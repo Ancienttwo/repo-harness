@@ -33,6 +33,12 @@ function procListsEveryProcess(mountInfo: string): boolean {
   if (fstype !== 'proc') return false;
   return superOptions!.split(',').every(option => option !== '' && (option.split('=')[0] !== 'hidepid' || /^hidepid=(?:off|noaccess|0|1)$/u.test(option)));
 }
+/** A process occupies a worktree when its cwd is the worktree or a path below
+ * it. A sibling directory that only shares the text prefix stays outside. */
+export function occupiesWorktree(processes: readonly WorktreeProcess[], worktree: string): boolean {
+  return processes.some(process => process.cwd === worktree || process.cwd.startsWith(`${worktree}/`));
+}
+
 /** Null means occupancy could not be proved. Never turn a failed process probe into an empty list. */
 export function worktreeProcesses(deadline: number, linuxProbe?: LinuxWorktreeProcessProbe): WorktreeProcess[] | null {
   try {

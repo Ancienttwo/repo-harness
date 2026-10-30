@@ -2,10 +2,13 @@ import type { JsonValue } from '../evidence/types';
 
 export const OPERATOR_SESSION_FINALIZATION_ROUTE = /^\/api\/v1\/sessions\/([0-9a-f]{32})\/finalization$/u;
 export const DOC_SESSION_FINALIZATION_FAILURES = ['session_not_found', 'events_unavailable', 'too_large', 'unavailable'] as const;
+/** Capability of the installed production adapter, not a persisted lifecycle fact. */
+export const DOC_SESSION_FINALIZE_BLOCKER = 'quiescence_unavailable' as const;
 export interface DocSessionFinalizationView {
   readonly protocol: 1;
   readonly kind: 'operator_docs_session_finalization_state';
   readonly session_id: string;
+  readonly availability: { readonly state: 'blocked'; readonly code: typeof DOC_SESSION_FINALIZE_BLOCKER };
   /** Saved journal progress, not live capability or proof of an audited outcome. */
   readonly progress: JsonValue | null;
 }
@@ -18,9 +21,11 @@ function object(value: unknown, fields: string[]): Record<string, unknown> {
 
 /** Closed read egress. Never serialize input, remote URL, message or step audit. */
 export function decodeDocSessionFinalizationView(value: unknown, request: { readonly session_id: string }): DocSessionFinalizationView {
-  const view = object(value, ['protocol', 'kind', 'session_id', 'progress']);
+  const view = object(value, ['protocol', 'kind', 'session_id', 'availability', 'progress']);
+  const availability = object(view.availability, ['state', 'code']);
   if (!/^[0-9a-f]{32}$/u.test(request.session_id) || view.protocol !== 1
-    || view.kind !== 'operator_docs_session_finalization_state' || view.session_id !== request.session_id) throw new Error('finalization identity');
+    || view.kind !== 'operator_docs_session_finalization_state' || view.session_id !== request.session_id
+    || availability.state !== 'blocked' || availability.code !== DOC_SESSION_FINALIZE_BLOCKER) throw new Error('finalization identity');
   if (view.progress !== null) {
     const candidate = view.progress as Record<string, unknown>;
     const commit = candidate?.operation === 'commit';

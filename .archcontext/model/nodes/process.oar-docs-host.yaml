@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.oar-docs-host"
+kind: "process"
+name: "OAR docs host"
+status: "active"
+layer: "effects"
+summary: "Detached Node process that runs one doc session's agent inside the docs host boundary."

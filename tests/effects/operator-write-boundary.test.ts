@@ -1,6 +1,8 @@
+import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE } from '../../src/core/operator/doc-session-finalize-wire';
+import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../src/core/operator/doc-session-messages';
+import { OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalization-view';
 import { OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../src/core/operator/doc-session-views';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
-import { OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalization-view';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -43,7 +45,7 @@ import {
 } from '../../src/effects/operator/server';
 import { OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE } from '../../src/effects/operator/agents-settings-route';
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE } from '../../src/effects/operator/worktree-cleanup';
-import { OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
+import { OPERATOR_SESSIONS_ROUTE, OPERATOR_SESSION_STOP_ROUTE } from '../../src/effects/operator/doc-session';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from '../../src/effects/operator/doc-session-changes';
 
 /**
@@ -69,13 +71,13 @@ function repositorySnapshot(
 }
 
 describe('operator structural write boundary', () => {
-  test('declares only the three admitted write routes and rejects every mutation verb even when mislabeled read-only', () => {
-    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create']);
+  test('declares only the seven admitted write routes and rejects every mutation verb even when mislabeled read-only', () => {
+    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'sessions_messages', 'sessions_commit', 'sessions_discard', 'sessions_stop']);
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
       const mutation: OperatorRouteV1 = { id: 'fake_write', method, pattern: '/api/v1/fleet/tasks/anything', write: false };
-      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'fake_write']);
+      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'sessions_messages', 'sessions_commit', 'sessions_discard', 'sessions_stop', 'fake_write']);
     }
-    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'get_write']);
+    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create', 'sessions_messages', 'sessions_commit', 'sessions_discard', 'sessions_stop', 'get_write']);
   });
 
   test('the dispatcher admits only GET, HEAD and, for a write route, POST', async () => {
@@ -116,14 +118,18 @@ describe('operator structural write boundary', () => {
       'docs_tree',
       'docs_file',
       'session_list',
+      'session_finalization',
       'session_detail',
       'session_events',
-      'session_finalization',
       'session_diff',
       'session_loss',
       'settings_agents',
       'settings_agents_write',
       'sessions_create',
+      'sessions_messages',
+      'sessions_commit',
+      'sessions_discard',
+      'sessions_stop',
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
@@ -155,15 +161,19 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('docs_file')).toBe(OPERATOR_DOCS_FILE_ROUTE.source);
     expect(OPERATOR_ROUTES.filter(route => route.id.startsWith('docs_')).every(route => route.method === 'GET' && !route.write)).toBe(true);
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_list')).toEqual({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'session_finalization')).toEqual({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_detail')).toEqual({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_events')).toEqual({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_diff')).toEqual({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_loss')).toEqual({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false });
-    expect(OPERATOR_ROUTES.find(route => route.id === 'session_finalization')).toEqual({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents')).toEqual({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents_write')).toEqual({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'worktrees_cleanup')).toEqual({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'sessions_create')).toEqual({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'sessions_messages')).toEqual({ id: 'sessions_messages', method: 'POST', pattern: OPERATOR_SESSION_MESSAGES_ROUTE.source, write: true });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'sessions_commit')).toEqual({ id: 'sessions_commit', method: 'POST', pattern: OPERATOR_SESSION_COMMIT_ROUTE.source, write: true });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'sessions_discard')).toEqual({ id: 'sessions_discard', method: 'POST', pattern: OPERATOR_SESSION_DISCARD_ROUTE.source, write: true });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'sessions_stop')).toEqual({ id: 'sessions_stop', method: 'POST', pattern: OPERATOR_SESSION_STOP_ROUTE.source, write: true });
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);

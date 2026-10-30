@@ -1,14 +1,14 @@
 import { afterEach, expect, test } from 'bun:test';
 import { execFileSync, spawn, spawnSync } from 'node:child_process';
 import { EventEmitter } from 'node:events';
-import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { connect, createServer, type Server, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
 import { darwinTest } from './helpers/darwin-test';
 import { tmpWorkspace } from './helpers/repo-fixture';
 import {
   assertDocsHostPlatform, isDocsHostWritablePath, docsHostDeveloperDirectory, docsHostEnvironment, docsHostPolicy, prepareDocsHostScratch,
-  proveDocsHostBoundary, writeDocsHostPolicy, type DocsHostAdmission,
+  proveDocsHostBoundary, writeDocsHostLauncher, writeDocsHostPolicy, type DocsHostAdmission,
 } from '../src/effects/review/docs-host-isolation';
 import { admitClientHello, startModelApiProxy, type ModelApiProxy } from '../src/effects/review/docs-host-proxy';
 
@@ -88,13 +88,22 @@ function fakeAccessToken(): string {
 }
 
 interface Fixture {
-  root: string; primary: string; worktree: string; control: string; home: string; remote: string;
+  root: string; primary: string; worktree: string; control: string; home: string; state: string; remote: string;
   admission: DocsHostAdmission; proxy: ModelApiProxy; consolePort: number; echoPort: number;
 }
 
 async function seedFixture(): Promise<Fixture> {
   const root = tmpWorkspace('docs-host'); roots.push(root);
-  const home = join(root, 'operator-home'), primary = join(root, 'primary'), worktree = join(root, 'wt'), control = join(root, 'control'), remote = join(root, 'remote.git');
+  const home = join(root, 'operator-home'), primary = join(root, 'primary'), worktree = join(root, 'wt'), remote = join(root, 'remote.git');
+  // The repo-harness home holds the operator audit log and other sessions. The control directory is this
+  // session's, in an owner-only root outside the repo-harness home that also holds another session's directory.
+  const state = join(root, 'state');
+  write(join(state, 'operator', 'audit.jsonl'), '{"phase":"intent"}\n');
+  write(join(state, 'operator', 'sessions', 'other', 'session.json'), '{"instruction":"another session"}');
+  const controlRoot = tmpWorkspace('docs-host-control'); roots.push(controlRoot);
+  chmodSync(controlRoot, 0o700);
+  const control = join(controlRoot, 'fixture');
+  write(join(controlRoot, 'other', 'scratch', 'home', 'history.jsonl'), 'another session history');
   write(join(home, '.codex', 'auth.json'), JSON.stringify({ tokens: { access_token: fakeAccessToken() } }));
   write(join(home, '.config', 'gh', 'hosts.yml'), 'github.com:\n  oauth_token: fixture-gh-token\n');
   write(join(home, '.repo-harness', 'mcp.tokens.json'), '{"fixture":"mcp-token"}');
@@ -120,10 +129,10 @@ async function seedFixture(): Promise<Fixture> {
   const { proxy } = await startLocalProxy(echoPort);
   const node = resolveNode();
   const admission: DocsHostAdmission = {
-    runtime: 'codex', worktree, control, operatorHome: home, node, executable: node,
+    runtime: 'codex', worktree, control, operatorHome: home, stateHome: state, node, executable: node,
     developerDirectory: docsHostDeveloperDirectory(), proxyPort: proxy.port,
   };
-  return { root, primary, worktree, control, home, remote, admission, proxy, consolePort, echoPort };
+  return { root, primary, worktree, control, home, state, remote, admission, proxy, consolePort, echoPort };
 }
 
 const WORKER = String.raw`
@@ -318,8 +327,10 @@ darwinTest('docs host boundary denies .git, source, generated and credential acc
   const deniedReads = [
     join(f.home, '.codex', 'auth.json'), join(f.home, '.config', 'gh', 'hosts.yml'), join(f.home, '.repo-harness', 'mcp.tokens.json'),
     join(f.home, '.ssh', 'id_ed25519'), join(f.home, '.netrc'), join(f.worktree, '.env'),
+    join(f.state, 'operator', 'audit.jsonl'), join(f.state, 'operator', 'sessions', 'other', 'session.json'),
+    join(dirname(f.control), 'other', 'scratch', 'home', 'history.jsonl'),
   ];
-  const allowedReads = [join(scratch.codexHome, 'auth.json'), join(f.worktree, 'src', 'app.ts'), join(docs, 'guide.md')];
+  const allowedReads = [join(scratch.codexHome, 'auth.json'), join(f.worktree, 'src', 'app.ts'), join(docs, 'guide.md'), policyFile];
   const worker = join(f.root, 'worker.cjs'); writeFileSync(worker, WORKER);
   const spec = {
     writes: [...deniedWrites, ...allowedWrites], reads: [...deniedReads, ...allowedReads], docs, worktree: f.worktree, tmp: scratch.tmp,
@@ -369,12 +380,79 @@ darwinTest('docs host boundary denies .git, source, generated and credential acc
   expect(readFileSync(join(docs, 'child.md'), 'utf8')).toBe('CHILD');
 }, 60_000);
 
+darwinTest('docs host reads its own control directory, but not the repo-harness home or another session\'s control directory', async () => {
+  const f = await seedFixture();
+  const policyFile = writeDocsHostPolicy(f.admission);
+  const scratch = prepareDocsHostScratch(f.admission, 60_000);
+  proveDocsHostBoundary(f.admission, policyFile, scratch);
+  const probe = "const fs=require('node:fs');const c=f=>{try{f();return 'ok'}catch(e){return e.code}};const [state,control,profile]=process.argv.slice(1);const root=require('node:path').dirname(control);"
+    + "console.log(JSON.stringify({control:c(()=>fs.readdirSync(control)),profile:c(()=>fs.readFileSync(profile)),codexHome:c(()=>fs.realpathSync(control+'/scratch/.codex-home')),"
+    + "state:c(()=>fs.readdirSync(state)),stateStat:c(()=>fs.statSync(state+'/operator')),audit:c(()=>fs.readFileSync(state+'/operator/audit.jsonl')),"
+    + "controlRoot:c(()=>fs.readdirSync(root)),otherSession:c(()=>fs.readdirSync(root+'/other'))}))";
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, f.admission.node, '-e', probe, f.state, f.control, policyFile],
+    { encoding: 'utf8', timeout: 15_000, env: docsHostEnvironment(scratch, f.proxy.port) });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ control: 'ok', profile: 'ok', codexHome: 'ok', state: 'EPERM', stateStat: 'EPERM', audit: 'EPERM', controlRoot: 'EPERM', otherSession: 'EPERM' });
+  // No read exception names the repo-harness home: the profile only denies it.
+  expect(readFileSync(policyFile, 'utf8').split('\n').filter(line => line.includes(JSON.stringify(f.state)))).toEqual([`(deny file-read* (subpath ${JSON.stringify(f.state)}))`]);
+}, 60_000);
+
+darwinTest('docs host launcher gives the runtime exactly the docs environment inside the profile', async () => {
+  const f = await seedFixture();
+  const scratch = prepareDocsHostScratch(f.admission, 60_000);
+  const env = docsHostEnvironment(scratch, f.proxy.port);
+  const policyFile = writeDocsHostPolicy(f.admission);
+  const launcher = writeDocsHostLauncher(f.admission, policyFile, env);
+  // The fixture runtime is node: it prints its environment and tries a write that only the profile denies.
+  const probe = "let w;try{require('node:fs').writeFileSync(process.argv[1],'CHANGED');w='ok'}catch(e){w=e.code}console.log(JSON.stringify({env:process.env,w}))";
+  const result = spawnSync(launcher, ['-e', probe, join(f.worktree, 'src', 'app.ts')], {
+    encoding: 'utf8', timeout: 15_000, cwd: f.worktree, env: { ...process.env, GH_TOKEN: 'fixture-gh-token', OPENAI_API_KEY: 'fixture-key' },
+  });
+  expect(result.status, result.stderr).toBe(0);
+  const observed = JSON.parse(result.stdout);
+  // macOS adds the text encoding variable to each new process. It carries no credential.
+  const { __CF_USER_TEXT_ENCODING: _encoding, ...runtimeEnv } = observed.env;
+  expect({ env: runtimeEnv, w: observed.w }).toEqual({ env, w: 'EPERM' });
+  expect(writeDocsHostLauncher(f.admission, policyFile, env)).toBe(launcher);
+  expect(() => writeDocsHostLauncher(f.admission, policyFile, { ...env, GH_TOKEN: 'x' })).toThrow('docs_host_launcher_changed');
+}, 60_000);
+
+darwinTest('docs host opens only the standalone codex release directory under ~/.codex and runs only its two helpers', async () => {
+  const f = await seedFixture();
+  const release = join(f.home, '.codex', 'packages', 'standalone', 'releases', '0.1.0-fixture');
+  const helpers = [join(release, 'bin', 'codex-code-mode-host'), join(release, 'codex-path', 'rg')];
+  for (const path of [join(release, 'bin', 'codex'), join(release, 'bin', 'other-tool'), ...helpers]) { mkdirSync(dirname(path), { recursive: true }); execFileSync('/bin/cp', ['/usr/bin/true', path]); }
+  write(join(release, 'codex-resources', 'voice', 'model.bin'), 'RESOURCE');
+  write(join(f.home, '.codex', 'sessions', 'rollout.jsonl'), 'SESSION');
+  write(join(f.home, '.codex', 'config.toml'), 'model = "fixture"');
+  const admission = { ...f.admission, executable: join(f.home, '.codex', 'packages', 'standalone', 'releases', '0.1.0-fixture', 'bin', 'codex') };
+  const policyFile = writeDocsHostPolicy(admission);
+  const scratch = prepareDocsHostScratch(admission, 60_000);
+  proveDocsHostBoundary(admission, policyFile, scratch);
+  const probe = `const fs=require('node:fs'),cp=require('node:child_process');const [release,codex,...helpers]=JSON.parse(process.argv[1]);
+const code=fn=>{try{fn();return 'ok'}catch(e){return e.code}};
+console.log(JSON.stringify({resource:code(()=>fs.readFileSync(release+'/codex-resources/voice/model.bin')),
+auth:code(()=>fs.readFileSync(codex+'/auth.json')),sessions:code(()=>fs.readFileSync(codex+'/sessions/rollout.jsonl')),config:code(()=>fs.readFileSync(codex+'/config.toml')),
+helpers:helpers.map(h=>cp.spawnSync(h,[]).status),other:cp.spawnSync(release+'/bin/other-tool',[]).error?.code}))`;
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policyFile, f.admission.node, '-e', probe, JSON.stringify([release, join(f.home, '.codex'), ...helpers])],
+    { encoding: 'utf8', timeout: 15_000, env: docsHostEnvironment(scratch, f.proxy.port) });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ resource: 'ok', auth: 'EPERM', sessions: 'EPERM', config: 'EPERM', helpers: [0, 0], other: 'EPERM' });
+}, 60_000);
+
 darwinTest('docs host admission fails closed before any profile exists', async () => {
   const f = await seedFixture();
   expect(() => docsHostPolicy({ ...f.admission, runtime: 'claude' as 'codex' })).toThrow('docs_host_runtime_unverified');
   expect(() => docsHostPolicy({ ...f.admission, worktree: f.primary })).toThrow('docs_host_linked_worktree_required');
   const nested = join(f.worktree, 'control'); mkdirSync(nested, { mode: 0o700 });
   expect(() => docsHostPolicy({ ...f.admission, control: nested })).toThrow('docs_host_control_overlaps_worktree');
+  expect(() => docsHostPolicy({ ...f.admission, stateHome: f.control })).toThrow('docs_host_control_in_state_home');
+  expect(() => docsHostPolicy({ ...f.admission, stateHome: dirname(f.control) })).toThrow('docs_host_control_in_state_home');
+  expect(() => docsHostPolicy({ ...f.admission, stateHome: f.root })).toThrow('docs_host_worktree_in_state_home');
+  // The control directory's parent holds other sessions' control directories, so it must be owner-only.
+  chmodSync(dirname(f.control), 0o755);
+  expect(() => docsHostPolicy(f.admission)).toThrow('docs_host_control_unsafe');
+  chmodSync(dirname(f.control), 0o700);
   const policyFile = writeDocsHostPolicy(f.admission);
   writeFileSync(policyFile, '(version 1)\n(allow default)\n');
   expect(() => writeDocsHostPolicy(f.admission)).toThrow('docs_host_profile_changed');
@@ -450,6 +528,27 @@ darwinTest('docs host denies the pasteboard and LaunchServices lookups and Apple
   expect(launchServices.stderr).not.toContain('execvp');
   expect(launchServices).toMatchObject({ status: 0, stdoutBytes: 0 });
   expect(run('launchservices-control', `${exec}\n${lookup('com.apple.coreservices.launchservicesd')}`, '/usr/bin/lsappinfo', 'list').stdoutBytes).toBeGreaterThan(0);
+}, 60_000);
+
+
+darwinTest('each resumed epoch has immutable policy and launcher files for its own proxy port with the same boundary rules', async () => {
+  const f = await seedFixture();
+  const scratch = prepareDocsHostScratch(f.admission, 60_000);
+  const firstPolicy = writeDocsHostPolicy(f.admission, 1);
+  const firstLauncher = writeDocsHostLauncher(f.admission, firstPolicy, docsHostEnvironment(scratch, f.proxy.port), 1);
+  const oldPolicy = readFileSync(firstPolicy, 'utf8'), oldLauncher = readFileSync(firstLauncher, 'utf8');
+  const nextProxy = await startModelApiProxy([{ host: 'model.example.test', port: 443 }]);
+  closers.push(() => nextProxy.close());
+  const admission = { ...f.admission, proxyPort: nextProxy.port };
+  const secondPolicy = writeDocsHostPolicy(admission, 2);
+  const secondLauncher = writeDocsHostLauncher(admission, secondPolicy, docsHostEnvironment(scratch, nextProxy.port), 2);
+  expect(secondPolicy).not.toBe(firstPolicy);
+  expect(secondLauncher).not.toBe(firstLauncher);
+  expect(readFileSync(firstPolicy, 'utf8')).toBe(oldPolicy);
+  expect(readFileSync(firstLauncher, 'utf8')).toBe(oldLauncher);
+  expect(readFileSync(secondPolicy, 'utf8')).toBe(docsHostPolicy(admission));
+  expect(() => writeDocsHostPolicy(admission, 1)).toThrow('docs_host_profile_changed');
+  proveDocsHostBoundary(admission, secondPolicy, scratch);
 }, 60_000);
 
 

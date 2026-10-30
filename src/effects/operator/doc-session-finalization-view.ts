@@ -1,4 +1,4 @@
-import { decodeDocSessionFinalizationView, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
+import { DOC_SESSION_FINALIZE_BLOCKER, decodeDocSessionFinalizationView, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
 import { readDocSessionFinalization } from './doc-session-finalize';
 import { readRegisteredDocSessionRecord } from './doc-session-views';
 
@@ -7,6 +7,7 @@ export function readDocSessionFinalizationView(env: NodeJS.ProcessEnv, request: 
   readRegisteredDocSessionRecord(env, request.session_id);
   return decodeDocSessionFinalizationView({
     protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: request.session_id,
+    availability: { state: 'blocked', code: DOC_SESSION_FINALIZE_BLOCKER },
     progress: readDocSessionFinalization(env, request.session_id),
   }, request);
 }

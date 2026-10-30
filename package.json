@@ -29,6 +29,7 @@
     "assets/",
     "dist/hook-entry.js",
     "dist/dsh-plugin.js",
+    "dist/oar-docs-host.js",
     "cordis.patch.yml",
     "dist/oar-review-host.js",
     "dist/operator-ui/",
@@ -88,11 +89,12 @@
     "build:dsh-plugin": "bun build src/dsh/plugin.ts --target=node --format=esm --packages=external --outfile dist/dsh-plugin.js && ! grep -q '@deepseek-ai/' dist/dsh-plugin.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",
     "dev:operator": "vite --config vite.operator.config.ts",
-    "prepack": "bun run build:hook-bundle 1>&2 && bun run build:dsh-plugin 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2",
+    "prepack": "bun run build:hook-bundle 1>&2 && bun run build:dsh-plugin 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:oar-docs-host 1>&2 && bun run build:operator-web 1>&2",
     "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
     "sync:brain": "repo-harness brain sync",
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh",
-    "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
+    "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js",
+    "build:oar-docs-host": "bun build src/effects/operator/oar-docs-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-docs-host.js"
   },
   "devDependencies": {
     "@cloudflare/kumo": "2.14.0",

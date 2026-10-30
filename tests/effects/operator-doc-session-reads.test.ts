@@ -1,3 +1,8 @@
+import { boundedDocSessionFinalizeOperation } from '../../src/effects/operator/doc-session-finalize-routes';
+import { decodeDocSessionFinalizeResponse } from '../../src/core/operator/doc-session-finalize-wire';
+import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
+import { DOC_SESSION_AGENT_LOCK } from '../../src/effects/operator/doc-session-agent';
+import { runOperatorWrite } from '../../src/effects/operator/write-run';
 import { decodeOperatorDocSessionDetail, decodeOperatorDocSessionList, DOC_SESSION_LIST_MAX } from '../../src/core/operator/doc-session-views';
 import { afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
@@ -41,6 +46,7 @@ interface Session {
   readonly roots: readonly string[];
   readonly env: NodeJS.ProcessEnv;
   readonly get: (path: string) => Promise<{ status: number; body: Record<string, any>; text: string }>;
+  readonly post: (action: string, body: object) => Promise<{ status: number; body: any; text: string }>;
   readonly cli: (...args: string[]) => ReturnType<typeof spawnSync>;
 }
 
@@ -80,7 +86,8 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
   reader.start();
   await reader.refresh();
-  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin' });
+  // No-op launch seam: the reads never start a host; tests that need host state write agent.json directly.
+  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin', launch_agent: () => 'starting' });
   const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route], ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }) });
   const roots = [repo, home, userHome, worktrees, staticRoot];
   cleanups.push(async () => {
@@ -98,12 +105,20 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   });
   const body = await created.json() as Record<string, any>;
   expect(created.status).toBe(201);
+  const createdSessionId = body.session_id as string;
   return {
     sid: body.session_id, url: server.url, base, repo, worktree: join(worktrees, body.worktree), roots, env,
     get: async (path) => {
       const response = await fetch(`${server.url}${path}`);
       const text = await response.text();
       return { status: response.status, body: text ? JSON.parse(text) as Record<string, any> : {}, text };
+    },
+    post: async (action, body) => {
+      const response = await fetch(`${server.url}/api/v1/sessions/${createdSessionId}/${action}`, {
+        method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie }, body: JSON.stringify(body),
+      });
+      const text = await response.text();
+      return { status: response.status, body: JSON.parse(text), text };
     },
     cli: (...args) => spawnSync(process.execPath, [CLI, 'operator', 'doc-sessions', ...args], { cwd: repo, env, encoding: 'utf8', timeout: 60_000 }),
   };
@@ -132,7 +147,9 @@ test('finalization public reads share closed progress without creating a journal
     const response = await fetch(`${s.url}/api/v1/sessions/${s.sid}/${action}`, {
       method: 'POST', headers: { Origin: s.url, 'Sec-Fetch-Site': 'same-origin' }, body: '{}',
     });
-    expect(response.status).toBe(405);
+    // The write routes exist; a POST without a JSON content type refuses at the
+    // media-type check, before any journal or audit write.
+    expect(response.status).toBe(415);
   }
   expect(existsSync(join(directory, 'finalize.json'))).toBe(false);
   expect(existsSync(join(directory, 'agent.json'))).toBe(false);
@@ -231,9 +248,11 @@ test.skipIf(process.platform === 'win32')('finalization HTTP bounds a blocked jo
 
 test('finalization decoder rejects mismatched identities, private fields and contradictory progress', () => {
   const request = { session_id: 'a'.repeat(32) };
-  const view = { protocol: 1, kind: 'operator_docs_session_finalization_state', ...request, progress: null } as const;
+  const view = { protocol: 1, kind: 'operator_docs_session_finalization_state', ...request,
+    availability: { state: 'blocked', code: 'quiescence_unavailable' }, progress: null } as const;
   expect(decodeDocSessionFinalizationView(view, request)).toEqual(view);
   for (const changed of [{ ...view, session_id: 'b'.repeat(32) }, { ...view, private: 'secret' },
+    { ...view, availability: { state: 'blocked', code: 'other_blocker' } },
     { ...view, progress: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete', input: {} } },
     { ...view, progress: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'commit', stage: 'complete', commit: 'a'.repeat(40), pushed: true, pr: null } }]) {
     expect(() => decodeDocSessionFinalizationView(changed, request)).toThrow();
@@ -818,4 +837,120 @@ test('production event pages cross epochs without repeats and seen changes only 
   expect((await s.get(`/api/v1/sessions/${s.sid}?seen=2.0`)).body.session.unread).toBe(true);
   expect((await s.get(`/api/v1/sessions/${s.sid}?seen=2.1`)).body.session.unread).toBe(false);
   expect((await s.get(`/api/v1/sessions/${s.sid}/events?after=2.0`)).body).toEqual(second.body);
+});
+
+test('production finalize enforces the darwin commit occupancy gate; discard and other platforms refuse unknown cleanup', async () => {
+  const s = await session();
+  agentRecord(s, 'stopped');
+  const directory = join(s.env.REPO_HARNESS_HOME!, 'operator', 'sessions', s.sid);
+  const before = readFileSync(join(directory, 'agent.json'), 'utf8');
+  const fields = { expected_head: s.base, expected_diff_sha256: 'a'.repeat(64), message: 'Private commit explanation' };
+  const requestId = randomUUID();
+  const answer = await s.post('commit', { request_id: requestId, ...fields });
+  // macOS passes the occupancy gate and reaches the core, which refuses the
+  // unknown digest; every other platform still refuses inside the gate.
+  const commitOutcome = process.platform === 'darwin' ? { status: 409, code: 'diff_changed' } : { status: 503, code: 'quiescence_unavailable' };
+  expect(answer).toMatchObject({ status: commitOutcome.status, body: { error: { code: commitOutcome.code } } });
+  expectNoPrivatePath(s, answer.text);
+  const replay = s.cli('commit', s.sid, '--expected-head', s.base, '--expected-diff-sha256', fields.expected_diff_sha256, '--message', fields.message, '--request-id', requestId, '--json');
+  expect(replay.status).toBe(2);
+  expect(JSON.parse(replay.stderr as string)).toEqual({ request_id: requestId, status: commitOutcome.status, ...answer.body });
+  if (process.platform === 'darwin') {
+    // A host that still holds agent.lock has not finished: specific refusal, not the generic blocker.
+    const lock = acquireExclusiveDirectoryLock(directory, DOC_SESSION_AGENT_LOCK, { waitTimeoutMs: 1000 });
+    try {
+      lock.assertOwned();
+      const held = await s.post('commit', { request_id: randomUUID(), ...fields });
+      expect(held).toMatchObject({ status: 503, body: { error: { code: 'session_host_active' } } });
+      expectNoPrivatePath(s, held.text);
+    } finally { lock.release(); }
+  }
+  const discardId = randomUUID();
+  const discard = s.cli('discard', s.sid, '--expected-head', s.base, '--expected-loss-sha256', 'b'.repeat(64), '--request-id', discardId, '--json');
+  expect(discard.status).toBe(2);
+  expect(JSON.parse(discard.stderr as string).error.code).toBe('quiescence_unavailable');
+  expect((await s.post('discard', { request_id: discardId, expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) })).status).toBe(503);
+  expect(readFileSync(join(directory, 'agent.json'), 'utf8')).toBe(before);
+  expect(git(['rev-parse', 'HEAD'], s.worktree).trim()).toBe(s.base);
+  expect(readFileSync(join(s.worktree, 'docs/guide.md'), 'utf8')).toBe(GUIDE);
+  const audit = readFileSync(join(s.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl'), 'utf8');
+  expect(audit).not.toContain(fields.message);
+  expect(audit.split('\n').filter(line => line.includes(requestId))).toHaveLength(2);
+  expect((await s.post('commit', { request_id: requestId, ...fields, message: 'changed' })).body.error.code).toBe('request_mismatch');
+});
+test('finalization keeps active-turn refusal and closed request admission; a new request observes recovery', async () => {
+  const s = await session();
+  const fields = { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) };
+  agentRecord(s, 'running');
+  const request = randomUUID();
+  const first = await s.post('discard', { request_id: request, ...fields });
+  expect(first).toMatchObject({ status: 409, body: { error: { code: 'turn_active' } } });
+  agentRecord(s, 'stopped', 2);
+  expect((await s.post('discard', { request_id: request, ...fields })).body).toEqual(first.body);
+  expect((await s.post('discard', { request_id: randomUUID(), ...fields })).body.error.code).toBe('quiescence_unavailable');
+  expect((await s.post('discard', { request_id: randomUUID(), ...fields, force: true })).status).toBe(400);
+  expect((await s.post('commit', { request_id: randomUUID(), expected_head: s.base, expected_diff_sha256: 'a'.repeat(64), message: '' })).status).toBe(400);
+});
+test('bounded finalization rejects unknown worker output and shares the message target lock', async () => {
+  const s = await session();
+  const fields = { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) };
+  const id = randomUUID(); let starts = 0;
+  const operation = boundedDocSessionFinalizeOperation(s.env, 'discard', s.sid, fields, async (argv, options) => {
+    starts++;
+    expect(argv).toHaveLength(1);
+    expect(JSON.parse(options.stdin!)).toEqual({ action: 'discard', session_id: s.sid, fields });
+    expect(options.timeout_ms).toBe(120000);
+    return { ok: false, code: 'timeout' };
+  });
+  expect((await runOperatorWrite(id, operation, s.env)).body).toMatchObject({ error: { code: 'reconcile_required' } });
+  expect((await runOperatorWrite(id, operation, s.env)).body).toMatchObject({ error: { code: 'reconcile_required' } });
+  expect(starts).toBe(1);
+  expect(operation.target).toBe(`docs_session:${s.sid}`);
+  let release!: () => void;
+  let entered!: () => void;
+  const started = new Promise<void>(resolve => { entered = resolve; });
+  const held = new Promise<void>(resolve => { release = resolve; });
+  const blocking = boundedDocSessionFinalizeOperation(s.env, 'discard', s.sid, fields, async () => {
+    entered(); await held;
+    return { ok: false, code: 'failed' };
+  });
+  const pending = runOperatorWrite(randomUUID(), blocking, s.env);
+  await started;
+  let messageRan = false;
+  try {
+    const competing = await runOperatorWrite(randomUUID(), { operation: 'docs_session_message', target: blocking.target, input: {}, execute: async () => { messageRan = true; return { status: 202, body: {} }; } }, s.env);
+    expect(competing.body).toMatchObject({ error: { code: 'busy' } });
+    expect(messageRan).toBe(false);
+  } finally { release(); await pending; }
+
+  expect(() => decodeDocSessionFinalizeResponse({ status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete', private_path: s.worktree } }, 'discard')).toThrow();
+  const valid = { status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete' } };
+  expect(decodeDocSessionFinalizeResponse(valid, 'discard')).toEqual(valid);
+  expect(() => decodeDocSessionFinalizeResponse(valid, 'commit')).toThrow();
+});
+test('finalization GET and CLI expose the blocker and saved progress even after the worktree is gone', async () => {
+  const s = await session();
+  const path = `/api/v1/sessions/${s.sid}/finalization`;
+  const empty = await s.get(path);
+  expect(empty).toMatchObject({ status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: s.sid,
+    availability: { state: 'blocked', code: 'quiescence_unavailable' }, progress: null } });
+  const cli = s.cli('finalization', s.sid, '--json');
+  expect(cli.status).toBe(0);
+  expect(JSON.parse(cli.stdout as string)).toEqual(empty.body);
+  // A synthetic saved journal tests readback only. It is not proof that deletion ran.
+  const journal = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid, 'finalize.json');
+  const contents = JSON.stringify({ protocol: 1, kind: 'discard', stage: 'complete', audit: null,
+    input: { expected_head: s.base, expected_loss_sha256: 'b'.repeat(64) }, private_note: s.worktree });
+  writeFileSync(journal, contents, { mode: 0o600 });
+  renameSync(s.worktree, `${s.worktree}-fixture-away`);
+  const done = await s.get(path);
+  expect(done).toMatchObject({ status: 200, body: { progress: { protocol: 1, kind: 'operator_docs_session_finalize', operation: 'discard', stage: 'complete' } } });
+  expectNoPrivatePath(s, done.text);
+  expect(done.text).not.toContain('private_note');
+  expect(readFileSync(journal, 'utf8')).toBe(contents);
+  expect((await fetch(`${s.url}${path}`, { method: 'HEAD' })).status).toBe(200);
+  expect((await s.get(`${path}?force=true`)).status).toBe(400);
+  expect((await s.get(`/api/v1/sessions/${'f'.repeat(32)}/finalization`)).status).toBe(404);
+  writeFileSync(journal, '{invalid');
+  expect((await s.get(path)).status).toBe(503);
 });

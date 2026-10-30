@@ -40,21 +40,24 @@ export type SetupProcessRunner = (
     readonly cwd: string; readonly env: NodeJS.ProcessEnv; readonly timeout_ms: number; readonly signal: AbortSignal;
     /** The owner name in the process-group record; the setup collector by default. */
     readonly service?: string;
+    /** Bounded private request bytes. They do not appear in the child argv. */
+    readonly stdin?: string;
   },
 ) => Promise<SetupProcessResult>;
 
 /**
- * Spawn `bun <argv>` with no shell, no stdin and no stderr capture. On POSIX the
+ * Spawn `bun <argv>` with no shell or stderr capture and optional bounded stdin. On POSIX the
  * child leads its own registered process group; a deadline, abort or oversized
  * stdout terminates that group (Windows: the `taskkill /T` tree) before settling.
  */
 export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promise((settle) => {
   if (options.signal.aborted) { settle({ ok: false, code: 'aborted' }); return; }
+  if (options.stdin !== undefined && Buffer.byteLength(options.stdin) > 64 * 1024) { settle({ ok: false, code: 'failed' }); return; }
   const group = process.platform !== 'win32';
   let child: ReturnType<typeof spawn>;
   try {
     child = spawnRegisteredProcessGroup(options.service ?? 'setup-collector', () => spawn(process.execPath, [...argv], {
-      cwd: options.cwd, env: options.env, stdio: ['ignore', 'pipe', 'ignore'], detached: group, windowsHide: true,
+      cwd: options.cwd, env: options.env, stdio: [options.stdin === undefined ? 'ignore' : 'pipe', 'pipe', 'ignore'], detached: group, windowsHide: true,
     }));
   } catch {
     settle({ ok: false, code: 'failed' });
@@ -96,6 +99,10 @@ export const runSetupProcess: SetupProcessRunner = (argv, options) => new Promis
     if (failure !== null) return;
     finish(code === 0 ? { ok: true, stdout: Buffer.concat(chunks).toString('utf8') } : { ok: false, code: 'failed' });
   });
+  if (child.stdin) {
+    child.stdin.once('error', () => terminate('failed'));
+    child.stdin.end(options.stdin);
+  }
 });
 
 export interface SetupCollectorOptions {

@@ -1,3 +1,8 @@
+import { boundedDocSessionFinalizeOperation } from '../../effects/operator/doc-session-finalize-routes';
+import { randomUUID } from 'node:crypto';
+import { decodeDocSessionMessage } from '../../core/operator/doc-session-messages';
+import { docSessionMessageOperation } from '../../effects/operator/doc-session-messages';
+import { parseOperatorRequestId, runOperatorWrite } from '../../effects/operator/write-run';
 import { Command } from 'commander';
 
 import type { OperatorDocSessionDiffV1, OperatorDocSessionLossV1 } from '../../core/operator/doc-session-changes';
@@ -8,7 +13,7 @@ import { DocSessionEventsError, readDocSessionEvents } from '../../effects/opera
 import { OperatorTaskReadError, readBoundedDocSessionFinalization } from '../../effects/operator/server';
 
 /**
- * `repo-harness operator doc-sessions`: the doc session reads of the operator
+ * `repo-harness operator doc-sessions`: the doc session operations of the operator
  * console (I7). Each subcommand runs the effect that the HTTP route runs, and
  * `--json` prints the route's body.
  */
@@ -57,13 +62,51 @@ function printLoss(loss: OperatorDocSessionLossV1): void {
 }
 
 export function buildDocSessionsCommand(): Command {
-  const sessions = new Command('doc-sessions').description('Read doc sessions of the operator console');
-  sessions.command('finalization').description('Read saved finalization journal progress')
+  const sessions = new Command('doc-sessions').description('Read doc sessions and send follow-up messages');
+  for (const action of ['commit', 'discard'] as const) {
+    const command = sessions.command(action).description(action === 'commit' ? 'Commit, push and open a Draft PR after verified host cleanup' : 'Discard after verified host cleanup and loss review')
+      .argument('<session-id>', 'Doc session id (32 hex)')
+      .requiredOption('--expected-head <sha>', 'Reviewed HEAD')
+      .option('--request-id <uuid>', 'Reuse this id to read the saved outcome').option('--json', 'Output JSON');
+    if (action === 'commit') command.requiredOption('--expected-diff-sha256 <hash>', 'Reviewed diff hash').requiredOption('--message <text>', 'Commit message');
+    else command.requiredOption('--expected-loss-sha256 <hash>', 'Reviewed loss hash');
+    command.action(async (sid: string, options: ReadOptions & { expectedHead: string; expectedDiffSha256?: string; expectedLossSha256?: string; message?: string; requestId?: string }) => {
+      const requestId = options.requestId === undefined ? randomUUID() : parseOperatorRequestId(options.requestId);
+      let operation;
+      try {
+        if (requestId === null) throw new Error('invalid_argument');
+        const fields = action === 'commit' ? { expected_head: options.expectedHead, expected_diff_sha256: options.expectedDiffSha256, message: options.message }
+          : { expected_head: options.expectedHead, expected_loss_sha256: options.expectedLossSha256 };
+        operation = boundedDocSessionFinalizeOperation(process.env, action, sid, fields);
+      } catch { refuse(options.json, 'invalid_argument', 2); return; }
+      const response = await runOperatorWrite(requestId!, operation, process.env);
+      const output = JSON.stringify({ request_id: requestId, status: response.status, ...response.body as object });
+      if (response.status === 200) console.log(output);
+      else { console.error(output); process.exitCode = 2; }
+    });
+  }
+  sessions.command('finalization').description('Read finalization availability and saved progress')
     .argument('<session-id>', 'Doc session id (32 hex)').option('--json', 'Output the HTTP body as JSON')
     .action(async (sessionId: string, options: ReadOptions) => {
       if (!SESSION_ID.test(sessionId)) { refuse(options.json, 'invalid_argument', 2); return; }
       try { console.log(JSON.stringify(await readBoundedDocSessionFinalization(process.env, sessionId))); }
       catch (error) { refuse(options.json, error instanceof OperatorTaskReadError ? error.code : 'unavailable', error instanceof OperatorTaskReadError ? 2 : 1); }
+    });
+  sessions.command('message').description('Send an audited follow-up to a doc session')
+    .argument('<session-id>', 'Doc session id (32 hex)')
+    .requiredOption('--text <text>', 'Message text').requiredOption('--when <when>', 'after_turn or now')
+    .option('--request-id <uuid>', 'Reuse this id to read the saved outcome').option('--json', 'Output JSON')
+    .action(async (sessionId: string, options: ReadOptions & { text: string; when: string; requestId?: string }) => {
+      const requestId = options.requestId === undefined ? randomUUID() : parseOperatorRequestId(options.requestId);
+      let operation;
+      try {
+        if (requestId === null) throw new Error('invalid_argument');
+        operation = docSessionMessageOperation(process.env, sessionId, decodeDocSessionMessage({ text: options.text, when: options.when }));
+      } catch { refuse(options.json, 'invalid_argument', 2); return; }
+      const response = await runOperatorWrite(requestId!, operation, process.env);
+      const output = JSON.stringify({ request_id: requestId, status: response.status, ...response.body as object });
+      if (response.status === 202) console.log(output);
+      else { console.error(output); process.exitCode = 2; }
     });
   sessions.command('list').description('List doc sessions; unread compares with the supplied browser cursors')
     .option('--seen <json>', 'JSON object of session ids to last-read epoch.seq cursors')
