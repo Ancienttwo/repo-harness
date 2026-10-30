@@ -5,9 +5,9 @@
 // This module never touches fs/process; callers own reading manifest.json and
 // (optionally) proving a package's source path exists on disk.
 
-export const SKILL_SURFACE_CATALOG_VERSION = 2 as const;
+export const SKILL_SURFACE_CATALOG_VERSION = 3 as const;
 
-export const SKILL_SURFACE_HOSTS = ["claude", "codex", "pi"] as const;
+export const SKILL_SURFACE_HOSTS = ["claude", "codex", "pi", "dsh"] as const;
 export type SkillSurfaceHost = (typeof SKILL_SURFACE_HOSTS)[number];
 
 export const SKILL_SURFACE_PROFILES = ["minimal", "full"] as const;
@@ -77,6 +77,7 @@ export interface SkillSurfaceHostPlacements {
   readonly pi: readonly string[];
   readonly claude: readonly string[];
   readonly codex: readonly string[];
+  readonly dsh: readonly string[];
 }
 
 export interface SkillSurfaceExpectedProjections {
@@ -228,7 +229,7 @@ function computeHostSkillPlacements(
   packages: readonly SkillSurfacePackage[],
   profile: SkillSurfaceProfile | undefined,
 ): SkillSurfaceHostPlacements {
-  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [], pi: [] };
+  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [], pi: [], dsh: [] };
   for (const pkg of packages) {
     if (pkg.kind !== "provider-skill") continue;
     if (profile !== undefined && !pkg.profiles.includes(profile)) continue;
@@ -464,7 +465,7 @@ function validateExpectedProjections(
       diagnostics.push(diagnostic(
         "EXPECTED_PROJECTIONS_REQUIRED",
         `expectedProjections.hostSkillPlacementsByProfile.${profile}`,
-        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude, codex and pi string arrays`,
+        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude, codex, pi and dsh string arrays`,
       ));
       shapeOk = false;
     } else {
@@ -472,6 +473,7 @@ function validateExpectedProjections(
         claude: hostPlacement.claude as string[],
         codex: hostPlacement.codex as string[],
         pi: hostPlacement.pi as string[],
+        dsh: hostPlacement.dsh as string[],
       };
     }
   }
@@ -569,7 +571,7 @@ export function validateSkillSurfaceCatalogValue(
     return {
       status: "invalid",
       catalog: null,
-      diagnostics: [diagnostic("UNSUPPORTED_VERSION", "version", "version must be 2")],
+      diagnostics: [diagnostic("UNSUPPORTED_VERSION", "version", "version must be 3")],
     };
   }
   if (!Array.isArray(value.packages)) {

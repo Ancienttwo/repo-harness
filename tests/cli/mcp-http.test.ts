@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash, randomBytes } from 'crypto';
 import { createServer } from 'net';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { ServerError } from '@modelcontextprotocol/sdk/server/auth/errors.js';
@@ -729,6 +729,154 @@ describe('mcp http transport', () => {
         active_sessions: 1,
         sessions_created: 1,
       });
+    } finally {
+      proc?.kill();
+      await proc?.exited.catch(() => undefined);
+      restoreRegistryHome();
+      rmSync(repoRoot, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('an orchestrator grant that predates publicationMerge never lists or reaches the merge tool', async () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-stale-grant-'));
+    const port = await freePort();
+    const restoreRegistryHome = useTempRegistryHome();
+    let proc: Bun.Subprocess | null = null;
+    try {
+      mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
+      writeFileSync(join(repoRoot, 'AGENTS.md'), '# Stale grant test\n');
+      const runGit = (...args: string[]) => {
+        const result = Bun.spawnSync(['git', '-C', repoRoot, ...args], { stdout: 'pipe', stderr: 'pipe' });
+        if (result.exitCode !== 0) throw new Error(result.stderr.toString());
+      };
+      runGit('init', '-b', 'main');
+      runGit('config', 'user.email', 'tests@example.com');
+      runGit('config', 'user.name', 'Repo Harness Tests');
+      runGit('add', '.');
+      runGit('commit', '-m', 'fixture');
+      runMcpSetupChatgpt({
+        repo: repoRoot,
+        profile: 'orchestrator',
+        grantReadWrite: [repoRoot],
+        endpoint: 'https://orchestrator.test/mcp',
+        port: String(port),
+      });
+      const configPath = join(process.env.REPO_HARNESS_HOME!, 'mcp.local.json');
+      // The old consent: same profile and revision, no publicationMerge capability recorded.
+      const staleConfig = await Bun.file(configPath).json() as { capabilities: Record<string, unknown> };
+      delete staleConfig.capabilities.publicationMerge;
+      writeFileSync(configPath, `${JSON.stringify(staleConfig)}\n`);
+      const passphrase = (await Bun.file(join(process.env.REPO_HARNESS_HOME!, 'mcp.oauth.json')).json()).passphrase as string;
+
+      // A tripwire gh: every provider call is recorded, so the assertion proves
+      // the refused call sent no merge request and ran no readiness read. The
+      // positive control runs it once first, so a missing log line means the
+      // provider was truly never invoked, not that the tripwire cannot write.
+      const ghLog = join(repoRoot, 'gh-calls.log');
+      writeFileSync(join(repoRoot, 'tripwire-gh.sh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}\nexit 1\n`);
+      const ghBin = join(repoRoot, 'tripwire-gh.sh');
+      chmodSync(ghBin, 0o755);
+      const control = Bun.spawnSync([ghBin, '--version'], { stdout: 'pipe', stderr: 'pipe' });
+      expect(control.exitCode).toBe(1);
+      expect(readFileSync(ghLog, 'utf-8')).toContain('--version');
+      unlinkSync(ghLog);
+
+      proc = Bun.spawn(
+        ['bun', 'src/cli/index.ts', 'mcp', 'serve', '--repo', repoRoot, '--transport', 'http', '--host', '127.0.0.1',
+          '--port', String(port), '--profile', 'orchestrator'],
+        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, REPO_HARNESS_GH_BIN: ghBin } },
+      );
+      await waitForHealth(port);
+
+      const registered = await fetch(`http://127.0.0.1:${port}/register`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify({
+          redirect_uris: ['http://localhost/callback'],
+          token_endpoint_auth_method: 'none',
+          grant_types: ['authorization_code', 'refresh_token'],
+          response_types: ['code'],
+          client_name: 'repo-harness-test',
+        }),
+      });
+      expect(registered.status).toBe(201);
+      const client = await registered.json() as { client_id: string };
+      const verifier = randomBytes(32).toString('base64url');
+      const challenge = createHash('sha256').update(verifier).digest('base64url');
+      const authorized = await fetch(`http://127.0.0.1:${port}/authorize`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          passphrase,
+          client_id: client.client_id,
+          redirect_uri: 'http://localhost/callback',
+          response_type: 'code',
+          code_challenge: challenge,
+          code_challenge_method: 'S256',
+          scope: 'repo-harness repo-harness.orchestrator offline_access',
+          state: 'state-1',
+        }),
+        redirect: 'manual',
+      });
+      expect(authorized.status).toBe(302);
+      const code = new URL(authorized.headers.get('location') ?? '').searchParams.get('code');
+      expect(code).toBeTruthy();
+      const tokenResponse = await fetch(`http://127.0.0.1:${port}/token`, {
+        method: 'POST',
+        headers: { 'content-type': 'application/x-www-form-urlencoded' },
+        body: new URLSearchParams({
+          grant_type: 'authorization_code',
+          client_id: client.client_id,
+          code: code ?? '',
+          code_verifier: verifier,
+          redirect_uri: 'http://localhost/callback',
+        }),
+      });
+      expect(tokenResponse.status).toBe(200);
+      const { access_token: accessToken } = await tokenResponse.json() as { access_token: string };
+
+      const call = async (id: number, method: string, params?: Record<string, unknown>, sessionId?: string | null):
+        Promise<{ status: number; nextSessionId: string | null; text: string }> => {
+        const response = await fetch(`http://127.0.0.1:${port}/mcp`, {
+          method: 'POST',
+          headers: {
+            authorization: `Bearer ${accessToken}`,
+            'content-type': 'application/json',
+            accept: 'application/json, text/event-stream',
+            ...(sessionId ? { 'mcp-session-id': sessionId } : {}),
+          },
+          body: JSON.stringify({ jsonrpc: '2.0', id, method, ...(params ? { params } : {}) }),
+        });
+        return { status: response.status, nextSessionId: response.headers.get('mcp-session-id'), text: await response.text() };
+      };
+
+      const initialized = await call(1, 'initialize', {
+        protocolVersion: '2024-11-05', capabilities: {}, clientInfo: { name: 'repo-harness-test', version: '0' },
+      });
+      expect(initialized.status).toBe(200);
+      const sessionId = initialized.nextSessionId;
+      expect(sessionId).toMatch(/^[0-9a-f-]{36}$/);
+
+      const list = await call(2, 'tools/list', undefined, sessionId);
+      const listBody = JSON.parse(list.text.split('\n').find((line) => line.startsWith('data: '))?.slice(6) ?? '{}') as { result: { tools: Array<{ name: string }> } };
+      const names = listBody.result.tools.map((tool) => tool.name);
+      expect(names).not.toContain('merge_pull_request');
+      expect(names).toContain('prompt_task_agent');
+
+      const mergeCall = await call(3, 'tools/call', {
+        name: 'merge_pull_request',
+        arguments: { repository: 'example/local', provider_repository_id: '1', pr_number: 1,
+          expected_head_sha: 'a'.repeat(40), expected_base_sha: 'b'.repeat(40) },
+      }, sessionId);
+      expect(mergeCall.status).toBe(200);
+      const mergeText = mergeCall.text.split('\n').find((line) => line.startsWith('data: '))?.slice(6) ?? '{}';
+      const mergeBody = JSON.parse(mergeText) as { result: { content: Array<{ text: string }> } };
+      const mergeResult = JSON.parse(mergeBody.result.content[0]?.text ?? '{}') as { error?: { code: string; message: string } };
+      expect(mergeResult.error?.code).toBe('TOOL_NOT_AVAILABLE');
+      expect(mergeResult.error?.message).toContain('setup');
+
+      expect(existsSync(ghLog)).toBe(false);
     } finally {
       proc?.kill();
       await proc?.exited.catch(() => undefined);

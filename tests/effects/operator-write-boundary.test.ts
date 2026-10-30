@@ -1,5 +1,6 @@
-import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE, OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalize-wire';
+import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE } from '../../src/core/operator/doc-session-finalize-wire';
 import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../src/core/operator/doc-session-messages';
+import { OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalization-view';
 import { OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../src/core/operator/doc-session-views';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
 import { describe, expect, test } from 'bun:test';

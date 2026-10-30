@@ -3,23 +3,40 @@ import {
   MergeReadinessError,
   collectPullRequestMergeReadiness,
 } from '../../effects/publication/merge-readiness';
+import { executePublicationMerge } from '../../effects/publication/merge-executor';
 
-/** Provider PR readiness is a read-only operator view. */
-export function buildPublicationCommand(): Command {
-  const publication = new Command('publication').description('Inspect publication readiness');
-  publication.command('readiness')
-    .description('Derive one read-only fenced merge-readiness verdict')
+interface PullRequestSelectionOptions {
+  readonly repository: string;
+  readonly repositoryId: string;
+  readonly pr: string;
+  readonly head: string;
+  readonly base: string;
+}
+
+function withSelection(command: Command, json: string): Command {
+  return command
     .requiredOption('--repository <owner/name>', 'Canonical GitHub repository')
     .requiredOption('--repository-id <id>', 'Canonical GitHub REST repository id')
     .requiredOption('--pr <number>', 'Provider PR number')
     .requiredOption('--head <sha>', 'Exact expected PR head')
     .requiredOption('--base <sha>', 'Exact expected main base')
-    .requiredOption('--json', 'Output the PullRequestReadinessV2 document')
-    .action((options: { repository: string; repositoryId: string; pr: string; head: string; base: string }) => {
+    .requiredOption('--json', json);
+}
+
+function selection(options: PullRequestSelectionOptions) {
+  return { repo_root: process.cwd(), repository: options.repository, provider_repository_id: options.repositoryId,
+    pr_number: Number(options.pr), expected_head_sha: options.head, expected_base_sha: options.base,
+    gh_bin: process.env.REPO_HARNESS_GH_BIN };
+}
+
+/** Provider PR readiness is a read-only operator view; merge is the single policy-gated executor. */
+export function buildPublicationCommand(): Command {
+  const publication = new Command('publication').description('Inspect publication readiness and run the policy-gated merge executor');
+  withSelection(publication.command('readiness')
+    .description('Derive one read-only fenced merge-readiness verdict'), 'Output the PullRequestReadinessV2 document')
+    .action((options: PullRequestSelectionOptions) => {
       try {
-        const verdict = collectPullRequestMergeReadiness({ repo_root: process.cwd(), repository: options.repository,
-          provider_repository_id: options.repositoryId, pr_number: Number(options.pr), expected_head_sha: options.head,
-          expected_base_sha: options.base, gh_bin: process.env.REPO_HARNESS_GH_BIN });
+        const verdict = collectPullRequestMergeReadiness(selection(options));
         process.stdout.write(`${JSON.stringify(verdict)}\n`);
       } catch (error) {
         process.stderr.write(`${JSON.stringify({ ok: false,
@@ -28,6 +45,14 @@ export function buildPublicationCommand(): Command {
         })}\n`);
         process.exitCode = 1;
       }
+    });
+  withSelection(publication.command('merge')
+    .description('Squash-merge one same-repository PR when the base policy enables acceptance merge and every gate passes'),
+  'Output the publication merge result document')
+    .action((options: PullRequestSelectionOptions) => {
+      const result = executePublicationMerge(selection(options));
+      process.stdout.write(`${JSON.stringify(result.document)}\n`);
+      process.exitCode = result.exit_code;
     });
   return publication;
 }

@@ -25,12 +25,16 @@ const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
   const prev = process.env.HOME;
+  const prevDsh = process.env.DSH_HOME;
   process.env.HOME = tmp;
+  delete process.env.DSH_HOME;
   try {
     fn(tmp);
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
+    if (prevDsh === undefined) delete process.env.DSH_HOME;
+    else process.env.DSH_HOME = prevDsh;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
@@ -122,6 +126,23 @@ afterEach(() => {
 });
 
 describe('doctor command (Phase 1C)', () => {
+  for (const target of ['claude', 'codex'] as const) {
+    test(`${target} diagnostics do not run or inherit a failed Pi integration check`, () => {
+      const f = setupFakeEnvironment(`repo-harness-doctor-${target}-pi`);
+      const log = path.join(f.root, 'host-probes');
+      try {
+        writeExecutable(path.join(f.fakeBin, 'pi'), `#!/bin/sh\necho pi >> '${log}'\nexit 99\n`);
+        writeExecutable(path.join(f.fakeBin, 'herdr'), `#!/bin/sh\necho herdr >> '${log}'\necho 'pi: not installed (/fixture/pi)'\n`);
+        withEnv({ HOME: f.home, PATH: f.fakeBin }, () => {
+          const report = runDoctor(f.root, target);
+          expect(report.checks.some(check => check.id.startsWith('pi-'))).toBe(false);
+          expect(report.checks.map(check => check.id)).toContain(`${target}-adapter`);
+        });
+        expect(fs.existsSync(log)).toBe(false);
+      } finally { fs.rmSync(f.root, { recursive: true, force: true }); }
+    }, DOCTOR_CHECK_TIMEOUT_MS);
+  }
+
   test('runDoctor emits the built-in checks (path/version/hosts/trust)', () => {
     withTempHome(() => {
       const r = runDoctor();
@@ -527,6 +548,9 @@ describe('doctor command (Phase 1C)', () => {
       );
       writeFakeCodeGraph(envRoot.fakeBin, logFile);
       writeFakeBunx(envRoot.fakeBin);
+      // Bun's PATH can include the pinned Pi CLI. Keep its new integration
+      // diagnostic ready while this case checks CodeGraph's read-only path.
+      writeExecutable(path.join(envRoot.fakeBin, 'herdr'), '#!/bin/sh\n[ "$*" = "integration status" ] || exit 99\nprintf "pi: current (v9) (/fixture/pi)\\n"\n');
 
       const root = path.join(import.meta.dir, '..', '..');
       fs.mkdirSync(path.join(envRoot.root, '.codegraph'));
@@ -839,4 +863,33 @@ describe('legacy workflow-state diagnostic', () => {
       });
     }));
   }, DOCTOR_CHECK_TIMEOUT_MS);
+});
+
+describe('DSH host detection', () => {
+  test('dsh-plugin reports na, warn and ok from profile declarations', () => withTempHome(home => {
+    const dshHome = path.join(home, '.dsh');
+    const profile = path.join(dshHome, 'profiles', 'desktop');
+    const check = () => runDoctor().checks.find(candidate => candidate.id === 'dsh-plugin')!;
+    expect(check().status).toBe('na');
+    fs.mkdirSync(profile, { recursive: true });
+    fs.writeFileSync(path.join(profile, 'package.json'), '{}\n');
+    expect(check().status).toBe('warn');
+    fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '0.24.3' } }));
+    expect(check().status).toBe('ok');
+  }));
+
+  test('dsh skill rows read the shared agents root', () => withTempHome(home => {
+    const profile = path.join(home, '.dsh', 'profiles', 'desktop');
+    fs.mkdirSync(profile, { recursive: true });
+    fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '0.24.3' } }));
+    const think = path.join(home, '.agents', 'skills', 'think');
+    fs.mkdirSync(think, { recursive: true });
+    fs.writeFileSync(path.join(think, 'SKILL.md'), '# think\n');
+
+    const rows = (checkSkillProjection('both').skills ?? []).filter(row => row.host === 'dsh');
+
+    expect(rows.map(row => row.name)).toEqual(['think', 'hunt', 'check', 'health', 'mermaid']);
+    expect(rows.find(row => row.name === 'think')).toMatchObject({ state: 'ok copy', ok: true });
+    expect(rows.find(row => row.name === 'hunt')).toMatchObject({ state: 'missing', ok: false });
+  }));
 });

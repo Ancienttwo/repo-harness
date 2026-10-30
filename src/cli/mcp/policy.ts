@@ -118,6 +118,7 @@ function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPo
     workflowExecutor: false,
     workspaceCoder: false,
     taskDispatch: false,
+    publicationMerge: false,
     ...overrides,
   };
 }
@@ -161,12 +162,12 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
   }
 
   if (profile === 'orchestrator') {
-    // Dispatch only: no workflow file, reader, planner write, or shell surface.
+    // Dispatch and the policy-gated merge executor only: no workflow file, reader, planner write, or shell surface.
     return {
       profile,
       allowedRoots: opts.allowedRoots,
       discoveryRoots: opts.discoveryRoots,
-      capabilities: capabilities({ taskDispatch: true }),
+      capabilities: capabilities({ taskDispatch: true, publicationMerge: true }),
       readGlobs: [],
       writeGlobs: [],
       denyGlobs: ['**'],

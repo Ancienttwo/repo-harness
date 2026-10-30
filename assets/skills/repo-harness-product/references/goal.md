@@ -20,8 +20,8 @@ repo-local `AGENTS.md` or `CLAUDE.md` first.
    identity, execution permission or completion status.
 4. Map any requested work from a historical Sprint to the current GitHub issue.
    Use the issue URL and its accepted scope in the goal prompt. If an issue does
-   not exist, prepare issue drafts through the backlog mode within the user's
-   write scope. Do not start implementation from the historical row.
+   not exist, route issue drafting to the `repo-harness-issue-flow` skill within the
+   user's write scope. Do not start implementation from the historical row.
 5. Build one bounded goal from the issue brief. Verify named repository paths,
    concrete acceptance checks and the stop condition. Record the linked PR when
    one exists. Do not mint task IDs, contracts, offers or leases.

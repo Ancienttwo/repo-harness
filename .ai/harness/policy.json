@@ -254,7 +254,10 @@
   },
   "merge_gate": {
     "enabled": true,
-    "rule": "The installed helper consumes exact GitHub PR head/base and current trusted Required / CI results, refuses outstanding GitHub change requests or unresolved review threads, scans credential/private paths and seals the immutable candidate. No external review, waiver, plan or AcceptanceReceipt is an ordinary merge permit."
+    "rule": "The installed helper consumes exact GitHub PR head/base and current trusted Required / CI results, refuses outstanding GitHub change requests or unresolved review threads, scans credential/private paths and seals the immutable candidate. The publication merge executor merges only when publication.acceptance_merge is \"on\" in the policy at the PR base SHA and default-branch protection meets its preconditions (strict required status checks, enforce_admins, no merge queue); its threshold is the readiness verdict plus the closing-reference check. No external review, waiver, plan or AcceptanceReceipt is a merge permit."
+  },
+  "publication": {
+    "acceptance_merge": "on"
   },
   "upgrade": {
     "strategy_version": 1,
@@ -342,7 +345,8 @@
         "deep-worker",
         "gatekeeper",
         "root-cause-prover",
-        "harness-evaluator"
+        "harness-evaluator",
+        "orchestrator"
       ],
       "claude_target": "~/.claude/agents",
       "codex_target": "~/.codex/agents",

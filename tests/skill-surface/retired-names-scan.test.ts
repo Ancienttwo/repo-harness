@@ -85,13 +85,6 @@ const FILE_ALLOWLIST: Record<string, string> = {
   // specially handled (historical, not a live reference).
   "src/cli/installer/install-profile.ts":
     "explanatory comments documenting the retired repo-harness-handoff facade",
-  // Same acceptance-receipt source-enum concept as R1, implemented as a
-  // bash sibling of scripts/acceptance-receipt.ts's TS enum.
-  // R1 provenance-enum value used in eval 24's expected_output prose
-  // ("--source repo-harness-sprint"), the same permanent capture-plan
-  // --source vocabulary R1 protects in scripts/capture-plan.sh etc.
-  "evals/evals.json":
-    "R1 provenance-enum value (capture-plan --source repo-harness-sprint) in eval 24's expected_output",
 };
 
 // R1: "Do NOT touch scripts/acceptance-receipt.ts,

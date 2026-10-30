@@ -552,10 +552,7 @@ function capabilityOwnershipFrom(
  */
 export function resolveCapabilityOwnership(cwd: string, targetRef?: string, options?: ArchctxProviderOptions): CapabilityOwnership | null {
   const policy = readWorkflowPolicy(cwd);
-  const reviewSubject = buildReviewSubject(cwd, { targetRef: targetRef ?? policyReviewBase(policy) });
-  if (reviewSubject.status !== 'ok') {
-    throw new Error(`review subject is unavailable: ${reviewSubject.reason ?? 'unknown reason'}`);
-  }
+  const reviewSubject = availableReviewSubject(cwd, targetRef ?? policyReviewBase(policy));
   const owedSubject = owedOwnershipSubject(cwd, reviewSubject);
   if (owedSubject.status !== 'ok') throw new Error(`owed subject is unavailable: ${owedSubject.reason ?? 'unknown reason'}`);
   const resolution = capabilityIdsForPaths(cwd, owedSubject.paths.filter(isImplementationSurfacePath), policy, undefined, undefined, options);
@@ -564,6 +561,23 @@ export function resolveCapabilityOwnership(cwd: string, targetRef?: string, opti
   }
   if (resolution.registryStatus === 'absent') return null;
   return capabilityOwnershipFrom(resolution, false, reviewSubject.target_rev)!;
+}
+
+/**
+ * The policy review base revision that `resolveCapabilityOwnership` measures
+ * against. It reads Git only and runs no archctx. It throws when the review
+ * subject is unavailable.
+ */
+export function resolveReviewBase(cwd: string): string {
+  return availableReviewSubject(cwd, policyReviewBase(readWorkflowPolicy(cwd))).target_rev;
+}
+
+function availableReviewSubject(cwd: string, targetRef: string): ReviewSubject {
+  const reviewSubject = buildReviewSubject(cwd, { targetRef });
+  if (reviewSubject.status !== 'ok') {
+    throw new Error(`review subject is unavailable: ${reviewSubject.reason ?? 'unknown reason'}`);
+  }
+  return reviewSubject;
 }
 
 export interface CapabilityPathOwner {

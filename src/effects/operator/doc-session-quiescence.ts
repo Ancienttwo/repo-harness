@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { DOC_SESSION_FINALIZE_BLOCKER } from '../../core/operator/doc-session-finalize-wire';
+import { DOC_SESSION_FINALIZE_BLOCKER } from '../../core/operator/doc-session-finalization-view';
 import { occupiesWorktree, worktreeProcesses, type WorktreeProcess } from '../git/worktree-processes';
 import { ExclusiveLockContentionError, acquireExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
 import { DOC_SESSION_AGENT_LOCK, readDocSessionAgent } from './doc-session-agent';

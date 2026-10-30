@@ -1,9 +1,10 @@
-import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE, OPERATOR_SESSION_FINALIZATION_ROUTE, decodeDocSessionFinalizationView } from '../../core/operator/doc-session-finalize-wire';
+import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE } from '../../core/operator/doc-session-finalize-wire';
 import { docSessionFinalizeRoutes } from './doc-session-finalize-routes';
 import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../core/operator/doc-session-messages';
 import { docSessionMessagesRoute } from './doc-session-messages';
 import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
 import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
+import { decodeDocSessionFinalizationView, DOC_SESSION_FINALIZATION_FAILURES, OPERATOR_SESSION_FINALIZATION_ROUTE, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
 import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
@@ -894,8 +895,30 @@ function readDefaultFleetSnapshot(
   });
 }
 
-class OperatorTaskReadError extends Error {
+export class OperatorTaskReadError extends Error {
   constructor(readonly code: string) { super(code); }
+}
+
+/** CLI uses the same supervised reader and closed schema as the HTTP route. */
+export function readBoundedDocSessionFinalization(env: NodeJS.ProcessEnv, sessionId: string): Promise<DocSessionFinalizationView> {
+  const request = { session_id: sessionId };
+  return readSupervisedOperatorProcess({
+    process_path: fileURLToPath(new URL('./task-read-process.ts', import.meta.url)), env,
+    signal: AbortSignal.timeout(OPERATOR_DEFAULT_TIMEOUT_MS),
+    start: { type: 'start', protocol: 1, kind: 'doc_session_finalization', request, env: repositoryWorkerEnvironment(env) },
+    response: value => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const response = value as Record<string, unknown>;
+      if (Object.keys(response).length !== 2) return null;
+      if (response.ok === true && 'snapshot' in response) {
+        try { return { ok: true, snapshot: decodeDocSessionFinalizationView(response.snapshot, request) }; } catch { return null; }
+      }
+      if (response.ok === false && typeof response.code === 'string' && DOC_SESSION_FINALIZATION_FAILURES.some(code => code === response.code)) return { ok: false, code: response.code };
+      if (response.ok === false && response.cancelled === true) return { ok: false, cancelled: true };
+      return null;
+    },
+    failure: code => new OperatorTaskReadError(code),
+  });
 }
 
 type SupervisedReadResponse<T> =
@@ -1795,8 +1818,8 @@ export async function startOperatorServer(
     if (finalization !== null) {
       if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
       handleBoundedTaskRead(response, headOnly, { session_id: finalization[1]! }, decodeDocSessionFinalizationView,
-        ['session_not_found', 'events_unavailable', 'unavailable'], 'doc_session_finalization', undefined,
-        code => code === 'session_not_found' ? 404 : code === 'timeout' ? 504 : 503);
+        DOC_SESSION_FINALIZATION_FAILURES, 'doc_session_finalization', undefined,
+        code => code === 'session_not_found' ? 404 : code === 'too_large' ? 413 : code === 'timeout' ? 504 : 503);
       return;
     }
     const sessionDetail = OPERATOR_SESSION_DETAIL_ROUTE.exec(pathname);

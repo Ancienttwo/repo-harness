@@ -32,7 +32,7 @@ import { authorizationProfile, mcpSupportedScopes } from '../policy';
 import { readRegisteredRepoHarnessRepos, repoHarnessAuthorizationRevision } from '../../../effects/repo-registry';
 import { resolveMcpRepoRoot } from '../repo';
 import { McpSessionStore } from '../session-store';
-import { buildMcpToolDefinitions } from '../tools';
+import { visibleMcpToolDefinitions } from '../tools';
 import type { McpPolicy } from '../types';
 import { repoHarnessPackageVersion } from '../version';
 
@@ -208,7 +208,10 @@ function consentDescription(policy: McpPolicy, repoNames: string[]): string {
     return `This Connector can open and edit these explicitly granted repositories: ${repos}. It can also run arbitrary shell commands that can access anything your local OS user can access on this machine, including outside these repositories. Repository grants and allowed roots select workspaces; they do not sandbox shell access. ${tokenLifetime}`;
   }
   if (policy.capabilities.taskDispatch) {
-    return `This Connector can list, prompt and read the Claude and Codex agent panes in local Herdr that work in these explicitly granted repositories: ${repos}. A prompt makes that agent act with the authority of your local OS user, which is not limited to these repositories. ${tokenLifetime}`;
+    const merge = policy.capabilities.publicationMerge
+      ? ' It can also squash-merge a same-repository pull request into the default branch of these repositories when the repository policy at the PR base enables acceptance merge and every merge gate passes.'
+      : '';
+    return `This Connector can list, prompt and read the Claude and Codex agent panes in local Herdr that work in these explicitly granted repositories: ${repos}. A prompt makes that agent act with the authority of your local OS user, which is not limited to these repositories.${merge} ${tokenLifetime}`;
   }
   return 'Enter the local MCP passphrase to let ChatGPT use this workflow-scoped connector.';
 }
@@ -711,8 +714,10 @@ export async function startMcpHttp(opts: McpHttpOptions): Promise<void> {
     codingRuntimes?.cleanupExpired();
   }, Math.min(sessionTtlMs, 60_000));
   cleanupTimer.unref?.();
+  // The hash covers the surface a client can actually list, so a stale grant
+  // cannot report a schema that includes the hidden merge tool.
   const healthSchemaHash = createHash('sha256')
-    .update(JSON.stringify(buildMcpToolDefinitions(healthContext.policy, { enableChatgptBrowser: opts.enableChatgptBrowser === true })))
+    .update(JSON.stringify(visibleMcpToolDefinitions(healthContext)))
     .digest('hex');
   const app = express();
 

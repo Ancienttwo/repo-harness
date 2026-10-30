@@ -7,6 +7,7 @@ import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { adoptionTemplateFile } from "../src/effects/adoption/manifest-templates";
 import { parseExternalSourcesPolicy } from "../src/effects/github/policy";
 import { ARCHCTX_REQUIRED_VERSION, readArchitectureProjectionPolicy } from "../src/core/architecture/projection";
+import { MANAGED_AGENTS } from "../src/effects/terminal/task-role-profiles";
 
 const ROOT = join(import.meta.dir, "..");
 const REFERENCE_STUB_MARKER = "<!-- repo-harness: reference-config-stub v1 -->";
@@ -349,14 +350,7 @@ describe("create-project-dirs runtime smoke", () => {
         JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8")).external_tooling.archctx
       ).toEqual(archctxEntry);
       expect(policy.external_tooling.agent_fleet.source).toBe("package:agents/fleet");
-      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual([
-        "explorer",
-        "deep-reasoner",
-        "fast-worker",
-        "gatekeeper",
-        "root-cause-prover",
-        "harness-evaluator",
-      ]);
+      expect(policy.external_tooling.agent_fleet.managed_agents).toEqual(MANAGED_AGENTS);
       expect(policy.external_tooling.agent_fleet.claude_target).toBe("~/.claude/agents");
       expect(policy.external_tooling.agent_fleet.codex_target).toBe("~/.codex/agents");
       expect(policy.external_tooling.agent_fleet.codex_generation).toBe("derive-toml-from-md");
@@ -1103,6 +1097,9 @@ describe("create-project-dirs runtime smoke", () => {
         expect(existsSync(join(home, ".claude", "agents", `${agent}.md`))).toBe(true);
         expect(existsSync(join(home, ".codex", "agents", `${agent}.toml`))).toBe(true);
       }
+      // A downstream list that omits the Claude-only orchestrator does not stop its install.
+      expect(existsSync(join(home, ".claude", "agents", "orchestrator.md"))).toBe(true);
+      expect(existsSync(join(home, ".codex", "agents", "orchestrator.toml"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

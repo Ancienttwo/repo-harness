@@ -4,7 +4,7 @@ import { isAbsolute, join } from 'node:path';
 import { VERSION, getPackageDir, type ExtensionAPI, type ExtensionContext } from '@earendil-works/pi-coding-agent';
 import { probePiCapability, type PiCapability } from './compat';
 import { PiHookBridge, type PiHookRequest } from './hook-bridge';
-import type { PiHookOutput } from '../cli/hook/hook-protocol';
+import type { BridgeHookOutput } from '../cli/hook/hook-protocol';
 import { gitExecFileSync, withoutRepositorySelectingGitEnv } from '../effects/git/runner';
 
 const REPO_PROBE_FAILED = 'PI_HOST_REPO_PROBE_FAILED' as const;
@@ -13,7 +13,7 @@ type Session = {
   readonly id: string;
   readonly bridge: PiHookBridge;
   capability: PiCapability | { readonly state: 'inactive' } | { readonly state: 'unknown'; readonly code: typeof REPO_PROBE_FAILED };
-  start: Promise<PiHookOutput | null>;
+  start: Promise<BridgeHookOutput | null>;
   contextDelivered: boolean;
   runId: string | null;
   readonly calls: Map<string, string>;

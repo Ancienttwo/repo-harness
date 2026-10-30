@@ -1,5 +1,5 @@
-import { readDocSessionFinalizationView } from './doc-session-finalization-view';
 import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest } from '../../core/operator/doc-session-views';
+import { readDocSessionFinalizationView } from './doc-session-finalization-view';
 import { readDocSessionList, readDocSessionDetail } from './doc-session-views';
 import { DocSessionEventsError, readDocSessionEvents } from './doc-session-events';
 import { isAdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
@@ -67,14 +67,14 @@ function run(): void {
         finish({ok:true,snapshot:readOperatorTaskHistory({...message.request,env})});
       } else if (message.kind === 'doc_session_list' && isDocSessionListRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionList(env ?? process.env,message.request)});
-      } else if (message.kind === 'doc_session_finalization' && isDocSessionReadRequest(message.request)) {
-        finish({ok:true,snapshot:readDocSessionFinalizationView(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_detail' && isDocSessionDetailRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionDetail(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_events' && isDocSessionEventsRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionEvents(env ?? process.env,message.request.session_id,message.request.after)});
       } else if (message.kind === 'doc_session_diff' && isDocSessionReadRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionDiff(env ?? process.env,message.request.session_id)});
+      } else if (message.kind === 'doc_session_finalization' && isDocSessionReadRequest(message.request)) {
+        finish({ok:true,snapshot:readDocSessionFinalizationView(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_loss' && isDocSessionReadRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionLoss(env ?? process.env,message.request.session_id)});
       } else throw new Error('invalid reader');

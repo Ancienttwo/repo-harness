@@ -51,26 +51,3 @@ export function decodeDocSessionFinalizeResponse(value: unknown, action: DocSess
   return { status: response.status, body: body as JsonValue };
 }
 
-export const OPERATOR_SESSION_FINALIZATION_ROUTE = /^\/api\/v1\/sessions\/([0-9a-f]{32})\/finalization$/u;
-/** Capability of the installed production adapter, not a persisted lifecycle fact. */
-export const DOC_SESSION_FINALIZE_BLOCKER = 'quiescence_unavailable' as const;
-export interface DocSessionFinalizationView {
-  readonly protocol: 1;
-  readonly kind: 'operator_docs_session_finalization_state';
-  readonly session_id: string;
-  readonly availability: { readonly state: 'blocked'; readonly code: typeof DOC_SESSION_FINALIZE_BLOCKER };
-  readonly progress: JsonValue | null;
-}
-export function decodeDocSessionFinalizationView(value: unknown, request: { readonly session_id: string }): DocSessionFinalizationView {
-  const view = object(value);
-  keys(view, ['protocol', 'kind', 'session_id', 'availability', 'progress']);
-  const availability = object(view.availability); keys(availability, ['state', 'code']);
-  if (!/^[0-9a-f]{32}$/u.test(request.session_id) || view.protocol !== 1 || view.kind !== 'operator_docs_session_finalization_state'
-    || view.session_id !== request.session_id || availability.state !== 'blocked' || availability.code !== DOC_SESSION_FINALIZE_BLOCKER) throw new Error('finalization view identity');
-  if (view.progress !== null) {
-    const progress = object(view.progress);
-    if (progress.operation !== 'commit' && progress.operation !== 'discard') throw new Error('finalization progress operation');
-    decodeDocSessionFinalizeResponse({ status: 200, body: progress }, progress.operation);
-  }
-  return view as unknown as DocSessionFinalizationView;
-}
