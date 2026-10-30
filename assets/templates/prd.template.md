@@ -12,7 +12,7 @@ PRD tier contract:
 - compact: one focused product/tool or fewer than three P0 modules, target 150-300 lines.
 - standard: multi-module product, target 300-600 lines and hard cap 800 lines.
 - If the PRD would exceed 800 lines, split it into smaller PRDs.
-- Output files live in plans/prds/<YYYYMMDD>-<HHMM>-<slug>.prd.md.
+- Output files live in docs/prds/<YYYYMMDD>-<HHMM>-<slug>.prd.md.
 - Inline responses should include only the AI Quick-Read Card and file path.
 -->
 

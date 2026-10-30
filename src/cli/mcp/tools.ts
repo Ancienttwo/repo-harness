@@ -150,7 +150,7 @@ function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; br
 }
 
 function isDiscoverableHarnessRepo(path: string): boolean {
-  return existsSync(join(path, '.ai', 'harness', 'policy.json')) || existsSync(join(path, 'tasks', 'current.md'));
+  return isRepoHarnessAdopted(path);
 }
 
 function normalizeRepoSearchTerm(value: unknown): string {

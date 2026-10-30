@@ -238,7 +238,7 @@ describe('host envelopes on the real hook entry (#678)', () => {
         id: 'core-owned', domain: 'core', name: 'owned', prefixes: ['src/owned'],
         contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
         architecture_module: 'docs/architecture/modules/core/owned.md',
-        workstream_dir: 'tasks/workstreams/core/owned', lsp_profile: 'typescript-lsp', verification_hints: [],
+        lsp_profile: 'typescript-lsp', verification_hints: [],
       }],
     })}\n`);
     mkdirSync(join(root, 'src/owned'), { recursive: true });

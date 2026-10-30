@@ -198,13 +198,7 @@
   "artifacts": {
     "runtimeManifest": ".ai/harness/workflow-contract.json",
     "requiredDirectories": [
-      "plans",
-      "plans/archive",
-      "plans/prds",
-      "plans/sprints",
       "tasks",
-      "tasks/archive",
-      "tasks/workstreams",
       ".claude/templates",
       ".ai/context",
       ".ai/harness",
@@ -230,12 +224,12 @@
       "deploy/runbooks",
       "deploy/release-checklists",
       "deploy/sql",
-      "docs/researches"
+      "docs/researches",
+      "docs/prds"
     ],
     "requiredFiles": [
       "docs/spec.md",
       ".claude/templates/spec.template.md",
-      ".claude/templates/plan.template.md",
       ".claude/templates/research.template.md",
       "tasks/lessons.md",
       "docs/architecture/index.md",
@@ -263,12 +257,10 @@
       ".ai/harness/failures/latest.jsonl",
       ".ai/harness/handoff/current.md",
       ".ai/harness/handoff/resume.md",
-      "tasks/current.md",
       ".ai/harness/capability-context/",
       ".ai/harness/architecture-projection/",
       ".ai/harness/security/.gitkeep",
       ".ai/harness/planning/",
-      ".ai/harness/active-plan",
       ".ai/harness/active-worktree",
       ".ai/harness/sprint/",
       ".ai/harness/worktrees/",
@@ -280,8 +272,6 @@
   },
   "documents": {
     "spec": "docs/spec.md",
-    "currentStatus": "tasks/current.md",
-    "planDirectory": "plans",
     "lessonsLog": "tasks/lessons.md",
     "researchReportsDirectory": "docs/researches"
   },
@@ -296,21 +286,6 @@
           "> **Status**: Draft",
           "",
           "Describe the product intent, users, workflows, acceptance scenarios, and constraints before implementation.",
-          ""
-        ]
-      },
-      "currentStatus": {
-        "document": "currentStatus",
-        "reason": "Create local current-status snapshot when missing",
-        "lines": [
-          "# Current Status Snapshot",
-          "",
-          "<!-- generated-by: repo-harness refresh-current-status v1 -->",
-          "",
-          "> **Status**: Idle",
-          "> **Reason**: repo-harness adoption bootstrap",
-          "",
-          "This file is an ignored local read model derived from this worktree's artifacts. It is not tracked, not a live lock, not a kanban board, and not an implementation gate.",
           ""
         ]
       },
@@ -1559,6 +1534,133 @@
           }
         },
         {
+          "id": "retired-plan-task-scaffolds",
+          "signal": "stale-plan-task-scaffolds",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "cleanupMode": "exact_fingerprint",
+          "paths": [
+            "tasks/current.md",
+            ".claude/templates/plan.template.md",
+            ".claude/templates/sprint.template.md",
+            ".claude/templates/contract.template.md",
+            "tasks/workstreams/.gitkeep",
+            ".ai/harness/active-plan"
+          ],
+          "fingerprints": {
+            "tasks/current.md": "sha256:2cf05e26aad989b38f1fdde64ca76c1c7afe9ca0dff0ce172b8e1e4b4111bacd",
+            ".claude/templates/plan.template.md": "sha256:3b7b2f045cb14b95214a661b3e9169d3955fb26cd3906f78555f132d6e12f543",
+            ".claude/templates/sprint.template.md": "sha256:da85c99845bbe180e604a5ca4f62d256b524c067406b82ca5e2ca41e51026769",
+            ".claude/templates/contract.template.md": "sha256:a7cdf1c88248b35b4b8f6b44d3552ccfeb72cb6dbc3021bc35c7e808147bda8a",
+            "tasks/workstreams/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            ".ai/harness/active-plan": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "summary": "Remove the projected plan, sprint and contract scaffolds, the current-status stub, the workstream keep file and the active-plan marker; keep edited files as user content.",
+          "retiredBy": "1183",
+          "historicalFingerprints": {
+            "tasks/current.md": [
+              "sha256:0f25f25b11def62b29f112897745df373dfb2864139ea2e48361abc8c09ea389",
+              "sha256:2254fb04a14de0fbd91d851c101772bc66d739a80e659c5fbe339b511ec9767a",
+              "sha256:2cf05e26aad989b38f1fdde64ca76c1c7afe9ca0dff0ce172b8e1e4b4111bacd",
+              "sha256:4ebbf0580d852243138a60e8c837a7b386eceb24ae89c3e91e9f9f37b43f5788"
+            ],
+            ".claude/templates/plan.template.md": [
+              "sha256:0660f3b59a157a799bab9f643eed8b52dbce979cd7a3b07d55d88bc2ebd9b3eb",
+              "sha256:0971aaa06ddc1dd58c5e8e211079fc10498baa5969a77bbb99126788c42908a2",
+              "sha256:12fb265040c1b98016cea602da8ffe159875dffe75e3dc35469d885a6de5b138",
+              "sha256:1aed17ce4b50ad153b63a46aa540163edfb4e939cb8d2a72bbaf8e48ad96ccd6",
+              "sha256:2552b8a2b1c9fdfce14919df053cf420f3798032d2dbf24d167bf009a2bfb5d8",
+              "sha256:3b7b2f045cb14b95214a661b3e9169d3955fb26cd3906f78555f132d6e12f543",
+              "sha256:43837e2193563855ea2d534dcf34ce255b69f53d685b98ae20ad81be0179f268",
+              "sha256:474b7838528f855f616f6d8575e60c8b40c938b3c51d5623708aae7b59f6ccf4",
+              "sha256:4de0f0eeafb5efea27988eba770c831324e46522677266620679dcd546076e30",
+              "sha256:6cd4273382d85a7c5a8a7460dca2d3b57c2b1e3bb5f6aca64a6741a9d20c3ab9",
+              "sha256:790f136decb0caf6418afaabd0a44308f04a08150d5f766ceb49190a808230ca",
+              "sha256:88357f15d9d66a9264225fc10e70ee315c0a89c2871093c5923f86903185fff5",
+              "sha256:910df65e299b2381834ec3fc3cce481f728cb59a3b7259aa593892ea54cf5662",
+              "sha256:99e69f62f6ac26f2957f895ee284edd011bb5e6422a210b6d0003e0c47fe73d9",
+              "sha256:9b516109f47e8fca1d0b1f75b0806b6a68a3564e1a7fcd997e5101f038c1abeb",
+              "sha256:a0e850ae3913b639e7d8eda27c11f2f4a69c218d70fe93ec08a20b21003f0b83",
+              "sha256:a52b4d4eb2e3935f60d7590e88e4adf6f1b658770a0d95e232d0d476451f958c",
+              "sha256:ab61af26b858ad6395e82659219434db0d1565eadeeb5b0c48fe5787613574ee",
+              "sha256:b09a6a40a2d7d84cab1dbc3b9c05cf2219b6d5f676596bef8883a00eefd12940",
+              "sha256:b741cd54e68449058d27849e1a99aa6a5cee8a9d3b29ef8b4527bd9f3a71fccb",
+              "sha256:c51f93e1712eccf27ef6c0446ec1383b27b8f75642fd5ec39ea7d9917e73cac8",
+              "sha256:c6620bea019c5b859f005b4c680fa8d806ebb0783bcd21df2b3436db7ffe449a",
+              "sha256:d075a0a39549102a20431e8cfbc81be97325dd016234a061feded057d54a5d5b",
+              "sha256:d50af8aeddf430d60d394fa7af3fa456637efa219de5afef42c46a8574f058d4",
+              "sha256:d5c53d46109c89f7ed10281c444e0020dcbb4c2b5eaf39bac48a623292a0f92c",
+              "sha256:dce46c5905687ebcc1ad7818cff79de4ecabc42b9993fcecf05ee970e7f1df06",
+              "sha256:f52e6a7850ff48e112b9ac8daa37b62753218802e72ef72ab4f7e9edbb12ed1f",
+              "sha256:f9f487cbbaa5e67decbe5d78fd3031a1ce30b82466896c379383e7d95c4842e9"
+            ],
+            ".claude/templates/sprint.template.md": [
+              "sha256:2959f29939564701c7dbae1d4667e9d0a35ac71fa60f64869299ae4db153f6f1",
+              "sha256:343b90a86fc8144d89f1d9cc8ab7d0e029734d826d20f3023e2e45a15c254869",
+              "sha256:4a3bd1fb458dd25228aec31a55e388d0a54b56415420b574dc691fd444c68b39",
+              "sha256:548817b3928de7382fde45821555c71a106f752732606435c74e93c582b18975",
+              "sha256:8e85da3ad7861bf87d67cd61b0bf2c4f35d284de683a4665c4dd711fe5b85b4a",
+              "sha256:8f62a7c8e41462999cfcc17a564071ed4eeed3d34de2e46cc60c348bdfbd23a3",
+              "sha256:96ee9fbd1778a7e13571b867ad92552370873cd155b5f8eb02d21ee7ec94979e",
+              "sha256:a0d28076954d4d4d5c4a9a4f1534cfe1f5437ca15fafbfce665cea6d95ab7c46",
+              "sha256:bf717946a00da4297f7d74b68791e8d6cef01dfff71522ccc683297957513c38",
+              "sha256:da85c99845bbe180e604a5ca4f62d256b524c067406b82ca5e2ca41e51026769"
+            ],
+            ".claude/templates/contract.template.md": [
+              "sha256:015724f7f29e8a225092f4698a9987ec37fc93bb93d6e42a6666c741dcf307e0",
+              "sha256:13ec3e814a1330926f9fadb01a054eb0d43a57883bbf4f263414a11f8a6a29c2",
+              "sha256:15d6e8907ff05bf021b0c87c2424b901eb813612ff0942ff75fd0bf544009e93",
+              "sha256:18307ba08a9fc35ef0236cc5988d2db4d0f8e86ac613c4c8aa663752f4cf98f9",
+              "sha256:22946a4024fa22d29635d607bd36282c32f0ef8fc443ad92b98e41860126a053",
+              "sha256:3794966e3f9d99df5eca0879bdcddfcbaa84febcbd3a24d01820e084024de2ea",
+              "sha256:3953429d7d1c6ba63b84bed677c6179c27e106424936d067e8ceb9c0361fbb5d",
+              "sha256:3e99035eaeb5a4a512476acb24dcd8ae7df686b28c22c00ca4364a5e9ce14b37",
+              "sha256:41450be1870f235accb7f9d11756290708bcb5d59c666dc2a3ea1320dfb24ca6",
+              "sha256:4a4cfe6c99948c7b9c50ad6a01e98f39ee045abb92d8750dae34c9c922aed413",
+              "sha256:4f0c3e6132fd1296d395ef5482ce56c1b29c4de7432438b3d699787bce2b6c59",
+              "sha256:501db1f17544280af462d6c7df06f24ffee08fb5bcbb664fd99fa2d1b1dde715",
+              "sha256:5c877d6596b210199f8764ac4d913d6d2a87dbb0a689e99f092c8f8977f3e8df",
+              "sha256:5f862c801a6335266e939dd1a149716b18034613c2a3328bc2a1f74f806b6f96",
+              "sha256:64782652d308d872523068ec5e5ad615cc2990180d66b38af7f32ef680c19829",
+              "sha256:6490bfb66a279c6b8513534b0ae94724d2b7cfdaeea4813e0a7b11a7294ee8f2",
+              "sha256:7ec5c1b9e2ba8eaa6ba0014cbcf9ae2f61cd45e24bce1d62c78a5b319f7c4253",
+              "sha256:9454dfbec6eee6d133c7153b1855c686efdd79607dc8d2d3190553f59ce35703",
+              "sha256:a0e0a31ab28f5219e35894ebbaf3ed5adaeeb1639df0760b340d63e63c59db61",
+              "sha256:a4025194af9e26340df85190525c7965954d87ebaf8a9d9b2871582f52dc24f7",
+              "sha256:a7cdf1c88248b35b4b8f6b44d3552ccfeb72cb6dbc3021bc35c7e808147bda8a",
+              "sha256:a97a298f286d56ff685d4d91cd92673b82652cd7b9dfeb35b9e481625fbb360e",
+              "sha256:b1245b9e0ce50700aa3088ab62c366630c05e96cf284cea3fa853e642fcbc883",
+              "sha256:b21e61741553c59bf227ded1e5cc2fc0dec74f384b0def79c8ca073e5f25581f",
+              "sha256:b947d4ac49f8b7e9567b557dec94f4946071b35e6019c241d8349cafcf100be8",
+              "sha256:bb35a9a61c6aa99e1fb6f6f9f62fc86d6c91ba31454f489d7d28e9c51be9d6c7",
+              "sha256:bd141a1ef6bbe985826583ccbe03c77d8997429386902e4f38d2f4719d7564bb",
+              "sha256:c864fd3852d7665d080418834481a18dc8f18d59e609090c75c3627d86c3b16e",
+              "sha256:cccbef00ae171cb91c2a5ca486bf5a462b054247df27d0887dc659051f8e119f",
+              "sha256:cfc4c6ca3ee2c51d3a907e4a8314d26cd0be987e1b89528200ca3d183ecd66fe",
+              "sha256:d1d9ff1d9cad917fcb9b1d86f294896282793f546abfcda60058bb6c7ba59b3d",
+              "sha256:d550f32b3158a51ee10d8273a105a8473ba05cc8280a94b7839033c4c3b1d561",
+              "sha256:d5f12edeaf15bce6771d442685f4fcd8430474d2ead9ddead57d4ef952062954",
+              "sha256:d6485883592d00494ab44c6e358ebe298dbd1ac43231d61f196b9a87dac75ec9",
+              "sha256:d6c98eb97ff1149f50be2b58e586952ce1297a86f27f0b08cf1b6f28bbbbc599",
+              "sha256:dc9d52f635b5833c7cb10cc3b5b320b08b5674422e29beb28a5742b0eb11f7ab",
+              "sha256:e0b129efb586c3261589dd125ad259f384640c9f53da95df33834706773ac735",
+              "sha256:e53d32b66189a2dca45932fa9c9c971731d402db0a98941fda20bb8ecc22bb60",
+              "sha256:e7955b9f361e677b9d1db460388a99c48c90a8c68e990e88fe52fd2dac1539b3",
+              "sha256:e8e9fa3d5b25283d9bfa1823a262fea6597c5ca3810e0ce3119247e4c5036f29",
+              "sha256:fc1070975d625bcf3c0b0a26ffdb6185b0cc209cf6824501fec6a5440e58aac9",
+              "sha256:fe47c80db4c169f9f4bb8518446016c1455b88e26770d203f79807cde6efe6aa",
+              "sha256:febeabc5eb46ee3340677711dfa94be2668153ba31fb25b3d487e56513b028e7"
+            ],
+            "tasks/workstreams/.gitkeep": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ],
+            ".ai/harness/active-plan": [
+              "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+            ]
+          }
+        },
+        {
           "id": "custom-claude-hooks-preserve",
           "signal": "custom-claude-hooks",
           "action": "preserve",
@@ -2270,51 +2372,6 @@
             "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" subagent-return-channel-guard.sh",
             "repo=$(git rev-parse --show-toplevel 2>/dev/null) || exit 0; HOOK_REPO_ROOT=\"$repo\" bash \"$repo/.ai/hooks/run-hook.sh\" worktree-guard.sh"
           ]
-        },
-        {
-          "id": "stale-project-copies",
-          "signal": "stale-project-copies",
-          "action": "refresh",
-          "risk": "medium",
-          "ownership": "known_generated",
-          "location": "project",
-          "surface": "file",
-          "paths": [
-            ".claude/templates/contract.template.md"
-          ],
-          "sourcePaths": {
-            ".claude/templates/contract.template.md": "assets/templates/contract.template.md"
-          },
-          "historicalFingerprints": {
-            ".claude/templates/contract.template.md": [
-              "sha256:015724f7f29e8a225092f4698a9987ec37fc93bb93d6e42a6666c741dcf307e0",
-              "sha256:13ec3e814a1330926f9fadb01a054eb0d43a57883bbf4f263414a11f8a6a29c2",
-              "sha256:15d6e8907ff05bf021b0c87c2424b901eb813612ff0942ff75fd0bf544009e93",
-              "sha256:3794966e3f9d99df5eca0879bdcddfcbaa84febcbd3a24d01820e084024de2ea",
-              "sha256:3e99035eaeb5a4a512476acb24dcd8ae7df686b28c22c00ca4364a5e9ce14b37",
-              "sha256:4f0c3e6132fd1296d395ef5482ce56c1b29c4de7432438b3d699787bce2b6c59",
-              "sha256:501db1f17544280af462d6c7df06f24ffee08fb5bcbb664fd99fa2d1b1dde715",
-              "sha256:5f862c801a6335266e939dd1a149716b18034613c2a3328bc2a1f74f806b6f96",
-              "sha256:64782652d308d872523068ec5e5ad615cc2990180d66b38af7f32ef680c19829",
-              "sha256:6490bfb66a279c6b8513534b0ae94724d2b7cfdaeea4813e0a7b11a7294ee8f2",
-              "sha256:7ec5c1b9e2ba8eaa6ba0014cbcf9ae2f61cd45e24bce1d62c78a5b319f7c4253",
-              "sha256:9454dfbec6eee6d133c7153b1855c686efdd79607dc8d2d3190553f59ce35703",
-              "sha256:a4025194af9e26340df85190525c7965954d87ebaf8a9d9b2871582f52dc24f7",
-              "sha256:b1245b9e0ce50700aa3088ab62c366630c05e96cf284cea3fa853e642fcbc883",
-              "sha256:b21e61741553c59bf227ded1e5cc2fc0dec74f384b0def79c8ca073e5f25581f",
-              "sha256:b947d4ac49f8b7e9567b557dec94f4946071b35e6019c241d8349cafcf100be8",
-              "sha256:bb35a9a61c6aa99e1fb6f6f9f62fc86d6c91ba31454f489d7d28e9c51be9d6c7",
-              "sha256:c864fd3852d7665d080418834481a18dc8f18d59e609090c75c3627d86c3b16e",
-              "sha256:cccbef00ae171cb91c2a5ca486bf5a462b054247df27d0887dc659051f8e119f",
-              "sha256:d6485883592d00494ab44c6e358ebe298dbd1ac43231d61f196b9a87dac75ec9",
-              "sha256:dc9d52f635b5833c7cb10cc3b5b320b08b5674422e29beb28a5742b0eb11f7ab",
-              "sha256:e0b129efb586c3261589dd125ad259f384640c9f53da95df33834706773ac735",
-              "sha256:e8e9fa3d5b25283d9bfa1823a262fea6597c5ca3810e0ce3119247e4c5036f29",
-              "sha256:fc1070975d625bcf3c0b0a26ffdb6185b0cc209cf6824501fec6a5440e58aac9",
-              "sha256:febeabc5eb46ee3340677711dfa94be2668153ba31fb25b3d487e56513b028e7"
-            ]
-          },
-          "summary": "Refresh unchanged old copies of the current project helper and contract template."
         },
         {
           "id": "stale-installed-skills",

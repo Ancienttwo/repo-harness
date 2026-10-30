@@ -103,6 +103,18 @@ describe("gitignore managed block .repo-harness rule", () => {
     expect(lines).toContain(".repo-harness/");
   });
 
+  test("managed block no longer ignores retired plan and task runtime paths", () => {
+    const lines = GITIGNORE_MANAGED_BLOCK_CONTENT.split("\n");
+    for (const retired of [
+      "tasks/current.md",
+      "tasks/.current.md.tmp.*",
+      ".ai/harness/active-plan",
+      ".ai/harness/sprint/",
+      ".claude/.active-plan",
+      ".claude/.plan-state/",
+    ]) expect(lines).not.toContain(retired);
+  });
+
   test("managed block content no longer carries per-file .repo-harness entries", () => {
     const lines = GITIGNORE_MANAGED_BLOCK_CONTENT.split("\n");
     const perFile = lines.filter((line) => line.startsWith(".repo-harness/") && line !== ".repo-harness/");

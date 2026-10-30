@@ -81,7 +81,6 @@ export function matchRecord(filePath: string, winner: CapabilityPathMatch | null
       architecture_domain: "root",
       architecture_capability: "_root",
       architecture_module: "docs/architecture/index.md",
-      workstream_dir: "tasks/workstreams/root/_root",
     };
   }
   return {
@@ -93,7 +92,6 @@ export function matchRecord(filePath: string, winner: CapabilityPathMatch | null
     architecture_domain: winner.capability.domain,
     architecture_capability: winner.capability.name,
     architecture_module: winner.capability.architecture_module,
-    workstream_dir: winner.capability.workstream_dir,
     contract_agents: winner.capability.contract_files.agents,
     contract_claude: winner.capability.contract_files.claude,
     lsp_profile: winner.capability.lsp_profile,

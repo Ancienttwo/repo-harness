@@ -275,6 +275,36 @@ describe("canonical adoption plan", () => {
     }
   }, 30_000);
 
+  test("standard adoption drops retired policy keys and reports each one", () => {
+    const repo = tempRepo();
+    try {
+      mkdirSync(join(repo, ".ai", "harness"), { recursive: true });
+      writeFileSync(join(repo, ".ai", "harness", "policy.json"), JSON.stringify({
+        active_plan: { directory: "plans" },
+        tasks: {
+          current_status_file: "tasks/current.md",
+          workstreams_dir: "tasks/workstreams",
+          lessons_file: "custom/lessons.md",
+        },
+        custom_key: { keep: true },
+      }, null, 2));
+      const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
+      expect(plan.warnings).toContainEqual(expect.objectContaining({
+        code: "retired-policy-keys",
+        message: "Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir",
+      }));
+      expect(applyAdoptionPlan(plan).ok).toBe(true);
+      const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
+      expect(policy.active_plan).toBeUndefined();
+      expect(policy.tasks.current_status_file).toBeUndefined();
+      expect(policy.tasks.workstreams_dir).toBeUndefined();
+      expect(policy.tasks.lessons_file).toBe("custom/lessons.md");
+      expect(policy.custom_key).toEqual({ keep: true });
+    } finally {
+      cleanup(repo);
+    }
+  });
+
   test("standard adoption directly replaces managed planning routes", () => {
     const repo = tempRepo();
     try {
@@ -372,26 +402,32 @@ describe("canonical adoption plan", () => {
     }
   });
 
-  test("planner archives legacy workflow artifacts while preserving private _ops material and custom files", () => {
+  test("planner leaves user-authored plans, legacy workflow documents and PRDs untouched", () => {
     const repo = tempRepo();
     try {
-      mkdirSync(join(repo, "docs"), { recursive: true });
+      mkdirSync(join(repo, "docs", "prds"), { recursive: true });
+      mkdirSync(join(repo, "plans"), { recursive: true });
       mkdirSync(join(repo, "tasks", "sprints"), { recursive: true });
       mkdirSync(join(repo, "_ops", "scripts"), { recursive: true });
       mkdirSync(join(repo, "scripts"), { recursive: true });
-      writeFileSync(join(repo, "docs", "plan.md"), "# Old plan\n");
-      writeFileSync(join(repo, "tasks", "sprints", "release.sprint.md"), "# Sprint: Release\n");
-      writeFileSync(join(repo, "_ops", "scripts", "deploy.sh"), "#!/bin/bash\n");
-      writeFileSync(join(repo, "scripts", "app-owned.sh"), "#!/bin/bash\necho app\n");
+      const userFiles: Record<string, string> = {
+        "docs/plan.md": "# Old plan\n",
+        "docs/TODO.md": "# Old todo\n",
+        "docs/prds/example.prd.md": "# PRD: Example\n",
+        "plans/plan-20260101-user.md": "# User plan\n",
+        "tasks/sprints/release.sprint.md": "# Sprint: Release\n",
+        "_ops/scripts/deploy.sh": "#!/bin/bash\n",
+        "scripts/app-owned.sh": "#!/bin/bash\necho app\n",
+      };
+      for (const [path, bytes] of Object.entries(userFiles)) writeFileSync(join(repo, path), bytes);
 
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(apply.ok).toBe(true);
-      expect(readFileSync(join(repo, "plans", "archive", "legacy-docs-plan.md"), "utf-8")).toContain("# Old plan");
-      expect(existsSync(join(repo, "docs", "plan.md.migrated.bak"))).toBe(true);
-      expect(existsSync(join(repo, "plans", "sprints", "release.sprint.md"))).toBe(true);
-      expect(existsSync(join(repo, "_ops", "scripts", "deploy.sh"))).toBe(true);
+      for (const [path, bytes] of Object.entries(userFiles)) expect(readFileSync(join(repo, path), "utf-8")).toBe(bytes);
+      expect(existsSync(join(repo, "plans", "archive"))).toBe(false);
+      expect(existsSync(join(repo, "tasks", "archive"))).toBe(false);
+      expect(existsSync(join(repo, "docs", "plan.md.migrated.bak"))).toBe(false);
       expect(existsSync(join(repo, "deploy", "scripts", "deploy.sh"))).toBe(false);
-      expect(readFileSync(join(repo, "scripts", "app-owned.sh"), "utf-8")).toContain("echo app");
     } finally {
       cleanup(repo);
     }
@@ -435,8 +471,22 @@ describe("canonical adoption plan", () => {
         expect(applyAdoptionPlan(plan).ok).toBe(true);
         expect(existsSync(join(repo, "tasks", "lessons.md"))).toBe(true);
         expect(existsSync(join(repo, "tasks", "contracts"))).toBe(false);
+        expect(existsSync(join(repo, "plans"))).toBe(false);
+        expect(existsSync(join(repo, "tasks", "workstreams"))).toBe(false);
+        expect(existsSync(join(repo, "tasks", "current.md"))).toBe(false);
         for (const path of ["todos.md", "notes", "reviews", "examples"]) {
           expect(existsSync(join(repo, "tasks", path))).toBe(false);
+        }
+        if (mode === "standard") {
+          const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
+          expect(policy.active_plan).toBeUndefined();
+          expect(policy.tasks.current_status_file).toBeUndefined();
+          expect(policy.tasks.workstreams_dir).toBeUndefined();
+          expect(readFileSync(join(repo, "docs", "prds", "prd.template.md"), "utf-8")).toBe(
+            readFileSync(join(ROOT, "assets", "templates", "prd.template.md"), "utf-8"),
+          );
+          const contextMap = JSON.parse(readFileSync(join(repo, ".ai", "context", "context-map.json"), "utf-8"));
+          expect(contextMap.root_context_files).not.toContain("tasks/current.md");
         }
       } finally {
         cleanup(repo);
@@ -460,26 +510,23 @@ describe("canonical adoption plan", () => {
     });
   }
 
-  test("legacy document and research archive collisions fail closed before retirement", () => {
-    const documentRepo = tempRepo();
-    const researchRepo = tempRepo();
+  test("legacy planning documents are no longer imported or rearchived", () => {
+    const repo = tempRepo();
     try {
-      mkdirSync(join(documentRepo, "docs"), { recursive: true });
-      mkdirSync(join(documentRepo, "tasks", "archive"), { recursive: true });
-      writeFileSync(join(documentRepo, "docs", "TODO.md"), "# Legacy todo\n");
-      writeFileSync(join(documentRepo, "tasks", "archive", "legacy-docs-TODO.md"), "# Different user archive\n");
-      expect(() => planAdoption({ repoRoot: documentRepo, mode: "standard" })).toThrow("legacy archive collision");
-      expect(readFileSync(join(documentRepo, "docs", "TODO.md"), "utf-8")).toBe("# Legacy todo\n");
-
-      mkdirSync(join(researchRepo, "tasks"), { recursive: true });
-      mkdirSync(join(researchRepo, "docs", "researches"), { recursive: true });
-      writeFileSync(join(researchRepo, "tasks", "research.md"), "# Legacy research\n");
-      writeFileSync(join(researchRepo, "docs", "researches", "legacy-research-notes.md"), "# Different user archive\n");
-      expect(() => planAdoption({ repoRoot: researchRepo, mode: "standard" })).toThrow("legacy archive collision");
-      expect(readFileSync(join(researchRepo, "tasks", "research.md"), "utf-8")).toBe("# Legacy research\n");
+      mkdirSync(join(repo, "docs", "researches"), { recursive: true });
+      mkdirSync(join(repo, "tasks"), { recursive: true });
+      writeFileSync(join(repo, "docs", "TODO.md"), "# Legacy todo\n");
+      writeFileSync(join(repo, "tasks", "research.md"), "# Legacy research\n");
+      writeFileSync(join(repo, "docs", "researches", "legacy-research-notes.md"), "# User research\n");
+      const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
+      expect(apply.ok).toBe(true);
+      expect(readFileSync(join(repo, "docs", "TODO.md"), "utf-8")).toBe("# Legacy todo\n");
+      expect(readFileSync(join(repo, "tasks", "research.md"), "utf-8")).toBe("# Legacy research\n");
+      expect(readFileSync(join(repo, "docs", "researches", "legacy-research-notes.md"), "utf-8")).toBe("# User research\n");
+      expect(existsSync(join(repo, "tasks", "archive"))).toBe(false);
+      expect(existsSync(join(repo, "plans"))).toBe(false);
     } finally {
-      cleanup(documentRepo);
-      cleanup(researchRepo);
+      cleanup(repo);
     }
   });
 
@@ -1240,7 +1287,7 @@ describe("documentation language policy datum", () => {
         const operation = plan.operations.find((entry) => entry.path === path);
         if (!operation || operation.kind !== "writeFile") throw new Error(`expected a writeFile operation for ${path}`);
         expect(operation.content).toContain(
-          "- Write human-facing documents (`docs/`, `plans/prds/`, design briefs) in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.",
+          "- Write human-facing documents (`docs/`, `docs/prds/`, design briefs) in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.",
         );
         expect(operation.content).not.toContain("documentation.language: ");
       }

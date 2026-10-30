@@ -187,7 +187,7 @@ export function readRegistry(repo: string): CapabilityRegistry {
 }
 
 // Anchors must exist only for listed (active) capabilities. Every capability
-// node, whatever its status, still owns its architecture module and workstreams.
+// node, whatever its status, still owns its architecture module.
 function validateRegistryEffects(
   registry: CapabilityRegistry,
   repo: string,
@@ -195,7 +195,6 @@ function validateRegistryEffects(
 ): string[] {
   const errors: string[] = [];
   const architectureModules = new Set<string>();
-  const workstreamDirs = new Set<string>();
 
   for (const capability of registry.capabilities) {
     for (const prefix of capability.prefixes) {
@@ -207,7 +206,6 @@ function validateRegistryEffects(
   }
   for (const capability of allCapabilities) {
     architectureModules.add(normalizeCapabilityPath(capability.architecture_module, repo));
-    workstreamDirs.add(normalizeCapabilityPath(capability.workstream_dir, repo));
   }
 
   const modulesRoot = resolve(repo, "docs/architecture/modules");
@@ -223,26 +221,6 @@ function validateRegistryEffects(
           const relPath = relative(repo, absPath).replaceAll("\\", "/");
           if (!architectureModules.has(relPath)) {
             errors.push(`orphan architecture module: ${relPath}`);
-          }
-        }
-      }
-    }
-  }
-
-  const workstreamsRoot = resolve(repo, "tasks/workstreams");
-  if (existsSync(workstreamsRoot)) {
-    const stack = [workstreamsRoot];
-    while (stack.length > 0) {
-      const current = stack.pop()!;
-      for (const entry of readdirSync(current, { withFileTypes: true })) {
-        const absPath = resolve(current, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(absPath);
-        } else if (entry.isFile() && entry.name.endsWith(".md")) {
-          const relPath = relative(repo, absPath).replaceAll("\\", "/");
-          const owned = [...workstreamDirs].some((dir) => relPath === dir || relPath.startsWith(`${dir}/`));
-          if (!owned) {
-            errors.push(`orphan workstream: ${relPath}`);
           }
         }
       }

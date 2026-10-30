@@ -261,7 +261,6 @@ function defaultManifestEntry(capability: Capability, authorityPath: string): Ma
     source_map: [
       { label: 'Primary prefix', path: capability.prefixes[0] || '.', role: 'entrypoint' },
       { label: 'Architecture module', path: capability.architecture_module, role: 'design-source' },
-      { label: 'Workstream', path: capability.workstream_dir, role: 'durable-progress' },
     ],
     refresh_hints: capability.verification_hints?.length
       ? capability.verification_hints
@@ -302,7 +301,6 @@ function renderCapabilityBlock(capability: Capability, entry: ManifestCapability
     `- Name: \`${capability.name}\``,
     `- Primary prefix: \`${capability.prefixes[0] || '.'}\``,
     `- Architecture module: \`${capability.architecture_module}\``,
-    `- Workstream: \`${capability.workstream_dir}\``,
     '',
     '## Positioning',
     '',

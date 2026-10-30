@@ -1,6 +1,4 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "node:fs";
-import { resolve } from "node:path";
 
 import {
   fingerprintVerificationCheck,
@@ -23,13 +21,6 @@ const currentCheck = {
 } as const;
 
 describe("Verification Plan schema", () => {
-  test("downstream contract template emits a valid explicit Verification Plan", () => {
-    const root = resolve(import.meta.dir, "../..");
-    const source = readFileSync(resolve(root, "assets/templates/contract.template.md"), "utf8");
-    const plan = parseVerificationPlanFromContractText(source.replaceAll("{{TASK_SLUG}}", "example"));
-    expect(plan.checks).toEqual([]);
-  });
-
   test("accepts an explicit empty plan without treating a missing plan as equivalent", () => {
     expect(validateVerificationPlan({ protocol: 1, checks: [] })).toEqual({ protocol: 1, checks: [] });
     const empty = `## Verification Plan\n\n\`\`\`json\n{"protocol":1,"checks":[]}\n\`\`\`\n`;

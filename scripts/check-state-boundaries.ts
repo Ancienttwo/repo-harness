@@ -102,7 +102,6 @@ const CANONICAL_SYMBOL_OWNERS: Readonly<Record<string, string>> = {
   CapabilitySourceMode: CAPABILITY_SOURCE,
   ArchcontextPathOwner: CAPABILITY_SOURCE,
   architectureModulePathFor: CAPABILITY_SOURCE,
-  workstreamDirFor: CAPABILITY_SOURCE,
   capabilityPathResolutionFromArchcontextOwners: CAPABILITY_SOURCE,
   stripWrappingQuotes: 'src/core/state/artifact-parsers.ts',
   markdownHeader: 'src/core/state/artifact-parsers.ts',

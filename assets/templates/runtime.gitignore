@@ -44,8 +44,6 @@ _ops/
 .claude/*.bak
 .claude/*.bak.*
 .claude/*.backup-*
-tasks/.current.md.tmp.*
-tasks/current.md
 .ai/harness/checks/
 .ai/harness/checks/*.latest.json
 .ai/harness/checks/*.latest.md
@@ -65,9 +63,7 @@ tasks/current.md
 !.ai/harness/planning/.gitkeep
 .ai/harness/delegation/*
 .ai/harness/architecture/events.jsonl
-.ai/harness/active-plan
 .ai/harness/active-worktree
-.ai/harness/sprint/
 .ai/harness/worktrees/
 .ai/harness/evidence/
 .ai/harness/runs/
@@ -79,6 +75,4 @@ tasks/current.md
 !.ai/harness/triage/.gitkeep
 .repo-harness/
 .codex/*
-.claude/.active-plan
 .claude/worktrees/
-.claude/.plan-state/

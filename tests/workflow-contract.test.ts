@@ -97,10 +97,10 @@ describe("workflow contract manifest", () => {
     expect(contract.agenticDevelopment?.routing.bugOrRegression).toBe("waza:hunt");
     expect(contract.agenticDevelopment?.dueDiligence.levels).toContain("P2_DATA_FLOW_TRACE");
     expect(contract.agenticDevelopment?.dueDiligence.explicitReportRequiredFor).toContain("complex_engineering_plan");
-    expect(contract.documents.currentStatus).toBe("tasks/current.md");
+    expect(Object.hasOwn(contract.documents, "currentStatus")).toBe(false);
+    expect(Object.hasOwn(contract.documents, "planDirectory")).toBe(false);
     expect(contract.adoptionTemplates?.files?.spec.document).toBe("spec");
     expect(contract.adoptionTemplates?.files?.spec.lines.join("\n")).toContain("{{repoName}}");
-    expect(contract.adoptionTemplates?.files?.currentStatus.document).toBe("currentStatus");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/workflow-contract.json");
     expect(contract.artifacts.requiredFiles).not.toContain(".codex/hooks.json");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/brain-manifest.json");
@@ -117,8 +117,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/refresh-current-status.sh");
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/sync-brain-docs.sh");
     expect(contract.artifacts.requiredFiles).not.toContain("tasks/current.md");
-    // ignored local read model: same list membership as .ai/harness/handoff/current.md
-    expect(contract.artifacts.runtimeFiles).toContain("tasks/current.md");
+    expect(contract.artifacts.runtimeFiles).not.toContain("tasks/current.md");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/current.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/architecture/index.md");
     expect(contract.artifacts.requiredFiles).not.toContain(".claude/templates/implementation-notes.template.md");
@@ -137,7 +136,8 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/reviews");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/examples");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/contracts");
-    expect(contract.artifacts.requiredDirectories).toContain("tasks/workstreams");
+    expect(contract.artifacts.requiredDirectories).not.toContain("tasks/workstreams");
+    expect(contract.artifacts.requiredDirectories).toContain("docs/prds");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
@@ -160,7 +160,7 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/checks/latest.json");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
-    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
+    expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/active-plan");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/worktrees/");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/triage/inbox.md");
@@ -184,6 +184,18 @@ describe("workflow contract manifest", () => {
     expect(queueScaffold?.action).toBe("remove");
     expect(queueScaffold?.cleanupMode).toBe("exact_fingerprint");
     expect(queueScaffold?.paths).toEqual([".ai/harness/architecture/.gitkeep", ".ai/harness/architecture/events.jsonl", "docs/architecture/requests/.gitkeep"]);
+    const retiredScaffolds = contract.migrations.upgrade?.actions.find((action) => action.id === "retired-plan-task-scaffolds");
+    expect(retiredScaffolds?.action).toBe("remove");
+    expect(retiredScaffolds?.cleanupMode).toBe("exact_fingerprint");
+    expect(retiredScaffolds?.paths).toEqual([
+      "tasks/current.md",
+      ".claude/templates/plan.template.md",
+      ".claude/templates/sprint.template.md",
+      ".claude/templates/contract.template.md",
+      "tasks/workstreams/.gitkeep",
+      ".ai/harness/active-plan",
+    ]);
+    expect(contract.migrations.upgrade?.actions.some((action) => action.id === "stale-project-copies")).toBe(false);
   });
 
   test("helper descriptions should cover the helper inventory 1:1 with non-empty text", () => {
@@ -357,7 +369,7 @@ describe("workflow contract manifest", () => {
     const runtimeFiles = contract.artifacts.runtimeFiles ?? [];
     expect(runtimeFiles).not.toContain(".ai/harness/checks/latest.json");
     expect(runtimeFiles).toContain(".ai/harness/evidence/");
-    expect(runtimeFiles).toContain(".ai/harness/active-plan");
+    expect(runtimeFiles).not.toContain(".ai/harness/active-plan");
     expect(runtimeFiles).toContain(".ai/harness/active-worktree");
     expect(runtimeFiles).toContain(".ai/harness/archive/");
     expect(runtimeFiles).toContain(".ai/harness/planning/");
@@ -382,9 +394,9 @@ describe("workflow contract manifest", () => {
     }
 
     const gitignore = readFileSync(join(ROOT, ".gitignore"), "utf-8");
-    expect(gitignore).toContain("tasks/.current.md.tmp.*");
-    expect(gitignore).toContain("tasks/current.md");
-    expect(gitignore).toContain(".claude/.plan-state/");
+    expect(gitignore).not.toContain("tasks/.current.md.tmp.*");
+    expect(gitignore).not.toContain("tasks/current.md");
+    expect(gitignore).not.toContain(".claude/.plan-state/");
     expect(gitignore).not.toContain(".ai/harness/checks/latest.json");
     expect(gitignore).toContain(".ai/harness/evidence/");
     expect(gitignore).toContain(".ai/harness/state/");
@@ -499,31 +511,26 @@ describe("state inspection and legacy doc migration", () => {
     }
   });
 
-  test("canonical adoption transaction preserves legacy documents without creating a todo ledger", () => {
+  test("canonical adoption leaves legacy documents in place without creating a todo ledger", () => {
     const repo = mkdtempSync(join(tmpdir(), "migrate-workflow-docs-"));
 
     try {
       mkdirSync(join(repo, "docs"), { recursive: true });
-      writeFileSync(join(repo, "docs/TODO.md"), "- [ ] port old checklist\n");
-      writeFileSync(join(repo, "docs/plan.md"), "# Old Plan\n\nKeep the useful parts.\n");
-      writeFileSync(join(repo, "docs/PROGRESS.md"), "# Session Notes\n\n- [ ] investigate drift\n");
+      const legacy: Record<string, string> = {
+        "docs/TODO.md": "- [ ] port old checklist\n",
+        "docs/plan.md": "# Old Plan\n\nKeep the useful parts.\n",
+        "docs/PROGRESS.md": "# Session Notes\n\n- [ ] investigate drift\n",
+      };
+      for (const [path, bytes] of Object.entries(legacy)) writeFileSync(join(repo, path), bytes);
 
       const summary = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
       expect(summary.ok).toBe(true);
       expect(existsSync(join(repo, "tasks/todos.md"))).toBe(false);
       expect(existsSync(join(repo, "docs/researches/README.md"))).toBe(true);
-      expect(existsSync(join(repo, "tasks/archive/legacy-docs-TODO.md"))).toBe(true);
-      expect(existsSync(join(repo, "plans/archive/legacy-docs-plan.md"))).toBe(true);
-      expect(existsSync(join(repo, "docs/TODO.md.migrated.bak"))).toBe(true);
-      expect(existsSync(join(repo, "docs/plan.md.migrated.bak"))).toBe(true);
-
-      const research = readFileSync(join(repo, "docs/researches/legacy-progress-import.md"), "utf-8");
-      expect(research).toContain("Legacy Progress Import");
-      expect(research).toContain("investigate drift");
-
-      expect(existsSync(join(repo, "docs/PROGRESS.md"))).toBe(false);
-      expect(existsSync(join(repo, "docs/PROGRESS.md.migrated.bak"))).toBe(true);
-      expect(existsSync(join(repo, "tasks/archive/legacy-docs-PROGRESS.md"))).toBe(true);
+      for (const [path, bytes] of Object.entries(legacy)) expect(readFileSync(join(repo, path), "utf-8")).toBe(bytes);
+      expect(existsSync(join(repo, "tasks/archive"))).toBe(false);
+      expect(existsSync(join(repo, "plans"))).toBe(false);
+      expect(existsSync(join(repo, "docs/researches/legacy-progress-import.md"))).toBe(false);
     } finally {
       rmSync(repo, { recursive: true, force: true });
     }

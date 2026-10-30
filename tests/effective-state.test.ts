@@ -253,7 +253,6 @@ describe('effective state resolver', () => {
           claude: `${prefixes[0]}/CLAUDE.md`,
         },
         architecture_module: `docs/architecture/modules/fixture/${id}.md`,
-        workstream_dir: `tasks/workstreams/fixture/${id}`,
         lsp_profile: 'typescript-lsp',
         verification_hints: ['bun test'],
       };
