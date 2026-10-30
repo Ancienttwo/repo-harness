@@ -2,8 +2,9 @@ import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, type CleanupAdvice } from '../../src/core/operator/worktree-cleanup-plan';
-import type { DocSessionRecordV1 } from '../../src/core/operator/doc-session-record';
-import { docSessionGitRunner, observeDocSessionLoss } from '../../src/effects/operator/doc-session-changes';
+import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
+import { worktreeId } from '../../src/effects/git/worktree-record';
+import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import {
   cleanupLossSha256, cleanupPlanSelectionDigest, createCleanupPlan, executeCleanupPlan,
   type CleanupExecutionPorts, type CleanupObservation,
@@ -21,8 +22,9 @@ function observation(n = 1, judgment: 'green' | 'yellow' | 'red' = 'yellow'): Cl
       reasons: judgment === 'green' ? [] : judgment === 'yellow' ? ['dirty'] : ['process_in_use'],
       size_bytes: 80, size_observed_at: null, process_count: judgment === 'red' ? 1 : 0, dirty_files: judgment === 'green' ? 0 : 1,
       ignored_entries: 0, unpushed_commits: 0, merge: 'ancestor', record: null },
-    loss: { head_commit: 'c'.repeat(40), changes: judgment === 'green' ? [] : [{ path: 'docs/guide.md', status: 'modified', tracked: true,
-      old_mode: '100644', new_mode: '100644', old_oid: 'd'.repeat(40), new_oid: 'e'.repeat(40) }], index: [], ignored: [], ignored_leaves: [], commits: [], pushed: false },
+    loss: { kind: 'registered', identity: { dev: 1, ino: n, birthtime_ms: 1 }, branch: `refs/heads/feature-${n}`, head_commit: 'c'.repeat(40),
+      files: judgment === 'green' ? [] : [{ path: 'docs/guide.md', kind: 'file', mode: 0o644, size: 5, sha256: 'd'.repeat(64), git_oid: 'e'.repeat(40) }],
+      changed_paths: judgment === 'green' ? [] : ['docs/guide.md'], index: [], ignored: [], commits: [], remote_refs: [] },
   };
 }
 function harness(observations = [observation()]) {
@@ -211,30 +213,28 @@ describe('cleanup plan contract and execution boundary', () => {
   });
 });
 
-test('real Git loss observations change fingerprints for bytes, index-only versions, ignored files and commits', () => {
-  const root = tmpWorkspace('cleanup-plan-loss');
+test('real generic observations change fingerprints for bytes, index-only versions, ignored files and commits', () => {
+  const parent = tmpWorkspace('cleanup-plan-loss'), root = join(parent, 'repo'), tree = join(parent, 'tree');
   try {
-    initGitRepo(root); mkdirSync(join(root, 'docs'));
+    mkdirSync(root); initGitRepo(root); mkdirSync(join(root, 'docs'));
     writeFileSync(join(root, 'docs/guide.md'), 'base\n');
     writeFileSync(join(root, '.gitignore'), '.env\n'); commitAll(root, 'base');
-    const git = (...args: string[]) => { const result = run('git', args, root); expect(result.status).toBe(0); return result.stdout.trim(); };
-    const base = git('rev-parse', 'HEAD'); git('update-ref', 'refs/remotes/origin/main', base);
-    git('checkout', '-b', `docs/${SID.slice(0, 12)}`);
-    const record: DocSessionRecordV1 = { protocol: 1, kind: 'docs_session', session_id: SID, state: 'created', created_at: new Date().toISOString(), repository_id: REPO,
-      runtime: 'codex', branch: `docs/${SID.slice(0, 12)}`, worktree: root, base_commit: base, citations: [], instruction: 'fixture' };
-    const observe = () => ({ ...observation(), loss: observeDocSessionLoss(docSessionGitRunner(process.env), record, root) });
+    const git = (cwd: string, ...args: string[]) => { const result = run('git', args, cwd); expect(result.status).toBe(0); return result.stdout.trim(); };
+    const base = git(root, 'rev-parse', 'HEAD'); git(root, 'update-ref', 'refs/remotes/origin/main', base);
+    git(root, 'worktree', 'add', '-b', 'feature', tree);
+    const target = { repository: root, worktree: tree, id: worktreeId(resolveGitCommonDirectory(root), tree), kind: 'registered' as const };
+    const observe = () => ({ ...observation(), loss: observeCleanupLoss(target, { env: process.env, deadline: Date.now() + 5000 }) });
     const initial = cleanupLossSha256(observe());
-    writeFileSync(join(root, 'docs/guide.md'), 'first\n');
+    writeFileSync(join(tree, 'docs/guide.md'), 'first\n');
     const changed = cleanupLossSha256(observe()); expect(changed).not.toBe(initial);
-    writeFileSync(join(root, 'docs/guide.md'), 'other\n'); expect(cleanupLossSha256(observe())).not.toBe(changed);
-    git('add', 'docs/guide.md'); writeFileSync(join(root, 'docs/guide.md'), 'base\n');
-    const staged = observe(); expect(staged.loss.index).toHaveLength(1); expect(cleanupLossSha256(staged)).not.toBe(initial);
-    // Synthetic fixture data only. No credential or real worktree is accessed.
-    writeFileSync(join(root, '.env'), 'SYNTHETIC=one\n'); const ignored = cleanupLossSha256(observe());
-    writeFileSync(join(root, '.env'), 'SYNTHETIC=two\n'); expect(cleanupLossSha256(observe())).not.toBe(ignored);
-    const beforeCommit = cleanupLossSha256(observe()); git('commit', '-m', 'unpublished');
+    writeFileSync(join(tree, 'docs/guide.md'), 'other\n'); expect(cleanupLossSha256(observe())).not.toBe(changed);
+    git(tree, 'add', 'docs/guide.md'); writeFileSync(join(tree, 'docs/guide.md'), 'base\n');
+    const staged = observe(); expect(staged.loss.changed_paths).toContain('docs/guide.md'); expect(cleanupLossSha256(staged)).not.toBe(initial);
+    writeFileSync(join(tree, '.env'), 'SYNTHETIC=one\n'); const ignored = cleanupLossSha256(observe());
+    writeFileSync(join(tree, '.env'), 'SYNTHETIC=two\n'); expect(cleanupLossSha256(observe())).not.toBe(ignored);
+    const beforeCommit = cleanupLossSha256(observe()); git(tree, 'commit', '-m', 'unpublished');
     const committed = observe(); expect(committed.loss.commits).toHaveLength(1); expect(cleanupLossSha256(committed)).not.toBe(beforeCommit);
     const plan = createCleanupPlan(SID, [{ observation: committed, advice: { ...advice(), archive: { ...advice().archive, private: { directory: 'fixture-repo', paths: ['.env'] } } } }]);
-    expect(JSON.stringify(plan)).not.toContain('SYNTHETIC'); expect(JSON.stringify(plan)).not.toContain(root);
-  } finally { rmSync(root, { recursive: true, force: true }); }
+    expect(JSON.stringify(plan)).not.toContain('SYNTHETIC'); expect(JSON.stringify(plan)).not.toContain(parent);
+  } finally { rmSync(parent, { recursive: true, force: true }); }
 });
