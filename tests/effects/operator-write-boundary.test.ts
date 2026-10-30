@@ -1,3 +1,6 @@
+import { OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../src/core/operator/doc-session-views';
+import { OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
+import { OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalization-view';
 import { describe, expect, test } from 'bun:test';
 
 import {
@@ -112,6 +115,10 @@ describe('operator structural write boundary', () => {
       'execution_state',
       'docs_tree',
       'docs_file',
+      'session_list',
+      'session_detail',
+      'session_events',
+      'session_finalization',
       'session_diff',
       'session_loss',
       'settings_agents',
@@ -147,8 +154,12 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('docs_tree')).toBe(OPERATOR_DOCS_TREE_ROUTE.source);
     expect(patterns.get('docs_file')).toBe(OPERATOR_DOCS_FILE_ROUTE.source);
     expect(OPERATOR_ROUTES.filter(route => route.id.startsWith('docs_')).every(route => route.method === 'GET' && !route.write)).toBe(true);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'session_list')).toEqual({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'session_detail')).toEqual({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'session_events')).toEqual({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_diff')).toEqual({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'session_loss')).toEqual({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'session_finalization')).toEqual({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents')).toEqual({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents_write')).toEqual({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'worktrees_cleanup')).toEqual({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true });
