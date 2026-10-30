@@ -55,7 +55,7 @@ worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
 usage() {
   cat <<'USAGE_EOF'
 Usage:
-  repo-harness run contract-worktree start --plan <plan-file> [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
+  repo-harness run contract-worktree start --issue <number> [--type <branch-type>] [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
   repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <pane-id> --pr <number> --merge <sha>
   repo-harness run contract-worktree sweep
@@ -80,11 +80,12 @@ start_notice() {
 }
 
 write_start_json() {
-  local worktree_path="$1" branch_name="$2" plan_file="$3" disposition="$4"
-  printf '{"protocol":1,"kind":"repo-harness-contract-worktree-start","worktree_path":"%s","branch":"%s","plan_path":"%s","disposition":"%s"}\n' \
+  local worktree_path="$1" branch_name="$2" issue_number="$3" issue_url="$4" disposition="$5"
+  printf '{"protocol":2,"kind":"repo-harness-contract-worktree-start","worktree_path":"%s","branch":"%s","issue":%s,"issue_url":"%s","disposition":"%s"}\n' \
     "$(json_escape "$worktree_path")" \
     "$(json_escape "$branch_name")" \
-    "$(json_escape "$plan_file")" \
+    "$issue_number" \
+    "$(json_escape "$issue_url")" \
     "$(json_escape "$disposition")"
 }
 
@@ -108,80 +109,43 @@ normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
 
-ACTIVE_PLAN_MARKER=".ai/harness/active-plan"
-ACTIVE_WORKTREE_MARKER=".ai/harness/active-worktree"
-
-derive_slug_from_plan() {
-  local plan_file="$1"
-  local plan_base slug
-  plan_base="$(basename "$plan_file")"
-  slug="$(printf '%s' "$plan_base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//')"
-  normalize_slug "${slug:-contract-task}"
+# The branch recorded by start. Cleanup must use it because start derives the
+# prefix from --type (default feat/) instead of worktree_strategy.branch_prefix.
+read_metadata_branch() {
+  local metadata_file="$1"
+  [[ -f "$metadata_file" ]] || return 1
+  sed -n 's/^  "branch": "\([^"]*\)",$/\1/p' "$metadata_file" | head -1
 }
 
-derive_original_artifact_stem_from_plan() {
-  local plan_file="$1"
-  local plan_base stem
-  plan_base="$(basename "$plan_file")"
-  stem="$(printf '%s' "$plan_base" | sed -E 's/^plan-//; s/\.md$//')"
-  if [[ "$stem" =~ ^[0-9]{8}-[0-9]{4}-.+ ]]; then
-    printf '%s' "$stem"
-  else
-    derive_slug_from_plan "$plan_file"
-  fi
+# Start writes metadata inside the new worktree, not in the primary checkout.
+# Cleanup runs from the primary, so resolve the branch from the Git worktree
+# list by the exact slug suffix when the primary metadata is absent.
+find_branch_for_slug() {
+  local slug="$1" line branch="" found="" matches=0
+  while IFS= read -r line; do
+    case "$line" in
+      "branch refs/heads/"*)
+        branch="${line#branch refs/heads/}"
+        if [[ "${branch##*/}" == "$slug" ]]; then
+          matches=$((matches + 1))
+          found="$branch"
+        fi
+        ;;
+      "") branch="" ;;
+    esac
+  done < <(git worktree list --porcelain)
+  [[ "$matches" -eq 1 ]] || return 1
+  printf '%s' "$found"
 }
 
-derive_raw_slug_from_plan() {
-  local plan_file="$1"
-  local plan_base
-  plan_base="$(basename "$plan_file")"
-  printf '%s' "$plan_base" | sed -E 's/^plan-[0-9]{8}-[0-9]{4}-//; s/\.md$//'
-}
-
-is_transient_plan_slug() {
-  case "$1" in
-    think-plan-[0-9]*|codex-plan-[0-9]*|approved-plan-[0-9]*)
-      return 0
-      ;;
-  esac
-  return 1
-}
-
-derive_title_slug_from_plan() {
-  local plan_file="$1"
-  local title slug
-  [[ -f "$plan_file" ]] || return 1
-  title="$(awk '
-    /^# Plan:[[:space:]]*/ {
-      sub(/^# Plan:[[:space:]]*/, "")
-      print
-      exit
-    }
-  ' "$plan_file" | xargs)"
-  [[ -n "$title" ]] || return 1
-  slug="$(normalize_slug "$title")"
-  [[ -n "$slug" ]] || return 1
+derive_issue_slug() {
+  local issue_number="$1"
+  local title="$2"
+  local words slug
+  words="$(printf '%s' "$title" | awk '{ for (i = 1; i <= 5 && i <= NF; i++) printf "%s%s", (i > 1 ? " " : ""), $i }')"
+  slug="$(normalize_slug "${issue_number}-${words}")"
+  [[ -n "$slug" ]] || slug="$issue_number"
   printf '%s' "$slug"
-}
-
-derive_artifact_stem_from_plan() {
-  local plan_file="$1"
-  local stem stamp slug title_slug
-  stem="$(derive_original_artifact_stem_from_plan "$plan_file")"
-  if [[ "$stem" =~ ^[0-9]{8}-[0-9]{4}-.+ ]]; then
-    stamp="$(printf '%s' "$stem" | sed -E 's/^([0-9]{8}-[0-9]{4})-.+$/\1/')"
-    slug="$(printf '%s' "$stem" | sed -E 's/^[0-9]{8}-[0-9]{4}-//')"
-    if is_transient_plan_slug "$slug"; then
-      title_slug="$(derive_title_slug_from_plan "$plan_file" || true)"
-      if [[ -n "$title_slug" && "$title_slug" != "$slug" ]]; then
-        printf '%s-%s' "$stamp" "$title_slug"
-        return 0
-      fi
-    fi
-    printf '%s' "$stem"
-  else
-    derive_slug_from_plan "$plan_file"
-  fi
 }
 
 is_linked_worktree() {
@@ -237,11 +201,12 @@ default_worktree_path() {
 
 write_start_metadata() {
   local slug="$1"
-  local plan_file="$2"
-  local branch_name="$3"
-  local worktree_path="$4"
-  local base_branch="$5"
-  local base_commit="$6"
+  local issue_number="$2"
+  local issue_url="$3"
+  local branch_name="$4"
+  local worktree_path="$5"
+  local base_branch="$6"
+  local base_commit="$7"
   local metadata_dir=".ai/harness/worktrees"
   local metadata_file="${metadata_dir}/${slug}.json"
 
@@ -252,7 +217,8 @@ write_start_metadata() {
   cat > "$metadata_file" <<EOF_METADATA
 {
   "slug": "$(json_escape "$slug")",
-  "plan": "$(json_escape "$plan_file")",
+  "issue": $issue_number,
+  "issue_url": "$(json_escape "$issue_url")",
   "branch": "$(json_escape "$branch_name")",
   "worktree": "$(json_escape "$worktree_path")",
   "source_repo": "$(json_escape "$REPO_ROOT")",
@@ -260,45 +226,6 @@ write_start_metadata() {
   "base_commit": "$(json_escape "$base_commit")"
 }
 EOF_METADATA
-}
-
-copy_plan_into_worktree() {
-  local plan_file="$1"
-  local worktree_path="$2"
-  local target_plan="$worktree_path/$plan_file"
-
-  mkdir -p "$(dirname "$target_plan")"
-  cp "$plan_file" "$target_plan"
-}
-
-remove_copied_untracked_source_plan() {
-  local plan_file="$1"
-  local worktree_path="$2"
-
-  if git ls-files --others --exclude-standard -- "$plan_file" | grep -Fxq "$plan_file" \
-    && cmp -s "$plan_file" "$worktree_path/$plan_file"; then
-    rm -f "$plan_file"
-    start_notice "[ContractWorktree] Moved untracked source plan into contract worktree: $plan_file"
-  fi
-}
-
-marker_points_to_plan() {
-  local marker_file="$1"
-  local plan_file="$2"
-  local marker_plan
-
-  [[ -f "$marker_file" ]] || return 1
-  marker_plan="$(cat "$marker_file" 2>/dev/null | xargs)"
-  [[ "$marker_plan" == "$plan_file" || "$marker_plan" == "./$plan_file" ]]
-}
-
-clear_primary_markers_for_transferred_plan() {
-  local plan_file="$1"
-
-  if marker_points_to_plan "$ACTIVE_PLAN_MARKER" "$plan_file"; then
-    rm -f "$ACTIVE_PLAN_MARKER" "$ACTIVE_WORKTREE_MARKER"
-    start_notice "[ContractWorktree] Cleared primary active markers for transferred plan: $plan_file"
-  fi
 }
 
 bootstrap_worktree_runtime() {
@@ -351,20 +278,32 @@ run_contract_runtime() {
 }
 
 start_worktree() {
-  local plan_file=""
+  local issue_number=""
+  local issue_title=""
+  local issue_state=""
+  local issue_url=""
   local worktree_path=""
   local branch_name=""
-  local run_plan_to_todo=1
+  local branch_type="feat"
   local require_fresh=0
   local output_json=0
   local herdr_endpoint=""
 
   while [[ $# -gt 0 ]]; do
     case "$1" in
-      --plan)
-        [[ -n "${2:-}" ]] || { echo "contract-worktree: --plan requires a value" >&2; exit 2; }
-        plan_file="${2#./}"
+      --issue)
+        [[ -n "${2:-}" ]] || { echo "contract-worktree: --issue requires a value" >&2; exit 2; }
+        issue_number="$2"
         shift 2
+        ;;
+      --type)
+        [[ -n "${2:-}" ]] || { echo "contract-worktree: --type requires a value" >&2; exit 2; }
+        branch_type="$2"
+        shift 2
+        ;;
+      --plan|--plan=*)
+        echo "contract-worktree: unknown option --plan; use --issue <n>" >&2
+        exit 2
         ;;
       --path)
         [[ -n "${2:-}" ]] || { echo "contract-worktree: --path requires a value" >&2; exit 2; }
@@ -380,10 +319,6 @@ start_worktree() {
         [[ -n "${2:-}" ]] || { echo "contract-worktree: --herdr-endpoint requires a file" >&2; exit 2; }
         herdr_endpoint="$(cd "$(dirname "$2")" && pwd -P)/$(basename "$2")"
         shift 2
-        ;;
-      --no-plan-to-todo)
-        run_plan_to_todo=0
-        shift
         ;;
       --fresh)
         require_fresh=1
@@ -405,8 +340,42 @@ start_worktree() {
     esac
   done
 
-  [[ -n "$plan_file" ]] || { echo "contract-worktree: start requires --plan" >&2; exit 2; }
-  [[ -f "$plan_file" ]] || { echo "contract-worktree: plan file not found: $plan_file" >&2; exit 2; }
+  [[ -n "$issue_number" ]] || { echo "contract-worktree: start requires --issue <number>" >&2; exit 2; }
+  [[ "$issue_number" =~ ^[1-9][0-9]*$ ]] || { echo "contract-worktree: --issue requires a positive integer: $issue_number" >&2; exit 2; }
+  [[ -n "$branch_type" ]] || { echo "contract-worktree: --type requires a value" >&2; exit 2; }
+
+  local gh_bin="${REPO_HARNESS_GH_BIN:-gh}"
+  if ! command -v "$gh_bin" >/dev/null 2>&1; then
+    echo "contract-worktree: gh is required for --issue" >&2
+    exit 2
+  fi
+
+  local gh_error gh_output issue_fields=() field gh_first_line
+  gh_error="$(mktemp "${TMPDIR:-/tmp}/contract-worktree-gh.XXXXXX")"
+  if ! gh_output="$("$gh_bin" issue view "$issue_number" --json number,title,state,url 2>"$gh_error")"; then
+    gh_first_line=""
+    IFS= read -r gh_first_line < "$gh_error" || true
+    rm -f "$gh_error"
+    echo "contract-worktree: cannot read issue $issue_number: $gh_first_line" >&2
+    exit 2
+  fi
+  rm -f "$gh_error"
+  while IFS= read -r -d '' field; do
+    issue_fields+=("$field")
+  done < <(run_contract_runtime issue-fields --json "$gh_output")
+  if [[ "${#issue_fields[@]}" -ne 4 ]]; then
+    echo "contract-worktree: cannot read issue $issue_number: invalid gh output" >&2
+    exit 2
+  fi
+  issue_number="${issue_fields[0]}"
+  issue_title="${issue_fields[1]}"
+  issue_state="${issue_fields[2]}"
+  issue_url="${issue_fields[3]}"
+  [[ "$issue_number" =~ ^[1-9][0-9]*$ ]] || { echo "contract-worktree: cannot read issue $issue_number: invalid issue number" >&2; exit 2; }
+  if [[ "$issue_state" != "OPEN" ]]; then
+    echo "contract-worktree: issue $issue_number is $issue_state" >&2
+    exit 2
+  fi
 
   contract_worktree_start_json="$output_json"
 
@@ -422,19 +391,18 @@ start_worktree() {
     fi
     if [[ "$output_json" -eq 1 ]]; then
       write_start_json "$(pwd -P)" "$(git branch --show-current 2>/dev/null || true)" \
-        "$(pwd -P)/$plan_file" "already_linked"
+        "$issue_number" "$issue_url" "already_linked"
     else
       echo "[ContractWorktree] Already in a linked worktree: $REPO_ROOT"
     fi
     return 0
   fi
 
-  local slug branch_prefix base_branch existing_worktree base_commit source_commit new_branch=0 disposition metadata_file
-  slug="$(derive_slug_from_plan "$plan_file")"
-  branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
+  local slug base_branch existing_worktree base_commit source_commit new_branch=0 disposition metadata_file
+  slug="$(derive_issue_slug "$issue_number" "$issue_title")"
   base_branch="$(policy_get '.worktree_strategy.base_branch' 'main')"
   source_commit="$(git rev-parse HEAD)"
-  branch_name="${branch_name:-${branch_prefix}${slug}}"
+  branch_name="${branch_name:-${branch_type}/${slug}}"
   worktree_path="${worktree_path:-$(default_worktree_path "$slug")}"
   metadata_file="$REPO_ROOT/.ai/harness/worktrees/${slug}.json"
 
@@ -488,7 +456,7 @@ start_worktree() {
   fi
 
   worktree_path="$(cd "$worktree_path" && pwd -P)"
-  run_contract_runtime record --repo "$REPO_ROOT" --worktree "$worktree_path" --creator contract --purpose "$plan_file" --task "$slug" >&2
+  run_contract_runtime record --repo "$REPO_ROOT" --worktree "$worktree_path" --creator contract --purpose "$issue_url" --task "$slug" >&2
   if [[ -n "$herdr_endpoint" ]]; then
     if ! run_contract_runtime register --worktree "$worktree_path" --endpoint "$herdr_endpoint" >&2; then
       echo "contract-worktree: Herdr registration incomplete; checkout preserved; register its runtime with the supplied endpoint before continuing" >&2
@@ -497,9 +465,6 @@ start_worktree() {
   fi
 
   bootstrap_worktree_runtime "$worktree_path"
-  copy_plan_into_worktree "$plan_file" "$worktree_path"
-  remove_copied_untracked_source_plan "$plan_file" "$worktree_path"
-  clear_primary_markers_for_transferred_plan "$plan_file"
   if [[ "$new_branch" -eq 1 ]]; then
     base_commit="$source_commit"
   else
@@ -509,21 +474,14 @@ start_worktree() {
   mkdir -p "$worktree_path/.ai/harness/worktrees"
   (
     cd "$worktree_path"
-    write_start_metadata "$slug" "$plan_file" "$branch_name" "$worktree_path" "$base_branch" "$base_commit"
-    if [[ "$run_plan_to_todo" -eq 1 && -f "$helper_dir/plan-to-todo.sh" ]]; then
-      if [[ "$output_json" -eq 1 ]]; then
-        REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file" >&2
-      else
-        REPO_HARNESS_TARGET_REPO_ROOT="$worktree_path" REPO_HARNESS_CONTRACT_WORKTREE=1 bash "$helper_dir/plan-to-todo.sh" --plan "$plan_file"
-      fi
-    fi
+    write_start_metadata "$slug" "$issue_number" "$issue_url" "$branch_name" "$worktree_path" "$base_branch" "$base_commit"
   )
 
   if [[ "$output_json" -eq 1 ]]; then
-    write_start_json "$worktree_path" "$branch_name" "$worktree_path/$plan_file" "$disposition"
+    write_start_json "$worktree_path" "$branch_name" "$issue_number" "$issue_url" "$disposition"
   else
     echo "[ContractWorktree] Branch: $branch_name"
-    echo "[ContractWorktree] Plan: $worktree_path/$plan_file"
+    echo "[ContractWorktree] Issue: $issue_url"
   fi
 }
 
@@ -591,8 +549,12 @@ cleanup_worktree() {
   local target_worktree current_root branch_prefix branch_name worktree_path metadata_file
   local worktree_status repair_needed=0 merge_mode=""
   branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
-  branch_name="${branch_prefix}${slug}"
   metadata_file=".ai/harness/worktrees/${slug}.json"
+  branch_name="$(read_metadata_branch "$metadata_file" || true)"
+  if [[ -z "$branch_name" ]]; then
+    branch_name="$(find_branch_for_slug "$slug" || true)"
+  fi
+  [[ -n "$branch_name" ]] || branch_name="${branch_prefix}${slug}"
   target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
   [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
 

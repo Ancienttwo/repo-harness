@@ -54,14 +54,14 @@ describe("contract-worktree runtime bootstrap: wiring", () => {
     for (const relative of COPIES) {
       const body = sourceOf(relative);
       expect(body).toContain("bootstrap_worktree_runtime() {");
-      // The call must land inside start_worktree and before the plan copy, so a
-      // worktree is usable by the time any downstream helper runs in it.
+      // The call must land inside start_worktree and before metadata is written,
+      // so a worktree is usable by the time any downstream helper runs in it.
       const start = body.indexOf("start_worktree() {");
       const call = body.indexOf('bootstrap_worktree_runtime "$worktree_path"', start);
-      const copy = body.indexOf('copy_plan_into_worktree "$plan_file" "$worktree_path"', start);
+      const metadata = body.indexOf('write_start_metadata "$slug"', start);
       expect(start).toBeGreaterThan(-1);
       expect(call).toBeGreaterThan(start);
-      expect(copy).toBeGreaterThan(call);
+      expect(metadata).toBeGreaterThan(call);
     }
   });
 
