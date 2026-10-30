@@ -386,6 +386,10 @@ In the Claude desktop app without Herdr, add `--launch app-terminal` and omit `-
 
 A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the addressed Herdr session for at most three repair rounds. Default selection uses the owner’s opposite harness; `--harness` explicitly selects Claude or Codex. Only a missing executable before start allows a reported fallback. File Results pass domain binding/finding checks and the generic-review Receipt writer/verifier before close. Terminal history is observation. Claude uses an exact result-file allowlist plus mutation fingerprints; production OS write isolation and complete large-packet ingestion remain unverified.
 
+### Bot merge
+
+A local Herdr Bot merges through the MCP `merge_pull_request` tool of the `orchestrator` profile. A cloud-only Bot runs `repo-harness publication merge` in a sandbox that has repo-harness, a working `gh auth` and a checkout. Both use the same executor. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](docs/control-bot-boundary.md#bot-modes-and-merge).
+
 ## Hooks
 
 The installed adapter binds 6 public hook routes: Claude installs 5 and Codex

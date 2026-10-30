@@ -360,6 +360,23 @@ describe("repo-harness action command skills", () => {
     expect(goal).not.toContain("backlog mode");
   });
 
+  test("issue-flow routes integrator merges through publication merge and handles each exit code", () => {
+    const skill = readSkillPackage("repo-harness-issue-flow");
+    const orchestrator = readReference("repo-harness-issue-flow", "orchestrator.md");
+    const board = readReference("repo-harness-issue-flow", "board.md");
+    const templates = readReference("repo-harness-issue-flow", "templates.md");
+
+    for (const text of [skill, orchestrator, board]) expect(text).toContain("repo-harness publication merge");
+    expect(skill).toContain("claude --agent orchestrator");
+    expect(skill).toContain("publication.acceptance_merge");
+    for (const code of ["acceptance_merge_off", "base_protection_insufficient", "merge_outcome_unknown", "provider_rejected"]) {
+      expect(orchestrator).toContain(code);
+    }
+    expect(orchestrator).toMatch(/\| 0 \|[\s\S]*\| 3 \|[\s\S]*\| 4 \|[\s\S]*\| 5 \|[\s\S]*\| 6 \|/);
+    expect(templates).toContain("Merge SHA:");
+    for (const text of [skill, orchestrator, board, templates]) expect(text).not.toContain("gh pr merge");
+  });
+
   test("product Goal mode binds native continuation to the current issue and claim", () => {
     const goal = readReference("repo-harness-product", "goal.md");
 
