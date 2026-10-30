@@ -16,7 +16,7 @@ import { CodingWorkspaceManager } from './coding-workspaces';
 import { buildMcpServerInstructions } from './instructions';
 import { authorizationProfile, getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
-import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
+import { callMcpTool, visibleMcpToolDefinitions, type McpToolContext } from './tools';
 import type { McpPolicy } from './types';
 import { repoHarnessPackageVersion } from './version';
 import { buildMcpProcessEnvironment, McpProcessSessionManager } from './process-sessions';
@@ -219,6 +219,9 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
   const ctx: McpToolContext = {
     repoRoot,
     policy,
+    // An orchestrator config written before the capability records no consent;
+    // its tokens must rerun setup before the merge surface appears.
+    publicationMergeConsented: config?.capabilities?.publicationMerge === true,
     workspaceManager: readerEnabled ? new WorkspaceManager({ allowedRoots: policyAllowedRoots, policy }) : undefined,
     enableChatgptBrowser: opts.enableChatgptBrowser === true,
   };
@@ -242,13 +245,13 @@ export function createRepoHarnessMcpServer(opts: McpServerOptions): Server {
         readerEnabled: ctx.policy.capabilities.workspaceReader,
         codingEnabled: ctx.policy.capabilities.workspaceCoder,
         taskDispatchEnabled: ctx.policy.capabilities.taskDispatch,
-        publicationMergeEnabled: ctx.policy.capabilities.publicationMerge,
+        publicationMergeEnabled: ctx.policy.capabilities.publicationMerge && ctx.publicationMergeConsented !== false,
       }),
     },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({
-    tools: buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true }),
+    tools: visibleMcpToolDefinitions(ctx),
   }));
 
   server.setRequestHandler(CallToolRequestSchema, async (request, extra) => {
