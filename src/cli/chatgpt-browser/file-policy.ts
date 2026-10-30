@@ -12,8 +12,7 @@ const READ_ALLOW_GLOBS = [
   'README.*.md',
   'package.json',
   'docs/**',
-  'plans/**',
-  'tasks/**',
+  'tasks/lessons.md',
   '.ai/context/**',
   '.ai/harness/**',
 ];
@@ -90,10 +89,9 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
   readGlobs: [],
   writeGlobs: [
     '.ai/harness/handoff/*.md',
-    'tasks/reviews/**',
     '.ai/harness/checks/**',
-    'plans/prds/**',
-    'plans/sprints/**',
+    'docs/prds/**',
+    'tasks/lessons.md',
   ],
   denyGlobs: WRITE_DENY_GLOBS,
   maxFileBytes: 0,

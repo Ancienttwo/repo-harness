@@ -141,7 +141,7 @@ function audit(ctx: McpToolContext, tool: string, status: 'ok' | 'blocked' | 'fa
 }
 
 function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; branch: string | null; workflowRoots: Array<{ path: string; exists: boolean }> } {
-  const roots = ['docs/spec.md', 'plans', '.ai/harness/handoff', '.ai/harness/checks'];
+  const roots = ['docs/spec.md', 'docs/prds', '.ai/harness/handoff', '.ai/harness/checks'];
   return {
     repoRoot,
     adopted: isRepoHarnessAdopted(repoRoot),
@@ -451,8 +451,8 @@ function workflowFileCandidates(repoRoot: string): string[] {
     'SKILL.md',
     'docs/spec.md',
     'docs/reference-configs',
-    'plans',
-    'tasks',
+    'docs/prds',
+    'tasks/lessons.md',
     '.ai/context',
     '.ai/harness/handoff',
     '.ai/harness/checks',
@@ -487,13 +487,7 @@ function timestampPrefix(date = new Date()): string {
 function prdArtifactPath(slug: string): string {
   const normalized = slugify(slug);
   const prefixed = /^\d{8}-\d{4}-/.test(normalized) ? normalized : `${timestampPrefix()}-${normalized}`;
-  return `plans/prds/${prefixed}.prd.md`;
-}
-
-function sprintArtifactPath(slug: string): string {
-  const normalized = slugify(slug);
-  const prefixed = /^\d{8}-\d{4}-/.test(normalized) ? normalized : `${timestampPrefix()}-${normalized}`;
-  return `plans/sprints/${prefixed}.sprint.md`;
+  return `docs/prds/${prefixed}.prd.md`;
 }
 
 function frontmatter(title: string, kind: string): string {
@@ -521,10 +515,6 @@ function bodyWithFrontmatter(title: string, kind: string, body: string): string 
 const GUARDED_WRITE_TOOLS: readonly string[] = [
   'write_prd',
   'write_prd_from_idea',
-  'write_sprint',
-  'write_checklist_sprint',
-  'write_plan',
-  'prepare_task_goal_from_sprint',
   'write_task_goal',
 ];
 
@@ -603,20 +593,6 @@ function writeMarkdownArtifact(
   });
 }
 
-// Canonical anti-extras clause injected into every runner-reachable surface (this
-// task-goal path, the native child context,
-// and subagent start context). Keep the first sentence byte-identical across all
-// sources; a parity test asserts they never drift apart.
-const EXECUTION_BOUNDARY = [
-  'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.',
-  '',
-  'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
-  '',
-  'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
-  '',
-  'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
-].join('\n');
-
 function validateGoal(body: string): string[] {
   return [
     '# Task Goal',
@@ -633,11 +609,6 @@ function validateGoal(body: string): string[] {
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
-}
-
-function taskObjects(value: unknown): Array<Record<string, unknown>> {
-  if (!Array.isArray(value)) return [];
-  return value.filter((entry): entry is Record<string, unknown> => typeof entry === 'object' && entry !== null && !Array.isArray(entry));
 }
 
 function renderPrdFromIdeaBody(args: Record<string, unknown>): string {
@@ -676,144 +647,18 @@ function renderPrdFromIdeaBody(args: Record<string, unknown>): string {
     '',
     '## Acceptance Criteria',
     '',
-    ...(success.length > 0 ? success.map((entry) => `- [ ] ${entry}`) : ['- [ ] The PRD can be converted into a checklist Sprint with staged verification gates.']),
+    ...(success.length > 0 ? success.map((entry) => `- [ ] ${entry}`) : ['- [ ] The PRD states reviewable acceptance criteria.']),
     '',
     '## Workflow Contract',
     '',
     '- PRD is the source of product intent.',
-    '- Sprint must be generated as ordered checklist task cards.',
+    '- The GitHub issue owns task identity and execution scope.',
     '- Codex execution must happen through a host-native `/goal` prompt or local Codex session, not through remote MCP execution.',
     '',
     '## Handoff Notes',
     '',
     notes || '- Generated from an idea through repo-harness MCP.',
   ].join('\n');
-}
-
-function renderChecklistSprintBody(args: Record<string, unknown>): string {
-  const title = String(args.title ?? 'Checklist Sprint').trim() || 'Checklist Sprint';
-  const prdPath = String(args.prd_path ?? '').trim();
-  const tasks = taskObjects(args.tasks);
-  const taskBlocks = tasks.length > 0 ? tasks.map((task, index) => {
-    const taskTitle = String(task.title ?? `Task ${index + 1}`).trim() || `Task ${index + 1}`;
-    const objective = String(task.objective ?? '').trim() || 'Complete the scoped implementation slice.';
-    const files = stringList(task.files);
-    const checks = stringList(task.checks);
-    const stageGate = String(task.stage_gate ?? '').trim() || 'Update this checklist, run relevant checks, and stage the completed slice before continuing.';
-    return [
-      `### Task Card ${index + 1}: ${taskTitle}`,
-      '',
-      `- [ ] Objective: ${objective}`,
-      `- [ ] Files/entrypoints: ${files.length > 0 ? files.map((entry) => `\`${entry}\``).join(', ') : 'TBD during execution'}`,
-      `- [ ] Verification: ${checks.length > 0 ? checks.map((entry) => `\`${entry}\``).join(', ') : 'Focused check for this slice'}`,
-      `- [ ] Stage gate: ${stageGate}`,
-    ].join('\n');
-  }) : [
-    [
-      '### Task Card 1: Plan the first implementation slice',
-      '',
-      '- [ ] Objective: Derive the first concrete implementation slice from the PRD.',
-      '- [ ] Files/entrypoints: TBD during execution',
-      '- [ ] Verification: Focused check for this slice',
-      '- [ ] Stage gate: Update this checklist, run relevant checks, and stage the completed slice before continuing.',
-    ].join('\n'),
-  ];
-
-  return [
-    `# ${title}`,
-    '',
-    '> **Status**: Draft',
-    '',
-    '## Source',
-    '',
-    `- PRD: \`${prdPath || 'TBD'}\``,
-    '',
-    '## Execution Rule',
-    '',
-    '- Execute task cards in order.',
-    '- Keep each task card reviewable as one staged slice.',
-    '- After every completed phase, update the checklist and stage the result before continuing.',
-    '- Do not treat unstaged work as a completed phase.',
-    '',
-    '## Checklist',
-    '',
-    ...taskBlocks.flatMap((block) => [block, '']),
-    '## Final Acceptance',
-    '',
-    '- [ ] All task cards are checked.',
-    '- [ ] Required checks pass.',
-    '- [ ] Handoff explains staged state, residual risks, and next bottleneck if any.',
-  ].join('\n').trimEnd() + '\n';
-}
-
-function renderTaskGoalFromSprint(args: Record<string, unknown>): { body: string; prompt: string } {
-  const prdPath = String(args.prd_path ?? '').trim();
-  const sprintPath = String(args.sprint_path ?? '').trim();
-  const goalPrdPath = String(args.goal_prd_path ?? prdPath).trim() || prdPath;
-  const goalSprintPath = String(args.goal_sprint_path ?? sprintPath).trim() || sprintPath;
-  const referenceRepo = String(args.reference_repo ?? '').trim();
-  const extraInstructions = String(args.extra_instructions ?? '').trim();
-  const prompt = [
-    `Read: ${goalPrdPath}`,
-    `Open or use a worktree and complete: ${goalSprintPath}`,
-    'After each completed phase, stage the result before continuing.',
-    'Use the user\'s language for status reports unless repo-local instructions require otherwise.',
-    referenceRepo ? `Reference repo: ${referenceRepo}` : '',
-  ].filter(Boolean).join('\n');
-  const body = [
-    '# Task Goal',
-    '',
-    '## Source of truth',
-    '',
-    `- PRD: \`${goalPrdPath}\``,
-    `- Checklist Sprint: \`${goalSprintPath}\``,
-    ...(referenceRepo ? [`- Reference repo: \`${referenceRepo}\` (read-only comparison source)`] : []),
-    '',
-    '## Role',
-    '',
-    'The task-owned Herdr agent is the executor. Planning artifacts do not widen its task scope or authority.',
-    '',
-    '## Scope',
-    '',
-    '- Open or use an isolated worktree for the sprint implementation.',
-    '- Execute the checklist Sprint task cards in order.',
-    '- Update the Sprint checklist as phases complete.',
-    '- Stage each completed phase before continuing to the next phase.',
-    '- Do not modify the reference repo or ignored secrets/ops state.',
-    '',
-    '## Execution boundary',
-    '',
-    EXECUTION_BOUNDARY,
-    '',
-    '## Required workflow',
-    '',
-    '1. Read the PRD and Sprint paths above before editing.',
-    '2. Build the P1/P2/P3 map required by repo-local AGENTS.md for non-trivial changes.',
-    '3. Execute one checklist task card at a time.',
-    '4. After each phase, run the relevant focused checks, update the checklist, and stage the completed slice.',
-    '5. Continue until the Sprint checklist is complete or a real blocker is reached.',
-    '6. Leave a concise handoff with staged state and verification evidence.',
-    ...(extraInstructions ? ['', extraInstructions] : []),
-    '',
-    '## Required checks',
-    '',
-    '- Run the checks named by the Sprint task card.',
-    '- At sprint closeout, run repo-required checks unless the Sprint narrows the verification surface with a stated reason.',
-    '',
-    '## Done when',
-    '',
-    '- The checklist Sprint is complete.',
-    '- Every completed phase is staged.',
-    '- Checks pass or failures are documented with exact blocker evidence.',
-    '- No commit is created unless the user explicitly asks for commit.',
-    '',
-    '## Task execution prompt',
-    '',
-    '```text',
-    prompt,
-    '```',
-  ].join('\n');
-  return { body, prompt };
 }
 
 function parseBrowserProvider(value: unknown): BrowserProviderName | undefined {
@@ -900,48 +745,6 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     required: ['title', 'slug', 'idea'],
     additionalProperties: false,
   };
-  const checklistSprintSchema = {
-    type: 'object',
-    properties: {
-      repo_path: { type: 'string' },
-      title: { type: 'string' },
-      slug: { type: 'string' },
-      prd_path: { type: 'string' },
-      tasks: {
-        type: 'array',
-        items: {
-          type: 'object',
-          properties: {
-            title: { type: 'string' },
-            objective: { type: 'string' },
-            files: { type: 'array', items: { type: 'string' } },
-            checks: { type: 'array', items: { type: 'string' } },
-            stage_gate: { type: 'string' },
-          },
-          required: ['title', 'objective'],
-          additionalProperties: false,
-        },
-      },
-      expected_sha256: { type: 'string' },
-    },
-    required: ['title', 'slug', 'prd_path', 'tasks'],
-    additionalProperties: false,
-  };
-  const goalFromSprintSchema = {
-    type: 'object',
-    properties: {
-      repo_path: { type: 'string' },
-      prd_path: { type: 'string' },
-      sprint_path: { type: 'string' },
-      goal_prd_path: { type: 'string' },
-      goal_sprint_path: { type: 'string' },
-      reference_repo: { type: 'string' },
-      extra_instructions: { type: 'string' },
-      expected_sha256: { type: 'string' },
-    },
-    required: ['prd_path', 'sprint_path'],
-    additionalProperties: false,
-  };
   const browserRunSchema = {
     type: 'object',
     properties: {
@@ -978,17 +781,12 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'read_workflow_file', description: 'Read one policy-allowed workflow file path from the current or target registered repo.', inputSchema: stringPathSchema, annotations: readOnly },
     { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
-    { name: 'list_prds', description: 'List PRD artifacts under plans/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
-    { name: 'list_sprints', description: 'List sprint artifacts under plans/sprints.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'list_prds', description: 'List PRD artifacts under docs/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
     ...buildStateToolDefinitions(),
     ...buildFleetToolDefinitions(),
     ...mergeTools,
-    { name: 'write_prd', description: 'Write a PRD under plans/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
-    { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under plans/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
-    { name: 'write_sprint', description: 'Write a sprint under plans/sprints/*.sprint.md.', inputSchema: markdownWriterSchema, annotations: write },
-    { name: 'write_checklist_sprint', description: 'Turn a PRD into an ordered checklist Sprint with per-phase staging gates.', inputSchema: checklistSprintSchema, annotations: write },
-    { name: 'write_plan', description: 'Write an implementation plan under plans/plan-*.md.', inputSchema: markdownWriterSchema, annotations: write },
-    { name: 'prepare_task_goal_from_sprint', description: 'Prepare .ai/harness/handoff/task-goal.md and a task execution prompt from PRD + checklist Sprint.', inputSchema: goalFromSprintSchema, annotations: write },
+    { name: 'write_prd', description: 'Write a PRD under docs/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
+    { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under docs/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
     {
       name: 'write_task_goal',
       description: 'Write .ai/harness/handoff/task-goal.md after required section validation.',
@@ -1091,7 +889,7 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
     }
     if (name === 'prepare_codex_goal_from_sprint' || name === 'write_codex_goal') {
-      return errorResult('TOOL_RETIRED', `Upgrade to ${name === 'write_codex_goal' ? 'write_task_goal' : 'prepare_task_goal_from_sprint'}; the retired tool has no alias.`);
+      return errorResult('TOOL_RETIRED', `Upgrade to write_task_goal or repo-harness mcp prepare-goal --issue <n>; the retired tool has no alias.`);
     }
     if (isCodingTool(name) && ctx.policy.capabilities.workspaceCoder) {
       return callCodingTool(codingContext(ctx), name, args);
@@ -1234,13 +1032,11 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         audit(ctx, name, 'ok', args);
         return textResult({ files });
       }
-      case 'list_prds':
-      case 'list_sprints': {
+      case 'list_prds': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
-        const root = name === 'list_prds' ? 'plans/prds' : 'plans/sprints';
         const files: string[] = [];
-        listFilesUnder(target.repoRoot, root, 200, files);
+        listFilesUnder(target.repoRoot, 'docs/prds', 200, files);
         audit(ctx, name, 'ok', args);
         return textResult({ files: files.map((path) => fileSummary(path, target.repoRoot)).filter(Boolean) });
       }
@@ -1258,60 +1054,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const slug = slugify(String(args.slug ?? title));
         const body = renderPrdFromIdeaBody(args);
         return writeMarkdownArtifact(ctx, target.repoRoot, name, prdArtifactPath(slug), title, 'prd', body, expectedSha256Arg(args), args);
-      }
-      case 'write_sprint': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const title = String(args.title ?? '').trim();
-        const slug = slugify(String(args.slug ?? title));
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, sprintArtifactPath(slug), title, 'sprint', String(args.body ?? ''), expectedSha256Arg(args), args);
-      }
-      case 'write_checklist_sprint': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const title = String(args.title ?? '').trim();
-        const slug = slugify(String(args.slug ?? title));
-        const prdPath = String(args.prd_path ?? '').trim();
-        const prdDecision = resolveMcpPath(target.repoRoot, prdPath, ctx.policy, 'read');
-        if (!prdDecision.ok || !prdDecision.absolutePath || !existsSync(prdDecision.absolutePath)) {
-          audit(ctx, name, 'blocked', args, prdPath, prdDecision.reason ?? 'PRD path does not exist or is not readable');
-          return errorResult('PRD_NOT_READABLE', 'PRD path does not exist or is not policy-readable.', { path: prdPath });
-        }
-        const body = renderChecklistSprintBody(args);
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, sprintArtifactPath(slug), title, 'sprint', body, expectedSha256Arg(args), args);
-      }
-      case 'write_plan': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const title = String(args.title ?? '').trim();
-        const slug = slugify(String(args.slug ?? title));
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, `plans/plan-${slug}.md`, title, 'plan', String(args.body ?? ''), expectedSha256Arg(args), args);
-      }
-      case 'prepare_task_goal_from_sprint': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const prdPath = String(args.prd_path ?? '').trim();
-        const sprintPath = String(args.sprint_path ?? '').trim();
-        const missingInputs = [
-          { label: 'PRD', path: prdPath },
-          { label: 'Sprint', path: sprintPath },
-        ].filter((entry) => {
-          const decision = resolveMcpPath(target.repoRoot, entry.path, ctx.policy, 'read');
-          return !decision.ok || !decision.absolutePath || !existsSync(decision.absolutePath);
-        });
-        if (missingInputs.length > 0) {
-          audit(ctx, name, 'blocked', args, missingInputs[0]?.path, `${missingInputs.map((entry) => entry.label).join(', ')} path does not exist or is not readable`);
-          return errorResult('SOURCE_NOT_READABLE', 'PRD or Sprint path does not exist or is not policy-readable.', { missing: missingInputs });
-        }
-        const goal = renderTaskGoalFromSprint(args);
-        const missing = validateGoal(goal.body);
-        if (missing.length > 0) {
-          audit(ctx, name, 'blocked', args, '.ai/harness/handoff/task-goal.md', `missing required goal sections: ${missing.join(', ')}`);
-          return errorResult('INVALID_GOAL', 'Generated task goal is missing required sections.', { missing });
-        }
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/task-goal.md', 'Task Goal', 'task-goal', goal.body, expectedSha256Arg(args), args, {
-          prompt: goal.prompt,
-        });
       }
       case 'write_task_goal': {
         const target = targetRepoRoot(ctx, args);

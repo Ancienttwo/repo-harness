@@ -12,13 +12,11 @@ async function withRepo<T>(fn: (repoRoot: string, ctx: McpToolContext) => Promis
   try {
     mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
     mkdirSync(join(repoRoot, '.ai/harness/checks'), { recursive: true });
-    mkdirSync(join(repoRoot, 'plans/prds'), { recursive: true });
-    mkdirSync(join(repoRoot, 'plans/sprints'), { recursive: true });
+    mkdirSync(join(repoRoot, 'docs/prds'), { recursive: true });
     mkdirSync(join(repoRoot, 'tasks'), { recursive: true });
     writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
-    writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
-    writeFileSync(join(repoRoot, 'plans/prds/existing.prd.md'), '# Existing\n');
-    writeFileSync(join(repoRoot, 'plans/sprints/example.sprint.md'), '# Sprint\n');
+    writeFileSync(join(repoRoot, 'tasks/lessons.md'), '# Lessons\n\nstatus=Active\n');
+    writeFileSync(join(repoRoot, 'docs/prds/existing.prd.md'), '# Existing\n');
     const policy = getMcpPolicy('planner', {
       enableReader: true,
       allowedRoots: [repoRoot],
@@ -111,7 +109,7 @@ describe('mcp tools', () => {
       const browserCtx = { ...ctx, enableChatgptBrowser: true };
       const created = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
         prompt: 'Review this sprint.',
-        files: ['plans/sprints/example.sprint.md'],
+        files: ['docs/prds/existing.prd.md'],
         model: 'GPT-5.5 Pro',
         thinking: 'pro',
         dryRun: true,
@@ -154,21 +152,21 @@ describe('mcp tools', () => {
 
       const allowed = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
         prompt: 'Review this sprint.',
-        writeOutput: 'plans/sprints/browser-review.md',
+        writeOutput: 'docs/prds/browser-review.md',
         dryRun: true,
       });
       expect(allowed.status).toBe('dry_run');
-      expect(readFileSync(join(repoRoot, 'plans/sprints/browser-review.md'), 'utf-8')).toContain('Dry run only');
+      expect(readFileSync(join(repoRoot, 'docs/prds/browser-review.md'), 'utf-8')).toContain('Dry run only');
     });
   });
 
   test('lists and reads allowed workflow files with redaction', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const listed = await jsonTool(ctx, 'list_workflow_files');
-      expect(listed.files.some((entry: { path: string }) => entry.path === 'tasks/current.md')).toBe(true);
+      expect(listed.files.some((entry: { path: string }) => entry.path === 'tasks/lessons.md')).toBe(true);
 
-      const read = await jsonTool(ctx, 'read_workflow_file', { path: 'tasks/current.md' });
-      expect(read.path).toBe('tasks/current.md');
+      const read = await jsonTool(ctx, 'read_workflow_file', { path: 'tasks/lessons.md' });
+      expect(read.path).toBe('tasks/lessons.md');
       expect(read.content).toContain('status=Active');
 
       const denied = await jsonTool(ctx, 'read_workflow_file', { path: '.env' });
@@ -205,7 +203,10 @@ describe('mcp tools', () => {
 
       const toolNames = buildMcpToolDefinitions(ctx.policy).map((tool) => tool.name);
       expect(toolNames).toContain('write_prd');
-      expect(toolNames).toContain('prepare_task_goal_from_sprint');
+      expect(toolNames).toContain('list_prds');
+      for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {
+        expect(toolNames).not.toContain(removed);
+      }
       expect(toolNames).toContain('reader_status');
       expect(toolNames).toContain('list_allowed_roots');
       expect(toolNames).toContain('open_workspace');
@@ -273,11 +274,11 @@ describe('mcp tools', () => {
       const repoRoot = join(scanRoot, 'workspace', 'agentic-dev');
       try {
         mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
-        mkdirSync(join(repoRoot, 'plans/prds'), { recursive: true });
+        mkdirSync(join(repoRoot, 'docs/prds'), { recursive: true });
         mkdirSync(join(repoRoot, 'tasks'), { recursive: true });
         writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
         writeFileSync(join(repoRoot, '.ai/harness/handoff/resume.md'), '# Resume\n\nready\n');
-        writeFileSync(join(repoRoot, 'tasks/current.md'), 'status=Active\n');
+        writeFileSync(join(repoRoot, 'tasks/lessons.md'), '# Lessons\n\nstatus=Active\n');
         registerRepoHarnessRepo(repoRoot, 'init');
         const canonicalRepoRoot = realpathSync(repoRoot);
 
@@ -322,10 +323,10 @@ describe('mcp tools', () => {
         const aliasResume = aliasHandoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
         expect(aliasResume).toMatchObject({ exists: true });
 
-        const current = await jsonTool(ctx, 'read_workflow_file', { repo_path: repoRoot, path: 'tasks/current.md' });
+        const current = await jsonTool(ctx, 'read_workflow_file', { repo_path: repoRoot, path: 'tasks/lessons.md' });
         expect(current.content).toContain('status=Active');
 
-        const aliasCurrent = await jsonTool(ctx, 'read_workflow_file', { repo_path: 'agentic-dev/', path: 'tasks/current.md' });
+        const aliasCurrent = await jsonTool(ctx, 'read_workflow_file', { repo_path: 'agentic-dev/', path: 'tasks/lessons.md' });
         expect(aliasCurrent.content).toContain('status=Active');
 
         const prd = await jsonTool(ctx, 'write_prd', {
@@ -335,6 +336,7 @@ describe('mcp tools', () => {
           body: '# Registered Repo Feature\n\nBody.',
         });
         expect(prd.repoRoot).toBe(canonicalRepoRoot);
+        expect(prd.path).toMatch(/^docs\/prds\/\d{8}-\d{4}-registered-repo-feature\.prd\.md$/);
         expect(existsSync(join(repoRoot, prd.path))).toBe(true);
 
         const siblingRoot = join(scanRoot, 'sibling');
@@ -358,12 +360,12 @@ describe('mcp tools', () => {
         body: '# New Feature\n\nBody.',
       });
       expect(prd.status).toBe('written');
-      expect(prd.path).toMatch(/^plans\/prds\/\d{8}-\d{4}-new-feature\.prd\.md$/);
+      expect(prd.path).toMatch(/^docs\/prds\/\d{8}-\d{4}-new-feature\.prd\.md$/);
       expect(prd.sha256).toMatch(/^[0-9a-f]{64}$/);
       expect(prd.previousSha256).toBeNull();
       expect(existsSync(join(repoRoot, prd.path))).toBe(true);
 
-      const existingSlug = prd.path.replace(/^plans\/prds\//, '').replace(/\.prd\.md$/, '');
+      const existingSlug = prd.path.replace(/^docs\/prds\//, '').replace(/\.prd\.md$/, '');
       const blocked = await jsonTool(ctx, 'write_prd', {
         title: 'New Feature',
         slug: existingSlug,
@@ -385,19 +387,17 @@ describe('mcp tools', () => {
       expect(JSON.stringify(stale)).not.toContain(prd.sha256);
       expect(readFileSync(join(repoRoot, prd.path), 'utf-8')).toContain('\nBody.');
 
-      const sprint = await jsonTool(ctx, 'write_sprint', {
-        title: 'Sprint',
-        slug: 'sprint-one',
-        body: '# Sprint\n\nBody.',
+      const ideaPrd = await jsonTool(ctx, 'write_prd_from_idea', {
+        title: 'Idea Feature',
+        slug: 'idea-feature',
+        idea: 'Write the idea as a PRD under docs/prds.',
       });
-      expect(sprint.path).toMatch(/^plans\/sprints\/\d{8}-\d{4}-sprint-one\.sprint\.md$/);
+      expect(ideaPrd.path).toMatch(/^docs\/prds\/\d{8}-\d{4}-idea-feature\.prd\.md$/);
+      expect(readFileSync(join(repoRoot, ideaPrd.path), 'utf-8')).toContain('## Workflow Contract');
+      expect(readFileSync(join(repoRoot, ideaPrd.path), 'utf-8')).not.toContain('checklist Sprint');
 
-      const plan = await jsonTool(ctx, 'write_plan', {
-        title: 'Plan',
-        slug: 'plan-one',
-        body: '# Plan\n\nBody.',
-      });
-      expect(plan.path).toBe('plans/plan-plan-one.md');
+      const listed = await jsonTool(ctx, 'list_prds');
+      expect(listed.files.map((entry: { path: string }) => entry.path)).toContain('docs/prds/existing.prd.md');
 
       const handoff = await jsonTool(ctx, 'append_handoff_note', { actor: 'test', body: 'handoff note' });
       expect(handoff.path).toBe('.ai/harness/handoff/chatgpt-plan.md');
@@ -407,19 +407,20 @@ describe('mcp tools', () => {
 
   test('round-trips read_workflow_file sha256 back through expected_sha256', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      const created = await jsonTool(ctx, 'write_plan', {
+      const created = await jsonTool(ctx, 'write_prd', {
         title: 'Round Trip',
-        slug: 'round-trip',
+        slug: '20260101-0000-round-trip',
         body: '# Round Trip\n\nFirst revision.',
       });
       expect(created.status).toBe('written');
+      expect(created.path).toBe('docs/prds/20260101-0000-round-trip.prd.md');
 
       const read = await jsonTool(ctx, 'read_workflow_file', { path: created.path });
       expect(read.sha256).toBe(created.sha256);
 
-      const replaced = await jsonTool(ctx, 'write_plan', {
+      const replaced = await jsonTool(ctx, 'write_prd', {
         title: 'Round Trip',
-        slug: 'round-trip',
+        slug: '20260101-0000-round-trip',
         body: '# Round Trip\n\nSecond revision.',
         expected_sha256: read.sha256,
       });
@@ -431,30 +432,30 @@ describe('mcp tools', () => {
       const reread = await jsonTool(ctx, 'read_workflow_file', { path: created.path });
       expect(reread.sha256).toBe(replaced.sha256);
 
-      const absent = await jsonTool(ctx, 'write_plan', {
+      const absent = await jsonTool(ctx, 'write_prd', {
         title: 'Never Written',
-        slug: 'never-written',
+        slug: '20260101-0000-never-written',
         body: '# Never Written\n\nBody.',
         expected_sha256: read.sha256,
       });
       expect(absent.error.code).toBe('REVISION_CONFLICT');
       expect(absent.error.details.reason).toBe('target_absent');
-      expect(existsSync(join(repoRoot, 'plans/plan-never-written.md'))).toBe(false);
+      expect(existsSync(join(repoRoot, 'docs/prds/20260101-0000-never-written.prd.md'))).toBe(false);
     });
   });
 
   test('two racing writes on one revision produce exactly one winner', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      const created = await jsonTool(ctx, 'write_plan', {
+      const created = await jsonTool(ctx, 'write_prd', {
         title: 'Race',
-        slug: 'race',
+        slug: '20260101-0000-race',
         body: '# Race\n\nBase revision.',
       });
       const base = created.sha256;
 
       const [first, second] = await Promise.all([
-        callMcpTool(ctx, 'write_plan', { title: 'Race', slug: 'race', body: '# Race\n\nWriter A.', expected_sha256: base }),
-        callMcpTool(ctx, 'write_plan', { title: 'Race', slug: 'race', body: '# Race\n\nWriter B.', expected_sha256: base }),
+        callMcpTool(ctx, 'write_prd', { title: 'Race', slug: '20260101-0000-race', body: '# Race\n\nWriter A.', expected_sha256: base }),
+        callMcpTool(ctx, 'write_prd', { title: 'Race', slug: '20260101-0000-race', body: '# Race\n\nWriter B.', expected_sha256: base }),
       ]).then((results) => results.map((result) => JSON.parse(result.content[0].text)));
 
       const written = [first, second].filter((entry) => entry.status === 'written');
@@ -470,31 +471,31 @@ describe('mcp tools', () => {
 
   test('cross-process guarded writes serialize revision checks and create-only claims', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      const created = await jsonTool(ctx, 'write_plan', {
+      const created = await jsonTool(ctx, 'write_prd', {
         title: 'Process Race',
-        slug: 'process-race',
+        slug: '20260101-0000-process-race',
         body: '# Process Race\n\nBase revision.',
       });
       const replacements = await runGuardedWriteRace(repoRoot, created.path, created.sha256);
       expect(replacements.filter((entry) => entry.ok === true)).toHaveLength(1);
       expect(replacements.filter((entry) => entry.code === 'REVISION_CONFLICT')).toHaveLength(1);
       expect(['writer-a\n', 'writer-b\n']).toContain(readFileSync(join(repoRoot, created.path), 'utf-8'));
-      expect(existsSync(join(repoRoot, 'plans', '.plan-process-race.md.repo-harness.lock'))).toBe(false);
+      expect(existsSync(join(repoRoot, 'docs/prds', '.20260101-0000-process-race.prd.md.repo-harness.lock'))).toBe(false);
 
-      const createPath = 'plans/plan-process-create.md';
+      const createPath = 'docs/prds/20260101-0000-process-create.prd.md';
       const creates = await runGuardedWriteRace(repoRoot, createPath, undefined);
       expect(creates.filter((entry) => entry.ok === true)).toHaveLength(1);
       expect(creates.filter((entry) => entry.code === 'WOULD_OVERWRITE')).toHaveLength(1);
       expect(['writer-a\n', 'writer-b\n']).toContain(readFileSync(join(repoRoot, createPath), 'utf-8'));
-      expect(existsSync(join(repoRoot, 'plans', '.plan-process-create.md.repo-harness.lock'))).toBe(false);
+      expect(existsSync(join(repoRoot, 'docs/prds', '.20260101-0000-process-create.prd.md.repo-harness.lock'))).toBe(false);
     });
   });
 
   test('rejects the retired overwrite parameter and any undeclared parameter server-side', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      const retired = await jsonTool(ctx, 'write_plan', {
+      const retired = await jsonTool(ctx, 'write_prd', {
         title: 'Retired',
-        slug: 'retired',
+        slug: '20260101-0000-retired',
         body: '# Retired\n\nBody.',
         overwrite: true,
       });
@@ -502,25 +503,22 @@ describe('mcp tools', () => {
       expect(retired.error.message).toContain('expected_sha256');
       expect(retired.error.message).toContain('0.16.1');
       expect(retired.error.details).toMatchObject({ retired: 'overwrite', replacement: 'expected_sha256' });
-      expect(existsSync(join(repoRoot, 'plans/plan-retired.md'))).toBe(false);
+      expect(existsSync(join(repoRoot, 'docs/prds/20260101-0000-retired.prd.md'))).toBe(false);
 
-      const unknown = await jsonTool(ctx, 'write_plan', {
+      const unknown = await jsonTool(ctx, 'write_prd', {
         title: 'Unknown',
-        slug: 'unknown',
+        slug: '20260101-0000-unknown',
         body: '# Unknown\n\nBody.',
         force_write: true,
       });
       expect(unknown.error.code).toBe('UNKNOWN_PARAMETER');
       expect(unknown.error.details.unknown).toEqual(['force_write']);
       expect(unknown.error.details.allowed).toContain('expected_sha256');
-      expect(existsSync(join(repoRoot, 'plans/plan-unknown.md'))).toBe(false);
+      expect(existsSync(join(repoRoot, 'docs/prds/20260101-0000-unknown.prd.md'))).toBe(false);
 
       for (const tool of [
         'write_prd',
         'write_prd_from_idea',
-        'write_sprint',
-        'write_checklist_sprint',
-        'prepare_task_goal_from_sprint',
         'write_task_goal',
       ]) {
         const rejected = await jsonTool(ctx, tool, { overwrite: false });
@@ -534,10 +532,6 @@ describe('mcp tools', () => {
       const guarded = [
         'write_prd',
         'write_prd_from_idea',
-        'write_sprint',
-        'write_checklist_sprint',
-        'write_plan',
-        'prepare_task_goal_from_sprint',
         'write_task_goal',
       ];
       const definitions = buildMcpToolDefinitions(ctx.policy);
@@ -559,25 +553,25 @@ describe('mcp tools', () => {
 
   test('refuses to write through a symlinked workflow artifact target', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      const protectedPath = join(repoRoot, 'tasks/current.md');
-      symlinkSync(protectedPath, join(repoRoot, 'plans/plan-symlinked.md'));
+      const protectedPath = join(repoRoot, 'tasks/lessons.md');
+      symlinkSync(protectedPath, join(repoRoot, 'docs/prds/20260101-0000-symlinked.prd.md'));
 
-      const result = await jsonTool(ctx, 'write_plan', {
+      const result = await jsonTool(ctx, 'write_prd', {
         title: 'Symlinked',
-        slug: 'symlinked',
+        slug: '20260101-0000-symlinked',
         body: '# Symlinked\n\nClobber attempt.',
       });
 
       expect(result.error.code).toBe('SYMLINK_ESCAPE');
-      expect(readFileSync(protectedPath, 'utf-8')).toBe('status=Active\n');
+      expect(readFileSync(protectedPath, 'utf-8')).toBe('# Lessons\n\nstatus=Active\n');
     });
   });
 
   test('blocks oversized workflow reads', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      writeFileSync(join(repoRoot, 'plans/prds/large.prd.md'), 'x'.repeat(32));
+      writeFileSync(join(repoRoot, 'docs/prds/large.prd.md'), 'x'.repeat(32));
       const smallLimit = { ...ctx, policy: { ...ctx.policy, maxFileBytes: 8 } };
-      const result = await jsonTool(smallLimit, 'read_workflow_file', { path: 'plans/prds/large.prd.md' });
+      const result = await jsonTool(smallLimit, 'read_workflow_file', { path: 'docs/prds/large.prd.md' });
       expect(result.error.code).toBe('FILE_TOO_LARGE');
     });
   });
@@ -590,13 +584,13 @@ describe('mcp tools', () => {
       const missingExecutionBoundary = [
         '# Task Goal',
         '## Source of truth',
-        'plans/prds/example.prd.md',
+        'docs/prds/example.prd.md',
         '## Role',
         'Codex executor.',
         '## Scope',
         'Only workflow artifacts.',
         '## Required workflow',
-        'Read PRD and sprint.',
+        'Read the issue and PRD.',
         '## Required checks',
         'bun test tests/cli/mcp.test.ts',
         '## Done when',
@@ -609,7 +603,7 @@ describe('mcp tools', () => {
       const validBody = [
         '# Task Goal',
         '## Source of truth',
-        'plans/prds/example.prd.md',
+        'docs/prds/example.prd.md',
         '## Role',
         'Codex executor.',
         '## Scope',
@@ -617,7 +611,7 @@ describe('mcp tools', () => {
         '## Execution boundary',
         'Implement exactly the listed scope; do not add unrequested extras.',
         '## Required workflow',
-        'Read PRD and sprint.',
+        'Read the issue and PRD.',
         '## Required checks',
         'bun test tests/cli/mcp.test.ts',
         '## Done when',
@@ -629,61 +623,28 @@ describe('mcp tools', () => {
     });
   });
 
-  test('supports idea to PRD to checklist Sprint to task goal handoff', async () => {
+  test('writes an idea PRD under docs/prds and makes retired plan and sprint tools unknown', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const prd = await jsonTool(ctx, 'write_prd_from_idea', {
         title: 'Goal Chain',
-        slug: 'goal-chain',
-        idea: 'Convert idea to PRD, checklist Sprint, and task-owned Herdr handoff.',
+        slug: '20260101-0000-goal-chain',
+        idea: 'Convert an idea into a PRD and an issue-based goal.',
         users: ['ChatGPT planner', 'Codex executor'],
         goals: ['Generate reviewable workflow artifacts'],
-        success_criteria: ['Codex receives a staged checklist Sprint execution prompt'],
+        success_criteria: ['The PRD states reviewable acceptance criteria'],
       });
-      expect(prd.path).toMatch(/^plans\/prds\/\d{8}-\d{4}-goal-chain\.prd\.md$/);
+      expect(prd.path).toBe('docs/prds/20260101-0000-goal-chain.prd.md');
       const prdContent = readFileSync(join(repoRoot, prd.path), 'utf-8');
       expect(prdContent).toContain('> **Status**: Draft');
       expect(prdContent).toContain('## Workflow Contract');
+      expect(prdContent).not.toContain('checklist Sprint');
 
-      const sprint = await jsonTool(ctx, 'write_checklist_sprint', {
-        title: 'Goal Chain Sprint',
-        slug: 'goal-chain-sprint',
-        prd_path: prd.path,
-        tasks: [
-          {
-            title: 'Implement chain surface',
-            objective: 'Expose the idea to PRD to checklist Sprint to Goal route.',
-            files: ['src/cli/mcp/tools.ts'],
-            checks: ['bun test tests/cli/mcp-tools.test.ts'],
-            stage_gate: 'Stage MCP tool changes before continuing.',
-          },
-        ],
-      });
-      expect(sprint.path).toMatch(/^plans\/sprints\/\d{8}-\d{4}-goal-chain-sprint\.sprint\.md$/);
-      const sprintContent = readFileSync(join(repoRoot, sprint.path), 'utf-8');
-      expect(sprintContent).toContain('### Task Card 1: Implement chain surface');
-      expect(sprintContent).toContain('- [ ] Stage gate: Stage MCP tool changes before continuing.');
-
-      const goal = await jsonTool(ctx, 'prepare_task_goal_from_sprint', {
-        prd_path: prd.path,
-        sprint_path: sprint.path,
-        reference_repo: '/tmp/reference-repo',
-      });
-      expect(goal.status).toBe('written');
-      expect(goal.path).toBe('.ai/harness/handoff/task-goal.md');
-      expect(goal.prompt).not.toContain('/goal');
-      expect(goal.prompt).toContain(`Read: ${prd.path}`);
-      expect(goal.prompt).toContain(`Open or use a worktree and complete: ${sprint.path}`);
-      expect(goal.prompt).toContain('After each completed phase, stage the result before continuing.');
-      expect(goal.prompt).toContain("Use the user's language for status reports unless repo-local instructions require otherwise.");
-      expect(goal.prompt).not.toContain('阅读：');
-      expect(goal.prompt).not.toContain('开worktree完整执行');
-      const goalContent = readFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), 'utf-8');
-      expect(goalContent).toContain('## Task execution prompt');
-      expect(goalContent).toContain('No commit is created unless the user explicitly asks for commit.');
-      expect(goalContent).toContain('## Execution boundary');
-      expect(goalContent).toContain(
-        'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief.',
-      );
+      const toolNames = buildMcpToolDefinitions(ctx.policy).map((tool) => tool.name);
+      for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {
+        expect(toolNames).not.toContain(removed);
+        const call = await jsonTool(ctx, removed, {});
+        expect(call.error.code).toBe('UNKNOWN_TOOL');
+      }
     });
   });
 
@@ -692,7 +653,7 @@ describe('mcp tools', () => {
       const validBody = [
         '# Task Goal',
         '## Source of truth',
-        'plans/prds/example.prd.md',
+        'docs/prds/example.prd.md',
         '## Role',
         'Codex executor.',
         '## Scope',
@@ -700,7 +661,7 @@ describe('mcp tools', () => {
         '## Execution boundary',
         'Implement exactly the listed scope; do not add unrequested extras.',
         '## Required workflow',
-        'Read PRD and sprint.',
+        'Read the issue and PRD.',
         '## Required checks',
         'bun test tests/cli/mcp.test.ts',
         '## Done when',
@@ -723,7 +684,7 @@ describe('mcp tools', () => {
   test('latest_checks is not starved by large earlier workflow roots', async () => {
     await withRepo(async (repoRoot, ctx) => {
       for (let index = 0; index < 720; index += 1) {
-        writeFileSync(join(repoRoot, 'plans/prds', `bulk-${String(index).padStart(3, '0')}.prd.md`), '# Bulk\n');
+        writeFileSync(join(repoRoot, 'docs/prds', `bulk-${String(index).padStart(3, '0')}.prd.md`), '# Bulk\n');
       }
       writeFileSync(join(repoRoot, '.ai/harness/checks/change-assessment.latest.json'), '{"ok":true}\n');
 

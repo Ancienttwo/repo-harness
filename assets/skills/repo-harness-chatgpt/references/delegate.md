@@ -36,7 +36,7 @@ access by using this mode.
    (`repo-harness chatgpt browser-consult --secret-scan --file <path>`,
    repeatable; every included file is hashed with SHA-256):
    1. Allowed read paths: `AGENTS.md`, `CLAUDE.md`, `README.md`,
-      `README.*.md`, `package.json`, `docs/**`, `plans/**`, `tasks/**`,
+      `README.*.md`, `package.json`, `docs/**`, `tasks/lessons.md`,
       `.ai/context/**`, `.ai/harness/**`. Denied read paths: `.env`,
       `.env.*`, `*.pem`, `*.key`, `*.p12`, `*.pfx`, `.ssh/**`, `.git/**`,
       `node_modules/**`, `dist/**`, `build/**`, `coverage/**`, `secrets/**`,
