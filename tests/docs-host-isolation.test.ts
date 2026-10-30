@@ -129,7 +129,7 @@ async function seedFixture(): Promise<Fixture> {
   const { proxy } = await startLocalProxy(echoPort);
   const node = resolveNode();
   const admission: DocsHostAdmission = {
-    runtime: 'codex', worktree, control, operatorHome: home, stateHome: state, node, executable: node,
+    purpose: 'docs', runtime: 'codex', worktree, control, operatorHome: home, stateHome: state, node, executable: node,
     developerDirectory: docsHostDeveloperDirectory(), proxyPort: proxy.port,
   };
   return { root, primary, worktree, control, home, state, remote, admission, proxy, consolePort, echoPort };
@@ -574,4 +574,24 @@ darwinTest('the shared writable-path predicate agrees with the actual Seatbelt f
     { encoding: 'utf8', timeout: 15_000, env: docsHostEnvironment(scratch, f.proxy.port) });
   expect(result.status, result.stderr).toBe(0);
   expect(JSON.parse(result.stdout)).toEqual(paths.map(isDocsHostWritablePath));
+}, 60_000);
+
+
+darwinTest('cleanup host refuses repository writes in the parent and descendant while keeping only scratch writable', async () => {
+  const f = await seedFixture();
+  const admission: DocsHostAdmission = { ...f.admission, purpose: 'worktree_cleanup', worktree: f.primary };
+  const scratch = prepareDocsHostScratch(admission, 60_000), policy = writeDocsHostPolicy(admission);
+  proveDocsHostBoundary(admission, policy, scratch);
+  const paths = [join(f.primary, 'docs/guide.md'), join(f.primary, 'src/app.ts'), join(f.primary, '.git/config'), join(f.worktree, 'docs/guide.md')];
+  const code = `const fs=require('node:fs'),cp=require('node:child_process');const [paths,tmp]=JSON.parse(process.argv[1]);
+const write=p=>{try{fs.writeFileSync(p,'CHANGED');return 'allowed'}catch(e){return e.code}};
+const child=cp.spawnSync(process.execPath,['-e',"try{require('node:fs').writeFileSync(process.argv[1],'CHANGED');process.exit(1)}catch(e){process.exit(e.code==='EPERM'?0:2)}",paths[3]]);
+console.log(JSON.stringify({writes:paths.map(write),child:child.status,scratch:write(tmp+'/fixture')}));`;
+  const result = spawnSync('/usr/bin/sandbox-exec', ['-f', policy, admission.node, '-e', code, JSON.stringify([paths, scratch.tmp])], { encoding: 'utf8', timeout: 15_000, env: docsHostEnvironment(scratch, f.proxy.port) });
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toEqual({ writes: paths.map(() => 'EPERM'), child: 0, scratch: 'allowed' });
+  expect(readFileSync(join(f.primary, 'docs/guide.md'), 'utf8')).toBe('# Guide\n');
+  // A cleanup repository need not have docs/ or a linked-worktree .git file.
+  rmSync(join(f.primary, 'docs'), { recursive: true });
+  expect(() => docsHostPolicy(admission)).not.toThrow();
 }, 60_000);

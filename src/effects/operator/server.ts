@@ -1,3 +1,4 @@
+import { OPERATOR_CLEANUP_PLAN_ROUTE, decodeCleanupPlanPreview } from '../../core/operator/worktree-cleanup-session';
 import { OPERATOR_SESSION_COMMIT_ROUTE, OPERATOR_SESSION_DISCARD_ROUTE, OPERATOR_SESSION_FINALIZATION_ROUTE, decodeDocSessionFinalizationView } from '../../core/operator/doc-session-finalize-wire';
 import { docSessionFinalizeRoutes } from './doc-session-finalize-routes';
 import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../core/operator/doc-session-messages';
@@ -171,6 +172,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false }),
+  Object.freeze({ id: 'session_cleanup_plan', method: 'GET', pattern: OPERATOR_CLEANUP_PLAN_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false }),
@@ -1538,7 +1540,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
+    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization' | 'cleanup_plan',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1791,6 +1793,14 @@ export async function startOperatorServer(
       return;
     }
 
+    const cleanupPlan = OPERATOR_CLEANUP_PLAN_ROUTE.exec(pathname);
+    if (cleanupPlan !== null) {
+      if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+      handleBoundedTaskRead(response, headOnly, { session_id: cleanupPlan[1]! }, decodeCleanupPlanPreview,
+        ['session_not_found', 'events_unavailable', 'unavailable'], 'cleanup_plan', undefined,
+        code => code === 'session_not_found' ? 404 : code === 'timeout' ? 504 : 503);
+      return;
+    }
     const finalization = OPERATOR_SESSION_FINALIZATION_ROUTE.exec(pathname);
     if (finalization !== null) {
       if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }

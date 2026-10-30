@@ -38,7 +38,7 @@ export function collectOrphanWorktrees(repos: readonly RepoHarnessRegisteredRepo
     { path: join(env.CODEX_HOME ?? join(env.HOME ?? '', '.codex'), 'worktrees'), source: 'codex' },
     ...repos.map(repo => ({ path: managedWorktreeRoot(env), source: 'manual' as const, depth: 1 as const, prefix: `${basename(repo.path)}-wt-` })),
     ...repos.map(repo => ({ path: join(repo.path, '.claude/worktrees'), source: 'claude' as const, depth: 1 as const })),
-  ]) {
+  ], onTarget?: (target: { repo: RepoHarnessRegisteredRepo | undefined; path: string; row: WorktreeView }) => void) {
   const deadline = Date.now() + 20_000;
   const known = new Set<string>();
   const owners = new Map<string, RepoHarnessRegisteredRepo>();
@@ -79,6 +79,7 @@ export function collectOrphanWorktrees(repos: readonly RepoHarnessRegisteredRepo
         judgment: count ? 'red' as const : 'yellow' as const, reasons: ['unregistered' as const, ...(count === null ? ['process_unknown' as const] : count ? ['process_in_use' as const] : [])],
         process_count: count, dirty_files: null, ignored_entries: null, unpushed_commits: null, merge: 'unknown' as const,
       }) };
+    onTarget?.({ repo, path, row });
     if (!repo) snapshot.unassigned.push(row);
     else {
       let group = snapshot.repositories.find(group => group.repository_id === repo.id);

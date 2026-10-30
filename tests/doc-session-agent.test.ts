@@ -1,3 +1,5 @@
+import { prepareCleanupSession } from '../src/effects/operator/worktree-cleanup-session';
+import { readCleanupPlanPreview } from '../src/effects/operator/worktree-cleanup-session-store';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
@@ -525,4 +527,27 @@ test('concurrent resume requests share the target lock and a late old-epoch chil
   expect(readDocSessionAgent(h.sessionDir(sid))!.epoch).toBe(2);
   expect(await requestDocSessionControl(h.env, sid, 'cancel')).toBe('accepted');
   await until(h, sid, agent => agent.state === 'stopped', 'cancelled');
+}, 60_000);
+
+// This proves the real Node host and OAR event/persistence path. It does not prove Seatbelt or a provider.
+test('a scripted cleanup turn uses the existing host, emits a summary, persists a bound plan and stops through shared control', async () => {
+  const h = await harness({ launch: 'none' });
+  const sid = prepareCleanupSession({ kind: 'worktree_cleanup', runtime: 'codex' }, h.env, 'darwin');
+  const path = join(h.sessionDir(sid), 'session.json');
+  const record = JSON.parse(readFileSync(path, 'utf8'));
+  writeSessionArtifact(path, { ...record, instruction: 'fixture:cleanup' }, false);
+  expect(startDocSessionAgent(h.env, sid, host)).toBe('starting');
+  reapHost(h, sid);
+  await until(h, sid, agent => agent.state === 'idle', 'cleanup plan');
+  const plan = readCleanupPlanPreview(h.env, { session_id: sid });
+  expect(plan).toMatchObject({ state: 'ready', agent: 'idle', execution: { enabled: false } });
+  expect(plan.plan!.items).toHaveLength(1);
+  expect(plan.plan!.items[0]!.advice.recommendation).toBe('keep');
+  const messages = events(h, sid).filter(event => event.type === 'message');
+  expect(messages).toHaveLength(2);
+  expect(messages[1]).toMatchObject({ role: 'agent', text: 'Worktree investigation ended. Read the plan preview for its result.' });
+  expect(JSON.stringify(events(h, sid))).not.toContain(record.worktree);
+  expect(await requestDocSessionControl(h.env, sid, 'cancel')).toBe('accepted');
+  await until(h, sid, agent => agent.state === 'stopped', 'cleanup stopped');
+  expect(readCleanupPlanPreview(h.env, { session_id: sid }).plan).toEqual(plan.plan);
 }, 60_000);

@@ -520,3 +520,18 @@ Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配�
 `GET /api/v1/sessions/<sid>/finalization` 在既有有界读进程中返回阻塞能力和安全的 journal 阶段；
 它不要求 worktree 仍存在，不启动宿主、不重试发布。CLI `finalization` 读取同一个投影。详细合同见
 [finalization integration](../../../reference-configs/doc-session-finalize-integration.md)。
+
+### Read-only cleanup investigations
+
+`POST /api/v1/sessions` also accepts `kind: worktree_cleanup`. The bounded
+preparation worker selects targets from the existing registry and worktree
+classifiers. It stores the target and complete observation in the private session
+directory. It does not create a Git branch or worktree.
+
+The existing Node host runs the investigation with `purpose: worktree_cleanup`.
+Its Seatbelt policy permits writes only in session scratch and `/dev/null`.
+The same lifecycle, epoch, credential, event and control owners remain in use.
+The host converts decoded advice into the existing cleanup plan against the
+stored observations. The public transcript contains categories and summaries.
+`GET /api/v1/sessions/<sid>/plan` returns the bounded preview. Execution stays
+unavailable. See [the wire contract](../../../reference-configs/worktree-cleanup-session.md).

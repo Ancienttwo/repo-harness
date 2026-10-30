@@ -1,3 +1,7 @@
+import { decodeDocSessionRecord, type DocSessionRecordV1 } from '../../core/operator/doc-session-record';
+import { decodeCleanupSessionRecord, type CleanupSessionRecord } from '../../core/operator/worktree-cleanup-session';
+import { beginCleanupPlan, cleanupSessionPrompt, saveCleanupAdvice } from './worktree-cleanup-session-store';
+import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 // The docs host (PRD G5; issue #1021; owner decision D3, 2026-10-28). One
 // Node >= 24 process per doc session. It is trusted and runs unsandboxed; only
 // the OAR runtime it opens, and that runtime's children, run inside the docs
@@ -32,21 +36,21 @@ import {
 } from './doc-session-agent';
 import { appendDocSessionEvents, DocSessionEventsError } from './doc-session-events';
 
-/** The session record fields the host reads (doc-session.ts writes it). */
-interface SessionRecord {
-  readonly session_id: string;
-  readonly runtime: string;
-  readonly branch: string;
-  readonly worktree: string;
-  readonly base_commit: string;
-  readonly instruction: string;
-  readonly citations: readonly { readonly path: string; readonly resolved: { readonly path: string; readonly start_line: number; readonly end_line: number } }[];
-}
+type SessionRecord = DocSessionRecordV1 | CleanupSessionRecord;
 
 /** A failure the host records with its category. Anything else is `runtime_error`. `recorded`: an OAR event already gave its record. */
 class HostFailure extends Error {
   constructor(readonly category: DocSessionFailureCategory, readonly code: string, readonly recorded = false) { super(code); }
 }
+
+export const CLEANUP_HOST_INSTRUCTIONS = [
+  'Inspect the supplied worktree inventory without changing any repository. You cannot archive, delete, commit or push.',
+  'Keep credential files unread. Local remote-tracking refs and closed PRs are not proof that local data can be deleted. Use keep when evidence is incomplete.',
+  'Return one JSON object only: {"items":[{"id":"the supplied worktree id","advice":{"recommendation":"keep","reason":"short reason","evidence":["observed fact"],"archive":{"git":null,"private":null}}}]}. Include every supplied id exactly once.',
+  'Allowed recommendations are delete, archive_then_delete and keep. Red or incompletely observed items must use keep.',
+  'For archive_then_delete, git is {directory:"docs/archive/YYYY-MM-DD-slug",branch:"docs/archive-slug",paths:["relative path"],include_commits:true}; private is {directory:"the repository_id",paths:["relative path"]}. Use null when that archive is not needed. Never put credentials into git.',
+  'These are suggestions for human review, never authorization. State evidence and limitations; do not invent provider observations.',
+].join('\n');
 
 export const DOCS_HOST_INSTRUCTIONS = [
   'You edit human-written documentation in this git worktree.',
@@ -56,7 +60,8 @@ export const DOCS_HOST_INSTRUCTIONS = [
 ].join('\n');
 
 /** The first prompt: the instruction and each cited passage, read from the worktree at the session base. */
-function composePrompt(record: SessionRecord): string {
+function composePrompt(record: SessionRecord, env: NodeJS.ProcessEnv): string {
+  if (record.kind === 'worktree_cleanup') return `${record.instruction}\nCleanup inventory:\n${cleanupSessionPrompt(env, record.session_id)}`;
   const passages = record.citations.map(({ resolved }) => {
     const lines = readFileSync(join(record.worktree, resolved.path), 'utf8').split('\n').slice(resolved.start_line - 1, resolved.end_line);
     return `--- ${resolved.path} lines ${resolved.start_line}-${resolved.end_line} ---\n${lines.join('\n')}`;
@@ -65,7 +70,12 @@ function composePrompt(record: SessionRecord): string {
 }
 
 /** The worktree is still the session's: its branch at the session base. */
-function assertWorktree(record: SessionRecord): void {
+function assertWorktree(record: SessionRecord, env: NodeJS.ProcessEnv): void {
+  if (record.kind === 'worktree_cleanup') {
+    const registered = readRepoHarnessRegistryStrictSnapshot({ env }).repos.find(repo => repo.id === record.repository_id);
+    if (!registered || realpathSync(registered.path) !== record.worktree || !lstatSync(record.worktree).isDirectory() || realpathSync(record.worktree) !== record.worktree) throw new HostFailure('boundary_denied', 'cleanup_host_repository_changed');
+    return;
+  }
   const git = (...args: string[]) => execFileSync('/usr/bin/git', args, { cwd: record.worktree, encoding: 'utf8', timeout: 10_000, env: { PATH: '/usr/bin:/bin', GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: '/dev/null' } }).trim();
   if (realpathSync(record.worktree) !== record.worktree || git('rev-parse', 'HEAD') !== record.base_commit
     || git('symbolic-ref', '--short', 'HEAD') !== record.branch) throw new HostFailure('boundary_denied', 'docs_host_worktree_changed');
@@ -77,6 +87,11 @@ function assertWorktree(record: SessionRecord): void {
  * instruction picks a script; the default one plants values that no record may keep.
  */
 export async function scriptedDocsTurn(turn: ScriptedTurn): Promise<void> {
+  if (turn.input.startsWith('fixture:cleanup')) {
+    const inventory = JSON.parse(turn.input.split('\nCleanup inventory:\n')[1]!);
+    turn.say(JSON.stringify({ items: inventory.items.map((item: { id: string }) => ({ id: item.id, advice: { recommendation: 'keep', reason: 'Fixture investigation only.', evidence: ['No removal is authorized.'], archive: { git: null, private: null } } })) }));
+    return;
+  }
   if (turn.input.startsWith('fixture:hold')) {
     await new Promise<void>(resolve => turn.signal.addEventListener('abort', () => resolve(), { once: true }));
     return;
@@ -130,7 +145,7 @@ async function openCodex(record: SessionRecord, control: string, env: NodeJS.Pro
   try {
     proxy = await startModelApiProxy(DOCS_HOST_MODEL_API.codex);
     const admission: DocsHostAdmission = {
-      runtime: 'codex', worktree: record.worktree, control, operatorHome: realpathSync(env.HOME!), stateHome: realpathSync(repoHarnessHome(env)),
+      purpose: record.kind === 'worktree_cleanup' ? 'worktree_cleanup' : 'docs', runtime: 'codex', worktree: record.worktree, control, operatorHome: realpathSync(env.HOME!), stateHome: realpathSync(repoHarnessHome(env)),
       node: process.execPath, executable: vendor.command, developerDirectory: docsHostDeveloperDirectory(), proxyPort: proxy.port,
     };
     let launcher: string, docsEnv: Record<string, string>;
@@ -146,7 +161,7 @@ async function openCodex(record: SessionRecord, control: string, env: NodeJS.Pro
     if (isolated.kind !== 'available' || isolated.via !== 'executable' || isolated.command !== launcher) throw new HostFailure('boundary_denied', 'docs_host_isolated_installation_unverified');
     // Seatbelt is the boundary; codex's own sandbox cannot nest inside it (OAR's default `danger-full-access`).
     delete process.env.OAR_CODEX_SANDBOX;
-    const options: SessionOptions = { cwd: record.worktree, ...(resume === undefined ? {} : { resume }), env: docsEnv, appendSystemPrompt: DOCS_HOST_INSTRUCTIONS };
+    const options: SessionOptions = { cwd: record.worktree, ...(resume === undefined ? {} : { resume }), env: docsEnv, appendSystemPrompt: record.kind === 'worktree_cleanup' ? CLEANUP_HOST_INSTRUCTIONS : DOCS_HOST_INSTRUCTIONS };
     const session = await runtime.session(isolated as AvailableInstallation, options);
     const opened = proxy;
     return { session, close: () => opened.close() };
@@ -217,10 +232,12 @@ export class DocsTurnControl {
 /** Runs one session until it is stopped, times out or fails. The caller holds `agent.lock`. */
 async function runSession(sessionDirectory: string, initial: DocSessionAgentRecord, env: NodeJS.ProcessEnv, resume?: string): Promise<void> {
   const started = Date.now();
-  const record = readSessionArtifact<SessionRecord>(join(sessionDirectory, 'session.json'));
+  const raw = readSessionArtifact<{ kind?: unknown }>(join(sessionDirectory, 'session.json'));
+  const record: SessionRecord = raw.kind === 'worktree_cleanup' ? decodeCleanupSessionRecord(raw) : decodeDocSessionRecord(raw);
   const requests = docSessionRequestsDirectory(sessionDirectory);
   const sink = new EventSink(env, record.session_id, initial.epoch);
   const adapter = new DocSessionAdapter(record.worktree);
+  const publicBodies = (bodies: DocSessionEventBody[]) => record.kind === 'worktree_cleanup' ? bodies.filter(body => body.type !== 'message') : bodies;
   let agent = initial;
   let inputInFlight = false;
   let inputState: Parameters<typeof nextAgentRecord>[1] | null = null;
@@ -234,7 +251,7 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     if (record.session_id !== initial.session_id || !isDocsHostRuntimeId(record.runtime)) throw new HostFailure('boundary_denied', 'docs_host_runtime_unverified');
     if (initial.control === null) throw new HostFailure('boundary_denied', 'docs_host_control_unplanned');
     const control = initial.control, scratch = join(control, 'scratch');
-    assertWorktree(record);
+    assertWorktree(record, env);
     // The codex app-server inherits this directory; the boundary denies reads of the session directory.
     process.chdir(record.worktree);
     if (control !== join(docsHostControlRoot(env), record.session_id)) throw new HostFailure('boundary_denied', 'docs_host_control_changed');
@@ -254,12 +271,23 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     const turns = new DocsTurnControl(session, adapter);
 
     let turnStartedAt = 0, idleSince = 0, exited = false, ended = false;
+    let cleanupAdvice: string | null = null;
     session.events(event => {
       const bodies = adapter.map(event);
-      sink.push(bodies);
+      // Cleanup transcript exposes categories and a fixed summary, never raw advice or tool output.
+      sink.push(publicBodies(bodies));
       // A turn boundary reaches the log before the state that follows from it.
       if (bodies.some(body => body.type === 'turn')) sink.flush();
       if (event.agentPath.length !== 0) return;
+      if (record.kind === 'worktree_cleanup') {
+        if (event.kind === 'turn_started') { cleanupAdvice = null; beginCleanupPlan(env, record.session_id); }
+        for (const body of bodies) if (body.type === 'message' && body.role === 'agent') cleanupAdvice = body.text;
+        if (event.kind === 'turn_ended') {
+          saveCleanupAdvice(env, record.session_id, event.outcome.kind === 'completed' ? cleanupAdvice : null);
+          sink.push([{ type: 'message', role: 'agent', text: 'Worktree investigation ended. Read the plan preview for its result.' }]);
+          sink.flush();
+        }
+      }
       if (event.kind === 'turn_started') { turnStartedAt = Date.now(); turns.turnStarted(); update({ state: 'running' }); }
       if (event.kind === 'turn_ended') { idleSince = Date.now(); update({ state: 'idle', actual_model: session.model().value }); }
       if (event.kind === 'exited' && !ended) exited = true;
@@ -268,7 +296,7 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
     if (resume === undefined) {
       sink.push([{ type: 'message', role: 'user', text: record.instruction }]);
       sink.flush();
-      const prompted = await withDeadline(session.prompt(composePrompt(record)), deadline);
+      const prompted = await withDeadline(session.prompt(composePrompt(record, env)), deadline);
       if (prompted.kind === 'rejected') throw new HostFailure('runtime_error', `docs_host_prompt_${prompted.code}`, true);
     } else {
       // A resume opens the old conversation. It must never replay the creation instruction.
@@ -332,20 +360,20 @@ async function runSession(sessionDirectory: string, initial: DocSessionAgentReco
       if (adapter.turnOpen) {
         // The runtime goes with the turn still open: its records end here.
         const cause = stopping === 'turn_timeout' || stopping === 'lifetime' ? 'timeout' : 'cancelled';
-        sink.push([...adapter.flush(), { type: 'failure', category: cause }]);
+        sink.push([...publicBodies(adapter.flush()), { type: 'failure', category: cause }]);
         if (stopping === 'turn_timeout') final = { state: 'failed', failure: 'timeout', reason: 'docs_host_turn_not_interrupted' };
       }
     } finally { process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); process.removeListener('SIGHUP', signal); }
   } catch (error) {
     const failure = error instanceof HostFailure ? error : new HostFailure('runtime_error', errorCode(error));
     final = { state: 'failed', failure: failure.category, reason: failure.code };
-    sink.push(adapter.flush());
+    sink.push(publicBodies(adapter.flush()));
     if (!failure.recorded) sink.push([{ type: 'failure', category: failure.category }]);
   } finally {
     adapter.disposed();
     try { await opened?.session.dispose(); } catch { final = { state: 'failed', failure: 'runtime_error', reason: 'docs_host_dispose_failed' }; }
     try { await opened?.close(); } catch { /* the proxy closes with the process */ }
-    sink.push(adapter.flush());
+    sink.push(publicBodies(adapter.flush()));
     if (adapter.turnOpen) sink.push([{ type: 'turn', boundary: 'ended' }]);
     // The credential copy goes and the state is recorded even when the event log refuses the last batch.
     try { sink.flush(); } catch (error) { if (final.state !== 'failed') final = { state: 'failed', failure: 'runtime_error', reason: errorCode(error) }; }

@@ -1,3 +1,6 @@
+import { cleanupSessionCreateOperation } from '../../effects/operator/worktree-cleanup-session';
+import { readCleanupPlanPreview } from '../../effects/operator/worktree-cleanup-session-store';
+import { docsHostExecutable, startDocSessionAgent } from '../../effects/operator/doc-session-agent';
 import { readDocSessionFinalizationView } from '../../effects/operator/doc-session-finalization-view';
 import { boundedDocSessionFinalizeOperation } from '../../effects/operator/doc-session-finalize-routes';
 import { randomUUID } from 'node:crypto';
@@ -85,6 +88,27 @@ export function buildDocSessionsCommand(): Command {
       else { console.error(output); process.exitCode = 2; }
     });
   }
+  sessions.command('cleanup').description('Start a read-only worktree investigation; no deletion')
+    .requiredOption('--runtime <runtime>', 'Runtime with verified isolation').option('--ids <json>', 'Selected worktree IDs; default is the bounded server inventory')
+    .option('--request-id <uuid>', 'Reuse this id to read the saved outcome').option('--json', 'Output JSON')
+    .action(async (options: ReadOptions & { runtime: string; ids?: string; requestId?: string }) => {
+      const requestId = options.requestId === undefined ? randomUUID() : parseOperatorRequestId(options.requestId);
+      let operation;
+      try {
+        if (requestId === null) throw new Error('invalid request');
+        const fields = { kind: 'worktree_cleanup', runtime: options.runtime, ...(options.ids === undefined ? {} : { ids: JSON.parse(options.ids) }) };
+        operation = cleanupSessionCreateOperation(fields, { env: process.env, launch_agent: sid => startDocSessionAgent(process.env, sid, () => docsHostExecutable(process.env)) });
+      } catch { refuse(options.json, 'invalid_argument', 2); return; }
+      const response = await runOperatorWrite(requestId!, operation, process.env);
+      const output = JSON.stringify({ request_id: requestId, status: response.status, ...response.body as object });
+      if (response.status === 201) console.log(output); else { console.error(output); process.exitCode = 2; }
+    });
+  sessions.command('plan').description('Read a cleanup investigation plan; execution remains unavailable')
+    .argument('<session-id>', 'Cleanup session id').option('--json', 'Output JSON')
+    .action((sessionId: string, options: ReadOptions) => {
+      if (!SESSION_ID.test(sessionId)) { refuse(options.json, 'invalid_argument', 2); return; }
+      runView(options, () => readCleanupPlanPreview(process.env, { session_id: sessionId }));
+    });
   sessions.command('finalization').description('Read finalization availability and saved progress')
     .argument('<session-id>', 'Doc session id (32 hex)').option('--json', 'Output JSON')
     .action((sessionId: string, options: ReadOptions) => {
