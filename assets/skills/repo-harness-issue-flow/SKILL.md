@@ -1,6 +1,6 @@
 ---
 name: repo-harness-issue-flow
-description: Run GitHub issue and PR driven development with agents. The orchestrator splits work by architecture module into requirement issues with explicit dependencies and boundaries, dispatches workers and follows PRs and CI to merge; a worker claims one issue and delivers one PR. Exclude PRD drafting and single-PR tasks.
+description: Run GitHub issue and PR driven development with several agents. Use it to turn a PRD or feature into a backlog of requirement issues split by architecture module, with Depends on lines and boundaries; to dispatch workers and follow their PRs and CI to merge as coordinator; or, as a worker, to claim an issue and deliver its PR, raise a boundary question, hand off or take over a stalled claim, or sync a PR stacked on another agent's PR. Exclude PRD drafting, code review, and small changes that need no issue.
 when_to_use: "repo-harness-issue-flow"
 ---
 

@@ -34,7 +34,8 @@ model's own docs. The archimap is the one hand-composed HTML view.
 - **Refresh.** A map exists. An `[Archimap]` notice fired, or the model,
   the module layout or a public API changed. Change only the affected
   boards. Keep unchanged nodes at the same coordinates, so that a reviewer
-  can compare the two versions by eye.
+  can compare the two versions by eye. When a new node needs room, move
+  the fewest nodes, and name each moved node in the report.
 
 ## Steps
 
