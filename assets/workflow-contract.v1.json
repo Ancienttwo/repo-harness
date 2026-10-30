@@ -490,6 +490,7 @@
             "scripts/inspect-project-state.ts",
             "scripts/maintenance-triage.sh",
             "scripts/migrate-project-template.sh",
+            "scripts/migrate-verification-plan.ts",
             "scripts/migrate-workflow-docs.ts",
             "scripts/new-plan.sh",
             "scripts/new-spec.sh",
@@ -914,6 +915,9 @@
               "sha256:b3443dc5f5b2db2547aaf82854a61bcb1bea87e47f4639f5bd14004c22f4fe6a",
               "sha256:bd22c8a4b01f5f18c6ef5d3db945609e7bcf28d22775b88f694f0e159e70d548",
               "sha256:d450e7bbdd45924adba177e8e3c6e1730c0ce80d47fe72e88552f9d999693362"
+            ],
+            "scripts/migrate-verification-plan.ts": [
+              "sha256:c3cf398241f8a3c45b3993b47dc92e0c69f39a5ff7ed60fa6923a73a517e7a6a"
             ],
             "scripts/migrate-workflow-docs.ts": [
               "sha256:d2fbfbbe8c5112630c0a4686e6d636320685c95e5b2135fbf87ddc3f73119f5f",
