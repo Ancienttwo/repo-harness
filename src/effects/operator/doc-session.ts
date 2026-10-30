@@ -1,3 +1,4 @@
+import type { DocSessionAgentState } from '../../core/operator/doc-session-agent-record';
 // Doc session creation (PRD G5 step 1, G8; issue #1021). It verifies every
 // citation against the docs view the console serves, then creates the
 // session's `docs/<slug>` worktree under the managed worktree root and the
@@ -23,7 +24,7 @@ import { configuredGitBinary, gitExecFile, GitExecError, withoutRepositorySelect
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { assertDocsHostPlatform } from '../review/docs-host-isolation';
-import { requestDocSessionControl, type DocSessionAgentState } from './doc-session-agent';
+import { requestDocSessionControl, } from './doc-session-agent';
 import { withWorktreeTopologyLockAsync } from '../state/coordination-worktree-topology';
 import { DocsReadError, normalizeDocsPath, type DocsReader } from './docs-reader';
 import type { OperatorWriteRoute } from './write-channel';

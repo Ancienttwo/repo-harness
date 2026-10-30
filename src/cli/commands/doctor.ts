@@ -14,6 +14,7 @@ import type { SkillProjectionState } from '../../core/setup/types';
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
+import { probePiHerdrIntegration } from '../../effects/setup/pi-herdr-integration';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -132,7 +133,7 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   const resolutionError = executable ? null : piExecutableIssue(env);
   const checks: DoctorCheckResult[] = [{ id: 'pi-path', describe: 'Pi on PATH', status: resolutionError ? 'fail' : executable ? 'ok' : 'na', detail: resolutionError ?? executable ?? 'pi not found on PATH' }];
   if (!executable) {
-    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package']) checks.push({ id, describe: id, status: 'na', detail: resolutionError ?? 'pi not found on PATH' });
+    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package', 'pi-herdr-integration']) checks.push({ id, describe: id, status: 'na', detail: resolutionError ?? 'pi not found on PATH' });
     return checks;
   }
   try {
@@ -169,6 +170,9 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   } catch (error) {
     checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: 'fail', detail: String((error as Error).message) });
   }
+  const integration = probePiHerdrIntegration(env);
+  checks.push({ id: 'pi-herdr-integration', describe: 'Herdr native Pi integration',
+    status: integration.state === 'current' ? 'ok' : 'fail', detail: integration.detail });
   return checks;
 }
 

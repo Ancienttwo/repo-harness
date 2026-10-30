@@ -447,6 +447,14 @@ The host installer, shared skill roots and catalog retain those responsibilities
 - 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。
 
 
+### 提交范围的宿主策略交接
+
+`isDocsHostWritablePath(path)` 从 `docs-host-isolation.ts` 导出宿主的词法写入范围。
+Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配置输出保持不变。
+#1023 的范围适配器可把它作为 `is_writable_path`，再组合既有 `docsHostProtectedProjection` 和 `readArchitectureHandEdits`。
+这个函数不证明文件系统目标、安全退出或生成区域可写，不能单独授权提交或丢弃。
+
+
 ### 文档会话读接口
 
 `src/core/operator/doc-session-views.ts` 是列表和详情的公开 schema 与封闭 decoder。
@@ -471,6 +479,31 @@ GET 不保存已读状态，跨 epoch 比较沿用事件游标规则。
 未知或重复查询字段回 400。HEAD 与 GET 共用校验并且不返回 body。
 已停止会话可以读详情，不会为读取而重新启动。
 
+宿主记录类型在 `src/core/operator/doc-session-agent-record.ts`；它只声明持久化格式，不创建或授权宿主。
+
+### Finalization journal reads
+
+`GET/HEAD /api/v1/sessions/{sid}/finalization` and
+`operator doc-sessions finalization <sid> --json` return the same closed body:
+`protocol: 1`, `kind: operator_docs_session_finalization_state`, `session_id`,
+and `progress`. Both use the bounded task-read child. The CLI has a 30-second
+deadline; HTTP uses the existing read deadline, admission limit and shutdown cleanup.
+
+The reader shares session-record decoding and repository registration admission
+with the session metadata views. It requires neither a live host nor an extant
+worktree. It reads the canonical atomic journal once and projects its saved stage,
+commit SHA, pushed flag and public PR identity. An absent journal yields null.
+Input fields, commit messages, remote URLs and step audit IDs stay private.
+The decoder rejects unknown fields and contradictory stages at the process boundary.
+
+Unknown sessions return 404; invalid metadata, revoked registration or malformed
+journals fail closed. Query fields return 400. No read creates a journal or starts
+an agent. A saved stage is not live capability or proof that the corresponding
+audit result exists. Complete cleanup proof and production commit/discard remain
+separate requirements of #1023. The read contract lives in
+`src/core/operator/doc-session-finalization-view.ts` and its effect in
+`src/effects/operator/doc-session-finalization-view.ts`.
+宿主及其消费者直接导入共享 record 类型，原内联声明已删除。创建会话后通过注入的启动入口启动 agent；读接口不启动或恢复宿主，也不替代真实 provider 的 D1 验收。
 
 ### 文档会话追加说明
 

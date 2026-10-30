@@ -19,6 +19,7 @@ responsibilities:
   - Resume only an idle-disposed doc session with a recorded native identity and removed credential copy; claim the next epoch under agent.lock, retain the same private runtime history, rebuild immutable per-epoch boundary artifacts, and copy fresh model credentials. Only the audited messages operation requests resume; reads, commit and discard do not. A failed resume keeps an unresolved audit intent and never replays the creation prompt.
   - Own the doc session event log: append redacted, schema-checked events to the session's events.jsonl under a per-session lock, each one moving the epoch.seq cursor forward, take over the lock of a writer that is proven dead, and serve the production cursor read through the bounded task-read process.
   - Serve the public doc session list and detail from persisted session, host and redacted event records through the bounded task-read process; expose only safe metadata, branch, worktree directory name and HEAD, and compare browser-provided read cursors without persisting browser state.
+  - Serve saved finalization journal progress through bounded HTTP and CLI reads after session identity and repository registration admission; preserve reads after worktree removal, omit private journal fields and make no inference about live write capability or audited completion.
 source:
   include:
     - src/effects/operator/**

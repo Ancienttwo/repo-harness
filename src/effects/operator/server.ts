@@ -1,7 +1,9 @@
+import type { DocSessionAgentState } from '../../core/operator/doc-session-agent-record';
 import { OPERATOR_SESSION_MESSAGES_ROUTE } from '../../core/operator/doc-session-messages';
 import { docSessionMessagesRoute } from './doc-session-messages';
 import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
 import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
+import { decodeDocSessionFinalizationView, DOC_SESSION_FINALIZATION_FAILURES, OPERATOR_SESSION_FINALIZATION_ROUTE, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
 import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
@@ -55,7 +57,7 @@ import { AgentsConfigurationError } from '../configuration/agents-configuration'
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, OPERATOR_SESSION_STOP_ROUTE, docSessionCreateRoute, docSessionStopRoute } from './doc-session';
-import { docsHostExecutable, reconcileDocSessionAgents, startDocSessionAgent, type DocSessionAgentState } from './doc-session-agent';
+import { docsHostExecutable, reconcileDocSessionAgents, startDocSessionAgent, } from './doc-session-agent';
 
 import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
@@ -171,6 +173,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false }),
   Object.freeze({ id: 'session_detail', method: 'GET', pattern: OPERATOR_SESSION_DETAIL_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_events', method: 'GET', pattern: OPERATOR_SESSION_EVENTS_ROUTE.source, write: false }),
+  Object.freeze({ id: 'session_finalization', method: 'GET', pattern: OPERATOR_SESSION_FINALIZATION_ROUTE.source, write: false }),
   // The doc session diff and discard loss list, with the digests that commit and discard (#1023) check.
   Object.freeze({ id: 'session_diff', method: 'GET', pattern: OPERATOR_SESSION_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_loss', method: 'GET', pattern: OPERATOR_SESSION_LOSS_ROUTE.source, write: false }),
@@ -889,8 +892,30 @@ function readDefaultFleetSnapshot(
   });
 }
 
-class OperatorTaskReadError extends Error {
+export class OperatorTaskReadError extends Error {
   constructor(readonly code: string) { super(code); }
+}
+
+/** CLI uses the same supervised reader and closed schema as the HTTP route. */
+export function readBoundedDocSessionFinalization(env: NodeJS.ProcessEnv, sessionId: string): Promise<DocSessionFinalizationView> {
+  const request = { session_id: sessionId };
+  return readSupervisedOperatorProcess({
+    process_path: fileURLToPath(new URL('./task-read-process.ts', import.meta.url)), env,
+    signal: AbortSignal.timeout(OPERATOR_DEFAULT_TIMEOUT_MS),
+    start: { type: 'start', protocol: 1, kind: 'doc_session_finalization', request, env: repositoryWorkerEnvironment(env) },
+    response: value => {
+      if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+      const response = value as Record<string, unknown>;
+      if (Object.keys(response).length !== 2) return null;
+      if (response.ok === true && 'snapshot' in response) {
+        try { return { ok: true, snapshot: decodeDocSessionFinalizationView(response.snapshot, request) }; } catch { return null; }
+      }
+      if (response.ok === false && typeof response.code === 'string' && DOC_SESSION_FINALIZATION_FAILURES.some(code => code === response.code)) return { ok: false, code: response.code };
+      if (response.ok === false && response.cancelled === true) return { ok: false, cancelled: true };
+      return null;
+    },
+    failure: code => new OperatorTaskReadError(code),
+  });
 }
 
 type SupervisedReadResponse<T> =
@@ -1533,7 +1558,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events',
+    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'history' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1782,6 +1807,15 @@ export async function startOperatorServer(
       }, ARCHITECTURE_FAILURES, 'architecture', undefined, code =>
         code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
           : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422, request);
+      return;
+    }
+
+    const finalization = OPERATOR_SESSION_FINALIZATION_ROUTE.exec(pathname);
+    if (finalization !== null) {
+      if (url.search !== '') { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+      handleBoundedTaskRead(response, headOnly, { session_id: finalization[1]! }, decodeDocSessionFinalizationView,
+        DOC_SESSION_FINALIZATION_FAILURES, 'doc_session_finalization', undefined,
+        code => code === 'session_not_found' ? 404 : code === 'too_large' ? 413 : code === 'timeout' ? 504 : 503);
       return;
     }
 

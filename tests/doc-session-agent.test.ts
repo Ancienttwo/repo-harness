@@ -1,3 +1,4 @@
+import type { DocSessionAgentRecord, DocSessionAgentState } from '../src/core/operator/doc-session-agent-record';
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
@@ -10,7 +11,6 @@ import type { DocSessionEventV1 } from '../src/core/operator/doc-session-events'
 import { readExclusiveDirectoryLockOwner } from '../src/effects/locking/exclusive-directory-lock';
 import {
   DOC_SESSION_AGENT_LOCK, readDocSessionAgent, reconcileDocSessionAgent, requestDocSessionControl, startDocSessionAgent,
-  type DocSessionAgentRecord, type DocSessionAgentState,
 } from '../src/effects/operator/doc-session-agent';
 import { readDocSessionEvents } from '../src/effects/operator/doc-session-events';
 import { DocsReader } from '../src/effects/operator/docs-reader';
