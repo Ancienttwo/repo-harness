@@ -445,3 +445,11 @@ The host installer, shared skill roots and catalog retain those responsibilities
 - `startOperatorServer` 仍集中处理路由、repository observation 队列、Fleet 队列和任务读取监督。拆分需要改动频率或性能证据。
 - `ModuleReadError` 现在在 `src/core/architecture/module-view.ts` 声明（#907）。architecture-view 与 primary 不再导入 acceptance-review。`relation.operator.architecture-view.acceptance-review` 与 `relation.operator.http-reader.acceptance-review` 没有源码边，需要删除。view-projections 仍导入 `ModuleReviewPromptV1` 类型。
 - 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。
+
+
+### 提交范围的宿主策略交接
+
+`isDocsHostWritablePath(path)` 从 `docs-host-isolation.ts` 导出宿主的词法写入范围。
+Seatbelt 配置和这个函数共用同一组文件、目录拒绝模式；配置输出保持不变。
+#1023 的范围适配器可把它作为 `is_writable_path`，再组合既有 `docsHostProtectedProjection` 和 `readArchitectureHandEdits`。
+这个函数不证明文件系统目标、安全退出或生成区域可写，不能单独授权提交或丢弃。
