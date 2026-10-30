@@ -1645,6 +1645,13 @@ test('current Task links open current detail and selecting cards writes only nav
   expect([...new URLSearchParams(window.location.search).keys()].sort()).toEqual(['issue_id','provider_repository_id','repository','session_binding_sha256']);
 });
 
+test('an invalid Task URL shows the link refusal without a task drawer',async()=>{
+  window.history.replaceState(null,'',`?repository=repo-harness&task=${'a'.repeat(64)}&ref=HEAD`);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+  expect(document.body.textContent).toContain('Invalid Task link');
+  expect(document.querySelector('.detail-pane')).toBeNull();
+});
+
 test('refresh removes stale acceptance readiness without creating Done or a merge action',async()=>{
   const {classifyFleetBoardPlacement}=await import('../../src/core/fleet/board');
   const current=stableSnapshot.repositories.flatMap(r=>r.cards).find(c=>c.task_id===fixtureTasks.ready.task_id)!;

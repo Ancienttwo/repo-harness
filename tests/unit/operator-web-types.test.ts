@@ -458,3 +458,9 @@ test('current provider links select an exact session without falling back to tas
   expect(unassigned.selection).toMatchObject({historical:false,sessionBinding:null,key:'repo-a:123:456:unassigned'});
   for(const query of [`?repository=repo-a&task=${taskId}`, '?repository=repo-a&provider_repository_id=123&issue_id=456&issue_id=789', '?repository=repo-a&provider_repository_id=123&issue_id=456&view=history'])expect(parseTaskLocation(query).invalid).toBe(true);
 });
+
+test('retired task and history selectors are rejected as invalid locations', async () => {
+  const {parseTaskLocation}=await import('../../src/operator-web/task-location');
+  const id='a'.repeat(64),revision='b'.repeat(64);
+  for(const query of [`?repository=repo-1&task=${id}`,`?repository=repo-1&task=${id}&task_revision=${revision}`,'?repository=repo-1&view=history'])expect(parseTaskLocation(query).invalid).toBe(true);
+});
