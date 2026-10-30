@@ -63,10 +63,12 @@ describe("Hook contracts", () => {
   });
 
 
-  test("session-start should not spend the global budget on cross-review availability", () => {
+  test("session-start should not spend the global budget on cross-review availability or a plan capture", () => {
     const script = read("src/cli/hook/session-context.ts");
     expect(script).not.toContain("[CrossReview]");
-    expect(script).toContain("Pending Plan Capture");
+    expect(script).not.toContain("Pending Plan Capture");
+    expect(script).not.toContain("capture-plan");
+    expect(script).not.toContain("references.plan");
     expect(script).not.toContain("claude-review");
     expect(script).not.toContain("worth the tokens");
   });
@@ -81,6 +83,8 @@ describe("Hook contracts", () => {
     // #695: no readiness lines, no state resolution, no events.jsonl append.
     expect(handler).not.toContain("[StopReadiness]");
     expect(handler).not.toContain("getEffectiveState");
+    expect(handler).not.toContain("getActivePlanMarker");
+    expect(handler).not.toContain("activePlanForRecovery");
     expect(handler).not.toContain("handoff_refresh");
   });
 

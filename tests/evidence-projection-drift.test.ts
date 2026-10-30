@@ -174,8 +174,8 @@ describe("projection drift: recovery views (checkpoint -> handoff/resume)", () =
       if (published.status !== "published") return;
 
       const options = { reason: "drift-check", now: FIXED_NOW, runId: "drift-fixed-run" };
-      const resultA = materializeRecoveryViews(repoRoot, null, {}, options);
-      const resultB = materializeRecoveryViews(repoRoot, null, {}, options);
+      const resultA = materializeRecoveryViews(repoRoot, {}, options);
+      const resultB = materializeRecoveryViews(repoRoot, {}, options);
 
       expect(resultA.handoff).toBe(resultB.handoff);
       expect(resultA.resume).toBe(resultB.resume);
@@ -197,8 +197,8 @@ describe("projection drift: recovery views (checkpoint -> handoff/resume)", () =
       mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
       writeFileSync(join(repoRoot, ".ai/harness/policy.json"), "{}\n");
       const env = {};
-      const resultA = materializeRecoveryViews(repoRoot, null, env, { reason: "drift-check", now: FIXED_NOW });
-      const resultB = materializeRecoveryViews(repoRoot, null, env, { reason: "drift-check", now: FIXED_NOW });
+      const resultA = materializeRecoveryViews(repoRoot, env, { reason: "drift-check", now: FIXED_NOW });
+      const resultB = materializeRecoveryViews(repoRoot, env, { reason: "drift-check", now: FIXED_NOW });
       expect(resultA.evidence).toEqual({ available: false, reason: "no-checkpoint" });
       expect(resultA.handoff).toBe(resultB.handoff);
       expect(resultA.resume).toBe(resultB.resume);

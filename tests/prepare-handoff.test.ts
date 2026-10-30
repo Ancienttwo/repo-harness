@@ -63,7 +63,8 @@ describe("prepare-handoff helper integration", () => {
 
       const status = run("bash", ["scripts/prepare-handoff.sh", "--status"], cwd);
       expect(status.status).toBe(0);
-      expect(status.stdout).toContain("Active plan: plans/plan-20260327-2200-alpha.md");
+      expect(status.stdout).toContain("Issue: none");
+      expect(status.stdout).not.toContain("Active plan:");
       expect(status.stdout).not.toContain("Active contract");
 
       const res = run("bash", ["scripts/prepare-handoff.sh", "--reason", "manual-checkpoint"], cwd);
@@ -72,22 +73,26 @@ describe("prepare-handoff helper integration", () => {
 
       const handoff = readFileSync(join(cwd, ".ai/harness/handoff/current.md"), "utf-8");
       expect(handoff).toContain("**Reason**: manual-checkpoint");
-      expect(handoff).toContain("Plan: plans/plan-20260327-2200-alpha.md");
-      // Task contracts and the sprint marker are retired: recovery reads neither,
-      // even when the fixture still has both.
+      expect(handoff).toContain("- Issue: none");
+      // Plans, todos, task contracts and the sprint marker are retired:
+      // recovery reads none of them, even when the fixture still has them.
+      expect(handoff).not.toContain("plans/plan-20260327-2200-alpha.md");
+      expect(handoff).not.toContain("tasks/todos.md");
+      expect(handoff).not.toContain("Active plan:");
       expect(handoff).not.toContain("tasks/contracts/");
       expect(handoff).not.toContain(".ai/harness/checks/latest.json");
       // The recovery materializer's "## Evidence" section
       // sources only from the checkpoint, rendering a typed minimal state when
       // none is published yet (this fixture seeds no ledger/checkpoint).
       expect(handoff).toContain("- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)");
-      expect(handoff).toContain("## Active Artifacts");
+      expect(handoff).toContain("## Repository");
       expect(handoff).not.toContain("Active sprint row");
       expect(handoff).not.toContain("Alpha handoff");
       const resume = readFileSync(join(cwd, ".ai/harness/handoff/resume.md"), "utf-8");
       expect(resume).not.toContain("tasks/contracts/");
-      expect(handoff).toContain("Next recommended action:");
-      expect(handoff).toContain("Finish handoff");
+      expect(resume).not.toContain("tasks/todos.md");
+      expect(handoff).not.toContain("Next recommended action:");
+      expect(handoff).not.toContain("Finish handoff");
       expect(handoff).toContain("## Exact Next Step");
       expect(handoff).toContain("## Resume Prompt");
       expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
@@ -161,31 +166,31 @@ test('prepare-handoff fails closed when its recovery materializer is missing', (
     });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('recovery materializer is missing');
-    expect(result.stdout).not.toContain('Active plan: (none)');
+    expect(result.stdout).not.toContain('Issue:');
     expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });
 
-test('prepare-handoff names no contract for a transient plan and no plan of another worktree', () => {
-  const cwd = tmpWorkspace('helper-prepare-handoff-transient');
+test('prepare-handoff --status prints the branch issue or none and no active plan', () => {
+  const cwd = tmpWorkspace('helper-prepare-handoff-issue');
   try {
     mkdirSync(join(cwd, 'plans'), { recursive: true });
     mkdirSync(join(cwd, 'tasks/contracts'), { recursive: true });
     copyHelpers(cwd);
-    const plan = 'plans/plan-20260101-1200-think-plan-123.md';
-    writeFileSync(join(cwd, plan), '# Plan: Real Title\n\n> **Status**: Executing\n');
-    writeFileSync(join(cwd, 'tasks/contracts/20260101-1200-real-title.contract.md'), '# Task Contract: real title\n');
-    writeFileSync(join(cwd, '.ai/harness/active-plan'), `${plan}\n`);
+    writeFileSync(join(cwd, 'README.md'), '# Fixture\n');
+    initGitRepo(cwd);
+    commitAll(cwd, 'fixture');
 
-    const owned = run('bash', ['scripts/prepare-handoff.sh', '--status'], cwd);
-    expect(owned.status, owned.stderr).toBe(0);
-    expect(owned.stdout).toContain(`Active plan: ${plan}`);
-    expect(owned.stdout).not.toContain('tasks/contracts/');
+    const none = run('bash', ['scripts/prepare-handoff.sh', '--status'], cwd);
+    expect(none.status, none.stderr).toBe(0);
+    expect(none.stdout).toContain('Issue: none');
+    expect(none.stdout).not.toContain('Active plan:');
 
-    writeFileSync(join(cwd, '.ai/harness/active-worktree'), `${join(cwd, 'other-worktree')}\n`);
-    const foreign = run('bash', ['scripts/prepare-handoff.sh', '--status'], cwd);
-    expect(foreign.status, foreign.stderr).toBe(0);
-    expect(foreign.stdout).toContain('Active plan: (none)');
-    expect(foreign.stdout).not.toContain('Active contract');
+    expect(run('git', ['checkout', '-b', 'feat/1178-hook-recovery'], cwd).status).toBe(0);
+    const issue = run('bash', ['scripts/prepare-handoff.sh', '--status'], cwd);
+    expect(issue.status, issue.stderr).toBe(0);
+    expect(issue.stdout).toContain('Issue: 1178');
+    expect(issue.stdout).not.toContain('Active plan:');
+    expect(issue.stdout).not.toContain('Active contract');
   } finally { rmSync(cwd, { recursive: true, force: true }); }
 });

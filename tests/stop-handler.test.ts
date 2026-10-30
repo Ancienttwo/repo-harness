@@ -60,12 +60,10 @@ function gitFixture(): { cwd: string; head: string } {
   return { cwd, head: git(cwd, ['rev-parse', 'HEAD']) };
 }
 
-/** Stop reads ownership and the active plan only; it never resolves the effective state. */
-function collector(cwd: string, activePlan: string | null = null) {
+/** Stop reads the repo root only; it never resolves the effective state or a plan marker. */
+function collector(cwd: string) {
   return {
     getRepoRoot: () => cwd,
-    getWorktreeOwnership: () => ({ current: cwd, owner: null, ownedByCurrent: false }),
-    getActivePlanMarker: () => activePlan,
     getEffectiveState: () => { throw new Error('Stop must not resolve the effective state'); },
   };
 }
@@ -128,8 +126,9 @@ describe('Stop recovery and safety invariants', () => {
     expect(handoff).not.toMatch(/Parent Run ID: run-/);
   });
 
-  test('preserves the recovery projection workflow-context fields', () => {
-    const cwd = fixture();
+  test('records the current branch, HEAD and branch-derived issue and no plan or todos', () => {
+    const { cwd } = gitFixture();
+    git(cwd, ['checkout', '-b', 'feat/1178-hook-recovery']);
     const plan = 'plans/plan-20260720-0000-projection.md';
     const contract = 'tasks/contracts/20260720-0000-projection.contract.md';
     const review = 'tasks/reviews/20260720-0000-projection.review.md';
@@ -154,17 +153,26 @@ describe('Stop recovery and safety invariants', () => {
     writeFileSync(join(cwd, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
     writeFileSync(join(cwd, '.claude/.task-state.json'), '{"source_plan":"plans/superseded.md"}\n');
     writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"run_file":".ai/harness/runs/verified.json"}\n');
+    git(cwd, ['add', '-A']);
+    git(cwd, ['commit', '-m', 'retired workflow artifacts']);
+    const head = git(cwd, ['rev-parse', 'HEAD']);
 
     const result = runStopHandler({
-      collector: collector(cwd, plan),
+      collector: collector(cwd),
       identity: hookIdentity({ runId: 'projection-parity' }),
     });
 
     expect(result.exitCode).toBe(0);
     const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
-    expect(handoff).toContain('Continue task checklist sourced from plans/source-plan.md.');
-    // The plan still declares a Task Contract and the sprint marker still
-    // exists; recovery reads neither.
+    expect(handoff).toContain('- Branch: feat/1178-hook-recovery');
+    expect(handoff).toContain(`- HEAD: ${head}`);
+    expect(handoff).toContain('- Issue: 1178');
+    expect(handoff).toContain('Continue GitHub issue #1178 on branch feat/1178-hook-recovery.');
+    // The old plan, sprint, contract and todo artifacts still exist; recovery
+    // reads none of them.
+    for (const stale of [plan, 'plans/source-plan.md', 'plans/superseded.md', 'tasks/todos.md', 'Active plan:', 'Todo Source Plan:', 'Next action stage:', 'Supersedes:', 'must not leak']) {
+      expect(handoff).not.toContain(stale);
+    }
     expect(handoff).not.toContain('Active sprint row');
     expect(handoff).not.toContain('hrd-06');
     expect(handoff).not.toContain(contract);
@@ -172,50 +180,31 @@ describe('Stop recovery and safety invariants', () => {
     // The "## Evidence" section sources only from the checkpoint and renders a
     // typed minimal state when none is published (this fixture seeds no ledger).
     expect(handoff).toContain('- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)');
-    expect(handoff).toContain('continue the next Task Breakdown item: preserve the real next action');
-    expect(handoff).toContain('- Next action stage: task');
-    expect(handoff).toContain('- Supersedes: plans/superseded.md');
-    expect(handoff).toContain('- Todo Source Plan: plans/source-plan.md');
     const resume = readFileSync(join(cwd, '.ai/harness/handoff/resume.md'), 'utf8');
+    expect(resume).toContain('- Branch: feat/1178-hook-recovery');
+    expect(resume).toContain(`- HEAD: ${head}`);
+    expect(resume).toContain('- Issue: 1178');
     // The legacy marker is the stable external contract that session-context's
     // resume check reads.
     expect(resume).toContain('<!-- generated-by: repo-harness codex-handoff-resume v1 -->');
     expect(resume).toContain('## Provenance');
     expect(resume).not.toContain(contract);
+    expect(resume).not.toContain('tasks/todos.md');
   });
 
-  test('does not shadow canonical finish authority when the active plan is complete', () => {
-    const cwd = fixture();
-    const plan = 'plans/plan-20260720-0001-complete.md';
-    mkdirSync(join(cwd, 'plans'), { recursive: true });
-    writeFileSync(join(cwd, plan), '# Complete\n## Task Breakdown\n- [x] done\n');
+  test('writes issue: none without guessing when the branch has no issue number', () => {
+    const { cwd, head } = gitFixture();
+    git(cwd, ['checkout', '-b', 'feature/no-issue-here']);
 
-    runStopHandler({
-      collector: collector(cwd, plan),
-      identity: hookIdentity({ runId: 'projection-complete-plan' }),
-    });
+    const result = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ runId: 'no-issue' }) });
 
+    expect(result.exitCode).toBe(0);
     const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
-    expect(handoff).toContain('- Next action stage: check');
-    expect(handoff).toContain('let canonical workflow gates determine whether review, external acceptance, verification, or worktree finish is next. Command: /check');
-    expect(handoff).not.toContain('finish and fast-forward merge');
-  });
-
-  test('ignores an active-plan marker owned by a foreign worktree', () => {
-    const cwd = fixture();
-    const plan = 'plans/plan-20260720-0002-foreign.md';
-    mkdirSync(join(cwd, 'plans'), { recursive: true });
-    writeFileSync(join(cwd, plan), '# Foreign plan\n## Task Breakdown\n- [ ] must not leak\n');
-    const foreignCollector = {
-      ...collector(cwd, plan),
-      getWorktreeOwnership: () => ({ current: cwd, owner: '/tmp/other-worktree', ownedByCurrent: false }),
-    };
-
-    runStopHandler({ collector: foreignCollector, identity: hookIdentity({ runId: 'projection-foreign-owner' }) });
-
-    const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
-    expect(handoff).toContain('- Active plan: (none)');
-    expect(handoff).not.toContain('must not leak');
+    expect(handoff).toContain('- Branch: feature/no-issue-here');
+    expect(handoff).toContain(`- HEAD: ${head}`);
+    expect(handoff).toContain('- Issue: none');
+    const resume = readFileSync(join(cwd, '.ai/harness/handoff/resume.md'), 'utf8');
+    expect(resume).toContain('- Issue: none');
   });
 
   test('fails closed before a policy-controlled projection can follow a symlink outside the repo', () => {

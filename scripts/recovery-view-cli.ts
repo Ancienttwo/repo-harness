@@ -10,7 +10,6 @@ import { dirname, join } from "path";
 import {
   extractResumePrompt,
   materializeRecoveryViews,
-  readActivePlanForRecovery,
   recoveryStatus,
   renderGlobalHandoffSection,
   repoKeyFor,
@@ -68,16 +67,15 @@ function parseArgs(argv: readonly string[]): Options {
 function main(): void {
   const options = parseArgs(process.argv.slice(2));
   const repoRoot = resolveRepoRoot(options.cwd);
-  const activePlan = readActivePlanForRecovery(repoRoot);
   if (options.status) {
-    const status = recoveryStatus(repoRoot, activePlan);
-    console.log(`Active plan: ${status.plan || "(none)"}`);
+    const status = recoveryStatus(repoRoot);
+    console.log(`Issue: ${status.issue ?? "none"}`);
     console.log(`Handoff: ${status.handoff}`);
     console.log(`Resume packet: ${status.resume}`);
     return;
   }
   const codexHome = process.env.CODEX_HOME || join(process.env.HOME || "", ".codex");
-  const views = materializeRecoveryViews(repoRoot, activePlan, process.env, {
+  const views = materializeRecoveryViews(repoRoot, process.env, {
     reason: options.reason,
     codexHome,
   });
