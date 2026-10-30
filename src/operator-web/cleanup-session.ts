@@ -8,7 +8,7 @@ import {
 } from '../core/operator/doc-session-api';
 import { DOC_SESSION_POLL_MS } from '../core/operator/doc-session-events';
 import { WORKTREE_CLEANUP_MAX_IDS } from '../core/operator/worktree-cleanup';
-import type { AuthorizedCleanupRequest, CleanupApproval, CleanupPlan } from '../core/operator/worktree-cleanup-plan';
+import { cleanupSelection, type AuthorizedCleanupRequest, type CleanupApproval, type CleanupPlan } from '../core/operator/worktree-cleanup-plan';
 import type { WorktreesSnapshot } from '../core/operator/worktrees';
 import {
   postSession,
@@ -43,7 +43,7 @@ export function postCleanupSessionCreate(body: CleanupSessionCreateV1 & RequestI
 /**
  * The approval request for the checked plan items. Green ids carry no
  * approval; a yellow id carries the loss and plan digests of its item; a red id
- * is refused here. The live collector row of each id must exist and carry the
+ * or an item the plan marks not selectable is refused here. The live collector row of each id must exist and carry the
  * judgment the plan gave it, so the plan never overrides the collector.
  * `expected_digest` is the selection digest of the plan rows, which the server
  * checks against the plan it saved.
@@ -66,6 +66,8 @@ export async function cleanupSessionRequest(plan: CleanupPlan, ids: readonly str
       if (item.loss_sha256 === null) throw new Error(`cleanup item ${id} has no observed loss`);
       approvals.push({ id, loss_sha256: item.loss_sha256, plan_sha256: item.plan_sha256 });
     }
+    // The plan page fixes the same selection policy, so a request never carries an item it would not check.
+    if (!cleanupSelection(item).selectable) throw new Error(`cleanup item ${id} is not selectable`);
   }
   return {
     session_id: plan.session_id, ids: selected, approvals,

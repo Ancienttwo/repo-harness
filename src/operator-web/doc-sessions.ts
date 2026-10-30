@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useReducer, useRef, useState } from 'react';
 import type { DocCitationV1 } from '../core/operator/doc-citation';
 import {
   decodeDocSessionRefusal,
@@ -478,6 +478,53 @@ export function storeFinalizeRequest(sessionId: string, operation: DocSessionFin
   const entry = isObject(all[sessionId]) ? all[sessionId] as Record<string, unknown> : {};
   try { localStorage.setItem(OPERATOR_SESSION_FINALIZE_STORAGE_KEY, JSON.stringify({ ...all, [sessionId]: { ...entry, [operation]: body } })); }
   catch { /* See above. */ }
+}
+
+/**
+ * Refusals that the server throws before it saves the request (PR #1173,
+ * `commitLocked` and `discardLocked` ahead of `saveState`, and the `turn_active`
+ * and `busy` checks ahead of both). Only on the first send of a body do they
+ * prove nothing was saved: once a request may be saved, the same checks also
+ * answer a retry.
+ */
+const UNSAVED_REFUSALS: Readonly<Record<DocSessionFinalizeOperation, ReadonlySet<string>>> = {
+  commit: new Set(['diff_changed', 'head_history_unsupported', 'no_changes', 'path_outside_scope', 'generated_region', 'branch_pushed', 'turn_active', 'busy']),
+  discard: new Set(['loss_changed', 'turn_active', 'branch_pushed', 'worktree_in_use', 'busy']),
+};
+
+export function refusalSavedNothing(operation: DocSessionFinalizeOperation, outcome: DocSessionWrite<unknown>): boolean {
+  return outcome.state === 'refused' && UNSAVED_REFUSALS[operation].has(outcome.refusal.code);
+}
+
+/** Drops the stored first request of one operation, after the server is known to have saved nothing. */
+export function forgetFinalizeRequest(sessionId: string, operation: DocSessionFinalizeOperation): void {
+  const all = readFinalize();
+  const entry = all[sessionId];
+  if (!isObject(entry) || !Object.hasOwn(entry, operation)) return;
+  const { [operation]: _, ...rest } = entry;
+  try { localStorage.setItem(OPERATOR_SESSION_FINALIZE_STORAGE_KEY, JSON.stringify({ ...all, [sessionId]: rest })); } catch { /* Nothing more to keep. */ }
+}
+
+/**
+ * The stored first request of one operation. While it exists the server may
+ * have saved it, and every later request of the session must carry the same
+ * fields. It is released after a first-send refusal that saved nothing, or when
+ * a `/finalization` read taken after an answer shows no progress.
+ */
+export function useFinalizeBinding(sessionId: string, operation: DocSessionFinalizeOperation, read: DocSessionRead<unknown> | null, noProgress: boolean) {
+  const [, redraw] = useReducer((count: number) => count + 1, 0);
+  const latest = useRef(read);
+  latest.current = read;
+  const waiting = useRef<{ readonly read: DocSessionRead<unknown> | null } | null>(null);
+  useEffect(() => {
+    if (waiting.current === null || read === waiting.current.read || read?.state !== 'ok') return;
+    waiting.current = null;
+    if (noProgress) { forgetFinalizeRequest(sessionId, operation); redraw(); }
+  }, [read, noProgress, sessionId, operation]);
+  const release = useCallback(() => { waiting.current = null; forgetFinalizeRequest(sessionId, operation); redraw(); }, [sessionId, operation]);
+  /** An answer left the request open: the next successful `/finalization` read decides. */
+  const awaitRead = useCallback(() => { waiting.current = { read: latest.current }; }, []);
+  return { release, awaitRead };
 }
 
 export function forgetFinalizeRequests(sessionId: string): void {

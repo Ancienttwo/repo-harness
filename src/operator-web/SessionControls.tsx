@@ -1,7 +1,6 @@
 import { useCallback, useState } from 'react';
 import { Banner, Button, cn } from '@cloudflare/kumo';
 import {
-  DOC_SESSION_COMMIT_MESSAGE_MAX,
   DOC_SESSION_MESSAGE_MAX_BYTES,
   DOC_SESSION_MESSAGE_WHEN,
   type DocSessionMessageWhen,
@@ -13,13 +12,16 @@ import type { DocSessionCommitInput } from '../core/operator/doc-session-finaliz
 import type { OperatorDocSessionDetail } from '../core/operator/doc-session-views';
 import {
   localizeDocSessionRefusal,
+  refusalSavedNothing,
   storedFinalizeRequest,
   storeFinalizeRequest,
+  useFinalizeBinding,
   useSessionWrite,
   type DocSessionCommitWriter,
   type DocSessionMessageRequest,
   type DocSessionMessageWriter,
   type DocSessionProgress,
+  type DocSessionRead,
   type DocSessionStopWriter,
   type DocSessionWrite,
   type RequestId,
@@ -165,11 +167,13 @@ export function OriginalMissing({ answered, t }: { readonly answered: DocSession
 /**
  * Commit, push and open a Draft PR (`4-DSES-P1`, C19). The first request
  * binds the diff the user read: its head and digest. The browser keeps that
- * request; once the server saved it, each retry sends it unchanged with a new
- * request_id, and the server resumes at the step that did not finish. The
- * progress shown is the `/finalization` read, never the write answer.
+ * request. Once the server may have saved it, every later request carries the
+ * same fields (a changed field answers `finalization_conflict`), so the message
+ * is locked and each retry resends the stored request with the step the server
+ * did not finish. The progress shown is the `/finalization` read, never the
+ * write answer.
  */
-export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed, progress, writeCommit, onDiffChanged, onAnswered, t }: {
+export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed, progress, finalizationRead, writeCommit, onDiffChanged, onAnswered, t }: {
   readonly sessionId: string; readonly title: string; readonly awaitingReview: boolean;
   /** The current diff read; null while it is not loaded. */
   readonly diff: OperatorDocSessionDiffV1 | null;
@@ -177,30 +181,36 @@ export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed
   readonly reviewed: boolean;
   /** The commit progress of the last `/finalization` read. */
   readonly progress: CommitProgress | null;
+  /** The last `/finalization` read as it came, so an answer can wait for a newer one. */
+  readonly finalizationRead: DocSessionRead<unknown> | null;
   readonly writeCommit: DocSessionCommitWriter; readonly onDiffChanged: () => void; readonly onAnswered: () => void; readonly t: OperatorTranslate;
 }) {
   const [message, setMessage] = useState<string | null>(null);
   const commit = useSessionWrite<DocSessionCommitInput, null>(useCallback(body => writeCommit(sessionId, body), [writeCommit, sessionId]));
-  const text = message ?? title;
+  const binding = useFinalizeBinding(sessionId, 'commit', finalizationRead, progress === null);
+  const stored = storedFinalizeRequest(sessionId, 'commit');
+  const text = stored?.message ?? message ?? title;
   const answered = commit.state.kind === 'answered' ? commit.state.outcome : null;
   const sending = commit.state.kind === 'sending';
   const resume = progress !== null && progress.stage !== 'complete';
-  const stored = resume ? storedFinalizeRequest(sessionId, 'commit') : null;
-  const send = async (body: DocSessionCommitInput) => {
+  const send = async (body: DocSessionCommitInput, first: boolean) => {
     const outcome = await commit.submit(body);
     if (outcome === null) return;
-    // A diff_changed refusal saved nothing; only the diff needs a new read.
-    if (outcome.state === 'refused' && outcome.refusal.code === 'diff_changed') onDiffChanged();
-    else onAnswered();
+    // A first-send refusal saved nothing; the stored body goes, and a diff_changed one needs a new diff read.
+    if (first && refusalSavedNothing('commit', outcome)) {
+      binding.release();
+      if (outcome.state === 'refused' && outcome.refusal.code === 'diff_changed') { onDiffChanged(); return; }
+    } else binding.awaitRead();
+    onAnswered();
   };
   const first = async () => {
     if (diff === null) return;
     const body: DocSessionCommitInput = { expected_head: diff.head_commit, expected_diff_sha256: diff.diff_sha256, message: text };
     storeFinalizeRequest(sessionId, 'commit', body);
-    await send(body);
+    await send(body, true);
   };
-  const ready = awaitingReview && diff !== null && diff.files.length > 0 && reviewed && text.trim() !== '';
-  const hint = !awaitingReview ? 'docSession.commit.notReady' : diff !== null && !reviewed ? 'docSession.commit.needsReview' : null;
+  const ready = stored !== null || (awaitingReview && diff !== null && diff.files.length > 0 && reviewed && text.trim() !== '');
+  const hint = stored !== null ? 'docSession.commit.messageLocked' : !awaitingReview ? 'docSession.commit.notReady' : diff !== null && !reviewed ? 'docSession.commit.needsReview' : null;
   return (
     <section className="flex flex-col gap-3" data-commit aria-label={t('docSession.commit.submit')}>
       {progress !== null && <CommitSteps progress={progress} t={t} />}
@@ -208,11 +218,11 @@ export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed
         <>
           <label className="flex flex-col gap-1 text-sm">
             <span className="type-caption text-kumo-subtle">{t('docSession.commit.message')}</span>
-            <input type="text" value={text} onChange={event => setMessage(event.target.value)} maxLength={DOC_SESSION_COMMIT_MESSAGE_MAX} data-commit-message
-              className="h-9 rounded-md border border-kumo-line bg-kumo-base px-3 text-sm text-kumo-default outline-none focus-visible:ring-2 focus-visible:ring-kumo-brand" />
+            <input type="text" value={text} onChange={event => setMessage(event.target.value)} disabled={stored !== null} data-commit-message
+              className="h-9 rounded-md border border-kumo-line bg-kumo-base px-3 text-sm text-kumo-default outline-none focus-visible:ring-2 focus-visible:ring-kumo-brand disabled:cursor-not-allowed disabled:opacity-60" />
           </label>
           <div className="flex flex-wrap items-center gap-3">
-            <Button variant="primary" onClick={() => void first()} disabled={!ready || sending} loading={sending} data-commit-submit="commit">
+            <Button variant="primary" onClick={() => void (stored !== null ? send(stored, false) : first())} disabled={!ready || sending} loading={sending} data-commit-submit="commit">
               {t(sending ? 'docSession.commit.sending' : 'docSession.commit.submit')}
             </Button>
             {hint !== null && <span className="text-sm text-kumo-subtle" data-commit-hint>{t(hint)}</span>}
@@ -220,7 +230,7 @@ export function CommitControl({ sessionId, title, awaitingReview, diff, reviewed
         </>
       )}
       {resume && stored !== null && (
-        <Button variant="primary" className="w-fit" onClick={() => void send(stored)} disabled={sending} loading={sending} data-commit-submit="resume">
+        <Button variant="primary" className="w-fit" onClick={() => void send(stored, false)} disabled={sending} loading={sending} data-commit-submit="resume">
           {t('docSession.commit.retry')}
         </Button>
       )}

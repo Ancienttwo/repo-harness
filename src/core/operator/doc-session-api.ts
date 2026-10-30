@@ -21,7 +21,6 @@ export const DOC_SESSION_MAX_INSTRUCTION = 8_000;
  * hash in `doc-citation.ts`, so the page that builds citations can import it.
  */
 export const DOC_CITATION_MAX_LINES = 500;
-export const DOC_SESSION_COMMIT_MESSAGE_MAX = 500;
 
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;

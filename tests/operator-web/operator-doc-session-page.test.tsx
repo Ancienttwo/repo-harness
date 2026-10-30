@@ -234,6 +234,9 @@ function withoutId(body: Record<string, unknown> | undefined): Record<string, un
   return rest;
 }
 
+/** An answer without a typed body: the page cannot tell whether the server ran the request. */
+const UNANSWERED: Answer = { status: 502, body: {} };
+
 const FIRST_COMMIT = { expected_head: BASE, expected_diff_sha256: DIFF_SHA, message: 'Tighten the reading column' };
 
 describe('doc session page', () => {
@@ -442,6 +445,61 @@ describe('doc session page', () => {
     expect(localStorage.getItem(OPERATOR_SESSION_FINALIZE_STORAGE_KEY)).toBe('{}');
   });
 
+  test('4-DSES-F2: a commit answer that was lost keeps the first body: the message is locked, and a retry resends it even though the finalization re-read failed too', async () => {
+    const page = await mount({
+      // The server may have saved the request, but neither the answer nor the /finalization re-read arrived.
+      finalization: [finalization(), UNANSWERED],
+      commit: [UNANSWERED, ok(commitProgress('complete'))],
+    });
+    await click(page.$('[data-commit-submit]'));
+    expect(withoutId(page.sent.commit[0])).toEqual(FIRST_COMMIT);
+    expect(page.$('[data-write-result]')?.getAttribute('data-write-result')).toBe('unreachable');
+    const input = page.$<HTMLInputElement>('[data-commit-message]')!;
+    expect(input.disabled).toBe(true);
+    expect(page.$('[data-commit-hint]')?.textContent).toBe(page.t('docSession.commit.messageLocked'));
+    expect(storedFinalizeRequest(SID, 'commit')).toEqual(FIRST_COMMIT);
+
+    await type(input, 'A different message');
+    expect(input.value).toBe(FIRST_COMMIT.message);
+    await click(page.$('[data-commit-submit]'));
+    expect(withoutId(page.sent.commit[1])).toEqual(FIRST_COMMIT);
+    // The lost answer is resent as the same request, so the server replays what it recorded.
+    expect(page.sent.commit[1]!.request_id).toBe(page.sent.commit[0]!.request_id);
+    expect(storedFinalizeRequest(SID, 'commit')).toEqual(FIRST_COMMIT);
+  });
+
+  test('4-DSES-F2: a lost answer is released once a /finalization read after it shows no progress; a first-send refusal that saved nothing releases at once', async () => {
+    const lost = await mount({ commit: [UNANSWERED, refused(409, 'busy')], finalization: [finalization(), finalization()] });
+    await click(lost.$('[data-commit-submit]'));
+    expect(lost.$<HTMLInputElement>('[data-commit-message]')?.disabled).toBe(false);
+    expect(storedFinalizeRequest(SID, 'commit')).toBeNull();
+    await type(lost.$<HTMLInputElement>('[data-commit-message]'), 'A different message');
+    await click(lost.$('[data-commit-submit]'));
+    expect(withoutId(lost.sent.commit[1])).toEqual({ ...FIRST_COMMIT, message: 'A different message' });
+    await unmount();
+
+    // A refusal of a retry proves nothing: busy also answers a request whose first send is still running.
+    const retried = await mount({ commit: [UNANSWERED, refused(409, 'busy')], finalization: [finalization(), UNANSWERED] });
+    await click(retried.$('[data-commit-submit]'));
+    await click(retried.$('[data-commit-submit]'));
+    expect(retried.$('[data-write-result]')?.getAttribute('data-write-result')).toBe('busy');
+    expect(retried.$<HTMLInputElement>('[data-commit-message]')?.disabled).toBe(true);
+    expect(storedFinalizeRequest(SID, 'commit')).toEqual(FIRST_COMMIT);
+  });
+
+  test('4-DSES-F2: after a diff_changed refusal nothing was saved, so the next commit builds a new body from the new message and digest', async () => {
+    const page = await mount({ diff: [diff(), diff(NEW_DIFF_SHA)], commit: [refused(409, 'diff_changed'), UNANSWERED] });
+    await click(page.$('[data-commit-submit]'));
+    expect(page.$('[data-write-result]')?.getAttribute('data-write-result')).toBe('diff_changed');
+    expect(storedFinalizeRequest(SID, 'commit')).toBeNull();
+    expect(page.$<HTMLInputElement>('[data-commit-message]')?.disabled).toBe(false);
+    await type(page.$<HTMLInputElement>('[data-commit-message]'), 'Reworded after the diff changed');
+    await click(page.$('[data-view="reading"]'));
+    await click(page.$('[data-view="diff"]'));
+    await click(page.$('[data-commit-submit]'));
+    expect(withoutId(page.sent.commit[1])).toEqual({ ...FIRST_COMMIT, expected_diff_sha256: NEW_DIFF_SHA, message: 'Reworded after the diff changed' });
+  });
+
   test('4-DSES-F2: after a reload without the stored first request, the page never sends a new commit body', async () => {
     const page = await mount({ diff: [diff(NEW_DIFF_SHA, COMMIT)], finalization: [finalization(commitProgress('pushed'))], commit: [ok(commitProgress('complete'))] });
     expect(page.$('[data-finalize-stage]')?.getAttribute('data-finalize-stage')).toBe('pushed');
@@ -526,6 +584,45 @@ describe('doc session page', () => {
     expect(page.$('[data-discard-done]')?.textContent).toBe(page.t('docSession.discard.done'));
     expect(page.all('[data-session-failure]').map(banner => banner.getAttribute('data-session-failure'))).toEqual([]);
     expect(storedFinalizeRequest(SID, 'discard')).toBeNull();
+  });
+
+  test('4-DSES-F4: a discard answer that was lost keeps the first body: a new loss read does not build a new one', async () => {
+    const page = await mount({ loss: [loss(), loss({ loss_sha256: '4'.repeat(64) })], finalization: [finalization(), UNANSWERED], discard: [UNANSWERED, ok(discardProgress('complete'))] });
+    const first = { expected_head: LOSS_HEAD, expected_loss_sha256: LOSS_SHA };
+    await click(page.$('[data-discard-open]'));
+    await click(page.$('[data-discard-confirm]'));
+    expect(withoutId(page.sent.discard[0])).toEqual(first);
+    expect(page.$('[data-discard] [data-write-result]')?.getAttribute('data-write-result')).toBe('unreachable');
+    expect(storedFinalizeRequest(SID, 'discard')).toEqual(first);
+
+    // The user closes and opens the confirm again; the loss read now shows another digest.
+    await click(page.$('[data-discard] button:not([data-discard-confirm])'));
+    await click(page.$('[data-discard-open]'));
+    expect(page.reads.loss).toBe(2);
+    await click(page.$('[data-discard-confirm]'));
+    expect(withoutId(page.sent.discard[1])).toEqual(first);
+    expect(storedFinalizeRequest(SID, 'discard')).toEqual(first);
+  });
+
+  test('4-DSES-F4: a lost discard answer is released by a /finalization read with no progress, and a retry refusal does not release it', async () => {
+    const released = await mount({ loss: [loss(), loss({ loss_sha256: '4'.repeat(64) })], finalization: [finalization(), finalization()], discard: [UNANSWERED, UNANSWERED] });
+    await click(released.$('[data-discard-open]'));
+    await click(released.$('[data-discard-confirm]'));
+    expect(storedFinalizeRequest(SID, 'discard')).toBeNull();
+    await click(released.$('[data-discard] button:not([data-discard-confirm])'));
+    await click(released.$('[data-discard-open]'));
+    await click(released.$('[data-discard-confirm]'));
+    expect(withoutId(released.sent.discard[1])).toEqual({ expected_head: LOSS_HEAD, expected_loss_sha256: '4'.repeat(64) });
+    await unmount();
+
+    const retried = await mount({ finalization: [finalization(), UNANSWERED], discard: [UNANSWERED, refused(409, 'worktree_in_use'), refused(409, 'loss_changed')] });
+    await click(retried.$('[data-discard-open]'));
+    await click(retried.$('[data-discard-confirm]'));
+    await click(retried.$('[data-discard-confirm]'));
+    expect(retried.$('[data-discard] [data-write-result]')?.getAttribute('data-write-result')).toBe('worktree_in_use');
+    expect(storedFinalizeRequest(SID, 'discard')).toEqual({ expected_head: LOSS_HEAD, expected_loss_sha256: LOSS_SHA });
+    await click(retried.$('[data-discard-confirm]'));
+    expect(withoutId(retried.sent.discard[2])).toEqual({ expected_head: LOSS_HEAD, expected_loss_sha256: LOSS_SHA });
   });
 
   test('4-DOCS-F1: pills from the create answer are numbered in list order and a relocated one is marked; the newest cursor is marked seen', async () => {

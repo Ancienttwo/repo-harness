@@ -400,7 +400,7 @@ describe('a server without doc sessions', () => {
     expect($$('[data-continue-item]').length).toBeGreaterThan(0);
   });
 
-  test('1-SHELL-N1 an absent list leaves the rail without 「新会话」 and 「最近」, and the Docs page without a cite action or composer', async () => {
+  test('1-SHELL-N1 an unreachable list leaves the rail without 「新会话」 and 「最近」, and the Docs page without a cite action or composer', async () => {
     await mount(`#docs/${CONSOLE}`, props('degraded'));
     expect($('[data-new-session]')).toBeNull();
     expect($('[data-recent-sessions]')).toBeNull();
@@ -410,8 +410,8 @@ describe('a server without doc sessions', () => {
     await act(async () => root?.unmount());
     root = null;
     document.body.innerHTML = '';
-    const absent = async (): Promise<DocSessionsRead> => ({ state: 'unavailable', reason: 'unreachable' });
-    await mount(`#docs/${CONSOLE}`, props('busy', { readDocSessions: absent }));
+    const unreachableList = async (): Promise<DocSessionsRead> => ({ state: 'unavailable', reason: 'unreachable' });
+    await mount(`#docs/${CONSOLE}`, props('busy', { readDocSessions: unreachableList }));
     await selectBlock(5);
     expect($('[data-docs-cite]')).toBeNull();
     expect($('[data-doc-composer]')).toBeNull();

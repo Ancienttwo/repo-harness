@@ -209,6 +209,12 @@ describe('the cleanup approval request', () => {
     // A yellow item whose loss the server did not observe has no digest to approve.
     const unobserved: CleanupPlan = { ...plan, items: plan.items.map(item => item.worktree.id === DOCS ? { ...item, loss: null, loss_sha256: null } : item) };
     await expect(cleanupSessionRequest(unobserved, [DOCS], snapshot)).rejects.toThrow('no observed loss');
+    // An item the plan's own selection policy leaves unchecked is refused: advice to keep, or a process still running in it.
+    const keep: CleanupPlan = { ...plan, items: plan.items.map(item => item.worktree.id === GREEN[0] ? { ...item, advice: { ...item.advice, recommendation: 'keep' as const } } : item) };
+    await expect(cleanupSessionRequest(keep, [GREEN[0]!], snapshot)).rejects.toThrow('not selectable');
+    const running: CleanupPlan = { ...plan, items: plan.items.map(item => item.worktree.id === GREEN[0] ? { ...item, worktree: { ...item.worktree, process_count: 1 } } : item) };
+    expect(cleanupSelection(itemOf(running, GREEN[0]!)).selectable).toBe(false);
+    await expect(cleanupSessionRequest(running, [GREEN[0]!], snapshot)).rejects.toThrow('not selectable');
   });
 
   test('the plan and the live collector must agree: an item the rows judge otherwise is refused, in both directions', async () => {

@@ -13,10 +13,12 @@ import {
   docSessionStatus,
   forgetFinalizeRequests,
   markSessionSeen,
+  refusalSavedNothing,
   storedFinalizeRequest,
   storeFinalizeRequest,
   useDocSessionDetail,
   useDocSessionEvents,
+  useFinalizeBinding,
   useSessionRead,
   useSessionWrite,
   type DocSessionCommitWriter,
@@ -146,31 +148,37 @@ type DiscardProgress = Extract<DocSessionProgress, { readonly operation: 'discar
 
 /**
  * `4-DSES-F4`: the loss read first, then a confirm bound to its head and digest. A pushed branch gets no
- * delete control. Once the server saved the discard, a retry sends the first request unchanged.
+ * delete control. Once the server may have saved the discard, every later request carries the first
+ * request unchanged: the stored body is resent and no new body is built.
  */
-function Discard({ sessionId, progress, readLoss, writeDiscard, generation, onAnswered, t }: {
-  readonly sessionId: string; readonly progress: DiscardProgress | null; readonly readLoss: DocSessionLossReader;
+function Discard({ sessionId, progress, finalizationRead, readLoss, writeDiscard, generation, onAnswered, t }: {
+  readonly sessionId: string; readonly progress: DiscardProgress | null; readonly finalizationRead: DocSessionRead<unknown> | null;
+  readonly readLoss: DocSessionLossReader;
   readonly writeDiscard: DocSessionDiscardWriter; readonly generation: number; readonly onAnswered: () => void; readonly t: OperatorTranslate;
 }) {
   const [open, setOpen] = useState(false);
   const { read: loss, reload } = useSessionRead('doc-session-loss', readLoss, open && progress === null ? sessionId : null, generation);
   const discard = useSessionWrite<DocSessionDiscardInput, null>(useCallback(body => writeDiscard(sessionId, body), [writeDiscard, sessionId]));
+  const binding = useFinalizeBinding(sessionId, 'discard', finalizationRead, progress === null);
+  const stored = storedFinalizeRequest(sessionId, 'discard');
   const answered = discard.state.kind === 'answered' ? discard.state.outcome : null;
   const sending = discard.state.kind === 'sending';
-  const send = async (body: DocSessionDiscardInput) => {
+  const send = async (body: DocSessionDiscardInput, first: boolean) => {
     const outcome = await discard.submit(body);
     if (outcome === null) return;
+    // A first-send refusal saved nothing; the stored body goes. Any other answer waits for the next /finalization read.
+    if (first && refusalSavedNothing('discard', outcome)) binding.release();
+    else binding.awaitRead();
     if (outcome.state === 'refused' && outcome.refusal.code === 'loss_changed') reload();
     onAnswered();
   };
   if (progress?.stage === 'complete') return <p role="status" className="text-sm text-kumo-default" data-discard-done>{t('docSession.discard.done')}</p>;
   if (progress !== null) {
-    const stored = storedFinalizeRequest(sessionId, 'discard');
     return (
       <section className="flex flex-col gap-3 rounded-lg border border-kumo-line bg-kumo-base p-4" data-discard data-finalize-stage={progress.stage} aria-label={t('docSession.discard')}>
         <p className="text-sm text-kumo-default" data-delivery-stopped={progress.stage}>{t(`docSession.finalize.stage.discard_${progress.stage}`)}</p>
         {stored !== null
-          ? <Button variant="destructive" className="w-fit" onClick={() => void send(stored)} disabled={sending} data-discard-confirm="resume">{t('docSession.discard.retry')}</Button>
+          ? <Button variant="destructive" className="w-fit" onClick={() => void send(stored, false)} disabled={sending} data-discard-confirm="resume">{t('docSession.discard.retry')}</Button>
           : <OriginalMissing answered={answered} t={t} />}
         {answered !== null && <SessionWriteResult outcome={answered} t={t} />}
       </section>
@@ -179,10 +187,11 @@ function Discard({ sessionId, progress, readLoss, writeDiscard, generation, onAn
   const pushed = (loss?.state === 'ok' && loss.value.pushed) || (answered?.state === 'refused' && answered.refusal.code === 'branch_pushed');
   if (!open) return <Button variant="secondary-destructive" className="w-fit" onClick={() => setOpen(true)} data-discard-open>{t('docSession.discard')}</Button>;
   const confirm = async () => {
+    if (stored !== null) { await send(stored, false); return; }
     if (loss?.state !== 'ok') return;
     const body: DocSessionDiscardInput = { expected_head: loss.value.head_commit, expected_loss_sha256: loss.value.loss_sha256 };
     storeFinalizeRequest(sessionId, 'discard', body);
-    await send(body);
+    await send(body, true);
   };
   const list = (title: string, items: readonly { readonly key: string; readonly text: string; readonly note?: string }[], name: string) => items.length > 0 && (
     <div className="flex flex-col gap-1">
@@ -210,7 +219,7 @@ function Discard({ sessionId, progress, readLoss, writeDiscard, generation, onAn
         </>
       )}
       <div className="flex flex-wrap gap-2">
-        {loss?.state === 'ok' && !pushed && (
+        {(stored !== null || loss?.state === 'ok') && !pushed && (
           <Button variant="destructive" onClick={() => void confirm()} disabled={sending} data-discard-confirm="first">{t('docSession.discard.confirm')}</Button>
         )}
         <Button variant="ghost" onClick={() => { setOpen(false); discard.reset(); }}>{t('docSession.discard.cancel')}</Button>
@@ -281,11 +290,11 @@ function SessionView({ sessionId, readDetail, readEvents, readDiff, readLoss, re
           {/* Delivery progress comes only from the finalization read, so nothing offers a commit before it answered. */}
           {detail !== null && finalization !== null && discardProgress === null && (
             <CommitControl sessionId={sessionId} title={detail.session.title} awaitingReview={status === 'awaiting_review'} diff={diff}
-              reviewed={diff !== null && reviewed === diff.diff_sha256} progress={commitProgress} writeCommit={writeCommit}
+              reviewed={diff !== null && reviewed === diff.diff_sha256} progress={commitProgress} finalizationRead={finalizationRead} writeCommit={writeCommit}
               onDiffChanged={diffChanged} onAnswered={finalized} t={t} />
           )}
           {finalization !== null && commitProgress === null && (detail !== null || discardProgress !== null) && (
-            <Discard sessionId={sessionId} progress={discardProgress} readLoss={readLoss} writeDiscard={writeDiscard} generation={generation} onAnswered={finalized} t={t} />
+            <Discard sessionId={sessionId} progress={discardProgress} finalizationRead={finalizationRead} readLoss={readLoss} writeDiscard={writeDiscard} generation={generation} onAnswered={finalized} t={t} />
           )}
         </section>
         <section className="flex min-w-0 flex-col gap-4" aria-label={t('docSession.source.events')}>
