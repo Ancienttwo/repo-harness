@@ -186,7 +186,7 @@ describe('mcp policy and paths', () => {
         workspaceReader: false,
         workflowExecutor: true,
       });
-      expect(executorTools).toContain('run_workflow_check');
+      expect(executorTools).not.toContain('run_workflow_check');
       expect(executorTools).not.toContain('reader_status');
       expect(executorTools).not.toContain('tree');
       expect(executorTools).not.toContain('read_text');
@@ -260,7 +260,7 @@ describe('mcp policy and paths', () => {
       workspaceCoder: true,
     });
     expect(coding.execution).toMatchObject({ codingShell: true });
-    expect(definitions).toHaveLength(20);
+    expect(definitions).toHaveLength(19);
     expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
     expect(definitions.map((tool) => tool.name)).toContain('write_prd');
     for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {
