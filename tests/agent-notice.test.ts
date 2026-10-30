@@ -459,6 +459,25 @@ describe('AgentNotice', () => {
     expect(quiet.systemMessage).toContain(ARCHIMAP_MESSAGE);
   });
 
+  test('archimap: an archctx ownership failure in archcontext mode keeps the map line beside the failure line', () => {
+    const root = fixture();
+    adoptArchimap(root);
+    fixtureWrite(root, '.archcontext/model/nodes/extra.yaml', '{}\n');
+    const options = { env: noticeEnv(root), run: timedOut };
+    const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
+    const failed = collectAgentNotice(root, ownership, options);
+    expect(failed.content).toStartWith('[Architecture] notice unavailable (');
+    expect(failed.content).toEndWith([ARCHIMAP_HEADER, '- .archcontext/model/nodes/extra.yaml', ARCHIMAP_FOOTER].join('\n'));
+    expect(failed.systemMessage).toEndWith(`\n${ARCHIMAP_MESSAGE}`);
+    expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
+    expect(failed.diagnostics).toContain('ARCHCONTEXT_RESOLVE_FAILED');
+    expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(true);
+    // The map line has its own marker, so the repeated failure prints neither line again.
+    const repeated = collectAgentNotice(root, ownership, options);
+    expect(repeated.content).toBeUndefined();
+    expect(repeated.diagnostics).toContain('ARCHCONTEXT_RESOLVE_FAILED');
+  });
+
   test('archimap: a failed shared diff is one diagnostic and keeps the setup line; no review base prints nothing', () => {
     const root = registryFixture();
     adoptArchimap(root);

@@ -7,7 +7,7 @@ import type { CapabilityOwnership } from '../../core/state/types';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt, type ArchctxProviderOptions } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
-import { loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
+import { loadRegistryAuthority, readWorkflowPolicy, resolveReviewBase } from '../../effects/state/resolve-effective-state';
 import { boundedHookDiagnostic } from './hook-protocol';
 import { gitExecFileSync } from '../../effects/git/runner';
 
@@ -121,23 +121,27 @@ function changedUnownedPaths(owned: CapabilityOwnership | null, changedPaths: Ch
   return owned.unowned_paths.filter(path => changed.has(path)).sort();
 }
 
-/** One git diff per hook run for the unowned filter and the archimap check. Each reader gets the same failure. */
-function memoChanged(repoRoot: string, reviewBase: string, options: ArchctxProviderOptions): ChangedPaths {
-  let result: { readonly set: ReadonlySet<string> } | { readonly error: unknown } | undefined;
-  return () => {
+/** One git diff per review base per hook run for the unowned filter and the archimap check. Each reader of a base gets the same failure. */
+function memoChanged(repoRoot: string, options: ArchctxProviderOptions): (reviewBase: string) => ChangedPaths {
+  const results = new Map<string, { readonly set: ReadonlySet<string> } | { readonly error: unknown }>();
+  return reviewBase => () => {
+    let result = results.get(reviewBase);
     if (!result) {
       try { result = { set: changedSinceReviewBase(repoRoot, reviewBase, options) }; }
       catch (error) { result = { error }; }
+      results.set(reviewBase, result);
     }
     if ('error' in result) throw result.error;
     return result.set;
   };
 }
 
-/** The map file marks adoption. Staleness needs only git and the review base, so an archctx setup state does not hide it. */
-function archimapPaths(repoRoot: string, changedPaths: ChangedPaths | null): string[] {
-  if (!changedPaths || !existsSync(join(repoRoot, ARCHIMAP_FILE))) return [];
-  const changed = changedPaths();
+/** The map file marks adoption. Staleness needs only git and the review base, so an archctx setup state or failure does not hide it. */
+function archimapPaths(repoRoot: string, reviewBase: () => string | null, changedFor: (reviewBase: string) => ChangedPaths): string[] {
+  if (!existsSync(join(repoRoot, ARCHIMAP_FILE))) return [];
+  const base = reviewBase();
+  if (!base) return [];
+  const changed = changedFor(base)();
   if (changed.has(ARCHIMAP_FILE)) return [];
   return [...changed].filter(modelPath).sort();
 }
@@ -212,18 +216,25 @@ function observe(repoRoot: string, ownership: (options: ArchctxProviderOptions) 
   try { if (source === 'registry' && registryAbsent(repoRoot)) return null; }
   catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
   const now = options.nowMs ?? Date.now;
-  let owned: CapabilityOwnership | null;
+  let owned: CapabilityOwnership | null = null;
+  let ownershipError: unknown;
   // Ownership and checkpoint each get one bounded call. SessionStart reuses ownership.
   try { owned = ownership({ ...options, deadlineMs: Math.min(options.deadlineMs ?? Infinity, now() + 3_000) }); }
-  catch (error) { return { status: statusOf(error), unowned: null, debt: null }; }
-  const changed = owned?.review_base ? memoChanged(repoRoot, owned.review_base, options) : null;
+  catch (error) { ownershipError = error; }
+  const failed = ownershipError !== undefined;
+  const changedFor = memoChanged(repoRoot, options);
+  // An ownership answer carries its review base. Without one (an archctx
+  // failure, or no answer on a clean tree), read the same policy base from Git.
+  const mapBase = () => !failed && owned ? owned.review_base : resolveReviewBase(repoRoot);
   let archimap: Observation['archimap'] = null;
   let archimapError: unknown;
   try {
-    const paths = archimapPaths(repoRoot, changed);
+    const paths = archimapPaths(repoRoot, mapBase, changedFor);
     archimap = paths.length > 0 ? { paths, block: archimapBlock(paths) } : null;
   } catch (error) { archimapError = error; }
-  return { ...observeDebt(repoRoot, source, owned, changed, options), archimap, ...(archimapError === undefined ? {} : { archimapError }) };
+  const changed = owned?.review_base ? changedFor(owned.review_base) : null;
+  const rest = failed ? { status: statusOf(ownershipError), unowned: null, debt: null } : observeDebt(repoRoot, source, owned, changed, options);
+  return { ...rest, archimap, ...(archimapError === undefined ? {} : { archimapError }) };
 }
 
 function observeDebt(repoRoot: string, source: ReturnType<typeof capabilitySource>, owned: CapabilityOwnership | null, changed: ChangedPaths | null, options: ArchctxProviderOptions): Observation {
@@ -331,10 +342,11 @@ export function collectAgentNotice(repoRoot: string, ownership: (options: Archct
   } catch (error) { problems.push(errorText(error)); }
   try { blocks.push(...debtNotice(repoRoot, options.env, observation)); }
   catch (error) { problems.push(errorText(error)); }
-  // A failed shared diff that the unowned filter already reported is not repeated.
+  // A failure that the status or unowned filter already reported (the shared
+  // diff, or the same unavailable review subject) is not repeated.
   const { archimapError } = observation;
   const reported = observation.status.kind === 'failure' ? observation.status.error : observation.unmeasured;
-  if (archimapError !== undefined && archimapError !== reported) problems.push(errorText(archimapError));
+  if (archimapError !== undefined && (reported === undefined || errorText(archimapError) !== errorText(reported))) problems.push(errorText(archimapError));
   try { blocks.push(...archimapNotice(repoRoot, options.env, observation)); }
   catch (error) { problems.push(errorText(error)); }
   if (point === 'session-start') {

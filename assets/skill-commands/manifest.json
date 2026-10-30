@@ -696,8 +696,8 @@
     },
     {
       "name": "repo-harness-sprint",
-      "replacement": "repo-harness-product",
-      "note": "Retired Sprint execution facade. Use repo-harness-product to order GitHub issue work.",
+      "replacement": "repo-harness-issue-flow",
+      "note": "Retired Sprint execution facade. Use repo-harness-issue-flow to order and run GitHub issue work.",
       "cleanup": [
         {
           "actionId": "retired-skill-facades",
