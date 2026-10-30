@@ -11,7 +11,7 @@ transaction passes.
 | Profile | Claude hooks | Codex hooks | Components and discovery |
 |---|---:|---:|---|
 | `minimal` | 5 | 4 | CLI, effective state, scope/worktree/check guards, handoff, adaptive workflow, conditional CodeGraph support, host adapters, root router, `repo-harness-check`, the repo-owned `obsidian-memory` facade, and `windows-python-first` |
-| `full` | 6 | 5 | Everything in minimal plus PRD/Sprint/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-ship`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
+| `full` | 6 | 5 | Everything in minimal plus PRD/Goal planning integrations, agent fleet, verifier, cross-model acceptance, release/deployment gates, `repo-harness-product`, `repo-harness-issue-flow`, `repo-harness-ship`, `repo-harness-archimap`, host-aware `repo-harness-cross-review`, Waza, and Mermaid |
 
 `windows-python-first` is a package-owned toolbox Skill. Both profiles project
 it to Codex and Claude. Use it for native Windows file and text operations. It

@@ -1,0 +1,236 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROJECT Architecture Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap">
+<!--
+  repo-harness-archimap template. Keep the stylesheet; replace the sample
+  content. Inline styles carry position and size only.
+-->
+<style>
+:root {
+  --canvas: #F7F7F4; --page: #F5F4EF; --ink: #16181D; --ink-2: #4A4F57; --ink-3: #5A5F68; --ink-4: #9AA0A8;
+  --panel: #FFFFFF; --rule: #E2E2DC;
+  --sans: 'IBM Plex Sans', 'Noto Sans SC', -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); }
+main { display: flex; flex-direction: column; align-items: center; gap: 48px; padding: 48px 0; }
+h2.caption { margin: 0 0 12px; font: 600 15px/20px var(--sans); color: var(--ink-3); }
+a { color: #1E40AF; } a:hover { color: #1E3A8A; }
+
+.board { position: relative; width: 1680px; background: var(--canvas); overflow: hidden; }
+.board > * { position: absolute; }
+.kicker { left: 64px; top: 64px; font: 13px/16px var(--mono); letter-spacing: .08em; color: var(--ink-3); }
+.title { left: 64px; top: 88px; font-size: 36px; line-height: 44px; font-weight: 600; }
+.legend { right: 64px; top: 72px; width: 552px; font-size: 13px; line-height: 22px; color: var(--ink-2); text-align: right; }
+.foot { font-size: 11px; line-height: 16px; color: var(--ink-3); }
+.mono { font-family: var(--mono); }
+
+/* Overview */
+.band { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; }
+.layer { font-size: 15px; line-height: 22px; color: var(--ink-2); width: 184px; }
+.layer b { color: var(--ink); }
+.layer small { display: block; font-size: 12px; }
+.node { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  padding: 8px 12px; border: 1.5px solid; border-radius: 10px; font-size: 15px; line-height: 20px; }
+.node b { font-weight: 600; }
+.node .loc { font: 12px var(--mono); }
+.node small { display: block; font-size: 13px; line-height: 18px; opacity: .85; }
+.node .id { font: 11px var(--mono); color: var(--ink-4); }
+.k-app { background: #EEF0F3; border-color: #4B5563; color: #1F2937; }
+.k-compose { background: #E8EEFB; border-color: #1E40AF; color: #1E2A4A; }
+.k-kernel { background: #EFEAFB; border-color: #5B21B6; color: #2E1F4F; }
+.k-contract { background: #E3F3F0; border-color: #0F766E; color: #16332F; }
+.k-remote { background: #FBEDE6; border-color: #9A3412; color: #4A2414; }
+.k-external { background: #FFFFFF; border-style: dashed; border-color: #8A8F98; color: var(--ink); }
+.zone { border: 1.5px dashed #C2703F; background: #FFF8F4; border-radius: 14px; }
+.zone-label { font-size: 15px; line-height: 22px; color: #7C2D12; }
+.note { background: #FFF4D6; border: 1px solid #B7791F; border-radius: 8px; padding: 6px 10px; font-size: 12px; line-height: 17px; color: #5C3D0A; }
+
+/* Edges */
+svg.edges { left: 0; top: 0; overflow: visible; pointer-events: none; }
+/* Direct children only: marker paths inside <defs> keep their own fill. */
+.edges > path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.e-call { stroke: #6B7079; stroke-width: 2; }
+.e-import { stroke: #2B2F36; stroke-width: 3; }
+.e-remote { stroke: #9A3412; stroke-width: 2; }
+.e-host { stroke: #5B21B6; stroke-width: 2; }
+.e-dash { stroke-dasharray: 6 6; }
+.lifeline { stroke: #C4C6BF; stroke-width: 1.5; stroke-dasharray: 4 6; }
+.badge { font: 600 12px/16px var(--mono); background: #FFFFFF; border: 1px solid var(--rule); border-radius: 6px; padding: 1px 6px; }
+.elabel { font-size: 13px; line-height: 16px; color: var(--ink-2); white-space: nowrap; }
+
+/* Matrix */
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 24px; }
+table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; }
+.matrix th { font: 600 12px var(--mono); color: var(--ink-2); padding: 6px 8px; text-align: center; }
+.matrix th.row { text-align: right; }
+.matrix td { width: 120px; height: 44px; white-space: nowrap; text-align: center; border-radius: 6px; font: 600 13px var(--mono); background: #F2F2EE; color: var(--ink-4); }
+.matrix td small { display: block; font: 400 11px var(--sans); }
+.h1 { background: #E6F2EF !important; color: #16332F !important; }
+.h2 { background: #BFE0D9 !important; color: #16332F !important; }
+.h3 { background: #7FC1B4 !important; color: #10302B !important; }
+.h4 { background: #2F8F7E !important; color: #FFFFFF !important; }
+.forbid { background: #FBEDEA !important; color: #9A3412 !important; font-size: 11px !important; }
+.attn { background: #FFF4D6 !important; color: #5C3D0A !important; outline: 2px solid #B7791F; }
+.viol { background: #FBEDEA !important; color: #B42318 !important; outline: 2px solid #B42318; }
+.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin: 0 4px 0 12px; }
+
+/* Sequence */
+.lifehead { display: flex; align-items: center; justify-content: center; text-align: center; width: 192px; height: 64px;
+  border: 1.5px solid #4B5563; border-radius: 10px; background: var(--panel); font-size: 14px; line-height: 18px; }
+.phase { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; }
+.phase.dashed { border-style: dashed; }
+.phase-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+
+/* Dark strip and file tree */
+.dark { background: #16181D; color: #E6E7EA; border-radius: 12px; padding: 24px; }
+.dark h3 { margin: 0 0 16px; font-size: 15px; }
+.chip { display: inline-block; background: #262A31; border-radius: 8px; padding: 8px 12px; font: 12px/16px var(--mono); }
+.chip b { color: #FFFFFF; margin-right: 6px; }
+.sep { color: #6B7079; margin: 0 8px; }
+.tree { font: 12.5px/20px var(--mono); white-space: pre; }
+.tree i { color: #8A8F98; font-style: normal; }
+
+/* Remarks */
+.remarks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.remark { background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--ink-4); border-radius: 12px; padding: 20px; }
+.remark.high { border-left-color: #B42318; }
+.remark.medium { border-left-color: #B7791F; }
+.remark .meta { font: 12px var(--mono); color: var(--ink-3); }
+.remark h3 { margin: 8px 0; font-size: 17px; line-height: 24px; }
+.remark p { margin: 0 0 8px; font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.remark .ref { font: 12px var(--mono); color: var(--ink-3); }
+.tag { display: inline-block; font: 600 11px var(--sans); background: #FFF4D6; color: #5C3D0A; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<main>
+
+<!-- Board 1: layered overview (sample) -->
+<section>
+<h2 class="caption">1 · Layered overview</h2>
+<div class="board" style="height:720px">
+  <div class="kicker">PROJECT · ARCHITECTURE · abc1234</div>
+  <div class="title">Layered overview</div>
+  <div class="legend">Thin line: runtime call · Thick line: value import, number = edge count<br>Dashed line: process or network boundary · Dashed box: not provided by the project</div>
+
+  <div class="band" style="left:64px;top:184px;width:1104px;height:184px"></div>
+  <div class="band" style="left:64px;top:400px;width:1104px;height:184px"></div>
+  <div class="layer" style="left:88px;top:248px"><b>L2</b> Service<small class="mono">src/server/</small></div>
+  <div class="layer" style="left:88px;top:464px"><b>L1</b> Contracts<small>shared by every side</small></div>
+
+  <div class="node k-compose" data-module="server" style="left:296px;top:224px;width:384px;height:104px">
+    <span><b>server</b> <span class="loc">6.3k</span></span><small>createServer · relay · SQLite</small><span class="id">server</span></div>
+  <div class="node k-external" style="left:744px;top:224px;width:400px;height:104px">
+    <span><b>Postgres</b></span><small>provided by the operator</small></div>
+  <div class="node k-contract" data-module="protocol" style="left:296px;top:440px;width:848px;height:104px">
+    <span><b>protocol</b> <span class="loc">7.3k</span></span><small>wire v4 · codec · http-api</small><span class="id">protocol</span></div>
+
+  <div class="zone" style="left:1224px;top:184px;width:392px;height:400px"></div>
+  <div class="zone-label" style="left:1248px;top:200px"><b>Device side · client</b> <span class="mono" style="font-size:12px">12.4k</span></div>
+  <div class="node k-remote" data-module="daemon" style="left:1248px;top:248px;width:336px;height:104px">
+    <span><b>daemon</b> <span class="loc">12.4k</span></span><small>auth · connection · journal</small><span class="id">daemon</span></div>
+
+  <svg class="edges" width="1680" height="720">
+    <defs>
+      <marker id="a-import" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#2B2F36"/></marker>
+      <marker id="a-call" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#6B7079"/></marker>
+      <marker id="a-remote" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#9A3412"/></marker>
+    </defs>
+    <path class="e-import" d="M488 328 V436" marker-end="url(#a-import)"/>
+    <path class="e-call" d="M680 276 H740" marker-end="url(#a-call)"/>
+    <path class="e-remote e-dash" d="M1248 328 H1192 V384 H624 V334" marker-end="url(#a-remote)"/>
+  </svg>
+  <div class="badge" style="left:500px;top:404px">36</div>
+  <div class="elabel" style="left:880px;top:362px">HTTPS long-poll</div>
+  <div class="foot" style="left:64px;top:640px">Size: non-test LOC. Imports from L2 to external packages are left out.</div>
+</div>
+</section>
+
+<!-- Board 2: dependency direction (sample) -->
+<section>
+<h2 class="caption">2 · Dependency direction (measured)</h2>
+<div class="board" style="height:640px">
+  <div class="kicker">PROJECT · DEPENDENCIES · abc1234</div>
+  <div class="title">Dependency direction (measured)</div>
+  <div class="legend"><span class="swatch h1"></span>1–5<span class="swatch h2"></span>6–20<span class="swatch h3"></span>21–50<span class="swatch h4"></span>51+ value imports<br><span class="swatch forbid"></span>forbidden, satisfied<span class="swatch attn"></span>allowed, worth attention</div>
+  <div class="panel" style="left:64px;top:184px;width:1024px">
+    <table class="matrix">
+      <tr><th></th><th>protocol</th><th>server</th><th>daemon</th></tr>
+      <tr><th class="row">server</th><td class="h3">36</td><td>·</td><td class="forbid">forbidden · 0</td></tr>
+      <tr><th class="row">daemon</th><td class="h4">73</td><td class="attn">2<small>R-L4</small></td><td>·</td></tr>
+      <tr><th class="row">protocol</th><td>·</td><td>—</td><td>—</td></tr>
+    </table>
+    <p class="foot">Value imports only, tests excluded, tracked files only (measure.ts at abc1234).</p>
+  </div>
+  <div class="panel" style="left:1128px;top:184px;width:488px">
+    <div class="meta mono" style="font-size:12px;color:#5A5F68">R-L1 · Medium</div>
+    <h3 style="margin:8px 0;font-size:17px">Import cycle inside daemon</h3>
+    <p style="margin:0;font-size:13px;color:#4A4F57">daemon ↔ bin <span class="mono">19 / 8</span></p>
+  </div>
+</div>
+</section>
+
+<!-- Board 4: key sequence (sample) -->
+<section>
+<h2 class="caption">4 · Key sequence</h2>
+<div class="board" style="height:560px">
+  <div class="kicker">PROJECT · SEQUENCE · abc1234</div>
+  <div class="title">Request to final state</div>
+  <div class="legend">Purple: caller side · Orange: remote side · Grey dashed: return or delivery</div>
+  <div class="lifehead" style="left:224px;top:184px">Host</div>
+  <div class="lifehead" style="left:464px;top:184px">server</div>
+  <div class="lifehead" style="left:704px;top:184px">daemon</div>
+  <div class="phase" style="left:64px;top:272px;width:1552px;height:112px"></div>
+  <div class="phase-label" style="left:80px;top:280px">① Enqueue</div>
+  <div class="note" style="left:576px;top:336px;width:176px">journal append + fsync</div>
+  <svg class="edges" width="1680" height="560">
+    <defs><marker id="s-host" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#5B21B6"/></marker></defs>
+    <path class="lifeline" d="M320 248 V520"/><path class="lifeline" d="M560 248 V520"/><path class="lifeline" d="M800 248 V520"/>
+    <path class="e-host" d="M320 320 H556" marker-end="url(#s-host)"/>
+  </svg>
+  <div class="elabel" style="left:376px;top:300px">submit / dispatch</div>
+</div>
+</section>
+
+<!-- Board 6: remarks (sample) -->
+<section>
+<h2 class="caption">6 · Remarks</h2>
+<div class="board" style="height:520px">
+  <div class="kicker">PROJECT · REMARKS · abc1234 · observations only; not scheduled work</div>
+  <div class="title">Remarks · 1</div>
+  <div class="legend"><span class="swatch" style="background:#B42318"></span>High · correctness or security boundary<span class="swatch" style="background:#B7791F"></span>Medium · structural burden<span class="swatch" style="background:#9AA0A8"></span>Low · naming and cleanup</div>
+  <div class="remarks" style="left:64px;top:184px;width:1552px">
+    <div class="remark medium">
+      <div class="meta">R-L1 · Medium · structure <span class="tag">needs owner decision</span></div>
+      <h3>Import cycle inside daemon</h3>
+      <p>daemon and bin import each other, so neither can be tested alone. Direction: move the shared types into protocol.</p>
+      <div class="ref">src/daemon/index.ts:42</div>
+    </div>
+  </div>
+</div>
+</section>
+
+</main>
+<script type="application/json" id="archimap-meta">
+{
+  "schema": "archimap/v1",
+  "project": "PROJECT",
+  "base": "abc1234",
+  "generated": "YYYY-MM-DD",
+  "sources": [".archcontext/model", "measure.ts archimap-measure/v1"],
+  "boards": ["overview", "dependencies", "sequence", "remarks"],
+  "modules": [
+    { "id": "server", "label": "server", "include": ["src/server/**"], "exclude": [], "nodes": ["capability.example.server"] },
+    { "id": "protocol", "label": "protocol", "include": ["src/protocol/**"], "exclude": [], "nodes": ["capability.example.protocol"] },
+    { "id": "daemon", "label": "daemon", "include": ["src/daemon/**"], "exclude": [], "nodes": ["capability.example.daemon"] }
+  ]
+}
+</script>
+</body>
+</html>

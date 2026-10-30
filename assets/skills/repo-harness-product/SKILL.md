@@ -1,6 +1,6 @@
 ---
 name: repo-harness-product
-description: Draft requested product requirements, order a GitHub issue backlog, or prepare a native Goal session. Exclude ordinary code tasks.
+description: Draft requested product requirements or prepare a native Goal session. Exclude ordinary code tasks.
 when_to_use: "repo-harness-product"
 ---
 
@@ -11,7 +11,7 @@ Bot entrypoint. Confirm the product goal and source requirements.
 ## Mode Selection
 
 - A real new product needs a PRD: `references/prd.md`.
-- A requested backlog needs ordering: `references/sprint.md`.
+- A requested backlog ordering, issue splitting or worker dispatch belongs to the `repo-harness-issue-flow` skill. Load that skill.
 - A requested bounded Goal session needs preparation: `references/goal.md`.
 
 ## Task Authority
