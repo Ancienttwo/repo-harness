@@ -12,7 +12,7 @@ export function resolveMcpRepoRoot(repo = '.'): string {
 }
 
 export function isRepoHarnessAdopted(repoRoot: string): boolean {
-  return existsSync(join(repoRoot, '.ai', 'harness', 'policy.json')) || existsSync(join(repoRoot, 'tasks', 'current.md'));
+  return existsSync(join(repoRoot, '.ai', 'harness', 'policy.json')) || existsSync(join(repoRoot, '.ai', 'harness', 'workflow-contract.json'));
 }
 
 export function currentGitBranch(repoRoot: string): string | null {

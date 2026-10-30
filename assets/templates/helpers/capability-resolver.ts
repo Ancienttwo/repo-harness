@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:68d11540967639ad476223b02f19d4190bf46800d0395ad4fa66f83bbc09e300
+// @generated-from src/core/capabilities/registry.ts sha256:11990efb29898f873535c33dbfa26aa28c39dde600e44e8b3a6a57b15a9df724
 // Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -35,7 +35,6 @@ export interface Capability {
   prefixes: string[];
   contract_files: ContractFiles;
   architecture_module: string;
-  workstream_dir: string;
   lsp_profile: string;
   verification_hints: string[];
 }
@@ -135,7 +134,6 @@ const REQUIRED_STRING_FIELDS = [
   "domain",
   "name",
   "architecture_module",
-  "workstream_dir",
   "lsp_profile",
 ] as const;
 
@@ -344,13 +342,6 @@ export function validateCapabilityRegistryValue(
       repoRoot,
       diagnostics,
     );
-    validatePathField(
-      rawCapability.workstream_dir,
-      `${basePath}.workstream_dir`,
-      repoRoot,
-      diagnostics,
-    );
-
     if (!Array.isArray(rawCapability.verification_hints)) {
       diagnostics.push(diagnostic(
         "VERIFICATION_HINTS_NOT_ARRAY",
@@ -578,10 +569,6 @@ export function architectureModulePathFor(domain: string, name: string): string 
   return `docs/architecture/modules/${domain}/${name}.md`;
 }
 
-export function workstreamDirFor(domain: string, name: string): string {
-  return `tasks/workstreams/${domain}/${name}`;
-}
-
 /** The stable ArchContext node id of a capability: `capability.<domain>.<name>`. */
 export function archcontextNodeId(capability: Pick<Capability, "domain" | "name">): string {
   return `${ARCHCONTEXT_ID_PREFIX}.${capability.domain}.${capability.name}`;
@@ -641,7 +628,6 @@ export function capabilityRegistryFromNativeContext(
       prefixes: [...profile.includeAnchors],
       contract_files: { agents: profile.contractFiles.agents, claude: profile.contractFiles.claude },
       architecture_module: profile.modulePath,
-      workstream_dir: workstreamDirFor(profile.domain, profile.name),
       lsp_profile: profile.lspProfile,
       verification_hints: [...profile.verification],
     });
@@ -786,7 +772,6 @@ export function matchRecord(filePath: string, winner: CapabilityPathMatch | null
       architecture_domain: "root",
       architecture_capability: "_root",
       architecture_module: "docs/architecture/index.md",
-      workstream_dir: "tasks/workstreams/root/_root",
     };
   }
   return {
@@ -798,7 +783,6 @@ export function matchRecord(filePath: string, winner: CapabilityPathMatch | null
     architecture_domain: winner.capability.domain,
     architecture_capability: winner.capability.name,
     architecture_module: winner.capability.architecture_module,
-    workstream_dir: winner.capability.workstream_dir,
     contract_agents: winner.capability.contract_files.agents,
     contract_claude: winner.capability.contract_files.claude,
     lsp_profile: winner.capability.lsp_profile,
@@ -1306,7 +1290,7 @@ export function readRegistry(repo: string): CapabilityRegistry {
 }
 
 // Anchors must exist only for listed (active) capabilities. Every capability
-// node, whatever its status, still owns its architecture module and workstreams.
+// node, whatever its status, still owns its architecture module.
 function validateRegistryEffects(
   registry: CapabilityRegistry,
   repo: string,
@@ -1314,7 +1298,6 @@ function validateRegistryEffects(
 ): string[] {
   const errors: string[] = [];
   const architectureModules = new Set<string>();
-  const workstreamDirs = new Set<string>();
 
   for (const capability of registry.capabilities) {
     for (const prefix of capability.prefixes) {
@@ -1326,7 +1309,6 @@ function validateRegistryEffects(
   }
   for (const capability of allCapabilities) {
     architectureModules.add(normalizeCapabilityPath(capability.architecture_module, repo));
-    workstreamDirs.add(normalizeCapabilityPath(capability.workstream_dir, repo));
   }
 
   const modulesRoot = resolve(repo, "docs/architecture/modules");
@@ -1342,26 +1324,6 @@ function validateRegistryEffects(
           const relPath = relative(repo, absPath).replaceAll("\\", "/");
           if (!architectureModules.has(relPath)) {
             errors.push(`orphan architecture module: ${relPath}`);
-          }
-        }
-      }
-    }
-  }
-
-  const workstreamsRoot = resolve(repo, "tasks/workstreams");
-  if (existsSync(workstreamsRoot)) {
-    const stack = [workstreamsRoot];
-    while (stack.length > 0) {
-      const current = stack.pop()!;
-      for (const entry of readdirSync(current, { withFileTypes: true })) {
-        const absPath = resolve(current, entry.name);
-        if (entry.isDirectory()) {
-          stack.push(absPath);
-        } else if (entry.isFile() && entry.name.endsWith(".md")) {
-          const relPath = relative(repo, absPath).replaceAll("\\", "/");
-          const owned = [...workstreamDirs].some((dir) => relPath === dir || relPath.startsWith(`${dir}/`));
-          if (!owned) {
-            errors.push(`orphan workstream: ${relPath}`);
           }
         }
       }

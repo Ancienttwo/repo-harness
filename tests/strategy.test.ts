@@ -269,7 +269,7 @@ describe('optional strategy and progressive memory', () => {
         id: 'core-owned', domain: 'core', name: 'owned', prefixes: ['src/owned'],
         contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
         architecture_module: 'docs/architecture/modules/core/owned.md',
-        workstream_dir: 'tasks/workstreams/core/owned', lsp_profile: 'typescript-lsp', verification_hints: [],
+        lsp_profile: 'typescript-lsp', verification_hints: [],
       }] }));
       write(root, 'docs/architecture/.projection-manifest.json', '{}\n');
       write(root, 'src/owned/a.ts', 'export const a = 1;\n');

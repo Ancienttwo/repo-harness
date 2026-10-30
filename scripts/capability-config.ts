@@ -25,7 +25,6 @@ type Args = {
   agents: string;
   claude: string;
   architectureModule: string;
-  workstreamDir: string;
   lspProfile: string;
   verificationHints: string[];
   createPrefix: boolean;
@@ -57,7 +56,6 @@ function usage(): never {
       "  --agents <path>                  AGENTS.md path (default: <prefix>/AGENTS.md)",
       "  --claude <path>                  CLAUDE.md path (default: <prefix>/CLAUDE.md)",
       "  --architecture-module <path>     Architecture module path",
-      "  --workstream-dir <path>          Workstream directory path",
       "  --lsp-profile <profile>          LSP/tooling profile (default: typescript-lsp)",
       "  --verification-hint <command>    Repeatable local verification hint",
       "  --create-prefix                  Create the prefix directory when missing",
@@ -80,7 +78,6 @@ function parseArgs(argv: string[]): Args {
     agents: "",
     claude: "",
     architectureModule: "",
-    workstreamDir: "",
     lspProfile: "typescript-lsp",
     verificationHints: [],
     createPrefix: false,
@@ -115,9 +112,6 @@ function parseArgs(argv: string[]): Args {
         break;
       case "--architecture-module":
         args.architectureModule = argv[++index] || usage();
-        break;
-      case "--workstream-dir":
-        args.workstreamDir = argv[++index] || usage();
         break;
       case "--lsp-profile":
         args.lspProfile = argv[++index] || usage();
@@ -221,7 +215,6 @@ function buildCapability(args: Args, repo: string): Capability {
       args.architectureModule || `docs/architecture/modules/${domain}/${name}.md`,
       repo
     ),
-    workstream_dir: normalizeRepoPath(args.workstreamDir || `tasks/workstreams/${domain}/${name}`, repo),
     lsp_profile: args.lspProfile,
     verification_hints:
       args.verificationHints.length > 0 ? args.verificationHints : ["record local commands here before implementation"],

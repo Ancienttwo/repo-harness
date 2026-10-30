@@ -191,8 +191,6 @@ create_structure() {
     if pi_should_generate_full_docs; then
         mkdir -p docs/architecture
     fi
-    mkdir -p tasks/archive
-    mkdir -p plans/archive
     mkdir -p .ai/context
     mkdir -p .ai/harness/checks
     mkdir -p .ai/harness/handoff
@@ -227,25 +225,6 @@ All notable changes to this project will be documented in this file.
 
 ---
 *Format based on [Keep a Changelog](https://keepachangelog.com/en/1.0.0/)*
-EOF
-
-    cat > tasks/current.md << EOF
-# Current Status Snapshot
-
-<!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: bootstrap -->
-<!-- stale_after: 24h -->
-
-> **Status**: Idle
-> **Updated At**: bootstrap
-> **Source Branch**: main
-> **Source Commit**: bootstrap
-> **Target Branch**: main
-> **Stale After**: 24h
-> **Reason**: bootstrap
-> **Derived From**: active-plan, workstreams, handoff, checks, git status
-
-This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
 EOF
 
     # Adoption writes the same contract template, so every new ledger uses one record format.
@@ -425,8 +404,7 @@ main() {
     echo "  2. Copy .env.example to .env and configure"
     echo "  3. Run: repo-harness init --repo . (writes CLAUDE.md, AGENTS.md and the workflow marker)"
     echo "  4. Run: $PKG_MANAGER run dev"
-    echo "  5. Use Codex Plan mode or Waza /think, then capture it with: repo-harness run capture-plan --slug first-feature --title \"First Feature\""
-    echo "  6. After approval, run: repo-harness run plan-to-todo --plan <active-plan>"
+    echo "  5. Open a GitHub issue for the first feature, then run: repo-harness run contract-worktree start --issue <number>"
     echo ""
     pi_maybe_install_agent_fleet "$PWD" "apply" "$SCRIPT_DIR/install-agent-fleet.sh"
     pi_print_external_tooling_report "$PWD" "apply" "$SCRIPT_DIR/check-agent-tooling.sh"

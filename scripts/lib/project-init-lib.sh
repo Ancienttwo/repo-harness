@@ -73,84 +73,6 @@ Describe the stable user or operator outcome this repo should deliver.
 - ...
 EOF_TEMPLATE_SPEC
 )
-PI_TEMPLATE_PLAN=$(cat <<'EOF_TEMPLATE_PLAN'
-# Plan: {{TITLE}}
-
-> **Status**: Draft
-> **Created**: {{TIMESTAMP}}
-> **Slug**: {{SLUG}}
-> **Artifact Level**: work-package
-> **Promotion Reason**:
-> **Verification Boundary**:
-> **Rollback Surface**:
-> **Spec**: `docs/spec.md`
-> **Research**: See `docs/researches/`
-
-## Agentic Routing
-- Selected route:
-- Routing reason:
-
-## Workflow Inventory
-Complete this inventory before implementation. If any line is unknown, keep the plan in Draft and fill it before projection.
-
-- Active plan: `{{PLAN_FILE}}`
-- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
-- Run snapshots: `.ai/harness/runs/`
-- Scope authority: the active approved admission and its `allowed_paths`; this plan only proposes scope.
-- Concurrency rule: `.ai/harness/active-plan` selects the active plan for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. If another worktree already owns active work, open or switch to the matching worktree instead of serializing unrelated plans.
-- Execution isolation: approved contract-level work projects through `repo-harness run plan-to-todo --plan {{PLAN_FILE}}` and may start `repo-harness run contract-worktree start --plan {{PLAN_FILE}}`.
-
-## Approach
-### Strategy
-### Trade-offs
-| Option | Pros | Cons | Decision |
-|--------|------|------|----------|
-
-## Detailed Design
-### File Changes
-| File | Action | Description |
-|------|--------|-------------|
-
-### Code Snippets
-### Data Flow
-
-## Risk Assessment
-| Risk | Likelihood | Impact | Mitigation |
-|------|------------|--------|------------|
-
-## Verification
-- Verification command: `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/{{ARTIFACT_STEM}}.report.json`
-- Active plan rule: `.ai/harness/active-plan` is authoritative for this worktree when present; `.ai/harness/active-worktree` records the owning worktree. Do not infer active execution from the latest non-archived plan.
-
-## Handoff
-
-- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
-- Session handoff: `.ai/harness/handoff/current.md`
-
-## Promotion Gate
-
-- **Merge/PR unit**:
-- **Rollback surface**:
-- **Verification boundary**:
-- **Review/acceptance boundary**:
-- **High-risk surface**:
-- **Why not checklist row**:
-
-## Evidence Contract
-
-- **State/progress path**:
-- **Verification evidence**:
-- **Evaluator rubric**:
-- **Stop condition**:
-- **Rollback surface**:
-
-## Annotations
-<!-- [NOTE]: prefixed inline. Claude processes all and revises. -->
-
-## Task Breakdown
-- [ ] ...
-EOF_TEMPLATE_PLAN
-)
 PI_CONTEXT_PROFILE_DEFAULT="stable-root-progressive-subdir"
 PI_RECOVERY_PROFILE_DEFAULT="hybrid"
 PI_STATE_PROFILE_DEFAULT="file-backed"
@@ -555,19 +477,9 @@ pi_install_templates() {
     printf '%s\n' "$PI_TEMPLATE_SPEC" > "$output_dir/spec.template.md"
   fi
 
-  if [[ -f "$templates_dir/plan.template.md" ]]; then
-    cp "$templates_dir/plan.template.md" "$output_dir/plan.template.md"
-  else
-    printf '%s\n' "$PI_TEMPLATE_PLAN" > "$output_dir/plan.template.md"
-  fi
-
-  # Keep historical Sprint documents readable in downstream repositories.
-  if [[ -f "$templates_dir/sprint.template.md" ]]; then
-    cp "$templates_dir/sprint.template.md" "$output_dir/sprint.template.md"
-  fi
-
   if [[ -f "$templates_dir/prd.template.md" ]]; then
-    cp "$templates_dir/prd.template.md" "$output_dir/prd.template.md"
+    mkdir -p "$target_dir/docs/prds"
+    cp "$templates_dir/prd.template.md" "$target_dir/docs/prds/prd.template.md"
   fi
 
   if [[ -f "$templates_dir/design-brief.template.md" ]]; then
@@ -1129,7 +1041,6 @@ pi_write_capability_registry() {
         "claude": "$rel_dir/CLAUDE.md"
       },
       "architecture_module": "docs/architecture/modules/$domain/$name.md",
-      "workstream_dir": "tasks/workstreams/$domain/$name",
       "lsp_profile": "$(pi_lsp_profile)",
       "verification_hints": ["record local commands here before implementation"]
     }
@@ -1193,12 +1104,6 @@ JS_EOF
       "priority": "low",
       "char_budget": 900,
       "purpose": "deep-doc"
-    },
-    {
-      "path": "tasks/workstreams/**/*.md",
-      "priority": "high",
-      "char_budget": 1200,
-      "purpose": "capability-workstream"
     }
 EOF_CONTEXT_ENTRY
     return 0
@@ -1239,12 +1144,6 @@ EOF_CONTEXT_ENTRY
       "priority": "low",
       "char_budget": 900,
       "purpose": "deep-doc"
-    },
-    {
-      "path": "tasks/workstreams/**/*.md",
-      "priority": "high",
-      "char_budget": 1200,
-      "purpose": "capability-workstream"
     }
 EOF_CONTEXT_ENTRY
 }
@@ -1269,37 +1168,15 @@ pi_write_harness_policy() {
   cat > "$default_file" <<EOF_POLICY
 {
   "version": 1,
-  "active_plan": {
-    "marker_file": ".ai/harness/active-plan",
-    "directory": "plans",
-    "archive_directory": "plans/archive",
-    "glob": "plan-*.md",
-    "active_worktree_marker_file": ".ai/harness/active-worktree",
-    "source_of_truth": "per-worktree explicit marker with active-worktree owner",
-    "lifecycle": {
-      "annotation_end": "Annotating",
-      "approved": "Approved",
-      "executing": "Executing",
-      "terminal_start": "Complete"
-    },
-    "statuses": ["Draft", "Annotating", "Approved", "Executing", "Blocked", "Review", "Complete", "Completed", "Done", "Fulfilled", "Archived", "Abandoned", "Superseded"]
-  },
   "tasks": {
-    "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
-    "research_dir": "docs/researches",
-    "workstreams_dir": "tasks/workstreams"
+    "research_dir": "docs/researches"
   },
   "prds": {
-    "dir": "plans/prds",
-    "template_file": ".claude/templates/prd.template.md",
+    "dir": "docs/prds",
+    "template_file": "docs/prds/prd.template.md",
     "statuses": ["Draft", "Approved", "Superseded"],
-    "rule": "PRDs live in plans/prds as the upper planning layer. They decompose docs/spec.md intent into product direction, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. Sprints reference PRDs through Source PRD and decompose them into ordered execution backlogs."
-  },
-  "sprints": {
-    "dir": "plans/sprints",
-    "template_file": ".claude/templates/sprint.template.md",
-    "statuses": ["Draft", "Approved", "Executing", "Done", "Archived"]
+    "rule": "PRDs live in docs/prds as the upper planning layer. They decompose docs/spec.md intent into product direction, acceptance scenarios, module behavior, data model, performance targets, and developer handoff."
   },
   "reference_material": {
     "dir": "_ref",
@@ -1338,12 +1215,6 @@ pi_write_harness_policy() {
     "runs_dir": ".ai/harness/runs",
     "helper_runtime_dir": "package:scripts",
     "helper_source": "package"
-  },
-  "workstreams": {
-    "dir": "tasks/workstreams",
-    "scope": "capability",
-    "projection": "local-contract-active-pointer-and-current-slice",
-    "rule": "durable multi-session progress lives under tasks/workstreams/<domain>/<capability>; current plan execution lives in the plan Task Breakdown"
   },
   "information_lifecycle": {
     "evidence": {
@@ -1683,7 +1554,6 @@ pi_write_context_map() {
     "CLAUDE.md",
     "AGENTS.md",
     "docs/spec.md",
-    "tasks/current.md",
     "tasks/lessons.md",
     ".ai/context/capabilities.json",
     ".ai/harness/policy.json"
@@ -1765,7 +1635,6 @@ pi_ensure_harness_state_surface() {
   fi
 
   mkdir -p \
-    "$target_dir/tasks/workstreams" \
     "$target_dir/.ai/context" \
     "$target_dir/.ai/harness/checks" \
     "$target_dir/.ai/harness/handoff" \
@@ -1792,7 +1661,6 @@ pi_ensure_harness_state_surface() {
   [[ -f "$target_dir/.ai/harness/worktrees/.gitkeep" ]] || : > "$target_dir/.ai/harness/worktrees/.gitkeep"
   [[ -f "$target_dir/.ai/harness/runs/.gitkeep" ]] || : > "$target_dir/.ai/harness/runs/.gitkeep"
   [[ -f "$target_dir/.ai/harness/triage/.gitkeep" ]] || : > "$target_dir/.ai/harness/triage/.gitkeep"
-  [[ -f "$target_dir/tasks/workstreams/.gitkeep" ]] || : > "$target_dir/tasks/workstreams/.gitkeep"
   if [[ ! -f "$target_dir/docs/researches/README.md" ]]; then
     cat > "$target_dir/docs/researches/README.md" <<'RESEARCH_README_EOF'
 # Research Reports
@@ -1802,26 +1670,6 @@ Durable research reports live in this directory as topic-scoped Markdown files.
 Use `YYYYMMDD-topic.md` names when chronology matters, or `<topic>.md` for
 stable subject reports. Keep repeated correction-derived rules in `tasks/lessons.md`.
 RESEARCH_README_EOF
-  fi
-  if [[ ! -f "$target_dir/tasks/current.md" ]]; then
-    cat > "$target_dir/tasks/current.md" <<'CURRENT_STATUS_EOF'
-# Current Status Snapshot
-
-<!-- generated-by: repo-harness refresh-current-status v1 -->
-<!-- updated_at: bootstrap -->
-<!-- stale_after: 24h -->
-
-> **Status**: Idle
-> **Updated At**: bootstrap
-> **Source Branch**: main
-> **Source Commit**: bootstrap
-> **Target Branch**: main
-> **Stale After**: 24h
-> **Reason**: bootstrap
-> **Derived From**: active-plan, workstreams, handoff, checks, git status
-
-This file is a tracked mainline snapshot derived from repo artifacts. It is not a live lock, not a kanban board, and not an implementation gate. If it is stale, read the source artifacts below.
-CURRENT_STATUS_EOF
   fi
   [[ -f "$target_dir/docs/architecture/domains/.gitkeep" ]] || : > "$target_dir/docs/architecture/domains/.gitkeep"
   [[ -f "$target_dir/docs/architecture/modules/.gitkeep" ]] || : > "$target_dir/docs/architecture/modules/.gitkeep"
@@ -1841,7 +1689,6 @@ CURRENT_STATUS_EOF
 ## Architecture Flow
 
 - Read architecture documents on demand. Update real boundaries explicitly.
-- `repo-harness run workstream-sync` keeps durable multi-session progress under `tasks/workstreams/<domain>/<capability>/` and projects only pointers into local contracts.
 - Semantic architecture diagrams live as Mermaid fenced blocks in the relevant module or snapshot Markdown.
 - Markdown Mermaid fenced blocks are the only architecture diagram artifacts; do not generate standalone HTML.
 
@@ -1962,6 +1809,24 @@ if (retiredReportLabels.size > 0 && Array.isArray(dueDiligence.explicit_report_r
 }
 agenticDevelopment.due_diligence = dueDiligence;
 merged.agentic_development = agenticDevelopment;
+
+const retiredPolicyKeys = [];
+if (Object.prototype.hasOwnProperty.call(merged, "active_plan")) {
+  delete merged.active_plan;
+  retiredPolicyKeys.push("active_plan");
+}
+if (isPlainObject(merged.tasks)) {
+  for (const key of ["current_status_file", "workstreams_dir"]) {
+    if (Object.prototype.hasOwnProperty.call(merged.tasks, key)) {
+      delete merged.tasks[key];
+      retiredPolicyKeys.push("tasks." + key);
+    }
+  }
+  if (Object.keys(merged.tasks).length === 0) delete merged.tasks;
+}
+if (retiredPolicyKeys.length > 0) {
+  process.stdout.write("[repo-harness] removed retired policy keys: " + retiredPolicyKeys.join(", ") + "\n");
+}
 fs.writeFileSync(outputPath, JSON.stringify(merged, null, 2) + "\n");
 ' "$defaults_file" "$current_file" "$output_file"
     return $?
@@ -2034,6 +1899,21 @@ if retired_report_labels and isinstance(due_diligence.get("explicit_report_requi
     due_diligence["explicit_report_required_for"] = migrated_due_diligence
 agentic_development["due_diligence"] = due_diligence
 merged["agentic_development"] = agentic_development
+
+retired_policy_keys = []
+if "active_plan" in merged:
+    merged.pop("active_plan")
+    retired_policy_keys.append("active_plan")
+tasks = merged.get("tasks")
+if isinstance(tasks, dict):
+    for key in ("current_status_file", "workstreams_dir"):
+        if key in tasks:
+            tasks.pop(key)
+            retired_policy_keys.append("tasks." + key)
+    if not tasks:
+        merged.pop("tasks")
+if retired_policy_keys:
+    print("[repo-harness] removed retired policy keys: " + ", ".join(retired_policy_keys))
 with open(output_path, "w", encoding="utf-8") as handle:
     json.dump(merged, handle, indent=2)
     handle.write("\n")

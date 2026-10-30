@@ -55,7 +55,6 @@ describe("capability-config helper", () => {
           claude: "apps/agent/CLAUDE.md",
         },
         architecture_module: "docs/architecture/modules/apps-agent/agent.md",
-        workstream_dir: "tasks/workstreams/apps-agent/agent",
         lsp_profile: "typescript-lsp",
         verification_hints: ["bun test apps/agent"],
       });

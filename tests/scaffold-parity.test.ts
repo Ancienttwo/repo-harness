@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
+import { existsSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join, relative } from "path";
 import { spawnSync } from "child_process";
@@ -52,11 +52,8 @@ describe("create-project-dirs scaffold parity", () => {
         "./.ai/harness/worktrees/.gitkeep",
         "./.ai/hooks/README.md",
         "./.claude/templates/design-brief.template.md",
-        "./.claude/templates/plan.template.md",
-        "./.claude/templates/prd.template.md",
         "./.claude/templates/research.template.md",
         "./.claude/templates/spec.template.md",
-        "./.claude/templates/sprint.template.md",
         "./.gitignore",
         "./deploy/README.md",
         "./deploy/env/.gitkeep",
@@ -71,6 +68,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./docs/architecture/index.md",
         "./docs/architecture/modules/.gitkeep",
         "./docs/architecture/snapshots/.gitkeep",
+        "./docs/prds/prd.template.md",
         "./docs/reference-configs/agentic-development-flow.md",
         "./docs/reference-configs/design-options.md",
         "./docs/reference-configs/document-generation.md",
@@ -86,9 +84,7 @@ describe("create-project-dirs scaffold parity", () => {
         "./docs/spec.md",
         "./interfaces/types.ts",
         "./package.json",
-        "./tasks/current.md",
         "./tasks/lessons.md",
-        "./tasks/workstreams/.gitkeep",
         "./tests/README.md",
       ]);
 
@@ -110,18 +106,14 @@ describe("create-project-dirs scaffold parity", () => {
 
       expect(JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts["check:task-workflow"]).toBeUndefined();
 
-      const template = readFileSync(join(cwd, ".claude/templates/plan.template.md"), "utf-8");
-      expect(template).toBe(readFileSync(join(ROOT, "assets/templates/plan.template.md"), "utf-8"));
-      for (const field of ["P1 map:", "P2 trace:", "P3 decision rationale:"]) {
-        expect(template).not.toContain(field);
-      }
-      expect(template).toContain("## Agentic Routing");
-      expect(template).toContain("## Workflow Inventory");
-      expect(template).toContain("Planning selection is metadata only.");
-      expect(template).toContain("Scope authority: the active approved admission and its `allowed_paths`");
-      expect(template).toContain("do not infer execution ownership from planning files");
-      expect(template).toContain("## Evidence Contract");
-      expect(template).toContain("**State/progress path**");
+      const template = readFileSync(join(cwd, "docs/prds/prd.template.md"), "utf-8");
+      expect(template).toBe(readFileSync(join(ROOT, "assets/templates/prd.template.md"), "utf-8"));
+      expect(template).toContain("docs/prds/<YYYYMMDD>-<HHMM>-<slug>.prd.md");
+      expect(existsSync(join(cwd, ".claude/templates/plan.template.md"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/templates/sprint.template.md"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/current.md"))).toBe(false);
+      expect(existsSync(join(cwd, "plans"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/workstreams"))).toBe(false);
 
       const runtimeConsole = readFileSync(
         join(ROOT, "assets/project-structures/ai-native-runtime-console.txt"),

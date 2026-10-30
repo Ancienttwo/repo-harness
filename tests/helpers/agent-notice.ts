@@ -10,7 +10,7 @@ export function writeNoticeRegistry(root: string): void {
   fixtureWrite(root, '.ai/context/capabilities.json', JSON.stringify({ version: 1, capabilities: [{
     id: 'test-module', domain: 'test', name: 'module', prefixes: ['src/module'],
     contract_files: { agents: 'src/module/AGENTS.md', claude: 'src/module/CLAUDE.md' },
-    architecture_module: MODULE_DOC, workstream_dir: 'tasks/workstreams/test/module', lsp_profile: 'typescript-lsp', verification_hints: ['bun test'],
+    architecture_module: MODULE_DOC, lsp_profile: 'typescript-lsp', verification_hints: ['bun test'],
   }] }));
 }
 

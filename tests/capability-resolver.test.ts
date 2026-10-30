@@ -56,7 +56,6 @@ const webCapability = {
     claude: "apps/web/CLAUDE.md",
   },
   architecture_module: "docs/architecture/modules/apps-web/web.md",
-  workstream_dir: "tasks/workstreams/apps-web/web",
   lsp_profile: "typescript-lsp",
   verification_hints: ["web checks"],
 };
@@ -71,7 +70,6 @@ const accountCapability = {
     claude: "apps/web/src/routes/account/CLAUDE.md",
   },
   architecture_module: "docs/architecture/modules/apps-web/account.md",
-  workstream_dir: "tasks/workstreams/apps-web/account",
   lsp_profile: "typescript-lsp",
   verification_hints: ["account checks"],
 };
@@ -95,7 +93,6 @@ describe("capability resolver", () => {
       const match = JSON.parse(standalone.stdout);
       expect(match.capability_id).toBe("apps-web-account");
       expect(match.matched_prefix).toBe("apps/web/src/routes/account");
-      expect(match.workstream_dir).toBe("tasks/workstreams/apps-web/account");
 
       const core = readFileSync(join(ROOT, "src/core/capabilities/registry.ts"), "utf-8");
       const expectedHash = sha256(core);

@@ -517,7 +517,6 @@ cat >"$STANDALONE_REPO/.ai/context/capabilities.json" <<'REGISTRY_EOF'
         "claude": "apps/web/CLAUDE.md"
       },
       "architecture_module": "docs/architecture/modules/apps-web/web.md",
-      "workstream_dir": "tasks/workstreams/apps-web/web",
       "lsp_profile": "typescript-lsp",
       "verification_hints": ["bun test"]
     }

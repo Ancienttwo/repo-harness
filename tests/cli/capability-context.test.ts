@@ -35,7 +35,6 @@ const rootCapability: Capability = {
   prefixes: ['AGENTS.md', 'CLAUDE.md'],
   contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
   architecture_module: 'docs/architecture/modules/public-surface/root-router.md',
-  workstream_dir: 'tasks/workstreams/public-surface/root-router',
   lsp_profile: 'typescript-lsp',
   verification_hints: ['root check'],
 };
@@ -47,7 +46,6 @@ const webCapability: Capability = {
   prefixes: ['apps/web'],
   contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
   architecture_module: 'docs/architecture/modules/apps-web/web.md',
-  workstream_dir: 'tasks/workstreams/apps-web/web',
   lsp_profile: 'typescript-lsp',
   verification_hints: ['bun test apps/web'],
 };
@@ -59,7 +57,6 @@ const scriptCapability: Capability = {
   prefixes: ['scripts/ensure-codegraph.sh'],
   contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
   architecture_module: 'docs/architecture/modules/verification/codegraph-readiness.md',
-  workstream_dir: 'tasks/workstreams/verification/codegraph-readiness',
   lsp_profile: 'typescript-lsp',
   verification_hints: ['bash scripts/ensure-codegraph.sh --check --json'],
 };

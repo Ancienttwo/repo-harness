@@ -13,7 +13,6 @@ import {
   type NativeCapabilityProfileInput,
   isCapabilityPathOutsideRepo,
   matchCapabilityPath,
-  workstreamDirFor,
   normalizeCapabilityPath,
   parseCapabilityRegistry,
   resolveCapabilityPaths,
@@ -91,7 +90,6 @@ const web: Capability = {
     claude: "apps/web/CLAUDE.md",
   },
   architecture_module: "docs/architecture/modules/apps-web/web.md",
-  workstream_dir: "tasks/workstreams/apps-web/web",
   lsp_profile: "typescript-lsp",
   verification_hints: ["web checks"],
 };
@@ -102,7 +100,6 @@ const account: Capability = {
   name: "account",
   prefixes: ["apps/web/src/routes/account"],
   architecture_module: "docs/architecture/modules/apps-web/account.md",
-  workstream_dir: "tasks/workstreams/apps-web/account",
 };
 
 function registry(capabilities: unknown[]): unknown {
@@ -260,7 +257,7 @@ describe("capabilityRegistryFromNativeContext", () => {
       expect(resolution.owners.get(native.nodeId)).toEqual({
         id: `${native.domain}-${native.name}`, domain: native.domain, name: native.name,
         prefixes: native.includeAnchors, contract_files: native.contractFiles,
-        architecture_module: native.modulePath, workstream_dir: `tasks/workstreams/${native.domain}/${native.name}`,
+        architecture_module: native.modulePath,
         lsp_profile: native.lspProfile as string, verification_hints: native.verification as string[],
       });
     }
@@ -313,7 +310,6 @@ describe("capabilityPathResolutionFromArchcontextOwners", () => {
     prefixes: [`src/${name}`],
     contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
     architecture_module: architectureModulePathFor(domain, name),
-    workstream_dir: workstreamDirFor(domain, name),
     lsp_profile: "typescript-lsp",
     verification_hints: [],
   });

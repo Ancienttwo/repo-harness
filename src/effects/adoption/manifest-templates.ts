@@ -1,7 +1,7 @@
 import { basename, resolve } from "path";
 import { loadWorkflowContractAsset } from "../../core/adoption/workflow-contract-asset";
 
-export type AdoptionTemplateKey = "spec" | "currentStatus" | "lessonsLog";
+export type AdoptionTemplateKey = "spec" | "lessonsLog";
 
 export interface AdoptionTemplateFile {
   readonly path: string;

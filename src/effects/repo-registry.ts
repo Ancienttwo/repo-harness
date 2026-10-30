@@ -124,7 +124,7 @@ export function canonicalRepoPath(path: string): string {
 
 export function isRepoHarnessAdoptedPath(repoRoot: string): boolean {
   return existsSync(join(repoRoot, ".ai", "harness", "policy.json")) ||
-    existsSync(join(repoRoot, "tasks", "current.md"));
+    existsSync(join(repoRoot, ".ai", "harness", "workflow-contract.json"));
 }
 
 export type RepoHarnessCheckoutRejectionReason = "not_primary_checkout" | "git_probe_failed";

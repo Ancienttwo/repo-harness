@@ -81,17 +81,18 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/api"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/verify-contract.sh"))).toBe(false);
       expect(existsSync(join(cwd, "docs/spec.md"))).toBe(true);
-      expect(existsSync(join(cwd, "plans/prds"))).toBe(true);
-      expect(existsSync(join(cwd, "plans/sprints"))).toBe(true);
+      expect(existsSync(join(cwd, "plans"))).toBe(false);
       expect(existsSync(join(cwd, "tasks/reviews"))).toBe(false);
-      expect(existsSync(join(cwd, "tasks/workstreams/.gitkeep"))).toBe(true);
+      expect(existsSync(join(cwd, "tasks/workstreams"))).toBe(false);
+      expect(existsSync(join(cwd, "tasks/current.md"))).toBe(false);
+      expect(existsSync(join(cwd, "docs/prds/prd.template.md"))).toBe(true);
       // repo-harness init (standard-plan.ts) is the only writer of root CLAUDE.md and AGENTS.md.
       expect(existsSync(join(cwd, "CLAUDE.md"))).toBe(false);
       expect(existsSync(join(cwd, "AGENTS.md"))).toBe(false);
       const gitignore = readFileSync(join(cwd, ".gitignore"), "utf-8");
-      expect(gitignore).toContain("tasks/.current.md.tmp.*");
-      expect(gitignore).toContain("tasks/current.md");
-      expect(gitignore).toContain(".claude/.plan-state/");
+      expect(gitignore).not.toContain("tasks/.current.md.tmp.*");
+      expect(gitignore).not.toContain("tasks/current.md");
+      expect(gitignore).not.toContain(".claude/.plan-state/");
       expect(gitignore).toContain(".ai/harness/checks/*.latest.json");
       expect(gitignore).toContain(".ai/harness/checks/*.latest.md");
       expect(gitignore).toContain(".ai/harness/state/");
@@ -157,7 +158,8 @@ describe("create-project-dirs runtime smoke", () => {
 
       expect(existsSync(join(cwd, "scripts/architecture-drift.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/architecture-drift.sh"))).toBe(false);
-      expect(existsSync(join(cwd, ".claude/templates/sprint.template.md"))).toBe(true);
+      expect(existsSync(join(cwd, ".claude/templates/sprint.template.md"))).toBe(false);
+      expect(existsSync(join(cwd, ".claude/templates/plan.template.md"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/context-budget.ts"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/prepare-codex-handoff.sh"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/codex-handoff-resume.sh"))).toBe(false);
@@ -250,16 +252,16 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
-      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-plan");
+      expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/active-plan");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/active-worktree");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/triage/inbox.md");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
       expect(workflowContract.artifacts.requiredFiles).toContain("docs/architecture/index.md");
       expect(workflowContract.artifacts.requiredFiles).not.toContain("tasks/current.md");
-      // ignored local read model: same list membership as .ai/harness/handoff/current.md
-      expect(workflowContract.artifacts.runtimeFiles).toContain("tasks/current.md");
-      expect(workflowContract.artifacts.requiredDirectories).toContain("plans/prds");
-      expect(workflowContract.artifacts.requiredDirectories).toContain("plans/sprints");
+      expect(workflowContract.artifacts.runtimeFiles).not.toContain("tasks/current.md");
+      expect(workflowContract.artifacts.requiredDirectories).not.toContain("plans/prds");
+      expect(workflowContract.artifacts.requiredDirectories).not.toContain("plans/sprints");
+      expect(workflowContract.artifacts.requiredDirectories).toContain("docs/prds");
       expect(workflowContract.artifacts.requiredFiles).not.toContain("scripts/refresh-current-status.sh");
       expect(workflowContract.artifacts.requiredFiles).toContain(".ai/context/capabilities.json");
       expect(workflowContract.artifacts.requiredFiles).not.toContain("scripts/capability-resolver.ts");
@@ -275,7 +277,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredDirectories).toContain("deploy/sql");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".claude/templates/implementation-notes.template.md");
       expect(workflowContract.artifacts.requiredDirectories).not.toContain("tasks/notes");
-      expect(workflowContract.artifacts.requiredDirectories).toContain("tasks/workstreams");
+      expect(workflowContract.artifacts.requiredDirectories).not.toContain("tasks/workstreams");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/triage");
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/planning");
@@ -293,8 +295,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(contextMap.functional_block_selector.script).toBe("repo-harness run select-agent-context-blocks");
       expect(contextMap.lsp_profiles.default).toBe("typescript-lsp");
       expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("apps/*/AGENTS.md");
-      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).toContain("tasks/workstreams/**/*.md");
-      expect(contextMap.discoverable_contexts.find((entry: { path: string }) => entry.path === "tasks/workstreams/**/*.md").purpose).toBe("capability-workstream");
+      expect(contextMap.discoverable_contexts.map((entry: { path: string }) => entry.path)).not.toContain("tasks/workstreams/**/*.md");
       const policy = JSON.parse(readFileSync(join(cwd, ".ai/harness/policy.json"), "utf-8"));
       expect(policy.harness.helper_source).toBe("package");
       expect(policy.harness.helper_runtime_dir).toBe("package:scripts");
@@ -362,8 +363,13 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.minimal_change).toEqual({ mode: "advice" });
       expect(policy.information_lifecycle.evidence.cache_globs).toEqual([".ai/harness/checks/*.latest.json", ".ai/harness/checks/*.latest.md"]);
       expect(policy.tasks.contracts_dir).toBeUndefined();
-      expect(policy.sprints.rule).toBeUndefined();
-      expect(policy.tasks.workstreams_dir).toBe("tasks/workstreams");
+      expect(policy.active_plan).toBeUndefined();
+      expect(policy.sprints).toBeUndefined();
+      expect(policy.tasks.current_status_file).toBeUndefined();
+      expect(policy.tasks.workstreams_dir).toBeUndefined();
+      expect(policy.workstreams).toBeUndefined();
+      expect(policy.prds.dir).toBe("docs/prds");
+      expect(policy.prds.template_file).toBe("docs/prds/prd.template.md");
       expect(policy.reference_material.dir).toBe("_ref");
       expect(policy.reference_material.commit_policy).toContain("never commit");
       expect(policy.reference_material.rule).toContain("occasional ignored external reference checkout cache");
@@ -377,7 +383,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.operations.rule).toContain("operations.deploy_sql");
       expect(policy.information_lifecycle.notes).toBeUndefined();
       expect(policy.tasks.todo_file).toBeUndefined();
-      expect(policy.workstreams.todo_projection).toBeUndefined();
       expect(policy.information_lifecycle.evidence.snapshots_dir).toBe(".ai/harness/runs");
       expect(policy.information_lifecycle.external_knowledge.mode).toBe("manual-opt-in");
       expect(policy.information_lifecycle.external_knowledge.manifest_file).toBe(".ai/harness/brain-manifest.json");
@@ -451,8 +456,6 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.external_tooling.diagram_design.sync_mode).toBe("external-installed-skill");
       expect(policy.harness.architecture_events_file).toBeUndefined();
       expect(policy.harness.workstream_events_file).toBeUndefined();
-      expect(policy.workstreams.scope).toBe("capability");
-      expect(policy.workstreams.projection).toBe("local-contract-active-pointer-and-current-slice");
       expect(policy.documentation.on_demand).toContain("docs/architecture.md");
       expect(policy.lsp_profiles.selection).toBe("functional-block-first");
       expect(policy.worktree_strategy.worktree_dir_template).toBe('{{system_tmp}}/{{repo}}-wt-{{slug}}');

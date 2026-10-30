@@ -97,7 +97,6 @@ const R1_PROVENANCE_ENUM_FILES = [
   "scripts/acceptance-receipt.ts",
   "scripts/harness-trace-grade.sh",
   "scripts/lib/project-init-lib.sh",
-  "assets/templates/contract.template.md",
   "assets/reference-configs/sprint-contracts.md",
   "docs/reference-configs/sprint-contracts.md",
 ];

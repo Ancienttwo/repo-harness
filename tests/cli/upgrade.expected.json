@@ -61,7 +61,7 @@
   ["project","file",".ai/hooks/subagent-start-context.sh","804c198f legacy-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file",".ai/hooks/subagent-stop-quality.sh","804c198f legacy-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file",".ai/hooks/worktree-guard.sh","60e0f73b 8cdc0340 4d24a01b b12c07b2 legacy-earlier-hook-runtime-retirement","owned-clean","historical-fingerprint","remove",null,null],
-  ["project","file",".claude/templates/contract.template.md","stale-project-copies","owned-clean","historical-fingerprint","refresh",null,null],
+  ["project","file",".claude/templates/contract.template.md","1183 retired-plan-task-scaffolds","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file","scripts/architecture-event.ts","8e160323 legacy-root-helper-runtime","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file","scripts/architecture-queue.sh","8e160323 legacy-root-helper-runtime","owned-clean","historical-fingerprint","remove",null,null],
   ["project","file","scripts/archive-architecture-request.sh","8e160323 legacy-root-helper-runtime","owned-clean","historical-fingerprint","remove",null,null],

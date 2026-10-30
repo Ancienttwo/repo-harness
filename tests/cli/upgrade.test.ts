@@ -4,6 +4,7 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readF
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
 import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { runAdoptionApply } from '../../src/cli/commands/adoption-plan';
 import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { localMergeMode } from '../../src/effects/state/coordination-worktree-topology';
 import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
@@ -343,6 +344,26 @@ describe('upgrade with real release bytes', () => {
     for (const [path, content] of Object.entries(before)) expect(tree(opts.cwd)[path]).toBe(content);
   }));
 
+  test('init refresh drops retired adoption policy keys and reports them with the upgrade refresh', () => sandbox((opts) => {
+    put(join(opts.cwd, '.ai/harness/policy.json'), JSON.stringify({
+      active_plan: { directory: 'plans' },
+      tasks: { current_status_file: 'tasks/current.md', workstreams_dir: 'tasks/workstreams', lessons_file: 'tasks/lessons.md' },
+      custom_key: true,
+    }, null, 2));
+    const result = runAdoptionApply({ repo: opts.cwd, mode: 'standard', env: { HOME: opts.home } });
+    expect(result.exitCode).toBe(0);
+    expect((result.report.plan as { warnings: { code: string; message: string }[] }).warnings).toContainEqual(expect.objectContaining({
+      code: 'retired-policy-keys',
+      message: 'Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir',
+    }));
+    const policy = JSON.parse(readFileSync(join(opts.cwd, '.ai/harness/policy.json'), 'utf8'));
+    expect(policy.active_plan).toBeUndefined();
+    expect(policy.tasks.current_status_file).toBeUndefined();
+    expect(policy.tasks.workstreams_dir).toBeUndefined();
+    expect(policy.tasks.lessons_file).toBe('tasks/lessons.md');
+    expect(policy.custom_key).toBe(true);
+  }));
+
   test('minimal project mode cleans real retired bytes and the source checkout stays a no-op', () => sandbox((opts) => {
     put(join(opts.cwd, '.ai/harness/policy.json'), '{"mode":"minimal"}\n');
     const result = runUpgrade({ ...opts, scope: 'project', apply: true });
@@ -462,23 +483,39 @@ describe('upgrade with real release bytes', () => {
     expect(existsSync(join(router, 'node_modules'))).toBe(false);
   }, false));
 
-  test('contract template refresh needs exact proof and preserves the legacy helper', () => sandbox((opts) => {
-    const helper = '.ai/hooks/lib/workflow-state.sh'; const template = '.claude/templates/contract.template.md';
-    for (const path of [helper, template]) put(join(opts.cwd, path), readUpgradeFixture('upgrade-v0.10-project', path).toString('utf8'));
+  test('retired plan and task scaffolds are removed only when their bytes are proven', () => sandbox((opts) => {
+    const helper = '.ai/hooks/lib/workflow-state.sh';
+    cpSync(join(FIXTURES, 'retired-plan-task-scaffolds'), opts.cwd, { recursive: true });
+    const modified = '.claude/templates/plan.template.md';
+    writeFileSync(join(opts.cwd, modified), `${readFileSync(join(opts.cwd, modified), 'utf8')}user edit\n`);
+    const proven = [
+      'tasks/current.md',
+      '.claude/templates/sprint.template.md',
+      '.claude/templates/contract.template.md',
+      'tasks/workstreams/.gitkeep',
+      '.ai/harness/active-plan',
+    ];
     const check = runUpgrade({ ...opts, scope: 'project' });
-    expect(check.items.find((item) => item.path === join(opts.cwd, template))).toEqual(expect.objectContaining({ proof: 'historical-fingerprint', action: 'refresh' }));
+    for (const path of proven) {
+      expect(check.items.find((item) => item.path === join(opts.cwd, path)), path).toEqual(expect.objectContaining({
+        ownership: 'owned-clean', proof: 'historical-fingerprint', action: 'remove',
+      }));
+    }
+    expect(check.items.find((item) => item.path === join(opts.cwd, modified))).toEqual(expect.objectContaining({
+      ownership: 'unowned', proof: null, action: 'report',
+    }));
     expect(check.items.find((item) => item.path === join(opts.cwd, helper))).toEqual(expect.objectContaining({ action: 'report', ownership: 'unowned', proof: null }));
     const result = runUpgrade({ ...opts, scope: 'project', apply: true });
     expect(result.exitCode).toBe(0);
+    for (const path of proven) expect(result.removedPaths, path).toContain(join(opts.cwd, path));
+    expect(result.removedPaths).not.toContain(join(opts.cwd, modified));
+    for (const path of proven) expect(existsSync(join(opts.cwd, path))).toBe(false);
+    expect(readFileSync(join(opts.cwd, modified), 'utf8')).toContain('user edit');
     expect(readFileSync(join(opts.cwd, helper), 'utf8')).toBe(readUpgradeFixture('upgrade-v0.10-project', helper).toString('utf8'));
-    expect(readFileSync(join(opts.cwd, template), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/templates/contract.template.md'), 'utf8'));
-    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
-    expect(rollback.ok).toBe(true);
-    for (const path of [helper, template]) writeFileSync(join(opts.cwd, path), `${readFileSync(join(opts.cwd, path), 'utf8')}\nuser edit\n`);
     const before = tree(opts.cwd);
     const kept = runUpgrade({ ...opts, scope: 'project', apply: true });
-    expect(kept.refreshedPaths).toEqual([]); expect(tree(opts.cwd)).toEqual(before);
-  }, false));
+    expect(kept.removedPaths).toEqual([]); expect(tree(opts.cwd)).toEqual(before);
+  }));
 
   test('manifest-owned refresh updates its backed-up receipt and remains clean', () => sandbox((opts) => {
     seed('upgrade-v0.19.5-home', opts.home);
@@ -1564,11 +1601,12 @@ describe('upgrade --registered', () => {
     const template = adoptedRepo(f, 'template');
     editPolicy(f, template, (policy) => { policy.worktree_strategy.worktree_dir_template = '../{{repo}}-wt-{{slug}}'; });
     const failing = adoptedRepo(f, 'failing');
-    // A user archive at the retirement target makes the init plan fail closed.
-    mkdirSync(join(failing, 'tasks/archive'), { recursive: true });
-    writeFileSync(join(failing, 'docs/TODO.md'), '# Legacy todo\n');
-    writeFileSync(join(failing, 'tasks/archive/legacy-docs-TODO.md'), '# Different user archive\n');
-    commitAll(f, failing, 'legacy todo');
+    // A symlinked ownership target makes the init plan fail closed before it writes.
+    mkdirSync(join(failing, '.ai/context'), { recursive: true });
+    writeFileSync(join(f.root, 'outside-capabilities.json'), '{}\n');
+    rmSync(join(failing, '.ai/context/capabilities.json'), { force: true });
+    symlinkSync(join(f.root, 'outside-capabilities.json'), join(failing, '.ai/context/capabilities.json'));
+    commitAll(f, failing, 'symlinked capability authority');
     const dirtyLater = staleRepo(f, 'dirty-later');
     const branchLater = staleRepo(f, 'branch-later');
     writeRegistry(f, [stale, template, failing, dirtyLater, branchLater]);
@@ -1580,7 +1618,7 @@ describe('upgrade --registered', () => {
     expect(byPath(preview.repos, template)).toMatchObject({ status: 'ready', pending: true,
       upgrade: { worktreeTemplate: { item: { action: 'rewrite', replacement: PORTABLE } } } });
     expect(byPath(preview.repos, failing)).toMatchObject({ status: 'failed' });
-    expect(byPath(preview.repos, failing).error).toContain('legacy archive collision');
+    expect(byPath(preview.repos, failing).error).toContain('symlink is not allowed in adoption path');
 
     // Both repos were ready at preview time; apply must see the change.
     writeFileSync(join(dirtyLater, 'late-edit.txt'), 'operator work\n');
@@ -1597,7 +1635,7 @@ describe('upgrade --registered', () => {
     expect(worktreeSnapshot(branchLater)).toEqual(branchBefore);
     const failed = byPath(result.repos, failing);
     expect(failed.status).toBe('failed');
-    expect(failed.error).toContain('legacy archive collision');
+    expect(failed.error).toContain('symlink is not allowed in adoption path');
     expect(failed.upgrade).toBeUndefined();
 
     const staleResult = byPath(result.repos, stale);

@@ -240,7 +240,6 @@
     "tests/unit/verifier-failure-log-retention.test.ts": 4637.0,
     "tests/unit/windows-protected-helper-platform-contract.test.ts": 268.09,
     "tests/ux-feature-guardrail.test.ts": 271.93,
-    "tests/verification-authoring.test.ts": 221.08,
     "tests/verification-lifecycle-adapters.test.ts": 8150.44,
     "tests/verify-sprint-rebase-base-guard.test.ts": 21922.23,
     "tests/verify-sprint.test.ts": 792.17,

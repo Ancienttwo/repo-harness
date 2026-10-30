@@ -175,7 +175,6 @@ export function writeFixtureCapabilityRegistry(cwd: string): void {
         prefixes: ["package.json"],
         contract_files: { agents: "AGENTS.md", claude: "CLAUDE.md" },
         architecture_module: "docs/architecture/modules/fixture/package.md",
-        workstream_dir: "tasks/workstreams/fixture/package",
         lsp_profile: "typescript-lsp",
         verification_hints: ["fixture checks"],
       },
@@ -478,9 +477,3 @@ export function commitVerificationFixture(cwd: string): void {
   );
   commitAll(cwd, "verification fixture");
 }
-
-export function installCanonicalContractTemplate(cwd: string): void {
-  mkdirSync(join(cwd, ".claude/templates"), { recursive: true });
-  copyFileSync(join(ROOT, ".claude/templates/contract.template.md"), join(cwd, ".claude/templates/contract.template.md"));
-}
-

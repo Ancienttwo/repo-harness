@@ -13,7 +13,6 @@ const capability = (id: string, domain: string, name: string, prefixes: string[]
   id, domain, name, prefixes,
   contract_files: { agents: 'AGENTS.md', claude: 'CLAUDE.md' },
   architecture_module: `docs/architecture/modules/${domain}/${name}.md`,
-  workstream_dir: `tasks/workstreams/${domain}/${name}`,
   lsp_profile: 'typescript-lsp',
   verification_hints: [`bun test ${id}`],
 });

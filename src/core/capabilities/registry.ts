@@ -32,7 +32,6 @@ export interface Capability {
   prefixes: string[];
   contract_files: ContractFiles;
   architecture_module: string;
-  workstream_dir: string;
   lsp_profile: string;
   verification_hints: string[];
 }
@@ -132,7 +131,6 @@ const REQUIRED_STRING_FIELDS = [
   "domain",
   "name",
   "architecture_module",
-  "workstream_dir",
   "lsp_profile",
 ] as const;
 
@@ -341,13 +339,6 @@ export function validateCapabilityRegistryValue(
       repoRoot,
       diagnostics,
     );
-    validatePathField(
-      rawCapability.workstream_dir,
-      `${basePath}.workstream_dir`,
-      repoRoot,
-      diagnostics,
-    );
-
     if (!Array.isArray(rawCapability.verification_hints)) {
       diagnostics.push(diagnostic(
         "VERIFICATION_HINTS_NOT_ARRAY",
@@ -575,10 +566,6 @@ export function architectureModulePathFor(domain: string, name: string): string 
   return `docs/architecture/modules/${domain}/${name}.md`;
 }
 
-export function workstreamDirFor(domain: string, name: string): string {
-  return `tasks/workstreams/${domain}/${name}`;
-}
-
 /** The stable ArchContext node id of a capability: `capability.<domain>.<name>`. */
 export function archcontextNodeId(capability: Pick<Capability, "domain" | "name">): string {
   return `${ARCHCONTEXT_ID_PREFIX}.${capability.domain}.${capability.name}`;
@@ -638,7 +625,6 @@ export function capabilityRegistryFromNativeContext(
       prefixes: [...profile.includeAnchors],
       contract_files: { agents: profile.contractFiles.agents, claude: profile.contractFiles.claude },
       architecture_module: profile.modulePath,
-      workstream_dir: workstreamDirFor(profile.domain, profile.name),
       lsp_profile: profile.lspProfile,
       verification_hints: [...profile.verification],
     });

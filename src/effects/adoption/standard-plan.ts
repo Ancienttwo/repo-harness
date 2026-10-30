@@ -17,14 +17,9 @@ const TEMPLATE_ROOT = join(ASSET_ROOT, "templates");
 const REFERENCE_ROOT = join(ASSET_ROOT, "reference-configs");
 
 const STANDARD_DIRS = [
-  "plans",
-  "plans/archive",
-  "plans/prds",
-  "plans/sprints",
   "tasks",
-  "tasks/archive",
-  "tasks/workstreams",
   "docs",
+  "docs/prds",
   "docs/researches",
   "docs/reference-configs",
   "docs/architecture/domains",
@@ -56,7 +51,6 @@ const STANDARD_DIRS = [
 ] as const;
 
 const MINIMAL_DIRS = [
-  "plans",
   "tasks",
   "docs",
   ".ai/harness/checks",
@@ -74,7 +68,6 @@ const STATE_FILES: ReadonlyArray<{ path: string; content: string }> = [
   { path: ".ai/harness/worktrees/.gitkeep", content: "" },
   { path: ".ai/harness/runs/.gitkeep", content: "" },
   { path: ".ai/harness/triage/.gitkeep", content: "" },
-  { path: "tasks/workstreams/.gitkeep", content: "" },
   { path: "docs/architecture/domains/.gitkeep", content: "" },
   { path: "docs/architecture/modules/.gitkeep", content: "" },
   { path: "docs/architecture/snapshots/.gitkeep", content: "" },
@@ -180,29 +173,6 @@ function removeOperation(repoRoot: string, path: string, reason: string): Adopti
   };
 }
 
-function moveOperation(repoRoot: string, path: string, to: string, reason: string): AdoptionOperation | undefined {
-  const source = safePath(repoRoot, path);
-  const target = safePath(repoRoot, to);
-  if (!existsSync(source)) return undefined;
-  if (existsSync(target)) {
-    throw new Error(`migration destination already exists; refusing to overwrite user-owned path: ${to}`);
-  }
-  if (!lstatSync(source).isFile()) {
-    throw new Error(`migration source is not a regular file: ${path}`);
-  }
-  const existing = readFileSync(source, "utf-8");
-  return {
-    id: makeOperationId("move", path, to),
-    kind: "move",
-    path,
-    to,
-    reason,
-    risk: "medium",
-    status: "planned",
-    expectedContentHash: contentHash(existing),
-  };
-}
-
 function jsonFile(repoRoot: string, path: string): JsonObject | undefined {
   const raw = fileContent(repoRoot, path);
   if (raw === undefined) return undefined;
@@ -276,29 +246,9 @@ function requireDocumentationLanguage(value: unknown): DocumentationLanguage {
 export function defaultPolicy(documentationProfile: string, documentationLanguage: string): JsonObject {
   return {
     version: 1,
-    active_plan: {
-      marker_file: ".ai/harness/active-plan",
-      directory: "plans",
-      archive_directory: "plans/archive",
-      glob: "plan-*.md",
-      active_worktree_marker_file: ".ai/harness/active-worktree",
-      source_of_truth: "per-worktree explicit marker with active-worktree owner",
-      lifecycle: {
-        annotation_end: "Annotating",
-        approved: "Approved",
-        executing: "Executing",
-        terminal_start: "Complete",
-      },
-      statuses: [
-        "Draft", "Annotating", "Approved", "Executing", "Blocked", "Review",
-        "Complete", "Completed", "Done", "Fulfilled", "Archived", "Abandoned", "Superseded",
-      ],
-    },
     tasks: {
-      current_status_file: "tasks/current.md",
       lessons_file: "tasks/lessons.md",
       research_dir: "docs/researches",
-      workstreams_dir: "tasks/workstreams",
     },
     context: {
       map_file: ".ai/context/context-map.json",
@@ -426,12 +376,12 @@ This is the root routing contract for Claude Code and Codex. Load this before ta
 ## Workflow Contract
 
 - Use first principles, one source of truth, and no steady-state compatibility paths.
-- Treat \`docs/spec.md\` as product truth; \`tasks/current.md\` is derived state.
+- Treat \`docs/spec.md\` as product truth; keep correction-derived lessons in \`tasks/lessons.md\`.
 - Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - Create task worktrees only at \`/tmp/<repo>-wt-<slug>\` (Windows: the OS temp directory): use \`repo-harness run contract-worktree start --plan <plan-file>\`, or \`git worktree add\` with that path. Never create one beside the main checkout (\`../\`).
 - Read \`.ai/context/capabilities.json\` and \`.ai/context/context-map.json\` before adding scoped agent context.
 - When a branch changes a capability's responsibility, entrypoints, relations or flows, run \`repo-harness architecture-projection check --json\` before review and follow \`repo-harness-architecture\` (\`assets/skill-commands/repo-harness-architecture/references/worker.md\` in the installed \`repo-harness\` skill: \`~/.claude/skills/repo-harness/\` or \`~/.codex/skills/repo-harness/\`).
-- Write human-facing documents (\`docs/\`, \`plans/prds/\`, design briefs) in the language set by \`.ai/harness/policy.json#documentation.language\`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.
+- Write human-facing documents (\`docs/\`, \`docs/prds/\`, design briefs) in the language set by \`.ai/harness/policy.json#documentation.language\`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.
 - Keep \`_ref/\` ignored external reference material and \`_ops/\` ignored local operations state.
 `;
 }
@@ -476,87 +426,6 @@ Use \`repo-harness docs show ${docId}\` for the full generic runtime guide.
 `;
 }
 
-function archiveLegacyContent(repoRoot: string, operations: AdoptionOperation[], path: string, content: string, reason: string): void {
-  const existing = fileContent(repoRoot, path);
-  if (existing !== undefined) {
-    if (existing !== content) {
-      throw new Error(`legacy archive collision; refusing to overwrite user-owned evidence: ${path}`);
-    }
-    return;
-  }
-  operations.push(writeOperation(repoRoot, path, content, reason, { risk: "medium" }));
-}
-
-function addLegacyDocumentMigrations(repoRoot: string, operations: AdoptionOperation[]): void {
-  const legacyDocs: ReadonlyArray<{ readonly path: string; readonly archive: string; readonly title: string }> = [
-    { path: "docs/plan.md", archive: "plans/archive/legacy-docs-plan.md", title: "Legacy Plan Import" },
-    { path: "docs/TODO.md", archive: "tasks/archive/legacy-docs-TODO.md", title: "Legacy TODO Import" },
-    { path: "docs/PROGRESS.md", archive: "tasks/archive/legacy-docs-PROGRESS.md", title: "Legacy Progress Import" },
-    { path: "docs/contract.md", archive: "tasks/archive/legacy-docs-contract.md", title: "Legacy Contract Import" },
-    { path: "docs/review.md", archive: "tasks/archive/legacy-docs-review.md", title: "Legacy Review Import" },
-    { path: "docs/handoff.md", archive: "tasks/archive/legacy-docs-handoff.md", title: "Legacy Handoff Import" },
-    { path: "HANDOFF.md", archive: "tasks/archive/legacy-root-HANDOFF.md", title: "Legacy Root Handoff Import" },
-  ];
-  for (const legacy of legacyDocs) {
-    const content = fileContent(repoRoot, legacy.path);
-    if (content === undefined) continue;
-    archiveLegacyContent(
-      repoRoot,
-      operations,
-      legacy.archive,
-      `# ${legacy.title}\n\n${content.trimEnd()}\n`,
-      "Archive legacy workflow document before retirement",
-    );
-    if (legacy.path === "docs/PROGRESS.md") {
-      archiveLegacyContent(
-        repoRoot,
-        operations,
-        "docs/researches/legacy-progress-import.md",
-        "# Legacy Progress Import\n\n<!-- repo-harness: legacy-docs-import docs/PROGRESS.md -->\n\n" + content.trimEnd() + "\n",
-        "Preserve legacy progress observations in the canonical research surface",
-      );
-    }
-    const moved = moveOperation(repoRoot, legacy.path, `${legacy.path}.migrated.bak`, "Retire archived legacy workflow document");
-    if (moved) operations.push(moved);
-  }
-
-  const legacyResearch = fileContent(repoRoot, "tasks/research.md");
-  if (legacyResearch !== undefined && !legacyResearch.includes("**Canonical Surface**: `docs/researches/`")) {
-    archiveLegacyContent(repoRoot, operations, "docs/researches/legacy-research-notes.md", `${legacyResearch.trimEnd()}\n`, "Archive legacy singleton research notes");
-    operations.push(writeOperation(
-      repoRoot,
-      "tasks/research.md",
-      "# Research Notes Moved\n\n> **Status**: Retired tombstone\n> **Canonical Surface**: `docs/researches/`\n> **Legacy Archive**: `docs/researches/legacy-research-notes.md`\n\nDurable research reports now live under `docs/researches/*.md`.\n",
-      "Replace legacy research surface with a canonical tombstone",
-      { risk: "medium" },
-    ));
-  }
-}
-
-function addLegacySprintMoves(repoRoot: string, operations: AdoptionOperation[]): void {
-  const sourceDir = safePath(repoRoot, "tasks/sprints");
-  if (existsSync(sourceDir) && lstatSync(sourceDir).isDirectory()) {
-    for (const entry of readdirSync(sourceDir).sort()) {
-      if (!entry.endsWith(".sprint.md")) continue;
-      if (!lstatSync(safePath(repoRoot, `tasks/sprints/${entry}`)).isFile()) continue;
-      const move = moveOperation(repoRoot, `tasks/sprints/${entry}`, `plans/sprints/${entry}`, "Move legacy sprint backlog into plans/sprints");
-      if (move) operations.push(move);
-    }
-  }
-
-  const prdDir = safePath(repoRoot, "plans/prds");
-  if (existsSync(prdDir) && lstatSync(prdDir).isDirectory()) {
-    for (const entry of readdirSync(prdDir).sort()) {
-      if (!entry.endsWith(".prd.md")) continue;
-      if (!lstatSync(safePath(repoRoot, `plans/prds/${entry}`)).isFile()) continue;
-      const content = fileContent(repoRoot, `plans/prds/${entry}`) ?? "";
-      if (!/^(# Sprint:|## Backlog\s*$)/m.test(content)) continue;
-      const move = moveOperation(repoRoot, `plans/prds/${entry}`, `plans/sprints/${entry.replace(/\.prd\.md$/, ".sprint.md")}`, "Move sprint-shaped PRD into plans/sprints");
-      if (move) operations.push(move);
-    }
-  }
-}
-
 function addLegacyCleanup(repoRoot: string, operations: AdoptionOperation[]): AdoptionWarning[] {
   const plan = planLegacyLeftovers({ scope: "project", cwd: repoRoot, home: repoRoot, packageRoot: join(ASSET_ROOT, "..") });
   const warnings: AdoptionWarning[] = [];
@@ -597,15 +466,14 @@ function addTemplateOperations(repoRoot: string, operations: AdoptionOperation[]
   const names = [
     "research.template.md",
     "spec.template.md",
-    "plan.template.md",
-    "sprint.template.md",
     "prd.template.md",
     "design-brief.template.md",
   ];
   for (const name of names) {
     const source = join(TEMPLATE_ROOT, name);
     if (!existsSync(source)) continue;
-    operations.push(writeOperation(repoRoot, `.claude/templates/${name}`, readFileSync(source, "utf-8"), "Install canonical repo-harness workflow template", { risk: "medium" }));
+    const target = name === "prd.template.md" ? `docs/prds/${name}` : `.claude/templates/${name}`;
+    operations.push(writeOperation(repoRoot, target, readFileSync(source, "utf-8"), "Install canonical repo-harness workflow template", { risk: "medium" }));
   }
 }
 
@@ -694,16 +562,24 @@ function retireArchitecturePolicy(policy: Record<string, unknown>): void {
   if (Object.keys(architecture).length === 0) delete policy.architecture;
 }
 
-function addActivePlanMigration(repoRoot: string, operations: AdoptionOperation[]): void {
-  const legacy = fileContent(repoRoot, ".claude/.active-plan")?.trim();
-  const canonical = fileContent(repoRoot, ".ai/harness/active-plan")?.trim();
-  if (!canonical && legacy) {
-    operations.push(writeOperation(repoRoot, ".ai/harness/active-plan", `${legacy}\n`, "Migrate legacy active-plan marker to its canonical path", { risk: "medium" }));
+/** Policy keys that no reader consumes after the plan/task artifact retirement. */
+const RETIRED_ADOPTION_POLICY_KEYS: ReadonlyArray<{ readonly path: readonly [string] | readonly [string, string]; readonly label: string }> = [
+  { path: ["active_plan"], label: "active_plan" },
+  { path: ["tasks", "current_status_file"], label: "tasks.current_status_file" },
+  { path: ["tasks", "workstreams_dir"], label: "tasks.workstreams_dir" },
+];
+
+function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {
+  const removed: string[] = [];
+  for (const { path, label } of RETIRED_ADOPTION_POLICY_KEYS) {
+    const parent = path.length === 2 ? policy[path[0]!] : policy;
+    const key = path[path.length - 1]!;
+    if (!isObject(parent) || !Object.hasOwn(parent, key)) continue;
+    delete parent[key];
+    removed.push(label);
   }
-  if (legacy !== undefined) {
-    const remove = removeOperation(repoRoot, ".claude/.active-plan", "Remove retired active-plan compatibility marker");
-    if (remove) operations.push(remove);
-  }
+  if (isObject(policy.tasks) && Object.keys(policy.tasks).length === 0) delete policy.tasks;
+  return removed;
 }
 
 export function planStandardAdoption(opts: StandardPlanOptions): { operations: AdoptionOperation[]; warnings: AdoptionWarning[] } {
@@ -718,6 +594,9 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   // Operator-invoked adoption retires the old execution authority. Never copy
   // repository preferences into the host-wide configuration.
   retireArchitecturePolicy(policy);
+  // Plan and task execution artifacts are retired; the upgrade refresh drops
+  // their policy keys and reports each one so downstream users can audit it.
+  const retiredPolicyKeys = opts.mode === "minimal" ? [] : retireAdoptionPolicy(policy);
   // Refactor execution is retired; recommendations read no repository refactor policy.
   delete policy.refactor;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
@@ -757,7 +636,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   for (const path of opts.mode === "minimal" ? MINIMAL_DIRS : STANDARD_DIRS) {
     operations.push(mkdirOperation(opts.repoRoot, path, "Ensure canonical repo-harness workflow directory exists"));
   }
-  for (const template of ["spec", "currentStatus", "lessonsLog"] as const) {
+  for (const template of ["spec", "lessonsLog"] as const) {
     const file = adoptionTemplateFile(opts.repoRoot, template);
     operations.push(writeOperation(opts.repoRoot, file.path, file.content, file.reason, { ifMissing: true }));
   }
@@ -785,7 +664,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   }
   operations.push(writeOperation(opts.repoRoot, ".ai/context/context-map.json", jsonContent(jsonFile(opts.repoRoot, ".ai/context/context-map.json") ?? {
     version: 1,
-    root_context_files: ["CLAUDE.md", "AGENTS.md", "docs/spec.md", "tasks/current.md", ".ai/context/capabilities.json", ".ai/harness/policy.json"],
+    root_context_files: ["CLAUDE.md", "AGENTS.md", "docs/spec.md", ".ai/context/capabilities.json", ".ai/harness/policy.json"],
     discoverable_contexts: [],
   }), "Install canonical context map when absent", { ifMissing: true }));
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/brain-manifest.json", jsonContent(jsonFile(opts.repoRoot, ".ai/harness/brain-manifest.json") ?? {
@@ -808,17 +687,21 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     { path: "AGENTS.md", content: rootContextContent() },
   ]) operations.push(writeOperation(opts.repoRoot, file.path, file.content, "Install canonical root workflow context when absent", { ifMissing: true, risk: "medium" }));
 
-  addActivePlanMigration(opts.repoRoot, operations);
   addTemplateOperations(opts.repoRoot, operations);
   addHookOperations(opts.repoRoot, operations);
   addReferenceOperations(opts.repoRoot, documentationProfile, operations);
-  addLegacyDocumentMigrations(opts.repoRoot, operations);
-  addLegacySprintMoves(opts.repoRoot, operations);
   addPackageOperation(opts.repoRoot, operations);
   const cleanupWarnings = addLegacyCleanup(opts.repoRoot, operations);
 
   const warnings: AdoptionWarning[] = [
     ...cleanupWarnings,
+    ...(retiredPolicyKeys.length > 0
+      ? [{
+          code: "retired-policy-keys",
+          message: `Removed retired harness policy keys: ${retiredPolicyKeys.join(", ")}`,
+          risk: "medium",
+        } as const]
+      : []),
     ...(opts.mode === "self-host"
       ? [{ code: "self-host-review", message: "Self-host adoption requires an explicit hook/runtime review and is intentionally not applied by the public command.", risk: "high" } as const]
       : []),
