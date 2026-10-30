@@ -192,7 +192,7 @@ export async function notify(env = process.env, send = fetch, options = {}) {
   }
   // Shadow work starts only after all existing notification attempts finish.
   if (config.CLEF_MODE === 'shadow' && config.CLOUDFLARE_ACCOUNT_ID && config.CLOUDFLARE_API_TOKEN
-    && data.agent_status === 'done' && ['claude', 'codex'].includes(data.agent)) {
+    && data.agent_status === 'done' && ['claude', 'codex', 'pi'].includes(data.agent)) {
     try { await shadowDecision(env, config, data, send); }
     catch { log('Shadow record failed.'); }
   }
