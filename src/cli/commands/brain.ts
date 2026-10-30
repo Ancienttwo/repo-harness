@@ -1,9 +1,9 @@
 /**
  * `agentic-dev brain` / `repo-harness brain` — explicit external knowledge
- * sync and archive promotion surface.
+ * sync surface.
  *
- * Hooks only emit [BrainPromote] advisories. This command owns the deliberate
- * write boundary from repo files into ~/brain/<project>/*.
+ * This command owns the deliberate write boundary from repo files into
+ * ~/brain/<project>/*.
  */
 
 import { Command } from 'commander';
@@ -13,7 +13,6 @@ import { configuredBrainRoot } from './brain-root';
 import { gitExecFileSync } from '../../effects/git/runner';
 
 export type BrainLifecycle = 'always-sync' | 'archive-only' | 'never-sync';
-export type BrainCategory = 'decisions' | 'runbooks' | 'patterns' | 'references';
 
 export interface BrainGroup {
   id: string;
@@ -88,30 +87,7 @@ export interface BrainSyncResult {
   dryRun: boolean;
 }
 
-export interface BrainPromoteOptions {
-  repo?: string;
-  slug: string;
-  category: BrainCategory;
-  dryRun?: boolean;
-  json?: boolean;
-}
-
-export interface BrainPromoteResult {
-  repoRoot: string;
-  brainRoot: string;
-  project: string;
-  slug: string;
-  category: BrainCategory;
-  targetPath: string;
-  brainPath: string;
-  sources: string[];
-  issues: BrainIssue[];
-  dryRun: boolean;
-  written: boolean;
-}
-
 const VALID_SCOPES = new Set(['reference-configs', 'architecture', 'project-docs', 'knowledge', 'workstreams', 'all']);
-const VALID_CATEGORIES = new Set<BrainCategory>(['decisions', 'runbooks', 'patterns', 'references']);
 const DEFAULT_MANIFEST = '.ai/harness/brain-manifest.json';
 const POLICY_FILE = '.ai/harness/policy.json';
 const VALID_ROLES = new Set(['externalized', 'partial', 'repo-authored']);
@@ -447,7 +423,7 @@ function collectItems(
   repoRoot: string,
   manifest: BrainManifest,
   root: string,
-  opts: { scope?: string; includeArchive?: boolean; changed?: string[] },
+  opts: { scope?: string; changed?: string[] },
   issues: BrainIssue[],
 ): BrainItem[] {
   const project = manifest.project || path.basename(repoRoot);
@@ -460,7 +436,7 @@ function collectItems(
   for (const group of groups) {
     const lifecycle = group.lifecycle ?? 'always-sync';
     if (lifecycle === 'never-sync') continue;
-    if (lifecycle === 'archive-only' && !opts.includeArchive) continue;
+    if (lifecycle === 'archive-only') continue;
     const scope = group.scope ?? group.id;
     if (opts.scope && opts.scope !== 'all' && opts.scope !== scope && opts.scope !== group.id) continue;
 
@@ -542,7 +518,7 @@ export function runBrain(mode: 'status' | 'check' | 'sync', opts: BrainCommandOp
     repoRoot,
     manifest,
     root,
-    { scope, changed: opts.changed, includeArchive: false },
+    { scope, changed: opts.changed },
     issues,
   );
   const synced: BrainItem[] = [];
@@ -589,94 +565,6 @@ export function runBrain(mode: 'status' | 'check' | 'sync', opts: BrainCommandOp
   return { repoRoot, manifestPath, brainRoot: root, project: manifest.project || path.basename(repoRoot), mode, scope, selected: items, synced, skipped, issues, dryRun: opts.dryRun === true };
 }
 
-function findArchiveSources(repoRoot: string, slug: string): string[] {
-  const safeSlug = slug.replace(/[^A-Za-z0-9._-]+/g, '-');
-  const sources: string[] = [];
-  for (const dir of ['plans/archive', 'tasks/archive']) {
-    const fullDir = path.resolve(repoRoot, dir);
-    if (!fs.existsSync(fullDir)) continue;
-    for (const file of fs.readdirSync(fullDir).sort()) {
-      if (!file.endsWith('.md')) continue;
-      if (dir === 'plans/archive' && !file.startsWith('plan-')) continue;
-      if (dir === 'tasks/archive' && !file.startsWith('notes-')) continue;
-      if (file.includes(safeSlug)) sources.push(`${dir}/${file}`);
-    }
-  }
-  return sources;
-}
-
-function frontmatterValue(content: string, label: string): string {
-  const escaped = label.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  const match = content.match(new RegExp(`^> \\*\\*${escaped}\\*\\*:\\s*(.+)$`, 'm'));
-  return match?.[1]?.trim() ?? '';
-}
-
-function yamlQuote(value: string): string {
-  return JSON.stringify(value);
-}
-
-export function runBrainPromote(opts: BrainPromoteOptions): BrainPromoteResult {
-  if (!VALID_CATEGORIES.has(opts.category)) {
-    throw new Error(`invalid category "${opts.category}" (expected: ${Array.from(VALID_CATEGORIES).join(', ')})`);
-  }
-  const repoRoot = resolveRepoRoot(opts.repo);
-  const { manifest } = readManifest(repoRoot);
-  const project = manifest.project || path.basename(repoRoot);
-  const root = brainRoot();
-  const issues: BrainIssue[] = [];
-  const sources = findArchiveSources(repoRoot, opts.slug);
-  const brainPath = logicalBrainPath(project, opts.category, `${opts.slug}.md`);
-  const targetPath = safeBrainPath(root, brainPath, `promote:${opts.slug}`, issues) || path.resolve(root, project, opts.category, `${opts.slug}.md`);
-
-  if (sources.length === 0) {
-    issue(issues, 'error', `No archived plan or notes found for slug: ${opts.slug}`);
-  }
-
-  const sections = sources.map((sourcePath) => {
-    const content = fs.readFileSync(path.resolve(repoRoot, sourcePath), 'utf-8');
-    const title = sourcePath;
-    return `## Source: ${title}\n\n${content.trim()}\n`;
-  });
-  const firstContent = sources.length > 0 ? fs.readFileSync(path.resolve(repoRoot, sources[0]), 'utf-8') : '';
-  const relatedPlan = sources.find((source) => source.startsWith('plans/archive/')) || frontmatterValue(firstContent, 'Related Plan');
-  const archivedAt = frontmatterValue(firstContent, 'Archived') || new Date().toISOString();
-  const outcome = frontmatterValue(firstContent, 'Outcome') || 'Promoted';
-  const body = [
-    '---',
-    `slug: ${yamlQuote(opts.slug)}`,
-    `category: ${yamlQuote(opts.category)}`,
-    `source_plan: ${yamlQuote(relatedPlan || '')}`,
-    `archived_at: ${yamlQuote(archivedAt)}`,
-    `outcome: ${yamlQuote(outcome)}`,
-    `repo: ${yamlQuote(repoRoot)}`,
-    '---',
-    '',
-    `# ${opts.slug}`,
-    '',
-    ...sections,
-  ].join('\n');
-
-  const hasErrors = issues.some((entry) => entry.level === 'error');
-  if (!hasErrors && !opts.dryRun) {
-    fs.mkdirSync(path.dirname(targetPath), { recursive: true });
-    fs.writeFileSync(targetPath, body, 'utf-8');
-  }
-
-  return {
-    repoRoot,
-    brainRoot: root,
-    project,
-    slug: opts.slug,
-    category: opts.category,
-    targetPath,
-    brainPath,
-    sources,
-    issues,
-    dryRun: opts.dryRun === true,
-    written: !hasErrors && !opts.dryRun,
-  };
-}
-
 function formatIssues(issues: BrainIssue[]): string[] {
   return issues.map((entry) => `[brain] ${entry.level}: ${entry.message}`);
 }
@@ -696,25 +584,12 @@ export function formatBrainResult(result: BrainSyncResult, asJson = false): stri
   return lines.join('\n');
 }
 
-export function formatBrainPromote(result: BrainPromoteResult, asJson = false): string {
-  if (asJson) return JSON.stringify(result, null, 2);
-  const lines: string[] = [];
-  lines.push(`Brain promote: ${result.slug}`);
-  lines.push(`Repo: ${result.repoRoot}`);
-  lines.push(`Root: ${result.brainRoot}`);
-  lines.push(`Target: ${result.brainPath}`);
-  lines.push(`Sources: ${result.sources.length}`);
-  lines.push(result.dryRun ? 'Dry run: no file written' : result.written ? 'Written: yes' : 'Written: no');
-  lines.push(...formatIssues(result.issues));
-  return lines.join('\n');
-}
-
 function exitCodeFor(issues: BrainIssue[]): number {
   return issues.some((entry) => entry.level === 'error') ? 1 : 0;
 }
 
 export function buildBrainCommand(): Command {
-  const brain = new Command('brain').description('Manage explicit repo-to-brain sync and archive promotion');
+  const brain = new Command('brain').description('Manage explicit repo-to-brain sync');
 
   brain
     .command('status')
@@ -751,20 +626,6 @@ export function buildBrainCommand(): Command {
     .action((rawOpts: BrainCommandOptions) => {
       const result = runBrain('sync', rawOpts);
       console.log(formatBrainResult(result, rawOpts.json === true));
-      process.exit(exitCodeFor(result.issues));
-    });
-
-  brain
-    .command('promote')
-    .description('Promote archived plan/notes by slug into ~/brain/<project>/<category>/')
-    .requiredOption('--slug <slug>', 'Archived workflow slug')
-    .requiredOption('--category <category>', 'Target category: decisions|runbooks|patterns|references')
-    .option('--repo <path>', 'Repository root to inspect')
-    .option('--dry-run', 'Show planned promotion without writing files')
-    .option('--json', 'Output JSON instead of human-readable text')
-    .action((rawOpts: BrainPromoteOptions) => {
-      const result = runBrainPromote(rawOpts);
-      console.log(formatBrainPromote(result, rawOpts.json === true));
       process.exit(exitCodeFor(result.issues));
     });
 

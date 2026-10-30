@@ -699,25 +699,6 @@ refresh_target_base() {
   run_cmd git fetch --no-tags "$REMOTE_NAME" "+refs/heads/$TARGET_BRANCH:refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
 }
 
-active_plan_or_empty() {
-  local active_plan=""
-  if [[ -f ".ai/harness/active-plan" ]]; then
-    active_plan="$(cat ".ai/harness/active-plan" 2>/dev/null | xargs)"
-  fi
-  printf '%s' "$active_plan"
-}
-
-pr_title_for_branch() {
-  local branch="$1"
-  local active_plan title
-  active_plan="$(active_plan_or_empty)"
-  if [[ -n "$active_plan" && -f "$active_plan" ]]; then
-    title="$(awk '/^# / { sub(/^# /, ""); print; exit }' "$active_plan" | sed -E 's/^Plan:[[:space:]]*//')"
-  fi
-  title="${title:-Ship ${branch}}"
-  printf '%s' "$title"
-}
-
 pr_body_for_branch() {
   local branch="$1"
   cat <<EOF_BODY
@@ -753,7 +734,7 @@ create_or_report_pr() {
     return 0
   fi
 
-  title="$(pr_title_for_branch "$branch")"
+  title="Ship $branch"
   body="$(pr_body_for_branch "$branch")"
   args=(pr create --base "$TARGET_BRANCH" --head "$branch" --title "$title" --body "$body")
   if [[ "$DRAFT_PR" -eq 1 ]]; then

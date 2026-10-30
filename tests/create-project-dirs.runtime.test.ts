@@ -229,10 +229,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).not.toContain("sync-brain-docs.sh");
       expect(workflowContract.helpers.scripts).toContain("check-deploy-sql-order.sh");
       expect(workflowContract.helpers.scripts).not.toContain("check-architecture-sync.sh");
-      expect(workflowContract.helpers.scripts).toContain("check-task-workflow.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("check-task-workflow.sh");
       expect(workflowContract.helpers.scripts).toContain("contract-worktree.sh");
       expect(workflowContract.helpers.scripts).toContain("ship-worktrees.sh");
-      expect(workflowContract.helpers.scripts).toContain("refresh-current-status.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("refresh-current-status.sh");
       expect(workflowContract.helpers.scripts).toContain("select-agent-context-blocks.sh");
       expect(workflowContract.helpers.scripts).not.toContain("context-budget.ts");
       expect(workflowContract.helpers.scripts).toContain("capability-resolver.ts");
@@ -241,7 +241,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.helpers.scripts).not.toContain("architecture-queue.sh");
       expect(workflowContract.helpers.scripts).not.toContain("archive-architecture-request.sh");
       expect(workflowContract.helpers.scripts).not.toContain("context-contract-sync.sh");
-      expect(workflowContract.helpers.scripts).toContain("workstream-sync.sh");
+      expect(workflowContract.helpers.scripts).not.toContain("workstream-sync.sh");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".claude/settings.json");

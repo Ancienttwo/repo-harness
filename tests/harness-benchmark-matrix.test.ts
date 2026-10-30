@@ -248,10 +248,8 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
 
         const gitDir = git(layout.workspace, 'rev-parse', '--git-dir').stdout.toString().trim();
         expect(gitDir.includes('.git/worktrees/')).toBe(profile !== 'no-harness');
-        expect(existsSync(join(layout.workspace, 'plans/plan-20000101-0000-benchmark.md')))
-          .toBe(profile === 'strict-harness');
-        expect(existsSync(join(layout.workspace, 'tasks/contracts/20000101-0000-benchmark.contract.md')))
-          .toBe(profile === 'strict-harness');
+        expect(existsSync(join(layout.workspace, 'plans/plan-20000101-0000-benchmark.md'))).toBe(false);
+        expect(existsSync(join(layout.workspace, 'tasks/contracts/20000101-0000-benchmark.contract.md'))).toBe(false);
         expect(existsSync(join(layout.workspace, '.ai/harness/handoff/resume.md'))).toBe(true);
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }

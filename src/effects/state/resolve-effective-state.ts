@@ -344,7 +344,7 @@ export interface CapabilityResolution {
 // explicit capability commands, write the registry and its policy reference.
 // A declared missing or invalid registry fails closed. Restore the declared
 // registry through those writers, or repair its JSON explicitly. Workflow
-// diagnostics and ensure-task-workflow do not repair registry contents.
+// diagnostics do not repair registry contents.
 function policyDeclaresCapabilityRegistry(policy: WorkflowPolicy): boolean {
   const declared = policyValue(policy, '.context.capability_registry_file');
   if (declared === POLICY_FIELD_ABSENT) return false;

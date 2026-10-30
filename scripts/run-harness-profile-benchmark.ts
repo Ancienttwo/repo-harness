@@ -791,27 +791,6 @@ function initializeBenchmarkWorkspace(seed: string, workspace: string): void {
   run('git', ['commit', '-m', 'benchmark seed'], workspace);
 }
 
-function writeStrictArtifacts(workspace: string, scenario: HarnessScenario, activeWorktree: string): void {
-  const plan = 'plans/plan-20000101-0000-benchmark.md';
-  const contract = 'tasks/contracts/20000101-0000-benchmark.contract.md';
-  mkdirSync(join(workspace, 'plans'), { recursive: true });
-  mkdirSync(join(workspace, 'tasks/contracts'), { recursive: true });
-  mkdirSync(join(workspace, '.ai/harness'), { recursive: true });
-  writeFileSync(join(workspace, plan), [
-    '# Benchmark Plan', '', '> **Status**: Executing', `> **Task Contract**: ${contract}`, '',
-    '## Task Breakdown', `- [ ] ${scenario.id}`, '', '## Evidence Contract',
-    '- **State/progress path**: benchmark record', '- **Verification evidence**: acceptance command',
-    '- **Evaluator rubric**: deterministic grader', '- **Stop condition**: grader pass', '- **Rollback surface**: disposable worktree', '',
-  ].join('\n'));
-  writeFileSync(join(workspace, contract), [
-    '# Benchmark Contract', '', '> **Status**: Active', `> **Plan**: ${plan}`, '> **Task Profile**: code-change',
-    '> **Workflow Profile**: strict', '', '## Allowed Paths', '```yaml', 'allowed_paths:',
-    '  - src/', '  - tests/', '  - deploy/', '```', '',
-  ].join('\n'));
-  writeFileSync(join(workspace, '.ai/harness/active-plan'), `${plan}\n`);
-  writeFileSync(join(workspace, '.ai/harness/active-worktree'), `${activeWorktree}\n`);
-}
-
 export function writeResumeProjection(workspace: string): void {
   mkdirSync(join(workspace, '.ai/harness/handoff'), { recursive: true });
   writeFileSync(join(workspace, '.ai/harness/handoff/resume.md'), [
@@ -933,10 +912,6 @@ export function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRun
   run('git', ['config', 'user.name', 'Benchmark'], primaryWorkspace);
   cpSync(base.home, layout.home, { recursive: true, mode: constants.COPYFILE_FICLONE });
   rebaseAbsoluteSymlinks(base.home, layout.home);
-  if (base.profile === 'strict-harness') {
-    const canonicalWorkspace = join(realpathSync(dirname(layout.workspace)), basename(layout.workspace));
-    writeStrictArtifacts(primaryWorkspace, scenario, canonicalWorkspace);
-  }
   if (scenario.requires_resume_projection) writeResumeProjection(primaryWorkspace);
   run('git', ['add', '.'], primaryWorkspace);
   run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], primaryWorkspace);
@@ -1192,7 +1167,7 @@ async function executeRun(
     hook_p50_ms: percentile(hookDurations, 0.5), hook_p95_ms: percentile(hookDurations, 0.95), hook_p99_ms: percentile(hookDurations, 0.99),
     guard_block_count: hooks.filter((entry) => entry.blocked).length,
     repeated_guard_fingerprint_count: repeated, artifact_files_created: artifactFiles.length, artifact_files: artifactFiles,
-    profile_projection_artifact_files: base.profile === 'strict-harness' ? 2 : 0,
+    profile_projection_artifact_files: 0,
     grader_acceptance: graderPassed ? 'passed' : 'failed',
     no_harness_isolation: noHarnessIsolation(provider, base.profile, stdout, hooks.length),
     evidence_hashes: {
@@ -1214,7 +1189,7 @@ function dryRunRecord(provider: BenchmarkProvider, scenario: HarnessScenario, la
     model_call_count: null, subagent_call_count: null, time_to_first_edit_ms: null, total_duration_ms: null,
     hook_invocation_count: 0, hook_total_duration_ms: 0, hook_p50_ms: null, hook_p95_ms: null, hook_p99_ms: null,
     guard_block_count: 0,
-    repeated_guard_fingerprint_count: 0, artifact_files_created: 0, artifact_files: [], profile_projection_artifact_files: profile === 'strict-harness' ? 2 : 0,
+    repeated_guard_fingerprint_count: 0, artifact_files_created: 0, artifact_files: [], profile_projection_artifact_files: 0,
     grader_acceptance: 'unavailable', no_harness_isolation: 'unavailable',
     evidence_hashes: { provider_stream: null, provider_stderr: null, grader_stdout: null, grader_stderr: null, workspace: null },
   };
@@ -1304,9 +1279,9 @@ function writeHarnessBenchmarkReport(report: HarnessBenchmarkReport, reportPath:
     `> **Profile bases / arms**: ${report.provenance.profile_base_count} / ${report.provenance.arm_count}`, '',
     '| Profile | Passed | Known tokens | Avg duration ms | Task artifacts | Projection artifacts | Recovery |',
     '|---|---:|---:|---:|---:|---:|---|', ...rows, '',
-    'Projection artifacts are the pre-run profile envelope (for example Strict Plan/Contract inputs); task artifacts are files created by the provider during the measured task. Provider-owned fields remain `null` when the structured provider stream does not supply them. See the JSON report for per-run hook, guard, evidence-hash, artifact, isolation, and grader evidence.', '',
+    'Projection artifacts are the pre-run profile envelope; task artifacts are files created by the provider during the measured task. Provider-owned fields remain `null` when the structured provider stream does not supply them. See the JSON report for per-run hook, guard, evidence-hash, artifact, isolation, and grader evidence.', '',
     '## Artifact Files', '',
-    'Per-run paths backing each `artifact_files_created` count, for auditing whether they land under `plans/`, `tasks/`, or `.ai/harness/` (note: `.ai/harness/runs/` and `.ai/harness/checks/*.latest.*` are gitignored and never appear here, since this list is sourced from `git status`).', '',
+    'Per-run paths backing each `artifact_files_created` count, for auditing the files each run leaves in the workspace (note: `.ai/harness/runs/` and `.ai/harness/checks/*.latest.*` are gitignored and never appear here, since this list is sourced from `git status`).', '',
     artifactLines.length > 0 ? artifactLines.join('\n') : '(none)', '',
   ].join('\n'));
   writeReportByteBinding(report, reportPath);

@@ -95,8 +95,6 @@ export function formatRetentionReport(report: RetentionReport): string {
   for (const entry of report.failed) lines.push(`  failed: ${entry.path}: ${entry.error}`);
   for (const entry of report.purged) lines.push(`  ${purgeVerb}: ${entry.path} (${entry.ageDays}d)`);
   for (const entry of report.purgeFailed) lines.push(`  delete failed: ${entry.path}: ${entry.error}`);
-  const leaving = report.archived.filter((entry) => entry.tracked).length;
-  if (leaving > 0) lines.push(`${leaving} archived entries are tracked by Git. Retention does not stage or commit; commit their removal.`);
   if (report.mode === 'dry-run' && (report.archived.length > 0 || report.purged.length > 0)) lines.push('Run again with --apply to move and delete these entries.');
   return `${lines.join('\n')}\n`;
 }

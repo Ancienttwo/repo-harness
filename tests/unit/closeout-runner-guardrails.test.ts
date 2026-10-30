@@ -142,8 +142,8 @@ describe('closeout runner guardrails', () => {
   });
 
   test('helper identity selects immutable ordinary, verifier, and closeout budgets', () => {
-    expect(helperTimeoutMs('check-task-workflow')).toBe(120_000);
-    expect(helperTimeoutMs('verify-contract')).toBe(3_660_000);
+    expect(helperTimeoutMs('check-context-files')).toBe(120_000);
+    expect(helperTimeoutMs('verify-sprint')).toBe(3_660_000);
     expect(helperTimeoutMs('verify-sprint')).toBe(3_660_000);
     expect(helperTimeoutMs('contract-worktree')).toBe(900_000);
     expect(helperTimeoutMs('merge-gate')).toBe(900_000);

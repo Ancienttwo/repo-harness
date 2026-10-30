@@ -73,7 +73,6 @@ const required = [
   "interfaces/effective-state-v2.ts",
   "interfaces/types.ts",
   "scripts/verification-plan.ts",
-  "scripts/migrate-verification-plan.ts",
   "src/core/evidence/verification-plan.ts",
   "src/effects/evidence/verification-execution.ts",
   "src/effects/operator/fleet-collector-process.ts",
@@ -469,8 +468,8 @@ if [[ -n "$(git -C "$TARGET_REPO" status --porcelain)" ]]; then
   exit 1
 fi
 
-if ! "$CLI" run check-task-workflow --help >/dev/null; then
-  echo "[tarball-smoke] ERROR: packaged 'repo-harness run check-task-workflow --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
+if ! "$CLI" run verify-sprint --help >/dev/null; then
+  echo "[tarball-smoke] ERROR: packaged 'repo-harness run verify-sprint --help' failed (run dispatcher / helper lookup / bin startup broken)" >&2
   exit 1
 fi
 

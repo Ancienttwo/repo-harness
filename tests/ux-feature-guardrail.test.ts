@@ -34,10 +34,6 @@ describe("UX feature pre-implementation guard", () => {
         'UX-{{SLUG}}-P1', 'Carry these IDs unchanged into the task contract']) expect(copy).toContain(field);
     }
     expect(read('.claude/templates/design-brief.template.md')).toContain('Optional document');
-    for (const helper of ['scripts/ensure-task-workflow.sh']) {
-      expect(read(helper)).not.toContain('DESIGN_BRIEF_TEMPLATE_EOF');
-      expect(read(helper)).toContain('no plan/contract/review/notes');
-    }
   });
 
   test("keeps explicit PRD guidance while retiring automatic prompt guard advice", () => {

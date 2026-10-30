@@ -425,26 +425,3 @@ describe("no-independent-authoring: the retired writers carry zero content assem
     }
   });
 });
-
-describe("tasks/current.md: refresh-current-status.sh stays the sole materializer (drift check)", () => {
-  test("two independent non-mutating preview regenerations agree byte-for-byte modulo the volatile updated_at timestamp", () => {
-    // Non-mutating: no --write, so this never touches the tracked file --
-    // deliberately not compared against tasks/current.md itself, which is
-    // a point-in-time snapshot only refreshed at explicit lifecycle
-    // boundaries (root CLAUDE.md) and is legitimately stale mid-task; the
-    // regenerate -> compare drift check instead proves the materializer
-    // itself is stable across repeated regenerations of the same live
-    // source-of-truth artifacts, the actual no-drift property this row
-    // requires.
-    const first = run("bash", ["scripts/refresh-current-status.sh"], REPO_ROOT);
-    const second = run("bash", ["scripts/refresh-current-status.sh"], REPO_ROOT);
-    expect(first.status).toBe(0);
-    expect(second.status).toBe(0);
-    expect(first.stdout).toContain("<!-- generated-by: repo-harness refresh-current-status v1 -->");
-
-    const strip = (text: string) => text
-      .replace(/^<!-- updated_at:.*$/m, "")
-      .replace(/^> \*\*Updated At\*\*:.*$/m, "");
-    expect(strip(first.stdout)).toBe(strip(second.stdout));
-  }, 30_000);
-});

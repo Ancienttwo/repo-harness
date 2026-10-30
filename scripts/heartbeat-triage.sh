@@ -17,12 +17,6 @@ inbox_path=".ai/harness/triage/inbox.md"
 run_id=""
 run_source="manual"
 json_output=0
-helper_source="$0"
-if [[ -n "${REPO_HARNESS_HELPER_SOURCE_PATH:-}" && -f "$REPO_HARNESS_HELPER_SOURCE_PATH" \
-      && "$(basename "$REPO_HARNESS_HELPER_SOURCE_PATH")" == "$(basename "$0")" ]]; then
-  helper_source="$REPO_HARNESS_HELPER_SOURCE_PATH"
-fi
-SCRIPT_DIR="$(cd "$(dirname "$helper_source")" && pwd)"
 
 if [[ "${1:-}" == "run" ]]; then
   shift
@@ -121,11 +115,6 @@ policy_get() {
   printf '%s' "$default_value"
 }
 
-helper_path() {
-  local helper_name="$1"
-  printf '%s/%s' "$SCRIPT_DIR" "$helper_name"
-}
-
 repo_relative() {
   local path="$1"
   case "$path" in
@@ -133,10 +122,6 @@ repo_relative() {
     "$repo") printf '.' ;;
     *) printf '%s' "$path" ;;
   esac
-}
-
-first_line() {
-  awk 'NF { print; exit }'
 }
 
 date_plus_14_days() {
@@ -153,36 +138,6 @@ entry_kinds=()
 entry_statuses=()
 entry_summaries=()
 entry_details=()
-
-add_entry() {
-  entry_kinds+=("$1")
-  entry_statuses+=("$2")
-  entry_summaries+=("$3")
-  entry_details+=("$4")
-}
-
-run_workflow_check() {
-  local output status summary
-  local check_script
-  check_script="$(helper_path "check-task-workflow.sh")"
-
-  if [[ ! -f "$check_script" ]]; then
-    add_entry "workflow-check" "warning" "$check_script is missing" ""
-    return 0
-  fi
-
-  set +e
-  output="$(bash "$check_script" 2>&1)"
-  status=$?
-  set -e
-
-  if [[ "$status" -eq 0 ]]; then
-    add_entry "workflow-check" "pass" "check-task-workflow.sh passed" "$output"
-  else
-    summary="$(first_line <<<"$output")"
-    add_entry "workflow-check" "fail" "${summary:-check-task-workflow.sh failed}" "$output"
-  fi
-}
 
 write_json_snapshot() {
   local target="$1"
@@ -247,7 +202,6 @@ write_inbox() {
 }
 
 adoption_review_due="$(date_plus_14_days)"
-run_workflow_check
 write_json_snapshot "$run_file"
 write_inbox
 

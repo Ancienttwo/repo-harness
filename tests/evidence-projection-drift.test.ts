@@ -1,4 +1,4 @@
-import { commitAll, initGitRepo, run, withTempRepo } from "./helpers/repo-fixture";
+import { withTempRepo } from "./helpers/repo-fixture";
 /**
  * EPC-09 Program closeout, Goal 1: cross-package projection-drift check.
  *
@@ -14,7 +14,7 @@ import { commitAll, initGitRepo, run, withTempRepo } from "./helpers/repo-fixtur
  * never silently patched in this package.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from "fs";
+import { existsSync, mkdirSync, writeFileSync } from "fs";
 import { join } from "path";
 
 import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
@@ -204,33 +204,4 @@ describe("projection drift: recovery views (checkpoint -> handoff/resume)", () =
       expect(resultA.resume).toBe(resultB.resume);
     });
   });
-});
-
-// ---------------------------------------------------------------------------
-// tasks/current.md (refresh-current-status.sh, EPC-07 precedent)
-// ---------------------------------------------------------------------------
-describe("projection drift: tasks/current.md (refresh-current-status.sh double-regeneration)", () => {
-  test("two independent non-mutating preview regenerations agree byte-for-byte modulo the volatile updated_at timestamp", () => {
-    // Compare stable source inputs in a disposable repository; concurrent
-    // workers can legitimately change the real checkout's Git status.
-    withTempRepo("drift-current-preview", (repoRoot) => {
-      initGitRepo(repoRoot);
-      mkdirSync(join(repoRoot, "tasks"), { recursive: true });
-      writeFileSync(join(repoRoot, "README.md"), "# Fixture\n");
-      writeFileSync(join(repoRoot, "tasks/current.md"), "existing local read model\n");
-      commitAll(repoRoot, "stable projection inputs");
-      writeFileSync(join(repoRoot, "README.md"), "# Fixture\nChanged source\n");
-      const script = join(REPO_ROOT, "scripts/refresh-current-status.sh");
-      const first = run("bash", [script], repoRoot);
-      const second = run("bash", [script], repoRoot);
-      expect(first.status, first.stderr).toBe(0);
-      expect(second.status, second.stderr).toBe(0);
-      expect(first.stdout).toContain("<!-- generated-by: repo-harness refresh-current-status v1 -->");
-      expect(first.stdout).toContain(" M README.md");
-      expect(readFileSync(join(repoRoot, "tasks/current.md"), "utf8")).toBe("existing local read model\n");
-      const strip = (text: string) =>
-        text.replace(/^<!-- updated_at:.*$/m, "").replace(/^> \*\*Updated At\*\*:.*$/m, "");
-      expect(strip(first.stdout)).toBe(strip(second.stdout));
-    });
-  }, 30_000);
 });

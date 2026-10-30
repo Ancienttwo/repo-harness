@@ -189,7 +189,7 @@ describe("verification lifecycle explicit adapters", () => {
     expect(report.passed).toBe(false);
     expect(report.results.find((entry: { id: string }) => entry.id === "full").execution).toBe("missing");
   }, 30_000);
-  for (const script of ["verify-sprint.sh", "verify-contract.sh"]) {
+  for (const script of ["verify-sprint.sh"]) {
     for (const typeExit of [0, 7]) {
       test(`${script} runs typecheck once and ${typeExit ? "stops before selected tests on failure" : "runs selected tests once"}`, () => {
         const { root, counter } = fixture("verification-local-selection", []);

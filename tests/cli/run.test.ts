@@ -80,6 +80,24 @@ describe("run command", () => {
     expect(resolveHelper("context-contract-sync")).toBeNull();
   });
 
+  test("removed plan and task helpers fail as unknown helpers", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-removed-helper-"));
+    try {
+      const res = spawnSync("bun", [CLI, "run", "new-plan", "--slug", "removed"], {
+        cwd: tmp,
+        encoding: "utf-8",
+        env: packageRuntimeEnv(),
+      });
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('repo-harness run: unknown helper "new-plan"');
+      expect(res.stderr).toContain("known helpers:");
+      expect(resolveHelper("new-plan")).toBeNull();
+      expect(resolveHelper("verify-contract")).toBeNull();
+    } finally {
+      rmSync(tmp, { recursive: true, force: true });
+    }
+  }, 30_000);
+
   test("passes unknown options through to the selected helper", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-cli-"));
     const logFile = join(tmp, "args.log");
@@ -109,11 +127,11 @@ describe("run command", () => {
   test("resolves bundled helpers from the package by default", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-package-"));
     try {
-      const resolved = resolveHelper("check-task-workflow", tmp, packageRuntimeEnv());
+      const resolved = resolveHelper("verify-sprint", tmp, packageRuntimeEnv());
 
       expect(resolved?.source).toBe("package");
-      expect(resolved?.fileName).toBe("check-task-workflow.sh");
-      expect(resolved?.path).toContain("scripts/check-task-workflow.sh");
+      expect(resolved?.fileName).toBe("verify-sprint.sh");
+      expect(resolved?.path).toContain("scripts/verify-sprint.sh");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -304,7 +322,7 @@ describe("run command", () => {
     expect(res.status).toBe(0);
     expect(res.stdout).toContain("Helpers:");
     expect(res.stdout).toMatch(
-      /check-task-workflow\s+Check workflow contract and policy compliance for the current repo/,
+      /verify-sprint\s+Run explicitly selected local checks or consume provider merge checks with --base/,
     );
     expect(res.stdout).toContain("Planning & execution:");
     expect(res.stdout.match(/cutover-closure/g)).toHaveLength(1);
@@ -367,12 +385,12 @@ describe("run command", () => {
     try {
       mkdirSync(join(tmp, ".ai/harness/scripts"), { recursive: true });
       writeFileSync(join(tmp, ".ai/harness/policy.json"), JSON.stringify({ harness: { helper_source: "repo" } }, null, 2));
-      writeFileSync(join(tmp, ".ai/harness/scripts/check-task-workflow.sh"), "#!/bin/bash\necho repo\n");
+      writeFileSync(join(tmp, ".ai/harness/scripts/verify-sprint.sh"), "#!/bin/bash\necho repo\n");
 
-      const resolved = resolveHelper("check-task-workflow", tmp, packageRuntimeEnv());
+      const resolved = resolveHelper("verify-sprint", tmp, packageRuntimeEnv());
 
       expect(resolved?.source).toBe("package");
-      expect(resolved?.path).toContain("scripts/check-task-workflow.sh");
+      expect(resolved?.path).toContain("scripts/verify-sprint.sh");
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -447,7 +465,7 @@ describe("run command", () => {
 
   test("runHelper returns a structured spawn error when helper resolution fails", () => {
     const res = runHelper({
-      helper: "check-task-workflow",
+      helper: "verify-sprint",
       env: { REPO_HARNESS_SOURCE_ROOT: "relative/source-root" },
       stdio: "pipe",
     });
@@ -457,52 +475,6 @@ describe("run command", () => {
     expect(res.stderr).toContain("REPO_HARNESS_SOURCE_ROOT must be an absolute path");
   });
 
-  test("bundled workstream-sync resolves bundled sibling helpers", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-workstream-package-"));
-    try {
-      mkdirSync(join(tmp, ".ai/context"), { recursive: true });
-      mkdirSync(join(tmp, "apps/extension"), { recursive: true });
-      writeFileSync(join(tmp, "apps/extension/AGENTS.md"), "# Extension Contract\n\nManual extension rule.\n");
-      writeFileSync(join(tmp, ".ai/context/capabilities.json"), JSON.stringify({
-        version: 1,
-        capabilities: [
-          {
-            id: "extension-runtime",
-            domain: "surface",
-            name: "extension-runtime",
-            prefixes: ["apps/extension"],
-            contract_files: {
-              agents: "apps/extension/AGENTS.md",
-              claude: "apps/extension/CLAUDE.md",
-            },
-            architecture_module: "docs/architecture/modules/surface/extension-runtime.md",
-            workstream_dir: "tasks/workstreams/surface/extension-runtime",
-            lsp_profile: "typescript-lsp",
-            verification_hints: ["bun --filter @devision/extension build"],
-          },
-        ],
-      }, null, 2) + "\n");
-
-      const res = runHelper({
-        helper: "workstream-sync",
-        cwd: tmp,
-        args: ["ensure", "--block", "apps/extension", "--slug", "extension-runtime-closure"],
-        env: packageRuntimeEnv(),
-        stdio: "pipe",
-      });
-
-      expect(res.exitCode).toBe(0);
-      expect(res.resolved?.source).toBe("package");
-      expect(res.stdout).toContain("[WorkstreamSync] Ensured tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md");
-      expect(existsSync(join(tmp, "tasks/workstreams/surface/extension-runtime/extension-runtime-closure.md"))).toBe(true);
-      expect(existsSync(join(tmp, "scripts/capability-resolver.ts"))).toBe(false);
-
-      expect(readFileSync(join(tmp, "apps/extension/AGENTS.md"), "utf8")).toBe("# Extension Contract\n\nManual extension rule.\n");
-      expect(existsSync(join(tmp, "apps/extension/CLAUDE.md"))).toBe(false);
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
 });
 
 describe('packaged state helpers', () => {
@@ -515,7 +487,7 @@ describe('packaged state helpers', () => {
           mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
           writeFileSync(join(repo, '.ai/hooks/lib/workflow-state.sh'), 'exit 91\n');
         }
-        for (const [helper, args] of [['prepare-handoff', ['--status']], ['summarize-failures', []], ['archive-workflow', ['--help']]] as const) {
+        for (const [helper, args] of [['prepare-handoff', ['--status']], ['summarize-failures', []]] as const) {
           const result = runHelper({ helper, args, cwd: repo, env: packageRuntimeEnv(), stdio: 'pipe' });
           expect(result.exitCode, `${helper}: ${result.stderr}`).toBe(0);
           expect(result.stdout).toBeTruthy();
