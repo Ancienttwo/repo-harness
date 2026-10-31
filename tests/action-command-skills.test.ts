@@ -332,7 +332,7 @@ describe("repo-harness action command skills", () => {
   test("product's PRD mode creates only upper-layer PRDs", () => {
     const prd = readReference("repo-harness-product", "prd.md");
 
-    expect(prd).toContain("plans/prds/");
+    expect(prd).toContain("docs/prds/");
     expect(prd).toContain("Activate `$geju`");
     expect(prd).toContain("compact geju framing");
     expect(prd).toContain("claude -p --model opus");

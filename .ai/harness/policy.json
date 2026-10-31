@@ -1,61 +1,18 @@
 {
   "version": 1,
-  "active_plan": {
-    "marker_file": ".ai/harness/active-plan",
-    "directory": "plans",
-    "archive_directory": "plans/archive",
-    "glob": "plan-*.md",
-    "active_worktree_marker_file": ".ai/harness/active-worktree",
-    "source_of_truth": "per-worktree explicit marker with active-worktree owner",
-    "lifecycle": {
-      "annotation_end": "Annotating",
-      "approved": "Approved",
-      "executing": "Executing",
-      "terminal_start": "Complete"
-    },
-    "statuses": [
-      "Draft",
-      "Annotating",
-      "Approved",
-      "Executing",
-      "Blocked",
-      "Review",
-      "Complete",
-      "Completed",
-      "Done",
-      "Fulfilled",
-      "Archived",
-      "Abandoned",
-      "Superseded"
-    ]
-  },
   "tasks": {
-    "current_status_file": "tasks/current.md",
     "lessons_file": "tasks/lessons.md",
-    "research_dir": "docs/researches",
-    "workstreams_dir": "tasks/workstreams"
+    "research_dir": "docs/researches"
   },
   "prds": {
-    "dir": "plans/prds",
-    "template_file": ".claude/templates/prd.template.md",
+    "dir": "docs/prds",
+    "template_file": "docs/prds/prd.template.md",
     "statuses": [
       "Draft",
       "Approved",
       "Superseded"
     ],
-    "rule": "PRDs live in plans/prds as the upper planning layer. They decompose docs/spec.md intent into product direction, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. Sprints reference PRDs through Source PRD and decompose them into ordered execution backlogs."
-  },
-  "sprints": {
-    "dir": "plans/sprints",
-    "active_marker_file": ".ai/harness/sprint/active-sprint",
-    "template_file": ".claude/templates/sprint.template.md",
-    "statuses": [
-      "Draft",
-      "Approved",
-      "Executing",
-      "Done",
-      "Archived"
-    ]
+    "rule": "PRDs live in docs/prds as the product-intent layer. They decompose docs/spec.md intent into product direction, acceptance scenarios, module behavior, data model, performance targets, and developer handoff. The GitHub issue and PR own task identity, claim, status and dependencies."
   },
   "external_sources": {
     "version": 1,
@@ -110,12 +67,6 @@
     "helper_runtime_dir": "package:scripts",
     "helper_source": "package"
   },
-  "workstreams": {
-    "dir": "tasks/workstreams",
-    "scope": "capability",
-    "projection": "off",
-    "rule": "Historical workstream projections are archived. Ordinary progress and verification live in the PR description."
-  },
   "information_lifecycle": {
     "evidence": {
       "snapshots_dir": ".ai/harness/runs",
@@ -155,14 +106,6 @@
     "resume_packet_file": ".ai/harness/handoff/resume.md",
     "global_handoff_dir": "~/.codex/handoffs",
     "auto_start_new_session": false
-  },
-  "plan_capture": {
-    "script": "repo-harness run capture-plan",
-    "rule": "Planning capture is optional and creates one reference only; no artifact-level, promotion, Evidence Contract, approval or automatic contract projection."
-  },
-  "planning": {
-    "pending_orchestration_file": ".ai/harness/planning/pending.json",
-    "source_of_truth": "transient host planning bridge only; plans/ and .ai/harness/active-plan remain authoritative"
   },
   "guards": {
     "edit_plan_gate": "off",
@@ -232,12 +175,11 @@
   },
   "worktree_strategy": {
     "auto_on_conflict": true,
-    "auto_for_contract_tasks": false,
     "branch_prefix": "codex/",
     "base_branch": "main",
     "review_base": "origin/main",
     "worktree_dir_template": "{{system_tmp}}/{{repo}}-wt-{{slug}}",
-    "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
+    "start_script": "repo-harness run contract-worktree start --issue <number>",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",

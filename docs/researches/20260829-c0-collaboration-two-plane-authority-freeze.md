@@ -6,7 +6,7 @@
 > **Scope**: `capability.runtime-harness.collaboration` boundary against the existing Task / Lease / Publication / Acceptance delivery authorities
 > **Baseline**: `main@a490a5ef76b439228a4b3282934c29ba15090cdf`
 > **Sprint row**: C0 of `plans/sprints/20260828-2321-collaborative-work-exchange-agent-succession.sprint.md`
-> **Source PRD**: `plans/prds/20260828-2321-collaboration-substrate.prd.md` (Child A)
+> **Source PRD**: `docs/prds/20260828-2321-collaboration-substrate.prd.md` (Child A)
 > **Architecture request**: `docs/architecture/requests/archive/2026/runtime-harness-collaboration.md` (Resolved)
 > **Durable ledger**: `tasks/workstreams/runtime-harness/collaboration/collaboration-substrate-program.md` (moved out of this document by C1)
 > **Historical machine guard**: `tests/unit/collaboration-authority-baseline.test.ts`. Issue #769 retires this guard and the collaboration substrate.

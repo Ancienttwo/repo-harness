@@ -48,7 +48,7 @@ allowlist:
 
 - `README.md` and `DEBUG.md`
 - `docs/architecture/.projection-manifest.json`
-- anything under `tasks/`, `plans/`, or `.ai/harness/handoff/`
+- anything under `tasks/` except `tasks/lessons.md`, or `.ai/harness/handoff/`
 - any `.md` under `docs/` or `examples/`, **except** anything under
   `docs/reference-configs/`
 

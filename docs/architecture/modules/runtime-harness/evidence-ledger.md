@@ -123,7 +123,7 @@ sequenceDiagram
 6. **Payload 与 blob 二选一。** 每个事件恰好有其中一个（`types.ts:41-45`）。Blob 按 sha256 命名，只写一次，不解引用 symlink（`src/effects/evidence/blob-store.ts:2-5`、`:32`）。
 7. **秘密从不以原文落盘。** 脱敏按构造拒绝（`src/core/evidence/redaction.ts:2-6`）。
 8. **Checkpoint 只经 marker 解析。** 发布在一个 staged 事务中验证后原子 rename。`last-published` marker 是唯一权威。读者从不按 mtime 或文件名扫描（`src/effects/evidence/checkpoint-store.ts:1-22`）。
-9. **恢复视图单跳。** 视图中的每条证据都来自已验证的 checkpoint 投影。工作流上下文每次从仓库重新读取（`src/effects/evidence/recovery-materializer.ts:10-16`）。Handoff 已有两个 producer，禁止第三个（PRD `plans/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md:53`）。
+9. **恢复视图单跳。** 视图中的每条证据都来自已验证的 checkpoint 投影。工作流上下文每次从仓库重新读取（`src/effects/evidence/recovery-materializer.ts:10-16`）。Handoff 已有两个 producer，禁止第三个（PRD `docs/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md:53`）。
 
 ### 3.2 关键权衡
 

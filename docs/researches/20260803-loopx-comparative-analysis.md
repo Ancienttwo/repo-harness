@@ -149,7 +149,7 @@ A second Codex pass reviewed this document and the draft sprint. Full convergenc
 - **Attempt ledger honesty**: the stall detector's per-turn records are admitted as a new runtime surface (`AttemptReceiptV1`), confined to *liveness evidence* in ignored `.ai/harness/runs/continuation/`, turn-based (before/after `progress_token` per bounded turn, 2 consecutive no-progress turns → `halt:no_progress`), never feeding Effective State or `progress_token`. Falsifiability clause: if real code changes routinely fail to move `progress_token`, fix the fingerprint — do not add heuristics.
 - **Scope fences**: action-budget and `evals/` cleanup stay out of this program (independent maintainability work); first WPs avoid `.ai/harness/policy.json` while its pending architecture request is open.
 
-Divergence retained after adjudication: the program PRD stays inline in the sprint file (single source; a separate `plans/prds/` copy would be a second place for the same contract to drift). Sprint rows renamed LRD-* → WP1..WP4 to match the round-2 shape.
+Divergence retained after adjudication: the program PRD stays inline in the sprint file (single source; a separate `docs/prds/` copy would be a second place for the same contract to drift). Sprint rows renamed LRD-* → WP1..WP4 to match the round-2 shape.
 
 ## Addendum — program closeout (2026-08-03)
 

@@ -24,10 +24,10 @@ synthesized to make automatic projection continue.
 
 `repo-harness` makes long-running AI engineering work reviewable and resumable
 inside the repository while keeping unified workflow helper implementation in
-the global package runtime. A maintainer should be able to hand Claude, Codex,
-or a future agent an approved plan or sprint, let it work in an isolated branch
-or worktree, and review completion from files: plan, contract, notes, checks,
-trace, review, and handoff.
+the global package runtime. A maintainer hands Claude, Codex, or a future agent
+a GitHub issue and PR. The agent works in an isolated branch or worktree. The
+maintainer reviews completion from the issue, PR checks, CI, the PR description
+and the handoff.
 
 The same authority model may support persistent logical Module Engineers. The
 engineer is a repo-defined role with a reviewed SOP and repo-grounded knowledge;
@@ -61,17 +61,16 @@ repos.
 
 ## Core Invariants
 
-- Durable truth lives in repo files: `plans/`, `tasks/contracts/`,
-  `tasks/reviews/`, `tasks/notes/`, `.ai/harness/evidence/events/log.jsonl`,
-  `.ai/harness/runs/*.json`, and `.ai/harness/handoff/`.
+- Durable truth lives in the GitHub issue and PR, `docs/prds/`,
+  `.ai/harness/evidence/events/log.jsonl`, `.ai/harness/runs/*.json`, and
+  `.ai/harness/handoff/`.
 - Helper implementation is package-owned for adopted downstream repositories;
   root `scripts/` in this repository are self-hosted source/runtime only.
-- `tasks/current.md` is a generated orientation snapshot, not a kanban board,
-  live lock, or implementation gate.
-- Agents may only widen scope by editing the active contract and leaving
-  reviewable evidence.
-- Contract verification, review recommendation, external acceptance or manual
-  override, and latest trace evidence are required before closeout.
+- No local plan, todo, workstream or contract artifact carries task state.
+- Agents may widen scope only when the issue or PR records the wider scope and
+  leaves reviewable evidence.
+- Verification, review recommendation, external acceptance or manual override,
+  and latest trace evidence are required before closeout.
 - Hooks remain fail-open observers. The prepare-acceptance gate recomputes a
   policy-base-bound Change Assessment packet over final content; it selects
   high-risk paths and required executable oracles without making Hook journals
@@ -84,7 +83,7 @@ repos.
 - Direct coding MCP is default-off, user-scoped, OAuth profile/revision-bound,
   worktree-first, and explicit that local-user Bash is not a filesystem sandbox.
 - Continuation surfaces are non-authoritative: the continuation envelope is a
-  read-only projection of effective state plus the sprint marker, the closeout
+  read-only projection of effective state. The closeout
   journal records operation progress for explicit recovery only (never workflow
   state, never read by state resolution), and attempt receipts are liveness
   evidence that never enter effective state or `progress_token`.
@@ -104,13 +103,13 @@ repos.
 | `repo-harness run <helper>` | Package runtime | Canonical workflow helper execution |
 | `repo-harness state next --json` | Package runtime | Canonical pull-based continuation entry: a read-only projection returning one unit or one halt per tick, byte-identical for identical repo bytes and identical attempt-ledger bytes |
 | `docs/spec.md` | Maintainers | Stable product intent and safety boundary |
-| `plans/prds/`, `plans/sprints/`, `plans/plan-*.md` | Planner | Decision-complete work packages |
-| `tasks/contracts/*.contract.md` | Implementer | Allowed paths, delegation, and exit criteria |
-| `tasks/reviews/*.review.md` | Evaluator | Human Review Card, evidence, risk, acceptance |
+| GitHub issue and PR | Issue owner and implementer | Task identity, claim, dependencies, scope, review and proof |
+| `docs/prds/*.prd.md` | Planner | Product intent and acceptance scenarios |
+| `docs/prds/DESIGN-*.md` | Designer | Optional design brief and UX guard, used only when the task requests it |
 | `.ai/harness/evidence/events/log.jsonl` | Verification Plan executor | Accepted execution events bind immutable runs |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
 | `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
-| `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; `frontend` task_profile contracts must cite a design brief, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
+| `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; a frontend task cites the design brief when the task requests one, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries
 
@@ -119,7 +118,7 @@ repos.
 - External knowledge and memory are advisory. Current repo files and live check
   output override summaries.
 - Delegated work remains parent-owned: explorer and verifier are read-only;
-  worker edits are constrained to contract `allowed_paths`.
+  worker edits are constrained to the scope recorded in the issue or PR.
 - Collaboration remains an untrusted knowledge plane: signals, context packets
   and handoff adoption cannot acquire a Claim, move a Lease, publish or accept.
   The C9 live gate keeps one writer, records exact provider JSONL usage, and
@@ -144,9 +143,8 @@ repos.
   separate crash-recoverable writer-slot states. Transitional or unverifiable
   states admit no mutation or publication and never silently restore a writer.
 - Provider threads, transcripts, auto memory, and context summaries are caches.
-  Durable module knowledge remains in architecture, research, lessons,
-  workstreams, and task-local notes, with any engineer memory kept as a
-  rebuildable index.
+  Durable module knowledge remains in architecture, research and lessons, with
+  any engineer memory kept as a rebuildable index.
 - Agent Runtime adapters are a closed set (`codex-app-thread`,
   `herdr-cli-agent`). They cannot create endpoints, carry message bodies, execute
   generic terminal commands, infer receipt state, or change Task, Lease,
@@ -154,10 +152,10 @@ repos.
 
 ## Human Review Expectations
 
-Human reviewers should start with the task review's `## Human Review Card`,
-then inspect the active contract, changed files, latest trace, and failed or
-skipped checks. A pass means the reviewer can see what changed, why it is in
-scope, what verified it, what risk remains, and how to roll it back.
+Human reviewers start with the PR description, then inspect the changed files,
+latest trace, and failed or skipped checks. A pass means the reviewer can see
+what changed, why it is in scope, what verified it, what risk remains, and how
+to roll it back.
 
 The card is a reading surface, not an acceptance authority. Closeout requires
 canonical `## External Acceptance Advice` with `pass`, bound under Review Rubric
@@ -177,34 +175,31 @@ readback is a separate release check, never a task AcceptanceReceipt field.
 
 ## Acceptance Scenarios
 
-- An existing repo can adopt the harness, generate workflow files, and pass
-  `repo-harness run check-task-workflow`.
+- An existing repo can adopt the harness and generate `docs/prds/` and
+  `tasks/lessons.md` without plan or task scaffolds.
 - A standard downstream init or migration does not create repo-local
   repo-harness helper scripts under `scripts/` or `.ai/harness/scripts/`.
-- A sprint row can expand into a plan, contract, notes, review, latest trace,
-  and handoff without relying on previous chat.
-- A fresh agent session can read source artifacts first and resume from the
-  exact next step.
-- A maintainer can reject or accept an agent change from the Human Review Card
-  plus machine evidence.
-- A host loop can drive an approved sprint to completion using only
-  `repo-harness state next` output; an interrupted closeout is recoverable
-  explicitly without duplicating push or merge; two consecutive no-progress
-  turns halt the loop instead of spinning.
+- A GitHub issue with a PR can be implemented, verified and closed using only
+  the issue, PR description and CI.
+- A fresh agent session can read the issue, PR and handoff first and resume from
+  the exact next step.
+- A maintainer can reject or accept an agent change from the PR description and
+  the machine evidence.
+- The issue/PR loop can drive work to completion using only `repo-harness state
+  next` output; an interrupted closeout is recoverable explicitly without
+  duplicating push or merge; two consecutive no-progress turns halt the loop
+  instead of spinning.
 
 ## Canonical Terms
 
-- **Plan (work-package)**: A decision-complete `plans/plan-*.md` document
-  promoted to work-package level because it needs its own merge, rollback, or
-  verification boundary, rather than staying a checklist row in a sprint
-  backlog or active plan.
-- **Task contract**: The authoritative delegation brief in
-  `tasks/contracts/*.contract.md` that fixes allowed paths, exit criteria, and
-  scope for one execution slice; an implementer works from the contract, not
-  from surrounding chat history.
-- **Workstream**: A durable, capability-scoped progress record under
-  `tasks/workstreams/<domain>/<capability>/` that carries status across
-  sessions and plans instead of living only in chat memory.
+- **Issue flow (IPDD)**: Issue/PR-driven development. The GitHub issue and PR
+  own task identity, claim, dependencies, status and proof.
+- **PRD**: The product-intent document under `docs/prds/*.prd.md`. It supplies
+  context and acceptance scenarios. It does not approve or track work.
+- **Design brief**: The optional `docs/prds/DESIGN-*.md` document that records
+  the UX guard only when the task requests design work.
+- **Fact home**: The single repository location that owns one class of durable
+  fact, as listed in `docs/issue-flow.md`.
 - **Capability**: A functional block registered in the capability authority
   selected by `.ai/harness/policy.json#context.capability_source`. The
   `registry` source resolves paths by longest-prefix match. The `archcontext`

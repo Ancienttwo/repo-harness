@@ -1,11 +1,10 @@
-# Task Scope and Optional Sprint Backlogs
+# Task Scope and Delegation
 
-Ordinary work is described in its PR: goal, scope, changes, verification, risk and rollback.
-The delegation brief contains Goal, Scope, Context, Acceptance, Verify, Rollback,
-Timebox, Forbidden, Report and Standing. A separate plan,
-contract, review, notes file, machine block or promotion gate is not a prerequisite.
-Use notes only for non-obvious decisions. PRDs are for genuinely new products; an
-optional sprint backlog may coordinate dependent work without creating artifact chains.
+Ordinary work is described in its PR: goal, scope, changes, verification, risk
+and rollback. The delegation brief contains Goal, Scope, Context, Acceptance,
+Verify, Rollback, Timebox, Forbidden, Report and Standing. A separate plan,
+contract, review or notes file is not a prerequisite. Record a one-time decision
+in the issue. PRDs are for genuinely new products.
 
 ## Delegation Brief
 
@@ -43,9 +42,8 @@ hard boundaries; the latter two require user approval. Reviewers consume existin
 behavior once, run full coverage daily, open repair tasks for failures, and report gaps.
 Record actual commands and outcomes in the PR; do not require receipts, waivers or pre-fix logs.
 
-## Existing Sprint Data
+## Task History
 
-When operating an existing schema-2 sprint, preserve each row's persisted `ID` across
-renames/reordering; display text is not identity. Existing stores remain their own runtime
-source of truth. Historic task artifacts are snapshots under `plans/archive/` and
-`tasks/archive/`, not active approval prerequisites or evidence of completed work.
+The GitHub issue and PR are the task record. Closed issues and merged PRs hold
+the history. No local sprint, plan or task archive is an active approval
+prerequisite or evidence of completed work.

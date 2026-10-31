@@ -12,7 +12,7 @@ appliesTo:
 
 - Status: Accepted for the Sprint 0 contract freeze.
 - Date: 2026-06-22
-- Sources: `plans/prds/20260622-1700-gpt-codegraph.prd.md` and
+- Sources: `docs/prds/20260622-1700-gpt-codegraph.prd.md` and
   `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`. Commit
   `07a5d63a5` removed both files; read them at `07a5d63a5^`.
 - Moved from `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`

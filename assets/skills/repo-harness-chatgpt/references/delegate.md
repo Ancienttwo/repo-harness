@@ -292,8 +292,8 @@ consult/continue commands -- it does not introduce a new provider path.
   `BrowserSessionMeta` can still show `model.verified: false` and
   `conversationUrl: null` for a session that actually completed correctly --
   this is a gap in what the engine projects from Oracle's own output, not
-  evidence the run failed (see the historical `tasks/todos.md` for the deferred engine
-  fix). Until that projection is fixed, treat the session meta's
+  evidence the run failed. This is a known gap in the engine projection. Until
+  that projection is fixed, treat the session meta's
   `providerSessionId` as the join key and read the transport-native truth
   directly from `.ai/harness/chatgpt/oracle-home/sessions/<providerSessionId>/meta.json`:
   `browser.modelSelection` (`verified`, `status`, `source`),

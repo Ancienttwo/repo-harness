@@ -15,7 +15,6 @@
     "CLAUDE.md",
     "AGENTS.md",
     "docs/spec.md",
-    "tasks/current.md",
     "tasks/lessons.md",
     ".archcontext/model/nodes",
     ".ai/harness/policy.json"
@@ -86,12 +85,6 @@
       "priority": "low",
       "char_budget": 900,
       "purpose": "deep-doc"
-    },
-    {
-      "path": "tasks/workstreams/**/*.md",
-      "priority": "high",
-      "char_budget": 1200,
-      "purpose": "capability-workstream"
     },
     {
       "path": "scripts/CLAUDE.md",

@@ -1,144 +1,55 @@
-# Task Contract: check-task-sync-json-mode
+# Issue and PR Brief Example
 
-> **Status**: Active
-> **Plan**: plans/plan-20260701-0930-check-task-sync-json-mode.md
-> **Task Profile**: code-change
-> **Owner**: example-owner
-> **Capability ID**: root
-> **Last Updated**: 2026-07-01 09:30
-> **Review File**: `tasks/reviews/20260701-0930-check-task-sync-json-mode.review.md`
-> **Notes File**: `tasks/notes/20260701-0930-check-task-sync-json-mode.notes.md`
+This example shows the issue and PR text for an ordinary task. It replaces the
+retired task-contract example. The GitHub issue and PR own task state; no
+contract, plan or review file is needed.
 
-## Why
+## Issue
 
-CI and other automation that call `scripts/check-task-sync.sh` today can only branch on its exit code and hand-parse stdout text, which breaks the moment the wording changes. `maintenance-triage.sh` and `contract-run.ts` already expose `--json` for the same reason. Without a matching machine-readable mode here, anything that wants task-sync detail beyond pass/fail has to re-implement fragile text scraping that silently drifts out of sync with the script's real behavior.
+### Goal
 
-## Goal
+Let automation read `check-task-sync` results without parsing text.
 
-Add a `--json` flag to `scripts/check-task-sync.sh` that, when passed, prints a single JSON object to stdout with the fields `status` (`pass` or `fail`), `has_task_sync_change`, `has_non_task_change`, and `message`, computed from the same verdict logic the text mode already uses, while leaving the default text-mode output and exit codes unchanged.
+### Scope
 
-## Scope
+- Add a `--json` flag to `scripts/check-task-sync.sh`.
+- Add one regression case in `tests/helper-scripts.test.ts`.
+- Out of scope: text-mode wording, exit codes and other `check-*` scripts.
 
-- In scope: the `--json` flag and JSON emission in `scripts/check-task-sync.sh`; one `tests/helper-scripts.test.ts` case asserting the JSON shape.
-- Out of scope: changing text-mode wording or exit codes; adding `--json` to any other `check-*.sh` script.
+### Acceptance
 
-## Stop Conditions
+- `--json` prints one JSON object with `status`, `has_task_sync_change`,
+  `has_non_task_change` and `message`.
+- The default text mode and exit codes do not change.
+- `bun run test:files tests/helper-scripts.test.ts --timeout 60000` passes.
 
-- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
-- Stop if an Exit Criteria command cannot be run in this environment.
-- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+### Dependencies
 
-## Workflow Inventory
+None.
 
-- Source plan: `plans/plan-20260701-0930-check-task-sync-json-mode.md`
-- Current and deferred work: GitHub Issue/PR
-- Review file: `tasks/reviews/20260701-0930-check-task-sync-json-mode.review.md`
-- Notes file: `tasks/notes/20260701-0930-check-task-sync-json-mode.notes.md`
-- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
-- Run snapshots: `.ai/harness/runs/`
-- Scope gate: edit only paths listed under `allowed_paths`; update this contract before widening scope.
-- Completion gate: `repo-harness run verification-plan execute --repo . --repository-id <id> --issue-id <id> --campaign-id <id> --grant-sha256 <hash> --policy-sha256 <hash> --actor <id> --report-file .ai/harness/runs/<run-id>.report.json` runs the Verification Plan of the current review admission and records the real checks in the selected report. `repo-harness run change-assessment prepare` with the same admission flags then writes the assessment before semantic review. One typed `AcceptanceReceipt` records `external_pass`, or `user_waiver` when the admission policy allows it.
+## Pull Request
 
-## Allowed Paths
+### Goal
 
-```yaml
-allowed_paths:
-  - scripts/check-task-sync.sh
-  - tests/helper-scripts.test.ts
-```
+Add the JSON mode that the issue specifies.
 
-## Evidence Requirements
+### Scope
 
-```yaml
-evidence_requirements:
-  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
-  benchmark: not_applicable
-```
+`scripts/check-task-sync.sh`, `tests/helper-scripts.test.ts`.
 
-## Delegation Contract
+### Changes
 
-```yaml
-delegation:
-  budget:
-    tokens: null
-    runner_invocations: 4
-    wall_time_minutes: 20
-  permission_scope:
-    mode: inherit_allowed_paths
-    writable_paths: []
-    network: inherited
-  roles:
-    parent:
-      mode: narrate_and_gatekeep
-      purpose: approval_checkpoint_owner
-    explorer:
-      mode: read_only
-      purpose: codebase_research
-    worker:
-      mode: edit_within_allowed_paths
-      purpose: implementation
-    verifier:
-      mode: read_only
-      purpose: exit_criteria_review
-  runner:
-    preferred:
-      - subagent
-    fallback: null
-    brief_is_authoritative: true
-```
+- Add `--json` parsing.
+- Build the JSON object from the existing verdict.
+- Add the regression case.
 
-## Exit Criteria (Machine Verifiable)
+### Verification
 
-```yaml
-exit_criteria:
-  files_contain:
-    - path: scripts/check-task-sync.sh
-      pattern: "--json"
-```
+- `bun run check:type`: pass.
+- `bun run test:files tests/helper-scripts.test.ts --timeout 60000`: 14 pass.
+- `bash scripts/check-task-sync.sh --json`: prints the documented object.
 
-## Verification Plan
+### Risk and Rollback
 
-```json
-{
-  "protocol": 1,
-  "checks": [
-    {
-      "id": "check-task-sync-json-test",
-      "kind": "package_test",
-      "path": "tests/helper-scripts.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Covers the check-task-sync JSON behavior described by this contract.",
-      "inputs": { "env": [] }
-    },
-    {
-      "id": "check-task-sync-json-contract",
-      "kind": "command",
-      "command": "bash scripts/check-task-sync.sh --json | grep -q '\"status\"'",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "Confirms the documented JSON command contract is present at runtime.",
-      "inputs": { "env": [] }
-    }
-  ]
-}
-```
-
-## Acceptance Notes (Human Review)
-
-- Functional behavior:
-- Edge cases:
-- Regression risks:
-
-## Rollback Point
-
-- Commit / checkpoint: (pre-change HEAD)
-- Revert strategy: revert the single commit that adds `--json`; no data migration involved.
-
----
-
-> **What good looks like**: every section above carries this task's actual specifics instead of template prose — `## Why` names a real downstream consumer and the failure mode of skipping the work, `allowed_paths` lists exactly the two files the worker will touch (not a whole directory), non-executable exit criteria retain `files_contain`, and the canonical `Verification Plan` declares the package test and typed commands that already exist in this repo today. The JSON runtime check fails until the described `--json` mode ships. Record the observed verification result in the PR before reporting completion.
+Risk: a caller may expect text output. The flag is opt-in, so the default path is
+unchanged. Rollback: revert the single commit. No data migration is involved.

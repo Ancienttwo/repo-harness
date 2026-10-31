@@ -32,7 +32,7 @@ runtime path alignment for publish.
 ## Release Notes
 
 - Added `repo-harness-prd` as the upper-layer PRD command facade. PRDs live
-  under `plans/prds/`, while Sprint backlogs live under
+  under `docs/prds/`, while Sprint backlogs live under
   `plans/sprints/*.sprint.md`.
 - Updated `repo-harness-sprint` to derive ordered execution backlogs from PRDs
   or user-provided slices without re-deciding product intent.

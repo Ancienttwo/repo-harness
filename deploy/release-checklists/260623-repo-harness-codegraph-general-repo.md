@@ -6,7 +6,7 @@ Status: Prepared for stacked Sprint 4 module PR review; package publish is out o
 ## Scope
 
 - Feature line: GPT CodeGraph general repo access through repo-harness MCP.
-- Source PRD: `plans/prds/20260622-1700-gpt-codegraph.prd.md`
+- Source PRD: `docs/prds/20260622-1700-gpt-codegraph.prd.md`
 - Source sprint: `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`
 - Module PR:
   - S4 security, observability, rollout, and release gates: PR #35

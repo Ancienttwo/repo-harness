@@ -194,7 +194,7 @@ repo-harness chatgpt browser-consult \
   --repo . \
   --provider oracle \
   --prompt "Review this PRD and return risks." \
-  --file plans/prds/example.prd.md \
+  --file docs/prds/example.prd.md \
   --follow-up "Challenge your previous recommendation." \
   --write-output ".ai/harness/handoff/gptpro/chatgpt-review-${stamp}.md"
 ```
@@ -317,7 +317,7 @@ Enabled tools:
 
 Use `dryRun: true` for planning or policy inspection. Non-dry-run consults may create a real ChatGPT Web conversation through the configured provider.
 
-MCP browser consults restrict `writeOutput` to repo-harness workflow artifacts such as `.ai/harness/handoff/*.md`, `tasks/reviews/**`, `.ai/harness/checks/**`, `plans/prds/**`, and `plans/sprints/**`. Absolute paths, source paths, package manifests, lockfiles, secrets, and existing files without `overwriteOutput: true` are rejected before provider execution.
+MCP browser consults restrict `writeOutput` to repo-harness workflow artifacts such as `.ai/harness/handoff/*.md`, `tasks/reviews/**`, `.ai/harness/checks/**`, `docs/prds/**`, and `plans/sprints/**`. Absolute paths, source paths, package manifests, lockfiles, secrets, and existing files without `overwriteOutput: true` are rejected before provider execution.
 
 ## File Policy
 

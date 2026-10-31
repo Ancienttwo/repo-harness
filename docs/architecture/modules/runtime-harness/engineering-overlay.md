@@ -101,7 +101,7 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **只读。** 本能力不保存 status 或当前 owner，不推导 Fleet 列，不提供 mutation 入口（`plans/prds/20260824-1653-engineering-overlay-control-board.prd.md` Hard constraint）。它只读取两个组件：provider engineer scheduling（admitted session 与 profile 选择）和 runtime effect。
+1. **只读。** 本能力不保存 status 或当前 owner，不推导 Fleet 列，不提供 mutation 入口（`docs/prds/20260824-1653-engineering-overlay-control-board.prd.md` Hard constraint）。它只读取两个组件：provider engineer scheduling（admitted session 与 profile 选择）和 runtime effect。
 2. **每个组件读两次，混合代际的快照不能标为 stable。** `collectEngineeringBoard` 做两次读取，逐组件比较观察摘要。任一组件不可读，结果为 `degraded`；任一组件两次不同，结果为 `changed_during_read`；否则为 `stable`（`src/effects/engineers/engineering-overlay.ts#collectEngineeringBoard`）。
 3. **runtime effect 只计入当前 admitted session。** effect 的 endpoint fence 必须等于一个已选择 profile 的 session：engineer、contract revision、session binding、task、role、admission 和 grant 都相同（`src/effects/engineers/engineering-overlay.ts:44-53`）。scheduling 不可读时，runtime effect 也记为不可读。
 4. **组织 attention 是封闭集合。** 原因只有四种，每种对应一个固定 owner：`profile_unassigned`、`profile_missing`、`engineer_contract_revision_changed`、`runtime_reconciliation_required`（`src/core/engineers/engineering-overlay.ts#projectAdmittedOrganizationAttention`）。

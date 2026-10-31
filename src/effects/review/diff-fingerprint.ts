@@ -371,11 +371,11 @@ function parseNameStatusZ(tokens: readonly string[]): string[] {
 }
 
 // Canonical source for "workflow surface" -- ceremony/administrative paths
-// that stay editable without an active plan and never inflate the risk
+// that stay editable without a local plan artifact and never inflate the risk
 // floor's medium-scope, cross-capability, or strict-token counters (Phase C2,
 // docs/architecture/modules/runtime-harness/hook-adapters.md).
 export const WORKFLOW_SURFACE_DIR_PREFIXES = Object.freeze([
-  'plans/', 'tasks/', 'docs/', '.ai/', '.claude/', '.codex/',
+  'tasks/', 'docs/', '.ai/', '.claude/', '.codex/',
 ]);
 export const WORKFLOW_SURFACE_EXTENSIONS = Object.freeze(['.md', '.markdown']);
 
@@ -389,7 +389,7 @@ export function isWorkflowSurfacePath(path: string): boolean {
 // The single predicate that owns "what counts toward medium-scope": every
 // non-workflow-surface path. Strict path-token categories (auth/payment/
 // deploy/migration/...) are unaffected by this exclusion in practice -- those
-// categories are implementation concerns that live outside plans/tasks/docs/
+// categories are implementation concerns that live outside tasks/docs/
 // .ai/.claude/.codex, so filtering workflow-surface paths out never suppresses
 // a real strict signal (see tests/harness-runtime-profiles.test.ts).
 export function isImplementationSurfacePath(path: string): boolean {
@@ -398,10 +398,7 @@ export function isImplementationSurfacePath(path: string): boolean {
 
 function isOperationalReviewPath(path: string): boolean {
   return (
-    path.startsWith('plans/') ||
     /^tasks\/(?:contracts|reviews|notes|archive)\//.test(path) ||
-    path === 'tasks/todos.md' ||
-    path === '.ai/harness/active-plan' ||
     path === '.ai/harness/active-worktree' ||
     path === '.ai/harness/events.jsonl' ||
     path.startsWith('.ai/harness/capability-context/') ||

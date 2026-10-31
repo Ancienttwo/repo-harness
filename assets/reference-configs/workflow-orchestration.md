@@ -8,22 +8,18 @@
 
 ## Repo Role
 
-Ordinary tasks use the PR description, per root `AGENTS.md`. Plans, contracts,
-workstreams, and handoff files apply only when the Promotion Gate below applies.
-Checks stay required for every change. The general multi-phase orchestration
-pattern belongs in the external pattern page.
+Ordinary tasks use the PR description, per root `AGENTS.md`. The GitHub issue and
+PR own task identity, claim, dependencies and status. Checks stay required for
+every change. The general multi-phase orchestration pattern belongs in the
+external pattern page.
 
-## Promotion Gate
+## Slices
 
-Do not promote every sprint row or checklist step into a new `plans/plan-*.md`.
-Create a top-level plan only when the slice is a coherent merge/PR unit, has a
-separate rollback surface, needs independent verification, needs its own
-review/acceptance boundary, touches a high-risk surface, or cannot remain a
-checklist row in the active plan or sprint backlog.
+Split work by issue and PR. A slice gets its own PR only when it needs a separate
+verification or rollback boundary, touches a high-risk surface, or runs in
+parallel with disjoint write ownership. Slices that write the same files in
+sequence go into one PR.
 
-Slices that write the same files in sequence go into one PR. Split a slice
-into its own PR only when it runs in parallel with disjoint write ownership.
-
-Inline sprint rows stay in the sprint backlog or the active plan's
-`## Task Breakdown`. Contract rows may expand through the full plan -> contract
--> review -> notes flow.
+Do not create a plan, sprint, contract, review or notes file to coordinate a
+slice. Put the scope, ordered steps, acceptance checks and dependencies in the
+issue. Put the result, checks, risk and rollback in the PR.

@@ -1308,7 +1308,6 @@ contents.
 | `responsibilities` | `responsibilities` | required non-empty string array; archctx validates it; not translated into registry semantics |
 | `id` | derived | `<domain>-<name>` |
 | `architecture_module` | derived | `docs/architecture/modules/<domain>/<name>.md` |
-| `workstream_dir` | derived | `tasks/workstreams/<domain>/<name>` |
 | `prefixes` | `capabilityProfiles[].includeAnchors` | the archctx anchors of `source.include`, in sorted order; never used for ownership |
 | `contract_files` | `extensions.contractFiles.agents` / `.claude` | declared, never derived: root-facing capabilities deliberately do not follow their prefix |
 | `lsp_profile` | `extensions.lspProfile` | required |

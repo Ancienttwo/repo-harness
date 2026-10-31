@@ -1,144 +1,55 @@
-# Task Contract: fix-empty-label-treated-as-non-empty
+# Bugfix Issue and PR Brief Example
 
-> **Status**: Verified
-> **Plan**: (none — golden reference example, not an active plan)
-> **Task Profile**: bugfix
-> **Owner**: example-owner
-> **Capability ID**: root
-> **Last Updated**: 2026-07-05 21:00
-> **Review File**: `tasks/reviews/example-fix-empty-label.review.md`
-> **Notes File**: `tasks/notes/example-fix-empty-label.notes.md`
+This example shows the issue and PR text for a bugfix. It replaces the retired
+bugfix-contract example. The GitHub issue and PR own task state; no contract,
+plan or review file is needed.
 
-## Why
+## Issue
 
-`isNonEmptyLabel` decides whether a UI label should render a placeholder or the caller's
-own text. Before this fix it unconditionally returned `true`, so an explicitly empty
-string (`""`) was treated as a non-empty label: callers that skip placeholder rendering
-whenever `isNonEmptyLabel` returns `true` silently show a blank field today, with no
-error or crash to surface the bug.
+### Goal
 
-## Goal
+Make `isNonEmptyLabel("")` return `false`.
 
-Fix `isNonEmptyLabel` so it returns `false` for a zero-length string, backed by a
-regression guard that fails on the current (unfixed) implementation and passes once the
-fix ships.
+### Root Cause
 
-## Scope
+`tests/fixtures/root-cause/regression-guard.test.ts:11` calls a function that
+always returned `true`. It never checks `label.length`, so an empty label was
+treated as non-empty.
 
-- In scope: the `isNonEmptyLabel` implementation and its regression guard test.
-- Out of scope: any other caller of label rendering; input validation beyond empty-string handling (for example whitespace-only labels).
+### Reproduction
 
-## Stop Conditions
+`bun test tests/fixtures/root-cause/regression-guard.test.ts` fails on the
+unfixed code: `expect(isNonEmptyLabel("")).toBe(false)` receives `true`.
 
-- Stop and hand back to the parent if the change would require editing a path outside Allowed Paths.
-- Stop if an Exit Criteria command cannot be run in this environment.
-- Stop if Goal, Scope, or Exit Criteria are internally contradictory.
+### Scope
 
-## Root Cause Evidence
+- Fix `isNonEmptyLabel`.
+- Keep the regression guard.
+- Out of scope: whitespace-only labels and other label callers.
 
-Required when Task Profile is `bugfix`; leave as-is otherwise.
+### Acceptance
 
-- root_cause: `tests/fixtures/root-cause/regression-guard.test.ts:11` `isNonEmptyLabel` unconditionally returned `true`, never inspecting `label.length`, so an explicitly empty string was treated as non-empty.
-- repro: `bun test tests/fixtures/root-cause/regression-guard.test.ts` fails on the unfixed code because `expect(isNonEmptyLabel("")).toBe(false)` receives `true`.
-- regression_guard: tests/fixtures/root-cause/regression-guard.test.ts
-- pre_fix_failure_artifact: tests/fixtures/root-cause/pre-fix-failure.log
+- The reproduction command passes after the fix.
+- `bun run check:type` passes.
+- No other caller behavior changes.
 
-## Workflow Inventory
+## Pull Request
 
-- Source plan: (none — golden reference example)
-- Current and deferred work: GitHub Issue/PR
-- Review file: `tasks/reviews/example-fix-empty-label.review.md`
-- Notes file: `tasks/notes/example-fix-empty-label.notes.md`
-- Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
-- Run snapshots: `.ai/harness/runs/`
-- Scope gate: edit only paths allowed by the active approved admission; ask the trusted upstream Bot for a new scoped admission before widening scope. This example only proposes paths.
-- Completion gate: Execute the active admitted verification plan and prepare change assessment with its repository, issue, campaign, grant, policy and actor selectors. Record and verify a typed AcceptanceReceipt under that admission. A user waiver requires a separate upstream-authorized decision and grant; policy eligibility alone is insufficient. `repo-harness run verify-sprint --test <affected-test-file>` runs explicit local checks; `--base <ref>` consumes provider merge checks. Neither form is an acceptance-receipt verifier. Use `repo-harness run verification-plan execute --repo . --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id> --report-file .ai/harness/runs/<run-id>.report.json` and `repo-harness run change-assessment prepare --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>`. Obtain these selectors from the trusted upstream admission, not this example.
+### Goal
 
-## Allowed Paths
+Fix the empty-label decision and keep the regression guard.
 
-```yaml
-allowed_paths:
-  - tests/fixtures/root-cause/
-```
+### Changes
 
-## Evidence Requirements
+- Return `false` when the label length is zero.
+- Keep the regression test that fails before the fix.
 
-```yaml
-evidence_requirements:
-  # Set benchmark to required when this contract consumes the harness profile benchmark matrix.
-  benchmark: not_applicable
-```
+### Verification
 
-## Delegation Contract
+- `bun test tests/fixtures/root-cause/regression-guard.test.ts`: pass.
+- `bun run check:type`: pass.
 
-```yaml
-delegation:
-  budget:
-    tokens: null
-    runner_invocations: null
-    wall_time_minutes: null
-  permission_scope:
-    mode: inherit_allowed_paths
-    writable_paths: []
-    network: inherited
-  roles:
-    parent:
-      mode: narrate_and_gatekeep
-      purpose: approval_checkpoint_owner
-    explorer:
-      mode: read_only
-      purpose: codebase_research
-    worker:
-      mode: edit_within_allowed_paths
-      purpose: implementation
-    verifier:
-      mode: read_only
-      purpose: exit_criteria_review
-  runner:
-    preferred:
-      - subagent
-    fallback: null
-    brief_is_authoritative: true
-```
+### Risk and Rollback
 
-## Exit Criteria (Machine Verifiable)
-
-```yaml
-exit_criteria:
-```
-
-## Verification Plan
-
-```json
-{
-  "protocol": 1,
-  "checks": [
-    {
-      "id": "root-cause-regression-guard",
-      "kind": "package_test",
-      "path": "tests/fixtures/root-cause/regression-guard.test.ts",
-      "cwd": ".",
-      "phase": "verification",
-      "cost": "normal",
-      "evidence_policy": "current_exact",
-      "necessity": "The regression guard proves the documented empty-label defect remains fixed.",
-      "inputs": { "env": [] }
-    }
-  ]
-}
-```
-
-## Acceptance Notes (Human Review)
-
-- Functional behavior: `isNonEmptyLabel("")` returns `false`; existing non-empty-label callers are unaffected.
-- Edge cases: whitespace-only labels are unchanged by this fix (out of scope; only the zero-length case is addressed).
-- Regression risks: none outside `tests/fixtures/root-cause/regression-guard.test.ts`'s own scope.
-
-## Rollback Point
-
-- Commit / checkpoint: (pre-change HEAD)
-- Revert strategy: revert the single commit that fixes `isNonEmptyLabel`; no data migration involved.
-
----
-
-> **What good looks like**: this is the `bugfix` counterpart to `contract-brief-example.md`. Every field under `## Root Cause Evidence` is concrete rather than the template's placeholder prose: `root_cause` names an exact file:line and condition, `repro` is a command that fails today, `regression_guard` is a real test file also listed as a `package_test` in the canonical `Verification Plan`, and `pre_fix_failure_artifact` is a real captured run of that test against the unfixed code — produced with `bun test tests/fixtures/root-cause/regression-guard.test.ts > tests/fixtures/root-cause/pre-fix-failure.log 2>&1; echo "PRE_FIX_EXIT=$?" >> tests/fixtures/root-cause/pre-fix-failure.log` before the fix landed, showing a non-zero `PRE_FIX_EXIT=1` line. That is what the bugfix root-cause gate (`contract-run.ts` preflight and `verify-contract.sh`) checks for, and what a worker should be able to point to as pre-fix failure evidence before reporting a bugfix contract done.
+Risk: a caller that relies on empty labels being non-empty would change behavior.
+No such caller exists in the repository. Rollback: revert the single commit.
