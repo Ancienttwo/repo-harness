@@ -31,6 +31,15 @@ a { color: #1E40AF; } a:hover { color: #1E3A8A; }
 .mono { font-family: var(--mono); }
 
 /* Overview */
+a.node { text-decoration: none; }
+a.node.k-app { color: #1F2937; }
+a.node.k-compose { color: #1E2A4A; }
+a.node.k-kernel { color: #2E1F4F; }
+a.node.k-contract { color: #16332F; }
+a.node.k-remote { color: #4A2414; }
+a.node.k-external { color: var(--ink); }
+a.node:hover, a.node:focus-visible { text-decoration: underline; }
+a.node:focus-visible { outline: 2px solid #1E40AF; outline-offset: 2px; }
 .band { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; }
 .layer { font-size: 15px; line-height: 22px; color: var(--ink-2); width: 184px; }
 .layer b { color: var(--ink); }
@@ -115,7 +124,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">1 · Layered overview</h2>
 <div class="board" style="height:1480px">
-  <div class="kicker">repo-harness · ARCHITECTURE · 5533ec9</div>
+  <div class="kicker">repo-harness · ARCHITECTURE · c6fdb540</div>
   <div class="title">Layered overview</div>
   <div class="legend">Thick line: value import, number = import count<br>Thin line: runtime call · Red dashed: reverse import against the layer order<br>Module size: non-test LOC · Dashed box: not provided by the project</div>
 
@@ -131,15 +140,15 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   <div class="layer" style="left:88px;top:816px"><b>L2</b> Core<small>pure contracts</small></div>
   <div class="layer" style="left:88px;top:960px"><b>L1</b> Support<small>scripts · tests · model</small></div>
 
-  <div class="node k-app" data-module="root" style="left:296px;top:200px;width:760px;height:104px"><span><b>root</b> <span class="loc">32.1k</span></span><small>Root contract, workflow rules and PRDs</small><span class="id">root · 238 files</span></div>
-  <div class="node k-contract" data-module="assets" style="left:296px;top:320px;width:760px;height:104px"><span><b>assets</b> <span class="loc">16.8k</span></span><small>Command facades and bundled skills</small><span class="id">assets · 128 files</span></div>
-  <div class="node k-compose" data-module="cli" style="left:296px;top:440px;width:760px;height:104px"><span><b>cli</b> <span class="loc">35.7k</span></span><small>Command surface, host adapters, MCP</small><span class="id">cli · 137 files</span></div>
-  <div class="node k-remote" data-module="web" style="left:296px;top:560px;width:760px;height:104px"><span><b>operator-web</b> <span class="loc">14.1k</span></span><small>Read-only operator console</small><span class="id">web · 64 files</span></div>
-  <div class="node k-compose" data-module="effects" style="left:296px;top:680px;width:760px;height:104px"><span><b>effects</b> <span class="loc">42.7k</span></span><small>Runtime, evidence, publication, operator</small><span class="id">effects · 200 files</span></div>
-  <div class="node k-kernel" data-module="core" style="left:296px;top:800px;width:760px;height:104px"><span><b>core</b> <span class="loc">19.5k</span></span><small>Pure state, workflow and capability core</small><span class="id">core · 132 files</span></div>
-  <div class="node k-contract" data-module="scripts" style="left:296px;top:920px;width:760px;height:104px"><span><b>scripts</b> <span class="loc">21.4k</span></span><small>Contract, worktree and migration helpers</small><span class="id">scripts · 77 files</span></div>
-  <div class="node k-app" data-module="verification" style="left:296px;top:1040px;width:760px;height:104px"><span><b>verification</b> <span class="loc">8.7k</span></span><small>Tests, evals and CI selection</small><span class="id">verification · 32 files</span></div>
-  <div class="node k-contract" data-module="architecture" style="left:296px;top:1160px;width:760px;height:104px"><span><b>architecture-model</b> <span class="loc">33.4k</span></span><small>Model, generated docs and policy</small><span class="id">architecture · 759 files</span></div>
+  <a class="node k-app" data-module="root" href="modules/public-surface/root-router.md" style="left:296px;top:200px;width:760px;height:104px"><span><b>root</b> <span class="loc">19.2k</span></span><small>Root contract, workflow rules and PRDs</small><span class="id">root · 186 files</span></a>
+  <a class="node k-contract" data-module="assets" href="modules/public-surface/action-commands.md" style="left:296px;top:320px;width:760px;height:104px"><span><b>assets</b> <span class="loc">17.2k</span></span><small>Command facades and bundled skills</small><span class="id">assets · 126 files</span></a>
+  <a class="node k-compose" data-module="cli" href="modules/runtime-harness/hook-adapters.md" style="left:296px;top:440px;width:760px;height:104px"><span><b>cli</b> <span class="loc">35.8k</span></span><small>Command surface, host adapters, MCP</small><span class="id">cli · 138 files +5</span></a>
+  <a class="node k-remote" data-module="web" href="modules/runtime-harness/operator.md" style="left:296px;top:560px;width:760px;height:104px"><span><b>operator-web</b> <span class="loc">14.0k</span></span><small>Read-only operator console</small><span class="id">web · 62 files</span></a>
+  <a class="node k-compose" data-module="effects" href="modules/organization/publication.md" style="left:296px;top:680px;width:760px;height:104px"><span><b>effects</b> <span class="loc">44.6k</span></span><small>Runtime, evidence, publication, operator</small><span class="id">effects · 202 files +12</span></a>
+  <a class="node k-kernel" data-module="core" href="modules/organization/task-fleet.md" style="left:296px;top:800px;width:760px;height:104px"><span><b>core</b> <span class="loc">21.5k</span></span><small>Pure state, workflow and capability core</small><span class="id">core · 139 files +2</span></a>
+  <a class="node k-contract" data-module="scripts" href="modules/workflow-engine/inspection-migration.md" style="left:296px;top:920px;width:760px;height:104px"><span><b>scripts</b> <span class="loc">21.5k</span></span><small>Contract, worktree and migration helpers</small><span class="id">scripts · 77 files</span></a>
+  <a class="node k-app" data-module="verification" href="modules/verification/evals-checks.md" style="left:296px;top:1040px;width:760px;height:104px"><span><b>verification</b> <span class="loc">10.6k</span></span><small>Tests, evals and CI selection</small><span class="id">verification · 29 files</span></a>
+  <a class="node k-contract" data-module="architecture" href="modules/workflow-engine/contract-assets.md" style="left:296px;top:1160px;width:760px;height:104px"><span><b>architecture-model</b> <span class="loc">20.6k</span></span><small>Model, generated docs and policy</small><span class="id">architecture · 646 files</span></a>
 
   <div class="zone" style="left:1224px;top:184px;width:392px;height:600px"></div>
   <div class="zone-label" style="left:1248px;top:200px"><b>Outside the repository</b></div>
@@ -163,13 +172,13 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     <path class="e-remote e-dash" d="M1056 712 H1188 V472 H1060" marker-end="url(#a-remote)"/>
   </svg>
   <div class="badge" style="left:1096px;top:468px">216</div>
-  <div class="badge" style="left:690px;top:778px">268</div>
+  <div class="badge" style="left:690px;top:778px">273</div>
   <div class="badge" style="left:284px;top:660px">38</div>
-  <div class="badge" style="left:1136px;top:700px">42</div>
+  <div class="badge" style="left:1136px;top:700px">44</div>
   <div class="badge" style="left:1108px;top:900px">22</div>
   <div class="badge" style="left:1084px;top:620px">2</div>
   <div class="badge" style="left:1192px;top:700px">1 rev</div>
-  <div class="foot" style="left:64px;top:1328px;width:1552px">Size is non-test LOC at 5533ec9. Edges shown: seven structural value imports and one reverse import. root→core, root→effects, web→root, scripts→cli and scripts→core are in board 2. Module path globs are the map footprint; capability ownership stays in the model.</div>
+  <div class="foot" style="left:64px;top:1328px;width:1552px">Size is non-test LOC at c6fdb540. Edges shown: seven structural value imports and one reverse import. root→core, root→effects, web→root, scripts→cli and scripts→core are in board 2. Module path globs are the map footprint; capability ownership stays in the model.</div>
 </div>
 </section>
 
@@ -177,7 +186,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">2 · Dependency direction (measured)</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · DEPENDENCIES · 5533ec9</div>
+  <div class="kicker">repo-harness · DEPENDENCIES · c6fdb540</div>
   <div class="title">Dependency direction (measured)</div>
   <div class="legend"><span class="swatch h1"></span>1–5<span class="swatch h2"></span>6–20<span class="swatch h3"></span>21–50<span class="swatch h4"></span>51+ value imports<br><span class="swatch viol"></span>forbidden, violated · <span class="swatch forbid"></span>forbidden, satisfied</div>
   <div class="panel" style="left:64px;top:184px;width:1312px;height:780px">
@@ -187,13 +196,13 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       <tr><th class="row">assets</th><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
       <tr><th class="row">cli</th><td>—</td><td>—</td><td>·</td><td class="h3">38</td><td class="h4">216</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
       <tr><th class="row">core</th><td>—</td><td class="h1">2</td><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-      <tr><th class="row">effects</th><td>—</td><td>—</td><td class="viol">1<small>violation</small></td><td class="h4">268</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
-      <tr><th class="row">operator-web</th><td class="h1">1</td><td>—</td><td>—</td><td class="h3">42</td><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">effects</th><td>—</td><td>—</td><td class="viol">1<small>violation</small></td><td class="h4">273</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">operator-web</th><td class="h1">1</td><td>—</td><td>—</td><td class="h3">44</td><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td></tr>
       <tr><th class="row">scripts</th><td>—</td><td>—</td><td class="h1">3</td><td class="h2">11</td><td class="h3">22</td><td>—</td><td>·</td><td>—</td><td>—</td></tr>
       <tr><th class="row">verification</th><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>·</td><td>—</td></tr>
       <tr><th class="row">architecture-model</th><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>·</td></tr>
     </table>
-    <p class="foot">Rows import columns. Value imports only, tests excluded, tracked files only (measure.ts at 5533ec9). The diagonal is · and a missing edge is —. One file, <span class="mono">src/operator-web/TaskEvidence.tsx</span>, did not parse; its edges are missing.</p>
+    <p class="foot">Rows import columns. Value imports only, tests excluded, tracked files only (measure.ts at c6fdb540). The diagonal is · and a missing edge is —. No file was unparsed.</p>
   </div>
   <div class="panel" style="left:1392px;top:184px;width:224px;height:400px">
     <div class="meta mono" style="font-size:12px;color:#5A5F68">R-A1 · Medium</div>
@@ -214,7 +223,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">3 · Runtime topology</h2>
 <div class="board" style="height:1200px">
-  <div class="kicker">repo-harness · TOPOLOGY · 5533ec9</div>
+  <div class="kicker">repo-harness · TOPOLOGY · c6fdb540</div>
   <div class="title">Runtime topology</div>
   <div class="legend">Solid: long-lived or per-event process · Dashed: detached child or sandbox<br>Channel labels name the transport. No launchd, systemd or container unit is installed.</div>
 
@@ -286,9 +295,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">4 · Key sequence</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · SEQUENCE · 5533ec9</div>
+  <div class="kicker">repo-harness · SEQUENCE · c6fdb540</div>
   <div class="title">Resolve and publish Effective State</div>
-  <div class="legend">Purple: caller side · Grey: internal call · Grey dashed: return<br>Flow <span class="mono">flow.workflow-state.primary</span> · selectors proven at 5533ec9</div>
+  <div class="legend">Purple: caller side · Grey: internal call · Grey dashed: return<br>Flow <span class="mono">flow.workflow-state.primary</span> · selectors proven at c6fdb540</div>
 
   <div class="lifehead" style="left:224px;top:184px">Hook / CLI caller</div>
   <div class="lifehead" style="left:704px;top:184px">workflow-state</div>
@@ -326,7 +335,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">5 · Interfaces and mounts</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · INTERFACES · 5533ec9</div>
+  <div class="kicker">repo-harness · INTERFACES · c6fdb540</div>
   <div class="title">Interfaces and mounts</div>
   <div class="legend">One chip = one callable surface. The console mounts only loopback HTTP reads.</div>
 
@@ -363,7 +372,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 <section>
 <h2 class="caption">6 · Remarks</h2>
 <div class="board" style="height:1000px">
-  <div class="kicker">repo-harness · REMARKS · 5533ec9 · observations only; not scheduled work</div>
+  <div class="kicker">repo-harness · REMARKS · c6fdb540 · observations only; not scheduled work</div>
   <div class="title">Remarks · 6</div>
   <div class="legend"><span class="swatch" style="background:#B42318"></span>High · correctness or security boundary<span class="swatch" style="background:#B7791F"></span>Medium · structural burden<span class="swatch" style="background:#9AA0A8"></span>Low · naming and cleanup</div>
   <div class="remarks" style="left:64px;top:184px;width:1552px">
@@ -376,7 +385,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     <div class="remark medium">
       <div class="meta">R-A2 · medium · size</div>
       <h3>The architecture module is mostly rendered text</h3>
-      <p>759 tracked files and 33.4k LOC sit in the model and generated architecture docs. Generated regions are writer-owned, so a feature diff should review the model YAML, not the rendered pages.</p>
+      <p>646 tracked files and 20.6k LOC sit in the model and generated architecture docs. Generated regions are writer-owned, so a feature diff should review the model YAML, not the rendered pages.</p>
       <div class="ref">docs/architecture/modules/workflow-engine/contract-assets.md:2</div>
     </div>
     <div class="remark medium">
@@ -388,8 +397,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
     <div class="remark medium">
       <div class="meta">R-A4 · medium · concentration</div>
       <h3>Effects owns the largest runtime surface</h3>
-      <p>effects holds 42.7k LOC and 13 capabilities, and imports core 268 times. Keep new runtime code in effects components so the core stays pure.</p>
-      <div class="ref">src/effects/** · measure at 5533ec9</div>
+      <p>effects holds 44.6k LOC and 13 capabilities, and imports core 273 times. Keep new runtime code in effects components so the core stays pure.</p>
+      <div class="ref">src/effects/** · measure at c6fdb540</div>
     </div>
     <div class="remark">
       <div class="meta">R-A5 · low · staleness</div>
@@ -413,8 +422,8 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
 {
   "schema": "archimap/v1",
   "project": "repo-harness",
-  "base": "5533ec9",
-  "generated": "2026-10-31",
+  "base": "c6fdb540",
+  "generated": "2026-11-01",
   "sources": [
     ".archcontext/model",
     "measure.ts archimap-measure/v1"
@@ -446,7 +455,6 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
         "agents/**",
         "docs/CHANGELOG.md",
         "docs/spec.md",
-        "docs/issue-flow.md",
         "docs/prds/**",
         "docs/images/**",
         "docs/design/**",
@@ -460,6 +468,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       "exclude": [],
       "nodes": [
         "capability.public-surface.root-router"
+      ],
+      "docs": [
+        "docs/architecture/modules/public-surface/root-router.md"
       ]
     },
     {
@@ -473,6 +484,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       "exclude": [],
       "nodes": [
         "capability.public-surface.action-commands"
+      ],
+      "docs": [
+        "docs/architecture/modules/public-surface/action-commands.md"
       ]
     },
     {
@@ -493,6 +507,14 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
         "capability.runtime-mcp.general-repo-access",
         "capability.verification.codegraph-readiness",
         "capability.runtime-harness.mcp-sidecar"
+      ],
+      "docs": [
+        "docs/architecture/modules/runtime-harness/hook-adapters.md",
+        "docs/architecture/modules/runtime-harness/integration-acceptance.md",
+        "docs/architecture/modules/runtime-harness/mcp-sidecar.md",
+        "docs/architecture/modules/runtime-mcp/chatgpt-browser.md",
+        "docs/architecture/modules/runtime-mcp/general-repo-access.md",
+        "docs/architecture/modules/verification/codegraph-readiness.md"
       ]
     },
     {
@@ -507,6 +529,11 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
         "capability.organization.task-fleet",
         "capability.public-surface.adoption",
         "capability.runtime-harness.engineer-bindings"
+      ],
+      "docs": [
+        "docs/architecture/modules/organization/task-fleet.md",
+        "docs/architecture/modules/public-surface/adoption.md",
+        "docs/architecture/modules/runtime-harness/engineer-bindings.md"
       ]
     },
     {
@@ -530,6 +557,21 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
         "capability.verification.acceptance-review",
         "capability.workflow-engine.execution-primitives",
         "capability.workflow-engine.workflow-state"
+      ],
+      "docs": [
+        "docs/architecture/modules/organization/publication.md",
+        "docs/architecture/modules/public-surface/strategy-reflection.md",
+        "docs/architecture/modules/runtime-harness/agent-runtime-effects.md",
+        "docs/architecture/modules/runtime-harness/engineer-scheduling.md",
+        "docs/architecture/modules/runtime-harness/engineering-overlay.md",
+        "docs/architecture/modules/runtime-harness/evidence-ledger.md",
+        "docs/architecture/modules/runtime-harness/external-source-intake.md",
+        "docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md",
+        "docs/architecture/modules/runtime-harness/refactor-program.md",
+        "docs/architecture/modules/runtime-harness/task-agent-host.md",
+        "docs/architecture/modules/verification/acceptance-review.md",
+        "docs/architecture/modules/workflow-engine/execution-primitives.md",
+        "docs/architecture/modules/workflow-engine/workflow-state.md"
       ]
     },
     {
@@ -542,6 +584,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       "exclude": [],
       "nodes": [
         "capability.runtime-harness.operator"
+      ],
+      "docs": [
+        "docs/architecture/modules/runtime-harness/operator.md"
       ]
     },
     {
@@ -554,6 +599,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       "exclude": [],
       "nodes": [
         "capability.workflow-engine.inspection-migration"
+      ],
+      "docs": [
+        "docs/architecture/modules/workflow-engine/inspection-migration.md"
       ]
     },
     {
@@ -567,6 +615,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       "exclude": [],
       "nodes": [
         "capability.verification.evals-checks"
+      ],
+      "docs": [
+        "docs/architecture/modules/verification/evals-checks.md"
       ]
     },
     {
@@ -582,6 +633,9 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
       "exclude": [],
       "nodes": [
         "capability.workflow-engine.contract-assets"
+      ],
+      "docs": [
+        "docs/architecture/modules/workflow-engine/contract-assets.md"
       ]
     }
   ]

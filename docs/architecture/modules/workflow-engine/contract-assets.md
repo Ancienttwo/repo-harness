@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8bb34547f33b085a7f92bc5e28dd2f683a77f098152386ae2a093217c6468d97" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a2b171ef726d958edb39f01ed5ec47494db04d2fe4d2ef34afba410dff58c059" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -147,7 +147,7 @@ flowchart LR
 | `component.contract-assets.planning-helpers` | Operations Helpers | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-cli` | Planning Helpers (cli) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-effects` | Planning Helpers (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.contract-assets.primary` | Workflow Contract And Policy | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.contract-assets.primary` | Workflow Contract And Policy | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.contract-assets.primary-assets` | Workflow Contract And Policy (assets) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.template-projection` | Template Projection | `50–100` 個文件 / `5000–10000` 行 | 未宣告 |
 | `component.contract-assets.template-projection-cli` | Template Projection (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
