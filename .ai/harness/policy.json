@@ -146,7 +146,7 @@
     "reference_resolver": "repo-harness docs path <doc-id>",
     "required": [
       "docs/spec.md",
-      "docs/architecture/index.md"
+      "docs/architecture/overview.md"
     ],
     "on_demand": [
       "docs/brief.md",
