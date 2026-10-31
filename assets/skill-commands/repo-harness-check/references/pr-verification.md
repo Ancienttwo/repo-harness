@@ -33,13 +33,7 @@ An internal PR uses the normal merge flow and does not use this reference.
 ## Protocol
 
 1. Hazard scan first. Read the full diff before you install or run PR code.
-   Stop when the diff:
-   - changes `.github/`;
-   - changes release or publish scripts, or package scripts that run at install or release;
-   - adds or changes a dependency or a lockfile entry;
-   - adds a network endpoint;
-   - reads credentials, such as tokens, keys, `~/.ssh`, `~/.npmrc` or credential environment variables;
-   - adds an encoded or opaque blob, such as base64, long hex, minified or binary content.
+   Stop when the diff hits the [change hazard list](docs/reference-configs/agentic-development-flow.md#change-hazards).
 
    On a stop, report each triggering `file:line`. Do not run the PR on a
    machine with real credentials. Escalate to the repository owner.
