@@ -101,9 +101,6 @@ export interface EffectiveStateV2 {
     readonly current: string;
     readonly owner: string | null;
   };
-  readonly handoff: EffectiveStateSource;
-  readonly resume: EffectiveStateSource;
-  readonly current_snapshot: EffectiveStateSource;
 }
 
 export type EffectiveState = EffectiveStateV2;

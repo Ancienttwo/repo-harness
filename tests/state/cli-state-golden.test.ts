@@ -85,14 +85,8 @@ function assertExactHashContract(state: EffectiveState, cwd: string): void {
 
 const DYNAMIC_HASH_KEYS = new Set([
   '.ai/harness/active-worktree',
-  '.ai/harness/handoff/current.md',
-  '.ai/harness/handoff/resume.md',
   'authority_revision',
   'state_revision',
-  // Handoff/resume content embeds authority_revision (dynamic, via the
-  // active-worktree marker's tmpdir path) in the executing-fresh-evidence
-  // scenario, which cascades into projection_revision.
-  'projection_revision',
   // Native execution IDs and owner receipt times vary for each real run.
   'evidence_revision',
   'progress_token',

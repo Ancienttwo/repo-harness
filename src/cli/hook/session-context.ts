@@ -1,7 +1,7 @@
 /**
  * SessionStart context. The handler resolves Effective State once. The state
  * section, or `[HarnessStateUnavailable]`, is the only section this module
- * owns. The resume has one pointer in `references`.
+ * owns. It names no local handoff or resume file.
  */
 
 import type { SessionContextSection } from './session-context-budget';
@@ -20,10 +20,6 @@ export function projectEffectiveStateSessionSection(state: EffectiveState): Sess
     next_action: state.next_action,
     guidance: state.guidance,
     blockers: state.blockers,
-    references: {
-      handoff: state.handoff.path,
-      resume: state.resume.path,
-    },
   };
   return {
     id: 'effective-state',
