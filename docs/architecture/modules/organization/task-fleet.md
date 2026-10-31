@@ -129,6 +129,14 @@ sequenceDiagram
 - Historical reply inspection validates the stored intent, event and commit chain without granting current authorization.
 - Inbox layout migration retains canonical recipient keys and checks record bytes. The operator reader performs no migration.
 - Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Publication feedback and per-repository board reads remain for slice C.
+- A provider issue or PR owns current task identity, claim, status and dependency. A local board, Sprint row or lease record is a bounded observation. It cannot grant admission, transfer a claim or complete an issue.
+- Protected admission binds an approved goal and scope to an exact execution session and claim. A matching actor name is not an engineer selection; engineer association requires an explicit profile and contract revision.
+- `fleet board` compares complete projected provider and session revisions, with at most three observations. A continued change returns `changed_during_read`. A discovery failure is a typed unavailable observation, not an empty session list.
+- An issue without an admitted session remains a provider issue card. Runtime progress does not determine issue status.
+- Current diff, activity and context routes require the closed session selector and reobserve current admission. Historical routes are explicit. A missing current session never falls back to Sprint or lease history.
+- Admitted inbox delivery binds the admission SHA and the exact claim reference and revision. Runtime effects also bind the session digest and selected profile revision. The host consumer checks native/request attribution, local approval and expiry before it reads the companion. Missing or unknown acceptance leaves delivery pending; recovery repeats the ledger commit without resending the prompt.
+- The task mutex stays at `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock`. Moving its implementation out of the retired lease reader created no new lock namespace.
+- Worktree safety keeps exact worktree identity and merge-proof checks. Dirty, locked, marked or unknown worktrees stay protected. `ship-worktrees` journals operation progress, not task authority. PR readiness reobserves canonical provider identity, expected head/base, checks, reviews and threads before it reports readiness. Historical Sprint documents, owner bytes and message codecs remain for explicit history reads; they cannot replace current approval or provider evidence.
 
 ## 4. 歷史決策記錄(append-only)
 

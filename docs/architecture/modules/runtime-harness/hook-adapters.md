@@ -222,6 +222,12 @@ sequenceDiagram
 6. **没有 shell operator library。** [archived hooks](https://github.com/Ancienttwo/repo-harness/tree/13a589c0c07f886891add648f0a54852dede7323/assets/hooks) 已删除。operator helper 经 `repo-harness run <helper>` 运行，policy 路径由 `resolveHarnessPaths` 一处解析，failure log 用 edit guard 写入的同一个 `FAILURE_LOG_FILE`（#696）。
 7. **遥测非安全权威，但消费者 fail-closed。** 字段缺失、畸形、重复或混协议时消费者必须停，不得补零。
 8. **Hook 不做架构工作。** Hook 不记录架构漂移，不运行投影，不写 capability 块。架构更新在 PR 里显式完成：ChangeSet 加 `architecture-projection apply`。
+9. **payload 与 identity 只解析一次。** host event 的 payload 解析一次，identity 只来自 payload 的 `session_id`、`run_id`、`turn_id`；缺失保持 null。hook 不生成、不存储 identity，handler 不读 session、run 或 turn 环境变量。`HOOK_HOST` 缺失、route 未知或该 host 未安装 route 时，在 handler 运行前停止。
+10. **handler 失败语义固定。** handler 返回 typed result；throw 的 handler 退出 1，edit guard 例外：throw 在 Claude 与 Codex 都退出 2（fail closed）。handler 不写 host 文件描述符。
+11. **board slice 是 advisory。** `SubagentStart.context` 与 `PreToolUse.subagent` 只附加最新有界 provider observation slice。`receipt-head.json` 缺失、过期或超限时不渲染 slice。slice 只给 issue reference、state 和 execution status，不给 provider title，也不做网络或 session discovery。解析失败不阻断事件。
+12. **`PreToolUse.edit` 不做 lease 检查。** `LeaseOwnershipGuard` 已删除。lease authority 只在 `start-task`、`complete-task` 和 `contract-worktree finish`。
+13. **迁移只在 adoption transaction 内。** `managed-entries.ts` 把 registry 投影成 user-level adapter entries，并保留 host trust boundary。`standard-plan.ts` 是唯一的 adoption planner。旧 repo-local adapter command 只由一次性迁移识别和删除，runtime dispatch 不读它们。未匹配字节和 custom sibling hooks 保持不动。
+14. **架构债通知是 advisory。** `agent-notice` 选择 citation debt；checkpoint 只接收 owned changed paths。每次 archctx ownership 或 checkpoint 调用有 3 s deadline。模型文本最多 3 条、800 UTF-8 字节；SessionStart section 保持 mandatory。失败只在 exit 0 输出一条诊断，不阻断事件。
 
 ### 3.2 关键权衡
 
@@ -300,6 +306,8 @@ host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandabl
 `PostToolUse.always` 确实是调用量最大的 route（21,217 次，超过 bash）。旧实测里它是**最便宜**的高频路径：p50 3.2ms、总占比 2.6%。#705 已删除这条 route。现在没有这项进程启动成本。
 
 注意遥测本身的边界：`metrics.child_processes` 在全部 44,301 条记录里都是 `0`，它属于 `measurement.incomplete_metrics`，不能用来反推 Stop 的子进程数量；上表只依赖 `elapsed_ms` 这个被标记为 complete 的字段。
+
+遥测保留有界。下一次 append 前，达到或超过 8 MiB 的 active 文件原子改名为 `hook-events.jsonl.archive/` 中的 segment。archive 最多保留 32 个自有 segment、256 MiB，先删最旧的。rotation/retention 与 snapshot 文件打开共用 owner-fenced 锁；append 保持 O_APPEND，改名后的 inode 不会被截断。foreign archive 文件名和 symlink target 不会被清理。记录的 `blocked` 只在 exit 2 或 deny 时为真；`reason` 区分 `handler-failed`、`invalid-payload`、`blocked` 和 `handler-exit`。遥测写入失败不能改变 hook 安全性。
 
 ### 3.5 安装范围与归属
 

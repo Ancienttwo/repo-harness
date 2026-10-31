@@ -13603,13 +13603,6 @@
      "reason_codes": []
     },
     {
-     "path": "docs/architecture/current-architecture.md",
-     "added": 1,
-     "deleted": 1,
-     "owners": [],
-     "reason_codes": []
-    },
-    {
      "path": "docs/architecture/decisions/index.md",
      "added": 2,
      "deleted": 2,
@@ -16489,7 +16482,6 @@
     ".ai/harness/policy.json",
     ".gitignore",
     "docs/architecture/.projection-manifest.json",
-    "docs/architecture/current-architecture.md",
     "docs/architecture/decisions/index.md",
     "docs/architecture/diagrams/architecture.likec4",
     "docs/architecture/diagrams/architecture.mmd",

@@ -120,7 +120,7 @@ sequenceDiagram
 8. **manifest 与文件效果同属一个事务。** apply 在第一个失败的 operation 处停止，后续 operation 不执行。manifest 落盘后，executor 按 manifest 自动回滚已完成的 operation（`src/effects/fs-transaction.ts:697`）。manifest 写入失败也使事务失败并回滚（`:579`）。回滚只碰本事务拥有的目标，apply 之后的用户编辑不会被覆盖。`init` 文本报告给出回滚结果和未恢复的文件。
 9. **self-host apply 保持关闭。** `runAdoptionApply` 对 `mode === "self-host"` 返回 `self_host_review_required`。`standard-plan.ts` 中 `buildStandardOperations` 的不可执行 `runCheck` 是第二道防线。
 10. **不再生成退役的 task artifacts。** adoption 不创建 todos、notes 或 reviews，不重写旧 todo 文件。lessons 和 contracts 仍保留；Issue/PR 持有当前工作状态。
-10. **目标仓库必须是明确的 Git 工作树。** `validateRepoAdoptionTarget` 拒绝 HOME，也拒绝不在 Git 工作树内的 cwd（`src/cli/repo-adoption/target.ts`）。`init` 和 `adoption-plan` 共用这一个校验。
+11. **目标仓库必须是明确的 Git 工作树。** `validateRepoAdoptionTarget` 拒绝 HOME，也拒绝不在 Git 工作树内的 cwd（`src/cli/repo-adoption/target.ts`）。`init` 和 `adoption-plan` 共用这一个校验。
 
 ### 3.2 关键权衡
 
@@ -144,12 +144,15 @@ sequenceDiagram
 - 不引入独立 workspace package。本 capability 与 CLI 同包发布，没有第二个独立消费者。
 - 不加 shell 兼容 apply 路径、experimental apply flag 或第二套 plan parser。
 
-### 3.5 与专题文档的关系
+### 3.5 事务规划与恢复
 
-`docs/architecture/transactional-adoption-planner.md` 是本 capability 的主题设计文档（HRD-09 legacy 退役、不变量清单、恢复语义）。与源码复验后的两处补充：
+专题文档已并入本节。
 
-- 该文的 P1 说 `standard-plan.ts` 被 `init` 与 `runInit()` 共同消费。源码中两者都经过 `planAdoption`。`planAdoption` 对 self-host 源码 checkout 有短路分支，这时 `standard-plan.ts` 不被调用。
-- 该文没有记录 `runAdoptionApply` 对 self-host 的显式阻断（§3.1 第 9 条）。
+- `standard-plan.ts` 是 `init` 与 `runInit()` 共同消费的唯一 mutation plan。两者都经过 `planAdoption`；`planAdoption` 对 self-host 源码 checkout 有短路分支，这时 `standard-plan.ts` 不被调用。`runAdoptionApply` 另外显式阻断 self-host（§3.1 第 9 条）。
+- plan 覆盖 scaffold/state 文件、typed hook 投影、模板、reference stub、workflow archive、known-generated 清理、deployment scaffold 和 managed-block 更新。写入前拒绝畸形 managed JSON、symlink、unsafe path、已占用的 move target 和归属不明的目标。
+- HRD-09 迁移把退役的 generated hook asset 按精确相对路径和 `sha256` 写进 workflow-contract migration manifest。`knownGeneratedFile()` 只在当前字节匹配声明指纹时删除；不匹配就告警并保留，通配符和未声明指纹被拒绝。repo-local `.codex/hooks.json` 与 `.claude/settings.json` 只由显式 migration step 解析；managed command detector 删除 repo-harness 自有的命令，保留 custom commands、unrelated events 和 sibling hook blocks。删除、`gitUntrack`、adapter rewrite 与 typed helper 投影由同一个 `FsTransaction` 提交，没有 post-apply shell cleanup，也没有 runtime dual-read。self-host 源码 checkout 不进入下游 generated-runtime cleanup。
+- 每次写入把原字节和 content hash 存入 `.ai/harness/backups/fs-transaction/<transaction>/manifest.json`。remove 把旧文件移入 transaction backup area；move 记录 source 和 destination。manifest 落盘失败是 failed apply，不是 success。rollback 只恢复 transaction-owned operation，并拒绝覆盖 apply 之后的用户编辑。
+- `repo-harness init rollback --transaction <manifest>` 只在 target 仍归本事务时恢复 backup 和 Git index。`gitUntrack` rollback 恢复记录的 index mode 和 blob，不 stage 当前工作树字节。apply 只记录一个 `100644` 或 `100755` 的 stage-0 entry；mutation 前拒绝 unmerged entry、其他 mode 和 intent-to-add entry。changed target、changed index entry、missing blob、occupied restore path、symlink（含 dangling）或 invalid manifest 给出结构化失败，不覆盖用户数据。manifest 没有 index entry 时，提示用户手动运行 `git add -- <path>`。
 
 ### 3.6 归属与开放问题（2026-10-11）
 
