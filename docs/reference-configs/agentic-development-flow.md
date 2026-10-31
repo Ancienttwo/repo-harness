@@ -88,7 +88,7 @@ Every PR is internal or external, never both. Classify it with the single rule i
 An internal PR uses Daily Flow step 5 and the main-merge boundary in [Four operation boundaries](#four-operation-boundaries). The external PR flow does not apply to it. A `tasks/lessons.md` change also follows the GO rule in [Lessons Retro](#lessons-retro).
 
 ### External PR flow
-An external PR never uses the internal flow. A worker produces the ready-for-GO bundle from `references/pr-verification.md`. The PR merges only after automated checks pass and the repository owner gives an explicit GO for the reviewed head SHA. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. A new head SHA needs a new bundle and a new GO.
+An external PR never uses the internal flow. A worker produces the ready-for-GO bundle from `references/pr-verification.md`, whose hazard scan uses the [change hazard list](#change-hazards). The PR merges only after automated checks pass and the repository owner gives an explicit GO for the reviewed head SHA. Merge with `gh pr merge <pr> --squash --match-head-commit <reviewed-sha>`. A new head SHA needs a new bundle and a new GO.
 
 ## Four operation boundaries
 - Main merge requires explicit current-task authorization, current automated checks, no outstanding change requests or unresolved review threads, exact head/base and conflict safety.
@@ -113,6 +113,18 @@ edits no product code and dispatches no subagents.
 
 The bot selects scope, worker and verification by risk. Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty; do not rerun a passing check or require multiple re-gates.
 
+### Change hazards
+
+A hazard is a change that runs or exposes code, secrets, data or network access on a machine or in CI. One hit on any item sets an internal PR to High under [Review by risk](#review-by-risk). An external PR stops and escalates under its protocol; that behavior does not change.
+
+- Changes a workflow or other CI configuration under `.github/`.
+- Changes a release, publish, update or install script, or a package script that runs at install or release.
+- Changes a `Dockerfile` or another container build file.
+- Adds a network address, endpoint or telemetry.
+- Reads credentials, such as tokens, keys, `~/.ssh`, `~/.npmrc` or credential environment variables.
+- Adds or changes a dependency or a lockfile entry. A lockfile-only bump is still a hit; its source does not lower the tier.
+- Adds a binary, or an encoded or opaque blob, such as base64, long hex, minified or otherwise unreadable content.
+
 ### Review by risk
 The diff sets the tier. The author does not: a human change and a model change with the same diff get the same tier. One hit on a higher signal sets the higher tier.
 
@@ -120,7 +132,7 @@ The diff sets the tier. The author does not: a human change and a model change w
 | --- | --- |
 | Low | No Medium or High signal, including local changes with clear behavior and docs, tests, comments or translations alone. |
 | Medium | Cross-module behavior changes; public API changes; more than 10 non-generated implementation files; shared runtime changes; authentication-adjacent changes; or unresolved behavior uncertainty. |
-| High | Credentials, permissions or sandbox grants; hooks and the mutation guard; deletion paths; release, publish, update or install scripts; `deploy/sql/`; code that writes to GitHub; or a change across more than one capability boundary in `.archcontext/model/`. |
+| High | Any hit on the [change hazard list](#change-hazards); permissions or sandbox grants; hooks and the mutation guard; deletion paths; `deploy/sql/`; code that writes to GitHub; or a change across more than one capability boundary in `.archcontext/model/`. |
 
 Review follows the `repo-harness-issue-flow` skill, [references/acceptor.md](../../assets/skills/repo-harness-issue-flow/references/acceptor.md). The tier selects the depth: no independent review for Low, one fresh-context review for Medium, and the gatekeeper plus one cross-model review for High, one round each. The Acceptor SOP owns the round, findings and publish steps.
 
