@@ -11,7 +11,16 @@ import {
   type PullRequestReadinessV2,
   type PullRequestSelectionV2,
   type ProviderMergeReadinessFactsV1,
+  type RequiredCheckBucketV1,
+  type RequiredCheckCoverageFactsV1,
 } from '../../core/publication/merge-readiness';
+import {
+  PUBLICATION_POLICY_PATH,
+  policyFileFromContents,
+  requiredCheckCoveragePolicyAtRef,
+  type PolicyFileAtRef,
+  type RequiredCheckCoveragePolicyAtRef,
+} from '../../core/publication/acceptance-merge-policy';
 export type MergeReadinessErrorCode =
   | 'provider_unavailable'
   | 'provider_data_incomplete';
@@ -51,6 +60,12 @@ export interface PublicationReadinessInput {
   readonly now_ms?: number;
   /** Internal effect/test seam for caller-owned provider execution, such as a protected helper environment. */
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
+  /**
+   * Internal effect seam: the publication executor already read this file at
+   * the base SHA for the acceptance-merge switch. Readiness reuses it instead
+   * of a second contents read. The ref must be the expected base.
+   */
+  readonly policy_file_at_base?: PolicyFileAtRef;
 }
 
 export interface AbortablePublicationReadinessInput extends Omit<PublicationReadinessInput, 'gh_runner'> {
@@ -78,6 +93,8 @@ export interface ProviderIdentity {
   readonly base_ref: string;
   readonly body: string;
   readonly review_decision: string | null;
+  /** The provider's changed-file count for this head; drives the exact page count. */
+  readonly changed_files: number;
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
@@ -137,7 +154,12 @@ function githubArguments(input: PublicationReadinessInput, args: readonly string
   return args;
 }
 
-function gh(input: PublicationReadinessInput, args: readonly string[], accepted = [0]): unknown {
+interface GhObservation {
+  readonly status: number;
+  readonly value: unknown;
+}
+
+function ghObserve(input: PublicationReadinessInput, args: readonly string[], accepted: readonly number[]): GhObservation {
   args = githubArguments(input, args);
   const injected = input.gh_runner?.(args);
   const result = injected ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
@@ -156,27 +178,43 @@ function gh(input: PublicationReadinessInput, args: readonly string[], accepted 
     );
   }
   try {
-    const value = JSON.parse(result.stdout);
-    if (args[0] === 'api' && accepted.includes(1)) {
-      if (result.status !== 0 && value?.status !== '404') {
-        throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
-      }
-      if (result.status === 0 && value?.status === '404') {
-        throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
-      }
-    }
-    return value;
+    return { status: result.status, value: JSON.parse(result.stdout) };
   } catch (error) {
-    if (error instanceof MergeReadinessError) throw error;
     throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
   }
 }
 
-async function ghAbortable(
+function gh(input: PublicationReadinessInput, args: readonly string[], accepted = [0]): unknown {
+  const observed = ghObserve(input, args, accepted);
+  if (args[0] === 'api' && accepted.includes(1)) {
+    if (observed.status !== 0 && (observed.value as { status?: unknown } | null)?.status !== '404') {
+      throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
+    }
+    if (observed.status === 0 && (observed.value as { status?: unknown } | null)?.status === '404') {
+      throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
+    }
+  }
+  return observed.value;
+}
+
+/** A provider read where 404 is a real answer: a missing policy file, not a provider outage. */
+function ghOptional(input: PublicationReadinessInput, args: readonly string[]): unknown | null {
+  const observed = ghObserve(input, args, [0, 1]);
+  if (observed.status === 0) {
+    if ((observed.value as { status?: unknown } | null)?.status === '404') {
+      throw new MergeReadinessError('provider_data_incomplete', 'provider returned a 404 with a success status');
+    }
+    return observed.value;
+  }
+  if ((observed.value as { status?: unknown } | null)?.status === '404') return null;
+  throw new MergeReadinessError('provider_unavailable', `provider observation failed: gh ${args.join(' ')}: HTTP ${observed.status}`);
+}
+
+async function ghAbortableObserve(
   input: AbortablePublicationReadinessInput,
   args: readonly string[],
-  accepted = [0],
-): Promise<unknown> {
+  accepted: readonly number[],
+): Promise<GhObservation> {
   args = githubArguments(input, args);
   if (input.signal?.aborted) {
     throw new MergeReadinessError('provider_unavailable', `provider observation aborted: gh ${args.join(' ')}`);
@@ -244,25 +282,56 @@ async function ghAbortable(
     throw new MergeReadinessError('provider_unavailable', `provider observation failed: gh ${args.join(' ')}: ${detail}`, result.error);
   }
   try {
-    const value = JSON.parse(result.stdout);
-    if (args[0] === 'api' && accepted.includes(1)) {
-      if (result.status !== 0 && value?.status !== '404') {
-        throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
-      }
-      if (result.status === 0 && value?.status === '404') {
-        throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
-      }
-    }
-    return value;
+    return { status: result.status, value: JSON.parse(result.stdout) };
   } catch (error) {
-    if (error instanceof MergeReadinessError) throw error;
     throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
   }
+}
+
+async function ghAbortable(
+  input: AbortablePublicationReadinessInput,
+  args: readonly string[],
+  accepted = [0],
+): Promise<unknown> {
+  const observed = await ghAbortableObserve(input, args, accepted);
+  if (args[0] === 'api' && accepted.includes(1)) {
+    if (observed.status !== 0 && (observed.value as { status?: unknown } | null)?.status !== '404') {
+      throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
+    }
+    if (observed.status === 0 && (observed.value as { status?: unknown } | null)?.status === '404') {
+      throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
+    }
+  }
+  return observed.value;
+}
+
+/** A provider read where 404 is a real answer: a missing policy file, not a provider outage. */
+async function ghAbortableOptional(
+  input: AbortablePublicationReadinessInput,
+  args: readonly string[],
+): Promise<unknown | null> {
+  const observed = await ghAbortableObserve(input, args, [0, 1]);
+  if (observed.status === 0) {
+    if ((observed.value as { status?: unknown } | null)?.status === '404') {
+      throw new MergeReadinessError('provider_data_incomplete', 'provider returned a 404 with a success status');
+    }
+    return observed.value;
+  }
+  if ((observed.value as { status?: unknown } | null)?.status === '404') return null;
+  throw new MergeReadinessError('provider_unavailable', `provider observation failed: gh ${args.join(' ')}: HTTP ${observed.status}`);
 }
 
 function identityBytes(identity: ProviderIdentity): string {
   const { body: _body, ...fences } = identity;
   return JSON.stringify(fences);
+}
+
+/** The provider's changed-file count; it must be present, because it sets the exact page count. */
+function changedFiles(value: unknown): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider PR changedFiles is invalid');
+  }
+  return Number(value);
 }
 
 function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, prValue: unknown): ProviderIdentity {
@@ -299,6 +368,7 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
     base_ref: string(pr.baseRefName, 'provider PR base ref'),
     body: typeof pr.body === 'string' ? pr.body : '',
     review_decision: reviewDecision,
+    changed_files: changedFiles(pr.changedFiles),
     mergeable: pr.mergeable,
   });
   return identity;
@@ -310,6 +380,7 @@ function parseProviderReadinessFacts(
   rollbackBoundary: ProviderMergeReadinessFactsV1['rollback_boundary'],
   graphValue: unknown,
   checkFailures: readonly RequiredCheckFailureEvidenceV1[],
+  coverage: RequiredCheckCoverageFactsV1,
 ): ProviderMergeReadinessFactsV1 {
   if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
   const checks = checksValue.map(providerCheck).map(({ name, bucket }) => Object.freeze({ name, bucket }));
@@ -357,6 +428,7 @@ function parseProviderReadinessFacts(
     rollback_boundary: rollbackBoundary,
     checks: Object.freeze(checks),
     check_failures: Object.freeze([...checkFailures]),
+    required_check_coverage: coverage,
     mergeable: identity.mergeable,
   });
 }
@@ -367,7 +439,7 @@ function providerReviewArgs(identity: ProviderIdentity): string[] {
   return ['api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${identity.pr_number}`];
 }
 
-type ProviderCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
+type ProviderCheckBucket = RequiredCheckBucketV1;
 
 interface ProviderCheck {
   readonly name: string;
@@ -509,8 +581,8 @@ function attemptJobs(value: unknown): AttemptJob[] {
   return jobs;
 }
 
-interface EvidenceRequest {
-  readonly path: string;
+interface ProviderRequest {
+  readonly args: readonly string[];
   /** Best-effort evidence: a missing annotation feed is not a provider outage. */
   readonly optional?: boolean;
 }
@@ -560,12 +632,12 @@ function* checkEvidence(
   check: ProviderCheck,
   run: RequiredCheckRunFacts,
   link: RequiredCheckLink,
-): Generator<EvidenceRequest, RequiredCheckFailureEvidenceV1 | null, unknown> {
+): Generator<ProviderRequest, RequiredCheckFailureEvidenceV1 | null, unknown> {
   // A first-attempt green or pending check has no failure history to record.
   if (run.run_attempt === 1 && (check.bucket === 'pass' || check.bucket === 'pending')) return null;
   const pages: AttemptJob[][] = [];
   for (let attempt = 1; attempt <= run.run_attempt; attempt++) {
-    pages.push(attemptJobs(yield { path: `${link.run_api_path}/attempts/${attempt}/jobs?per_page=100` }));
+    pages.push(attemptJobs(yield { args: ['api', `${link.run_api_path}/attempts/${attempt}/jobs?per_page=100`] }));
   }
   const linked = pages.flat().find(job => job.id === link.job_id);
   if (!linked) throw new MergeReadinessError('provider_data_incomplete', 'required check job link does not resolve');
@@ -581,7 +653,7 @@ function* checkEvidence(
       continue;
     }
     annotations.push(annotationEvidence(yield {
-      path: `repos/${identity.repo_name_with_owner}/check-runs/${job.check_run_id}/annotations?per_page=100`,
+      args: ['api', `repos/${identity.repo_name_with_owner}/check-runs/${job.check_run_id}/annotations?per_page=100`],
       optional: true,
     }));
   }
@@ -622,7 +694,7 @@ function* requiredCheckFailures(
   identity: ProviderIdentity,
   checks: readonly ProviderCheck[],
   firstRun: RequiredCheckRunFacts,
-): Generator<EvidenceRequest, RequiredCheckFailureEvidenceV1[], unknown> {
+): Generator<ProviderRequest, RequiredCheckFailureEvidenceV1[], unknown> {
   const evidence: RequiredCheckFailureEvidenceV1[] = [];
   for (const check of checks) {
     let link: RequiredCheckLink;
@@ -635,25 +707,20 @@ function* requiredCheckFailures(
       continue;
     }
     const run = check.name === 'Required / CI' ? firstRun
-      : requiredCheckRunFacts(identity, yield { path: link.run_api_path }, 'required check run');
+      : requiredCheckRunFacts(identity, yield { args: ['api', link.run_api_path] }, 'required check run');
     const failure = yield* checkEvidence(identity, check, run, link);
     if (failure) evidence.push(failure);
   }
   return evidence;
 }
 
-function collectRequiredCheckFailuresSync(
-  identity: ProviderIdentity,
-  checks: readonly ProviderCheck[],
-  firstRun: RequiredCheckRunFacts,
-  input: PublicationReadinessInput,
-): RequiredCheckFailureEvidenceV1[] {
-  const protocol = requiredCheckFailures(identity, checks, firstRun);
+/** The one read driver: a protocol yields requests, the transport answers them. */
+function driveRequestsSync<T>(protocol: Generator<ProviderRequest, T, unknown>, input: PublicationReadinessInput): T {
   let request = protocol.next();
   while (!request.done) {
     let value: unknown = null;
     try {
-      value = gh(input, ['api', request.value.path]);
+      value = gh(input, request.value.args);
     } catch (error) {
       if (!request.value.optional) throw error;
     }
@@ -662,24 +729,149 @@ function collectRequiredCheckFailuresSync(
   return request.value;
 }
 
-async function collectRequiredCheckFailuresAbortable(
-  identity: ProviderIdentity,
-  checks: readonly ProviderCheck[],
-  firstRun: RequiredCheckRunFacts,
+async function driveRequestsAbortable<T>(
+  protocol: Generator<ProviderRequest, T, unknown>,
   input: AbortablePublicationReadinessInput,
-): Promise<RequiredCheckFailureEvidenceV1[]> {
-  const protocol = requiredCheckFailures(identity, checks, firstRun);
+): Promise<T> {
   let request = protocol.next();
   while (!request.done) {
     let value: unknown = null;
     try {
-      value = await ghAbortable(input, ['api', request.value.path]);
+      value = await ghAbortable(input, request.value.args);
     } catch (error) {
       if (!request.value.optional) throw error;
     }
     request = protocol.next(value);
   }
   return request.value;
+}
+
+const CHANGED_FILE_PAGE_SIZE = 100;
+/** GitHub caps the PR file list at 3000 entries; a longer list fails closed instead of looping. */
+const CHANGED_FILE_LIMIT = 3000;
+
+interface ChangedFilePage {
+  readonly files: readonly { readonly filename: string; readonly previous_filename?: string }[];
+}
+
+/**
+ * One page of the REST pull-request files view. It is the only provider view
+ * that reports a rename source (`previous_filename`), so a protected path
+ * cannot be lost by a rename.
+ *
+ * The page cannot carry a head/base SHA. The enclosing identity fence binds it:
+ * readiness reads the PR identity before and after the facts, and a head or
+ * base move during the read discards the round as `changed_during_read`.
+ */
+function changedFilePage(value: unknown): ChangedFilePage {
+  if (!Array.isArray(value)) throw new MergeReadinessError('provider_data_incomplete', 'changed files must be an array');
+  const files = value.map((entry) => {
+    const file = object(entry, 'changed file');
+    return Object.freeze({
+      filename: string(file.filename, 'changed file name'),
+      ...(file.previous_filename === undefined || file.previous_filename === null
+        ? {} : { previous_filename: string(file.previous_filename, 'changed file previous name') }),
+    });
+  });
+  return Object.freeze({ files: Object.freeze(files) });
+}
+
+/**
+ * Every changed path of the PR head, including rename sources. Read only when
+ * the coverage block is active. The page count comes from the provider's
+ * changed-file count in the identity read, so it is exactly
+ * ceil(changed_files / 100): 0 files cost no page and 3000 files cost 30.
+ */
+function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, string[], unknown> {
+  if (identity.changed_files > CHANGED_FILE_LIMIT) {
+    throw new MergeReadinessError('provider_data_incomplete',
+      `the PR reports ${identity.changed_files} changed files; the provider lists at most ${CHANGED_FILE_LIMIT}`);
+  }
+  const pages = Math.ceil(identity.changed_files / CHANGED_FILE_PAGE_SIZE);
+  const files: { readonly filename: string; readonly previous_filename?: string }[] = [];
+  for (let page = 1; page <= pages; page++) {
+    const parsed = changedFilePage(yield {
+      args: ['api', `repos/${identity.repo_name_with_owner}/pulls/${identity.pr_number}/files?per_page=${CHANGED_FILE_PAGE_SIZE}&page=${page}`],
+    });
+    files.push(...parsed.files);
+  }
+  if (files.length !== identity.changed_files) {
+    throw new MergeReadinessError('provider_data_incomplete',
+      `the PR reported ${identity.changed_files} changed files but the provider listed ${files.length}`);
+  }
+  const paths = files.flatMap((file) => file.previous_filename === undefined ? [file.filename] : [file.filename, file.previous_filename]);
+  return [...new Set(paths)].sort();
+}
+
+function policyAtRef(contents: unknown, ref: string): PolicyFileAtRef {
+  const file = policyFileFromContents(contents);
+  if (file === null) throw new MergeReadinessError('provider_data_incomplete', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
+  return file;
+}
+
+function reusedPolicyFile(input: PublicationReadinessInput, ref: string): PolicyFileAtRef | null {
+  if (input.policy_file_at_base === undefined) return null;
+  const expectedBase = 'expected_base_sha' in input ? (input as { readonly expected_base_sha?: unknown }).expected_base_sha : undefined;
+  // The executor read this file at the expected base. A moved base is a cache
+  // miss, not a refusal: the normal read reports base_moved_since_verification.
+  return expectedBase === ref ? input.policy_file_at_base : null;
+}
+
+function coveragePolicy(input: PublicationReadinessInput, ref: string): RequiredCheckCoveragePolicyAtRef {
+  const reused = reusedPolicyFile(input, ref);
+  if (reused !== null) return requiredCheckCoveragePolicyAtRef(reused);
+  const contents = ghOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
+  return contents === null ? { status: 'absent' } : requiredCheckCoveragePolicyAtRef(policyAtRef(contents, ref));
+}
+
+async function coveragePolicyAbortable(
+  input: AbortablePublicationReadinessInput,
+  ref: string,
+): Promise<RequiredCheckCoveragePolicyAtRef> {
+  const reused = reusedPolicyFile(input, ref);
+  if (reused !== null) return requiredCheckCoveragePolicyAtRef(reused);
+  const contents = await ghAbortableOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
+  return contents === null ? { status: 'absent' } : requiredCheckCoveragePolicyAtRef(policyAtRef(contents, ref));
+}
+
+/**
+ * The all-checks read is the only view that shows a declared check which branch
+ * protection does not require. A declared matrix job is usually such a check:
+ * it appears in the PR rollup as skipped, and the required list never names it.
+ *
+ * Read budget for one readiness round:
+ * - inactive block: zero extra reads when the executor passes
+ *   `policy_file_at_base`, otherwise one policy contents read;
+ * - active block: that policy read, exactly ceil(changed_files / 100) REST file
+ *   pages from the provider's changed-file count (0 files cost no page, 100
+ *   files cost one, 3000 files cost 30) and one all-checks read.
+ * So an active PR costs two extra reads with one file page and three with two
+ * pages on the executor path, plus the policy read on the standalone path.
+ */
+function observedCheckFacts(checks: readonly ProviderCheck[]): readonly { readonly name: string; readonly bucket: RequiredCheckBucketV1 }[] {
+  return Object.freeze(checks.map(({ name, bucket }) => Object.freeze({ name, bucket })));
+}
+
+const ALL_CHECKS_ARGS = (identity: ProviderIdentity): string[] =>
+  ['pr', 'checks', String(identity.pr_number), '--json', 'name,bucket,link'];
+
+function coverageFacts(identity: ProviderIdentity, input: PublicationReadinessInput): RequiredCheckCoverageFactsV1 {
+  const policy = coveragePolicy(input, identity.base_sha);
+  if (policy.status !== 'active') return policy;
+  const changed = driveRequestsSync(changedPaths(identity), input);
+  const observed = observedCheckFacts(checkArray(gh(input, ALL_CHECKS_ARGS(identity), [0, 1, 8])));
+  return Object.freeze({ status: 'active', policy: policy.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
+}
+
+async function coverageFactsAbortable(
+  identity: ProviderIdentity,
+  input: AbortablePublicationReadinessInput,
+): Promise<RequiredCheckCoverageFactsV1> {
+  const policy = await coveragePolicyAbortable(input, identity.base_sha);
+  if (policy.status !== 'active') return policy;
+  const changed = await driveRequestsAbortable(changedPaths(identity), input);
+  const observed = observedCheckFacts(checkArray(await ghAbortable(input, ALL_CHECKS_ARGS(identity), [0, 1, 8])));
+  return Object.freeze({ status: 'active', policy: policy.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
 }
 
 /** One read protocol for synchronous and abortable consumers; reads only the current commit boundary. */
@@ -740,11 +932,12 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
   ], [0, 1, 8]);
   const providers = checkArray(checks);
   const firstRun = validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, providers)]), providers);
-  const checkFailures = collectRequiredCheckFailuresSync(identity, providers, firstRun, input);
+  const checkFailures = driveRequestsSync(requiredCheckFailures(identity, providers, firstRun), input);
+  const coverage = coverageFacts(identity, input);
   const boundary = rollbackBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(gh(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)), checkFailures);
+  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)), checkFailures, coverage);
 }
 
 export async function observeProviderReadinessFactsAbortable(
@@ -757,11 +950,12 @@ export async function observeProviderReadinessFactsAbortable(
   ], [0, 1, 8]);
   const providers = checkArray(checks);
   const firstRun = validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, providers)]), providers);
-  const checkFailures = await collectRequiredCheckFailuresAbortable(identity, providers, firstRun, input);
+  const checkFailures = await driveRequestsAbortable(requiredCheckFailures(identity, providers, firstRun), input);
+  const coverage = await coverageFactsAbortable(identity, input);
   const boundary = rollbackBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)), checkFailures);
+  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)), checkFailures, coverage);
 }
 
 export interface PullRequestReadinessInput extends PublicationReadinessInput {
@@ -798,7 +992,12 @@ function confirmRepository(input: PullRequestReadinessInput, identity: ProviderI
   return identity;
 }
 
-const PR_IDENTITY_FIELDS = 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,mergeable';
+/**
+ * The one PR identity read. Readiness, fleet feedback and product acceptance
+ * all observe their identity through it, so every field here must be answered
+ * by any provider stand-in: `changedFiles` sets the exact coverage page count.
+ */
+const PR_IDENTITY_FIELDS = 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,changedFiles,mergeable';
 export function observeProviderReadinessIdentity(input: PullRequestReadinessInput): ProviderIdentity {
   selectionOf(input);
   const identity = parseProviderPullRequestIdentity(input.pr_number,

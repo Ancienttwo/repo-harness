@@ -18,6 +18,19 @@ function readControlRequest(file: string, fields: readonly string[]): Record<str
   return request;
 }
 
+/**
+ * The optional PR selection for the coverage read. `--repository-id` is the
+ * admission identity and is always required; the other three flags are the
+ * optional selection and are all-or-none. Admission identity alone is not a
+ * partial selection.
+ */
+export function pullRequestSelectionFromOptions(opts: Record<string, string | undefined>) {
+  const given = [opts.repository, opts.pr, opts.base].filter((value) => value !== undefined).length;
+  if (given === 0) return undefined;
+  if (given !== 3) throw new Error('--repository, --pr and --base must be given together');
+  return { repository: opts.repository!, provider_repository_id: opts.repositoryId!, pr_number: Number(opts.pr), expected_base_sha: opts.base! };
+}
+
 export function buildReviewCommand(): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
   command.command('admit').description('Apply an already-authorized upstream Bot request (trusted integration only)')
@@ -85,7 +98,10 @@ export function buildReviewCommand(): Command {
       .option('--launch <mode>', 'herdr, or app-terminal: the Claude app operator runs the printed host command', 'herdr')
       .option('--harness <kind>', 'Explicit claude, codex or pi; no fallback for an explicit override')
       .requiredOption('--verification <path>', 'Native verification report under .ai/harness/runs/')
-      .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms');
+      .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms')
+      .option('--repository <owner/name>', 'Explicit PR repository for the required-check coverage read')
+      .option('--pr <number>', 'Explicit PR number for the coverage read')
+      .option('--base <sha>', 'Explicit expected PR base for the coverage read');
     child.action(async opts => {
       try {
         const authority = readReviewAdmissionSource(opts.repo, {
@@ -99,7 +115,9 @@ export function buildReviewCommand(): Command {
           if ((opts.launch === 'herdr') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr and refused for app-terminal');
           const addressing = opts.herdrEndpoint ? JSON.parse(readFileSync(opts.herdrEndpoint, 'utf8')) : {};
           if (opts.harness && !isReviewRuntimeId(opts.harness)) throw new Error('review_harness_unsupported');
+          const pullRequest = pullRequestSelectionFromOptions(opts);
           result = await runReviewRound({ repoRoot: opts.repo, authority, taskClaim: { reference: opts.claimRef, revision: opts.claimRevision }, verification: opts.verification,
+            ...(pullRequest === undefined ? {} : { pullRequest }),
             engineerProfile: opts.engineerId === undefined ? undefined : { engineer_id: opts.engineerId, engineer_contract_revision: opts.engineerContractRevision },
             reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_pane, launch: opts.launch,
             harness: opts.harness, timeoutMs: opts.timeoutMs === undefined ? undefined : Number(opts.timeoutMs),

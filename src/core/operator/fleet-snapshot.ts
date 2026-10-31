@@ -77,8 +77,10 @@ function projectCard(card: FleetBoardCardV2): OperatorFleetCardV1 {
     blockers: Object.freeze(card.merge_readiness.blockers.map((blocker) => Object.freeze({
       code: blocker.code,
       attention_owner: blocker.attention_owner,
+      ...(blocker.detail === undefined ? {} : { detail: blocker.detail }),
     }))),
     check_failures: Object.freeze([...card.merge_readiness.check_failures]),
+    required_check_coverage: card.merge_readiness.required_check_coverage,
   });
   return Object.freeze({
     repository_id: card.repository_id,

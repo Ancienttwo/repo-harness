@@ -63,6 +63,20 @@ import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,
 } from '../../core/evidence/required-check-evidence';
+import {
+  validateRequiredCheckCoverageEvidenceOrNull,
+  type RequiredCheckCoverageEvidenceV1,
+} from '../../core/publication/required-check-coverage';
+import { PUBLICATION_POLICY_PATH, requiredCheckCoveragePolicyAtRef, type RequiredCheckCoveragePolicyAtRef } from '../../core/publication/acceptance-merge-policy';
+import { collectPullRequestMergeReadiness, validatePullRequestSelection } from '../publication/merge-readiness';
+
+/** The explicit PR identity an active coverage policy needs. The record path reads the evidence itself. */
+export interface AcceptancePullRequestSelection {
+  readonly repository: string;
+  readonly provider_repository_id: string;
+  readonly pr_number: number;
+  readonly expected_base_sha: string;
+}
 
 export {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
@@ -95,6 +109,7 @@ export type {
   ReviewSubject,
   UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+export type { RequiredCheckCoverageEvidenceV1 } from '../../core/publication/required-check-coverage';
 
 /** The bound author task session and the models its OAR host observed. */
 export interface AcceptanceAuthor {
@@ -553,6 +568,11 @@ export function validateAcceptanceReceiptAgainstPolicy(
     } catch (error) {
       return no('check_failure_evidence', `AcceptanceReceipt failures are invalid: ${(error as Error).message}`);
     }
+    try {
+      validateRequiredCheckCoverageEvidenceOrNull(receipt.required_check_coverage);
+    } catch (error) {
+      return no('required_check_coverage_evidence', `AcceptanceReceipt required_check_coverage is invalid: ${(error as Error).message}`);
+    }
     if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
     if (receipt.campaign_sha256 !== input.admission.campaign_sha256) return no('campaign_identity', 'AcceptanceReceipt campaign is stale');
     if (receipt.admission_sha256 !== input.admission.admission_sha256 || receipt.grant_sha256 !== input.grantSha256) return no('admission_binding', 'AcceptanceReceipt admission is stale');
@@ -567,6 +587,9 @@ export function validateAcceptanceReceiptAgainstPolicy(
     if (receipt.subject_scope !== 'normalized-final-content') return no('subject_scope', 'AcceptanceReceipt subject scope is invalid');
     if (receipt.target_ref.trim() === '') return no('target_ref_present', 'AcceptanceReceipt target_ref is required');
     if (!GIT_OID_FIELD.test(receipt.target_revision)) return no('target_revision_shape', 'AcceptanceReceipt target_revision is invalid');
+    if (receipt.required_check_coverage !== null && receipt.required_check_coverage.base_sha !== receipt.target_revision) {
+      return no('required_check_coverage_evidence', 'AcceptanceReceipt required_check_coverage does not bind the target revision');
+    }
     // Emptiness is legal: a subject can review zero paths. Shape is not.
     if (receipt.reviewed_paths.some(unsafeRepoRelativePath)) return no('reviewed_paths_shape', 'AcceptanceReceipt reviewed_paths are invalid');
     if (receipt.summary.trim() === '') return no('summary_present', 'AcceptanceReceipt summary is required');
@@ -649,7 +672,8 @@ function parseReceipt(text: string): AcceptanceReceipt {
     fail('AcceptanceReceipt waiver grant binding does not match disposition');
   }
   const receipt = { ...value, findings: validateFindings(value.findings),
-    failures: validateRequiredCheckFailureEvidenceList(value.failures) } as AcceptanceReceipt;
+    failures: validateRequiredCheckFailureEvidenceList(value.failures),
+    required_check_coverage: validateRequiredCheckCoverageEvidenceOrNull(value.required_check_coverage) } as AcceptanceReceipt;
   assertReviewFields(receipt);
   return receipt;
 }
@@ -783,6 +807,7 @@ function buildReceipt(
   summary: string,
   findings: AcceptanceFinding[],
   failures: RequiredCheckFailureEvidenceV1[],
+  coverage: RequiredCheckCoverageEvidenceV1 | null,
   waiverGrantSha256: string | null,
   now: () => Date,
 ): AcceptanceReceipt {
@@ -813,6 +838,7 @@ function buildReceipt(
     summary,
     findings,
     failures,
+    required_check_coverage: coverage,
     waiver_grant_sha256: waiverGrantSha256,
     issued_at: now().toISOString(),
   };
@@ -885,6 +911,68 @@ function assertRecordedReceiptPolicy(
   fail(`${verdict.reason} (${verdict.rule})`);
 }
 
+/**
+ * The explicit PR identity options. All four or none: a partial selection
+ * cannot bind the coverage read.
+ */
+function pullRequestSelectionOption(argv: string[]): AcceptancePullRequestSelection | undefined {
+  const repository = option(argv, '--repository', false);
+  const repositoryId = option(argv, '--repository-id', false);
+  const pr = option(argv, '--pr', false);
+  const base = option(argv, '--base', false);
+  const given = [repository, repositoryId, pr, base].filter((value) => value !== undefined).length;
+  if (given === 0) return undefined;
+  if (given !== 4) fail('--repository, --repository-id, --pr and --base must be given together');
+  return { repository: repository!, provider_repository_id: repositoryId!, pr_number: Number(pr), expected_base_sha: base! };
+}
+
+/**
+ * The coverage policy at one commit of the local repository. The receipt binds
+ * a revision, so the block is read at that revision and not from the working
+ * tree. A missing file is `absent`; a malformed one fails the record.
+ */
+function coveragePolicyAtRevision(root: string, revision: string): RequiredCheckCoveragePolicyAtRef {
+  const listing = gitSpawnSync(['ls-tree', revision, '--', PUBLICATION_POLICY_PATH], { cwd: root, encoding: 'utf8', timeout: 10_000 });
+  if (listing.status !== 0) fail(`cannot read ${PUBLICATION_POLICY_PATH} at ${revision}`);
+  if (listing.stdout.trim() === '') return { status: 'absent' };
+  const shown = gitSpawnSync(['show', `${revision}:${PUBLICATION_POLICY_PATH}`], { cwd: root, encoding: 'utf8', timeout: 10_000, maxBuffer: 1_048_576 });
+  if (shown.status !== 0) fail(`cannot read ${PUBLICATION_POLICY_PATH} at ${revision}`);
+  return requiredCheckCoveragePolicyAtRef({ status: 'present', text: shown.stdout });
+}
+
+/**
+ * The coverage evidence the record stores. It is not caller-supplied: when the
+ * reviewed target carries an active block, the record path reads the PR
+ * readiness itself, bound to the reviewed head and the reviewed target (the PR
+ * base), and fails closed when that observation is missing or bound elsewhere.
+ */
+function recordedCoverage(args: {
+  readonly root: string;
+  /** The reviewed target (the PR base) and the reviewed head. */
+  readonly targetRevision: string;
+  readonly headRevision: string;
+  readonly pullRequest?: AcceptancePullRequestSelection;
+}): RequiredCheckCoverageEvidenceV1 | null {
+  const policy = coveragePolicyAtRevision(args.root, args.targetRevision);
+  if (policy.status === 'invalid') fail(`required-check coverage policy at ${args.targetRevision} is invalid: ${policy.message}`);
+  if (policy.status === 'absent') return null;
+  if (args.pullRequest === undefined) {
+    fail('an active required-check coverage policy requires an explicit pull request selection');
+  }
+  const selection = validatePullRequestSelection({ ...args.pullRequest, expected_head_sha: args.headRevision });
+  if (selection.expected_base_sha !== args.targetRevision) {
+    fail('the pull request base is not the reviewed target revision');
+  }
+  const readiness = collectPullRequestMergeReadiness({ repo_root: args.root, ...selection });
+  const coverage = readiness.required_check_coverage;
+  if (coverage === null) {
+    fail(`the pull request readiness read did not observe required-check coverage: ${readiness.blockers.map((blocker) => blocker.code).join(', ') || 'no evidence'}`);
+  }
+  if (coverage.head_sha !== args.headRevision) fail('required-check coverage does not bind the reviewed head');
+  if (coverage.base_sha !== args.targetRevision) fail('required-check coverage does not bind the reviewed target');
+  return coverage;
+}
+
 export async function recordAcceptance(args: {
   reviewResult?: AcceptanceReviewResult;
   /** Null when no bound author task session exists for this review. */
@@ -901,6 +989,8 @@ export async function recordAcceptance(args: {
   findings: AcceptanceFinding[];
   /** Observed required-check failure evidence; a rerun pass never becomes a proven flake. */
   failures?: readonly RequiredCheckFailureEvidenceV1[];
+  /** Explicit PR identity. Required when the reviewed revision carries an active coverage block. */
+  pull_request?: AcceptancePullRequestSelection;
   /** A provider must bind its opinion to the context it actually reviewed. */
   expectedContext?: {
     admission_sha256: string;
@@ -938,6 +1028,8 @@ export async function recordAcceptance(args: {
     args.summary,
     args.findings,
     validateRequiredCheckFailureEvidenceList(args.failures ?? []),
+    recordedCoverage({ root: context.root, targetRevision: context.subject.target_rev,
+      headRevision: context.subject.head_rev, pullRequest: args.pull_request }),
     null,
     args.now ?? (() => new Date()),
   );
@@ -962,6 +1054,8 @@ export async function recordUserWaiverAcceptance(args: {
   authorityHome: string;
   authority: ReviewAdmissionSource;
   verification: string;
+  /** Explicit PR identity. Required when the reviewed revision carries an active coverage block. */
+  pull_request?: AcceptancePullRequestSelection;
   now?: () => Date;
 }): Promise<AcceptanceReceipt> {
   const context = await acceptanceContext(args);
@@ -982,6 +1076,8 @@ export async function recordUserWaiverAcceptance(args: {
     grant.summary,
     findings,
     [],
+    recordedCoverage({ root: context.root, targetRevision: context.subject.target_rev,
+      headRevision: context.subject.head_rev, pullRequest: args.pull_request }),
     waiverGrantFingerprint(grant),
     args.now ?? (() => new Date()),
   );
@@ -1195,6 +1291,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
         authorityHome,
         authority,
         verification: option(argv, '--verification')!,
+        pull_request: pullRequestSelectionOption(argv),
         now: opts.now,
       });
       projectRecordedAcceptance({ root, review, receipt });
@@ -1205,6 +1302,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     const findingsRaw = option(argv, '--findings-json', false) ?? '[]';
     const failuresRaw = option(argv, '--failures-json', false) ?? '[]';
     const failures = validateRequiredCheckFailureEvidenceList(JSON.parse(failuresRaw));
+    const pullRequest = pullRequestSelectionOption(argv);
     const reviewResultFile = option(argv, '--review-result')!;
     if (!lstatSync(reviewResultFile).isFile() || lstatSync(reviewResultFile).isSymbolicLink()) fail('--review-result must be a regular file');
     const receipt = await recordAcceptance({
@@ -1222,6 +1320,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       summary: option(argv, '--summary')!,
       findings: validateFindings(JSON.parse(findingsRaw)),
       failures,
+      pull_request: pullRequest,
       now: opts.now,
     });
     projectRecordedAcceptance({ root, review, receipt });

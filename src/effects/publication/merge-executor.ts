@@ -13,7 +13,9 @@
 
 import { spawnSync } from 'child_process';
 import {
+  PUBLICATION_POLICY_PATH,
   parsePublicationPolicy,
+  policyFileFromContents,
   publicationPolicyChanged,
   type PolicyFileAtRef,
   type PublicationPolicy,
@@ -27,7 +29,7 @@ import {
   type PullRequestReadinessInput,
 } from './merge-readiness';
 
-export const PUBLICATION_POLICY_PATH = '.ai/harness/policy.json';
+export { PUBLICATION_POLICY_PATH };
 
 export type PublicationMergeRefusalCode =
   | 'invalid_selection'
@@ -253,11 +255,9 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
 function readPolicyAt(input: PullRequestReadinessInput, ref: string): PolicyFileAtRef {
   const value = read(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`], true);
   if (value === null) return { status: 'missing' };
-  const file = field(value, 'policy file');
-  if (file.type !== 'file' || file.path !== PUBLICATION_POLICY_PATH || file.encoding !== 'base64' || typeof file.content !== 'string') {
-    throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
-  }
-  return { status: 'present', text: Buffer.from(file.content, 'base64').toString('utf-8') };
+  const file = policyFileFromContents(field(value, 'policy file'));
+  if (file === null) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
+  return file;
 }
 
 function readDefaultBranch(input: PullRequestReadinessInput): string {
@@ -303,8 +303,15 @@ function assertBaseProtection(input: PullRequestReadinessInput, branch: string, 
   assertNoMergeQueue(target);
 }
 
-function readPolicy(input: PullRequestReadinessInput): PublicationPolicy & { readonly ok: true } {
-  const base = parsePublicationPolicy(readPolicyAt(input, input.expected_base_sha));
+interface BasePolicy {
+  readonly policy: PublicationPolicy & { readonly ok: true };
+  /** The base file itself, so readiness reuses this read instead of a second one. */
+  readonly file: PolicyFileAtRef;
+}
+
+function readPolicy(input: PullRequestReadinessInput): BasePolicy {
+  const file = readPolicyAt(input, input.expected_base_sha);
+  const base = parsePublicationPolicy(file);
   if (!base.ok) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${input.expected_base_sha}: ${base.message}`);
   if (base.acceptance_merge === 'off') {
     throw new Refusal('acceptance_merge_off', `publication.acceptance_merge is off at base ${input.expected_base_sha}`);
@@ -312,7 +319,7 @@ function readPolicy(input: PullRequestReadinessInput): PublicationPolicy & { rea
   if (publicationPolicyChanged(base, readPolicyAt(input, input.expected_head_sha))) {
     throw new Refusal('publication_policy_changed_in_pr', 'the PR changes the publication policy subtree');
   }
-  return base;
+  return { policy: base, file };
 }
 
 const MERGE_MUTATION = 'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,$commitHeadline:String!,$commitBody:String!){mergePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,mergeMethod:SQUASH,commitHeadline:$commitHeadline,commitBody:$commitBody}){pullRequest{number state mergeCommit{oid}}}}';
@@ -462,10 +469,11 @@ function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
   }
   const initial = readMergeTarget(input);
   assertSameRepositoryTarget(initial);
-  readPolicy(input);
+  const policy = readPolicy(input);
   const defaultBranch = readDefaultBranch(input);
   assertBaseProtection(input, defaultBranch, initial);
-  const verdict = collectPullRequestMergeReadiness(input);
+  // Readiness reuses the base policy file this executor already read.
+  const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file });
   if (!verdict.ready) {
     throw new Refusal('merge_readiness_blocked', `readiness blockers: ${verdict.blockers.map((blocker) => blocker.code).join(', ')}`, verdict.blockers);
   }

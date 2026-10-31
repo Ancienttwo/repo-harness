@@ -99,7 +99,7 @@ function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationA
     const selection = item.selection;
     if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
       state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
-      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', changedFiles: 0, mergeable: 'UNKNOWN' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
     if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {
       number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',
@@ -298,6 +298,7 @@ describe('ME-4C integration product acceptance', () => {
       summary: 'approved fixture',
       findings: [],
       failures: [],
+      required_check_coverage: null,
       waiver_grant_sha256: DIGEST,
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;
@@ -422,6 +423,7 @@ describe('ME-4C integration product acceptance', () => {
       summary: 'verified before read race',
       findings: [],
       failures: [],
+      required_check_coverage: null,
       waiver_grant_sha256: null,
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;
@@ -467,6 +469,7 @@ describe('ME-4C integration product acceptance', () => {
       summary: 'recorded receipt',
       findings: [],
       failures: [],
+      required_check_coverage: null,
       waiver_grant_sha256: null,
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;

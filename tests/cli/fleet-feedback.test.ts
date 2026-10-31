@@ -37,7 +37,7 @@ if (args[0] === 'repo' && args[1] === 'view') {
     headRefName: 'codex/feedback-cli',
     baseRefOid: '${base}',
     baseRefName: 'main',
-    mergeable: 'CONFLICTING', reviewDecision: null,
+    mergeable: 'CONFLICTING', reviewDecision: null, changedFiles: 0,
     body,
     createdAt: '2026-08-23T00:00:00Z',
     mergedAt: null,

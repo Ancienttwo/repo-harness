@@ -10,10 +10,11 @@ import {
   projectOperatorFleetSnapshot,
   type OperatorFleetSnapshotV1,
 } from '../../src/core/operator/fleet-snapshot';
+import type { PullRequestReadinessV2 } from '../../src/core/publication/merge-readiness';
 
 const serviceEpoch = '00000000-0000-4000-8000-000000000001';
 
-function sourceSnapshot(): FleetBoardSnapshotV2 {
+function sourceSnapshot(readiness: PullRequestReadinessV2 | null = null): FleetBoardSnapshotV2 {
   return projectFleetBoardSnapshot({
     registry_revision: 'sha256:registry',
     sequence: 7,
@@ -30,7 +31,7 @@ function sourceSnapshot(): FleetBoardSnapshotV2 {
             task_id: null, provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${'b'.repeat(64)}`, execution_status: 'observed', execution: null,
             task_label: 'observe one registered repository',
             task_index: 1,
-            merge_readiness: null,
+            merge_readiness: readiness,
             execution_readiness: 'execution_ready', readiness_blockers: [],
             feedback: { observation_status: 'observed', pending_count: 1, no_progress: false, repair_actions: [] },
             inbox: { observation_status: 'observed', unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
@@ -57,6 +58,26 @@ function sourceSnapshot(): FleetBoardSnapshotV2 {
 }
 
 describe('OperatorFleetSnapshotV1 browser projection', () => {
+  test('preserves the required-check coverage blocker detail and evidence', () => {
+    const head = 'a'.repeat(40), base = 'b'.repeat(40);
+    const detail = 'required check "build, typecheck, test (matrix)" is skipping for protected path "api-surface/entries.json"; run it or add a passing "coverage-waiver" check';
+    const readiness: PullRequestReadinessV2 = {
+      protocol: 2, kind: 'repo-harness-pull-request-readiness',
+      provider_repository_id: '1001', repository: 'example/repo-harness', pr_number: 1, ready: false,
+      expected_head_sha: head, expected_base_sha: base, integration_mode: 'unmerged', attention_owner: 'agent',
+      blockers: [{ code: 'required_check_coverage_missing', attention_owner: 'agent', detail }],
+      check_failures: [],
+      required_check_coverage: { protocol: 1, kind: 'repo-harness-required-check-coverage', head_sha: head, base_sha: base,
+        protected_paths: ['api-surface/entries.json'],
+        checks: [{ check: 'build, typecheck, test (matrix)', bucket: 'skipping', requirement: 'required' }], waiver: null },
+    };
+    const projected = projectOperatorFleetSnapshot(sourceSnapshot(readiness), serviceEpoch, basename);
+    expect(projected.repositories[0]?.cards[0]?.merge_readiness?.blockers[0]?.detail).toBe(detail);
+    expect(projected.repositories[0]?.cards[0]?.merge_readiness?.required_check_coverage).toEqual(readiness.required_check_coverage);
+    // The projection is a transport view: it must not reclassify the blocker.
+    expect(projected.repositories[0]?.cards[0]?.blocker_codes).toEqual(['required_check_coverage_missing']);
+  });
+
   test('UX-local-human-control-board-v1-N1 removes local paths and preserves Fleet facts', () => {
     const source = sourceSnapshot();
     const projected = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
