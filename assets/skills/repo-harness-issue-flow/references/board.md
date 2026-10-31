@@ -16,7 +16,7 @@ claim comment. One seat has at most one active holder.
 | Coordinator | Parent issue | Orchestrator | Parent body (child table), dispatch, scope changes, merge order | Closing comment, or handoff |
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this seat pushes | Merge, or a handoff that names the next head owner |
-| Acceptor | One review round of one PR | Read-only reviewer | Review threads and the acceptance record row | The acceptance record row for its round |
+| Acceptor | One review round of one PR | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its round |
 | Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner seat) | Merge done, or handoff |
 
 Rules that keep the topology safe:
@@ -26,8 +26,10 @@ Rules that keep the topology safe:
   either asks the head owner on the board, or takes the head-owner seat
   through a handoff comment first. Two pushers on one branch lose work.
 - **Acceptor ≠ writer.** The acceptor of a round did not write the subject
-  SHA. For the High tier, the acceptor is also from a different model
-  family.
+  SHA. For the High tier, prefer an acceptor from a different model family.
+  When no other family is available, use a fresh same-family context and
+  record `model_relation: same-family` in the acceptance record. A
+  same-family review does not block the merge.
 - **A coordinator of a sub-tree does not write in it.** A child issue that
   turns out to be large becomes a parent. Its claimant becomes the
   coordinator of that sub-tree, opens grandchildren and dispatches them.
@@ -105,8 +107,8 @@ lines, then at most a short free-text body. The exact shapes are in
 | `scope change` | Issue | Coordinator | The issue body changed: what, why, who is affected |
 | `decision` | Issue (parent for cross-issue ones) | Coordinator | A decision that the body does not hold yet, with its reason |
 | `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a seat. Names prior claim, next holder, exact state |
-| `acceptance claim` | PR | Acceptor | Take a review round: seat, round, subject SHA, tier |
-| `acceptance record` | PR | Acceptor or coordinator | Round table: seat, subject SHA, verdict, findings |
+| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: seat, round, subject SHA, tier (`acceptor.md`) |
+| `acceptance record` | PR | Acceptor or coordinator | Round table: seat, subject SHA, verdict, findings, `model_relation` (`acceptor.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; or a merge result with the executor exit code |
 
@@ -119,21 +121,23 @@ Board rules:
    a child body by the coordinator through a `scope change`).
 2. **Address and answer.** A comment that needs an answer has a `To:` line
    that names a seat (`To: writer #1147`). The answer has a `Re: <comment
-   URL>` line. The agents can share one GitHub login, so @mentions do not
-   route. Seats route.
+   URL>` line. A shared GitHub login is not an agent identity, so @mentions
+   do not route. Every seat holder uses the identity from its claim
+   (`Agent: <kind>, session <id>`) in every later comment. Seats route.
 3. **Read before you act, read back after you post.** Read the full thread
    (`gh issue view <n> --comments`, `gh pr view <n> --comments`; paginate
    with `gh api` for long threads) before you act. After you post, read the
-   comment back and keep its URL. If delivery is uncertain, read before you
-   retry. Never post the same claim twice.
+   comment back and keep its URL. Confirm that the published body contains
+   every required field. Never post the same claim twice.
 4. **Evidence by reference.** Link CI runs, commits and files. Paste at most
    about 20 lines of log. Never paste secrets, tokens, private host paths
    or environment files.
 5. **Line findings go in review threads.** A finding about specific lines
    is a PR review comment on those lines. Its first word is the severity
-   (`P1`, `P2`, `P3`). The head owner replies with the fix SHA. The
-   reviewer who opened the thread resolves it after checking the fix.
-   Do not resolve another reviewer's thread.
+   (`P1`, `P2`, `NIT`). The head owner replies with the fix SHA and does
+   not resolve the thread. Only the acceptor of that round resolves it
+   after the next round confirms the fix. The coordinator may resolve a
+   thread with a written rejection reason. See `acceptor.md`.
 6. **Nudge with a link.** To wake an agent, send it the comment URL
    through the host channel (a Herdr prompt, a session message). The
    comment is the instruction. A message that differs from the board loses.
@@ -143,6 +147,9 @@ Board rules:
    files. A decision that must outlive the issues (an architecture rule)
    goes into the architecture model or the `docs/architecture/` prose, and
    the map shows it.
+8. **Stop on an uncertain read or post.** When a board read fails, or you
+   cannot confirm that a comment was delivered, stop and report the failure.
+   Read back before you retry an uncertain post.
 
 ## Waking up
 
