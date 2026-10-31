@@ -59,7 +59,7 @@ interface FleetTarget {
   readonly registry: RepoHarnessRegistrySnapshot;
 }
 
-class FleetMcpError extends Error {
+export class FleetMcpError extends Error {
   constructor(
     readonly code: string,
     message: string,
@@ -231,12 +231,26 @@ function pullRequestSelection(args: Record<string, unknown>) {
   };
 }
 
-/** The same executor as `repo-harness publication merge`, bound to a read_write granted checkout of the repository. */
-function callPublicationMerge(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
+/**
+ * Resolve the exact target repository from the adopted registry and require its
+ * explicit read_write grant. This is the only write-authorized target check on
+ * the MCP surface; merge_pull_request and review_publish both use it.
+ */
+export function resolveGrantedWriteTarget(
+  ctx: FleetMcpToolContext,
+  args: Record<string, unknown>,
+  tool: string,
+): { readonly repoRoot: string; readonly registeredRepo: RepoHarnessRegisteredRepo } {
   const target = targetFromArgs(ctx, args);
   if (target.registeredRepo?.accessMode !== 'read_write') {
-    throw new FleetMcpError('REPO_NOT_ALLOWED', 'merge_pull_request requires an adopted repo with an explicit read_write grant');
+    throw new FleetMcpError('REPO_NOT_ALLOWED', `${tool} requires an adopted repo with an explicit read_write grant`);
   }
+  return { repoRoot: target.repoRoot, registeredRepo: target.registeredRepo };
+}
+
+/** The same executor as `repo-harness publication merge`, bound to a read_write granted checkout of the repository. */
+function callPublicationMerge(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
+  const target = resolveGrantedWriteTarget(ctx, args, PUBLICATION_MERGE_TOOL_NAME);
   const selection = pullRequestSelection(args);
   try { assertLocalPullRequestRepository(target.repoRoot, selection.repository); }
   catch (error) { throw new FleetMcpError('REPO_NOT_ALLOWED', error instanceof Error ? error.message : String(error)); }
