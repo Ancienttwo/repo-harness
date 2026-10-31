@@ -7,7 +7,10 @@ import {
 } from '../../core/evidence/required-check-evidence';
 import {
   projectPullRequestMergeReadiness,
+  unobservedStackDetail,
   type MergeReadinessObservation,
+  type MergeReadinessStackDetailV1,
+  type MergeReadinessStackEntryV1,
   type PullRequestReadinessV2,
   type PullRequestSelectionV2,
   type ProviderMergeReadinessFactsV1,
@@ -142,6 +145,10 @@ function string(value: unknown, label: string): string {
     throw new MergeReadinessError('provider_data_incomplete', `${label} is required`);
   }
   return value;
+}
+
+function validSha(value: unknown): value is string {
+  return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 }
 
 function githubArguments(input: PublicationReadinessInput, args: readonly string[]): readonly string[] {
@@ -983,13 +990,18 @@ function selectionOf(input: PullRequestReadinessInput): PullRequestSelectionV2 {
     pr_number: input.pr_number, expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha });
 }
 
-function confirmRepository(input: PullRequestReadinessInput, identity: ProviderIdentity, rest: unknown): ProviderIdentity {
+interface ProviderReadinessTarget {
+  readonly identity: ProviderIdentity;
+  readonly default_branch: string;
+}
+
+function confirmRepositoryIdentity(input: PullRequestReadinessInput, identity: ProviderIdentity, rest: unknown): string {
   const repository = object(rest, 'REST repository');
   const defaultBranch = string(repository.default_branch, 'REST repository default_branch');
   if (!Number.isSafeInteger(repository.id) || Number(repository.id) < 1 || String(repository.id) !== input.provider_repository_id
     || repository.node_id !== identity.provider_repo_id || repository.full_name !== input.repository
-    || identity.repo_name_with_owner !== input.repository || identity.base_ref !== defaultBranch) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
-  return identity;
+    || identity.repo_name_with_owner !== input.repository) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
+  return defaultBranch;
 }
 
 /**
@@ -998,39 +1010,226 @@ function confirmRepository(input: PullRequestReadinessInput, identity: ProviderI
  * by any provider stand-in: `changedFiles` sets the exact coverage page count.
  */
 const PR_IDENTITY_FIELDS = 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,changedFiles,mergeable';
-export function observeProviderReadinessIdentity(input: PullRequestReadinessInput): ProviderIdentity {
+
+/**
+ * The readiness target keeps the repository default branch. Stack detection
+ * needs it to decide membership; the strict identity adapter below rejects a
+ * non-default base for every other consumer.
+ */
+function observeProviderReadinessTarget(input: PullRequestReadinessInput): ProviderReadinessTarget {
   selectionOf(input);
   const identity = parseProviderPullRequestIdentity(input.pr_number,
     gh(input, ['repo', 'view', '--json', 'id,nameWithOwner']),
     gh(input, ['pr', 'view', String(input.pr_number), '--json', PR_IDENTITY_FIELDS]));
-  return confirmRepository(input, identity, gh(input, ['api', `repos/${input.repository}`]));
+  return { identity, default_branch: confirmRepositoryIdentity(input, identity, gh(input, ['api', `repos/${input.repository}`])) };
+}
+
+export function observeProviderReadinessIdentity(input: PullRequestReadinessInput): ProviderIdentity {
+  const target = observeProviderReadinessTarget(input);
+  if (target.identity.base_ref !== target.default_branch) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
+  return target.identity;
 }
 
 export interface AbortablePullRequestReadinessInput extends Omit<AbortablePublicationReadinessInput, 'repository'>, PullRequestSelectionV2 {}
-export async function observeProviderReadinessIdentityAbortable(input: AbortablePullRequestReadinessInput): Promise<ProviderIdentity> {
+
+async function observeProviderReadinessTargetAbortable(input: AbortablePullRequestReadinessInput): Promise<ProviderReadinessTarget> {
   selectionOf(input);
   const repo = await ghAbortable(input, ['repo', 'view', '--json', 'id,nameWithOwner']);
   const pr = await ghAbortable(input, ['pr', 'view', String(input.pr_number), '--json', PR_IDENTITY_FIELDS]);
-  return confirmRepository(input, parseProviderPullRequestIdentity(input.pr_number, repo, pr), await ghAbortable(input, ['api', `repos/${input.repository}`]));
+  const identity = parseProviderPullRequestIdentity(input.pr_number, repo, pr);
+  return { identity, default_branch: confirmRepositoryIdentity(input, identity, await ghAbortable(input, ['api', `repos/${input.repository}`])) };
 }
 
-function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation): PullRequestReadinessV2 {
+export async function observeProviderReadinessIdentityAbortable(input: AbortablePullRequestReadinessInput): Promise<ProviderIdentity> {
+  const target = await observeProviderReadinessTargetAbortable(input);
+  if (target.identity.base_ref !== target.default_branch) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
+  return target.identity;
+}
+
+const STACK_DEPTH_LIMIT = 20;
+/** GitHub returns at most 100 PRs for one list request; a full page is not exhaustive. */
+const STACK_PR_LIST_LIMIT = 100;
+const STACK_PR_FIELDS = 'number,state,headRefOid,headRefName,baseRefOid,baseRefName,isCrossRepository';
+
+interface ProviderStackPullRequest {
+  readonly pr_number: number;
+  readonly state: 'OPEN' | 'CLOSED' | 'MERGED';
+  readonly head_ref: string;
+  readonly head_sha: string;
+  readonly base_ref: string;
+  readonly base_sha: string;
+  readonly cross_repository: boolean;
+}
+
+function providerStackPullRequest(value: unknown): ProviderStackPullRequest {
+  const pr = object(value, 'provider stack pull request');
+  if (!Number.isSafeInteger(pr.number) || Number(pr.number) < 1
+    || !['OPEN', 'CLOSED', 'MERGED'].includes(String(pr.state))
+    || typeof pr.headRefName !== 'string' || pr.headRefName.trim() === ''
+    || typeof pr.baseRefName !== 'string' || pr.baseRefName.trim() === ''
+    || !validSha(pr.headRefOid) || !validSha(pr.baseRefOid)
+    || typeof pr.isCrossRepository !== 'boolean') {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider stack pull request is incomplete');
+  }
+  return Object.freeze({
+    pr_number: Number(pr.number), state: String(pr.state) as ProviderStackPullRequest['state'],
+    head_ref: pr.headRefName, head_sha: pr.headRefOid, base_ref: pr.baseRefName, base_sha: pr.baseRefOid,
+    cross_repository: pr.isCrossRepository,
+  });
+}
+
+function providerStackList(value: unknown): readonly ProviderStackPullRequest[] {
+  if (!Array.isArray(value)) throw new MergeReadinessError('provider_data_incomplete', 'provider stack pull request list is invalid');
+  if (value.length >= STACK_PR_LIST_LIMIT) throw new MergeReadinessError('provider_data_incomplete', 'provider stack pull request list is not exhaustive');
+  return Object.freeze(value.map(providerStackPullRequest));
+}
+
+function stackFailure(status: MergeReadinessStackDetailV1['status'], chain: readonly MergeReadinessStackEntryV1[]): MergeReadinessStackDetailV1 {
+  return Object.freeze({ member: true, depth: chain.length - 1, chain: Object.freeze([...chain]), final_base_sha: null, status });
+}
+
+/**
+ * Follow the baseRefName chain from the observed PR to the default branch.
+ * Every request names the branch observed on the previous link. The loop stops
+ * on a repeated PR number or branch, a missing or closed base PR, a foreign PR,
+ * or the depth bound; none of these returns a complete chain.
+ */
+function* stackProtocol(
+  identity: ProviderIdentity,
+  defaultBranch: string,
+): Generator<string, MergeReadinessStackDetailV1, readonly ProviderStackPullRequest[]> {
+  if (identity.base_ref === defaultBranch) {
+    return Object.freeze({ member: false, depth: 0, chain: Object.freeze([]), final_base_sha: null, status: 'not_member' as const });
+  }
+  const member: MergeReadinessStackEntryV1 = Object.freeze({
+    pr_number: identity.pr_number, head_ref: identity.head_ref, head_sha: identity.head_sha,
+    base_ref: identity.base_ref, base_sha: identity.base_sha,
+  });
+  const chain: MergeReadinessStackEntryV1[] = [member];
+  const seenNumbers = new Set<number>([identity.pr_number]);
+  // Only branches used as a lookup key form the chain; a head ref is not a cycle
+  // by itself, and a PR from the default branch is still a member.
+  const seenRefs = new Set<string>([identity.base_ref]);
+  let baseRef = identity.base_ref;
+  for (;;) {
+    if (baseRef === defaultBranch) {
+      return Object.freeze({
+        member: true, depth: chain.length - 1, chain: Object.freeze([...chain]),
+        final_base_sha: chain[chain.length - 1]!.base_sha, status: 'complete' as const,
+      });
+    }
+    if (chain.length - 1 >= STACK_DEPTH_LIMIT) return stackFailure('depth_exceeded', chain);
+    const matching = (yield baseRef).filter(pr => pr.head_ref === baseRef);
+    const open = matching.filter(pr => pr.state === 'OPEN');
+    if (open.length === 0) return stackFailure(matching.length === 0 ? 'base_pr_missing' : 'base_pr_not_open', chain);
+    if (open.length > 1) {
+      throw new MergeReadinessError('provider_data_incomplete', `provider returned ${open.length} open pull requests for stack base ${baseRef}`);
+    }
+    const base = open[0]!;
+    if (base.cross_repository) return stackFailure('foreign_pr', chain);
+    if (seenNumbers.has(base.pr_number) || seenRefs.has(base.base_ref)) return stackFailure('cycle', chain);
+    const entry: MergeReadinessStackEntryV1 = Object.freeze({
+      pr_number: base.pr_number, head_ref: base.head_ref, head_sha: base.head_sha,
+      base_ref: base.base_ref, base_sha: base.base_sha,
+    });
+    chain.push(entry);
+    seenNumbers.add(entry.pr_number);
+    seenRefs.add(entry.base_ref);
+    baseRef = entry.base_ref;
+  }
+}
+
+function observeStack(target: ProviderReadinessTarget, input: PublicationReadinessInput): MergeReadinessStackDetailV1 {
+  const protocol = stackProtocol(target.identity, target.default_branch);
+  let request = protocol.next();
+  while (!request.done) {
+    const list = gh(input, ['pr', 'list', '--head', request.value, '--state', 'all', '--json', STACK_PR_FIELDS, '--limit', String(STACK_PR_LIST_LIMIT)]);
+    request = protocol.next(providerStackList(list));
+  }
+  return request.value;
+}
+
+async function observeStackAbortable(target: ProviderReadinessTarget, input: AbortablePublicationReadinessInput): Promise<MergeReadinessStackDetailV1> {
+  const protocol = stackProtocol(target.identity, target.default_branch);
+  let request = protocol.next();
+  while (!request.done) {
+    const list = await ghAbortable(input, ['pr', 'list', '--head', request.value, '--state', 'all', '--json', STACK_PR_FIELDS, '--limit', String(STACK_PR_LIST_LIMIT)]);
+    request = protocol.next(providerStackList(list));
+  }
+  return request.value;
+}
+
+function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1): PullRequestReadinessV2 {
   return Object.freeze({ protocol: 2, kind: 'repo-harness-pull-request-readiness', ...selectionOf(input),
     ...projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
-      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider }) });
+      integration_mode: provider?.state === 'MERGED' ? 'ancestor' : 'unmerged', observation, provider, stack }) });
 }
 
-/** One observation loop for both open-PR readiness and exact merged-PR evidence. */
+/** One observation loop for exact merged-PR evidence. The stack is fenced with the identity. */
 function stablePullRequestRound<T>(input: PullRequestReadinessInput, observeExtra: (identity: ProviderIdentity) => T) {
   for (let attempt = 0; attempt < 2; attempt++) {
-    const before = observeProviderReadinessIdentity(input);
-    const extra = observeExtra(before);
-    const facts = observeProviderReadinessFacts(before, input, input);
-    const after = observeProviderReadinessIdentity(input);
-    const extraAfter = observeExtra(after);
-    if (identityBytes(before) === identityBytes(after) && JSON.stringify(extra) === JSON.stringify(extraAfter)) {
-      return { identity: after, facts, extra };
+    const before = observeProviderReadinessTarget(input);
+    const extra = observeExtra(before.identity);
+    const stack = observeStack(before, input);
+    const facts = observeProviderReadinessFacts(before.identity, input, input);
+    const after = observeProviderReadinessTarget(input);
+    const extraAfter = observeExtra(after.identity);
+    const stackAfter = observeStack(after, input);
+    if (identityBytes(before.identity) === identityBytes(after.identity)
+      && JSON.stringify(extra) === JSON.stringify(extraAfter)
+      && JSON.stringify(stack) === JSON.stringify(stackAfter)) {
+      return { identity: after.identity, facts, extra, stack: stackAfter };
     }
+  }
+  return null;
+}
+
+interface ReadinessRound {
+  readonly facts: ProviderMergeReadinessFactsV1 | null;
+  readonly stack: MergeReadinessStackDetailV1;
+}
+
+/**
+ * Readiness observes only the identity and the chain for a stack member. Own-base
+ * checks, reviews and coverage are not read: that evidence proves the PR only
+ * against its feature base, not against the default branch.
+ */
+function stableReadinessRound(input: PullRequestReadinessInput): ReadinessRound | null {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = observeProviderReadinessTarget(input);
+    const stack = observeStack(before, input);
+    if (stack.member) {
+      const after = observeProviderReadinessTarget(input);
+      const stackAfter = observeStack(after, input);
+      if (identityBytes(before.identity) === identityBytes(after.identity)
+        && JSON.stringify(stack) === JSON.stringify(stackAfter)) return { facts: null, stack: stackAfter };
+      continue;
+    }
+    const facts = observeProviderReadinessFacts(before.identity, input, input);
+    const after = observeProviderReadinessTarget(input);
+    const stackAfter = observeStack(after, input);
+    if (identityBytes(before.identity) === identityBytes(after.identity)
+      && JSON.stringify(stack) === JSON.stringify(stackAfter)) return { facts, stack: stackAfter };
+  }
+  return null;
+}
+
+async function stableReadinessRoundAbortable(input: AbortablePullRequestReadinessInput): Promise<ReadinessRound | null> {
+  for (let attempt = 0; attempt < 2; attempt++) {
+    const before = await observeProviderReadinessTargetAbortable(input);
+    const stack = await observeStackAbortable(before, input);
+    if (stack.member) {
+      const after = await observeProviderReadinessTargetAbortable(input);
+      const stackAfter = await observeStackAbortable(after, input);
+      if (identityBytes(before.identity) === identityBytes(after.identity)
+        && JSON.stringify(stack) === JSON.stringify(stackAfter)) return { facts: null, stack: stackAfter };
+      continue;
+    }
+    const facts = await observeProviderReadinessFactsAbortable(before.identity, input, input);
+    const after = await observeProviderReadinessTargetAbortable(input);
+    const stackAfter = await observeStackAbortable(after, input);
+    if (identityBytes(before.identity) === identityBytes(after.identity)
+      && JSON.stringify(stack) === JSON.stringify(stackAfter)) return { facts, stack: stackAfter };
   }
   return null;
 }
@@ -1039,27 +1238,24 @@ function stablePullRequestRound<T>(input: PullRequestReadinessInput, observeExtr
 export function collectPullRequestMergeReadiness(input: PullRequestReadinessInput): PullRequestReadinessV2 {
   selectionOf(input);
   try {
-    const round = stablePullRequestRound(input, () => null);
-    return round ? readinessProjection(input, round.facts, 'stable') : readinessProjection(input, null, 'changed_during_read');
+    const round = stableReadinessRound(input);
+    return round ? readinessProjection(input, round.facts, 'stable', round.stack)
+      : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
   } catch (error) {
     if (!(error instanceof MergeReadinessError)) throw error;
-    return readinessProjection(input, null, error.code);
+    return readinessProjection(input, null, error.code, unobservedStackDetail());
   }
 }
 
 export async function collectPullRequestMergeReadinessAbortable(input: AbortablePullRequestReadinessInput): Promise<PullRequestReadinessV2> {
   selectionOf(input);
   try {
-    for (let attempt = 0; attempt < 2; attempt++) {
-      const before = await observeProviderReadinessIdentityAbortable(input);
-      const facts = await observeProviderReadinessFactsAbortable(before, input, input);
-      const after = await observeProviderReadinessIdentityAbortable(input);
-      if (identityBytes(before) === identityBytes(after)) return readinessProjection(input, facts, 'stable');
-    }
-    return readinessProjection(input, null, 'changed_during_read');
+    const round = await stableReadinessRoundAbortable(input);
+    return round ? readinessProjection(input, round.facts, 'stable', round.stack)
+      : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
   } catch (error) {
     if (!(error instanceof MergeReadinessError)) throw error;
-    return readinessProjection(input, null, error.code);
+    return readinessProjection(input, null, error.code, unobservedStackDetail());
   }
 }
 
@@ -1099,7 +1295,8 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
   });
   if (!round) throw new MergeReadinessError('provider_data_incomplete', 'integration selection changed during read');
   const verdict = projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha,
-    expected_base_sha: input.expected_base_sha, integration_mode: 'ancestor', observation: 'stable', provider: round.facts });
+    expected_base_sha: input.expected_base_sha, integration_mode: 'ancestor', observation: 'stable', provider: round.facts,
+    stack: round.stack });
   // These three blockers describe merge lifecycle, not CI/review acceptance of an already merged PR.
   const blockers = verdict.blockers.filter(blocker => !['already_integrated', 'pr_not_open', 'not_mergeable'].includes(blocker.code));
   if (blockers.length) throw new MergeReadinessError('provider_data_incomplete', `integrated PR evidence refused: ${blockers.map(blocker => blocker.code).join(', ')}`);

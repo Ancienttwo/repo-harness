@@ -208,7 +208,7 @@ it('cancels both injected loops without further reads or an acceptance result', 
 });
 
 async function snapshot(f: Fixture): Promise<PrSnapshot> { return (await observe(f)).snapshot; }
-it('keeps ready stack segments observational and records a moved base', async () => {
+it('keeps stack members observational and records a moved base', async () => {
   const root = fixture();
   const stack = [
     root,
@@ -225,8 +225,13 @@ it('keeps ready stack segments observational and records a moved base', async ()
   expect(prefix).toEqual([1]);
   expect(wr.map(row => Number(row.context.number))).toEqual([1, 2, 3]);
   expect(decisions).toEqual(['ready', 'waiting', 'ready']);
-  expect(bs[2].blockers.map(b => b.code)).toContain('base_moved_since_verification');
-  report.stackSegments = { pureHarnessReadyPrefix: prefix, observerRowDecisions: decisions,
+  // The pure predicate observes one row, so a non-default base is a member
+  // with an unobserved chain. It cannot become ready on its own facts.
+  expect(bs[0].blockers).toEqual([]);
+  expect(bs[1].blockers.map(b => b.code)).toEqual(['stack_member', 'checks_pending']);
+  expect(bs[2].blockers.map(b => b.code)).toEqual(['stack_member', 'base_moved_since_verification']);
+  const pureHarnessBlockers = bs.map(row => row.blockers.map(b => b.code));
+  report.stackSegments = { pureHarnessReadyPrefix: prefix, pureHarnessBlockers, observerRowDecisions: decisions,
     observerTopReadyAfterBaseMove: true, semantics: 'Neither a per-row observer result nor a contiguous segment authorizes a stack merge.' };
 });
 
