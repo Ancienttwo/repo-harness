@@ -27,6 +27,7 @@ import {
   runProviderEval,
   perfectEchoRouteFor,
   buildAggregateReport,
+  AGGREGATE_ADVISORY_REASON,
   buildSubjectFreeze,
   filterPathsPresentAtHead,
   type DiscoveredSkillSurfaceEntry,
@@ -754,7 +755,9 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
       expect(aggregate.protocol).toBe(1);
       expect(aggregate.evidence_scope).toBe("aggregate_package_acceptance");
-      expect(aggregate.evidence_note).toContain("Package acceptance signal");
+      expect(aggregate.advisory).toBe(true);
+      expect(aggregate.advisory_reason).toBe(AGGREGATE_ADVISORY_REASON);
+      expect(aggregate.evidence_note).toContain("ADVISORY EVIDENCE, NOT A MERGE GATE");
       expect(aggregate.records).toHaveLength(68);
       expect(aggregate.case_sources).toHaveLength(68);
       expect(aggregate.metrics.excluded_unreachable_count).toBe(0);
@@ -909,6 +912,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       );
       expect(agg.status).toBe(0);
       expect(agg.stdout).toContain("aggregate OK");
+      expect(agg.stdout).toContain("advisory=true");
 
       const aggregateReport = JSON.parse(readFileSync(aggregateReportPath, "utf-8"));
       expect(aggregateReport.evidence_scope).toBe("aggregate_package_acceptance");
@@ -935,6 +939,16 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(result.stdout).toContain("aggregate --report");
     }, 30_000);
   });
+});
+
+test("committed aggregate marks its floors advisory, not a merge gate, and keeps the measured result", () => {
+  const aggregate = JSON.parse(readFileSync(join(ROOT, "evals/skill-routing/routing-aggregate.json"), "utf8"));
+  expect(aggregate.advisory).toBe(true);
+  expect(aggregate.advisory_reason).toBe(AGGREGATE_ADVISORY_REASON);
+  expect(aggregate.evidence_note).toContain("ADVISORY EVIDENCE, NOT A MERGE GATE");
+  expect(aggregate.thresholds.overall_pass).toBe(false);
+  expect(aggregate.metrics.top1_accuracy).toEqual({ numerator: 4, denominator: 42, rate: 4 / 42 });
+  expect(aggregate.thresholds.per_route_recall["merge-gate"]).toEqual({ floor: 0.9, actual: 1, pass: true, reachable: true });
 });
 
 test("committed full-profile routing reports match their sidecars", () => {
