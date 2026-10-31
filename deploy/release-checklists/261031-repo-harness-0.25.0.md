@@ -35,8 +35,9 @@ The owner runs `npm publish`; the agent does not publish.
 - IPDD single source: the issue-flow skill is the only flow source (#1223);
   the root rules are cross-layer invariants only (#1226); the duplicated flow
   reference docs are retired (#1227); the handoff session recovery is retired
-  (#1228); init and update ship the IPDD root context and migrate the retired
-  copies (#1229); only the coordinator posts claims (#1278); review has one
+  (#1228); init ships the IPDD root context and the registered upgrade
+  migrates the retired copies (#1229); only the coordinator posts claims
+  (#1278); review has one
   hazard list and a High tier on a hit (#1274); CI repair issues are keyed by
   the failing test identity (#1275); research and durable decisions have one
   home (#1250); the fleet known-gaps table is recorded (#1272); publication
@@ -50,19 +51,25 @@ The owner runs `npm publish`; the agent does not publish.
 
 ## Upgrade steps for users
 
-- From 0.24.3: run `repo-harness update`.
+- From 0.24.3: run `repo-harness update`. It refreshes the global runtime and
+  skills. It prints a read-only registered-repo upgrade summary and does not
+  change project files.
+- Run `repo-harness upgrade --registered` to preview each registered
+  repository and its registry revision.
+- Confirm the repository and the revision, then run
+  `repo-harness upgrade --registered --apply --expected-revision <revision>`
+  to apply the IPDD root-context and reference-config migration (#1229). It
+  writes `CLAUDE.md` and `AGENTS.md` from
+  `assets/templates/root-context.md` only when their bytes match a shipped
+  generated version. It removes the six retired flow reference docs and the
+  empty `docs/architecture/domains` and `docs/architecture/snapshots`
+  placeholders. A modified file is kept and reported.
 - The local plan/sprint/contract/review/notes/workstream files are no longer
   read. Move any PRDs to `docs/prds/`; task identity now lives in GitHub
   issues and PRs.
 - Remove local `check:task-*` scripts. The upgrade removes the exact legacy
   `repo-harness run check-task-workflow --strict` entry and does not seed
   `check:task-sync`.
-- `repo-harness update` applies the IPDD root-context and reference-config
-  migration (#1229). It writes `CLAUDE.md` and `AGENTS.md` from
-  `assets/templates/root-context.md` only when their bytes match a shipped
-  generated version. It removes the six retired flow reference docs and the
-  empty `docs/architecture/domains` and `docs/architecture/snapshots`
-  placeholders. A modified file is kept and reported.
 - The Stop hook no longer writes, and Effective State no longer reads,
   `.ai/harness/handoff/current.md` and `resume.md` (#1228). Resume from Git
   state, the GitHub issue and the PR.
@@ -71,10 +78,12 @@ The owner runs `npm publish`; the agent does not publish.
 
 - Dispatch: `gh workflow run ci.yml --repo Ancienttwo/repo-harness --ref main`
   at 2026-10-31T18:58:10Z on `30bca275`.
-- Run 41231939960. Status at record time: in progress. Recorded from run
-  41231939960.
-- Daily jobs must include Daily architecture freshness and both MCP path
-  matrices. PR-only jobs are skipped by design in daily mode.
+- Run 41231939960. Result: success at 2026-10-31T19:08:31Z. Daily architecture
+  freshness, both MCP path matrices, Daily full tests and package, Daily
+  governance and Native OAR acceptance (macOS) passed. PR-only jobs were
+  skipped by design.
+- Daily mode runs Daily architecture freshness and both MCP path matrices.
+  PR-only jobs are skipped by design.
 
 ## Acceptance environment
 

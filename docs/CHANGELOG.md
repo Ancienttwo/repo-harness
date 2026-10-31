@@ -42,9 +42,12 @@ All notable changes to this skill are documented here.
 
 - `repo-harness init` writes `CLAUDE.md` and `AGENTS.md` from one root-context
   template, `assets/templates/root-context.md`. (#1229)
-- `repo-harness update` removes the six retired flow reference docs
-  (`contract-brief-example.md`, `contract-brief-example-bugfix.md`,
-  `development-protocol.md`, `handoff-protocol.md`, `sprint-contracts.md` and
+- `repo-harness update` refreshes the global runtime and skills. It prints a
+  read-only registered-upgrade preview and does not change project files.
+- `repo-harness upgrade --registered --apply` removes the six retired flow
+  reference docs (`contract-brief-example.md`,
+  `contract-brief-example-bugfix.md`, `development-protocol.md`,
+  `handoff-protocol.md`, `sprint-contracts.md` and
   `workflow-orchestration.md`) and the empty `docs/architecture/domains` and
   `docs/architecture/snapshots` placeholders. A modified file is kept and
   reported. (#1229)
