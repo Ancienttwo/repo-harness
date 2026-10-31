@@ -93,6 +93,10 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   you act. Follow the repository's issue-claim rules. Only the coordinator
   posts `issue claim`; a worker starts from the claim that names it.
   Silence or an old timestamp does not release a claim.
+- Before you claim or comment on a repair issue, search its test name,
+  read every comment, and take a posted patch first. Do not post a
+  "seen again" comment; the reporter appends evidence through `report-ci`
+  only.
 - One child issue has one write scope. It has one PR, or PR slots that the
   issue names in advance. Parallel workers never share a file.
 - One head owner per PR. Any other agent asks on the board, or takes the

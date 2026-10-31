@@ -378,6 +378,16 @@ describe("repo-harness action command skills", () => {
     for (const text of [skill, orchestrator, board, templates]) expect(text).not.toContain("gh pr merge");
   });
 
+  test("issue-flow requires reading a repair issue and taking its patch before acting", () => {
+    const skill = readSkillPackage("repo-harness-issue-flow");
+
+    expect(skill).toContain("Before you claim or comment on a repair issue");
+    expect(skill).toContain("search its test name");
+    expect(skill).toContain("read every comment");
+    expect(skill).toContain("take a posted patch first");
+    expect(skill).toContain("report-ci");
+  });
+
   test("product Goal mode binds native continuation to the current issue and claim", () => {
     const goal = readReference("repo-harness-product", "goal.md");
 
