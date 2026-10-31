@@ -116,6 +116,7 @@ const READBACK_DELAYS_MS = readbackDelays(READBACK_WINDOW_MS);
 /** The executor's own test seam; the CLI and MCP never set it. */
 type PublicationMergeInput = PullRequestReadinessInput & {
   readonly readback_wait?: (milliseconds: number) => void;
+  readonly readback_now?: () => number;
 };
 
 function waitForReadback(milliseconds: number): void {
@@ -130,7 +131,7 @@ interface ProviderResult {
 }
 
 /** Every call names github.com and the repository; nothing depends on the current directory's remote. */
-function runGh(input: PullRequestReadinessInput, args: readonly string[]): ProviderResult {
+function runGh(input: PullRequestReadinessInput, args: readonly string[], timeoutMs = PROVIDER_TIMEOUT_MS): ProviderResult {
   const full = args[0] === 'api' ? [...args, '--hostname', 'github.com'] : [...args];
   const injected = input.gh_runner?.(full);
   if (injected) return { status: injected.status, stdout: injected.stdout, stderr: injected.stderr ?? '' };
@@ -138,7 +139,7 @@ function runGh(input: PullRequestReadinessInput, args: readonly string[]): Provi
     cwd: input.repo_root,
     env: { ...process.env, GH_HOST: 'github.com' },
     encoding: 'utf-8',
-    timeout: PROVIDER_TIMEOUT_MS,
+    timeout: timeoutMs,
     killSignal: 'SIGKILL',
   });
   const failure = result.error?.message ?? (result.signal ? `terminated by ${result.signal}` : undefined);
@@ -373,15 +374,17 @@ type ReadbackValue =
   | { readonly ok: true; readonly value: Record<string, unknown> }
   | { readonly ok: false; readonly failure: string };
 
-function readbackValue(input: PublicationMergeInput, args: readonly string[]): ReadbackValue {
-  const result = runGh(input, args);
+function readbackValue(input: PublicationMergeInput, args: readonly string[], timeoutMs: number): ReadbackValue {
+  const result = runGh(input, args, timeoutMs);
   const value = result.failure || result.status !== 0 ? undefined : parseJson(result.stdout);
   return isObject(value) ? { ok: true, value } : { ok: false, failure: `readback failed: ${describeCall(args, result)}` };
 }
 
 /** One readback attempt: the PR is merged at the response SHA by one commit whose only parent is the expected base. */
-function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string): ProofAttempt {
-  const prRead = readbackValue(input, ['api', `repos/${input.repository}/pulls/${input.pr_number}`]);
+function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, deadline: number): ProofAttempt {
+  const now = input.readback_now ?? Date.now;
+  const remaining = () => Math.max(1, deadline - now());
+  const prRead = readbackValue(input, ['api', `repos/${input.repository}/pulls/${input.pr_number}`], remaining());
   if (!prRead.ok) return { kind: 'pending', evidence: prRead.failure };
   const pr = prRead.value;
   if (pr.merged === true && typeof pr.merge_commit_sha === 'string' && SHA.test(pr.merge_commit_sha) && pr.merge_commit_sha !== mergeCommitSha) {
@@ -393,7 +396,8 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
   if (pr.merged !== true || pr.merge_commit_sha !== mergeCommitSha || head !== input.expected_head_sha || base !== baseRef) {
     return { kind: 'pending', evidence, pr: evidence };
   }
-  const commitRead = readbackValue(input, ['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`]);
+  if (now() >= deadline) return { kind: 'pending', evidence, pr: evidence };
+  const commitRead = readbackValue(input, ['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`], remaining());
   if (!commitRead.ok) return { kind: 'pending', evidence: commitRead.failure, pr: evidence };
   const commit = commitRead.value;
   const parents = commit.parents;
@@ -407,16 +411,20 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
 
 /** Bounded retry: the merge request is sent once; only these readback attempts repeat. */
 function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string): void {
-  const deadline = Date.now() + READBACK_WINDOW_MS;
+  const now = input.readback_now ?? Date.now;
+  const deadline = now() + READBACK_WINDOW_MS;
   let lastPrEvidence: string | undefined;
   for (let attempt = 0; ; attempt++) {
-    const proof = attemptMergeProof(input, mergeCommitSha, baseRef);
+    if (now() >= deadline) {
+      throw new UnknownOutcome(`merge readback did not confirm the merge within ${READBACK_WINDOW_MS} ms: readback window exhausted${lastPrEvidence !== undefined ? `; last PR readback: ${lastPrEvidence}` : ''}`);
+    }
+    const proof = attemptMergeProof(input, mergeCommitSha, baseRef, deadline);
     if (proof.kind === 'proven') return;
     if (proof.kind === 'contradiction') {
       throw new UnknownOutcome(`merge readback contradicts the merge response: ${proof.evidence}`);
     }
     if (proof.pr !== undefined) lastPrEvidence = proof.pr;
-    const remaining = deadline - Date.now();
+    const remaining = deadline - now();
     if (attempt >= READBACK_DELAYS_MS.length || remaining <= 0) {
       const context = lastPrEvidence !== undefined && lastPrEvidence !== proof.evidence ? `; last PR readback: ${lastPrEvidence}` : '';
       throw new UnknownOutcome(`merge readback did not confirm the merge within ${READBACK_WINDOW_MS} ms: ${proof.evidence}${context}`);

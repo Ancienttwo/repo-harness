@@ -33,6 +33,10 @@ afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 interface MergeInProcessOptions {
   /** Internal seam: no real wait during the bounded readback window. */
   readonly readbackWait?: (milliseconds: number) => void;
+  /** Internal seam: deterministic clock for the bounded readback window. */
+  readonly readbackNow?: () => number;
+  /** Internal seam: simulate a slow provider call before the fake answer. */
+  readonly beforeCall?: (args: readonly string[]) => void;
 }
 
 function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
@@ -42,12 +46,14 @@ function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProc
     repo_root: scratch, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
     expected_head_sha: HEAD, expected_base_sha: BASE,
     gh_runner: (args) => {
+      options.beforeCall?.(args);
       calls.push([...args]);
       const prReadback = args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`;
       const response = fakeGhResponse(args, scenario, prReadback ? readbacks++ : 0);
       return { status: response.status as number, stdout: response.stdout, stderr: response.stderr };
     },
     ...(options.readbackWait ? { readback_wait: options.readbackWait } : {}),
+    ...(options.readbackNow ? { readback_now: options.readbackNow } : {}),
   });
   return { result, calls, mutations: calls.filter(isMergeMutation) };
 }
@@ -332,6 +338,21 @@ describe('publication merge execution', () => {
     const readbacks = calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`);
     expect(readbacks.length).toBeGreaterThan(1);
     expect(readbacks.length).toBeLessThanOrEqual(13);
+  });
+
+  test('a slow read that consumes the window starts no further readback', () => {
+    let now = 0;
+    const { result, calls, mutations } = mergeInProcess(passingScenario({ readbackSequence: ['open'] }), {
+      readbackNow: () => now,
+      readbackWait: () => { throw new Error('no wait after the deadline'); },
+      beforeCall: (args) => {
+        if (args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`) now += 30_000;
+      },
+    });
+    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain('did not confirm the merge within 30000 ms');
+    expect(mutations).toHaveLength(1);
+    expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(1);
   });
 
   test('a readback that shows a different merged SHA exits 5 with that SHA and the response SHA', () => {
