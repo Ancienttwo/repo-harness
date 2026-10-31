@@ -1,6 +1,8 @@
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { spawnSync } from 'node:child_process';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody } from '../src/core/operator/tests';
+import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/operator/tests';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -18,6 +20,38 @@ export interface CIReport {
 function positive(value: unknown): value is number { return Number.isSafeInteger(value) && Number(value) > 0; }
 function message(error: unknown): string { return error instanceof Error ? error.message : String(error); }
 function safeText(value: unknown): string { return String(value ?? '').replace(/[\x00-\x1f\x7f]/g, ' ').slice(0, 300); }
+
+/** One downloaded JUnit report; the path is for diagnostics only. */
+export interface TestReportFile { readonly path: string; readonly text: string }
+/** Reads one failed job's test report artifact. Null means the report is unavailable. */
+export type TestReportReader = (artifact: { readonly id: number; readonly name: string }) => Promise<readonly TestReportFile[] | null>;
+interface FailedJob { readonly name: string; readonly conclusion: string; readonly url: string }
+interface FailedTest { readonly file: string; readonly suite: string | null; readonly name: string; readonly jobs: FailedJob[] }
+
+/** The test name as the issue shows it; the suite keeps same-named tests apart. */
+function testNameOf(test: { readonly suite: string | null; readonly name: string }): string {
+  return test.suite === null ? test.name : `${test.suite} > ${test.name}`;
+}
+function testLabel(test: { readonly suite: string | null; readonly name: string }): string {
+  return safeText(testNameOf(test));
+}
+function testIdentity(test: { readonly file: string; readonly suite: string | null; readonly name: string }): string {
+  return `test:${safeText(`${test.file} > ${testNameOf(test)}`)}`;
+}
+/**
+ * The failed job that uploads one test report artifact. The artifact names are
+ * the contract of `.github/workflows/ci.yml`; change both together.
+ */
+function testReportJob(artifact: string, attempt: number, jobs: readonly FailedJob[]): FailedJob | null {
+  if (artifact === `junit-daily-${attempt}`) return jobs.find(job => job.name === 'Daily full tests and package') ?? null;
+  const shard = /^junit-affected-shard-(\d+)-(\d+)$/u.exec(artifact);
+  if (!shard || Number(shard[2]) !== attempt) return null;
+  return jobs.find(job => new RegExp(`^Affected tests \\(shard ${shard[1]}/[0-9]+\\)$`).test(job.name)) ?? null;
+}
+function failingTestDetail(failure: FailedTest): string {
+  return [`File: ${failure.file}`, `Test: ${testLabel(failure)}`, 'Failing jobs:',
+    ...failure.jobs.map(job => `- ${job.name}: ${job.conclusion}: ${job.url}`)].join('\n');
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return value !== null && typeof value === 'object' && !Array.isArray(value);
@@ -73,6 +107,69 @@ async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, titl
   return { issue_url: winner.html_url, delivery: 'reused' };
 }
 
+const TEST_REPORT_MAX_BYTES = 64 * 1024 * 1024;
+const TEST_REPORT_FILE_MAX_BYTES = 8 * 1024 * 1024;
+const TEST_REPORT_FILE_LIMIT = 5_000;
+
+/**
+ * Reads the failed jobs' JUnit reports. A repair identity is the report file
+ * and the test name, so one test that failed in several jobs stays one issue.
+ * A job with no readable report, or none that names a failed test, keeps the
+ * job identity and gets no test issue.
+ */
+async function readFailedTests(api: GitHubAPI, root: string, runId: number, attempt: number, jobs: readonly FailedJob[], read: TestReportReader): Promise<FailedTest[]> {
+  const artifacts = await githubPages(api, `${root}/actions/runs/${runId}/artifacts`, 'artifacts');
+  const failures = new Map<string, FailedTest>();
+  const seen = new Set<string>();
+  for (const artifact of artifacts) {
+    if (typeof artifact.name !== 'string' || !positive(artifact.id)) continue;
+    const job = testReportJob(artifact.name, attempt, jobs);
+    if (job === null || seen.has(job.name) || artifact.expired === true) continue;
+    if (typeof artifact.size_in_bytes === 'number' && artifact.size_in_bytes > TEST_REPORT_MAX_BYTES) continue;
+    seen.add(job.name);
+    let files: readonly TestReportFile[] | null;
+    try { files = await read({ id: artifact.id, name: artifact.name }); } catch { files = null; }
+    if (files === null) continue;
+    for (const file of files) {
+      let report: TestFileResultV1;
+      try { report = parseJUnitReport(file.text); } catch { continue; }
+      for (const testCase of report.cases) {
+        if (testCase.result !== 'failed') continue;
+        const suite = testCase.suite === null ? null : safeText(testCase.suite);
+        const name = safeText(testCase.name);
+        const identity = testIdentity({ file: report.file, suite, name });
+        const known = failures.get(identity);
+        if (known) { if (!known.jobs.some(entry => entry.name === job.name)) known.jobs.push(job); }
+        else failures.set(identity, { file: report.file, suite, name, jobs: [job] });
+      }
+    }
+  }
+  return [...failures.values()].sort((left, right) => testLabel(left) < testLabel(right) ? -1 : testLabel(left) > testLabel(right) ? 1 : 0);
+}
+
+function junitFiles(directory: string, files: TestReportFile[]): TestReportFile[] {
+  for (const entry of readdirSync(directory)) {
+    const target = join(directory, entry);
+    const stat = statSync(target);
+    if (stat.isDirectory()) junitFiles(target, files);
+    else if (entry.endsWith('.xml') && stat.size <= TEST_REPORT_FILE_MAX_BYTES && files.length < TEST_REPORT_FILE_LIMIT) files.push({ path: target, text: readFileSync(target, 'utf8') });
+  }
+  return files;
+}
+
+/** Downloads one test report artifact with the GitHub CLI; the report workflow grants actions:read. */
+export function ghTestReportReader(repo: string, runId: number): TestReportReader {
+  return async artifact => {
+    const directory = mkdtempSync(join(tmpdir(), 'repo-harness-ci-report-'));
+    try {
+      const result = spawnSync('gh', ['run', 'download', String(runId), '--repo', repo, '--name', artifact.name, '--dir', directory], {
+        encoding: 'utf8', timeout: 120_000, maxBuffer: 16 * 1024 * 1024,
+      });
+      return result.status === 0 ? junitFiles(directory, []) : null;
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  };
+}
+
 /** The daily CI job that checks render equivalence. Keep its provider identity stable. */
 export const ARCHITECTURE_JOB = 'Daily architecture freshness';
 /** The daily architecture job uploads this file; ci-report.yml downloads it here. */
@@ -119,7 +216,7 @@ export function architectureActionRow(summary: ArchitectureSummary | null, evide
   return row;
 }
 
-export async function reportCI(repo: string, runId: number, api: GitHubAPI, architecture?: ArchitectureInput): Promise<CIReport> {
+export async function reportCI(repo: string, runId: number, api: GitHubAPI, architecture?: ArchitectureInput, testReports?: TestReportReader): Promise<CIReport> {
   if (!/^[\w.-]+\/[\w.-]+$/.test(repo) || !positive(runId)) throw new Error('Invalid provider repository/run identity');
   const root = `/repos/${repo}`;
   const run = record(await api(`${root}/actions/runs/${runId}`), 'CI run');
@@ -134,14 +231,14 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
   const report: CIReport = { run_id: runId, run_attempt: run.run_attempt, sha: run.head_sha,
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
   // The marker key stays the dedupe identity. An architecture repair only changes the title and body.
-  const repair = async (identity: string, detail: string, requireOpen = false, cause?: { subject: string; body: string }): Promise<void> => {
+  const repair = async (identity: string, detail: string, requireOpen = false, cause?: { subject: string; body: string }, subject?: string): Promise<void> => {
     const key = requireOpen ? `${CI_REPAIR_KEY_PREFIX}${identity}` : `${CI_REPAIR_KEY_PREFIX}${run.id}:${run.run_attempt}:${identity}`;
     const action = cause ? `${cause.body}\n\nFollow this action in a repair PR. Do not weaken assertions.`
       : 'Investigate the real failure; open a repair PR and run typecheck + affected tests once. Do not weaken assertions.';
     try {
       const task = await ensureRepairIssue(api, root, key,
-        `[CI repair] ${safeText(cause?.subject ?? identity)} @ ${headSha.slice(0, 12)}`,
-        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${identity}\n\n${safeText(detail)}\n\n${action} Credentials/permissions and production operations require user approval.`, requireOpen,
+        `[CI repair] ${safeText(cause?.subject ?? subject ?? identity)} @ ${headSha.slice(0, 12)}`,
+        `Fixed main SHA: \`${run.head_sha}\`\nRun: ${run.html_url}\nAttempt: ${run.run_attempt}\nCheck: ${safeText(identity)}\n\n${detail}\n\n${action} Credentials/permissions and production operations require user approval.`, requireOpen,
         `<!-- ci-repair-evidence:${run.id}:${run.run_attempt} -->`);
       report.repairs.push({ key, ...task });
     } catch (error) {
@@ -175,13 +272,29 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       const jobs = await githubPages(api, `${root}/actions/runs/${run.id}/attempts/${run.run_attempt}/jobs`, 'jobs');
       const failures = jobs.filter(job => job.conclusion !== 'success' && job.conclusion !== 'skipped');
       if (!failures.length) await repair(`run-${run.id}`, `Run concluded ${run.conclusion}; no successful complete daily observation.`);
+      const failed: FailedJob[] = [];
       for (const job of failures) {
         // Job/check identity comes from GitHub, never a locally generated check receipt.
         if (!positive(job.id) || typeof job.check_run_url !== 'string') throw new Error('Failed job has no check identity');
         const check = record(await api(new URL(job.check_run_url).pathname), 'Failed check');
         if (!positive(check.id)) throw new Error('Failed check identity unavailable');
-        // The job name is the repair key: a later attempt or daily run reuses the open issue.
-        await repair(`job:${safeText(job.name)}`, `${safeText(job.name)}: ${safeText(job.conclusion)}. Check: ${check.html_url ?? job.check_run_url}`,
+        failed.push({ name: safeText(job.name), conclusion: safeText(job.conclusion),
+          url: safeText(typeof check.html_url === 'string' ? check.html_url : job.check_run_url) });
+      }
+      // A named failing test is the dedupe identity; the job identity is the fallback when no report names one.
+      let tests: FailedTest[] = [];
+      if (testReports && failed.length) {
+        try { tests = await readFailedTests(api, root, run.id, run.run_attempt, failed, testReports); }
+        catch (error) { report.errors.push(`Test report readback incomplete: ${message(error)}`); }
+      }
+      const reported = new Set<string>();
+      for (const test of tests) {
+        for (const job of test.jobs) reported.add(job.name);
+        await repair(testIdentity(test), failingTestDetail(test), true, undefined, testLabel(test));
+      }
+      for (const job of failed) {
+        if (reported.has(job.name)) continue;
+        await repair(`job:${job.name}`, `${job.name}: ${job.conclusion}. Check: ${job.url}`,
           true, job.name === ARCHITECTURE_JOB ? architectureCause() : undefined);
       }
     } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
@@ -319,7 +432,7 @@ if (import.meta.main) {
         summaryText: existsSync(ARCHITECTURE_SUMMARY_PATH) ? readFileSync(ARCHITECTURE_SUMMARY_PATH, 'utf8') : null,
         evidence: readFileSync(join(import.meta.dir, '..', ARCHITECTURE_EVIDENCE), 'utf8'),
       };
-      const report = await reportCI(repo, selectedRunId, api, architecture);
+      const report = await reportCI(repo, selectedRunId, api, architecture, ghTestReportReader(repo, selectedRunId));
       writeFileSync('.ci-report/report.json', JSON.stringify(report, null, 2));
       writeFileSync('.ci-report/report.md', renderReport(report));
       if (process.env.GITHUB_STEP_SUMMARY) writeFileSync(process.env.GITHUB_STEP_SUMMARY, renderReport(report));
