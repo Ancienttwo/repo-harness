@@ -228,7 +228,7 @@ export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: 
     '',
     '| Round | Seat | Subject | Verdict |',
     '|---|---|---|---|',
-    '| ' + receipt.round + ' | ' + reviewerIdentity(receipt) + ', fresh context, read-only | `' + receipt.subject_sha + '` | ' + verdict + ' |',
+    '| ' + receipt.round + ' | ' + reviewerIdentity(receipt) + ', read-only | `' + receipt.subject_sha + '` | ' + verdict + ' |',
     '',
     'Model relation: ' + receipt.model_relation,
     '',

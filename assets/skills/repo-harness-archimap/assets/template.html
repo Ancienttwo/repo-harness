@@ -36,7 +36,10 @@ a { color: #1E40AF; } a:hover { color: #1E3A8A; }
 .layer b { color: var(--ink); }
 .layer small { display: block; font-size: 12px; }
 .node { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
-  padding: 8px 12px; border: 1.5px solid; border-radius: 10px; font-size: 15px; line-height: 20px; }
+  padding: 8px 12px; border: 1.5px solid; border-radius: 10px; font-size: 15px; line-height: 20px;
+  text-decoration: none; color: inherit; }
+.node:hover, .node:focus-visible { text-decoration: underline; text-underline-offset: 3px; }
+.node:focus-visible { outline: 2px solid #1E40AF; outline-offset: 2px; }
 .node b { font-weight: 600; }
 .node .loc { font: 12px var(--mono); }
 .node small { display: block; font-size: 13px; line-height: 18px; opacity: .85; }
@@ -124,17 +127,19 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   <div class="layer" style="left:88px;top:248px"><b>L2</b> Service<small class="mono">src/server/</small></div>
   <div class="layer" style="left:88px;top:464px"><b>L1</b> Contracts<small>shared by every side</small></div>
 
-  <div class="node k-compose" data-module="server" style="left:296px;top:224px;width:384px;height:104px">
-    <span><b>server</b> <span class="loc">6.3k</span></span><small>createServer · relay · SQLite</small><span class="id">server</span></div>
+  <!-- A node that the model covers is an <a> to the first path of its module's docs
+       (measure.ts modules[].docs); href is relative to docs/architecture/archimap.html. -->
+  <a class="node k-compose" data-module="server" href="modules/service/server.md" style="left:296px;top:224px;width:384px;height:104px">
+    <span><b>server</b> <span class="loc">6.3k</span></span><small>createServer · relay · SQLite</small><span class="id">server</span></a>
   <div class="node k-external" style="left:744px;top:224px;width:400px;height:104px">
     <span><b>Postgres</b></span><small>provided by the operator</small></div>
-  <div class="node k-contract" data-module="protocol" style="left:296px;top:440px;width:848px;height:104px">
-    <span><b>protocol</b> <span class="loc">7.3k</span></span><small>wire v4 · codec · http-api</small><span class="id">protocol</span></div>
+  <a class="node k-contract" data-module="protocol" href="modules/contracts/protocol.md" style="left:296px;top:440px;width:848px;height:104px">
+    <span><b>protocol</b> <span class="loc">7.3k</span></span><small>wire v4 · codec · http-api</small><span class="id">protocol +2</span></a>
 
   <div class="zone" style="left:1224px;top:184px;width:392px;height:400px"></div>
   <div class="zone-label" style="left:1248px;top:200px"><b>Device side · client</b> <span class="mono" style="font-size:12px">12.4k</span></div>
-  <div class="node k-remote" data-module="daemon" style="left:1248px;top:248px;width:336px;height:104px">
-    <span><b>daemon</b> <span class="loc">12.4k</span></span><small>auth · connection · journal</small><span class="id">daemon</span></div>
+  <a class="node k-remote" data-module="daemon" href="modules/device/daemon.md" style="left:1248px;top:248px;width:336px;height:104px">
+    <span><b>daemon</b> <span class="loc">12.4k</span></span><small>auth · connection · journal</small><span class="id">daemon</span></a>
 
   <svg class="edges" width="1680" height="720">
     <defs>

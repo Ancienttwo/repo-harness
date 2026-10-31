@@ -58,7 +58,8 @@ export function buildReviewCommand(): Command {
       } catch (error) {
         if (error instanceof ReviewPublishError) {
           const failure = { ok: false, error: error.code, exit_code: error.exitCode,
-            message: error.message, posted: error.posted };
+            message: error.message, posted: error.posted,
+            ...(error.code === 'review_publish_unknown' ? { inspect_required: true, confirmed_urls: error.posted } : {}) };
           console.log(JSON.stringify(failure, null, opts.json ? undefined : 2));
           process.exitCode = error.exitCode;
           return;

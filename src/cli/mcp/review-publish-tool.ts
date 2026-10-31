@@ -1,8 +1,8 @@
-import { realpathSync } from 'fs';
 import { isAbsolute, resolve } from 'path';
 
 import { publishReview, ReviewPublishError } from '../../effects/review/review-publish';
 import { currentMcpActor, hashMcpInput, tryWriteMcpAuditEntry } from './audit';
+import { FleetMcpError, resolveGrantedWriteTarget } from './fleet-tools';
 import { redactMcpText } from './redaction';
 import type { McpPolicy } from './types';
 
@@ -45,7 +45,7 @@ function errorResult(code: string, message: string, details?: unknown): ReviewPu
 export function buildReviewPublishToolDefinitions(): ReviewPublishToolDefinition[] {
   return [{
     name: REVIEW_PUBLISH_TOOL_NAME,
-    description: 'Publish one gatekeeper review receipt to a GitHub pull request: an acceptance claim comment, exactly one COMMENT review with one inline thread per P0/P1/P2 finding and NITs only in the review body, then an acceptance record comment. It posts nothing when the receipt is invalid or its subject SHA is not the PR head.',
+    description: 'Publish one gatekeeper review receipt to a GitHub pull request: an acceptance claim comment, exactly one COMMENT review with one inline thread per P0/P1/P2 finding and NITs only in the review body, then an acceptance record comment. It requires the orchestrator profile and an adopted repository with an explicit read_write grant. It posts nothing when the receipt is invalid or its subject SHA is not the PR head, and it reports an unknown write outcome for inspection instead of retrying.',
     inputSchema: {
       type: 'object',
       properties: {
@@ -60,24 +60,15 @@ export function buildReviewPublishToolDefinitions(): ReviewPublishToolDefinition
   }];
 }
 
-function allowedRepo(ctx: ReviewPublishToolContext, raw: unknown): string {
-  if (raw !== undefined && typeof raw !== 'string') throw new ReviewPublishToolError('INVALID_ARGUMENT', 'repo_path must be a string');
-  const root = realpathSync(raw === undefined ? ctx.repoRoot : resolve(ctx.repoRoot, raw));
-  const roots = ctx.policy.allowedRoots;
-  if (roots && roots.length && !roots.some((allowed) => {
-    try { return realpathSync(allowed) === root; } catch { return false; }
-  })) throw new ReviewPublishToolError('REPO_NOT_ALLOWED', 'repo_path is outside the allowed roots');
-  return root;
-}
-
 export function callReviewPublishTool(ctx: ReviewPublishToolContext, args: Record<string, unknown> = {}): ReviewPublishToolResult {
   try {
     if (ctx.policy.profile !== 'orchestrator') throw new ReviewPublishToolError('TOOL_NOT_AVAILABLE', 'review_publish is only available in the orchestrator profile');
     const keys = Object.keys(args).sort();
     if (keys.some((key) => !['repo_path', 'pr_number', 'receipt_path'].includes(key))) throw new ReviewPublishToolError('INVALID_ARGUMENT', 'unknown review_publish argument');
     if (typeof args.pr_number !== 'number' || !Number.isSafeInteger(args.pr_number) || args.pr_number < 1) throw new ReviewPublishToolError('INVALID_ARGUMENT', 'pr_number must be a positive integer');
+    if (args.repo_path !== undefined && typeof args.repo_path !== 'string') throw new ReviewPublishToolError('INVALID_ARGUMENT', 'repo_path must be a string');
     if (typeof args.receipt_path !== 'string' || !args.receipt_path.trim()) throw new ReviewPublishToolError('INVALID_ARGUMENT', 'receipt_path is required');
-    const repoRoot = allowedRepo(ctx, args.repo_path);
+    const repoRoot = resolveGrantedWriteTarget(ctx, { repo_path: args.repo_path }, REVIEW_PUBLISH_TOOL_NAME).repoRoot;
     const receiptPath = isAbsolute(args.receipt_path) ? args.receipt_path : resolve(repoRoot, args.receipt_path);
     const result = publishReview({ repoRoot, prNumber: args.pr_number, receiptPath });
     tryWriteMcpAuditEntry(repoRoot, {
@@ -93,8 +84,14 @@ export function callReviewPublishTool(ctx: ReviewPublishToolContext, args: Recor
     return textResult(result);
   } catch (error) {
     const code = error instanceof ReviewPublishError ? error.code
-      : error instanceof ReviewPublishToolError ? error.code : 'TOOL_FAILED';
-    const details = error instanceof ReviewPublishError ? { exit_code: error.exitCode, posted: error.posted } : undefined;
+      : error instanceof FleetMcpError || error instanceof ReviewPublishToolError ? error.code : 'TOOL_FAILED';
+    const details = error instanceof ReviewPublishError
+      ? {
+          exit_code: error.exitCode,
+          posted: error.posted,
+          ...(error.code === 'review_publish_unknown' ? { inspect_required: true, confirmed_urls: error.posted } : {}),
+        }
+      : error instanceof FleetMcpError && error.details !== undefined ? error.details : undefined;
     tryWriteMcpAuditEntry(ctx.repoRoot, {
       timestamp: new Date().toISOString(),
       tool: REVIEW_PUBLISH_TOOL_NAME,

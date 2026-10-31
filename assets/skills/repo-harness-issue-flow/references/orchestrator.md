@@ -14,15 +14,24 @@ issue or PR.
 1. Read the goal source: the user's request, a PRD, a design document or
    an existing parent issue. Note the requirement and scenario IDs. Issues
    cite them, so that acceptance can be traced.
-2. Read the module map. Prefer `docs/architecture/archimap.html`. If the
+2. Check the architecture authority. Run
+   `repo-harness architecture-projection status --json`. Split only when
+   `modelAuthority.source` is `archcontext` and `modelAuthority.ready` is
+   `true`. Otherwise stop splitting and follow `next` until the
+   repository is adopted: `repo-harness-architecture`, section
+   "Adopt ArchContext in a repository". A split made against an unadopted
+   model writes boundaries that the capability documents do not have.
+   The result of `repo-harness architecture-projection check --json` does
+   not carry `modelAuthority` or `next`. Do not use it as this gate.
+3. Read the module map. Prefer `docs/architecture/archimap.html`. If the
    map is missing or older than the architecture model, refresh it first
    with the `repo-harness-archimap` skill. A split that is made against a
    stale map puts module boundaries in the wrong place.
-3. Read the open issues and PRs in the area (`gh issue list`, `gh pr list`,
+4. Read the open issues and PRs in the area (`gh issue list`, `gh pr list`,
    then `gh issue view <n> --comments`). Record each active claim, linked
    PR and handoff. Reuse existing issues. Never open a duplicate for work
    that someone has already claimed.
-4. Pin the base. Record `main@<short-sha>` for every "current state"
+5. Pin the base. Record `main@<short-sha>` for every "current state"
    section that you write.
 
 ## 2. Split
