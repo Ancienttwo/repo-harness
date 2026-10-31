@@ -160,6 +160,7 @@ export function projectStackRow(f: Fixture) {
     rollback_boundary: { status: 'not_active' }, checks: f.checks as ProviderMergeReadinessFactsV1['checks'],
     check_failures: [],
     required_check_coverage: { status: 'absent' },
+    generated_artifacts: { status: 'absent' },
     mergeable: f.pr.mergeable as ProviderMergeReadinessFactsV1['mergeable'],
   };
   // This predicate observes one row, not the base chain. A non-default base is

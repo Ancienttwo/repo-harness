@@ -13,6 +13,7 @@ import {
 } from '../../src/operator-web/types';
 import { repositoryObservationFixture, repositorySnapshot, operatorFixtures } from '../../src/operator-web/fixture';
 import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import { GENERATED_ARTIFACTS_FAILURE_CODES } from '../../src/core/publication/generated-artifacts';
 import type { RequiredCheckCoverageEvidenceV1 } from '../../src/core/publication/required-check-coverage';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
@@ -221,6 +222,27 @@ describe('operator browser payload contracts', () => {
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: {
       ...readiness, blockers: [{ code: 'draft', attention_owner: 'agent', detail: 'not allowed' }],
     } }))).toThrow(OperatorPayloadError);
+  });
+
+
+  // A generated-artifact blocker carries action text too. The operator decode
+  // must accept every code in the closed vocabulary with its detail.
+  test('decodes every generated-artifact blocker with its action detail', () => {
+    const head = 'a'.repeat(40), base = 'b'.repeat(40);
+    for (const code of GENERATED_ARTIFACTS_FAILURE_CODES) {
+      const detail = `${code}: the PR did not push the regenerated artifact`;
+      const readiness = {
+        protocol: 2, kind: 'repo-harness-pull-request-readiness',
+        provider_repository_id: '1001', repository: 'example/repo-harness', pr_number: 1, ready: false,
+        expected_head_sha: head, expected_base_sha: base, integration_mode: 'unmerged', attention_owner: 'agent',
+        blockers: [{ code, attention_owner: 'agent', detail }],
+        check_failures: [],
+        required_check_coverage: null,
+        stack: { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' as const },
+      };
+      const card = decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: readiness })).repositories[0]!.cards[0]!;
+      expect(card.merge_readiness?.blockers).toEqual([{ code, attention_owner: 'agent', detail }]);
+    }
   });
 
   // The browser fixture is the payload the UI suites render. If the production

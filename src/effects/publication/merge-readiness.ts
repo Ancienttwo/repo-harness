@@ -32,10 +32,11 @@ import {
 import {
   PUBLICATION_POLICY_PATH,
   policyFileFromContents,
-  requiredCheckCoveragePolicyAtRef,
+  publicationPolicyBlocksAtRef,
   type PolicyFileAtRef,
-  type RequiredCheckCoveragePolicyAtRef,
 } from '../../core/publication/acceptance-merge-policy';
+import type { GeneratedArtifactsFactsV1 } from '../../core/publication/generated-artifacts';
+import { observeGeneratedArtifacts } from './generated-artifacts';
 export type MergeReadinessErrorCode =
   | 'provider_unavailable'
   | 'provider_data_incomplete';
@@ -411,6 +412,7 @@ function parseProviderReadinessFacts(
   graphValue: unknown,
   checkFailures: readonly RequiredCheckFailureEvidenceV1[],
   coverage: RequiredCheckCoverageFactsV1,
+  generated: GeneratedArtifactsFactsV1,
 ): ProviderMergeReadinessFactsV1 {
   if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
   const checks = checksValue.map(providerCheck).map(({ name, bucket }) => Object.freeze({ name, bucket }));
@@ -459,6 +461,7 @@ function parseProviderReadinessFacts(
     checks: Object.freeze(checks),
     check_failures: Object.freeze([...checkFailures]),
     required_check_coverage: coverage,
+    generated_artifacts: generated,
     mergeable: identity.mergeable,
   });
 }
@@ -988,21 +991,24 @@ function reusedPolicyFile(input: PublicationReadinessInput, ref: string): Policy
   return expectedBase === ref ? input.policy_file_at_base : null;
 }
 
-function coveragePolicy(input: PublicationReadinessInput, ref: string): RequiredCheckCoveragePolicyAtRef {
+type PublicationPolicyBlocks = ReturnType<typeof publicationPolicyBlocksAtRef>;
+
+/** One policy read per readiness round answers both declared blocks. */
+function publicationPolicy(input: PublicationReadinessInput, ref: string): PublicationPolicyBlocks {
   const reused = reusedPolicyFile(input, ref);
-  if (reused !== null) return requiredCheckCoveragePolicyAtRef(reused);
+  if (reused !== null) return publicationPolicyBlocksAtRef(reused);
   const contents = ghOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
-  return contents === null ? { status: 'absent' } : requiredCheckCoveragePolicyAtRef(policyAtRef(contents, ref));
+  return publicationPolicyBlocksAtRef(contents === null ? { status: 'missing' } : policyAtRef(contents, ref));
 }
 
-async function coveragePolicyAbortable(
+async function publicationPolicyAbortable(
   input: AbortablePublicationReadinessInput,
   ref: string,
-): Promise<RequiredCheckCoveragePolicyAtRef> {
+): Promise<PublicationPolicyBlocks> {
   const reused = reusedPolicyFile(input, ref);
-  if (reused !== null) return requiredCheckCoveragePolicyAtRef(reused);
+  if (reused !== null) return publicationPolicyBlocksAtRef(reused);
   const contents = await ghAbortableOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
-  return contents === null ? { status: 'absent' } : requiredCheckCoveragePolicyAtRef(policyAtRef(contents, ref));
+  return publicationPolicyBlocksAtRef(contents === null ? { status: 'missing' } : policyAtRef(contents, ref));
 }
 
 /**
@@ -1026,23 +1032,48 @@ function observedCheckFacts(checks: readonly ProviderCheck[]): readonly { readon
 const ALL_CHECKS_ARGS = (identity: ProviderIdentity): string[] =>
   ['pr', 'checks', String(identity.pr_number), '--json', 'name,bucket,link'];
 
-function coverageFacts(identity: ProviderIdentity, input: PublicationReadinessInput): RequiredCheckCoverageFactsV1 {
-  const policy = coveragePolicy(input, identity.base_sha);
-  if (policy.status !== 'active') return policy;
+function coverageFacts(identity: ProviderIdentity, input: PublicationReadinessInput, policy: PublicationPolicyBlocks): RequiredCheckCoverageFactsV1 {
+  if (policy.coverage.status !== 'active') return policy.coverage;
   const changed = driveRequestsSync(changedPaths(identity), input);
   const observed = observedCheckFacts(checkArray(gh(input, ALL_CHECKS_ARGS(identity), [0, 1, 8])));
-  return Object.freeze({ status: 'active', policy: policy.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
+  return Object.freeze({ status: 'active', policy: policy.coverage.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
 }
 
 async function coverageFactsAbortable(
   identity: ProviderIdentity,
   input: AbortablePublicationReadinessInput,
+  policy: PublicationPolicyBlocks,
 ): Promise<RequiredCheckCoverageFactsV1> {
-  const policy = await coveragePolicyAbortable(input, identity.base_sha);
-  if (policy.status !== 'active') return policy;
+  if (policy.coverage.status !== 'active') return policy.coverage;
   const changed = await driveRequestsAbortable(changedPaths(identity), input);
   const observed = observedCheckFacts(checkArray(await ghAbortable(input, ALL_CHECKS_ARGS(identity), [0, 1, 8])));
-  return Object.freeze({ status: 'active', policy: policy.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
+  return Object.freeze({ status: 'active', policy: policy.coverage.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
+}
+
+/**
+ * Run the declared regeneration on the merge tree. The check is synchronous
+ * and bounded by the declared timeout; the abortable readiness path accepts
+ * that bound because the child runs in a process group and is killed at the
+ * deadline. Every failure is a typed blocker, never a provider outage.
+ */
+function generatedArtifactsFacts(
+  identity: ProviderIdentity,
+  input: PublicationReadinessInput,
+  policy: PublicationPolicyBlocks,
+): GeneratedArtifactsFactsV1 {
+  const block = policy.generated_artifacts;
+  if (block.status !== 'active') return block;
+  return Object.freeze({
+    status: 'active',
+    policy: block.policy,
+    check: observeGeneratedArtifacts({
+      repo_root: input.repo_root,
+      base_sha: identity.base_sha,
+      head_sha: identity.head_sha,
+      policy: block.policy,
+      ...(input.git_bin === undefined ? {} : { git_bin: input.git_bin }),
+    }),
+  });
 }
 
 /** One read protocol for synchronous and abortable consumers; reads only the current commit boundary. */
@@ -1103,11 +1134,13 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
   const providers = checkArray(checks);
   const firstRun = validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, providers)]), providers);
   const checkFailures = driveRequestsSync(requiredCheckFailures(identity, providers, firstRun), input);
-  const coverage = coverageFacts(identity, input);
+  const policy = publicationPolicy(input, identity.base_sha);
+  const coverage = coverageFacts(identity, input, policy);
+  const generated = generatedArtifactsFacts(identity, input, policy);
   const boundary = rollbackBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(gh(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)), checkFailures, coverage);
+  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)), checkFailures, coverage, generated);
 }
 
 export async function observeProviderReadinessFactsAbortable(
@@ -1121,11 +1154,13 @@ export async function observeProviderReadinessFactsAbortable(
   const providers = checkArray(checks);
   const firstRun = validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, providers)]), providers);
   const checkFailures = await driveRequestsAbortable(requiredCheckFailures(identity, providers, firstRun), input);
-  const coverage = await coverageFactsAbortable(identity, input);
+  const policy = await publicationPolicyAbortable(input, identity.base_sha);
+  const coverage = await coverageFactsAbortable(identity, input, policy);
+  const generated = generatedArtifactsFacts(identity, input, policy);
   const boundary = rollbackBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)), checkFailures, coverage);
+  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)), checkFailures, coverage, generated);
 }
 
 export interface PullRequestReadinessInput extends PublicationReadinessInput {
