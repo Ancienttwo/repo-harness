@@ -1,9 +1,9 @@
 # public-surface/strategy-reflection 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:66ac07dab254c5691df8d18a14af8b6358f9660178845d4d95442791dec9bcf6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-strategy-reflection" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:839024b41edffe43b500b84e78aefc011e1bca0172c16bee3ef3c5d28dd4cd96" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.strategy-reflection`(kind `capability`)
-> **Matched Prefixes**:`docs/plans/**`、`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
+> **Matched Prefixes**:`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -41,8 +41,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
-- 匹配前綴:`docs/plans/**`、`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
+- 規模量級:`5–10` 個文件 / `500–1000` 行
+- 匹配前綴:`src/core/strategy/**`、`src/effects/strategy/**`、`src/cli/commands/strategy.ts`、`docs/strategy/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -70,7 +70,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.strategy-reflection.primary` | Strategy Context Collector | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.strategy-reflection.primary` | Strategy Context Collector | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.strategy-reflection.primary-cli` | Strategy Context Collector (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.strategy-reflection.primary-core` | Strategy Context Collector (core) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
