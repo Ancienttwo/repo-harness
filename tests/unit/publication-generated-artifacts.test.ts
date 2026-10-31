@@ -77,11 +77,10 @@ function staleGeneratedFixture(options: { prTouchesGenerated?: boolean } = {}): 
 }
 
 /**
- * Base changes input a and regenerates gen.txt; the PR changes input b and
- * leaves gen.txt stale. The PR-changed set must exclude the base-only a.txt
- * and gen.txt changes.
+ * Base changes input a and regenerates gen.txt; the PR changes input b.
+ * The PR head still needs the merged regeneration (oneX+two) to pass.
  */
-function divergedBaseFixture(): Fixture & { base: string; head: string } {
+function divergedBaseFixture(options: { prCommitsRegenerated?: boolean } = {}): Fixture & { base: string; head: string } {
   const created = fixture((repo, writeFile) => {
     writeFile('a.txt', 'one\n');
     writeFile('b.txt', 'one\n');
@@ -91,6 +90,7 @@ function divergedBaseFixture(): Fixture & { base: string; head: string } {
   commitAll(created.repo, 'base');
   git(created.repo, 'checkout', '-q', '-b', 'pr');
   write(created.repo, 'b.txt', 'two\n');
+  if (options.prCommitsRegenerated) write(created.repo, 'gen.txt', 'oneX+two\n');
   commitAll(created.repo, 'pr changes b');
   const head = git(created.repo, 'rev-parse', 'HEAD');
   git(created.repo, 'checkout', '-q', 'main');
@@ -234,25 +234,32 @@ describe('generated-artifact regeneration on the merge tree', () => {
     });
     expect(check.failure?.code).toBe('generated_artifacts_unpushed_regeneration');
     expect(check.failure?.message).toContain('"gen.txt"');
-    expect(check.failure?.message).toContain('commit the result');
-    expect(check.failure?.message).toContain('-stale');
+    expect(check.failure?.message).toContain('commit it');
     expect(check.failure?.message).toContain('+two');
     expect(check.regenerated_paths).toEqual(['gen.txt']);
   });
 
-  darwinTest('a stale merge tree regenerates when the PR did not edit the generated path', () => {
+  darwinTest('an input-only change that leaves the generated file stale fails closed', () => {
     const created = staleGeneratedFixture({ prTouchesGenerated: false });
     const check = observeGeneratedArtifacts({
       repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root, policy: policy(),
     });
-    expect(check.failure).toBeNull();
-    expect(check.merge_tree_sha).toMatch(/^[0-9a-f]{40}$/u);
+    expect(check.failure?.code).toBe('generated_artifacts_unpushed_regeneration');
+    expect(check.failure?.message).toContain('"gen.txt"');
     expect(check.regenerated_paths).toEqual(['gen.txt']);
-    expect(check.generated_paths).toEqual(['gen.txt']);
   });
 
-  darwinTest('a base-only declared change is not a PR edit, so the merge tree regenerates', () => {
+  darwinTest('a base-only change that the PR did not regenerate fails closed', () => {
     const created = divergedBaseFixture();
+    const check = observeGeneratedArtifacts({
+      repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root, policy: policy(),
+    });
+    expect(check.failure?.code).toBe('generated_artifacts_unpushed_regeneration');
+    expect(check.regenerated_paths).toEqual(['gen.txt']);
+  });
+
+  darwinTest('a base-only change regenerated on the PR head passes', () => {
+    const created = divergedBaseFixture({ prCommitsRegenerated: true });
     const check = observeGeneratedArtifacts({
       repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root, policy: policy(),
     });
@@ -474,7 +481,7 @@ describe('readiness wiring for generated artifacts', () => {
   });
 
   darwinTest('a clean regeneration leaves a ready verdict', () => {
-    const created = staleGeneratedFixture({ prTouchesGenerated: false });
+    const created = divergedBaseFixture({ prCommitsRegenerated: true });
     const policyText = JSON.stringify({ publication: { acceptance_merge: 'on', generated_artifacts: {
       paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 10_000,
     } } });
