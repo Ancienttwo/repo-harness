@@ -22,9 +22,7 @@ const STANDARD_DIRS = [
   "docs/prds",
   "docs/researches",
   "docs/reference-configs",
-  "docs/architecture/domains",
   "docs/architecture/modules",
-  "docs/architecture/snapshots",
   "docs/architecture/diagrams",
   ".ai/context",
   ".ai/harness/checks",
@@ -64,9 +62,7 @@ const STATE_FILES: ReadonlyArray<{ path: string; content: string }> = [
   { path: ".ai/harness/worktrees/.gitkeep", content: "" },
   { path: ".ai/harness/runs/.gitkeep", content: "" },
   { path: ".ai/harness/triage/.gitkeep", content: "" },
-  { path: "docs/architecture/domains/.gitkeep", content: "" },
   { path: "docs/architecture/modules/.gitkeep", content: "" },
-  { path: "docs/architecture/snapshots/.gitkeep", content: "" },
   { path: "docs/architecture/diagrams/.gitkeep", content: "" },
   { path: "deploy/env/.gitkeep", content: "" },
   { path: "deploy/scripts/.gitkeep", content: "" },
@@ -363,32 +359,18 @@ function declaredMinimumHarnessVersion(markerText: string | undefined): string |
   return minimumHarnessVersionOf(marker) ?? undefined;
 }
 
+/** The downstream root context. assets/templates/root-context.md is its only source. */
 function rootContextContent(): string {
-  return `# Repo Agent Context
-
-This is the root routing contract for Claude Code and Codex. Load this before task-local artifacts.
-
-## Workflow Contract
-
-- Use first principles, one source of truth, and no steady-state compatibility paths.
-- Treat \`docs/spec.md\` as product truth; keep correction-derived lessons in \`tasks/lessons.md\`.
-- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
-- Create task worktrees only at \`/tmp/<repo>-wt-<slug>\` (Windows: the OS temp directory): use \`repo-harness run contract-worktree start --plan <plan-file>\`, or \`git worktree add\` with that path. Never create one beside the main checkout (\`../\`).
-- Read \`.ai/context/capabilities.json\` and \`.ai/context/context-map.json\` before adding scoped agent context.
-- When a branch changes a capability's responsibility, entrypoints, relations or flows, run \`repo-harness architecture-projection check --json\` before review and follow \`repo-harness-architecture\` (\`assets/skill-commands/repo-harness-architecture/references/worker.md\` in the installed \`repo-harness\` skill: \`~/.claude/skills/repo-harness/\` or \`~/.codex/skills/repo-harness/\`).
-- Write human-facing documents (\`docs/\`, \`docs/prds/\`, design briefs) in the language set by \`.ai/harness/policy.json#documentation.language\`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.
-- Keep \`_ref/\` ignored external reference material and \`_ops/\` ignored local operations state.
-`;
+  return readFileSync(join(TEMPLATE_ROOT, "root-context.md"), "utf-8");
 }
 
 function architectureIndexContent(): string {
   return `# Architecture Index
 
-> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
+> Umbrella architecture ledger for current boundaries and diagrams.
 
 ## Current Snapshot
 
-- Latest snapshot: (none yet)
 - Semantic diagram source: (none yet)
 `;
 }
@@ -557,12 +539,19 @@ function retireArchitecturePolicy(policy: Record<string, unknown>): void {
 /** Policy keys that no reader consumes after the plan/task artifact retirement. */
 const RETIRED_ADOPTION_POLICY_KEYS: ReadonlyArray<{ readonly path: readonly [string] | readonly [string, string]; readonly label: string }> = [
   { path: ["active_plan"], label: "active_plan" },
+  { path: ["plan_capture"], label: "plan_capture" },
   { path: ["tasks", "current_status_file"], label: "tasks.current_status_file" },
   { path: ["tasks", "workstreams_dir"], label: "tasks.workstreams_dir" },
+  { path: ["guards", "edit_plan_gate"], label: "guards.edit_plan_gate" },
+  { path: ["guards", "edit_plan_gate_modes"], label: "guards.edit_plan_gate_modes" },
 ];
 
 function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {
   const removed: string[] = [];
+  // A retired plan-gate block carries its rule and its planning authority text.
+  // The gate key is the block marker, so a current guards.rule stays.
+  const hadPlanGate = isObject(policy.guards) && Object.hasOwn(policy.guards, "edit_plan_gate");
+  const hadPlanCapture = Object.hasOwn(policy, "plan_capture");
   for (const { path, label } of RETIRED_ADOPTION_POLICY_KEYS) {
     const parent = path.length === 2 ? policy[path[0]!] : policy;
     const key = path[path.length - 1]!;
@@ -570,7 +559,17 @@ function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {
     delete parent[key];
     removed.push(label);
   }
-  if (isObject(policy.tasks) && Object.keys(policy.tasks).length === 0) delete policy.tasks;
+  if (hadPlanGate && isObject(policy.guards) && Object.hasOwn(policy.guards, "rule")) {
+    delete policy.guards.rule;
+    removed.push("guards.rule");
+  }
+  if (hadPlanCapture && isObject(policy.planning) && Object.hasOwn(policy.planning, "source_of_truth")) {
+    delete policy.planning.source_of_truth;
+    removed.push("planning.source_of_truth");
+  }
+  for (const key of ["tasks", "guards", "planning"] as const) {
+    if (isObject(policy[key]) && Object.keys(policy[key]).length === 0) delete policy[key];
+  }
   return removed;
 }
 
@@ -586,9 +585,9 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   // Operator-invoked adoption retires the old execution authority. Never copy
   // repository preferences into the host-wide configuration.
   retireArchitecturePolicy(policy);
-  // Plan and task execution artifacts are retired; the upgrade refresh drops
-  // their policy keys and reports each one so downstream users can audit it.
-  const retiredPolicyKeys = opts.mode === "minimal" ? [] : retireAdoptionPolicy(policy);
+  // Plan and task execution artifacts are retired; both adoption modes drop
+  // their policy keys and report each one so downstream users can audit it.
+  const retiredPolicyKeys = retireAdoptionPolicy(policy);
   // Refactor execution is retired; recommendations read no repository refactor policy.
   delete policy.refactor;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
@@ -643,8 +642,17 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
     expectedContentHash: fileContent(opts.repoRoot, ".gitignore") === undefined ? undefined : contentHash(gitignore),
   });
 
+  const retiredPolicyWarnings: AdoptionWarning[] = retiredPolicyKeys.length > 0
+    ? [{ code: "retired-policy-keys", message: `Removed retired harness policy keys: ${retiredPolicyKeys.join(", ")}`, risk: "medium" }]
+    : [];
   if (opts.mode === "minimal") {
-    return { operations, warnings: addLegacyCleanup(opts.repoRoot, operations) };
+    // A minimal scaffold creates no policy. When one exists, the same retired
+    // key cleanup runs and is reported, so retired flows cannot survive a
+    // downgrade to minimal mode.
+    if (policyCurrent !== undefined) {
+      operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", jsonContent(policy), "Remove retired harness policy keys", { risk: "medium" }));
+    }
+    return { operations, warnings: [...addLegacyCleanup(opts.repoRoot, operations), ...retiredPolicyWarnings] };
   }
 
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/policy.json", jsonContent(policy), "Merge canonical harness policy defaults without discarding explicit repo settings", { risk: "medium" }));
@@ -687,13 +695,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
 
   const warnings: AdoptionWarning[] = [
     ...cleanupWarnings,
-    ...(retiredPolicyKeys.length > 0
-      ? [{
-          code: "retired-policy-keys",
-          message: `Removed retired harness policy keys: ${retiredPolicyKeys.join(", ")}`,
-          risk: "medium",
-        } as const]
-      : []),
+    ...retiredPolicyWarnings,
     ...(opts.mode === "self-host"
       ? [{ code: "self-host-review", message: "Self-host adoption requires an explicit hook/runtime review and is intentionally not applied by the public command.", risk: "high" } as const]
       : []),

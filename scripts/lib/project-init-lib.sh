@@ -1293,7 +1293,7 @@ pi_write_harness_policy() {
     "base_branch": "main",
     "review_base": "main",
     "worktree_dir_template": $worktree_template,
-    "start_script": "repo-harness run contract-worktree start --plan <plan-file>",
+    "start_script": "repo-harness run contract-worktree start --issue <number>",
     "cleanup_script": "repo-harness run contract-worktree cleanup --slug <slug>",
     "conflict_signals": [
       "dirty_worktree_overlaps_task_files",
@@ -1636,9 +1636,7 @@ pi_ensure_harness_state_surface() {
     "$target_dir/.ai/harness/worktrees" \
     "$target_dir/.ai/harness/triage" \
     "$target_dir/docs/researches" \
-    "$target_dir/docs/architecture/domains" \
     "$target_dir/docs/architecture/modules" \
-    "$target_dir/docs/architecture/snapshots" \
     "$target_dir/docs/architecture/diagrams" \
     "$target_dir/.ai/harness/runs"
 
@@ -1660,19 +1658,16 @@ Use `YYYYMMDD-topic.md` names when chronology matters, or `<topic>.md` for
 stable subject reports. Keep repeated correction-derived rules in `tasks/lessons.md`.
 RESEARCH_README_EOF
   fi
-  [[ -f "$target_dir/docs/architecture/domains/.gitkeep" ]] || : > "$target_dir/docs/architecture/domains/.gitkeep"
   [[ -f "$target_dir/docs/architecture/modules/.gitkeep" ]] || : > "$target_dir/docs/architecture/modules/.gitkeep"
-  [[ -f "$target_dir/docs/architecture/snapshots/.gitkeep" ]] || : > "$target_dir/docs/architecture/snapshots/.gitkeep"
   [[ -f "$target_dir/docs/architecture/diagrams/.gitkeep" ]] || : > "$target_dir/docs/architecture/diagrams/.gitkeep"
   if [[ ! -f "$target_dir/docs/architecture/index.md" ]]; then
     cat > "$target_dir/docs/architecture/index.md" <<'ARCHITECTURE_INDEX_EOF'
 # Architecture Index
 
-> Umbrella architecture ledger for current boundaries, snapshots, and diagrams.
+> Umbrella architecture ledger for current boundaries and diagrams.
 
 ## Current Snapshot
 
-- Latest snapshot: (none yet)
 - Semantic diagram source: (none yet)
 
 ## Architecture Flow
@@ -1800,9 +1795,13 @@ agenticDevelopment.due_diligence = dueDiligence;
 merged.agentic_development = agenticDevelopment;
 
 const retiredPolicyKeys = [];
-if (Object.prototype.hasOwnProperty.call(merged, "active_plan")) {
-  delete merged.active_plan;
-  retiredPolicyKeys.push("active_plan");
+const hadPlanGate = isPlainObject(merged.guards) && Object.prototype.hasOwnProperty.call(merged.guards, "edit_plan_gate");
+const hadPlanCapture = Object.prototype.hasOwnProperty.call(merged, "plan_capture");
+for (const key of ["active_plan", "plan_capture"]) {
+  if (Object.prototype.hasOwnProperty.call(merged, key)) {
+    delete merged[key];
+    retiredPolicyKeys.push(key);
+  }
 }
 if (isPlainObject(merged.tasks)) {
   for (const key of ["current_status_file", "workstreams_dir"]) {
@@ -1812,6 +1811,24 @@ if (isPlainObject(merged.tasks)) {
     }
   }
   if (Object.keys(merged.tasks).length === 0) delete merged.tasks;
+}
+if (isPlainObject(merged.guards)) {
+  for (const key of ["edit_plan_gate", "edit_plan_gate_modes"]) {
+    if (Object.prototype.hasOwnProperty.call(merged.guards, key)) {
+      delete merged.guards[key];
+      retiredPolicyKeys.push("guards." + key);
+    }
+  }
+  if (hadPlanGate && Object.prototype.hasOwnProperty.call(merged.guards, "rule")) {
+    delete merged.guards.rule;
+    retiredPolicyKeys.push("guards.rule");
+  }
+  if (Object.keys(merged.guards).length === 0) delete merged.guards;
+}
+if (hadPlanCapture && isPlainObject(merged.planning) && Object.prototype.hasOwnProperty.call(merged.planning, "source_of_truth")) {
+  delete merged.planning.source_of_truth;
+  retiredPolicyKeys.push("planning.source_of_truth");
+  if (Object.keys(merged.planning).length === 0) delete merged.planning;
 }
 if (retiredPolicyKeys.length > 0) {
   process.stdout.write("[repo-harness] removed retired policy keys: " + retiredPolicyKeys.join(", ") + "\n");
@@ -1890,9 +1907,12 @@ agentic_development["due_diligence"] = due_diligence
 merged["agentic_development"] = agentic_development
 
 retired_policy_keys = []
-if "active_plan" in merged:
-    merged.pop("active_plan")
-    retired_policy_keys.append("active_plan")
+had_plan_gate = isinstance(merged.get("guards"), dict) and "edit_plan_gate" in merged["guards"]
+had_plan_capture = "plan_capture" in merged
+for key in ("active_plan", "plan_capture"):
+    if key in merged:
+        merged.pop(key)
+        retired_policy_keys.append(key)
 tasks = merged.get("tasks")
 if isinstance(tasks, dict):
     for key in ("current_status_file", "workstreams_dir"):
@@ -1901,6 +1921,23 @@ if isinstance(tasks, dict):
             retired_policy_keys.append("tasks." + key)
     if not tasks:
         merged.pop("tasks")
+guards = merged.get("guards")
+if isinstance(guards, dict):
+    for key in ("edit_plan_gate", "edit_plan_gate_modes"):
+        if key in guards:
+            guards.pop(key)
+            retired_policy_keys.append("guards." + key)
+    if had_plan_gate and "rule" in guards:
+        guards.pop("rule")
+        retired_policy_keys.append("guards.rule")
+    if not guards:
+        merged.pop("guards")
+planning = merged.get("planning")
+if had_plan_capture and isinstance(planning, dict) and "source_of_truth" in planning:
+    planning.pop("source_of_truth")
+    retired_policy_keys.append("planning.source_of_truth")
+    if not planning:
+        merged.pop("planning")
 if retired_policy_keys:
     print("[repo-harness] removed retired policy keys: " + ", ".join(retired_policy_keys))
 with open(output_path, "w", encoding="utf-8") as handle:

@@ -123,10 +123,17 @@ describe("canonical adoption plan", () => {
       expect(scripts["check:task-sync"]).toBeUndefined();
       for (const name of ["AGENTS.md", "CLAUDE.md"]) {
         const context = readFileSync(join(repo, name), "utf-8");
-        expect(context).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");
-        expect(context).toContain("Create task worktrees only at `/tmp/<repo>-wt-<slug>` (Windows: the OS temp directory)");
-        expect(context).not.toContain("Keep current execution in the active plan");
+        expect(context).toContain("repo-harness-issue-flow");
+        expect(context).toContain("docs/architecture/archimap.html");
+        expect(context).toContain("Keep four hard boundaries");
+        expect(context).toContain("Review by risk");
+        expect(context).toContain("repo-harness run contract-worktree start --issue <number>");
+        expect(context).not.toContain("--plan <plan-file>");
+        expect(context).not.toContain("Write a plan before");
       }
+      expect(existsSync(join(repo, "docs", "architecture", "snapshots"))).toBe(false);
+      expect(existsSync(join(repo, "docs", "architecture", "domains"))).toBe(false);
+      expect(readFileSync(join(repo, "docs", "architecture", "index.md"), "utf-8")).not.toContain("Latest snapshot");
       expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
     } finally {
@@ -1286,7 +1293,7 @@ describe("documentation language policy datum", () => {
         const operation = plan.operations.find((entry) => entry.path === path);
         if (!operation || operation.kind !== "writeFile") throw new Error(`expected a writeFile operation for ${path}`);
         expect(operation.content).toContain(
-          "- Write human-facing documents (`docs/`, `docs/prds/`, design briefs) in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys, and technical terms in English. Agent-facing artifacts stay English.",
+          "- Write human-facing documents in the language set by `.ai/harness/policy.json#documentation.language`; keep section headers, field keys and technical terms in English.",
         );
         expect(operation.content).not.toContain("documentation.language: ");
       }
