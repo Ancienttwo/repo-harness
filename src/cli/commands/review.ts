@@ -6,6 +6,7 @@ import { readFileSync } from 'fs';
 import { closeReview, reviewLocation, reviewStatus, runReviewRound } from '../../effects/review/generic-review';
 import { recordCircuitAttempt } from '../hook/circuit-breaker';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { publishReview, ReviewPublishError } from '../../effects/review/review-publish';
 
 /** Both control operations accept only a closed JSON object from the trusted Bot. */
 function readControlRequest(file: string, fields: readonly string[]): Record<string, any> {
@@ -43,6 +44,26 @@ export function buildReviewCommand(): Command {
           expectedGrantSha256: request.expectedGrantSha256, expectedRevision: request.expectedRevision })));
       } catch (error) {
         console.error(`review revoke: ${error instanceof Error ? error.message : String(error)}`);
+        process.exitCode = 1;
+      }
+    });
+  command.command('publish').description('Publish one gatekeeper receipt as an acceptance claim, one COMMENT PR review, and an acceptance record')
+    .requiredOption('--pr <number>', 'Pull request number')
+    .requiredOption('--receipt <path>', 'Review publish receipt JSON; the gatekeeper owns its content')
+    .option('--repo <path>', 'Owner repository worktree', process.cwd()).option('--json', 'Print compact JSON')
+    .action(opts => {
+      try {
+        const result = publishReview({ repoRoot: opts.repo, prNumber: Number(opts.pr), receiptPath: opts.receipt });
+        console.log(JSON.stringify(result, null, opts.json ? undefined : 2));
+      } catch (error) {
+        if (error instanceof ReviewPublishError) {
+          const failure = { ok: false, error: error.code, exit_code: error.exitCode,
+            message: error.message, posted: error.posted };
+          console.log(JSON.stringify(failure, null, opts.json ? undefined : 2));
+          process.exitCode = error.exitCode;
+          return;
+        }
+        console.error(`review publish: ${error instanceof Error ? error.message : String(error)}`);
         process.exitCode = 1;
       }
     });

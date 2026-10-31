@@ -6,7 +6,7 @@
 > **Date**: 2026-10-27
 > **Issue**: [#1003](https://github.com/Ancienttwo/repo-harness/issues/1003)（第〇期 [#997](https://github.com/Ancienttwo/repo-harness/issues/997)，切片 0.1）
 >
-> 用户 2026-10-27 确认本稿。控制台的 UX 以本稿为准，取代 `DESIGN-local-human-control-board-v1.md`；旧稿的标注由切片 0.2（#1004）另开 PR。前端切片（1.1 起）引用本稿和下面的场景 id。
+> 用户 2026-10-27 确认本稿。控制台的 UX 以本稿为准，取代 [DESIGN-local-human-control-board-v1.md](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/DESIGN-local-human-control-board-v1.md)；旧稿的标注由切片 0.2（#1004）另开 PR。前端切片（1.1 起）引用本稿和下面的场景 id。
 
 ## 输入与权威
 

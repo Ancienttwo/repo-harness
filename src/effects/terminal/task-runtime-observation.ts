@@ -13,7 +13,7 @@ const failureClasses: Record<FailureClass, true> = {
 };
 const rejectionCodes: Record<RejectionCode, true> = {
   busy: true, no_active_turn: true, not_queued: true, unsupported: true,
-  runtime_exited: true, disposed: true, runtime_refused: true, error: true,
+  runtime_exited: true, session_released: true, disposed: true, runtime_refused: true, error: true,
 };
 interface HostIdentity { pid: number; identity: string }
 interface RequestIdentity { request_id: string; round: number }

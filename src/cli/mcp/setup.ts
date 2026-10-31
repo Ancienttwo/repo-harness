@@ -32,6 +32,7 @@ import { sensitiveAllowedRootReason } from './policy';
 import { authorizationProfile, getMcpPolicy, isMcpProfileName, mcpSupportedScopes, parseMcpProfile } from './policy';
 import { buildCodingToolDefinitions, type CodingToolDefinition } from './coding-tools';
 import { buildHerdrToolDefinitions } from './herdr-tools';
+import { buildReviewPublishToolDefinitions } from './review-publish-tool';
 import { buildPublicationMergeToolDefinitions } from './fleet-tools';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { repoHarnessPackageVersion } from './version';
@@ -1357,7 +1358,7 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       const expectedSpecialTools: readonly Pick<CodingToolDefinition, 'name' | 'inputSchema' | 'annotations'>[] | null = capabilities?.workspaceCoder
         ? buildCodingToolDefinitions()
         : capabilities?.taskDispatch
-          ? [...buildHerdrToolDefinitions(), ...(capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [])]
+          ? [...buildHerdrToolDefinitions(), ...(profile === 'orchestrator' ? buildReviewPublishToolDefinitions() : []), ...(capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [])]
           : null;
       const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
