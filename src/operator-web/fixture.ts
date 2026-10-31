@@ -41,6 +41,7 @@ function mergeReadiness(
     blockers,
     check_failures: [],
     required_check_coverage: null,
+    stack: { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' },
   };
 }
 

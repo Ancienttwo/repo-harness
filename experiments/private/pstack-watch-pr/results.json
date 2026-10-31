@@ -321,6 +321,17 @@
     "pureHarnessReadyPrefix": [
       1
     ],
+    "pureHarnessBlockers": [
+      [],
+      [
+        "stack_member",
+        "checks_pending"
+      ],
+      [
+        "stack_member",
+        "base_moved_since_verification"
+      ]
+    ],
     "observerRowDecisions": [
       "ready",
       "waiting",
@@ -416,7 +427,14 @@
       "attention_owner": "none",
       "blockers": [],
       "check_failures": [],
-      "required_check_coverage": null
+      "required_check_coverage": null,
+      "stack": {
+        "member": false,
+        "depth": 0,
+        "chain": [],
+        "final_base_sha": null,
+        "status": "not_member"
+      }
     }
   },
   "measurementUnits": "Logical provider reads are injected collector gh commands or watcher reader methods. They are not actual HTTP requests, latency, CPU, or production throughput. External API requests are zero.",

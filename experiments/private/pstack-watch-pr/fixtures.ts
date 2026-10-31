@@ -162,9 +162,20 @@ export function projectStackRow(f: Fixture) {
     required_check_coverage: { status: 'absent' },
     mergeable: f.pr.mergeable as ProviderMergeReadinessFactsV1['mergeable'],
   };
+  // This predicate observes one row, not the base chain. A non-default base is
+  // still a member: it is blocked by membership with an unobserved chain. The
+  // caller cannot supply complete chain evidence it did not read.
+  const member = f.pr.baseRefName !== 'main';
+  const memberEntry = {
+    pr_number: f.pr.number, head_ref: f.pr.headRefName, head_sha: f.expectedHead,
+    base_ref: f.pr.baseRefName, base_sha: f.expectedBase,
+  };
   return projectPullRequestMergeReadiness({ expected_head_sha: f.expectedHead, expected_base_sha: f.expectedBase,
     integration_mode: f.pr.state === 'MERGED' ? 'ancestor' : 'unmerged',
-    observation: f.unavailable ? 'provider_unavailable' : f.hasNextPage ? 'provider_data_incomplete' : 'stable', provider });
+    observation: f.unavailable ? 'provider_unavailable' : f.hasNextPage ? 'provider_data_incomplete' : 'stable', provider,
+    stack: member
+      ? { member: true, depth: 0, chain: [memberEntry], final_base_sha: null, status: 'unobserved' }
+      : { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' } });
 }
 export class Cancelled extends Error { constructor() { super('offline cancellation'); } }
 export function logicalClock(cancelAfterSleeps = Infinity) {

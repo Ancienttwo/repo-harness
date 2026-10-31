@@ -107,6 +107,30 @@ the rule it is merged under.
 - A malformed block fails closed with
   `required_check_coverage_policy_invalid`.
 
+### Stacked pull requests
+
+A stacked PR has a base branch that is not the repository default branch. The
+readiness output carries a closed `stack` detail and a typed blocker.
+
+- Readiness follows `baseRefName` from the PR to the default branch. Each chain
+  entry records the PR number, head branch and SHA, base branch and SHA. The
+  detail records membership, depth, the ordered chain and the final base SHA.
+- A member is never ready, even when its own-base checks pass. The blocker is
+  `stack_member`. Own-base checks, reviews and coverage are not read for a
+  member: they prove the PR against the feature base, not the default branch.
+- A depth bound of 20 stops a chain that does not reach the default branch.
+  Cycle detection uses PR numbers and branch names. A missing, closed or
+  foreign base PR and an over-deep chain emit `stack_base_pr_missing`,
+  `stack_base_pr_not_open`, `stack_foreign_pr` and `stack_depth_exceeded`.
+  A chain that repeats a PR or branch emits `stack_cycle`.
+- The member identity and every chain read are fenced together. A base that
+  moves during the read returns `changed_during_read`, not a ready verdict.
+- Caller-supplied chain data is ignored. The effect observes the chain from the
+  provider and from the repository default branch.
+- This slice does not run a merge tree, merge a chain, retarget a branch or
+  write to GitHub. Atomic chain landing, a per-slice final-base merge tree and
+  retarget automation remain follow-ups in #1204.
+
 ## Revocation
 
 `review revoke --request <file>` consumes
