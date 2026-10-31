@@ -688,7 +688,7 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     if(retried.status!==0)throw new Error(retried.stderr+retried.stdout);
     const space=call(['workspace','list']).workspaces.find((item:any)=>item.worktree?.checkout_path===target);
     expect(space.worktree.repo_key).toBe(realpathSync(join(fixture,'.git')));
-    expect(existsSync(join(target,'.ai/harness/worktrees/123-recover-fixture.json'))).toBe(true);
+    expect(existsSync(join(fixture,'.ai/harness/worktrees/123-recover-fixture.json'))).toBe(true);
     expect((await api.cleanupTaskWorktree(fixture,target)).status).toBe('closed');
     expect(call(['workspace','list']).workspaces.length).toBe(baseline);
     expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);

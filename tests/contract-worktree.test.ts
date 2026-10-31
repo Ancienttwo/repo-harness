@@ -73,6 +73,11 @@ function start(
   return run("bash", ["scripts/contract-worktree.sh", "start", ...args], cwd, issueEnv(env, issue));
 }
 
+function writeStartMetadata(cwd: string, slug: string, branch: string): void {
+  mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+  writeFileSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`), `${JSON.stringify({ slug, branch })}\n`);
+}
+
 describe("contract-worktree helper integration", () => {
 
   test("contract-worktree cleanup should dry-run then remove merged worktree, branch, and metadata", () => {
@@ -85,8 +90,7 @@ describe("contract-worktree helper integration", () => {
       commitAll(cwd, "init cleanup");
 
       expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
-      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
+      writeStartMetadata(cwd, "demo", "codex/demo");
 
       const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "demo", "--dry-run"], cwd);
       expect(dryRun.status).toBe(0);
@@ -151,7 +155,7 @@ describe("contract-worktree helper integration", () => {
         disposition: "created",
       });
       expect(started.stdout.trim().split("\n")).toHaveLength(1);
-      const metadata = JSON.parse(readFileSync(join(worktreePath, ".ai/harness/worktrees", `${slug}.json`), "utf8"));
+      const metadata = JSON.parse(readFileSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`), "utf8"));
       expect(metadata).toMatchObject({
         slug,
         issue: 123,
@@ -159,8 +163,12 @@ describe("contract-worktree helper integration", () => {
         branch: `feat/${slug}`,
       });
       expect(metadata).not.toHaveProperty("plan");
+      expect(existsSync(join(worktreePath, ".ai/harness/worktrees", `${slug}.json`))).toBe(false);
       expect(run("git", ["branch", "--show-current"], worktreePath).stdout.trim()).toBe(`feat/${slug}`);
 
+      // Start metadata now lives in the primary checkout. Remove it so this
+      // retry still exercises the residual worktree path refusal.
+      rmSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`));
       const residual = start([
         "--issue", "123",
         "--path", worktreePath,
@@ -191,7 +199,7 @@ describe("contract-worktree helper integration", () => {
         issue: 123,
         disposition: "created",
       });
-      const metadata = JSON.parse(readFileSync(join(worktreePath, ".ai/harness/worktrees/123-location.json"), "utf8"));
+      const metadata = JSON.parse(readFileSync(join(cwd, ".ai/harness/worktrees/123-location.json"), "utf8"));
       expect(metadata.branch).toBe("fix/123-location");
     } finally {
       run("git", ["worktree", "remove", "--force", worktreePath], cwd);
@@ -248,8 +256,7 @@ describe("contract-worktree helper integration", () => {
       commitAll(cwd, "init cleanup repair");
 
       expect(run("git", ["worktree", "add", worktreePath, "-b", "codex/demo"], cwd).status).toBe(0);
-      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees/demo.json"), '{"slug":"demo"}\n');
+      writeStartMetadata(cwd, "demo", "codex/demo");
       writeFileSync(join(worktreePath, ".git"), "gitdir: /tmp/moved-repo/.git/worktrees/wt-demo\n");
 
       const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "demo", "--dry-run"], cwd);
@@ -305,6 +312,76 @@ describe("contract-worktree helper integration", () => {
     }
   }, 15000);
 
+  test("contract-worktree cleanup removes the start branch after the worktree is pruned", () => {
+    const cwd = tmpWorkspace("helper-contract-cleanup-pruned");
+    const worktreePath = `${cwd}-wt-pruned`;
+    const slug = "123-pruned";
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      writeFileSync(join(cwd, ".gitignore"), ".ai/harness/worktrees/\n");
+      commitAll(cwd, "init cleanup pruned");
+      const started = start(["--issue", "123", "--path", worktreePath, "--json"], cwd, {}, { title: "Pruned" });
+      expect(started.status, started.stderr).toBe(0);
+      expect(JSON.parse(started.stdout).branch).toBe(`feat/${slug}`);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`))).toBe(true);
+
+      expect(run("git", ["worktree", "remove", "--force", worktreePath], cwd).status).toBe(0);
+      expect(run("git", ["worktree", "prune"], cwd).status).toBe(0);
+      expect(existsSync(worktreePath)).toBe(false);
+      expect(run("git", ["show-ref", "--verify", "--quiet", `refs/heads/feat/${slug}`], cwd).status).toBe(0);
+
+      const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", slug], cwd);
+      expect(cleanup.status, cleanup.stderr).toBe(0);
+      expect(cleanup.stdout).toContain(`Deleted branch: feat/${slug}`);
+      expect(run("git", ["show-ref", "--verify", "--quiet", `refs/heads/feat/${slug}`], cwd).status).not.toBe(0);
+      expect(existsSync(join(cwd, ".ai/harness/worktrees", `${slug}.json`))).toBe(false);
+      expect(run("git", ["branch", "--list", `codex/${slug}`], cwd).stdout.trim()).toBe("");
+    } finally {
+      run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+      rmSync(worktreePath, { recursive: true, force: true });
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("contract-worktree cleanup fails closed when start metadata is missing", () => {
+    const cwd = tmpWorkspace("helper-contract-cleanup-no-metadata");
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      writeFileSync(join(cwd, ".ai/harness/policy.json"), `${JSON.stringify({ worktree_strategy: { branch_prefix: "codex/" } })}\n`);
+      commitAll(cwd, "init missing metadata");
+      expect(run("git", ["branch", "codex/no-metadata"], cwd).status).toBe(0);
+
+      const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "no-metadata"], cwd);
+      expect(cleanup.status).toBe(2);
+      expect(cleanup.stderr.trim()).toBe("contract-worktree: no start metadata for no-metadata");
+      expect(run("git", ["show-ref", "--verify", "--quiet", "refs/heads/codex/no-metadata"], cwd).status).toBe(0);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
+  test("contract-worktree cleanup fails closed when the recorded branch is missing", () => {
+    const cwd = tmpWorkspace("helper-contract-cleanup-missing-branch");
+    try {
+      copyHelpers(cwd);
+      initGitRepo(cwd);
+      writeFileSync(join(cwd, "README.md"), "# demo\n");
+      commitAll(cwd, "init missing branch");
+      writeStartMetadata(cwd, "missing-branch", "feat/missing-branch");
+
+      const cleanup = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "missing-branch"], cwd);
+      expect(cleanup.status).toBe(2);
+      expect(cleanup.stderr.trim()).toBe("contract-worktree: branch feat/missing-branch not found");
+      expect(existsSync(join(cwd, ".ai/harness/worktrees/missing-branch.json"))).toBe(true);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 15000);
+
   test("contract-worktree cleanup should refuse unmerged, dirty, and linked-cwd cleanup", () => {
     const cwd = tmpWorkspace("helper-contract-cleanup-refuse");
     const unmergedPath = `${cwd}-wt-unmerged`;
@@ -317,6 +394,7 @@ describe("contract-worktree helper integration", () => {
       commitAll(cwd, "init cleanup refuse");
 
       expect(run("git", ["worktree", "add", unmergedPath, "-b", "codex/unmerged"], cwd).status).toBe(0);
+      writeStartMetadata(cwd, "unmerged", "codex/unmerged");
       writeFileSync(join(unmergedPath, "feature.txt"), "unmerged\n");
       commitAll(unmergedPath, "unmerged branch change");
       const unmerged = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "unmerged"], cwd);
@@ -324,6 +402,7 @@ describe("contract-worktree helper integration", () => {
       expect(unmerged.stderr).toContain("not fully merged");
 
       expect(run("git", ["worktree", "add", dirtyPath, "-b", "codex/dirty"], cwd).status).toBe(0);
+      writeStartMetadata(cwd, "dirty", "codex/dirty");
       writeFileSync(join(dirtyPath, "dirty.txt"), "dirty\n");
       const dirty = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "dirty"], cwd);
       expect(dirty.status).toBe(1);
@@ -448,7 +527,7 @@ describe('W2/W3/W4 start and closeout ownership', () => {
       expect(readFileSync(join(f.target, '.ai/harness/active-worktree'), 'utf8').trim()).toBe(f.target);
       writeFileSync(join(f.target, 'change'), 'task change'); commitAll(f.target, 'task change');
       expect(run('git', ['merge', '--ff-only', 'codex/owned'], f.cwd).status).toBe(0);
-      const result = run('bash', ['scripts/contract-worktree.sh', 'cleanup', '--slug', 'owned', '--target', 'main'], f.cwd);
+      const result = run('bash', ['scripts/contract-worktree.sh', 'cleanup', '--slug', '123-owned', '--target', 'main'], f.cwd);
       expect(result.status, result.stderr).toBe(0); expect(existsSync(f.target)).toBe(false);
       expect(run('git', ['branch', '--list', 'codex/owned'], f.cwd).stdout.trim()).toBe('');
       // The fixture HOME has no global architecture configuration, so the provider is disabled.
@@ -484,7 +563,7 @@ describe('W2/W3/W4 start and closeout ownership', () => {
       expect(existsSync(stale)).toBe(false); expect(existsSync(unknown)).toBe(true);
       writeFileSync(join(f.target, 'change'), 'task'); commitAll(f.target, 'task');
       expect(run('git', ['merge', '--ff-only', 'codex/owned'], f.cwd).status).toBe(0);
-      const cleanup = run('bash', ['scripts/contract-worktree.sh', 'cleanup', '--slug', 'owned', '--target', 'main'], f.cwd);
+      const cleanup = run('bash', ['scripts/contract-worktree.sh', 'cleanup', '--slug', '123-owned', '--target', 'main'], f.cwd);
       expect(cleanup.status, cleanup.stderr).toBe(0); expect(existsSync(f.target)).toBe(false);
       expect(readdirSync(store).filter(name => name.endsWith('.json'))).toEqual([]);
     } finally { f.cleanup(); }
