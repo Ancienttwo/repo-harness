@@ -3,15 +3,13 @@ import { readDocSessionFinalizationView } from './doc-session-finalization-view'
 import { readDocSessionList, readDocSessionDetail } from './doc-session-views';
 import { DocSessionEventsError, readDocSessionEvents } from './doc-session-events';
 import { isAdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
-import { readOperatorAdmittedTaskActivity } from './admitted-task-activity';
+import { OperatorTaskActivityError, readOperatorAdmittedTaskActivity } from './admitted-task-activity';
 import { isTaskSessionsRequest } from '../../core/sessions/task-sessions';
 import { readAdmittedTaskSessions } from '../sessions/task-sessions';
 import { Worker } from 'node:worker_threads';
 import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
-import { isTaskActivityRequest } from '../../core/operator/task-activity';
 import { isAdmittedSessionSelector } from '../../core/sessions/session-selector';
-import { OperatorTaskActivityError, readOperatorTaskActivity } from './task-activity';
 import { readOperatorTaskContext } from './task-context';
 import { SessionObservationError } from '../sessions/admitted-source';
 import { readOperatorTaskDiff } from './task-diff';
@@ -55,8 +53,6 @@ function run(): void {
         finish({ok:true,snapshot:readOperatorTaskContext({...message.request,env})});
       } else if (message.kind === 'admitted_activity' && isAdmittedTaskActivityRequest(message.request)) {
         finish({ok:true,snapshot:readOperatorAdmittedTaskActivity({...message.request,env})});
-      } else if (message.kind === 'activity' && isTaskActivityRequest(message.request)) {
-        finish({ok:true,snapshot:readOperatorTaskActivity({...message.request,env})});
       } else if (message.kind === 'sessions' && isTaskSessionsRequest(message.request)) {
         finish({ok:true,snapshot:readAdmittedTaskSessions({...message.request,env})});
       } else if (message.kind === 'diff' && isAdmittedSessionSelector(message.request)) {

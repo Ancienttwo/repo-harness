@@ -152,10 +152,10 @@ describe("Bootstrap Script Contracts", () => {
     expect(cliEntry).not.toMatch(/\\.version\\(['\"][0-9]+\\.[0-9]+\\.[0-9]+['\"]\\)/);
     expect(pkg.scripts["check:ci"]).toBe("bash scripts/check-ci.sh");
     expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
-    expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
+    expect(pkg.scripts["check:task-sync"]).toBeUndefined();
     expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
     expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
-    expect(pkg.scripts["check:task-workflow"]).toBe("repo-harness run check-task-workflow");
+    expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
     expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
     expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");
   });
@@ -265,9 +265,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("skill-factory-create.sh");
     expect(sharedLib).not.toContain("skill-factory-check.sh");
     expect(sharedLib).not.toContain("pi_install_workflow_contract");
-    expect(sharedLib).toContain("check:task-sync");
+    expect(sharedLib).not.toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
-    expect(sharedLib).toContain("check:task-workflow");
+    expect(sharedLib).toContain('delete pkg.scripts["check:task-workflow"]');
     expect(sharedLib).not.toContain("contract.template.md");
     expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(sharedLib).not.toContain("PI_TEMPLATE_PLAN");
@@ -411,9 +411,9 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("skill-factory-create.sh");
     expect(sharedLib).not.toContain("skill-factory-check.sh");
     expect(sharedLib).toContain("pi_workflow_contract_query_lines");
-    expect(sharedLib).toContain("check:task-sync");
+    expect(sharedLib).not.toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
-    expect(sharedLib).toContain("check:task-workflow");
+    expect(sharedLib).toContain('delete pkg.scripts["check:task-workflow"]');
     expect(content).toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");

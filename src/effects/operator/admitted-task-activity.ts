@@ -1,8 +1,11 @@
 import { decodeAdmittedTaskActivity, isAdmittedTaskActivityRequest, type AdmittedActivityEntry, type AdmittedTaskActivity, type AdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
-import { TASK_ACTIVITY_DEADLINE_MS, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN } from '../../core/operator/task-activity';
+import { TASK_ACTIVITY_DEADLINE_MS, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN, type TaskActivityFailure } from '../../core/operator/task-activity';
 import { readAdmittedTaskActivity } from '../fleet/task-inbox';
-import { OperatorTaskActivityError } from './task-activity';
 import { observeAdmittedSessionSource, SessionObservationError } from '../sessions/admitted-source';
+
+export class OperatorTaskActivityError extends Error {
+  constructor(readonly code: TaskActivityFailure) { super(code); }
+}
 
 /** Current session authorization surrounds a bounded observation of stored facts. */
 export function readOperatorAdmittedTaskActivity(input: AdmittedTaskActivityRequest & { readonly env?: NodeJS.ProcessEnv },

@@ -1,13 +1,7 @@
 /**
  * SessionStart context. The handler resolves Effective State once. The state
- * section, or `[HarnessStateUnavailable]`, comes first and always. Every other
- * provider is an independent nullable section with a stable id and the source
- * that holds its full content. The resume has one
- * pointer in `references`.
- * Providers read the resolved state; they do not parse the plan, the sprint
- * marker or the policy again. A provider that throws becomes one
- * `[SessionContextProviderFailed] <id>` line and does not remove the state
- * section or a sibling.
+ * section, or `[HarnessStateUnavailable]`, is the only section this module
+ * owns. The resume has one pointer in `references`.
  */
 
 import type { SessionContextSection } from './session-context-budget';
@@ -73,49 +67,8 @@ export const EDIT_GUARD_SCOPE_SECTION: SessionContextSection = Object.freeze({
   source: 'docs/reference-configs/hook-operations.md',
 });
 
-export interface SessionContextProviderInput {
-  readonly repoRoot: string;
-  readonly state: EffectiveState;
-  readonly nowMs: number;
-}
-
-export interface SessionContextBody {
-  readonly content: string;
-  readonly source: string;
-  readonly systemMessage?: string;
-}
-
-export interface SessionContextProvider {
-  readonly id: string;
-  readonly priority: number;
-  readonly render: (input: SessionContextProviderInput) => SessionContextBody | null;
-}
-
-/** All SessionStart sections, state first. The runtime budgets them once. */
-export function buildSessionStartSections(
-  repoRoot: string,
-  resolution: EffectiveStateResolution,
-  nowMs: number,
-  providers: readonly SessionContextProvider[] = [],
-): SessionContextSection[] {
+/** The state, or its fail-closed unavailability notice. The runtime budgets it once. */
+export function buildSessionStartSections(resolution: EffectiveStateResolution): SessionContextSection[] {
   if (!resolution.ok) return [projectUnavailableStateSessionSection(resolution)];
-  const sections = [projectEffectiveStateSessionSection(resolution.state)];
-  for (const provider of providers) {
-    let body: SessionContextBody | null;
-    try {
-      body = provider.render({ repoRoot, state: resolution.state, nowMs });
-    } catch {
-      // Mandatory so the budget never hides that a section is missing.
-      sections.push({
-        id: provider.id,
-        priority: provider.priority,
-        content: `[SessionContextProviderFailed] ${provider.id}`,
-        mandatory: true,
-        source: STATE_SOURCE,
-      });
-      continue;
-    }
-    if (body) sections.push({ id: provider.id, priority: provider.priority, mandatory: false, ...body });
-  }
-  return sections;
+  return [projectEffectiveStateSessionSection(resolution.state)];
 }

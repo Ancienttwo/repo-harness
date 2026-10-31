@@ -29,8 +29,8 @@ export interface ContinuationEnvelopeInputs {
  * Resolve the continuation route before applying the no-progress circuit
  * breaker. The route is a projection of Effective State alone: a hard blocker
  * halts, a fresh handoff next action continues, and every other state idles.
- * The unit reference is the state revision, so no plan or sprint path enters
- * the output.
+ * The unit reference is the next action's digest, so no plan or sprint path
+ * enters the output.
  */
 function projectRoutedEnvelope(
   input: ContinuationEnvelopeInputs,

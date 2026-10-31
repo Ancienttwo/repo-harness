@@ -16,7 +16,7 @@ export function isDocumentationPath(path: string): boolean {
   if (path.startsWith('docs/reference-configs/')) return false;
   return path === 'README.md' || path === 'DEBUG.md' || path === 'docs/architecture/.projection-manifest.json'
     || (path.startsWith('examples/') && path.endsWith('.md'))
-    || path.startsWith('tasks/') || path.startsWith('plans/') || path.startsWith('.ai/harness/handoff/')
+    || path === 'tasks/lessons.md' || path.startsWith('.ai/harness/handoff/')
     || (path.startsWith('docs/') && path.endsWith('.md'));
 }
 export function diffBase(eventName: string, event: unknown): unknown {
@@ -132,6 +132,12 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   for (const path of paths) {
     if (isDocumentationPath(path)) { for (const test of documentationConsumers) if (sources.has(test)) tests.add(test); continue; }
     if (fullReasons.includes(path)) continue;
+    // Eval fixtures are inputs to the eval suite; a rename or deletion must run it.
+    if (path.startsWith('evals/fixtures/')) {
+      if (sources.has('tests/run-skill-evals.test.ts')) tests.add('tests/run-skill-evals.test.ts');
+      else uncovered.push(path);
+      continue;
+    }
     const seen = new Set([path]); const queue = [path]; let covered = false;
     for (const consumer of data.get(path) ?? []) if (!seen.has(consumer)) { seen.add(consumer); queue.push(consumer); }
     for (let i = 0; i < queue.length; i++) {

@@ -5,10 +5,7 @@ import { execFileSync, spawnSync } from "child_process";
 import { existsSync, mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join } from "path";
-import {
-  buildSessionStartSections,
-  type SessionContextProvider,
-} from "../src/cli/hook/session-context";
+import { buildSessionStartSections } from "../src/cli/hook/session-context";
 import { budgetSessionContext } from "../src/cli/hook/session-context-budget";
 import type { EffectiveState } from "../src/core/state/types";
 import type { EffectiveStateResolution } from "../src/effects/loop/state-input-collector";
@@ -203,34 +200,23 @@ describe("buildSessionStartSections", () => {
     resume: { path: RESUME, freshness: "missing" },
   } as unknown as EffectiveState;
 
-  test("an unavailable state yields only the fail-closed section and runs no provider", () => {
-    let called = false;
+  test("an unavailable state yields only the fail-closed section", () => {
     const resolution: EffectiveStateResolution = {
       ok: false, reason_code: "state_resolution_failed", error_hash: `sha256:${"b".repeat(64)}`, message: "/private/secret",
     };
-    const sections = buildSessionStartSections("/unused", resolution, 0, [
-      { id: "probe", priority: 2, render: () => { called = true; return null; } },
-    ]);
-    expect(called).toBe(false);
+    const sections = buildSessionStartSections(resolution);
     expect(sections).toHaveLength(1);
     expect(sections[0]).toMatchObject({ id: "effective-state", mandatory: true });
     expect(sections[0].content).toStartWith("[HarnessStateUnavailable] ");
     expect(sections[0].content).not.toContain("/private/secret");
   });
 
-  test("a throwing provider is replaced by a mandatory marker and later providers still run", () => {
-    const later: SessionContextProvider = { id: "later", priority: 4, render: () => ({ content: "later body", source: "later.md" }) };
-    const sections = buildSessionStartSections("/unused", { ok: true, state }, 0, [
-      { id: "boom", priority: 2, render: () => { throw new Error("provider bug /private/path"); } },
-      later,
-    ]);
-    expect(sections.map(({ id }) => id)).toEqual(["effective-state", "boom", "later"]);
-    expect(sections[1]).toMatchObject({ content: "[SessionContextProviderFailed] boom", mandatory: true });
+  test("an available state yields only the state section", () => {
+    const sections = buildSessionStartSections({ ok: true, state });
+    expect(sections.map(({ id }) => id)).toEqual(["effective-state"]);
     const context = budgetSessionContext(sections);
     expect(context).toStartWith("[HarnessState] ");
-    expect(context).toContain("[SessionContextProviderFailed] boom");
-    expect(context).toContain("later body");
-    expect(context).not.toContain("/private/path");
+    expect(context).not.toContain("[SessionContextProviderFailed]");
   });
 });
 
