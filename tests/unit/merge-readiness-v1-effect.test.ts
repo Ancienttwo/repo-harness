@@ -438,3 +438,80 @@ test('merged provider PR remains blocked without local squash classification aut
   expect(verdict.ready).toBe(false);
   expect(verdict.blockers.map(blocker => blocker.code)).toContain('already_integrated');
 });
+
+
+function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job'): NonNullable<PublicationReadinessInput['gh_runner']> {
+  const source = fakeGh();
+  const run = {
+    path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
+    status: 'completed', conclusion: scenario === 'failed-check' ? 'failure' : 'success',
+    run_attempt: scenario === 'failed-check' ? 1 : 2, workflow_id: 99,
+    pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: BASE } }],
+  };
+  const job = (id: number, conclusion: string, checkRunUrl: string | null = null, name = 'test (ubuntu-latest)') => ({
+    id, name, status: 'completed', conclusion,
+    steps: [{ name: 'Run tests', number: 1, status: 'completed', conclusion }],
+    check_run_url: checkRunUrl,
+  });
+  return (args) => {
+    const path = args[1] ?? '';
+    if (args[0] === 'pr' && args[1] === 'checks') {
+      return { status: scenario === 'failed-check' ? 1 : 0, stdout: JSON.stringify([{
+        name: 'Required / CI', bucket: scenario === 'failed-check' ? 'fail' : 'pass',
+        link: `https://github.com/example/repo-harness/actions/runs/123/job/${scenario === 'failed-check' ? 456 : 789}`,
+      }]) };
+    }
+    if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
+    if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
+      return { status: 0, stdout: JSON.stringify({
+        total_count: 1,
+        jobs: [job(456, 'failure', 'https://api.github.com/repos/example/repo-harness/check-runs/77',
+          scenario === 'missing-previous-job' ? 'renamed job' : 'test (ubuntu-latest)')],
+      }) };
+    }
+    if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
+      return { status: 0, stdout: JSON.stringify({ total_count: 1, jobs: [job(789, 'success')] }) };
+    }
+    if (path === 'repos/example/repo-harness/check-runs/77/annotations?per_page=100') {
+      return { status: 0, stdout: JSON.stringify([{ message: 'AssertionError: expected 200 but received 500' }]) };
+    }
+    return source(args);
+  };
+}
+
+test('a passing same-SHA rerun is failed_then_passed evidence and never a proven flake', async () => {
+  const gh_runner = evidenceGh('passed-rerun');
+  const sync = collectPullRequestMergeReadiness({ ...input, gh_runner });
+  expect(sync.ready).toBe(true);
+  expect(sync.blockers).toEqual([]);
+  expect(sync.check_failures).toHaveLength(1);
+  const [evidence] = sync.check_failures;
+  expect(evidence!.observed_result).toBe('failed_then_passed');
+  expect(evidence!.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed' });
+  expect(evidence!.cause).toBe('unknown');
+  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, job_name: 'test (ubuntu-latest)' });
+  expect(evidence!.retry.latest).toMatchObject({ run_id: 123, attempt: 2, job_id: 789 });
+  expect(evidence!.workflow).toEqual({ path: '.github/workflows/ci.yml', id: 99, revision: HEAD });
+
+  const asyncVerdict = await collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => gh_runner(args) });
+  expect(asyncVerdict.check_failures).toEqual(sync.check_failures);
+});
+
+test('a failed required check keeps its blocker and records the failing job and step', () => {
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('failed-check') });
+  expect(verdict.ready).toBe(false);
+  expect(verdict.blockers.map(blocker => blocker.code)).toContain('checks_failed');
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.observed_result).toBe('failed');
+  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, steps: ['Run tests'], shape: 'assertion_mismatch' });
+  expect(evidence!.failed.failure_excerpt).toContain('AssertionError');
+  expect(evidence!.cause).toBe('unknown');
+});
+
+test('a rerun whose preserved job is missing fails closed instead of inventing history', () => {
+  const gh_runner = evidenceGh('missing-previous-job');
+  const identity = observeProviderReadinessIdentity({ ...input, gh_runner });
+  expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
+    .toThrow('did not preserve the failed job');
+});
+

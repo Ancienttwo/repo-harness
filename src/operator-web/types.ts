@@ -2,6 +2,7 @@ import { decodeAdmittedTaskSessions } from '../core/sessions/task-sessions';
 import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
+import { validateRequiredCheckFailureEvidence } from '../core/evidence/required-check-evidence';
 import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
 export type {
@@ -371,7 +372,7 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
   if (value === null) return null;
   const readiness = requireRecord(value);
   requireExactKeys(readiness, ['protocol', 'kind', 'provider_repository_id', 'repository', 'pr_number', 'ready',
-    'expected_head_sha', 'expected_base_sha', 'integration_mode', 'attention_owner', 'blockers']);
+    'expected_head_sha', 'expected_base_sha', 'integration_mode', 'attention_owner', 'blockers', 'check_failures']);
   if (readiness.protocol !== 2 || readiness.kind !== 'repo-harness-pull-request-readiness') throw new OperatorPayloadError();
   const repositoryId = requireString(readiness.provider_repository_id);
   const repository = requireString(readiness.repository);
@@ -392,6 +393,9 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
     }
     blockers.push(Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }));
   }
+  const checkFailures = requireArray(readiness.check_failures).map((entry) => {
+    try { return validateRequiredCheckFailureEvidence(entry); } catch { throw new OperatorPayloadError(); }
+  });
   return Object.freeze({
     protocol: 2,
     kind: 'repo-harness-pull-request-readiness',
@@ -402,6 +406,7 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
     integration_mode: integrationMode,
     attention_owner: attentionOwner,
     blockers: Object.freeze(blockers),
+    check_failures: Object.freeze(checkFailures),
   });
 }
 

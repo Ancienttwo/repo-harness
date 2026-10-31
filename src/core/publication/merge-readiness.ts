@@ -1,3 +1,8 @@
+import {
+  validateRequiredCheckFailureEvidence,
+  type RequiredCheckFailureEvidenceV1,
+} from '../evidence/required-check-evidence';
+
 export type MergeReadinessAttentionOwner = 'agent' | 'user' | 'external';
 export type MergeReadinessVerdictAttentionOwner = MergeReadinessAttentionOwner | 'none';
 
@@ -44,6 +49,8 @@ export interface ProviderMergeReadinessFactsV1 {
     readonly name: string;
     readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
   }[];
+  /** Observed failure history for required checks. Empty when every check passed on its first attempt. */
+  readonly check_failures: readonly RequiredCheckFailureEvidenceV1[];
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
@@ -63,6 +70,13 @@ export interface MergeReadinessVerdict {
   readonly integration_mode: MergeReadinessIntegrationMode;
   readonly attention_owner: MergeReadinessVerdictAttentionOwner;
   readonly blockers: readonly MergeReadinessBlockerV1[];
+  /**
+   * Evidence only. It never changes `blockers` or `ready`: a same-SHA rerun
+   * that passes is `failed_then_passed`, not a proven infrastructure flake and
+   * not an automatic pass. The merge decision stays with the publication
+   * policy and the observed check buckets.
+   */
+  readonly check_failures: readonly RequiredCheckFailureEvidenceV1[];
 }
 
 export interface PullRequestSelectionV2 {
@@ -113,6 +127,19 @@ function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): Me
  */
 export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): MergeReadinessVerdict {
   const blockers: MergeReadinessBlockerV1[] = [];
+  if (input.provider !== null && !Array.isArray(input.provider.check_failures)) push(blockers, 'provider_data_incomplete');
+  const checkFailures = Array.isArray(input.provider?.check_failures) ? input.provider.check_failures : [];
+  for (const failure of checkFailures) {
+    try {
+      validateRequiredCheckFailureEvidence(failure);
+    } catch {
+      push(blockers, 'provider_data_incomplete');
+      continue;
+    }
+    if (failure.head_sha !== input.expected_head_sha || failure.base_sha !== input.expected_base_sha) {
+      push(blockers, 'provider_data_incomplete');
+    }
+  }
   const validSha = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
   if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
   if (input.integration_mode === 'ancestor' || input.integration_mode === 'absorbed') push(blockers, 'already_integrated');
@@ -152,5 +179,6 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     integration_mode: input.integration_mode,
     attention_owner: verdictAttentionOwner(blockers),
     blockers: Object.freeze(blockers),
+    check_failures: Object.freeze([...checkFailures]),
   });
 }
