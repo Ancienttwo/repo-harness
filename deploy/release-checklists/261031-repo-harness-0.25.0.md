@@ -92,6 +92,10 @@ The owner runs `npm publish`; the agent does not publish.
 - `bash scripts/check-npm-release.sh --prepublish`: version must be unpublished
   and helpers must pass.
 - `bash scripts/check-ci.sh architecture`: `noop`, `renderEquivalent: true`.
+- Registered upgrade: `repo-harness update` leaves a registered project
+  unchanged. `repo-harness upgrade --registered` lists the pending migration
+  and the registry revision. `--apply --expected-revision` then migrates the
+  project and reports each removed, refreshed or kept file.
 - Package smoke: `npm pack --dry-run` includes `dist/oar-review-host.js` and
   the DSH plugin, and excludes `tasks/` and `plans/`. The docs host is closed
   (#1149), so its bundle is not in the package.
