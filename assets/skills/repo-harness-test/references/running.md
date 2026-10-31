@@ -1,7 +1,7 @@
 # Running tests
 
 Which coverage is sufficient is policy
-(`docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`).
+(`docs/reference-configs/global-working-rules.md#test-budget`).
 This file records how to actually run and measure it here.
 
 ## Focused first

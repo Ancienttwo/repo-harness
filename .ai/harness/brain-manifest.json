@@ -60,22 +60,6 @@
       "max_repo_lines": 40
     },
     {
-      "id": "workflow-orchestration",
-      "role": "externalized",
-      "repo_path": "docs/reference-configs/workflow-orchestration.md",
-      "asset_path": "assets/reference-configs/workflow-orchestration.md",
-      "brain_path": "brain/repo-harness/patterns/pattern-agentic-workflow-orchestration.md",
-      "max_repo_lines": 40
-    },
-    {
-      "id": "development-protocol",
-      "role": "partial",
-      "repo_path": "docs/reference-configs/development-protocol.md",
-      "asset_path": "assets/reference-configs/development-protocol.md",
-      "brain_path": "brain/repo-harness/patterns/pattern-agentic-development-protocol.md",
-      "max_repo_lines": 80
-    },
-    {
       "id": "evaluator-rubric",
       "role": "partial",
       "repo_path": "docs/reference-configs/evaluator-rubric.md",

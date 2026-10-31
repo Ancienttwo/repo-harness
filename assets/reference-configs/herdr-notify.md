@@ -2,7 +2,6 @@
 
 ## Herdr Dispatch
 
-- Suggested model split: when both are available, Claude (deep tier) drafts the architecture and Codex executes against the agreed plan; with only one, that model does both (plan first, then execute).
 - Claude, Codex and Pi peers run in visible Herdr panes through the herdr skill (`herdr agent start|prompt|wait|read`). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.
 - Pi review uses an OAR RPC subprocess under Seatbelt. Its private agent directory links native model configuration and credentials for read-only access. An owner-written mode-0600 `settings.json` contains only native `defaultProvider`, `defaultModel` and `defaultThinkingLevel`; packages, proxy and trust policy are excluded. User extensions, skills, context files, prompt templates and MCP are disabled. The Pi reviewer uses the user's Pi default model. The Receipt's `actual_model` records OAR's actual `provider/model`. An unobserved model is `null`: the Receipt still records the verdict and grants no cross-model claim.
 - A cross-model review means Receipt `model_relation: different-family`. The OAR host records the reviewer model and the model of each ended turn of the one author task session bound to the caller pane, campaign and reviewed root. One closed family table in `src/core/review/acceptance-receipt.ts` compares vendor families, not routing providers. Harness kind does not prove a model difference. A shared family is `same-family`. A missing author binding, an unobserved or running turn, a Claude turn (its model is not observed) or a model outside the table is `unknown`. Interactive authors are not OAR-observed, so they give `unknown` and a High-tier cross-model review stays a manual Herdr peer review. The review runtime records identity; it adds no cross-model gate.
@@ -10,16 +9,8 @@
 - Send the root tests-and-implementation review to the other model through Herdr when it is available. Otherwise, run that read-only review in a separate same-model pane.
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
 
-### Worker Briefs
-
-- Define the boundary by responsibility, not by a file list. Inside the boundary, the worker edits every file the change needs: callers, types, tests and docs.
-- List only the paths that another worker owns. Name the stop conditions: a path another worker owns, a public contract or wire format outside the brief, deletion of user data, credentials or permissions, release. The worker makes every other decision and records it in the final report.
-- Default to a clean refactor: change all callers, delete the old path and update the tests in the same change. Do not add compatibility shims, fallbacks, aliases, or validation for states the code cannot reach. Keep compatibility only where the brief names it, for example persisted user data, a published protocol or installed adapters.
-- Give the decision, not a menu. State each value precisely (exact names, limits, the variables to remove), so the worker does not choose the most defensive reading. Codex in particular adds guards and couplings when the brief is vague.
-
 ### Test and Review Rules
 
-- Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.
 - The merge gate is typecheck plus affected tests. Run `bash scripts/check-ci.sh affected --base origin/main` locally.
 - Run the full suite for dependency manifests, shared test/runtime foundations, releases, the daily run, or a named integration invariant that focused checks cannot cover.
 - When full coverage is required, run `bun run test:full` once on the final rebased head.
@@ -30,9 +21,6 @@
 - Run long tasks in the background.
 - Wait for the completion notice, or check at intervals of 5 to 10 minutes.
 - Do not report each check.
-- Use one cross-reviewer for each artifact.
-- Limit each artifact to two review rounds.
-- Ask the user to decide before a third review round.
 - Before commit, remove debug writes to `/tmp` and other debug instrumentation.
 
 ## Notify setup

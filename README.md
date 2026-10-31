@@ -319,8 +319,7 @@ frame, the parent completes P1/P2/P3 and freezes the accepted direction into an
 upper-layer PRD under `docs/prds/`, then orders GitHub issues through
 `repo-harness-issue-flow`. The issue and PR are the durable execution queue, so a
 resumed Goal session never reinterprets the original chat. See
-[`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
-and [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.md).
+[`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md).
 
 ## Work Across Sessions
 
