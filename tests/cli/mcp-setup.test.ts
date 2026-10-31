@@ -19,6 +19,7 @@ import { startMcpStdio } from '../../src/cli/mcp/transports/stdio';
 import { callMcpTool } from '../../src/cli/mcp/tools';
 import { repoHarnessPackageVersion } from '../../src/cli/mcp/version';
 import { assertChatGptMcpContract } from '../helpers/chatgpt-mcp-contract';
+import { PR as PUBLISH_PR, installFakeGh, passingScenario } from '../helpers/publication-merge-fake-gh';
 import {
   readRegisteredRepoHarnessRepos,
   repoHarnessAuthorizationRevision,
@@ -544,6 +545,49 @@ describe('mcp setup', () => {
       expect(disabled.authorizationRevision).toBe(4);
       expect(() => createMcpToolContext({ repo: repoRoot, profile: 'coding' })).toThrow('coding MCP is disabled');
     });
+  });
+
+  test('orchestrator review publish needs the target read_write grant under empty and named allowed roots', async () => {
+    for (const allowRoot of [false, true]) {
+      await withTmpRepoAsync(async (repoRoot) => {
+        const outside = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-review-outside-')));
+        const previousGh = process.env.REPO_HARNESS_GH_BIN;
+        try {
+          mkdirSync(join(outside, '.ai/harness'), { recursive: true });
+          writeFileSync(join(outside, '.ai/harness/policy.json'), '{}\n');
+          expect(setRepoHarnessAccessMode(outside, 'read_only').accessMode).toBe('read_only');
+          runMcpSetupChatgpt({
+            repo: repoRoot,
+            profile: 'orchestrator',
+            grantReadWrite: [repoRoot],
+            ...(allowRoot ? { allowRoot: [outside] } : {}),
+            endpoint: 'https://orchestrator.example.com/mcp',
+          });
+          const ctx = createMcpToolContext({ repo: repoRoot, profile: 'orchestrator' });
+          expect(ctx.policy.allowedRoots).toEqual(allowRoot ? [realpathSync(outside)] : []);
+          const gh = installFakeGh(outside, passingScenario());
+          process.env.REPO_HARNESS_GH_BIN = gh.bin;
+
+          const denied = JSON.parse((await callMcpTool(ctx, 'review_publish', {
+            repo_path: outside, pr_number: PUBLISH_PR, receipt_path: join(outside, 'receipt.json'),
+          })).content[0].text);
+          expect(denied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
+          expect(denied.error.message).toContain('explicit read_write grant');
+          expect(gh.calls()).toEqual([]);
+
+          // The granted target reaches the receipt reader; an outside target never does.
+          const granted = JSON.parse((await callMcpTool(ctx, 'review_publish', {
+            repo_path: repoRoot, pr_number: PUBLISH_PR, receipt_path: join(repoRoot, 'missing-receipt.json'),
+          })).content[0].text);
+          expect(granted.error).toMatchObject({ code: 'review_receipt_invalid' });
+          expect(gh.calls()).toEqual([]);
+        } finally {
+          if (previousGh === undefined) delete process.env.REPO_HARNESS_GH_BIN;
+          else process.env.REPO_HARNESS_GH_BIN = previousGh;
+          rmSync(outside, { recursive: true, force: true });
+        }
+      });
+    }
   });
 
   test('orchestrator setup requires an explicit grant and its own profile authorization', () => {
