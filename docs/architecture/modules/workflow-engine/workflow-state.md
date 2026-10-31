@@ -1,13 +1,13 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c6f29b9adf69cb48d58e99392d6da5512241ae378d2d9e25f754de3f49a8e965" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:79f0276a9021ca9d5e557565e2cb8db0c712ee321786a3c3ba1b4abe5b54dee9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Resolves deterministic Effective State, provider issue and admitted session board observations, historical task identity, worktree safety and the continuation ledger.
+Resolves deterministic Effective State, provider issue and admitted session board observations, worktree safety and the continuation ledger.
 
 ## 1. P1:能力架構地圖
 
@@ -123,8 +123,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.continuation-ledger-effects` | Continuation Ledger (effects) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `200–500` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `50–100` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
