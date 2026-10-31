@@ -1,4 +1,4 @@
-import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReadFileSync as readFileSync, observationReaddirSync as readdirSync } from '../readonly-observation';
+import { assertObservationPath, currentReadonlyObservation, withReadonlyObservation, type ReadonlyObservationIO, observationReaddirSync as readdirSync } from '../readonly-observation';
 import { statSync, existsSync } from 'fs';
 import { posix, win32, join } from 'path';
 import { buildReviewSubject, isImplementationSurfacePath, type ReviewSubject } from '../review/diff-fingerprint';
@@ -26,7 +26,6 @@ import type {
   EffectiveStateRiskInput,
   StateSnapshot,
 } from '../../core/state/types';
-import { planStatusFromText } from '../../core/state/artifact-parsers';
 import { projectEffectiveState } from '../../core/state/project-effective-state';
 import {
   projectStateSnapshot,
@@ -250,12 +249,6 @@ function capabilityAuthoritySourcePaths(cwd: string, mode: CapabilitySourceMode)
   return paths.length > 0 ? paths : [CAPABILITY_NODES_DIR];
 }
 
-function planStatusForPendingDraft(cwd: string, planPath: string): string {
-  if (!fileExists(cwd, planPath)) return '';
-  const state = planStatusFromText(readText(cwd, planPath));
-  return state === 'draft' || state === 'annotating' ? state : '';
-}
-
 function pendingState(cwd: string, nowMs: number, policy: WorkflowPolicy): 'none' | 'fresh' | 'stale' {
   const pendingPath = policyPath(
     policy,
@@ -273,21 +266,6 @@ function pendingState(cwd: string, nowMs: number, policy: WorkflowPolicy): 'none
   }
   const ageSeconds = Math.max(0, Math.floor((nowMs - stat.mtimeMs) / 1000));
   if (ageSeconds <= 259200) return 'fresh';
-  let parsed: { draft_plan_path?: unknown } = {};
-  try {
-    parsed = JSON.parse(readFileSync(repoPath(cwd, pendingPath), 'utf-8'));
-  } catch {
-    return 'stale';
-  }
-  const draftPath =
-    typeof parsed.draft_plan_path === 'string' ? parsed.draft_plan_path : '';
-  if (
-    draftPath &&
-    planStatusForPendingDraft(cwd, draftPath) &&
-    ageSeconds <= 604800
-  ) {
-    return 'fresh';
-  }
   return 'stale';
 }
 

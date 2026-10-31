@@ -520,7 +520,6 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
     "check:brain": "repo-harness brain check",
     "check:context-files": "repo-harness run check-context-files",
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-    "check:task-sync": "repo-harness run check-task-sync",
     "sync:brain": "repo-harness brain sync",
   });
   if (scripts["check:brain-manifest"] === "repo-harness run check-brain-manifest") {

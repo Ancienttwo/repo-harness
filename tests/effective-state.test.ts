@@ -57,52 +57,24 @@ describe('effective state ignores the retired task chain', () => {
 });
 
 describe('effective state resolver', () => {
-  test('fails closed when artifact-derived paths escape the repository', () => {
-    const cases = [
-      {
-        name: 'pending draft path',
-        setup(cwd: string, outsidePath: string, outsideRelative: string) {
-          writeFileSync(outsidePath, '# Outside draft\n> **Status**: Draft\n');
-          const pendingPath = join(cwd, '.ai/harness/planning/pending.json');
-          write(cwd, '.ai/harness/planning/pending.json', JSON.stringify({
-            draft_plan_path: outsideRelative,
-          }));
-          const old = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
-          utimesSync(pendingPath, old, old);
-        },
-        run(cwd: string) { buildStateSnapshot(cwd); },
-      },
-    ] as const;
-
-    const results: Array<{ readonly name: string; readonly failedClosed: boolean; readonly published: boolean }> = [];
-    for (const entry of cases) {
-      const fixture = createEffectiveStateFixture();
-      const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-${entry.name.replaceAll(' ', '-')}.md`);
-      const outsideRelative = `../${basename(outsidePath)}`;
-      try {
-        entry.setup(fixture.cwd, outsidePath, outsideRelative);
-        let failedClosed = false;
-        try {
-          entry.run(fixture.cwd);
-        } catch {
-          failedClosed = true;
-        }
-        results.push({
-          name: entry.name,
-          failedClosed,
-          published: existsSync(stateVersionOwnerPath(fixture.cwd)),
-        });
-      } finally {
-        rmSync(outsidePath, { force: true });
-        fixture.cleanup();
-      }
+  test('ignores draft_plan_path in the pending orchestration file', () => {
+    const fixture = createEffectiveStateFixture();
+    const outsidePath = join(fixture.cwd, '..', `${basename(fixture.cwd)}-outside-draft.md`);
+    try {
+      writeFileSync(outsidePath, '# Outside draft\n> **Status**: Draft\n');
+      const pendingPath = join(fixture.cwd, '.ai/harness/planning/pending.json');
+      write(fixture.cwd, '.ai/harness/planning/pending.json', JSON.stringify({
+        draft_plan_path: `../${basename(outsidePath)}`,
+      }));
+      const old = new Date(Date.now() - 4 * 24 * 60 * 60 * 1000);
+      utimesSync(pendingPath, old, old);
+      const snapshot = buildStateSnapshot(fixture.cwd);
+      expect(snapshot.states.pending).toBe('stale');
+      expect(JSON.stringify(snapshot)).not.toContain('outside-draft');
+    } finally {
+      rmSync(outsidePath, { force: true });
+      fixture.cleanup();
     }
-
-    expect(results).toEqual(cases.map((entry) => ({
-      name: entry.name,
-      failedClosed: true,
-      published: false,
-    })));
   }, 30_000);
 
   test('ignores in-repo plan symlinks that point outside the repository', () => {

@@ -184,8 +184,14 @@ function readGithubIssue(repoRoot: string, issueNumber: number): GithubIssueFiel
 function activeClaim(issue: GithubIssueFields): string {
   const claims = issue.comments.filter((comment) => /^repo-harness issue claim\b/mu.test(comment.body));
   const latest = claims.at(-1);
-  const status = latest?.body.match(/^Status:\s*(.+)$/imu)?.[1]?.replace(/[\*_`]/gu, '').trim().toLowerCase();
-  if (latest && status === 'active') return `${latest.author} (${latest.url})`;
+  const statusText = latest?.body.match(/^Status:\s*(.+)$/imu)?.[1];
+  const status = statusText?.split(';')[0]?.replace(/[\*_`]/gu, '').trim().toLowerCase();
+  if (latest && (status === 'active' || status === 'blocked' || status === 'ready for review')) return `${latest.author} (${latest.url})`;
+  if (latest && (status === 'released' || status === 'done')) {
+    const assigneeList = issue.assignees.length > 0 ? issue.assignees.join(', ') : 'none';
+    return `no active claim; assignees: ${assigneeList} (${issue.url})`;
+  }
+  if (latest) return `claim status unknown: ${statusText?.trim() ?? '(missing status)'} ${latest.author} (${latest.url})`;
   const assigneeList = issue.assignees.length > 0 ? issue.assignees.join(', ') : 'none';
   return `no active claim; assignees: ${assigneeList} (${issue.url})`;
 }
