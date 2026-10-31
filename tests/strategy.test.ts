@@ -304,21 +304,29 @@ describe('optional strategy and progressive memory', () => {
     write(root, policy, JSON.stringify({ context: { capability_source: 'archcontext' } }));
     write(root, node, capabilityText('Fixture'));
     git(root, 'add', node); git(root, 'commit', '-m', 'Synthetic capability source');
-    write(root, 'tasks/current.md', 'Fixture current');
     const originalText = new Map([policy, node].map(path => [path, readFileSync(join(root, path), 'utf8')]));
     const reader = new StrategyReader(root); const original = reader.observationIO();
     const before = snapshot(root);
     const baseline = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, original);
     const counts = new Map<string, number>();
+    const policyPath = join(root, policy);
+    let policyReads = 0;
     const io = { ...original, readFile: (path: string) => {
+      // The policy is the first read of each pass. Restore the original bytes
+      // before the second pass observes them; the mutated disk stays in place
+      // for the whole first pass, so a re-read would still be visible.
+      if (path === policyPath && (policyReads += 1) === 2) {
+        for (const [source, text] of originalText) write(root, source, text);
+      }
       const bytes = original.readFile(path);
       for (const source of [policy, node]) if (path === join(root, source)) {
-        counts.set(source, (counts.get(source) ?? 0) + 1);
+        const count = (counts.get(source) ?? 0) + 1;
+        counts.set(source, count);
         // Change the disk after capture, before later authority/source hashing.
-        write(root, source, source === policy ? '{invalid' : capabilityText('Changed'));
+        // The first pass keeps the mutated bytes; the second pass reads the
+        // restored originals and does not mutate again.
+        if (count === 1) write(root, source, source === policy ? '{invalid' : capabilityText('Changed'));
       }
-      // This late source is collected after policy/node revision facts.
-      if (path === join(root, 'tasks/current.md')) for (const [source, text] of originalText) write(root, source, text);
       return bytes;
     } };
     const observed = resolveEffectiveStateReadOnly(root, nowMs, { targetPaths: [], operationKind: 'inspect' }, io);

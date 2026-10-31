@@ -37,9 +37,6 @@ function effectiveState(overrides: Partial<EffectiveState> = {}): EffectiveState
       current: '/repo',
       owner: '/repo',
     },
-    handoff: { path: null, freshness: 'missing' },
-    resume: { path: null, freshness: 'missing' },
-    current_snapshot: { path: 'tasks/current.md', freshness: 'stale' },
     ...overrides,
   };
 }

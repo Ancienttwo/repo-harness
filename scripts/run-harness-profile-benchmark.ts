@@ -57,7 +57,6 @@ export interface HarnessScenario {
   prompt: string;
   expected_paths: string[];
   acceptance_command: string;
-  requires_resume_projection?: boolean;
 }
 
 export interface HarnessScenarioManifest {
@@ -791,14 +790,6 @@ function initializeBenchmarkWorkspace(seed: string, workspace: string): void {
   run('git', ['commit', '-m', 'benchmark seed'], workspace);
 }
 
-export function writeResumeProjection(workspace: string): void {
-  mkdirSync(join(workspace, '.ai/harness/handoff'), { recursive: true });
-  writeFileSync(join(workspace, '.ai/harness/handoff/resume.md'), [
-    '# Resume', '', '## Exact Next Step', 'Change src/recovery.ts so recoveryState() returns complete.',
-    '', '## Verification', 'bun test tests/recovery.test.ts', '',
-  ].join('\n'));
-}
-
 function copyCodexAuthOnly(hostRoot: string): void {
   const sourceHome = process.env.CODEX_HOME ?? join(process.env.HOME ?? '', '.codex');
   const source = join(sourceHome, 'auth.json');
@@ -912,15 +903,10 @@ export function createRunOverlay(base: PreparedProfileBase, layout: BenchmarkRun
   run('git', ['config', 'user.name', 'Benchmark'], primaryWorkspace);
   cpSync(base.home, layout.home, { recursive: true, mode: constants.COPYFILE_FICLONE });
   rebaseAbsoluteSymlinks(base.home, layout.home);
-  if (scenario.requires_resume_projection) writeResumeProjection(primaryWorkspace);
   run('git', ['add', '.'], primaryWorkspace);
   run('git', ['commit', '--allow-empty', '-m', `benchmark ${base.profile} ${scenario.id} input`], primaryWorkspace);
   if (usesLinkedWorkspace) {
     addLinkedArmWorkspace(primaryWorkspace, layout.workspace);
-    // Handoff projections are intentionally ignored runtime state. Recreate
-    // them in the linked workspace because `git worktree add` can only project
-    // committed input from the private primary clone.
-    if (scenario.requires_resume_projection) writeResumeProjection(layout.workspace);
   }
   assertProfileBaseImmutable(base);
 }

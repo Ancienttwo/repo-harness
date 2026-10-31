@@ -3,16 +3,17 @@ import { spawnSync } from 'node:child_process';
 import { isAbsolute, join, posix } from 'node:path';
 import { inside, prepareCodexHome } from './review-isolation';
 import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
-import { isDocsHostRuntimeId, type DocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
+import type { DocsHostRuntimeId } from '../../core/operator/docs-host-runtimes';
 import type { ModelApiEndpoint } from './docs-host-proxy';
 
 /**
- * Model API hosts per verified runtime (`DOCS_HOST_RUNTIME_IDS`). Claude keeps its macOS login in the Keychain,
- * which this host denies. The access token is checked for the whole run, so no auth refresh host is open.
+ * Model API hosts per verified runtime (`DOCS_HOST_RUNTIME_IDS`). Empty while no
+ * runtime is verified: the owner closed the docs host stack (#1149, option 3).
+ * A runtime that joins the allowlist also lists its endpoints here. Claude keeps
+ * its macOS login in the Keychain, which this host denies. The access token is
+ * checked for the whole run, so no auth refresh host is open.
  */
-export const DOCS_HOST_MODEL_API: Readonly<Record<DocsHostRuntimeId, readonly ModelApiEndpoint[]>> = {
-  codex: [{ host: 'chatgpt.com', port: 443 }, { host: 'api.openai.com', port: 443 }],
-};
+export const DOCS_HOST_MODEL_API: Readonly<Record<DocsHostRuntimeId, readonly ModelApiEndpoint[]>> = Object.freeze({});
 
 export const DOCS_HOST_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
 
@@ -61,7 +62,8 @@ const DESKTOP_SERVICES = [
 
 /** Operator input. A session request cannot supply or change it. */
 export interface DocsHostAdmission {
-  readonly runtime: DocsHostRuntimeId;
+  /** The runtime id the host serves. The launch allowlist decides which ids may start a host; this builder does not read it. */
+  readonly runtime: string;
   /** Canonical linked worktree root. */
   readonly worktree: string;
   /** Owner-only directory outside the worktree. It holds the profile; only its `scratch` child is writable. */
@@ -161,10 +163,13 @@ export function docsHostProtectedProjection(worktree: string): readonly string[]
   return [...protectedPaths].sort().map(path => join(worktree, path));
 }
 
-/** Validate operator input and the worktree before any policy text exists. */
+/**
+ * Validate operator input and the worktree before any policy text exists. The
+ * launch allowlist (`DOCS_HOST_RUNTIME_IDS`) gates a launch; this builder keeps
+ * the verified profile shape for a future host and checks only its inputs.
+ */
 export function assertDocsHostAdmission(admission: DocsHostAdmission, platform: NodeJS.Platform = process.platform): void {
   assertDocsHostPlatform(platform);
-  if (!isDocsHostRuntimeId(admission.runtime)) throw new Error('docs_host_runtime_unverified');
   const worktree = canonicalDirectory(admission.worktree, 'docs_host_worktree_unsafe');
   const dotGit = lstatSync(join(worktree, '.git'), { throwIfNoEntry: false });
   if (!dotGit?.isFile()) throw new Error('docs_host_linked_worktree_required');

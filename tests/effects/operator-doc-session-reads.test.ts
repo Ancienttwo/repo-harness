@@ -4,16 +4,14 @@ import { spawnSync } from 'node:child_process';
 import { createHash, randomUUID } from 'node:crypto';
 import { chmodSync, existsSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'node:fs';
 import { decodeDocSessionFinalizationView } from '../../src/core/operator/doc-session-finalization-view';
-import { join, resolve } from 'node:path';
+import { basename, join, resolve } from 'node:path';
 import { DOC_SESSION_PATCH_MAX_BYTES, docSessionDiffDigestInput, docSessionLossDigestInput } from '../../src/core/operator/doc-session-changes';
 import type { DocCitationV1 } from '../../src/core/operator/doc-citation';
 import {
   docSessionDiffSha256, docSessionGitRunner, docSessionLossSha256, observeDocSessionChanges, observeDocSessionLoss, resolveDocSession,
   readDocSessionDiff, readDocSessionLoss,
 } from '../../src/effects/operator/doc-session-changes';
-import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents } from '../../src/effects/operator/doc-session-events';
-import { DocsReader } from '../../src/effects/operator/docs-reader';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
@@ -45,9 +43,9 @@ interface Session {
 }
 
 /**
- * A doc session created through the create route, served by a server with
- * the production route inventory, so the reads run in the
- * bounded task-read child as in `operator serve`.
+ * A doc session record and its `docs/<slug>` worktree, as a verified docs host
+ * wrote them before #1149 closed, served by a server with the production route
+ * inventory, so the reads run in the bounded task-read child as in `operator serve`.
  */
 async function session(prepare?: (repo: string) => void, gitBin?: string, instruction = 'Tighten the intro.', timeoutMs?: number): Promise<Session> {
   const repo = tmpWorkspace('doc-session-reads-repo'); initGitRepo(repo);
@@ -73,33 +71,28 @@ async function session(prepare?: (repo: string) => void, gitBin?: string, instru
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
-  mkdirSync(join(userHome, '.repo-harness'), { recursive: true });
-  writeFileSync(join(userHome, '.repo-harness', 'config.json'), JSON.stringify({ agents: { enabled: ['codex'], uses: { docs: ['codex'], review: [] }, default_docs: null } }));
   const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees,
     ...(gitBin === undefined ? {} : { REPO_HARNESS_GIT_BIN: gitBin }) };
-  const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
-  reader.start();
-  await reader.refresh();
-  const route = docSessionCreateRoute({ env, docs_reader: id => (id === repositoryId ? reader : null), platform: 'darwin' });
-  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, write_routes: [route], ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }) });
+  const base = git(['rev-parse', 'HEAD'], repo).trim();
+  const sid = randomUUID().replaceAll('-', '');
+  const branch = `docs/${sid.slice(0, 12)}`;
+  const worktree = join(worktrees, `${basename(repo)}-wt-docs-${sid.slice(0, 12)}`);
+  git(['worktree', 'add', '-q', '-b', branch, worktree, base], repo);
+  const citation: DocCitationV1 = { path: 'docs/guide.md', start_line: 1, end_line: 1, range_sha256: hex('# Guide\n'), file_sha256: hex(GUIDE), commit: base };
+  const directory = join(home, 'operator', 'sessions', sid);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(join(directory, 'session.json'), JSON.stringify({
+    protocol: 1, kind: 'docs_session', session_id: sid, state: 'created', created_at: at, repository_id: repositoryId,
+    runtime: 'codex', branch, worktree, base_commit: base, citations: [{ ...citation, resolved: citation, relocated: false }], instruction,
+  }));
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, ...(timeoutMs === undefined ? {} : { timeout_ms: timeoutMs }) });
   const roots = [repo, home, userHome, worktrees, staticRoot];
   cleanups.push(async () => {
     await server.close();
-    reader.close();
     for (const dir of roots) rmSync(dir, { recursive: true, force: true });
   });
-  const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
-  const base = git(['rev-parse', 'HEAD'], repo).trim();
-  const citation: DocCitationV1 = { path: 'docs/guide.md', start_line: 1, end_line: 1, range_sha256: hex('# Guide\n'), file_sha256: hex(GUIDE), commit: base };
-  const created = await fetch(`${server.url}/api/v1/sessions`, {
-    method: 'POST',
-    headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie },
-    body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId, citations: [citation], instruction }),
-  });
-  const body = await created.json() as Record<string, any>;
-  expect(created.status).toBe(201);
   return {
-    sid: body.session_id, url: server.url, base, repo, worktree: join(worktrees, body.worktree), roots, env,
+    sid, url: server.url, base, repo, worktree, roots, env,
     get: async (path) => {
       const response = await fetch(`${server.url}${path}`);
       const text = await response.text();
@@ -117,7 +110,8 @@ test('finalization public reads share closed progress without creating a journal
   const path = `/api/v1/sessions/${s.sid}/finalization`;
   const directory = join(s.env.REPO_HARNESS_HOME!, 'operator/sessions', s.sid);
   const audit = join(s.env.REPO_HARNESS_HOME!, 'operator/audit.jsonl');
-  const before = readFileSync(audit, 'utf8');
+  // The fixture seeds the session record directly, so no write has reached the audit log yet.
+  expect(existsSync(audit)).toBe(false);
   const empty = await s.get(path);
   expect(empty).toMatchObject({ status: 200, body: { protocol: 1, kind: 'operator_docs_session_finalization_state', session_id: s.sid, progress: null } });
   const cli = s.cli('finalization', s.sid, '--json');
@@ -136,7 +130,7 @@ test('finalization public reads share closed progress without creating a journal
   }
   expect(existsSync(join(directory, 'finalize.json'))).toBe(false);
   expect(existsSync(join(directory, 'agent.json'))).toBe(false);
-  expect(readFileSync(audit, 'utf8')).toBe(before);
+  expect(existsSync(audit)).toBe(false);
   expect(git(['rev-parse', 'HEAD'], s.worktree).trim()).toBe(s.base);
 });
 

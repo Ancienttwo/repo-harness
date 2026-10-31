@@ -1,9 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
-import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync, symlinkSync } from 'fs';
+import { existsSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync, mkdirSync } from 'fs';
 import { spawnSync } from 'child_process';
 import { dirname, join } from 'path';
 import { tmpdir } from 'os';
-import { runStopHandler as runStopHandlerRuntime, type StopProjectionTarget } from '../src/cli/hook/stop-handler';
+import { runStopHandler as runStopHandlerRuntime } from '../src/cli/hook/stop-handler';
 import { runMutationGuard } from '../src/cli/hook/mutation-guard';
 import { agentNoticeFixture, noticeEnv, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureWrite, fixtureCommit } from './helpers/module-repository';
@@ -68,192 +68,40 @@ function collector(cwd: string) {
   };
 }
 
-function stopArtifacts(cwd: string): Record<string, string> {
-  const paths = {
-    handoff: join(cwd, '.ai/harness/handoff/current.md'),
-    resume: join(cwd, '.ai/harness/handoff/resume.md'),
-  };
-  return Object.fromEntries(Object.entries(paths).map(([key, path]) => [
-    key,
-    existsSync(path) ? readFileSync(path, 'utf8').replaceAll(cwd, '<repo>') : '(missing)',
-  ]));
-}
-
-describe('Stop recovery and safety invariants', () => {
-  test('writes handoff then resume and nothing else', () => {
+describe('Stop writes no recovery views', () => {
+  test('writes no handoff or resume file and no events line', () => {
     const cwd = fixture();
-    const observed: StopProjectionTarget[] = [];
     const result = runStopHandler({
       collector: collector(cwd),
       payload: { stop_hook_active: false },
-      identity: hookIdentity({ runId: 'stop-write-count' }),
-      dependencies: { observeProjectionWrite: (target) => observed.push(target) },
+      identity: hookIdentity({ runId: 'stop-no-recovery' }),
     });
 
     expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '' });
-    expect(observed).toEqual([
-      { kind: 'handoff', path: '.ai/harness/handoff/current.md' },
-      { kind: 'resume', path: '.ai/harness/handoff/resume.md' },
-    ]);
+    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);
+    expect(existsSync(join(cwd, '.ai/harness/handoff/resume.md'))).toBe(false);
+    expect(existsSync(join(cwd, '.ai/harness/handoff'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/events.jsonl'))).toBe(false);
     expect(existsSync(join(cwd, '.ai/harness/runs'))).toBe(false);
   });
 
-  test('two identical Stops write identical handoff and resume files and no events.jsonl line', () => {
+  test('two identical Stops stay silent and write no recovery file', () => {
     const cwd = fixture();
     const now = new Date('2026-08-14T08:00:00.000Z');
     const stop = () => runStopHandler({ collector: collector(cwd), dependencies: { now: () => now } });
 
     expect(stop().exitCode).toBe(0);
-    const first = stopArtifacts(cwd);
     expect(stop().exitCode).toBe(0);
-
-    expect(stopArtifacts(cwd)).toEqual(first);
-    expect(first.handoff).not.toBe('(missing)');
-    expect(first.resume).not.toBe('(missing)');
-    expect(existsSync(join(cwd, '.ai/harness/events.jsonl'))).toBe(false);
+    expect(existsSync(join(cwd, '.ai/harness/handoff'))).toBe(false);
   });
 
-  test('renders the payload run identity and mints none when the host sends no run', () => {
-    const named = fixture();
-    runStopHandler({ collector: collector(named), identity: hookIdentity({ runId: 'host-run-7' }) });
-    expect(readFileSync(join(named, '.ai/harness/handoff/current.md'), 'utf8')).toContain('- Parent Run ID: host-run-7');
-
-    const runless = fixture();
-    runStopHandler({ collector: collector(runless), identity: hookIdentity({ runId: null }) });
-    const handoff = readFileSync(join(runless, '.ai/harness/handoff/current.md'), 'utf8');
-    expect(handoff).toContain('- Parent Run ID: (unresolved)');
-    expect(handoff).not.toMatch(/Parent Run ID: run-/);
-  });
-
-  test('records the current branch, HEAD and branch-derived issue and no plan or todos', () => {
-    const { cwd } = gitFixture();
-    git(cwd, ['checkout', '-b', 'feat/1178-hook-recovery']);
-    const plan = 'plans/plan-20260720-0000-projection.md';
-    const contract = 'tasks/contracts/20260720-0000-projection.contract.md';
-    const review = 'tasks/reviews/20260720-0000-projection.review.md';
-    const notes = 'tasks/notes/20260720-0000-projection.notes.md';
-    const sprint = 'plans/sprints/20260720-projection.sprint.md';
-    for (const directory of ['plans', 'plans/sprints', 'tasks', 'tasks/contracts', 'tasks/reviews', 'tasks/notes', '.claude', '.ai/harness/sprint', '.ai/harness/checks']) {
-      mkdirSync(join(cwd, directory), { recursive: true });
-    }
-    writeFileSync(join(cwd, plan), [
-      '# Projection plan',
-      `> **Task Contract**: ${contract}`,
-      `> **Task Review**: ${review}`,
-      `> **Implementation Notes**: ${notes}`,
-      '## Task Breakdown',
-      '- [x] completed item',
-      '- [ ] preserve the real next action',
-      '## Evidence',
-      '',
-    ].join('\n'));
-    writeFileSync(join(cwd, 'tasks/todos.md'), '# Deferred\n> **Source Plan**: plans/source-plan.md\n');
-    writeFileSync(join(cwd, sprint), `| 6 | hrd-06 | ${plan} |\n`);
-    writeFileSync(join(cwd, '.ai/harness/sprint/active-sprint'), `${sprint}\n`);
-    writeFileSync(join(cwd, '.claude/.task-state.json'), '{"source_plan":"plans/superseded.md"}\n');
-    writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"run_file":".ai/harness/runs/verified.json"}\n');
-    git(cwd, ['add', '-A']);
-    git(cwd, ['commit', '-m', 'retired workflow artifacts']);
-    const head = git(cwd, ['rev-parse', 'HEAD']);
-
-    const result = runStopHandler({
-      collector: collector(cwd),
-      identity: hookIdentity({ runId: 'projection-parity' }),
-    });
-
-    expect(result.exitCode).toBe(0);
-    const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
-    expect(handoff).toContain('- Branch: feat/1178-hook-recovery');
-    expect(handoff).toContain(`- HEAD: ${head}`);
-    expect(handoff).toContain('- Issue: 1178');
-    expect(handoff).toContain('Continue GitHub issue #1178 on branch feat/1178-hook-recovery.');
-    // The old plan, sprint, contract and todo artifacts still exist; recovery
-    // reads none of them.
-    for (const stale of [plan, 'plans/source-plan.md', 'plans/superseded.md', 'tasks/todos.md', 'Active plan:', 'Todo Source Plan:', 'Next action stage:', 'Supersedes:', 'must not leak']) {
-      expect(handoff).not.toContain(stale);
-    }
-    expect(handoff).not.toContain('Active sprint row');
-    expect(handoff).not.toContain('hrd-06');
-    expect(handoff).not.toContain(contract);
-    expect(handoff).not.toContain('## Commands Run');
-    // The "## Evidence" section sources only from the checkpoint and renders a
-    // typed minimal state when none is published (this fixture seeds no ledger).
-    expect(handoff).toContain('- Checkpoint: (none published yet -- no ledger evidence recorded in this worktree)');
-    const resume = readFileSync(join(cwd, '.ai/harness/handoff/resume.md'), 'utf8');
-    expect(resume).toContain('- Branch: feat/1178-hook-recovery');
-    expect(resume).toContain(`- HEAD: ${head}`);
-    expect(resume).toContain('- Issue: 1178');
-    // The legacy marker is the stable external contract that session-context's
-    // resume check reads.
-    expect(resume).toContain('<!-- generated-by: repo-harness codex-handoff-resume v1 -->');
-    expect(resume).toContain('## Provenance');
-    expect(resume).not.toContain(contract);
-    expect(resume).not.toContain('tasks/todos.md');
-  });
-
-  test('writes issue: none without guessing when the branch has no issue number', () => {
-    const { cwd, head } = gitFixture();
-    git(cwd, ['checkout', '-b', 'feature/no-issue-here']);
-
-    const result = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ runId: 'no-issue' }) });
-
-    expect(result.exitCode).toBe(0);
-    const handoff = readFileSync(join(cwd, '.ai/harness/handoff/current.md'), 'utf8');
-    expect(handoff).toContain('- Branch: feature/no-issue-here');
-    expect(handoff).toContain(`- HEAD: ${head}`);
-    expect(handoff).toContain('- Issue: none');
-    const resume = readFileSync(join(cwd, '.ai/harness/handoff/resume.md'), 'utf8');
-    expect(resume).toContain('- Issue: none');
-  });
-
-  test('fails closed before a policy-controlled projection can follow a symlink outside the repo', () => {
+  test('a continued Stop returns before any work', () => {
     const cwd = fixture();
-    const outside = mkdtempSync(join(tmpdir(), 'repo-harness-stop-outside-'));
-    fixtures.push(outside);
-    symlinkSync(outside, join(cwd, '.ai/harness/link'));
-    writeFileSync(join(cwd, '.ai/harness/policy.json'), `${JSON.stringify({
-      harness: { handoff_file: '.ai/harness/link/current.md' },
-    })}\n`);
-
-    expect(() => runStopHandler({
-      collector: collector(cwd),
-      identity: hookIdentity({ runId: 'symlink-run' }),
-    })).toThrow('symlinked write path is forbidden');
-    expect(existsSync(join(outside, 'current.md'))).toBe(false);
+    expect(runStopHandler({ collector: collector(cwd), payload: { stop_hook_active: true } }))
+      .toEqual({ exitCode: 0, stdout: '', stderr: '' });
+    expect(existsSync(join(cwd, '.ai/harness/handoff'))).toBe(false);
   });
-
-  test('each Stop write phase converges on a fresh retry', () => {
-    const phases: StopProjectionTarget['kind'][] = ['handoff', 'resume'];
-    const faultNow = new Date('2026-08-14T08:00:00.000Z');
-    const retryNow = new Date('2026-08-14T08:01:00.000Z');
-
-    const baselineRoot = fixture();
-    runStopHandler({ collector: collector(baselineRoot), dependencies: { now: () => retryNow } });
-    const baseline = stopArtifacts(baselineRoot);
-
-    for (const phase of phases) {
-      const retryRoot = fixture();
-      expect(() => runStopHandler({
-        collector: collector(retryRoot),
-        dependencies: {
-          now: () => faultNow,
-          afterProjectionWrite: (target) => {
-            if (target.kind === phase) throw new Error(`fault after ${phase}`);
-          },
-        },
-      })).toThrow(`fault after ${phase}`);
-
-      runStopHandler({ collector: collector(retryRoot), dependencies: { now: () => retryNow } });
-      const normalize = (artifacts: Record<string, string>) => Object.fromEntries(Object.entries(artifacts)
-        .map(([key, value]) => [key, value.replaceAll(retryRoot, '<repo>').replaceAll(baselineRoot, '<repo>')
-          .replace(/Content hash: sha256:[0-9a-f]+/g, 'Content hash: <normalized>')
-          .replace(/HEAD: [0-9a-f]{40}/g, 'HEAD: <normalized>')]));
-      expect(normalize(stopArtifacts(retryRoot))).toEqual(normalize(baseline));
-    }
-  }, 60_000);
 });
-
 
 describe('Stop architecture debt notice', () => {
   function noticeFixture() { const root = agentNoticeFixture(); fixtures.push(root); return root; }
@@ -310,18 +158,13 @@ describe('Stop architecture debt notice', () => {
     expect(readFileSync(join(cwd, '.ai/harness/state/agent-notice'), 'utf8')).toBe(marker);
   });
 
-  test('a changed debt id set delivers both lines; notice writes are separate from recovery writes', () => {
+  test('a changed debt id set delivers both lines', () => {
     const cwd = noticeFixture();
     expect(stop(cwd).systemMessage).toContain('Architecture: 1 debt item');
     fixtureWrite(cwd, 'docs/architecture/modules/test/module.md', '## 3. Decisions\nRead `src/module/read.ts:998` and `src/module/read.ts:997`.\n');
-    const writes: StopProjectionTarget[] = [];
-    const changed = stop(cwd, { dependencies: { observeProjectionWrite: target => writes.push(target) } });
+    const changed = stop(cwd);
     expect(changed.systemMessage).toBe(`Architecture: 2 debt items in ${NOTICE_CAPABILITY}; run repo-harness architecture-debt --json.`);
     expect(changed.stdout).toContain('[ArchitectureDebt] 2 new');
-    expect(writes).toEqual([
-      { kind: 'handoff', path: '.ai/harness/handoff/current.md' },
-      { kind: 'resume', path: '.ai/harness/handoff/resume.md' },
-    ]);
     expect(stop(cwd)).toEqual({ exitCode: 0, stdout: '', stderr: '' });
   });
 
@@ -333,7 +176,7 @@ describe('Stop architecture debt notice', () => {
     expect(result.stdout).toBe('');
     expect(result.systemMessage).toBeUndefined();
     expect(result.stderr.trim().split('\n')).toHaveLength(1);
-    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
+    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);
   });
 
   test('a continued Stop and Codex stay silent and do not consume the notice', () => {
@@ -344,7 +187,7 @@ describe('Stop architecture debt notice', () => {
     expect(stop(cwd).stdout).toContain('[ArchitectureDebt]');
   });
 
-  test('an ownership failure shows one failure line and preserves recovery', () => {
+  test('an ownership failure shows one failure line and writes no recovery file', () => {
     const cwd = noticeFixture();
     fixtureWrite(cwd, '.archcontext/model/nodes/capability.test.module.yaml', '{not json');
     const result = stop(cwd);
@@ -354,7 +197,7 @@ describe('Stop architecture debt notice', () => {
     expect(result.systemMessage).toBe('Architecture: notice unavailable (error); run repo-harness architecture-debt --json.');
     expect(result.stderr.trim().split('\n')).toHaveLength(1);
     expect(result.stderr).toContain('architecture notice unavailable');
-    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
+    expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);
   });
 });
 
@@ -364,7 +207,7 @@ describe('Stop observes workflow gaps without permission gates', () => {
       const cwd = fixture();
       const result = runStopHandler({ collector: collector(cwd), identity: hookIdentity({ host }) });
       expect(result).toEqual({ exitCode: 0, stdout: '', stderr: '' });
-      expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(true);
+      expect(existsSync(join(cwd, '.ai/harness/handoff/current.md'))).toBe(false);
     }
   });
   test('Stop writes no architecture or capability runtime state', () => {

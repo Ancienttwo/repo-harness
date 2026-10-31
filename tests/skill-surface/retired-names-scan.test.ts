@@ -82,15 +82,13 @@ const FILE_ALLOWLIST: Record<string, string> = {
 // R1: "Do NOT touch scripts/acceptance-receipt.ts,
 // scripts/harness-trace-grade.sh, scripts/lib/project-init-lib.sh enum usages"
 // -- permanent provenance-enum vocabulary (generic-review is the current
-// Receipt source; retired provider sources are rejected). Contract seeds,
-// evidence materialization, and the sprint-contract reference also carry the
-// same frozen source vocabulary rather than a runnable Skill reference.
+// Receipt source; retired provider sources are rejected). Contract seeds and
+// evidence materialization also carry the same frozen source vocabulary rather
+// than a runnable Skill reference.
 const R1_PROVENANCE_ENUM_FILES = [
   "scripts/acceptance-receipt.ts",
   "scripts/harness-trace-grade.sh",
   "scripts/lib/project-init-lib.sh",
-  "assets/reference-configs/sprint-contracts.md",
-  "docs/reference-configs/sprint-contracts.md",
 ];
 
 // Discovered during the SSD-06 sweep, originally outside this contract's
@@ -131,6 +129,24 @@ function allFiles(root: string): string[] {
 const RETIREMENT_DIAGNOSTICS: Record<string, string[]> = {
   "claude-review": ["src/cli/index.ts", "src/effects/review/generic-review.ts"],
 };
+
+// #1227 removed the six duplicated flow documents. Their names must not
+// return as live references in the reference-config mirrors or in the Skills
+// that describe testing and delegation.
+const RETIRED_REFERENCE_CONFIG_NAMES = [
+  "handoff-protocol",
+  "workflow-orchestration",
+  "development-protocol",
+  "sprint-contracts",
+  "contract-brief-example",
+  "contract-brief-example-bugfix",
+];
+
+const RETIRED_REFERENCE_CONFIG_SURFACES = [
+  "assets/reference-configs",
+  "docs/reference-configs",
+  "assets/skills",
+];
 
 /** Word-boundary-aware match: a retired name is a hit only when not glued
  * to more identifier/hyphen characters on either side (rejects homonyms
@@ -248,5 +264,25 @@ describe("retired Skill package names: live-reference scan", () => {
     for (const entry of MANIFEST.retiredPackages) {
       if (entry.replacement !== null) expect(liveNames.has(entry.replacement)).toBe(true);
     }
+  });
+});
+
+describe("retired reference-config names: live-reference scan", () => {
+  test("every retired flow doc has zero live hits in the mirrors and Skills", () => {
+    const violations: string[] = [];
+
+    for (const surface of RETIRED_REFERENCE_CONFIG_SURFACES) {
+      const absolute = join(ROOT, surface);
+      if (!existsSync(absolute)) continue;
+      for (const file of allFiles(absolute)) {
+        const rel = relative(ROOT, file).split(sep).join("/");
+        const content = readFileSync(file, "utf-8");
+        for (const name of RETIRED_REFERENCE_CONFIG_NAMES) {
+          if (hasLiveHit(content, name)) violations.push(`${rel}: ${name}`);
+        }
+      }
+    }
+
+    expect(violations).toEqual([]);
   });
 });

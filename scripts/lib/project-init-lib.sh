@@ -81,7 +81,7 @@ PI_EVALUATION_PROFILE_DEFAULT="browser-qa"
 PI_HANDOFF_PROFILE_DEFAULT="artifact-aware"
 PI_DOCUMENTATION_PROFILE_DEFAULT="minimal-agentic"
 PI_DEFAULT_LSP_PROFILE="typescript-lsp"
-PI_MINIMAL_REFERENCE_CONFIGS="harness-overview.md agentic-development-flow.md design-options.md ux-feature-guard.md external-tooling.md sprint-contracts.md heartbeat-triage.md handoff-protocol.md document-generation.md global-working-rules.md minimal-change-hooks.md"
+PI_MINIMAL_REFERENCE_CONFIGS="harness-overview.md agentic-development-flow.md design-options.md ux-feature-guard.md external-tooling.md heartbeat-triage.md document-generation.md global-working-rules.md minimal-change-hooks.md"
 PI_REFERENCE_CONFIG_STUB_MARKER="<!-- repo-harness: reference-config-stub v1 -->"
 
 pi_write_file_if_apply() {
@@ -1209,7 +1209,6 @@ pi_write_harness_policy() {
   },
   "harness": {
     "policy_file": ".ai/harness/policy.json",
-    "handoff_file": ".ai/harness/handoff/current.md",
     "failure_log_file": ".ai/harness/failures/latest.jsonl",
     "events_file": ".ai/harness/events.jsonl",
     "runs_dir": ".ai/harness/runs",
@@ -1630,7 +1629,6 @@ pi_ensure_harness_state_surface() {
   mkdir -p \
     "$target_dir/.ai/context" \
     "$target_dir/.ai/harness/checks" \
-    "$target_dir/.ai/harness/handoff" \
     "$target_dir/.ai/harness/failures" \
     "$target_dir/.ai/harness/security" \
     "$target_dir/.ai/harness/planning" \
@@ -1644,8 +1642,6 @@ pi_ensure_harness_state_surface() {
     "$target_dir/docs/architecture/diagrams" \
     "$target_dir/.ai/harness/runs"
 
-  [[ -f "$target_dir/.ai/harness/handoff/current.md" ]] || printf "# Harness Handoff\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/current.md"
-  [[ -f "$target_dir/.ai/harness/handoff/resume.md" ]] || printf "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/resume.md"
   [[ -f "$target_dir/.ai/context/capability-source-map.json" ]] || printf '{\n  "version": 1,\n  "capabilities": {}\n}\n' > "$target_dir/.ai/context/capability-source-map.json"
   [[ -f "$target_dir/.ai/harness/events.jsonl" ]] || : > "$target_dir/.ai/harness/events.jsonl"
   [[ -f "$target_dir/.ai/harness/failures/latest.jsonl" ]] || : > "$target_dir/.ai/harness/failures/latest.jsonl"
