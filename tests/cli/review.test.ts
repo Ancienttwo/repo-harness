@@ -10,6 +10,7 @@ import * as accountHome from '../../src/effects/runtime/os-account-home';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
 import { controlApprovalFixture } from '../helpers/control-approval-fixture';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
+import { HEAD as PUBLISH_HEAD, PR as PUBLISH_PR, installFakeGh, passingScenario } from '../helpers/publication-merge-fake-gh';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -84,4 +85,117 @@ test('review revoke applies an exact active-grant CAS and task consumers observe
   const again = await revoke('revoke-again', { expectedRevision: 2 });
   expect(again.status).toBe(1);
   expect(again.stderr).toContain('review_admission_revoked_or_replaced');
+});
+const publishHome = () => { const home = tmpWorkspace('review-publish-home'); roots.push(home); return home; };
+
+function publishReceipt(overrides: Record<string, unknown> = {}) {
+  return {
+    protocol: 1,
+    kind: 'repo-harness-review-publish-receipt',
+    round: 1,
+    subject_sha: PUBLISH_HEAD,
+    risk_tier: 'high',
+    reviewer: { harness: 'codex', actual_model: 'gpt-5.1-codex' },
+    verdict: 'FAIL',
+    model_relation: 'different-family',
+    summary: 'One blocking finding and one NIT.',
+    findings: [
+      { id: 'F1', severity: 'P1', path: 'src/example.ts', line: 12, evidence: 'The guard drops the last item.', fix: 'Use the inclusive bound.' },
+      { id: 'N1', severity: 'P3', message: 'Rename the helper for clarity.' },
+    ],
+    ...overrides,
+  };
+}
+
+function publishFixture(scenario = passingScenario()) {
+  const root = tmpWorkspace('review-publish-root'); roots.push(root);
+  const gh = installFakeGh(root, scenario);
+  return { root, gh, receipt: join(root, 'receipt.json') };
+}
+
+async function runPublish(fixture: ReturnType<typeof publishFixture>, receipt: unknown) {
+  writeFileSync(fixture.receipt, JSON.stringify(receipt));
+  const previous = process.env.REPO_HARNESS_GH_BIN;
+  process.env.REPO_HARNESS_GH_BIN = fixture.gh.bin;
+  try {
+    return await runReview(publishHome(), ['publish', '--repo', fixture.root, '--pr', String(PUBLISH_PR), '--receipt', fixture.receipt, '--json']);
+  } finally {
+    if (previous === undefined) delete process.env.REPO_HARNESS_GH_BIN;
+    else process.env.REPO_HARNESS_GH_BIN = previous;
+  }
+}
+
+function postedInputs(fixture: ReturnType<typeof publishFixture>, suffix: string) {
+  return fixture.gh.inputs().filter((entry) => entry.args.some((arg) => arg === suffix || arg.endsWith(suffix)));
+}
+
+test('publish posts the claim, one review thread per P1/P2, then the record', async () => {
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt());
+  expect(result.status, result.stderr).toBe(0);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({ ok: true, pr: PUBLISH_PR, head_sha: PUBLISH_HEAD, round: 1, threads: 1 });
+  expect(output.claim_url).toContain('/pull/' + PUBLISH_PR + '#issuecomment-');
+  expect(output.review_url).toContain('#pullrequestreview-');
+  expect(output.record_url).toContain('/pull/' + PUBLISH_PR + '#issuecomment-');
+
+  const posts = fixture.gh.inputs().filter((entry) => entry.input !== '').map((entry) => JSON.parse(entry.input));
+  expect(posts).toHaveLength(3);
+  expect(posts[0].body).toContain('repo-harness acceptance claim');
+  expect(posts[0].body).toContain('Tier: high');
+  expect(posts[0].body).toContain('Agent: codex (gpt-5.1-codex), read-only');
+  expect(posts[1]).toMatchObject({ commit_id: PUBLISH_HEAD, event: 'COMMENT' });
+  expect(posts[1].comments).toHaveLength(1);
+  expect(posts[1].comments[0]).toMatchObject({ path: 'src/example.ts', line: 12, side: 'RIGHT' });
+  expect(posts[1].comments[0].body).toContain('The guard drops the last item.');
+  expect(posts[1].comments[0].body).toContain('Use the inclusive bound.');
+  expect(posts[1].body).toContain('Rename the helper for clarity.');
+  expect(posts[1].body).not.toContain('The guard drops the last item.');
+  expect(posts[1].comments[0].body).not.toContain('Rename the helper for clarity.');
+  expect(posts[2].body).toContain('repo-harness acceptance record');
+  expect(posts[2].body).toContain('Model relation: different-family');
+  expect(posts[2].body).toContain('FAIL: 1 P1, 1 P3');
+  expect(posts[2].body).toContain(output.claim_url);
+});
+
+test('a FAIL receipt with no blocking finding is invalid and posts nothing', async () => {
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt({ findings: [{ id: 'N1', severity: 'P3', message: 'Only a NIT.' }] }));
+  expect(result.status).toBe(2);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_receipt_invalid', exit_code: 2, posted: [] });
+  expect(fixture.gh.calls()).toEqual([]);
+});
+
+test('a stale subject exits 2 and posts nothing', async () => {
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt({ subject_sha: 'b'.repeat(40) }));
+  expect(result.status).toBe(2);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: false, error: 'review_subject_stale', exit_code: 2, posted: [] });
+  expect(fixture.gh.calls().some((args) => args.includes('POST'))).toBe(false);
+  expect(fixture.gh.inputs().some((entry) => entry.input !== '')).toBe(false);
+});
+
+test('a PASS receipt with no P1/P2 opens no review thread', async () => {
+  const fixture = publishFixture();
+  const result = await runPublish(fixture, publishReceipt({ verdict: 'PASS', findings: [
+    { id: 'N1', severity: 'P3', message: 'Rename the helper for clarity.' },
+  ] }));
+  expect(result.status, result.stderr).toBe(0);
+  expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, threads: 0 });
+  const review = JSON.parse(postedInputs(fixture, '/reviews')[0]!.input);
+  expect(review.comments ?? []).toEqual([]);
+  expect(review.body).toContain('Rename the helper for clarity.');
+  expect(review.event).toBe('COMMENT');
+});
+
+test('a failure after the claim stops with review_publish_partial and the posted URLs', async () => {
+  const fixture = publishFixture(passingScenario({ failPost: 'review' }));
+  const result = await runPublish(fixture, publishReceipt());
+  expect(result.status).toBe(5);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({ ok: false, error: 'review_publish_partial', exit_code: 5 });
+  expect(output.posted).toHaveLength(1);
+  expect(output.posted[0]).toContain('/pull/' + PUBLISH_PR + '#issuecomment-');
+  expect(fixture.gh.inputs().filter((entry) => entry.args.some((arg) => arg.endsWith('/reviews')))).toHaveLength(1);
+  expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance record'))).toHaveLength(0);
 });
