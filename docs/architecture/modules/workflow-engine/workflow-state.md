@@ -176,7 +176,7 @@ Effective State 的决定、冻结不变量与 P2 解析轨迹已并入本章。
 
 ### 3.1 必须保持的不变量
 
-1. **GitHub issue/PR 拥有当前任务身份。** Effective State 投影 Git、worktree 和 capability 事实。`tasks/current.md` 是可替换的读模型，不能把权威反馈回解析；Effective State 没有持久化的 JSON 读模型，旧 `.ai/harness/state/effective.json` 没有 reader。
+1. **GitHub issue/PR 拥有当前任务身份。** Effective State 投影 Git、worktree 和 capability 事实。`tasks/current.md` 是可替换的读模型，不能把权威反馈回解析。它的字节可以改变自身 source hash/freshness、`state_revision`/`state_version` 和 `stale_sources`，但不能改变 `authority_revision` 或 task selection。Handoff/resume 指针和 review/verification evidence 是 recovery 或 acceptance 输入，不授予任务所有权。Effective State 没有持久化的 JSON 读模型，旧 `.ai/harness/state/effective.json` 没有 reader。
 2. **纯核心不做 IO。** `src/core/state`、`src/core/workflow` 与 `src/core/capabilities` 是一个纯核心（`scripts/check-state-boundaries.ts:36-40`）。它们不能导入 `fs`、`child_process` 等运行时模块（`:106-130`），也不能导入 `src/cli` 或 `src/effects`（`:277`）。门禁命令是 `bun run check:state-boundaries`。
 3. **版本 owner 是唯一的持久化输出。** `commitStateVersionAfter` 在 Git common dir 的锁内先重读权威源哈希，再写版本记录。revision 未变时它不写文件（`src/effects/state/git-state-version-store.ts:125-143`）。写入失败不会暴露已消耗的版本号。
 4. **写路径在仓库状态锁内串行。** 生产代码里只有 `repo-harness state resolve` 调用 `resolveEffectiveState`。它先取 `.ai/harness/state/effective.lock`（`src/effects/state/state-lock.ts:3-7`）。锁目录从 canonical repository root 起逐级创建并验证；任何 symlink、非目录或 identity 变化都 fail closed。artifact 路径必须同时按 POSIX 与 Win32 语法保持在仓库内。源在稳定性循环之后又变化时，整轮只重试一次，第二次仍不一致就抛 `StateResolutionUnstableError`（`src/effects/state/resolve-effective-state.ts:923-951`）。
@@ -190,14 +190,15 @@ Effective State 的决定、冻结不变量与 P2 解析轨迹已并入本章。
 12. **linked worktree 共享一个版本 owner。** 版本记录在 Git common dir，不是 worktree 本地计数器。并发 linked-worktree publisher 得到连续的 `1..N`，一次发布失败不消耗版本号。
 13. **foreign worktree ownership 阻断。** 不推断 owner。CLI exit 语义保持：`0` 表示 resolved/unblocked，`1` 表示 resolved/blocked 或既有 operational failure，`2` 表示 usage 或 unknown-field error。blocked 的 `--field` 输出保持抑制。
 14. **workflow profile 解析确定且 fail closed。** 必需风险信号缺失、无效或低于计算出的 risk floor 时失败。workflow-only 编辑不扩大 implementation scope；strict-category token 仍抬高 safety floor。
-15. **adapter 只渲染、触发或 guard。** CLI、hook 与 MCP adapter 共用 core/effects 的同一组 surfaces。adapter 不拥有 workflow policy、artifact semantics 或 capability matching，也不复制 state 算法。Stop 发布 checkpoint 与 handoff/resume 视图，所以只读解析不代表每个 hook 事件都零写入。
+15. **adapter 只渲染、触发或 guard。** CLI、hook 与 MCP adapter 共用 core/effects 的同一组 surfaces。adapter 不拥有 workflow policy、artifact semantics 或 capability matching，也不复制 state 算法。Stop 发布 checkpoint 与 handoff/resume 视图，所以只读解析不代表每个 hook 事件都零写入。没有 feature flag、兼容 fallback 或第二套 steady-state 实现。
+16. **MCP 工件写入以 revision 为前置条件。** MCP workflow-artifact 写工具要求 `expected_sha256`，布尔 `overwrite` 被拒绝，不重新解释。写入经过 symlink 与 regular-file guard、hash precondition、temp + fsync + rename + parent fsync。跨进程锁仍未实现，所以 guard 只在一个 server process 内精确，跨进程仍有 check-to-rename 窗口。
 
 ### 3.2 关键权衡
 
 | 决策 | 权衡 |
 | --- | --- |
 | 共享协调面是本 capability 的组件，不是独立 capability（2026-10-11 用户决定） | 协调面复用 Effective State 的工件读取、只读解析与纯核心门禁。它独立成 capability 会把这些调用变成跨 capability 依赖。代价是本 capability 有 50 个文件、约 13.9k 行，需要组件表来说明内部边界 |
-| 版本 owner 放在 Git common dir，而不是 worktree 本地 | 所有 linked worktree 共享一个单调版本（Frozen Invariant 6）。代价是每次发布都要解析 common dir 并取第二把锁 |
+| 版本 owner 放在 Git common dir，而不是 worktree 本地 | 所有 linked worktree 共享一个单调版本（§3.1 第 12 条）。代价是每次发布都要解析 common dir 并取第二把锁 |
 | board 无锁读取，用双采样暴露撕裂 | 观察者不会串行化所有 agent。代价是读者可能拿到 `changed_during_read` 文档，只能当诊断用 |
 | hook、MCP 与 continuation ledger 只读 Effective State（2026-10-25 扩展到 hook 与 MCP） | SessionStart、MCP 摘要与 `state next` 保持零写入。SessionStart 的快乐路径从三次解析降到两次。代价是它们看到的 `state_version` 是最后发布的版本，可能属于另一个 revision。判断内容变化要比较 `state_revision` |
 | CLI 通过依赖注入把 resolver 传给命令函数 | 命令函数可以在测试中替换 resolver。代价是 CodeGraph 只记录 `references` 边，flow 选择器只能从 effects 层开始 |
@@ -220,6 +221,8 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 1. **同步的 Git 与源收集。** 早期设计已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.4 第 5 条。
 2. **provider board 的全量读取。** `resolveProviderBoard` 最多采样三次。每次采样，`collectProviderBoardInputs` 读取该仓库的全部 observation 与 refresh receipt，并做一次 session 发现（`src/effects/state/collect-provider-board-inputs.ts:19-43`）。记录数增加时，读成本线性增长。
 3. **`coordination-identity.ts` 只保留 task-id 路径形状。** 任务身份由 GitHub issue/PR 提供。旧 Sprint 行解析、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds` 已删除。
+
+锁的已知边界：PID reuse 可让 stale token 看起来仍 live；bounded timeout 与人工清理保持 mutual exclusion，且不引入 host-native 依赖。最终 identity check 之后的 hostile ancestor rename 需要 `openat`/dirfd，超出 portable Bun/Node boundary；静态与中间 symlink redirection 会被拒绝。
 
 ## 4. 歷史決策記錄(append-only)
 

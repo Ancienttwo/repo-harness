@@ -297,6 +297,7 @@ host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandabl
 4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。#770 删除了 resume 与 active-sprint 两个 provider。`[HarnessState]` 只保留 `references.resume` 指针。它不再输出 sprint 指针。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **只读解析的 stability 重读耗尽。** `runtime.ts` 的 `resolveHookEffectiveState` 是唯一的重试策略。它调用不取锁、不写状态的 `resolveEffectiveStateReadOnly`，最多三次（`EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3`），只重试 `StateResolutionUnstableError`。一次 SessionStart 的快乐路径是两次解析，最坏十二次。2026-10-25 前 hook 走写路径，这两个数是三次和三十次。权威源被并发改写时，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
 6. **`install-profile.ts` 1,441 行的单点（2026-10-11 实测，旧版记录为 1,167 行）。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
+7. **同步遥测 append 与不完整测量。** 10x 事件量下，第一个压力点是每条 route 完成后同步 append 的竞争或测量缺失，不是第二次 handler invocation。遥测保持非安全权威；证据消费者在必需字段缺失时 fail closed。
 
 两个 sink 不是同一个东西，早期版本把它们混为一谈：
 
