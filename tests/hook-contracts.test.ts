@@ -73,13 +73,15 @@ describe("Hook contracts", () => {
     expect(script).not.toContain("worth the tokens");
   });
 
-  test("in-process stop handler renders the recovery views and resolves no workflow state", () => {
+  test("in-process stop handler writes no recovery view and resolves no workflow state", () => {
     const handler = read("src/cli/hook/stop-handler.ts");
     // #691 finding 10 removed the private Stop payload type, the only place that named last_assistant_message.
     expect(handler).toContain("stop_hook_active");
-    expect(handler).toContain("renderRecoveryHandoff");
-    expect(handler).toContain("renderRecoveryResume");
     expect(handler).toContain("publishCheckpointFromLedger");
+    expect(handler).not.toContain("renderRecoveryHandoff");
+    expect(handler).not.toContain("renderRecoveryResume");
+    expect(handler).not.toContain("handoff/current.md");
+    expect(handler).not.toContain("handoff/resume.md");
     // #695: no readiness lines, no state resolution, no events.jsonl append.
     expect(handler).not.toContain("[StopReadiness]");
     expect(handler).not.toContain("getEffectiveState");
