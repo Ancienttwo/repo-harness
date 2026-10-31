@@ -38,7 +38,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
       { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: HERMES_CLIENT, slack_bot_id: 'B07HERMES1', herdr_agent: 'hermes' },
     ] },
     mcp: { state: 'ok', doctor: {
-      status: 'ready_user', package_version: '0.24.3', config_version_ok: true, auth_mode: 'oauth', auth_configured: true,
+      status: 'ready_user', package_version: '0.25.0', config_version_ok: true, auth_mode: 'oauth', auth_configured: true,
       capabilities: { workspace_reader: true, workflow_planner: true, workflow_executor: true, workspace_coder: false },
       registered_repo_count: 3, allowed_root_count: 1, unsafe_allowed_root_count: 0, legacy_full_disk_read: false, authorization_revision: 12,
       codex: { cli_available: true, configured: true }, chatgpt: { server_name_configured: true, public_endpoint_configured: true },
