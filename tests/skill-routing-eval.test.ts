@@ -936,3 +936,16 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     }, 30_000);
   });
 });
+
+test("committed full-profile routing reports match their sidecars", () => {
+  const pairs = [
+    ["evals/skill-routing/routing-aggregate.json", "evals/skill-routing/routing-aggregate.json.sha256"],
+    ["evals/skill-routing/routing-report-full-codex.json", "evals/skill-routing/routing-report-full-codex.json.sha256"],
+    ["evals/skill-routing/routing-report-full-claude.json", "evals/skill-routing/routing-report-full-claude.json.sha256"],
+  ] as const;
+  for (const [report, sidecar] of pairs) {
+    const bytes = readFileSync(join(ROOT, report));
+    const expected = readFileSync(join(ROOT, sidecar), "utf8");
+    expect(expected.startsWith(sha256Hex(bytes))).toBe(true);
+  }
+});
