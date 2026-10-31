@@ -37,12 +37,12 @@ The owner runs `npm publish`; the agent does not publish.
   reference docs are retired (#1227); the handoff session recovery is retired
   (#1228); init ships the IPDD root context and the registered upgrade
   migrates the retired copies (#1229); only the coordinator posts claims
-  (#1278); review has one
-  hazard list and a High tier on a hit (#1274); CI repair issues are keyed by
-  the failing test identity (#1275); research and durable decisions have one
-  home (#1250); the fleet known-gaps table is recorded (#1272); publication
-  regenerates generated artifacts and its P1 fix requires the result on the PR
-  head (#1257, #1288); the archimap is refreshed (#1291).
+  (#1278); review has one hazard list and a High tier on a hit (#1274); CI
+  repair issues are keyed by the failing test identity (#1275); research and
+  durable decisions have one home (#1250); the fleet known-gaps table is
+  recorded (#1272); publication regenerates generated artifacts and its P1
+  fix requires the result on the PR head (#1257, #1288); the archimap is
+  refreshed (#1291).
 - DSH plugin: the package ships `dist/dsh-plugin.js` and
   `cordis.patch.yml`; `prepack` builds the plugin. Registry install
   verification and release-note claims are deferred (#1206).
