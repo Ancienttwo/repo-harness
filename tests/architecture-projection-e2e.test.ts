@@ -48,7 +48,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
     expect(new Set(flows.map((flow) => flow.capabilityId))).toEqual(new Set(capabilities.map((node) => node.id)));
   });
 
-  test("projects every model capability as a Mermaid-only document and no HTML architecture artifact", () => {
+  test("projects every model capability as a Mermaid-only document and one archimap HTML artifact", () => {
     const architectureRoot = join(ROOT, "docs", "architecture");
     const moduleDocs = filesUnder(join(architectureRoot, "modules")).filter((path) => path.endsWith(".md"));
     const html = filesUnder(architectureRoot).filter((path) => path.endsWith(".html"));
@@ -59,7 +59,7 @@ describe("AXR7 repo-harness architecture consumer", () => {
       return architectureModulePathFor(domain, name);
     }).sort();
     expect(moduleDocs.map(path => relative(ROOT, path)).sort()).toEqual(expectedPaths);
-    expect(html.map((path) => relative(ROOT, path))).toEqual([]);
+    expect(html.map((path) => relative(ROOT, path))).toEqual(["docs/architecture/archimap.html"]);
     for (const path of moduleDocs) {
       const body = readFileSync(path, "utf8");
       expect(body.match(/^```mermaid$/gm)?.length ?? 0).toBeGreaterThanOrEqual(2);
