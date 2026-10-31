@@ -267,7 +267,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).not.toContain("pi_install_workflow_contract");
     expect(sharedLib).not.toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
-    expect(sharedLib).not.toContain("check:task-workflow");
+    expect(sharedLib).toContain('delete pkg.scripts["check:task-workflow"]');
     expect(sharedLib).not.toContain("contract.template.md");
     expect(sharedLib).not.toContain("implementation-notes.template.md");
     expect(sharedLib).not.toContain("PI_TEMPLATE_PLAN");
@@ -413,7 +413,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(sharedLib).toContain("pi_workflow_contract_query_lines");
     expect(sharedLib).not.toContain("check:task-sync");
     expect(sharedLib).not.toContain('pkg.scripts["check:architecture-sync"] = ');
-    expect(sharedLib).not.toContain("check:task-workflow");
+    expect(sharedLib).toContain('delete pkg.scripts["check:task-workflow"]');
     expect(content).toContain("pi_install_reference_configs");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/document-generation.md");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/global-working-rules.md");

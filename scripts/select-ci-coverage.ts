@@ -135,6 +135,7 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
     // Eval fixtures are inputs to the eval suite; a rename or deletion must run it.
     if (path.startsWith('evals/fixtures/')) {
       if (sources.has('tests/run-skill-evals.test.ts')) tests.add('tests/run-skill-evals.test.ts');
+      else uncovered.push(path);
       continue;
     }
     const seen = new Set([path]); const queue = [path]; let covered = false;

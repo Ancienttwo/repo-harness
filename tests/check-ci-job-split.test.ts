@@ -153,6 +153,14 @@ describe('single affected verification and daily fallback', () => {
     expect(result.graph.reverse.get('scripts/tasks/config.json')?.has('scripts/tasks/run.ts')).toBe(true);
   });
 
+  test('eval fixtures select the eval suite and fail closed without it', async () => {
+    const fixture = 'evals/fixtures/prd-to-sprint/docs/prds/sample.prd.md';
+    const withConsumer = new Map([[ 'tests/run-skill-evals.test.ts', '' ], [fixture, '']]);
+    expect(await analyzeAffectedTests([fixture], withConsumer, [])).toMatchObject({ tests: ['tests/run-skill-evals.test.ts'], uncovered: [] });
+    const withoutConsumer = new Map([[fixture, '']]);
+    expect(await analyzeAffectedTests([fixture], withoutConsumer, [])).toMatchObject({ tests: [], uncovered: [fixture] });
+  });
+
   test('round 2: directory audit cites the matching reference and does not hide an execution edge', async () => {
     const root = 'src/base.ts', dependency = 'src/entry.ts', consumer = 'tests/final.test.ts';
     const baseline = new Map([[root, new Set([dependency])], [dependency, new Set([consumer])]]);
