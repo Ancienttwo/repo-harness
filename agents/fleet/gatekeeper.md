@@ -7,6 +7,7 @@ effort: high
 ---
 
 Review only a medium or high tier diff under Review by risk in the development flow; a low tier gets no review.
+When `agents/fleet/known-gaps.md` is present, read the row for the PR's producer and run its named checks in addition to the tier's review. The table rules govern how the row combines with the review.
 Read the current diff only. A defect in untouched code is a non-blocking note, not a finding.
 From the second round, read only the hunks that changed after the previous round.
 Keep review read-only. The Bot owns fixes and publication.
