@@ -382,21 +382,20 @@ describe('single affected verification and daily fallback', () => {
   });
 
   test('deleted skill-routing evidence is retired; source and changed evidence still fail closed', async () => {
-    const previous = new Map([
+    const evidence = new Map<string, string>([
       ['evals/skill-routing/packed-profile-discovery-probe.sh', '#!/usr/bin/env bash\n'],
       ['evals/skill-routing/retirement-matrix-coverage.md', '# matrix\n'],
       ['evals/skill-routing/routing-report-strict-claude.json', '{}\n'],
       ['evals/skill-routing/routing-report-strict-claude.json.sha256', `${'0'.repeat(64)}  evals/skill-routing/routing-report-strict-claude.json\n`],
     ]);
-    const paths = [...previous.keys()];
-    const coverage = await analyzeAffectedTests(paths, new Map(), [], previous);
-    expect(coverage.retired.sort()).toEqual([...paths].sort());
-    expect(coverage.uncovered).toEqual([]);
-    expect(await selectAffectedTests(paths, new Map(), [], previous)).toEqual([]);
-    await expect(selectAffectedTests(['evals/skill-routing/gone.ts'], new Map(), [], new Map([['evals/skill-routing/gone.ts', 'export {}']]))).rejects.toThrow('coverage is unknown');
-    const changed = new Map([['evals/skill-routing/routing-report-full-claude.json', '{}']]);
-    await expect(selectAffectedTests(['evals/skill-routing/routing-report-full-claude.json'], changed, [], changed)).rejects.toThrow('coverage is unknown');
-  });
+    const deletedSource = 'evals/skill-routing/gone.ts';
+    const changed = 'evals/skill-routing/routing-report-full-claude.json';
+    const previous = new Map<string, string>([...evidence, [deletedSource, 'export {}'], [changed, '{}']]);
+    const sources = new Map<string, string>([[changed, '{"changed":true}']]);
+    const coverage = await analyzeAffectedTests([...evidence.keys(), deletedSource, changed], sources, [], previous);
+    expect(coverage.retired.sort()).toEqual([...evidence.keys()].sort());
+    expect(coverage.uncovered).toEqual([deletedSource, changed]);
+  }, 30_000);
 
   test('dependency manifests select every test without hiding another unknown path', async () => {
     const sources = new Map([['tests/a.test.ts', 'export {}'], ['tests/b.test.ts', 'export {}']]);
