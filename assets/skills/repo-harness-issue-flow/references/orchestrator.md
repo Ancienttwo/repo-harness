@@ -12,8 +12,9 @@ file is the Claude entry, not a requirement. Any host and any capable
 model may hold the seat.
 
 Post your own `issue claim` with `Seat: coordinator` on the parent before
-you dispatch. Every later instruction to a worker is a comment on its
-issue or PR.
+you dispatch. Only you post `issue claim` comments: the claim for each
+worker is yours, and it names the worker. Every later instruction to a
+worker is a comment on its issue or PR.
 
 ## 1. Preflight
 
@@ -155,6 +156,12 @@ module is in the title so that a list view shows the write scopes.
   the role (`worker`), the worktree path and branch name, the model and the
   report channel. Do not restate the requirement in chat. A second copy
   becomes a second authority.
+- Post the claim, then the packet. Post one `issue claim` on the child
+  issue for the worker: `Seat: writer`, `Agent:` the worker identity,
+  `Branch:` the branch that the packet names, `Scope` and `Not in scope`
+  from the issue, and `Coordinator:` the URL of your own parent claim. The
+  claim is the worker's identity on the board, and the worker never posts
+  one. Dispatch only after the claim is on the issue.
 - Dispatch in parallel only when the write scopes are disjoint and each
   dependency is merged, or its contract is stable and the issue allows
   early start.

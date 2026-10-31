@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { isCiRepairIssueBody } from '../src/core/operator/tests';
-import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
+import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, junitFiles, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; comments: { issue: number; body: string }[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
   const root = mkdtempSync(join(tmpdir(), 'ci-report-fixture-'));
@@ -108,6 +108,104 @@ test.each(['failure', 'cancelled', 'timed_out'])('completed %s run keys one read
   const reopened = await reportCI('test/repo', 13, f.api);
   expect(reopened.repairs).toEqual([{ key: 'ci-repair:job:Daily test', issue_url: 'https://github.com/test/repo/issues/2', delivery: 'created' }]);
 }));
+
+function junitFile(file: string, suite: string, cases: { name: string; failed?: boolean }[]): string {
+  const failures = cases.filter(entry => entry.failed).length;
+  const counts = `tests="${cases.length}" assertions="${cases.length}" failures="${failures}" skipped="0"`;
+  const testcases = cases.map(entry => entry.failed
+    ? `      <testcase name="${entry.name}" classname="${suite}" time="0.001" file="${file}" line="2" assertions="1"><failure type="AssertionError" message="boom">boom</failure></testcase>`
+    : `      <testcase name="${entry.name}" classname="${suite}" time="0.001" file="${file}" line="2" assertions="1" />`).join('\n');
+  return `<?xml version="1.0" encoding="UTF-8"?>
+<testsuites name="bun test" ${counts} time="0.2">
+  <testsuite name="${file}" file="${file}" ${counts} time="0.2">
+    <testsuite name="${suite}" file="${file}" line="1" ${counts} time="0.2">
+${testcases}
+    </testsuite>
+  </testsuite>
+</testsuites>`;
+}
+
+/** Answers the failed-run job and JUnit artifact reads; every other provider answer is the shared fixture. */
+function testReportAPI(f: { api: GitHubAPI }, jobs: { id: number; name: string; conclusion: string }[], artifacts: { id: number; name: string }[]): GitHubAPI {
+  return async (path, method, body) => {
+    if (path.includes('/artifacts?')) return { artifacts: artifacts.map(artifact => ({ ...artifact, expired: false, size_in_bytes: 1024 })) };
+    if (path.includes('/attempts/1/jobs')) return { jobs: jobs.map(job => ({ ...job, check_run_url: `https://api.github.com/repos/test/repo/check-runs/${job.id}` })) };
+    const check = /\/check-runs\/(\d+)$/.exec(path);
+    if (check) return { id: Number(check[1]), html_url: `https://github.com/test/repo/runs/${check[1]}` };
+    return f.api(path, method, body);
+  };
+}
+
+test('two failing tests in one job open two repair issues titled by test', () => fixture(async f => {
+  f.setConclusion('failure');
+  const file = 'tests/repair-key.test.ts';
+  const report = junitFile(file, 'repair key', [{ name: 'first test', failed: true }, { name: 'second test', failed: true }]);
+  const api = testReportAPI(f, [{ id: 44, name: 'Daily full tests and package', conclusion: 'failure' }], [{ id: 7, name: 'junit-daily-1' }]);
+  const result = await reportCI('test/repo', 12, api, undefined, async () => [{ path: 'report.xml', text: report }]);
+  expect(result.errors).toEqual([]);
+  expect(result.repairs.map(entry => entry.key).sort()).toEqual([
+    `ci-repair:test:${file} > repair key > first test`,
+    `ci-repair:test:${file} > repair key > second test`,
+  ].sort());
+  expect(f.issues).toHaveLength(2);
+  expect(f.issues.map(issue => issue.title).sort()).toEqual([
+    `[CI repair] repair key > first test @ ${f.after.slice(0, 12)}`,
+    `[CI repair] repair key > second test @ ${f.after.slice(0, 12)}`,
+  ].sort());
+  for (const issue of f.issues) {
+    expect(issue.body).toContain(`File: ${file}`);
+    expect(issue.body).toContain('Failing jobs:\n- Daily full tests and package: failure: https://github.com/test/repo/runs/44');
+  }
+}));
+
+test('one test failing in several jobs opens one repair issue with the job list', () => fixture(async f => {
+  f.setConclusion('failure');
+  const file = 'tests/repair-key.test.ts';
+  const report = junitFile(file, 'repair key', [{ name: 'shared test', failed: true }]);
+  const api = testReportAPI(f, [
+    { id: 44, name: 'Affected tests (shard 0/3)', conclusion: 'failure' },
+    { id: 45, name: 'Daily full tests and package', conclusion: 'failure' },
+  ], [{ id: 7, name: 'junit-affected-shard-0-1' }, { id: 8, name: 'junit-daily-1' }]);
+  const result = await reportCI('test/repo', 12, api, undefined, async () => [{ path: 'report.xml', text: report }]);
+  expect(result.errors).toEqual([]);
+  expect(result.repairs).toEqual([{ key: `ci-repair:test:${file} > repair key > shared test`, issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
+  expect(f.issues).toHaveLength(1);
+  const body = f.issues[0].body;
+  expect(body).toContain('Failing jobs:');
+  expect(body).toContain('- Affected tests (shard 0/3): failure: https://github.com/test/repo/runs/44');
+  expect(body).toContain('- Daily full tests and package: failure: https://github.com/test/repo/runs/45');
+  expect(f.issues[0].title).toBe(`[CI repair] repair key > shared test @ ${f.after.slice(0, 12)}`);
+}));
+
+test('a job with no readable test report keeps the job repair key', () => fixture(async f => {
+  f.setConclusion('failure');
+  const api = testReportAPI(f, [{ id: 44, name: 'Daily full tests and package', conclusion: 'failure' }], [{ id: 7, name: 'junit-daily-1' }]);
+  const result = await reportCI('test/repo', 12, api, undefined, async () => null);
+  expect(result.errors).toEqual([]);
+  expect(result.repairs).toEqual([{ key: 'ci-repair:job:Daily full tests and package', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
+  expect(f.issues).toHaveLength(1);
+  expect(f.issues[0].title).toBe(`[CI repair] job:Daily full tests and package @ ${f.after.slice(0, 12)}`);
+}));
+
+test('an unreadable test report keeps the job key and records the degradation', () => fixture(async f => {
+  f.setConclusion('failure');
+  const api = testReportAPI(f, [{ id: 44, name: 'Daily full tests and package', conclusion: 'failure' }], [{ id: 7, name: 'junit-daily-1' }]);
+  const result = await reportCI('test/repo', 12, api, undefined, async () => { throw new Error('gh run download failed'); });
+  expect(result.errors).toEqual([]);
+  expect(result.repairs).toEqual([{ key: 'ci-repair:job:Daily full tests and package', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
+  expect(f.issues[0].body).toContain('The test report could not be read; the job key is used.');
+}));
+
+test('the artifact reader lists only nested XML reports', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ci-report-files-'));
+  try {
+    mkdirSync(join(root, 'nested'));
+    writeFileSync(join(root, 'nested', 'a.xml'), '<a/>');
+    writeFileSync(join(root, 'nested', 'notes.txt'), 'no');
+    writeFileSync(join(root, 'b.xml'), '<b/>');
+    expect(junitFiles(root, []).map(file => basename(file.path)).sort()).toEqual(['a.xml', 'b.xml']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('dispatch permission refusal stays pending and leaves the completed merge unchanged', () => fixture(async f => {
   f.setConclusion('failure'); f.denyIssues();

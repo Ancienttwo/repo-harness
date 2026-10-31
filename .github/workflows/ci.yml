@@ -164,6 +164,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
+          # scripts/report-ci.ts reads this report to key repair issues by test.
           name: junit-affected-shard-${{ matrix.shard }}-${{ github.run_attempt }}
           path: .ai/harness/runs/junit
           include-hidden-files: true
@@ -312,6 +313,7 @@ jobs:
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
         with:
+          # scripts/report-ci.ts reads this report to key repair issues by test.
           name: junit-daily-${{ github.run_attempt }}
           path: .ai/harness/runs/junit
           include-hidden-files: true

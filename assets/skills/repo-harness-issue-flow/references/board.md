@@ -44,36 +44,56 @@ Rules that keep the topology safe:
 
 ## Claims
 
-One `issue claim` comment takes one seat. A valid claim carries
-`Status`, `Seat`, `Agent`, `Branch`, `Scope` and `Not in scope`.
-A claim that takes over a seat also carries `Prior claim`. Board rules 2,
-3 and 8 apply: one identity, read back, and stop on an uncertain read or
-post.
+One `issue claim` comment takes one seat. `issue claim` is seat-only:
+only the active coordinator holder posts it (see "Seat-only comment
+kinds"). A valid claim carries `Status`, `Seat`, `Agent`, `Branch`,
+`Scope` and `Not in scope`. A claim that takes over a seat also carries
+`Prior claim`. Board rules 2, 3 and 8 apply: one identity, read back, and
+stop on an uncertain read or post.
 
-- **Read the parent first.** Before a writer claims, read the parent seat
-  table and the latest `plan` on the parent, every comment on this issue,
-  and every PR that links it. Do not claim a dependent issue while its
-  dependency is open, unless the issue allows early start.
-- **No coordinator on the parent.** A writer may claim an issue with no
-  open dependency while the parent has no coordinator. The claim then
-  carries `Coordinator: none`. A coordinator that takes the parent later
-  confirms or returns each such claim.
-- **Invalid claim.** A claim that misses a required field is invalid. Its
-  author releases it with `issue claim status` and `Status: released`,
-  then posts one complete claim. The coordinator names the missing fields
-  in a `To: <agent>` comment and does not dispatch work on that issue
-  until the corrected claim is on the board. The parent table never makes
-  an invalid claim valid.
+- **The coordinator posts every claim.** It claims its own coordinator
+  seat on the parent. For each worker it dispatches, it posts one writer
+  claim with `Agent:` set to that worker's identity and `Coordinator:`
+  set to its own claim URL. The worker never posts a claim of its own.
+  That claim is the identity that the worker uses in every later comment.
+- **Read the parent first.** Before the coordinator claims a seat, it
+  reads the parent seat table and the latest `plan` on the parent, every
+  comment on this issue, and every PR that links it. It does not claim a
+  dependent issue while its dependency is open, unless the issue allows
+  early start.
+- **Write access is the coordinator's authority.** A claim is valid only
+  when the account that posts it has write access to the repository: its
+  `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`. GitHub
+  is the only source of that permission; do not keep a separate list. A
+  claim from any other account holds no seat.
+- **A claim from anyone else is a request.** An `issue claim` comment
+  from an agent without the coordinator seat is a request, not a claim.
+  The coordinator accepts it with one `issue claim` that names that
+  agent, or rejects it with a `To: <agent>` comment. No work starts
+  until the coordinator's claim is on the board.
+- **No coordinator, no start.** While the parent has no coordinator, no
+  child starts. The owner appoints a coordinator, and it claims the parent
+  before it dispatches any child.
+- **Invalid claim.** A claim that misses a required field is invalid. The
+  coordinator releases it with `issue claim status` and
+  `Status: released`, then posts one complete claim. It names the missing
+  fields in a `To: <agent>` comment and does not dispatch work on that
+  issue until the corrected claim is on the board. The parent table never
+  makes an invalid claim valid.
 
 ## Seat-only comment kinds
 
-`plan`, `decision`, `scope change` and `unblocked` belong to the
-coordinator seat. Only the active coordinator holder posts them.
+`plan`, `decision`, `scope change`, `unblocked` and `issue claim`
+belong to the coordinator seat. Only the active coordinator holder posts
+them.
 
 - A comment of one of these kinds from an agent without the coordinator
   seat is invalid. It takes effect only when the coordinator confirms it
-  in its own `decision` or `scope change`. Until then no worker acts on
-  it, and the parent table does not change.
+  in its own comment of the same kind. Until then no worker acts on it,
+  and the parent table does not change.
+- An `issue claim` from another agent is a request. The coordinator
+  accepts or rejects it as `Claims` says. No seat changes until the
+  coordinator posts the claim.
 - An owner instruction becomes a board rule through the coordinator. The
   coordinator records it as a `decision`, or as a `scope change` when
   the issue body moves. The owner's message alone is not a board entry.
@@ -92,7 +112,7 @@ Parent issue ── coordinator seat
  ├─ Child A (module X) ── writer seat ── PR-A ── head owner = writer A
  │                                        └─ acceptance round 1, 2 ... (acceptor seats)
  ├─ Child B (module Y) ── PR slots named in the issue:
- │    ├─ PR-B1 ── writer B1 (own slot claim)
+ │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
  │    └─ PR-B2 ── writer B2, Depends on PR-B1
  └─ Child C (module Z) ── Depends on #A ── PR-C draft until PR-A merges
 Integrator seat (coordinator) merges in the parent's order.
@@ -110,8 +130,9 @@ after each claim or status change.
   dependency section. The coordinator checks the graph for cycles before
   publish.
 - **PR slots.** One issue can name several PRs in advance (PR-1a, PR-1b),
-  each with its own scope. Each slot is claimed separately: an issue claim
-  comment with `Slot: PR-1b`. Without named slots, one issue is one writer.
+  each with its own scope. Each slot is claimed separately: the
+  coordinator posts one `issue claim` per slot, with `Slot: PR-1b`.
+  Without named slots, one issue is one writer.
 - **PR dependencies** are lines `Depends on #<PR>` in the PR body.
 - **Pushed history is append-only.** A head owner never rewrites a branch
   that someone may have built on. It syncs main with a merge commit, and
@@ -152,7 +173,7 @@ lines, then at most a short free-text body. The exact shapes are in
 
 | Kind | Where | Posted by | Purpose |
 |---|---|---|---|
-| `issue claim` | Issue | Coordinator, writer | Take a seat: the required fields, with an optional `Slot` |
+| `issue claim` | Issue | Coordinator | Take a seat for a dispatched agent: the required fields, with an optional `Slot` |
 | `issue claim status` | Issue | Seat holder | ready for review, blocked, released, handed off, done |
 | `boundary question` | Issue | Writer | The issue boundary blocks the work. Stop and ask |
 | `scope change` | Issue | Coordinator | The issue body changed: what, why, who is affected |
@@ -164,8 +185,9 @@ lines, then at most a short free-text body. The exact shapes are in
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; or a merge result with the executor exit code |
 
-`plan`, `decision`, `scope change` and `unblocked` are seat-only
-(see above). Every other kind may come from any seat holder it names.
+`plan`, `decision`, `scope change`, `unblocked` and `issue claim`
+are seat-only (see above). Every other kind may come from any seat holder
+it names.
 
 Board rules:
 

@@ -177,18 +177,23 @@ Agent: <kind>, session <id>     # required
 Branch: <type>/<issue>-<slug>   # required
 Scope: <what this claim covers> # required
 Not in scope: <what it leaves>  # required
-Coordinator: <parent claim URL> # none when the parent has no coordinator
+Coordinator: <parent claim URL> # the coordinator's own claim
 Prior claim: <comment URL>      # required on a handoff
 ```
 
 `Status`, `Seat`, `Agent`, `Branch`, `Scope` and `Not in scope` are
 required. A handoff claim also requires `Prior claim`. A claim without
-any of them is invalid. The author reads its claim back; when a field is
-missing it posts `issue claim status` with `Status: released`, then one
-complete claim. The coordinator names the missing fields in a
-`To: <agent>` comment and does not dispatch until the corrected claim is
-on the board. Write `Coordinator: none` only when the parent has no
-coordinator and the issue has no open dependency.
+any of them is invalid. The coordinator reads its claim back; when a
+field is missing it posts `issue claim status` with `Status: released`,
+then one complete claim. It names the missing fields in a `To: <agent>`
+comment and does not dispatch until the corrected claim is on the board.
+
+`issue claim` is seat-only. The coordinator posts it, including the
+claim of each agent it dispatches. Such a claim names the agent in
+`Agent:` and the coordinator's own claim in `Coordinator:`. Any other
+agent's claim is a request, not a seat. A claim is valid only from an
+account whose `author_association` is `OWNER`, `MEMBER` or
+`COLLABORATOR`; GitHub is the only source of that permission.
 
 ### issue claim status
 
@@ -233,9 +238,10 @@ Why: <reason and evidence>
 Applies to: #<n> ...
 ```
 
-`plan`, `decision`, `scope change` and `unblocked` are seat-only. Only
-the active coordinator holder posts them. Another agent's comment of one
-of these kinds takes effect only when the coordinator confirms it.
+`plan`, `decision`, `scope change`, `unblocked` and `issue claim`
+are seat-only. Only the active coordinator holder posts them. Another
+agent's comment of one of these kinds takes effect only when the
+coordinator confirms it.
 
 ### plan
 
@@ -268,7 +274,8 @@ State: branch <name>, head <sha>, done <...>, left <...>
 Next command: <exact command>
 ```
 
-The receiver then posts its own `issue claim` with `Prior claim:`.
+The coordinator then posts the receiver's `issue claim` with
+`Prior claim:`.
 
 ### acceptance claim (on the PR)
 
