@@ -1047,4 +1047,3 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
   expect(readiness.blockers.map((blocker) => blocker.code)).toContain('unresolved_threads');
   expect(readiness.ready).toBe(false);
 });
-
