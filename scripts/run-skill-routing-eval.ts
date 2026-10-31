@@ -213,8 +213,10 @@ export function schemaDriftIssues(canonicalRoutes: readonly string[]): string[] 
 // RouteRecallStat.reachable) and its overall_pass is labeled PARTIAL
 // evidence, never package acceptance on its own (RoutingRunReport
 // .evidence_scope/.evidence_note). The `aggregate` subcommand
-// (buildAggregateReport, below) combines 2+ runs into the actual
-// package-acceptance signal across all canonical routes.
+// (buildAggregateReport, below) combines 2+ runs into an ADVISORY
+// aggregate across all canonical routes: the provider harness has no
+// routing preamble, so the measurement reflects direct model answers, not
+// skill discovery. See AGGREGATE_ADVISORY_REASON.
 // ============================================================================
 
 import { spawnSync } from "child_process";
@@ -854,8 +856,9 @@ export function evaluateThresholds(
  * OWN reachable route subset only (profile/host-gated) -- PARTIAL evidence,
  * never package acceptance on its own (see SINGLE_RUN_EVIDENCE_NOTE).
  * "aggregate_package_acceptance": buildAggregateReport's output, below --
- * overall_pass here IS the package acceptance signal (all canonical
- * routes evaluated, each from a run where it was actually reachable).
+ * the aggregate evaluates all canonical routes (each from a run where it
+ * was actually reachable), but it is ADVISORY evidence, not a merge gate
+ * (see AGGREGATE_ADVISORY_REASON).
  */
 export type EvidenceScope = "single_run_partial" | "aggregate_package_acceptance";
 
@@ -926,16 +929,26 @@ export interface AggregateCaseSource {
   readonly source_report: string;
 }
 
+export const AGGREGATE_ADVISORY_REASON =
+  "The provider harness invokes claude -p / codex exec with the raw corpus " +
+  "prompt and no routing preamble, so this measurement reflects direct model " +
+  "answers, not skill discovery. overall_pass and the floors are reported " +
+  "advisory evidence, not a merge gate, until a follow-up adds the routing " +
+  "preamble and reconsiders gating.";
+
 export const AGGREGATE_EVIDENCE_NOTE =
-  "Package acceptance signal: overall_pass here evaluates all four plan " +
-  "floors over the union of 2+ runs, with every canonical route scored from " +
-  "a run where it was actually reachable. A zero-recall route cannot hide " +
-  "behind a flattering aggregate -- every canonical route is " +
-  "independently gated.";
+  "ADVISORY EVIDENCE, NOT A MERGE GATE: overall_pass here evaluates all four " +
+  "plan floors over the union of 2+ runs, with every canonical route scored " +
+  "from a run where it was actually reachable. A zero-recall route cannot " +
+  "hide behind a flattering aggregate -- every canonical route is reported " +
+  "independently. Gating waits for a follow-up that adds the routing " +
+  "preamble and reconsiders the floors.";
 
 export interface AggregateRunReport {
   readonly protocol: 1;
   readonly evidence_scope: "aggregate_package_acceptance";
+  readonly advisory: true;
+  readonly advisory_reason: string;
   readonly evidence_note: string;
   readonly generated_at: string;
   readonly corpus_sha256: string;
@@ -1044,6 +1057,8 @@ export function buildAggregateReport(
   return {
     protocol: 1,
     evidence_scope: "aggregate_package_acceptance",
+    advisory: true,
+    advisory_reason: AGGREGATE_ADVISORY_REASON,
     evidence_note: AGGREGATE_EVIDENCE_NOTE,
     generated_at: new Date().toISOString(),
     corpus_sha256: first.report.corpus_sha256,
@@ -1271,6 +1286,7 @@ function printAggregateSummary(report: AggregateRunReport, reportPath: string): 
     console.log(`  input: profile=${input.profile} host=${input.host} provider=${input.provider} path=${input.path}`);
   }
   printMetricsAndThresholds(report.metrics, report.thresholds);
+  console.log(`  advisory=${String(report.advisory)} -- ${report.advisory_reason}`);
   console.log(`  evidence_scope=${report.evidence_scope} -- ${report.evidence_note}`);
   console.log(`  report: ${reportPath}`);
   console.log(`  sidecar: ${reportPath}.sha256`);
@@ -1499,8 +1515,10 @@ function usage(): string {
     "fails closed on mismatched corpus/manifest sha256 across inputs or a",
     "canonical route unreachable in every input, else evaluates all four plan",
     "floors over the union (each case scored from a run where its route was",
-    "reachable) and writes a report + .sha256 sidecar whose overall_pass IS",
-    "the package acceptance signal.",
+    "reachable) and writes a report + .sha256 sidecar. The report is marked",
+    "advisory:true with advisory_reason: overall_pass is reported evidence,",
+    "not a merge gate, because the provider invocation has no routing",
+    "preamble and measures direct model answers rather than skill discovery.",
     "freeze [--write] [--out <path>]: computes the SSD-07 subject-freeze",
     "record (manifest/corpus sha256, per-package tree hashes, discovered-set",
     "projections per profile/host, changed-files-since-base, head_sha:null-",
