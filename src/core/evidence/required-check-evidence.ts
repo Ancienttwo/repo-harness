@@ -85,7 +85,7 @@ export interface RequiredCheckRetryV1 {
   readonly attempted: boolean;
   readonly attempts: number;
   readonly outcome: RequiredCheckRetryOutcome;
-  /** True only when every failed identifier provably executed again and none was skipped. */
+  /** True only when an observed failed child/test identifier executed again and was not skipped. */
   readonly revalidated: boolean;
   readonly latest: RequiredCheckJobLinkV1 & {
     readonly conclusion: RequiredCheckAttemptConclusion;
@@ -374,22 +374,16 @@ function frozenScope(value: RequiredCheckScopeV1): RequiredCheckScopeV1 {
   return Object.freeze({ executed: Object.freeze([...value.executed]), skipped: Object.freeze([...value.skipped]) });
 }
 
-function revalidation(
-  attempts: readonly RequiredCheckAttemptObservationV1[],
-  shape: RequiredCheckFailureShape,
-): { outcome: RequiredCheckRetryOutcome; revalidated: boolean } {
+function revalidation(attempts: readonly RequiredCheckAttemptObservationV1[]): { outcome: RequiredCheckRetryOutcome; revalidated: boolean } {
   const latest = attempts[attempts.length - 1]!;
   if (attempts.length === 1) return { outcome: 'not_attempted', revalidated: false };
   if (latest.conclusion !== 'success') return { outcome: 'still_failing', revalidated: false };
   const incident = attempts.find(isFailureAttempt)!;
-  const tests = incident.failed_tests;
-  // A failed assertion names a test/child. A generic step label such as
-  // "Run tests" can pass while the failed child is skipped, so it is not
-  // revalidation evidence for an assertion failure.
-  if (tests.length === 0 && shape === 'assertion_mismatch') {
-    return { outcome: 'failed_then_not_revalidated', revalidated: false };
-  }
-  const identifiers = tests.length > 0 ? tests : incident.steps;
+  const identifiers = incident.failed_tests;
+  // A generic step label such as "Run tests" can pass while the failed child is
+  // skipped. Without an observed failed child/test identifier the retry cannot
+  // prove revalidation, whether the failure shape is assertion, timeout or an
+  // unavailable log.
   if (identifiers.length === 0) return { outcome: 'failed_then_not_revalidated', revalidated: false };
   const skipped = new Set(latest.scope.skipped);
   const executed = new Set(latest.scope.executed);
@@ -415,7 +409,7 @@ export function assessRequiredCheckFailure(input: RequiredCheckObservationV1): R
   if (!incident) fail('RequiredCheckObservation has no failed attempt');
   const latest = input.attempts[input.attempts.length - 1]!;
   const shape = failureShapeOf(incident);
-  const retry = revalidation(input.attempts, shape);
+  const retry = revalidation(input.attempts);
   const assessed = causeOf(shape, incident, input.declared_cause);
   const failedThenPassed = retry.outcome === 'failed_then_passed' || retry.outcome === 'failed_then_not_revalidated';
   // A passing rerun is not proof of an infrastructure flake, even when the

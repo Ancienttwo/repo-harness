@@ -270,11 +270,12 @@ describe('required-check failure evidence', () => {
 
   test('a platform-evidenced runner abort that later passes is still not a proven infrastructure flake', () => {
     const evidence = assessRequiredCheckFailure(requiredCheckObservation([
-      requiredCheckAttempt({ conclusion: 'cancelled', steps: ['Run tests'], failure_excerpt: null, logs_available: false,
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: ['Run tests'], failed_tests: ['session-runtime > chunk boundary'],
+        failure_excerpt: null, logs_available: false,
         platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
       requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
         conclusion: 'success', steps: [], failure_excerpt: null,
-        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests', 'session-runtime > chunk boundary'], skipped: [] } }),
     ]));
     expect(evidence.failed.shape).toBe('runner_abort');
     expect(evidence.observed_result).toBe('failed_then_passed');
@@ -349,6 +350,18 @@ describe('required-check failure evidence', () => {
           .toEqual([field, Array.isArray(malformed) ? 'array' : typeof malformed, true]);
       }
     }
+  });
+
+  test('a retry without a failed child identifier is not revalidated even when the aggregate step passes', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: [], failure_excerpt: null, logs_available: false }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('logs_unavailable');
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.observed_result).toBe('not_revalidated');
   });
 
   test('a real product failure remains a blocker and a rerun pass never clears it', () => {

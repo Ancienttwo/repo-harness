@@ -440,7 +440,7 @@ test('merged provider PR remains blocked without local squash classification aut
 });
 
 
-function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'skipped-child'): NonNullable<PublicationReadinessInput['gh_runner']> {
+function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'skipped-child' | 'no-annotations'): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
   const run = {
     path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
@@ -466,7 +466,8 @@ function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previou
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
       return { status: 0, stdout: JSON.stringify({
         total_count: 1,
-        jobs: [job(456, 'failure', 'https://api.github.com/repos/example/repo-harness/check-runs/77',
+        jobs: [job(456, 'failure', scenario === 'no-annotations' ? null
+          : 'https://api.github.com/repos/example/repo-harness/check-runs/77',
           scenario === 'missing-previous-job' ? 'renamed job' : 'test (ubuntu-latest)')],
       }) };
     }
@@ -517,6 +518,17 @@ test('a passing aggregate step does not revalidate a skipped failed child', () =
   expect(verdict.ready).toBe(true);
   const [evidence] = verdict.check_failures;
   expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
+  expect(evidence!.failed.steps).toEqual(['Run tests']);
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+  expect(evidence!.observed_result).toBe('not_revalidated');
+});
+
+test('a rerun without failed child evidence is not revalidated even when the aggregate step passes', () => {
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('no-annotations') });
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.failed.tests).toEqual([]);
+  expect(evidence!.failed.shape).toBe('logs_unavailable');
   expect(evidence!.failed.steps).toEqual(['Run tests']);
   expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
   expect(evidence!.observed_result).toBe('not_revalidated');
