@@ -1,6 +1,6 @@
 ---
 name: repo-harness-issue-flow
-description: Run GitHub issue and PR driven development with several agents. Use it to turn a PRD or feature into a backlog of requirement issues split by architecture module, with Depends on lines and boundaries; to dispatch workers and follow their PRs and CI to merge as coordinator; or, as a worker, to claim an issue and deliver its PR, raise a boundary question, hand off or take over a stalled claim, or sync a PR stacked on another agent's PR. Exclude PRD drafting, code review, and small changes that need no issue.
+description: Run GitHub issue and PR driven development with several agents. Use it to turn a PRD or feature into a backlog of requirement issues split by architecture module, with Depends on lines and boundaries; to dispatch workers and follow their PRs and CI to merge as coordinator; or, as a worker, to deliver a dispatched issue's PR, raise a boundary question, hand off or take over a stalled claim, or sync a PR stacked on another agent's PR. Exclude PRD drafting, code review, and small changes that need no issue.
 when_to_use: "repo-harness-issue-flow"
 ---
 
@@ -29,7 +29,7 @@ executes them or stops and asks.
 |---|---|---|---|
 | Orchestrator | Any host's long-lived top-level session with network access. On Claude, it may use `claude --agent orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
-| Worker | Any capable coding model | Writer of one issue or PR slot; head owner of its PR | Widens scope, merges, pushes to another owner's branch |
+| Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Claims its own seat, widens scope, merges, pushes to another owner's branch |
 | Acceptor | Gatekeeper by default. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review round | Reviews its own code, pushes code |
 
 The suggested models are advice, not a requirement. Any capable host may
@@ -90,8 +90,13 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
 ## Hard rules
 
 - Read the current issue, its assignees, all comments and linked PRs before
-  you act. Follow the repository's issue-claim rules. Silence or an old
-  timestamp does not release a claim.
+  you act. Follow the repository's issue-claim rules. Only the coordinator
+  posts `issue claim`; a worker starts from the claim that names it.
+  Silence or an old timestamp does not release a claim.
+- Before you claim or comment on a repair issue, search its test name,
+  read every comment, and take a posted patch first. Do not post a
+  "seen again" comment; the reporter appends evidence through `report-ci`
+  only.
 - One child issue has one write scope. It has one PR, or PR slots that the
   issue names in advance. Parallel workers never share a file.
 - One head owner per PR. Any other agent asks on the board, or takes the
