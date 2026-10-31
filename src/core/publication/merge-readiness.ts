@@ -212,6 +212,7 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   generated_artifacts_timeout: 'agent',
   generated_artifacts_network_attempt: 'agent',
   generated_artifacts_diff_outside: 'agent',
+  generated_artifacts_unpushed_regeneration: 'agent',
   generated_artifacts_unstable: 'agent',
   generated_artifacts_unavailable: 'external',
   stack_member: 'agent',

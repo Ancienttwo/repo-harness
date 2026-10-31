@@ -53,6 +53,7 @@ export const GENERATED_ARTIFACTS_FAILURE_CODES = [
   'generated_artifacts_timeout',
   'generated_artifacts_network_attempt',
   'generated_artifacts_diff_outside',
+  'generated_artifacts_unpushed_regeneration',
   'generated_artifacts_unstable',
   'generated_artifacts_unavailable',
 ] as const;
@@ -116,7 +117,10 @@ function glob(value: unknown, label: string): string {
 }
 
 function pointer(value: unknown, label: string): string {
-  if (typeof value !== 'string' || parseJsonPointer(value) === null) fail(`${label} must be a JSON pointer`);
+  // The empty pointer addresses the whole document; a preserve rule cannot mean that.
+  if (typeof value !== 'string' || value === '' || parseJsonPointer(value) === null) {
+    fail(`${label} must be a non-empty JSON pointer`);
+  }
   return value;
 }
 

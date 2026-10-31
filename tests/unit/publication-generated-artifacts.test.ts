@@ -58,7 +58,7 @@ function policy(overrides: Partial<GeneratedArtifactsPolicyV1> = {}): GeneratedA
  * generated value. Main moves on with an unrelated file so the base is a
  * distinct commit. The merge tree therefore contains the stale generated file.
  */
-function staleGeneratedFixture(): Fixture & { base: string; head: string } {
+function staleGeneratedFixture(options: { prTouchesGenerated?: boolean } = {}): Fixture & { base: string; head: string } {
   const created = fixture((repo, writeFile) => {
     writeFile('input.txt', 'one\n');
     writeFile('gen.txt', 'one\n');
@@ -67,8 +67,8 @@ function staleGeneratedFixture(): Fixture & { base: string; head: string } {
   commitAll(created.repo, 'base');
   git(created.repo, 'checkout', '-q', '-b', 'pr');
   write(created.repo, 'input.txt', 'two\n');
-  write(created.repo, 'gen.txt', 'stale\n');
-  commitAll(created.repo, 'pr changes the generated file');
+  if (options.prTouchesGenerated !== false) write(created.repo, 'gen.txt', 'stale\n');
+  commitAll(created.repo, 'pr changes its inputs');
   const head = git(created.repo, 'rev-parse', 'HEAD');
   git(created.repo, 'checkout', '-q', 'main');
   write(created.repo, 'main-only.txt', 'main\n');
@@ -117,6 +117,7 @@ describe('generated-artifact policy block', () => {
       { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [{ path: 'other.json', preserve_from_pr: ['/a'] }] },
       { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [{ path: 'gen.txt', preserve_from_pr: ['a'] }] },
       { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [{ path: 'gen.txt', preserve_from_pr: ['/~2'] }] },
+      { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [{ path: 'gen.txt', preserve_from_pr: [''] }] },
       { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [{ path: 'gen.txt', preserve_from_pr: [] }] },
     ];
     for (const value of invalid) {
@@ -202,8 +203,21 @@ describe('network-denied sandbox plan', () => {
 });
 
 describe('generated-artifact regeneration on the merge tree', () => {
-  darwinTest('a stale generated file regenerates cleanly and reports the changed path', () => {
+  darwinTest('a stale generated file that the PR edited fails closed, so the author pushes the regeneration', () => {
     const created = staleGeneratedFixture();
+    const check = observeGeneratedArtifacts({
+      repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root, policy: policy(),
+    });
+    expect(check.failure?.code).toBe('generated_artifacts_unpushed_regeneration');
+    expect(check.failure?.message).toContain('"gen.txt"');
+    expect(check.failure?.message).toContain('commit the result');
+    expect(check.failure?.message).toContain('-stale');
+    expect(check.failure?.message).toContain('+two');
+    expect(check.regenerated_paths).toEqual(['gen.txt']);
+  });
+
+  darwinTest('a stale merge tree regenerates when the PR did not edit the generated path', () => {
+    const created = staleGeneratedFixture({ prTouchesGenerated: false });
     const check = observeGeneratedArtifacts({
       repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root, policy: policy(),
     });
@@ -341,7 +355,7 @@ describe('generated-artifact regeneration on the merge tree', () => {
   });
 
   darwinTest('a generator that changes a declared path on every run is unstable', () => {
-    const created = staleGeneratedFixture();
+    const created = staleGeneratedFixture({ prTouchesGenerated: false });
     const check = observeGeneratedArtifacts({
       repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root,
       policy: policy({ command: 'echo more >> gen.txt' }),
@@ -427,7 +441,7 @@ describe('readiness wiring for generated artifacts', () => {
   });
 
   darwinTest('a clean regeneration leaves a ready verdict', () => {
-    const created = staleGeneratedFixture();
+    const created = staleGeneratedFixture({ prTouchesGenerated: false });
     const policyText = JSON.stringify({ publication: { acceptance_merge: 'on', generated_artifacts: {
       paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 10_000,
     } } });

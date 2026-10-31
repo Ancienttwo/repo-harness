@@ -137,11 +137,25 @@ rule it is merged under.
 - Readiness resolves a conflict on a declared path from the base version, then
   runs the command. A second run must change nothing
   (`generated_artifacts_unstable` otherwise).
+- A conflict on a declared path still requires the author to push the
+  regenerated resolution. The check proves that the merge tree converges to it;
+  it does not write the PR branch.
+- A declared generated path that the PR edited must already be the generator's
+  output. Readiness does not repair the PR: when the command changes a path the
+  PR changed outside a conflict resolution, it fails closed with
+  `generated_artifacts_unpushed_regeneration` and the exact diff. Run the
+  declared command and commit the result.
 - The command runs in a network-denied sandbox: `sandbox-exec` with
   `(deny network*)` on macOS, `unshare --user --map-root-user --net` on
-  Linux. A probe proves the
-  denial before the command starts. A platform without a supported sandbox, or
-  a probe that can connect, fails closed.
+  Linux. A probe connects to `1.1.1.1:443` before the command starts and must
+  fail with a platform denial code (`EPERM` or `EACCES` on macOS,
+  `ENETUNREACH` or `EAFNOSUPPORT` on Linux). A timeout, a successful
+  connection, or a platform without a supported sandbox fails closed.
+- The command is PR-influenced code. It runs with the host user's filesystem
+  permissions and a scrubbed environment: only `PATH`, the locale variables,
+  `TZ`, `GIT_TERMINAL_PROMPT` and `CI` are set. Write confinement for this
+  child is a tracked follow-up, so run readiness on a host where the checked-out
+  PR is trusted to run code.
 - Any changed path outside `paths` fails closed with
   `generated_artifacts_diff_outside` and the exact diff. A network attempt, a
   command failure and a timeout have their own blockers.

@@ -6,9 +6,18 @@
  * network-denied sandbox, and requires a second run to be a no-op. Any changed
  * path outside the declared globs fails closed.
  *
+ * The check proves convergence; it does not repair the PR. A declared generated
+ * path that the PR edited must already be the generator's output, and a
+ * resolved conflict still needs its regenerated result pushed by the author.
+ *
+ * The command is PR-influenced code. It runs with a scrubbed environment and no
+ * network, but with the host user's filesystem permissions; write confinement
+ * is a tracked follow-up.
+ *
  * Network denial is proven before the command starts: a probe child runs in the
- * same sandbox and must fail to open an outbound connection. A platform without
- * a supported sandbox fails closed instead of running the command unsandboxed.
+ * same sandbox and must fail to open a connection to a routable address with a
+ * platform denial code. A timeout, a connection or a platform without a
+ * supported sandbox fails closed instead of running the command unsandboxed.
  *
  * The check never takes one side of a mixed file. A declared generated path
  * without a `mixed` rule is probed by regenerating once from the base version
@@ -37,13 +46,40 @@ const GIT_TIMEOUT_MS = 60_000;
 const GIT_MAX_BUFFER = 16 * 1024 * 1024;
 const MESSAGE_LIMIT = 2_000;
 const PROBE_TIMEOUT_MS = 5_000;
+/**
+ * The probe connects to a routable address. Only a platform denial code proves
+ * that the sandbox blocks egress; a timeout, a connection or any other error
+ * does not, so the check fails closed.
+ */
 const SANDBOX_PROBE = `const net = require('node:net');
-const socket = net.connect({ host: '192.0.2.1', port: 443 });
+const socket = net.connect({ host: '1.1.1.1', port: 443 });
 socket.setTimeout(1500);
-socket.once('connect', () => { process.stdout.write('CONNECTED'); process.exit(1); });
-socket.once('timeout', () => { socket.destroy(); process.stdout.write('NO-EGRESS'); process.exit(0); });
-socket.once('error', (error) => { process.stdout.write('NO-EGRESS ' + (error.code || error.message)); process.exit(0); });
+socket.once('connect', () => { process.stdout.write('CONNECTED'); process.exit(2); });
+socket.once('timeout', () => { socket.destroy(); process.stdout.write('TIMEOUT'); process.exit(3); });
+socket.once('error', (error) => { process.stdout.write('DENIED ' + (error.code || error.message)); process.exit(0); });
 `;
+
+/** The platform denial codes that prove the sandbox refused the connection. */
+const PROBE_DENIAL_CODES: Readonly<Record<'darwin' | 'linux', readonly string[]>> = {
+  darwin: ['EPERM', 'EACCES'],
+  linux: ['ENETUNREACH', 'EAFNOSUPPORT'],
+};
+
+/**
+ * The child environment for the probe and the regeneration command. PR-
+ * influenced code runs here, so the parent environment is not inherited:
+ * only a path, locale, time zone and the two marker variables remain.
+ */
+const SANDBOX_ENV_KEYS = ['PATH', 'LANG', 'LC_ALL', 'LC_CTYPE', 'TZ'] as const;
+
+function sandboxEnvironment(): NodeJS.ProcessEnv {
+  const env: NodeJS.ProcessEnv = { GIT_TERMINAL_PROMPT: '0', CI: '1' };
+  for (const key of SANDBOX_ENV_KEYS) {
+    const value = process.env[key];
+    if (value !== undefined) env[key] = value;
+  }
+  return env;
+}
 
 /** An outbound attempt that the sandbox denied: the command must not need the network. */
 const NETWORK_DENIAL = /\bEPERM\b|\bEACCES\b|ECONNREFUSED|ECONNRESET|ENETUNREACH|EHOSTUNREACH|EAI_AGAIN|getaddrinfo|Operation not permitted|network-outbound/iu;
@@ -85,7 +121,7 @@ function errorMessage(error: unknown): string {
 
 function excerpt(value: string, limit = MESSAGE_LIMIT): string {
   const text = value.trim();
-  return text.length > limit ? `${text.slice(0, limit)}…` : text;
+  return text.length > limit ? `${text.slice(0, limit)}…[truncated ${text.length - limit} characters]` : text;
 }
 
 function pathList(paths: readonly string[]): string {
@@ -227,7 +263,8 @@ function runSandboxed(
     timeoutMs: timeout,
     processGroup: true,
     maxOutputBytes: 32 * 1024,
-    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', CI: '1' },
+    env: sandboxEnvironment(),
+    inheritEnv: false,
   }));
   return run(argv[0]!, argv.slice(1), timeout_ms, cwd);
 }
@@ -238,16 +275,23 @@ function runSandboxed(
  * markers cannot prove isolation, so the check fails closed.
  */
 function proveNetworkDenial(input: GeneratedArtifactsCheckInput, cwd: string): void {
-  const probe = runSandboxed(input, input.probe_runtime ?? process.execPath, ['-e', SANDBOX_PROBE], PROBE_TIMEOUT_MS, cwd);
+  // Node reports the sandbox denial as EPERM on macOS and ENETUNREACH inside a
+  // network namespace on Linux; a different runtime can remap the same denial.
+  const runtime = input.probe_runtime ?? process.env.REPO_HARNESS_NODE_BIN ?? 'node';
+  const probe = runSandboxed(input, runtime, ['-e', SANDBOX_PROBE], PROBE_TIMEOUT_MS, cwd);
   const output = `${probe.stdout}\n${probe.stderr}`;
-  if (probe.timedOut || probe.status === null) {
-    fail('generated_artifacts_unavailable', `the network-denied sandbox did not answer the probe: ${excerpt(output)}`);
+  if (probe.timedOut) {
+    fail('generated_artifacts_unavailable',
+      `the network-denied sandbox probe timed out; a timeout does not prove that egress is denied: ${excerpt(output)}`);
   }
-  if (probe.status === 0 && output.includes('NO-EGRESS')) return;
-  if (probe.status === 1 && output.includes('CONNECTED')) {
+  const denied = /DENIED (\S+)/u.exec(output);
+  const platform = (input.platform ?? process.platform) as 'darwin' | 'linux';
+  if (probe.status === 0 && denied !== null && PROBE_DENIAL_CODES[platform].includes(denied[1]!)) return;
+  if (output.includes('CONNECTED')) {
     fail('generated_artifacts_unavailable', 'the sandbox allowed outbound network access; regeneration must be network-denied');
   }
-  fail('generated_artifacts_unavailable', `the network-denied sandbox is unavailable: ${excerpt(output)}`);
+  fail('generated_artifacts_unavailable',
+    `the sandbox did not deny egress with a known ${platform} code (expected ${PROBE_DENIAL_CODES[platform].join(' or ')}): ${excerpt(output)}`);
 }
 
 function classifyCommandFailure(input: GeneratedArtifactsCheckInput, result: ProcessRunResult): never {
@@ -377,6 +421,17 @@ function check(input: GeneratedArtifactsCheckInput, observed: ObservedPaths): vo
     if (unexpected.length > 0) {
       fail('generated_artifacts_diff_outside',
         `regeneration changed ${pathList(unexpected)} outside publication.generated_artifacts.paths; the diff is:\n${diffExcerpt(input.repo_root, merge.tree, first, unexpected, input)}`);
+    }
+
+    // A generated file that the PR edited must already be the generator's
+    // output: readiness proves convergence, it does not repair the PR. A
+    // conflict resolution is exempt because the author still has to push it.
+    const prChanged = changedPaths(input.repo_root, input.base_sha, input.head_sha, input);
+    const unpushed = observed.regenerated.filter((path) =>
+      prChanged.includes(path) && !observed.resolved.includes(path));
+    if (unpushed.length > 0) {
+      fail('generated_artifacts_unpushed_regeneration',
+        `the PR changed declared generated path ${pathList(unpushed)} but regeneration changes it again; run publication.generated_artifacts.command and commit the result. The diff is:\n${diffExcerpt(input.repo_root, merge.tree, first, unpushed, input)}`);
     }
 
     // A declared generated path with no mixed rule is probed from the PR
