@@ -585,7 +585,7 @@ paths are symlink-backed runtime entrypoints rebuilt by
 the npm unpublished-version preflight, then runs the `release` lane: the
 expensive-gated tests and the tarball install smoke. It is not a second full
 suite and not the CI gate; a release depends on green CI for the release SHA.
-Runtime routing regressions stay in affected tests. The old routing eval gate is retired.
+Runtime routing regressions stay in affected tests. The old routing eval gate is retired. The skill-routing aggregate in `evals/skill-routing/routing-aggregate.json` is advisory evidence, not a merge gate: the provider harness passes the raw corpus prompt with no routing preamble, so the run measures direct model answers, not skill discovery. The aggregate sets `advisory: true` and records the reason; its `overall_pass` and floors stay reported metrics. A follow-up will add the routing preamble and reconsider gating.
 
 ```bash
 bun run check:ci                    # the whole gate
