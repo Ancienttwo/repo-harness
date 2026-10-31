@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { join, posix } from "path";
 import { assertChatGptMcpContract } from "./helpers/chatgpt-mcp-contract";
 
 // SSD-06 migration: the pre-cutover 19-facade public action command surface
@@ -464,5 +464,99 @@ describe("repo-harness action command skills", () => {
     expect(readBack).toContain("chatgpt.serverName");
     expect(readBack).toContain("MCP Read Evidence".replace("MCP Read Evidence", "Called tool"));
     assertChatGptMcpContract(readBack);
+  });
+  test("issue-flow child template carries an architecture slice of the capability document", () => {
+    const templates = readReference("repo-harness-issue-flow", "templates.md");
+
+    expect(templates).toContain("## Architecture slice");
+    expect(templates).toContain("flowchart LR");
+    expect(templates).toMatch(/classDef target [^\n]*/);
+    expect(templates).toMatch(/class p1_component_[a-z0-9_]+ target/);
+    expect(templates).toContain("entrypoint.action-commands.profile-projection");
+    expect(templates).toMatch(/`[a-z0-9/.-]+\.ts#[A-Za-z][A-Za-z0-9]*`/);
+    expect(templates).toMatch(/\/blob\/<sha>\/docs\/architecture\/modules\/<domain>\/<capability>\.md/);
+    // The PR body rule: attach the changed slice, keep one line otherwise, and never commit a
+    // generated region.
+    expect(templates).toContain(".archcontext/model/**");
+    expect(templates).toContain("Architecture slice unchanged, see #<issue>");
+    expect(templates).toMatch(/[Nn]ever commit a generated region/);
+  });
+
+  test("issue-flow orchestrator gates splitting on architecture-projection status --json", () => {
+    const orchestrator = readReference("repo-harness-issue-flow", "orchestrator.md");
+
+    expect(orchestrator).toContain("repo-harness architecture-projection status --json");
+    expect(orchestrator).toContain("modelAuthority.source");
+    expect(orchestrator).toContain("modelAuthority.ready");
+    expect(orchestrator).toContain("archcontext");
+    expect(orchestrator).toContain("stop splitting");
+    expect(orchestrator).toContain("follow `next`");
+    // The gate needs modelAuthority and next, which check --json does not return.
+    expect(orchestrator.replace(/\s+/g, " ")).toContain("does not carry `modelAuthority` or `next`");
+  });
+
+  test("issue-flow worker derives the PR slice from the projection plan preview", () => {
+    const worker = readReference("repo-harness-issue-flow", "worker.md");
+
+    expect(worker).toContain("### 6.1 Architecture slice");
+    expect(worker).toContain("repo-harness architecture-projection plan --json --changed-path");
+    expect(worker).toContain("preview.format");
+    expect(worker).toContain("unified-diff");
+    expect(worker).toContain("preview.content");
+    expect(worker).toContain("§1.1");
+    expect(worker).toContain("preview.truncated");
+    expect(worker).toContain("Status: blocked; claim remains");
+    expect(worker).toMatch(/[Nn]ever hand-draw/);
+    expect(worker).toContain("scratch path");
+    expect(worker).toContain("Never modify or restore the worktree document");
+    expect(worker).not.toMatch(/Restore the worktree copy/);
+    expect(worker).toMatch(/No second source/);
+    expect(worker).toContain("codegraph index .");
+  });
+
+  test("archimap takes the model and the node links from ArchContext only", () => {
+    const skill = readSkillPackage("repo-harness-archimap");
+    const template = readFileSync(join(SKILLS_ROOT, "repo-harness-archimap", "assets", "template.html"), "utf-8");
+    const visual = readReference("repo-harness-archimap", "visual-language.md");
+
+    expect(skill).not.toContain("package and directory layout");
+    expect(skill).not.toContain(".ai/context/capabilities.json");
+    expect(skill).toContain("--model");
+    expect(skill).toContain("docs/architecture/.projection-manifest.json");
+    expect(skill).toContain("modules[].nodes");
+    expect(skill).toContain("undocumentedNodes");
+    expect(skill).toContain("relative to the map file's directory");
+    expect(skill.replace(/\s+/g, " ")).toContain("Remove the `docs/architecture/` prefix");
+    expect(template).toContain('<a class="node');
+    expect(template).toContain("modules[].docs");
+    expect(visual).toContain("modules[].docs");
+    expect(visual).toContain("capability document");
+    expect(visual).toContain("relative to `docs/architecture/archimap.html`");
+    expect(visual).toContain("remove the\n`docs/architecture/` prefix");
+
+    // measure.ts reports docs/architecture/modules/... from the repository root. The map links
+    // them from docs/architecture/archimap.html, so each href must resolve back to that document
+    // and must not repeat the prefix.
+    const mapDir = "docs/architecture";
+    const hrefs = [...template.matchAll(/<a class="node[^>]*href="([^"]+)"/g)].map((match) => match[1]!);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) {
+      expect(href.startsWith("docs/")).toBe(false);
+      expect(posix.join(mapDir, href)).toMatch(/^docs\/architecture\/modules\/[a-z-]+\/[a-z-]+\.md$/);
+    }
+  });
+
+  test("archimap measure refuses to run without --model", () => {
+    const measure = join(SKILLS_ROOT, "repo-harness-archimap", "scripts", "measure.ts");
+    let failure: { status?: number | null; stderr?: Buffer | string } | undefined;
+    try {
+      execFileSync("bun", [measure], { cwd: ROOT, encoding: "utf-8", stdio: "pipe" });
+    } catch (error) {
+      failure = error as { status?: number | null; stderr?: Buffer | string };
+    }
+
+    expect(failure).toBeDefined();
+    expect(failure?.status).toBe(2);
+    expect(String(failure?.stderr)).toContain("--model is required");
   });
 });
