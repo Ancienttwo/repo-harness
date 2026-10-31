@@ -364,6 +364,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     writeFileSync(join(fixture,'.git/info/exclude'), '.ai/harness/runs/\n');
     const checkout = join(fixture, 'linked-checkout');
     run('git', ['worktree', 'add', '-qb', 'codex/linked-test', checkout], fixture, env);
+    mkdirSync(join(fixture, '.ai/harness/worktrees'), { recursive: true });
+    writeFileSync(join(fixture, '.ai/harness/worktrees/linked-test.json'), `${JSON.stringify({ slug: 'linked-test', branch: 'codex/linked-test' })}\n`);
     const linkedSpec = { ...spec, role: 'linked-role', max_requests: 3 };
     const linkedPath = join(fixture, 'linked-spec.json'); writeFileSync(linkedPath, JSON.stringify(linkedSpec));
     const shim = join(fixture, 'shim'); mkdirSync(shim);

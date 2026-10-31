@@ -593,13 +593,14 @@ describe('W2/W3/W4 start and closeout ownership', () => {
     } finally { f.cleanup(); }
   });
 
-  test('W6 identity write failure names the retained checkout and a cleanup command', () => {
+  test('W6 identity write failure names the retained checkout and manual cleanup', () => {
     const f = fixture(); try {
       const binary = join(f.parent, 'git-block-identity');
       writeFileSync(binary, '#!/bin/sh\n/usr/bin/git "$@"\nstatus=$?\nif [ "$1" = worktree ] && [ "$2" = add ] && [ "$status" = 0 ]; then mkdir -p "$W6_STORE_PARENT"; printf blocked > "$W6_STORE_PARENT/worktree-identities"; fi\nexit "$status"\n', { mode: 0o755 });
       const started = f.start([], { REPO_HARNESS_GIT_BIN: binary, W6_STORE_PARENT: join(f.cwd, '.git/repo-harness/coordination') });
       expect(started.status).toBe(1); expect(started.stderr).toContain('Git created checkout ' + f.target);
-      expect(started.stderr).toContain('cleanup --slug owned --target <integration-branch>');
+      expect(started.stderr).toContain('Managed cleanup cannot prove ownership');
+      expect(started.stderr).toContain('git branch -D codex/owned');
       expect(existsSync(join(f.target, '.git'))).toBe(true);
     } finally { f.cleanup(); }
   });

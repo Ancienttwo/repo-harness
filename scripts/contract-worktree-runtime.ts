@@ -91,7 +91,7 @@ try {
       }
       try { recordCreatedWorktree(value('--repo'), worktree); }
       catch (error) {
-        throw new Error(`Git created checkout ${canonical} and branch ${value('--branch')}, but start could not save its recovery identity: ${String(error)}. Keep the checkout. After merge proof, run bash scripts/contract-worktree.sh cleanup --slug ${value('--branch').replace(/^[^/]+\//, '')} --target <integration-branch> from the main checkout. Or start with a new --path and --branch.`);
+        throw new Error(`Git created checkout ${canonical} and branch ${value('--branch')}, but start could not save its recovery identity: ${String(error)}. Keep the checkout. Managed cleanup cannot prove ownership without that identity. After merge proof, remove it manually from the main checkout: git worktree remove ${canonical}; git branch -D ${value('--branch')}. Or start with a new --path and --branch.`);
       }
       markActiveWorktree(worktree);
     });
