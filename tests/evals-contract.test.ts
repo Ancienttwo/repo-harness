@@ -1,5 +1,5 @@
 import { describe, test, expect } from "bun:test";
-import { existsSync, readFileSync } from "fs";
+import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
 
 const ROOT = join(import.meta.dir, "..");
@@ -124,5 +124,56 @@ describe("Skill eval assets", () => {
         expect(expectation.length).toBeGreaterThan(10);
       }
     }
+  });
+});
+
+describe("Eval fixture contract", () => {
+  const PRIMARY_MANIFEST = join(ROOT, "evals", "evals.json");
+  // Every other checked-in eval definition that seeds a fixture directory.
+  const OTHER_EVAL_MANIFESTS = [join(ROOT, "evals", "frontier-stress-test", "evals.json")];
+  const HARNESS_SCENARIOS = join(ROOT, "evals", "harness", "scenarios.json");
+
+  function manifestFixtureRefs(manifestPath: string): string[] {
+    const manifest = JSON.parse(readFileSync(manifestPath, "utf-8")) as {
+      evals: Array<{ files: string[] }>;
+    };
+    return manifest.evals
+      .flatMap((entry) => entry.files)
+      .filter((file) => file.startsWith("evals/fixtures/"));
+  }
+
+  const harnessSeed = (
+    JSON.parse(readFileSync(HARNESS_SCENARIOS, "utf-8")) as { seed: string }
+  ).seed;
+
+  // The reverse check counts every eval definition that seeds a fixture: the
+  // primary skill-eval manifest, the frontier stress-test manifest and the
+  // harness benchmark scenario seed. A fixture directory that none of them
+  // names is dead weight.
+  const referencedFixtureDirs = new Set(
+    [
+      ...manifestFixtureRefs(PRIMARY_MANIFEST),
+      ...OTHER_EVAL_MANIFESTS.flatMap(manifestFixtureRefs),
+      harnessSeed,
+    ]
+      .filter((rel) => rel.startsWith("evals/fixtures/"))
+      .map((rel) => rel.split("/").slice(0, 3).join("/")),
+  );
+
+  test("every fixture path referenced by evals.json exists", () => {
+    const refs = manifestFixtureRefs(PRIMARY_MANIFEST);
+    expect(refs.length).toBeGreaterThan(0);
+    for (const ref of refs) {
+      expect(existsSync(join(ROOT, ref)), ref).toBe(true);
+    }
+  });
+
+  test("every directory under evals/fixtures is referenced by at least one eval", () => {
+    const fixtureRoot = join(ROOT, "evals", "fixtures");
+    const dirs = readdirSync(fixtureRoot, { withFileTypes: true })
+      .filter((entry) => entry.isDirectory())
+      .map((entry) => `evals/fixtures/${entry.name}`);
+    expect(dirs.length).toBeGreaterThan(0);
+    expect(dirs.filter((dir) => !referencedFixtureDirs.has(dir))).toEqual([]);
   });
 });

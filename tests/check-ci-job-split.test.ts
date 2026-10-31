@@ -154,7 +154,7 @@ describe('single affected verification and daily fallback', () => {
   });
 
   test('eval fixtures select the eval suite and fail closed without it', async () => {
-    const fixture = 'evals/fixtures/prd-to-sprint/docs/prds/sample.prd.md';
+    const fixture = 'evals/fixtures/prd-to-issues/docs/prds/20260101-0000-sample-feature.prd.md';
     const withConsumer = new Map([[ 'tests/run-skill-evals.test.ts', '' ], [fixture, '']]);
     expect(await analyzeAffectedTests([fixture], withConsumer, [])).toMatchObject({ tests: ['tests/run-skill-evals.test.ts'], uncovered: [] });
     const withoutConsumer = new Map([[fixture, '']]);
