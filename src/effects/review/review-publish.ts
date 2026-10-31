@@ -148,7 +148,7 @@ function postedUrl(value: Record<string, unknown>, slug: string, prNumber: numbe
 }
 
 function postComment(run: ReviewPublishGhRunner, slug: string, prNumber: number, body: string): string {
-  const value = ghJson(run, ['api', '--hostname', 'github.com', '--method', 'POST', 'repos/' + slug + '/issues/' + prNumber + '/comments', '--input', '-'],
+  const value = ghJson(run, ['api', 'repos/' + slug + '/issues/' + prNumber + '/comments', '--hostname', 'github.com', '--method', 'POST', '--input', '-'],
     JSON.stringify({ body }));
   return postedUrl(value, slug, prNumber, false);
 }
@@ -161,7 +161,7 @@ function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, 
     body: rendered.body,
     ...(rendered.comments.length ? { comments: rendered.comments } : {}),
   };
-  const value = ghJson(run, ['api', '--hostname', 'github.com', '--method', 'POST', 'repos/' + slug + '/pulls/' + prNumber + '/reviews', '--input', '-'], JSON.stringify(payload));
+  const value = ghJson(run, ['api', 'repos/' + slug + '/pulls/' + prNumber + '/reviews', '--hostname', 'github.com', '--method', 'POST', '--input', '-'], JSON.stringify(payload));
   if (value.commit_id !== headSha) throw new Error('provider review does not bind the requested head SHA');
   if (value.state !== 'COMMENTED') throw new Error('provider review state is ' + String(value.state) + ', not COMMENTED');
   return postedUrl(value, slug, prNumber, true);

@@ -14,6 +14,9 @@ import { join, resolve } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash } from 'crypto';
 import { buildReviewSubject } from '../src/effects/review/diff-fingerprint';
+import { publishReview } from '../src/effects/review/review-publish';
+import { collectPullRequestMergeReadiness } from '../src/effects/publication/merge-readiness';
+import { validateReviewPublishReceipt } from '../src/core/review/review-publish';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
 import { executeAdmittedVerification, evaluateAdmittedVerification, materializeVerificationExecutionReport } from '../src/effects/evidence/verification-execution';
@@ -961,3 +964,87 @@ test('external acceptance and current inspection survive HEAD-only provenance ch
   expect(evidence.fingerprint).toBe(receipt.verification_evidence_sha256);
   expect(inspectAcceptanceCurrentBinding({ root, authority: authorityFor(root), authorityHome: home, subject: context.subject, evidence })).toEqual(receipt);
 });
+
+test('review publish turns a P1 receipt into one unresolved thread that merge readiness reports', () => {
+  const PUBLISH_HEAD = 'd'.repeat(40), PUBLISH_BASE = 'e'.repeat(40), PR_NUMBER = 7, SLUG = 'example/repo';
+  const root = mkdtempSync(join(tmpdir(), 'repo-harness-review-publish-')); tempDirs.push(root);
+  const receiptPath = join(root, 'receipt.json');
+  const receipt = {
+    protocol: 1 as const, kind: 'repo-harness-review-publish-receipt' as const, round: 2,
+    subject_sha: PUBLISH_HEAD, risk_tier: 'high' as const,
+    reviewer: { harness: 'claude' as const, actual_model: null },
+    verdict: 'FAIL' as const, model_relation: 'unknown' as const, summary: 'One blocking finding and one NIT.',
+    findings: [
+      { id: 'F1', severity: 'P1' as const, path: 'src/example.ts', line: 12, evidence: 'The guard drops the last item.', fix: 'Use the inclusive bound.' },
+      { id: 'N1', severity: 'P3' as const, message: 'Rename the helper for clarity.' },
+    ],
+  };
+  writeFileSync(receiptPath, JSON.stringify(receipt));
+  expect(() => validateReviewPublishReceipt({ ...receipt, findings: receipt.findings.slice(1) })).toThrow('FAIL requires');
+  expect(() => validateReviewPublishReceipt({ ...receipt, subject_sha: 'not-a-sha' })).toThrow('subject_sha');
+  expect(() => validateReviewPublishReceipt({ ...receipt, findings: [{ ...receipt.findings[0], path: '../outside.ts' }] })).toThrow('repository-relative');
+
+  const writes: Array<{ readonly args: string[]; readonly input: string }> = [];
+  const result = publishReview({
+    repoRoot: root, prNumber: PR_NUMBER, receiptPath,
+    ghRunner: (args, input = '') => {
+      writes.push({ args: [...args], input });
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, headRefOid: PUBLISH_HEAD, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}` }), stderr: '' };
+      }
+      if (args[0] === 'api' && args[1] === `repos/${SLUG}/issues/${PR_NUMBER}/comments`) {
+        return { status: 0, stdout: JSON.stringify({ html_url: `https://github.com/${SLUG}/pull/${PR_NUMBER}#issuecomment-${writes.length}` }), stderr: '' };
+      }
+      if (args[0] === 'api' && args[1] === `repos/${SLUG}/pulls/${PR_NUMBER}/reviews`) {
+        return { status: 0, stdout: JSON.stringify({ commit_id: PUBLISH_HEAD, state: 'COMMENTED',
+          html_url: `https://github.com/${SLUG}/pull/${PR_NUMBER}#pullrequestreview-${writes.length}` }), stderr: '' };
+      }
+      return { status: 1, stdout: '', stderr: 'unexpected gh call: ' + args.join(' ') };
+    },
+  });
+  expect(result.threads).toBe(1);
+  const reviewPayload = JSON.parse(writes.find((entry) => entry.args[1]?.endsWith('/reviews'))!.input);
+  expect(reviewPayload.comments).toHaveLength(1);
+  expect(reviewPayload.comments[0]).toMatchObject({ path: 'src/example.ts', line: 12 });
+  expect(reviewPayload.body).toContain('Rename the helper for clarity.');
+  expect(reviewPayload.comments[0].body).not.toContain('Rename the helper for clarity.');
+
+  const readiness = collectPullRequestMergeReadiness({
+    repo_root: root, repository: SLUG, provider_repository_id: '1', pr_number: PR_NUMBER,
+    expected_head_sha: PUBLISH_HEAD, expected_base_sha: PUBLISH_BASE,
+    gh_runner: (args) => {
+      if (args[0] === 'repo' && args[1] === 'view') return { status: 0, stdout: JSON.stringify({ id: 'R_publish', nameWithOwner: SLUG }) };
+      if (args[0] === 'pr' && args[1] === 'view') {
+        return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}`,
+          state: 'OPEN', isDraft: false, headRefOid: PUBLISH_HEAD, headRefName: 'feat/review-publish',
+          baseRefOid: PUBLISH_BASE, baseRefName: 'main', body: '', reviewDecision: '', mergeable: 'MERGEABLE' }) };
+      }
+      if (args[0] === 'pr' && args[1] === 'checks') {
+        return { status: 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pass',
+          link: `https://github.com/${SLUG}/actions/runs/123/job/456` }]) };
+      }
+      if (args[0] !== 'api') return { status: 1, stdout: '', stderr: 'unexpected readiness call: ' + args.join(' ') };
+      const path = args[1] ?? '';
+      if (path === `repos/${SLUG}`) return { status: 0, stdout: JSON.stringify({ id: 1, node_id: 'R_publish', full_name: SLUG, default_branch: 'main' }) };
+      if (path === `repos/${SLUG}/actions/runs/123`) {
+        return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: PUBLISH_HEAD,
+          status: 'completed', conclusion: 'success', pull_requests: [{ number: PR_NUMBER, head: { sha: PUBLISH_HEAD }, base: { sha: PUBLISH_BASE } }] }) };
+      }
+      if (path.startsWith(`repos/${SLUG}/contents/.github/workflows/ci-report.yml`)) {
+        return { status: 1, stdout: JSON.stringify({ status: '404' }), stderr: 'gh: Not Found' };
+      }
+      if (path === 'graphql') {
+        return { status: 0, stdout: JSON.stringify({ data: { node: { id: 'R_publish', pullRequest: {
+          number: PR_NUMBER, headRefOid: PUBLISH_HEAD, baseRefOid: PUBLISH_BASE, reviewDecision: null,
+          latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] },
+          reviewThreads: { pageInfo: { hasNextPage: false },
+            nodes: Array.from({ length: result.threads }, () => ({ isResolved: false })) },
+        } } } }) };
+      }
+      return { status: 1, stdout: '', stderr: 'unexpected readiness api call: ' + args.join(' ') };
+    },
+  });
+  expect(readiness.blockers.map((blocker) => blocker.code)).toContain('unresolved_threads');
+  expect(readiness.ready).toBe(false);
+});
+
