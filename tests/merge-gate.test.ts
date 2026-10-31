@@ -34,7 +34,7 @@ function providerFixture(root: string, mode = 'ready') {
   writeFileSync(decoy, `#!${process.execPath}\nimport {writeFileSync} from 'fs'; writeFileSync(${JSON.stringify(marker)}, 'unsafe'); process.exit(99);\n`, { mode: 0o755 });
   const head = git(root, 'rev-parse', 'HEAD'); const base = git(root, 'rev-parse', 'main');
   const pr = { number: 7, url: 'https://github.com/example/repo/pull/7', state: 'OPEN', isDraft: false,
-    headRefOid: head, headRefName: 'codex/test', baseRefOid: base, baseRefName: 'main', body: '', reviewDecision: null, mergeable: 'MERGEABLE' };
+    headRefOid: head, headRefName: 'codex/test', baseRefOid: base, baseRefName: 'main', body: '', reviewDecision: null, changedFiles: 0, mergeable: 'MERGEABLE' };
   const graph = { data: { node: { id: 'R_fixture', pullRequest: { number: 7, headRefOid: head, baseRefOid: base, reviewDecision: null,
     latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] }, reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] } } } } };
   const run = { path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: head, status: 'completed', conclusion: 'success',

@@ -41,7 +41,7 @@ export function fixture(name = 'clean', patch: Partial<Fixture> = {}): Fixture {
   return frozen({ name, pr: {
     number: 1, url: 'https://github.com/fixture/offline/pull/1', state: 'OPEN',
     isDraft: false, headRefOid: HEAD, baseRefOid: BASE, headRefName: 'feature',
-    baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'MERGEABLE',
+    baseRefName: 'main', body: '', reviewDecision: 'APPROVED', changedFiles: 0, mergeable: 'MERGEABLE',
     mergeStateStatus: 'CLEAN', mergedAt: null,
   }, checks: [check()], threads: [], hasNextPage: false,
   expectedHead: HEAD, expectedBase: BASE, ...patch });

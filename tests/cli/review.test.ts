@@ -2,7 +2,7 @@ import { afterEach, expect, spyOn, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { buildReviewCommand } from '../../src/cli/commands/review';
+import { buildReviewCommand, pullRequestSelectionFromOptions } from '../../src/cli/commands/review';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
 import { readCurrentReviewAdmissionSelection, readReviewAdmission } from '../../src/effects/admission/admission-store';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
@@ -297,3 +297,31 @@ test('head movement between the review and the record stops before the record', 
   expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance record'))).toHaveLength(0);
 });
 
+
+test('review round registers one admission repository id and parses the optional PR selection', () => {
+  const command = buildReviewCommand();
+  const round = command.commands.find((child) => child.name() === 'round');
+  if (!round) throw new Error('review round is missing');
+  const longs = round.options.map((option) => option.long).filter((value): value is string => value !== undefined);
+  expect(longs.filter((value) => value === '--repository-id')).toHaveLength(1);
+  expect(longs).toEqual(expect.arrayContaining(['--repository', '--pr', '--base']));
+  // Parse the flags without running the action.
+  round.parseOptions(['--repository-id', '1001', '--repository', 'example/repo-harness', '--pr', '42', '--base', 'b'.repeat(40)]);
+  expect(round.opts()).toMatchObject({ repositoryId: '1001', repository: 'example/repo-harness', pr: '42', base: 'b'.repeat(40) });
+});
+
+test('the optional PR selection is all-or-none and admission identity alone is not a selection', () => {
+  const admission = { repositoryId: '1001' };
+  expect(pullRequestSelectionFromOptions(admission)).toBeUndefined();
+  for (const partial of [
+    { repository: 'example/repo-harness' },
+    { pr: '42' },
+    { base: 'b'.repeat(40) },
+    { repository: 'example/repo-harness', pr: '42' },
+  ]) {
+    expect(() => pullRequestSelectionFromOptions({ ...admission, ...partial }))
+      .toThrow('--repository, --pr and --base must be given together');
+  }
+  expect(pullRequestSelectionFromOptions({ ...admission, repository: 'example/repo-harness', pr: '42', base: 'b'.repeat(40) }))
+    .toEqual({ repository: 'example/repo-harness', provider_repository_id: '1001', pr_number: 42, expected_base_sha: 'b'.repeat(40) });
+});

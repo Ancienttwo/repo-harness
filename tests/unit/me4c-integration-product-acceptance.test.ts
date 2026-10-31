@@ -99,7 +99,7 @@ function providerRunner(provider: Fixture['provider']): NonNullable<IntegrationA
     const selection = item.selection;
     if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
       state: 'MERGED', isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
-      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', mergeable: 'UNKNOWN' });
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', changedFiles: 0, mergeable: 'UNKNOWN' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
     if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {
       number, headRefOid: selection.expected_head_sha, baseRefOid: selection.expected_base_sha, reviewDecision: 'APPROVED',

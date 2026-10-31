@@ -351,7 +351,7 @@ function providerRunner(provider: Map<number, ProviderPullRequest>): NonNullable
     const selection = item.selection;
     if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
       state: item.state, isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
-      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED',
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', changedFiles: 0,
       mergeable: item.state === 'MERGED' ? 'UNKNOWN' : 'MERGEABLE' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
     if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {

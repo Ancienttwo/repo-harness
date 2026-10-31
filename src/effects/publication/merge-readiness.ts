@@ -93,6 +93,8 @@ export interface ProviderIdentity {
   readonly base_ref: string;
   readonly body: string;
   readonly review_decision: string | null;
+  /** The provider's changed-file count for this head; drives the exact page count. */
+  readonly changed_files: number;
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
@@ -324,6 +326,14 @@ function identityBytes(identity: ProviderIdentity): string {
   return JSON.stringify(fences);
 }
 
+/** The provider's changed-file count; it must be present, because it sets the exact page count. */
+function changedFiles(value: unknown): number {
+  if (!Number.isSafeInteger(value) || Number(value) < 0) {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider PR changedFiles is invalid');
+  }
+  return Number(value);
+}
+
 function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, prValue: unknown): ProviderIdentity {
   const repo = object(repoValue, 'provider repository');
   const pr = object(prValue, 'provider PR');
@@ -358,6 +368,7 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
     base_ref: string(pr.baseRefName, 'provider PR base ref'),
     body: typeof pr.body === 'string' ? pr.body : '',
     review_decision: reviewDecision,
+    changed_files: changedFiles(pr.changedFiles),
     mergeable: pr.mergeable,
   });
   return identity;
@@ -737,13 +748,10 @@ async function driveRequestsAbortable<T>(
 
 const CHANGED_FILE_PAGE_SIZE = 100;
 /** GitHub caps the PR file list at 3000 entries; a longer list fails closed instead of looping. */
-const CHANGED_FILE_PAGES = 30;
+const CHANGED_FILE_LIMIT = 3000;
 
 interface ChangedFilePage {
-  /** The file names plus every rename source path. */
-  readonly paths: string[];
-  /** A full page means another page may exist. */
-  readonly full: boolean;
+  readonly files: readonly { readonly filename: string; readonly previous_filename?: string }[];
 }
 
 /**
@@ -757,28 +765,42 @@ interface ChangedFilePage {
  */
 function changedFilePage(value: unknown): ChangedFilePage {
   if (!Array.isArray(value)) throw new MergeReadinessError('provider_data_incomplete', 'changed files must be an array');
-  const paths: string[] = [];
-  for (const entry of value) {
+  const files = value.map((entry) => {
     const file = object(entry, 'changed file');
-    paths.push(string(file.filename, 'changed file name'));
-    if (file.previous_filename !== undefined && file.previous_filename !== null) {
-      paths.push(string(file.previous_filename, 'changed file previous name'));
-    }
-  }
-  return Object.freeze({ paths, full: value.length === CHANGED_FILE_PAGE_SIZE });
+    return Object.freeze({
+      filename: string(file.filename, 'changed file name'),
+      ...(file.previous_filename === undefined || file.previous_filename === null
+        ? {} : { previous_filename: string(file.previous_filename, 'changed file previous name') }),
+    });
+  });
+  return Object.freeze({ files: Object.freeze(files) });
 }
 
-/** Every changed path of the PR head, including rename sources. Read only when the coverage block is active. */
+/**
+ * Every changed path of the PR head, including rename sources. Read only when
+ * the coverage block is active. The page count comes from the provider's
+ * changed-file count in the identity read, so it is exactly
+ * ceil(changed_files / 100): 0 files cost no page and 3000 files cost 30.
+ */
 function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, string[], unknown> {
-  const paths: string[] = [];
-  for (let page = 1; page <= CHANGED_FILE_PAGES; page++) {
+  if (identity.changed_files > CHANGED_FILE_LIMIT) {
+    throw new MergeReadinessError('provider_data_incomplete',
+      `the PR reports ${identity.changed_files} changed files; the provider lists at most ${CHANGED_FILE_LIMIT}`);
+  }
+  const pages = Math.ceil(identity.changed_files / CHANGED_FILE_PAGE_SIZE);
+  const files: { readonly filename: string; readonly previous_filename?: string }[] = [];
+  for (let page = 1; page <= pages; page++) {
     const parsed = changedFilePage(yield {
       args: ['api', `repos/${identity.repo_name_with_owner}/pulls/${identity.pr_number}/files?per_page=${CHANGED_FILE_PAGE_SIZE}&page=${page}`],
     });
-    paths.push(...parsed.paths);
-    if (!parsed.full) return [...new Set(paths)].sort();
+    files.push(...parsed.files);
   }
-  throw new MergeReadinessError('provider_data_incomplete', 'changed file pages were not exhaustively observed');
+  if (files.length !== identity.changed_files) {
+    throw new MergeReadinessError('provider_data_incomplete',
+      `the PR reported ${identity.changed_files} changed files but the provider listed ${files.length}`);
+  }
+  const paths = files.flatMap((file) => file.previous_filename === undefined ? [file.filename] : [file.filename, file.previous_filename]);
+  return [...new Set(paths)].sort();
 }
 
 function policyAtRef(contents: unknown, ref: string): PolicyFileAtRef {
@@ -820,9 +842,9 @@ async function coveragePolicyAbortable(
  * Read budget for one readiness round:
  * - inactive block: zero extra reads when the executor passes
  *   `policy_file_at_base`, otherwise one policy contents read;
- * - active block: that policy read, ceil(changed names / 100) REST file pages
- *   (one page for at most 100 names, including rename sources) and one
- *   all-checks read.
+ * - active block: that policy read, exactly ceil(changed_files / 100) REST file
+ *   pages from the provider's changed-file count (0 files cost no page, 100
+ *   files cost one, 3000 files cost 30) and one all-checks read.
  * So an active PR costs two extra reads with one file page and three with two
  * pages on the executor path, plus the policy read on the standalone path.
  */
@@ -970,7 +992,7 @@ function confirmRepository(input: PullRequestReadinessInput, identity: ProviderI
   return identity;
 }
 
-const PR_IDENTITY_FIELDS = 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,mergeable';
+const PR_IDENTITY_FIELDS = 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,changedFiles,mergeable';
 export function observeProviderReadinessIdentity(input: PullRequestReadinessInput): ProviderIdentity {
   selectionOf(input);
   const identity = parseProviderPullRequestIdentity(input.pr_number,

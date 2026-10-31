@@ -1023,7 +1023,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
       if (args[0] === 'pr' && args[1] === 'view') {
         return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}`,
           state: 'OPEN', isDraft: false, headRefOid: PUBLISH_HEAD, headRefName: 'feat/review-publish',
-          baseRefOid: PUBLISH_BASE, baseRefName: 'main', body: '', reviewDecision: '', mergeable: 'MERGEABLE' }) };
+          baseRefOid: PUBLISH_BASE, baseRefName: 'main', body: '', reviewDecision: '', changedFiles: 0, mergeable: 'MERGEABLE' }) };
       }
       if (args[0] === 'pr' && args[1] === 'checks') {
         return { status: 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pass',

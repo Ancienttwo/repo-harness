@@ -134,7 +134,7 @@ function createReviewingProviderFixture(
     const providerPr = JSON.stringify({
       number: index + 1, url: `https://github.com/example/fleet/pull/${index + 1}`, state: 'OPEN', isDraft: false,
       headRefOid: head, headRefName: 'codex/fleet-provider', baseRefOid: base, baseRefName: 'main',
-      body: '', reviewDecision: null, mergeable: 'MERGEABLE',
+      body: '', reviewDecision: null, changedFiles: 0, mergeable: 'MERGEABLE',
     });
     providerCases.push(`  ${index + 1}) printf '%s\\n' ${shellSingleQuoted(providerPr)} ;;`);
   }

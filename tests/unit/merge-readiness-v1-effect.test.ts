@@ -32,6 +32,7 @@ const providerIdentity = {
   base_ref: receipt.target_ref,
   body: 'Provider PR description',
   review_decision: null,
+  changed_files: 0,
   mergeable: 'MERGEABLE' as const,
 };
 
@@ -64,6 +65,7 @@ function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessIn
     baseRefName: receipt.target_ref,
     body: 'Provider PR description',
     reviewDecision: '',
+    changedFiles: options.changedFilePages?.flat().length ?? options.changedPaths?.length ?? 0,
     mergeable: 'MERGEABLE',
   };
   const requiredBucket = options.requiredBucket ?? 'pending';
@@ -368,7 +370,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     for (const scenario of scenarios) {
       const observedBase = scenario === 'zero-base' ? '0'.repeat(40) : scenario === 'root' ? before : scenario === 'multiple-parents' ? merge : scenario === 'multi-commit-rebase' ? rebased : scenario === 'multi-commit-squash' ? squashed : base;
       const observedParent = scenario === 'multi-commit-rebase' ? git('rev-parse', `${rebased}^`) : scenario === 'multi-commit-squash' ? base : before;
-      const identity = { ...providerIdentity, base_sha: observedBase };
+      const identity = { ...providerIdentity, base_sha: observedBase, changed_files: 0 };
       const requests: string[] = [];
       const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
         const path = args[1] ?? ''; requests.push(args.join(' '));
@@ -661,26 +663,44 @@ describe('required-check coverage reads', () => {
     expect(skipped.blockers.map((entry) => entry.code)).toContain('required_check_coverage_missing');
   });
 
-  test('the file read paginates and the read budget follows the page count', () => {
-    const fullPage = Array.from({ length: 100 }, (_, index) => ({ filename: `src/file-${index}.ts` }));
-    const onePage = fakeGh({ policy: ACTIVE_POLICY, changedFilePages: [fullPage.slice(0, 1)],
-      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }] });
-    const onePageCalls: string[][] = [];
-    collectPullRequestMergeReadiness({ ...input, gh_runner: args => { onePageCalls.push([...args]); return onePage(args); } });
-    expect(onePageCalls.filter(args => args[1]?.includes('/files?'))).toHaveLength(1);
-    expect(onePageCalls.filter(args => args[1]?.includes('/files?')).map(args => /[?&]page=(\d+)/u.exec(args[1]!)?.[1]))
-      .toEqual(['1']);
+  test('the file read paginates exactly and the read budget follows the page count', () => {
+    const files = (count: number, prefix = 'src/file') => Array.from({ length: count }, (_, index) => ({ filename: `${prefix}-${index}.ts` }));
+    const pagesOf = (count: number) => {
+      const all = files(count);
+      const pages: { filename: string }[][] = [];
+      for (let index = 0; index < all.length; index += 100) pages.push(all.slice(index, index + 100));
+      return pages;
+    };
+    const run = (count: number) => {
+      const source = fakeGh({ policy: ACTIVE_POLICY, changedFilePages: pagesOf(count),
+        requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }] });
+      const calls: string[][] = [];
+      const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+      return { calls, verdict };
+    };
+    // Exact boundaries: ceil(count / 100) pages, and 0 files cost no page at all.
+    for (const [count, pages] of [[0, 0], [1, 1], [100, 1], [101, 2], [200, 2], [3000, 30]] as const) {
+      const { calls, verdict } = run(count);
+      const fileCalls = calls.filter(args => args[1]?.includes('/files?'));
+      expect([count, fileCalls.length]).toEqual([count, pages]);
+      expect([count, fileCalls.map(args => /[?&]page=(\d+)/u.exec(args[1]!)?.[1])])
+        .toEqual([count, Array.from({ length: pages }, (_, index) => String(index + 1))]);
+      expect(verdict.ready).toBe(true);
+      // The policy read and the all-checks read happen once, whatever the page count.
+      expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
+      expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
+    }
+  });
 
-    const twoPages = fakeGh({ policy: ACTIVE_POLICY, changedFilePages: [fullPage, [{ filename: 'src/last.ts' }]],
-      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }] });
-    const twoPageCalls: string[][] = [];
-    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { twoPageCalls.push([...args]); return twoPages(args); } });
-    expect(twoPageCalls.filter(args => args[1]?.includes('/files?'))).toHaveLength(2);
-    expect(twoPageCalls.filter(args => args[1]?.includes('/files?')).map(args => /[?&]page=(\d+)/u.exec(args[1]!)?.[1]))
-      .toEqual(['1', '2']);
-    // Policy + two file pages + one all-checks read.
-    expect(twoPageCalls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
-    expect(twoPageCalls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
+  test('the executor reuses its base policy read instead of a second contents read', () => {
+    const calls: string[][] = [];
+    const source = fakeGh({ changedFilePages: [[{ filename: 'api-surface/entries.json' }]],
+      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'pass' }] });
+    const verdict = collectPullRequestMergeReadiness({ ...input,
+      policy_file_at_base: { status: 'present', text: ACTIVE_POLICY },
+      gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(0);
+    expect(verdict.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
     expect(verdict.ready).toBe(true);
   });
 
