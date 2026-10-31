@@ -465,4 +465,82 @@ describe("repo-harness action command skills", () => {
     expect(readBack).toContain("MCP Read Evidence".replace("MCP Read Evidence", "Called tool"));
     assertChatGptMcpContract(readBack);
   });
+  test("issue-flow child template carries an architecture slice of the capability document", () => {
+    const templates = readReference("repo-harness-issue-flow", "templates.md");
+
+    expect(templates).toContain("## Architecture slice");
+    expect(templates).toContain("flowchart LR");
+    expect(templates).toMatch(/classDef target [^\n]*/);
+    expect(templates).toMatch(/class p1_component_[a-z0-9_]+ target/);
+    expect(templates).toContain("entrypoint.action-commands.profile-projection");
+    expect(templates).toMatch(/`[a-z0-9/.-]+\.ts#[A-Za-z][A-Za-z0-9]*`/);
+    expect(templates).toMatch(/\/blob\/<sha>\/docs\/architecture\/modules\/<domain>\/<capability>\.md/);
+    // The PR body rule: attach the changed slice, keep one line otherwise, and never commit a
+    // generated region.
+    expect(templates).toContain(".archcontext/model/**");
+    expect(templates).toContain("Architecture slice unchanged, see #<issue>");
+    expect(templates).toMatch(/[Nn]ever commit a generated region/);
+  });
+
+  test("issue-flow orchestrator gates splitting on architecture-projection status --json", () => {
+    const orchestrator = readReference("repo-harness-issue-flow", "orchestrator.md");
+
+    expect(orchestrator).toContain("repo-harness architecture-projection status --json");
+    expect(orchestrator).toContain("modelAuthority.source");
+    expect(orchestrator).toContain("modelAuthority.ready");
+    expect(orchestrator).toContain("archcontext");
+    expect(orchestrator).toContain("stop splitting");
+    expect(orchestrator).toContain("follow `next`");
+    // The gate needs modelAuthority and next, which check --json does not return.
+    expect(orchestrator.replace(/\s+/g, " ")).toContain("does not carry `modelAuthority` or `next`");
+  });
+
+  test("issue-flow worker derives the PR slice from the projection plan preview", () => {
+    const worker = readReference("repo-harness-issue-flow", "worker.md");
+
+    expect(worker).toContain("### 6.1 Architecture slice");
+    expect(worker).toContain("repo-harness architecture-projection plan --json --changed-path");
+    expect(worker).toContain("preview.format");
+    expect(worker).toContain("unified-diff");
+    expect(worker).toContain("preview.content");
+    expect(worker).toContain("§1.1");
+    expect(worker).toContain("preview.truncated");
+    expect(worker).toContain("Status: blocked; claim remains");
+    expect(worker).toMatch(/[Nn]ever hand-draw/);
+    expect(worker).toContain("git checkout -- <document>");
+    expect(worker).toMatch(/No second source/);
+    expect(worker).toContain("codegraph index .");
+  });
+
+  test("archimap takes the model and the node links from ArchContext only", () => {
+    const skill = readSkillPackage("repo-harness-archimap");
+    const template = readFileSync(join(SKILLS_ROOT, "repo-harness-archimap", "assets", "template.html"), "utf-8");
+    const visual = readReference("repo-harness-archimap", "visual-language.md");
+
+    expect(skill).not.toContain("package and directory layout");
+    expect(skill).not.toContain(".ai/context/capabilities.json");
+    expect(skill).toContain("--model");
+    expect(skill).toContain("docs/architecture/.projection-manifest.json");
+    expect(skill).toContain("modules[].nodes");
+    expect(skill).toContain("undocumentedNodes");
+    expect(template).toContain('<a class="node');
+    expect(template).toMatch(/href="modules\/[a-z-]+\/[a-z-]+\.md"/);
+    expect(template).toContain("modules[].docs");
+    expect(visual).toContain("modules[].docs");
+    expect(visual).toContain("capability document");
+  });
+
+  test("archimap measure refuses to run without --model", () => {
+    const measure = join(SKILLS_ROOT, "repo-harness-archimap", "scripts", "measure.ts");
+    let failure: { status?: number | null; stderr?: Buffer | string } | undefined;
+    try {
+      execFileSync("bun", [measure], { cwd: ROOT, encoding: "utf-8", stdio: "pipe" });
+    } catch (error) {
+      failure = error as { status?: number | null; stderr?: Buffer | string };
+    }
+
+    expect(failure).toBeDefined();
+    expect(failure?.status).toBe(2);
+    expect(String(failure?.stderr)).toContain("--model is required");
+  });
 });
