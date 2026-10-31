@@ -41,6 +41,10 @@ export interface PublicationMergeScenario {
   readonly merge?: 'ok' | 'graphql_error' | 'internal_error' | 'null_errors' | 'kill' | 'truncated';
   /** The PR that `repos/<repo>/pulls/<n>` returns after the mutation; `fail` is a failed read. */
   readonly readback?: 'merged' | 'open' | 'fail';
+  /** The merged SHA the PR readback reports; defaults to the merge response SHA. */
+  readonly readbackMergeSha?: string;
+  /** Per-readback PR answers; the last answer repeats. Defaults to `readback`. */
+  readonly readbackSequence?: readonly ('merged' | 'open' | 'fail')[];
   readonly parents?: readonly string[];
   /** Fail one review publish write after any earlier write succeeded. */
   readonly failPost?: 'review' | 'record';
@@ -69,7 +73,7 @@ function graphqlQuery(args: readonly string[]): string {
 }
 
 /** One fake provider answer. Unknown calls fail loudly so a test sees the missing fixture. */
-export function fakeGhResponse(args: readonly string[], scenario: PublicationMergeScenario, input = ''): FakeGhResponse {
+export function fakeGhResponse(args: readonly string[], scenario: PublicationMergeScenario, prReadbackAttempt = 0, input = ''): FakeGhResponse {
   const root = `repos/${REPOSITORY}`;
   const [command, sub] = args;
   if (command === 'repo' && sub === 'view') return ok({ id: REPOSITORY_NODE, nameWithOwner: REPOSITORY });
@@ -148,9 +152,11 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   }
   if (sub === `${root}/rules/branches/main?per_page=100`) return ok(scenario.rules ?? []);
   if (sub === `${root}/pulls/${PR}`) {
-    if (scenario.readback === 'fail') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
-    if (scenario.readback === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: HEAD }, base: { ref: 'main' } });
-    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: MERGE_COMMIT, head: { sha: HEAD }, base: { ref: 'main' } });
+    const sequence = scenario.readbackSequence;
+    const state = sequence === undefined ? scenario.readback : sequence[Math.min(prReadbackAttempt, sequence.length - 1)];
+    if (state === 'fail') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
+    if (state === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: HEAD }, base: { ref: 'main' } });
+    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? MERGE_COMMIT, head: { sha: HEAD }, base: { ref: 'main' } });
   }
   if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
     return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });
@@ -187,12 +193,14 @@ export function installFakeGh(dir: string, scenario: PublicationMergeScenario): 
   const scenarioPath = join(dir, 'fake-gh-scenario.json');
   const logPath = join(dir, 'fake-gh-calls.jsonl');
   const inputLogPath = join(dir, 'fake-gh-inputs.jsonl');
+  const readbackCountPath = join(dir, 'fake-gh-readbacks');
   const bin = join(dir, 'fake-gh');
   const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
   writeFileSync(scenarioPath, JSON.stringify(scenario));
   writeFileSync(logPath, '');
   writeFileSync(inputLogPath, '');
-  writeFileSync(bin, `#!/bin/sh\nFAKE_GH_SCENARIO=${quote(scenarioPath)} FAKE_GH_LOG=${quote(logPath)} FAKE_GH_INPUT_LOG=${quote(inputLogPath)} exec ${quote(process.execPath)} ${quote(import.meta.path)} "$@"\n`);
+  writeFileSync(readbackCountPath, '0');
+  writeFileSync(bin, `#!/bin/sh\nFAKE_GH_SCENARIO=${quote(scenarioPath)} FAKE_GH_LOG=${quote(logPath)} FAKE_GH_INPUT_LOG=${quote(inputLogPath)} FAKE_GH_READBACKS=${quote(readbackCountPath)} exec ${quote(process.execPath)} ${quote(import.meta.path)} "$@"\n`);
   chmodSync(bin, 0o755);
   return {
     bin,
@@ -207,7 +215,13 @@ if (import.meta.main) {
   appendFileSync(process.env.FAKE_GH_LOG!, `${JSON.stringify(args)}\n`);
   const input = args.includes('--input') ? readFileSync(0, 'utf-8') : '';
   appendFileSync(process.env.FAKE_GH_INPUT_LOG!, `${JSON.stringify({ args, input })}\n`);
-  const response = fakeGhResponse(args, JSON.parse(readFileSync(process.env.FAKE_GH_SCENARIO!, 'utf-8')) as PublicationMergeScenario, input);
+  let readbackAttempt = 0;
+  if (args[0] === 'api' && /\/pulls\/\d+$/u.test(args[1] ?? '')) {
+    const countPath = process.env.FAKE_GH_READBACKS!;
+    readbackAttempt = Number(readFileSync(countPath, 'utf-8')) || 0;
+    writeFileSync(countPath, String(readbackAttempt + 1));
+  }
+  const response = fakeGhResponse(args, JSON.parse(readFileSync(process.env.FAKE_GH_SCENARIO!, 'utf-8')) as PublicationMergeScenario, readbackAttempt, input);
   if (response.status === null) process.kill(process.pid, 'SIGKILL');
   if (response.stdout) process.stdout.write(response.stdout);
   if (response.stderr) process.stderr.write(response.stderr);
