@@ -138,7 +138,8 @@ describe("workflow contract manifest", () => {
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/contracts");
     expect(contract.artifacts.requiredDirectories).not.toContain("tasks/workstreams");
     expect(contract.artifacts.requiredDirectories).toContain("docs/prds");
-    expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
+    expect(contract.artifacts.requiredDirectories).not.toContain("docs/architecture/domains");
+    expect(contract.artifacts.requiredDirectories).not.toContain("docs/architecture/snapshots");
     expect(contract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/worktrees");
     expect(contract.artifacts.requiredDirectories).toContain(".ai/harness/triage");

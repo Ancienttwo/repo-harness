@@ -8,6 +8,7 @@ import {
   type PullRequestMergeReadinessInput,
   type RequiredCheckCoverageFactsV1,
 } from '../../src/core/publication/merge-readiness';
+import type { GeneratedArtifactsCheckV1, GeneratedArtifactsFactsV1 } from '../../src/core/publication/generated-artifacts';
 import { checkClosingReferences, parseClosingReferences } from '../../src/core/publication/closing-references';
 import { assessRequiredCheckFailure, validateRequiredCheckFailureEvidence } from '../../src/core/evidence/required-check-evidence';
 import { assertionThenPassedEvidence, productFailureEvidence, requiredCheckAttempt, requiredCheckObservation } from '../helpers/required-check-evidence-fixture';
@@ -34,6 +35,7 @@ function readyInput(): PullRequestMergeReadinessInput {
       checks: [{ name: 'Required / CI', bucket: 'pass' }],
       check_failures: [],
       required_check_coverage: { status: 'absent' },
+      generated_artifacts: { status: 'absent' },
       mergeable: 'MERGEABLE',
     },
     stack: notStackMemberDetail(),
@@ -763,5 +765,90 @@ describe('required-check coverage policy', () => {
       acceptance_merge: 'on',
       required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] },
     } }))).toBe(false);
+  });
+});
+
+describe('generated-artifact readiness projection', () => {
+  function withGenerated(facts: GeneratedArtifactsFactsV1): PullRequestMergeReadinessInput {
+    const input = readyInput();
+    return { ...input, provider: { ...input.provider!, generated_artifacts: facts } };
+  }
+
+  function check(overrides: Partial<GeneratedArtifactsCheckV1> = {}): GeneratedArtifactsCheckV1 {
+    return {
+      head_sha: HEAD,
+      base_sha: BASE,
+      merge_tree_sha: 'c'.repeat(40),
+      generated_paths: ['gen.txt'],
+      conflicted_paths: [],
+      resolved_paths: [],
+      regenerated_paths: [],
+      failure: null,
+      ...overrides,
+    };
+  }
+
+  test('an absent or passing regeneration keeps the verdict ready', () => {
+    expect(projectPullRequestMergeReadiness(withGenerated({ status: 'absent' })).ready).toBe(true);
+    const passing = projectPullRequestMergeReadiness(withGenerated({
+      status: 'active',
+      policy: { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [] },
+      check: check(),
+    }));
+    expect(passing.ready).toBe(true);
+    expect(passing.blockers).toEqual([]);
+  });
+
+  test('a failed regeneration blocks with its typed code and names the declared path and diff', () => {
+    const message = 'regeneration changed "src/other.ts" outside publication.generated_artifacts.paths; the diff is: diff --git a/src/other.ts b/src/other.ts';
+    const verdict = projectPullRequestMergeReadiness(withGenerated({
+      status: 'active',
+      policy: { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [] },
+      check: check({ regenerated_paths: ['src/other.ts'], failure: { code: 'generated_artifacts_diff_outside', message } }),
+    }));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.attention_owner).toBe('agent');
+    expect(verdict.blockers).toEqual([{ code: 'generated_artifacts_diff_outside', attention_owner: 'agent', detail: message }]);
+  });
+
+  test('a mixed file without a rule fails closed with the exact diff', () => {
+    const message = 'declared generated path "manifest.json" keeps PR content that regeneration does not reproduce; the diff is: +  "entries": [';
+    const verdict = projectPullRequestMergeReadiness(withGenerated({
+      status: 'active',
+      policy: { paths: ['manifest.json'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [] },
+      check: check({ conflicted_paths: ['manifest.json'], failure: { code: 'generated_artifacts_mixed_without_rule', message } }),
+    }));
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['generated_artifacts_mixed_without_rule']);
+    expect(verdict.blockers[0]?.detail).toContain('"entries"');
+  });
+
+  test('an invalid generated-artifact policy blocks with the fix', () => {
+    const verdict = projectPullRequestMergeReadiness(withGenerated({
+      status: 'invalid',
+      message: 'publication.generated_artifacts is invalid: timeout_ms must be an integer between 1 and 600000',
+    }));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers).toHaveLength(1);
+    expect(verdict.blockers[0]?.code).toBe('generated_artifacts_policy_invalid');
+    expect(verdict.blockers[0]?.detail).toContain('publication.generated_artifacts');
+  });
+
+  test('an observation that does not bind the reviewed head/base is provider data incomplete', () => {
+    const verdict = projectPullRequestMergeReadiness(withGenerated({
+      status: 'active',
+      policy: { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [] },
+      check: check({ head_sha: 'd'.repeat(40) }),
+    }));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['provider_data_incomplete']);
+  });
+
+  test('a generated-artifact failure code outside the closed vocabulary is provider data incomplete', () => {
+    const verdict = projectPullRequestMergeReadiness(withGenerated({
+      status: 'active',
+      policy: { paths: ['gen.txt'], command: 'sh regen.sh', timeout_ms: 1_000, mixed: [] },
+      check: check({ failure: { code: 'generated_artifacts_made_up', message: 'x' } as never }),
+    }));
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['provider_data_incomplete']);
   });
 });
