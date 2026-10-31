@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:64080ce1264f62e40da439ee61e67fd7db0e053589e177393ab5e390edf71a62" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5999535efcbb06b75890c12953ebc000f8e631bb48e35d8444f84e1af2507b9c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -110,7 +110,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.evals-checks.ci-selection` | CI Selection And Report | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evals-checks.evals-and-benchmarks` | Evals And Benchmarks | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.evals-checks.evals-and-benchmarks-tests` | Evals And Benchmarks (tests) | `100–200` 個文件 / `10k–20k` 行 | 未宣告 |
+| `component.evals-checks.evals-and-benchmarks-tests` | Evals And Benchmarks (tests) | `50–100` 個文件 / `10k–20k` 行 | 未宣告 |
 | `component.evals-checks.primary` | Verification Check Execution | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.evals-checks.test-suite` | Test Suite | `500–1000` 個文件 / `100k–200k` 行 | 未宣告 |
 | `component.evals-checks.workflow-gates` | Workflow Gates | `1–2` 個文件 / `2000–5000` 行 | 未宣告 |
