@@ -220,11 +220,12 @@ Board rules:
    through the host channel (a Herdr prompt, a session message). The
    comment is the instruction. A message that differs from the board loses.
 7. **Decisions live on the board.** A decision that changes scope goes into
-   the issue body through a `scope change`. Any other decision goes into a
-   `decision` comment on the issue. Do not keep decision notes in local
-   files. A decision that must outlive the issues (an architecture rule)
-   goes into the architecture model or the `docs/architecture/` prose, and
-   the map shows it.
+   the issue body through a `scope change`. Any other one-time decision goes
+   into a `decision` comment on the issue. Do not keep decision notes in local
+   files. A durable decision, one that an agent could violate after the issue
+   closes, goes into `docs/adr/` as an `archcontext.adr/v1` file that links
+   the originating issue decision. Capability docs and the map link the ADR
+   and do not restate it. `docs/plans/` is banned.
 8. **Stop on an uncertain read or post.** When a board read fails, or you
    cannot confirm that a comment was delivered, stop and report the failure.
    Read back before you retry an uncertain post.
