@@ -12,6 +12,7 @@ for them.
 | Observed state at a pinned base | Current state (main@sha) | 现状（main@sha） |
 | Concrete work | Do | 要做的 |
 | Module and files | Module and files | 模块与位置 |
+| The changed component on the capability map | Architecture slice | 架构切片 |
 | Forbidden scope, invariants, deletes, compatibility | Boundaries | 边界 |
 | Proof | Acceptance | 验收 |
 | Dependencies | Depends on | 依赖 |
@@ -45,7 +46,7 @@ Merge order: <1 → 2 → (3, 4 in parallel) → 5>.
 
 Title: `<module>: <outcome>` or `<area> <phase>.<n>｜<module>：<outcome>（<IDs>）`.
 
-```markdown
+````markdown
 Part of #<parent>. Source: <PRD or design link at pinned SHA>, requirement and scenario IDs <IDs>.
 
 ## Goal
@@ -62,6 +63,22 @@ Part of #<parent>. Source: <PRD or design link at pinned SHA>, requirement and s
 - Module: <module id from the architecture map>
 - Change: <main files>
 - Tests to extend: <test files>
+
+## Architecture slice
+Source: [<domain>/<capability>.md @ <sha>](https://github.com/<owner>/<repo>/blob/<sha>/docs/architecture/modules/<domain>/<capability>.md) §1.1.
+
+```mermaid
+flowchart LR
+  p1_component_action_commands_skill_surface_catalog_a72c29bc["Skill Surface Catalog"]
+  p1_component_action_commands_primary_c9e77bd1["Command Facades and Manifest"]:::component
+  p1_component_action_commands_skill_surface_catalog_a72c29bc -->|"Read manifest.json as the single catalog authority"| p1_component_action_commands_primary_c9e77bd1
+  classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
+  classDef target fill:#FFF4D6,stroke:#B42318,stroke-width:2px,color:#5C3D0A
+  class p1_component_action_commands_skill_surface_catalog_a72c29bc target
+```
+
+- Entry anchor: `entrypoint.action-commands.profile-projection` → `scripts/skill-surface-select.ts#main`.
+- Sink anchor: `sink.action-commands.facades-for-profile` → `src/core/skill-surface/catalog.ts#facadesForProfile`.
 
 ## Boundaries
 - Do not change: <files, modules, public contracts>
@@ -81,11 +98,20 @@ Early start: <allowed against <contract>, PR stays draft until #<n> merges | not
 
 ## Out of scope
 - <plausible addition> (owned by #<n>)
-```
+````
+
+The slice has one source: the capability document that ArchContext projects
+at the pinned base. Copy §1.1 from it, with the classDef lines that the
+copied nodes use. Keep the target component and its direct neighbours, and
+delete the other nodes. Delete the `:::component` marker from the target
+node line, add `classDef target …` after the copied classDef lines, then
+add `class <node ID> target`. Take the entrypoint and `file#symbol`
+anchors from §1.2 of the same document. Never draw a slice from the
+archimap, a source scan or memory.
 
 ## PR body
 
-```markdown
+````markdown
 Closes #<issue>            <!-- or: Refs #<issue> for a non-final PR of the issue -->
 Depends on #<PR>           <!-- one line per PR that must merge first; omit when none -->
 
@@ -99,6 +125,10 @@ Depends on #<PR>           <!-- one line per PR that must merge first; omit when
 - <change>
 - Deleted: <old path removed in this PR>
 
+## Architecture slice
+<the changed §1.1 excerpt with `classDef target` and `class <node ID> target`, or: Architecture slice unchanged, see #<issue>>
+Source: [<domain>/<capability>.md @ <base sha>](https://github.com/<owner>/<repo>/blob/<base sha>/docs/architecture/modules/<domain>/<capability>.md) §1.1
+
 ## Verification
 Run on `<sha>` (<os>, <runtime version>):
 - `<command>` — <N pass, 0 fail>
@@ -108,7 +138,15 @@ Run on `<sha>` (<os>, <runtime version>):
 
 ## Risk and rollback
 Risk: <what could break first>. Rollback: `git revert <squash-commit>`.
-```
+````
+
+Attach the changed slice when this PR changes `.archcontext/model/**` or a
+capability entrypoint. Produce it as `worker.md` §6.1 says: apply the
+`plan` preview to the worktree copy of the document, then take §1.1.
+Otherwise write the one line `Architecture slice unchanged, see #<issue>`.
+Never commit a generated region. `.projection-manifest.json` and the
+machine regions of `docs/architecture/modules/**` come from the rolling
+writer, not from this PR.
 
 ## Comments
 
