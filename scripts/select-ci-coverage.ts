@@ -148,6 +148,11 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
     if (covered || path.startsWith('docs/images/')) continue;
     if (previousSources.has(path) && !sources.has(path) && [...seen].some(file => /^tests\/.*\.test\.tsx?$/.test(file) && previousSources.has(file)) && [...seen].every(file => !sources.has(file))) { retired.push(path); continue; }
     if (dailyInputs.has(path)) { dailyOnly.push(path); continue; }
+    // Deleted skill-routing evidence has no runtime consumer: reports, matrices
+    // and probes are inputs to an explicit eval command, not source code.
+    // Retire the deletion instead of demanding a test edge. The non-code guard
+    // keeps a deleted script or test under the same prefix fail-closed.
+    if (previousSources.has(path) && !sources.has(path) && path.startsWith('evals/skill-routing/') && !/\.[cm]?[jt]sx?$/.test(path)) { retired.push(path); continue; }
     uncovered.push(path);
   }
   return { graph: { reverse, data }, tests: fullReasons.length ? allTests : [...tests].sort(), uncovered, dailyOnly, retired, fullReasons };

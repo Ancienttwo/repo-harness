@@ -381,6 +381,23 @@ describe('single affected verification and daily fallback', () => {
     await expect(selectAffectedTests(['unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
   });
 
+  test('deleted skill-routing evidence is retired; source and changed evidence still fail closed', async () => {
+    const previous = new Map([
+      ['evals/skill-routing/packed-profile-discovery-probe.sh', '#!/usr/bin/env bash\n'],
+      ['evals/skill-routing/retirement-matrix-coverage.md', '# matrix\n'],
+      ['evals/skill-routing/routing-report-strict-claude.json', '{}\n'],
+      ['evals/skill-routing/routing-report-strict-claude.json.sha256', `${'0'.repeat(64)}  evals/skill-routing/routing-report-strict-claude.json\n`],
+    ]);
+    const paths = [...previous.keys()];
+    const coverage = await analyzeAffectedTests(paths, new Map(), [], previous);
+    expect(coverage.retired.sort()).toEqual([...paths].sort());
+    expect(coverage.uncovered).toEqual([]);
+    expect(await selectAffectedTests(paths, new Map(), [], previous)).toEqual([]);
+    await expect(selectAffectedTests(['evals/skill-routing/gone.ts'], new Map(), [], new Map([['evals/skill-routing/gone.ts', 'export {}']]))).rejects.toThrow('coverage is unknown');
+    const changed = new Map([['evals/skill-routing/routing-report-full-claude.json', '{}']]);
+    await expect(selectAffectedTests(['evals/skill-routing/routing-report-full-claude.json'], changed, [], changed)).rejects.toThrow('coverage is unknown');
+  });
+
   test('dependency manifests select every test without hiding another unknown path', async () => {
     const sources = new Map([['tests/a.test.ts', 'export {}'], ['tests/b.test.ts', 'export {}']]);
     for (const path of ['package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json']) {
