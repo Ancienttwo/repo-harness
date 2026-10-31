@@ -992,6 +992,11 @@ function confirmRepository(input: PullRequestReadinessInput, identity: ProviderI
   return identity;
 }
 
+/**
+ * The one PR identity read. Readiness, fleet feedback and product acceptance
+ * all observe their identity through it, so every field here must be answered
+ * by any provider stand-in: `changedFiles` sets the exact coverage page count.
+ */
 const PR_IDENTITY_FIELDS = 'number,url,state,isDraft,headRefOid,headRefName,baseRefOid,baseRefName,body,reviewDecision,changedFiles,mergeable';
 export function observeProviderReadinessIdentity(input: PullRequestReadinessInput): ProviderIdentity {
   selectionOf(input);

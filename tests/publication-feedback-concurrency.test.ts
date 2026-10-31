@@ -46,7 +46,7 @@ function feedbackRunner(head: string, tornFirstRound = false, graphErrors = fals
       const observedHead = tornFirstRound && prReads === 2 ? 'd'.repeat(40) : head;
       return { status: 0, stdout: JSON.stringify({
         number: 9, url: 'https://example.invalid/pr/9', state: 'OPEN', isDraft: false,
-        headRefOid: observedHead, headRefName: 'codex/feedback', baseRefOid: BASE, baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null,
+        headRefOid: observedHead, headRefName: 'codex/feedback', baseRefOid: BASE, baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null, changedFiles: 0,
       }) };
     }
     if (query !== undefined && graphErrors) {
