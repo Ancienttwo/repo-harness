@@ -21,6 +21,8 @@ import { prepareChangeAssessment } from '../src/effects/review/change-assessment
 import { applyReviewerDisagreement, assessChange, buildReviewSelectionPacket } from '../src/core/review/change-assessment';
 import { executeAdmittedVerification, evaluateAdmittedVerification, materializeVerificationExecutionReport } from '../src/effects/evidence/verification-execution';
 import { acceptanceContext, authorityFingerprint, acceptanceReceiptPath, acceptanceVerificationObservationPath, inspectAcceptanceEvidence, inspectAcceptanceCurrentBinding, projectAcceptance, recordAcceptance, recordUserWaiverAcceptance, recordUserWaiverGrant, revokeUserWaiverGrant, verifyAcceptance, verifyUserWaiverGrant } from '../scripts/acceptance-receipt';
+import { readAcceptanceReceiptRecord } from '../src/effects/review/acceptance-receipt';
+import { assertionThenPassedEvidence, productFailureEvidence } from './helpers/required-check-evidence-fixture';
 
 const tempDirs: string[] = [];
 const admissions = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
@@ -1047,3 +1049,46 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
   expect(readiness.blockers.map((blocker) => blocker.code)).toContain('unresolved_threads');
   expect(readiness.ready).toBe(false);
 });
+
+
+test('protocol 4 acceptance record durably stores check failures and projects them readably', async () => {
+  const { root, home } = makeFixture();
+  const failures = [assertionThenPassedEvidence(), productFailureEvidence()];
+  const input = {
+    root, authority: authorityFor(root), authorityHome: home,
+    verification: '.ai/harness/runs/acceptance.report.json',
+    disposition: 'external_pass' as const, reviewer: 'Claude', source: 'generic-review', actor: null,
+    summary: 'candidate accepted with recorded check failures', findings: [], failures,
+  };
+  const receipt = await recordFixtureAcceptance(input);
+  expect(receipt.failures).toEqual(failures);
+  expect(receipt.failures.map((failure) => failure.observed_result)).toEqual(['failed_then_passed', 'failed']);
+
+  const bytes = readFileSync(acceptanceReceiptPath(root, home));
+  expect(JSON.parse(bytes.toString('utf8')).failures).toEqual(failures);
+  const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  expect(readAcceptanceReceiptRecord(root, home, digest).receipt.failures).toEqual(failures);
+  expect((await verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home })).failures).toEqual(failures);
+
+  // The failure array extends the record body; protocol 4 identity fields do not move.
+  const plain = await recordFixtureAcceptance({ ...input, summary: 'same candidate without check failures', failures: [] });
+  for (const field of ['protocol', 'kind', 'repository_root', 'campaign_sha256', 'admission_sha256', 'grant_sha256',
+    'goal_sha256', 'verification_file', 'verification_evidence_sha256', 'benchmark_evidence_sha256',
+    'subject_sha256', 'subject_scope', 'target_ref', 'target_revision', 'reviewed_paths'] as const) {
+    expect([field, plain[field]]).toEqual([field, receipt[field]]);
+  }
+  expect(plain.failures).toEqual([]);
+
+  // The failure array is human-readable in the review projection.
+  const reviewPath = join(root, 'tasks', 'reviews', 'demo.review.md');
+  projectAcceptance(reviewPath, receipt);
+  const projection = readFileSync(reviewPath, 'utf8');
+  expect(projection).toContain('Check Failures: Required / CI: assertion_mismatch/failed_then_passed/unknown (run 123 attempt 1 job 456)');
+  expect(projection).toContain('Required / CI: assertion_mismatch/not_attempted/product_defect (run 123 attempt 1 job 456)');
+
+  // A tampered failure array cannot pass the protocol 4 reader.
+  writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify({ ...receipt, failures: [{ check_name: 'incomplete' }] }));
+  await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home }))
+    .rejects.toThrow('RequiredCheckFailureEvidence');
+});
+
