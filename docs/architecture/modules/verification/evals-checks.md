@@ -146,8 +146,8 @@ sequenceDiagram
 3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:61`）。PR 的 `verify` 是三个 matrix shard：`shardTestFiles` 按实测时长把受影响文件分成互不重叠的三份，shard 0 另跑 typecheck（`CI_SHARD`，`scripts/check-ci.sh`）。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
 5. **本地显式验证只做两件事。** `verify-sprint.sh` 先运行 typecheck，再运行调用方给出的测试文件。测试路径必须在 `tests/` 下，不能逃出仓库（`scripts/verify-sprint.sh:28`）。`--base` 交给 `merge-gate.ts` 消费可信 PR 检查，不重跑命令（`verify-sprint.sh:22`）。
-6. **contract preflight 只校验元数据。** `verify-contract.sh --contract <file> --preflight` 校验 Task Profile、Allowed Paths 和 Review File，不运行测试，不写 Status，不生成 receipt（`scripts/verify-contract.sh:6`）。其他参数交给 `verify-sprint.sh`。
-7. **workflow gate 只做诊断。** `check-task-workflow.sh` 只报告 JSON 是否可读，并总是以 0 退出（`scripts/check-task-workflow.sh:25`）。`check-task-sync.sh` 不再要求 plan、contract、review、notes、digest 行或 waiver（`scripts/check-task-sync.sh:23`）。
+6. **protected path 检查是只读门禁。** `scripts/check-protected-paths.ts` 读取受保护目录的暂存或跟踪路径，报告冲突；它不改文件，也不运行测试。
+7. **agent tooling gate 只做诊断。** `check-agent-tooling.sh` 检查外部工具和 hook 配置，并报告 JSON 诊断。旧的 task workflow 和 task sync gate 已随 helper 删除（#1182）。
 8. **昂贵 benchmark 串行。** profile benchmark 在执行前获取 expensive-run lock（`scripts/run-harness-profile-benchmark.ts:1501`）。
 9. **有界命令按进程组回收。** Verification Plan 执行器把一个绝对截止时间传给 `runProcess({ processGroup: true, deadlineMs })`（`src/effects/evidence/verification-execution.ts:1037`）。进程组监督器在截止时间终止整个进程组，并在组长退出后继续等待进程组消失（`src/effects/process-supervisor.ts:279-281,312-337`）。
 
@@ -171,7 +171,7 @@ sequenceDiagram
 | `component.evals-checks.test-suite`（expandable） | `tests/**`、`bunfig.toml` | 575 / 181610 | 全部测试文件和测试配置 |
 | `component.evals-checks.evals-and-benchmarks` | `evals/**`、skill eval 与 profile benchmark 脚本、`harness-trace-grade.sh` | 105 / 12684 | 生产 effectiveness 证据 |
 | `component.evals-checks.ci-selection` | `.github/**`、`check-ci.sh`、覆盖选择、测试调度、CI report | 10 / 1497 | 选择覆盖并运行 CI lane |
-| `component.evals-checks.workflow-gates` | `check-task-{workflow,sync}.sh`、`check-agent-tooling.sh`、brain manifest 脚本 | 5 / 2772 | 诊断类 gate |
+| `component.evals-checks.workflow-gates` | `check-agent-tooling.sh` | 1 / 2,189 | 诊断类 gate |
 
 test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cli、effects、unit、state、operator-web、fixtures）拆分。现在不拆。
 
@@ -180,7 +180,7 @@ test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cl
 - 本节以前的 §3 原文已移到 §4 末尾。以下历史说法与当前源码不符：
   - `verify-contract.sh` 的旧 evidence-producer guard 和 3600 秒预算。当前文件只有 40 行，没有这两项。
   - `verify-sprint --prepare-acceptance`、frozen-subject criterion retry 和 `--force-expensive-rerun`。当前 `verify-sprint.sh` 拒绝 workflow-stage acceptance 参数（`verify-sprint.sh:17`）。
-  - `check-task-sync.sh` 的 digest 绑定。当前脚本不再要求 digest 行（`check-task-sync.sh:23`）。
+  - 旧的 task-sync digest 绑定已随 helper 删除（#1182）。
   - 根 `## Required Checks` 是唯一清单来源。当前根 `AGENTS.md` 和 `CLAUDE.md` 没有这一节。
   - "183 个测试文件 / 66,345 LOC"。当前 test-suite 组件有 575 个文件、181,610 行。
 - P2 的 selector `executeVerificationContract → executeCheck` 在 `src/effects/evidence/verification-execution.ts` 里。`scripts/verification-plan.ts` 通过动态 import 调用它（`scripts/verification-plan.ts:16`），CodeGraph 没有这条边。所以 P2 没有证明从 CLI 到执行器的路径。

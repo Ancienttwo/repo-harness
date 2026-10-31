@@ -113,10 +113,10 @@ An empty section shows `- (none recorded)`.
 
 ## Sources
 
-- Sprint (PRD of record): `plans/sprints/20260803-1810-long-run-anti-drift.sprint.md`
+- Task record: GitHub issue and PR
 - Design rationale: `docs/researches/20260803-loopx-comparative-analysis.md` (§9 gap map + round-2 addendum)
 - WP1 closeout journal: `tests/contract-worktree-closeout-journal.test.ts`
 - WP2 continuation envelope: `tests/continuation-envelope.test.ts`
 - WP3 no-progress breaker: `tests/continuation-attempt.test.ts`
 - WP4 host conformance: `tests/continuation-conformance.test.ts`
-- Worktree lifecycle and the completion gate: `docs/reference-configs/sprint-contracts.md`
+- Completion gate: PR checks and CI

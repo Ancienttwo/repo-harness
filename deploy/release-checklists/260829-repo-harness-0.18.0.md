@@ -67,7 +67,7 @@
 
 ### Documentation and workflow closeout
 
-- `README.md` and `docs/design/DESIGN-local-human-control-board-v1.md` are
+- `README.md` and `docs/prds/DESIGN-local-human-control-board-v1.md` are
   aligned with the rebuilt board.
 - `scripts/check-tarball-install-smoke.sh` accounts for the new client assets.
 - The `operator-board-redesign` slice is closed out: its contract is marked

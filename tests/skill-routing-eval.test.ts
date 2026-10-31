@@ -27,6 +27,8 @@ import {
   runProviderEval,
   perfectEchoRouteFor,
   buildAggregateReport,
+  buildSubjectFreeze,
+  filterPathsPresentAtHead,
   type DiscoveredSkillSurfaceEntry,
   type RoutingRunRecord,
   type RoutingRunReport,
@@ -196,6 +198,32 @@ describe("discovery-baseline.json (evals/skill-routing/discovery-baseline.json)"
     const bytes = readFileSync(CORPUS_PATH);
     expect(baseline.corpus_sha256).toBe(sha256Hex(bytes));
     expect(baseline.corpus_sha256).toMatch(/^[0-9a-f]{64}$/);
+  });
+});
+
+describe("final subject freeze changed-file filter", () => {
+  test("keeps a changed path only when HEAD still has it", () => {
+    const head = new Set(["src/kept.ts", "docs/kept.md"]);
+    expect(
+      filterPathsPresentAtHead(
+        [
+          "src/kept.ts",
+          "plans/plan-retired.md",
+          "assets/skills/repo-harness-product/references/sprint.md",
+          "docs/kept.md",
+          "src/kept.ts",
+        ],
+        head,
+      ),
+    ).toEqual(["src/kept.ts", "docs/kept.md", "src/kept.ts"]);
+  });
+
+  test("buildSubjectFreeze lists only paths present at HEAD", () => {
+    const freeze = buildSubjectFreeze();
+    const tree = spawnSync("git", ["-C", ROOT, "ls-tree", "-r", "--name-only", "-z", "HEAD"], { encoding: "utf-8" });
+    expect(tree.status).toBe(0);
+    const head = new Set(tree.stdout.split("\0").filter(Boolean));
+    expect(freeze.changed_files_since_base.filter((path) => !head.has(path))).toEqual([]);
   });
 });
 
@@ -907,4 +935,17 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(result.stdout).toContain("aggregate --report");
     }, 30_000);
   });
+});
+
+test("committed full-profile routing reports match their sidecars", () => {
+  const pairs = [
+    ["evals/skill-routing/routing-aggregate.json", "evals/skill-routing/routing-aggregate.json.sha256"],
+    ["evals/skill-routing/routing-report-full-codex.json", "evals/skill-routing/routing-report-full-codex.json.sha256"],
+    ["evals/skill-routing/routing-report-full-claude.json", "evals/skill-routing/routing-report-full-claude.json.sha256"],
+  ] as const;
+  for (const [report, sidecar] of pairs) {
+    const bytes = readFileSync(join(ROOT, report));
+    const expected = readFileSync(join(ROOT, sidecar), "utf8");
+    expect(expected.startsWith(sha256Hex(bytes))).toBe(true);
+  }
 });

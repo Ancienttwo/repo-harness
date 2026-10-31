@@ -1,20 +1,20 @@
 {
   "protocol": 1,
   "evidence_scope": "aggregate_package_acceptance",
-  "evidence_note": "Package acceptance signal: overall_pass here evaluates all four plan floors over the union of 2+ runs, with every canonical route scored from a run where it was actually reachable. A zero-recall route cannot hide behind a flattering aggregate -- every one of the 10 canonical routes is independently gated.",
-  "generated_at": "2026-07-23T06:20:09.137Z",
-  "corpus_sha256": "17a8a2feba0d1dd309f318eab9eb3b95c6ed1d3acf4da75df136c6eedff051f9",
-  "manifest_sha256": "d762d41d0136f3c12188ed3c7057521329c11725fe159ab838ccdae03e73c325",
+  "evidence_note": "Package acceptance signal: overall_pass here evaluates all four plan floors over the union of 2+ runs, with every canonical route scored from a run where it was actually reachable. A zero-recall route cannot hide behind a flattering aggregate -- every canonical route is independently gated.",
+  "generated_at": "2026-10-31T01:45:02.278Z",
+  "corpus_sha256": "757d37703b6d2929eeb797356f07378a260411711929faa0113676b91b827b04",
+  "manifest_sha256": "a90ec4c2a806bbd99b84802d1bfbdf6ce5d50c13701bd605f728ceb30eacaeef",
   "inputs": [
     {
-      "path": "evals/skill-routing/routing-report-product-planning-claude.json",
-      "profile": "product-planning",
-      "host": "claude",
-      "provider": "claude"
+      "path": "/tmp/routing-recordings/routing-report-full-codex.json",
+      "profile": "full",
+      "host": "codex",
+      "provider": "codex"
     },
     {
-      "path": "evals/skill-routing/routing-report-strict-claude.json",
-      "profile": "strict",
+      "path": "/tmp/routing-recordings/routing-report-full-claude.json",
+      "profile": "full",
       "host": "claude",
       "provider": "claude"
     }
@@ -22,275 +22,275 @@
   "case_sources": [
     {
       "id": "pos-root-general-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-root-handoff-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-root-general-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-root-handoff-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-setup-init-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-setup-migrate-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-setup-upgrade-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-setup-repair-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-setup-scaffold-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-setup-capability-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-plan-create-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-plan-review-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-plan-create-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-plan-review-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-product-prd-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
-      "id": "pos-product-sprint-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "id": "pos-product-goal-zh",
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-product-prd-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-product-goal-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-check-workflow-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-check-deploy-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-check-workflow-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-check-deploy-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-ship-pr-zh",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-ship-worktree-zh",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-ship-pr-en",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-ship-worktree-en",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-architecture-drift-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-architecture-diagram-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-architecture-drift-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-architecture-diagram-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-crossreview-codex-zh",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-crossreview-claude-zh",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-crossreview-codex-en",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-crossreview-claude-en",
-      "source_report": "evals/skill-routing/routing-report-strict-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-mergegate-candidate-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-mergegate-verify-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-mergegate-candidate-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-mergegate-verify-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-chatgpt-setup-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-chatgpt-consult-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-chatgpt-bridge-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "pos-chatgpt-consult-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "amb-check-casual-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "amb-review-prose-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "amb-plan-discussion-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "amb-ship-industry-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "amb-mergegate-vs-crossreview-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "amb-architecture-topic-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "quoted-ship-name-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "quoted-check-name-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "quoted-crossreview-name-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "quoted-mergegate-name-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "neg-check-notyet-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "neg-ship-notyet-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "neg-review-notyet-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "neg-migrate-holdoff-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "hyp-ship-whatif-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "hyp-chatgpt-steps-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "hyp-mergegate-oldcommit-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "hyp-migrate-later-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "status-check-last-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "status-architecture-request-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "status-mergegate-last-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "status-crossreview-last-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "qa-ts-interface-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "qa-gptpro-model-zh",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "qa-jscopy-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     },
     {
       "id": "qa-gptpro-tier-en",
-      "source_report": "evals/skill-routing/routing-report-product-planning-claude.json"
+      "source_report": "/tmp/routing-recordings/routing-report-full-codex.json"
     }
   ],
   "records": [
@@ -305,7 +305,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3349
+      "duration_ms": 22374
     },
     {
       "id": "pos-root-handoff-zh",
@@ -318,7 +318,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3232
+      "duration_ms": 29570
     },
     {
       "id": "pos-root-general-en",
@@ -331,7 +331,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3454
+      "duration_ms": 19059
     },
     {
       "id": "pos-root-handoff-en",
@@ -344,7 +344,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3593
+      "duration_ms": 24484
     },
     {
       "id": "pos-setup-init-zh",
@@ -357,7 +357,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3200
+      "duration_ms": 31291
     },
     {
       "id": "pos-setup-migrate-en",
@@ -370,7 +370,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3570
+      "duration_ms": 24407
     },
     {
       "id": "pos-setup-upgrade-zh",
@@ -383,7 +383,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3205
+      "duration_ms": 59612
     },
     {
       "id": "pos-setup-repair-en",
@@ -396,7 +396,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3663
+      "duration_ms": 26758
     },
     {
       "id": "pos-setup-scaffold-zh",
@@ -409,7 +409,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3404
+      "duration_ms": 22811
     },
     {
       "id": "pos-setup-capability-en",
@@ -417,67 +417,64 @@
       "kind": "positive",
       "expected_route": "repo-harness-setup",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness",
-        "repo-harness-setup"
-      ],
-      "primary_route": "repo-harness",
+      "selected_routes": [],
+      "primary_route": "none",
       "correct_top1": false,
-      "double_trigger": true,
+      "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 163398
+      "duration_ms": 23877
     },
     {
       "id": "pos-plan-create-zh",
       "lang": "zh",
       "kind": "positive",
-      "expected_route": "repo-harness-plan",
+      "expected_route": "repo-harness-check",
       "outcome": "routed",
       "selected_routes": [],
       "primary_route": "none",
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 18077
+      "duration_ms": 20245
     },
     {
       "id": "pos-plan-review-zh",
       "lang": "zh",
       "kind": "positive",
-      "expected_route": "repo-harness-plan",
+      "expected_route": "repo-harness-check",
       "outcome": "routed",
       "selected_routes": [],
       "primary_route": "none",
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 20017
+      "duration_ms": 18736
     },
     {
       "id": "pos-plan-create-en",
       "lang": "en",
       "kind": "positive",
-      "expected_route": "repo-harness-plan",
+      "expected_route": "repo-harness-check",
       "outcome": "routed",
       "selected_routes": [],
       "primary_route": "none",
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 12233
+      "duration_ms": 13565
     },
     {
       "id": "pos-plan-review-en",
       "lang": "en",
       "kind": "positive",
-      "expected_route": "repo-harness-plan",
+      "expected_route": "repo-harness-check",
       "outcome": "routed",
       "selected_routes": [],
       "primary_route": "none",
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 12651
+      "duration_ms": 23352
     },
     {
       "id": "pos-product-prd-zh",
@@ -490,22 +487,20 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 10603
+      "duration_ms": 22344
     },
     {
-      "id": "pos-product-sprint-zh",
+      "id": "pos-product-goal-zh",
       "lang": "zh",
       "kind": "positive",
       "expected_route": "repo-harness-product",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness-product"
-      ],
-      "primary_route": "repo-harness-product",
-      "correct_top1": true,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 60975
+      "duration_ms": 20427
     },
     {
       "id": "pos-product-prd-en",
@@ -518,7 +513,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 20630
+      "duration_ms": 23202
     },
     {
       "id": "pos-product-goal-en",
@@ -526,14 +521,12 @@
       "kind": "positive",
       "expected_route": "repo-harness-product",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness-product"
-      ],
-      "primary_route": "repo-harness-product",
-      "correct_top1": true,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 41778
+      "duration_ms": 21168
     },
     {
       "id": "pos-check-workflow-zh",
@@ -541,14 +534,12 @@
       "kind": "positive",
       "expected_route": "repo-harness-check",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness"
-      ],
-      "primary_route": "repo-harness",
+      "selected_routes": [],
+      "primary_route": "none",
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 74965
+      "duration_ms": 20301
     },
     {
       "id": "pos-check-deploy-zh",
@@ -561,7 +552,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 28417
+      "duration_ms": 21657
     },
     {
       "id": "pos-check-workflow-en",
@@ -569,14 +560,12 @@
       "kind": "positive",
       "expected_route": "repo-harness-check",
       "outcome": "routed",
-      "selected_routes": [
-        "merge-gate"
-      ],
-      "primary_route": "merge-gate",
+      "selected_routes": [],
+      "primary_route": "none",
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 16363
+      "duration_ms": 21500
     },
     {
       "id": "pos-check-deploy-en",
@@ -589,7 +578,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 49466
+      "duration_ms": 23421
     },
     {
       "id": "pos-ship-pr-zh",
@@ -602,7 +591,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3265
+      "duration_ms": 22026
     },
     {
       "id": "pos-ship-worktree-zh",
@@ -615,7 +604,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3351
+      "duration_ms": 23812
     },
     {
       "id": "pos-ship-pr-en",
@@ -628,7 +617,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3467
+      "duration_ms": 23229
     },
     {
       "id": "pos-ship-worktree-en",
@@ -641,7 +630,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3358
+      "duration_ms": 23076
     },
     {
       "id": "pos-architecture-drift-zh",
@@ -654,7 +643,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 82020
+      "duration_ms": 24681
     },
     {
       "id": "pos-architecture-diagram-zh",
@@ -667,7 +656,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 28149
+      "duration_ms": 21414
     },
     {
       "id": "pos-architecture-drift-en",
@@ -680,7 +669,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 103006
+      "duration_ms": 23768
     },
     {
       "id": "pos-architecture-diagram-en",
@@ -693,7 +682,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 29236
+      "duration_ms": 19578
     },
     {
       "id": "pos-crossreview-codex-zh",
@@ -706,7 +695,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3405
+      "duration_ms": 25235
     },
     {
       "id": "pos-crossreview-claude-zh",
@@ -719,7 +708,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3328
+      "duration_ms": 30513
     },
     {
       "id": "pos-crossreview-codex-en",
@@ -732,7 +721,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3541
+      "duration_ms": 23558
     },
     {
       "id": "pos-crossreview-claude-en",
@@ -745,7 +734,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 3323
+      "duration_ms": 24093
     },
     {
       "id": "pos-mergegate-candidate-zh",
@@ -760,7 +749,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 23151
+      "duration_ms": 24144
     },
     {
       "id": "pos-mergegate-verify-zh",
@@ -775,7 +764,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 30584
+      "duration_ms": 22245
     },
     {
       "id": "pos-mergegate-candidate-en",
@@ -790,7 +779,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 21043
+      "duration_ms": 19381
     },
     {
       "id": "pos-mergegate-verify-en",
@@ -805,7 +794,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 36882
+      "duration_ms": 29621
     },
     {
       "id": "pos-chatgpt-setup-zh",
@@ -813,14 +802,12 @@
       "kind": "positive",
       "expected_route": "repo-harness-chatgpt",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness-chatgpt"
-      ],
-      "primary_route": "repo-harness-chatgpt",
-      "correct_top1": true,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 89892
+      "duration_ms": 81568
     },
     {
       "id": "pos-chatgpt-consult-zh",
@@ -833,7 +820,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 31265
+      "duration_ms": 20406
     },
     {
       "id": "pos-chatgpt-bridge-en",
@@ -841,14 +828,12 @@
       "kind": "positive",
       "expected_route": "repo-harness-chatgpt",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness-chatgpt"
-      ],
-      "primary_route": "repo-harness-chatgpt",
-      "correct_top1": true,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 111765
+      "duration_ms": 22608
     },
     {
       "id": "pos-chatgpt-consult-en",
@@ -856,14 +841,12 @@
       "kind": "positive",
       "expected_route": "repo-harness-chatgpt",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness-chatgpt"
-      ],
-      "primary_route": "repo-harness-chatgpt",
-      "correct_top1": true,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 19066
+      "duration_ms": 18974
     },
     {
       "id": "amb-check-casual-zh",
@@ -876,7 +859,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 6498
+      "duration_ms": 13628
     },
     {
       "id": "amb-review-prose-en",
@@ -889,7 +872,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 8924
+      "duration_ms": 13314
     },
     {
       "id": "amb-plan-discussion-zh",
@@ -902,7 +885,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 13736
+      "duration_ms": 14712
     },
     {
       "id": "amb-ship-industry-en",
@@ -915,7 +898,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 5686
+      "duration_ms": 15303
     },
     {
       "id": "amb-mergegate-vs-crossreview-zh",
@@ -930,7 +913,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 29761
+      "duration_ms": 20826
     },
     {
       "id": "amb-architecture-topic-en",
@@ -943,7 +926,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 19923
+      "duration_ms": 25050
     },
     {
       "id": "quoted-ship-name-zh",
@@ -951,14 +934,12 @@
       "kind": "quoted-name",
       "expected_route": "none",
       "outcome": "routed",
-      "selected_routes": [
-        "merge-gate"
-      ],
-      "primary_route": "merge-gate",
-      "correct_top1": false,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 23624
+      "duration_ms": 23772
     },
     {
       "id": "quoted-check-name-zh",
@@ -971,7 +952,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 25849
+      "duration_ms": 14125
     },
     {
       "id": "quoted-crossreview-name-en",
@@ -979,14 +960,12 @@
       "kind": "quoted-name",
       "expected_route": "none",
       "outcome": "routed",
-      "selected_routes": [
-        "merge-gate"
-      ],
-      "primary_route": "merge-gate",
-      "correct_top1": false,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 35076
+      "duration_ms": 26050
     },
     {
       "id": "quoted-mergegate-name-en",
@@ -1001,7 +980,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 5822
+      "duration_ms": 14881
     },
     {
       "id": "neg-check-notyet-zh",
@@ -1014,7 +993,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 11861
+      "duration_ms": 12310
     },
     {
       "id": "neg-ship-notyet-zh",
@@ -1027,7 +1006,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 5876
+      "duration_ms": 13628
     },
     {
       "id": "neg-review-notyet-en",
@@ -1040,7 +1019,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 6981
+      "duration_ms": 15108
     },
     {
       "id": "neg-migrate-holdoff-en",
@@ -1053,7 +1032,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 6187
+      "duration_ms": 14510
     },
     {
       "id": "hyp-ship-whatif-zh",
@@ -1061,14 +1040,12 @@
       "kind": "hypothetical",
       "expected_route": "none",
       "outcome": "routed",
-      "selected_routes": [
-        "merge-gate"
-      ],
-      "primary_route": "merge-gate",
-      "correct_top1": false,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 45570
+      "duration_ms": 25489
     },
     {
       "id": "hyp-chatgpt-steps-zh",
@@ -1076,14 +1053,12 @@
       "kind": "hypothetical",
       "expected_route": "none",
       "outcome": "routed",
-      "selected_routes": [
-        "repo-harness-chatgpt"
-      ],
-      "primary_route": "repo-harness-chatgpt",
-      "correct_top1": false,
+      "selected_routes": [],
+      "primary_route": "none",
+      "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 36821
+      "duration_ms": 36930
     },
     {
       "id": "hyp-mergegate-oldcommit-en",
@@ -1098,7 +1073,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 50370
+      "duration_ms": 31047
     },
     {
       "id": "hyp-migrate-later-en",
@@ -1111,7 +1086,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 24671
+      "duration_ms": 23943
     },
     {
       "id": "status-check-last-zh",
@@ -1124,7 +1099,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 19015
+      "duration_ms": 19426
     },
     {
       "id": "status-architecture-request-zh",
@@ -1137,7 +1112,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 22421
+      "duration_ms": 35985
     },
     {
       "id": "status-mergegate-last-en",
@@ -1152,7 +1127,7 @@
       "correct_top1": false,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 24514
+      "duration_ms": 30100
     },
     {
       "id": "status-crossreview-last-en",
@@ -1165,7 +1140,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 23710
+      "duration_ms": 32730
     },
     {
       "id": "qa-ts-interface-zh",
@@ -1178,7 +1153,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 16455
+      "duration_ms": 16724
     },
     {
       "id": "qa-gptpro-model-zh",
@@ -1191,7 +1166,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 48821
+      "duration_ms": 31454
     },
     {
       "id": "qa-jscopy-en",
@@ -1204,7 +1179,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 12105
+      "duration_ms": 13802
     },
     {
       "id": "qa-gptpro-tier-en",
@@ -1217,7 +1192,7 @@
       "correct_top1": true,
       "double_trigger": false,
       "excluded_unreachable": false,
-      "duration_ms": 29434
+      "duration_ms": 29733
     }
   ],
   "metrics": {
@@ -1225,9 +1200,9 @@
     "provider_error_count": 0,
     "excluded_unreachable_count": 0,
     "top1_accuracy": {
-      "numerator": 9,
+      "numerator": 4,
       "denominator": 42,
-      "rate": 0.21428571428571427
+      "rate": 0.09523809523809523
     },
     "per_route_recall": {
       "repo-harness": {
@@ -1242,21 +1217,15 @@
         "rate": 0,
         "reachable": true
       },
-      "repo-harness-plan": {
+      "repo-harness-product": {
         "numerator": 0,
         "denominator": 4,
         "rate": 0,
         "reachable": true
       },
-      "repo-harness-product": {
-        "numerator": 2,
-        "denominator": 4,
-        "rate": 0.5,
-        "reachable": true
-      },
       "repo-harness-check": {
         "numerator": 0,
-        "denominator": 4,
+        "denominator": 8,
         "rate": 0,
         "reachable": true
       },
@@ -1285,16 +1254,16 @@
         "reachable": true
       },
       "repo-harness-chatgpt": {
-        "numerator": 3,
+        "numerator": 0,
         "denominator": 4,
-        "rate": 0.75,
+        "rate": 0,
         "reachable": true
       }
     },
     "double_trigger": {
-      "count": 1,
+      "count": 0,
       "denominator": 68,
-      "rate": 0.014705882352941176
+      "rate": 0
     },
     "ordinary_qa_false_activation": {
       "numerator": 0,
@@ -1309,9 +1278,9 @@
         "rate": 0.16666666666666666
       },
       "quoted-name": {
-        "numerator": 3,
+        "numerator": 1,
         "denominator": 4,
-        "rate": 0.75
+        "rate": 0.25
       },
       "negated": {
         "numerator": 0,
@@ -1319,9 +1288,9 @@
         "rate": 0
       },
       "hypothetical": {
-        "numerator": 3,
+        "numerator": 1,
         "denominator": 4,
-        "rate": 0.75
+        "rate": 0.25
       },
       "status-only": {
         "numerator": 1,
@@ -1338,7 +1307,7 @@
   "thresholds": {
     "top1_accuracy": {
       "floor": 0.95,
-      "actual": 0.21428571428571427,
+      "actual": 0.09523809523809523,
       "pass": false
     },
     "per_route_recall": {
@@ -1354,15 +1323,9 @@
         "pass": false,
         "reachable": true
       },
-      "repo-harness-plan": {
-        "floor": 0.9,
-        "actual": 0,
-        "pass": false,
-        "reachable": true
-      },
       "repo-harness-product": {
         "floor": 0.9,
-        "actual": 0.5,
+        "actual": 0,
         "pass": false,
         "reachable": true
       },
@@ -1398,14 +1361,14 @@
       },
       "repo-harness-chatgpt": {
         "floor": 0.9,
-        "actual": 0.75,
+        "actual": 0,
         "pass": false,
         "reachable": true
       }
     },
     "double_trigger": {
       "ceiling": 0.02,
-      "actual": 0.014705882352941176,
+      "actual": 0,
       "pass": true
     },
     "ordinary_qa_false_activation": {

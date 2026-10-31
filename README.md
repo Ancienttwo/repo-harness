@@ -157,8 +157,8 @@ Apply ends with `=== Migration Report ===`, naming where generated hook behavior
 comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`
 adapter target, the repo-local surfaces created or refreshed, the
 `.ai/harness/scripts/*` helper runtime, and an `--- External Tooling ---`
-readiness block. Stable intent then lives in `docs/spec.md`, execution state in
-`plans/` and `tasks/`, resume state in `.ai/harness/handoff/`. If the dry run
+readiness block. Stable intent then lives in `docs/spec.md` and `docs/prds/`,
+task state in the GitHub issue and PR, resume state in `.ai/harness/handoff/`. If the dry run
 looks wrong, stop and read
 [`hook-operations.md`](docs/reference-configs/hook-operations.md) first.
 
@@ -236,9 +236,9 @@ In an adopted repo, the surface area is intentionally small:
 | Surface | Purpose |
 | --- | --- |
 | `docs/spec.md` and `docs/reference-configs/` | Shared standards and stable product intent that every agent session can read. |
-| `plans/`, `plans/prds/`, and `plans/sprints/` | Optional planning context and historical work records. |
-| `tasks/contracts/`, `tasks/reviews/`, and `.ai/harness/checks/` | Existing closeout and recovery records retained during the lifecycle removal. |
-| `.ai/harness/handoff/` and `tasks/current.md` | Session journal and resumable status, derived from workflow artifacts instead of chat memory. |
+| `docs/prds/` | Product intent and optional design briefs. |
+| `tasks/lessons.md` | The one local lesson ledger. Task identity and history stay in the issue and PR. |
+| `.ai/harness/handoff/` | Session journal and resumable status, derived from the issue, PR and repository state instead of chat memory. |
 
 ## Task Authority
 
@@ -260,7 +260,7 @@ callers while the contract lifecycle is removed.
 
 | | |
 | --- | --- |
-| **File-backed sessions** | Plans, contracts, checks, and handoffs live in the repo, so a new session resumes from artifacts instead of a chat thread |
+| **File-backed sessions** | Issues, PRs, checks, and handoffs live in the repository, so a new session resumes from artifacts instead of a chat thread |
 | **Typed hook runtime** | 6 public routes (Claude 5, Codex 5), each bound to exactly one typed in-process handler, with fail-closed guards at the edit boundary |
 | **Issue → PR → Review** | One task authority with bounded changes, recorded verification and review evidence |
 | **Session handoff** | Record the issue, branch, evidence and next action so another agent can continue |
@@ -275,7 +275,7 @@ callers while the contract lifecycle is removed.
    typed hook handlers, the operator-helper asset, workflow contract, tests, and
    release gate.
 2. **Target repo contract**: `repo-harness init` or migration writes repo-local
-   files such as `docs/spec.md`, `plans/`, `tasks/`, `.ai/context/`,
+   files such as `docs/spec.md`, `docs/prds/`, `tasks/lessons.md`, `.ai/context/`,
    `.ai/harness/`, helper scripts, and `.ai/hooks/`.
 3. **Host adapters**: user-level `~/.claude/settings.json` and
    `~/.codex/hooks.json` route Claude/Codex events into `repo-harness-hook`.
@@ -294,8 +294,7 @@ Handler details and policy modes:
 ## Task Workflow
 
 The GitHub issue and PR carry task identity, claims, status and dependencies.
-Optional plans explain the work. The retained contract closeout helpers serve
-old records until that lifecycle is retired.
+There is no local plan, sprint, contract, review or notes artifact.
 
 ```mermaid
 flowchart TD
@@ -318,9 +317,8 @@ flowchart TD
 For long-running product loops, keep discovery and engineering-plan judgment with
 the parent agent before Codex loops on execution: `geju` opens the pre-contract
 frame, the parent completes P1/P2/P3 and freezes the accepted direction into an
-upper-layer PRD under `plans/prds/` and an ordered sprint backlog under
-`plans/sprints/`, then a Codex Goal points at that sprint file. The PRD stays the
-upper source of truth and the backlog is the durable execution queue, so a
+upper-layer PRD under `docs/prds/`, then orders GitHub issues through
+`repo-harness-issue-flow`. The issue and PR are the durable execution queue, so a
 resumed Goal session never reinterprets the original chat. See
 [`agentic-development-flow.md`](docs/reference-configs/agentic-development-flow.md)
 and [`workflow-orchestration.md`](docs/reference-configs/workflow-orchestration.md).
@@ -338,8 +336,8 @@ repo-harness fleet board --json
 ```
 
 The board reads retained task, Lease, publication, inbox and runtime evidence.
-It does not claim work or create an Engineer binding. Existing completion and
-cleanup helpers remain for existing contract lifecycle callers.
+It does not claim work or create an Engineer binding. Completion and cleanup
+helpers remain for existing records.
 
 Use [repo-harness](SKILL.md) for scope and worker ownership,
 [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for requested
@@ -385,8 +383,8 @@ an explicit `execution_mode`: `contract` or `inline`. The mode is part of the
 approved admission digest; changing it requires new approval. Do not create an
 approval from these examples: actor IDs and authorization references are binding
 data, not authentication. Select the resulting active grant and policy digests
-below, and supply the current immutable issue claim. A contract or plan file
-cannot grant permission. A user waiver requires a separate upstream-authorized
+below, and supply the current immutable issue claim. A local plan or contract
+file cannot grant permission. A user waiver requires a separate upstream-authorized
 decision; waiver eligibility in an admission does not grant one.
 
 See [the control Bot boundary](docs/control-bot-boundary.md) for the integration contract.
@@ -458,8 +456,8 @@ update, profile switch), registry cleanup and CLI uninstall stay commands that
 you run in a terminal. The console does not send messages to coding sessions,
 stop them or dispatch work; dispatch stays Bot → CLI → herdr. Browser payloads
 do not contain secrets or absolute paths. Product scope:
-[`plans/prds/20261026-2310-operator-console-uiux.prd.md`](plans/prds/20261026-2310-operator-console-uiux.prd.md);
-UX: [`docs/design/DESIGN-operator-console-uiux.md`](docs/design/DESIGN-operator-console-uiux.md).
+[`docs/prds/20261026-2310-operator-console-uiux.prd.md`](docs/prds/20261026-2310-operator-console-uiux.prd.md);
+UX: [`docs/prds/DESIGN-operator-console-uiux.md`](docs/prds/DESIGN-operator-console-uiux.md).
 
 Read committed architecture facts or export a module review prompt:
 
@@ -492,9 +490,9 @@ the human workflow is:
 
 1. ChatGPT reads repo-harness workflow files through MCP.
 2. ChatGPT writes a PRD with `write_prd_from_idea`.
-3. ChatGPT writes a checklist Sprint with `write_checklist_sprint`.
-4. ChatGPT prepares `.ai/harness/handoff/task-goal.md` with `prepare_task_goal_from_sprint`.
-5. The task owner sends the generated execution prompt to an explicitly addressed Herdr agent and stages each completed Sprint phase.
+3. ChatGPT lists existing PRDs under `docs/prds/` and reads the linked issue.
+4. The task owner orders GitHub issues through `repo-harness-issue-flow` and
+   sends the issue Goal to an explicitly addressed Herdr agent.
 
 General repo reader/writer tools, snapshot and index consistency, server
 profiles, and the opt-in dev runner:
@@ -505,13 +503,11 @@ Index-stale, CodeGraph-down, and rollback operations:
 
 ## Reviewing Work
 
-Start with `tasks/reviews/<task>.review.md`. Its `## Human Review Card` is the
-one-screen decision surface: verdict, change type, intended vs actual files,
-commands passed, external acceptance, residual risk, reviewer action, and
-rollback. Then inspect the active contract, the latest trace in
-Verification Plan execution records, and the changed files. Accept only when the
-review recommends pass, the card verdict is pass, and external acceptance is
-pass, `not_required`, or an explicit override.
+Start with the PR description. It is the one-screen decision surface: goal,
+scope, changes, commands passed, external acceptance, residual risk and rollback.
+Then inspect the changed files, the latest trace in Verification Plan execution
+records, and the checks. Accept only when the checks pass and external acceptance
+is pass, `not_required`, or an explicit override.
 
 Execution facts and acceptance are separate authorities: a passing
 `verify-contract` run proves a command ran, not that the work is accepted.
@@ -521,15 +517,11 @@ Agents read source artifacts before derived summaries:
 
 | Agent reads first | Human reviews first |
 | --- | --- |
-| Current user prompt and referenced files | `tasks/reviews/<task>.review.md` Human Review Card |
+| Current user prompt and referenced files | PR description |
 | `AGENTS.md` / `CLAUDE.md` | Changed files and diff |
-| Active plan in `.ai/harness/active-plan` | Active contract allowed paths and exit criteria |
-| Active contract in `tasks/contracts/` | Verification Plan execution records and run trace |
+| The GitHub issue and PR | Verification Plan execution records and run trace |
 | Latest handoff in `.ai/harness/handoff/` | Residual risks and rollback |
-
-`tasks/current.md` is an ignored local orientation snapshot, not a tracked file.
-If it disagrees with the active plan, contract, review, checks, or handoff, the
-source artifacts win.
+If it disagrees with the issue, PR, checks, or handoff, the source artifacts win.
 
 Runtime-heavy validators (Unity, browser E2E, mobile simulators, hardware rigs,
 staging smoke tests) can publish external verification manifests under the

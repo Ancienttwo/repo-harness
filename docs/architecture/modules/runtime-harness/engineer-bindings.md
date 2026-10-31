@@ -111,7 +111,7 @@ sequenceDiagram
 
 ### 2026-08-24 ME-0A authority foundation
 
-- The original implementation plan is not tracked. The requirement is in `plans/prds/20260824-1653-engineer-profile-binding-projection.prd.md`.
+- The original implementation plan is not tracked. The requirement is in `docs/prds/20260824-1653-engineer-profile-binding-projection.prd.md`.
 - Accepted architecture change: `changeset.plan-20260824-2126-me0a-engineer-profile-binding`, bound to archived external approval `event.review-20260824-2050-persistent-module-engineer-me0a-approval`.
 - EngineerPrincipal, Session mutation, ClaimActorReceipt, delegation, messaging, Worker Host, Provider lifecycle, handoff, Human Board, and remote access remain separate Draft children and receive no authority from this module.
 

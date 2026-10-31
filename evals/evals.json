@@ -1007,7 +1007,7 @@
     {
       "id": 24,
       "slug": "plan-issue-flow-module-backlog",
-      "prompt": "This repo already has the harness installed. Use repo-harness-issue-flow to split a notification feature into GitHub issues by architecture module: read the PRD in plans/prds/ when present, give each issue its goal, boundary and dependencies, and explain how workers are dispatched and how PRs and CI are followed.",
+      "prompt": "This repo already has the harness installed. Use repo-harness-issue-flow to split a notification feature into GitHub issues by architecture module: read the PRD in docs/prds/ when present, give each issue its goal, boundary and dependencies, and explain how workers are dispatched and how PRs and CI are followed.",
       "expected_output": "Routes to repo-harness-issue-flow: reads the PRD and the architecture modules, splits the work into one issue per module with explicit dependencies and boundaries, checks existing issue claims before dispatch, dispatches workers per issue, and follows each PR and its CI; GitHub issues own task identity and status and tasks/todos.md stays the deferred-goal ledger.",
       "files": [
         "evals/fixtures/fix-agents"
@@ -1047,14 +1047,14 @@
         "Routes the request to repo-harness-issue-flow instead of repo-harness-product or the separate repo-harness-check skill.",
         "Splits the work by architecture module and states dependencies and boundaries per issue.",
         "Requires a concrete acceptance line per issue before dispatch.",
-        "Follows each worker PR and its CI, and keeps tasks/todos.md as the deferred-goal ledger."
+        "Follows each worker PR and its CI, and keeps deferred work in GitHub issues."
       ]
     },
     {
       "id": 26,
       "slug": "generate-prd-from-idea",
-      "prompt": "Use repo-harness-product's PRD mode to generate a PRD from this product idea: notification preferences for a small SaaS app. Keep it compact, save it under plans/prds/, and summarize only the AI Quick-Read Card in the final response.",
-      "expected_output": "Routes to repo-harness-product's PRD mode, activates $geju for a direction pass, uses Claude-first claude -p --model opus drafting with Codex only as fallback, and writes a compact PRD under plans/prds/ with an AI Quick-Read Card, evidence-marked unknowns, acceptance scenarios, module behavior, data model, performance targets, and a developer handoff. The final response gives the Quick-Read Card, geju thesis, drafting path, and file path only.",
+      "prompt": "Use repo-harness-product's PRD mode to generate a PRD from this product idea: notification preferences for a small SaaS app. Keep it compact, save it under docs/prds/, and summarize only the AI Quick-Read Card in the final response.",
+      "expected_output": "Routes to repo-harness-product's PRD mode, activates $geju for a direction pass, uses Claude-first claude -p --model opus drafting with Codex only as fallback, and writes a compact PRD under docs/prds/ with an AI Quick-Read Card, evidence-marked unknowns, acceptance scenarios, module behavior, data model, performance targets, and a developer handoff. The final response gives the Quick-Read Card, geju thesis, drafting path, and file path only.",
       "files": [
         "evals/fixtures/prd-from-idea"
       ],
@@ -1081,7 +1081,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "plans/prds/"
+            "pattern": "docs/prds/"
           },
           {
             "path": "final-response.md",
@@ -1105,7 +1105,7 @@
         "Routes the request to repo-harness-product's PRD mode instead of its Sprint mode.",
         "Runs a geju direction pass before PRD drafting.",
         "Uses Claude-first claude -p --model opus drafting and keeps Codex as fallback only.",
-        "Writes the PRD under plans/prds/ and does not create a sprint backlog.",
+        "Writes the PRD under docs/prds/ and does not create a local backlog.",
         "Keeps competitor or SaaS vendor claims out unless explicitly verified.",
         "Includes Quick-Read Card, acceptance scenarios, and developer handoff."
       ]
@@ -1113,15 +1113,15 @@
     {
       "id": 27,
       "slug": "issues-from-existing-prd",
-      "prompt": "Use repo-harness-issue-flow on plans/prds/20260101-0000-sample-feature.prd.md to split the feature into GitHub issues. Preserve the PRD as the source requirement, state dependencies and boundaries per issue, and do not write tasks/todos.md.",
-      "expected_output": "Routes to repo-harness-issue-flow, reads the sample PRD, links each issue to its source requirement in plans/prds/, writes or describes ordered issues with dependencies and machine-checkable acceptance lines traceable to the PRD, and keeps tasks/todos.md as the deferred-goal ledger.",
+      "prompt": "Use repo-harness-issue-flow on docs/prds/20260101-0000-sample-feature.prd.md to split the feature into GitHub issues. Preserve the PRD as the source requirement, state dependencies and boundaries per issue, and do not write a local todo ledger.",
+      "expected_output": "Routes to repo-harness-issue-flow, reads the sample PRD, links each issue to its source requirement in docs/prds/, writes or describes ordered issues with dependencies and machine-checkable acceptance lines traceable to the PRD, and keeps deferred work in GitHub issues.",
       "files": [
         "evals/fixtures/prd-to-sprint"
       ],
       "graders": {
         "files_exist": [
           "final-response.md",
-          "plans/prds/20260101-0000-sample-feature.prd.md"
+          "docs/prds/20260101-0000-sample-feature.prd.md"
         ],
         "files_contain": [
           {
@@ -1134,7 +1134,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "Source PRD|plans/prds/20260101-0000-sample-feature\\.prd\\.md"
+            "pattern": "Source PRD|docs/prds/20260101-0000-sample-feature\\.prd\\.md"
           },
           {
             "path": "final-response.md",
@@ -1156,7 +1156,7 @@
       },
       "expectations": [
         "Routes the request to repo-harness-issue-flow.",
-        "Keeps the PRD in plans/prds/ and links each issue to its source requirement.",
+        "Keeps the PRD in docs/prds/ and links each issue to its source requirement.",
         "Issue acceptance lines are machine-checkable and traceable to PRD scenarios.",
         "Does not use tasks/todos.md as an execution backlog."
       ]
@@ -1164,7 +1164,7 @@
     {
       "id": 28,
       "slug": "goal-from-prd-or-sprint",
-      "prompt": "Use repo-harness-product's Goal mode to prepare a Codex or Claude /goal session for plans/prds/20260101-0000-sample-feature.prd.md. Require the detailed PRD or Sprint document as source of truth, produce the bounded /goal prompt, and do not start implementation if the source document is missing.",
+      "prompt": "Use repo-harness-product's Goal mode to prepare a Codex or Claude /goal session for docs/prds/20260101-0000-sample-feature.prd.md. Require the detailed PRD or GitHub issue as source of truth, produce the bounded /goal prompt, and do not start implementation if the source document is missing.",
       "expected_output": "Routes to repo-harness-product's Goal mode, requires a detailed PRD or Sprint artifact before native /goal continuation, prepares a bounded Codex/Claude /goal prompt with source of truth, scope, non-goals, acceptance checks, stop condition, and repo-harness workflow gates, and stops to request the PRD/Sprint document when missing.",
       "files": [
         "evals/fixtures/prd-to-sprint"
@@ -1172,7 +1172,7 @@
       "graders": {
         "files_exist": [
           "final-response.md",
-          "plans/prds/20260101-0000-sample-feature.prd.md"
+          "docs/prds/20260101-0000-sample-feature.prd.md"
         ],
         "files_contain": [
           {
@@ -1185,7 +1185,7 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "PRD|Sprint|plans/prds/20260101-0000-sample-feature\\.prd\\.md"
+            "pattern": "PRD|docs/prds/20260101-0000-sample-feature\\.prd\\.md"
           },
           {
             "path": "final-response.md",

@@ -79,7 +79,6 @@ describe('review subject', () => {
       mkdirSync(join(cwd, '.ai/harness/handoff'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, 'tasks/reviews/demo.review.md'), '> **Recommendation**: pass\n');
-      writeFileSync(join(cwd, '.ai/harness/active-plan'), 'plans/plan-demo.md\n');
       writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"status":"pass"}\n');
       writeFileSync(join(cwd, '.ai/harness/evidence/events/log.jsonl'), '{"type":"evidence_event"}\n');
       writeFileSync(join(cwd, '.ai/harness/failures/latest.jsonl'), '{"guard":"demo"}\n');
@@ -88,7 +87,6 @@ describe('review subject', () => {
 
       const operationalOnly = buildReviewSubject(cwd);
       expect(operationalOnly.excluded_paths).toEqual([
-        '.ai/harness/active-plan',
         '.ai/harness/checks/latest.json',
         '.ai/harness/evidence/events/log.jsonl',
         '.ai/harness/failures/latest.jsonl',

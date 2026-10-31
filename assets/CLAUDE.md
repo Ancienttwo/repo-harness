@@ -8,22 +8,21 @@ Keep this file focused on the local contract for this primary functional block.
 - Capability ID: `workflow-engine-contract-assets`
 - Domain: `workflow-engine`
 - Name: `contract-assets`
-- Primary prefix: `assets/workflow-contract.v1.json`
+- Primary prefix: `.ai/context`
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md`
-- Workstream: `tasks/workstreams/workflow-engine/contract-assets`
 
 ## Positioning
 
-Owns the workflow-engine-contract-assets capability boundary declared in .archcontext/model/nodes.
+Owns the package workflow contract, repo opt-in marker, templates, capability nodes, and the standalone resolver projection.
 
 ## Source Map
 
-- Primary prefix: `assets/workflow-contract.v1.json` (entrypoint)
+- Primary prefix: `.ai/context` (entrypoint)
 - Architecture module: `docs/architecture/modules/workflow-engine/contract-assets.md` (design-source)
-- Workstream: `tasks/workstreams/workflow-engine/contract-assets` (durable-progress)
 
 ## Refresh Hints
 
 - `bun test tests/workflow-contract.test.ts tests/scaffold-parity.test.ts`
 - `bun scripts/capability-resolver.ts validate --format text`
+- `bun run check:helpers`
 <!-- END CAPABILITY CONTEXT -->

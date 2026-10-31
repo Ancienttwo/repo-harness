@@ -1,17 +1,17 @@
 # repo-harness
 
 ## Workflow
-- Follow [Plans lifecycle](docs/plans-lifecycle.md): open multi-PR intent in `plans/`, work in Issue/PR, proof in PR/CI, lessons in `tasks/lessons.md`. Keep todos historical; do not generate notes/reviews/example task trees or move expired plans to `plans/archive/`. Contract removal is #1114 HOLD.
+- Follow [Issue flow](docs/issue-flow.md): task identity, claim, status and dependencies live in the GitHub issue and PR; proof lives in the PR and CI; product intent lives in `docs/prds/`; lessons live in `tasks/lessons.md`. Do not create plans, sprints, contracts, notes, reviews, todos, workstreams or `tasks/current.md`. Use `repo-harness-issue-flow` for issue ordering and the issue/PR loop.
 - For non-trivial work, follow the global Progressive Due Diligence rule (P1 map, P2 trace, P3 decision) before design decisions or code edits.
 - Keep root CLAUDE.md and AGENTS.md as standalone regular files; repeat shared rules in both and keep host-specific guidance separate.
 - Read the current request and repo-local agent context, work on a branch, make bounded commits, verify once, then report the PR outcome.
 - Read `tasks/lessons.md` at session start and apply its active lessons. Current repo state and evidence override a lesson.
 - Finish the main task first. Fix a small problem found on the way directly. For a large problem, open a GitHub issue before you work on it.
-- Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No mandatory plan/contract/review/notes chain; notes are only for non-obvious decisions.
+- Ordinary tasks use the PR description: goal, scope, changes, verification, risk and rollback. No plan, contract, review, notes or approval artifact is mandatory. Record a one-time decision in the issue.
 - Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.
 - Only when the current task explicitly authorizes main publication may a model squash-merge after automated checks pass and GitHub has no outstanding change requests or unresolved review threads; an explicit no-merge instruction always wins. Push/tag still require task authorization; credentials/permissions, other deletion and release/production retain their separate approval boundaries. Record authorized publication, the provider-confirmed merge SHA and parent SHA, `git revert <squash-commit>`, and the daily report. Do not create rollback tags.
 - When `publication.acceptance_merge` is `on` in the policy on the PR base, a model may merge with `repo-harness publication merge`. When it is `off`, the executor does not merge, and task authorization does not change that.
-- Create task worktrees only at `/tmp/<repo>-wt-<slug>` (Windows: `os.tmpdir()`): use `repo-harness run contract-worktree start --plan <plan-file>` for plan tasks, or `git worktree add` with that path. Never create one beside the main checkout (`../`); the Claude Bash hook denies a target outside that root. Commit or push before a reboot or a tmp cleanup.
+- Create task worktrees only at `/tmp/<repo>-wt-<slug>` (Windows: `os.tmpdir()`): use `repo-harness run contract-worktree start --issue <number>`, or `git worktree add` with that path. Never create one beside the main checkout (`../`); the Claude Bash hook denies a target outside that root. Commit or push before a reboot or a tmp cleanup.
 - Closeout and sweep remove only merged, clean and unowned worktrees. To keep one, give it an unmerged commit, keep it dirty, or mark or lock it. Details: [agentic-development-flow](docs/reference-configs/agentic-development-flow.md).
 - Automatically delete only merged, clean worktrees/branches; ask the user for every other deletion. Credentials/permissions (including confirmation bypass) and release/production operations require user approval.
 - Select independent review by the diff's [Review by risk](docs/reference-configs/agentic-development-flow.md#review-by-risk) tier: none for low, one fresh-context review for medium, gatekeeper plus cross-model review for high; ordinary steps record diagnostics without approval loops.
@@ -65,7 +65,7 @@
 - Keep temporary checkpoints under ignored `.ai/harness/handoff/`; historical snapshots are not current execution authority.
 - Include evidence paths and actual command outcomes; distinguish observed state from inference.
 - Never include secrets, tokens or real environment files in handoff text.
-- On resume, verify the live checkout and source artifacts before reusing a result; `tasks/current.md` is an optional local read model.
+- On resume, verify the live checkout and source artifacts before reusing a result; read the issue, PR and `.ai/harness/handoff/` files.
 - Preserve dirty work and other workers' edits; hand back an ownership conflict instead of discarding their changes.
 
 ## Writing

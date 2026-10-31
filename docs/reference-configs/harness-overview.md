@@ -10,14 +10,14 @@ or refreshes a repo. The harness gives agents three durable surfaces:
 - **Shared standards**: `docs/spec.md`, `docs/reference-configs/`, root
   `AGENTS.md`, and root `CLAUDE.md` explain stable product intent, coding
   rules, and local workflow boundaries.
-- **Task contracts (optional)**: ordinary tasks use the PR description:
-  goal, scope, changes, verification, risk and rollback. No
-  plan/contract/review/notes chain is mandatory. A task can opt into
-  contract-level work. Then `plans/`, `tasks/contracts/`, PR/CI evidence
-  and native execution records hold its scope and completion evidence.
-- **Session journal**: `.ai/harness/handoff/`, `tasks/current.md`, and
-  `.ai/harness/events.jsonl` let a new agent session resume from repo state
-  without treating chat history as authority.
+- **Work ownership**: the GitHub issue and PR hold task identity, claim,
+  dependencies, scope, checks, review and rollback. Ordinary tasks need no
+  separate local artifact.
+- **Product intent**: `docs/prds/*.prd.md` holds product intent. A design brief
+  is optional at `docs/prds/DESIGN-*.md`.
+- **Session journal**: `.ai/harness/handoff/` and `.ai/harness/events.jsonl`
+  let a new agent session resume from repo state without treating chat history
+  as authority.
 
 The install is not an app scaffold or an agent gateway. It adds a reviewable
 workflow contract around an existing repo, then leaves product code ownership
@@ -35,47 +35,62 @@ This pattern is adapted from pstack (cursor/plugins, MIT, Lauren Tan).
 
 ## Roles
 
-The roles and the state flow below apply to contract-level work only.
+Work follows the GitHub issue and PR. The `repo-harness-issue-flow` skill
+splits an issue into ordered issues and runs dispatch.
 
-- **Planner** updates `docs/spec.md`, researches constraints, and writes or approves `plans/plan-*.md`.
-- **Generator** implements only against the active sprint contract and the plan's `## Task Breakdown`, and records implementation decisions and deferred work in the Issue/PR.
-- **Evaluator** runs Waza `/check`, then records review in the PR using fresh evidence from Verification Plan execution records and `.ai/harness/runs/*.json`.
+- **Issue owner and implementer** writes the goal, scope, acceptance checks and
+  dependencies in the issue. The PR holds the changes, checks and rollback.
+- **Reviewer** starts from the PR description and CI. The independent review
+  level follows the diff risk.
+- **Product planner** writes product intent to `docs/prds/*.prd.md`. Product
+  intent does not start work.
+- **Architecture owner** updates `.archcontext/model/` and `docs/architecture/`
+  only for a real responsibility change.
 
 ## State Flow
 
 1. `docs/spec.md` captures stable product intent.
-2. `plans/plan-*.md` captures a concrete execution approach.
-3. `tasks/contracts/<plan-stem>.contract.md` defines done for the active sprint.
-4. `tasks/current.md` is an ignored local read model derived from workflow artifacts; it is not tracked, not a live lock, kanban board, or implementation gate.
-5. Issue/PR owns work and deferred goals.
-6. the PR description records design decisions, deviations, tradeoffs, open questions, and promotion candidates for this sprint only.
-7. the PR review records evaluator judgment.
-8. `.ai/harness/policy.json` is the machine-readable workflow contract.
-9. `information_lifecycle` inside `.ai/harness/policy.json` separates notes, raw evidence, reusable assets, advisory memory, and external knowledge.
-10. `agentic_development` inside `.ai/harness/policy.json` keeps product, engineering, and design planning parent-owned with `geju` pre-contract framing, and captures the Waza bug-hunt/review routes.
-11. `external_tooling` inside `.ai/harness/policy.json` captures host install/update defaults for Waza, `geju`, and required CodeGraph readiness.
-12. `.ai/context/capabilities.json` declares capability prefixes, contract files, architecture modules, and workstream directories.
-13. `.ai/context/context-map.json` indexes stable root context and discoverable capability context derived from the registry.
-14. `documentation` inside `.ai/harness/policy.json` keeps generated docs minimal and moves optional docs to agent-created, evidence-backed output.
-15. `lsp_profiles` inside policy and context-map files select tooling hints per capability.
-16. `worktree_strategy` inside policy tells agents when to isolate contract-level work in `codex/<slug>` worktrees, start execution through `repo-harness run contract-worktree start --plan <plan>`, and use `/check` plus the GitHub PR for review and delivery.
-17. `.ai/harness/handoff/current.md` preserves resumable state across sessions.
-18. `.ai/harness/events.jsonl` and `.ai/harness/runs/*.json` retain lightweight execution traces.
+2. The GitHub issue captures task identity, claim, dependencies and acceptance.
+3. The PR captures the implementation, checks and review.
+4. `docs/prds/*.prd.md` captures product intent. `docs/prds/DESIGN-*.md` holds
+   an optional design brief.
+5. `.ai/harness/policy.json` holds machine-readable settings.
+6. `information_lifecycle` separates evidence, reusable assets, advisory
+   memory and external knowledge.
+7. `agentic_development` keeps product, engineering and design planning
+   parent-owned, with `geju` framing and Waza routes.
+8. `external_tooling` captures host install and update defaults.
+9. The capability authority declares prefixes, contract files, architecture
+   modules and verification hints.
+10. `.ai/context/context-map.json` indexes stable root context and discoverable
+    capability context.
+11. `documentation` keeps generated docs minimal.
+12. `lsp_profiles` selects tooling hints per capability.
+13. `worktree_strategy` isolates task work in `codex/<slug>` worktrees. Start
+    it with `repo-harness run contract-worktree start --issue <number>`.
+14. `.ai/harness/handoff/` preserves resumable state.
+15. `.ai/harness/events.jsonl` and `.ai/harness/runs/*.json` retain execution
+    traces.
 
 ## Session Boundaries
 
-- Exploration and planning are allowed before a contract exists.
-- Before implementation, the plan and contract should both expose a concrete workflow inventory so the agent does not rediscover or guess active artifacts.
-- Implementation should prefer `docs/spec.md`, an approved plan, and an active sprint contract.
-- For contract-level work, claiming completion should include contract verification evidence, a run snapshot, implementation notes, and a passing Waza `/check` review artifact. An ordinary task records its verification in the PR description.
-- Stopping a session should refresh `.ai/harness/handoff/current.md` for easier resume; while pending planning orchestration is open, Stop may block once to force a plan completeness self-review before execution.
-- Refresh `tasks/current.md` with `repo-harness run refresh-current-status --write --reason <reason>` only at explicit lifecycle boundaries or as a deliberate maintainer action; ordinary hooks should not rewrite the local snapshot on every event.
-- `tasks/current.md` is regenerated per worktree and never read across branches; verify stale or surprising state against the source artifacts before acting.
-- Existing repos adopted before this file became ignored still have it committed; run `git rm --cached tasks/current.md` once to untrack it. The file stays on disk and the next refresh regenerates it.
-- Use `docs/reference-configs/agentic-development-flow.md` for skill routing and `docs/reference-configs/external-tooling.md` for install/update commands.
-- Use `docs/reference-configs/global-working-rules.md` as the user-level Claude/Codex rule template; keep repo-local workflow contracts in repo files.
-- Externalized reference docs may be indexed by `.ai/harness/brain-manifest.json`. Drift checks and export through `repo-harness brain check` / `repo-harness brain sync` are explicit operator actions and never part of hook or workflow correctness.
-- When a task opts into contract-level execution, run it in an isolated `codex/<task-slug>` worktree. Merge back only after the contract is fulfilled, the PR review recommends pass, and the target worktree is clean. Ordinary tasks merge through the PR flow.
+- Exploration is allowed before an issue exists. No plan file is needed.
+- Implementation follows the scope in the issue and PR. Widen scope only when
+  the issue or PR records it.
+- Completion records the commands and results in the PR. CI is the authority.
+- Stop refreshes `.ai/harness/handoff/current.md` for resume.
+- Do not create or read plan, sprint, contract, notes, review, todo, workstream
+  or current-status files.
+- Use `docs/reference-configs/agentic-development-flow.md` for skill routing and
+  `docs/reference-configs/external-tooling.md` for install and update commands.
+- Use `docs/reference-configs/global-working-rules.md` as the user-level
+  Claude/Codex rule template; keep repo-local rules in repo files.
+- Externalized reference docs may be indexed by
+  `.ai/harness/brain-manifest.json`. Drift checks and export through
+  `repo-harness brain check` / `repo-harness brain sync` are explicit operator
+  actions and never part of hook or workflow correctness.
+- Run task work in an isolated `codex/<task-slug>` worktree. Merge through the
+  PR flow.
 - Adoption retires legacy hook/runtime assets only inside the canonical
   `FsTransaction`: declared paths require an exact SHA-256 match, while
   mismatches, ambiguous app-owned files, and custom adapter siblings are
@@ -91,13 +106,25 @@ The roles and the state flow below apply to contract-level work only.
 
 ## Information Lifecycle
 
-- Task synchronization: `check-task-sync.sh` accepts existing diff-bound workflow evidence or a valid scoped waiver. Otherwise it passes the complete changed-path inventory, including the configured Git base range, to `repo-harness state resolve`. A successful `lite` result needs no workflow artifact; `standard` and `strict` still require bound evidence. Missing, failed, or malformed resolver output fails closed. This is a ceremony exemption, not a substitute for behavior-specific verification.
-- Notes: the PR description is task-local and auditable. It should not be treated as durable knowledge by default.
-- Current status: `tasks/current.md` is an ignored local read model for orientation only. It must be regenerated from source artifacts and must not contain hand-written kanban/checklist state.
-- Evidence: Native execution evaluation supplies current check facts, while `.ai/harness/runs/*.json` keeps ignored local verification snapshots for the current workflow audit. Task-specific `.ai/harness/checks/*.latest.{json,md}` reports are ignored runtime cache; promote durable conclusions into reviews, contracts, notes, or research.
-- Human reading surface: `docs/spec.md`, `docs/architecture/`, and durable `docs/researches/` conclusions are the default entrypoint. Root workflow artifacts should describe active work only; completed plan/contract/review/notes/todo artifacts move to `plans/archive/` or `tasks/archive/`, and `.rgignore` keeps those archives plus runtime evidence out of default `rg` results.
-- Closeout order: promote durable truth first, then archive the workflow artifacts. If a fact only lives in a review/contract/checks file, the workflow is not ready to disappear from the active reading surface.
-- Local retention: `repo-harness retention` moves closed artifacts to a gitignored local archive root after 30 days. It scans five classes: closed plans in `plans/archive/`, closed task records in `tasks/archive/`, check logs (`.ai/harness/checks/*.log`), run records that no code reads back (`.ai/harness/runs/verification-vx-*.log`, `*-heartbeat-triage.json`, and finished `contract-run-*` directories with a `manifest.json`), and fs-transaction backups (`.ai/harness/backups/fs-transaction/`). An archived backup no longer serves a rollback by manifest; restore it by hand. The command is a dry run by default. Add `--apply` to move the entries. It skips open work, entries in the `keep` list, entries newer than the window, and entries whose destination exists. An archived entry is deleted once its newest write is older than `archive_days` (default: `days` plus 60). Retention deletes nothing outside the archive root. `--json` also lists every harness storage root and its rule: archive, delete, writer rotation, or keep. The MCP logs under `.ai/harness/mcp/` rotate like hook telemetry. `install` keeps only the release tarball it installed in `~/.repo-harness/packages/`. `upgrade` keeps the newest 100 records in `~/.repo-harness/upgrade-cleanup.log.jsonl`. Other run records stay in place: verification records and reports are bound by hash or named by receipts, session directories keep a `closed.json` tombstone, ledgers and hook telemetry are live, and `evidence-gc` owns run summaries. Configure it in `.ai/harness/policy.json`:
+- Notes: the PR description is task-local and auditable. It is not durable
+  knowledge by default.
+- Evidence: native execution supplies current check facts. `.ai/harness/runs/*.json`
+  keeps ignored local verification snapshots. Promote durable conclusions into
+  `docs/researches/`, lessons, ADRs or architecture.
+- Human reading surface: `docs/spec.md`, `docs/architecture/` and durable
+  `docs/researches/` conclusions. The issue and PR describe active work.
+- Local retention: `repo-harness retention` moves ignored artifacts to a
+  gitignored local archive root after 30 days. It scans three classes: check
+  logs (`.ai/harness/checks/*.log`), run records that no code reads back, and
+  fs-transaction backups (`.ai/harness/backups/fs-transaction/`). An archived
+  backup no longer serves a rollback by manifest; restore it by hand. The
+  command is a dry run by default. Add `--apply` to move the entries. It skips
+  entries in the `keep` list, entries newer than the window, tracked files,
+  modified files and entries whose destination exists. An archived entry is
+  deleted once its newest write is older than `archive_days` (default: `days`
+  plus 60). Retention deletes nothing outside the archive root. `--json` also
+  lists every harness storage root and its rule. Configure it in
+  `.ai/harness/policy.json`:
 
   ```json
   "information_lifecycle": {
@@ -105,9 +132,15 @@ The roles and the state flow below apply to contract-level work only.
   }
   ```
 
-  All fields are optional. A malformed or non-canonical field fails the command. The archive root and every destination must be gitignored. A scanned or archive path through a symlink fails the command. The default root is under `.ai/harness/archive/`, which the generated `.gitignore` block already ignores.
-- Plans stay committed: keep `plans/` tracked in Git. A closed plan stays in `plans/archive/` and in Git for the retention window. The window counts from the last commit of a tracked artifact, and from the file time of an untracked plan. After the window, retention moves the plan to the archive root, and the plan leaves the working tree. Retention does not stage or commit; commit the removal. A plan with uncommitted changes is skipped. Closed task records use the same window and guards. Check logs and run records still skip tracked files.
-- Local-only process artifacts: a repository that does not commit its task records and run evidence can add these patterns below the generated `.gitignore` block. Do not ignore `plans/`; plans stay committed. The two negations keep the durable ledgers tracked. Leave out `*.jsonl` if the repository tracks JSONL data.
+  All fields are optional. A malformed or non-canonical field fails the
+  command. The archive root and every destination must be gitignored. A scanned
+  or archive path through a symlink fails the command. The default root is under
+  `.ai/harness/archive/`, which the generated `.gitignore` block already
+  ignores.
+- Local-only process artifacts: a repository that does not commit runtime
+  evidence can add these patterns below the generated `.gitignore` block. Keep
+  the negation so `tasks/lessons.md` stays tracked. Leave out `*.jsonl` if the
+  repository tracks JSONL data.
 
   ```gitignore
   tasks/*
@@ -118,23 +151,26 @@ The roles and the state flow below apply to contract-level work only.
   *.jsonl
   ```
 
-  The generated block already ignores `.ai/harness/runs/`, `.ai/harness/checks/`, `.ai/harness/archive/` and `_ops/`. Ignoring a path does not remove blobs that Git already tracks; untrack them with `git rm --cached` in a separate change.
-- Memory: `docs/researches/` and `tasks/lessons.md` are advisory. Current repo state and evidence override summaries.
-- External knowledge: `brain/<project>/*` is an optional operator-managed export surface for long-form explanations, runbooks, decisions, and patterns. Hooks and workflow checks never read, write, or gate on its state.
-- Assets: policies, hooks, scripts, templates, and reference configs only change when a pattern has evidence across tasks or fixtures.
+  The generated block already ignores `.ai/harness/runs/`,
+  `.ai/harness/checks/`, `.ai/harness/archive/` and `_ops/`. Ignoring a path
+  does not remove blobs that Git already tracks; untrack them with
+  `git rm --cached` in a separate change.
+- Memory: `docs/researches/` and `tasks/lessons.md` are advisory. Current repo
+  state and evidence override summaries.
+- External knowledge: `brain/<project>/*` is an optional operator-managed
+  export surface for long-form explanations, runbooks, decisions, and patterns.
+  Hooks and workflow checks never read, write, or gate on its state.
+- Assets: policies, hooks, scripts, templates, and reference configs only change
+  when a pattern has evidence across tasks or fixtures.
 
 ## Trace Evidence
 
-`repo-harness run verify-sprint` runs local checks. It writes no verification report. The trusted control Bot first supplies an approved admission through `repo-harness review admit --request <request.json> --repo .`. The Bot withdraws it through `repo-harness review revoke --request <revocation.json> --repo .`. The revocation request names the campaign (`repository_id`, `issue_id`, `campaign_id`), `expectedGrantSha256` and `expectedRevision`. The command revokes only that exact active grant. The admission must include the approved positive safe-integer `issue_number`, distinct from the provider global `issue_id`. Its digest binds this lookup locator; changing it requires new approval and does not change the campaign key. The admission must explicitly select `execution_mode: "contract"` or `execution_mode: "inline"`; no mode is inferred from a task or plan file. Changing mode requires new upstream approval. Verification and assessment consume that admission, not a contract path. Pass `--repository-id`, `--issue-id`, `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor` from the active admission to `repo-harness run verification-plan execute --repo . --report-file .ai/harness/runs/<run-id>.report.json` and `repo-harness run change-assessment prepare`. The latter writes the independent assessment. These selectors bind an existing approval; they do not grant permission. If a packet has a reviewer-disagreement overlay, pass its path with `--packet` when you prepare it again. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty plans cannot pass.
+`repo-harness run verify-sprint` runs local checks. It writes no verification report. The trusted control Bot first supplies an approved admission through `repo-harness review admit --request <request.json> --repo .`. The Bot withdraws it through `repo-harness review revoke --request <revocation.json> --repo .`. The revocation request names the campaign (`repository_id`, `issue_id`, `campaign_id`), `expectedGrantSha256` and `expectedRevision`. The command revokes only that exact active grant. The admission must include the approved positive safe-integer `issue_number`, distinct from the provider global `issue_id`. Its digest binds this lookup locator; changing it requires new approval and does not change the campaign key. The admission must explicitly select `execution_mode: "contract"` or `execution_mode: "inline"`; no mode is inferred from a task or local file. Changing mode requires new upstream approval. Verification and assessment consume that admission, not a contract path. Pass `--repository-id`, `--issue-id`, `--campaign-id`, `--grant-sha256`, `--policy-sha256` and `--actor` from the active admission to `repo-harness run verification-plan execute --repo . --report-file .ai/harness/runs/<run-id>.report.json` and `repo-harness run change-assessment prepare`. The latter writes the independent assessment. These selectors bind an existing approval; they do not grant permission. If a packet has a reviewer-disagreement overlay, pass its path with `--packet` when you prepare it again. Acceptance uses that explicit native report and its immutable backing events and runs. Missing or empty verification evidence cannot pass.
 
-Required v1 fields:
-
-- `run_id`, `generated_at`, `status`, `exit_code`, and `source`
-- `task_profile`, `active_plan`, `contract`, `review`, `worktree`, and `branch`
-- `commands`, `guards`, `handoffs`, `files_changed`, and `allowed_paths_check`
-- `external_acceptance`, `failure_class`, and `next_step`
-
-`repo-harness run check-task-workflow` reports read-only JSON diagnostics. It does not grant workflow permission. `repo-harness run harness-trace-grade --run <trace> --strict` applies the local graders used for workflow regression checks: active plan resolves, contract profile is valid, Human Review Card passes, command evidence exists, and changed files stay inside allowed paths.
+`repo-harness run harness-trace-grade --run <trace> --strict` applies the local
+graders used for workflow regression checks: command evidence exists, the
+acceptance evidence is current, and changed files stay inside the issue or PR
+scope.
 
 ## Harness Cost Evidence and SLOs
 
@@ -227,7 +263,7 @@ rather than inferring those values from turns, tool names, or timestamps.
 ## Capability Context
 
 - Do not infer agent context boundaries from physical layout globs such as `apps/*`, `packages/*`, or `services/*`.
-- Under `capability_source: registry`, declare capabilities in `.ai/context/capabilities.json`; each capability owns prefixes, paired contract files, an architecture module, a workstream directory, and local verification hints.
+- Under `capability_source: registry`, declare capabilities in `.ai/context/capabilities.json`; each capability owns prefixes, paired contract files, an architecture module and local verification hints.
 - Under `capability_source: registry`, add selected capabilities with `repo-harness-setup` (capability mode) or `repo-harness run capability-config add --prefix <path>` when the harness already exists and a full init/migrate/upgrade pass would be too broad.
 - Under `capability_source: archcontext`, `.archcontext/model/nodes/` declares the capabilities. Change them only through an archctx ChangeSet, as `repo-harness-architecture` describes. To move a registry repository to ArchContext, follow "Adopt ArchContext in a repository" in that skill's worker reference. `repo-harness architecture-projection status --json` names that step in `next`.
 - Resolve edited paths through `repo-harness run capability-resolver match --path <path>`; longest prefix wins and equal-length ambiguity fails.
@@ -247,7 +283,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 
 - Plan menu is tiered: **Core Plans (A-F)** first, **Custom Presets (G-K)** only when needed.
 - Skill routing is inspection-first: `scripts/inspect-project-state.ts`, `src/effects/adoption/standard-plan.ts`, `assets/workflow-contract.v1.json`.
-- Generated repos support an optional contract-level flow: `docs/spec.md -> plans/ -> tasks/contracts/ -> PR/CI -> .ai/context/context-map.json -> .ai/harness/*`. Ordinary tasks use the PR description and need no plan, contract or review file.
+- The workflow is issue/PR-driven: `docs/spec.md -> GitHub issue -> PR/CI -> .ai/context/context-map.json -> .ai/harness/*`. Product intent lives in `docs/prds/`. Ordinary tasks need no local plan, contract or review file.
 - Generated and self-hosted repos use `.ai/harness/workflow-contract.json` as the opt-in marker.
 - The marker can declare `minimum_harness_version`, a release version such as `0.22.1`. A hook that runs an older repo-harness then reports an upgrade instruction (`repo-harness update`) on SessionStart, UserPromptSubmit and Stop. It exits 1, which does not block, and does not resolve state for these events. PreToolUse skips this check, so every edit guard still runs. `repo-harness doctor` and `repo-harness update --check` report the same instruction. Declare it when a release changes the model shape that older readers cannot parse. Adoption keeps the declared value.
 - The package asset `assets/workflow-contract.v1.json` defines the workflow contract.
@@ -261,7 +297,7 @@ Maintainer-facing detail on how the initializer and runtime defaults are wired.
 - `repo-harness install` bootstraps the package-owned Codex/Claude runtime pieces for the default workflow: refreshes `repo-harness` skill aliases, installs global Codex/Claude hook adapters, persists the brain root in `~/.repo-harness/config.json`, and configures CodeGraph MCP for selected host agents. Mutable Waza and Mermaid providers are installed only after explicit selection. `repo-harness init` adopts the repo-local workflow only and installs none of these host runtime pieces.
 - The recommended `reverse-skill-router` remains explicit-only through `--with-reverse-skill` because its upstream authorization assumption cannot replace independently verified scope; the pinned selected tree is integrity-checked before host projection.
 - Read-only external-tooling audit stays advisory: `repo-harness run check-agent-tooling --host both --check-updates`. The explicit mutating boundary is `repo-harness update`, which reconciles mandatory ArchContext packages and runtime and updates the global CodeGraph CLI/MCP; mutable Waza/Mermaid providers require `--with-external-skills`. It does not initialize or sync a repository CodeGraph index.
-- Manual distillation stays repo-local: repeated corrections -> `tasks/lessons.md`; deep findings and hidden contracts -> topic-scoped `docs/researches/*.md`; sprint verification evidence -> PR/CI; durable capability progress -> `tasks/workstreams/`; release history -> `docs/CHANGELOG.md`.
+- Manual distillation stays repo-local: repeated corrections -> `tasks/lessons.md`; deep findings and hidden contracts -> topic-scoped `docs/researches/*.md`; verification evidence -> PR/CI; release history -> `docs/CHANGELOG.md`.
 
 ### Package Manager Defaults
 

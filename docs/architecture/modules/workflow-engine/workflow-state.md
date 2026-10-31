@@ -179,12 +179,12 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **仓库 Markdown 与工作流工件是唯一权威。** Effective State 没有持久化的 JSON 读模型。`tasks/current.md` 只是读模型，不能把权威反馈回解析（`effective-state-authority.md` Frozen Invariants 1-3）。
+1. **GitHub issue/PR 与仓库工件是唯一权威。** Effective State 没有持久化的 JSON 读模型。本地任务文件不承载状态，也不能把权威反馈回解析（`effective-state-authority.md` Frozen Invariants 1-3）。
 2. **纯核心不做 IO。** `src/core/state`、`src/core/workflow` 与 `src/core/capabilities` 是一个纯核心（`scripts/check-state-boundaries.ts:36-40`）。它们不能导入 `fs`、`child_process` 等运行时模块（`:106-130`），也不能导入 `src/cli` 或 `src/effects`（`:277`）。门禁命令是 `bun run check:state-boundaries`。
 3. **版本 owner 是唯一的持久化输出。** `commitStateVersionAfter` 在 Git common dir 的锁内先重读权威源哈希，再写版本记录。revision 未变时它不写文件（`src/effects/state/git-state-version-store.ts:125-143`）。写入失败不会暴露已消耗的版本号。
 4. **写路径在仓库状态锁内串行。** 生产代码里只有 `repo-harness state resolve` 调用 `resolveEffectiveState`。它先取 `.ai/harness/state/effective.lock`（`src/effects/state/state-lock.ts:3-7`）。源在稳定性循环之后又变化时，整轮只重试一次，第二次仍不一致就抛 `StateResolutionUnstableError`（`src/effects/state/resolve-effective-state.ts:923-951`）。
 5. **只读路径不写任何东西。** `resolveEffectiveStateReadOnly` 走同一个稳定性循环，但不取锁，也不分配版本。它不取版本锁，直接报告最后发布的 `state_version`（`resolve-effective-state.ts:958-969`）。每个 hook 事件、MCP `summarize_repo_harness_state`、board 与 continuation envelope 都只用这条路径。
-6. **身份是读出来的。** `task_id` 是 Sprint 行 `ID` 单元格的原文，必须匹配 `TASK_DIGEST_PATTERN`（`src/core/state/coordination-identity.ts:77`）。只有 `task_revision` 是推导值。
+6. **身份来自 GitHub issue/PR。** `task_id` 只是一个符合 `TASK_DIGEST_PATTERN` 的路径片段（`src/core/state/coordination-identity.ts:7`）。Sprint 行解析已删除。
 7. **任务锁保护保留的写入。** manual inbox 和 feedback 在任务锁中校验历史 owner。lease transition 和 cleanup writer 已删除。
 8. **board 不取锁，也不授予执行权限。** 双采样暴露 torn read。GitHub issue 和 PR 保存当前任务 authority。
 9. **attempt ledger 不进入 Effective State。** 收据不是 `EffectiveState`、`state_revision` 的输入。断路器只在路由表给出可执行路由后运行（`src/core/state/project-continuation-envelope.ts` 文件头）。
@@ -207,7 +207,7 @@ sequenceDiagram
 | 组件 | 文件 / 行 | 职责 | 主要出向关系 |
 | --- | ---: | --- | --- |
 | `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
-| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | 历史 Sprint 身份解析、worktree 安全、provider board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
+| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | worktree 安全、provider board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
 coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/state/coordination-*.ts`）。新的 `coordination-*` 文件自动归入该组件。其他新文件只归入 capability，直到有人把它加入某个组件。
@@ -216,7 +216,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 1. **同步的 Git 与源收集。** `effective-state-authority.md` Consequences 已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.3 第 5 条。
 2. **provider board 的全量读取。** `resolveProviderBoard` 最多采样三次。每次采样，`collectProviderBoardInputs` 读取该仓库的全部 observation 与 refresh receipt，并做一次 session 发现（`src/effects/state/collect-provider-board-inputs.ts:19-43`）。记录数增加时，读成本线性增长。
-3. **`coordination-identity.ts` 约 183 行的纯核心。** 它只从 Sprint 行推导任务身份与 task revision。调用方使用 `TASK_DIGEST_PATTERN`、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds`。文件中没有 owner record codec。每次投影读取全部 Sprint 行，行数增加时成本线性增长。
+3. **`coordination-identity.ts` 只保留 task-id 路径形状。** 任务身份由 GitHub issue/PR 提供。旧 Sprint 行解析、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds` 已删除。
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -232,13 +232,12 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 - **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
-- **continuation-ledger → coordination-plane 回边。** `src/core/state/project-continuation-envelope.ts:45` 导入 `sprint-backlog-rows.ts`。该文件是 Sprint backlog 的纯解析器。候选做法：把它和 `artifact-parsers.ts` 放在一起。
 - **历史 coordination-plane → engineer-scheduling 回边。** [archived sprint-schema-migration.ts](https://github.com/Ancienttwo/repo-harness/blob/65d1d4f1bad4863dd0659f56a9fca8ea8a834667/src/effects/state/sprint-schema-migration.ts) 曾导入 engineers scheduling。#820 已删除该迁移文件。
 - **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** `effective-state-authority.md` 把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。
-- **coordination-plane footprint 用文件名 glob。** 它包含 `src/core/state/sprint-*.ts`、`src/effects/state/coordination-*.ts` 与 `src/core/worktree-*`。新增同名模式的文件自动进入组件。`src/core/state/coordination-identity.ts` 是这个模式下唯一的文件，所以仍是精确路径。
+- **coordination-plane footprint 用文件名 glob。** 它包含 `src/effects/state/coordination-*.ts` 与 `src/core/worktree-*`。新增同名模式的文件自动进入组件。
 - **到 evidence-ledger 的方向（集成决定）。** 本 capability → evidence-ledger 有 28 条边（主要是 `atomic-append.ts`）。evidence-ledger → 本 capability 有 21 条边（`readonly-observation.ts` 与 `artifact-parsers.ts`）。模型声明 coordination-plane、continuation-ledger 与 primary → evidence-ledger。反向记在 evidence-ledger 的 Backlog。#907 把 `atomic-append.ts` 与 `readonly-observation.ts` 移到 execution-primitives。现在 `src/effects/state` 不导入 `src/effects/evidence`；evidence → state 只剩 `src/effects/evidence/recovery-materializer.ts:29` 导入 `resolveHarnessPaths`。这些 relation 需要按新边复审。
 
 ## 2026-10-18: Slice C snapshot boundary

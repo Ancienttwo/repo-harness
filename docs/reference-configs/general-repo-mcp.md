@@ -1,8 +1,7 @@
 # General Repo MCP Reference
 
 Status: General repository API reference
-Source PRD: `plans/prds/20260622-1700-gpt-codegraph.prd.md`
-Source sprint: `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`
+Source PRD: `docs/prds/20260622-1700-gpt-codegraph.prd.md`
 
 This document is the operator and developer reference for the repo-harness MCP
 general repo API. It covers the tool contract, repo administration, privacy
@@ -154,7 +153,7 @@ Create a new file in a write-enabled repo:
 ```json
 {
   "repo_id": "repo_read_write",
-  "path": "tasks/notes/example.notes.md",
+  "path": "docs/researches/example.md",
   "content": "Decision note\n",
   "must_not_exist": true
 }
@@ -165,7 +164,7 @@ Patch an existing file:
 ```json
 {
   "repo_id": "repo_read_write",
-  "path": "tasks/notes/example.notes.md",
+  "path": "docs/researches/example.md",
   "expected_sha256": "8d8fca...",
   "edits": [
     {
@@ -181,8 +180,8 @@ Move a file:
 ```json
 {
   "repo_id": "repo_read_write",
-  "from_path": "tasks/notes/example.notes.md",
-  "to_path": "tasks/notes/example-archived.notes.md",
+  "from_path": "docs/researches/example.md",
+  "to_path": "docs/researches/example-archived.md",
   "expected_sha256": "8d8fca...",
   "must_not_exist": true
 }
@@ -193,7 +192,7 @@ Delete a file:
 ```json
 {
   "repo_id": "repo_read_write",
-  "path": "tasks/notes/example-archived.notes.md",
+  "path": "docs/researches/example-archived.md",
   "expected_sha256": "91a42b..."
 }
 ```
@@ -203,7 +202,7 @@ Refresh CodeGraph after a mutation:
 ```json
 {
   "repo_id": "repo_read_write",
-  "paths": ["tasks/notes/example.notes.md"],
+  "paths": ["docs/researches/example.md"],
   "mutation_id": "mcpmut_..."
 }
 ```

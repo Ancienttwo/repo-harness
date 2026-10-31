@@ -119,7 +119,7 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个必需 PR 的 provider merge commit 都是该候选的祖先（`src/effects/integration/product-acceptance.ts#observeSelectedPullRequest`）。本能力从不构造或排序合并（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md)，PRD `plans/prds/20260824-1653-integration-product-acceptance.prd.md:21`）。
+1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个必需 PR 的 provider merge commit 都是该候选的祖先（`src/effects/integration/product-acceptance.ts#observeSelectedPullRequest`）。本能力从不构造或排序合并（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md)，PRD `docs/prds/20260824-1653-integration-product-acceptance.prd.md:21`）。
 2. **`AcceptanceReceipt` 是唯一的产品裁决。** `ProductAcceptanceProjectionV1` 只验证并引用现有的 protocol-2 receipt。它不能签发、豁免、合并或改变验收状态（notes，PRD `:21`）。
 3. **每个可变读取都绑定确切的字节与摘要。** 范围包括 Approved PRD 与 spec、仓库身份、每个必需 PR 的 provider integration 观察、Git refs 与 tree、matrix 证据与 target revision（notes）。
 4. **必需 PR 观察两次。** Envelope 对 contract 中的每个 `required_pull_requests` 读两次 provider merge commit 与 tree。两次不同时以 `publication_stale` 失败。provider merge tree 必须等于本地 commit 的 tree（`src/effects/integration/product-acceptance.ts:402-457`）。

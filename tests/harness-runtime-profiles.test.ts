@@ -301,8 +301,6 @@ describe('workflow runtime profile risk floor', () => {
 
 describe('workflow-surface path predicate (Phase C2 resolver layer)', () => {
   test.each([
-    'plans/plan-20260101-0000-example.md',
-    'plans/',
     'tasks/todos.md',
     'tasks/contracts/x.contract.md',
     'docs/architecture/index.md',

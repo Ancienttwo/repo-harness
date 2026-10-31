@@ -8,7 +8,7 @@ Optional document: use this template only when the task calls for it. Ordinary w
 
 <!--
 Design brief usage: when the task requests a design brief, save it as
-docs/design/DESIGN-{{SLUG}}.md. Human approval is needed only when the current
+docs/prds/DESIGN-{{SLUG}}.md. Human approval is needed only when the current
 task explicitly selects a design approval step. imagegen-type skills (for
 example `imagegen-frontend-web`, `design-taste-frontend`) may produce the
 Preview Attachment below, but they are optional enhancers, never a substitute

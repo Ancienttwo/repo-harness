@@ -9,7 +9,7 @@ summary: Starts isolated worktrees, ships branch-only PRs and removes only prove
 responsibilities:
   - Start isolated worktrees and sweep merged managed worktrees under the worktree topology lock.
   - Ship a frozen branch candidate to a PR with a durable journal, provider readback and explicit branch recovery.
-  - Keep the protected merge gate and explicit workflow archive helper. Do not run contract finish or local merge commands.
+  - Keep the protected merge gate. Do not run contract finish or local merge commands.
   - Stop checkout architecture daemons and recorded runtime before guarded cleanup.
 source:
   include:
@@ -17,5 +17,4 @@ source:
     - scripts/worktree-merge-lib.sh
     - scripts/ship-worktrees.sh
     - scripts/merge-gate.ts
-    - scripts/archive-workflow.sh
     - scripts/cutover-closure.ts

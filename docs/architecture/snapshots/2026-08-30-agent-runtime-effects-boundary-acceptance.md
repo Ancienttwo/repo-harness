@@ -4,7 +4,7 @@
 > **Accepted**: 2026-08-30T19:18:00+0800
 > **Human Approval**: originating Codex task, 2026-08-30
 > **Request**: `docs/architecture/requests/archive/2026/runtime-harness-provider-thread-effects.md` (Resolved)
-> **PRD**: `plans/prds/20260830-1827-provider-neutral-agent-runtime-adapter.prd.md`
+> **PRD**: `docs/prds/20260830-1827-provider-neutral-agent-runtime-adapter.prd.md`
 > **Plan**: `plans/plan-20260830-1903-r1-provider-neutral-agent-runtime.md`
 
 ## Decision

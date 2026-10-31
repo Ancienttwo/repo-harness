@@ -5,12 +5,10 @@ name: "Workflow Gates"
 status: active
 parent: capability.verification.evals-checks
 layer: "scripts"
-summary: "Shell gates for task sync, task workflow and agent tooling."
+summary: "Shell gates for the workflow contract files and agent tooling."
 responsibilities:
-  - Bind workflow evidence to the substantive diff digest and fail closed on missing evidence.
-  - Check the workflow contract files and agent tooling readiness.
+  - Check the workflow contract files and their required runtime surfaces.
+  - Check agent tooling readiness.
 source:
   include:
-    - "scripts/check-task-workflow.sh"
-    - "scripts/check-task-sync.sh"
     - "scripts/check-agent-tooling.sh"

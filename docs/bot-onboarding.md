@@ -159,7 +159,7 @@ define cleanup ownership.
 
 ## Task artifacts
 
-Follow [Plans lifecycle](plans-lifecycle.md): `plans/` holds open multi-PR
-intent, Issue/PR holds work, PR/CI holds proof, and `tasks/lessons.md` holds
-lessons. Keep todos historical. Do not create notes/reviews/example task trees
-or move expired plans into `plans/archive/`. Contract cleanup is #1114 HOLD.
+Follow [Issue flow](issue-flow.md): the GitHub issue and PR hold task identity,
+claim, dependencies and status; PR and CI hold proof; `docs/prds/` holds product
+intent; `tasks/lessons.md` holds lessons. Do not create plan, sprint, contract,
+notes, review, todo or workstream artifacts.

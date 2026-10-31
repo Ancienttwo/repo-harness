@@ -68,14 +68,6 @@ const FILE_ALLOWLIST: Record<string, string> = {
   // R5: untouchable historical pre-cutover evidence.
   "evals/skill-routing/discovery-baseline.json":
     "frozen pre-cutover discovery baseline (plan Ruling R5)",
-  // SSD-07 phase A (D3): the subject-freeze record's changed_files_since_base
-  // field is the literal `git diff --name-only <base>..HEAD` output, which
-  // legitimately lists deleted paths from the old facade tree (e.g.
-  // assets/skill-commands/repo-harness-init/SKILL.md) as migration diff
-  // evidence -- the same "archival record naming a retired name" category as
-  // discovery-baseline.json above, not a live reference.
-  "evals/skill-routing/final-subject-freeze.json":
-    "SSD-07 subject-freeze changed_files_since_base is git-diff migration evidence, not a live reference",
   // This module doc's own migration-metadata paragraph, documenting the
   // retiredPackages[] mapping for human readers (same justification as the
   // manifest entry above).
