@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b1c7906249a8c82657d21879a12156aec931fb84cd1ba5915666e1ac740ed680" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a16b2994d967ac9a7777df2c9ee9dab27b7953ac4ab31199ad49430190e9a377" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
@@ -91,9 +91,9 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.publication.primary` | PR Readiness and Integration Evidence | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.publication.primary` | PR Readiness and Integration Evidence | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.publication.primary-cli` | PR Readiness and Integration Evidence (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
-| `component.publication.primary-effects` | PR Readiness and Integration Evidence (effects) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.publication.primary-effects` | PR Readiness and Integration Evidence (effects) | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.publication.provider-feedback` | Provider Feedback | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.publication.provider-feedback-core` | Provider Feedback (core) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.publication.pstack-watch-pr-experiment` | Private pstack watcher experiment | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
