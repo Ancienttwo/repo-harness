@@ -207,6 +207,11 @@ describe('agent settings routes', () => {
     expect([promote.status, (await promote.json()).error.code]).toEqual([422, 'docs_isolation_unverified']);
     expect(readFileSync(harness.configPath, 'utf8')).toBe(unchanged);
 
+    // Dropping the stored default's docs use leaves a reachable default_docs_invalid refusal.
+    const orphan = await post(harness, { expected_revision: kept.config_revision, changes: [{ runtime: 'codex', enabled: true, uses: [] }] });
+    expect([orphan.status, (await orphan.json()).error.code]).toEqual([422, 'default_docs_invalid']);
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(unchanged);
+
     const remove = await post(harness, { expected_revision: kept.config_revision, changes: [{ runtime: 'claude', enabled: true, uses: [] }] });
     expect(remove.status).toBe(200);
     const removed = await remove.json();
