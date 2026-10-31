@@ -1,6 +1,6 @@
 import { createHash } from 'crypto';
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync } from 'fs';
-import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
+import { basename, dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import { hashManagedTree, installedCopyTreeOptions, OWNER_MARKER } from '../managed-tree';
 import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
@@ -46,6 +46,8 @@ interface RetirementAction {
   readonly retiredBy?: string;
   readonly cleanupMode?: string;
   readonly paths?: readonly string[];
+  /** Exact-fingerprint removals that are skipped when the directory holds other entries. */
+  readonly onlyWhenSoleEntry?: readonly string[];
   readonly fingerprints?: Readonly<Record<string, string>>;
   readonly historicalFingerprints?: Readonly<Record<string, readonly string[]>>;
   readonly commands?: readonly string[];
@@ -139,6 +141,12 @@ function actionsOf(): readonly RetirementAction[] {
       for (const path of Object.keys(action.fingerprints ?? {})) {
         if (!paths.includes(path)) throw new Error(`fingerprint declared for undeclared migration path ${path}`);
       }
+      for (const path of action.onlyWhenSoleEntry ?? []) {
+        if (!paths.includes(path)) throw new Error(`sole-entry path ${path} is not declared in migration action ${action.id ?? '<unnamed>'}`);
+      }
+    }
+    if ((action.onlyWhenSoleEntry?.length ?? 0) > 0 && (action.action !== 'remove' || action.cleanupMode !== 'exact_fingerprint')) {
+      throw new Error(`sole-entry guard requires an exact-fingerprint remove action: ${action.id ?? '<unnamed>'}`);
     }
     for (const digest of [...Object.values(action.fingerprints ?? {}), ...Object.values(action.historicalFingerprints ?? {}).flat()]) {
       if (!/^sha256:[0-9a-f]{64}$/.test(digest)) throw new Error(`invalid known-generated fingerprint in ${action.id ?? '<unnamed>'}`);
@@ -467,6 +475,17 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   }
 }
 
+/** Fail closed: an unreadable directory counts as user content. */
+function directoryHasOtherEntries(directory: string, ownName: string): boolean {
+  try {
+    // The upgrade holds a per-target lock beside the file while it re-plans.
+    const ownLock = `${ownName}.repo-harness.lock`;
+    return readdirSync(directory).some((name) => name !== ownName && name !== ownLock);
+  } catch {
+    return true;
+  }
+}
+
 /** Read-only inventory. Shipped retirement records define candidates and ownership proof. */
 export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: LeftoverItem[] } {
   const actions = actionsOf();
@@ -499,8 +518,13 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
       const snapshot = legacyPathSnapshot(path);
       if (!snapshot) continue;
       const ownership = classify(path, snapshot, action, contractPath, location === 'global' ? manifest : []);
+      // A placeholder file is removable only when no sibling entry needs its
+      // directory; a populated directory is user content, so it stays reported.
+      const soleEntryBlocked = snapshot.kind === 'file' && (action.onlyWhenSoleEntry ?? []).includes(contractPath)
+        && directoryHasOtherEntries(dirname(path), basename(path));
       add({ ...base, surface: snapshot.kind === 'symlink' ? 'symlink' : snapshot.kind === 'directory' ? (action.surface === 'skill' ? 'skill' : 'directory') : 'file',
-        ...ownership, action: ownership.ownership === 'owned-clean' ? 'remove' : 'report',
+        ...ownership, action: ownership.ownership === 'owned-clean' && !soleEntryBlocked ? 'remove' : 'report',
+        ...(soleEntryBlocked ? { reason: 'Directory contains user files; keep the placeholder and the directory.' } : {}),
         expectedContentHash: snapshot.contentHash, expectedSymlinkTarget: snapshot.symlinkTarget });
     }
   }

@@ -319,6 +319,10 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/workstreams/events.jsonl");
     expect(contract.artifacts.requiredFiles).toContain("docs/reference-configs/external-tooling.md");
+    expect(contract.artifacts.requiredFiles).not.toContain("docs/reference-configs/sprint-contracts.md");
+    expect(contract.artifacts.requiredFiles).not.toContain("docs/reference-configs/handoff-protocol.md");
+    expect(contract.artifacts.requiredDirectories).not.toContain("docs/architecture/domains");
+    expect(contract.artifacts.requiredDirectories).not.toContain("docs/architecture/snapshots");
     expect(contract.migrations.upgrade.strategyVersion).toBe(1);
     expect(contract.migrations.upgrade.safety.removeOnlyOwnership).toBe("known_generated");
     const retiredDrift = contract.migrations.upgrade.actions.find(

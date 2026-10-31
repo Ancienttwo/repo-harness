@@ -364,6 +364,144 @@ describe('upgrade with real release bytes', () => {
     expect(policy.custom_key).toBe(true);
   }));
 
+  const RETIRED_RC_FIXTURE = join(FIXTURES, 'retired-flow-reference-configs');
+  const RETIRED_RC_DOCS = [
+    'handoff-protocol.md', 'workflow-orchestration.md', 'development-protocol.md',
+    'sprint-contracts.md', 'contract-brief-example.md', 'contract-brief-example-bugfix.md',
+  ];
+  const retiredRcPaths = () => [
+    'CLAUDE.md', 'AGENTS.md',
+    ...RETIRED_RC_DOCS.map((name) => `docs/reference-configs/${name}`),
+    'docs/architecture/snapshots/.gitkeep', 'docs/architecture/domains/.gitkeep',
+  ];
+
+  test('retired flow reference configs migrate by exact fingerprint while user edits and populated directories stay', () => sandbox((opts) => {
+    cpSync(RETIRED_RC_FIXTURE, opts.cwd, { recursive: true });
+    const modified = join(opts.cwd, 'docs/reference-configs/sprint-contracts.md');
+    writeFileSync(modified, `${readFileSync(modified, 'utf8')}user edit\n`);
+    put(join(opts.cwd, 'docs/architecture/snapshots/user-note.md'), '# User snapshot\n');
+    const before = tree(opts.cwd);
+    const rootTemplate = readFileSync(join(ROOT, 'assets/templates/root-context.md'), 'utf8');
+
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    for (const name of RETIRED_RC_DOCS.filter((name) => name !== 'sprint-contracts.md')) {
+      expect(check.items.find((item) => item.path === join(opts.cwd, 'docs/reference-configs', name))).toEqual(expect.objectContaining({
+        action: 'remove', ownership: 'owned-clean', proof: 'historical-fingerprint',
+      }));
+    }
+    expect(check.items.find((item) => item.path === modified)).toEqual(expect.objectContaining({
+      action: 'report', ownership: 'unowned', proof: null,
+    }));
+    expect(check.items.find((item) => item.path === join(opts.cwd, 'docs/architecture/snapshots/.gitkeep'))).toEqual(expect.objectContaining({
+      action: 'report', ownership: 'owned-clean', proof: 'historical-fingerprint',
+    }));
+    expect(check.items.find((item) => item.path === join(opts.cwd, 'docs/architecture/domains/.gitkeep'))).toEqual(expect.objectContaining({
+      action: 'remove', ownership: 'owned-clean', proof: 'historical-fingerprint',
+    }));
+    for (const name of ['CLAUDE.md', 'AGENTS.md']) {
+      expect(check.items.find((item) => item.path === join(opts.cwd, name))).toEqual(expect.objectContaining({
+        action: 'refresh', ownership: 'owned-clean', proof: 'historical-fingerprint',
+      }));
+    }
+
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(result.exitCode, result.error).toBe(0);
+    for (const name of RETIRED_RC_DOCS.filter((name) => name !== 'sprint-contracts.md')) {
+      expect(existsSync(join(opts.cwd, 'docs/reference-configs', name))).toBe(false);
+      expect(result.removedPaths).toContain(join(opts.cwd, 'docs/reference-configs', name));
+    }
+    expect(readFileSync(modified, 'utf8')).toContain('user edit');
+    expect(result.removedPaths).not.toContain(modified);
+    expect(existsSync(join(opts.cwd, 'docs/architecture/snapshots/.gitkeep'))).toBe(true);
+    expect(existsSync(join(opts.cwd, 'docs/architecture/domains/.gitkeep'))).toBe(false);
+    expect(readFileSync(join(opts.cwd, 'docs/architecture/snapshots/user-note.md'), 'utf8')).toBe('# User snapshot\n');
+    for (const name of ['CLAUDE.md', 'AGENTS.md']) {
+      expect(readFileSync(join(opts.cwd, name), 'utf8')).toBe(rootTemplate);
+      expect(result.refreshedPaths).toContain(join(opts.cwd, name));
+    }
+
+    // The one transaction restores every touched path to its original bytes.
+    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
+    expect(rollback.ok, JSON.stringify(rollback.results)).toBe(true);
+    const afterRollback = tree(opts.cwd);
+    for (const path of retiredRcPaths().concat(['docs/architecture/snapshots/user-note.md'])) {
+      expect(afterRollback[path], path).toBe(before[path]);
+    }
+  }));
+
+  test('every byte-identical retired reference config is removed once and the migration is idempotent', () => sandbox((opts) => {
+    cpSync(RETIRED_RC_FIXTURE, opts.cwd, { recursive: true });
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(result.exitCode, result.error).toBe(0);
+    for (const path of retiredRcPaths()) {
+      expect(result.removedPaths.includes(join(opts.cwd, path)) || result.refreshedPaths.includes(join(opts.cwd, path)), path).toBe(true);
+      if (path.endsWith('.md') && path.includes('reference-configs')) expect(existsSync(join(opts.cwd, path)), path).toBe(false);
+    }
+    for (const path of ['docs/architecture/snapshots/.gitkeep', 'docs/architecture/domains/.gitkeep']) {
+      expect(existsSync(join(opts.cwd, path))).toBe(false);
+    }
+    const before = tree(opts.cwd);
+    const second = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(second.exitCode).toBe(0);
+    expect(second.removedPaths).toEqual([]);
+    expect(second.refreshedPaths).toEqual([]);
+    expect(tree(opts.cwd)).toEqual(before);
+  }));
+
+  test('an injected migration failure restores every original byte and leaves a usable rollback manifest', () => sandbox((opts) => {
+    cpSync(RETIRED_RC_FIXTURE, opts.cwd, { recursive: true });
+    const before = tree(opts.cwd);
+    let calls = 0;
+    const result = runUpgrade({ ...opts, scope: 'project', apply: true }, { beforeRemove() {
+      calls += 1;
+      if (calls === 3) throw new Error('injected migration failure');
+    } });
+    expect(calls).toBe(3);
+    expect(result.exitCode).toBe(1);
+    expect(result.error).toContain('injected migration failure');
+    const afterFailure = tree(opts.cwd);
+    for (const path of retiredRcPaths()) expect(afterFailure[path], path).toBe(before[path]);
+    const rollback = rollbackAdoptionTransaction({ repoRoot: opts.cwd, transaction: relative(opts.cwd, result.projectBackupPath!) });
+    expect(rollback.ok, JSON.stringify(rollback.results)).toBe(true);
+    const afterRollback = tree(opts.cwd);
+    for (const path of retiredRcPaths()) expect(afterRollback[path], path).toBe(before[path]);
+  }));
+
+  test('minimal mode removes and reports the retired policy keys like standard mode', () => sandbox((opts) => {
+    put(join(opts.cwd, '.ai/harness/policy.json'), JSON.stringify({
+      plan_capture: { script: 'repo-harness run capture-plan' },
+      planning: { pending_orchestration_file: '.ai/harness/planning/pending.json', source_of_truth: 'plans/ and .ai/harness/active-plan remain authoritative' },
+      guards: { edit_plan_gate: 'enforce', edit_plan_gate_modes: ['enforce', 'advice', 'off'], rule: 'the mutation-guard handler blocks implementation edits' },
+      active_plan: { directory: 'plans' },
+      tasks: { current_status_file: 'tasks/current.md', workstreams_dir: 'tasks/workstreams', lessons_file: 'tasks/lessons.md' },
+      custom_key: true,
+    }, null, 2));
+    const result = runAdoptionApply({ repo: opts.cwd, mode: 'minimal', env: { HOME: opts.home } });
+    expect(result.exitCode, result.output).toBe(0);
+    const warnings = (result.report.plan as { warnings: { code: string; message: string }[] }).warnings;
+    expect(warnings).toContainEqual(expect.objectContaining({
+      code: 'retired-policy-keys',
+      message: 'Removed retired harness policy keys: active_plan, plan_capture, tasks.current_status_file, tasks.workstreams_dir, guards.edit_plan_gate, guards.edit_plan_gate_modes, guards.rule, planning.source_of_truth',
+    }));
+    const policy = JSON.parse(readFileSync(join(opts.cwd, '.ai/harness/policy.json'), 'utf8'));
+    expect(policy.active_plan).toBeUndefined();
+    expect(policy.plan_capture).toBeUndefined();
+    expect(policy.tasks.current_status_file).toBeUndefined();
+    expect(policy.tasks.workstreams_dir).toBeUndefined();
+    expect(policy.tasks.lessons_file).toBe('tasks/lessons.md');
+    expect(policy.guards).toBeUndefined();
+    expect(policy.planning.source_of_truth).toBeUndefined();
+    expect(policy.planning.pending_orchestration_file).toBe('.ai/harness/planning/pending.json');
+    expect(policy.custom_key).toBe(true);
+  }));
+
+  test('minimal init creates no policy file when the repository has none', () => sandbox((opts) => {
+    expect(existsSync(join(opts.cwd, '.ai/harness/policy.json'))).toBe(false);
+    const result = runAdoptionApply({ repo: opts.cwd, mode: 'minimal', env: { HOME: opts.home } });
+    expect(result.exitCode, result.output).toBe(0);
+    expect(existsSync(join(opts.cwd, '.ai/harness/policy.json'))).toBe(false);
+  }));
+
   test('minimal project mode cleans real retired bytes and the source checkout stays a no-op', () => sandbox((opts) => {
     put(join(opts.cwd, '.ai/harness/policy.json'), '{"mode":"minimal"}\n');
     const result = runUpgrade({ ...opts, scope: 'project', apply: true });
