@@ -255,11 +255,8 @@ describe("init command", () => {
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
     const home = join(tmp, "home");
-    // Init owns the registry entry. The verify step's handoff refresh writes the
-    // policy's global Codex packet (`global_handoff_dir`); that projection
-    // belongs to the recovery materializer, not to the install transaction.
+    // Init owns the registry entry and no host handoff projection.
     const registry = join(home, ".repo-harness", "registered-repos.json");
-    const handoffPackets = join(home, ".codex", "handoffs");
     try {
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
@@ -296,9 +293,7 @@ describe("init command", () => {
         detail: "missing for claude,codex; run: repo-harness update --target both",
       });
       const after = snapshotTree(home);
-      expect(Object.keys(after).filter((path) =>
-        path !== registry && path !== handoffPackets && dirname(path) !== handoffPackets))
-        .toEqual(Object.keys(before));
+      expect(Object.keys(after).filter((path) => path !== registry)).toEqual(Object.keys(before));
       for (const [path, entry] of Object.entries(before)) expect(after[path]).toBe(entry);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -402,7 +397,7 @@ describe("init command", () => {
     }
   });
 
-  test("runInit refreshes Codex handoff and checks context without a plan file", () => {
+  test("runInit creates no handoff files and checks context without a plan file", () => {
     const tmp = join(tmpdir(), `repo-harness-init-handoff-${Date.now()}`);
     const source = join(tmp, "source");
     const repo = join(tmp, "repo");
@@ -422,12 +417,13 @@ describe("init command", () => {
       });
 
       expect(result.exitCode).toBe(0);
-      expect(result.steps.find((step) => step.step === "refresh handoff packet")?.status).toBe("ok");
+      expect(result.steps.find((step) => step.step === "refresh handoff packet")).toBeUndefined();
       expect(result.steps.find((step) => step.step === "verify repo harness")?.status).toBe("ok");
       expect(result.steps.find((step) => step.step === "verify repo harness")?.detail).toBe("repo-harness run check-context-files");
       expect(existsSync(join(repo, ".ai", "harness", "active-plan"))).toBe(false);
-      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "current.md"), "utf-8")).toContain("repo-harness-init-verify");
-      expect(readFileSync(join(repo, ".ai", "harness", "handoff", "resume.md"), "utf-8")).toContain("Codex Resume Packet");
+      expect(existsSync(join(repo, ".ai", "harness", "handoff"))).toBe(false);
+      expect(existsSync(join(repo, ".ai", "harness", "handoff", "current.md"))).toBe(false);
+      expect(existsSync(join(repo, ".ai", "harness", "handoff", "resume.md"))).toBe(false);
     } finally {
       process.chdir(previousCwd);
       rmSync(tmp, { recursive: true, force: true });

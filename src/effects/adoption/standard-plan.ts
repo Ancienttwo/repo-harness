@@ -28,7 +28,6 @@ const STANDARD_DIRS = [
   "docs/architecture/diagrams",
   ".ai/context",
   ".ai/harness/checks",
-  ".ai/harness/handoff",
   ".ai/harness/failures",
   ".ai/harness/security",
   ".ai/harness/planning",
@@ -54,12 +53,9 @@ const MINIMAL_DIRS = [
   "tasks",
   "docs",
   ".ai/harness/checks",
-  ".ai/harness/handoff",
 ] as const;
 
 const STATE_FILES: ReadonlyArray<{ path: string; content: string }> = [
-  { path: ".ai/harness/handoff/current.md", content: "# Harness Handoff\n\n> **Reason**: bootstrap\n" },
-  { path: ".ai/harness/handoff/resume.md", content: "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" },
   { path: ".ai/context/capability-source-map.json", content: '{\n  "version": 1,\n  "capabilities": {}\n}\n' },
   { path: ".ai/harness/events.jsonl", content: "" },
   { path: ".ai/harness/failures/latest.jsonl", content: "" },
@@ -267,7 +263,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
     },
     harness: {
       policy_file: ".ai/harness/policy.json",
-      handoff_file: ".ai/harness/handoff/current.md",
       helper_runtime_dir: "package:scripts",
       helper_source: "package",
     },
