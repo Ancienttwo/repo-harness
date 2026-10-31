@@ -159,6 +159,7 @@ export function projectStackRow(f: Fixture) {
     review_decision: f.pr.reviewDecision, unresolved_thread_count: f.threads.filter(t => !t.isResolved).length,
     rollback_boundary: { status: 'not_active' }, checks: f.checks as ProviderMergeReadinessFactsV1['checks'],
     check_failures: [],
+    required_check_coverage: { status: 'absent' },
     mergeable: f.pr.mergeable as ProviderMergeReadinessFactsV1['mergeable'],
   };
   return projectPullRequestMergeReadiness({ expected_head_sha: f.expectedHead, expected_base_sha: f.expectedBase,
