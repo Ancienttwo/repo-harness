@@ -140,7 +140,6 @@ or refreshed. It never creates an application stack; new projects and modules us
 
 ```bash
 repo-harness init
-bash scripts/check-task-workflow.sh
 bun test
 ```
 
@@ -475,10 +474,9 @@ shards arrive. Diff mode requires both `--base <rev>` and `--head <rev>`.
 ## MCP Connector
 
 As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP
-clients through the default `planner` profile. ChatGPT reads real repo state and
-moves an idea through PRD, checklist Sprint, and task goal handoff artifacts —
-with no default source-code write access, arbitrary shell execution, or default
-runner. The task owner directs an explicitly addressed Herdr agent to execute the task goal.
+clients through the default `planner` profile. ChatGPT reads real repo state,
+writes PRDs under `docs/prds/`, and reads the linked GitHub issue — with no
+default source-code write access, arbitrary shell execution, or default runner. The task owner directs an explicitly addressed Herdr agent to execute the task goal.
 
 ```bash
 repo-harness mcp setup chatgpt --repo .

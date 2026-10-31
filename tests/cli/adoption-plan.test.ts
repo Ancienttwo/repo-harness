@@ -105,7 +105,6 @@ describe("canonical adoption plan", () => {
     try {
       writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture", scripts: {
         test: "bun test",
-        "check:task-workflow": "repo-harness run check-task-workflow --strict",
       } }, null, 2));
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
 
@@ -121,7 +120,7 @@ describe("canonical adoption plan", () => {
       const scripts = JSON.parse(readFileSync(join(repo, "package.json"), "utf-8")).scripts;
       expect(scripts["check:task-workflow"]).toBeUndefined();
       expect(scripts.test).toBe("bun test");
-      expect(scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
+      expect(scripts["check:task-sync"]).toBeUndefined();
       for (const name of ["AGENTS.md", "CLAUDE.md"]) {
         const context = readFileSync(join(repo, name), "utf-8");
         expect(context).toContain("Write a plan before cross-module changes, architecture changes, and dependency upgrades. Small changes do not need a plan.");

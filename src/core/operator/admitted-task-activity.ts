@@ -1,7 +1,7 @@
 import type { TaskMessageEventV2, TaskMessageDeliveryReceiptV2 } from '../fleet/admitted-task-message';
 import { isAdmittedSessionSelector, SESSION_SELECTOR_KEYS, type AdmittedSessionSelector } from '../sessions/session-selector';
 import { parseTaskDiffRequest } from './task-diff';
-import { isTaskActivityRequest, parseTaskActivityRequest, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN, type OperatorTaskActivity } from './task-activity';
+import { isTaskActivityRequest, parseTaskActivityRequest, TASK_ACTIVITY_MAX_BYTES, TASK_ACTIVITY_MAX_OUTPUT_BYTES, TASK_ACTIVITY_MAX_SCAN, type TaskActivityCoverage } from './task-activity';
 
 export interface AdmittedTaskActivityRequest {
   readonly selector: AdmittedSessionSelector;
@@ -20,7 +20,7 @@ export interface AdmittedTaskActivity extends AdmittedTaskActivityRequest {
   readonly observed_at: string;
   readonly consistency: 'observed';
   readonly entries: readonly AdmittedActivityEntry[];
-  readonly coverage: OperatorTaskActivity['coverage'];
+  readonly coverage: TaskActivityCoverage;
   readonly next_cursor: string | null;
 }
 const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && Object.keys(v).every(k => keys.includes(k));

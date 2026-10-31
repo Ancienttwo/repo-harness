@@ -29,5 +29,4 @@ Installs and runs typed Claude, Codex and Pi host hook routes.
 - `bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts`
 - `bun run test:files tests/cli/route-registry.test.ts tests/stop-handler.test.ts tests/cli/install.test.ts tests/cli/status.test.ts tests/cli/security.test.ts tests/cli/hook.test.ts tests/hook-protocol.test.ts --timeout 60000 --max-concurrency 1`
 - `bun run test:files tests/pi-extension.test.ts tests/pi-compat.test.ts tests/cli/pi-install.test.ts --timeout 60000 --max-concurrency 1`
-- `bash scripts/check-task-workflow.sh`
 <!-- END CAPABILITY CONTEXT -->

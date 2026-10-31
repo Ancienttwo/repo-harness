@@ -35,7 +35,7 @@ import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { createHash, randomUUID } from 'node:crypto';
 import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
 import { Worker as ObservationWorker } from 'node:worker_threads';
-import { decodeOperatorTaskActivity, parseTaskActivityRequest, TASK_ACTIVITY_FAILURES, type OperatorTaskActivityRequest, type OperatorTaskActivity } from '../../core/operator/task-activity';
+import { TASK_ACTIVITY_FAILURES } from '../../core/operator/task-activity';
 import { decodeOperatorTaskDiff, parseTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from './doc-session-changes';
@@ -99,7 +99,6 @@ export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
 export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/context$/u;
 export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/activity$/u;
-export const OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/tasks\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/([0-9a-f]{64})\/history\/activity$/u;
 export const OPERATOR_TASK_SESSIONS_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
 export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/diff$/u;
 /**
@@ -146,7 +145,6 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
     write: false,
   }),
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
-  Object.freeze({ id: 'historical_task_activity', method: 'GET', pattern: OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_sessions', method: 'GET', pattern: OPERATOR_TASK_SESSIONS_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
@@ -201,7 +199,6 @@ export interface OperatorServerOptions {
   readonly runtime_status_config?: string;
   readonly read_task_context?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<AdmittedTaskContext>;
   readonly read_admitted_task_activity?: (input: AdmittedTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskActivity>;
-  readonly read_task_activity?: (input: OperatorTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<OperatorTaskActivity>;
   readonly read_task_sessions?: (input: AdmittedTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskSessions>;
   readonly read_task_diff?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   /** Notify cache reader. GET notify_status and the Bot access collector read only this cache; neither runs Herdr. */
@@ -2011,16 +2008,6 @@ export async function startOperatorServer(
         'admitted_activity',options.read_admitted_task_activity);
       return;
     }
-    const activityRoute = OPERATOR_HISTORICAL_TASK_ACTIVITY_ROUTE.exec(pathname);
-    if (activityRoute !== null) {
-      let input: OperatorTaskActivityRequest;
-      try { input = parseTaskActivityRequest(activityRoute[1]!,activityRoute[2]!,url.searchParams); }
-      catch { sendRefusal(request,response,400,errorBody('invalid_request','Invalid activity selector.'),headOnly); return; }
-      handleBoundedTaskRead(response,headOnly,input,decodeOperatorTaskActivity,TASK_ACTIVITY_FAILURES,
-        'activity',options.read_task_activity);
-      return;
-    }
-
     const sessionsRoute = OPERATOR_TASK_SESSIONS_ROUTE.exec(pathname);
     if (sessionsRoute !== null) {
       const input = { repository_id: sessionsRoute[1]! };
