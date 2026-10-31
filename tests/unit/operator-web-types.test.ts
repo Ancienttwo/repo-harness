@@ -194,10 +194,17 @@ describe('operator browser payload contracts', () => {
       blockers: [{ code: 'required_check_coverage_missing', attention_owner: 'agent', detail }],
       check_failures: [],
       required_check_coverage: coverage,
+      stack: { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' as const },
     };
     const card = decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: readiness })).repositories[0]!.cards[0]!;
     expect(card.merge_readiness?.blockers[0]?.detail).toBe(detail);
     expect(card.merge_readiness?.required_check_coverage).toEqual(coverage);
+    expect(card.merge_readiness?.stack).toEqual(readiness.stack);
+
+    // The stack detail is closed: a non-zero depth with no chain is not a document.
+    expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: {
+      ...readiness, stack: { ...readiness.stack, depth: 1 },
+    } }))).toThrow(OperatorPayloadError);
 
     // A detail on a blocker that has no action text is not a valid document.
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: {

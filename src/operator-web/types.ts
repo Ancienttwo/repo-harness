@@ -282,9 +282,18 @@ const MERGE_BLOCKERS = [
   'already_integrated',
   'required_check_coverage_missing',
   'required_check_coverage_policy_invalid',
+  'stack_member',
+  'stack_depth_exceeded',
+  'stack_cycle',
+  'stack_base_pr_missing',
+  'stack_base_pr_not_open',
+  'stack_foreign_pr',
 ] as const;
 const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;
 const MERGE_INTEGRATION_MODES = ['unmerged', 'ancestor', 'absorbed', 'unavailable'] as const;
+const MERGE_STACK_STATUSES = [
+  'not_member', 'complete', 'depth_exceeded', 'cycle', 'base_pr_missing', 'base_pr_not_open', 'foreign_pr', 'unobserved',
+] as const;
 const SHA256_PATTERN = /^sha256:[0-9a-f]{64}$/u;
 const GIT_OID_PATTERN = /^[0-9a-f]{40}(?:[0-9a-f]{24})?$/u;
 // Keep these transport-side checks byte-for-byte aligned with the canonical
@@ -371,12 +380,45 @@ function decodeError(value: unknown): OperatorFleetRepositoryV1['error'] {
   return Object.freeze({ code: error.code, message: error.message });
 }
 
+function decodeStack(value: unknown): NonNullable<OperatorFleetCardV1['merge_readiness']>['stack'] {
+  const stack = requireRecord(value);
+  requireExactKeys(stack, ['member', 'depth', 'chain', 'final_base_sha', 'status']);
+  const member = requireBoolean(stack.member);
+  const depth = requireNonNegativeInteger(stack.depth);
+  const status = requireOneOf(stack.status, MERGE_STACK_STATUSES);
+  const finalBaseSha = stack.final_base_sha === null ? null : requireGitOid(stack.final_base_sha);
+  const chain = requireArray(stack.chain).map((entryValue) => {
+    const entry = requireRecord(entryValue);
+    requireExactKeys(entry, ['pr_number', 'head_ref', 'head_sha', 'base_ref', 'base_sha']);
+    return Object.freeze({
+      pr_number: requirePositiveInteger(entry.pr_number),
+      head_ref: requireString(entry.head_ref),
+      head_sha: requireGitOid(entry.head_sha),
+      base_ref: requireString(entry.base_ref),
+      base_sha: requireGitOid(entry.base_sha),
+    });
+  });
+  if (!member) {
+    if ((status !== 'not_member' && status !== 'unobserved') || depth !== 0 || chain.length !== 0 || finalBaseSha !== null) {
+      throw new OperatorPayloadError();
+    }
+  } else if (status === 'not_member' || status === 'unobserved' || chain.length === 0 || depth !== chain.length - 1) {
+    throw new OperatorPayloadError();
+  }
+  if (status === 'complete') {
+    if (depth < 1 || finalBaseSha === null || finalBaseSha !== chain[chain.length - 1]!.base_sha) throw new OperatorPayloadError();
+  } else if (finalBaseSha !== null) {
+    throw new OperatorPayloadError();
+  }
+  return Object.freeze({ member, depth, chain: Object.freeze(chain), final_base_sha: finalBaseSha, status });
+}
+
 function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readiness'] {
   if (value === null) return null;
   const readiness = requireRecord(value);
   requireExactKeys(readiness, ['protocol', 'kind', 'provider_repository_id', 'repository', 'pr_number', 'ready',
     'expected_head_sha', 'expected_base_sha', 'integration_mode', 'attention_owner', 'blockers', 'check_failures',
-    'required_check_coverage']);
+    'required_check_coverage', 'stack']);
   if (readiness.protocol !== 2 || readiness.kind !== 'repo-harness-pull-request-readiness') throw new OperatorPayloadError();
   const repositoryId = requireString(readiness.provider_repository_id);
   const repository = requireString(readiness.repository);
@@ -421,6 +463,7 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
     blockers: Object.freeze(blockers),
     check_failures: Object.freeze(checkFailures),
     required_check_coverage: requiredCheckCoverage,
+    stack: decodeStack(readiness.stack),
   });
 }
 
