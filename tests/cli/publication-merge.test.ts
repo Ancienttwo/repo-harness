@@ -26,19 +26,28 @@ import {
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+const OTHER_COMMIT = 'd'.repeat(40);
 const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-publication-merge-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
-function mergeInProcess(scenario: PublicationMergeScenario) {
+interface MergeInProcessOptions {
+  /** Internal seam: no real wait during the bounded readback window. */
+  readonly readbackWait?: (milliseconds: number) => void;
+}
+
+function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
   const calls: string[][] = [];
+  let readbacks = 0;
   const result = executePublicationMerge({
     repo_root: scratch, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
     expected_head_sha: HEAD, expected_base_sha: BASE,
     gh_runner: (args) => {
       calls.push([...args]);
-      const response = fakeGhResponse(args, scenario);
+      const prReadback = args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`;
+      const response = fakeGhResponse(args, scenario, prReadback ? readbacks++ : 0);
       return { status: response.status as number, stdout: response.stdout, stderr: response.stderr };
     },
+    ...(options.readbackWait ? { readback_wait: options.readbackWait } : {}),
   });
   return { result, calls, mutations: calls.filter(isMergeMutation) };
 }
@@ -219,6 +228,14 @@ describe('publication merge execution', () => {
     expect(graphqlVariable(run.mutations[0]!, 'expectedHeadOid')).toBe(HEAD);
   }, 120_000);
 
+  test('the CLI returns the merge document after a stale first readback', () => {
+    const run = mergeCli(passingScenario({ readbackSequence: ['open', 'merged'] }));
+    expect(run.status).toBe(0);
+    expect(run.document).toMatchObject({ merge_commit_sha: MERGE_COMMIT, parent_sha: BASE });
+    expect(run.mutations).toHaveLength(1);
+    expect(run.calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(2);
+  }, 120_000);
+
   test('the CLI exits 3 for an off switch without a mutation', () => {
     const run = mergeCli(passingScenario({ policyBase: policy({ publication: { acceptance_merge: 'off' } }) }));
     expect(run.status).toBe(3);
@@ -292,8 +309,36 @@ describe('publication merge execution', () => {
   }, 120_000);
 
   test('a merge commit whose single parent is not the expected base exits 5', () => {
-    const { result, mutations } = mergeInProcess(passingScenario({ parents: ['d'.repeat(40)] }));
+    const { result, mutations } = mergeInProcess(passingScenario({ parents: [OTHER_COMMIT] }));
     expect(result.document).toMatchObject({ ok: false, exit_code: 5, error: 'merge_outcome_unknown' });
     expect(mutations).toHaveLength(1);
+  });
+
+  test('a successful squash with a late PR readback is proven within the bounded window', () => {
+    const { result, calls, mutations } = mergeInProcess(passingScenario({ readbackSequence: ['open', 'merged'] }), { readbackWait: () => {} });
+    expect(result.exit_code).toBe(0);
+    expect(result.document).toMatchObject({ merge_commit_sha: MERGE_COMMIT, parent_sha: BASE });
+    expect(mutations).toHaveLength(1);
+    expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(2);
+  });
+
+  test('a readback that never shows the merge exits 5 with not-merged evidence', () => {
+    const { result, calls, mutations } = mergeInProcess(passingScenario({ readbackSequence: ['open'] }), { readbackWait: () => {} });
+    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain('state=open');
+    expect(failureOf(result).message).toContain('merged=false');
+    expect(failureOf(result).message).toContain('did not confirm the merge');
+    expect(mutations).toHaveLength(1);
+    const readbacks = calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`);
+    expect(readbacks.length).toBeGreaterThan(1);
+    expect(readbacks.length).toBeLessThanOrEqual(13);
+  });
+
+  test('a readback that shows a different merged SHA exits 5 with that SHA and the response SHA', () => {
+    const { result, calls } = mergeInProcess(passingScenario({ readbackMergeSha: OTHER_COMMIT }), { readbackWait: () => {} });
+    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(`merged at ${OTHER_COMMIT}`);
+    expect(failureOf(result).message).toContain(`merge response reported ${MERGE_COMMIT}`);
+    expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(1);
   });
 });
