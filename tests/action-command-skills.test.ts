@@ -579,7 +579,13 @@ describe("repo-harness action command skills", () => {
       expect(board).toContain("`" + kind + "`");
     }
     expect(board).toContain("only when the coordinator confirms it");
-    expect(board).toContain("Coordinator: none");
+    // `issue claim` is seat-only and the coordinator posts it for each
+    // dispatched worker. The no-coordinator self-claim rule is deleted, so
+    // the board must no longer offer `Coordinator: none`.
+    expect(board).toContain("A claim from anyone else is a request");
+    expect(board).toContain("`author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`");
+    expect(board).not.toContain("Coordinator: none");
+    expect(board).not.toContain("No coordinator on the parent");
     expect(board).toContain("Status: released");
     expect(board).toContain("Prior claim");
     expect(board).toContain("read back");
@@ -594,9 +600,14 @@ describe("repo-harness action command skills", () => {
     for (const field of ["repo-harness plan", "Coordinator:", "Baseline: main@<sha>", "Waves:", "Merge order:", "Blocked:", "Supersedes:"]) {
       expect(templates).toContain(field);
     }
-    for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:", "Coordinator: none"]) {
+    for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {
       expect(templates).toContain(field);
     }
+    // The claim note now names the coordinator as the only poster and
+    // repeats the write-access rule. `Coordinator:` is a required link to
+    // the coordinator's own claim, so the template no longer offers "none".
+    expect(templates).toContain("The coordinator posts it, including the");
+    expect(templates).not.toContain("Coordinator: none");
     for (const status of ["unclaimed", "unclaimed · waits for #n", "writer <agent> · active", "writer <agent> · PR #p", "merged", "待认领", "待认领 · 等待 #n 合并"]) {
       expect(templates).toContain(status);
     }
@@ -617,7 +628,11 @@ describe("repo-harness action command skills", () => {
     expect(orchestrator).not.toContain("a Claude session");
 
     expect(worker).toContain("Read the parent too");
-    expect(worker).toContain("Coordinator: none");
+    // The worker reads the coordinator-posted claim and never posts its own.
+    expect(worker).toContain("The coordinator claims the seat for you");
+    expect(worker).toContain("Do not post a claim of your own");
+    expect(worker).toContain("Without a claim that names you, do not start");
+    expect(worker).not.toContain("Coordinator: none");
     expect(worker).toContain("Status: released");
     expect(worker).toContain("Read the claim back");
 

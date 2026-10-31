@@ -31,18 +31,22 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 
 ## 2. Claim
 
-1. Post one `issue claim` with every required field: `Status`, `Seat`,
-   `Agent`, `Branch`, `Scope` and `Not in scope`. Add `Slot:` for a PR
-   slot and `Prior claim:` for a handoff. Write `Coordinator: none` when
-   the parent has no coordinator and the issue has no open dependency.
-   Use one stable identity (agent kind plus session or task ID) in all
-   later comments.
+1. The coordinator claims the seat for you before it dispatches you. Find
+   the `issue claim` for your issue or slot. Its `Agent:` names you, and
+   its `Branch:` matches the branch in your dispatch packet. Check the
+   fields: `Seat`, `Agent`, `Branch`, `Scope`, `Not in scope` and the
+   `Coordinator:` link to the coordinator's own claim. Use the identity
+   in that claim in all later comments. Do not post a claim of your own.
 2. Read the claim back. Confirm its URL and every field. A claim that
    misses a field is invalid: post `issue claim status` with
-   `Status: released`, then one complete claim. An invalid claim holds no
-   seat, so do not start work on it.
+   `Status: released`, name the missing fields to the coordinator
+   (`To: coordinator`), then wait for one complete claim. An invalid claim
+   holds no seat, so do not start work on it.
 3. Stop when the read or the post is uncertain, and report the failure.
    Read back before a retry.
+
+Without a claim that names you, do not start. Report to the coordinator
+with a `To: coordinator` comment on the issue, and wait for its claim.
 
 Then create the worktree:
 
