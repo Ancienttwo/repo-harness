@@ -2,13 +2,17 @@
 
 ## Scope and authority
 
-- Base: `9205bf541d5ac6aa65f1b318523b9694586157eb` (#1242, Windows tripwire skip) on
-  `origin/main`. Its parent is `280fcbcaf9be54b96ea32b51f5788de58905971a`
-  (#1209, architecture refresh).
+- Publish candidate: `30bca275e0fc8d58bebced78b5a98133da9a0fac` on
+  `origin/main` (#1291, archimap refresh).
 - Previous release: 0.24.3 on npm and in Git. Tag `v0.24.3`, annotated tag
   object `357673f5fd4e0686c59866496b573a22c5d4eacb`, target
   `bd3a40bd5c874a20c55916238f120e7cd884ca75` (#976).
-- Merged range: `v0.24.3..9205bf54`; 142 commits. Each subject ends with a PR number.
+- Merged range: `v0.24.3..30bca275`; 178 commits
+  (`git rev-list --count v0.24.3..30bca275`). Each subject ends with a PR
+  number.
+- This record covers `30bca275`. PR #1290 (lessons evidence) is open at
+  record time. If #1290 merges before publish, sync `origin/main`, update
+  the candidate and the range, and re-run the count.
 - The npm package goes from 0.24.3 to 0.25.0. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.0.
@@ -28,8 +32,19 @@ The owner runs `npm publish`; the agent does not publish.
   (#1177-#1184, #1225).
 - Architecture: the issue/PR architecture map is added and the generated
   outputs are refreshed (#1184, #1209).
-- DSH plugin: the plugin is built by `prepack` and included in the package
-  (#1206).
+- IPDD single source: the issue-flow skill is the only flow source (#1223);
+  the root rules are cross-layer invariants only (#1226); the duplicated flow
+  reference docs are retired (#1227); the handoff session recovery is retired
+  (#1228); init and update ship the IPDD root context and migrate the retired
+  copies (#1229); only the coordinator posts claims (#1278); review has one
+  hazard list and a High tier on a hit (#1274); CI repair issues are keyed by
+  the failing test identity (#1275); research and durable decisions have one
+  home (#1250); the fleet known-gaps table is recorded (#1272); publication
+  regenerates generated artifacts and its P1 fix requires the result on the PR
+  head (#1257, #1288); the archimap is refreshed (#1291).
+- DSH plugin: the package ships `dist/dsh-plugin.js` and
+  `cordis.patch.yml`; `prepack` builds the plugin. Registry install
+  verification and release-note claims are deferred (#1206).
 - `contract-worktree start` and `cleanup` use one branch metadata source
   (#1230).
 
@@ -42,15 +57,22 @@ The owner runs `npm publish`; the agent does not publish.
 - Remove local `check:task-*` scripts. The upgrade removes the exact legacy
   `repo-harness run check-task-workflow --strict` entry and does not seed
   `check:task-sync`.
-- Downstream root context and reference-configs migration is #1229; this
-  release does not claim it.
+- `repo-harness update` applies the IPDD root-context and reference-config
+  migration (#1229). It writes `CLAUDE.md` and `AGENTS.md` from
+  `assets/templates/root-context.md` only when their bytes match a shipped
+  generated version. It removes the six retired flow reference docs and the
+  empty `docs/architecture/domains` and `docs/architecture/snapshots`
+  placeholders. A modified file is kept and reported.
+- The Stop hook no longer writes, and Effective State no longer reads,
+  `.ai/harness/handoff/current.md` and `resume.md` (#1228). Resume from Git
+  state, the GitHub issue and the PR.
 
 ## Hosted daily CI
 
 - Dispatch: `gh workflow run ci.yml --repo Ancienttwo/repo-harness --ref main`
-  at 2026-10-31T04:58:02Z on `9205bf54`.
-- Run 41170680746. Result: pending at release-preparation time; fill in before
-  publishing.
+  at 2026-10-31T18:58:10Z on `30bca275`.
+- Run 41231939960. Status at record time: in progress. Recorded from run
+  41231939960.
 - Daily jobs must include Daily architecture freshness and both MCP path
   matrices. PR-only jobs are skipped by design in daily mode.
 
@@ -69,6 +91,11 @@ The owner runs `npm publish`; the agent does not publish.
 
 - Owner command: `npm publish` from the release branch after the release PR
   merges.
-- Then verify the published tarball for #1206 and run the #987 local upgrade
-  test from 0.24.3.
-- Record the npm version, the Git tag, and the published tarball digest here.
+- Run the #987 local upgrade test from 0.24.3. Registry install verification
+  and release-note claims for the DSH plugin are deferred (#1206).
+- The owner records the npm version, the Git tag, and the published tarball
+  digest here. This record does not state a publish SHA or digest.
+
+  - npm version: (owner)
+  - Git tag: (owner)
+  - published tarball digest: (owner)
