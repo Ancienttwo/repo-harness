@@ -70,6 +70,8 @@ export interface RequiredCheckJobLinkV1 {
 export interface RequiredCheckFailurePointV1 extends RequiredCheckJobLinkV1 {
   /** Steps that reported a failed conclusion in this job. Empty is legal. */
   readonly steps: readonly string[];
+  /** Failed test/child identifiers from provider annotations. Empty is legal. */
+  readonly tests: readonly string[];
   readonly shape: RequiredCheckFailureShape;
   readonly logs_available: boolean;
   /** Provider annotation text when the job published any; never invented. */
@@ -197,39 +199,30 @@ function scope(value: unknown, label: string): RequiredCheckScopeV1 {
   });
 }
 
+function oneOf<T extends string>(value: unknown, choices: readonly T[], label: string): T {
+  // A JSON array such as ["timeout"] must not pass through String() coercion.
+  if (typeof value !== 'string' || !(choices as readonly string[]).includes(value)) fail(`${label} is invalid`);
+  return value as T;
+}
+
 function attemptConclusion(value: unknown, label: string): RequiredCheckAttemptConclusion {
-  if (!['success', 'failure', 'timed_out', 'cancelled', 'skipped', 'unknown'].includes(String(value))) {
-    fail(`${label} is invalid`);
-  }
-  return value as RequiredCheckAttemptConclusion;
+  return oneOf(value, ['success', 'failure', 'timed_out', 'cancelled', 'skipped', 'unknown'], label);
 }
 
 function failureShape(value: unknown, label: string): RequiredCheckFailureShape {
-  if (!['runner_abort', 'timeout', 'assertion_mismatch', 'dependency_install_failure', 'logs_unavailable', 'other'].includes(String(value))) {
-    fail(`${label} is invalid`);
-  }
-  return value as RequiredCheckFailureShape;
+  return oneOf(value, ['runner_abort', 'timeout', 'assertion_mismatch', 'dependency_install_failure', 'logs_unavailable', 'other'], label);
 }
 
 function cause(value: unknown, label: string): RequiredCheckCause {
-  if (!['infrastructure', 'test_defect', 'product_defect', 'unknown'].includes(String(value))) {
-    fail(`${label} is invalid`);
-  }
-  return value as RequiredCheckCause;
+  return oneOf(value, ['infrastructure', 'test_defect', 'product_defect', 'unknown'], label);
 }
 
 function observedResult(value: unknown, label: string): RequiredCheckObservedResult {
-  if (!['failed', 'failed_then_passed', 'not_revalidated'].includes(String(value))) {
-    fail(`${label} is invalid`);
-  }
-  return value as RequiredCheckObservedResult;
+  return oneOf(value, ['failed', 'failed_then_passed', 'not_revalidated'], label);
 }
 
 function retryOutcome(value: unknown, label: string): RequiredCheckRetryOutcome {
-  if (!['not_attempted', 'failed_then_passed', 'failed_then_not_revalidated', 'still_failing'].includes(String(value))) {
-    fail(`${label} is invalid`);
-  }
-  return value as RequiredCheckRetryOutcome;
+  return oneOf(value, ['not_attempted', 'failed_then_passed', 'failed_then_not_revalidated', 'still_failing'], label);
 }
 
 function workflow(value: unknown, label: string): RequiredCheckWorkflowV1 {
@@ -266,7 +259,7 @@ export function validateRequiredCheckFailureEvidence(value: unknown): RequiredCh
   const failed = (() => {
     if (!isRecord(value.failed)) fail('RequiredCheckFailureEvidence.failed is invalid');
     exactKeys(value.failed, 'RequiredCheckFailureEvidence.failed', ['run_id', 'attempt', 'job_id', 'job_name',
-      'run_url', 'job_url', 'steps', 'shape', 'logs_available', 'failure_excerpt', 'platform_evidence', 'scope']);
+      'run_url', 'job_url', 'steps', 'tests', 'shape', 'logs_available', 'failure_excerpt', 'platform_evidence', 'scope']);
     if (typeof value.failed.logs_available !== 'boolean') fail('RequiredCheckFailureEvidence.failed.logs_available is invalid');
     return Object.freeze({
       ...jobLink({
@@ -274,6 +267,7 @@ export function validateRequiredCheckFailureEvidence(value: unknown): RequiredCh
         job_name: value.failed.job_name, run_url: value.failed.run_url, job_url: value.failed.job_url,
       }, 'RequiredCheckFailureEvidence.failed'),
       steps: Object.freeze(stringArray(value.failed.steps, 'RequiredCheckFailureEvidence.failed.steps')),
+      tests: Object.freeze(stringArray(value.failed.tests, 'RequiredCheckFailureEvidence.failed.tests')),
       shape: failureShape(value.failed.shape, 'RequiredCheckFailureEvidence.failed.shape'),
       logs_available: value.failed.logs_available,
       failure_excerpt: nullableString(value.failed.failure_excerpt, 'RequiredCheckFailureEvidence.failed.failure_excerpt'),
@@ -380,13 +374,23 @@ function frozenScope(value: RequiredCheckScopeV1): RequiredCheckScopeV1 {
   return Object.freeze({ executed: Object.freeze([...value.executed]), skipped: Object.freeze([...value.skipped]) });
 }
 
-function revalidation(attempts: readonly RequiredCheckAttemptObservationV1[]): { outcome: RequiredCheckRetryOutcome; revalidated: boolean } {
+function revalidation(
+  attempts: readonly RequiredCheckAttemptObservationV1[],
+  shape: RequiredCheckFailureShape,
+): { outcome: RequiredCheckRetryOutcome; revalidated: boolean } {
   const latest = attempts[attempts.length - 1]!;
   if (attempts.length === 1) return { outcome: 'not_attempted', revalidated: false };
   if (latest.conclusion !== 'success') return { outcome: 'still_failing', revalidated: false };
   const incident = attempts.find(isFailureAttempt)!;
-  const identifiers = [...incident.failed_tests, ...incident.steps];
-  if (identifiers.length === 0) return { outcome: 'failed_then_passed', revalidated: false };
+  const tests = incident.failed_tests;
+  // A failed assertion names a test/child. A generic step label such as
+  // "Run tests" can pass while the failed child is skipped, so it is not
+  // revalidation evidence for an assertion failure.
+  if (tests.length === 0 && shape === 'assertion_mismatch') {
+    return { outcome: 'failed_then_not_revalidated', revalidated: false };
+  }
+  const identifiers = tests.length > 0 ? tests : incident.steps;
+  if (identifiers.length === 0) return { outcome: 'failed_then_not_revalidated', revalidated: false };
   const skipped = new Set(latest.scope.skipped);
   const executed = new Set(latest.scope.executed);
   const revalidated = identifiers.every((identifier) => executed.has(identifier) && !skipped.has(identifier));
@@ -411,7 +415,7 @@ export function assessRequiredCheckFailure(input: RequiredCheckObservationV1): R
   if (!incident) fail('RequiredCheckObservation has no failed attempt');
   const latest = input.attempts[input.attempts.length - 1]!;
   const shape = failureShapeOf(incident);
-  const retry = revalidation(input.attempts);
+  const retry = revalidation(input.attempts, shape);
   const assessed = causeOf(shape, incident, input.declared_cause);
   const failedThenPassed = retry.outcome === 'failed_then_passed' || retry.outcome === 'failed_then_not_revalidated';
   // A passing rerun is not proof of an infrastructure flake, even when the
@@ -430,6 +434,7 @@ export function assessRequiredCheckFailure(input: RequiredCheckObservationV1): R
       ...jobLink({ run_id: incident.run_id, attempt: incident.attempt, job_id: incident.job_id,
         job_name: incident.job_name, run_url: incident.run_url, job_url: incident.job_url }, 'RequiredCheckObservation.failed'),
       steps: Object.freeze([...incident.steps]),
+      tests: Object.freeze([...incident.failed_tests]),
       shape,
       logs_available: incident.logs_available,
       failure_excerpt: incident.failure_excerpt,

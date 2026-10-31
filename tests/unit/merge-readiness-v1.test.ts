@@ -6,7 +6,7 @@ import {
   type PullRequestMergeReadinessInput,
 } from '../../src/core/publication/merge-readiness';
 import { checkClosingReferences, parseClosingReferences } from '../../src/core/publication/closing-references';
-import { assessRequiredCheckFailure } from '../../src/core/evidence/required-check-evidence';
+import { assessRequiredCheckFailure, validateRequiredCheckFailureEvidence } from '../../src/core/evidence/required-check-evidence';
 import { assertionThenPassedEvidence, productFailureEvidence, requiredCheckAttempt, requiredCheckObservation } from '../helpers/required-check-evidence-fixture';
 import { parsePublicationPolicy, publicationPolicyChanged } from '../../src/core/publication/acceptance-merge-policy';
 
@@ -270,10 +270,11 @@ describe('required-check failure evidence', () => {
 
   test('a platform-evidenced runner abort that later passes is still not a proven infrastructure flake', () => {
     const evidence = assessRequiredCheckFailure(requiredCheckObservation([
-      requiredCheckAttempt({ conclusion: 'cancelled', steps: [], failure_excerpt: null, logs_available: false,
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: ['Run tests'], failure_excerpt: null, logs_available: false,
         platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
       requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
-        conclusion: 'success', steps: [], failure_excerpt: null, scope: { executed: ['test (ubuntu-latest)'], skipped: [] } }),
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
     ]));
     expect(evidence.failed.shape).toBe('runner_abort');
     expect(evidence.observed_result).toBe('failed_then_passed');
@@ -311,6 +312,43 @@ describe('required-check failure evidence', () => {
     expect(evidence.retry.outcome).toBe('failed_then_not_revalidated');
     expect(evidence.retry.revalidated).toBe(false);
     expect(evidence.cause).toBe('unknown');
+  });
+
+  test('an assertion retry with only a generic step label is not revalidation', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: [], scope: { executed: ['Run tests'], skipped: [] } }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('assertion_mismatch');
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('stored evidence rejects array, object and number enum values', () => {
+    const valid = assertionThenPassedEvidence();
+    expect(validateRequiredCheckFailureEvidence(valid)).toEqual(valid);
+    const fields: readonly (readonly [string, string])[] = [
+      ['failed.shape', 'timeout'],
+      ['retry.outcome', 'failed_then_passed'],
+      ['retry.latest.conclusion', 'success'],
+      ['observed_result', 'failed_then_passed'],
+      ['cause', 'unknown'],
+    ];
+    for (const [field, value] of fields) {
+      for (const malformed of [[value], { value }, 7]) {
+        const tampered = JSON.parse(JSON.stringify(valid)) as Record<string, unknown>;
+        const parts = field.split('.');
+        let target = tampered;
+        for (const part of parts.slice(0, -1)) target = target[part] as Record<string, unknown>;
+        target[parts[parts.length - 1]!] = malformed;
+        let message: string | null = null;
+        try { validateRequiredCheckFailureEvidence(tampered); } catch (error) { message = (error as Error).message; }
+        expect([field, Array.isArray(malformed) ? 'array' : typeof malformed, message !== null && message.includes('is invalid')])
+          .toEqual([field, Array.isArray(malformed) ? 'array' : typeof malformed, true]);
+      }
+    }
   });
 
   test('a real product failure remains a blocker and a rerun pass never clears it', () => {

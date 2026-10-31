@@ -440,7 +440,7 @@ test('merged provider PR remains blocked without local squash classification aut
 });
 
 
-function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job'): NonNullable<PublicationReadinessInput['gh_runner']> {
+function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'skipped-child'): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
   const run = {
     path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
@@ -448,9 +448,10 @@ function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previou
     run_attempt: scenario === 'failed-check' ? 1 : 2, workflow_id: 99,
     pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: BASE } }],
   };
-  const job = (id: number, conclusion: string, checkRunUrl: string | null = null, name = 'test (ubuntu-latest)') => ({
+  const job = (id: number, conclusion: string, checkRunUrl: string | null = null, name = 'test (ubuntu-latest)',
+    stepNames: readonly string[] = ['Run tests']) => ({
     id, name, status: 'completed', conclusion,
-    steps: [{ name: 'Run tests', number: 1, status: 'completed', conclusion }],
+    steps: stepNames.map((stepName, index) => ({ name: stepName, number: index + 1, status: 'completed', conclusion })),
     check_run_url: checkRunUrl,
   });
   return (args) => {
@@ -470,10 +471,12 @@ function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previou
       }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: 1, jobs: [job(789, 'success')] }) };
+      return { status: 0, stdout: JSON.stringify({ total_count: 1, jobs: [job(789, 'success', null, 'test (ubuntu-latest)',
+        scenario === 'passed-rerun' ? ['Run tests', 'session-runtime > chunk boundary'] : ['Run tests'])] }) };
     }
     if (path === 'repos/example/repo-harness/check-runs/77/annotations?per_page=100') {
-      return { status: 0, stdout: JSON.stringify([{ message: 'AssertionError: expected 200 but received 500' }]) };
+      return { status: 0, stdout: JSON.stringify([{ title: 'session-runtime > chunk boundary',
+        message: 'AssertionError: expected 200 but received 500' }]) };
     }
     return source(args);
   };
@@ -487,7 +490,8 @@ test('a passing same-SHA rerun is failed_then_passed evidence and never a proven
   expect(sync.check_failures).toHaveLength(1);
   const [evidence] = sync.check_failures;
   expect(evidence!.observed_result).toBe('failed_then_passed');
-  expect(evidence!.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed' });
+  expect(evidence!.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed', revalidated: true });
+  expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
   expect(evidence!.cause).toBe('unknown');
   expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, job_name: 'test (ubuntu-latest)' });
   expect(evidence!.retry.latest).toMatchObject({ run_id: 123, attempt: 2, job_id: 789 });
@@ -506,6 +510,16 @@ test('a failed required check keeps its blocker and records the failing job and 
   expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, steps: ['Run tests'], shape: 'assertion_mismatch' });
   expect(evidence!.failed.failure_excerpt).toContain('AssertionError');
   expect(evidence!.cause).toBe('unknown');
+});
+
+test('a passing aggregate step does not revalidate a skipped failed child', () => {
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('skipped-child') });
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
+  expect(evidence!.failed.steps).toEqual(['Run tests']);
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+  expect(evidence!.observed_result).toBe('not_revalidated');
 });
 
 test('a rerun whose preserved job is missing fails closed instead of inventing history', () => {

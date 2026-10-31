@@ -377,7 +377,8 @@ interface ProviderCheck {
 
 function providerCheck(value: unknown): ProviderCheck {
   const check = object(value, 'provider required check');
-  if (!['pass', 'fail', 'pending', 'skipping', 'cancel'].includes(String(check.bucket))) {
+  if (typeof check.bucket !== 'string'
+    || !['pass', 'fail', 'pending', 'skipping', 'cancel'].includes(check.bucket)) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider required check bucket is unknown');
   }
   return Object.freeze({
@@ -514,15 +515,36 @@ interface EvidenceRequest {
   readonly optional?: boolean;
 }
 
-function annotationExcerpt(value: unknown): string | null {
-  if (!Array.isArray(value)) return null;
-  const messages = value.map(entry => {
+interface AnnotationEvidence {
+  readonly excerpt: string | null;
+  readonly tests: readonly string[];
+}
+
+/** A test reporter names the failed child in the annotation title or first message line. */
+const TEST_IDENTIFIER = /(?:[^\s]+\.(?:test|spec)\.[cm]?[jt]sx?(?::\d+)?|\S+\s+>\s+\S+)/u;
+
+function annotationEvidence(value: unknown): AnnotationEvidence {
+  if (!Array.isArray(value)) return Object.freeze({ excerpt: null, tests: Object.freeze([]) });
+  const messages: string[] = [];
+  const tests: string[] = [];
+  for (const entry of value) {
     const annotation = object(entry, 'job annotation');
-    return typeof annotation.message === 'string' ? annotation.message.trim() : '';
-  }).filter(message => message !== '');
-  if (messages.length === 0) return null;
-  const excerpt = messages.slice(0, 3).join('\n');
-  return excerpt.length > 4_000 ? `${excerpt.slice(0, 4_000)}…` : excerpt;
+    if (typeof annotation.title === 'string') {
+      const title = annotation.title.trim();
+      if (title !== '' && TEST_IDENTIFIER.test(title)) tests.push(title);
+    }
+    if (typeof annotation.message !== 'string') continue;
+    const message = annotation.message.trim();
+    if (message === '') continue;
+    messages.push(message);
+    const firstLine = message.split(/\r?\n/u)[0]!.trim();
+    if (TEST_IDENTIFIER.test(firstLine)) tests.push(firstLine);
+  }
+  const joined = messages.slice(0, 3).join('\n');
+  return Object.freeze({
+    excerpt: joined === '' ? null : joined.length > 4_000 ? `${joined.slice(0, 4_000)}…` : joined,
+    tests: Object.freeze([...new Set(tests)]),
+  });
 }
 
 const FAILED_ATTEMPT_CONCLUSIONS: ReadonlySet<AttemptConclusion> = new Set(['failure', 'timed_out', 'cancelled']);
@@ -552,10 +574,13 @@ function* checkEvidence(
   if (jobs.some(job => job === undefined)) {
     throw new MergeReadinessError('provider_data_incomplete', 'required check rerun did not preserve the failed job');
   }
-  const excerpts: (string | null)[] = [];
+  const annotations: AnnotationEvidence[] = [];
   for (const job of jobs as AttemptJob[]) {
-    if (!FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.check_run_id === null) { excerpts.push(null); continue; }
-    excerpts.push(annotationExcerpt(yield {
+    if (!FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.check_run_id === null) {
+      annotations.push(Object.freeze({ excerpt: null, tests: Object.freeze([]) }));
+      continue;
+    }
+    annotations.push(annotationEvidence(yield {
       path: `repos/${identity.repo_name_with_owner}/check-runs/${job.check_run_id}/annotations?per_page=100`,
       optional: true,
     }));
@@ -573,9 +598,9 @@ function* checkEvidence(
       job_url: job.id === link.job_id ? link.job_url : `${runUrl}/job/${job.id}`,
       conclusion: job.conclusion,
       steps: Object.freeze(job.steps.filter(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion)).map(step => step.name)),
-      failed_tests: Object.freeze([]),
+      failed_tests: annotations[index]?.tests ?? Object.freeze([]),
       logs_available: false,
-      failure_excerpt: excerpts[index] ?? null,
+      failure_excerpt: annotations[index]?.excerpt ?? null,
       platform_evidence: Object.freeze([]),
       scope: Object.freeze({ executed: Object.freeze(executed), skipped: Object.freeze(skipped) }),
     });
