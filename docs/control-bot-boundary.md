@@ -107,6 +107,70 @@ the rule it is merged under.
 - A malformed block fails closed with
   `required_check_coverage_policy_invalid`.
 
+### Generated artifacts
+
+A repository can declare generated paths and one regeneration command. The
+block lives in the protected `publication` subtree, so a PR cannot change the
+rule it is merged under.
+
+```json
+"publication": {
+  "acceptance_merge": "on",
+  "generated_artifacts": {
+    "paths": ["api-surface/**", "packages/client/upgrade-manifest.json"],
+    "command": "bun run regenerate",
+    "timeout_ms": 120000,
+    "mixed": [
+      { "path": "packages/client/upgrade-manifest.json", "preserve_from_pr": ["/entries"] }
+    ]
+  }
+}
+```
+
+- An absent or empty block keeps the current behavior. A malformed block fails
+  closed with `generated_artifacts_policy_invalid`.
+- Readiness builds the merge tree of the base SHA and the PR head SHA. Both
+  commits must exist in the readiness checkout; a missing commit fails closed
+  with `generated_artifacts_unavailable`.
+- A conflict outside `paths` stays a normal conflict
+  (`generated_artifacts_conflict_outside`). Readiness does not resolve it.
+- Readiness resolves a conflict on a declared path from the base version, then
+  runs the command. A second run must change nothing
+  (`generated_artifacts_unstable` otherwise).
+- A conflict on a declared path still requires the author to push the
+  regenerated resolution. The check proves that the merge tree converges to it;
+  it does not write the PR branch.
+- A declared generated path that the PR edited must already be the generator's
+  output. Readiness does not repair the PR: when the command changes a path the
+  PR changed outside a conflict resolution, it fails closed with
+  `generated_artifacts_unpushed_regeneration` and the exact diff. Run the
+  declared command and commit the result.
+- The command runs in a network-denied sandbox: `sandbox-exec` with
+  `(deny network*)` on macOS, `unshare --user --map-root-user --net` on
+  Linux. A probe connects to `1.1.1.1:443` before the command starts and must
+  fail with a platform denial code (`EPERM` or `EACCES` on macOS,
+  `ENETUNREACH` or `EAFNOSUPPORT` on Linux). A timeout, a successful
+  connection, or a platform without a supported sandbox fails closed.
+- The command is PR-influenced code. It runs with the host user's filesystem
+  permissions and a scrubbed environment: only `PATH`, the locale variables,
+  `TZ`, `GIT_TERMINAL_PROMPT` and `CI` are set. Write confinement for this
+  child is a tracked follow-up, so run readiness on a host where the checked-out
+  PR is trusted to run code.
+- Any changed path outside `paths` fails closed with
+  `generated_artifacts_diff_outside` and the exact diff. A network attempt, a
+  command failure and a timeout have their own blockers.
+- A mixed file needs a `mixed` rule. `preserve_from_pr` lists JSON pointers
+  that are human-authored and are copied from the PR head. Every other field
+  comes from the base and is recomputed by the command. A declared generated
+  path that keeps PR content without a rule fails closed with
+  `generated_artifacts_mixed_without_rule` and the exact diff.
+- The policy file cannot be a declared path. A regeneration that writes it is a
+  diff outside the declared paths, so the budget ratchet stays manual and a
+  budget raise stays an explicit policy edit in the PR.
+- Readiness reads the block at the base SHA and reuses the executor's policy
+  read. Each readiness round runs the command at most twice, and each run is
+  bounded by `timeout_ms`.
+
 ### Stacked pull requests
 
 A stacked PR has a base branch that is not the repository default branch. The
