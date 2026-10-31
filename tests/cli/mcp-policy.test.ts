@@ -228,7 +228,7 @@ describe('mcp policy and paths', () => {
         publicationMerge: true,
       });
       expect(orchestrator.execution).toEqual({ codingShell: false });
-      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'merge_pull_request'];
+      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'review_publish', 'merge_pull_request'];
       expect(buildMcpToolDefinitions(orchestrator).map((tool) => tool.name)).toEqual(dispatchTools);
       expect(buildMcpToolDefinitions(orchestrator, { enableChatgptBrowser: true }).map((tool) => tool.name)).toEqual(dispatchTools);
       for (const profile of ['planner', 'executor', 'coding'] as const) {
@@ -243,6 +243,10 @@ describe('mcp policy and paths', () => {
       }
       const auditRows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
       expect(auditRows.map((row) => [row.tool, row.status])).toEqual(deniedTools.map((name) => [name, 'blocked']));
+      const blockedReview = await jsonTool(tmp, getMcpPolicy('planner'), 'review_publish', { pr_number: 1, receipt_path: 'receipt.json' });
+      expect(blockedReview.error.code).toBe('TOOL_NOT_AVAILABLE');
+      const missingReceipt = await jsonTool(tmp, orchestrator, 'review_publish', { pr_number: 1, receipt_path: 'missing-receipt.json' });
+      expect(missingReceipt.error.code).toBe('review_receipt_invalid');
       expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
     } finally {
