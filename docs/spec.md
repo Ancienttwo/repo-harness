@@ -199,7 +199,8 @@ readback is a separate release check, never a task AcceptanceReceipt field.
 - **Design brief**: The optional `docs/prds/DESIGN-*.md` document that records
   the UX guard only when the task requests design work.
 - **Fact home**: The single repository location that owns one class of durable
-  fact, as listed in `docs/issue-flow.md`.
+  fact, as listed in `assets/skills/repo-harness-issue-flow/SKILL.md`
+  § Where each fact lives.
 - **Capability**: A functional block registered in the capability authority
   selected by `.ai/harness/policy.json#context.capability_source`. The
   `registry` source resolves paths by longest-prefix match. The `archcontext`
