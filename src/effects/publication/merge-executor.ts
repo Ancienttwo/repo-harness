@@ -407,6 +407,7 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
 
 /** Bounded retry: the merge request is sent once; only these readback attempts repeat. */
 function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string): void {
+  const deadline = Date.now() + READBACK_WINDOW_MS;
   let lastPrEvidence: string | undefined;
   for (let attempt = 0; ; attempt++) {
     const proof = attemptMergeProof(input, mergeCommitSha, baseRef);
@@ -415,11 +416,12 @@ function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRe
       throw new UnknownOutcome(`merge readback contradicts the merge response: ${proof.evidence}`);
     }
     if (proof.pr !== undefined) lastPrEvidence = proof.pr;
-    if (attempt >= READBACK_DELAYS_MS.length) {
+    const remaining = deadline - Date.now();
+    if (attempt >= READBACK_DELAYS_MS.length || remaining <= 0) {
       const context = lastPrEvidence !== undefined && lastPrEvidence !== proof.evidence ? `; last PR readback: ${lastPrEvidence}` : '';
       throw new UnknownOutcome(`merge readback did not confirm the merge within ${READBACK_WINDOW_MS} ms: ${proof.evidence}${context}`);
     }
-    (input.readback_wait ?? waitForReadback)(READBACK_DELAYS_MS[attempt]!);
+    (input.readback_wait ?? waitForReadback)(Math.min(READBACK_DELAYS_MS[attempt]!, remaining));
   }
 }
 
