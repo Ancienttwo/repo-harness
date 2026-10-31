@@ -1,7 +1,7 @@
 # Writing the test side of a contract
 
 The rules for what a `Verification Plan` may contain are policy
-(`docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`).
+(`docs/reference-configs/global-working-rules.md#test-budget`).
 This file records the shapes and paths that are specific to this repository.
 
 ## Check shape
