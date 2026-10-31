@@ -112,7 +112,7 @@ function createGhRunner(repoRoot: string, ghBin?: string): ReviewPublishGhRunner
  * already confirmed, and require inspection before any retry.
  */
 class GhMutationUnknownError extends Error {
-  constructor(message: string, readonly cause?: unknown) {
+  constructor(message: string, readonly cause?: unknown, readonly confirmedUrl?: string) {
     super(message);
     this.name = 'GhMutationUnknownError';
   }
@@ -142,7 +142,15 @@ function ghJson(
   if (result.status !== 0) {
     const detail = result.stderr.trim() || 'exit ' + String(result.status);
     const message = 'gh ' + args.join(' ') + ' failed: ' + detail;
-    if (options.mutation) throw new GhMutationRejectedError(message);
+    if (options.mutation) {
+      // Only a provider 4xx answer confirms that the write was refused. A
+      // transport failure (EOF), a 5xx, or an exit without an HTTP status may
+      // follow an accepted POST, so it stays unknown and is never retried.
+      const status = /\bHTTP (\d{3})\b/.exec(result.stderr)?.[1];
+      const httpStatus = status === undefined ? null : Number(status);
+      if (httpStatus === null || httpStatus < 400 || httpStatus >= 500) throw new GhMutationUnknownError(message);
+      throw new GhMutationRejectedError(message);
+    }
     throw new Error(message);
   }
   let value: unknown;
@@ -204,13 +212,21 @@ function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, 
     ...(rendered.comments.length ? { comments: rendered.comments } : {}),
   };
   const value = ghJson(run, ['api', 'repos/' + slug + '/pulls/' + prNumber + '/reviews', '--hostname', 'github.com', '--method', 'POST', '--input', '-'], JSON.stringify(payload), { mutation: true });
+  let reviewUrl: string;
   try {
-    if (value.commit_id !== headSha) throw new Error('provider review does not bind the requested head SHA');
-    if (value.state !== 'COMMENTED') throw new Error('provider review state is ' + String(value.state) + ', not COMMENTED');
-    return postedUrl(value, slug, prNumber, true);
+    reviewUrl = postedUrl(value, slug, prNumber, true);
   } catch (error) {
     throw new GhMutationUnknownError(errorMessage(error), error);
   }
+  try {
+    if (value.commit_id !== headSha) throw new Error('provider review does not bind the requested head SHA');
+    if (value.state !== 'COMMENTED') throw new Error('provider review state is ' + String(value.state) + ', not COMMENTED');
+  } catch (error) {
+    // The provider returned a stable review URL, so a review exists even though
+    // its binding is wrong. Keep that URL for inspection instead of discarding it.
+    throw new GhMutationUnknownError(errorMessage(error), error, reviewUrl);
+  }
+  return reviewUrl;
 }
 
 function partial(message: string, posted: readonly string[], cause?: unknown): ReviewPublishError {
@@ -259,6 +275,7 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
     claimUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceClaim(receipt));
   } catch (error) {
     if (error instanceof GhMutationUnknownError) {
+      if (error.confirmedUrl !== undefined) posted.push(error.confirmedUrl);
       throw unknownOutcome('the acceptance claim POST outcome is unknown; inspection is required before any retry: ' + errorMessage(error), posted, error);
     }
     throw new ReviewPublishError('review_publish_failed', 'acceptance claim was not posted: ' + errorMessage(error), 1, posted);
@@ -270,6 +287,7 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
     reviewUrl = postReview(run, pr.slug, input.prNumber, pr.headSha, receipt);
   } catch (error) {
     if (error instanceof GhMutationUnknownError) {
+      if (error.confirmedUrl !== undefined && !posted.includes(error.confirmedUrl)) posted.push(error.confirmedUrl);
       throw unknownOutcome('the acceptance review POST outcome is unknown; inspection is required before any retry: ' + errorMessage(error), posted, error);
     }
     throw partial('acceptance review was not posted after the claim: ' + errorMessage(error), posted, error);
@@ -281,6 +299,7 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
     recordUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceRecord(receipt, claimUrl));
   } catch (error) {
     if (error instanceof GhMutationUnknownError) {
+      if (error.confirmedUrl !== undefined) posted.push(error.confirmedUrl);
       throw unknownOutcome('the acceptance record POST outcome is unknown; inspection is required before any retry: ' + errorMessage(error), posted, error);
     }
     throw partial('acceptance record was not posted after the review: ' + errorMessage(error), posted, error);

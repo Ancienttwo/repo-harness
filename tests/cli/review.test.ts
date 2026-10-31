@@ -227,6 +227,19 @@ test('a claim POST with no provider answer exits 5 with no confirmed URL and req
   expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance record'))).toHaveLength(0);
 });
 
+test('a POST transport failure with exit 1 and EOF reports the unknown outcome', async () => {
+  const fixture = publishFixture(passingScenario({ unknownPost: 'review', unknownPostMode: 'transport' }));
+  const result = await runPublish(fixture, publishReceipt());
+  expect(result.status).toBe(5);
+  const output = JSON.parse(result.stdout);
+  expect(output).toMatchObject({ ok: false, error: 'review_publish_unknown', exit_code: 5, inspect_required: true });
+  expect(output.posted).toHaveLength(1);
+  expect(output.posted[0]).toContain('/pull/' + PUBLISH_PR + '#issuecomment-');
+  expect(output.message).toContain('gh: EOF');
+  expect(fixture.gh.inputs().filter((entry) => entry.args.some((arg) => arg.endsWith('/reviews')))).toHaveLength(1);
+  expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance record'))).toHaveLength(0);
+});
+
 test('a record POST whose response fails URL validation exits 5 and keeps the confirmed URLs', async () => {
   const fixture = publishFixture(passingScenario({ unknownPost: 'record', unknownPostMode: 'bad_url' }));
   const result = await runPublish(fixture, publishReceipt());
@@ -238,6 +251,22 @@ test('a record POST whose response fails URL validation exits 5 and keeps the co
   expect(output.posted[1]).toContain('#pullrequestreview-');
   expect(output.confirmed_urls).toEqual(output.posted);
   expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance record'))).toHaveLength(1);
+});
+
+test('a valid review URL with a wrong binding or state is retained in the unknown outcome', async () => {
+  for (const reviewBinding of ['wrong_commit', 'wrong_state'] as const) {
+    const fixture = publishFixture(passingScenario({ reviewBinding }));
+    const result = await runPublish(fixture, publishReceipt());
+    expect(result.status).toBe(5);
+    const output = JSON.parse(result.stdout);
+    expect(output).toMatchObject({ ok: false, error: 'review_publish_unknown', exit_code: 5, inspect_required: true });
+    expect(output.posted).toHaveLength(2);
+    expect(output.posted[0]).toContain('/pull/' + PUBLISH_PR + '#issuecomment-');
+    expect(output.posted[1]).toContain('#pullrequestreview-');
+    expect(output.confirmed_urls).toEqual(output.posted);
+    expect(fixture.gh.inputs().filter((entry) => entry.args.some((arg) => arg.endsWith('/reviews')))).toHaveLength(1);
+    expect(fixture.gh.inputs().filter((entry) => entry.input.includes('repo-harness acceptance record'))).toHaveLength(0);
+  }
 });
 
 test('head movement between the claim and the review stops before the review', async () => {

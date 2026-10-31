@@ -52,8 +52,10 @@ export interface PublicationMergeScenario {
   readonly headSequence?: readonly string[];
   /** Make one review publish POST end with an unknown outcome. */
   readonly unknownPost?: 'claim' | 'review' | 'record';
-  /** How the unknown POST ends: a lost response, invalid JSON, or an unstable URL. */
-  readonly unknownPostMode?: 'timeout' | 'invalid_json' | 'bad_url';
+  /** How the unknown POST ends: a lost response, invalid JSON, an unstable URL, or a transport EOF. */
+  readonly unknownPostMode?: 'timeout' | 'invalid_json' | 'bad_url' | 'transport';
+  /** A review response with a stable URL but a wrong commit binding or state. */
+  readonly reviewBinding?: 'wrong_commit' | 'wrong_state';
 }
 
 function unknownPostResponse(scenario: PublicationMergeScenario, review: boolean): FakeGhResponse {
@@ -64,6 +66,7 @@ function unknownPostResponse(scenario: PublicationMergeScenario, review: boolean
       ? { id: 1, commit_id: HEAD, state: 'COMMENTED', html_url: 'https://example.invalid/pull/42#pullrequestreview-1' }
       : { id: 1, html_url: 'https://example.invalid/pull/42#issuecomment-1' });
   }
+  if (mode === 'transport') return { status: 1, stdout: '', stderr: 'gh: EOF' };
   return { status: 0, stdout: '{"id":' };
 }
 
@@ -145,7 +148,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     const payload = input ? JSON.parse(input) as { body?: unknown } : {};
     const body = typeof payload.body === 'string' ? payload.body : '';
     if (scenario.failPost === 'record' && body.startsWith('repo-harness acceptance record')) {
-      return { status: 1, stdout: '', stderr: 'gh: acceptance record write failed' };
+      return { status: 1, stdout: '', stderr: 'gh: acceptance record write failed (HTTP 422)' };
     }
     if (scenario.unknownPost === 'claim' && body.startsWith('repo-harness acceptance claim')) return unknownPostResponse(scenario, false);
     if (scenario.unknownPost === 'record' && body.startsWith('repo-harness acceptance record')) return unknownPostResponse(scenario, false);
@@ -153,10 +156,12 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     return ok({ id, html_url: `https://github.com/${REPOSITORY}/pull/${PR}#issuecomment-${id}` });
   }
   if (sub === `${root}/pulls/${PR}/reviews`) {
-    if (scenario.failPost === 'review') return { status: 1, stdout: '', stderr: 'gh: review write failed' };
+    if (scenario.failPost === 'review') return { status: 1, stdout: '', stderr: 'gh: review write failed (HTTP 422)' };
     if (scenario.unknownPost === 'review') return unknownPostResponse(scenario, true);
     const payload = input ? JSON.parse(input) as { commit_id?: unknown } : {};
-    return ok({ id: numericId(input), commit_id: payload.commit_id, state: 'COMMENTED',
+    return ok({ id: numericId(input),
+      commit_id: scenario.reviewBinding === 'wrong_commit' ? 'f'.repeat(40) : payload.commit_id,
+      state: scenario.reviewBinding === 'wrong_state' ? 'APPROVED' : 'COMMENTED',
       html_url: `https://github.com/${REPOSITORY}/pull/${PR}#pullrequestreview-${numericId(input)}` });
   }
   if (sub === root) return ok({ id: Number(REPOSITORY_ID), node_id: REPOSITORY_NODE, full_name: REPOSITORY, default_branch: 'main' });
