@@ -140,11 +140,12 @@ rule it is merged under.
 - A conflict on a declared path still requires the author to push the
   regenerated resolution. The check proves that the merge tree converges to it;
   it does not write the PR branch.
-- A declared generated path that the PR edited must already be the generator's
-  output. Readiness does not repair the PR: when the command changes a path the
-  PR changed outside a conflict resolution, it fails closed with
-  `generated_artifacts_unpushed_regeneration` and the exact diff. Run the
-  declared command and commit the result.
+- Every declared path that regeneration changes must already be the
+  generator's output on the PR head. Readiness does not repair the PR: when
+  the head lacks the regenerated result, including an input-only change that
+  did not commit it, it fails closed with
+  `generated_artifacts_unpushed_regeneration` and the candidate-tree diff.
+  Run the declared command and commit the result.
 - The command runs in a network-denied sandbox: `sandbox-exec` with
   `(deny network*)` on macOS, `unshare --user --map-root-user --net` on
   Linux. A probe connects to `1.1.1.1:443` before the command starts and must
