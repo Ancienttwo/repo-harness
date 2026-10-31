@@ -12,7 +12,6 @@ responsibilities:
   - Project the explicit-setup repo-harness-strategy skill to host skill roots on request.
 source:
   include:
-    - "docs/plans/**"
     - src/core/strategy/**
     - src/effects/strategy/**
     - src/cli/commands/strategy.ts

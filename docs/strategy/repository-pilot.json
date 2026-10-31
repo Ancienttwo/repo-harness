@@ -67,7 +67,7 @@
     },
     {
       "path": "docs/plans/optional-strategy-memory.md",
-      "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
+      "revision": "d8bf2df7994371767d307f669048bf9e2cc173d2",
       "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
     }
   ],
@@ -79,7 +79,7 @@
       "lifecycle": "active",
       "body": {
         "path": "docs/plans/optional-strategy-memory.md",
-        "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
+        "revision": "d8bf2df7994371767d307f669048bf9e2cc173d2",
         "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
       },
       "provenance": [

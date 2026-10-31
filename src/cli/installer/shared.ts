@@ -3,7 +3,7 @@
  *
  * Atomic writes prevent partial-write corruption visible to the host process
  * (Claude Code auto-reloads `~/.claude/settings.json` via ConfigChange and
- * could race a non-atomic write — see docs/architecture/global-hook-runtime.md).
+ * could race a non-atomic write — see docs/architecture/modules/runtime-harness/hook-adapters.md).
  *
  * Deep equality is used so re-installing with identical adapter content
  * returns `action: 'unchanged'`. Critical because Codex hashes adapter

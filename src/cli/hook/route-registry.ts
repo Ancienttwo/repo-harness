@@ -6,7 +6,7 @@
  * identities are stable internal authority names and do not alter the tuple.
  *
  * Derived from `.codex/hooks.json` reality verified Phase 0 canary
- * 2026-05-28 (see docs/architecture/global-hook-runtime.md and Codex consult
+ * 2026-05-28 (see docs/architecture/modules/runtime-harness/hook-adapters.md and Codex consult
  * session 019e6df7-e7c9-70e2-8872-db9869420bd0). The matcher dimension was
  * the missing piece in the X (event-only) design — see
  * tasks/notes/hook-global-runtime.notes.md § Phase 1B Design Pivot.
