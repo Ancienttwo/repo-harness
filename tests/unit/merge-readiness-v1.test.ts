@@ -357,7 +357,8 @@ describe('required-check failure evidence', () => {
         platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
       requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
         conclusion: 'success', steps: [], failure_excerpt: null,
-        scope: { executed: ['test (ubuntu-latest)', 'Run tests', 'session-runtime > chunk boundary'], skipped: [] } }),
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] },
+        test_execution: { status: 'available', executed: ['session-runtime > chunk boundary'], skipped: [] } }),
     ]));
     expect(evidence.failed.shape).toBe('runner_abort');
     expect(evidence.observed_result).toBe('failed_then_passed');
@@ -389,11 +390,14 @@ describe('required-check failure evidence', () => {
       requiredCheckAttempt({ failed_tests: ['session-runtime > chunk boundary'], scope: { executed: ['Run tests'], skipped: [] } }),
       requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
         conclusion: 'success', steps: [], failure_excerpt: null,
-        scope: { executed: ['Run tests', 'session-runtime > unrelated'], skipped: ['session-runtime > chunk boundary'] } }),
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] },
+        test_execution: { status: 'available', executed: ['session-runtime > unrelated'],
+          skipped: ['session-runtime > chunk boundary'] } }),
     ]));
     expect(evidence.observed_result).toBe('not_revalidated');
     expect(evidence.retry.outcome).toBe('failed_then_not_revalidated');
     expect(evidence.retry.revalidated).toBe(false);
+    expect(evidence.retry.reason).toBe('original_test_skipped');
     expect(evidence.cause).toBe('unknown');
   });
 
@@ -405,7 +409,8 @@ describe('required-check failure evidence', () => {
         scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
     ]));
     expect(evidence.failed.shape).toBe('assertion_mismatch');
-    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+      reason: 'failed_test_identifier_unavailable' });
     expect(evidence.observed_result).toBe('not_revalidated');
   });
 
@@ -442,7 +447,35 @@ describe('required-check failure evidence', () => {
         scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
     ]));
     expect(evidence.failed.shape).toBe('logs_unavailable');
-    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+      reason: 'failed_test_identifier_unavailable' });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('a passing rerun without a test execution source is not revalidated and says why', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: ['session-runtime > chunk boundary'] }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] },
+        test_execution: { status: 'unavailable' } }),
+    ]));
+    expect(evidence.failed.tests).toEqual(['session-runtime > chunk boundary']);
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+      reason: 'test_execution_evidence_unavailable' });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('a rerun whose test-level source lacks the failed test is not revalidated', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: ['session-runtime > chunk boundary'] }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] },
+        test_execution: { status: 'available', executed: ['session-runtime > unrelated'], skipped: [] } }),
+    ]));
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+      reason: 'original_test_not_executed' });
     expect(evidence.observed_result).toBe('not_revalidated');
   });
 
@@ -732,4 +765,3 @@ describe('required-check coverage policy', () => {
     } }))).toBe(false);
   });
 });
-

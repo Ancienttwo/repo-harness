@@ -3,8 +3,20 @@ import { spawn, spawnSync } from 'child_process';
 import {
   assessRequiredCheckFailure,
   type RequiredCheckAttemptObservationV1,
+  type RequiredCheckChildObservationV1,
   type RequiredCheckFailureEvidenceV1,
 } from '../../core/evidence/required-check-evidence';
+import type { RequiredCheckTestExecutionV1 } from '../../core/evidence/test-execution-evidence';
+import {
+  parseWorkflowJobs,
+  resolveWorkflowJob,
+  workflowJobMatchesName,
+  type WorkflowJobV1,
+} from '../../core/evidence/workflow-needs';
+import {
+  readTestExecutionEvidence,
+  readTestExecutionEvidenceAbortable,
+} from './test-execution-evidence';
 import {
   projectPullRequestMergeReadiness,
   unobservedStackDetail,
@@ -53,6 +65,13 @@ export function assertLocalPullRequestRepository(repoRoot: string, repository: s
   }
 }
 
+/** One attempt whose test-level execution results the transport must answer. */
+export interface TestExecutionReadRequest {
+  readonly repository: string;
+  readonly run_id: number;
+  readonly attempt: number;
+}
+
 export interface PublicationReadinessInput {
   readonly repo_root: string;
   readonly repository?: string;
@@ -63,6 +82,8 @@ export interface PublicationReadinessInput {
   readonly now_ms?: number;
   /** Internal effect/test seam for caller-owned provider execution, such as a protected helper environment. */
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
+  /** Internal effect/test seam for the rerun attempt's test-level execution source. */
+  readonly test_execution_reader?: (request: TestExecutionReadRequest) => RequiredCheckTestExecutionV1;
   /**
    * Internal effect seam: the publication executor already read this file at
    * the base SHA for the acceptance-merge switch. Readiness reuses it instead
@@ -81,6 +102,8 @@ export interface AbortablePublicationReadinessInput extends Omit<PublicationRead
     readonly stderr?: string;
     readonly error?: Error;
   }>;
+  /** Async test seam for the rerun attempt's test-level execution source. */
+  readonly test_execution_reader_async?: (request: TestExecutionReadRequest, signal: AbortSignal | undefined) => Promise<RequiredCheckTestExecutionV1>;
 }
 
 export interface ProviderIdentity {
@@ -589,9 +612,12 @@ function attemptJobs(value: unknown): AttemptJob[] {
 }
 
 interface ProviderRequest {
-  readonly args: readonly string[];
+  /** Provider read arguments. Exactly one of args and test_execution is set. */
+  readonly args?: readonly string[];
   /** Best-effort evidence: a missing annotation feed is not a provider outage. */
   readonly optional?: boolean;
+  /** Read test-level execution evidence for one attempt; the transport answers it. */
+  readonly test_execution?: TestExecutionReadRequest;
 }
 
 interface AnnotationEvidence {
@@ -628,11 +654,55 @@ function annotationEvidence(value: unknown): AnnotationEvidence {
 
 const FAILED_ATTEMPT_CONCLUSIONS: ReadonlySet<AttemptConclusion> = new Set(['failure', 'timed_out', 'cancelled']);
 
+const WORKFLOW_PATH = /^\.github\/workflows\/[A-Za-z0-9._-]+\.ya?ml$/u;
+
+/** The workflow file content at the run revision; null when it is unavailable or unreadable. */
+function workflowDefinitionText(value: unknown): string | null {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+  const file = value as Record<string, unknown>;
+  if (file.type !== 'file' || file.encoding !== 'base64' || typeof file.content !== 'string') return null;
+  try {
+    const text = Buffer.from(file.content.replace(/\s/gu, ''), 'base64').toString('utf8');
+    return text.trim() === '' ? null : text;
+  } catch {
+    return null;
+  }
+}
+
+function attemptObservation(
+  job: AttemptJob,
+  attempt: number,
+  runUrl: string,
+  link: RequiredCheckLink,
+  annotation: AnnotationEvidence | undefined,
+): RequiredCheckAttemptObservationV1 {
+  const skipped = job.steps.filter(step => step.conclusion === 'skipped').map(step => step.name);
+  const executed = [job.name, ...job.steps.filter(step => step.conclusion !== 'skipped').map(step => step.name)];
+  return Object.freeze({
+    run_id: link.run_id,
+    attempt,
+    job_id: job.id,
+    job_name: job.name,
+    run_url: runUrl,
+    job_url: job.id === link.job_id ? link.job_url : `${runUrl}/job/${job.id}`,
+    conclusion: job.conclusion,
+    steps: Object.freeze(job.steps.filter(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion)).map(step => step.name)),
+    failed_tests: annotation?.tests ?? Object.freeze([]),
+    logs_available: false,
+    failure_excerpt: annotation?.excerpt ?? null,
+    platform_evidence: Object.freeze([]),
+    scope: Object.freeze({ executed: Object.freeze(executed), skipped: Object.freeze(skipped) }),
+    test_execution: null,
+  });
+}
+
 /**
  * Reads the attempt history of one required check. A rerun keeps one run id
- * and increments the attempt; this collector follows that link. Evidence is
- * read only for checks that failed or were rerun, so a first-attempt green
- * check keeps the existing single-run read.
+ * and increments the attempt; this collector follows that link. The linked job
+ * is the check itself. When other jobs failed in the same attempt, the
+ * collector reads the workflow revision's declared needs and preserves the
+ * proven failed children. Without proof the association stays unknown and the
+ * summary job keeps the reported failure point.
  */
 function* checkEvidence(
   identity: ProviderIdentity,
@@ -648,43 +718,95 @@ function* checkEvidence(
   }
   const linked = pages.flat().find(job => job.id === link.job_id);
   if (!linked) throw new MergeReadinessError('provider_data_incomplete', 'required check job link does not resolve');
-  const jobs = pages.map((page, index) => page.find(job => job.name === linked.name)
+  const linkedJobs = pages.map((page, index) => page.find(job => job.name === linked.name)
     ?? (index + 1 === run.run_attempt ? linked : undefined));
-  if (jobs.some(job => job === undefined)) {
+  if (linkedJobs.some(job => job === undefined)) {
     throw new MergeReadinessError('provider_data_incomplete', 'required check rerun did not preserve the failed job');
   }
-  const annotations: AnnotationEvidence[] = [];
-  for (const job of jobs as AttemptJob[]) {
-    if (!FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.check_run_id === null) {
-      annotations.push(Object.freeze({ excerpt: null, tests: Object.freeze([]) }));
-      continue;
+  const attemptsJobs = linkedJobs as AttemptJob[];
+  const otherFailed = pages.flatMap((page, index) =>
+    page.filter(job => job.id !== attemptsJobs[index]!.id && FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion)));
+
+  let association: 'direct' | 'declared_needs' | 'unknown' = 'direct';
+  const childAssociations = new Map<string, 'declared_needs' | 'unknown'>();
+  if (otherFailed.length > 0) {
+    const contentsPath = WORKFLOW_PATH.test(run.path) ? run.path : null;
+    const definition = contentsPath === null ? null
+      : workflowDefinitionText(yield {
+        args: ['api', `repos/${identity.repo_name_with_owner}/contents/${contentsPath}?ref=${run.head_sha}`],
+        optional: true,
+      });
+    const workflow = definition === null ? null : parseWorkflowJobs(definition);
+    const entry = workflow === null ? null : resolveWorkflowJob(workflow, linked.name);
+    if (entry !== null && entry.needs.length === 0) {
+      association = 'direct';
+    } else if (workflow !== null && entry !== null) {
+      const needJobs = entry.needs
+        .map(id => workflow.jobs.find(job => job.id === id))
+        .filter((job): job is WorkflowJobV1 => job !== undefined);
+      const proven = needJobs.length === entry.needs.length
+        ? otherFailed.filter(job => needJobs.some(need => workflowJobMatchesName(need, job.name)))
+        : [];
+      if (proven.length > 0) {
+        association = 'declared_needs';
+        for (const job of proven) childAssociations.set(job.name, 'declared_needs');
+      } else {
+        association = 'unknown';
+        for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
+      }
+    } else {
+      association = 'unknown';
+      for (const job of otherFailed) childAssociations.set(job.name, 'unknown');
     }
-    annotations.push(annotationEvidence(yield {
+  }
+
+  // Annotations are read once per failed job identity, never invented.
+  const annotationJobs = new Map<number, AttemptJob>();
+  const noteAnnotations = (job: AttemptJob | undefined): void => {
+    if (job === undefined || !FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.check_run_id === null) return;
+    annotationJobs.set(job.id, job);
+  };
+  for (const job of attemptsJobs) noteAnnotations(job);
+  for (const name of childAssociations.keys()) {
+    for (const page of pages) noteAnnotations(page.find(job => job.name === name));
+  }
+  const annotations = new Map<number, AnnotationEvidence>();
+  for (const job of annotationJobs.values()) {
+    annotations.set(job.id, annotationEvidence(yield {
       args: ['api', `repos/${identity.repo_name_with_owner}/check-runs/${job.check_run_id}/annotations?per_page=100`],
       optional: true,
     }));
   }
+
   const runUrl = `https://github.com/${identity.repo_name_with_owner}/actions/runs/${link.run_id}`;
-  const attempts = (jobs as AttemptJob[]).map((job, index): RequiredCheckAttemptObservationV1 => {
-    const skipped = job.steps.filter(step => step.conclusion === 'skipped').map(step => step.name);
-    const executed = [job.name, ...job.steps.filter(step => step.conclusion !== 'skipped').map(step => step.name)];
-    return Object.freeze({
+  const latestJob = attemptsJobs[attemptsJobs.length - 1]!;
+  let latestTestExecution: RequiredCheckTestExecutionV1 | null = null;
+  if (attemptsJobs.length > 1 && latestJob.conclusion === 'success') {
+    latestTestExecution = (yield { test_execution: {
+      repository: identity.repo_name_with_owner,
       run_id: link.run_id,
-      attempt: index + 1,
-      job_id: job.id,
-      job_name: job.name,
-      run_url: runUrl,
-      job_url: job.id === link.job_id ? link.job_url : `${runUrl}/job/${job.id}`,
-      conclusion: job.conclusion,
-      steps: Object.freeze(job.steps.filter(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion)).map(step => step.name)),
-      failed_tests: annotations[index]?.tests ?? Object.freeze([]),
-      logs_available: false,
-      failure_excerpt: annotations[index]?.excerpt ?? null,
-      platform_evidence: Object.freeze([]),
-      scope: Object.freeze({ executed: Object.freeze(executed), skipped: Object.freeze(skipped) }),
-    });
-  });
-  if (!attempts.some(attempt => FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0)) return null;
+      attempt: run.run_attempt,
+    } }) as RequiredCheckTestExecutionV1;
+  }
+  const attempts = attemptsJobs.map((job, index) => attemptObservation(
+    job, index + 1, runUrl, link, annotations.get(job.id),
+  ));
+  if (latestTestExecution !== null) {
+    const last = attempts[attempts.length - 1]!;
+    attempts[attempts.length - 1] = Object.freeze({ ...last, test_execution: latestTestExecution });
+  }
+  const children: RequiredCheckChildObservationV1[] = [...childAssociations.entries()].map(([name, childAssociation]) => ({
+    job_name: name,
+    association: childAssociation,
+    attempts: pages.flatMap((page, index) => {
+      const job = page.find(entry => entry.name === name);
+      return job === undefined ? [] : [attemptObservation(job, index + 1, runUrl, link, annotations.get(job.id))];
+    }),
+  }));
+  const hasFailure = attempts.some(attempt => FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0)
+    || children.some(child => child.attempts.some(attempt =>
+      FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0));
+  if (!hasFailure) return null;
   return assessRequiredCheckFailure({
     check_name: check.name,
     head_sha: identity.head_sha,
@@ -692,6 +814,8 @@ function* checkEvidence(
     merge_tree_sha: null,
     workflow: Object.freeze({ path: run.path, id: run.workflow_id, revision: run.head_sha }),
     attempts: Object.freeze(attempts),
+    association,
+    children: Object.freeze(children),
     declared_cause: null,
   });
 }
@@ -721,19 +845,57 @@ function* requiredCheckFailures(
   return evidence;
 }
 
+function readTestExecutionSync(input: PublicationReadinessInput, request: TestExecutionReadRequest): RequiredCheckTestExecutionV1 {
+  try {
+    if (input.test_execution_reader !== undefined) return input.test_execution_reader(request);
+    return readTestExecutionEvidence({
+      repository: request.repository,
+      run_id: request.run_id,
+      attempt: request.attempt,
+      repo_root: input.repo_root,
+      gh_bin: input.gh_bin,
+    });
+  } catch {
+    // Test-level evidence is best effort: a failed read is unavailable, never a pass.
+    return Object.freeze({ status: 'unavailable' });
+  }
+}
+
 /** The one read driver: a protocol yields requests, the transport answers them. */
 function driveRequestsSync<T>(protocol: Generator<ProviderRequest, T, unknown>, input: PublicationReadinessInput): T {
   let request = protocol.next();
   while (!request.done) {
     let value: unknown = null;
     try {
-      value = gh(input, request.value.args);
+      value = request.value.test_execution !== undefined
+        ? readTestExecutionSync(input, request.value.test_execution)
+        : gh(input, request.value.args!);
     } catch (error) {
       if (!request.value.optional) throw error;
     }
     request = protocol.next(value);
   }
   return request.value;
+}
+
+async function readTestExecutionAbortable(
+  input: AbortablePublicationReadinessInput,
+  request: TestExecutionReadRequest,
+): Promise<RequiredCheckTestExecutionV1> {
+  try {
+    if (input.test_execution_reader_async !== undefined) {
+      return await input.test_execution_reader_async(request, input.signal);
+    }
+    return await readTestExecutionEvidenceAbortable({
+      repository: request.repository,
+      run_id: request.run_id,
+      attempt: request.attempt,
+      repo_root: input.repo_root,
+      gh_bin: input.gh_bin,
+    }, input.signal);
+  } catch {
+    return Object.freeze({ status: 'unavailable' });
+  }
 }
 
 async function driveRequestsAbortable<T>(
@@ -744,7 +906,9 @@ async function driveRequestsAbortable<T>(
   while (!request.done) {
     let value: unknown = null;
     try {
-      value = await ghAbortable(input, request.value.args);
+      value = request.value.test_execution !== undefined
+        ? await readTestExecutionAbortable(input, request.value.test_execution)
+        : await ghAbortable(input, request.value.args!);
     } catch (error) {
       if (!request.value.optional) throw error;
     }
@@ -913,8 +1077,7 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
   }
   const detail = object(yield `${root}/pulls/${prNumber}`, 'merged parent PR detail');
   if (detail.number !== prNumber || detail.merged !== true || detail.merge_commit_sha !== identity.base_sha
-    || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {
-    throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
+    || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {    throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
   const parentAssociations = yield `${root}/commits/${commit.parents[0].sha}/pulls?per_page=100`;
   if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) {

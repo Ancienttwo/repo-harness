@@ -26,6 +26,7 @@ export function requiredCheckAttempt(
     failure_excerpt: 'AssertionError: expected 1 to deeply equal 2',
     platform_evidence: [],
     scope: { executed: ['Run tests'], skipped: [] },
+    test_execution: null,
     ...overrides,
   };
 }
@@ -41,18 +42,21 @@ export function requiredCheckObservation(
     merge_tree_sha: null,
     workflow: { path: '.github/workflows/ci.yml', id: 99, revision: HEAD },
     attempts,
+    association: 'direct',
+    children: [],
     declared_cause: null,
     ...overrides,
   };
 }
 
-/** The issue's main case: assertion failure, same-SHA rerun passes. */
+/** The issue's main case: assertion failure, same-SHA rerun passes, test-level evidence exists. */
 export function assertionThenPassedEvidence(): RequiredCheckFailureEvidenceV1 {
   return assessRequiredCheckFailure(requiredCheckObservation([
     requiredCheckAttempt({ attempt: 1, failed_tests: ['session-runtime > chunk boundary'] }),
     requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
       conclusion: 'success', steps: [], failure_excerpt: null,
-      scope: { executed: ['test (ubuntu-latest)', 'Run tests', 'session-runtime > chunk boundary'], skipped: [] } }),
+      scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] },
+      test_execution: { status: 'available', executed: ['session-runtime > chunk boundary'], skipped: [] } }),
   ]));
 }
 
