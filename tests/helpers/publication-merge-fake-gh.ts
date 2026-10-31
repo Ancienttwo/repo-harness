@@ -48,6 +48,23 @@ export interface PublicationMergeScenario {
   readonly parents?: readonly string[];
   /** Fail one review publish write after any earlier write succeeded. */
   readonly failPost?: 'review' | 'record';
+  /** The head SHA that each successive `pr view` reports; the last entry repeats. */
+  readonly headSequence?: readonly string[];
+  /** Make one review publish POST end with an unknown outcome. */
+  readonly unknownPost?: 'claim' | 'review' | 'record';
+  /** How the unknown POST ends: a lost response, invalid JSON, or an unstable URL. */
+  readonly unknownPostMode?: 'timeout' | 'invalid_json' | 'bad_url';
+}
+
+function unknownPostResponse(scenario: PublicationMergeScenario, review: boolean): FakeGhResponse {
+  const mode = scenario.unknownPostMode ?? 'invalid_json';
+  if (mode === 'timeout') return { status: null, stdout: '', stderr: '' };
+  if (mode === 'bad_url') {
+    return ok(review
+      ? { id: 1, commit_id: HEAD, state: 'COMMENTED', html_url: 'https://example.invalid/pull/42#pullrequestreview-1' }
+      : { id: 1, html_url: 'https://example.invalid/pull/42#issuecomment-1' });
+  }
+  return { status: 0, stdout: '{"id":' };
 }
 
 export function passingScenario(overrides: Partial<PublicationMergeScenario> = {}): PublicationMergeScenario {
@@ -73,13 +90,15 @@ function graphqlQuery(args: readonly string[]): string {
 }
 
 /** One fake provider answer. Unknown calls fail loudly so a test sees the missing fixture. */
-export function fakeGhResponse(args: readonly string[], scenario: PublicationMergeScenario, prReadbackAttempt = 0, input = ''): FakeGhResponse {
+export function fakeGhResponse(args: readonly string[], scenario: PublicationMergeScenario, prReadbackAttempt = 0, input = '', prViewAttempt = 0): FakeGhResponse {
   const root = `repos/${REPOSITORY}`;
   const [command, sub] = args;
   if (command === 'repo' && sub === 'view') return ok({ id: REPOSITORY_NODE, nameWithOwner: REPOSITORY });
   if (command === 'pr' && sub === 'view') {
+    const sequence = scenario.headSequence;
+    const head = sequence?.length ? sequence[Math.min(prViewAttempt, sequence.length - 1)]! : HEAD;
     return ok({ number: PR, url: `https://github.com/${REPOSITORY}/pull/${PR}`, state: 'OPEN', isDraft: false,
-      headRefOid: HEAD, headRefName: 'feat/executor', baseRefOid: BASE, baseRefName: 'main', body: scenario.body ?? '',
+      headRefOid: head, headRefName: 'feat/executor', baseRefOid: BASE, baseRefName: 'main', body: scenario.body ?? '',
       reviewDecision: '', mergeable: 'MERGEABLE' });
   }
   if (command === 'pr' && sub === 'checks') {
@@ -128,11 +147,14 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (scenario.failPost === 'record' && body.startsWith('repo-harness acceptance record')) {
       return { status: 1, stdout: '', stderr: 'gh: acceptance record write failed' };
     }
+    if (scenario.unknownPost === 'claim' && body.startsWith('repo-harness acceptance claim')) return unknownPostResponse(scenario, false);
+    if (scenario.unknownPost === 'record' && body.startsWith('repo-harness acceptance record')) return unknownPostResponse(scenario, false);
     const id = numericId(body);
     return ok({ id, html_url: `https://github.com/${REPOSITORY}/pull/${PR}#issuecomment-${id}` });
   }
   if (sub === `${root}/pulls/${PR}/reviews`) {
     if (scenario.failPost === 'review') return { status: 1, stdout: '', stderr: 'gh: review write failed' };
+    if (scenario.unknownPost === 'review') return unknownPostResponse(scenario, true);
     const payload = input ? JSON.parse(input) as { commit_id?: unknown } : {};
     return ok({ id: numericId(input), commit_id: payload.commit_id, state: 'COMMENTED',
       html_url: `https://github.com/${REPOSITORY}/pull/${PR}#pullrequestreview-${numericId(input)}` });
@@ -194,13 +216,15 @@ export function installFakeGh(dir: string, scenario: PublicationMergeScenario): 
   const logPath = join(dir, 'fake-gh-calls.jsonl');
   const inputLogPath = join(dir, 'fake-gh-inputs.jsonl');
   const readbackCountPath = join(dir, 'fake-gh-readbacks');
+  const prViewCountPath = join(dir, 'fake-gh-pr-views');
   const bin = join(dir, 'fake-gh');
   const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
   writeFileSync(scenarioPath, JSON.stringify(scenario));
   writeFileSync(logPath, '');
   writeFileSync(inputLogPath, '');
   writeFileSync(readbackCountPath, '0');
-  writeFileSync(bin, `#!/bin/sh\nFAKE_GH_SCENARIO=${quote(scenarioPath)} FAKE_GH_LOG=${quote(logPath)} FAKE_GH_INPUT_LOG=${quote(inputLogPath)} FAKE_GH_READBACKS=${quote(readbackCountPath)} exec ${quote(process.execPath)} ${quote(import.meta.path)} "$@"\n`);
+  writeFileSync(prViewCountPath, '0');
+  writeFileSync(bin, `#!/bin/sh\nFAKE_GH_SCENARIO=${quote(scenarioPath)} FAKE_GH_LOG=${quote(logPath)} FAKE_GH_INPUT_LOG=${quote(inputLogPath)} FAKE_GH_READBACKS=${quote(readbackCountPath)} FAKE_GH_PR_VIEWS=${quote(prViewCountPath)} exec ${quote(process.execPath)} ${quote(import.meta.path)} "$@"\n`);
   chmodSync(bin, 0o755);
   return {
     bin,
@@ -221,7 +245,13 @@ if (import.meta.main) {
     readbackAttempt = Number(readFileSync(countPath, 'utf-8')) || 0;
     writeFileSync(countPath, String(readbackAttempt + 1));
   }
-  const response = fakeGhResponse(args, JSON.parse(readFileSync(process.env.FAKE_GH_SCENARIO!, 'utf-8')) as PublicationMergeScenario, readbackAttempt, input);
+  let prViewAttempt = 0;
+  if (args[0] === 'pr' && args[1] === 'view') {
+    const countPath = process.env.FAKE_GH_PR_VIEWS!;
+    prViewAttempt = Number(readFileSync(countPath, 'utf-8')) || 0;
+    writeFileSync(countPath, String(prViewAttempt + 1));
+  }
+  const response = fakeGhResponse(args, JSON.parse(readFileSync(process.env.FAKE_GH_SCENARIO!, 'utf-8')) as PublicationMergeScenario, readbackAttempt, input, prViewAttempt);
   if (response.status === null) process.kill(process.pid, 'SIGKILL');
   if (response.stdout) process.stdout.write(response.stdout);
   if (response.stderr) process.stderr.write(response.stderr);

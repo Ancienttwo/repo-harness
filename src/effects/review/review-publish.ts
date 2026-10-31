@@ -13,6 +13,7 @@ export type ReviewPublishErrorCode =
   | 'review_receipt_invalid'
   | 'review_subject_stale'
   | 'review_publish_partial'
+  | 'review_publish_unknown'
   | 'review_publish_provider_unavailable'
   | 'review_publish_failed';
 
@@ -105,20 +106,57 @@ function createGhRunner(repoRoot: string, ghBin?: string): ReviewPublishGhRunner
   };
 }
 
-function ghJson(run: ReviewPublishGhRunner, args: readonly string[], input?: string): Record<string, unknown> {
+/**
+ * A mutation ended without a confirmed provider answer. GitHub may have
+ * accepted it, so the caller must report an unknown outcome, keep the URLs it
+ * already confirmed, and require inspection before any retry.
+ */
+class GhMutationUnknownError extends Error {
+  constructor(message: string, readonly cause?: unknown) {
+    super(message);
+    this.name = 'GhMutationUnknownError';
+  }
+}
+
+/** A mutation returned a provider error, so it was confirmed not to post. */
+class GhMutationRejectedError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'GhMutationRejectedError';
+  }
+}
+
+function ghJson(
+  run: ReviewPublishGhRunner,
+  args: readonly string[],
+  input?: string,
+  options: { readonly mutation?: boolean } = {},
+): Record<string, unknown> {
   const result = run(args, input);
-  if (result.error || result.status === null || result.status !== 0) {
-    const detail = result.stderr.trim() || result.error?.message || 'exit ' + String(result.status);
+  if (result.error || result.status === null) {
+    const detail = result.error?.message ?? 'request ended without a provider status';
+    const message = 'gh ' + args.join(' ') + ' outcome is unknown: ' + detail;
+    if (options.mutation) throw new GhMutationUnknownError(message, result.error);
     throw new Error('gh ' + args.join(' ') + ' failed: ' + detail);
+  }
+  if (result.status !== 0) {
+    const detail = result.stderr.trim() || 'exit ' + String(result.status);
+    const message = 'gh ' + args.join(' ') + ' failed: ' + detail;
+    if (options.mutation) throw new GhMutationRejectedError(message);
+    throw new Error(message);
   }
   let value: unknown;
   try {
     value = JSON.parse(result.stdout);
   } catch {
-    throw new Error('gh ' + args.join(' ') + ' returned invalid JSON');
+    const message = 'gh ' + args.join(' ') + ' returned invalid JSON';
+    if (options.mutation) throw new GhMutationUnknownError(message);
+    throw new Error(message);
   }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) {
-    throw new Error('gh ' + args.join(' ') + ' returned a non-object');
+    const message = 'gh ' + args.join(' ') + ' returned a non-object';
+    if (options.mutation) throw new GhMutationUnknownError(message);
+    throw new Error(message);
   }
   return value as Record<string, unknown>;
 }
@@ -149,8 +187,12 @@ function postedUrl(value: Record<string, unknown>, slug: string, prNumber: numbe
 
 function postComment(run: ReviewPublishGhRunner, slug: string, prNumber: number, body: string): string {
   const value = ghJson(run, ['api', 'repos/' + slug + '/issues/' + prNumber + '/comments', '--hostname', 'github.com', '--method', 'POST', '--input', '-'],
-    JSON.stringify({ body }));
-  return postedUrl(value, slug, prNumber, false);
+    JSON.stringify({ body }), { mutation: true });
+  try {
+    return postedUrl(value, slug, prNumber, false);
+  } catch (error) {
+    throw new GhMutationUnknownError(errorMessage(error), error);
+  }
 }
 
 function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, headSha: string, receipt: ReviewPublishReceipt): string {
@@ -161,14 +203,26 @@ function postReview(run: ReviewPublishGhRunner, slug: string, prNumber: number, 
     body: rendered.body,
     ...(rendered.comments.length ? { comments: rendered.comments } : {}),
   };
-  const value = ghJson(run, ['api', 'repos/' + slug + '/pulls/' + prNumber + '/reviews', '--hostname', 'github.com', '--method', 'POST', '--input', '-'], JSON.stringify(payload));
-  if (value.commit_id !== headSha) throw new Error('provider review does not bind the requested head SHA');
-  if (value.state !== 'COMMENTED') throw new Error('provider review state is ' + String(value.state) + ', not COMMENTED');
-  return postedUrl(value, slug, prNumber, true);
+  const value = ghJson(run, ['api', 'repos/' + slug + '/pulls/' + prNumber + '/reviews', '--hostname', 'github.com', '--method', 'POST', '--input', '-'], JSON.stringify(payload), { mutation: true });
+  try {
+    if (value.commit_id !== headSha) throw new Error('provider review does not bind the requested head SHA');
+    if (value.state !== 'COMMENTED') throw new Error('provider review state is ' + String(value.state) + ', not COMMENTED');
+    return postedUrl(value, slug, prNumber, true);
+  } catch (error) {
+    throw new GhMutationUnknownError(errorMessage(error), error);
+  }
 }
 
 function partial(message: string, posted: readonly string[], cause?: unknown): ReviewPublishError {
   return new ReviewPublishError('review_publish_partial', message, 5, [...posted], cause === undefined ? undefined : { cause: errorMessage(cause) });
+}
+
+/** A POST may have reached GitHub; never retry without inspecting the PR first. */
+function unknownOutcome(message: string, posted: readonly string[], cause?: unknown): ReviewPublishError {
+  return new ReviewPublishError('review_publish_unknown', message, 5, [...posted], {
+    inspect_required: true,
+    ...(cause === undefined ? {} : { cause: errorMessage(cause) }),
+  });
 }
 
 export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
@@ -188,24 +242,47 @@ export function publishReview(input: ReviewPublishInput): ReviewPublishResult {
       'review receipt subject ' + receipt.subject_sha + ' is not the PR head ' + pr.headSha + '; nothing was posted', 2);
   }
   const posted: string[] = [];
+  const confirmHead = (stage: string): void => {
+    let current: PullRequestHead;
+    try {
+      current = prHead(run, input.prNumber);
+    } catch (error) {
+      throw partial('the PR head could not be re-read before the ' + stage + '; inspection is required: ' + errorMessage(error), posted, error);
+    }
+    if (current.slug !== pr.slug || current.headSha.toLowerCase() !== receipt.subject_sha) {
+      throw partial('the PR head moved from ' + pr.headSha + ' to ' + current.headSha + ' before the ' + stage
+        + '; receipt subject ' + receipt.subject_sha + ' was not published to the ' + stage + '; inspection is required', posted);
+    }
+  };
   let claimUrl: string;
   try {
     claimUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceClaim(receipt));
   } catch (error) {
+    if (error instanceof GhMutationUnknownError) {
+      throw unknownOutcome('the acceptance claim POST outcome is unknown; inspection is required before any retry: ' + errorMessage(error), posted, error);
+    }
     throw new ReviewPublishError('review_publish_failed', 'acceptance claim was not posted: ' + errorMessage(error), 1, posted);
   }
   posted.push(claimUrl);
+  confirmHead('review');
   let reviewUrl: string;
   try {
     reviewUrl = postReview(run, pr.slug, input.prNumber, pr.headSha, receipt);
   } catch (error) {
+    if (error instanceof GhMutationUnknownError) {
+      throw unknownOutcome('the acceptance review POST outcome is unknown; inspection is required before any retry: ' + errorMessage(error), posted, error);
+    }
     throw partial('acceptance review was not posted after the claim: ' + errorMessage(error), posted, error);
   }
   posted.push(reviewUrl);
+  confirmHead('record');
   let recordUrl: string;
   try {
     recordUrl = postComment(run, pr.slug, input.prNumber, renderAcceptanceRecord(receipt, claimUrl));
   } catch (error) {
+    if (error instanceof GhMutationUnknownError) {
+      throw unknownOutcome('the acceptance record POST outcome is unknown; inspection is required before any retry: ' + errorMessage(error), posted, error);
+    }
     throw partial('acceptance record was not posted after the review: ' + errorMessage(error), posted, error);
   }
   return Object.freeze({
