@@ -20,6 +20,7 @@ import {
   buildBenchmarkSummary,
   buildAgentCommand,
   captureGitArtifacts,
+  copyEvalFixtures,
   formatIterationName,
   initBenchmarkGitRepo,
   loadBenchmarkConfig,
@@ -28,6 +29,7 @@ import {
   parseClaudeStructuredOutput,
   parseCodexStructuredOutput,
   runSkillEvals,
+  type EvalEntry,
 } from "../scripts/run-skill-evals";
 
 const ROOT = join(import.meta.dir, "..");
@@ -168,6 +170,25 @@ describe("run-skill-evals helpers", () => {
       expect(command.args).not.toContain(ROOT);
     } finally {
       rmSync(boundary, { recursive: true, force: true });
+    }
+  });
+
+  test("copies the eval 27/28 fixture inputs after the PRD moved to docs/prds", () => {
+    const manifest = JSON.parse(readFileSync(join(ROOT, "evals", "evals.json"), "utf-8")) as { evals: EvalEntry[] };
+    const destination = tempPath("benchmark-eval-fixtures");
+    try {
+      for (const id of [27, 28]) {
+        const entry = manifest.evals.find(candidate => candidate.id === id);
+        expect(entry).toBeDefined();
+        copyEvalFixtures(entry!, ROOT, destination);
+        for (const path of entry!.graders.files_exist ?? []) {
+          // The graded response is agent output, not a copied fixture input.
+          if (path === "final-response.md") continue;
+          expect(existsSync(join(destination, path)), `eval ${id} input ${path}`).toBe(true);
+        }
+      }
+    } finally {
+      rmSync(destination, { recursive: true, force: true });
     }
   });
 
