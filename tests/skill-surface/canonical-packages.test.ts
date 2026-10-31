@@ -325,7 +325,10 @@ describe("issue-flow facade: board protocol surface ships with the package", () 
       "unblocked", "integration status",
     ]);
     expect(board).toContain("Seat-only comment kinds");
-    expect(board).toContain("Coordinator: none");
+    // A claim is valid only from a write-access account, and the deleted
+    // self-claim rule must not come back as a "none" value.
+    expect(board).toContain("`author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`");
+    expect(board).not.toContain("Coordinator: none");
   });
 
   test("templates carry the plan, required claim fields and five status values", () => {
