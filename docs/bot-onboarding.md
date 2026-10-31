@@ -159,7 +159,7 @@ define cleanup ownership.
 
 ## Task artifacts
 
-Follow [Issue flow](issue-flow.md): the GitHub issue and PR hold task identity,
+Follow [Issue flow](../assets/skills/repo-harness-issue-flow/SKILL.md): the GitHub issue and PR hold task identity,
 claim, dependencies and status; PR and CI hold proof; `docs/prds/` holds product
 intent; `tasks/lessons.md` holds lessons. Do not create plan, sprint, contract,
 notes, review, todo or workstream artifacts.

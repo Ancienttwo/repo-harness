@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { readFileSync } from "fs";
+import { existsSync, lstatSync, readFileSync } from "fs";
 import { join } from "path";
 import {
   formatGlobalContextWrite,
@@ -210,5 +210,129 @@ describe("global working rules distribution", () => {
     const inspection = inspectGlobalContext(merged.content, ROOT);
     expect(inspection.state).toBe("managed-current");
     expect(inspection.language).toEqual({ preset: "custom", instruction });
+  });
+});
+
+const RULE_FILES = ["CLAUDE.md", "AGENTS.md"] as const;
+const ISSUE_FLOW_SKILL = "assets/skills/repo-harness-issue-flow/SKILL.md";
+const SHARED_SECTIONS = ["Workflow", "Code Optimization Principles", "Testing", "Writing", "UI"];
+
+function rootRules(file: (typeof RULE_FILES)[number]): string {
+  return readFileSync(join(ROOT, file), "utf-8");
+}
+
+function ruleLineCount(content: string): number {
+  return content.replace(/\n$/, "").split("\n").length;
+}
+
+function sectionBody(content: string, title: string): string {
+  const start = content.indexOf("## " + title + "\n");
+  if (start === -1) return "";
+  const body = content.slice(start + title.length + 4);
+  const next = body.search(/^## /m);
+  return next === -1 ? body : body.slice(0, next);
+}
+
+describe("root rule invariants", () => {
+  test("root rule files stay standalone regular files within the 60-line budget", () => {
+    for (const file of RULE_FILES) {
+      const stat = lstatSync(join(ROOT, file));
+      expect(stat.isFile(), file).toBe(true);
+      expect(stat.isSymbolicLink(), file).toBe(false);
+      expect(ruleLineCount(rootRules(file)), file).toBeLessThanOrEqual(60);
+    }
+  });
+
+  test("both root files repeat every shared invariant and keep host guidance separate", () => {
+    const [claude, agents] = RULE_FILES.map(rootRules);
+    const shared = (content: string) => content.split(/\n## (?:Claude Code|Codex)\n/)[0]!;
+    expect(shared(claude)).toBe(shared(agents));
+    for (const section of SHARED_SECTIONS) {
+      expect(sectionBody(claude, section), section).not.toBe("");
+      expect(sectionBody(agents, section), section).not.toBe("");
+    }
+    expect(claude).toContain("## Claude Code");
+    expect(claude).not.toContain("## Codex\n");
+    expect(agents).toContain("## Codex");
+    expect(agents).not.toContain("## Claude Code\n");
+    expect(claude).toContain("~/.claude/settings.json");
+    expect(claude).not.toContain("~/.codex/hooks.json");
+    expect(agents).toContain("~/.codex/hooks.json");
+    expect(agents).not.toContain("~/.claude/settings.json");
+  });
+
+  test("the workflow line points at the issue-flow skill for every multi-agent concern", () => {
+    const skill = readFileSync(join(ROOT, ISSUE_FLOW_SKILL), "utf-8");
+    for (const file of RULE_FILES) {
+      const content = rootRules(file);
+      expect(content).toContain("`repo-harness-issue-flow` (`" + ISSUE_FLOW_SKILL + "`)");
+      expect(content).toContain("roles, claims, handoff, dispatch, acceptance and merge");
+      expect(content).not.toContain("docs/issue-flow.md");
+      expect(content.split(ISSUE_FLOW_SKILL).length - 1, file).toBe(1);
+    }
+    expect(skill).toContain("## Roles and seats");
+    expect(skill).toContain("## Where each fact lives");
+    expect(skill).toContain("## Hard rules");
+  });
+
+  test("the architecture line points at the archimap and its capability docs", () => {
+    for (const file of RULE_FILES) {
+      const content = rootRules(file);
+      expect(content).toContain("`docs/architecture/archimap.html` is the single architecture entry");
+      expect(content).toContain("`docs/architecture/modules/`");
+      expect(content).toContain("Change boundaries only through `repo-harness-architecture`");
+      expect(content).not.toContain("`.archcontext/model/` owns architecture boundaries");
+      expect(content).not.toContain("read `docs/architecture/` on demand");
+    }
+  });
+
+  test("both root files keep the hard boundaries and the risk-tier rule", () => {
+    for (const file of RULE_FILES) {
+      const content = rootRules(file);
+      expect(content).toContain("Keep four hard boundaries: main publication, deletion, credentials/permissions, and release/production operations.");
+      expect(content).toContain("current task explicitly authorizes main publication");
+      expect(content).toContain("`publication.acceptance_merge` is `on` in the policy on the PR base");
+      expect(content).toContain("Deletion, credentials/permissions and release/production need user approval.");
+      expect(content).toContain("[Review by risk](docs/reference-configs/agentic-development-flow.md#review-by-risk)");
+      expect(content).toContain("Changing implementation and test assertions together does not raise the tier.");
+    }
+  });
+
+  test("the retired multi-agent sections stay out of both root files", () => {
+    const retired = [
+      "## GitHub Issue Claims",
+      "## Handoff",
+      "Herdr Dispatch",
+      "When you delegate",
+      "parent agent",
+      "sub-agent",
+      "frontend implementation",
+      "Own backend implementation",
+      ".ai/harness/handoff",
+      "archcontext/model/` owns",
+    ];
+    for (const file of RULE_FILES) {
+      const content = rootRules(file);
+      for (const text of retired) expect(content, file + ": " + text).not.toContain(text);
+    }
+  });
+
+  test("every relative Markdown link in the root files resolves on disk", () => {
+    for (const file of RULE_FILES) {
+      for (const match of rootRules(file).matchAll(/\]\(([^)\s]+)\)/g)) {
+        const target = match[1]!;
+        if (/^(?:https?:|mailto:|#)/.test(target)) continue;
+        expect(existsSync(join(ROOT, target.split("#")[0]!)), file + ": " + target).toBe(true);
+      }
+    }
+  });
+
+  test("documents that linked the retired flow page now link the skill", () => {
+    const spec = readFileSync(join(ROOT, "docs/spec.md"), "utf-8");
+    const onboarding = readFileSync(join(ROOT, "docs/bot-onboarding.md"), "utf-8");
+    expect(spec).toContain("`assets/skills/repo-harness-issue-flow/SKILL.md`");
+    expect(spec).not.toContain("docs/issue-flow.md");
+    expect(onboarding).toContain("(../assets/skills/repo-harness-issue-flow/SKILL.md)");
+    expect(onboarding).not.toContain("(issue-flow.md)");
   });
 });
