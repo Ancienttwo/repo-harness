@@ -771,10 +771,7 @@ describe('mcp http transport', () => {
     }
   }, 30_000);
 
-  // Windows CreateProcess cannot execute the POSIX .sh tripwire (EFTYPE), and a
-  // .cmd tripwire cannot be spawned directly. The refusal path is covered on
-  // POSIX; the Windows matrix still exercises the other MCP transport cases.
-  test.skipIf(process.platform === 'win32')('an orchestrator grant that predates publicationMerge never lists or reaches the merge tool', async () => {
+  test('an orchestrator grant that predates publicationMerge never lists or reaches the merge tool', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-stale-grant-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
