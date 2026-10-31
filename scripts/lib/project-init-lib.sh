@@ -1245,19 +1245,12 @@ pi_write_harness_policy() {
     "global_handoff_dir": "~/.codex/handoffs",
     "auto_start_new_session": false
   },
-  "plan_capture": {
-    "script": "repo-harness run capture-plan",
-    "sources": ["codex-plan-mode", "waza-think", "repo-harness-plan", "repo-harness-sprint"],
-    "rule": "Codex Plan mode and Waza think planning should capture decision-complete work-package plans into plans/plan-*.md only when Artifact Level is work-package and the Promotion Gate is concrete; implementation approval then projects the active approved work-package plan through repo-harness run plan-to-todo; checklist-row and inline sprint work stay in the sprint backlog or active plan Task Breakdown, while contract rows may expand with \$think before capture/execution"
-  },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",
-    "source_of_truth": "transient host planning bridge only; plans/ and .ai/harness/active-plan remain authoritative"
+    "source_of_truth": "transient host planning bridge only; no repository plan is authoritative"
   },
   "guards": {
-    "edit_plan_gate": "enforce",
-    "edit_plan_gate_modes": ["enforce", "advice", "off"],
-    "rule": "the mutation-guard handler blocks implementation edits (non-workflow paths) unless an active plan is Approved/Executing; prompt-layer plan gates are advisory routing only"
+    "rule": "the mutation guard blocks protected paths only; no plan gate is evaluated"
   },
   "circuit_breakers": {
     "guard_repeat": 2,
