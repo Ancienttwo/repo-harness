@@ -482,7 +482,7 @@
       },
       {
         "id": "component.contract-assets.planning-helpers",
-        "name": "Planning Helpers",
+        "name": "Operations Helpers",
         "type": "Component",
         "tags": [
           "component"
