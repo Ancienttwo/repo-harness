@@ -3,6 +3,7 @@ import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-s
 export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
 import { validateRequiredCheckFailureEvidence } from '../core/evidence/required-check-evidence';
+import { GENERATED_ARTIFACTS_FAILURE_CODES } from '../core/publication/generated-artifacts';
 import { validateRequiredCheckCoverageEvidence } from '../core/publication/required-check-coverage';
 import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
@@ -267,6 +268,7 @@ export const OPERATOR_REPOSITORY_ERROR_CODES = [
 ] as const;
 const EXECUTION_READINESS = ['execution_ready', 'planning_required', 'inline_ready', 'unsupported'] as const;
 const MERGE_BLOCKERS = [
+  ...GENERATED_ARTIFACTS_FAILURE_CODES,
   'provider_unavailable',
   'provider_data_incomplete',
   'changed_during_read',
@@ -289,6 +291,12 @@ const MERGE_BLOCKERS = [
   'stack_base_pr_not_open',
   'stack_foreign_pr',
 ] as const;
+/** Only these blockers carry executable action text in `detail`. */
+const MERGE_BLOCKER_DETAIL_CODES: ReadonlySet<string> = new Set([
+  'required_check_coverage_missing',
+  'required_check_coverage_policy_invalid',
+  ...GENERATED_ARTIFACTS_FAILURE_CODES,
+]);
 const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;
 const MERGE_INTEGRATION_MODES = ['unmerged', 'ancestor', 'absorbed', 'unavailable'] as const;
 const MERGE_STACK_STATUSES = [
@@ -440,8 +448,7 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
       throw new OperatorPayloadError();
     }
     const detail = blocker.detail === undefined ? undefined : requireString(blocker.detail);
-    if (detail !== undefined && blocker.code !== 'required_check_coverage_missing'
-      && blocker.code !== 'required_check_coverage_policy_invalid') throw new OperatorPayloadError();
+    if (detail !== undefined && !MERGE_BLOCKER_DETAIL_CODES.has(blocker.code)) throw new OperatorPayloadError();
     blockers.push(Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner, ...(detail === undefined ? {} : { detail }) }));
   }
   const checkFailures = requireArray(readiness.check_failures).map((entry) => {

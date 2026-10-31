@@ -4,17 +4,25 @@
  * a missing field means "off"; every other shape is invalid.
  *
  * `publication.required_check_coverage` declares protected paths and the
- * required checks that must have run for them (issue #1205). Both blocks live
- * in the protected `publication` subtree, so a PR cannot weaken the rule it is
- * merged under.
+ * required checks that must have run for them (issue #1205).
+ * `publication.generated_artifacts` declares generated paths and the one
+ * regeneration command readiness runs on the merge tree (issue #1257). All
+ * blocks live in the protected `publication` subtree, so a PR cannot weaken
+ * the rule it is merged under.
  */
 
+import {
+  parseGeneratedArtifactsBlock,
+  type GeneratedArtifactsPolicyAtRef,
+  type GeneratedArtifactsPolicyV1,
+} from './generated-artifacts';
+import { PUBLICATION_POLICY_PATH } from './policy-path';
 import {
   parseRequiredCheckCoverageBlock,
   type RequiredCheckCoveragePolicyV1,
 } from './required-check-coverage';
 
-export const PUBLICATION_POLICY_PATH = '.ai/harness/policy.json';
+export { PUBLICATION_POLICY_PATH };
 
 export type AcceptanceMergeSwitch = 'off' | 'on';
 
@@ -29,6 +37,8 @@ export type PublicationPolicy =
     readonly acceptance_merge: AcceptanceMergeSwitch;
     /** The declared coverage block, or null when the block is absent or empty. */
     readonly coverage: RequiredCheckCoveragePolicyV1 | null;
+    /** The declared generated-artifact block, or null when the block is absent or empty. */
+    readonly generated_artifacts: GeneratedArtifactsPolicyV1 | null;
     readonly subtree: string;
   }
   | { readonly ok: false; readonly message: string };
@@ -81,12 +91,13 @@ export function policyFileFromContents(value: unknown): PolicyFileAtRef | null {
 
 export function parsePublicationPolicy(file: PolicyFileAtRef): PublicationPolicy {
   const parsed = policyRoot(file);
-  if (parsed.status === 'absent') return { ok: true, acceptance_merge: 'off', coverage: null, subtree: canonicalJson(undefined) };
+  if (parsed.status === 'absent') return { ok: true, acceptance_merge: 'off', coverage: null, generated_artifacts: null, subtree: canonicalJson(undefined) };
   if (parsed.status === 'invalid') return { ok: false, message: parsed.message };
   const publication = parsed.root.publication;
-  if (publication === undefined) return { ok: true, acceptance_merge: 'off', coverage: null, subtree: canonicalJson(undefined) };
+  if (publication === undefined) return { ok: true, acceptance_merge: 'off', coverage: null, generated_artifacts: null, subtree: canonicalJson(undefined) };
   if (!isObject(publication)) return { ok: false, message: 'publication must be an object' };
-  const unknown = Object.keys(publication).filter((key) => key !== 'acceptance_merge' && key !== 'required_check_coverage');
+  const unknown = Object.keys(publication).filter((key) => key !== 'acceptance_merge'
+    && key !== 'required_check_coverage' && key !== 'generated_artifacts');
   if (unknown.length > 0) return { ok: false, message: `publication has unknown fields: ${unknown.sort().join(', ')}` };
   const value = publication.acceptance_merge;
   if (value !== undefined && value !== 'off' && value !== 'on') {
@@ -94,7 +105,23 @@ export function parsePublicationPolicy(file: PolicyFileAtRef): PublicationPolicy
   }
   const coverage = parseRequiredCheckCoveragePolicy(publication.required_check_coverage);
   if (!coverage.ok) return { ok: false, message: coverage.message };
-  return { ok: true, acceptance_merge: value ?? 'off', coverage: coverage.policy, subtree: canonicalJson(publication) };
+  const generated = parseGeneratedArtifactsPolicy(publication.generated_artifacts);
+  if (!generated.ok) return { ok: false, message: generated.message };
+  return {
+    ok: true,
+    acceptance_merge: value ?? 'off',
+    coverage: coverage.policy,
+    generated_artifacts: generated.policy,
+    subtree: canonicalJson(publication),
+  };
+}
+
+function parseGeneratedArtifactsPolicy(block: unknown):
+  { readonly ok: true; readonly policy: GeneratedArtifactsPolicyV1 | null } | { readonly ok: false; readonly message: string } {
+  if (block === undefined) return { ok: true, policy: null };
+  const parsed = parseGeneratedArtifactsBlock(block);
+  if (!parsed.ok) return { ok: false, message: `publication.generated_artifacts is invalid: ${parsed.message}` };
+  return { ok: true, policy: parsed.policy };
 }
 
 function parseRequiredCheckCoveragePolicy(block: unknown):
@@ -112,15 +139,50 @@ function parseRequiredCheckCoveragePolicy(block: unknown):
  * `absent` covers a missing file, a missing block and an empty block.
  */
 export function requiredCheckCoveragePolicyAtRef(file: PolicyFileAtRef): RequiredCheckCoveragePolicyAtRef {
+  return publicationPolicyBlocksAtRef(file).coverage;
+}
+
+/** The generated-artifact block alone, so readiness can name its own blocker. */
+export function generatedArtifactsPolicyAtRef(file: PolicyFileAtRef): GeneratedArtifactsPolicyAtRef {
+  return publicationPolicyBlocksAtRef(file).generated_artifacts;
+}
+
+/** One policy read answers both declared blocks for a readiness round. */
+export function publicationPolicyBlocksAtRef(file: PolicyFileAtRef): {
+  readonly coverage: RequiredCheckCoveragePolicyAtRef;
+  readonly generated_artifacts: GeneratedArtifactsPolicyAtRef;
+} {
   const parsed = policyRoot(file);
-  if (parsed.status === 'absent') return { status: 'absent' };
-  if (parsed.status === 'invalid') return { status: 'invalid', message: parsed.message };
+  if (parsed.status === 'absent') {
+    return { coverage: { status: 'absent' }, generated_artifacts: { status: 'absent' } };
+  }
+  if (parsed.status === 'invalid') {
+    return {
+      coverage: { status: 'invalid', message: parsed.message },
+      generated_artifacts: { status: 'invalid', message: parsed.message },
+    };
+  }
   const publication = parsed.root.publication;
-  if (publication === undefined) return { status: 'absent' };
-  if (!isObject(publication)) return { status: 'invalid', message: 'publication must be an object' };
+  if (publication === undefined) {
+    return { coverage: { status: 'absent' }, generated_artifacts: { status: 'absent' } };
+  }
+  if (!isObject(publication)) {
+    const message = 'publication must be an object';
+    return {
+      coverage: { status: 'invalid', message },
+      generated_artifacts: { status: 'invalid', message },
+    };
+  }
   const coverage = parseRequiredCheckCoveragePolicy(publication.required_check_coverage);
-  if (!coverage.ok) return { status: 'invalid', message: coverage.message };
-  return coverage.policy === null ? { status: 'absent' } : { status: 'active', policy: coverage.policy };
+  const generated = parseGeneratedArtifactsPolicy(publication.generated_artifacts);
+  return {
+    coverage: !coverage.ok
+      ? { status: 'invalid', message: coverage.message }
+      : coverage.policy === null ? { status: 'absent' } : { status: 'active', policy: coverage.policy },
+    generated_artifacts: !generated.ok
+      ? { status: 'invalid', message: generated.message }
+      : generated.policy === null ? { status: 'absent' } : { status: 'active', policy: generated.policy },
+  };
 }
 
 /**
