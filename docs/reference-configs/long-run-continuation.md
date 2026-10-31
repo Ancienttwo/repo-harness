@@ -1,8 +1,21 @@
 # Long-Run Continuation
 
-Long tasks drift when chat context becomes the de-facto authority. The continuation protocol removes that dependency: the host decides *when* to wake, repo-harness answers *what is next* from durable state alone. A fresh session with no memory of the previous turn reaches the same answer as a session that ran twenty turns.
+Long tasks drift when chat context becomes the de-facto authority. The continuation protocol removes that dependency: the host decides *when* to wake, repo-harness answers *what is next* from Git state, the GitHub issue and the PR. A fresh session with no memory of the previous turn reaches the same answer as a session that ran twenty turns.
+
+No local handoff file is part of this loop. The Stop hook does not write `.ai/harness/handoff/current.md` or `resume.md`, and Effective State does not read them or `tasks/current.md`.
 
 repo-harness ships no scheduler, no daemon, no timer, and no quota or token ledger. Wake timing belongs entirely to the host loop — Claude Code `/loop`, Codex Goal mode, cron, or a human running one tick at a time.
+
+## Where the Next Unit Comes From
+
+The branch is the only next-unit input. Effective State reads it with Git and applies one rule:
+
+| Branch | `next_action` |
+|---|---|
+| Canonical `<type>/<digits>-<slug>`, for example `feat/1228-handoff-retirement` | `Continue GitHub issue #1228 on branch feat/1228-handoff-retirement.` |
+| No issue number, no slug, extra path segments, or detached HEAD | null; the envelope is `idle` |
+
+The message always names both the issue and the branch. The host reads that issue and its PR for the task scope and the exact step. An ambiguous branch never invents a target: the loop stays idle until the branch names one issue.
 
 ## The Tick
 
@@ -26,11 +39,11 @@ Rules that make the tick safe to repeat:
 
 | Route | Meaning | Host action |
 |---|---|---|
-| `continue` | A fresh handoff names the exact next step; `reason` carries `next_action:<step>` and `unit_ref` is a stable hash of that next action, so projection-only edits do not reset the stall group | Run the envelope's `command` (`repo-harness state resolve --json`) for the full brief, then dispatch bounded execution on that next step |
+| `continue` | The branch names one GitHub issue; `reason` carries `next_action:Continue GitHub issue #N on branch <branch>.` and `unit_ref` is a stable hash of that message, so projection-only edits do not reset the stall group | Read the issue and PR for the exact step, then run the envelope's `command` (`repo-harness state resolve --json`) for the full brief |
 | `halt` | A blocker, a stall, or an unreadable ledger; `command` is `null` | Surface `reason` to the operator and stop. Never retry a halt without a state change — the same bytes produce the same halt |
 | `idle` | No next action is available | Stop the loop |
 
-`halt` carries the existing vocabulary rather than inventing one: `blockers:<list>`, `no_progress`, `attempt_ledger_unreadable`. There is no `ask` or `wait` route: a needs-user state is a halt whose reason points at the blocker or the handoff.
+`halt` carries the existing vocabulary rather than inventing one: `blockers:<list>`, `no_progress`, `attempt_ledger_unreadable`. There is no `ask` or `wait` route: a needs-user state is a halt whose reason points at the blocker.
 
 ## Attempt Receipts
 
@@ -107,12 +120,12 @@ An unknown or replaced cursor fails. `--limit N` keeps the latest N remaining ro
 Render output is a projection. It is not a second store.
 
 Checkpoint publication retains the latest 20 accepted decisions by `created_at`.
-Equal times keep append order. The handoff Decisions section reads only that
-published checkpoint. New decisions appear after the next checkpoint publication.
-An empty section shows `- (none recorded)`.
+Equal times keep append order. New decisions appear after the next checkpoint
+publication.
 
 ## Sources
 
+- Next unit: the branch's canonical `<type>/<digits>-<slug>` issue, its GitHub issue and PR
 - Task record: GitHub issue and PR
 - Design rationale: `docs/researches/20260803-loopx-comparative-analysis.md` (§9 gap map + round-2 addendum)
 - WP1 closeout journal: `tests/contract-worktree-closeout-journal.test.ts`
