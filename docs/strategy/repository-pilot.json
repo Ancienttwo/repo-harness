@@ -6,7 +6,7 @@
     "kind": "assumption",
     "evidence": [
       "README.md",
-      "docs/strategy/optional-strategy-memory.md"
+      "docs/plans/optional-strategy-memory.md"
     ]
   },
   "intendedResults": [
@@ -15,7 +15,7 @@
       "kind": "assumption",
       "evidence": [
         "README.md",
-        "docs/strategy/optional-strategy-memory.md"
+        "docs/plans/optional-strategy-memory.md"
       ]
     },
     {
@@ -23,7 +23,7 @@
       "kind": "assumption",
       "evidence": [
         "README.md",
-        "docs/strategy/optional-strategy-memory.md"
+        "docs/plans/optional-strategy-memory.md"
       ]
     }
   ],
@@ -32,7 +32,7 @@
       "key": "execution",
       "value": "export-only",
       "evidence": [
-        "docs/strategy/optional-strategy-memory.md"
+        "docs/plans/optional-strategy-memory.md"
       ]
     }
   ],
@@ -66,7 +66,7 @@
       "sha256": "15ff93f7a0caa5cdff6e6d541ae01d639e1f1de95490187e2b62b2f38c6455f1"
     },
     {
-      "path": "docs/strategy/optional-strategy-memory.md",
+      "path": "docs/plans/optional-strategy-memory.md",
       "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
       "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
     }
@@ -78,12 +78,12 @@
       "kind": "long_term",
       "lifecycle": "active",
       "body": {
-        "path": "docs/strategy/optional-strategy-memory.md",
+        "path": "docs/plans/optional-strategy-memory.md",
         "revision": "f4ed93d91575c470d72560c1bab3d2fb14e117ab",
         "sha256": "df15c55f0bac2e23ab3827c83d8e99fa6b81fe46ad29b9cd214b28ddca0866d3"
       },
       "provenance": [
-        "docs/strategy/optional-strategy-memory.md"
+        "docs/plans/optional-strategy-memory.md"
       ],
       "applicability": [
         "strategy-pilot"
