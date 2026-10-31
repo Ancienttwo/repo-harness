@@ -63,6 +63,10 @@ import {
   validateRequiredCheckFailureEvidenceList,
   type RequiredCheckFailureEvidenceV1,
 } from '../../core/evidence/required-check-evidence';
+import {
+  validateRequiredCheckCoverageEvidenceOrNull,
+  type RequiredCheckCoverageEvidenceV1,
+} from '../../core/publication/required-check-coverage';
 
 export {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
@@ -95,6 +99,7 @@ export type {
   ReviewSubject,
   UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+export type { RequiredCheckCoverageEvidenceV1 } from '../../core/publication/required-check-coverage';
 
 /** The bound author task session and the models its OAR host observed. */
 export interface AcceptanceAuthor {
@@ -553,6 +558,11 @@ export function validateAcceptanceReceiptAgainstPolicy(
     } catch (error) {
       return no('check_failure_evidence', `AcceptanceReceipt failures are invalid: ${(error as Error).message}`);
     }
+    try {
+      validateRequiredCheckCoverageEvidenceOrNull(receipt.required_check_coverage);
+    } catch (error) {
+      return no('required_check_coverage_evidence', `AcceptanceReceipt required_check_coverage is invalid: ${(error as Error).message}`);
+    }
     if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
     if (receipt.campaign_sha256 !== input.admission.campaign_sha256) return no('campaign_identity', 'AcceptanceReceipt campaign is stale');
     if (receipt.admission_sha256 !== input.admission.admission_sha256 || receipt.grant_sha256 !== input.grantSha256) return no('admission_binding', 'AcceptanceReceipt admission is stale');
@@ -649,7 +659,8 @@ function parseReceipt(text: string): AcceptanceReceipt {
     fail('AcceptanceReceipt waiver grant binding does not match disposition');
   }
   const receipt = { ...value, findings: validateFindings(value.findings),
-    failures: validateRequiredCheckFailureEvidenceList(value.failures) } as AcceptanceReceipt;
+    failures: validateRequiredCheckFailureEvidenceList(value.failures),
+    required_check_coverage: validateRequiredCheckCoverageEvidenceOrNull(value.required_check_coverage) } as AcceptanceReceipt;
   assertReviewFields(receipt);
   return receipt;
 }
@@ -783,6 +794,7 @@ function buildReceipt(
   summary: string,
   findings: AcceptanceFinding[],
   failures: RequiredCheckFailureEvidenceV1[],
+  coverage: RequiredCheckCoverageEvidenceV1 | null,
   waiverGrantSha256: string | null,
   now: () => Date,
 ): AcceptanceReceipt {
@@ -813,6 +825,7 @@ function buildReceipt(
     summary,
     findings,
     failures,
+    required_check_coverage: coverage,
     waiver_grant_sha256: waiverGrantSha256,
     issued_at: now().toISOString(),
   };
@@ -901,6 +914,8 @@ export async function recordAcceptance(args: {
   findings: AcceptanceFinding[];
   /** Observed required-check failure evidence; a rerun pass never becomes a proven flake. */
   failures?: readonly RequiredCheckFailureEvidenceV1[];
+  /** Observed required-check coverage; null records that the base policy declares no block. */
+  coverage?: RequiredCheckCoverageEvidenceV1 | null;
   /** A provider must bind its opinion to the context it actually reviewed. */
   expectedContext?: {
     admission_sha256: string;
@@ -938,6 +953,7 @@ export async function recordAcceptance(args: {
     args.summary,
     args.findings,
     validateRequiredCheckFailureEvidenceList(args.failures ?? []),
+    validateRequiredCheckCoverageEvidenceOrNull(args.coverage ?? null),
     null,
     args.now ?? (() => new Date()),
   );
@@ -982,6 +998,7 @@ export async function recordUserWaiverAcceptance(args: {
     grant.summary,
     findings,
     [],
+    null,
     waiverGrantFingerprint(grant),
     args.now ?? (() => new Date()),
   );
@@ -1205,6 +1222,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
     const findingsRaw = option(argv, '--findings-json', false) ?? '[]';
     const failuresRaw = option(argv, '--failures-json', false) ?? '[]';
     const failures = validateRequiredCheckFailureEvidenceList(JSON.parse(failuresRaw));
+    const coverage = validateRequiredCheckCoverageEvidenceOrNull(JSON.parse(option(argv, '--coverage-json', false) ?? 'null'));
     const reviewResultFile = option(argv, '--review-result')!;
     if (!lstatSync(reviewResultFile).isFile() || lstatSync(reviewResultFile).isSymbolicLink()) fail('--review-result must be a regular file');
     const receipt = await recordAcceptance({
@@ -1222,6 +1240,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       summary: option(argv, '--summary')!,
       findings: validateFindings(JSON.parse(findingsRaw)),
       failures,
+      coverage,
       now: opts.now,
     });
     projectRecordedAcceptance({ root, review, receipt });

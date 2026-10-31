@@ -4,11 +4,13 @@ import {
   projectPullRequestMergeReadiness,
   type ProviderMergeReadinessFactsV1,
   type PullRequestMergeReadinessInput,
+  type RequiredCheckCoverageFactsV1,
 } from '../../src/core/publication/merge-readiness';
 import { checkClosingReferences, parseClosingReferences } from '../../src/core/publication/closing-references';
 import { assessRequiredCheckFailure, validateRequiredCheckFailureEvidence } from '../../src/core/evidence/required-check-evidence';
 import { assertionThenPassedEvidence, productFailureEvidence, requiredCheckAttempt, requiredCheckObservation } from '../helpers/required-check-evidence-fixture';
-import { parsePublicationPolicy, publicationPolicyChanged } from '../../src/core/publication/acceptance-merge-policy';
+import { parsePublicationPolicy, publicationPolicyChanged, requiredCheckCoveragePolicyAtRef } from '../../src/core/publication/acceptance-merge-policy';
+import { protectedPathMatches, validateRequiredCheckCoverageEvidenceOrNull } from '../../src/core/publication/required-check-coverage';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -29,6 +31,7 @@ function readyInput(): PullRequestMergeReadinessInput {
       rollback_boundary: { status: 'not_active' },
       checks: [{ name: 'Required / CI', bucket: 'pass' }],
       check_failures: [],
+      required_check_coverage: { status: 'absent' },
       mergeable: 'MERGEABLE',
     },
   };
@@ -44,6 +47,7 @@ describe('projectPullRequestMergeReadiness', () => {
       attention_owner: 'none',
       blockers: [],
       check_failures: [],
+      required_check_coverage: null,
     });
   });
 
@@ -394,6 +398,223 @@ describe('required-check failure evidence', () => {
     expect(projectPullRequestMergeReadiness({ ...base,
       provider: { ...base.provider!, check_failures: [{ check_name: 'incomplete' }] } as unknown as ProviderMergeReadinessFactsV1 })
       .blockers.map((blocker) => blocker.code)).toContain('provider_data_incomplete');
+  });
+});
+
+describe('required-check coverage', () => {
+  const matrix = 'build, typecheck, test (matrix)';
+  const policy = { protected_paths: ['api-surface/**', 'docs/protocol.md'], required_checks: ['Required / CI', matrix] };
+
+  type Check = { readonly name: string; readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' };
+  /** The required-check view and the all-checks view are separate provider reads. */
+  function coverageInput(
+    coverage: { readonly changed_paths: readonly string[]; readonly observed?: readonly Check[] }
+      | { readonly status: 'invalid'; readonly message: string }
+      | { readonly status: 'absent' },
+    checks: readonly Check[],
+  ): PullRequestMergeReadinessInput {
+    const base = readyInput();
+    const facts: RequiredCheckCoverageFactsV1 = 'status' in coverage ? coverage
+      : { status: 'active', policy, changed_paths: coverage.changed_paths, observed_checks: coverage.observed ?? checks };
+    return { ...base, provider: { ...base.provider!, checks, required_check_coverage: facts } };
+  }
+
+  test('a protected path with a skipped check blocks and names the path, the check and the fix', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['src/app.ts', 'api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_missing')!;
+    expect(blocker.attention_owner).toBe('agent');
+    expect(blocker.detail).toContain('"api-surface/entries.json"');
+    expect(blocker.detail).toContain(`"${matrix}"`);
+    expect(blocker.detail).toContain('is skipping');
+    expect(blocker.detail).toContain('coverage-waiver');
+    expect(verdict.required_check_coverage).toMatchObject({
+      protected_paths: ['api-surface/entries.json'],
+      checks: [
+        { check: 'Required / CI', bucket: 'pass', requirement: 'required' },
+        { check: matrix, bucket: 'skipping', requirement: 'required' },
+      ],
+      waiver: null,
+    });
+    expect(validateRequiredCheckCoverageEvidenceOrNull(verdict.required_check_coverage)).toEqual(verdict.required_check_coverage);
+  });
+
+  test('an unprotected PR keeps the current behavior', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['src/app.ts', 'docs/other.md'] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.blockers).toEqual([]);
+    expect(verdict.required_check_coverage).toMatchObject({
+      protected_paths: [],
+      waiver: null,
+      checks: [
+        { check: 'Required / CI', bucket: 'pass', requirement: 'not_required' },
+        { check: matrix, bucket: 'missing', requirement: 'not_required' },
+      ],
+    });
+  });
+
+  test('every declared check passing is ready and recorded', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['docs/protocol.md'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'pass' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.blockers).toEqual([]);
+    expect(verdict.required_check_coverage).toMatchObject({
+      protected_paths: ['docs/protocol.md'],
+      waiver: null,
+      checks: [
+        { check: 'Required / CI', bucket: 'pass', requirement: 'required' },
+        { check: matrix, bucket: 'pass', requirement: 'required' },
+      ],
+    });
+  });
+
+  test('a passing coverage-waiver check waives the requirement and is recorded', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' },
+          { name: 'coverage-waiver', bucket: 'pass' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage?.waiver).toEqual({ check: 'coverage-waiver', bucket: 'pass' });
+    expect(verdict.required_check_coverage?.checks.map((check) => check.requirement)).toEqual(['waived', 'waived']);
+    expect(validateRequiredCheckCoverageEvidenceOrNull(verdict.required_check_coverage)).toEqual(verdict.required_check_coverage);
+  });
+
+  test('a non-passing coverage-waiver check does not waive', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' },
+          { name: 'coverage-waiver', bucket: 'skipping' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage?.waiver).toBeNull();
+    expect(verdict.blockers.map((blocker) => blocker.code)).toContain('required_check_coverage_missing');
+  });
+
+  test('a missing declared check blocks', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_missing')!;
+    expect(blocker.detail).toContain(`"${matrix}" is missing`);
+    expect(blocker.detail).toContain('fix its name in publication.required_check_coverage');
+    expect(verdict.required_check_coverage?.checks[1]).toEqual({ check: matrix, bucket: 'missing', requirement: 'required' });
+  });
+
+  test('a malformed coverage policy fails closed with a typed blocker', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { status: 'invalid', message: 'publication.required_check_coverage is invalid: the block has unknown fields: protected_path' },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage).toBeNull();
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_policy_invalid')!;
+    expect(blocker.attention_owner).toBe('agent');
+    expect(blocker.detail).toContain('unknown fields: protected_path');
+  });
+
+  test('an absent coverage block leaves the verdict and evidence unchanged', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput({ status: 'absent' },
+      [{ name: 'Required / CI', bucket: 'pass' }]));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage).toBeNull();
+  });
+
+  test('a read that changed during observation carries no coverage evidence', () => {
+    const verdict = projectPullRequestMergeReadiness({
+      ...coverageInput({ changed_paths: ['api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }]),
+      observation: 'changed_during_read',
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage).toBeNull();
+  });
+});
+
+describe('required-check coverage policy', () => {
+  const file = (value: unknown) => ({ status: 'present' as const, text: JSON.stringify(value) });
+
+  test('an absent, missing or empty block is inactive', () => {
+    expect(requiredCheckCoveragePolicyAtRef({ status: 'missing' })).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({}))).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { acceptance_merge: 'on' } }))).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { required_check_coverage: {} } }))).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { required_check_coverage: { protected_paths: [] } } })))
+      .toEqual({ status: 'absent' });
+  });
+
+  test('a declared block is active and keeps both lists', () => {
+    const declared = { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] };
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { required_check_coverage: declared } })))
+      .toEqual({ status: 'active', policy: declared });
+  });
+
+  test('the block is closed: unknown fields, unsafe globs and a path rule without checks are invalid', () => {
+    const invalid = [
+      { publication: { required_check_coverage: { protected_path: ['api-surface/**'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['/abs/**'], required_checks: ['Required / CI'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['../escape'], required_checks: ['Required / CI'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['api-surface/**'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['a/**'], required_checks: [''] } } },
+      { publication: { required_check_coverage: { protected_paths: ['a/**', 'a/**'], required_checks: ['Required / CI'] } } },
+      { publication: { required_check_coverage: [] } },
+      { publication: { required_check_coverage: 'on' } },
+    ];
+    for (const value of invalid) {
+      const parsed = requiredCheckCoveragePolicyAtRef(file(value));
+      expect(parsed.status).toBe('invalid');
+      if (parsed.status === 'invalid') expect(parsed.message).toContain('required_check_coverage is invalid');
+    }
+  });
+
+  test('a malformed policy file is invalid, not absent', () => {
+    expect(requiredCheckCoveragePolicyAtRef({ status: 'present', text: '{' }).status).toBe('invalid');
+    expect(requiredCheckCoveragePolicyAtRef({ status: 'present', text: '[]' }).status).toBe('invalid');
+  });
+
+  test('protected globs match whole segments and ** crosses directories', () => {
+    expect(protectedPathMatches('api-surface/**', 'api-surface/entries.json')).toBe(true);
+    expect(protectedPathMatches('api-surface/**', 'api-surface/nested/deep.json')).toBe(true);
+    expect(protectedPathMatches('api-surface/*', 'api-surface/nested/deep.json')).toBe(false);
+    expect(protectedPathMatches('docs/protocol.md', 'docs/protocol.md')).toBe(true);
+    expect(protectedPathMatches('docs/protocol.md', 'docs/protocol.md.bak')).toBe(false);
+    expect(protectedPathMatches('**/entries.json', 'api-surface/entries.json')).toBe(true);
+    expect(protectedPathMatches('**/entries.json', 'entries.json')).toBe(true);
+    expect(protectedPathMatches('*.bin', 'nested/firmware.bin')).toBe(false);
+    expect(protectedPathMatches('*.bin', 'firmware.bin')).toBe(true);
+  });
+
+  test('a PR cannot change the coverage block it is merged under', () => {
+    const base = parsePublicationPolicy(file({ publication: {
+      acceptance_merge: 'on',
+      required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] },
+    } }));
+    expect(base.ok).toBe(true);
+    if (!base.ok) return;
+    expect(base.coverage).toEqual({ protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] });
+    expect(publicationPolicyChanged(base, file({ publication: {
+      acceptance_merge: 'on',
+      required_check_coverage: { protected_paths: ['src/**'], required_checks: ['Required / CI'] },
+    } }))).toBe(true);
+    expect(publicationPolicyChanged(base, file({ publication: {
+      acceptance_merge: 'on',
+      required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] },
+    } }))).toBe(false);
   });
 });
 

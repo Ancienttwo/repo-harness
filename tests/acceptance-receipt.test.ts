@@ -1032,6 +1032,9 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
         return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: PUBLISH_HEAD,
           status: 'completed', conclusion: 'success', pull_requests: [{ number: PR_NUMBER, head: { sha: PUBLISH_HEAD }, base: { sha: PUBLISH_BASE } }] }) };
       }
+      if (path === `repos/${SLUG}/contents/.ai/harness/policy.json?ref=${PUBLISH_BASE}`) {
+        return { status: 1, stdout: JSON.stringify({ status: '404' }), stderr: 'gh: Not Found' };
+      }
       if (path.startsWith(`repos/${SLUG}/contents/.github/workflows/ci-report.yml`)) {
         return { status: 1, stdout: JSON.stringify({ status: '404' }), stderr: 'gh: Not Found' };
       }
@@ -1090,5 +1093,66 @@ test('protocol 4 acceptance record durably stores check failures and projects th
   writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify({ ...receipt, failures: [{ check_name: 'incomplete' }] }));
   await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home }))
     .rejects.toThrow('RequiredCheckFailureEvidence');
+});
+
+const COVERAGE_EVIDENCE = {
+  protocol: 1,
+  kind: 'repo-harness-required-check-coverage',
+  head_sha: 'a'.repeat(40),
+  base_sha: 'b'.repeat(40),
+  protected_paths: ['api-surface/entries.json'],
+  checks: [
+    { check: 'Required / CI', bucket: 'pass', requirement: 'waived' },
+    { check: 'build, typecheck, test (matrix)', bucket: 'skipping', requirement: 'waived' },
+  ],
+  waiver: { check: 'coverage-waiver', bucket: 'pass' },
+} as const;
+
+test('protocol 4 acceptance record durably stores required-check coverage and rejects tampering', async () => {
+  const { root, home } = makeFixture();
+  const input = {
+    root, authority: authorityFor(root), authorityHome: home,
+    verification: '.ai/harness/runs/acceptance.report.json',
+    disposition: 'external_pass' as const, reviewer: 'Claude', source: 'generic-review', actor: null,
+    summary: 'candidate accepted with recorded coverage evidence', findings: [], failures: [],
+    coverage: COVERAGE_EVIDENCE,
+  };
+  const receipt = await recordFixtureAcceptance(input);
+  expect(receipt.required_check_coverage).toEqual(COVERAGE_EVIDENCE);
+
+  const bytes = readFileSync(acceptanceReceiptPath(root, home));
+  expect(JSON.parse(bytes.toString('utf8')).required_check_coverage).toEqual(COVERAGE_EVIDENCE);
+  const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  expect(readAcceptanceReceiptRecord(root, home, digest).receipt.required_check_coverage).toEqual(COVERAGE_EVIDENCE);
+  expect((await verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home })).required_check_coverage)
+    .toEqual(COVERAGE_EVIDENCE);
+
+  // The coverage observation extends the record body; protocol 4 identity fields do not move.
+  const plain = await recordFixtureAcceptance({ ...input, summary: 'same candidate without coverage', coverage: null });
+  for (const field of ['protocol', 'kind', 'repository_root', 'campaign_sha256', 'admission_sha256', 'grant_sha256',
+    'goal_sha256', 'verification_file', 'verification_evidence_sha256', 'benchmark_evidence_sha256',
+    'subject_sha256', 'subject_scope', 'target_ref', 'target_revision', 'reviewed_paths'] as const) {
+    expect([field, plain[field]]).toEqual([field, receipt[field]]);
+  }
+  expect(plain.required_check_coverage).toBeNull();
+
+  // The waiver identity, the protected path and the check are readable in the review projection.
+  const reviewPath = join(root, 'tasks', 'reviews', 'demo.review.md');
+  projectAcceptance(reviewPath, receipt);
+  const projection = readFileSync(reviewPath, 'utf8');
+  expect(projection).toContain('Required Check Coverage: protected "api-surface/entries.json"; waived by coverage-waiver: pass');
+
+  // A tampered coverage observation cannot pass the protocol 4 reader.
+  const tampered = [
+    { ...COVERAGE_EVIDENCE, checks: [{ check: 'Required / CI', bucket: 'pass', requirement: 'required' }] },
+    { ...COVERAGE_EVIDENCE, waiver: null },
+    { ...COVERAGE_EVIDENCE, protected_paths: ['../escape'] },
+    { ...COVERAGE_EVIDENCE, checks: [{ check: 'Required / CI', bucket: 'green', requirement: 'waived' }] },
+  ];
+  for (const coverage of tampered) {
+    writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify({ ...receipt, required_check_coverage: coverage }));
+    await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home }))
+      .rejects.toThrow('RequiredCheckCoverageEvidence');
+  }
 });
 

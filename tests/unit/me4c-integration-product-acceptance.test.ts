@@ -298,6 +298,7 @@ describe('ME-4C integration product acceptance', () => {
       summary: 'approved fixture',
       findings: [],
       failures: [],
+      required_check_coverage: null,
       waiver_grant_sha256: DIGEST,
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;
@@ -422,6 +423,7 @@ describe('ME-4C integration product acceptance', () => {
       summary: 'verified before read race',
       findings: [],
       failures: [],
+      required_check_coverage: null,
       waiver_grant_sha256: null,
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;
@@ -467,6 +469,7 @@ describe('ME-4C integration product acceptance', () => {
       summary: 'recorded receipt',
       findings: [],
       failures: [],
+      required_check_coverage: null,
       waiver_grant_sha256: null,
       issued_at: '2026-08-26T00:00:00.000Z',
     } satisfies AcceptanceReceipt;

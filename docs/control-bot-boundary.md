@@ -72,6 +72,37 @@ A Bot works in one of two modes. Both modes merge through the same executor,
 - Exit codes and the handling of each: the
   [issue-flow orchestrator guide](../assets/skills/repo-harness-issue-flow/references/orchestrator.md).
 
+### Required-check coverage
+
+A repository can declare the paths that need the full required-check matrix.
+The block lives in the protected `publication` subtree, so a PR cannot change
+the rule it is merged under.
+
+```json
+"publication": {
+  "acceptance_merge": "on",
+  "required_check_coverage": {
+    "protected_paths": ["api-surface/**", "docs/protocol.md"],
+    "required_checks": ["Required / CI", "build, typecheck, test (matrix)"]
+  }
+}
+```
+
+- An absent or empty block keeps the current behavior.
+- `*` matches inside one path segment. `**` matches zero or more segments.
+- When a changed path matches a protected glob, every declared check must be
+  present in the PR check list with bucket `pass`. A missing, skipped, pending,
+  failed or cancelled check blocks with `required_check_coverage_missing`. The
+  blocker names the protected path, the check and the fix.
+- The declared check is read from the PR check list, not from branch
+  protection. A skipped matrix job is therefore visible.
+- The only waiver is a check named `coverage-waiver` with conclusion success on
+  the same PR head. The protocol 4 acceptance record stores the waiver, the
+  protected paths and the per-check bucket. No local waiver file and no
+  executor flag exists.
+- A malformed block fails closed with
+  `required_check_coverage_policy_invalid`.
+
 ## Revocation
 
 `review revoke --request <file>` consumes

@@ -437,6 +437,7 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
     summary: 'accepted wp-a',
     findings: [],
     failures: [],
+    required_check_coverage: null,
     waiver_grant_sha256: null,
     issued_at: '2026-09-02T00:00:00.000Z',
     ...overrides,
@@ -1452,6 +1453,7 @@ describe('issue #284 closed dependency authority', () => {
       summary: '   ',
       findings: [{ severity: 'P0', message: 'blocked' }],
       failures: [{ check_name: 'incomplete' }],
+      required_check_coverage: { protocol: 1, kind: 'repo-harness-required-check-coverage' },
       waiver_grant_sha256: `sha256:${'e'.repeat(64)}`,
       issued_at: 'not-a-timestamp',
     };

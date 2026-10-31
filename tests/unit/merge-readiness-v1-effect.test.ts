@@ -35,7 +35,22 @@ const providerIdentity = {
   mergeable: 'MERGEABLE' as const,
 };
 
-function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_runner']> {
+const REQUIRED_CI = 'Required / CI';
+const REQUIRED_CI_LINK = 'https://github.com/example/repo-harness/actions/runs/123/job/456';
+
+interface FakeGhOptions {
+  readonly wrongBase?: boolean;
+  /** Policy file text at the base; null is an absent file (404). */
+  readonly policy?: string | null;
+  /** Changed paths the provider reports for the PR head. */
+  readonly changedPaths?: readonly string[];
+  /** Buckets `pr checks --required` reports for the required CI check. */
+  readonly requiredBucket?: 'pass' | 'pending' | 'fail' | 'skipping' | 'cancel';
+  /** The unfiltered `pr checks` answer, used only for the waiver lookup. */
+  readonly allChecks?: readonly { readonly name: string; readonly bucket: string }[];
+}
+
+function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessInput['gh_runner']> {
   const pr = {
     number: receipt.pr_number,
     url: receipt.pr_url,
@@ -49,20 +64,43 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
     reviewDecision: '',
     mergeable: 'MERGEABLE',
   };
+  const requiredBucket = options.requiredBucket ?? 'pending';
+  const requiredChecks = [{ name: REQUIRED_CI, bucket: requiredBucket, link: REQUIRED_CI_LINK }];
   return (args) => {
     const command = `${args[0]} ${args[1]}`;
     if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify({ id: 1001, node_id: receipt.provider_repo_id, full_name: 'example/repo-harness', default_branch: receipt.target_ref }) };
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
-    if (command === 'pr checks') return { status: 8, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pending', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
-    if (command === 'api graphql') return { status: 0, stdout: JSON.stringify(reviewGraph()) };
+    if (command === 'pr checks') {
+      const checks = args.includes('--required') ? requiredChecks : (options.allChecks ?? requiredChecks);
+      return { status: checks.some(check => check.bucket === 'pending') ? 8 : 0, stdout: JSON.stringify(checks) };
+    }
+    if (command === 'api graphql') {
+      const query = args.find(arg => arg.startsWith('query=')) ?? '';
+      if (query.includes('files(')) {
+        return { status: 0, stdout: JSON.stringify(changedFilesGraph(options.changedPaths ?? [])) };
+      }
+      return { status: 0, stdout: JSON.stringify(reviewGraph()) };
+    }
+    if (args[0] === 'api' && args[1] === `repos/example/repo-harness/contents/.ai/harness/policy.json?ref=${BASE}`) {
+      if (options.policy === undefined || options.policy === null) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
+      return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(options.policy).toString('base64') }) };
+    }
     if (args[0] === 'api' && args[1]?.includes('/contents/.github/workflows/ci-report.yml')) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
     if (command === 'api repos/example/repo-harness/actions/runs/123') {
       return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
-        pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: wrongBase ? '9'.repeat(40) : BASE } }] }) };
+        status: 'completed', conclusion: 'success',
+        pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: options.wrongBase ? '9'.repeat(40) : BASE } }] }) };
     }
     return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
   };
+}
+
+function changedFilesGraph(paths: readonly string[]) {
+  return { data: { node: { id: receipt.provider_repo_id, pullRequest: {
+    number: receipt.pr_number, headRefOid: HEAD, baseRefOid: BASE,
+    files: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: paths.map(path => ({ path })) },
+  } } } };
 }
 
 function reviewGraph() {
@@ -342,6 +380,10 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         if (path === 'graphql') { const graph = reviewGraph(); graph.data.node.pullRequest.baseRefOid = observedBase; return json(graph); }
         if (args[0] === 'pr') return json([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]);
         if (path.includes('/actions/runs/123')) return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success', pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: observedBase } }] });
+        if (path === `repos/example/repo-harness/contents/.ai/harness/policy.json?ref=${observedBase}`) {
+          // No coverage block in this scenario: the pre-#1205 behavior must hold.
+          return json({ status: '404', message: 'Not Found' }, 1);
+        }
         if (path.includes('/contents/')) {
           expect(path).toBe(`repos/example/repo-harness/contents/.github/workflows/ci-report.yml?ref=${observedBase}`);
           if (scenario === '404') return json({ status: '404', message: 'Not Found' }, 1);
@@ -539,5 +581,114 @@ test('a rerun whose preserved job is missing fails closed instead of inventing h
   const identity = observeProviderReadinessIdentity({ ...input, gh_runner });
   expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
     .toThrow('did not preserve the failed job');
+});
+
+const MATRIX = 'build, typecheck, test (matrix)';
+
+function coveragePolicyText(block: unknown): string {
+  return JSON.stringify({ publication: { acceptance_merge: 'on', required_check_coverage: block } });
+}
+
+const ACTIVE_POLICY = coveragePolicyText({
+  protected_paths: ['api-surface/**'],
+  required_checks: ['Required / CI', MATRIX],
+});
+
+describe('required-check coverage reads', () => {
+  function observed(
+    verdict: ReturnType<typeof collectPullRequestMergeReadiness>,
+  ): readonly { readonly check: string; readonly bucket: string; readonly requirement: string }[] {
+    return verdict.required_check_coverage?.checks ?? [];
+  }
+
+  test('an absent coverage block reads no changed files and keeps the current behavior', () => {
+    const calls: string[][] = [];
+    const source = fakeGh({ requiredBucket: 'pass' });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage).toBeNull();
+    expect(calls.some(args => args.some(arg => arg.startsWith('query=') && arg.includes('files(')))).toBe(false);
+    expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks')).toHaveLength(1);
+  });
+
+  test('a protected changed path blocks a skipped declared check and reads each check view once', () => {
+    const calls: string[][] = [];
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['src/app.ts', 'api-surface/entries.json'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(verdict.ready).toBe(false);
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_missing')!;
+    expect(blocker.detail).toContain('"api-surface/entries.json"');
+    expect(blocker.detail).toContain(`"${MATRIX}" is skipping`);
+    expect(observed(verdict)).toEqual([
+      { check: 'Required / CI', bucket: 'pass', requirement: 'required' },
+      { check: MATRIX, bucket: 'skipping', requirement: 'required' },
+    ]);
+    expect(verdict.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+    expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && args.includes('--required'))).toHaveLength(1);
+    expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
+    expect(calls.filter(args => args[1] === 'graphql'
+      && args.some(arg => arg.startsWith('query=') && arg.includes('files(')))).toHaveLength(1);
+  });
+
+  test('an unprotected changed path under an active block stays ready', () => {
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['src/core/app.ts'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: source });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.blockers).toEqual([]);
+    expect(verdict.required_check_coverage?.protected_paths).toEqual([]);
+    expect(observed(verdict).map((check) => check.requirement)).toEqual(['not_required', 'not_required']);
+  });
+
+  test('a passing coverage-waiver check waives the block and is recorded', () => {
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['api-surface/entries.json'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' },
+        { name: 'coverage-waiver', bucket: 'pass' }],
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: source });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage?.waiver).toEqual({ check: 'coverage-waiver', bucket: 'pass' });
+    expect(observed(verdict).map((check) => check.requirement)).toEqual(['waived', 'waived']);
+  });
+
+  test('a malformed coverage block fails closed with the typed policy blocker', () => {
+    const source = fakeGh({
+      policy: coveragePolicyText({ protected_path: ['api-surface/**'] }),
+      changedPaths: ['api-surface/entries.json'],
+      requiredBucket: 'pass',
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: source });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage).toBeNull();
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_policy_invalid')!;
+    expect(blocker.detail).toContain('unknown fields: protected_path');
+  });
+
+  test('the abortable adapter reads the same coverage facts', async () => {
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['api-surface/entries.json'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    });
+    const verdict = await collectPullRequestMergeReadinessAbortable({
+      ...input, gh_runner_async: async args => source(args),
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((entry) => entry.code)).toContain('required_check_coverage_missing');
+    expect(verdict.required_check_coverage?.checks).toHaveLength(2);
+  });
 });
 

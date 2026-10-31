@@ -13,7 +13,9 @@
 
 import { spawnSync } from 'child_process';
 import {
+  PUBLICATION_POLICY_PATH,
   parsePublicationPolicy,
+  policyFileFromContents,
   publicationPolicyChanged,
   type PolicyFileAtRef,
   type PublicationPolicy,
@@ -27,7 +29,7 @@ import {
   type PullRequestReadinessInput,
 } from './merge-readiness';
 
-export const PUBLICATION_POLICY_PATH = '.ai/harness/policy.json';
+export { PUBLICATION_POLICY_PATH };
 
 export type PublicationMergeRefusalCode =
   | 'invalid_selection'
@@ -253,11 +255,9 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
 function readPolicyAt(input: PullRequestReadinessInput, ref: string): PolicyFileAtRef {
   const value = read(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`], true);
   if (value === null) return { status: 'missing' };
-  const file = field(value, 'policy file');
-  if (file.type !== 'file' || file.path !== PUBLICATION_POLICY_PATH || file.encoding !== 'base64' || typeof file.content !== 'string') {
-    throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
-  }
-  return { status: 'present', text: Buffer.from(file.content, 'base64').toString('utf-8') };
+  const file = policyFileFromContents(field(value, 'policy file'));
+  if (file === null) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
+  return file;
 }
 
 function readDefaultBranch(input: PullRequestReadinessInput): string {
