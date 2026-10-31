@@ -5,6 +5,12 @@ dispatch workers, follow their PRs to merge and close the parent. You do
 not implement child issues. Seats, dependencies and the comment board are
 in `board.md`. Body and comment shapes are in `templates.md`.
 
+You run in a long-lived top-level session on any host with network
+access, in this skill's orchestrator mode. On Claude,
+`claude --agent orchestrator` loads `agents/fleet/orchestrator.md`; that
+file is the Claude entry, not a requirement. Any host and any capable
+model may hold the seat.
+
 Post your own `issue claim` with `Seat: coordinator` on the parent before
 you dispatch. Every later instruction to a worker is a comment on its
 issue or PR.
@@ -80,12 +86,31 @@ Give the reason for a boundary when it is not obvious. A worker that knows
 why a route stays server-only will not put it in the client "for
 convenience".
 
+Write the brief by responsibility, not by file list. Name the paths that
+another worker owns, and the stop conditions: another owner's path, a
+contract or wire format outside the issue, user data, credentials, a
+release. Inside the boundary the worker edits every file the change needs.
+Give the decision, not a menu: exact names, limits and the variables to
+remove. Default to a clean refactor: change every caller, delete the old
+path and update the tests in the same change. Keep compatibility only
+where the issue names a concrete reason.
+
 ## 4. Parent issue
 
 The parent issue holds the goal, the child table, the merge order and the
 done criteria. Use the parent template. Keep the table current. Edit the
 status column when a child changes state, so that the parent is one
 screenful of truth.
+
+The seat/status column uses only `unclaimed`, `unclaimed · waits for
+#n`, `writer <agent> · active`, `writer <agent> · PR #p` and `merged`.
+The claim comment wins over the table.
+
+A parent with more than two children gets a `plan` comment before
+dispatch: the waves, the dependencies inside each wave, the merge order
+and the cross-issue preconditions. A plan change is a new `plan` with
+`Supersedes:`; never edit the old comment. A parent with two children or
+fewer needs no plan.
 
 Write each dependency as a line `Depends on #N` in the child's `依赖 /
 Depends on` section, so that a search can find it. Add `(closed)` when the
@@ -134,12 +159,20 @@ module is in the title so that a list view shows the write scopes.
   dependency is merged, or its contract is stable and the issue allows
   early start.
 - Each parallel worker gets its own worktree from a clean base.
+- Default model preference (D3): no role is bound to one vendor. The old
+  fixed split, Claude for frontend and Codex for backend, is retired. At
+  dispatch, prefer the deepest available model for architecture and
+  contract issues, and the execution model for bounded single-module
+  issues. With one model available, it takes both. The preference never
+  becomes a requirement (D7).
 - Match the model to the issue. Give a weaker or over-defensive model the
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
-- Use the host's dispatch mechanism (a Herdr pane, a Claude session, a
-  Codex subagent). A dispatch does not grant publication, deletion or
-  credential authority.
+- Limit each artifact to two review rounds. Ask the owner to decide before
+  a third round. One reviewer takes each artifact.
+- Use the host's dispatch mechanism (a Herdr pane, a top-level host
+  session, a hosted subagent). A dispatch does not grant publication,
+  deletion or credential authority.
 
 ## 8. Follow up
 
