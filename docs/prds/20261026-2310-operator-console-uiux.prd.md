@@ -132,7 +132,7 @@
 | N4：不显示终端文本、prompt、工具参数 | Kumo 计划 | 文档会话显示消息正文、工具类别、相对路径和执行状态（G3）；其余仍不显示 |
 | 「文档只显示路径，服务端只回纯文本」 | revamp 计划 :251、:530 | 浏览器渲染 markdown，不开原始 HTML，不执行脚本 |
 | 「不引入 `@xyflow/react` 和 `@dagrejs/dagre`」 | revamp 计划 §11 #1 | 架构画布可以引入（待决问题 8） |
-| 非目标：mutation、Agent 进程启动、SSE/WebSocket 等 | `docs/prds/DESIGN-local-human-control-board-v1.md` | 由新的 `docs/prds/DESIGN-<slug>.md` 取代 |
+| 非目标：mutation、Agent 进程启动、SSE/WebSocket 等 | [DESIGN-local-human-control-board-v1.md](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/DESIGN-local-human-control-board-v1.md) | 由 [DESIGN-operator-console-uiux.md](DESIGN-operator-console-uiux.md) 取代 |
 | 只读说明 | `README.md` | 改成三种有界写入 |
 | 写路由为空、非 GET 回 405、UI 没有表单 | `operator-write-boundary.test.ts`、`operator-serve.test.ts`、UI 测试 | 逐条改写，在 PR 里逐条说明理由 |
 

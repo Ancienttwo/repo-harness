@@ -35,22 +35,18 @@ rounds killed the machinery this convention deliberately avoids:
 - BDD² Phase E killed the inline Shape card, Behavior Audit, Browser
   Evidence Adapter, ImageGen Prototype Adapter, and a generic counting
   linter — each failed because the AGENT tried to close a preference or
-  feature-need question with synthetic evidence
-  (`docs/researches/20260713-bdd2-phase-e-closeout.md`).
+  feature-need question with synthetic evidence.
 - BDD3-EA1 killed a typed evidence-authority packet plus a 6-rule
   deterministic validator — enforced validator machinery tripped on
-  legitimate work at Stage B scale
-  (`docs/researches/20260714-bdd3-ea1-typed-evidence-authority-outcome.md`).
+  legitimate work at Stage B scale.
 - BDD3-PS1 killed a protected-concern ledger with its own hold-correctness
   validator — the same enforced-machinery failure mode, this time as a
-  lifecycle/ledger
-  (`docs/researches/20260714-bdd3-ps1-protected-shape-outcome.md`).
+  lifecycle/ledger.
 
-The direction adjudication between BDD² and BDD3
-(`docs/researches/20260713-bdd3-ea1-direction-adjudication.md`) reframed
-Chrome MCP and image generation as plain host tool calls, not bespoke
-product surfaces, and explicitly left open a "prototype generation + human
-response capture" path where the human closes the decision. This convention
+The direction adjudication between BDD² and BDD3 reframed Chrome MCP and
+image generation as plain host tool calls, not bespoke product surfaces, and
+explicitly left open a "prototype generation + human response capture" path
+where the human closes the decision. This convention
 is that path: tools stay plain host calls, authority ceilings stay guidance
 prose applied by judgment, there is no ledger/lifecycle/sidecar/catalog, and
 the human — never the agent — closes the preference question. It does not

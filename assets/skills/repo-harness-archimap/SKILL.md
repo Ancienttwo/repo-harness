@@ -18,12 +18,13 @@ module IDs. A stale map therefore sends issues to the wrong boundaries.
 
 | Content | Authority | The map does |
 |---|---|---|
-| Modules, layers, responsibilities, relations, flows | Architecture model: `.archcontext/model/` (nodes, relations, flows), or `.ai/context/capabilities.json`. Without either: the package and directory layout | Groups model nodes into map modules and draws them |
+| Modules, layers, responsibilities, relations, flows | Architecture model: `.archcontext/model/` (nodes, relations, flows). A repository without an adopted model is adopted first (`repo-harness-architecture`, "Adopt ArchContext in a repository") | Groups model nodes into map modules and draws them |
 | Size and import direction | Code, measured by `scripts/measure.ts` | Shows LOC and value-import counts |
 | Observations and risks | The author's review, with file:line evidence | Lists them on the Remarks board |
 
 The map never adds a module, relation or flow that the model does not
-have. If the model is wrong, fix the model first: use
+have. It does not group by package or directory layout: that layout is not
+a model. If the model is wrong, fix the model first: use
 `repo-harness-architecture` for an archctx model. Then refresh the map.
 Mermaid diagrams that archctx generates stay as they are. They serve the
 model's own docs. The archimap is the one hand-composed HTML view.
@@ -43,8 +44,8 @@ model's own docs. The archimap is the one hand-composed HTML view.
    `source.include`, entrypoints), its relations and its flows. For
    archctx, read the YAML under `.archcontext/model/` directly. In a
    refresh, read the meta block of the current map and run
-   `git diff <meta.base>..HEAD --stat -- .archcontext/model .ai/context`
-   to find what moved.
+   `git diff <meta.base>..HEAD --stat -- .archcontext/model` to find what
+   moved.
 2. **Group into map modules.** The overview holds at most 20 modules. A
    small model gets one module per node. A larger model is grouped by
    domain or layer. Each map module lists the
@@ -59,11 +60,16 @@ model's own docs. The archimap is the one hand-composed HTML view.
    ```
 
    For a first draw, write the grouping to a scratch `modules.json` and
-   pass `--modules <file>` instead of `--map`. Omit `--model` when the
-   repository has no archctx model. Fix every `uncoveredNodes`,
+   pass `--modules <file>` instead of `--map`. `--model` is required, and
+   `measure.ts` exits 2 when it is missing or when
+   `docs/architecture/.projection-manifest.json` is missing. Each module in
+   the output carries `docs`: the capability documents it covers, resolved
+   from `modules[].nodes` through that manifest. Fix every `uncoveredNodes`,
    `unknownNodes`, `duplicateNodes` and `overlaps` entry in the grouping
-   before you draw. Look at `unassigned.largest`: a large unassigned file
-   is usually a missing module. `unparsed` and `unresolved` list files and
+   before you draw. `undocumentedNodes` lists capability nodes that no
+   projected document covers: name them in a remark, and do not link them.
+   Look at `unassigned.largest`: a large unassigned file is usually a
+   missing module. `unparsed` and `unresolved` list files and
    imports that the counts miss. Name them in the matrix caption when they
    are not zero. The counts are value imports: a model relation that the
    code satisfies with type-only imports shows no count. Draw it as a
@@ -78,8 +84,15 @@ model's own docs. The archimap is the one hand-composed HTML view.
 5. **Compose.** Copy `assets/template.html`, and follow
    `references/visual-language.md` for the grid, colors, node kinds and
    edges. Write the real content. Every overview node carries its map
-   module ID in `data-module`. Every number on the map comes from the
-   measurement or from the model.
+   module ID in `data-module` and links to its capability document: an
+   `<a>` element whose `href` is the first path of the module's `docs`,
+   made relative to the map file's directory. `measure.ts` reports the
+   path from the repository root, such as
+   `docs/architecture/modules/<domain>/<capability>.md`. Remove the
+   `docs/architecture/` prefix there, so that
+   `docs/architecture/archimap.html` links to
+   `modules/<domain>/<capability>.md`. Every number on the map comes from
+   the measurement or from the model.
 6. **Write the meta block.** Update `schema`, `base` (the commit that you
    measured), `generated` (date), `sources`, `modules` and `boards`. Put
    the short base SHA into each board kicker.
