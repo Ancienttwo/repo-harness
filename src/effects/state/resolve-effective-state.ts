@@ -126,7 +126,11 @@ function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string, ro
 /** The edit guard writes failure records here and `summarize-failures` reads them. No policy override (#692). */
 export const FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';
 
-/** Repo-relative workflow paths that the policy may relocate. */
+/**
+ * Repo-relative workflow paths that the policy may relocate. `handoff` and
+ * `resume` serve only the manual prepare-handoff helpers; Effective State
+ * reads neither.
+ */
 export interface HarnessPaths {
   readonly handoff: string;
   readonly resume: string;
@@ -269,26 +273,17 @@ function pendingState(cwd: string, nowMs: number, policy: WorkflowPolicy): 'none
   return 'stale';
 }
 
-const HANDOFF_PATH = '.ai/harness/handoff/current.md';
-const RESUME_PATH = '.ai/harness/handoff/resume.md';
-const CURRENT_SNAPSHOT_PATH = 'tasks/current.md';
-
 /**
  * `source_hashes` keys the stability contract's re-read comparison ignores:
  * high-churn, non-authority surfaces whose instability must not abort
  * resolution (root-cause-prover diagnosis, 2026-07-23 -- see
- * .ai/harness/runs/hook-guard-stability/). These sources are still read
- * once per unlocked resolution and reported in `source_hashes` exactly as
- * before; only their participation in the stability-abort DECISION changes.
- * Workflow-authority surfaces (the active-worktree marker, policy, the
- * capability registry, and the derived authority_revision) keep the full
+ * .ai/harness/runs/hook-guard-stability/). Only the observed review subject
+ * remains; workflow-authority surfaces (the active-worktree marker, policy,
+ * the capability registry, and the derived authority_revision) keep the full
  * stability contract unchanged.
  */
 const NON_AUTHORITY_SOURCE_HASH_KEYS: ReadonlySet<string> = new Set([
   'review_subject',
-  CURRENT_SNAPSHOT_PATH,
-  HANDOFF_PATH,
-  RESUME_PATH,
 ]);
 
 /** Projects `sourceHashes` onto the workflow-authority subset the stability
@@ -609,6 +604,30 @@ function collectStateSnapshotFacts(
 }
 
 /**
+ * The next unit when the branch is the canonical `<type>/<digits>-<slug>` form:
+ * the branch names one GitHub issue and the message names both. Any other
+ * branch (no issue, a leading zero, no slug, extra path segments, detached
+ * HEAD) yields null, so the continuation envelope stays idle. It reads Git
+ * only.
+ */
+function branchIssueNextAction(cwd: string): string | null {
+  let branch: string;
+  try {
+    branch = gitExecFileSync(['-C', cwd, 'rev-parse', '--abbrev-ref', 'HEAD'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+    }).trim();
+  } catch {
+    return null;
+  }
+  const match = /^[^/]+\/([1-9]\d*)-[^/]+$/.exec(branch);
+  if (!match) return null;
+  const issue = Number(match[1]);
+  if (!Number.isSafeInteger(issue) || issue <= 0) return null;
+  return `Continue GitHub issue #${issue} on branch ${branch}.`;
+}
+
+/**
  * Resolve all workflow projections into one fail-closed, versioned state model.
  * Markdown remains the human-editable authority.
  */
@@ -616,7 +635,7 @@ function resolveEffectiveStateUnlocked(
   cwd: string,
   nowMs: number,
   reviewSubjectFor: ReviewSubjectSlot,
-  options: { risk?: EffectiveStateRiskInput },
+  options: { risk?: EffectiveStateRiskInput; branchNextAction?: string | null },
 ): EffectiveState {
   const currentWorktree = safeRealpath(cwd);
   // Only these named facts are shared, and only within this unlocked read-only
@@ -755,22 +774,14 @@ function resolveEffectiveStateUnlocked(
     review_subject: reviewSubjectSha256 ?? sha256('unavailable:review-subject'),
     target_rev: reviewSubject.status === 'ok' ? sha256(reviewSubject.target_rev) : sha256('unavailable:target-rev'),
   });
-  const handoffText = readText(cwd, HANDOFF_PATH);
-  const resumeText = readText(cwd, RESUME_PATH);
-  const currentText = readText(cwd, CURRENT_SNAPSHOT_PATH);
-  const projectionRevision = contentRevision({
-    handoff: handoffText !== null ? sha256(handoffText) : sha256('missing:handoff'),
-    resume: resumeText !== null ? sha256(resumeText) : sha256('missing:resume'),
-    current_snapshot: currentText !== null ? sha256(currentText) : sha256('missing:current-snapshot'),
-  });
+  // Every display projection (handoff, resume, task snapshot) is retired, so
+  // the projection set is empty and its revision is the empty-set digest.
+  const projectionRevision = contentRevision({});
 
   const sourcePaths = [
     ACTIVE_WORKTREE_MARKER,
     POLICY_PATH,
     ...capabilityAuthoritySourcePaths(cwd, capabilitySource),
-    HANDOFF_PATH,
-    RESUME_PATH,
-    CURRENT_SNAPSHOT_PATH,
   ];
   const collected = collectStateInputs(cwd, sourcePaths.filter(path => !captured?.has(path)), {
     ...Object.fromEntries(sourcePaths.filter(path => captured?.has(path)).map(path => [path, hashSource(path)])),
@@ -796,12 +807,7 @@ function resolveEffectiveStateUnlocked(
     currentWorktree,
     worktreeOwner: owner,
     worktreeOwnerIsCurrent,
-    handoffPath: HANDOFF_PATH,
-    handoffText,
-    resumePath: RESUME_PATH,
-    resumeText,
-    currentSnapshotPath: CURRENT_SNAPSHOT_PATH,
-    currentSnapshotText: currentText,
+    branchNextAction: options.branchNextAction ?? null,
     authorityRevision,
     subjectRevision,
     projectionRevision,
@@ -943,10 +949,13 @@ function resolveStableEffectiveState(
   nowMs: number,
   risk?: EffectiveStateRiskInput,
 ): { state: EffectiveState; reviewSubjectFor: ReviewSubjectSlot } {
+  // One Git read per resolution, not per stability pass: the next unit does
+  // not enter the authority hashes the passes compare.
+  const branchNextAction = branchIssueNextAction(cwd);
   let authority = resolveAuthoritySourceHashes(cwd, nowMs, reviewSubjectSlot(cwd), risk);
   for (let attempt = 0; attempt < 3; attempt += 1) {
     const reviewSubjectFor = reviewSubjectSlot(cwd);
-    const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubjectFor, { risk });
+    const confirmed = resolveEffectiveStateUnlocked(cwd, nowMs, reviewSubjectFor, { risk, branchNextAction });
     if (JSON.stringify(authority)
       === JSON.stringify(authoritySourceHashes(confirmed.source_hashes))) {
       return { state: confirmed, reviewSubjectFor };

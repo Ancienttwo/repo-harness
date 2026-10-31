@@ -193,7 +193,6 @@ create_structure() {
     fi
     mkdir -p .ai/context
     mkdir -p .ai/harness/checks
-    mkdir -p .ai/harness/handoff
     mkdir -p .ai/harness/failures
     mkdir -p .ai/harness/runs
     mkdir -p .claude/templates
@@ -254,8 +253,6 @@ EOF
     # - .ai/harness/policy.json
     # - .ai/harness/brain-manifest.json
     # - .ai/harness/events.jsonl
-    # - .ai/harness/handoff/current.md
-    # - .ai/harness/handoff/resume.md
     # - .ai/harness/failures/latest.jsonl
     # - .ai/harness/security/.gitkeep
     # - .ai/harness/worktrees/.gitkeep

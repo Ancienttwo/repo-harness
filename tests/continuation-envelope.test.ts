@@ -12,7 +12,6 @@ import type { ContinuationEnvelopeV2 } from '../src/core/state/types';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
 import {
   PLAN,
-  resolveFixtureState,
   runStateCli,
   withRepo,
   writeFixture as write,
@@ -21,12 +20,13 @@ import {
 const SPRINT = 'plans/sprints/20260803-fixture.sprint.md';
 const SPRINT_MARKER = '.ai/harness/sprint/active-sprint';
 
-function writeHandoff(cwd: string, nextStep = 'implement resolver'): void {
-  const authority = resolveFixtureState(cwd).authority_revision;
-  write(cwd, '.ai/harness/handoff/current.md', [
-    '> **Source State Revision**: ' + authority,
-    '- Exact Next Step: ' + nextStep,
-  ].join('\n'));
+const ISSUE_BRANCH = 'feat/1234-fixture';
+const ISSUE_NEXT_ACTION = `Continue GitHub issue #1234 on branch ${ISSUE_BRANCH}.`;
+
+/** The only next-unit source: a canonical <type>/<digits>-<slug> branch. */
+function branchWithIssue(cwd: string, branch = ISSUE_BRANCH): void {
+  const result = spawnSync('git', ['checkout', '-q', '-b', branch], { cwd, encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(result.stderr);
 }
 
 function envelopeFrom(cwd: string): ContinuationEnvelopeV2 {
@@ -59,12 +59,12 @@ function treeFingerprint(root: string): string {
 describe('continuation envelope routes', () => {
   const cases = [
     {
-      name: 'continue when a fresh handoff names the exact next step',
-      setup: (cwd: string) => writeHandoff(cwd),
+      name: 'continue when the branch names one issue',
+      setup: (cwd: string) => branchWithIssue(cwd),
       expected: {
         route: 'continue',
         command: 'repo-harness state resolve --json',
-        reason: 'next_action:implement resolver',
+        reason: `next_action:${ISSUE_NEXT_ACTION}`,
       },
     },
     {
@@ -77,7 +77,7 @@ describe('continuation envelope routes', () => {
       },
     },
     {
-      name: 'idle when no handoff next action exists',
+      name: 'idle when the branch names no issue',
       setup: () => undefined,
       expected: {
         route: 'idle',
@@ -86,7 +86,7 @@ describe('continuation envelope routes', () => {
       },
     },
     {
-      name: 'idle when a retired sprint and active plan exist but no handoff does',
+      name: 'idle when a retired sprint and active plan exist but the branch names no issue',
       setup: (cwd: string) => {
         write(cwd, SPRINT, '# Sprint: Fixture\n\n> **Status**: Approved\n');
         write(cwd, SPRINT_MARKER, SPRINT + '\n');
@@ -125,21 +125,52 @@ describe('continuation envelope routes', () => {
     }, 30_000);
   }
 
-  test('a resume-only change keeps the continue unit_ref stable', () => {
+  test('retired handoff and resume files cannot change the continue unit_ref', () => {
     withRepo(cwd => {
-      writeHandoff(cwd, 'implement resolver');
+      branchWithIssue(cwd);
       const first = envelopeFrom(cwd);
+      write(cwd, '.ai/harness/handoff/current.md', '# Handoff\n- Exact Next Step: retired\n');
       write(cwd, '.ai/harness/handoff/resume.md', '# resume changed\n');
       const second = envelopeFrom(cwd);
       expect(second.route).toBe('continue');
+      expect(second.reason).toBe(`next_action:${ISSUE_NEXT_ACTION}`);
       expect(second.unit_ref).toBe(first.unit_ref);
       expect(second.progress_token).toBe(first.progress_token);
     });
   }, 30_000);
 
+  test('an ambiguous branch form stays idle and invents no issue', () => {
+    withRepo(cwd => {
+      branchWithIssue(cwd, 'feature/no-issue-here');
+      const envelope = envelopeFrom(cwd);
+      expect(envelope.route).toBe('idle');
+      expect(envelope.reason).toBe('no_next_action');
+      expect(envelope.unit_ref).toBeNull();
+    });
+  }, 30_000);
+
+  test('a branch without a slug stays idle', () => {
+    withRepo(cwd => {
+      branchWithIssue(cwd, 'feat/1234');
+      const envelope = envelopeFrom(cwd);
+      expect(envelope.route).toBe('idle');
+      expect(envelope.reason).toBe('no_next_action');
+    });
+  }, 30_000);
+
+  test('a leading-zero issue stays idle instead of naming a different number', () => {
+    withRepo(cwd => {
+      branchWithIssue(cwd, 'feat/01234-fixture');
+      const envelope = envelopeFrom(cwd);
+      expect(envelope.route).toBe('idle');
+      expect(envelope.reason).toBe('no_next_action');
+      expect(envelope.unit_ref).toBeNull();
+    });
+  }, 30_000);
+
   test('the output never references a plan or sprint path', () => {
     withRepo(cwd => {
-      writeHandoff(cwd);
+      branchWithIssue(cwd);
       const output = runStateCli(cwd, ['state', 'next', '--json']).stdout;
       expect(output).not.toContain('plan');
       expect(output).not.toContain('sprint');

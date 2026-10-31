@@ -116,8 +116,9 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".ai/harness/architecture"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/workstreams/events.jsonl"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/failures/latest.jsonl"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/harness/handoff/current.md"))).toBe(true);
-      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(true);
+      expect(existsSync(join(cwd, ".ai/harness/handoff"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/handoff/current.md"))).toBe(false);
+      expect(existsSync(join(cwd, ".ai/harness/handoff/resume.md"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/context-budget/latest.json"))).toBe(false);
       expect(existsSync(join(cwd, ".ai/harness/planning"))).toBe(true);
       expect(existsSync(join(cwd, ".ai/harness/runs/.gitkeep"))).toBe(true);
@@ -250,7 +251,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".claude/settings.json");
       expect(workflowContract.artifacts.requiredFiles).not.toContain(".codex/hooks.json");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/context-budget/latest.json");
-      expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
+      expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/handoff/current.md");
+      expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/handoff/resume.md");
       expect(workflowContract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/architecture/events.jsonl");
       expect(workflowContract.artifacts.runtimeFiles).not.toContain(".ai/harness/active-plan");

@@ -88,7 +88,8 @@ const BROWSER_MCP_OUTPUT_POLICY: McpPolicy = {
   profile: 'planner',
   readGlobs: [],
   writeGlobs: [
-    '.ai/harness/handoff/*.md',
+    '.ai/harness/handoff/task-goal.md',
+    '.ai/harness/handoff/chatgpt-plan.md',
     '.ai/harness/checks/**',
     'docs/prds/**',
     'tasks/lessons.md',

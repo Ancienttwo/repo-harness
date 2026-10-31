@@ -41,7 +41,6 @@ interface EffectiveStateFixture {
 }
 
 interface EffectiveStateFixtureOptions {
-  readonly currentUpdatedAt?: string;
   readonly includeLegacyActivePlan?: boolean;
 }
 
@@ -82,7 +81,7 @@ export function createEffectiveStateFixture(
 ): EffectiveStateFixture {
   const cwd = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-effective-')));
   try {
-    for (const path of ['plans', 'tasks/contracts', 'tasks/reviews', '.ai/harness/handoff']) {
+    for (const path of ['plans', 'tasks/contracts', 'tasks/reviews']) {
       mkdirSync(join(cwd, path), { recursive: true });
     }
     writeFixture(cwd, '.ai/harness/active-plan', `${PLAN}\n`);
@@ -134,12 +133,6 @@ export function createEffectiveStateFixture(
     '> **External Acceptance**: unavailable',
     '',
     ].join('\n'));
-    writeFixture(cwd, 'tasks/current.md', [
-      '# Current',
-      `> **Updated At**: ${options.currentUpdatedAt ?? '2099-01-01T00:00:00.000Z'}`,
-      `- Active Plan: ${PLAN}`,
-      '',
-    ].join('\n'));
     writeFixture(cwd, '.gitignore', [
       '.ai/harness/state/',
       '.ai/harness/checks/',
@@ -147,6 +140,7 @@ export function createEffectiveStateFixture(
       '.ai/harness/runs/',
       '.ai/harness/handoff/',
       '.ai/harness/active-worktree',
+      'tasks/current.md',
       '',
     ].join('\n'));
     for (const args of [
@@ -285,21 +279,6 @@ export function makeFreshEvidence(cwd: string, nowMs: number): void {
   ].join('\n'));
   const reviewed = resolveEffectiveState(cwd, nowMs, risk);
   const authorityRevision = reviewed.source_hashes.authority_revision;
-  const handoff = [
-    '# Handoff',
-    '> **Task ID**: 20260712-2327-effective-fixture',
-    `> **Source State Revision**: ${authorityRevision}`,
-    '- Exact Next Step: implement resolver',
-    '',
-  ].join('\n');
-  writeFixture(cwd, '.ai/harness/handoff/current.md', handoff);
-  writeFixture(cwd, '.ai/harness/handoff/resume.md', [
-    '# Resume',
-    '> **Task ID**: 20260712-2327-effective-fixture',
-    `> **Source State Revision**: ${authorityRevision}`,
-    `> **Handoff Hash**: ${sha256(handoff)}`,
-    '',
-  ].join('\n'));
   const reportPath = seedNativeVerification(cwd, CONTRACT);
   const fixture = fixtureAuthorities.get(cwd)!;
   const waiverSummary = 'Fixture owner accepts the current change.';
@@ -364,11 +343,6 @@ export const EFFECTIVE_STATE_SCENARIOS: readonly EffectiveStateScenario[] = [
     name: 'stale-projections',
     risk: { targetPaths: ['src/feature.ts'], operationKind: 'feature' },
     setup: (cwd) => {
-      writeFixture(cwd, '.ai/harness/handoff/current.md', '- Active Plan: plans/plan-old.md\n');
-      writeFixture(cwd, 'tasks/current.md', [
-        '> **Updated At**: 2020-01-01T00:00:00Z',
-        '- Active Plan: plans/plan-old.md',
-      ].join('\n'));
       writeFixture(cwd, '.ai/harness/sprint/active-sprint', 'plans/sprints/missing.sprint.md\n');
     },
   },
