@@ -10,9 +10,9 @@ required version from `package.json`; there is no separate version constant.
 
 Source: `Ancienttwo/arch-context` `origin/main`
 `8dee040ad9bf5c343ad70956c1b0abb621fea327` (the merged `release/0.10.0`
-branch). The npm registry reported `latest` 0.10.0 for both packages when this
-note was written. The GitHub release page did not yet list `v0.10.0`; the source
-revision above is the release candidate that the registry metadata belongs to.
+branch). Release: <https://github.com/Ancienttwo/arch-context/releases/tag/v0.10.0>,
+whose annotated tag points to that commit. The npm registry reported `latest`
+0.10.0 for both packages.
 
 Installed with `bun add --exact archctx@0.10.0 archctx-contracts@0.10.0`. The
 script downloaded each published npm tarball, compared every regular archive
