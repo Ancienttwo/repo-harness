@@ -69,6 +69,7 @@ Size PR CI by the diff, the same as step 4. A full suite on each small PR spends
 - For a repeat, copy the `Name` and `Mistake pattern` text exactly. Maintenance triage groups entries by `Mistake pattern`. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
 - `Enforced by` names the file that fails when the mistake comes back. For an architecture or type fix, name the file that makes the mistake impossible. `judgment` means that no file catches the mistake.
 - `Missed by` names the check layer that should have caught the mistake before merge. Two entries with `Missed by: independent-review` on the same [Review by risk](#review-by-risk) signal move that signal up one tier in the PR that adds the second entry.
+- An entry with `Missed by: independent-review` adds its `Triggered by correction` PR/SHA and date to the row for the producer in `agents/fleet/known-gaps.md`. The producer is the model or harness in the `Agent:` line of the issue claim for the PR's branch; a claim that names none leaves the producer unknown and adds no evidence. Add or remove rows as that file requires. Do not copy the table here.
 - From `Seen: 2×`, fix the mistake class in the PR that adds the entry. Use the highest level that works:
   1. Architecture or data structure: one owner for each state, one way to do each task, and no old path that an agent can copy.
   2. Types that cannot express the mistake.
