@@ -85,8 +85,14 @@ model's own docs. The archimap is the one hand-composed HTML view.
    `references/visual-language.md` for the grid, colors, node kinds and
    edges. Write the real content. Every overview node carries its map
    module ID in `data-module` and links to its capability document: an
-   `<a>` element whose `href` is the first path of the module's `docs`.
-   Every number on the map comes from the measurement or from the model.
+   `<a>` element whose `href` is the first path of the module's `docs`,
+   made relative to the map file's directory. `measure.ts` reports the
+   path from the repository root, such as
+   `docs/architecture/modules/<domain>/<capability>.md`. Remove the
+   `docs/architecture/` prefix there, so that
+   `docs/architecture/archimap.html` links to
+   `modules/<domain>/<capability>.md`. Every number on the map comes from
+   the measurement or from the model.
 6. **Write the meta block.** Update `schema`, `base` (the commit that you
    measured), `generated` (date), `sources`, `modules` and `boards`. Put
    the short base SHA into each board kicker.

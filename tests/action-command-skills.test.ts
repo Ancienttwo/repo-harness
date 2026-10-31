@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
-import { join } from "path";
+import { join, posix } from "path";
 import { assertChatGptMcpContract } from "./helpers/chatgpt-mcp-contract";
 
 // SSD-06 migration: the pre-cutover 19-facade public action command surface
@@ -507,7 +507,9 @@ describe("repo-harness action command skills", () => {
     expect(worker).toContain("preview.truncated");
     expect(worker).toContain("Status: blocked; claim remains");
     expect(worker).toMatch(/[Nn]ever hand-draw/);
-    expect(worker).toContain("git checkout -- <document>");
+    expect(worker).toContain("scratch path");
+    expect(worker).toContain("Never modify or restore the worktree document");
+    expect(worker).not.toMatch(/Restore the worktree copy/);
     expect(worker).toMatch(/No second source/);
     expect(worker).toContain("codegraph index .");
   });
@@ -523,11 +525,25 @@ describe("repo-harness action command skills", () => {
     expect(skill).toContain("docs/architecture/.projection-manifest.json");
     expect(skill).toContain("modules[].nodes");
     expect(skill).toContain("undocumentedNodes");
+    expect(skill).toContain("relative to the map file's directory");
+    expect(skill.replace(/\s+/g, " ")).toContain("Remove the `docs/architecture/` prefix");
     expect(template).toContain('<a class="node');
-    expect(template).toMatch(/href="modules\/[a-z-]+\/[a-z-]+\.md"/);
     expect(template).toContain("modules[].docs");
     expect(visual).toContain("modules[].docs");
     expect(visual).toContain("capability document");
+    expect(visual).toContain("relative to `docs/architecture/archimap.html`");
+    expect(visual).toContain("remove the\n`docs/architecture/` prefix");
+
+    // measure.ts reports docs/architecture/modules/... from the repository root. The map links
+    // them from docs/architecture/archimap.html, so each href must resolve back to that document
+    // and must not repeat the prefix.
+    const mapDir = "docs/architecture";
+    const hrefs = [...template.matchAll(/<a class="node[^>]*href="([^"]+)"/g)].map((match) => match[1]!);
+    expect(hrefs.length).toBeGreaterThan(0);
+    for (const href of hrefs) {
+      expect(href.startsWith("docs/")).toBe(false);
+      expect(posix.join(mapDir, href)).toMatch(/^docs\/architecture\/modules\/[a-z-]+\/[a-z-]+\.md$/);
+    }
   });
 
   test("archimap measure refuses to run without --model", () => {

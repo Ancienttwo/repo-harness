@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, rmSync, unlinkSync } from 'node:fs';
-import { join } from 'node:path';
+import { join, posix } from 'node:path';
 import { fixtureGit, fixtureWrite } from './helpers/module-repository';
 
 // Real-entry regressions for the archimap measure script: every case runs the
@@ -236,6 +236,12 @@ describe('archimap measure requires the adopted model', () => {
       ['docs/architecture/modules/dom/alpha.md'],
       [],
     ]);
+    // measure.ts reports the path from the repository root. The map links it from
+    // docs/architecture/archimap.html, so the path must sit under the map directory and resolve
+    // back to the same document after the prefix is removed.
+    const doc = result.modules[0]!.docs[0]!;
+    expect(doc.startsWith('docs/architecture/')).toBe(true);
+    expect(posix.join('docs/architecture', doc.slice('docs/architecture/'.length))).toBe(doc);
     expect(result.model.undocumentedNodes).toEqual(['capability.beta']);
     expect(result.model.uncoveredNodes).toEqual(['capability.alpha']);
     expect(result.model.unknownNodes).toEqual([]);

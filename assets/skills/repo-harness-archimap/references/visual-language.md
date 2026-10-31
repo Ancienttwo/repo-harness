@@ -24,9 +24,11 @@ a small diff, and two maps from the same skill look the same.
 
 An overview node that the model covers is an `<a>` element with
 `class="node"`, not a `<div>`. Its `href` is the first path of the
-module's `docs` from `measure.ts`, relative to
-`docs/architecture/archimap.html` (for example
-`modules/runtime-harness/operator.md`). The node keeps its kind fill,
+module's `docs`, made relative to `docs/architecture/archimap.html`.
+`measure.ts` returns that path from the repository root, so remove the
+`docs/architecture/` prefix:
+`docs/architecture/modules/runtime-harness/operator.md` becomes
+`modules/runtime-harness/operator.md`. The node keeps its kind fill,
 border and text color. Underline it on `:hover` and `:focus-visible`
 only, and show a visible focus ring.
 

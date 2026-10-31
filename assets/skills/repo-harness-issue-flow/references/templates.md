@@ -142,7 +142,7 @@ Risk: <what could break first>. Rollback: `git revert <squash-commit>`.
 
 Attach the changed slice when this PR changes `.archcontext/model/**` or a
 capability entrypoint. Produce it as `worker.md` §6.1 says: apply the
-`plan` preview to the worktree copy of the document, then take §1.1.
+`plan` preview to a scratch copy of the document, then take §1.1.
 Otherwise write the one line `Architecture slice unchanged, see #<issue>`.
 Never commit a generated region. `.projection-manifest.json` and the
 machine regions of `docs/architecture/modules/**` come from the rolling

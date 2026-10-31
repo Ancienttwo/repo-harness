@@ -134,10 +134,9 @@ ArchContext projection of the capability document.
    The request renders every capability document, so `--changed-path` does
    not narrow `files[]`. Find your document by its path.
 3. Read the `files[]` row for your document:
-   - `preview.format` is `unified-diff` for an existing document. Apply the
-     diff to the worktree copy of that document, then take §1.1 from the
-     result. The worktree copy is the base document, because this PR does
-     not commit generated regions.
+   - `preview.format` is `unified-diff` for an existing document. Copy the
+     worktree document to a scratch path, apply the diff to that copy,
+     then take §1.1 from the result.
    - `preview.format` is `body` for a new document. `preview.content` is
      the whole rendered document. Take §1.1 from it.
 4. Stop and post `issue claim status` with `Status: blocked; claim remains
@@ -152,8 +151,11 @@ ArchContext projection of the capability document.
    document, and link the document at the PR base SHA. Two projections of
    the same model keep the node IDs, so a node ID names the changed
    component.
-7. Restore the worktree copy: `git checkout -- <document>`. Never commit
-   the preview, a generated region or the restored copy.
+7. Delete the scratch copy. Never modify or restore the worktree document,
+   and never commit the preview, a generated region or the scratch copy.
+   The worktree document is the base document, because this PR does not
+   commit generated regions. An unstaged edit in that document stays as it
+   is; a `git checkout -- <document>` would discard it.
 
 No second source: do not build the slice from the archimap, a source scan,
 the base document alone or memory. When the preview fails, the issue is
