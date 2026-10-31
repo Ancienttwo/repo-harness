@@ -351,7 +351,7 @@ function providerRunner(provider: Map<number, ProviderPullRequest>): NonNullable
     const selection = item.selection;
     if (command === 'pr view') return response({ number, url: `https://github.com/example/product/pull/${number}`,
       state: item.state, isDraft: false, headRefOid: selection.expected_head_sha, headRefName: `feature-${number}`,
-      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED',
+      baseRefOid: selection.expected_base_sha, baseRefName: 'main', body: '', reviewDecision: 'APPROVED', changedFiles: 0,
       mergeable: item.state === 'MERGED' ? 'UNKNOWN' : 'MERGEABLE' });
     if (command === 'pr checks') return response([{ name: 'Required / CI', bucket: 'pass', link: `https://github.com/example/product/actions/runs/${number}/job/1` }]);
     if (command === 'api graphql') return response({ data: { node: { id: 'R_me4c_fixture', pullRequest: {
@@ -436,6 +436,8 @@ function acceptanceReceipt(subject: Fixture, overrides: Partial<AcceptanceReceip
     actor: null,
     summary: 'accepted wp-a',
     findings: [],
+    failures: [],
+    required_check_coverage: null,
     waiver_grant_sha256: null,
     issued_at: '2026-09-02T00:00:00.000Z',
     ...overrides,
@@ -1450,6 +1452,8 @@ describe('issue #284 closed dependency authority', () => {
       actor: 'someone-else',
       summary: '   ',
       findings: [{ severity: 'P0', message: 'blocked' }],
+      failures: [{ check_name: 'incomplete' }],
+      required_check_coverage: { protocol: 1, kind: 'repo-harness-required-check-coverage' },
       waiver_grant_sha256: `sha256:${'e'.repeat(64)}`,
       issued_at: 'not-a-timestamp',
     };

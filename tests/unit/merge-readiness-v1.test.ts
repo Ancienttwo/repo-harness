@@ -4,9 +4,13 @@ import {
   projectPullRequestMergeReadiness,
   type ProviderMergeReadinessFactsV1,
   type PullRequestMergeReadinessInput,
+  type RequiredCheckCoverageFactsV1,
 } from '../../src/core/publication/merge-readiness';
 import { checkClosingReferences, parseClosingReferences } from '../../src/core/publication/closing-references';
-import { parsePublicationPolicy, publicationPolicyChanged } from '../../src/core/publication/acceptance-merge-policy';
+import { assessRequiredCheckFailure, validateRequiredCheckFailureEvidence } from '../../src/core/evidence/required-check-evidence';
+import { assertionThenPassedEvidence, productFailureEvidence, requiredCheckAttempt, requiredCheckObservation } from '../helpers/required-check-evidence-fixture';
+import { parsePublicationPolicy, publicationPolicyChanged, requiredCheckCoveragePolicyAtRef } from '../../src/core/publication/acceptance-merge-policy';
+import { protectedPathMatches, validateRequiredCheckCoverageEvidenceOrNull } from '../../src/core/publication/required-check-coverage';
 
 const HEAD = 'a'.repeat(40);
 const BASE = 'b'.repeat(40);
@@ -26,6 +30,8 @@ function readyInput(): PullRequestMergeReadinessInput {
       unresolved_thread_count: 0,
       rollback_boundary: { status: 'not_active' },
       checks: [{ name: 'Required / CI', bucket: 'pass' }],
+      check_failures: [],
+      required_check_coverage: { status: 'absent' },
       mergeable: 'MERGEABLE',
     },
   };
@@ -40,6 +46,8 @@ describe('projectPullRequestMergeReadiness', () => {
       integration_mode: 'unmerged',
       attention_owner: 'none',
       blockers: [],
+      check_failures: [],
+      required_check_coverage: null,
     });
   });
 
@@ -248,3 +256,402 @@ describe('acceptance merge policy switch', () => {
     }
   });
 });
+
+
+describe('required-check failure evidence', () => {
+  test('a same-SHA assertion failure then pass is failed_then_passed and is never infrastructure', () => {
+    const evidence = assertionThenPassedEvidence();
+    expect(evidence.observed_result).toBe('failed_then_passed');
+    expect(evidence.failed.shape).toBe('assertion_mismatch');
+    expect(evidence.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed', revalidated: true });
+    expect(evidence.cause).not.toBe('infrastructure');
+    expect(evidence.cause).toBe('unknown');
+    // The run/attempt/job link survives the rerun.
+    expect([evidence.failed.run_id, evidence.failed.attempt, evidence.failed.job_id]).toEqual([123, 1, 456]);
+    expect([evidence.retry.latest.run_id, evidence.retry.latest.attempt, evidence.retry.latest.job_id]).toEqual([123, 2, 789]);
+    expect(evidence.workflow).toEqual({ path: '.github/workflows/ci.yml', id: 99, revision: HEAD });
+  });
+
+  test('a platform-evidenced runner abort that later passes is still not a proven infrastructure flake', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: ['Run tests'], failed_tests: ['session-runtime > chunk boundary'],
+        failure_excerpt: null, logs_available: false,
+        platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests', 'session-runtime > chunk boundary'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('runner_abort');
+    expect(evidence.observed_result).toBe('failed_then_passed');
+    expect(evidence.cause).toBe('unknown');
+  });
+
+  test('a runner abort without platform or log evidence stays unknown', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: [], failure_excerpt: null, logs_available: false }),
+    ]));
+    expect(evidence.failed.shape).toBe('runner_abort');
+    expect(evidence.observed_result).toBe('failed');
+    expect(evidence.retry.outcome).toBe('not_attempted');
+    expect(evidence.cause).toBe('unknown');
+    expect(evidence.cause_evidence).toEqual([]);
+  });
+
+  test('a runner abort with platform evidence is infrastructure', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: [], failure_excerpt: null, logs_available: false,
+        platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
+    ]));
+    expect(evidence.cause).toBe('infrastructure');
+    expect(evidence.cause_evidence).toEqual(['The runner has received a shutdown signal and the job was cancelled']);
+  });
+
+  test('a retry that skips the originally failed test is not revalidation', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ failed_tests: ['session-runtime > chunk boundary'], scope: { executed: ['Run tests'], skipped: [] } }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['Run tests', 'session-runtime > unrelated'], skipped: ['session-runtime > chunk boundary'] } }),
+    ]));
+    expect(evidence.observed_result).toBe('not_revalidated');
+    expect(evidence.retry.outcome).toBe('failed_then_not_revalidated');
+    expect(evidence.retry.revalidated).toBe(false);
+    expect(evidence.cause).toBe('unknown');
+  });
+
+  test('an assertion retry with only a generic step label is not revalidation', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: [], scope: { executed: ['Run tests'], skipped: [] } }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('assertion_mismatch');
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('stored evidence rejects array, object and number enum values', () => {
+    const valid = assertionThenPassedEvidence();
+    expect(validateRequiredCheckFailureEvidence(valid)).toEqual(valid);
+    const fields: readonly (readonly [string, string])[] = [
+      ['failed.shape', 'timeout'],
+      ['retry.outcome', 'failed_then_passed'],
+      ['retry.latest.conclusion', 'success'],
+      ['observed_result', 'failed_then_passed'],
+      ['cause', 'unknown'],
+    ];
+    for (const [field, value] of fields) {
+      for (const malformed of [[value], { value }, 7]) {
+        const tampered = JSON.parse(JSON.stringify(valid)) as Record<string, unknown>;
+        const parts = field.split('.');
+        let target = tampered;
+        for (const part of parts.slice(0, -1)) target = target[part] as Record<string, unknown>;
+        target[parts[parts.length - 1]!] = malformed;
+        let message: string | null = null;
+        try { validateRequiredCheckFailureEvidence(tampered); } catch (error) { message = (error as Error).message; }
+        expect([field, Array.isArray(malformed) ? 'array' : typeof malformed, message !== null && message.includes('is invalid')])
+          .toEqual([field, Array.isArray(malformed) ? 'array' : typeof malformed, true]);
+      }
+    }
+  });
+
+  test('a retry without a failed child identifier is not revalidated even when the aggregate step passes', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: [], failure_excerpt: null, logs_available: false }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('logs_unavailable');
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('a real product failure remains a blocker and a rerun pass never clears it', () => {
+    const productFailure = productFailureEvidence();
+    expect(productFailure.cause).toBe('product_defect');
+    expect(productFailure.cause_evidence).toEqual(['AssertionError: expected product response code 200 but received 500']);
+    const base = readyInput();
+    const blocked = projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, checks: [{ name: 'Required / CI', bucket: 'fail' }], check_failures: [productFailure] } });
+    expect(blocked.ready).toBe(false);
+    expect(blocked.blockers.map((blocker) => blocker.code)).toContain('checks_failed');
+    expect(blocked.check_failures).toEqual([productFailure]);
+
+    // A passing rerun is evidence, not an automatic pass: the observed failed
+    // bucket still blocks and the executor decision is unchanged.
+    const rerun = assertionThenPassedEvidence();
+    const stillBlocked = projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, checks: [{ name: 'Required / CI', bucket: 'fail' }], check_failures: [rerun] } });
+    expect(stillBlocked.ready).toBe(false);
+    expect(stillBlocked.blockers.map((blocker) => blocker.code)).toContain('checks_failed');
+    expect(stillBlocked.check_failures).toEqual([rerun]);
+  });
+
+  test('failure evidence for another head or a malformed shape fails closed', () => {
+    const base = readyInput();
+    const otherHead = { ...assertionThenPassedEvidence(), head_sha: '9'.repeat(40) };
+    expect(projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, check_failures: [otherHead] } }).blockers.map((blocker) => blocker.code))
+      .toContain('provider_data_incomplete');
+    expect(projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, check_failures: [{ check_name: 'incomplete' }] } as unknown as ProviderMergeReadinessFactsV1 })
+      .blockers.map((blocker) => blocker.code)).toContain('provider_data_incomplete');
+  });
+});
+
+describe('required-check coverage', () => {
+  const matrix = 'build, typecheck, test (matrix)';
+  const policy = { protected_paths: ['api-surface/**', 'docs/protocol.md'], required_checks: ['Required / CI', matrix] };
+
+  type Check = { readonly name: string; readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' };
+  /** The required-check view and the all-checks view are separate provider reads. */
+  function coverageInput(
+    coverage: { readonly changed_paths: readonly string[]; readonly observed?: readonly Check[] }
+      | { readonly status: 'invalid'; readonly message: string }
+      | { readonly status: 'absent' },
+    checks: readonly Check[],
+  ): PullRequestMergeReadinessInput {
+    const base = readyInput();
+    const facts: RequiredCheckCoverageFactsV1 = 'status' in coverage ? coverage
+      : { status: 'active', policy, changed_paths: coverage.changed_paths, observed_checks: coverage.observed ?? checks };
+    return { ...base, provider: { ...base.provider!, checks, required_check_coverage: facts } };
+  }
+
+  test('a protected path with a skipped check blocks and names the path, the check and the fix', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['src/app.ts', 'api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_missing')!;
+    expect(blocker.attention_owner).toBe('agent');
+    expect(blocker.detail).toContain('"api-surface/entries.json"');
+    expect(blocker.detail).toContain(`"${matrix}"`);
+    expect(blocker.detail).toContain('is skipping');
+    expect(blocker.detail).toContain('coverage-waiver');
+    expect(verdict.required_check_coverage).toMatchObject({
+      protected_paths: ['api-surface/entries.json'],
+      checks: [
+        { check: 'Required / CI', bucket: 'pass', requirement: 'required' },
+        { check: matrix, bucket: 'skipping', requirement: 'required' },
+      ],
+      waiver: null,
+    });
+    expect(validateRequiredCheckCoverageEvidenceOrNull(verdict.required_check_coverage)).toEqual(verdict.required_check_coverage);
+  });
+
+  test('an unprotected PR keeps the current behavior', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['src/app.ts', 'docs/other.md'] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.blockers).toEqual([]);
+    expect(verdict.required_check_coverage).toMatchObject({
+      protected_paths: [],
+      waiver: null,
+      checks: [
+        { check: 'Required / CI', bucket: 'pass', requirement: 'not_required' },
+        { check: matrix, bucket: 'missing', requirement: 'not_required' },
+      ],
+    });
+  });
+
+  test('every declared check passing is ready and recorded', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['docs/protocol.md'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'pass' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.blockers).toEqual([]);
+    expect(verdict.required_check_coverage).toMatchObject({
+      protected_paths: ['docs/protocol.md'],
+      waiver: null,
+      checks: [
+        { check: 'Required / CI', bucket: 'pass', requirement: 'required' },
+        { check: matrix, bucket: 'pass', requirement: 'required' },
+      ],
+    });
+  });
+
+  test('a passing coverage-waiver check waives the requirement and is recorded', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' },
+          { name: 'coverage-waiver', bucket: 'pass' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage?.waiver).toEqual({ check: 'coverage-waiver', bucket: 'pass' });
+    expect(verdict.required_check_coverage?.checks.map((check) => check.requirement)).toEqual(['waived', 'waived']);
+    expect(validateRequiredCheckCoverageEvidenceOrNull(verdict.required_check_coverage)).toEqual(verdict.required_check_coverage);
+  });
+
+  test('duplicate observed names are order-independent and every observation must pass', () => {
+    const duplicates = (first: 'pass' | 'skipping', second: 'pass' | 'skipping') => [
+      { name: 'Required / CI', bucket: 'pass' as const },
+      { name: matrix, bucket: first },
+      { name: matrix, bucket: second },
+    ];
+    for (const observed of [duplicates('pass', 'skipping'), duplicates('skipping', 'pass')]) {
+      const verdict = projectPullRequestMergeReadiness(coverageInput(
+        { changed_paths: ['api-surface/entries.json'], observed },
+        [{ name: 'Required / CI', bucket: 'pass' }],
+      ));
+      expect(verdict.ready).toBe(false);
+      expect(verdict.blockers.map((blocker) => blocker.code)).toContain('required_check_coverage_missing');
+      expect(verdict.required_check_coverage?.checks[1]?.bucket).not.toBe('pass');
+    }
+    // Two passing observations of the same name stay ready.
+    const allPass = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'], observed: duplicates('pass', 'pass') },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(allPass.ready).toBe(true);
+    expect(allPass.required_check_coverage?.checks[1]).toEqual({ check: matrix, bucket: 'pass', requirement: 'required' });
+  });
+
+  test('a duplicate coverage-waiver observation does not waive when one is not passing', () => {
+    for (const order of [['pass', 'skipping'], ['skipping', 'pass']] as const) {
+      const verdict = projectPullRequestMergeReadiness(coverageInput(
+        { changed_paths: ['api-surface/entries.json'],
+          observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' },
+            { name: 'coverage-waiver', bucket: order[0] }, { name: 'coverage-waiver', bucket: order[1] }] },
+        [{ name: 'Required / CI', bucket: 'pass' }],
+      ));
+      expect(verdict.ready).toBe(false);
+      expect(verdict.required_check_coverage?.waiver).toBeNull();
+    }
+  });
+
+  test('a non-passing coverage-waiver check does not waive', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' },
+          { name: 'coverage-waiver', bucket: 'skipping' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage?.waiver).toBeNull();
+    expect(verdict.blockers.map((blocker) => blocker.code)).toContain('required_check_coverage_missing');
+  });
+
+  test('a missing declared check blocks', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'] },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_missing')!;
+    expect(blocker.detail).toContain(`"${matrix}" is missing`);
+    expect(blocker.detail).toContain('fix its name in publication.required_check_coverage');
+    expect(verdict.required_check_coverage?.checks[1]).toEqual({ check: matrix, bucket: 'missing', requirement: 'required' });
+  });
+
+  test('a malformed coverage policy fails closed with a typed blocker', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput(
+      { status: 'invalid', message: 'publication.required_check_coverage is invalid: the block has unknown fields: protected_path' },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage).toBeNull();
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_policy_invalid')!;
+    expect(blocker.attention_owner).toBe('agent');
+    expect(blocker.detail).toContain('unknown fields: protected_path');
+  });
+
+  test('an absent coverage block leaves the verdict and evidence unchanged', () => {
+    const verdict = projectPullRequestMergeReadiness(coverageInput({ status: 'absent' },
+      [{ name: 'Required / CI', bucket: 'pass' }]));
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage).toBeNull();
+  });
+
+  test('a read that changed during observation carries no coverage evidence', () => {
+    const verdict = projectPullRequestMergeReadiness({
+      ...coverageInput({ changed_paths: ['api-surface/entries.json'],
+        observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' }] },
+      [{ name: 'Required / CI', bucket: 'pass' }]),
+      observation: 'changed_during_read',
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage).toBeNull();
+  });
+});
+
+describe('required-check coverage policy', () => {
+  const file = (value: unknown) => ({ status: 'present' as const, text: JSON.stringify(value) });
+
+  test('an absent, missing or empty block is inactive', () => {
+    expect(requiredCheckCoveragePolicyAtRef({ status: 'missing' })).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({}))).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { acceptance_merge: 'on' } }))).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { required_check_coverage: {} } }))).toEqual({ status: 'absent' });
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { required_check_coverage: { protected_paths: [] } } })))
+      .toEqual({ status: 'absent' });
+  });
+
+  test('a declared block is active and keeps both lists', () => {
+    const declared = { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] };
+    expect(requiredCheckCoveragePolicyAtRef(file({ publication: { required_check_coverage: declared } })))
+      .toEqual({ status: 'active', policy: declared });
+  });
+
+  test('the block is closed: unknown fields, unsafe globs and a path rule without checks are invalid', () => {
+    const invalid = [
+      { publication: { required_check_coverage: { protected_path: ['api-surface/**'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['/abs/**'], required_checks: ['Required / CI'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['../escape'], required_checks: ['Required / CI'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['api-surface/**'] } } },
+      { publication: { required_check_coverage: { protected_paths: ['a/**'], required_checks: [''] } } },
+      { publication: { required_check_coverage: { protected_paths: ['a/**', 'a/**'], required_checks: ['Required / CI'] } } },
+      { publication: { required_check_coverage: [] } },
+      { publication: { required_check_coverage: 'on' } },
+    ];
+    for (const value of invalid) {
+      const parsed = requiredCheckCoveragePolicyAtRef(file(value));
+      expect(parsed.status).toBe('invalid');
+      if (parsed.status === 'invalid') expect(parsed.message).toContain('required_check_coverage is invalid');
+    }
+  });
+
+  test('a malformed policy file is invalid, not absent', () => {
+    expect(requiredCheckCoveragePolicyAtRef({ status: 'present', text: '{' }).status).toBe('invalid');
+    expect(requiredCheckCoveragePolicyAtRef({ status: 'present', text: '[]' }).status).toBe('invalid');
+  });
+
+  test('protected globs match whole segments and ** crosses directories', () => {
+    expect(protectedPathMatches('api-surface/**', 'api-surface/entries.json')).toBe(true);
+    expect(protectedPathMatches('api-surface/**', 'api-surface/nested/deep.json')).toBe(true);
+    expect(protectedPathMatches('api-surface/*', 'api-surface/nested/deep.json')).toBe(false);
+    expect(protectedPathMatches('docs/protocol.md', 'docs/protocol.md')).toBe(true);
+    expect(protectedPathMatches('docs/protocol.md', 'docs/protocol.md.bak')).toBe(false);
+    expect(protectedPathMatches('**/entries.json', 'api-surface/entries.json')).toBe(true);
+    expect(protectedPathMatches('**/entries.json', 'entries.json')).toBe(true);
+    expect(protectedPathMatches('*.bin', 'nested/firmware.bin')).toBe(false);
+    expect(protectedPathMatches('*.bin', 'firmware.bin')).toBe(true);
+  });
+
+  test('a PR cannot change the coverage block it is merged under', () => {
+    const base = parsePublicationPolicy(file({ publication: {
+      acceptance_merge: 'on',
+      required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] },
+    } }));
+    expect(base.ok).toBe(true);
+    if (!base.ok) return;
+    expect(base.coverage).toEqual({ protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] });
+    expect(publicationPolicyChanged(base, file({ publication: {
+      acceptance_merge: 'on',
+      required_check_coverage: { protected_paths: ['src/**'], required_checks: ['Required / CI'] },
+    } }))).toBe(true);
+    expect(publicationPolicyChanged(base, file({ publication: {
+      acceptance_merge: 'on',
+      required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI'] },
+    } }))).toBe(false);
+  });
+});
+

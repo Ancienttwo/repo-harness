@@ -154,11 +154,11 @@ decides what to schedule.
 
 Apply ends with `=== Migration Report ===`, naming where generated hook behavior
 comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`
-adapter target, the repo-local surfaces created or refreshed, the
-`.ai/harness/scripts/*` helper runtime, and an `--- External Tooling ---`
-readiness block. Stable intent then lives in `docs/spec.md` and `docs/prds/`,
-task state in the GitHub issue and PR, resume state in `.ai/harness/handoff/`. If the dry run
-looks wrong, stop and read
+adapter target, the repo-local surfaces created or refreshed, and an
+`--- External Tooling ---` readiness block. Stable intent then lives in
+`docs/spec.md` and `docs/prds/`, task state in the GitHub issue and PR,
+resume state in `.ai/harness/handoff/`. If the dry run looks wrong, stop and
+read
 [`hook-operations.md`](docs/reference-configs/hook-operations.md) first.
 
 ### Update and remove
@@ -585,7 +585,7 @@ paths are symlink-backed runtime entrypoints rebuilt by
 the npm unpublished-version preflight, then runs the `release` lane: the
 expensive-gated tests and the tarball install smoke. It is not a second full
 suite and not the CI gate; a release depends on green CI for the release SHA.
-Runtime routing regressions stay in affected tests. The old routing eval gate is retired.
+Runtime routing regressions stay in affected tests. The old routing eval gate is retired. The skill-routing aggregate in `evals/skill-routing/routing-aggregate.json` is advisory evidence, not a merge gate: the provider harness passes the raw corpus prompt with no routing preamble, so the run measures direct model answers, not skill discovery. The aggregate sets `advisory: true` and records the reason; its `overall_pass` and floors stay reported metrics. A follow-up will add the routing preamble and reconsider gating.
 
 ```bash
 bun run check:ci                    # the whole gate
@@ -630,8 +630,8 @@ repo-harness commit scripts or hooks unless that repo adopts the same policy.
 
 ## Current Release
 
-- npm package: `repo-harness@0.24.3`
-- Generated workflow stamp: `repo-harness@0.24.3+template@0.24.3`
+- npm package: `repo-harness@0.25.0`
+- Generated workflow stamp: `repo-harness@0.25.0+template@0.25.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release notes and history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

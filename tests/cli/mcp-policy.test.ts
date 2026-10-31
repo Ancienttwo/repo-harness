@@ -8,7 +8,9 @@ import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
 import { globMatches, normalizeMcpRelativePath, resolveMcpPath } from '../../src/cli/mcp/paths';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
+import { setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import { SEGMENTED_LOG_SEGMENT_BYTES } from '../../src/effects/segmented-log';
+import { HEAD as PUBLISH_HEAD, PR as PUBLISH_PR, installFakeGh, passingScenario } from '../helpers/publication-merge-fake-gh';
 
 async function jsonTool(repoRoot: string, policy: ReturnType<typeof getMcpPolicy>, name: string, args: Record<string, unknown> = {}) {
   const result = await callMcpTool({ repoRoot, policy }, name, args);
@@ -212,11 +214,16 @@ describe('mcp policy and paths', () => {
 
   test('orchestrator profile exposes exactly the Herdr dispatch tools and the merge executor', async () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-home-'));
+    const previousHome = process.env.REPO_HARNESS_HOME;
+    process.env.REPO_HARNESS_HOME = home;
     try {
       mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
       mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
       writeFileSync(join(tmp, 'docs/prds/existing.prd.md'), '# Existing\n');
       writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
+      writeFileSync(join(tmp, '.ai/harness/policy.json'), '{}\n');
+      expect(setRepoHarnessAccessMode(tmp, 'read_write').accessMode).toBe('read_write');
 
       const orchestrator = getMcpPolicy('orchestrator', { enableReader: true });
       expect(orchestrator.capabilities).toEqual({
@@ -228,7 +235,7 @@ describe('mcp policy and paths', () => {
         publicationMerge: true,
       });
       expect(orchestrator.execution).toEqual({ codingShell: false });
-      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'merge_pull_request'];
+      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'review_publish', 'merge_pull_request'];
       expect(buildMcpToolDefinitions(orchestrator).map((tool) => tool.name)).toEqual(dispatchTools);
       expect(buildMcpToolDefinitions(orchestrator, { enableChatgptBrowser: true }).map((tool) => tool.name)).toEqual(dispatchTools);
       for (const profile of ['planner', 'executor', 'coding'] as const) {
@@ -243,10 +250,73 @@ describe('mcp policy and paths', () => {
       }
       const auditRows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
       expect(auditRows.map((row) => [row.tool, row.status])).toEqual(deniedTools.map((name) => [name, 'blocked']));
+      const blockedReview = await jsonTool(tmp, getMcpPolicy('planner'), 'review_publish', { pr_number: 1, receipt_path: 'receipt.json' });
+      expect(blockedReview.error.code).toBe('TOOL_NOT_AVAILABLE');
+      const missingReceipt = await jsonTool(tmp, orchestrator, 'review_publish', { pr_number: 1, receipt_path: 'missing-receipt.json' });
+      expect(missingReceipt.error.code).toBe('review_receipt_invalid');
       expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
     } finally {
+      if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
+      else process.env.REPO_HARNESS_HOME = previousHome;
       rmSync(tmp, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('review_publish requires the exact adopted read_write grant, not allowed roots', async () => {
+    const parent = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-review-grant-'));
+    const previous = { home: process.env.REPO_HARNESS_HOME, gh: process.env.REPO_HARNESS_GH_BIN };
+    process.env.REPO_HARNESS_HOME = join(parent, 'home');
+    try {
+      const granted = join(parent, 'granted');
+      const outsideRepo = join(parent, 'outside');
+      const readOnlyRepo = join(parent, 'read-only');
+      for (const dir of [granted, outsideRepo, readOnlyRepo]) {
+        mkdirSync(join(dir, '.ai/harness'), { recursive: true });
+        writeFileSync(join(dir, '.ai/harness/policy.json'), '{}\n');
+      }
+      expect(setRepoHarnessAccessMode(granted, 'read_write').accessMode).toBe('read_write');
+      expect(setRepoHarnessAccessMode(readOnlyRepo, 'read_only').accessMode).toBe('read_only');
+      const gh = installFakeGh(parent, passingScenario());
+      process.env.REPO_HARNESS_GH_BIN = gh.bin;
+      const receiptPath = join(granted, 'receipt.json');
+      writeFileSync(receiptPath, JSON.stringify({
+        protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: PUBLISH_HEAD, risk_tier: 'high',
+        reviewer: { harness: 'codex', actual_model: null }, verdict: 'PASS', model_relation: 'different-family',
+        summary: 'The grant regression is fixed.', findings: [],
+      }));
+      const deny = (policy: ReturnType<typeof getMcpPolicy>, target: string) => jsonTool(granted, policy, 'review_publish', {
+        repo_path: target, pr_number: PUBLISH_PR, receipt_path: join(target, 'receipt.json'),
+      });
+
+      // Empty allowed roots must deny, not permit any target.
+      const emptyRoots = getMcpPolicy('orchestrator');
+      expect(emptyRoots.allowedRoots).toBeUndefined();
+      const outsideDenied = await deny(emptyRoots, outsideRepo);
+      expect(outsideDenied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
+      // Naming the target in allowed roots does not grant write authority.
+      const namedRoots = getMcpPolicy('orchestrator', { allowedRoots: [outsideRepo] });
+      const namedDenied = await deny(namedRoots, outsideRepo);
+      expect(namedDenied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
+      // A read_only row is denied even when allowed roots name it.
+      const readOnlyDenied = await deny(getMcpPolicy('orchestrator', { allowedRoots: [readOnlyRepo] }), readOnlyRepo);
+      expect(readOnlyDenied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
+      expect(readOnlyDenied.error.message).toContain('explicit read_write grant');
+      expect(gh.calls()).toEqual([]);
+
+      // The exact read_write target still publishes.
+      const published = await jsonTool(granted, emptyRoots, 'review_publish', {
+        repo_path: granted, pr_number: PUBLISH_PR, receipt_path: receiptPath,
+      });
+      expect(published).toMatchObject({ ok: true, pr: PUBLISH_PR, head_sha: PUBLISH_HEAD });
+      expect(gh.inputs().filter((entry) => entry.input !== '')).toHaveLength(3);
+    } finally {
+      for (const [key, value] of [['REPO_HARNESS_HOME', previous.home], ['REPO_HARNESS_GH_BIN', previous.gh]] as const) {
+        if (value === undefined) delete process.env[key];
+        else process.env[key] = value;
+      }
+      rmSync(parent, { recursive: true, force: true });
     }
   });
 

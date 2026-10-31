@@ -1116,7 +1116,7 @@
       "prompt": "Use repo-harness-issue-flow on docs/prds/20260101-0000-sample-feature.prd.md to split the feature into GitHub issues. Preserve the PRD as the source requirement, state dependencies and boundaries per issue, and do not write a local todo ledger.",
       "expected_output": "Routes to repo-harness-issue-flow, reads the sample PRD, links each issue to its source requirement in docs/prds/, writes or describes ordered issues with dependencies and machine-checkable acceptance lines traceable to the PRD, and keeps deferred work in GitHub issues.",
       "files": [
-        "evals/fixtures/prd-to-sprint"
+        "evals/fixtures/prd-to-issues"
       ],
       "graders": {
         "files_exist": [
@@ -1167,7 +1167,7 @@
       "prompt": "Use repo-harness-product's Goal mode to prepare a Codex or Claude /goal session for docs/prds/20260101-0000-sample-feature.prd.md. Require the detailed PRD or GitHub issue as source of truth, produce the bounded /goal prompt, and do not start implementation if the source document is missing.",
       "expected_output": "Routes to repo-harness-product's Goal mode, requires a detailed PRD or Sprint artifact before native /goal continuation, prepares a bounded Codex/Claude /goal prompt with source of truth, scope, non-goals, acceptance checks, stop condition, and repo-harness workflow gates, and stops to request the PRD/Sprint document when missing.",
       "files": [
-        "evals/fixtures/prd-to-sprint"
+        "evals/fixtures/prd-to-issues"
       ],
       "graders": {
         "files_exist": [

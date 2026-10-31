@@ -1,3 +1,14 @@
+import {
+  validateRequiredCheckFailureEvidence,
+  type RequiredCheckFailureEvidenceV1,
+} from '../evidence/required-check-evidence';
+import {
+  buildRequiredCheckCoverageEvidence,
+  requiredCheckCoverageFailures,
+  type RequiredCheckCoverageEvidenceV1,
+  type RequiredCheckCoveragePolicyV1,
+} from './required-check-coverage';
+
 export type MergeReadinessAttentionOwner = 'agent' | 'user' | 'external';
 export type MergeReadinessVerdictAttentionOwner = MergeReadinessAttentionOwner | 'none';
 
@@ -18,11 +29,15 @@ export type MergeReadinessBlockerCode =
   | 'changes_requested'
   | 'unresolved_threads'
   | 'not_mergeable'
-  | 'already_integrated';
+  | 'already_integrated'
+  | 'required_check_coverage_missing'
+  | 'required_check_coverage_policy_invalid';
 
 export interface MergeReadinessBlockerV1 {
   readonly code: MergeReadinessBlockerCode;
   readonly attention_owner: MergeReadinessAttentionOwner;
+  /** Action text for a coverage blocker: the protected path, the check and the fix. Absent for every other code. */
+  readonly detail?: string;
 }
 
 export type MergeReadinessIntegrationMode = 'unmerged' | 'ancestor' | 'absorbed' | 'unavailable';
@@ -31,6 +46,25 @@ export type MergeReadinessObservation = 'stable' | 'changed_during_read' | 'prov
 export type MergeReadinessRollbackBoundary =
   | { readonly status: 'not_active' }
   | { readonly status: 'ready'; readonly pr_number: number; readonly before_sha: string; readonly after_sha: string };
+
+/** The provider check bucket vocabulary; `missing` exists only in the coverage evidence. */
+export type RequiredCheckBucketV1 = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
+
+/**
+ * The observed coverage rule. `active` carries the provider evidence the
+ * projection needs: the PR's changed paths and the all-checks read. The
+ * all-checks read is the only view that shows a declared check which branch
+ * protection does not require, such as a skipped matrix job.
+ */
+export type RequiredCheckCoverageFactsV1 =
+  | { readonly status: 'absent' }
+  | { readonly status: 'invalid'; readonly message: string }
+  | {
+    readonly status: 'active';
+    readonly policy: RequiredCheckCoveragePolicyV1;
+    readonly changed_paths: readonly string[];
+    readonly observed_checks: readonly { readonly name: string; readonly bucket: RequiredCheckBucketV1 }[];
+  };
 
 export interface ProviderMergeReadinessFactsV1 {
   readonly state: string;
@@ -42,8 +76,12 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly rollback_boundary: MergeReadinessRollbackBoundary | null;
   readonly checks: readonly {
     readonly name: string;
-    readonly bucket: 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
+    readonly bucket: RequiredCheckBucketV1;
   }[];
+  /** Observed failure history for required checks. Empty when every check passed on its first attempt. */
+  readonly check_failures: readonly RequiredCheckFailureEvidenceV1[];
+  /** Observed required-check coverage rule; `absent` keeps the pre-#1205 behavior. */
+  readonly required_check_coverage: RequiredCheckCoverageFactsV1;
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
@@ -63,6 +101,19 @@ export interface MergeReadinessVerdict {
   readonly integration_mode: MergeReadinessIntegrationMode;
   readonly attention_owner: MergeReadinessVerdictAttentionOwner;
   readonly blockers: readonly MergeReadinessBlockerV1[];
+  /**
+   * Evidence only. It never changes `blockers` or `ready`: a same-SHA rerun
+   * that passes is `failed_then_passed`, not a proven infrastructure flake and
+   * not an automatic pass. The merge decision stays with the publication
+   * policy and the observed check buckets.
+   */
+  readonly check_failures: readonly RequiredCheckFailureEvidenceV1[];
+  /**
+   * Per-check coverage detail for the declared required checks, or null when
+   * the base policy declares no coverage block. The same closed shape is stored
+   * in the protocol 4 acceptance record.
+   */
+  readonly required_check_coverage: RequiredCheckCoverageEvidenceV1 | null;
 }
 
 export interface PullRequestSelectionV2 {
@@ -92,11 +143,13 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   unresolved_threads: 'agent',
   not_mergeable: 'agent',
   already_integrated: 'agent',
+  required_check_coverage_missing: 'agent',
+  required_check_coverage_policy_invalid: 'agent',
 };
 
-function push(blockers: MergeReadinessBlockerV1[], code: MergeReadinessBlockerCode): void {
+function push(blockers: MergeReadinessBlockerV1[], code: MergeReadinessBlockerCode, detail?: string): void {
   if (blockers.some((blocker) => blocker.code === code)) return;
-  blockers.push(Object.freeze({ code, attention_owner: ATTENTION[code] }));
+  blockers.push(Object.freeze({ code, attention_owner: ATTENTION[code], ...(detail === undefined ? {} : { detail }) }));
 }
 
 function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): MergeReadinessVerdictAttentionOwner {
@@ -113,6 +166,25 @@ function verdictAttentionOwner(blockers: readonly MergeReadinessBlockerV1[]): Me
  */
 export function projectPullRequestMergeReadiness(input: PullRequestMergeReadinessInput): MergeReadinessVerdict {
   const blockers: MergeReadinessBlockerV1[] = [];
+  let requiredCheckCoverage: RequiredCheckCoverageEvidenceV1 | null = null;
+  if (input.provider !== null && !Array.isArray(input.provider.check_failures)) push(blockers, 'provider_data_incomplete');
+  const coverage = input.provider === null ? null : input.provider.required_check_coverage;
+  if (input.provider !== null && (!coverage || typeof coverage !== 'object' || Array.isArray(coverage)
+    || !['absent', 'invalid', 'active'].includes(String(coverage.status)))) {
+    push(blockers, 'provider_data_incomplete');
+  }
+  const checkFailures = Array.isArray(input.provider?.check_failures) ? input.provider.check_failures : [];
+  for (const failure of checkFailures) {
+    try {
+      validateRequiredCheckFailureEvidence(failure);
+    } catch {
+      push(blockers, 'provider_data_incomplete');
+      continue;
+    }
+    if (failure.head_sha !== input.expected_head_sha || failure.base_sha !== input.expected_base_sha) {
+      push(blockers, 'provider_data_incomplete');
+    }
+  }
   const validSha = (value: unknown) => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
   if (!validSha(input.expected_head_sha) || !validSha(input.expected_base_sha)) push(blockers, 'provider_data_incomplete');
   if (input.integration_mode === 'ancestor' || input.integration_mode === 'absorbed') push(blockers, 'already_integrated');
@@ -144,6 +216,22 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     if (provider.checks.some(check => check.bucket === 'pending')) push(blockers, 'checks_pending');
     if (provider.checks.some(check => check.bucket !== 'pass' && check.bucket !== 'pending')) push(blockers, 'checks_failed');
     if (provider.mergeable !== 'MERGEABLE') push(blockers, 'not_mergeable');
+    if (coverage?.status === 'invalid') {
+      push(blockers, 'required_check_coverage_policy_invalid',
+        `required-check coverage policy is invalid: ${coverage.message}; fix publication.required_check_coverage in .ai/harness/policy.json on the base branch`);
+    } else if (coverage?.status === 'active') {
+      requiredCheckCoverage = buildRequiredCheckCoverageEvidence({
+        head_sha: provider.head_sha,
+        base_sha: provider.base_sha,
+        policy: coverage.policy,
+        changed_paths: coverage.changed_paths,
+        observed_checks: coverage.observed_checks,
+      });
+      const failures = requiredCheckCoverageFailures(requiredCheckCoverage);
+      if (failures.length > 0) {
+        push(blockers, 'required_check_coverage_missing', failures.map((failure) => failure.message).join('; '));
+      }
+    }
   }
   return Object.freeze({
     ready: blockers.length === 0,
@@ -152,5 +240,7 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     integration_mode: input.integration_mode,
     attention_owner: verdictAttentionOwner(blockers),
     blockers: Object.freeze(blockers),
+    check_failures: Object.freeze([...checkFailures]),
+    required_check_coverage: requiredCheckCoverage,
   });
 }

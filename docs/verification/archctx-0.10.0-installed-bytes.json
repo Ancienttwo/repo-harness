@@ -1,0 +1,16 @@
+[
+  {
+    "name": "archctx",
+    "version": "0.10.0",
+    "sha256": "761febd74c1b850e3c1ae93af3a99d03a897e335aef624ae06a0fcae2a0fd49c",
+    "integrity": "sha512-m/KNWvqMf5M75Rio8zmT6o3V8r0Txg9PX3jfzKxRHQlE5P+cYWJhq2fC9U3LJ/4UWH41Gc0Na4Zgse0KGZQh9A==",
+    "installedRegularFilesCompared": 106
+  },
+  {
+    "name": "archctx-contracts",
+    "version": "0.10.0",
+    "sha256": "5b64d6f7bc63b11def43990efd7eca269170a0197d38c6bde73a05ca0c9b1d81",
+    "integrity": "sha512-mhNna8uaGiudYkVRxTRndwgmc5pQFcCXZ/BymdnZNq3fEqOHuRI0hTw34uzwoiXCG7dJK2kMoTU9ic92n7M+Xw==",
+    "installedRegularFilesCompared": 241
+  }
+]

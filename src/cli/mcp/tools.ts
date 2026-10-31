@@ -27,6 +27,7 @@ import {
   isFleetTool,
 } from './fleet-tools';
 import { buildHerdrToolDefinitions, callHerdrTool, isHerdrTool } from './herdr-tools';
+import { REVIEW_PUBLISH_TOOL_NAME, buildReviewPublishToolDefinitions, callReviewPublishTool } from './review-publish-tool';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
@@ -712,7 +713,8 @@ export function visibleMcpToolDefinitions(ctx: McpToolContext): McpToolDefinitio
 export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
   const mergeTools = policy.capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [];
   // The dispatch surface is exclusive: a task-dispatch token reaches no workflow, file or shell tool.
-  if (policy.capabilities.taskDispatch) return [...buildHerdrToolDefinitions(), ...mergeTools];
+  const reviewPublishTools = policy.profile === 'orchestrator' ? buildReviewPublishToolDefinitions() : [];
+  if (policy.capabilities.taskDispatch) return [...buildHerdrToolDefinitions(), ...reviewPublishTools, ...mergeTools];
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
@@ -902,6 +904,13 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
       }
       return callPublicationMergeTool({ repoRoot: ctx.repoRoot, policy: ctx.policy }, args);
+    }
+    if (name === REVIEW_PUBLISH_TOOL_NAME) {
+      if (ctx.policy.profile !== 'orchestrator') {
+        audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
+        return errorResult('TOOL_NOT_AVAILABLE', `${name} is only available in the orchestrator profile.`);
+      }
+      return callReviewPublishTool({ repoRoot: ctx.repoRoot, policy: ctx.policy }, args);
     }
     if (ctx.policy.capabilities.taskDispatch) {
       if (isHerdrTool(name)) return await callHerdrTool({ repoRoot: ctx.repoRoot }, name, args);

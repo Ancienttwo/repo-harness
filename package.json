@@ -1,6 +1,6 @@
 {
   "name": "repo-harness",
-  "version": "0.24.3",
+  "version": "0.25.0",
   "description": "Installs, migrates, audits, and repairs repo-local agentic development harnesses",
   "license": "MIT",
   "repository": {
@@ -121,10 +121,10 @@
     "vite": "^8.3.1"
   },
   "dependencies": {
-    "@botiverse/oar": "0.75.0",
+    "@botiverse/oar": "0.80.1",
     "@modelcontextprotocol/sdk": "^1.31.0",
-    "archctx": "0.9.4",
-    "archctx-contracts": "0.9.4",
+    "archctx": "0.10.0",
+    "archctx-contracts": "0.10.0",
     "commander": "^15.0.0",
     "express": "^5.2.1"
   }

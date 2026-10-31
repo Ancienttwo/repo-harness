@@ -43,7 +43,7 @@ function runner(overrides: {
         stdout: JSON.stringify({
           number: receipt.pr_number, url: 'https://example.invalid/pr/7', state: 'OPEN', isDraft: false,
           headRefOid: overrides.changed_head && prReads > 1 ? 'd'.repeat(40) : HEAD,
-          headRefName: 'codex/feedback', baseRefOid: BASE, baseRefName: 'main', reviewDecision: null,
+          headRefName: 'codex/feedback', baseRefOid: BASE, baseRefName: 'main', reviewDecision: null, changedFiles: 0,
           ...(mergeStateStatus === null ? {} : { mergeable: mergeStateStatus }),
         }),
       };
@@ -196,7 +196,7 @@ async function installRepairFixture() {
     if (args[0] === 'repo') return { status: 0, stdout: JSON.stringify({ id: 'R_feedback', nameWithOwner: 'acme/widgets' }) };
     if (args[0] === 'pr') return { status: 0, stdout: JSON.stringify({ number: 12, url: receipt.pr_url,
       state: 'OPEN', isDraft: false, headRefOid: receipt.head_sha, baseRefOid: receipt.base_sha,
-      headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null }) };
+      headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null, changedFiles: 0 }) };
     if (args[1] === 'repos/acme/widgets') return { status: 0, stdout: JSON.stringify({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' }) };
     return { status: 2, stdout: '' };
   };
@@ -301,7 +301,7 @@ if (args[0] === 'pr') {
   if (args.at(-2) !== '--repo' || args.at(-1) !== 'github.com/acme/widgets') process.exit(8);
   reply({ number: 12, url: 'https://github.com/acme/widgets/pull/12', state: 'OPEN', isDraft: false,
     headRefOid: ${JSON.stringify(fixture.head)}, baseRefOid: ${JSON.stringify(fixture.base)},
-    headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
+    headRefName: 'main', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null, changedFiles: 0 });
 }
 if (args[1] === 'repos/acme/widgets') reply({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' });
 const query = args.find(arg => arg.startsWith('query=')) ?? '';
@@ -357,7 +357,7 @@ test('a local commit before push blocks only intake, not show, offers or ack', a
     const json = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'repo') return json({ id: 'R_feedback', nameWithOwner: 'acme/widgets' });
     if (args[0] === 'pr') return json({ number: 12, url: 'https://github.com/acme/widgets/pull/12', state: 'OPEN', isDraft: false,
-      headRefOid: fixture.head, baseRefOid: fixture.base, headRefName: 'work', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null });
+      headRefOid: fixture.head, baseRefOid: fixture.base, headRefName: 'work', baseRefName: 'main', mergeable: 'MERGEABLE', reviewDecision: null, changedFiles: 0 });
     if (args[1] === 'repos/acme/widgets') return json({ id: 123, node_id: 'R_feedback', full_name: 'acme/widgets', default_branch: 'main' });
     const query = args.find(arg => arg.startsWith('query=')) ?? '';
     const pageInfo = { hasNextPage: false, endCursor: null };

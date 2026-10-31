@@ -4,6 +4,7 @@ export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codi
       'repo-harness orchestrator profile: dispatch work to Claude and Codex agent panes in local Herdr.',
       'Call list_task_agents first. It returns only agents whose working directory is in a read_write granted repo.',
       'prompt_task_agent submits text and returns without waiting; poll read_task_agent for progress.',
+      'review_publish posts one gatekeeper receipt as an acceptance claim, one COMMENT review with P0/P1/P2 inline threads and NITs only in the body, then an acceptance record. It requires an adopted repo with an explicit read_write grant. It posts nothing when the receipt subject is not the PR head; review_publish_unknown means the owner must inspect the PR before any retry.',
       ...(opts.publicationMergeEnabled === true
         ? ['merge_pull_request squash-merges one same-repository PR of a read_write granted repo only when publication.acceptance_merge is "on" in the policy at the PR base and every merge gate passes. It never retries; merge_outcome_unknown means the owner must check the PR.']
         : []),

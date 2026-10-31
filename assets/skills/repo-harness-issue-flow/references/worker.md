@@ -115,6 +115,52 @@ typecheck and the affected test files, and say so.
 - Post `issue claim status` with `Status: ready for review; claim remains
   active`, the PR URL, the head SHA and the CI state.
 
+### 6.1 Architecture slice in the PR
+
+The PR body carries the changed slice when this branch changes
+`.archcontext/model/**` or a capability entrypoint. The only source is the
+ArchContext projection of the capability document.
+
+1. Build a complete CodeGraph index before you call archctx:
+   `codegraph index .`. Do not call archctx while the index builds, and do
+   not run the plan on a partial index. Without an index, `plan` exits with
+   `AC_CODE_FACTS_UNAVAILABLE`.
+2. Run the preview on a path of the capability footprint:
+
+   ```bash
+   repo-harness architecture-projection plan --json --changed-path <path in the capability footprint>
+   ```
+
+   The request renders every capability document, so `--changed-path` does
+   not narrow `files[]`. Find your document by its path.
+3. Read the `files[]` row for your document:
+   - `preview.format` is `unified-diff` for an existing document. Copy the
+     worktree document to a scratch path, apply the diff to that copy,
+     then take §1.1 from the result.
+   - `preview.format` is `body` for a new document. `preview.content` is
+     the whole rendered document. Take §1.1 from it.
+4. Stop and post `issue claim status` with `Status: blocked; claim remains
+   active` when `preview.truncated` is `true` or the plan exits non-zero.
+   Give the command and its output. Never hand-draw the slice.
+5. Write the one line `Architecture slice unchanged, see #<issue>` when
+   your document is not in `files[]` or its §1.1 did not change.
+6. Put the §1.1 excerpt in the PR body. Keep the target component and its
+   direct neighbours. Remove the `:::component` marker from the changed
+   node line, then add `classDef target …` and `class <node ID> target`.
+   Add the §1.2 `entrypoint.<id>` → `<file>#<symbol>` anchors of the same
+   document, and link the document at the PR base SHA. Two projections of
+   the same model keep the node IDs, so a node ID names the changed
+   component.
+7. Delete the scratch copy. Never modify or restore the worktree document,
+   and never commit the preview, a generated region or the scratch copy.
+   The worktree document is the base document, because this PR does not
+   commit generated regions. An unstaged edit in that document stays as it
+   is; a `git checkout -- <document>` would discard it.
+
+No second source: do not build the slice from the archimap, a source scan,
+the base document alone or memory. When the preview fails, the issue is
+blocked. A hand-drawn slice is not a fallback.
+
 ## 7. CI and review loop
 
 You are the head owner. Only you push to this branch.

@@ -2,6 +2,8 @@ import { decodeAdmittedTaskSessions } from '../core/sessions/task-sessions';
 import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
+import { validateRequiredCheckFailureEvidence } from '../core/evidence/required-check-evidence';
+import { validateRequiredCheckCoverageEvidence } from '../core/publication/required-check-coverage';
 import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
 import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
 export type {
@@ -278,6 +280,8 @@ const MERGE_BLOCKERS = [
   'unresolved_threads',
   'not_mergeable',
   'already_integrated',
+  'required_check_coverage_missing',
+  'required_check_coverage_policy_invalid',
 ] as const;
 const MERGE_ATTENTION_OWNERS = ['agent', 'user', 'external'] as const;
 const MERGE_INTEGRATION_MODES = ['unmerged', 'ancestor', 'absorbed', 'unavailable'] as const;
@@ -371,7 +375,8 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
   if (value === null) return null;
   const readiness = requireRecord(value);
   requireExactKeys(readiness, ['protocol', 'kind', 'provider_repository_id', 'repository', 'pr_number', 'ready',
-    'expected_head_sha', 'expected_base_sha', 'integration_mode', 'attention_owner', 'blockers']);
+    'expected_head_sha', 'expected_base_sha', 'integration_mode', 'attention_owner', 'blockers', 'check_failures',
+    'required_check_coverage']);
   if (readiness.protocol !== 2 || readiness.kind !== 'repo-harness-pull-request-readiness') throw new OperatorPayloadError();
   const repositoryId = requireString(readiness.provider_repository_id);
   const repository = requireString(readiness.repository);
@@ -386,11 +391,23 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
   const blockers: Array<NonNullable<OperatorFleetCardV1['merge_readiness']>['blockers'][number]> = [];
   for (const blockerValue of requireArray(readiness.blockers)) {
     const blocker = requireRecord(blockerValue);
-    requireExactKeys(blocker, ['code', 'attention_owner']);
+    // Only a coverage blocker carries action text; every other code keeps its two-field shape.
+    const keys = Object.keys(blocker).sort().join(',');
+    if (keys !== 'attention_owner,code' && keys !== 'attention_owner,code,detail') throw new OperatorPayloadError();
     if (!isOneOf(blocker.code, MERGE_BLOCKERS) || !isOneOf(blocker.attention_owner, MERGE_ATTENTION_OWNERS)) {
       throw new OperatorPayloadError();
     }
-    blockers.push(Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner }));
+    const detail = blocker.detail === undefined ? undefined : requireString(blocker.detail);
+    if (detail !== undefined && blocker.code !== 'required_check_coverage_missing'
+      && blocker.code !== 'required_check_coverage_policy_invalid') throw new OperatorPayloadError();
+    blockers.push(Object.freeze({ code: blocker.code, attention_owner: blocker.attention_owner, ...(detail === undefined ? {} : { detail }) }));
+  }
+  const checkFailures = requireArray(readiness.check_failures).map((entry) => {
+    try { return validateRequiredCheckFailureEvidence(entry); } catch { throw new OperatorPayloadError(); }
+  });
+  let requiredCheckCoverage: ReturnType<typeof validateRequiredCheckCoverageEvidence> | null = null;
+  if (readiness.required_check_coverage !== null) {
+    try { requiredCheckCoverage = validateRequiredCheckCoverageEvidence(readiness.required_check_coverage); } catch { throw new OperatorPayloadError(); }
   }
   return Object.freeze({
     protocol: 2,
@@ -402,6 +419,8 @@ function decodeMergeReadiness(value: unknown): OperatorFleetCardV1['merge_readin
     integration_mode: integrationMode,
     attention_owner: attentionOwner,
     blockers: Object.freeze(blockers),
+    check_failures: Object.freeze(checkFailures),
+    required_check_coverage: requiredCheckCoverage,
   });
 }
 

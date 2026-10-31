@@ -32,10 +32,28 @@ const providerIdentity = {
   base_ref: receipt.target_ref,
   body: 'Provider PR description',
   review_decision: null,
+  changed_files: 0,
   mergeable: 'MERGEABLE' as const,
 };
 
-function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_runner']> {
+const REQUIRED_CI = 'Required / CI';
+const REQUIRED_CI_LINK = 'https://github.com/example/repo-harness/actions/runs/123/job/456';
+
+interface FakeGhOptions {
+  readonly wrongBase?: boolean;
+  /** Policy file text at the base; null is an absent file (404). */
+  readonly policy?: string | null;
+  /** Changed paths the provider reports for the PR head, as one REST page. */
+  readonly changedPaths?: readonly string[];
+  /** Explicit REST pages; a full page of 100 entries asks for the next page. */
+  readonly changedFilePages?: readonly (readonly { readonly filename: string; readonly previous_filename?: string }[])[];
+  /** Buckets `pr checks --required` reports for the required CI check. */
+  readonly requiredBucket?: 'pass' | 'pending' | 'fail' | 'skipping' | 'cancel';
+  /** The unfiltered `pr checks` answer, used only for the waiver lookup. */
+  readonly allChecks?: readonly { readonly name: string; readonly bucket: string }[];
+}
+
+function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessInput['gh_runner']> {
   const pr = {
     number: receipt.pr_number,
     url: receipt.pr_url,
@@ -47,23 +65,42 @@ function fakeGh(wrongBase = false): NonNullable<PublicationReadinessInput['gh_ru
     baseRefName: receipt.target_ref,
     body: 'Provider PR description',
     reviewDecision: '',
+    changedFiles: options.changedFilePages?.flat().length ?? options.changedPaths?.length ?? 0,
     mergeable: 'MERGEABLE',
   };
+  const requiredBucket = options.requiredBucket ?? 'pending';
+  const requiredChecks = [{ name: REQUIRED_CI, bucket: requiredBucket, link: REQUIRED_CI_LINK }];
   return (args) => {
     const command = `${args[0]} ${args[1]}`;
     if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') return { status: 0, stdout: JSON.stringify({ id: 1001, node_id: receipt.provider_repo_id, full_name: 'example/repo-harness', default_branch: receipt.target_ref }) };
     if (command === 'repo view') return { status: 0, stdout: JSON.stringify({ id: receipt.provider_repo_id, nameWithOwner: 'example/repo-harness' }) };
     if (command === 'pr view') return { status: 0, stdout: JSON.stringify(pr) };
-    if (command === 'pr checks') return { status: 8, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pending', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]) };
+    if (command === 'pr checks') {
+      const checks = args.includes('--required') ? requiredChecks : (options.allChecks ?? requiredChecks);
+      return { status: checks.some(check => check.bucket === 'pending') ? 8 : 0, stdout: JSON.stringify(checks) };
+    }
     if (command === 'api graphql') return { status: 0, stdout: JSON.stringify(reviewGraph()) };
+    if (args[0] === 'api' && args[1]?.startsWith('repos/example/repo-harness/pulls/42/files?')) {
+      const page = Number(new URLSearchParams(args[1].slice(args[1].indexOf('?') + 1)).get('page'));
+      const pages = options.changedFilePages
+        ?? [(options.changedPaths ?? []).map((filename) => ({ filename }))];
+      return { status: 0, stdout: JSON.stringify(pages[page - 1] ?? []) };
+    }
+    if (args[0] === 'api' && args[1] === `repos/example/repo-harness/contents/.ai/harness/policy.json?ref=${BASE}`) {
+      if (options.policy === undefined || options.policy === null) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
+      return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(options.policy).toString('base64') }) };
+    }
     if (args[0] === 'api' && args[1]?.includes('/contents/.github/workflows/ci-report.yml')) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
     if (command === 'api repos/example/repo-harness/actions/runs/123') {
       return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
-        pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: wrongBase ? '9'.repeat(40) : BASE } }] }) };
+        status: 'completed', conclusion: 'success',
+        pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: options.wrongBase ? '9'.repeat(40) : BASE } }] }) };
     }
     return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
   };
 }
+
+
 
 function reviewGraph() {
   return { data: { node: { id: receipt.provider_repo_id, pullRequest: {
@@ -333,7 +370,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     for (const scenario of scenarios) {
       const observedBase = scenario === 'zero-base' ? '0'.repeat(40) : scenario === 'root' ? before : scenario === 'multiple-parents' ? merge : scenario === 'multi-commit-rebase' ? rebased : scenario === 'multi-commit-squash' ? squashed : base;
       const observedParent = scenario === 'multi-commit-rebase' ? git('rev-parse', `${rebased}^`) : scenario === 'multi-commit-squash' ? base : before;
-      const identity = { ...providerIdentity, base_sha: observedBase };
+      const identity = { ...providerIdentity, base_sha: observedBase, changed_files: 0 };
       const requests: string[] = [];
       const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
         const path = args[1] ?? ''; requests.push(args.join(' '));
@@ -342,6 +379,10 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         if (path === 'graphql') { const graph = reviewGraph(); graph.data.node.pullRequest.baseRefOid = observedBase; return json(graph); }
         if (args[0] === 'pr') return json([{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }]);
         if (path.includes('/actions/runs/123')) return json({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success', pull_requests: [{ number: 42, head: { sha: HEAD }, base: { sha: observedBase } }] });
+        if (path === `repos/example/repo-harness/contents/.ai/harness/policy.json?ref=${observedBase}`) {
+          // No coverage block in this scenario: the pre-#1205 behavior must hold.
+          return json({ status: '404', message: 'Not Found' }, 1);
+        }
         if (path.includes('/contents/')) {
           expect(path).toBe(`repos/example/repo-harness/contents/.github/workflows/ci-report.yml?ref=${observedBase}`);
           if (scenario === '404') return json({ status: '404', message: 'Not Found' }, 1);
@@ -438,3 +479,285 @@ test('merged provider PR remains blocked without local squash classification aut
   expect(verdict.ready).toBe(false);
   expect(verdict.blockers.map(blocker => blocker.code)).toContain('already_integrated');
 });
+
+
+function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'skipped-child' | 'no-annotations'): NonNullable<PublicationReadinessInput['gh_runner']> {
+  const source = fakeGh();
+  const run = {
+    path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
+    status: 'completed', conclusion: scenario === 'failed-check' ? 'failure' : 'success',
+    run_attempt: scenario === 'failed-check' ? 1 : 2, workflow_id: 99,
+    pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: BASE } }],
+  };
+  const job = (id: number, conclusion: string, checkRunUrl: string | null = null, name = 'test (ubuntu-latest)',
+    stepNames: readonly string[] = ['Run tests']) => ({
+    id, name, status: 'completed', conclusion,
+    steps: stepNames.map((stepName, index) => ({ name: stepName, number: index + 1, status: 'completed', conclusion })),
+    check_run_url: checkRunUrl,
+  });
+  return (args) => {
+    const path = args[1] ?? '';
+    if (args[0] === 'pr' && args[1] === 'checks') {
+      return { status: scenario === 'failed-check' ? 1 : 0, stdout: JSON.stringify([{
+        name: 'Required / CI', bucket: scenario === 'failed-check' ? 'fail' : 'pass',
+        link: `https://github.com/example/repo-harness/actions/runs/123/job/${scenario === 'failed-check' ? 456 : 789}`,
+      }]) };
+    }
+    if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
+    if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
+      return { status: 0, stdout: JSON.stringify({
+        total_count: 1,
+        jobs: [job(456, 'failure', scenario === 'no-annotations' ? null
+          : 'https://api.github.com/repos/example/repo-harness/check-runs/77',
+          scenario === 'missing-previous-job' ? 'renamed job' : 'test (ubuntu-latest)')],
+      }) };
+    }
+    if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
+      return { status: 0, stdout: JSON.stringify({ total_count: 1, jobs: [job(789, 'success', null, 'test (ubuntu-latest)',
+        scenario === 'passed-rerun' ? ['Run tests', 'session-runtime > chunk boundary'] : ['Run tests'])] }) };
+    }
+    if (path === 'repos/example/repo-harness/check-runs/77/annotations?per_page=100') {
+      return { status: 0, stdout: JSON.stringify([{ title: 'session-runtime > chunk boundary',
+        message: 'AssertionError: expected 200 but received 500' }]) };
+    }
+    return source(args);
+  };
+}
+
+test('a passing same-SHA rerun is failed_then_passed evidence and never a proven flake', async () => {
+  const gh_runner = evidenceGh('passed-rerun');
+  const sync = collectPullRequestMergeReadiness({ ...input, gh_runner });
+  expect(sync.ready).toBe(true);
+  expect(sync.blockers).toEqual([]);
+  expect(sync.check_failures).toHaveLength(1);
+  const [evidence] = sync.check_failures;
+  expect(evidence!.observed_result).toBe('failed_then_passed');
+  expect(evidence!.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed', revalidated: true });
+  expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
+  expect(evidence!.cause).toBe('unknown');
+  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, job_name: 'test (ubuntu-latest)' });
+  expect(evidence!.retry.latest).toMatchObject({ run_id: 123, attempt: 2, job_id: 789 });
+  expect(evidence!.workflow).toEqual({ path: '.github/workflows/ci.yml', id: 99, revision: HEAD });
+
+  const asyncVerdict = await collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => gh_runner(args) });
+  expect(asyncVerdict.check_failures).toEqual(sync.check_failures);
+});
+
+test('a failed required check keeps its blocker and records the failing job and step', () => {
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('failed-check') });
+  expect(verdict.ready).toBe(false);
+  expect(verdict.blockers.map(blocker => blocker.code)).toContain('checks_failed');
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.observed_result).toBe('failed');
+  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, steps: ['Run tests'], shape: 'assertion_mismatch' });
+  expect(evidence!.failed.failure_excerpt).toContain('AssertionError');
+  expect(evidence!.cause).toBe('unknown');
+});
+
+test('a passing aggregate step does not revalidate a skipped failed child', () => {
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('skipped-child') });
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
+  expect(evidence!.failed.steps).toEqual(['Run tests']);
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+  expect(evidence!.observed_result).toBe('not_revalidated');
+});
+
+test('a rerun without failed child evidence is not revalidated even when the aggregate step passes', () => {
+  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('no-annotations') });
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.failed.tests).toEqual([]);
+  expect(evidence!.failed.shape).toBe('logs_unavailable');
+  expect(evidence!.failed.steps).toEqual(['Run tests']);
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+  expect(evidence!.observed_result).toBe('not_revalidated');
+});
+
+test('a rerun whose preserved job is missing fails closed instead of inventing history', () => {
+  const gh_runner = evidenceGh('missing-previous-job');
+  const identity = observeProviderReadinessIdentity({ ...input, gh_runner });
+  expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
+    .toThrow('did not preserve the failed job');
+});
+
+const MATRIX = 'build, typecheck, test (matrix)';
+
+function coveragePolicyText(block: unknown): string {
+  return JSON.stringify({ publication: { acceptance_merge: 'on', required_check_coverage: block } });
+}
+
+const ACTIVE_POLICY = coveragePolicyText({
+  protected_paths: ['api-surface/**'],
+  required_checks: ['Required / CI', MATRIX],
+});
+
+describe('required-check coverage reads', () => {
+  function observed(
+    verdict: ReturnType<typeof collectPullRequestMergeReadiness>,
+  ): readonly { readonly check: string; readonly bucket: string; readonly requirement: string }[] {
+    return verdict.required_check_coverage?.checks ?? [];
+  }
+
+  test('an absent coverage block reads no changed files and keeps the current behavior', () => {
+    const calls: string[][] = [];
+    const source = fakeGh({ requiredBucket: 'pass' });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage).toBeNull();
+    expect(calls.some(args => args[1]?.startsWith('repos/example/repo-harness/pulls/42/files?'))).toBe(false);
+    expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks')).toHaveLength(1);
+    // One policy read is the whole extra cost when the block is inactive.
+    expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
+  });
+
+  test('a protected changed path blocks a skipped declared check and reads each check view once', () => {
+    const calls: string[][] = [];
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['src/app.ts', 'api-surface/entries.json'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(verdict.ready).toBe(false);
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_missing')!;
+    expect(blocker.detail).toContain('"api-surface/entries.json"');
+    expect(blocker.detail).toContain(`"${MATRIX}" is skipping`);
+    expect(observed(verdict)).toEqual([
+      { check: 'Required / CI', bucket: 'pass', requirement: 'required' },
+      { check: MATRIX, bucket: 'skipping', requirement: 'required' },
+    ]);
+    expect(verdict.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+    expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && args.includes('--required'))).toHaveLength(1);
+    expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
+    expect(calls.filter(args => args[1]?.startsWith('repos/example/repo-harness/pulls/42/files?'))).toHaveLength(1);
+    // Inactive-to-active: policy + one file page + one all-checks read.
+    expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
+  });
+
+  test('a rename protects both the source and the destination path', () => {
+    const renamed = (source: string, destination: string) => fakeGh({
+      policy: ACTIVE_POLICY,
+      changedFilePages: [[{ filename: destination, previous_filename: source }]],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'pass' }],
+    });
+    const sourceProtected = collectPullRequestMergeReadiness({ ...input, gh_runner: renamed('api-surface/entries.json', 'src/entries.json') });
+    expect(sourceProtected.ready).toBe(true);
+    expect(sourceProtected.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+
+    const destinationProtected = collectPullRequestMergeReadiness({ ...input, gh_runner: renamed('src/entries.json', 'api-surface/entries.json') });
+    expect(destinationProtected.ready).toBe(true);
+    expect(destinationProtected.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+
+    // A rename whose source is protected still needs every declared check.
+    const skipped = collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh({
+      policy: ACTIVE_POLICY,
+      changedFilePages: [[{ filename: 'src/entries.json', previous_filename: 'api-surface/entries.json' }]],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    }) });
+    expect(skipped.ready).toBe(false);
+    expect(skipped.blockers.map((entry) => entry.code)).toContain('required_check_coverage_missing');
+  });
+
+  test('the file read paginates exactly and the read budget follows the page count', () => {
+    const files = (count: number, prefix = 'src/file') => Array.from({ length: count }, (_, index) => ({ filename: `${prefix}-${index}.ts` }));
+    const pagesOf = (count: number) => {
+      const all = files(count);
+      const pages: { filename: string }[][] = [];
+      for (let index = 0; index < all.length; index += 100) pages.push(all.slice(index, index + 100));
+      return pages;
+    };
+    const run = (count: number) => {
+      const source = fakeGh({ policy: ACTIVE_POLICY, changedFilePages: pagesOf(count),
+        requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }] });
+      const calls: string[][] = [];
+      const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+      return { calls, verdict };
+    };
+    // Exact boundaries: ceil(count / 100) pages, and 0 files cost no page at all.
+    for (const [count, pages] of [[0, 0], [1, 1], [100, 1], [101, 2], [200, 2], [3000, 30]] as const) {
+      const { calls, verdict } = run(count);
+      const fileCalls = calls.filter(args => args[1]?.includes('/files?'));
+      expect([count, fileCalls.length]).toEqual([count, pages]);
+      expect([count, fileCalls.map(args => /[?&]page=(\d+)/u.exec(args[1]!)?.[1])])
+        .toEqual([count, Array.from({ length: pages }, (_, index) => String(index + 1))]);
+      expect(verdict.ready).toBe(true);
+      // The policy read and the all-checks read happen once, whatever the page count.
+      expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
+      expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
+    }
+  });
+
+  test('the executor reuses its base policy read instead of a second contents read', () => {
+    const calls: string[][] = [];
+    const source = fakeGh({ changedFilePages: [[{ filename: 'api-surface/entries.json' }]],
+      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'pass' }] });
+    const verdict = collectPullRequestMergeReadiness({ ...input,
+      policy_file_at_base: { status: 'present', text: ACTIVE_POLICY },
+      gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(0);
+    expect(verdict.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+    expect(verdict.ready).toBe(true);
+  });
+
+  test('an unprotected changed path under an active block stays ready', () => {
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['src/core/app.ts'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: source });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.blockers).toEqual([]);
+    expect(verdict.required_check_coverage?.protected_paths).toEqual([]);
+    expect(observed(verdict).map((check) => check.requirement)).toEqual(['not_required', 'not_required']);
+  });
+
+  test('a passing coverage-waiver check waives the block and is recorded', () => {
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['api-surface/entries.json'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' },
+        { name: 'coverage-waiver', bucket: 'pass' }],
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: source });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.required_check_coverage?.waiver).toEqual({ check: 'coverage-waiver', bucket: 'pass' });
+    expect(observed(verdict).map((check) => check.requirement)).toEqual(['waived', 'waived']);
+  });
+
+  test('a malformed coverage block fails closed with the typed policy blocker', () => {
+    const source = fakeGh({
+      policy: coveragePolicyText({ protected_path: ['api-surface/**'] }),
+      changedPaths: ['api-surface/entries.json'],
+      requiredBucket: 'pass',
+    });
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: source });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.required_check_coverage).toBeNull();
+    const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_policy_invalid')!;
+    expect(blocker.detail).toContain('unknown fields: protected_path');
+  });
+
+  test('the abortable adapter reads the same coverage facts', async () => {
+    const source = fakeGh({
+      policy: ACTIVE_POLICY,
+      changedPaths: ['api-surface/entries.json'],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    });
+    const verdict = await collectPullRequestMergeReadinessAbortable({
+      ...input, gh_runner_async: async args => source(args),
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((entry) => entry.code)).toContain('required_check_coverage_missing');
+    expect(verdict.required_check_coverage?.checks).toHaveLength(2);
+  });
+});
+

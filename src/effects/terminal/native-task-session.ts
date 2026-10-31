@@ -19,7 +19,7 @@ const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(val
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonical(value)).digest('hex')}`;
 
 /** The controlled OAR host writes ready only after native start/resume succeeds.
- * Pinned OAR 0.75.0 uses Claude's --session-id/--resume and Codex's
+ * Pinned OAR 0.80.1 uses Claude's --session-id/--resume and Codex's
  * thread/start|resume response thread.id as Session.id. Pi subprocess uses the
  * native get_state.sessionId; OAR verifies it against the requested resume ID.
  * No cwd or actor join. */

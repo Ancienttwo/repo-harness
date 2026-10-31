@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:34956986c76c312a0dce4aaad35e643116f683a7365d1b371ad7167ccbf54121" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b3435e694a47e6bdcb7f568b5a2d3d305eb29bc29490ffab7244f60ed934476a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
@@ -45,7 +45,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `2000–5000` 行
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/evidence/**`、`src/effects/evidence/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -123,7 +123,7 @@ sequenceDiagram
 6. **Payload 与 blob 二选一。** 每个事件恰好有其中一个（`types.ts:41-45`）。Blob 按 sha256 命名，只写一次，不解引用 symlink（`src/effects/evidence/blob-store.ts:2-5`、`:32`）。
 7. **秘密从不以原文落盘。** 脱敏按构造拒绝（`src/core/evidence/redaction.ts:2-6`）。
 8. **Checkpoint 只经 marker 解析。** 发布在一个 staged 事务中验证后原子 rename。`last-published` marker 是唯一权威。读者从不按 mtime 或文件名扫描（`src/effects/evidence/checkpoint-store.ts:1-22`）。
-9. **恢复视图单跳。** 视图中的每条证据都来自已验证的 checkpoint 投影。工作流上下文每次从仓库重新读取（`src/effects/evidence/recovery-materializer.ts:10-16`）。Handoff 已有两个 producer，禁止第三个（PRD `docs/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md:53`）。
+9. **恢复视图单跳。** 视图中的每条证据都来自已验证的 checkpoint 投影。工作流上下文每次从仓库重新读取（`src/effects/evidence/recovery-materializer.ts:10-16`）。Handoff 已有两个 producer，禁止第三个（[PRD](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/20260822-0405-fleet-acquire-publication-readiness.prd.md#L53)）。
 
 ### 3.2 关键权衡
 

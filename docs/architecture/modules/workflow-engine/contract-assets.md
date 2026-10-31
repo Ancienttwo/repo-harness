@@ -1,8 +1,8 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:958c3db3f59e49860b3d9cbad13521636125fd13f8c3df5dbbd8dbfd89e1963f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8bb34547f33b085a7f92bc5e28dd2f683a77f098152386ae2a093217c6468d97" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
-> **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/workstream-sync.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/new-plan.sh`、`scripts/capture-plan.sh`、`scripts/plan-to-todo.sh`、`scripts/switch-plan.sh`、`scripts/classify-historical-plans.ts`、`scripts/ensure-task-workflow.sh`、`scripts/refresh-current-status.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
+> **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
 > **Local Contracts**:`assets/AGENTS.md`、`assets/CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -23,7 +23,7 @@ flowchart LR
   p1_component_contract_assets_cli_layer_90bb6fa4["Contract Assets (cli)"]:::component
   p1_component_contract_assets_contract_worktree_lifecycle_5cb413df["Worktree Safety and Branch Delivery"]:::component
   p1_component_contract_assets_effects_layer_03f9e65c["Contract Assets (effects)"]:::component
-  p1_component_contract_assets_planning_helpers_7600c3e5["Planning Helpers"]:::component
+  p1_component_contract_assets_planning_helpers_7600c3e5["Operations Helpers"]:::component
   p1_component_contract_assets_planning_helpers_cli_8bc2bdf7["Planning Helpers (cli)"]:::component
   p1_component_contract_assets_planning_helpers_effects_57f98a5d["Planning Helpers (effects)"]:::component
   p1_component_contract_assets_primary_21097608["Workflow Contract And Policy"]:::component
@@ -45,7 +45,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:02ed671492c877f5fce0337274048f21b42f62516910134464d6599f0a2d820f`).
+- Proof: `proven` (`sha256:bfbbdd579c7561d0e43217bf273e5f4aacad479b9f6293c0e5fceac0cb8d5247`).
 - Semantic nodes: `18`; declared relations: `7`.
 
 ### 1.2 模組職責表
@@ -63,7 +63,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`500–1000` 個文件 / `20k–50k` 行
-- 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/archive-workflow.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/workstream-sync.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/new-plan.sh`、`scripts/capture-plan.sh`、`scripts/plan-to-todo.sh`、`scripts/switch-plan.sh`、`scripts/classify-historical-plans.ts`、`scripts/ensure-task-workflow.sh`、`scripts/refresh-current-status.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
+- 匹配前綴:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
 - 排除前綴:`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/architecture/**`、`docs/researches/**`、`.ai/harness/**`、`docs/design/**`、`references/plugins-core.md`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -144,10 +144,10 @@ flowchart LR
 | `component.contract-assets.cli-layer` | Contract Assets (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.contract-assets.contract-worktree-lifecycle` | Worktree Safety and Branch Delivery | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.effects-layer` | Contract Assets (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.contract-assets.planning-helpers` | Planning Helpers | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.contract-assets.planning-helpers-cli` | Planning Helpers (cli) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.contract-assets.planning-helpers` | Operations Helpers | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.contract-assets.planning-helpers-cli` | Planning Helpers (cli) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-effects` | Planning Helpers (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.contract-assets.primary` | Workflow Contract And Policy | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.contract-assets.primary` | Workflow Contract And Policy | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.contract-assets.primary-assets` | Workflow Contract And Policy (assets) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.template-projection` | Template Projection | `50–100` 個文件 / `5000–10000` 行 | 未宣告 |
 | `component.contract-assets.template-projection-cli` | Template Projection (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
@@ -156,7 +156,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:02ed671492c877f5fce0337274048f21b42f62516910134464d6599f0a2d820f`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:bfbbdd579c7561d0e43217bf273e5f4aacad479b9f6293c0e5fceac0cb8d5247`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -179,7 +179,7 @@ sequenceDiagram
 sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Contract Assets
-  participant p2_helpers_21137951 as Planning Helpers
+  participant p2_helpers_21137951 as Operations Helpers
   participant p2_primitives_8dae000d as Execution Primitives
   p2_capability_4262990f->>p2_helpers_21137951: Resolve a helper id that the workflow contract lists
   alt The helper exits zero inside its timeout class

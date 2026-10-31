@@ -4,7 +4,8 @@ import { captureGitVirtualTreeSnapshot } from '../src/effects/evidence/verificat
 import { readAcceptedEvents } from '../src/effects/evidence/event-log';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { chmodSync, lstatSync, utimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, lstatSync, utimesSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { parseStrategyDocument, validateProposal, type StrategyDocument, type StrategyPacket } from '../src/core/strategy/contracts';
@@ -552,6 +553,18 @@ describe('optional strategy and progressive memory', () => {
     expect(() => collectStrategyContext(root, { nowMs, documentPath: '../foreign.json' })).toThrow();
     expect(() => new StrategyReader(root, { durationMs: Infinity })).toThrow('limits');
     expect(() => new StrategyReader(root, { totalBytes: 1048577 })).toThrow('limits');
+  });
+  test('committed repository pilot binds every evidence reference to its recorded revision', () => {
+    const repository = join(import.meta.dir, '..');
+    const pilot = JSON.parse(readFileSync(join(repository, 'docs/strategy/repository-pilot.json'), 'utf8')) as StrategyDocument;
+    expect(() => parseStrategyDocument(pilot)).not.toThrow();
+    const bound = [...pilot.evidence, ...pilot.memory.flatMap(memory => memory.body ? [memory.body] : [])];
+    expect(bound.length).toBeGreaterThan(0);
+    for (const entry of bound) {
+      const blob = execFileSync('git', ['-C', repository, 'show', `${entry.revision}:${entry.path}`]);
+      expect(createHash('sha256').update(blob).digest('hex')).toBe(entry.sha256);
+    }
+    expect(existsSync(join(repository, 'docs/strategy/optional-strategy-memory.md'))).toBe(true);
   });
   test('pilot budgets are explicit, scoped and bounded; standard defaults stay unchanged', () => {
     const root = temp(); write(root, 'payload.txt', 'x'.repeat(131072));

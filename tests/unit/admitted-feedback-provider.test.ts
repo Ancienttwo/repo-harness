@@ -11,7 +11,7 @@ function provider(options: { repositoryId?: number; head?: string; base?: string
     const json = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
     if (args[0] === 'repo') return json({ id: 'R_widgets', nameWithOwner: 'acme/widgets' });
     if (args[0] === 'pr') return json({ number: 7, url: 'https://github.com/acme/widgets/pull/7', state: 'OPEN', isDraft: false,
-      headRefOid: options.head ?? head, headRefName: 'work', baseRefOid: options.base ?? base, baseRefName: options.baseRef ?? 'main', body: '', reviewDecision: null, mergeable: 'MERGEABLE' });
+      headRefOid: options.head ?? head, headRefName: 'work', baseRefOid: options.base ?? base, baseRefName: options.baseRef ?? 'main', body: '', reviewDecision: null, changedFiles: 0, mergeable: 'MERGEABLE' });
     if (args[1] === 'repos/acme/widgets') return json({ id: options.repositoryId ?? 42, node_id: 'R_widgets', full_name: 'acme/widgets', default_branch: options.defaultBranch ?? 'main' });
     const query = args.find(arg => arg.startsWith('query=')) ?? '';
     const pageInfo = { hasNextPage: false, endCursor: null };

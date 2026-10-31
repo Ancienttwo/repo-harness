@@ -5,13 +5,17 @@
  * request. The mutation is sent once. After it is sent, the result is a
  * rejection only when an error response is followed by a readback of the PR
  * still open at the expected head, and a merge only when the single-parent
- * squash commit is proven. Everything else is an unknown outcome, and the
- * executor never retries it.
+ * squash commit is proven. Everything else is an unknown outcome. The executor
+ * never resends the merge request; only the provider readback repeats, inside
+ * a bounded window, because a merge response can arrive before the read model
+ * shows the merge.
  */
 
 import { spawnSync } from 'child_process';
 import {
+  PUBLICATION_POLICY_PATH,
   parsePublicationPolicy,
+  policyFileFromContents,
   publicationPolicyChanged,
   type PolicyFileAtRef,
   type PublicationPolicy,
@@ -25,7 +29,7 @@ import {
   type PullRequestReadinessInput,
 } from './merge-readiness';
 
-export const PUBLICATION_POLICY_PATH = '.ai/harness/policy.json';
+export { PUBLICATION_POLICY_PATH };
 
 export type PublicationMergeRefusalCode =
   | 'invalid_selection'
@@ -91,6 +95,36 @@ class UnknownOutcome extends Error {}
 
 const PROVIDER_TIMEOUT_MS = 30_000;
 const SHA = /^[0-9a-f]{40}$/u;
+/** Post-merge readback window. It reuses the provider-call bound; a read model can lag the merge response. */
+const READBACK_WINDOW_MS = PROVIDER_TIMEOUT_MS;
+const READBACK_FIRST_DELAY_MS = 250;
+const READBACK_MAX_DELAY_MS = 4_000;
+
+/** Deterministic backoff: the delays sum to the bounded window, with no wall-clock dependence. */
+function readbackDelays(windowMs: number): readonly number[] {
+  const delays: number[] = [];
+  let remaining = windowMs;
+  let delay = READBACK_FIRST_DELAY_MS;
+  while (remaining > 0) {
+    const next = Math.min(delay, remaining);
+    delays.push(next);
+    remaining -= next;
+    delay = Math.min(delay * 2, READBACK_MAX_DELAY_MS);
+  }
+  return delays;
+}
+const READBACK_DELAYS_MS = readbackDelays(READBACK_WINDOW_MS);
+
+/** The executor's own test seam; the CLI and MCP never set it. */
+type PublicationMergeInput = PullRequestReadinessInput & {
+  readonly readback_wait?: (milliseconds: number) => void;
+  readonly readback_now?: () => number;
+  readonly readback_timeout?: (milliseconds: number) => void;
+};
+
+function waitForReadback(milliseconds: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, milliseconds);
+}
 
 interface ProviderResult {
   readonly status: number | null;
@@ -100,7 +134,7 @@ interface ProviderResult {
 }
 
 /** Every call names github.com and the repository; nothing depends on the current directory's remote. */
-function runGh(input: PullRequestReadinessInput, args: readonly string[]): ProviderResult {
+function runGh(input: PullRequestReadinessInput, args: readonly string[], timeoutMs = PROVIDER_TIMEOUT_MS): ProviderResult {
   const full = args[0] === 'api' ? [...args, '--hostname', 'github.com'] : [...args];
   const injected = input.gh_runner?.(full);
   if (injected) return { status: injected.status, stdout: injected.stdout, stderr: injected.stderr ?? '' };
@@ -108,7 +142,7 @@ function runGh(input: PullRequestReadinessInput, args: readonly string[]): Provi
     cwd: input.repo_root,
     env: { ...process.env, GH_HOST: 'github.com' },
     encoding: 'utf-8',
-    timeout: PROVIDER_TIMEOUT_MS,
+    timeout: timeoutMs,
     killSignal: 'SIGKILL',
   });
   const failure = result.error?.message ?? (result.signal ? `terminated by ${result.signal}` : undefined);
@@ -221,11 +255,9 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
 function readPolicyAt(input: PullRequestReadinessInput, ref: string): PolicyFileAtRef {
   const value = read(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`], true);
   if (value === null) return { status: 'missing' };
-  const file = field(value, 'policy file');
-  if (file.type !== 'file' || file.path !== PUBLICATION_POLICY_PATH || file.encoding !== 'base64' || typeof file.content !== 'string') {
-    throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
-  }
-  return { status: 'present', text: Buffer.from(file.content, 'base64').toString('utf-8') };
+  const file = policyFileFromContents(field(value, 'policy file'));
+  if (file === null) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${ref} is not a readable file`);
+  return file;
 }
 
 function readDefaultBranch(input: PullRequestReadinessInput): string {
@@ -271,8 +303,15 @@ function assertBaseProtection(input: PullRequestReadinessInput, branch: string, 
   assertNoMergeQueue(target);
 }
 
-function readPolicy(input: PullRequestReadinessInput): PublicationPolicy & { readonly ok: true } {
-  const base = parsePublicationPolicy(readPolicyAt(input, input.expected_base_sha));
+interface BasePolicy {
+  readonly policy: PublicationPolicy & { readonly ok: true };
+  /** The base file itself, so readiness reuses this read instead of a second one. */
+  readonly file: PolicyFileAtRef;
+}
+
+function readPolicy(input: PullRequestReadinessInput): BasePolicy {
+  const file = readPolicyAt(input, input.expected_base_sha);
+  const base = parsePublicationPolicy(file);
   if (!base.ok) throw new Refusal('publication_policy_invalid', `${PUBLICATION_POLICY_PATH} at ${input.expected_base_sha}: ${base.message}`);
   if (base.acceptance_merge === 'off') {
     throw new Refusal('acceptance_merge_off', `publication.acceptance_merge is off at base ${input.expected_base_sha}`);
@@ -280,7 +319,7 @@ function readPolicy(input: PullRequestReadinessInput): PublicationPolicy & { rea
   if (publicationPolicyChanged(base, readPolicyAt(input, input.expected_head_sha))) {
     throw new Refusal('publication_policy_changed_in_pr', 'the PR changes the publication policy subtree');
   }
-  return base;
+  return { policy: base, file };
 }
 
 const MERGE_MUTATION = 'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,$commitHeadline:String!,$commitBody:String!){mergePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,mergeMethod:SQUASH,commitHeadline:$commitHeadline,commitBody:$commitBody}){pullRequest{number state mergeCommit{oid}}}}';
@@ -323,28 +362,87 @@ function readBackAfterError(input: PullRequestReadinessInput): ErrorReadback {
   if (pr.number === input.pr_number && pr.merged === true && typeof pr.merge_commit_sha === 'string' && SHA.test(pr.merge_commit_sha)) {
     return { state: 'merged', merge_commit_sha: pr.merge_commit_sha };
   }
-  throw new UnknownOutcome('PR readback after the error response is neither open at the expected head nor merged');
+  throw new UnknownOutcome(`PR readback after the error response is neither open at the expected head nor merged: ${prReadbackEvidence(pr)}`);
 }
 
-/** Readback: the PR is merged by exactly one commit whose only parent is the expected base. */
-function proveMerge(input: PullRequestReadinessInput, mergeCommitSha: string, baseRef: string): void {
-  const readback = (args: readonly string[]): Record<string, unknown> => {
-    const result = runGh(input, args);
-    const value = result.failure || result.status !== 0 ? undefined : parseJson(result.stdout);
-    if (!isObject(value)) throw new UnknownOutcome(`merge readback failed: ${describeCall(args, result)}`);
-    return value;
-  };
-  const pr = readback(['api', `repos/${input.repository}/pulls/${input.pr_number}`]);
+function prReadbackEvidence(pr: Record<string, unknown>): string {
   const head = isObject(pr.head) ? pr.head.sha : undefined;
   const base = isObject(pr.base) ? pr.base.ref : undefined;
-  if (pr.merged !== true || pr.merge_commit_sha !== mergeCommitSha || head !== input.expected_head_sha || base !== baseRef) {
-    throw new UnknownOutcome('merged PR readback does not match the merge response');
+  return `PR readback: state=${String(pr.state)} merged=${String(pr.merged)} merge_commit_sha=${String(pr.merge_commit_sha)} head=${String(head)} base=${String(base)}`;
+}
+
+type ProofAttempt =
+  | { readonly kind: 'proven' }
+  /** The read model is behind; the same proof can succeed on a later read. */
+  | { readonly kind: 'pending'; readonly evidence: string; readonly pr?: string }
+  /** A provider answer that a later read cannot turn into the expected proof. */
+  | { readonly kind: 'contradiction'; readonly evidence: string };
+
+type ReadbackValue =
+  | { readonly ok: true; readonly value: Record<string, unknown> }
+  | { readonly ok: false; readonly failure: string };
+
+function readbackValue(input: PublicationMergeInput, args: readonly string[], timeoutMs: number): ReadbackValue {
+  const result = runGh(input, args, timeoutMs);
+  const value = result.failure || result.status !== 0 ? undefined : parseJson(result.stdout);
+  return isObject(value) ? { ok: true, value } : { ok: false, failure: `readback failed: ${describeCall(args, result)}` };
+}
+
+/** One readback attempt: the PR is merged at the response SHA by one commit whose only parent is the expected base. */
+function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, deadline: number): ProofAttempt {
+  const now = input.readback_now ?? Date.now;
+  const remaining = () => deadline - now();
+  const prTimeout = remaining();
+  if (prTimeout <= 0) return { kind: 'pending', evidence: 'readback window exhausted' };
+  input.readback_timeout?.(prTimeout);
+  const prRead = readbackValue(input, ['api', `repos/${input.repository}/pulls/${input.pr_number}`], prTimeout);
+  if (!prRead.ok) return { kind: 'pending', evidence: prRead.failure };
+  const pr = prRead.value;
+  if (pr.merged === true && typeof pr.merge_commit_sha === 'string' && SHA.test(pr.merge_commit_sha) && pr.merge_commit_sha !== mergeCommitSha) {
+    return { kind: 'contradiction', evidence: `PR readback shows merged at ${pr.merge_commit_sha}, but the merge response reported ${mergeCommitSha}` };
   }
-  const commit = readback(['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`]);
+  const head = isObject(pr.head) ? pr.head.sha : undefined;
+  const base = isObject(pr.base) ? pr.base.ref : undefined;
+  const evidence = prReadbackEvidence(pr);
+  if (pr.merged !== true || pr.merge_commit_sha !== mergeCommitSha || head !== input.expected_head_sha || base !== baseRef) {
+    return { kind: 'pending', evidence, pr: evidence };
+  }
+  const commitTimeout = remaining();
+  if (commitTimeout <= 0) return { kind: 'pending', evidence, pr: evidence };
+  input.readback_timeout?.(commitTimeout);
+  const commitRead = readbackValue(input, ['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`], commitTimeout);
+  if (!commitRead.ok) return { kind: 'pending', evidence: commitRead.failure, pr: evidence };
+  const commit = commitRead.value;
   const parents = commit.parents;
   if (commit.sha !== mergeCommitSha || !Array.isArray(parents) || parents.length !== 1
     || !isObject(parents[0]) || parents[0].sha !== input.expected_base_sha) {
-    throw new UnknownOutcome(`merge commit ${mergeCommitSha} does not have exactly one parent equal to ${input.expected_base_sha}`);
+    const observed = Array.isArray(parents) ? `[${parents.map((parent) => isObject(parent) ? String(parent.sha) : '?').join(', ')}]` : String(parents);
+    return { kind: 'contradiction', evidence: `commit ${String(commit.sha)} has parents ${observed}; expected exactly [${input.expected_base_sha}]` };
+  }
+  return { kind: 'proven' };
+}
+
+/** Bounded retry: the merge request is sent once; only these readback attempts repeat. */
+function proveMerge(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string): void {
+  const now = input.readback_now ?? Date.now;
+  const deadline = now() + READBACK_WINDOW_MS;
+  let lastPrEvidence: string | undefined;
+  for (let attempt = 0; ; attempt++) {
+    if (now() >= deadline) {
+      throw new UnknownOutcome(`merge readback did not confirm the merge within ${READBACK_WINDOW_MS} ms: readback window exhausted${lastPrEvidence !== undefined ? `; last PR readback: ${lastPrEvidence}` : ''}`);
+    }
+    const proof = attemptMergeProof(input, mergeCommitSha, baseRef, deadline);
+    if (proof.kind === 'proven') return;
+    if (proof.kind === 'contradiction') {
+      throw new UnknownOutcome(`merge readback contradicts the merge response: ${proof.evidence}`);
+    }
+    if (proof.pr !== undefined) lastPrEvidence = proof.pr;
+    const remaining = deadline - now();
+    if (attempt >= READBACK_DELAYS_MS.length || remaining <= 0) {
+      const context = lastPrEvidence !== undefined && lastPrEvidence !== proof.evidence ? `; last PR readback: ${lastPrEvidence}` : '';
+      throw new UnknownOutcome(`merge readback did not confirm the merge within ${READBACK_WINDOW_MS} ms: ${proof.evidence}${context}`);
+    }
+    (input.readback_wait ?? waitForReadback)(Math.min(READBACK_DELAYS_MS[attempt]!, remaining));
   }
 }
 
@@ -371,10 +469,11 @@ function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
   }
   const initial = readMergeTarget(input);
   assertSameRepositoryTarget(initial);
-  readPolicy(input);
+  const policy = readPolicy(input);
   const defaultBranch = readDefaultBranch(input);
   assertBaseProtection(input, defaultBranch, initial);
-  const verdict = collectPullRequestMergeReadiness(input);
+  // Readiness reuses the base policy file this executor already read.
+  const verdict = collectPullRequestMergeReadiness({ ...input, policy_file_at_base: policy.file });
   if (!verdict.ready) {
     throw new Refusal('merge_readiness_blocked', `readiness blockers: ${verdict.blockers.map((blocker) => blocker.code).join(', ')}`, verdict.blockers);
   }
@@ -393,7 +492,7 @@ function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
   return { target, headline, base_ref: defaultBranch };
 }
 
-export function executePublicationMerge(input: PullRequestReadinessInput): PublicationMergeResult {
+export function executePublicationMerge(input: PublicationMergeInput): PublicationMergeResult {
   let prepared: PreparedMerge;
   try {
     prepared = prepareMerge(input);

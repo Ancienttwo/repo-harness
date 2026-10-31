@@ -39,6 +39,8 @@ function mergeReadiness(
     integration_mode: 'unmerged',
     attention_owner: blockers.length === 0 ? 'none' : blockers[0].attention_owner,
     blockers,
+    check_failures: [],
+    required_check_coverage: null,
   };
 }
 

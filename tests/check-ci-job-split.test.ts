@@ -154,7 +154,7 @@ describe('single affected verification and daily fallback', () => {
   });
 
   test('eval fixtures select the eval suite and fail closed without it', async () => {
-    const fixture = 'evals/fixtures/prd-to-sprint/docs/prds/sample.prd.md';
+    const fixture = 'evals/fixtures/prd-to-issues/docs/prds/20260101-0000-sample-feature.prd.md';
     const withConsumer = new Map([[ 'tests/run-skill-evals.test.ts', '' ], [fixture, '']]);
     expect(await analyzeAffectedTests([fixture], withConsumer, [])).toMatchObject({ tests: ['tests/run-skill-evals.test.ts'], uncovered: [] });
     const withoutConsumer = new Map([[fixture, '']]);
@@ -380,6 +380,22 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['src/gone.ts', 'src/live.ts'], sources, [], previous)).toEqual(['tests/live.test.ts']);
     await expect(selectAffectedTests(['unknown/new.ts'], sources, [])).rejects.toThrow('coverage is unknown');
   });
+
+  test('deleted skill-routing evidence is retired; source and changed evidence still fail closed', async () => {
+    const evidence = new Map<string, string>([
+      ['evals/skill-routing/packed-profile-discovery-probe.sh', '#!/usr/bin/env bash\n'],
+      ['evals/skill-routing/retirement-matrix-coverage.md', '# matrix\n'],
+      ['evals/skill-routing/routing-report-strict-claude.json', '{}\n'],
+      ['evals/skill-routing/routing-report-strict-claude.json.sha256', `${'0'.repeat(64)}  evals/skill-routing/routing-report-strict-claude.json\n`],
+    ]);
+    const deletedSource = 'evals/skill-routing/gone.ts';
+    const changed = 'evals/skill-routing/routing-report-full-claude.json';
+    const previous = new Map<string, string>([...evidence, [deletedSource, 'export {}'], [changed, '{}']]);
+    const sources = new Map<string, string>([[changed, '{"changed":true}']]);
+    const coverage = await analyzeAffectedTests([...evidence.keys(), deletedSource, changed], sources, [], previous);
+    expect(coverage.retired.sort()).toEqual([...evidence.keys()].sort());
+    expect(coverage.uncovered).toEqual([deletedSource, changed]);
+  }, 30_000);
 
   test('dependency manifests select every test without hiding another unknown path', async () => {
     const sources = new Map([['tests/a.test.ts', 'export {}'], ['tests/b.test.ts', 'export {}']]);

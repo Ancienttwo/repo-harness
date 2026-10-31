@@ -1,8 +1,10 @@
 {
   "protocol": 1,
   "evidence_scope": "aggregate_package_acceptance",
-  "evidence_note": "Package acceptance signal: overall_pass here evaluates all four plan floors over the union of 2+ runs, with every canonical route scored from a run where it was actually reachable. A zero-recall route cannot hide behind a flattering aggregate -- every canonical route is independently gated.",
-  "generated_at": "2026-10-31T01:45:02.278Z",
+  "advisory": true,
+  "advisory_reason": "The provider harness invokes claude -p / codex exec with the raw corpus prompt and no routing preamble, so this measurement reflects direct model answers, not skill discovery. overall_pass and the floors are reported advisory evidence, not a merge gate, until a follow-up adds the routing preamble and reconsiders gating.",
+  "evidence_note": "ADVISORY EVIDENCE, NOT A MERGE GATE: overall_pass here evaluates all four plan floors over the union of 2+ runs, with every canonical route scored from a run where it was actually reachable. A zero-recall route cannot hide behind a flattering aggregate -- every canonical route is reported independently. Gating waits for a follow-up that adds the routing preamble and reconsiders the floors.",
+  "generated_at": "2026-10-31T11:16:01.218Z",
   "corpus_sha256": "757d37703b6d2929eeb797356f07378a260411711929faa0113676b91b827b04",
   "manifest_sha256": "a90ec4c2a806bbd99b84802d1bfbdf6ce5d50c13701bd605f728ceb30eacaeef",
   "inputs": [
