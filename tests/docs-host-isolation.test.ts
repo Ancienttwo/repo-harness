@@ -4,6 +4,7 @@ import { EventEmitter } from 'node:events';
 import { existsSync, linkSync, mkdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { connect, createServer, type Server, type Socket } from 'node:net';
 import { dirname, join } from 'node:path';
+import { isDocsHostRuntimeId } from '../src/core/operator/docs-host-runtimes';
 import { darwinTest } from './helpers/darwin-test';
 import { tmpWorkspace } from './helpers/repo-fixture';
 import {
@@ -371,7 +372,9 @@ darwinTest('docs host boundary denies .git, source, generated and credential acc
 
 darwinTest('docs host admission fails closed before any profile exists', async () => {
   const f = await seedFixture();
-  expect(() => docsHostPolicy({ ...f.admission, runtime: 'claude' as 'codex' })).toThrow('docs_host_runtime_unverified');
+  // The launch allowlist is empty (#1234), so no runtime may start a docs host. The profile builder keeps the verified
+  // shape for a future host and checks its structural inputs, not the launch decision.
+  for (const runtime of ['codex', 'claude', 'pi']) expect(isDocsHostRuntimeId(runtime)).toBe(false);
   expect(() => docsHostPolicy({ ...f.admission, worktree: f.primary })).toThrow('docs_host_linked_worktree_required');
   const nested = join(f.worktree, 'control'); mkdirSync(nested, { mode: 0o700 });
   expect(() => docsHostPolicy({ ...f.admission, control: nested })).toThrow('docs_host_control_overlaps_worktree');

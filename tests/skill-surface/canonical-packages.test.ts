@@ -296,3 +296,55 @@ describe("canonical packages: activation proof — present in manifest v2 and co
     expect(existsSync(join(SKILLS_ROOT, "repo-harness-plan-canonical"))).toBe(false);
   });
 });
+
+// The issue-flow facade is a board-protocol package, not a compact router.
+// Its references define the closed comment set, the plan, the claim fields
+// and the parent status values that every seat reads. Pin that surface here
+// so a reference rename or a dropped protocol row fails in the skill-surface
+// lane, not only in the action-command content tests.
+describe("issue-flow facade: board protocol surface ships with the package", () => {
+  const DIR = join(SKILLS_ROOT, "repo-harness-issue-flow");
+  const REFERENCE_NAMES = ["acceptor.md", "board.md", "orchestrator.md", "templates.md", "worker.md"];
+  const read = (reference: string) => readFileSync(join(DIR, "references", reference), "utf-8");
+
+  test("SKILL.md routes every reference and the directory has no extra file", () => {
+    const skill = readFileSync(join(DIR, "SKILL.md"), "utf-8");
+    for (const reference of REFERENCE_NAMES) {
+      expect(existsSync(join(DIR, "references", reference))).toBe(true);
+      expect(skill).toContain("references/" + reference);
+    }
+    expect(readdirSync(join(DIR, "references")).sort()).toEqual([...REFERENCE_NAMES].sort());
+  });
+
+  test("the comment set stays closed and plan is the only addition", () => {
+    const board = read("board.md");
+    const kinds = [...board.matchAll(/^\| `([a-z ]+)` \|/gm)].map((match) => match[1]);
+    expect(kinds).toEqual([
+      "issue claim", "issue claim status", "boundary question", "scope change",
+      "decision", "plan", "handoff", "acceptance claim", "acceptance record",
+      "unblocked", "integration status",
+    ]);
+    expect(board).toContain("Seat-only comment kinds");
+    expect(board).toContain("Coordinator: none");
+  });
+
+  test("templates carry the plan, required claim fields and five status values", () => {
+    const templates = read("templates.md");
+    for (const field of ["repo-harness plan", "Baseline: main@<sha>", "Waves:", "Merge order:", "Supersedes:"]) {
+      expect(templates).toContain(field);
+    }
+    for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {
+      expect(templates).toContain(field);
+    }
+    for (const status of ["unclaimed", "unclaimed · waits for #n", "writer <agent> · active", "writer <agent> · PR #p", "merged"]) {
+      expect(templates).toContain(status);
+    }
+  });
+
+  test("acceptor routes publication through review publish", () => {
+    const acceptor = read("acceptor.md");
+    expect(acceptor).toContain("repo-harness review publish");
+    expect(acceptor).toContain("repo-harness-review-publish-receipt");
+    expect(acceptor).toContain("model_relation");
+  });
+});

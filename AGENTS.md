@@ -29,6 +29,7 @@
 - For a bug fix, prefer a focused failing regression before the fix. Run only the reproducer during RED. Record a reproduction gap when the environment cannot produce it; ordinary tasks do not require RED artifacts.
 - A diff's size, a new test file, a new agent or a rebase does not by itself require a full run.
 - Use `bun run test:files <affected tests> --timeout 60000 --max-concurrency 1`; extend existing coverage before creating a new test file.
+- Test budget per PR: added test lines divided by added product lines must not exceed 2:1, and the PR adds at most one test file. A PR that adds no product lines records the exception for any added test. Measure with `git diff --numstat main...HEAD -- tests` and `git diff --numstat main...HEAD -- src scripts`; above either cap, add a `Test budget exception` PR section with the counts and why an existing test cannot cover the behavior.
 - Select tests by observable risk and owning runtime boundary, including error/recovery paths when affected.
 - Mechanical prose changes need link/scope validation, not new product tests; do not test incidental formatting or that deleted files stay deleted.
 - Reviewers consume the recorded command, result, revision and environment; they do not rerun passing checks to claim ownership.
@@ -36,7 +37,7 @@
 - Run the full suite daily; a failure opens an automatic repair task and appears in the daily report.
 - Isolate mutable HOME, repositories and process state; use real synchronization signals and preserve complete failure output.
 - Report failed, timed-out, incomplete or omitted coverage explicitly; do not manufacture receipts, waiver files or pre-fix logs.
-- Never modify or delete test assertions just to make tests pass; justify every necessary test change item by item in the PR description.
+- Never modify or delete test assertions just to make tests pass; justify every necessary test change item by item in the PR description. Remove a redundant test only when the PR names the retained test that covers the same behavior.
 - Before you write or change tests, load the `repo-harness-test` skill (`assets/skills/repo-harness-test/SKILL.md`).
 - When a local check and CI disagree, CI is the authority. Reproduce the failure with `bash scripts/check-ci.sh <lane>` before you change code; a global `repo-harness` or `repo-harness-hook` on `PATH` can hide a missing test setup.
 

@@ -25,12 +25,16 @@ executes them or stops and asks.
 
 ## Roles and seats
 
-| Role | Model fit | Seats it holds | Never does |
+| Role | Suggested model | Seats it holds | Never does |
 |---|---|---|---|
-| Orchestrator | Fleet role `orchestrator`: a long-lived Claude session, started with `claude --agent orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
-| Gap reviewer | A different model family from the orchestrator | None. Comments on the drafts | Rewrites the split or decides scope |
+| Orchestrator | Any host's long-lived top-level session with network access. On Claude, it may use `claude --agent orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
+| Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot; head owner of its PR | Widens scope, merges, pushes to another owner's branch |
-| Acceptor | Fresh context, read-only; a different family for the High tier | Acceptor of one review round | Reviews its own code, pushes code |
+| Acceptor | Gatekeeper by default. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review round | Reviews its own code, pushes code |
+
+The suggested models are advice, not a requirement. Any capable host may
+hold any seat. The High tier records its `model_relation` in the
+acceptance record (`references/acceptor.md`).
 
 Many agents work at once. A parent issue has children, a child can have
 named PR slots, and PRs can depend on PRs with other owners. Each seat has
@@ -66,6 +70,8 @@ is current.
 - Orchestrator work (split a goal, write or fix issues, dispatch, follow PRs,
   accept, merge order, close out): read `references/orchestrator.md`.
 - Worker work (deliver one claimed issue): read `references/worker.md`.
+- Acceptance work (take a review round, publish its result, resolve its
+  threads): read `references/acceptor.md`.
 - Any seat, claim, handoff, dependency or board question: read
   `references/board.md`.
 - Every body and comment shape: `references/templates.md`.

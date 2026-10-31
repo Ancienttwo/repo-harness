@@ -40,6 +40,18 @@ describe("reference-configs projection", () => {
     ).toEqual([]);
   });
 
+  test("the sprint-contracts testing link points at the shipped Test Budget section", () => {
+    const doc = readFileSync(join(SOURCE_DIR, "sprint-contracts.md"), "utf-8");
+    const link = doc.match(/\[Global Working Rules\]\(([^)#]+)#([^)]+)\)/);
+    expect(link).not.toBeNull();
+    const [, file, anchor] = link!;
+    const target = readFileSync(join(SOURCE_DIR, file), "utf-8");
+    const headings = [...target.matchAll(/^## (.+?)\s*$/gm)].map((match) =>
+      match[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
+    );
+    expect(headings).toContain(anchor);
+  });
+
   // docs/reference-configs additionally carries docs-only material (install profiles, MCP
   // guides, contract brief examples) that never ships in assets. Those are outside the
   // mirror by design, so the projection is one-directional and must not delete them.

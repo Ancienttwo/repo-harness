@@ -29,8 +29,10 @@ for them.
 ## Children
 | Order | Issue | Module | Outcome | Depends on | Seat / status |
 |---|---|---|---|---|---|
-| 1 | #<n> | <module id> | <outcome> | — | writer <agent> · PR #<p> · merged |
-| 2 | #<n> | <module id> | <outcome> | #<n> | open |
+| 1 | #<n> | <module id> | <outcome> | — | merged |
+| 2 | #<n> | <module id> | <outcome> | #<n> | writer <agent> · PR #<p> |
+| 3 | #<n> | <module id> | <outcome> | #<n> | unclaimed · waits for #<n> |
+| 4 | #<n> | <module id> | <outcome> | — | unclaimed |
 
 Merge order: <1 → 2 → (3, 4 in parallel) → 5>.
 
@@ -41,6 +43,17 @@ Merge order: <1 → 2 → (3, 4 in parallel) → 5>.
 ## Decisions
 <filled by `decision` comments; list their links here when the parent is edited>
 ```
+
+The seat/status column uses only these values: `unclaimed`,
+`unclaimed · waits for #n`, `writer <agent> · active`,
+`writer <agent> · PR #p`, `merged`. A Chinese-language repository
+writes `待认领`, `待认领 · 等待 #n 合并`, `writer <agent> · active`,
+`writer <agent> · PR #p`, `merged`. The claim comment wins over the
+table. The coordinator corrects the table after each claim or status
+change.
+
+A parent with more than two children gets a `plan` comment before
+dispatch (`plan`, below). A parent with two children or fewer needs none.
 
 ## Child issue
 
@@ -157,15 +170,25 @@ at most a short body.
 
 ```text
 repo-harness issue claim
-Status: active
-Seat: writer            # coordinator | writer | integrator
-Slot: PR-1b             # only for a named PR slot
-Agent: <kind>, session <id>
-Branch: <type>/<issue>-<slug>
-Scope: <what this claim covers>
-Not in scope: <what it leaves>
-Prior claim: <comment URL>   # only for a handoff
+Status: active                  # required: active
+Seat: writer                    # required: coordinator | writer | integrator
+Slot: PR-1b                     # only for a named PR slot
+Agent: <kind>, session <id>     # required
+Branch: <type>/<issue>-<slug>   # required
+Scope: <what this claim covers> # required
+Not in scope: <what it leaves>  # required
+Coordinator: <parent claim URL> # none when the parent has no coordinator
+Prior claim: <comment URL>      # required on a handoff
 ```
+
+`Status`, `Seat`, `Agent`, `Branch`, `Scope` and `Not in scope` are
+required. A handoff claim also requires `Prior claim`. A claim without
+any of them is invalid. The author reads its claim back; when a field is
+missing it posts `issue claim status` with `Status: released`, then one
+complete claim. The coordinator names the missing fields in a
+`To: <agent>` comment and does not dispatch until the corrected claim is
+on the board. Write `Coordinator: none` only when the parent has no
+coordinator and the issue has no open dependency.
 
 ### issue claim status
 
@@ -209,6 +232,29 @@ Decision: <one sentence>
 Why: <reason and evidence>
 Applies to: #<n> ...
 ```
+
+`plan`, `decision`, `scope change` and `unblocked` are seat-only. Only
+the active coordinator holder posts them. Another agent's comment of one
+of these kinds takes effect only when the coordinator confirms it.
+
+### plan
+
+```text
+repo-harness plan
+Coordinator: <coordinator claim URL>
+Baseline: main@<sha>
+Supersedes: <previous plan URL>   # omit on the first plan
+Waves:
+- Wave 1: #<n>, #<m> (parallel; no shared file)
+- Wave 2: #<k> (after #<n> merges)
+Merge order: #<n> → #<k> → (#<m>, #<p> in parallel)
+Blocked: <what blocks a wave; none when nothing blocks>
+```
+
+The coordinator posts a `plan` on a parent with more than two children
+before dispatch. It names the waves, the dependencies inside each wave,
+the merge order and the cross-issue preconditions. A plan change is a new
+comment with `Supersedes:`. Never edit the old plan.
 
 ### handoff
 

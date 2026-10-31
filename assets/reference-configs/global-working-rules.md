@@ -37,7 +37,7 @@ Before non-trivial design or edits, complete P1/P2/P3:
 - Add an abstraction only when it removes observed duplicate authority or complexity, serves at least two real consumers, or protects a cross-module invariant.
 - Create shared components only for observed reuse or invariants. When independently meaningful consumers need a shared package, prefer an existing monorepo workspace; do not convert a single-package repository into a monorepo without a second independently released or deployed consumer.
 - Validate an unknown value once, at the boundary that owns it, and pass the typed value inward. Do not check again a value that a schema, constructor or internal type already guarantees.
-- Before you add complexity for a speculative or very unlikely race, security or failure case, tell the user the concrete failure mode, its likelihood and the complexity cost, and get their approval. Do not expand scope silently for theoretical robustness.
+- Before you add complexity for a speculative or very unlikely race, security or failure case, or a test for it, tell the user the concrete failure mode, its likelihood and the complexity cost, and get their approval. Do not expand scope silently for theoretical robustness.
 
 ## No Compatibility Fallbacks in Product Code
 
@@ -49,6 +49,15 @@ Before non-trivial design or edits, complete P1/P2/P3:
 - A human-approved migration/release contract may require a one-shot migration: operator-invoked, fail closed, tested, and removing the old path or authority in the same work-package. Do not ship a long-lived compatibility shim.
 
 - Runtime availability degradation may select another runner only on the same task contract and must remain observable; it cannot change product semantics or synthesize authority.
+
+## Test Budget
+
+- Add a test only for changed observable behavior or a reproduced bug; use one case per behavior branch. Do not test a guarantee already enforced by a type, schema, constructor or one boundary validator, and do not test log text or formatting.
+- Extend an existing test before you add a test file. Do not add a test for a speculative or very unlikely case without the approval in Code Optimization Principles.
+- Test budget per PR: added test lines divided by added product lines must not exceed 2:1, and the PR adds at most one test file. A PR that only removes or consolidates tests has no budget. A PR that adds no product lines records the exception for any added test.
+- Report both counts in the PR. Measure added lines with `git diff --numstat <base>...HEAD -- tests` and `git diff --numstat <base>...HEAD -- src scripts`; list added test files with `git diff --diff-filter=A --name-only <base>...HEAD -- tests`. Downstream repositories use their own test and product roots.
+- Above either cap, add a `Test budget exception` section to the PR description, or to an issue comment when there is no PR: the measured counts, the behavior that needs the coverage, and why an existing test cannot cover it. Without that record the change is over budget.
+- Remove a redundant test only when the PR names the retained test that covers the same behavior. Never modify or delete assertions just to make a test pass.
 
 ## Reporting
 

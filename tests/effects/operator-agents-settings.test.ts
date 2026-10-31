@@ -114,7 +114,8 @@ describe('agent settings routes', () => {
     expect(value.runtimes.entries.map(entry => [entry.id, entry.review_supported])).toEqual([
       ['claude', true], ['codex', true], ['grok', false], ['morph', false], ['cursor', false],
     ]);
-    expect(value.runtimes.entries.filter(entry => entry.docs_supported).map(entry => entry.id)).toEqual(['codex']);
+    // The launch allowlist is empty (#1234), so no runtime reports docs support.
+    expect(value.runtimes.entries.filter(entry => entry.docs_supported).map(entry => entry.id)).toEqual([]);
     expect(value.runtimes.entries[0]!.capabilities).toEqual({ stop: 'available', steer: 'session', withdraw: 'session' });
     expect((await fetch(`${harness.server.url}/api/v1/settings/agents?x=1`)).status).toBe(400);
     expect((await fetch(`${harness.server.url}/api/v1/settings/agents`, { method: 'PUT' })).status).toBe(405);
@@ -128,26 +129,25 @@ describe('agent settings routes', () => {
     const before = await settings(harness);
     const response = await post(harness, {
       expected_revision: before.config.revision,
-      changes: [{ runtime: 'codex', enabled: true, uses: ['docs', 'review'] }, { runtime: 'grok', enabled: true, uses: [] }],
-      default_docs_runtime: 'codex',
+      changes: [{ runtime: 'codex', enabled: true, uses: ['review'] }, { runtime: 'grok', enabled: true, uses: [] }],
     });
     expect(response.status).toBe(200);
     const result = await response.json();
     expect(result).toEqual({
       config_revision: sha256(harness.configPath),
-      changed_keys: ['agents.enabled', 'agents.uses.docs', 'agents.uses.review', 'agents.default_docs'],
+      changed_keys: ['agents.enabled', 'agents.uses.review'],
     });
     const stored = JSON.parse(readFileSync(harness.configPath, 'utf8'));
     expect(stored).toEqual({
       security: { mode: 'strict' }, brainRoot: '/srv/brain',
-      agents: { enabled: ['codex', 'grok'], uses: { docs: ['codex'], review: ['codex'] }, default_docs: 'codex' },
+      agents: { enabled: ['codex', 'grok'], uses: { docs: [], review: ['codex'] }, default_docs: null },
     });
     expect((await settings(harness)).config.revision).toBe(result.config_revision);
     expect(existsSync(join(harness.home, '.repo-harness', 'operator'))).toBe(false);
     const audit = readFileSync(operatorAuditPath({ REPO_HARNESS_HOME: harness.harnessHome }), 'utf8').trim().split('\n').map(line => JSON.parse(line));
     expect(audit.map(record => [record.phase, record.operation ?? null, record.target ?? null])).toEqual([['intent', 'settings_agents', 'config'], ['result', null, null]]);
 
-    const same = await post(harness, { expected_revision: result.config_revision, changes: [{ runtime: 'codex', enabled: true, uses: ['docs', 'review'] }] });
+    const same = await post(harness, { expected_revision: result.config_revision, changes: [{ runtime: 'codex', enabled: true, uses: ['review'] }] });
     expect(await same.json()).toEqual({ config_revision: result.config_revision, changed_keys: [] });
   });
 
@@ -185,7 +185,8 @@ describe('agent settings routes', () => {
       [{ changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] }, 'docs_isolation_unverified'],
       [{ changes: [{ runtime: 'nope', enabled: true, uses: [] }] }, 'runtime_unknown'],
       [{ changes: [{ runtime: 'codex', enabled: false, uses: ['docs'] }] }, 'runtime_not_enabled'],
-      [{ changes: [{ runtime: 'codex', enabled: true, uses: [] }], default_docs_runtime: 'codex' }, 'default_docs_invalid'],
+      // No runtime is a docs host now, so a default is refused before the default_docs_invalid relation check.
+      [{ changes: [{ runtime: 'codex', enabled: true, uses: [] }], default_docs_runtime: 'codex' }, 'docs_isolation_unverified'],
     ] as const) {
       const response = await post(harness, { expected_revision: 'absent', ...body });
       expect([response.status, (await response.json()).error.code]).toEqual([422, code]);
@@ -193,7 +194,7 @@ describe('agent settings routes', () => {
     expect(existsSync(harness.configPath)).toBe(false);
   });
 
-  test('3-SET-N1 a docs use stored before the isolation check stays and can be removed, but none is added and it cannot become the default', async () => {
+  test('3-SET-N1 a docs use stored before the docs host closed stays and can be removed, but none is added and it cannot become the default', async () => {
     const harness = await startHarness({ agents: { enabled: ['claude', 'codex'], uses: { docs: ['claude', 'codex'], review: ['claude'] }, default_docs: 'codex' } });
     const before = await settings(harness);
     const keep = await post(harness, { expected_revision: before.config.revision, changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] });
@@ -206,12 +207,48 @@ describe('agent settings routes', () => {
     expect([promote.status, (await promote.json()).error.code]).toEqual([422, 'docs_isolation_unverified']);
     expect(readFileSync(harness.configPath, 'utf8')).toBe(unchanged);
 
+    // Dropping the stored default's docs use leaves a reachable default_docs_invalid refusal.
+    const orphan = await post(harness, { expected_revision: kept.config_revision, changes: [{ runtime: 'codex', enabled: true, uses: [] }] });
+    expect([orphan.status, (await orphan.json()).error.code]).toEqual([422, 'default_docs_invalid']);
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(unchanged);
+
     const remove = await post(harness, { expected_revision: kept.config_revision, changes: [{ runtime: 'claude', enabled: true, uses: [] }] });
     expect(remove.status).toBe(200);
     const removed = await remove.json();
     expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents.uses.docs).toEqual(['codex']);
     const readd = await post(harness, { expected_revision: removed.config_revision, changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] });
     expect([readd.status, (await readd.json()).error.code]).toEqual([422, 'docs_isolation_unverified']);
+  });
+
+  test('a stored legacy docs use stays inert: an unrelated write succeeds, removal works, and a new docs use still refuses', async () => {
+    const harness = await startHarness({ agents: { enabled: ['claude', 'codex'], uses: { docs: ['codex'], review: ['claude'] }, default_docs: 'codex' } });
+    const before = await settings(harness);
+    const stored = readFileSync(harness.configPath, 'utf8');
+
+    // Re-sending the stored docs value is not a new docs use, so it writes nothing and does not throw.
+    const unchanged = await post(harness, { expected_revision: before.config.revision, changes: [{ runtime: 'codex', enabled: true, uses: ['docs'] }] });
+    expect(unchanged.status).toBe(200);
+    expect((await unchanged.json()).changed_keys).toEqual([]);
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(stored);
+
+    // An unrelated write on another runtime succeeds while the legacy docs use and default stay inert.
+    const unrelated = await post(harness, { expected_revision: before.config.revision, changes: [{ runtime: 'grok', enabled: true, uses: [] }] });
+    expect(unrelated.status).toBe(200);
+    const unrelatedResult = await unrelated.json();
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents).toEqual({
+      enabled: ['claude', 'codex', 'grok'], uses: { docs: ['codex'], review: ['claude'] }, default_docs: 'codex',
+    });
+
+    // A new docs use still refuses.
+    const enable = await post(harness, { expected_revision: unrelatedResult.config_revision, changes: [{ runtime: 'claude', enabled: true, uses: ['docs'] }] });
+    expect([enable.status, (await enable.json()).error.code]).toEqual([422, 'docs_isolation_unverified']);
+
+    // Removal of the stored docs use and its default stays allowed.
+    const remove = await post(harness, { expected_revision: unrelatedResult.config_revision, changes: [{ runtime: 'codex', enabled: true, uses: [] }], default_docs_runtime: null });
+    expect(remove.status).toBe(200);
+    expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents).toEqual({
+      enabled: ['claude', 'codex', 'grok'], uses: { docs: [], review: ['claude'] }, default_docs: null,
+    });
   });
 
   test('refuses an unknown field, a missing probe, an invalid section and a linked file', async () => {

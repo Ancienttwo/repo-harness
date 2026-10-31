@@ -1,15 +1,12 @@
 import { afterEach, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, lstatSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
+import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync, writeSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import { checkDocCitation, DOC_CITATION_BUDGET_CHARS, DOC_CITATION_BUDGET_HASHES, docCitationBudget, type DocCitationV1 } from '../../src/core/operator/doc-citation';
 import { DOC_SESSION_EVENT_TEXT_MAX_BYTES, DOC_SESSION_EVENTS_PAGE, DOC_SESSION_POLL_MS, type DocSessionEventInput } from '../../src/core/operator/doc-session-events';
-import { OPERATOR_DOCS_TREE_KIND, type DocsTreeV1 } from '../../src/core/operator/docs';
-import { isManagedWorktreePath } from '../../src/effects/git/managed-worktree';
 import { GIT_KILL_GRACE_MS, gitExecFile, GitExecError } from '../../src/effects/git/runner';
 import { docSessionCreateRoute } from '../../src/effects/operator/doc-session';
 import { appendDocSessionEvents, OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-session-events';
-import { DocsReader, type DocsFile } from '../../src/effects/operator/docs-reader';
 import { OPERATOR_ROUTES, startOperatorServer } from '../../src/effects/operator/server';
 import { withWorktreeTopologyLockAsync } from '../../src/effects/state/coordination-worktree-topology';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
@@ -43,25 +40,12 @@ interface Harness {
   readonly url: string;
   readonly env: NodeJS.ProcessEnv;
   head: () => string;
-  commit: (text: string) => Promise<void>;
   post: (body: Record<string, unknown>) => Promise<{ status: number; body: Record<string, any>; text: string }>;
   branches: () => string[];
 }
 
 interface HarnessOptions {
-  readonly session_id?: () => string;
   readonly platform?: NodeJS.Platform;
-  readonly env?: NodeJS.ProcessEnv;
-  /** Runs around each citation read of the route, so a test can hold or change the docs view mid-request. */
-  readonly around_file?: (path: string, read: () => Promise<DocsFile>) => Promise<DocsFile>;
-  /** The runtimes with the docs use in the agent settings; codex by default. */
-  readonly docs_runtimes?: readonly string[];
-}
-
-/** The agent settings live under HOME; each harness gives HOME its own temporary root. */
-function writeAgentsSettings(home: string, docs: readonly string[]): void {
-  mkdirSync(join(home, '.repo-harness'), { recursive: true });
-  writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({ agents: { enabled: [...docs], uses: { docs: [...docs], review: [] }, default_docs: null } }));
 }
 
 async function harness(options: HarnessOptions = {}): Promise<Harness> {
@@ -80,18 +64,11 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
   const userHome = tmpWorkspace('operator-doc-session-user');
-  writeAgentsSettings(userHome, options.docs_runtimes ?? ['codex']);
-  const env = { ...process.env, ...options.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
-  const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
-  reader.start();
-  await reader.refresh();
+  const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
   const route = docSessionCreateRoute({
-    env, docs_reader: (id) => {
-      if (id !== repositoryId) return null;
-      const around = options.around_file;
-      return around ? { file: (path: string) => around(path, () => reader.file(path)) } as unknown as DocsReader : reader;
-    },
-    ...(options.session_id ? { new_session_id: options.session_id } : {}),
+    env,
+    // No docs view is served: the refusal comes before any citation read.
+    docs_reader: () => null,
     // Doc sessions are macOS only; the CI runner's own platform must not decide these tests.
     platform: options.platform ?? 'darwin',
   });
@@ -99,18 +76,11 @@ async function harness(options: HarnessOptions = {}): Promise<Harness> {
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
     await server.close();
-    reader.close();
     for (const dir of [repo, home, userHome, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
   });
   return {
     repo, repositoryId, worktrees, home, url: server.url, env,
     head: () => git(['rev-parse', 'refs/remotes/origin/main'], repo).trim(),
-    commit: async (text) => {
-      writeFileSync(join(repo, 'docs', 'guide.md'), text);
-      commitAll(repo, 'edit docs');
-      git(['update-ref', 'refs/remotes/origin/main', 'HEAD'], repo);
-      await reader.refresh();
-    },
     post: async (body) => {
       const response = await fetch(`${server.url}/api/v1/sessions`, {
         method: 'POST',
@@ -130,86 +100,16 @@ function request(h: Harness, citations: readonly DocCitationV1[], extra: Record<
 
 function sessionsDir(h: Harness): string { return join(h.home, 'operator', 'sessions'); }
 
-test('a citation whose cited lines changed and whose text is gone is refused with 409 citation_stale, and nothing is created', async () => {
+test('every docs session is refused with 501 docs_host_disabled before any worktree or record', async () => {
   const h = await harness();
-  const citation = cite(GUIDE, 'docs/guide.md', 3, 4, h.head());
-  await h.commit(GUIDE.replace('The operator reads docs.\nIt never writes main.\n', 'The operator reads and edits docs.\n'));
-  const answer = await h.post(request(h, [citation]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('citation_stale');
+  const citation = cite(GUIDE, 'docs/guide.md', 1, 1, h.head());
+  for (const runtime of ['codex', 'claude', 'pi']) {
+    const answer = await h.post(request(h, [citation], { runtime }));
+    expect([answer.status, answer.body.error.code]).toEqual([501, 'docs_host_disabled']);
+    expect(answer.text).not.toContain(h.repo);
+  }
   expect(readdirSync(h.worktrees)).toEqual([]);
   expect(h.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
-test('a citation of a file that left the docs tree is stale too', async () => {
-  const h = await harness();
-  const citation = cite(GUIDE, 'docs/old.md', 1, 1, h.head());
-  const answer = await h.post(request(h, [citation]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('citation_stale');
-  expect(readdirSync(h.worktrees)).toEqual([]);
-});
-
-test('the session worktree is a direct child of the managed root on a docs branch at the cited commit, and the response names no path', async () => {
-  const h = await harness();
-  const base = h.head();
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 3, 4, base)]));
-  expect(answer.status).toBe(201);
-  const { session_id, branch, worktree } = answer.body;
-  expect(answer.body).toEqual({ protocol: 1, kind: 'operator_docs_session', session_id, state: 'created', repository_id: h.repositoryId, runtime: 'codex',
-    branch, worktree, base_commit: base, citations: [{ path: 'docs/guide.md', start_line: 3, end_line: 4, relocated: false }] });
-  expect(branch).toMatch(/^docs\/[0-9a-f]{12}$/u);
-  expect(worktree).toBe(`${basename(h.repo)}-wt-docs-${branch.slice('docs/'.length)}`);
-  const path = join(h.worktrees, worktree);
-  expect(lstatSync(path).isSymbolicLink()).toBe(false);
-  expect(isManagedWorktreePath(realpathSync(path), h.worktrees, basename(h.repo))).toBe(true);
-  expect(readdirSync(h.worktrees)).toEqual([worktree]);
-  expect(git(['worktree', 'list', '--porcelain'], h.repo)).toContain(`worktree ${realpathSync(path)}\n`);
-  expect(git(['rev-parse', 'HEAD'], path).trim()).toBe(base);
-  expect(git(['symbolic-ref', 'HEAD'], path).trim()).toBe(`refs/heads/${branch}`);
-  for (const hidden of [h.repo, h.home, h.worktrees, '/tmp', '/private']) expect(answer.text).not.toContain(hidden);
-  const record = join(sessionsDir(h), session_id, 'session.json');
-  expect(statSync(record).mode & 0o777).toBe(0o600);
-  expect(JSON.parse(readFileSync(record, 'utf8'))).toMatchObject({ protocol: 1, kind: 'docs_session', session_id, state: 'created', branch,
-    worktree: realpathSync(path), base_commit: base, instruction: 'Tighten the intro.' });
-});
-
-test('a planned worktree path that already exists, even as a symlink out of the root, is refused and nothing is written there', async () => {
-  const sessionId = 'a'.repeat(32);
-  const h = await harness({ session_id: () => sessionId });
-  const outside = tmpWorkspace('operator-doc-session-outside');
-  cleanups.push(() => rmSync(outside, { recursive: true, force: true }));
-  symlinkSync(outside, join(h.worktrees, `${basename(h.repo)}-wt-docs-${sessionId.slice(0, 12)}`));
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('worktree_exists');
-  expect(readdirSync(outside)).toEqual([]);
-  expect(h.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
-test('a git failure after the claim removes only the empty claim, and leaves no docs branch and no session record', async () => {
-  const h = await harness();
-  // A branch named `docs` makes every `docs/<slug>` ref impossible, so `git worktree add -b` fails after the claim.
-  git(['branch', 'docs'], h.repo);
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('reconcile_required');
-  expect(readdirSync(h.worktrees)).toEqual([]);
-  expect(h.branches()).toEqual([]);
-  expect(git(['worktree', 'list', '--porcelain'], h.repo).match(/^worktree /gmu)).toHaveLength(1);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
-test('an existing docs/<slug> branch is refused before the claim', async () => {
-  const sessionId = 'b'.repeat(32);
-  const h = await harness({ session_id: () => sessionId });
-  git(['branch', `docs/${sessionId.slice(0, 12)}`], h.repo);
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('worktree_exists');
-  expect(readdirSync(h.worktrees)).toEqual([]);
   expect(existsSync(sessionsDir(h))).toBe(false);
 });
 
@@ -223,6 +123,7 @@ test('the request cannot choose a location: an unknown field, a path outside doc
     request(h, [{ ...good, path: 'docs/../.git/config' }]),
     request(h, [{ ...good, start_line: 3, end_line: 2 }]),
     request(h, [{ ...good, extra: true } as DocCitationV1]),
+    request(h, [{ ...good, start_line: 1, end_line: 501 }]),
     request(h, []),
     request(h, [good], { runtime: 'Not A Runtime' }),
   ]) {
@@ -231,62 +132,6 @@ test('the request cannot choose a location: an unknown field, a path outside doc
     expect(answer.body.error.code).toBe('invalid_body');
   }
   expect(readdirSync(h.worktrees)).toEqual([]);
-});
-
-test('cited text that moved to other lines is accepted at its new lines', async () => {
-  const h = await harness();
-  const citation = cite(GUIDE, 'docs/guide.md', 3, 4, h.head());
-  await h.commit(`Intro line.\n\n${GUIDE}`);
-  const answer = await h.post(request(h, [citation]));
-  expect(answer.status).toBe(201);
-  expect(answer.body.citations).toEqual([{ path: 'docs/guide.md', start_line: 5, end_line: 6, relocated: true }]);
-  expect(answer.body.base_commit).toBe(h.head());
-  const record = JSON.parse(readFileSync(join(sessionsDir(h), answer.body.session_id, 'session.json'), 'utf8'));
-  expect(record.citations[0]).toMatchObject(citation);
-  const resolved = record.citations[0].resolved;
-  expect(resolved).toEqual(cite(`Intro line.\n\n${GUIDE}`, citation.path, 5, 6, h.head()));
-  const savedText = git(['show', `${resolved.commit}:${resolved.path}`], h.repo);
-  expect(hex(savedText)).toBe(resolved.file_sha256);
-  expect(hex(linesOf(savedText).slice(resolved.start_line - 1, resolved.end_line).join(''))).toBe(resolved.range_sha256);
-});
-
-test('an unchanged citation range retains its source and records the new file revision', async () => {
-  const h = await harness();
-  const citation = cite(GUIDE, 'docs/guide.md', 3, 4, h.head());
-  const updated = `${GUIDE}An added conclusion.\n`;
-  await h.commit(updated);
-  const answer = await h.post(request(h, [citation]));
-  expect(answer.status).toBe(201);
-  expect(answer.body.citations).toEqual([{ path: citation.path, start_line: 3, end_line: 4, relocated: false }]);
-  const record = JSON.parse(readFileSync(join(sessionsDir(h), answer.body.session_id, 'session.json'), 'utf8'));
-  expect(record.citations[0]).toMatchObject(citation);
-  expect(record.citations[0].resolved).toEqual(cite(updated, citation.path, 3, 4, h.head()));
-});
-
-test('the same request_id returns the stored session and creates one worktree', async () => {
-  const h = await harness();
-  const body = request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]);
-  const first = await h.post(body);
-  const second = await h.post(body);
-  expect(first.status).toBe(201);
-  expect(second).toEqual(first);
-  expect(readdirSync(h.worktrees)).toHaveLength(1);
-  expect(h.branches()).toHaveLength(1);
-});
-
-test('a runtime without verified docs isolation or without the docs use is refused with 422 before any worktree', async () => {
-  const unverified = await harness({ docs_runtimes: ['claude', 'codex'] });
-  const refused = await unverified.post(request(unverified, [cite(GUIDE, 'docs/guide.md', 1, 1, unverified.head())], { runtime: 'claude' }));
-  expect([refused.status, refused.body.error.code]).toEqual([422, 'docs_isolation_unverified']);
-  expect(readdirSync(unverified.worktrees)).toEqual([]);
-  expect(existsSync(sessionsDir(unverified))).toBe(false);
-
-  const off = await harness({ docs_runtimes: [] });
-  const notEnabled = await off.post(request(off, [cite(GUIDE, 'docs/guide.md', 1, 1, off.head())]));
-  expect([notEnabled.status, notEnabled.body.error.code]).toEqual([422, 'runtime_not_enabled']);
-  expect(readdirSync(off.worktrees)).toEqual([]);
-  expect(off.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(off))).toBe(false);
 });
 
 test('doc sessions are macOS only for now', async () => {
@@ -335,104 +180,6 @@ test('a relocation that needs more hashes or more hashed text than the request b
   expect(checkDocCitation(range, block, { hashes: 1, chars: block.length })).toEqual({ state: 'current', start_line: 1, end_line: 500 });
 });
 
-test('a citation whose relocation exceeds the request hash budget is refused with 409 citation_stale before any git work, and nothing is created', async () => {
-  const h = await harness();
-  const block = Array.from({ length: 500 }, (_, index) => `${String(index).padStart(4, '0')} ${'b'.repeat(100)}\n`).join('');
-  await h.commit(block);
-  const citation = cite(block, 'docs/guide.md', 1, 500, h.head());
-  await h.commit(`${`${'y'.repeat(105)}\n`.repeat(400)}${block}`);
-  const answer = await h.post(request(h, [citation]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('citation_stale');
-  expect(readdirSync(h.worktrees)).toEqual([]);
-  expect(h.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
-test('two concurrent creations for one repository give one 201 and one 503 busy, and leave one worktree and one branch', async () => {
-  let entered!: () => void;
-  const inside = new Promise<void>((resolve) => { entered = resolve; });
-  let release!: () => void;
-  const hold = new Promise<void>((resolve) => { release = resolve; });
-  let first = true;
-  // The first request waits inside its citation read, so the second one arrives while it holds the repository.
-  const h = await harness({ around_file: async (_path, read) => {
-    if (first) { first = false; entered(); await hold; }
-    return read();
-  } });
-  const citation = cite(GUIDE, 'docs/guide.md', 1, 1, h.head());
-  const pending = h.post(request(h, [citation]));
-  await inside;
-  const second = await h.post(request(h, [citation]));
-  release();
-  const answer = await pending;
-  expect(answer.status).toBe(201);
-  expect(second.status).toBe(503);
-  expect(second.body.error.code).toBe('busy');
-  expect(readdirSync(h.worktrees)).toEqual([answer.body.worktree]);
-  expect(h.branches()).toEqual([answer.body.branch]);
-});
-
-test('a citation may span 500 lines, and a citation of 501 lines is refused before anything runs', async () => {
-  const h = await harness();
-  const answer = await h.post(request(h, [{ ...cite(GUIDE, 'docs/guide.md', 1, 1, h.head()), start_line: 1, end_line: 501 }]));
-  expect(answer.status).toBe(400);
-  expect(answer.body.error.code).toBe('invalid_body');
-  expect(readdirSync(h.worktrees)).toEqual([]);
-  expect(h.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-  const long = Array.from({ length: 500 }, (_, index) => `line ${index + 1}\n`).join('');
-  await h.commit(long);
-  const accepted = await h.post(request(h, [cite(long, 'docs/guide.md', 1, 500, h.head())]));
-  expect(accepted.status).toBe(201);
-  expect(accepted.body.citations).toEqual([{ path: 'docs/guide.md', start_line: 1, end_line: 500, relocated: false }]);
-});
-
-test('a claim that git filled before it failed is kept, and the result is reconcile_required', async () => {
-  const h = await harness();
-  // The hook runs after the checkout is written, and its failure fails `git worktree add`.
-  writeFileSync(join(h.repo, '.git', 'hooks', 'post-checkout'), '#!/bin/sh\nexit 1\n', { mode: 0o755 });
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('reconcile_required');
-  const kept = readdirSync(h.worktrees);
-  expect(kept).toHaveLength(1);
-  expect(readdirSync(join(h.worktrees, kept[0]!)).length).toBeGreaterThan(0);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
-test('a docs view refresh between two citations of one request refuses it, and nothing is created', async () => {
-  let reads = 0;
-  let h!: Harness;
-  h = await harness({ around_file: async (_path, read) => {
-    const file = await read();
-    if (++reads === 1) await h.commit(`${GUIDE}Added later.\n`);
-    return file;
-  } });
-  const base = h.head();
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, base), cite(GUIDE, 'docs/guide.md', 3, 4, base)]));
-  expect(reads).toBe(2);
-  expect(answer.status).toBe(503);
-  expect(answer.body.error.code).toBe('docs_unavailable');
-  expect(readdirSync(h.worktrees)).toEqual([]);
-  expect(h.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
-test('git variables that select another repository do not move the branch or the worktree there', async () => {
-  const other = tmpWorkspace('operator-doc-session-other'); initGitRepo(other);
-  writeFileSync(join(other, 'README.md'), 'other');
-  commitAll(other, 'other');
-  cleanups.push(() => rmSync(other, { recursive: true, force: true }));
-  const h = await harness({ env: { GIT_DIR: join(other, '.git'), GIT_COMMON_DIR: join(other, '.git'), GIT_WORK_TREE: other } });
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(201);
-  expect(h.branches()).toEqual([answer.body.branch]);
-  expect(git(['worktree', 'list', '--porcelain'], h.repo)).toContain(`worktree ${realpathSync(join(h.worktrees, answer.body.worktree))}\n`);
-  expect(git(['for-each-ref', '--format=%(refname)', 'refs/heads/docs/'], other)).toBe('');
-  expect(git(['worktree', 'list', '--porcelain'], other).match(/^worktree /gmu)).toHaveLength(1);
-});
-
 /** An executable that runs `body` and then the real git with the same arguments. */
 function gitWrapper(prefix: string, body: (gate: string) => string[]): { readonly gate: string; readonly wrapper: string } {
   const realGit = Bun.which('git');
@@ -443,45 +190,6 @@ function gitWrapper(prefix: string, body: (gate: string) => string[]): { readonl
   writeFileSync(wrapper, ['#!/bin/sh', ...body(gate), `exec '${realGit}' "$@"`, ''].join('\n'), { mode: 0o755 });
   return { gate, wrapper };
 }
-
-test('a held `git rev-parse --git-common-dir` or `git worktree add` keeps the server answering: a health read completes while the creation waits', async () => {
-  // Once armed, the wrapper holds each named call until the test releases it.
-  const hold = (gate: string, name: string, test: string) => [
-    `if [ -e '${gate}/armed' ] && ${test}; then`,
-    `  : > '${gate}/started-${name}'`,
-    `  while [ ! -e '${gate}/release-${name}' ]; do sleep 0.02; done`,
-    'fi',
-  ];
-  const { gate, wrapper } = gitWrapper('operator-doc-session-git-gate', (dir) => [
-    ...hold(dir, 'common', '[ "$1" = rev-parse ] && [ "$2" = --git-common-dir ]'),
-    ...hold(dir, 'checkout', '[ "$1" = worktree ] && [ "$2" = add ]'),
-  ]);
-  const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
-  const topologyLock = join(h.repo, '.git', 'repo-harness', 'coordination', 'locks', 'worktree-topology.lock');
-  writeFileSync(join(gate, 'armed'), '');
-  let settled = false;
-  const creation = h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())])).finally(() => { settled = true; });
-
-  // The common directory lookup runs before the topology lock is taken.
-  while (!existsSync(join(gate, 'started-common'))) await Bun.sleep(10);
-  expect((await fetch(`${h.url}/healthz`)).status).toBe(200);
-  expect(settled).toBe(false);
-  expect(existsSync(join(gate, 'started-checkout'))).toBe(false);
-  writeFileSync(join(gate, 'release-common'), '');
-
-  while (!existsSync(join(gate, 'started-checkout'))) await Bun.sleep(10);
-  expect((await fetch(`${h.url}/healthz`)).status).toBe(200);
-  expect(settled).toBe(false);
-  // The topology lock stays held across the awaited checkout.
-  expect(existsSync(topologyLock)).toBe(true);
-  writeFileSync(join(gate, 'release-checkout'), '');
-
-  const answer = await creation;
-  expect(answer.status).toBe(201);
-  expect(h.branches()).toEqual([answer.body.branch]);
-  expect(readdirSync(h.worktrees)).toEqual([answer.body.worktree]);
-  expect(existsSync(topologyLock)).toBe(false);
-});
 
 test('a git call that ignores SIGTERM is killed after the grace period, the call rejects after the child is gone, and the topology lock is released', async () => {
   const { gate, wrapper } = gitWrapper('operator-doc-session-git-hang', (dir) => [
@@ -514,27 +222,28 @@ test('a git call that ignores SIGTERM is killed after the grace period, the call
   expect(existsSync(topologyLock)).toBe(false);
 });
 
-test('a `show-ref` probe that fails other than with exit 1 ends the creation before the claim, and nothing is created', async () => {
-  const { wrapper } = gitWrapper('operator-doc-session-git-show-ref', () => ['if [ "$1" = show-ref ]; then exit 128; fi']);
-  const h = await harness({ env: { REPO_HARNESS_GIT_BIN: wrapper } });
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(409);
-  expect(answer.body.error.code).toBe('reconcile_required');
-  expect(readdirSync(h.worktrees)).toEqual([]);
-  expect(h.branches()).toEqual([]);
-  expect(existsSync(sessionsDir(h))).toBe(false);
-});
-
 const AT = '2026-10-27T12:00:00.000Z';
 const message = (epoch: number, seq: number, text: string): DocSessionEventInput => ({ epoch, seq, at: AT, type: 'message', role: 'agent', text });
 const turn = (epoch: number, seq: number, boundary: 'started' | 'ended'): DocSessionEventInput => ({ epoch, seq, at: AT, type: 'turn', boundary });
 const tool = (epoch: number, seq: number, paths: string[]): DocSessionEventInput => ({ epoch, seq, at: AT, type: 'tool', category: 'read', status: 'succeeded', paths });
 const eventsFile = (h: Harness, sid: string) => join(sessionsDir(h), sid, 'events.jsonl');
 
-async function createdSession(h: Harness): Promise<string> {
-  const answer = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(answer.status).toBe(201);
-  return answer.body.session_id;
+/** A session record and its `docs/<slug>` worktree, as a verified docs host wrote them before #1149 closed. */
+function seedSession(h: Harness): string {
+  const sid = randomUUID().replaceAll('-', '');
+  const branch = `docs/${sid.slice(0, 12)}`;
+  const worktree = join(h.worktrees, `${basename(h.repo)}-wt-docs-${sid.slice(0, 12)}`);
+  const base = h.head();
+  git(['worktree', 'add', '-q', '-b', branch, worktree, base], h.repo);
+  const citation = cite(GUIDE, 'docs/guide.md', 1, 1, base);
+  const directory = join(sessionsDir(h), sid);
+  mkdirSync(directory, { recursive: true, mode: 0o700 });
+  writeFileSync(join(directory, 'session.json'), JSON.stringify({
+    protocol: 1, kind: 'docs_session', session_id: sid, state: 'created', created_at: new Date().toISOString(),
+    repository_id: h.repositoryId, runtime: 'codex', branch, worktree, base_commit: base,
+    citations: [{ ...citation, resolved: citation, relocated: false }], instruction: 'Tighten the intro.',
+  }));
+  return sid;
 }
 
 async function readEvents(h: Harness, sid: string, after?: string) {
@@ -558,7 +267,7 @@ const SECRET_SAMPLES = {
 
 test('the host writer redacts events before they reach events.jsonl, and no secret sample reaches the file or a response', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   const s = SECRET_SAMPLES;
   appendDocSessionEvents(h.env, sid, [
     message(1, 0, [
@@ -590,7 +299,7 @@ test('the host writer redacts events before they reach events.jsonl, and no secr
 
 test('an event field outside the schema, such as raw tool arguments, a command, terminal output or the environment, is refused and nothing is written', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   const extras = [{ arguments: { path: 'docs/guide.md' } }, { command: 'cat docs/guide.md' }, { output: 'stdout text' }, { env: { HOME: '/Users/someone' } }];
   for (const extra of extras) {
     expect(() => appendDocSessionEvents(h.env, sid, [{ ...tool(1, 0, ['docs/guide.md']), ...extra } as DocSessionEventInput])).toThrow();
@@ -610,7 +319,7 @@ test('an event field outside the schema, such as raw tool arguments, a command, 
 
 test('the epoch.seq cursor orders events across host restarts, and an event that does not move the cursor forward is refused', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   appendDocSessionEvents(h.env, sid, [message(1, 0, 'a'), message(1, 1, 'b'), message(1, 2, 'c')]);
   // The host restarted: OAR counts seq from 0 again, in a new epoch.
   appendDocSessionEvents(h.env, sid, [message(2, 0, 'd'), message(2, 1, 'e')]);
@@ -629,7 +338,7 @@ test('the epoch.seq cursor orders events across host restarts, and an event that
 
 test('the session is running between turn boundaries and idle otherwise, which picks the 1 s or the 30 s poll', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   expect(DOC_SESSION_POLL_MS).toEqual({ running: 1_000, idle: 30_000 });
   expect((await readEvents(h, sid)).body.activity).toBe('idle');
   appendDocSessionEvents(h.env, sid, [turn(1, 0, 'started'), message(1, 1, 'working')]);
@@ -641,7 +350,7 @@ test('the session is running between turn boundaries and idle otherwise, which p
 
 test('a page holds at most DOC_SESSION_EVENTS_PAGE events, and its next_cursor reads the rest', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   appendDocSessionEvents(h.env, sid, Array.from({ length: DOC_SESSION_EVENTS_PAGE + 50 }, (_, seq) => message(1, seq, `m${seq}`)));
   const first = await readEvents(h, sid);
   expect(first.body.events).toHaveLength(DOC_SESSION_EVENTS_PAGE);
@@ -653,7 +362,7 @@ test('a page holds at most DOC_SESSION_EVENTS_PAGE events, and its next_cursor r
 
 test('message text over the byte limit is cut after redaction and marked truncated', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   // The secret sits across the cut, so redaction must run on the whole text first.
   const text = `${'x'.repeat(DOC_SESSION_EVENT_TEXT_MAX_BYTES - 15)}${SECRET_SAMPLES.openai} ${'y'.repeat(100)}`;
   appendDocSessionEvents(h.env, sid, [message(1, 0, text)]);
@@ -672,7 +381,7 @@ test('message text over the byte limit is cut after redaction and marked truncat
 
 test('a last line without its newline is skipped by the reader and refused by the writer, and a symlinked log is refused', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   appendDocSessionEvents(h.env, sid, [message(1, 0, 'kept')]);
   const torn = `${readFileSync(eventsFile(h, sid), 'utf8')}{"protocol":1,"epoch":1,"seq":1`;
   writeFileSync(eventsFile(h, sid), torn, { mode: 0o600 });
@@ -682,7 +391,7 @@ test('a last line without its newline is skipped by the reader and refused by th
   expect(() => appendDocSessionEvents(h.env, sid, [message(1, 2, 'next')])).toThrow();
   expect(readFileSync(eventsFile(h, sid), 'utf8')).toBe(torn);
 
-  const other = await createdSession(h);
+  const other = seedSession(h);
   const outside = join(h.home, 'outside.jsonl');
   writeFileSync(outside, `${JSON.stringify({ protocol: 1, epoch: 1, seq: 0, at: AT, type: 'message', role: 'agent', text: 'outside', truncated: false })}\n`, { mode: 0o600 });
   symlinkSync(outside, eventsFile(h, other));
@@ -693,9 +402,9 @@ test('a last line without its newline is skipped by the reader and refused by th
   expect(readFileSync(outside, 'utf8')).not.toContain('"x"');
 });
 
-test('a sessions directory or a session directory that is a symlink is refused for the session record and for events', async () => {
+test('a sessions directory or a session directory that is a symlink is refused for events and for a session record', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   // `operator/sessions` now points at a directory outside that holds <sid>/session.json.
   const elsewhere = join(h.home, 'elsewhere');
   renameSync(sessionsDir(h), elsewhere);
@@ -705,9 +414,9 @@ test('a sessions directory or a session directory that is a symlink is refused f
   expect(read.body.code).toBe('events_unavailable');
   expect(() => appendDocSessionEvents(h.env, sid, [message(1, 0, 'x')])).toThrow();
   expect(existsSync(join(elsewhere, sid, 'events.jsonl'))).toBe(false);
+  // Creation refuses before any record write, so the symlinked directory stays as it was.
   const created = await h.post(request(h, [cite(GUIDE, 'docs/guide.md', 1, 1, h.head())]));
-  expect(created.status).toBe(409);
-  expect(created.body.error.code).toBe('reconcile_required');
+  expect([created.status, created.body.error.code]).toEqual([501, 'docs_host_disabled']);
   expect(readdirSync(elsewhere)).toEqual([sid]);
 
   // A real sessions directory whose <sid> entry is a symlink to another session directory.
@@ -721,7 +430,7 @@ test('a sessions directory or a session directory that is a symlink is refused f
 
 test('a write that fails part way through a batch leaves the log at its old length, and a later append succeeds', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   appendDocSessionEvents(h.env, sid, [message(1, 0, 'a')]);
   const before = readFileSync(eventsFile(h, sid), 'utf8');
   let calls = 0;
@@ -741,7 +450,7 @@ test('a write that fails part way through a batch leaves the log at its old leng
 
 test('the events read refuses an unknown query key and a repeated cursor', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   for (const query of ['?limit=5', '?after=1.0&after=1.1', '?after=1.0&x=1']) {
     const response = await fetch(`${h.url}/api/v1/sessions/${sid}/events${query}`);
     expect(response.status).toBe(400);
@@ -751,7 +460,7 @@ test('the events read refuses an unknown query key and a repeated cursor', async
 
 test('the events read refuses a bad cursor, an unknown session and a corrupt log without echoing the log', async () => {
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   for (const after of ['1', '1.', 'x.1', '-1.0', '1.01', '1.2.3']) {
     const answer = await readEvents(h, sid, after);
     expect(answer.status).toBe(400);
@@ -774,14 +483,14 @@ test('the events read refuses a bad cursor, an unknown session and a corrupt log
 test('production routes admit the redacted session events read', async () => {
   expect(OPERATOR_ROUTES.some(route => route.id === 'session_events' && route.pattern === OPERATOR_SESSION_EVENTS_ROUTE.source)).toBe(true);
   const h = await harness();
-  const sid = await createdSession(h);
+  const sid = seedSession(h);
   appendDocSessionEvents(h.env, sid, [message(1, 0, 'visible')]);
   const answer = await readEvents(h, sid);
   expect(answer.status).toBe(200);
   expect(answer.body.events[0].text).toBe('visible');
 });
 
-test('the production inventory binds POST /api/v1/sessions to the server-built route over the injected docs cache', async () => {
+test('the production inventory binds POST /api/v1/sessions to the server-built route, which refuses and writes nothing', async () => {
   const repo = tmpWorkspace('operator-doc-session-repo'); initGitRepo(repo);
   mkdirSync(join(repo, 'docs'));
   writeFileSync(join(repo, 'docs', 'guide.md'), GUIDE);
@@ -797,47 +506,23 @@ test('the production inventory binds POST /api/v1/sessions to the server-built r
     id: repositoryId, path: repo, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
   const userHome = tmpWorkspace('operator-doc-session-user');
-  writeAgentsSettings(userHome, ['codex']);
   const env = { ...process.env, HOME: userHome, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: worktrees };
-  const reader = new DocsReader({ root: repo, ref: 'refs/remotes/origin/main', env });
-  reader.start();
-  await reader.refresh();
-  const tree: DocsTreeV1 = {
-    protocol: 1, kind: OPERATOR_DOCS_TREE_KIND, repository_id: repositoryId, ref: 'refs/remotes/origin/main',
-    commit: git(['rev-parse', 'refs/remotes/origin/main'], repo).trim(), collected_at: at,
-    files: [{ path: 'docs/guide.md', size: Buffer.byteLength(GUIDE), sha256: hex(GUIDE) }],
-  };
+  const base = git(['rev-parse', 'refs/remotes/origin/main'], repo).trim();
   // No write_routes injection: the production OPERATOR_ROUTES entry binds the server-built handler.
-  const server = await startOperatorServer({
-    port: 0, static_root: staticRoot, env, docs_session_platform: 'darwin',
-    read_docs: () => ({ state: 'ready', tree, reader }),
-  });
+  const server = await startOperatorServer({ port: 0, static_root: staticRoot, env, docs_session_platform: 'darwin' });
   const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
   cleanups.push(async () => {
     await server.close();
-    reader.close();
     for (const dir of [repo, home, userHome, worktrees, staticRoot]) rmSync(dir, { recursive: true, force: true });
   });
-  const post = async (citations: readonly DocCitationV1[]) => {
-    const response = await fetch(`${server.url}/api/v1/sessions`, {
-      method: 'POST',
-      headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie },
-      body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId, citations, instruction: 'Tighten the intro.' }),
-    });
-    return { status: response.status, body: JSON.parse(await response.text()) as Record<string, any> };
-  };
-
-  const stale = await post([cite(GUIDE.replace('The operator reads docs.', 'The operator reads nothing.'), 'docs/guide.md', 3, 4, tree.commit)]);
-  expect(stale.status).toBe(409);
-  expect(stale.body.error.code).toBe('citation_stale');
+  const response = await fetch(`${server.url}/api/v1/sessions`, {
+    method: 'POST',
+    headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie },
+    body: JSON.stringify({ request_id: randomUUID(), kind: 'docs', runtime: 'codex', repository_id: repositoryId,
+      citations: [cite(GUIDE, 'docs/guide.md', 1, 1, base)], instruction: 'Tighten the intro.' }),
+  });
+  expect([response.status, ((await response.json()) as Record<string, any>).error.code]).toEqual([501, 'docs_host_disabled']);
   expect(readdirSync(worktrees)).toEqual([]);
-
-  const answer = await post([cite(GUIDE, 'docs/guide.md', 3, 4, tree.commit)]);
-  expect(answer.status).toBe(201);
-  expect(answer.body.kind).toBe('operator_docs_session');
-  const sid = answer.body.session_id as string;
-  expect(answer.body.branch).toBe(`docs/${sid.slice(0, 12)}`);
-  expect(readdirSync(worktrees)).toEqual([`${basename(repo)}-wt-docs-${sid.slice(0, 12)}`]);
-  expect(readFileSync(join(home, 'operator', 'sessions', sid, 'session.json'), 'utf8')).toContain('"docs_session"');
+  expect(existsSync(join(home, 'operator', 'sessions'))).toBe(false);
 });
 

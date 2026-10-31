@@ -70,9 +70,11 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
       required_check_coverage: { protocol: 1, kind: 'repo-harness-required-check-coverage', head_sha: head, base_sha: base,
         protected_paths: ['api-surface/entries.json'],
         checks: [{ check: 'build, typecheck, test (matrix)', bucket: 'skipping', requirement: 'required' }], waiver: null },
+      stack: { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' },
     };
     const projected = projectOperatorFleetSnapshot(sourceSnapshot(readiness), serviceEpoch, basename);
     expect(projected.repositories[0]?.cards[0]?.merge_readiness?.blockers[0]?.detail).toBe(detail);
+    expect(projected.repositories[0]?.cards[0]?.merge_readiness?.stack).toEqual(readiness.stack);
     expect(projected.repositories[0]?.cards[0]?.merge_readiness?.required_check_coverage).toEqual(readiness.required_check_coverage);
     // The projection is a transport view: it must not reclassify the blocker.
     expect(projected.repositories[0]?.cards[0]?.blocker_codes).toEqual(['required_check_coverage_missing']);
