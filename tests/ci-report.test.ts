@@ -1,10 +1,10 @@
 import { expect, test } from 'bun:test';
 import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { basename, join } from 'node:path';
 import { isCiRepairIssueBody } from '../src/core/operator/tests';
-import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
+import { ARCHITECTURE_EVIDENCE, ARCHITECTURE_JOB, CIReportError, architectureActionRow, junitFiles, parseArchitectureSummary, reportCI, renderReport, watchDailyCI, type GitHubAPI } from '../scripts/report-ci';
 
 function fixture(run: (f: { api: GitHubAPI; git: (...args: string[]) => string; before: string; after: string; prCommits: number; root: string; issues: any[]; comments: { issue: number; body: string }[]; calls: { path: string; method: string }[]; setConclusion: (value: string) => void; setRun: (id: number, attempt: number) => void; denyIssues: () => void }) => Promise<void>, candidateCommits = 1) {
   const root = mkdtempSync(join(tmpdir(), 'ci-report-fixture-'));
@@ -186,6 +186,26 @@ test('a job with no readable test report keeps the job repair key', () => fixtur
   expect(f.issues).toHaveLength(1);
   expect(f.issues[0].title).toBe(`[CI repair] job:Daily full tests and package @ ${f.after.slice(0, 12)}`);
 }));
+
+test('an unreadable test report keeps the job key and records the degradation', () => fixture(async f => {
+  f.setConclusion('failure');
+  const api = testReportAPI(f, [{ id: 44, name: 'Daily full tests and package', conclusion: 'failure' }], [{ id: 7, name: 'junit-daily-1' }]);
+  const result = await reportCI('test/repo', 12, api, undefined, async () => { throw new Error('gh run download failed'); });
+  expect(result.errors).toEqual([]);
+  expect(result.repairs).toEqual([{ key: 'ci-repair:job:Daily full tests and package', issue_url: 'https://github.com/test/repo/issues/1', delivery: 'created' }]);
+  expect(f.issues[0].body).toContain('The test report could not be read; the job key is used.');
+}));
+
+test('the artifact reader lists only nested XML reports', () => {
+  const root = mkdtempSync(join(tmpdir(), 'ci-report-files-'));
+  try {
+    mkdirSync(join(root, 'nested'));
+    writeFileSync(join(root, 'nested', 'a.xml'), '<a/>');
+    writeFileSync(join(root, 'nested', 'notes.txt'), 'no');
+    writeFileSync(join(root, 'b.xml'), '<b/>');
+    expect(junitFiles(root, []).map(file => basename(file.path)).sort()).toEqual(['a.xml', 'b.xml']);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 test('dispatch permission refusal stays pending and leaves the completed merge unchanged', () => fixture(async f => {
   f.setConclusion('failure'); f.denyIssues();

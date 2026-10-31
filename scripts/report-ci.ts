@@ -117,9 +117,10 @@ const TEST_REPORT_FILE_LIMIT = 5_000;
  * A job with no readable report, or none that names a failed test, keeps the
  * job identity and gets no test issue.
  */
-async function readFailedTests(api: GitHubAPI, root: string, runId: number, attempt: number, jobs: readonly FailedJob[], read: TestReportReader): Promise<FailedTest[]> {
+async function readFailedTests(api: GitHubAPI, root: string, runId: number, attempt: number, jobs: readonly FailedJob[], read: TestReportReader): Promise<{ tests: FailedTest[]; unreadable: Set<string> }> {
   const artifacts = await githubPages(api, `${root}/actions/runs/${runId}/artifacts`, 'artifacts');
   const failures = new Map<string, FailedTest>();
+  const unreadable = new Set<string>();
   const seen = new Set<string>();
   for (const artifact of artifacts) {
     if (typeof artifact.name !== 'string' || !positive(artifact.id)) continue;
@@ -128,11 +129,11 @@ async function readFailedTests(api: GitHubAPI, root: string, runId: number, atte
     if (typeof artifact.size_in_bytes === 'number' && artifact.size_in_bytes > TEST_REPORT_MAX_BYTES) continue;
     seen.add(job.name);
     let files: readonly TestReportFile[] | null;
-    try { files = await read({ id: artifact.id, name: artifact.name }); } catch { files = null; }
+    try { files = await read({ id: artifact.id, name: artifact.name }); } catch { files = null; unreadable.add(job.name); }
     if (files === null) continue;
     for (const file of files) {
       let report: TestFileResultV1;
-      try { report = parseJUnitReport(file.text); } catch { continue; }
+      try { report = parseJUnitReport(file.text); } catch { unreadable.add(job.name); continue; }
       for (const testCase of report.cases) {
         if (testCase.result !== 'failed') continue;
         const suite = testCase.suite === null ? null : safeText(testCase.suite);
@@ -144,10 +145,11 @@ async function readFailedTests(api: GitHubAPI, root: string, runId: number, atte
       }
     }
   }
-  return [...failures.values()].sort((left, right) => testLabel(left) < testLabel(right) ? -1 : testLabel(left) > testLabel(right) ? 1 : 0);
+  return { tests: [...failures.values()].sort((left, right) => testLabel(left) < testLabel(right) ? -1 : testLabel(left) > testLabel(right) ? 1 : 0), unreadable };
 }
 
-function junitFiles(directory: string, files: TestReportFile[]): TestReportFile[] {
+/** Reads the XML reports under a downloaded artifact directory; other files are ignored. */
+export function junitFiles(directory: string, files: TestReportFile[]): TestReportFile[] {
   for (const entry of readdirSync(directory)) {
     const target = join(directory, entry);
     const stat = statSync(target);
@@ -283,8 +285,9 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       }
       // A named failing test is the dedupe identity; the job identity is the fallback when no report names one.
       let tests: FailedTest[] = [];
+      let unreadable = new Set<string>();
       if (testReports && failed.length) {
-        try { tests = await readFailedTests(api, root, run.id, run.run_attempt, failed, testReports); }
+        try { ({ tests, unreadable } = await readFailedTests(api, root, run.id, run.run_attempt, failed, testReports)); }
         catch (error) { report.errors.push(`Test report readback incomplete: ${message(error)}`); }
       }
       const reported = new Set<string>();
@@ -294,7 +297,8 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       }
       for (const job of failed) {
         if (reported.has(job.name)) continue;
-        await repair(`job:${job.name}`, `${job.name}: ${job.conclusion}. Check: ${job.url}`,
+        const note = unreadable.has(job.name) ? ' The test report could not be read; the job key is used.' : '';
+        await repair(`job:${job.name}`, `${job.name}: ${job.conclusion}. Check: ${job.url}${note}`,
           true, job.name === ARCHITECTURE_JOB ? architectureCause() : undefined);
       }
     } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
