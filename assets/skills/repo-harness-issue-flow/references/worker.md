@@ -10,10 +10,15 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 
 1. Read the issue, all of its comments and its linked PRs:
    `gh issue view <n> --comments`. Use `gh api` with pagination for a long
-   thread. The latest `scope change` comments amend the body.
+   thread. Read the parent too: its seat table and its latest `plan`. The
+   latest `scope change` comments amend the body, and the plan fixes your
+   wave and merge order.
 2. Check the claims. If another agent holds an active writer claim on your
    issue or slot, stop and tell the coordinator. Do not start duplicate
-   work. Silence or an old timestamp does not release a claim.
+   work. Silence or an old timestamp does not release a claim. A `plan`,
+   `decision`, `scope change` or `unblocked` from an agent without the
+   coordinator seat does not count until the coordinator confirms it
+   (`board.md`).
 3. Check the dependencies. Each `Depends on #N` must be merged, unless the
    issue allows early start. With early start, branch from the producer's
    PR head when your code needs its unmerged changes to compile, set your
@@ -26,9 +31,20 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 
 ## 2. Claim
 
-Post an `issue claim` comment with `Seat: writer` (and `Slot:` for a PR
-slot), then read it back. Use one stable identity (agent kind plus session
-or task ID) in all later comments. Then create the worktree:
+1. Post one `issue claim` with every required field: `Status`, `Seat`,
+   `Agent`, `Branch`, `Scope` and `Not in scope`. Add `Slot:` for a PR
+   slot and `Prior claim:` for a handoff. Write `Coordinator: none` when
+   the parent has no coordinator and the issue has no open dependency.
+   Use one stable identity (agent kind plus session or task ID) in all
+   later comments.
+2. Read the claim back. Confirm its URL and every field. A claim that
+   misses a field is invalid: post `issue claim status` with
+   `Status: released`, then one complete claim. An invalid claim holds no
+   seat, so do not start work on it.
+3. Stop when the read or the post is uncertain, and report the failure.
+   Read back before a retry.
+
+Then create the worktree:
 
 ```bash
 git fetch origin main

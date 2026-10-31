@@ -13,7 +13,7 @@ claim comment. One seat has at most one active holder.
 
 | Seat | Object | Holds it | Can write | Released by |
 |---|---|---|---|---|
-| Coordinator | Parent issue | Orchestrator | Parent body (child table), dispatch, scope changes, merge order | Closing comment, or handoff |
+| Coordinator | Parent issue | Orchestrator | Parent body (child table), plan, dispatch, scope changes, merge order | Closing comment, or handoff |
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this seat pushes | Merge, or a handoff that names the next head owner |
 | Acceptor | One review round of one PR | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its round |
@@ -42,6 +42,49 @@ Rules that keep the topology safe:
   handoff, the earliest comment wins. Break ties by comment ID. The later
   claimant posts a released status and stops.
 
+## Claims
+
+One `issue claim` comment takes one seat. A valid claim carries
+`Status`, `Seat`, `Agent`, `Branch`, `Scope` and `Not in scope`.
+A claim that takes over a seat also carries `Prior claim`. Board rules 2,
+3 and 8 apply: one identity, read back, and stop on an uncertain read or
+post.
+
+- **Read the parent first.** Before a writer claims, read the parent seat
+  table and the latest `plan` on the parent, every comment on this issue,
+  and every PR that links it. Do not claim a dependent issue while its
+  dependency is open, unless the issue allows early start.
+- **No coordinator on the parent.** A writer may claim an issue with no
+  open dependency while the parent has no coordinator. The claim then
+  carries `Coordinator: none`. A coordinator that takes the parent later
+  confirms or returns each such claim.
+- **Invalid claim.** A claim that misses a required field is invalid. Its
+  author releases it with `issue claim status` and `Status: released`,
+  then posts one complete claim. The coordinator names the missing fields
+  in a `To: <agent>` comment and does not dispatch work on that issue
+  until the corrected claim is on the board. The parent table never makes
+  an invalid claim valid.
+
+## Seat-only comment kinds
+
+`plan`, `decision`, `scope change` and `unblocked` belong to the
+coordinator seat. Only the active coordinator holder posts them.
+
+- A comment of one of these kinds from an agent without the coordinator
+  seat is invalid. It takes effect only when the coordinator confirms it
+  in its own `decision` or `scope change`. Until then no worker acts on
+  it, and the parent table does not change.
+- An owner instruction becomes a board rule through the coordinator. The
+  coordinator records it as a `decision`, or as a `scope change` when
+  the issue body moves. The owner's message alone is not a board entry.
+- A seatless drafting session may create a parent issue and child issues
+  on the owner's instruction. It writes `unclaimed` in the parent seat
+  table and posts no seat-only comment. The coordinator adopts or rewrites
+  the drafts after it claims.
+
+`handoff` is not seat-only: the current holder posts it, or the
+coordinator posts it on the owner's instruction.
+
 ## Topology
 
 ```text
@@ -54,6 +97,14 @@ Parent issue ── coordinator seat
  └─ Child C (module Z) ── Depends on #A ── PR-C draft until PR-A merges
 Integrator seat (coordinator) merges in the parent's order.
 ```
+
+**Parent table status.** The seat/status column of the parent child table
+uses only these values: `unclaimed`, `unclaimed · waits for #n`,
+`writer <agent> · active`, `writer <agent> · PR #p`, `merged`. A
+Chinese-language repository writes `待认领`, `待认领 · 等待 #n 合并`,
+`writer <agent> · active`, `writer <agent> · PR #p`, `merged`. The
+claim comment wins over the table, and the coordinator corrects the table
+after each claim or status change.
 
 - **Issue dependencies** are lines `Depends on #N` in the child's
   dependency section. The coordinator checks the graph for cycles before
@@ -101,16 +152,20 @@ lines, then at most a short free-text body. The exact shapes are in
 
 | Kind | Where | Posted by | Purpose |
 |---|---|---|---|
-| `issue claim` | Issue | Coordinator, writer | Take a seat (with `Seat`, optional `Slot`) |
+| `issue claim` | Issue | Coordinator, writer | Take a seat: the required fields, with an optional `Slot` |
 | `issue claim status` | Issue | Seat holder | ready for review, blocked, released, handed off, done |
 | `boundary question` | Issue | Writer | The issue boundary blocks the work. Stop and ask |
 | `scope change` | Issue | Coordinator | The issue body changed: what, why, who is affected |
 | `decision` | Issue (parent for cross-issue ones) | Coordinator | A decision that the body does not hold yet, with its reason |
+| `plan` | Parent issue | Coordinator | Waves, dependencies and merge order for a large parent. A revision supersedes the previous plan |
 | `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a seat. Names prior claim, next holder, exact state |
 | `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: seat, round, subject SHA, tier (`acceptor.md`) |
 | `acceptance record` | PR | Acceptor or coordinator | Round table: seat, subject SHA, verdict, findings, `model_relation` (`acceptor.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; or a merge result with the executor exit code |
+
+`plan`, `decision`, `scope change` and `unblocked` are seat-only
+(see above). Every other kind may come from any seat holder it names.
 
 Board rules:
 
