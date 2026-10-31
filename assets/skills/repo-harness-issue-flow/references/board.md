@@ -189,7 +189,8 @@ Board rules:
    or environment files.
 5. **Line findings go in review threads.** A finding about specific lines
    is a PR review comment on those lines. Its first word is the severity
-   (`P1`, `P2`, `NIT`). The head owner replies with the fix SHA and does
+   (`P0`, `P1`, `P2`). NIT findings go in the review body only
+   (`acceptor.md` §3). The head owner replies with the fix SHA and does
    not resolve the thread. Only the acceptor of that round resolves it
    after the next round confirms the fix. The coordinator may resolve a
    thread with a written rejection reason. See `acceptor.md`.
