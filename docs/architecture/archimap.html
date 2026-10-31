@@ -1,0 +1,591 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROJECT Architecture Map</title>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600&family=IBM+Plex+Sans:wght@400;600&family=Noto+Sans+SC:wght@400;600&display=swap">
+<!--
+  repo-harness-archimap template. Keep the stylesheet; replace the sample
+  content. Inline styles carry position and size only.
+-->
+<style>
+:root {
+  --canvas: #F7F7F4; --page: #F5F4EF; --ink: #16181D; --ink-2: #4A4F57; --ink-3: #5A5F68; --ink-4: #9AA0A8;
+  --panel: #FFFFFF; --rule: #E2E2DC;
+  --sans: 'IBM Plex Sans', 'Noto Sans SC', -apple-system, 'Segoe UI', sans-serif;
+  --mono: 'IBM Plex Mono', ui-monospace, Menlo, monospace;
+}
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font-family: var(--sans); }
+main { display: flex; flex-direction: column; align-items: center; gap: 48px; padding: 48px 0; }
+h2.caption { margin: 0 0 12px; font: 600 15px/20px var(--sans); color: var(--ink-3); }
+a { color: #1E40AF; } a:hover { color: #1E3A8A; }
+
+.board { position: relative; width: 1680px; background: var(--canvas); overflow: hidden; }
+.board > * { position: absolute; }
+.kicker { left: 64px; top: 64px; font: 13px/16px var(--mono); letter-spacing: .08em; color: var(--ink-3); }
+.title { left: 64px; top: 88px; font-size: 36px; line-height: 44px; font-weight: 600; }
+.legend { right: 64px; top: 72px; width: 552px; font-size: 13px; line-height: 22px; color: var(--ink-2); text-align: right; }
+.foot { font-size: 11px; line-height: 16px; color: var(--ink-3); }
+.mono { font-family: var(--mono); }
+
+/* Overview */
+.band { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; }
+.layer { font-size: 15px; line-height: 22px; color: var(--ink-2); width: 184px; }
+.layer b { color: var(--ink); }
+.layer small { display: block; font-size: 12px; }
+.node { display: flex; flex-direction: column; align-items: center; justify-content: center; text-align: center;
+  padding: 8px 12px; border: 1.5px solid; border-radius: 10px; font-size: 15px; line-height: 20px; }
+.node b { font-weight: 600; }
+.node .loc { font: 12px var(--mono); }
+.node small { display: block; font-size: 13px; line-height: 18px; opacity: .85; }
+.node .id { font: 11px var(--mono); color: var(--ink-4); }
+.k-app { background: #EEF0F3; border-color: #4B5563; color: #1F2937; }
+.k-compose { background: #E8EEFB; border-color: #1E40AF; color: #1E2A4A; }
+.k-kernel { background: #EFEAFB; border-color: #5B21B6; color: #2E1F4F; }
+.k-contract { background: #E3F3F0; border-color: #0F766E; color: #16332F; }
+.k-remote { background: #FBEDE6; border-color: #9A3412; color: #4A2414; }
+.k-external { background: #FFFFFF; border-style: dashed; border-color: #8A8F98; color: var(--ink); }
+.zone { border: 1.5px dashed #C2703F; background: #FFF8F4; border-radius: 14px; }
+.zone-label { font-size: 15px; line-height: 22px; color: #7C2D12; }
+.note { background: #FFF4D6; border: 1px solid #B7791F; border-radius: 8px; padding: 6px 10px; font-size: 12px; line-height: 17px; color: #5C3D0A; }
+
+/* Edges */
+svg.edges { left: 0; top: 0; overflow: visible; pointer-events: none; }
+/* Direct children only: marker paths inside <defs> keep their own fill. */
+.edges > path { fill: none; stroke-linecap: round; stroke-linejoin: round; }
+.e-call { stroke: #6B7079; stroke-width: 2; }
+.e-import { stroke: #2B2F36; stroke-width: 3; }
+.e-remote { stroke: #9A3412; stroke-width: 2; }
+.e-host { stroke: #5B21B6; stroke-width: 2; }
+.e-dash { stroke-dasharray: 6 6; }
+.lifeline { stroke: #C4C6BF; stroke-width: 1.5; stroke-dasharray: 4 6; }
+.badge { font: 600 12px/16px var(--mono); background: #FFFFFF; border: 1px solid var(--rule); border-radius: 6px; padding: 1px 6px; }
+.elabel { font-size: 13px; line-height: 16px; color: var(--ink-2); white-space: nowrap; }
+
+/* Matrix */
+.panel { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; padding: 24px; }
+table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; }
+.matrix th { font: 600 12px var(--mono); color: var(--ink-2); padding: 6px 8px; text-align: center; }
+.matrix th.row { text-align: right; }
+.matrix td { width: 120px; height: 44px; white-space: nowrap; text-align: center; border-radius: 6px; font: 600 13px var(--mono); background: #F2F2EE; color: var(--ink-4); }
+.matrix td small { display: block; font: 400 11px var(--sans); }
+.h1 { background: #E6F2EF !important; color: #16332F !important; }
+.h2 { background: #BFE0D9 !important; color: #16332F !important; }
+.h3 { background: #7FC1B4 !important; color: #10302B !important; }
+.h4 { background: #2F8F7E !important; color: #FFFFFF !important; }
+.forbid { background: #FBEDEA !important; color: #9A3412 !important; font-size: 11px !important; }
+.attn { background: #FFF4D6 !important; color: #5C3D0A !important; outline: 2px solid #B7791F; }
+.viol { background: #FBEDEA !important; color: #B42318 !important; outline: 2px solid #B42318; }
+.swatch { display: inline-block; width: 14px; height: 14px; border-radius: 3px; vertical-align: -2px; margin: 0 4px 0 12px; }
+
+/* Sequence */
+.lifehead { display: flex; align-items: center; justify-content: center; text-align: center; width: 192px; height: 64px;
+  border: 1.5px solid #4B5563; border-radius: 10px; background: var(--panel); font-size: 14px; line-height: 18px; }
+.phase { background: var(--panel); border: 1px solid var(--rule); border-radius: 12px; }
+.phase.dashed { border-style: dashed; }
+.phase-label { font-size: 13px; font-weight: 600; color: var(--ink-2); }
+
+/* Dark strip and file tree */
+.dark { background: #16181D; color: #E6E7EA; border-radius: 12px; padding: 24px; }
+.dark h3 { margin: 0 0 16px; font-size: 15px; }
+.chip { display: inline-block; background: #262A31; border-radius: 8px; padding: 8px 12px; font: 12px/16px var(--mono); }
+.chip b { color: #FFFFFF; margin-right: 6px; }
+.sep { color: #6B7079; margin: 0 8px; }
+.tree { font: 12.5px/20px var(--mono); white-space: pre; }
+.tree i { color: #8A8F98; font-style: normal; }
+
+/* Remarks */
+.remarks { display: grid; grid-template-columns: repeat(3, 1fr); gap: 24px; }
+.remark { background: var(--panel); border: 1px solid var(--rule); border-left: 4px solid var(--ink-4); border-radius: 12px; padding: 20px; }
+.remark.high { border-left-color: #B42318; }
+.remark.medium { border-left-color: #B7791F; }
+.remark .meta { font: 12px var(--mono); color: var(--ink-3); }
+.remark h3 { margin: 8px 0; font-size: 17px; line-height: 24px; }
+.remark p { margin: 0 0 8px; font-size: 13px; line-height: 20px; color: var(--ink-2); }
+.remark .ref { font: 12px var(--mono); color: var(--ink-3); }
+.tag { display: inline-block; font: 600 11px var(--sans); background: #FFF4D6; color: #5C3D0A; border-radius: 4px; padding: 1px 6px; margin-left: 6px; }
+</style>
+</head>
+<body>
+<main>
+
+
+<section>
+<h2 class="caption">1 · Layered overview</h2>
+<div class="board" style="height:1480px">
+  <div class="kicker">repo-harness · ARCHITECTURE · 5533ec9</div>
+  <div class="title">Layered overview</div>
+  <div class="legend">Thick line: value import, number = import count<br>Thin line: runtime call · Red dashed: reverse import against the layer order<br>Module size: non-test LOC · Dashed box: not provided by the project</div>
+
+  <div class="band" style="left:64px;top:184px;width:1104px;height:240px"></div>
+  <div class="band" style="left:64px;top:424px;width:1104px;height:240px"></div>
+  <div class="band" style="left:64px;top:664px;width:1104px;height:120px"></div>
+  <div class="band" style="left:64px;top:784px;width:1104px;height:120px"></div>
+  <div class="band" style="left:64px;top:904px;width:1104px;height:376px"></div>
+
+  <div class="layer" style="left:88px;top:248px"><b>L5</b> Entry<small>rules · skills</small></div>
+  <div class="layer" style="left:88px;top:488px"><b>L4</b> Interfaces<small>CLI · console</small></div>
+  <div class="layer" style="left:88px;top:696px"><b>L3</b> Runtime<small>effects layer</small></div>
+  <div class="layer" style="left:88px;top:816px"><b>L2</b> Core<small>pure contracts</small></div>
+  <div class="layer" style="left:88px;top:960px"><b>L1</b> Support<small>scripts · tests · model</small></div>
+
+  <div class="node k-app" data-module="root" style="left:296px;top:200px;width:760px;height:104px"><span><b>root</b> <span class="loc">32.1k</span></span><small>Root contract, workflow rules and PRDs</small><span class="id">root · 238 files</span></div>
+  <div class="node k-contract" data-module="assets" style="left:296px;top:320px;width:760px;height:104px"><span><b>assets</b> <span class="loc">16.8k</span></span><small>Command facades and bundled skills</small><span class="id">assets · 128 files</span></div>
+  <div class="node k-compose" data-module="cli" style="left:296px;top:440px;width:760px;height:104px"><span><b>cli</b> <span class="loc">35.7k</span></span><small>Command surface, host adapters, MCP</small><span class="id">cli · 137 files</span></div>
+  <div class="node k-remote" data-module="web" style="left:296px;top:560px;width:760px;height:104px"><span><b>operator-web</b> <span class="loc">14.1k</span></span><small>Read-only operator console</small><span class="id">web · 64 files</span></div>
+  <div class="node k-compose" data-module="effects" style="left:296px;top:680px;width:760px;height:104px"><span><b>effects</b> <span class="loc">42.7k</span></span><small>Runtime, evidence, publication, operator</small><span class="id">effects · 200 files</span></div>
+  <div class="node k-kernel" data-module="core" style="left:296px;top:800px;width:760px;height:104px"><span><b>core</b> <span class="loc">19.5k</span></span><small>Pure state, workflow and capability core</small><span class="id">core · 132 files</span></div>
+  <div class="node k-contract" data-module="scripts" style="left:296px;top:920px;width:760px;height:104px"><span><b>scripts</b> <span class="loc">21.4k</span></span><small>Contract, worktree and migration helpers</small><span class="id">scripts · 77 files</span></div>
+  <div class="node k-app" data-module="verification" style="left:296px;top:1040px;width:760px;height:104px"><span><b>verification</b> <span class="loc">8.7k</span></span><small>Tests, evals and CI selection</small><span class="id">verification · 32 files</span></div>
+  <div class="node k-contract" data-module="architecture" style="left:296px;top:1160px;width:760px;height:104px"><span><b>architecture-model</b> <span class="loc">33.4k</span></span><small>Model, generated docs and policy</small><span class="id">architecture · 759 files</span></div>
+
+  <div class="zone" style="left:1224px;top:184px;width:392px;height:600px"></div>
+  <div class="zone-label" style="left:1248px;top:200px"><b>Outside the repository</b></div>
+  <div class="node k-external" style="left:1248px;top:248px;width:336px;height:104px"><span><b>Agent host</b></span><small>Claude Code · Codex · Pi</small></div>
+  <div class="node k-external" style="left:1248px;top:392px;width:336px;height:104px"><span><b>GitHub</b></span><small>issues · PRs · checks</small></div>
+  <div class="node k-external" style="left:1248px;top:536px;width:336px;height:104px"><span><b>archctx daemon</b></span><small>model · resolve · projection</small></div>
+  <div class="foot" style="left:1248px;top:664px;width:336px">Calls to these sides are on the runtime topology board.</div>
+
+  <svg class="edges" width="1680" height="1480">
+    <defs>
+      <marker id="a-import" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#2B2F36"/></marker>
+      <marker id="a-call" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#6B7079"/></marker>
+      <marker id="a-remote" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#9A3412"/></marker>
+    </defs>
+    <path class="e-import" d="M1056 492 H1160 V732 H1060" marker-end="url(#a-import)"/>
+    <path class="e-import" d="M676 784 V796" marker-end="url(#a-import)"/>
+    <path class="e-call" d="M296 492 H280 V852 H292" marker-end="url(#a-call)"/>
+    <path class="e-call" d="M1056 612 H1128 V852 H1060" marker-end="url(#a-call)"/>
+    <path class="e-call" d="M1056 972 H1104 V732 H1060" marker-end="url(#a-call)"/>
+    <path class="e-call" d="M1056 852 H1080 V372 H1060" marker-end="url(#a-call)"/>
+    <path class="e-remote e-dash" d="M1056 712 H1188 V472 H1060" marker-end="url(#a-remote)"/>
+  </svg>
+  <div class="badge" style="left:1096px;top:468px">216</div>
+  <div class="badge" style="left:690px;top:778px">268</div>
+  <div class="badge" style="left:284px;top:660px">38</div>
+  <div class="badge" style="left:1136px;top:700px">42</div>
+  <div class="badge" style="left:1108px;top:900px">22</div>
+  <div class="badge" style="left:1084px;top:620px">2</div>
+  <div class="badge" style="left:1192px;top:700px">1 rev</div>
+  <div class="foot" style="left:64px;top:1328px;width:1552px">Size is non-test LOC at 5533ec9. Edges shown: seven structural value imports and one reverse import. root→core, root→effects, web→root, scripts→cli and scripts→core are in board 2. Module path globs are the map footprint; capability ownership stays in the model.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">2 · Dependency direction (measured)</h2>
+<div class="board" style="height:1000px">
+  <div class="kicker">repo-harness · DEPENDENCIES · 5533ec9</div>
+  <div class="title">Dependency direction (measured)</div>
+  <div class="legend"><span class="swatch h1"></span>1–5<span class="swatch h2"></span>6–20<span class="swatch h3"></span>21–50<span class="swatch h4"></span>51+ value imports<br><span class="swatch viol"></span>forbidden, violated · <span class="swatch forbid"></span>forbidden, satisfied</div>
+  <div class="panel" style="left:64px;top:184px;width:1312px;height:780px">
+    <table class="matrix">
+      <tr><th></th><th>root</th><th>assets</th><th>cli</th><th>core</th><th>effects</th><th>operator-web</th><th>scripts</th><th>verification</th><th>architecture-model</th></tr>
+      <tr><th class="row">root</th><td>·</td><td>—</td><td>—</td><td class="h1">1</td><td class="h1">1</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">assets</th><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">cli</th><td>—</td><td>—</td><td>·</td><td class="h3">38</td><td class="h4">216</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">core</th><td>—</td><td class="h1">2</td><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">effects</th><td>—</td><td>—</td><td class="viol">1<small>violation</small></td><td class="h4">268</td><td>·</td><td>—</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">operator-web</th><td class="h1">1</td><td>—</td><td>—</td><td class="h3">42</td><td>—</td><td>·</td><td>—</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">scripts</th><td>—</td><td>—</td><td class="h1">3</td><td class="h2">11</td><td class="h3">22</td><td>—</td><td>·</td><td>—</td><td>—</td></tr>
+      <tr><th class="row">verification</th><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>·</td><td>—</td></tr>
+      <tr><th class="row">architecture-model</th><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>—</td><td>·</td></tr>
+    </table>
+    <p class="foot">Rows import columns. Value imports only, tests excluded, tracked files only (measure.ts at 5533ec9). The diagonal is · and a missing edge is —. One file, <span class="mono">src/operator-web/TaskEvidence.tsx</span>, did not parse; its edges are missing.</p>
+  </div>
+  <div class="panel" style="left:1392px;top:184px;width:224px;height:400px">
+    <div class="meta mono" style="font-size:12px;color:#5A5F68">R-A1 · Medium</div>
+    <h3 style="margin:8px 0;font-size:17px">One reverse import</h3>
+    <p style="margin:0 0 8px;font-size:13px;color:#4A4F57">effects → cli: 1 value import. <span class="mono">src/effects/setup/pi-capability-child.ts:3</span> imports <span class="mono">src/pi/compat</span>. The model's layer order places cli above effects.</p>
+    <p style="margin:0;font-size:13px;color:#4A4F57">Direction: move the compat helper below effects, or declare the dependency.</p>
+  </div>
+  <div class="panel" style="left:1392px;top:608px;width:224px;height:320px">
+    <h3 style="margin:0 0 8px;font-size:15px">Who guards these directions</h3>
+    <p style="margin:0 0 6px;font-size:13px;color:#4A4F57">Checked by <span class="mono">scripts/check-state-boundaries.ts</span> for the pure core, and by the model's <span class="mono">layer-direction</span> constraint through archctx.</p>
+    <p style="margin:0;font-size:13px;color:#4A4F57">Not checked: runtime calls, dynamic imports and process entry strings. Board 1 omits those edges.</p>
+  </div>
+  <div class="foot" style="left:88px;top:872px;width:1264px">The matrix is the only measured dependency view. A model relation that the code satisfies with type-only imports has no count here.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">3 · Runtime topology</h2>
+<div class="board" style="height:1200px">
+  <div class="kicker">repo-harness · TOPOLOGY · 5533ec9</div>
+  <div class="title">Runtime topology</div>
+  <div class="legend">Solid: long-lived or per-event process · Dashed: detached child or sandbox<br>Channel labels name the transport. No launchd, systemd or container unit is installed.</div>
+
+  <div class="panel" style="left:64px;top:184px;width:1040px;height:600px"></div>
+  <div class="panel" style="left:1128px;top:184px;width:488px;height:600px"></div>
+  <div class="panel" style="left:64px;top:808px;width:1040px;height:312px"></div>
+
+  <div class="foot mono" style="left:104px;top:208px">Developer machine</div>
+  <div class="foot mono" style="left:1168px;top:208px">Herdr panes</div>
+  <div class="foot mono" style="left:104px;top:832px">External services</div>
+
+  <div class="node k-app" style="left:104px;top:240px;width:240px;height:80px"><span><b>Agent host</b></span><small>Claude Code · Codex · Pi</small></div>
+  <div class="node k-compose" style="left:400px;top:240px;width:220px;height:80px"><span><b>hook</b></span><small>one bun process per event</small></div>
+  <div class="node k-compose" style="left:104px;top:376px;width:240px;height:80px"><span><b>CLI</b></span><small>one bun process per command</small></div>
+  <div class="node k-compose" style="left:400px;top:376px;width:220px;height:80px"><span><b>MCP server</b></span><small>stdio or loopback HTTP</small></div>
+  <div class="node k-remote" style="left:104px;top:512px;width:240px;height:80px"><span><b>Browser console</b></span><small>operator web UI</small></div>
+  <div class="node k-compose" style="left:400px;top:512px;width:220px;height:80px"><span><b>operator server</b></span><small>read-only loopback HTTP</small></div>
+  <div class="node k-external" style="left:104px;top:648px;width:240px;height:80px"><span><b>operator collector</b></span><small>detached child · probes</small></div>
+  <div class="node k-compose" style="left:688px;top:240px;width:240px;height:80px"><span><b>process supervisor</b></span><small>bounded child group</small></div>
+  <div class="node k-compose" style="left:688px;top:376px;width:240px;height:80px"><span><b>helper / checker</b></span><small>short bun or shell child</small></div>
+  <div class="note" style="left:688px;top:512px;width:336px">Every child runs in a process group with one deadline. The supervisor publishes the group id before it starts the target.</div>
+
+  <div class="node k-external" style="left:1160px;top:240px;width:424px;height:80px"><span><b>Herdr server</b></span><small>owns panes and pane commands</small></div>
+  <div class="node k-compose" style="left:1160px;top:376px;width:200px;height:80px"><span><b>task agent pane</b></span><small>persistent worker</small></div>
+  <div class="node k-compose" style="left:1384px;top:376px;width:200px;height:80px"><span><b>OAR review host</b></span><small>one review session</small></div>
+  <div class="node k-external" style="left:1384px;top:512px;width:200px;height:80px"><span><b>vendor CLI</b></span><small>sandbox-exec</small></div>
+  <div class="note" style="left:1160px;top:648px;width:424px">A task agent is a host session. It loads the projected skills, starts hooks and may start a stdio MCP server.</div>
+
+  <div class="node k-external" style="left:104px;top:864px;width:240px;height:80px"><span><b>GitHub</b></span><small>HTTPS · gh CLI</small></div>
+  <div class="node k-external" style="left:400px;top:864px;width:220px;height:80px"><span><b>archctx daemon</b></span><small>loopback HTTP</small></div>
+  <div class="node k-external" style="left:680px;top:864px;width:220px;height:80px"><span><b>npm registry</b></span><small>HTTPS</small></div>
+  <div class="node k-external" style="left:104px;top:992px;width:240px;height:80px"><span><b>ChatGPT</b></span><small>browser session</small></div>
+  <div class="note" style="left:400px;top:984px;width:500px">The operator server and collectors read cached results. GET and HEAD only; no write route exists.</div>
+
+  <svg class="edges" width="1680" height="1200">
+    <defs>
+      <marker id="t-call" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#6B7079"/></marker>
+      <marker id="t-remote" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#9A3412"/></marker>
+    </defs>
+    <path class="e-call" d="M344 280 H396" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M344 300 H376 V360 H396" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M344 416 H396" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M344 552 H396" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M400 592 H344 V644" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M344 472 H672 V280 H684" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M808 320 V372" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M104 416 H80 V904 H100" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M344 456 H648 V904 H624" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M1260 320 V372" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M1484 320 V372" marker-end="url(#t-call)"/>
+    <path class="e-call" d="M1484 456 V508" marker-end="url(#t-call)"/>
+  </svg>
+  <div class="elabel" style="left:352px;top:260px">stdin/stdout JSON</div>
+  <div class="elabel" style="left:352px;top:336px">stdio / loopback</div>
+  <div class="elabel" style="left:352px;top:396px">spawns</div>
+  <div class="elabel" style="left:352px;top:532px">HTTP loopback</div>
+  <div class="elabel" style="left:352px;top:608px">detached child</div>
+  <div class="elabel" style="left:680px;top:300px">bounded child</div>
+  <div class="elabel" style="left:816px;top:340px">one deadline</div>
+  <div class="elabel" style="left:1272px;top:340px">pane</div>
+  <div class="elabel" style="left:1500px;top:340px">review</div>
+  <div class="elabel" style="left:1500px;top:524px">sandbox</div>
+  <div class="note" style="left:400px;top:1064px;width:500px">The ChatGPT browser provider drives the web assistant through Chrome or oracle.</div>
+  <div class="foot" style="left:64px;top:1144px;width:1552px">A process that owns no pane and no port is a bounded child. The operator collector and the hook are per-event or detached children; they do not survive a reboot as a service.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">4 · Key sequence</h2>
+<div class="board" style="height:1000px">
+  <div class="kicker">repo-harness · SEQUENCE · 5533ec9</div>
+  <div class="title">Resolve and publish Effective State</div>
+  <div class="legend">Purple: caller side · Grey: internal call · Grey dashed: return<br>Flow <span class="mono">flow.workflow-state.primary</span> · selectors proven at 5533ec9</div>
+
+  <div class="lifehead" style="left:224px;top:184px">Hook / CLI caller</div>
+  <div class="lifehead" style="left:704px;top:184px">workflow-state</div>
+  <div class="lifehead" style="left:1184px;top:184px">execution-primitives</div>
+
+  <div class="phase" style="left:64px;top:288px;width:1552px;height:176px"></div>
+  <div class="phase-label" style="left:80px;top:296px">① Resolve under the state lock</div>
+  <div class="phase" style="left:64px;top:480px;width:1552px;height:208px"></div>
+  <div class="phase-label" style="left:80px;top:488px">② Publish one state_version</div>
+
+  <div class="note" style="left:336px;top:360px;width:320px">Collect artifacts · stability re-read · project the pure state</div>
+  <div class="note" style="left:880px;top:440px;width:320px">Directory-token lock in the canonical ancestor</div>
+  <div class="note" style="left:1200px;top:600px;width:336px">Commit the shared version owner under the Git common dir</div>
+
+  <svg class="edges" width="1680" height="1000">
+    <defs>
+      <marker id="s-host" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#5B21B6"/></marker>
+      <marker id="s-call" viewBox="0 0 4 4" refX="2" refY="2" markerWidth="5" markerHeight="5" orient="auto"><path d="M0 0 L4 2 L0 4 Z" fill="#6B7079"/></marker>
+    </defs>
+    <path class="lifeline" d="M320 248 V920"/><path class="lifeline" d="M800 248 V920"/><path class="lifeline" d="M1280 248 V920"/>
+    <path class="e-host" d="M320 336 H796" marker-end="url(#s-host)"/>
+    <path class="e-call" d="M800 416 H1276" marker-end="url(#s-call)"/>
+    <path class="e-call" d="M800 536 H1276" marker-end="url(#s-call)"/>
+    <path class="e-host e-dash" d="M800 856 H324" marker-end="url(#s-host)"/>
+  </svg>
+  <div class="elabel" style="left:376px;top:316px">resolveEffectiveState(repo)</div>
+  <div class="elabel" style="left:856px;top:396px">withStateLock(repo)</div>
+  <div class="elabel" style="left:856px;top:516px">commitStateVersionAfter</div>
+  <div class="elabel" style="left:376px;top:836px">EffectiveState + state_version</div>
+  <div class="foot" style="left:64px;top:944px;width:1552px">Read-only callers (hook events, MCP state summary, board and continuation envelope) use the same flow without the lock and without publishing a version.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">5 · Interfaces and mounts</h2>
+<div class="board" style="height:1000px">
+  <div class="kicker">repo-harness · INTERFACES · 5533ec9</div>
+  <div class="title">Interfaces and mounts</div>
+  <div class="legend">One chip = one callable surface. The console mounts only loopback HTTP reads.</div>
+
+  <div class="panel" style="left:64px;top:184px;width:760px;height:320px">
+    <h3 style="margin:0 0 16px;font-size:18px">CLI commands</h3>
+    <p class="mono" style="font-size:13px;line-height:28px;margin:0"><b>init</b> adopt · <b>upgrade</b> refresh · <b>state</b> Effective State · <b>module</b> model reader · <b>operator serve</b> console + HTTP · <b>mcp serve</b> MCP sidecar · <b>run</b> protected helper · <b>publication</b> PR readiness · <b>worktrees</b> cleanup guards · <b>architecture-projection</b> model projection · <b>docs</b> reference docs · <b>review</b> acceptance review</p>
+  </div>
+
+  <div class="panel" style="left:64px;top:536px;width:760px;height:400px">
+    <h3 style="margin:0 0 16px;font-size:18px">Hook events and MCP tools</h3>
+    <p class="foot" style="margin:0 0 12px">Hook events: SessionStart · UserPromptSubmit · SubagentStart · PreToolUse · Stop</p>
+    <p class="mono" style="font-size:12.5px;line-height:24px;margin:0">harness_status · harness_doctor · discover_harness_repos · list_workflow_files · read_workflow_file · list_prds · write_prd · write_task_goal · publication_readiness · list_task_agents · prompt_task_agent · read_task_agent · chatgpt_browser_consult</p>
+    <p class="foot" style="margin:12px 0 0">Every MCP tool is read-only except the explicit PRD, goal and ChatGPT writer tools. Policy checks each path.</p>
+  </div>
+
+  <div class="panel" style="left:856px;top:184px;width:760px;height:752px">
+    <h3 style="margin:0 0 16px;font-size:18px">HTTP routes and mounts</h3>
+    <p class="foot" style="margin:0 0 12px">Loopback only. GET and HEAD only; the server refuses every write method.</p>
+    <p class="mono" style="font-size:12.5px;line-height:24px;margin:0">/api/v1/health<br>/api/v1/repositories/:repo/architecture/map<br>/api/v1/repositories/:repo/architecture/modules<br>/api/v1/repositories/:repo/architecture/modules/:capability<br>/api/v1/sessions/:id<br>/api/v1/sessions/:id/finalization</p>
+    <h3 style="margin:24px 0 12px;font-size:18px">Mounts</h3>
+    <table class="matrix" style="border-spacing:2px">
+      <tr><th></th><th>shell</th><th>host session</th><th>MCP client</th><th>browser</th><th>Herdr pane</th></tr>
+      <tr><th class="row">CLI</th><td class="h2">yes</td><td>—</td><td>—</td><td>—</td><td>yes</td></tr>
+      <tr><th class="row">hook</th><td>—</td><td class="h2">yes</td><td>—</td><td>—</td><td>yes</td></tr>
+      <tr><th class="row">MCP</th><td>—</td><td class="h2">stdio</td><td class="h2">HTTP</td><td>—</td><td>yes</td></tr>
+      <tr><th class="row">operator</th><td class="h2">loopback</td><td>—</td><td>—</td><td class="h2">loopback</td><td>—</td></tr>
+    </table>
+  </div>
+  <div class="foot" style="left:64px;top:952px;width:1552px">The CLI root, hook and MCP server are the three entry processes. The console has no write route; it reads cached collector output.</div>
+</div>
+</section>
+
+
+<section>
+<h2 class="caption">6 · Remarks</h2>
+<div class="board" style="height:1000px">
+  <div class="kicker">repo-harness · REMARKS · 5533ec9 · observations only; not scheduled work</div>
+  <div class="title">Remarks · 6</div>
+  <div class="legend"><span class="swatch" style="background:#B42318"></span>High · correctness or security boundary<span class="swatch" style="background:#B7791F"></span>Medium · structural burden<span class="swatch" style="background:#9AA0A8"></span>Low · naming and cleanup</div>
+  <div class="remarks" style="left:64px;top:184px;width:1552px">
+    <div class="remark high">
+      <div class="meta">R-A1 · high · dependency</div>
+      <h3>One reverse import crosses the layer order</h3>
+      <p>effects imports cli once. The model's layer order places cli above effects, so the constraint reports a warning. Direction: move <span class="mono">probePiCapability</span> below effects, or declare the dependency.</p>
+      <div class="ref">src/effects/setup/pi-capability-child.ts:3</div>
+    </div>
+    <div class="remark medium">
+      <div class="meta">R-A2 · medium · size</div>
+      <h3>The architecture module is mostly rendered text</h3>
+      <p>759 tracked files and 33.4k LOC sit in the model and generated architecture docs. Generated regions are writer-owned, so a feature diff should review the model YAML, not the rendered pages.</p>
+      <div class="ref">docs/architecture/modules/workflow-engine/contract-assets.md:2</div>
+    </div>
+    <div class="remark medium">
+      <div class="meta">R-A3 · medium · citations</div>
+      <h3>Architecture anchors still cite retired helpers</h3>
+      <p>The anchor report lists 21 missing paths and 1 out-of-range line, mostly retired plan, task and helper citations in append-only history. Direction: repair live citations in the owning capability; keep historical references linked to Git history.</p>
+      <div class="ref">repo-harness architecture-projection anchors --json</div>
+    </div>
+    <div class="remark medium">
+      <div class="meta">R-A4 · medium · concentration</div>
+      <h3>Effects owns the largest runtime surface</h3>
+      <p>effects holds 42.7k LOC and 13 capabilities, and imports core 268 times. Keep new runtime code in effects components so the core stays pure.</p>
+      <div class="ref">src/effects/** · measure at 5533ec9</div>
+    </div>
+    <div class="remark">
+      <div class="meta">R-A5 · low · staleness</div>
+      <h3>Generated module pages lag the model</h3>
+      <p>The generated region of contract-assets still lists helper paths removed by #1182. The rolling writer republishes after merge; do not hand-edit it in this PR.</p>
+      <div class="ref">.archcontext/projections/targets.json:2</div>
+    </div>
+    <div class="remark">
+      <div class="meta">R-A6 · low · read-only</div>
+      <h3>The console has no write surface</h3>
+      <p>The operator server declares every route with <span class="mono">write: false</span>. Keep new console reads on the HTTP reader and cached collectors.</p>
+      <div class="ref">src/effects/operator/server.ts:140</div>
+    </div>
+  </div>
+  <div class="foot" style="left:64px;top:944px;width:1552px">A remark that needs work becomes a GitHub issue through repo-harness-issue-flow. The map records the observation; it does not schedule the fix.</div>
+</div>
+</section>
+
+</main>
+<script type="application/json" id="archimap-meta">
+{
+  "schema": "archimap/v1",
+  "project": "repo-harness",
+  "base": "5533ec9",
+  "generated": "2026-10-31",
+  "sources": [
+    ".archcontext/model",
+    "measure.ts archimap-measure/v1"
+  ],
+  "boards": [
+    "overview",
+    "dependencies",
+    "topology",
+    "sequence",
+    "interfaces",
+    "remarks"
+  ],
+  "modules": [
+    {
+      "id": "root",
+      "label": "Root docs",
+      "include": [
+        "SKILL.md",
+        "README.md",
+        "README.es.md",
+        "README.fr.md",
+        "README.ja.md",
+        "README.zh-CN.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        "LICENSE",
+        "DEBUG.md",
+        "references/**",
+        "agents/**",
+        "docs/CHANGELOG.md",
+        "docs/spec.md",
+        "docs/issue-flow.md",
+        "docs/prds/**",
+        "docs/images/**",
+        "docs/design/**",
+        "docs/researches/**",
+        "docs/bot-onboarding.md",
+        "docs/repo-harness-chatgpt-browser-engine.md",
+        "deploy/**",
+        "examples/**",
+        "experiments/**"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.public-surface.root-router"
+      ]
+    },
+    {
+      "id": "assets",
+      "label": "Skill surface",
+      "include": [
+        "assets/**",
+        ".claude/**",
+        ".agents/**"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.public-surface.action-commands"
+      ]
+    },
+    {
+      "id": "cli",
+      "label": "CLI",
+      "include": [
+        "src/cli/**",
+        "src/pi/**",
+        "src/dsh/**",
+        "install.sh",
+        "install.ps1"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.runtime-harness.hook-adapters",
+        "capability.runtime-harness.integration-acceptance",
+        "capability.runtime-mcp.chatgpt-browser",
+        "capability.runtime-mcp.general-repo-access",
+        "capability.verification.codegraph-readiness",
+        "capability.runtime-harness.mcp-sidecar"
+      ]
+    },
+    {
+      "id": "core",
+      "label": "Core",
+      "include": [
+        "src/core/**",
+        "interfaces/**"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.organization.task-fleet",
+        "capability.public-surface.adoption",
+        "capability.runtime-harness.engineer-bindings"
+      ]
+    },
+    {
+      "id": "effects",
+      "label": "Effects",
+      "include": [
+        "src/effects/**"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.organization.publication",
+        "capability.public-surface.strategy-reflection",
+        "capability.runtime-harness.agent-runtime-effects",
+        "capability.runtime-harness.engineer-scheduling",
+        "capability.runtime-harness.engineering-overlay",
+        "capability.runtime-harness.evidence-ledger",
+        "capability.runtime-harness.external-source-intake",
+        "capability.runtime-harness.global-runtime-reconciliation",
+        "capability.runtime-harness.refactor-program",
+        "capability.runtime-harness.task-agent-host",
+        "capability.verification.acceptance-review",
+        "capability.workflow-engine.execution-primitives",
+        "capability.workflow-engine.workflow-state"
+      ]
+    },
+    {
+      "id": "web",
+      "label": "Operator web",
+      "include": [
+        "src/operator-web/**",
+        "vite.operator.config.ts"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.runtime-harness.operator"
+      ]
+    },
+    {
+      "id": "scripts",
+      "label": "Scripts",
+      "include": [
+        "scripts/**",
+        ".github/**"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.workflow-engine.inspection-migration"
+      ]
+    },
+    {
+      "id": "verification",
+      "label": "Verification",
+      "include": [
+        "tests/**",
+        "evals/**",
+        "bunfig.toml"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.verification.evals-checks"
+      ]
+    },
+    {
+      "id": "architecture",
+      "label": "Architecture model",
+      "include": [
+        ".archcontext/**",
+        "docs/architecture/**",
+        "docs/adr/**",
+        "docs/reference-configs/**",
+        ".ai/**"
+      ],
+      "exclude": [],
+      "nodes": [
+        "capability.workflow-engine.contract-assets"
+      ]
+    }
+  ]
+}
+</script>
+</body>
+</html>

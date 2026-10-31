@@ -32,9 +32,9 @@ remain consistent.
 The product has two layers that share one set of files (`README.md`, "Two
 Layers"):
 
-- **Session contract.** One human, one agent session, one task. Plans,
-  checks, reviews and handoffs provide context and evidence. GitHub issues and
-  PRs own task identity, claim, status and dependency.
+- **Session contract.** One human, one agent session, one issue. A skill
+  routes the work. The GitHub issue and PR own task identity, claim, status and
+  dependency; the PR and CI carry change, verification and risk.
 - **Bot-scheduled programs.** The Bot is the entry point for long-running work.
   It drives the repo-harness CLI and Herdr task agents. repo-harness supplies
   the tools and the evidence. The Bot decides what runs next.
@@ -47,11 +47,11 @@ Authoritative surfaces:
 - Contract assets: `assets/workflow-contract.v1.json`, `.ai/harness/workflow-contract.json`, `.ai/harness/policy.json`, `.ai/context/context-map.json`, and the capability authority selected by `.ai/harness/policy.json#context.capability_source` (this repo: `.archcontext/model/nodes/*.yaml`).
 - Runtime harness: the `repo-harness-hook` binary (`package.json` `bin`), the typed route registry `src/cli/hook/route-registry.ts`, user-level host adapters, and ignored `.ai/harness/*` runtime state. No shell operator library exists.
 - MCP sidecar: `src/cli/mcp/`, `src/cli/commands/mcp.ts`, user-owned ignored config and registry under `~/.repo-harness/`, and the [MCP sidecar architecture](modules/runtime-harness/mcp-sidecar.md).
-- Verification: `tests/`, `evals/`, `scripts/check-task-workflow.sh`, `scripts/check-task-sync.sh`, `scripts/check-agent-tooling.sh`, `scripts/ensure-codegraph.sh`.
-- Effective State: `src/core/state/` projects plan, worktree, capability ownership,
+- Verification: `tests/`, `evals/`, `scripts/check-ci.sh`, `scripts/check-agent-tooling.sh`, `scripts/check-protected-paths.ts`, `scripts/ensure-codegraph.sh`.
+- Effective State: `src/core/state/` projects worktree, capability ownership,
   risk and recovery pointers. `src/effects/state/` reads sources. Only `state resolve` publishes
   the shared `state_version`; hooks and MCP use the read-only resolver. `src/core/workflow/profile.ts` owns the risk profile.
-  State carries no contract, review, acceptance, checks, readiness or sprint
+  State carries no local task-file, contract, review, acceptance, checks or readiness
   projection. The CLI, SessionStart and MCP read the same projection.
   `tests/state/adapter-parity.test.ts` checks these readers.
 - Provider board: `src/core/state/provider-board.ts` and
@@ -63,11 +63,11 @@ Authoritative surfaces:
   and current issue goals; `src/effects/github/` provides the common provider
   adapter and policy reader; `src/effects/profiles/profile-store.ts` resolves
   tracked engineer contracts. These services do not require review execution.
-- Historical coordination and worktree safety: `src/core/state/coordination-identity.ts`
-  derives canonical task identity and revision from Sprint rows for explicit history. The active
-  lease reader and Sprint board are removed. Worktree cleanup keeps its exact
-  deletion guards. `src/effects/locking/task-lock.ts` keeps the shared physical
-  task mutex. See [Provider Observations and Worktree Safety](shared-coordination-plane.md).
+- Worktree safety: `src/core/state/coordination-identity.ts` keeps the task-id
+  path shape that worktree safety uses. The active lease reader, Sprint board and
+  task-history readers are removed. Worktree cleanup keeps its exact deletion
+  guards. `src/effects/locking/task-lock.ts` keeps the shared physical task
+  mutex. See [Provider Observations and Worktree Safety](shared-coordination-plane.md).
 - Shared execution effects: `src/effects/process-runner.ts`,
   `src/effects/process-supervisor.ts`, `src/effects/process-group-launcher.ts`,
   `src/effects/locking/`, and `src/effects/git/` own bounded process lifecycle
@@ -95,7 +95,7 @@ move directories. `cli`, `core`, `effects` and `scripts` are implementation laye
 | public-surface | 4 | Routes user intent to CLI-backed command facades, adopts repositories, and collects strategy context. | [Public Surface](domains/public-surface.md) |
 | workflow-engine | 4 | Owns the workflow contract and templates, inspects and migrates repositories, resolves Effective State and the coordination plane, and provides process, lock and Git primitives. | [Workflow Engine](domains/workflow-engine.md) |
 | runtime-harness | 13 | Runs host hooks and the installed runtime, hosts task agents, records evidence and observations, serves the MCP sidecar, and retains historical Engineer readers. | [Runtime Harness](domains/runtime-harness.md) |
-| organization | 2 | Projects provider fleet and PR readiness observations. Owns admitted Task Inbox, manual provider feedback and explicit history readers. | [Organization](domains/organization.md) |
+| organization | 2 | Projects provider fleet and PR readiness observations. Owns admitted Task Inbox and manual provider feedback. | [Organization](domains/organization.md) |
 | runtime-mcp | 2 | Exposes bounded repository tools through MCP and runs the local ChatGPT browser consult. | [Runtime MCP](domains/runtime-mcp.md) |
 | verification | 3 | Runs tests, gates and evals, records the acceptance receipt, and checks CodeGraph readiness. | [Verification](domains/verification.md) |
 
@@ -201,10 +201,10 @@ Each datum has one authority. Every other representation is a projection.
 | Workflow contract | `assets/workflow-contract.v1.json`; the repo opt-in marker `.ai/harness/workflow-contract.json` | contract-assets | Templates, helper copies and reference configs are byte projections. |
 | Architecture model | `.archcontext/model/{nodes,relations,flows}/`, written through archctx ChangeSets | contract-assets (files); global-runtime-reconciliation runs the projection | Generated regions in `docs/architecture/**`. `repo-harness module` and the operator read the committed HEAD snapshot (`src/effects/architecture/model-reader.ts`). |
 | Capability ownership | Policy-selected source: archcontext model or registry | contract-assets | Archcontext mode uses package-local `archctx resolve`; registry mode uses local longest-prefix matching. Components and parent chains participate in archcontext ownership. |
-| Planning context | Repository Markdown under `plans/` and `tasks/` | workflow-state reads retained plan context | Effective State projects local facts. It has no persisted JSON cache. `tasks/current.md` is an orientation snapshot, not task authority. |
-| Current task identity, claim, status and dependency | GitHub issue and PR | Human/Bot decisions | Local boards and retained Sprint readers do not dispatch tasks. |
+| Product intent | `docs/prds/` and the parent issue | repo-harness-product drafts; repo-harness-issue-flow splits work | The child issue body carries requirement, scope, boundaries, dependencies and acceptance. |
+| Current task identity, claim, status and dependency | GitHub issue and PR | Human/Bot decisions | Issue comments carry claim, status, handoff and decisions. No local task file holds these facts; CI carries proof. |
 | State content and published version | `state_revision` identifies resolved content; `state resolve` alone allocates shared `state_version` | workflow-state | Read-only hooks and MCP can return a version allocated for a different revision. |
-| Historical coordination | Persisted Sprint rows, owner records and claim tokens | workflow-state | Retained codecs read Sprint rows for explicit history. No reader parses owner records or claim tokens. Current boards do not read leases. Retirement does not delete historical bytes. |
+| Historical coordination | Persisted Sprint rows, owner records and claim tokens | none | No reader parses Sprint rows, owner records or claim tokens. Retirement does not delete historical bytes. |
 | Current execution admission | Protected approval under the OS account gates root, current provider goal and exact session/claim selection | acceptance-review; task-agent-host binds execution | `effects/admission/` and `effects/sessions/` reobserve authority. A board or native host attribution record cannot grant it. |
 | Task mutex | `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock` | execution-primitives | Inbox and feedback retain the same physical lock path through `effects/locking/task-lock.ts`. |
 | Task messages | Admitted records below `<git-common-dir>/repo-harness/task-inbox/v2` | task-fleet | Exact admission SHA and claim reference/revision fence delivery. Session context renders messages as untrusted data; historical records remain separate. |
@@ -268,17 +268,13 @@ Project
      -> capability
         -> component
         -> capability contract block
-        -> workstream ledger
-        -> current todo slice
-        -> source plan
 ```
 
 - Architecture owns stable truth: boundaries, snapshots, and embedded Mermaid source.
 - The capability authority selected by `.ai/harness/policy.json#context.capability_source` selects the ownership resolver: package-local `archctx resolve` for archcontext, local longest-prefix matching for registry.
 - Component nodes split a capability by responsibility. Archcontext resolves component footprints and parent chains; its response identifies the owning capability.
 - Local `AGENTS.md` / `CLAUDE.md` contract blocks own agent-facing context projection.
-- `tasks/workstreams/<domain>/<capability>/` owns durable multi-session progress.
-- `tasks/todos.md` owns deferred medium/long-term goals with tradeoff and revisit trigger; current execution slices stay in the active plan's `## Task Breakdown`.
+- GitHub issues and PRs own durable multi-session progress, deferred work and the current execution slice. `tasks/lessons.md` holds repeated lessons only.
 
 ## Architecture Update Flow
 

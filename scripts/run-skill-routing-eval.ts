@@ -1361,6 +1361,17 @@ export interface SubjectFreeze {
   };
 }
 
+/** Keep only paths that still exist at HEAD. A work-package diff also names
+ * every path deleted between the base and HEAD, including retired plan and
+ * sprint files; those paths are not part of the live subject the freeze
+ * binds. Membership is exact: no prefix or glob inference. */
+export function filterPathsPresentAtHead(
+  changedPaths: readonly string[],
+  headPaths: ReadonlySet<string>,
+): string[] {
+  return changedPaths.filter((path) => headPaths.has(path));
+}
+
 export function buildSubjectFreeze(): SubjectFreeze {
   const catalog = loadLiveCatalog();
 
@@ -1384,7 +1395,15 @@ export function buildSubjectFreeze(): SubjectFreeze {
   if (diffResult.status !== 0) {
     throw new CliError(`freeze: git diff --name-only ${WORK_PACKAGE_BASE_SHA}..HEAD failed: ${diffResult.stderr.trim()}`);
   }
-  const changedFilesSinceBase = diffResult.stdout.split("\n").map((l) => l.trim()).filter(Boolean).sort();
+  const headTree = runGit(["ls-tree", "-r", "--name-only", "-z", "HEAD"]);
+  if (headTree.status !== 0) {
+    throw new CliError(`freeze: git ls-tree -r --name-only HEAD failed: ${headTree.stderr.trim()}`);
+  }
+  const headPaths = new Set(headTree.stdout.split("\0").filter(Boolean));
+  const changedFilesSinceBase = filterPathsPresentAtHead(
+    diffResult.stdout.split("\n").map((l) => l.trim()).filter(Boolean),
+    headPaths,
+  ).sort();
 
   const statusResult = runGit(["status", "--porcelain", "--untracked-files=all"]);
   const modified: string[] = [];
@@ -1419,10 +1438,11 @@ export function buildSubjectFreeze(): SubjectFreeze {
     discovered_set_projections: discoveredSetProjections,
     changed_files_since_base: changedFilesSinceBase,
     changed_files_note:
-      `git diff --name-only ${WORK_PACKAGE_BASE_SHA}..HEAD at freeze-generation time: reflects committed ` +
-      "history only (SSD-01 through SSD-06's own merged commits on this branch), NOT this phase's own " +
-      "still-uncommitted changes (see uncommitted_changes_at_freeze_time below for those). Re-running the " +
-      "identical command after the orchestrator commits phase A will include this phase's files too.",
+      `git diff --name-only ${WORK_PACKAGE_BASE_SHA}..HEAD at freeze-generation time, filtered to paths ` +
+      "that still exist at HEAD: deleted plan and sprint paths from earlier work packages are not part of " +
+      "the live subject. The list reflects committed history only, NOT this phase's own still-uncommitted " +
+      "changes (see uncommitted_changes_at_freeze_time below for those). Re-running the identical command " +
+      "after the orchestrator commits phase A will include this phase's files too.",
     uncommitted_changes_at_freeze_time: { modified, added_or_untracked: addedOrUntracked },
   };
 }

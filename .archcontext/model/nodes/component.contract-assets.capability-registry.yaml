@@ -15,4 +15,3 @@ source:
   include:
     - .archcontext/**
     - scripts/capability-*.ts
-    - scripts/workstream-sync.sh

@@ -4,13 +4,13 @@ kind: "capability"
 name: "Workflow State"
 status: "active"
 layer: "effects"
-summary: "Resolves deterministic Effective State, provider issue and admitted session board observations, historical task identity, worktree safety and the continuation ledger."
+summary: "Resolves deterministic Effective State, provider issue and admitted session board observations, worktree safety and the continuation ledger."
 responsibilities:
-  - "Project repository workflow artifacts into one deterministic Effective State. The tasks/current.md snapshot stays a replaceable read model."
-  - "Join stored canonical provider issue observations to every exact admitted session binding. Preserve explicit historical task identity readers and exact worktree cleanup; task mutex ownership belongs to Execution Primitives."
+  - "Project repository workflow artifacts into one deterministic Effective State. No local task snapshot is a state authority."
+  - "Join stored canonical provider issue observations to every exact admitted session binding. Preserve exact worktree cleanup; task mutex ownership belongs to Execution Primitives."
   - "Own the continuation envelope and the append-only attempt ledger with its no-progress breaker."
   - "Keep src/core/state and src/core/workflow pure. Effects do IO under directory locks."
-  - "Project state snapshots without task contract paths or presence. Resolve recovery paths without review or notes directory policy keys."
+  - "Project state snapshots without local task-file or contract fields. Resolve recovery paths without review or notes directory policy keys."
 source:
   include:
     - "src/core/state/**"

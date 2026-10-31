@@ -324,5 +324,5 @@
     "reason": "The line records neither the six file names nor a pinned subject SHA, so the result cannot be bound to a reproducible subject.",
     "disposition": "SSD relies on fresh deterministic gates (this slice's own tests plus the required-checks list) rather than reusing this cached number."
   },
-  "corpus_sha256": "a0c9ee959596818d5f8050ecced3ad25573ed9346e532a8278c0e013d39a74b2"
+  "corpus_sha256": "757d37703b6d2929eeb797356f07378a260411711929faa0113676b91b827b04"
 }

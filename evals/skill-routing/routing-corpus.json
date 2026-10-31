@@ -54,7 +54,7 @@
       "id": "pos-setup-repair-en",
       "lang": "en",
       "kind": "positive",
-      "prompt": "Something's off with the task-sync hook routing in this repo, can repo-harness repair itself?",
+      "prompt": "Something's off with the hook routing in this repo, can repo-harness repair itself?",
       "expected_route": "repo-harness-setup"
     },
     {
@@ -107,24 +107,24 @@
       "expected_route": "repo-harness-product"
     },
     {
-      "id": "pos-product-sprint-zh",
+      "id": "pos-product-goal-zh",
       "lang": "zh",
       "kind": "positive",
-      "prompt": "PRD 已经定稿了，麻烦帮我拆成一份 sprint backlog。",
+      "prompt": "PRD 已经定稿了，帮我根据 PRD 准备一个边界明确的 goal 会话。",
       "expected_route": "repo-harness-product"
     },
     {
       "id": "pos-product-prd-en",
       "lang": "en",
       "kind": "positive",
-      "prompt": "Draft a PRD for this feature idea before we start planning any sprints.",
+      "prompt": "Draft a PRD for this feature idea before we split the work into issues.",
       "expected_route": "repo-harness-product"
     },
     {
       "id": "pos-product-goal-en",
       "lang": "en",
       "kind": "positive",
-      "prompt": "Prep a bounded goal session from the sprint doc we just approved.",
+      "prompt": "Prep a bounded goal session from the PRD we just approved.",
       "expected_route": "repo-harness-product"
     },
     {
@@ -194,7 +194,7 @@
       "id": "pos-architecture-diagram-zh",
       "lang": "zh",
       "kind": "positive",
-      "prompt": "麻烦把这个能力对应的架构图更新一下。",
+      "prompt": "帮我把新加的模块补进 ArchContext 架构模型，并跑一下 flows check。",
       "expected_route": "repo-harness-architecture"
     },
     {
@@ -208,7 +208,7 @@
       "id": "pos-architecture-diagram-en",
       "lang": "en",
       "kind": "positive",
-      "prompt": "Update the architecture diagram for this capability now that the boundary moved.",
+      "prompt": "Add this module to the ArchContext model and verify its flow selectors.",
       "expected_route": "repo-harness-architecture"
     },
     {

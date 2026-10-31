@@ -8,7 +8,7 @@ summary: Runs repository verification, contract gates, benchmarks, and evaluatio
 responsibilities:
   - Own machine-verifiable checks, bounded verifier execution, and evaluation evidence.
   - Own the test suite, CI coverage selection and the CI report.
-  - Own the workflow gate scripts that check task sync, task workflow and agent tooling.
+  - Own the workflow gate scripts that check the contract files, agent tooling and protected paths.
 source:
   include:
     - "tests/**"
@@ -62,6 +62,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun test"
-    - "bash scripts/check-task-sync.sh"
-    - "bash scripts/check-task-workflow.sh"
+    - "bun run test:core"
+    - "bun run check:type"

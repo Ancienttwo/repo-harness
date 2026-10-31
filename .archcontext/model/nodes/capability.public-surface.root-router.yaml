@@ -21,6 +21,8 @@ source:
     - "AGENTS.md"
     - "CLAUDE.md"
     - "docs/spec.md"
+    - "docs/issue-flow.md"
+    - "docs/prds/**"
     - "README.es.md"
     - "README.fr.md"
     - "README.ja.md"

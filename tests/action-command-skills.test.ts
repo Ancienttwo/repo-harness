@@ -141,7 +141,8 @@ describe("repo-harness action command skills", () => {
     const review = readFileSync(join(COMMAND_ROOT, "repo-harness-check/references/review.md"), "utf-8");
     expect(plan).toContain("Ordinary tasks do not require an Approved plan");
     expect(create).toContain("Trace one real path");
-    expect(create).toContain("capture-plan");
+    expect(create).toContain("repo-harness-issue-flow");
+    expect(create).not.toContain("capture-plan");
     expect(create).toContain("A plan does not grant implementation approval");
     expect(create).toContain("Do not edit implementation files in planning mode");
     expect(create).toContain("existing task authorization");
