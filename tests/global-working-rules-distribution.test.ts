@@ -61,6 +61,19 @@ describe("global working rules distribution", () => {
     expect(rendered).toContain("never split down");
   });
 
+  test("the managed block ships the test-volume budget and its exception path", () => {
+    const rendered = renderedManagedBlock("en", "Use English to report to user.");
+    expect(SHIPPED_GLOBAL_RULES_SECTIONS).toContain("Test Budget");
+    expect(rendered).toContain("## Test Budget");
+    expect(rendered).toContain("added test lines divided by added product lines must not exceed 2:1");
+    expect(rendered).toContain("the PR adds at most one test file");
+    expect(rendered).toContain("git diff --numstat <base>...HEAD -- tests");
+    expect(rendered).toContain("git diff --numstat <base>...HEAD -- src scripts");
+    expect(rendered).toContain("Test budget exception");
+    expect(rendered).toContain("Remove a redundant test only when the PR names the retained test");
+    expect(rendered).toContain("Never modify or delete assertions just to make a test pass");
+  });
+
   test("the zh-CN rendering substitutes the completion-summary label once per mention", () => {
     const rendered = renderedManagedBlock("zh-CN", "Use Chinese to report to user.");
     expect(countOccurrences(rendered, "include a short `下一刀` section")).toBe(1);
