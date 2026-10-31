@@ -117,6 +117,7 @@ const READBACK_DELAYS_MS = readbackDelays(READBACK_WINDOW_MS);
 type PublicationMergeInput = PullRequestReadinessInput & {
   readonly readback_wait?: (milliseconds: number) => void;
   readonly readback_now?: () => number;
+  readonly readback_timeout?: (milliseconds: number) => void;
 };
 
 function waitForReadback(milliseconds: number): void {
@@ -383,8 +384,11 @@ function readbackValue(input: PublicationMergeInput, args: readonly string[], ti
 /** One readback attempt: the PR is merged at the response SHA by one commit whose only parent is the expected base. */
 function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, deadline: number): ProofAttempt {
   const now = input.readback_now ?? Date.now;
-  const remaining = () => Math.max(1, deadline - now());
-  const prRead = readbackValue(input, ['api', `repos/${input.repository}/pulls/${input.pr_number}`], remaining());
+  const remaining = () => deadline - now();
+  const prTimeout = remaining();
+  if (prTimeout <= 0) return { kind: 'pending', evidence: 'readback window exhausted' };
+  input.readback_timeout?.(prTimeout);
+  const prRead = readbackValue(input, ['api', `repos/${input.repository}/pulls/${input.pr_number}`], prTimeout);
   if (!prRead.ok) return { kind: 'pending', evidence: prRead.failure };
   const pr = prRead.value;
   if (pr.merged === true && typeof pr.merge_commit_sha === 'string' && SHA.test(pr.merge_commit_sha) && pr.merge_commit_sha !== mergeCommitSha) {
@@ -396,8 +400,10 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
   if (pr.merged !== true || pr.merge_commit_sha !== mergeCommitSha || head !== input.expected_head_sha || base !== baseRef) {
     return { kind: 'pending', evidence, pr: evidence };
   }
-  if (now() >= deadline) return { kind: 'pending', evidence, pr: evidence };
-  const commitRead = readbackValue(input, ['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`], remaining());
+  const commitTimeout = remaining();
+  if (commitTimeout <= 0) return { kind: 'pending', evidence, pr: evidence };
+  input.readback_timeout?.(commitTimeout);
+  const commitRead = readbackValue(input, ['api', `repos/${input.repository}/git/commits/${mergeCommitSha}`], commitTimeout);
   if (!commitRead.ok) return { kind: 'pending', evidence: commitRead.failure, pr: evidence };
   const commit = commitRead.value;
   const parents = commit.parents;

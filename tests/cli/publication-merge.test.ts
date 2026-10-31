@@ -37,6 +37,8 @@ interface MergeInProcessOptions {
   readonly readbackNow?: () => number;
   /** Internal seam: simulate a slow provider call before the fake answer. */
   readonly beforeCall?: (args: readonly string[]) => void;
+  /** Internal seam: observe the timeout passed to each readback call. */
+  readonly readbackTimeout?: (milliseconds: number) => void;
 }
 
 function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
@@ -54,6 +56,7 @@ function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProc
     },
     ...(options.readbackWait ? { readback_wait: options.readbackWait } : {}),
     ...(options.readbackNow ? { readback_now: options.readbackNow } : {}),
+    ...(options.readbackTimeout ? { readback_timeout: options.readbackTimeout } : {}),
   });
   return { result, calls, mutations: calls.filter(isMergeMutation) };
 }
@@ -340,9 +343,9 @@ describe('publication merge execution', () => {
     expect(readbacks.length).toBeLessThanOrEqual(13);
   });
 
-  test('a slow read that consumes the window starts no further readback', () => {
+  test('a slow PR read that consumes the window starts neither another PR read nor the commit read', () => {
     let now = 0;
-    const { result, calls, mutations } = mergeInProcess(passingScenario({ readbackSequence: ['open'] }), {
+    const { result, calls, mutations } = mergeInProcess(passingScenario({ readback: 'merged' }), {
       readbackNow: () => now,
       readbackWait: () => { throw new Error('no wait after the deadline'); },
       beforeCall: (args) => {
@@ -353,6 +356,19 @@ describe('publication merge execution', () => {
     expect(failureOf(result).message).toContain('did not confirm the merge within 30000 ms');
     expect(mutations).toHaveLength(1);
     expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(1);
+    expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/git/commits/${MERGE_COMMIT}`)).toHaveLength(0);
+  });
+
+  test('each readback call is capped to the window that remains', () => {
+    let now = 0;
+    const timeouts: number[] = [];
+    const { result } = mergeInProcess(passingScenario({ readbackSequence: ['open', 'merged'] }), {
+      readbackNow: () => now,
+      readbackWait: (milliseconds) => { now += milliseconds; },
+      readbackTimeout: (milliseconds) => { timeouts.push(milliseconds); },
+    });
+    expect(result.exit_code).toBe(0);
+    expect(timeouts).toEqual([30_000, 29_750, 29_750]);
   });
 
   test('a readback that shows a different merged SHA exits 5 with that SHA and the response SHA', () => {
