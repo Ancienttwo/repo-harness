@@ -31,7 +31,6 @@ import {
   prepareBenchmarkProfiles,
   rebaseAbsoluteSymlinks,
   readHookMetrics,
-  writeResumeProjection,
   reportByteBindingPath,
   runBoundedProviderProcess,
   runHarnessProfileBenchmark,
@@ -190,11 +189,9 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       expect(git(primary, 'add', '.').exitCode).toBe(0);
       expect(git(primary, 'commit', '-qm', 'seed').exitCode).toBe(0);
       addLinkedArmWorkspace(primary, linked);
-      writeResumeProjection(linked);
       const gitDir = git(linked, 'rev-parse', '--git-dir').stdout.toString().trim();
       expect(gitDir).toContain('.git/worktrees/');
       expect(git(linked, 'branch', '--show-current').stdout.toString().trim()).toBe('codex/benchmark');
-      expect(readFileSync(join(linked, '.ai/harness/handoff/resume.md'), 'utf8')).toContain('## Exact Next Step');
       expect(realpathSync(linked)).not.toBe('');
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 30_000);
@@ -213,7 +210,6 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
       writeFileSync(join(source, '.gitignore'), [
         '.ai/harness/active-plan',
         '.ai/harness/active-worktree',
-        '.ai/harness/handoff/resume.md',
         '',
       ].join('\n'));
       writeFileSync(join(source, 'seed.txt'), 'seed\n');
@@ -226,7 +222,6 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
         prompt: 'task',
         expected_paths: [],
         acceptance_command: 'true',
-        requires_resume_projection: true,
       };
       for (const profile of BENCHMARK_PROFILES) {
         const armRoot = join(dir, profile);
@@ -250,7 +245,7 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
         expect(gitDir.includes('.git/worktrees/')).toBe(profile !== 'no-harness');
         expect(existsSync(join(layout.workspace, 'plans/plan-20000101-0000-benchmark.md'))).toBe(false);
         expect(existsSync(join(layout.workspace, 'tasks/contracts/20000101-0000-benchmark.contract.md'))).toBe(false);
-        expect(existsSync(join(layout.workspace, '.ai/harness/handoff/resume.md'))).toBe(true);
+        expect(existsSync(join(layout.workspace, '.ai/harness/handoff/resume.md'))).toBe(false);
       }
     } finally { rmSync(dir, { recursive: true, force: true }); }
   }, 30_000);

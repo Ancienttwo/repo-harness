@@ -298,7 +298,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/sync-brain-docs.sh");
     expect(contract.artifacts.requiredFiles).not.toContain("tasks/current.md");
     expect(contract.artifacts.runtimeFiles).not.toContain("tasks/current.md");
-    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/current.md");
+    expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/handoff/current.md");
     expect(contract.artifacts.requiredFiles).not.toContain("scripts/capability-config.ts");
     expect(contract.artifacts.requiredFiles).toContain(".ai/harness/workflow-contract.json");
     expect(contract.artifacts.requiredFiles).not.toContain(".codex/hooks.json");
@@ -307,7 +307,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.artifacts.requiredFiles).toContain(".ai/context/capability-source-map.json");
     expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.requiredFiles).not.toContain(".ai/harness/context-budget/latest.json");
-    expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/handoff/resume.md");
+    expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/handoff/resume.md");
     expect(contract.artifacts.runtimeFiles).not.toContain(".ai/harness/context-budget/latest.json");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/capability-context/");
     expect(contract.artifacts.runtimeFiles).toContain(".ai/harness/planning/");

@@ -197,8 +197,6 @@ describe("buildSessionStartSections", () => {
     guidance: null,
     blockers: [],
     capability_ownership: null,
-    handoff: { path: ".ai/harness/handoff/current.md", freshness: "missing" },
-    resume: { path: RESUME, freshness: "missing" },
   } as unknown as EffectiveState;
 
   test("an unavailable state yields only the fail-closed section", () => {
