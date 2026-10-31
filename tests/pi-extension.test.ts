@@ -240,7 +240,7 @@ describe('Pi real SDK with scripted provider fixture', () => {
     } finally { await f.close(); }
   });
 
-  test('agent_settled passes aborted and renders the Stop recovery views', async () => {
+  test('agent_settled passes aborted and writes no Stop recovery views', async () => {
     const f = await fixture();
     try {
       await f.tool('write', { path: 'normal.txt', content: 'complete' });
@@ -248,8 +248,8 @@ describe('Pi real SDK with scripted provider fixture', () => {
       const stops = f.bridges.flatMap(bridge => bridge.requests).filter(request => request.event === 'Stop');
       expect(stops.map(request => request.payload.aborted)).toEqual([false, true]);
       expect(records(f.root).filter(record => record.event === 'Stop')).toHaveLength(2);
-      expect(existsSync(join(f.root, '.ai/harness/handoff/current.md'))).toBe(true);
-      expect(existsSync(join(f.root, '.ai/harness/handoff/resume.md'))).toBe(true);
+      expect(existsSync(join(f.root, '.ai/harness/handoff/current.md'))).toBe(false);
+      expect(existsSync(join(f.root, '.ai/harness/handoff/resume.md'))).toBe(false);
     } finally { await f.close(); }
   });
 
