@@ -154,8 +154,59 @@ triage_json="$(
   '
 )"
 
+# A consolidation commit replaces several ledger entries with fewer. An entry that
+# keeps only such a commit as its Triggered by correction has lost the failure
+# record it restates. Read the ledger history and list those commits. Outside a
+# Git checkout the list is empty and the check cannot fail.
+consolidation_refs() {
+  git rev-parse --git-dir >/dev/null 2>&1 || return 0
+  local sha subject before after
+  while IFS=$'\t' read -r sha subject; do
+    [[ -n "$sha" ]] || continue
+    before="$(git show "$sha^:tasks/lessons.md" 2>/dev/null | grep -c '^- Date: ' || true)"
+    after="$(git show "$sha:tasks/lessons.md" 2>/dev/null | grep -c '^- Date: ' || true)"
+    (( before > after )) || continue
+    printf '%s\n' "${sha:0:8}"
+    if [[ "$subject" =~ \(#([0-9]+)\) ]]; then
+      printf '#%s\n' "${BASH_REMATCH[1]}"
+    fi
+  done < <(git --no-pager log --format='%H%x09%s' -- tasks/lessons.md 2>/dev/null)
+}
+
+consolidation_json="$(consolidation_refs | jq -R . | jq -s 'map(select(length > 0))')"
+
+evidence_errors="$(
+  jq -nc --argjson items "[${lessons_json}]" --argjson consolidation "${consolidation_json}" '
+    def norm:
+      ascii_downcase
+      | gsub("^[[:space:]#]+|[[:space:]]+$"; "")
+      | if test("^[0-9a-f]{8,40}$") then .[0:8] else . end;
+    ($consolidation | map(norm)) as $consolidations
+    | [ $items[] as $item
+      | ($item.trigger // "" | gsub("\n"; " ") | split(","))
+      | map(gsub("^[[:space:]]+|[[:space:]]+$"; ""))
+      | map(select(length > 0))
+      | select(length > 0)
+      | select((map(norm) - $consolidations | length) == 0)
+      | {theme: $item.theme, trigger: $item.trigger}
+    ]
+  '
+)"
+
+evidence_error_count="$(jq 'length' <<< "$evidence_errors")"
+
+if [[ "$evidence_error_count" != "0" ]]; then
+  if [[ "$output_mode" == "json" ]]; then
+    jq -c --argjson errors "$evidence_errors" '. + {evidence_errors: $errors}' <<< "$triage_json"
+  else
+    echo "[Maintenance] Entries whose only Triggered by correction is a consolidation commit:"
+    jq -r '.[] | "- \(.theme): \(.trigger)"' <<< "$evidence_errors"
+  fi
+  exit 1
+fi
+
 if [[ "$output_mode" == "json" ]]; then
-  printf '%s\n' "$triage_json"
+  jq -c '. + {evidence_errors: []}' <<< "$triage_json"
   exit 0
 fi
 
