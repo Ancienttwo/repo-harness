@@ -1,4 +1,5 @@
 import { describe, expect, test } from 'bun:test';
+import { spawnSync } from 'child_process';
 import { createHash, randomBytes } from 'crypto';
 import { createServer } from 'net';
 import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, unlinkSync, writeFileSync } from 'fs';
@@ -111,6 +112,39 @@ function useTempRegistryHome(): () => void {
     else process.env.REPO_HARNESS_HOME = previous;
     rmSync(home, { recursive: true, force: true });
   };
+}
+
+/** A POSIX gh double: a shell script that records its argv and fails. */
+function installPosixTripwireGh(dir: string): string {
+  const bin = join(dir, 'tripwire-gh.sh');
+  writeFileSync(bin, '#!/bin/sh\nprintf \'%s\\n\' "$*" >> "$TRIPWIRE_GH_LOG"\nexit 1\n');
+  chmodSync(bin, 0o755);
+  return bin;
+}
+
+/**
+ * A native Windows gh double. CreateProcess cannot start an extensionless
+ * shebang script (EFTYPE), so compile the same tripwire into an executable.
+ * Production and the positive control both spawn one executable path with an
+ * argv, so no shell or batch wrapper joins the boundary.
+ */
+function compileWindowsTripwireGh(dir: string): string {
+  const source = join(dir, 'tripwire-gh.mjs');
+  const bin = join(dir, 'tripwire-gh.exe');
+  writeFileSync(source, [
+    "import { appendFileSync } from 'node:fs';",
+    'appendFileSync(process.env.TRIPWIRE_GH_LOG, `${process.argv.slice(2).join(\' \')}\\n`);',
+    'process.exit(1);',
+    '',
+  ].join('\n'));
+  const build = spawnSync(process.execPath, [
+    'build', '--compile',
+    '--no-compile-autoload-bunfig', '--no-compile-autoload-dotenv',
+    '--no-compile-autoload-tsconfig', '--no-compile-autoload-package-json',
+    source, '--outfile', bin,
+  ], { cwd: dir, encoding: 'utf-8', timeout: 60_000 });
+  if (build.status !== 0) throw new Error(`tripwire gh compile failed: ${build.stderr || build.stdout}`);
+  return bin;
 }
 
 describe('mcp http transport', () => {
@@ -737,10 +771,7 @@ describe('mcp http transport', () => {
     }
   }, 30_000);
 
-  // Windows CreateProcess cannot execute the POSIX .sh tripwire (EFTYPE), and a
-  // .cmd tripwire cannot be spawned directly. The refusal path is covered on
-  // POSIX; the Windows matrix still exercises the other MCP transport cases.
-  test.skipIf(process.platform === 'win32')('an orchestrator grant that predates publicationMerge never lists or reaches the merge tool', async () => {
+  test('an orchestrator grant that predates publicationMerge never lists or reaches the merge tool', async () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-stale-grant-'));
     const port = await freePort();
     const restoreRegistryHome = useTempRegistryHome();
@@ -777,18 +808,22 @@ describe('mcp http transport', () => {
       // positive control runs it once first, so a missing log line means the
       // provider was truly never invoked, not that the tripwire cannot write.
       const ghLog = join(repoRoot, 'gh-calls.log');
-      writeFileSync(join(repoRoot, 'tripwire-gh.sh'), `#!/bin/sh\nprintf '%s\\n' "$*" >> ${JSON.stringify(ghLog)}\nexit 1\n`);
-      const ghBin = join(repoRoot, 'tripwire-gh.sh');
-      chmodSync(ghBin, 0o755);
-      const control = Bun.spawnSync([ghBin, '--version'], { stdout: 'pipe', stderr: 'pipe' });
-      expect(control.exitCode).toBe(1);
+      const ghBin = process.platform === 'win32'
+        ? compileWindowsTripwireGh(repoRoot)
+        : installPosixTripwireGh(repoRoot);
+      const control = spawnSync(ghBin, ['--version'], {
+        env: { ...process.env, TRIPWIRE_GH_LOG: ghLog },
+        encoding: 'utf-8',
+        timeout: 30_000,
+      });
+      expect(control.status).toBe(1);
       expect(readFileSync(ghLog, 'utf-8')).toContain('--version');
       unlinkSync(ghLog);
 
       proc = Bun.spawn(
         ['bun', 'src/cli/index.ts', 'mcp', 'serve', '--repo', repoRoot, '--transport', 'http', '--host', '127.0.0.1',
           '--port', String(port), '--profile', 'orchestrator'],
-        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, REPO_HARNESS_GH_BIN: ghBin } },
+        { cwd: process.cwd(), stdout: 'ignore', stderr: 'pipe', env: { ...process.env, REPO_HARNESS_GH_BIN: ghBin, TRIPWIRE_GH_LOG: ghLog } },
       );
       await waitForHealth(port);
 
