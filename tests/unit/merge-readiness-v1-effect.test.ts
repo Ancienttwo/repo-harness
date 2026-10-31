@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { projectPullRequestMergeReadiness, type MergeReadinessBlockerCode } from '../../src/core/publication/merge-readiness';
+import { notStackMemberDetail, projectPullRequestMergeReadiness, type MergeReadinessBlockerCode } from '../../src/core/publication/merge-readiness';
 
 import {
   MergeReadinessError,
@@ -124,6 +124,49 @@ function passingGh(): NonNullable<PublicationReadinessInput['gh_runner']> {
   };
 }
 
+interface StackParent {
+  readonly number: number;
+  readonly head_ref: string;
+  readonly head_sha: string;
+  readonly base_ref: string;
+  readonly base_sha: string;
+  readonly state?: 'OPEN' | 'CLOSED' | 'MERGED';
+  readonly cross_repository?: boolean;
+}
+
+/** The member PR keeps its own identity; only its base ref and the chain list differ. */
+function stackGh(options: {
+  readonly member_base_ref: string;
+  readonly member_base_sha?: string;
+  readonly parents: readonly StackParent[];
+  readonly default_branch?: string;
+}): NonNullable<PublicationReadinessInput['gh_runner']> {
+  const source = passingGh();
+  const memberBaseSha = options.member_base_sha ?? BASE;
+  const defaultBranch = options.default_branch ?? 'main';
+  return (args) => {
+    if (args[0] === 'pr' && args[1] === 'list') {
+      const head = args[args.indexOf('--head') + 1];
+      return { status: 0, stdout: JSON.stringify(options.parents.filter((parent) => parent.head_ref === head).map((parent) => ({
+        number: parent.number, state: parent.state ?? 'OPEN',
+        headRefOid: parent.head_sha, headRefName: parent.head_ref,
+        baseRefOid: parent.base_sha, baseRefName: parent.base_ref,
+        isCrossRepository: parent.cross_repository ?? false,
+      }))) };
+    }
+    const result = source(args);
+    if (args[0] === 'pr' && args[1] === 'view') {
+      return { ...result, stdout: JSON.stringify({
+        ...JSON.parse(result.stdout), baseRefOid: memberBaseSha, baseRefName: options.member_base_ref,
+      }) };
+    }
+    if (args[0] === 'api' && args[1] === 'repos/example/repo-harness') {
+      return { ...result, stdout: JSON.stringify({ ...JSON.parse(result.stdout), default_branch: defaultBranch }) };
+    }
+    return result;
+  };
+}
+
 describe('explicit PR readiness effects', () => {
   test('rejects the retired publication selector even alongside an explicit PR', () => {
     expect(() => collectPullRequestMergeReadiness({ ...input, publication_id: 'retired' } as PullRequestReadinessInput)).toThrow('publication_id');
@@ -178,6 +221,152 @@ describe('explicit PR readiness effects', () => {
     expect(aggregate.pull_requests.map(item => item.pr_number)).toEqual([42,42]);
     expect(aggregate.pull_requests[0]!.blockers[0]!.code).toBe('provider_unavailable');
     expect(aggregate.pull_requests[1]!.ready).toBe(true);
+  });
+});
+
+describe('stacked pull request readiness reads', () => {
+  const PARENT_HEAD = 'c'.repeat(40);
+  const FINAL_BASE = 'd'.repeat(40);
+  const ONE_LEVEL: StackParent = {
+    number: 41, head_ref: 'feat/base', head_sha: PARENT_HEAD, base_ref: 'main', base_sha: FINAL_BASE,
+  };
+
+  test('a non-stack PR keeps the current ready verdict and reads no chain', () => {
+    const calls: string[][] = [];
+    const source = passingGh();
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
+    expect(verdict.ready).toBe(true);
+    expect(verdict.stack).toEqual(notStackMemberDetail());
+    expect(calls.some(args => args[0] === 'pr' && args[1] === 'list')).toBe(false);
+  });
+
+  test('a one-level stack is blocked with the observed chain and no own-base facts', async () => {
+    const source = stackGh({ member_base_ref: ONE_LEVEL.head_ref, parents: [ONE_LEVEL] });
+    const calls: string[][] = [];
+    const verdict = collectPullRequestMergeReadiness({
+      ...input, gh_runner: args => { calls.push([...args]); return source(args); },
+    });
+    const expectedStack = {
+      member: true, depth: 1,
+      chain: [
+        { pr_number: 42, head_ref: receipt.branch, head_sha: HEAD, base_ref: ONE_LEVEL.head_ref, base_sha: BASE },
+        { pr_number: 41, head_ref: ONE_LEVEL.head_ref, head_sha: PARENT_HEAD, base_ref: 'main', base_sha: FINAL_BASE },
+      ],
+      final_base_sha: FINAL_BASE, status: 'complete' as const,
+    };
+    expect(verdict.ready).toBe(false);
+    expect(verdict.attention_owner).toBe('agent');
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+    expect(verdict.stack).toEqual(expectedStack);
+    expect(verdict.check_failures).toEqual([]);
+    expect(verdict.required_check_coverage).toBeNull();
+    // The member is blocked without any own-base check, review or coverage read.
+    expect(calls.some(args => args[0] === 'pr' && args[1] === 'checks')).toBe(false);
+    expect(calls.some(args => args[0] === 'api' && (args[1]?.includes('/contents/') || args[1] === 'graphql'))).toBe(false);
+
+    const abortable = await collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => source(args) });
+    expect(abortable.stack).toEqual(expectedStack);
+    expect(abortable.blockers).toEqual(verdict.blockers);
+  });
+
+  test('a multi-level chain is ordered from the PR to the default branch', () => {
+    const parent: StackParent = {
+      number: 41, head_ref: 'feat/b', head_sha: PARENT_HEAD, base_ref: 'feat/a', base_sha: 'e'.repeat(40),
+    };
+    const root: StackParent = {
+      number: 40, head_ref: 'feat/a', head_sha: 'e'.repeat(40), base_ref: 'main', base_sha: FINAL_BASE,
+    };
+    const verdict = collectPullRequestMergeReadiness({
+      ...input, gh_runner: stackGh({ member_base_ref: parent.head_ref, parents: [parent, root] }),
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.stack.status).toBe('complete');
+    expect(verdict.stack.depth).toBe(2);
+    expect(verdict.stack.chain.map((entry) => entry.pr_number)).toEqual([42, 41, 40]);
+    expect(verdict.stack.chain.map((entry) => entry.head_ref)).toEqual([receipt.branch, 'feat/b', 'feat/a']);
+    expect(verdict.stack.final_base_sha).toBe(FINAL_BASE);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+  });
+
+  test('a cycle fails closed with the proven edges', () => {
+    const parent: StackParent = {
+      number: 41, head_ref: 'feat/a', head_sha: PARENT_HEAD, base_ref: 'feat/b', base_sha: 'e'.repeat(40),
+    };
+    const root: StackParent = {
+      number: 40, head_ref: 'feat/b', head_sha: 'e'.repeat(40), base_ref: 'feat/a', base_sha: 'f'.repeat(40),
+    };
+    const verdict = collectPullRequestMergeReadiness({
+      ...input, gh_runner: stackGh({ member_base_ref: parent.head_ref, parents: [parent, root] }),
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.stack.status).toBe('cycle');
+    // #40 points back to feat/a before it can become a valid ancestor, so the
+    // proven chain stops at the parent that introduced the repeating edge.
+    expect(verdict.stack.depth).toBe(1);
+    expect(verdict.stack.chain.map((entry) => entry.pr_number)).toEqual([42, 41]);
+    expect(verdict.stack.final_base_sha).toBeNull();
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member', 'stack_cycle']);
+  });
+
+  test.each([
+    ['missing', [], 'base_pr_missing', 'stack_base_pr_missing'],
+    ['closed', [{ ...ONE_LEVEL, state: 'CLOSED' as const }], 'base_pr_not_open', 'stack_base_pr_not_open'],
+    ['foreign', [{ ...ONE_LEVEL, cross_repository: true }], 'foreign_pr', 'stack_foreign_pr'],
+  ] as const)('a %s base PR fails closed', (_label, parents, status, code) => {
+    const verdict = collectPullRequestMergeReadiness({
+      ...input, gh_runner: stackGh({ member_base_ref: ONE_LEVEL.head_ref, parents }),
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.stack.status).toBe(status);
+    expect(verdict.stack.chain.map((entry) => entry.pr_number)).toEqual([42]);
+    expect(verdict.stack.depth).toBe(0);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member', code]);
+  });
+
+  test('the depth cap stops a chain that never reaches the default branch', () => {
+    const parents: StackParent[] = Array.from({ length: 21 }, (_, index) => ({
+      number: 1000 + index,
+      head_ref: `feat/${index}`,
+      head_sha: (index + 10).toString(16).padStart(2, '0').repeat(20),
+      base_ref: `feat/${index + 1}`,
+      base_sha: (index + 11).toString(16).padStart(2, '0').repeat(20),
+    }));
+    const verdict = collectPullRequestMergeReadiness({
+      ...input, gh_runner: stackGh({ member_base_ref: 'feat/0', parents }),
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.stack.status).toBe('depth_exceeded');
+    expect(verdict.stack.depth).toBe(20);
+    expect(verdict.stack.chain).toHaveLength(21);
+    expect(verdict.stack.final_base_sha).toBeNull();
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member', 'stack_depth_exceeded']);
+  });
+
+  test('a base that moves during the chain read is changed_during_read', () => {
+    const source = stackGh({ member_base_ref: ONE_LEVEL.head_ref, parents: [ONE_LEVEL] });
+    let reads = 0;
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: (args) => {
+      if (args[0] !== 'pr' || args[1] !== 'list') return source(args);
+      reads++;
+      const observed = source(args);
+      return { ...observed, stdout: JSON.stringify(JSON.parse(observed.stdout).map((entry: Record<string, unknown>) => ({
+        ...entry, headRefOid: reads.toString(16).padStart(40, '0'),
+      }))) };
+    } });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['changed_during_read']);
+    expect(verdict.stack.status).toBe('unobserved');
+    expect(reads).toBeGreaterThanOrEqual(4);
+  });
+
+  test('caller-supplied chain data cannot turn a member into a ready verdict', () => {
+    const forged = { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' };
+    const verdict = collectPullRequestMergeReadiness({
+      ...input, stack: forged, gh_runner: stackGh({ member_base_ref: ONE_LEVEL.head_ref, parents: [ONE_LEVEL] }),
+    } as PullRequestReadinessInput);
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+    expect(verdict.stack.chain.map((entry) => entry.pr_number)).toEqual([42, 41]);
   });
 });
 
@@ -450,7 +639,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         expect(asyncFacts.rollback_boundary).toEqual(expected);
         for (const provider of [syncFacts, asyncFacts]) {
           const verdict = projectPullRequestMergeReadiness({ expected_head_sha: HEAD, expected_base_sha: observedBase,
-            integration_mode: 'unmerged', observation: 'stable', provider });
+            integration_mode: 'unmerged', observation: 'stable', provider, stack: notStackMemberDetail() });
           expect(verdict.ready).toBe(true); expect(verdict.blockers).toEqual([]);
         }
         if (scenario === '404') expect(requests.some(path => path.includes('/pulls') || path.includes('/git/commits/'))).toBe(false);

@@ -1,7 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
+  notStackMemberDetail,
   projectPullRequestMergeReadiness,
+  type MergeReadinessStackDetailV1,
   type ProviderMergeReadinessFactsV1,
   type PullRequestMergeReadinessInput,
   type RequiredCheckCoverageFactsV1,
@@ -34,6 +36,7 @@ function readyInput(): PullRequestMergeReadinessInput {
       required_check_coverage: { status: 'absent' },
       mergeable: 'MERGEABLE',
     },
+    stack: notStackMemberDetail(),
   };
 }
 
@@ -48,6 +51,7 @@ describe('projectPullRequestMergeReadiness', () => {
       blockers: [],
       check_failures: [],
       required_check_coverage: null,
+      stack: notStackMemberDetail(),
     });
   });
 
@@ -124,6 +128,80 @@ describe('projectPullRequestMergeReadiness', () => {
   });
 });
 
+describe('stacked pull request readiness projection', () => {
+  const PARENT_HEAD = 'c'.repeat(40);
+  const FINAL_BASE = 'd'.repeat(40);
+  const memberChain = [
+    { pr_number: 42, head_ref: 'feat/stack', head_sha: HEAD, base_ref: 'feat/base', base_sha: BASE },
+    { pr_number: 41, head_ref: 'feat/base', head_sha: PARENT_HEAD, base_ref: 'main', base_sha: FINAL_BASE },
+  ];
+
+  function memberStack(overrides: Partial<MergeReadinessStackDetailV1> = {}): MergeReadinessStackDetailV1 {
+    return {
+      member: true, depth: 1, chain: memberChain, final_base_sha: FINAL_BASE, status: 'complete',
+      ...overrides,
+    };
+  }
+
+  test('a stack member stays blocked when its own-base facts are green', () => {
+    const verdict = projectPullRequestMergeReadiness({ ...readyInput(), stack: memberStack() });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.attention_owner).toBe('agent');
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+    expect(verdict.stack).toEqual(memberStack());
+  });
+
+  test.each([
+    ['cycle', 'stack_cycle'],
+    ['base_pr_missing', 'stack_base_pr_missing'],
+    ['base_pr_not_open', 'stack_base_pr_not_open'],
+    ['foreign_pr', 'stack_foreign_pr'],
+    ['depth_exceeded', 'stack_depth_exceeded'],
+  ] as const)('a %s chain keeps its typed blocker and the observed edges', (status, code) => {
+    const chain = [memberChain[0]!];
+    const verdict = projectPullRequestMergeReadiness({
+      ...readyInput(),
+      stack: { member: true, depth: 0, chain, final_base_sha: null, status },
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member', code]);
+    expect(verdict.stack).toEqual({ member: true, depth: 0, chain, final_base_sha: null, status });
+  });
+
+  test('a member with an unobserved chain is blocked by membership alone', () => {
+    const verdict = projectPullRequestMergeReadiness({
+      ...readyInput(),
+      stack: { member: true, depth: 0, chain: [memberChain[0]!], final_base_sha: null, status: 'unobserved' },
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+    expect(verdict.stack.status).toBe('unobserved');
+  });
+
+  test('a malformed, misbound or forged member chain fails closed', () => {
+    const malformed = [
+      { ...memberStack(), depth: 0 },
+      { ...memberStack(), chain: [memberChain[1]!] },
+      { ...memberStack(), final_base_sha: null },
+      { ...memberStack(), chain: [memberChain[0]!, { ...memberChain[1]!, head_ref: 'other' }] },
+      { ...memberStack(), status: 'not_member' as const },
+      { member: false as const, depth: 0, chain: [], final_base_sha: FINAL_BASE, status: 'not_member' as const },
+    ];
+    for (const stack of malformed) {
+      const verdict = projectPullRequestMergeReadiness({ ...readyInput(), stack: stack as MergeReadinessStackDetailV1 });
+      expect([stack.status, verdict.ready]).toEqual([stack.status, false]);
+      expect(verdict.blockers.map((blocker) => blocker.code)).toContain('provider_data_incomplete');
+    }
+  });
+
+  test('a stack member is blocked even without own-base facts', () => {
+    const verdict = projectPullRequestMergeReadiness({ ...readyInput(), provider: null, stack: memberStack() });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+    expect(verdict.check_failures).toEqual([]);
+  });
+});
+
 test.each(['head_sha','base_sha'] as const)('an otherwise green pull request loses readiness when provider %s moves', field => {
   const input=readyInput();
   const verdict=projectPullRequestMergeReadiness({...input,provider:{...input.provider!,[field]:'9'.repeat(40)}});
@@ -131,8 +209,8 @@ test.each(['head_sha','base_sha'] as const)('an otherwise green pull request los
   expect(verdict.blockers.map(b=>b.code)).toEqual([field==='head_sha'?'head_moved':'base_moved_since_verification']);
 });
 test('ordinary PR readiness needs no receipt, lease or acceptance artifact', () => {
-  const { provider, integration_mode, observation } = readyInput();
-  const input = { provider: provider!, integration_mode, observation,
+  const { provider, integration_mode, observation, stack } = readyInput();
+  const input = { provider: provider!, integration_mode, observation, stack,
     expected_head_sha: HEAD, expected_base_sha: BASE };
   expect(projectPullRequestMergeReadiness(input).ready).toBe(true);
   expect(projectPullRequestMergeReadiness({ ...input, provider: { ...input.provider, checks: [] } }).ready).toBe(false);
@@ -159,7 +237,7 @@ test('a ready rollback boundary binds both provider and expected base', () => {
   expect(projectPullRequestMergeReadiness({ ...input, provider: { ...provider, base_sha: 'd'.repeat(40) } }).blockers.map(b => b.code))
     .toEqual(['base_moved_since_verification', 'provider_data_incomplete']);
   expect(projectPullRequestMergeReadiness({ provider, integration_mode: 'unmerged', observation: 'stable',
-    expected_head_sha: HEAD, expected_base_sha: 'd'.repeat(40) }).blockers.map(b => b.code))
+    expected_head_sha: HEAD, expected_base_sha: 'd'.repeat(40), stack: notStackMemberDetail() }).blockers.map(b => b.code))
     .toEqual(['base_moved_since_verification', 'provider_data_incomplete']);
 });
 

@@ -204,9 +204,10 @@ test('configuration writes preserve sibling sections and reject invalid input or
     configureBrainRoot(join(home, 'brain'), env);
     expect(ensureGlobalArchitectureProjection(env).status).toBe('ok');
     const before = readGlobalConfiguration(env);
-    applyAgentsSettings({ expected_revision: before.revision, changes: [{ runtime: 'codex', enabled: true, uses: ['docs'] }] }, ['codex'], env);
+    // A review use is a valid agents write; a new docs use is refused while no runtime has verified docs isolation.
+    applyAgentsSettings({ expected_revision: before.revision, changes: [{ runtime: 'codex', enabled: true, uses: ['review'] }] }, ['codex'], env);
     const result = readGlobalConfiguration(env);
-    expect(result.config).toMatchObject({ security: { mode: 'strict' }, brainRoot: join(home, 'brain'), architecture: { projection_provider: 'archctx' }, agents: { enabled: ['codex'] } });
+    expect(result.config).toMatchObject({ security: { mode: 'strict' }, brainRoot: join(home, 'brain'), architecture: { projection_provider: 'archctx' }, agents: { enabled: ['codex'], uses: { review: ['codex'] } } });
     expect(() => applyAgentsSettings({ expected_revision: before.revision, changes: [] }, ['codex'], env)).toThrow('changed after it was read');
     expect(readGlobalConfiguration(env).revision).toBe(result.revision);
     expect(() => mutateGlobalConfiguration(env, () => ({ config: {}, value: undefined }), {

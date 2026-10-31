@@ -110,6 +110,7 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
         blockers: [{ code: 'checks_pending', attention_owner: 'external' }],
         check_failures: [],
         required_check_coverage: null,
+        stack: { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' },
       },
       feedback: { observation_status: 'observed', pending_count: 2, no_progress: true, repair_actions: [] },
       inbox: { observation_status: 'observed', unread_count: 1, addressed_to_current_claim: true, delivery_state: 'delivered', runtime_reachability: 'reachable', effect_sha256: `sha256:${'f'.repeat(64)}`, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
