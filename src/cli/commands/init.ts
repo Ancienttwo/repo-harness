@@ -409,21 +409,6 @@ export function runInit(
 
   if (apply && verify) {
     const verifyEnv = { ...(commandEnv ?? process.env), REPO_HARNESS_SOURCE_ROOT: sourceRoot };
-    if (migrate.status === "ok") {
-      const handoff = runProcess(
-        "bun",
-        [join(REPO_ROOT, "src/cli/index.ts"), "run", "prepare-codex-handoff", "--reason", "repo-harness-init-verify"],
-        repoRoot,
-        verifyEnv,
-      );
-      steps.push(
-        withStepName(
-          handoff,
-          "refresh handoff packet",
-          "repo-harness run prepare-codex-handoff --reason repo-harness-init-verify",
-        ),
-      );
-    }
     const verifyStep = runProcess("bun", [join(REPO_ROOT, "src/cli/index.ts"), "run", "check-context-files"], repoRoot, verifyEnv);
     steps.push(withStepName(verifyStep, "verify repo harness", "repo-harness run check-context-files"));
   } else {

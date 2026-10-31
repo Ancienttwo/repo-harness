@@ -82,10 +82,10 @@ function sessionStartContext(f: Fixture, host: "claude" | "codex" = "claude"): s
 }
 
 /** The `references` object of the `[HarnessState]` line. */
-function stateReferences(context: string): Record<string, string | null> {
+function statePayload(context: string): Record<string, unknown> {
   const line = context.split("\n")[0]!;
   expect(line).toStartWith("[HarnessState] ");
-  return (JSON.parse(line.slice("[HarnessState] ".length)) as { references: Record<string, string | null> }).references;
+  return JSON.parse(line.slice("[HarnessState] ".length)) as Record<string, unknown>;
 }
 
 describe("SessionStart host envelope", () => {
@@ -112,14 +112,15 @@ describe("SessionStart host envelope", () => {
     } finally { f.cleanup(); }
   });
 
-  test("a resume file adds no resume text; the state section points to it", () => {
+  test("a resume file adds no resume text and no resume pointer", () => {
     const f = fixture("session-resume-only");
     try {
       f.write(RESUME, "# Codex Resume Packet\n\nContinue the widget work.\n");
       for (const host of ["claude", "codex"] as const) {
         const context = sessionStartContext(f, host);
         expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
-        expect(stateReferences(context).resume).toBe(RESUME);
+        expect(statePayload(context)).not.toHaveProperty("references");
+        expect(context).not.toContain(RESUME);
         expect(context).not.toContain("# Resume");
         expect(context).not.toContain("Recovery context only");
         expect(context).not.toContain("Continue the widget work.");
@@ -136,14 +137,14 @@ describe("SessionStart host envelope", () => {
       expect(context).not.toContain("plans/");
       expect(context).not.toContain("capture-plan");
       expect(context).not.toContain("references.plan");
-      expect(Object.hasOwn(stateReferences(context), "plan")).toBe(false);
+      expect(statePayload(context)).not.toHaveProperty("references");
       expect(existsSync(join(f.root, ".ai/harness/state/session-context-budget.json"))).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/state/session-run-identity.json"))).toBe(false);
       expect(existsSync(join(f.root, ".ai/harness/security"))).toBe(false);
     } finally { f.cleanup(); }
   }, 30_000);
 
-  test("a retired sprint is absent and a large resume has only a pointer", () => {
+  test("a retired sprint is absent and a large resume has no pointer", () => {
     const f = fixture("session-large-resume");
     try {
       writeActiveSprint(f);
@@ -151,9 +152,9 @@ describe("SessionStart host envelope", () => {
       f.write(RESUME, `# Codex Resume Packet\n\n${body}\n`);
       const context = sessionStartContext(f);
       expect(context.split("\n").slice(1)).toEqual([EDIT_GUARD_SCOPE]);
-      const references = stateReferences(context);
-      expect(references.resume).toBe(RESUME);
-      expect(Object.hasOwn(references, "sprint")).toBe(false);
+      const payload = statePayload(context);
+      expect(payload).not.toHaveProperty("references");
+      expect(context).not.toContain(RESUME);
       expect(context).not.toContain("[ContextRef:resume]");
       expect(context).not.toContain("resume line 0 with recovery detail");
       expect(context).not.toContain("# Active Sprint");
@@ -196,8 +197,6 @@ describe("buildSessionStartSections", () => {
     guidance: null,
     blockers: [],
     capability_ownership: null,
-    handoff: { path: ".ai/harness/handoff/current.md", freshness: "missing" },
-    resume: { path: RESUME, freshness: "missing" },
   } as unknown as EffectiveState;
 
   test("an unavailable state yields only the fail-closed section", () => {

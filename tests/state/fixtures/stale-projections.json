@@ -16,8 +16,8 @@
     "state_version": 1,
     "state_revision": "sha256:<dynamic:state_revision>",
     "authority_revision": "sha256:<dynamic:authority_revision>",
-    "subject_revision": "sha256:611ad84ed54754aa0afeb9d13ce4e9a0fdc5bc65321ee5707b54863c6d7dc890",
-    "projection_revision": "sha256:<dynamic:projection_revision>",
+    "subject_revision": "sha256:b5c136a8dc6ef213b0bc3955f29ca18732d63813ad44b7373302ad65c67a1aaf",
+    "projection_revision": "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a",
     "progress_token": "sha256:<dynamic:progress_token>",
     "workflow_profile": "routine",
     "requested_workflow_profile": null,
@@ -38,19 +38,13 @@
     "next_action": null,
     "guidance": "Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR. This is a state snapshot, not a session-wide restriction; re-resolve for the proposed edit and current diff when scope changes. Current edit-time requirements supersede earlier snapshot guidance.",
     "blockers": [],
-    "stale_sources": [
-      "current_snapshot",
-      "handoff"
-    ],
+    "stale_sources": [],
     "conflicting_sources": [],
     "source_hashes": {
       ".ai/context/capabilities.json": "sha256:becde17b6600ee6ea2f65fe3320f11bc1efbb103d81bb7dda3788623ca293441",
       ".ai/harness/active-worktree": "sha256:<dynamic:.ai/harness/active-worktree>",
-      ".ai/harness/handoff/current.md": "sha256:<dynamic:.ai/harness/handoff/current.md>",
-      ".ai/harness/handoff/resume.md": "sha256:<dynamic:.ai/harness/handoff/resume.md>",
       ".ai/harness/policy.json": "sha256:001e056f4ac35ace2e89e20bef71f492ac9a0ac7373cacaeaf1e0fa36ea130b8",
-      "tasks/current.md": "sha256:e16cda27c0a53e5a4f839011c5e47480be01ab0bee30e75576a62bc2732e9d30",
-      "review_subject": "sha256:8d1ea67b10188cb888564a019394712072bc46c65903acacf936b803358466c4",
+      "review_subject": "sha256:7f8dc6f4ea59eed88ea2f2f3dfaa0a3e99cd1e0c99031e2ac02be14caa6dc827",
       "authority_revision": "sha256:<dynamic:authority_revision>"
     },
     "worktree": {
@@ -58,18 +52,6 @@
       "freshness": "fresh",
       "current": "<repo>",
       "owner": "<repo>"
-    },
-    "handoff": {
-      "path": ".ai/harness/handoff/current.md",
-      "freshness": "stale"
-    },
-    "resume": {
-      "path": ".ai/harness/handoff/resume.md",
-      "freshness": "missing"
-    },
-    "current_snapshot": {
-      "path": "tasks/current.md",
-      "freshness": "stale"
     }
   },
   "hook": {

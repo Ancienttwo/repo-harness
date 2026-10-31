@@ -11,12 +11,17 @@ export type CoverageSelection = { mode: 'affected' | 'daily' | 'report' | 'inval
 export function validSha(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 }
+/** The two MCP bridge files under handoff/; session recovery files are retired. */
+function isHandoffBridgePath(path: string): boolean {
+  return path === '.ai/harness/handoff/task-goal.md' || path === '.ai/harness/handoff/chatgpt-plan.md';
+}
+
 export function isDocumentationPath(path: string): boolean {
   if (path.split('/').some(part => !part || part === '.' || part === '..')) return false;
   if (path.startsWith('docs/reference-configs/')) return false;
   return path === 'README.md' || path === 'DEBUG.md' || path === 'docs/architecture/.projection-manifest.json'
     || (path.startsWith('examples/') && path.endsWith('.md'))
-    || path === 'tasks/lessons.md' || path.startsWith('.ai/harness/handoff/')
+    || path === 'tasks/lessons.md' || isHandoffBridgePath(path)
     || (path.startsWith('docs/') && path.endsWith('.md'));
 }
 export function diffBase(eventName: string, event: unknown): unknown {

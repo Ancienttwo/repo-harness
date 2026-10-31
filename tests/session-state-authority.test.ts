@@ -39,8 +39,6 @@ function fixtureState(overrides: Partial<EffectiveState> = {}): EffectiveState {
     next_action: 'continue',
     guidance: null,
     blockers: [],
-    handoff: { path: '.ai/harness/handoff/current.md', freshness: 'fresh' },
-    resume: { path: '.ai/harness/handoff/resume.md', freshness: 'fresh' },
     ...overrides,
   } as EffectiveState;
 }

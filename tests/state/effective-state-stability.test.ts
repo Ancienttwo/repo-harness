@@ -25,8 +25,8 @@ import type { EffectiveState } from '../../src/core/state/types';
 // Root cause: resolveStableEffectiveState's stability contract
 // (src/effects/state/resolve-effective-state.ts) compares the FULL
 // source_hashes map -- including non-authority, high-churn surfaces such as
-// checks/change-assessment.latest.json, tasks/current.md, handoff/resume, and the
-// review_subject working-tree diff fingerprint -- between re-reads, and
+// checks/change-assessment.latest.json and the review_subject working-tree
+// diff fingerprint -- between re-reads, and
 // throws `StateResolutionUnstableError` whenever any one of them differs. The
 // hook wrapper
 // (src/cli/hook/runtime.ts) collapses that throw into `null`, which

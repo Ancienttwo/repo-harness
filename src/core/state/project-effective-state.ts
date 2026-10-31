@@ -7,15 +7,9 @@ import {
   capabilityOwnershipNextAction,
   type CapabilityOwnershipBlocker,
 } from '../capabilities/ownership-blocker';
-import {
-  markdownBullet,
-  markdownHeader,
-  parseIsoOrLocalTimestamp,
-} from './artifact-parsers';
 import type {
   CapabilityOwnership,
   EffectiveState,
-  FreshnessState,
 } from './types';
 
 const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
@@ -37,12 +31,8 @@ export interface EffectiveStateInputs {
   readonly currentWorktree: string;
   readonly worktreeOwner: string | null;
   readonly worktreeOwnerIsCurrent: boolean;
-  readonly handoffPath: string;
-  readonly handoffText: string | null;
-  readonly resumePath: string;
-  readonly resumeText: string | null;
-  readonly currentSnapshotPath: string;
-  readonly currentSnapshotText: string | null;
+  /** The branch's GitHub issue as the next unit; Git state only, never a local handoff file. */
+  readonly branchNextAction: string | null;
   readonly authorityRevision: string;
   readonly subjectRevision: string;
   readonly projectionRevision: string;
@@ -59,40 +49,6 @@ function uniqueSorted(values: readonly string[]): string[] {
 export function projectEffectiveState(input: EffectiveStateInputs): EffectiveState {
   const staleSources = [...input.staleSources];
   const conflictingSources = [...input.conflictingSources];
-  const handoffRevision = input.handoffText
-    ? markdownHeader(input.handoffText, 'Source State Revision') ?? markdownBullet(input.handoffText, 'Source State Revision')
-    : null;
-  const handoffFreshness: FreshnessState = !input.handoffText
-    ? 'missing'
-    : handoffRevision === input.authorityRevision
-      ? 'fresh'
-      : 'stale';
-  if (handoffFreshness === 'stale') staleSources.push('handoff');
-
-  const resumeRevision = input.resumeText
-    ? markdownHeader(input.resumeText, 'Source State Revision') ?? markdownBullet(input.resumeText, 'Source State Revision')
-    : null;
-  const resumeHandoffHash = input.resumeText
-    ? markdownHeader(input.resumeText, 'Handoff Hash') ?? markdownBullet(input.resumeText, 'Handoff Hash')
-    : null;
-  const resumeFreshness: FreshnessState = !input.resumeText
-    ? 'missing'
-    : resumeRevision === input.authorityRevision &&
-        resumeHandoffHash === input.sourceHashes[input.handoffPath]
-      ? 'fresh'
-      : 'stale';
-  if (resumeFreshness === 'stale') staleSources.push('resume');
-
-  const currentUpdated = input.currentSnapshotText
-    ? parseIsoOrLocalTimestamp(markdownHeader(input.currentSnapshotText, 'Updated At'))
-    : null;
-  const currentFreshness: FreshnessState = !input.currentSnapshotText
-    ? 'missing'
-    : currentUpdated !== null && input.nowMs - currentUpdated <= 24 * 60 * 60 * 1000
-      ? 'fresh'
-      : 'stale';
-  if (currentFreshness === 'stale') staleSources.push('current_snapshot');
-
   const workflowProfile = input.riskResolution.ok ? input.riskResolution.profile : null;
 
   const blockers = conflictingSources.map((source) => `conflict:${source}`);
@@ -104,8 +60,8 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   // Progress token: one deterministic content hash over exactly the audit's
   // recipe. It composes revisions and values the resolver/projector already
   // computed -- no re-hashing of source content, no projection, time, or PID
-  // input -- so rendering-only churn (handoff/resume/current-snapshot) can
-  // never move it, only real subject or blocker progress can.
+  // input -- so projection-only churn can never move it, only real subject or
+  // blocker progress can.
   const progressToken = `sha256:${createHash('sha256').update(JSON.stringify({
     subject_revision: input.subjectRevision,
     hard_blockers: blockers,
@@ -114,9 +70,7 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
   const phase = blockers.length > 0 ? 'blocked' : 'idle';
   const nextAction = blockers.length > 0
     ? input.capabilityBlocker ? capabilityOwnershipNextAction(input.capabilityBlocker) : 'resolve blockers'
-    : handoffFreshness === 'fresh' && input.handoffText
-      ? markdownBullet(input.handoffText, 'Exact Next Step')
-      : null;
+    : input.branchNextAction;
 
   return {
     protocol: 2,
@@ -151,8 +105,5 @@ export function projectEffectiveState(input: EffectiveStateInputs): EffectiveSta
       current: input.currentWorktree,
       owner: input.worktreeOwner,
     },
-    handoff: { path: input.handoffPath, freshness: handoffFreshness },
-    resume: { path: input.resumePath, freshness: resumeFreshness },
-    current_snapshot: { path: input.currentSnapshotPath, freshness: currentFreshness },
   };
 }

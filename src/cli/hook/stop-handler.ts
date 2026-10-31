@@ -1,31 +1,15 @@
-/** Stop renders the recovery views; it never grants publication permission. */
-import { join } from 'path';
-import { writeHookStateFile } from '../../effects/hook-state-file';
+/** Stop publishes the evidence checkpoint and reports notices; it never grants publication permission. */
 import { collectAgentNotice } from './agent-notice';
 import { collectProtectedPathNotice } from './protected-path-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
-import {
-  buildRecoveryContext,
-  renderRecoveryHandoff,
-  renderRecoveryResume,
-  resolveRecoveryEvidence,
-} from '../../effects/evidence/recovery-materializer';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 import { payloadValue, type HookIdentity, type HookPayload } from './hook-input';
 
 export type StopCollector = Pick<StateInputCollector, 'getRepoRoot'>;
 
-export interface StopProjectionTarget {
-  readonly kind: 'handoff' | 'resume';
-  readonly path: string;
-}
-
 export interface StopHandlerDependencies {
   readonly now?: () => Date;
-  readonly observeProjectionWrite?: (target: StopProjectionTarget) => void;
-  /** Narrow post-commit fault/observation seam; never driven by an env flag. */
-  readonly afterProjectionWrite?: (target: StopProjectionTarget) => void;
 }
 
 export interface StopHandlerInput {
@@ -43,31 +27,10 @@ export interface StopHandlerResult {
   readonly systemMessage?: string;
 }
 
-/** Writes handoff then resume; each write replaces the whole file, so a retry converges. */
-function writeRecoveryViews(
-  repoRoot: string,
-  env: NodeJS.ProcessEnv,
-  identity: HookIdentity,
-  now: Date,
-  dependencies: StopHandlerDependencies,
-): void {
-  const context = buildRecoveryContext(repoRoot, env, { reason: 'session-stop', now: () => now, runId: identity.runId });
-  const evidence = resolveRecoveryEvidence(repoRoot);
-  const views: readonly [StopProjectionTarget, string][] = [
-    [{ kind: 'handoff', path: context.paths.handoff }, renderRecoveryHandoff(context, evidence)],
-    [{ kind: 'resume', path: context.paths.resume }, renderRecoveryResume(context, evidence)],
-  ];
-  for (const [target, content] of views) {
-    writeHookStateFile(repoRoot, join(repoRoot, target.path), content);
-    dependencies.observeProjectionWrite?.(target);
-    dependencies.afterProjectionWrite?.(target);
-  }
-}
-
 /**
- * Stop publishes the evidence checkpoint and renders handoff.md and resume.md.
- * It then reports changes under _ops/ and _ref/ that no edit guard decision covered.
- * A recovery write that would leave the repository or follow a symlink throws.
+ * Stop publishes the evidence checkpoint, then reports changes under _ops/ and
+ * _ref/ that no edit guard decision covered. A failed publish must not block
+ * the turn: the next Stop publishes again from the same ledger.
  */
 export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   const repoRoot = opts.collector.getRepoRoot();
@@ -78,10 +41,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
   if (stopHookActive === true || stopHookActive === 'true') {
     return { exitCode: 0, stdout: '', stderr: '' };
   }
-  // The views name the checkpoint they read, so a failed publish renders the
-  // last published one.
-  try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* see above */ }
-  writeRecoveryViews(repoRoot, env, opts.identity, now, dependencies);
+  try { publishCheckpointFromLedger(repoRoot, () => now); } catch { /* a failed publish never blocks the turn */ }
   return opts.identity.host === 'claude' ? claudeNotices(repoRoot, env) : codexNotices(repoRoot, env);
 }
 

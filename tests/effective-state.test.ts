@@ -190,26 +190,35 @@ describe('effective state resolver', () => {
     });
   }, 30_000);
 
-  test('rewriting handoff and resume advances only projection and state revision, never authority, subject, evidence, or the progress token', () => {
+  test('ignores the retired handoff, resume and task snapshot files', () => {
     withRepo((cwd) => {
       const first = resolveFixtureState(cwd);
 
-      // Handoff/resume are gitignored by the fixture AND excluded from the
-      // review-subject scan (isOperationalReviewPath), so rewriting them is
-      // pure projection churn with zero side effect on any other bucket --
-      // no commit needed, which also means target_rev (an ingredient of
-      // subject_revision) cannot move as a side effect of this rewrite.
-      write(cwd, '.ai/harness/handoff/current.md', '# Handoff\nrewritten body\n');
-      write(cwd, '.ai/harness/handoff/resume.md', '# Resume\nrewritten body\n');
+      // The three retired recovery files stay on disk. Effective State must
+      // not read them: no source hash, no freshness, no next action, no
+      // revision or version movement.
+      write(cwd, '.ai/harness/handoff/current.md', [
+        `> **Source State Revision**: ${first.authority_revision}`,
+        '- Exact Next Step: retired handoff step',
+        '',
+      ].join('\n'));
+      write(cwd, '.ai/harness/handoff/resume.md', '# Resume\nretired body\n');
+      write(cwd, 'tasks/current.md', '# Current\n> **Updated At**: 2099-01-01T00:00:00.000Z\n');
 
       const second = resolveFixtureState(cwd);
 
-      expect(second.projection_revision).not.toBe(first.projection_revision);
-      expect(second.state_revision).not.toBe(first.state_revision);
-      expect(second.state_version).toBe(first.state_version + 1);
+      expect(second.state_revision).toBe(first.state_revision);
+      expect(second.state_version).toBe(first.state_version);
+      expect(second.projection_revision).toBe(first.projection_revision);
       expect(second.authority_revision).toBe(first.authority_revision);
       expect(second.subject_revision).toBe(first.subject_revision);
       expect(second.progress_token).toBe(first.progress_token);
+      expect(second.next_action).toBeNull();
+      for (const retired of ['.ai/harness/handoff/current.md', '.ai/harness/handoff/resume.md', 'tasks/current.md']) {
+        expect(second.source_hashes[retired]).toBeUndefined();
+      }
+      expect(projectEffectiveStateSessionSection(second).content).not.toContain('handoff');
+      expect(projectEffectiveStateSessionSection(second).content).not.toContain('resume');
     });
   }, 30_000);
 
