@@ -109,33 +109,26 @@ normalize_slug() {
   printf '%s' "$1" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//; s/-{2,}/-/g'
 }
 
-# The branch recorded by start. Cleanup must use it because start derives the
-# prefix from --type (default feat/) instead of worktree_strategy.branch_prefix.
+# Start records the branch in the primary checkout. Cleanup reads that file only
+# and never derives a branch from policy or the Git worktree list.
 read_metadata_branch() {
   local metadata_file="$1"
   [[ -f "$metadata_file" ]] || return 1
-  sed -n 's/^  "branch": "\([^"]*\)",$/\1/p' "$metadata_file" | head -1
+  sed -nE 's/^.*"branch"[[:space:]]*:[[:space:]]*"([^"]*)".*$/\1/p' "$metadata_file" | head -1
 }
 
-# Start writes metadata inside the new worktree, not in the primary checkout.
-# Cleanup runs from the primary, so resolve the branch from the Git worktree
-# list by the exact slug suffix when the primary metadata is absent.
-find_branch_for_slug() {
-  local slug="$1" line branch="" found="" matches=0
-  while IFS= read -r line; do
-    case "$line" in
-      "branch refs/heads/"*)
-        branch="${line#branch refs/heads/}"
-        if [[ "${branch##*/}" == "$slug" ]]; then
-          matches=$((matches + 1))
-          found="$branch"
-        fi
-        ;;
-      "") branch="" ;;
-    esac
-  done < <(git worktree list --porcelain)
-  [[ "$matches" -eq 1 ]] || return 1
-  printf '%s' "$found"
+read_start_branch() {
+  local metadata_file="$1" slug="$2" branch=""
+  branch="$(read_metadata_branch "$metadata_file" || true)"
+  if [[ -z "$branch" ]]; then
+    echo "contract-worktree: no start metadata for $slug" >&2
+    return 2
+  fi
+  if ! git show-ref --verify --quiet "refs/heads/$branch"; then
+    echo "contract-worktree: branch $branch not found" >&2
+    return 2
+  fi
+  printf '%s' "$branch"
 }
 
 derive_issue_slug() {
@@ -209,11 +202,15 @@ write_start_metadata() {
   local base_commit="$7"
   local metadata_dir=".ai/harness/worktrees"
   local metadata_file="${metadata_dir}/${slug}.json"
+  local existing_base_commit=""
 
   mkdir -p "$metadata_dir"
-  if [[ -f "$metadata_file" ]] && grep -Eq '"base_commit"[[:space:]]*:[[:space:]]*"[0-9a-f]{40,64}"' "$metadata_file"; then
-    return 0
+  # A retry keeps the base recorded by the first start, but always refreshes the
+  # branch and worktree fields so cleanup reads current start metadata.
+  if [[ -f "$metadata_file" ]]; then
+    existing_base_commit="$(sed -nE 's/^.*"base_commit"[[:space:]]*:[[:space:]]*"([0-9a-f]{40,64})".*$/\1/p' "$metadata_file" | head -1)"
   fi
+  [[ -z "$existing_base_commit" ]] || base_commit="$existing_base_commit"
   cat > "$metadata_file" <<EOF_METADATA
 {
   "slug": "$(json_escape "$slug")",
@@ -471,11 +468,7 @@ start_worktree() {
     base_commit="$(git -C "$worktree_path" merge-base HEAD "$base_branch" 2>/dev/null || git -C "$worktree_path" rev-parse HEAD)"
   fi
 
-  mkdir -p "$worktree_path/.ai/harness/worktrees"
-  (
-    cd "$worktree_path"
-    write_start_metadata "$slug" "$issue_number" "$issue_url" "$branch_name" "$worktree_path" "$base_branch" "$base_commit"
-  )
+  write_start_metadata "$slug" "$issue_number" "$issue_url" "$branch_name" "$worktree_path" "$base_branch" "$base_commit"
 
   if [[ "$output_json" -eq 1 ]]; then
     write_start_json "$worktree_path" "$branch_name" "$issue_number" "$issue_url" "$disposition"
@@ -546,15 +539,10 @@ cleanup_worktree() {
     exit 1
   fi
 
-  local target_worktree current_root branch_prefix branch_name worktree_path metadata_file
+  local target_worktree current_root branch_name worktree_path metadata_file
   local worktree_status repair_needed=0 merge_mode=""
-  branch_prefix="$(policy_get '.worktree_strategy.branch_prefix' 'codex/')"
   metadata_file=".ai/harness/worktrees/${slug}.json"
-  branch_name="$(read_metadata_branch "$metadata_file" || true)"
-  if [[ -z "$branch_name" ]]; then
-    branch_name="$(find_branch_for_slug "$slug" || true)"
-  fi
-  [[ -n "$branch_name" ]] || branch_name="${branch_prefix}${slug}"
+  branch_name="$(read_start_branch "$metadata_file" "$slug")" || exit $?
   target_worktree="$(find_worktree_for_branch "$target_branch" || true)"
   [[ -n "$target_worktree" ]] || { echo "contract-worktree: target branch has no checked-out worktree: $target_branch" >&2; exit 1; }
 
@@ -576,34 +564,25 @@ cleanup_worktree() {
     esac
   fi
 
-  if [[ -n "$worktree_path" ]] && ! git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    echo "contract-worktree: registered worktree branch is missing; refusing unproven cleanup" >&2
-    return 1
-  fi
-
   local cleanup_head="" cleanup_target=""
   cleanup_target="$(git rev-parse "$target_branch^{commit}")"
-  if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    cleanup_head="$(git rev-parse "refs/heads/$branch_name")"
-    # Merge state comes from the shared authority in worktree-merge-lib.sh.
-    # The lib is fail-closed: anything it cannot prove merged comes back
-    # `unmerged`.
-    merge_mode="$(worktree_merge_mode "$branch_name" "$target_branch")"
-    case "$merge_mode" in
-      ancestor)
-        echo "[ContractWorktree] Merge check for $branch_name: ancestor of $target_branch"
-        ;;
-      absorbed)
-        echo "[ContractWorktree] Merge check for $branch_name: absorbed into $target_branch (squash-equivalent tree)"
-        ;;
-      *)
-        echo "contract-worktree: branch $branch_name is not fully merged into $target_branch; refusing cleanup" >&2
-        exit 1
-        ;;
-    esac
-  else
-    echo "[ContractWorktree] Branch already absent, skipping: $branch_name"
-  fi
+  cleanup_head="$(git rev-parse "refs/heads/$branch_name")"
+  # Merge state comes from the shared authority in worktree-merge-lib.sh.
+  # The lib is fail-closed: anything it cannot prove merged comes back
+  # `unmerged`.
+  merge_mode="$(worktree_merge_mode "$branch_name" "$target_branch")"
+  case "$merge_mode" in
+    ancestor)
+      echo "[ContractWorktree] Merge check for $branch_name: ancestor of $target_branch"
+      ;;
+    absorbed)
+      echo "[ContractWorktree] Merge check for $branch_name: absorbed into $target_branch (squash-equivalent tree)"
+      ;;
+    *)
+      echo "contract-worktree: branch $branch_name is not fully merged into $target_branch; refusing cleanup" >&2
+      exit 1
+      ;;
+  esac
 
   if [[ -n "$worktree_path" ]]; then
     if ! worktree_status="$(worktree_status_for_cleanup "$worktree_path" "$((1 - dry_run))")"; then
@@ -654,24 +633,22 @@ cleanup_worktree() {
 
   # Bind the observations before runtime shutdown to the existing exact authority.
   local daemon_stop_failed=0
-  if git show-ref --verify --quiet "refs/heads/$branch_name"; then
-    if [[ -n "$worktree_path" ]]; then
-      # Stop this checkout's architecture daemons while it still exists and
-      # stays registered: start cannot put another checkout at this path, and
-      # the helpers that finish runs from this checkout are still present.
-      # archctx runs outside the topology lock. A failure is reported and
-      # never blocks or reorders the removal.
-      if ! run_contract_runtime stop-architecture-daemons --repo "$current_root" --worktree "$worktree_path"; then
-        daemon_stop_failed=1
-      fi
+  if [[ -n "$worktree_path" ]]; then
+    # Stop this checkout's architecture daemons while it still exists and
+    # stays registered: start cannot put another checkout at this path, and
+    # the helpers that finish runs from this checkout are still present.
+    # archctx runs outside the topology lock. A failure is reported and
+    # never blocks or reorders the removal.
+    if ! run_contract_runtime stop-architecture-daemons --repo "$current_root" --worktree "$worktree_path"; then
+      daemon_stop_failed=1
     fi
-    run_contract_runtime remove-exact --repo "$current_root" \
-      --worktree "${worktree_path:-(absent)}" \
-      --branch "$branch_name" --head "$cleanup_head" --target "$target_branch" \
-      --target-oid "$cleanup_target" --merge "$cleanup_target"
-    echo "[ContractWorktree] Removed worktree: ${worktree_path:-(absent)}"
-    echo "[ContractWorktree] Deleted branch: $branch_name (update-ref, $merge_mode)"
   fi
+  run_contract_runtime remove-exact --repo "$current_root" \
+    --worktree "${worktree_path:-(absent)}" \
+    --branch "$branch_name" --head "$cleanup_head" --target "$target_branch" \
+    --target-oid "$cleanup_target" --merge "$cleanup_target"
+  echo "[ContractWorktree] Removed worktree: ${worktree_path:-(absent)}"
+  echo "[ContractWorktree] Deleted branch: $branch_name (update-ref, $merge_mode)"
 
   if [[ -e "$metadata_file" ]]; then
     rm -f "$metadata_file"

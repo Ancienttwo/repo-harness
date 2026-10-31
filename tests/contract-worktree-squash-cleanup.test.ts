@@ -112,7 +112,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       expect(run("git", ["status", "--porcelain"], worktreePath).stdout).toBe("");
       mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
       const metadataPath = join(cwd, ".ai/harness/worktrees/native-evidence.json");
-      const metadata = '{"slug":"native-evidence"}\n';
+      const metadata = '{"slug":"native-evidence","branch":"codex/native-evidence"}\n';
       writeFileSync(metadataPath, metadata);
       const dryRun = run("bash", ["scripts/contract-worktree.sh", "cleanup", "--slug", "native-evidence", "--dry-run"], cwd);
       expect(dryRun.status, dryRun.stdout + dryRun.stderr).toBe(0);
@@ -155,7 +155,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       ).not.toBe(0);
 
       mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees/squash-demo.json"), '{"slug":"squash-demo"}\n');
+      writeFileSync(join(cwd, ".ai/harness/worktrees/squash-demo.json"), '{"slug":"squash-demo","branch":"codex/squash-demo"}\n');
 
       const dryRun = run(
         "bash",
@@ -202,6 +202,8 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       // -- this is the falsifier's negative control.
       writeFileSync(join(worktreePath, "extra.txt"), "not on main\n");
       commitAll(worktreePath, "add unmerged extra change");
+      mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
+      writeFileSync(join(cwd, ".ai/harness/worktrees/squash-extra.json"), '{"slug":"squash-extra","branch":"codex/squash-extra"}\n');
 
       const dryRun = run(
         "bash",
@@ -247,7 +249,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       ).not.toBe(0);
 
       mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees/squash-real.json"), '{"slug":"squash-real"}\n');
+      writeFileSync(join(cwd, ".ai/harness/worktrees/squash-real.json"), '{"slug":"squash-real","branch":"codex/squash-real"}\n');
 
       const result = run(
         "bash",
@@ -307,7 +309,7 @@ describe("contract-worktree cleanup squash-merge absorption", () => {
       ).toBe(0);
 
       mkdirSync(join(cwd, ".ai/harness/worktrees"), { recursive: true });
-      writeFileSync(join(cwd, ".ai/harness/worktrees/ancestor-real.json"), '{"slug":"ancestor-real"}\n');
+      writeFileSync(join(cwd, ".ai/harness/worktrees/ancestor-real.json"), '{"slug":"ancestor-real","branch":"codex/ancestor-real"}\n');
 
       const result = run(
         "bash",
