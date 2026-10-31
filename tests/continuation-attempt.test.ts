@@ -14,7 +14,6 @@ import { dirname, join, relative } from 'path';
 import { spawn, spawnSync } from 'child_process';
 import type { AttemptReceiptV1, ContinuationEnvelopeV2 } from '../src/core/state/types';
 import { stateVersionOwnerPath } from '../src/effects/state/git-state-version-store';
-import { resolveEffectiveStateReadOnly } from '../src/effects/state/resolve-effective-state';
 import {
   buildAttemptReceipt,
   evaluateAttemptStall,
@@ -48,12 +47,10 @@ function attemptArgv(args: AttemptArgs): string[] {
   ];
 }
 
-function writeHandoff(cwd: string, nextStep = 'implement resolver'): void {
-  const authority = resolveEffectiveStateReadOnly(cwd).authority_revision;
-  write(cwd, '.ai/harness/handoff/current.md', [
-    '> **Source State Revision**: ' + authority,
-    '- Exact Next Step: ' + nextStep,
-  ].join('\n'));
+/** The only next-unit source: a canonical <type>/<digits>-<slug> branch. */
+function branchWithIssue(cwd: string, branch = 'feat/1234-fixture'): void {
+  const result = spawnSync('git', ['checkout', '-q', '-b', branch], { cwd, encoding: 'utf-8' });
+  if (result.status !== 0) throw new Error(result.stderr);
 }
 
 function envelopeFrom(cwd: string): ContinuationEnvelopeV2 {
@@ -105,7 +102,7 @@ function treeFingerprint(root: string): string {
 function withLedgerRepo(fn: (cwd: string) => void): void {
   withRepo((cwd) => {
     write(cwd, '.gitignore', readFileSync(join(cwd, '.gitignore'), 'utf-8') + '.ai/harness/runs/\n');
-    writeHandoff(cwd);
+    branchWithIssue(cwd);
     fn(cwd);
   });
 }
@@ -264,7 +261,7 @@ describe('no-progress circuit breaker', () => {
     });
   }, 30_000);
 
-  test('a resume-only projection change keeps the stall', () => {
+  test('a retired resume write keeps the stall', () => {
     withLedgerRepo((cwd) => {
       const initial = envelopeFrom(cwd);
       recordStalled(cwd, initial.progress_token);
@@ -405,7 +402,7 @@ describe('no-progress circuit breaker', () => {
 describe('circuit breaker scope', () => {
   test('a stalled idle route is never rewritten', () => {
     withLedgerRepo((cwd) => {
-      write(cwd, '.ai/harness/handoff/current.md', '# no actionable next step\n');
+      branchWithIssue(cwd, 'feature/no-issue-here');
       const complete = envelopeFrom(cwd);
       expect(complete.route).toBe('idle');
       expect(complete.unit_ref).toBeNull();

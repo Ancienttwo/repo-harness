@@ -10,6 +10,7 @@ const NOW = Date.parse('2026-07-15T12:00:00Z');
 const AUTHORITY = 'sha256:authority';
 const SUBJECT_REVISION = 'sha256:subject';
 const PROJECTION_REVISION = 'sha256:projection';
+const BRANCH_NEXT_ACTION = 'Continue GitHub issue #1234 on branch feat/1234-fixture.';
 const INVALID_REGISTRY = capabilityOwnershipBlocker(
   { code: 'INVALID_JSON', path: '$', message: 'invalid JSON: Unexpected token' },
   'registry',
@@ -46,74 +47,31 @@ function input(overrides: Partial<EffectiveStateInputs> = {}): EffectiveStateInp
     currentWorktree: '/repo',
     worktreeOwner: '/repo',
     worktreeOwnerIsCurrent: true,
-    handoffPath: '.ai/harness/handoff/current.md',
-    handoffText: null,
-    resumePath: '.ai/harness/handoff/resume.md',
-    resumeText: null,
-    currentSnapshotPath: 'tasks/current.md',
-    currentSnapshotText: null,
+    branchNextAction: null,
     authorityRevision: AUTHORITY,
     subjectRevision: SUBJECT_REVISION,
     projectionRevision: PROJECTION_REVISION,
     stateVersion: 7,
     stateRevision: 'sha256:state',
-    sourceHashes: { '.ai/harness/handoff/current.md': 'sha256:handoff' },
+    sourceHashes: { '.ai/harness/active-worktree': 'sha256:worktree' },
     ...overrides,
   };
 }
 
-function freshHandoff(nextStep = 'resume adapter parity'): string {
-  return [
-    `> **Source State Revision**: ${AUTHORITY}`,
-    `- Exact Next Step: ${nextStep}`,
-  ].join('\n');
-}
-
-function freshResume(): string {
-  return [
-    `> **Source State Revision**: ${AUTHORITY}`,
-    '> **Handoff Hash**: sha256:handoff',
-  ].join('\n');
-}
-
 describe('pure Effective State projection', () => {
-  test('snapshot age changes freshness without changing workflow admission authority', () => {
-    const snapshot = '> **Updated At**: 2026-07-15T12:00:00Z\n';
-    const before = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW + 24 * 60 * 60 * 1000 }));
-    const after = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW + 24 * 60 * 60 * 1000 + 1 }));
-    expect(before.current_snapshot.freshness).toBe('fresh');
-    expect(after.current_snapshot.freshness).toBe('stale');
-    expect(before.stale_sources).not.toContain('current_snapshot');
-    expect(after.stale_sources).toContain('current_snapshot');
-    expect(after.blockers).toEqual(before.blockers);
-
-    expect(after.progress_token).toBe(before.progress_token);
-    expect(after.phase).toBe(before.phase);
-
-    const invalidAuthority = projectEffectiveState(input({ currentSnapshotText: snapshot, nowMs: NOW, capabilityBlocker: INVALID_REGISTRY }));
-    expect(invalidAuthority.blockers).toContain('capability_registry:invalid');
-  });
-
-  test('projects idle phase, profile, and only the handoff next action without I/O', () => {
-    const state = projectEffectiveState(input({ handoffText: freshHandoff() }));
+  test('projects idle phase, profile, and the branch next action without I/O', () => {
+    const state = projectEffectiveState(input({ branchNextAction: BRANCH_NEXT_ACTION }));
     expect(state.protocol).toBe(2);
     expect(state.phase).toBe('idle');
-    expect(state.next_action).toBe('resume adapter parity');
+    expect(state.next_action).toBe(BRANCH_NEXT_ACTION);
     expect(state.workflow_profile).toBe('routine');
     expect(state.guidance).toContain('verify typecheck and affected tests once');
   });
 
-  test('projects fresh handoff/resume/current branches and handoff next action', () => {
-    const state = projectEffectiveState(input({
-      handoffText: freshHandoff(),
-      resumeText: freshResume(),
-      currentSnapshotText: '> **Updated At**: 2026-07-15T11:30:00Z\n',
-    }));
-    expect(state.next_action).toBe('resume adapter parity');
-
-    expect(state.handoff.freshness).toBe('fresh');
-    expect(state.resume.freshness).toBe('fresh');
-    expect(state.current_snapshot.freshness).toBe('fresh');
+  test('projects an ambiguous branch as a null next action', () => {
+    const state = projectEffectiveState(input());
+    expect(state.phase).toBe('idle');
+    expect(state.next_action).toBeNull();
     expect(state.stale_sources).toEqual([]);
   });
 
@@ -128,7 +86,7 @@ describe('pure Effective State projection', () => {
         reasons: ['risk-floor:strict:signals-unavailable'],
       },
       capabilityBlocker: INVALID_REGISTRY,
-      staleSources: ['handoff', 'handoff'],
+      staleSources: ['review_subject', 'review_subject'],
       conflictingSources: ['worktree_owner', 'worktree_owner'],
     }));
     expect(state.phase).toBe('blocked');
@@ -142,7 +100,7 @@ describe('pure Effective State projection', () => {
       'workflow_profile:invalid_risk_input',
       'capability_registry:invalid',
     ]);
-    expect(state.stale_sources).toEqual(['handoff']);
+    expect(state.stale_sources).toEqual(['review_subject']);
     expect(state.conflicting_sources).toEqual(['worktree_owner']);
     expect(state.guidance).toBeNull();
   });
@@ -174,47 +132,20 @@ describe('pure Effective State projection', () => {
     expect(state.next_action).toBe('resolve blockers');
   });
 
-  test('binds resume independently to authority revision and handoff hash', () => {
-    const resume = (revision: string, handoffHash: string) => [
-      `> **Source State Revision**: ${revision}`,
-      `> **Handoff Hash**: ${handoffHash}`,
-    ].join('\n');
-    expect(projectEffectiveState(input({ resumeText: resume(AUTHORITY, 'sha256:handoff') })).resume.freshness)
-      .toBe('fresh');
-
-    for (const stale of [
-      resume('sha256:other-authority', 'sha256:handoff'),
-      resume(AUTHORITY, 'sha256:other-handoff'),
-    ]) {
-      expect(projectEffectiveState(input({ resumeText: stale })).resume.freshness).toBe('stale');
-    }
-  });
-
   test('covers the blocked and idle phase branches and the null next-action branch', () => {
     expect(projectEffectiveState(input()).phase).toBe('idle');
     expect(projectEffectiveState(input({ conflictingSources: ['worktree_owner'] })).phase).toBe('blocked');
-    expect(projectEffectiveState(input({ handoffText: null })).next_action).toBeNull();
+    expect(projectEffectiveState(input({ branchNextAction: null })).next_action).toBeNull();
   });
 
-  test('covers missing, unavailable, stale, and not-applicable freshness branches', () => {
-    const missing = projectEffectiveState(input());
-
-    expect(missing.handoff.freshness).toBe('missing');
-    expect(missing.resume.freshness).toBe('missing');
-    expect(missing.current_snapshot.freshness).toBe('missing');
+  test('covers the missing, fresh and stale worktree freshness branches', () => {
+    expect(projectEffectiveState(input()).worktree.freshness).toBe('fresh');
 
     const stale = projectEffectiveState(input({
       worktreeOwner: '/other',
       worktreeOwnerIsCurrent: false,
-      handoffText: '> **Source State Revision**: sha256:other\n',
-      resumeText: '> **Source State Revision**: sha256:other\n',
-      currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
     }));
-
     expect(stale.worktree.freshness).toBe('stale');
-    expect(stale.handoff.freshness).toBe('stale');
-    expect(stale.resume.freshness).toBe('stale');
-    expect(stale.current_snapshot.freshness).toBe('stale');
 
     expect(projectEffectiveState(input({ worktreeOwner: null })).worktree.freshness).toBe('missing');
   });
@@ -244,13 +175,11 @@ describe('pure Effective State projection', () => {
     expect(state.progress_token).toMatch(/^sha256:[0-9a-f]{64}$/);
   });
 
-  test('progress_token depends only on subject revision and blockers -- never projection text, time, or state version', () => {
+  test('progress_token depends only on subject revision and blockers -- never projection, time, branch, or state version', () => {
     const base = projectEffectiveState(input());
 
     const projectionChurned = projectEffectiveState(input({
-      handoffText: '> **Source State Revision**: other\n',
-      resumeText: '> **Source State Revision**: other\n',
-      currentSnapshotText: '> **Updated At**: 2000-01-01T00:00:00Z\n',
+      branchNextAction: BRANCH_NEXT_ACTION,
       nowMs: NOW + 999_999,
       stateVersion: 999,
       stateRevision: 'sha256:different',
@@ -290,6 +219,9 @@ describe('pure Effective State projection', () => {
       'progress_token',
     ]);
     expect(keys.indexOf('next_action')).toBeLessThan(keys.indexOf('source_hashes'));
+    expect(keys).not.toContain('handoff');
+    expect(keys).not.toContain('resume');
+    expect(keys).not.toContain('current_snapshot');
   });
 });
 

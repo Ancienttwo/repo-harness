@@ -1209,7 +1209,6 @@ pi_write_harness_policy() {
   },
   "harness": {
     "policy_file": ".ai/harness/policy.json",
-    "handoff_file": ".ai/harness/handoff/current.md",
     "failure_log_file": ".ai/harness/failures/latest.jsonl",
     "events_file": ".ai/harness/events.jsonl",
     "runs_dir": ".ai/harness/runs",
@@ -1630,7 +1629,6 @@ pi_ensure_harness_state_surface() {
   mkdir -p \
     "$target_dir/.ai/context" \
     "$target_dir/.ai/harness/checks" \
-    "$target_dir/.ai/harness/handoff" \
     "$target_dir/.ai/harness/failures" \
     "$target_dir/.ai/harness/security" \
     "$target_dir/.ai/harness/planning" \
@@ -1644,8 +1642,6 @@ pi_ensure_harness_state_surface() {
     "$target_dir/docs/architecture/diagrams" \
     "$target_dir/.ai/harness/runs"
 
-  [[ -f "$target_dir/.ai/harness/handoff/current.md" ]] || printf "# Harness Handoff\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/current.md"
-  [[ -f "$target_dir/.ai/harness/handoff/resume.md" ]] || printf "# Codex Resume Packet\n\n> **Reason**: bootstrap\n" > "$target_dir/.ai/harness/handoff/resume.md"
   [[ -f "$target_dir/.ai/context/capability-source-map.json" ]] || printf '{\n  "version": 1,\n  "capabilities": {}\n}\n' > "$target_dir/.ai/context/capability-source-map.json"
   [[ -f "$target_dir/.ai/harness/events.jsonl" ]] || : > "$target_dir/.ai/harness/events.jsonl"
   [[ -f "$target_dir/.ai/harness/failures/latest.jsonl" ]] || : > "$target_dir/.ai/harness/failures/latest.jsonl"

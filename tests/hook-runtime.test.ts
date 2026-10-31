@@ -141,7 +141,7 @@ describe('hook runtime typed dispatch', () => {
     } finally { rmSync(root, { recursive: true, force: true }); }
   }, 60_000);
 
-  test('a crash outside the edit route keeps a non-blocking exit 1', () => {
+  test('a Stop with a symlinked retired handoff directory stays non-blocking and writes nothing', () => {
     const root = fixture();
     const outside = mkdtempSync(join(tmpdir(), 'hrd09-stop-outside-'));
     try {
@@ -153,8 +153,9 @@ describe('hook runtime typed dispatch', () => {
         input: JSON.stringify({ stop_hook_active: false }),
         env: env(root),
       });
-      expect(result).toMatchObject({ exitCode: 1, reason: 'handler-failed', handler: 'stop' });
-      expect(telemetry(root).at(-1)).toMatchObject({ exit_code: 1, blocked: false, reason: 'handler-failed' });
+      expect(result).toMatchObject({ exitCode: 0, reason: 'ok', handler: 'stop' });
+      expect(existsSync(join(outside, 'current.md'))).toBe(false);
+      expect(existsSync(join(outside, 'resume.md'))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });

@@ -82,7 +82,7 @@ describe('review subject', () => {
       writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"status":"pass"}\n');
       writeFileSync(join(cwd, '.ai/harness/evidence/events/log.jsonl'), '{"type":"evidence_event"}\n');
       writeFileSync(join(cwd, '.ai/harness/failures/latest.jsonl'), '{"guard":"demo"}\n');
-      writeFileSync(join(cwd, '.ai/harness/handoff/current.md'), '# Handoff\n');
+      writeFileSync(join(cwd, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), '{}\n');
 
       const operationalOnly = buildReviewSubject(cwd);
@@ -90,7 +90,7 @@ describe('review subject', () => {
         '.ai/harness/checks/latest.json',
         '.ai/harness/evidence/events/log.jsonl',
         '.ai/harness/failures/latest.jsonl',
-        '.ai/harness/handoff/current.md',
+        '.ai/harness/handoff/task-goal.md',
         '.ai/harness/state/effective.json',
         'tasks/reviews/demo.review.md',
       ]);
@@ -101,6 +101,26 @@ describe('review subject', () => {
       const implementationChange = buildReviewSubject(cwd);
       expect(implementationChange.paths).toEqual(['README.md']);
       expect(implementationChange.review_subject_sha256).not.toBe(clean.review_subject_sha256);
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
+
+  test('retired handoff session recovery files are no longer operational', () => {
+    const cwd = tmpRepo('repo-harness-review-freshness-retired-handoff');
+    try {
+      const clean = buildReviewSubject(cwd);
+      mkdirSync(join(cwd, '.ai/harness/handoff'), { recursive: true });
+      writeFileSync(join(cwd, '.ai/harness/handoff/current.md'), '# Handoff\n');
+      writeFileSync(join(cwd, '.ai/harness/handoff/resume.md'), '# Resume\n');
+
+      const subject = buildReviewSubject(cwd);
+      expect(subject.excluded_paths).toEqual([]);
+      expect(subject.paths).toEqual([
+        '.ai/harness/handoff/current.md',
+        '.ai/harness/handoff/resume.md',
+      ]);
+      expect(subject.review_subject_sha256).not.toBe(clean.review_subject_sha256);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }
