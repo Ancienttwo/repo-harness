@@ -20,6 +20,25 @@ a small diff, and two maps from the same skill look the same.
 - Sequence: lifeline headers 192 × 64 on a 240 px pitch, starting at
   x = 224.
 
+## Overview node links
+
+An overview node that the model covers is an `<a>` element with
+`class="node"`, not a `<div>`. Its `href` is the first path of the
+module's `docs`, made relative to `docs/architecture/archimap.html`.
+`measure.ts` returns that path from the repository root, so remove the
+`docs/architecture/` prefix:
+`docs/architecture/modules/runtime-harness/operator.md` becomes
+`modules/runtime-harness/operator.md`. The node keeps its kind fill,
+border and text color. Underline it on `:hover` and `:focus-visible`
+only, and show a visible focus ring.
+
+A module that covers more than one capability document links to the first
+path and ends its mono id line with `+N`, the number of other documents.
+The meta block keeps the full list in `modules[].docs`. A node with no
+document stays a `<div>` and carries no link: an `undocumentedNodes`
+capability gets a remark, and a node that the project does not provide is
+not a capability.
+
 ## Type
 
 IBM Plex Sans with Noto Sans SC for CJK text, and IBM Plex Mono for
