@@ -11,6 +11,10 @@ All notable changes to this skill are documented here.
   `plans/`, `tasks/todos.md`, `tasks/current.md`, `check:task-*` scripts and
   the retired policy keys. Existing PRDs move to `docs/prds/`. (#1177-#1184,
   #1225)
+- Remove `docs/issue-flow.md`. The `repo-harness-issue-flow` skill is the only
+  flow source. (#1223)
+- Remove the duplicated flow reference docs from `docs/reference-configs/`.
+  (#1227)
 - Add the issue/PR architecture map (`docs/architecture/archimap.html`) and
   refresh the generated architecture outputs. (#1184, #1209)
 
@@ -30,10 +34,45 @@ All notable changes to this skill are documented here.
 - Remove the MCP `run_workflow_check` tool. Its `check-task-workflow`
   helper is retired, so the tool would fail as an unknown helper. The old
   name now returns the MCP unknown-tool error. (#1182)
+- The Stop hook no longer writes, and Effective State no longer reads,
+  `.ai/harness/handoff/current.md` and `resume.md`. Resume from Git state,
+  the GitHub issue and the PR. (#1228)
 
 ### Added
 
-- The DSH host plugin ships in the npm package; `prepack` builds it. (#1206)
+- `repo-harness init` writes `CLAUDE.md` and `AGENTS.md` from one root-context
+  template, `assets/templates/root-context.md`. (#1229)
+- `repo-harness update` removes the six retired flow reference docs
+  (`contract-brief-example.md`, `contract-brief-example-bugfix.md`,
+  `development-protocol.md`, `handoff-protocol.md`, `sprint-contracts.md` and
+  `workflow-orchestration.md`) and the empty `docs/architecture/domains` and
+  `docs/architecture/snapshots` placeholders. A modified file is kept and
+  reported. (#1229)
+- The DSH host plugin ships in the npm package. `prepack` builds
+  `dist/dsh-plugin.js`, and the package includes `cordis.patch.yml`. Registry
+  install verification and release-note claims are deferred. (#1206)
+
+### Changed
+
+- Root `CLAUDE.md` and `AGENTS.md` carry cross-layer invariants only. The
+  issue-flow skill owns the multi-agent flow, and the archimap owns the
+  architecture view. (#1226)
+- Only the coordinator posts `issue claim`. A worker starts from the claim
+  that names it and does not claim its own seat. (#1278)
+- One change hazard list sets the High review tier. A hit covers CI workflows,
+  release and install scripts, a network address or telemetry, credential
+  reads, a dependency or lockfile change, and binaries or opaque blobs.
+  (#1274)
+- A CI repair issue is keyed by the failing test identity. A repair session
+  finds the issue by test name and reads its evidence first. (#1275)
+- Research findings live in `docs/researches/`. Durable decisions live in
+  `docs/adr/`. `docs/plans/` is banned. (#1250)
+- The fleet known-gaps table records a named review check for each producer.
+  The check adds evidence and does not change the review tier. (#1272)
+- Publication readiness regenerates declared generated artifacts on the merge
+  tree. A generator input change must commit the regenerated output on the PR
+  head. (#1257, #1288)
+- The architecture map and the root-router projection are refreshed. (#1291)
 
 ### Fixed
 
