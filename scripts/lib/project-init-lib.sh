@@ -1973,6 +1973,9 @@ if (pkg.scripts["check:brain-manifest"] === "repo-harness run check-brain-manife
 }
 pkg.scripts["check:context-files"] = "repo-harness run check-context-files";
 pkg.scripts["check:deploy-sql"] = "repo-harness run check-deploy-sql-order";
+if (pkg.scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
+  delete pkg.scripts["check:task-workflow"];
+}
 if (pkg.scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
   delete pkg.scripts["check:architecture-sync"];
 }

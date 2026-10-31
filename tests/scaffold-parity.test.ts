@@ -151,7 +151,7 @@ describe("create-project-dirs scaffold parity", () => {
     }
   }, SCAFFOLD_PARITY_TIMEOUT_MS);
 
-  test("legacy package refresh leaves existing workflow scripts untouched", () => {
+  test("legacy package refresh removes the generated strict workflow script and stops seeding task sync", () => {
     const cwd = mkdtempSync(join(tmpdir(), "scaffold-workflow-script-"));
     try {
       for (const command of ["repo-harness run check-task-workflow --strict", "bun run custom-workflow.ts"]) {
@@ -164,7 +164,7 @@ describe("create-project-dirs scaffold parity", () => {
         const scripts = JSON.parse(readFileSync(join(cwd, "package.json"), "utf-8")).scripts;
         expect(scripts.test).toBe("bun test");
         expect(scripts["check:task-sync"]).toBeUndefined();
-        expect(scripts["check:task-workflow"]).toBe(command);
+        expect(scripts["check:task-workflow"]).toBe(command.startsWith("repo-harness") ? undefined : command);
       }
     } finally {
       rmSync(cwd, { recursive: true, force: true });

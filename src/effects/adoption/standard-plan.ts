@@ -528,6 +528,9 @@ function addPackageOperation(repoRoot: string, operations: AdoptionOperation[]):
   if (scripts["sync:brain-docs"] === "repo-harness run sync-brain-docs --all") {
     delete scripts["sync:brain-docs"];
   }
+  if (scripts["check:task-workflow"] === "repo-harness run check-task-workflow --strict") {
+    delete scripts["check:task-workflow"];
+  }
   if (scripts["check:architecture-sync"] === "repo-harness run check-architecture-sync") {
     delete scripts["check:architecture-sync"];
   }

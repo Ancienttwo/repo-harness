@@ -132,6 +132,11 @@ export async function analyzeAffectedTests(paths: readonly string[], sources: Re
   for (const path of paths) {
     if (isDocumentationPath(path)) { for (const test of documentationConsumers) if (sources.has(test)) tests.add(test); continue; }
     if (fullReasons.includes(path)) continue;
+    // Eval fixtures are inputs to the eval suite; a rename or deletion must run it.
+    if (path.startsWith('evals/fixtures/')) {
+      if (sources.has('tests/run-skill-evals.test.ts')) tests.add('tests/run-skill-evals.test.ts');
+      continue;
+    }
     const seen = new Set([path]); const queue = [path]; let covered = false;
     for (const consumer of data.get(path) ?? []) if (!seen.has(consumer)) { seen.add(consumer); queue.push(consumer); }
     for (let i = 0; i < queue.length; i++) {
