@@ -3,7 +3,7 @@
  * this one constant. There is no upper bound: a newer Pi is accepted when the
  * runtime capability probe passes.
  *
- * 1.4.0 is the floor because OAR 0.75.0 requires
+ * 1.4.0 is the floor because OAR 0.80.1 requires
  * `@earendil-works/pi-coding-agent ^1.4.0`, and Pi 1.4.0 has every event the
  * extension maps (`tool_call` with `parentToolCallId`, `before_agent_start`
  * messages, `agent_settled.aborted`).
