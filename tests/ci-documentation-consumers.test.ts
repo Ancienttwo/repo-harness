@@ -22,12 +22,12 @@ describe('documentation consumer discovery', () => {
     const root = mkdtempSync(join(tmpdir(), 'ci-documentation-discovery-'));
     const fixtures: Record<string, string> = {
       'two-step.test.ts': `import { join } from 'path'; import { readFileSync as read } from 'fs'; const ROOT = join(import.meta.dir, '..'); const guide = join(ROOT, 'docs/guide.md'); read(guide);`,
-      'cwd.test.ts': `const ROOT = process.cwd(); const guide = resolve(ROOT, 'tasks/todos.md'); readFileSync(guide);`,
+      'cwd.test.ts': `const ROOT = process.cwd(); const guide = resolve(ROOT, 'tasks/lessons.md'); readFileSync(guide);`,
       'named-guide.test.ts': `const CLI = join(import.meta.dir, '..', 'src/main.ts'); const temp = mkdtempSync('fixture'); readFileSync(join(temp, 'docs/existing.md'));`,
       'named-ledger-fixture.test.ts': `const CLI = join(import.meta.dir, '..', 'src/main.ts'); const temp = mkdtempSync('fixture'); readFileSync(join(temp, 'tasks/todos.md'));`,
       'generated-guide.test.ts': `const CLI = join(import.meta.dir, '..', 'src/main.ts'); const temp = mkdtempSync('fixture'); writeFileSync(join(temp, 'docs/existing.md'), '# Generated'); readFileSync(join(temp, 'docs/existing.md'));`,
       'checkout-write-read.test.ts': `const ROOT = join(import.meta.dir, '..'); writeFileSync(join(ROOT, 'docs/existing.md'), '# Changed'); readFileSync(join(ROOT, 'docs/existing.md'));`,
-      'relative.test.ts': `readFileSync('plans/prds/example.md');`,
+      'relative.test.ts': `readFileSync('tasks/lessons.md');`,
       'loop.test.ts': `const ROOT = join(import.meta.dir, '..'); const paths = ['README.md', 'docs/guide.md']; for (const file of paths) readFileSync(join(ROOT, file));`,
       'wrapper.test.ts': `const ROOT = join(import.meta.dir, '..'); function read(path: string) { return readFileSync(path); } read(join(ROOT, 'docs/guide.md'));`,
       'dynamic.test.ts': `const ROOT = join(import.meta.dir, '..'); const documentedFamily = 'docs/guide.md'; readFileSync(join(ROOT, selectedPath));`,

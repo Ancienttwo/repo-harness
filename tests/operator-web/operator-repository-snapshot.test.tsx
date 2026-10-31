@@ -10,7 +10,7 @@ import { Window } from 'happy-dom';
 
 import { OperatorApp } from '../../src/operator-web/App';
 import { fetchOperatorRepositorySnapshot } from '../../src/operator-web/fleet-api';
-import { repositorySnapshot, repositoryObservationFixture, fixtureTasks, planningObservationFixture, admittedTaskContextFixture as taskContextFixture, taskActivityFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import { repositorySnapshot, repositoryObservationFixture, fixtureTasks, planningObservationFixture, admittedTaskContextFixture as taskContextFixture, stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 import {
   decodeOperatorRepositorySnapshot,
@@ -220,7 +220,6 @@ describe('repository snapshot failure recovery', () => {
     await mount(<OperatorApp initialSnapshot={snapshot} initialLocale="en"
       fetchSnapshot={async () => snapshot}
       readTaskContext={async request => taskContextFixture(request)}
-      readTaskActivity={async request => taskActivityFixture(request)}
       fetchRepositorySnapshot={async repositoryId => {
         asked.push(repositoryId);
         if (asked.length === 1) throw { code: 'repository_snapshot_unavailable', message: 'Repository sources are unavailable.', next_action: 'Refresh.' };

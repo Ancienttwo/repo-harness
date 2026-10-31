@@ -27,20 +27,6 @@ requires it. A diff's size, a new test file, or an evidence cache miss is not a
 reason. Declare each execution once: do not list a leaf check that an aggregate
 script such as `bun run check:ci` already runs.
 
-## Bind the task-sync digest
-
-The digest must be computed against the same boundary CI will use, or it goes
-stale the moment `main` moves:
-
-```bash
-REPO_HARNESS_DIFF_BASE=origin/main REPO_HARNESS_DIFF_MODE=merge-base \
-  bash scripts/check-task-sync.sh
-```
-
-`REPO_HARNESS_DIFF_MODE` accepts `merge-base` (pull requests) or `direct`
-(push-parent); it defaults to `direct`. Rebind after every rebase onto a moved
-`main`.
-
 ## Which lane the change will get
 
 `scripts/select-ci-coverage.ts#isDocumentationPath` is the whole documentation
@@ -48,7 +34,8 @@ allowlist:
 
 - `README.md` and `DEBUG.md`
 - `docs/architecture/.projection-manifest.json`
-- anything under `tasks/` except `tasks/lessons.md`, or `.ai/harness/handoff/`
+- `tasks/lessons.md`
+- anything under `.ai/harness/handoff/`
 - any `.md` under `docs/` or `examples/`, **except** anything under
   `docs/reference-configs/`
 

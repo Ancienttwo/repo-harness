@@ -347,7 +347,7 @@ describe("repo-harness action command skills", () => {
     expect(prd).toContain("[UNVERIFIED]");
     expect(prd).toContain("Does not skip the `$geju` direction pass");
     expect(prd).toContain("Does not make Codex the primary PRD author");
-    expect(prd).toContain("repo-harness run check-task-workflow");
+    expect(prd).not.toContain("repo-harness run check-task-workflow");
   });
 
   test("product routes backlog ordering, issue splitting and dispatch to repo-harness-issue-flow", () => {

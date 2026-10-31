@@ -82,8 +82,6 @@
     "check:brain": "repo-harness brain check",
     "check:context-files": "repo-harness run check-context-files",
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
-    "check:task-sync": "repo-harness run check-task-sync",
-    "check:task-workflow": "repo-harness run check-task-workflow",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_BUNDLED_CLI_VERSION=\"\\\"$npm_package_version\\\"\" && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_BUNDLED_CLI_VERSION dist/hook-entry.js",
     "build:dsh-plugin": "bun build src/dsh/plugin.ts --target=node --format=esm --packages=external --outfile dist/dsh-plugin.js && ! grep -q '@deepseek-ai/' dist/dsh-plugin.js",
     "build:operator-web": "vite build --config vite.operator.config.ts",

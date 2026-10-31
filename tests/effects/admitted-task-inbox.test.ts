@@ -2,7 +2,7 @@ import { expect, test } from 'bun:test';
 import { rmSync } from 'node:fs';
 import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { acknowledgeTaskInbox, deliverTaskInbox, listTaskInbox, readAdmittedTaskActivity, readHistoricalTaskActivity, sendTaskMessage } from '../../src/effects/fleet/task-inbox';
+import { acknowledgeTaskInbox, deliverTaskInbox, listTaskInbox, readAdmittedTaskActivity, sendTaskMessage } from '../../src/effects/fleet/task-inbox';
 import { buildTaskMessageEvent, validateTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { taskMessageSender } from '../../src/cli/commands/fleet';
 
@@ -45,7 +45,6 @@ test('bounded admitted activity pages stored events and receipts without legacy 
     const next = readAdmittedTaskActivity({ ...query, after: activity.next_cursor });
     expect(next.entries[0]?.event).toEqual(second);
     expect(next.entries[0]?.receipts).toEqual([]);
-    expect(readHistoricalTaskActivity(query).entries).toHaveLength(0);
     expect(readAdmittedTaskActivity({ ...query, budget: { ...budget, max_scan: 0 } }).coverage.reason).toBe('scan');
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
