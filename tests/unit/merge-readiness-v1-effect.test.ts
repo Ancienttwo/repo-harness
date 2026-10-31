@@ -1,4 +1,6 @@
 import { describe, expect, test } from 'bun:test';
+import { selectAttemptTestArtifacts, testArtifactAttempt, type RequiredCheckTestExecutionV1 } from '../../src/core/evidence/test-execution-evidence';
+import { readTestExecutionEvidence, readTestExecutionEvidenceAbortable } from '../../src/effects/publication/test-execution-evidence';
 import { notStackMemberDetail, projectPullRequestMergeReadiness, type MergeReadinessBlockerCode } from '../../src/core/publication/merge-readiness';
 
 import {
@@ -670,101 +672,270 @@ test('merged provider PR remains blocked without local squash classification aut
 });
 
 
-function evidenceGh(scenario: 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'skipped-child' | 'no-annotations'): NonNullable<PublicationReadinessInput['gh_runner']> {
+const SUMMARY_JOB = 'Required / CI';
+const SHARD_ONE = 'Affected tests (shard 1/3)';
+const SHARD_TWO = 'Affected tests (shard 2/3)';
+const SUMMARY_STEP = 'Consume the single candidate verification';
+const SHARD_STEP = 'Run the shard tests';
+
+/** The real ci.yml shape: a summary required job and the matrix shards it needs. */
+const WORKFLOW_DEFINITION = [
+  'name: CI',
+  'on:',
+  '  pull_request:',
+  'jobs:',
+  '  selection:',
+  '    name: Select test coverage',
+  '  verify:',
+  '    name: Affected tests (shard ${{ matrix.shard }}/3)',
+  '    needs: selection',
+  '  required:',
+  '    name: Required / CI',
+  '    needs: [selection, verify]',
+].join('\n');
+
+type EvidenceScenario = 'passed-rerun' | 'failed-check' | 'missing-previous-job' | 'association-unknown'
+  | 'evidence-unavailable' | 'original-test-skipped' | 'original-test-not-executed' | 'no-annotations';
+
+function evidenceGh(scenario: EvidenceScenario): NonNullable<PublicationReadinessInput['gh_runner']> {
   const source = fakeGh();
+  const failing = scenario === 'failed-check';
   const run = {
     path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD,
-    status: 'completed', conclusion: scenario === 'failed-check' ? 'failure' : 'success',
-    run_attempt: scenario === 'failed-check' ? 1 : 2, workflow_id: 99,
+    status: 'completed', conclusion: failing ? 'failure' : 'success',
+    run_attempt: failing ? 1 : 2, workflow_id: 99,
     pull_requests: [{ number: receipt.pr_number, head: { sha: HEAD }, base: { sha: BASE } }],
   };
-  const job = (id: number, conclusion: string, checkRunUrl: string | null = null, name = 'test (ubuntu-latest)',
-    stepNames: readonly string[] = ['Run tests']) => ({
+  const job = (id: number, name: string, conclusion: string, step: string, checkRun: string | null = null) => ({
     id, name, status: 'completed', conclusion,
-    steps: stepNames.map((stepName, index) => ({ name: stepName, number: index + 1, status: 'completed', conclusion })),
-    check_run_url: checkRunUrl,
+    steps: [{ name: step, number: 1, status: 'completed', conclusion }],
+    check_run_url: checkRun,
   });
+  const annotationRun = scenario === 'no-annotations' ? null
+    : 'https://api.github.com/repos/example/repo-harness/check-runs/77';
   return (args) => {
     const path = args[1] ?? '';
     if (args[0] === 'pr' && args[1] === 'checks') {
-      return { status: scenario === 'failed-check' ? 1 : 0, stdout: JSON.stringify([{
-        name: 'Required / CI', bucket: scenario === 'failed-check' ? 'fail' : 'pass',
-        link: `https://github.com/example/repo-harness/actions/runs/123/job/${scenario === 'failed-check' ? 456 : 789}`,
+      return { status: failing ? 1 : 0, stdout: JSON.stringify([{
+        name: SUMMARY_JOB, bucket: failing ? 'fail' : 'pass',
+        link: `https://github.com/example/repo-harness/actions/runs/123/job/${failing ? 456 : 789}`,
       }]) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123') return { status: 0, stdout: JSON.stringify(run) };
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/1/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({
-        total_count: 1,
-        jobs: [job(456, 'failure', scenario === 'no-annotations' ? null
-          : 'https://api.github.com/repos/example/repo-harness/check-runs/77',
-          scenario === 'missing-previous-job' ? 'renamed job' : 'test (ubuntu-latest)')],
-      }) };
+      return { status: 0, stdout: JSON.stringify({ total_count: 3, jobs: [
+        job(456, scenario === 'missing-previous-job' ? 'renamed summary job' : SUMMARY_JOB, 'failure', SUMMARY_STEP),
+        job(460, SHARD_ONE, 'failure', SHARD_STEP, annotationRun),
+        job(461, SHARD_TWO, 'success', SHARD_STEP),
+      ] }) };
     }
     if (path === 'repos/example/repo-harness/actions/runs/123/attempts/2/jobs?per_page=100') {
-      return { status: 0, stdout: JSON.stringify({ total_count: 1, jobs: [job(789, 'success', null, 'test (ubuntu-latest)',
-        scenario === 'passed-rerun' ? ['Run tests', 'session-runtime > chunk boundary'] : ['Run tests'])] }) };
+      return { status: 0, stdout: JSON.stringify({ total_count: 3, jobs: [
+        job(789, SUMMARY_JOB, 'success', SUMMARY_STEP),
+        job(760, SHARD_ONE, 'success', SHARD_STEP),
+        job(761, SHARD_TWO, 'success', SHARD_STEP),
+      ] }) };
     }
     if (path === 'repos/example/repo-harness/check-runs/77/annotations?per_page=100') {
       return { status: 0, stdout: JSON.stringify([{ title: 'session-runtime > chunk boundary',
         message: 'AssertionError: expected 200 but received 500' }]) };
     }
+    if (path === `repos/example/repo-harness/contents/.github/workflows/ci.yml?ref=${HEAD}`) {
+      if (scenario === 'association-unknown') return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
+      return { status: 0, stdout: JSON.stringify({ type: 'file', path: '.github/workflows/ci.yml',
+        encoding: 'base64', content: Buffer.from(WORKFLOW_DEFINITION).toString('base64') }) };
+    }
     return source(args);
   };
 }
 
-test('a passing same-SHA rerun is failed_then_passed evidence and never a proven flake', async () => {
-  const gh_runner = evidenceGh('passed-rerun');
-  const sync = collectPullRequestMergeReadiness({ ...input, gh_runner });
+function testExecution(scenario: EvidenceScenario): RequiredCheckTestExecutionV1 {
+  if (scenario === 'evidence-unavailable' || scenario === 'no-annotations') return { status: 'unavailable' };
+  if (scenario === 'original-test-skipped') {
+    return { status: 'available', executed: ['session-runtime > unrelated'], skipped: ['session-runtime > chunk boundary'] };
+  }
+  if (scenario === 'original-test-not-executed') {
+    return { status: 'available', executed: ['session-runtime > unrelated'], skipped: [] };
+  }
+  return { status: 'available', executed: ['session-runtime > chunk boundary'], skipped: [] };
+}
+
+function evidenceVerdict(scenario: EvidenceScenario) {
+  const gh_runner = evidenceGh(scenario);
+  const reader = () => testExecution(scenario);
+  return collectPullRequestMergeReadiness({ ...input, gh_runner, test_execution_reader: reader });
+}
+
+async function evidenceVerdictAsync(scenario: EvidenceScenario) {
+  const gh_runner = evidenceGh(scenario);
+  return collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => gh_runner(args),
+    test_execution_reader_async: async () => testExecution(scenario) });
+}
+
+test('a passing same-SHA rerun preserves the failed shard and revalidates at test level', async () => {
+  const sync = evidenceVerdict('passed-rerun');
   expect(sync.ready).toBe(true);
   expect(sync.blockers).toEqual([]);
   expect(sync.check_failures).toHaveLength(1);
   const [evidence] = sync.check_failures;
-  expect(evidence!.observed_result).toBe('failed_then_passed');
-  expect(evidence!.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed', revalidated: true });
-  expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
-  expect(evidence!.cause).toBe('unknown');
-  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, job_name: 'test (ubuntu-latest)' });
-  expect(evidence!.retry.latest).toMatchObject({ run_id: 123, attempt: 2, job_id: 789 });
+  expect(evidence!.association).toBe('declared_needs');
   expect(evidence!.workflow).toEqual({ path: '.github/workflows/ci.yml', id: 99, revision: HEAD });
+  // The reported failure is the failed child, not the summary job's shell step.
+  expect(evidence!.failed).toMatchObject({
+    run_id: 123, attempt: 1, job_id: 460, job_name: SHARD_ONE,
+    steps: [SHARD_STEP], tests: ['session-runtime > chunk boundary'], shape: 'assertion_mismatch',
+  });
+  expect(evidence!.failed.failure_excerpt).toContain('AssertionError');
+  // The summary job link and the child's attempt history survive the rerun.
+  expect(evidence!.summary).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, job_name: SUMMARY_JOB });
+  expect(evidence!.failed_children).toHaveLength(1);
+  expect(evidence!.failed_children[0]).toMatchObject({
+    association: 'declared_needs',
+    failure: { job_id: 460, job_name: SHARD_ONE, tests: ['session-runtime > chunk boundary'] },
+  });
+  expect(evidence!.failed_children[0]!.attempts).toEqual([
+    { attempt: 1, job_id: 460, job_name: SHARD_ONE, conclusion: 'failure' },
+    { attempt: 2, job_id: 760, job_name: SHARD_ONE, conclusion: 'success' },
+  ]);
+  // The retry's job/step scope carries real workflow step names, never a test name.
+  expect(evidence!.retry).toMatchObject({
+    attempted: true, attempts: 2, outcome: 'failed_then_passed', revalidated: true, reason: null,
+    latest: { run_id: 123, attempt: 2, job_id: 789, job_name: SUMMARY_JOB },
+  });
+  expect(evidence!.retry.latest.scope.executed).toEqual([SUMMARY_JOB, SUMMARY_STEP]);
+  expect(evidence!.retry.latest.scope.executed).not.toContain('session-runtime > chunk boundary');
+  expect(evidence!.observed_result).toBe('failed_then_passed');
+  expect(evidence!.cause).toBe('unknown');
 
-  const asyncVerdict = await collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => gh_runner(args) });
+  const asyncVerdict = await evidenceVerdictAsync('passed-rerun');
   expect(asyncVerdict.check_failures).toEqual(sync.check_failures);
 });
 
-test('a failed required check keeps its blocker and records the failing job and step', () => {
-  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('failed-check') });
+test('a failed required check keeps its blocker and records the failed shard', () => {
+  const verdict = evidenceVerdict('failed-check');
   expect(verdict.ready).toBe(false);
   expect(verdict.blockers.map(blocker => blocker.code)).toContain('checks_failed');
   const [evidence] = verdict.check_failures;
+  expect(evidence!.association).toBe('declared_needs');
   expect(evidence!.observed_result).toBe('failed');
-  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 456, steps: ['Run tests'], shape: 'assertion_mismatch' });
-  expect(evidence!.failed.failure_excerpt).toContain('AssertionError');
+  expect(evidence!.failed).toMatchObject({ run_id: 123, attempt: 1, job_id: 460, job_name: SHARD_ONE,
+    steps: [SHARD_STEP], tests: ['session-runtime > chunk boundary'], shape: 'assertion_mismatch' });
+  expect(evidence!.failed_children[0]!.attempts).toHaveLength(1);
+  expect(evidence!.retry).toMatchObject({ attempted: false, attempts: 1, outcome: 'not_attempted', revalidated: false, reason: null });
   expect(evidence!.cause).toBe('unknown');
 });
 
-test('a passing aggregate step does not revalidate a skipped failed child', () => {
-  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('skipped-child') });
+test('an unproven dependency keeps the summary failure and attributes no child', () => {
+  const verdict = evidenceVerdict('association-unknown');
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.association).toBe('unknown');
+  // The reported failure stays on the required check's own job.
+  expect(evidence!.failed).toMatchObject({ job_id: 456, job_name: SUMMARY_JOB, steps: [SUMMARY_STEP], tests: [] });
+  expect(evidence!.summary).toMatchObject({ job_id: 456, job_name: SUMMARY_JOB });
+  // The observed shard is preserved but marked unknown, never promoted to root cause.
+  expect(evidence!.failed_children).toHaveLength(1);
+  expect(evidence!.failed_children[0]).toMatchObject({
+    association: 'unknown',
+    failure: { job_id: 460, job_name: SHARD_ONE, steps: [SHARD_STEP], tests: ['session-runtime > chunk boundary'] },
+  });
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+    reason: 'failed_test_identifier_unavailable' });
+  expect(evidence!.cause).toBe('unknown');
+});
+
+test('a passing rerun without test execution evidence is not revalidated', () => {
+  const verdict = evidenceVerdict('evidence-unavailable');
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.association).toBe('declared_needs');
+  expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+    reason: 'test_execution_evidence_unavailable' });
+  expect(evidence!.observed_result).toBe('not_revalidated');
+});
+
+test('a rerun that skips the originally failed test is not revalidation', () => {
+  const verdict = evidenceVerdict('original-test-skipped');
   expect(verdict.ready).toBe(true);
   const [evidence] = verdict.check_failures;
   expect(evidence!.failed.tests).toEqual(['session-runtime > chunk boundary']);
-  expect(evidence!.failed.steps).toEqual(['Run tests']);
-  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+    reason: 'original_test_skipped' });
   expect(evidence!.observed_result).toBe('not_revalidated');
 });
 
-test('a rerun without failed child evidence is not revalidated even when the aggregate step passes', () => {
-  const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: evidenceGh('no-annotations') });
+test('a rerun that does not execute the originally failed test is not revalidation', () => {
+  const verdict = evidenceVerdict('original-test-not-executed');
   expect(verdict.ready).toBe(true);
   const [evidence] = verdict.check_failures;
-  expect(evidence!.failed.tests).toEqual([]);
-  expect(evidence!.failed.shape).toBe('logs_unavailable');
-  expect(evidence!.failed.steps).toEqual(['Run tests']);
-  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+    reason: 'original_test_not_executed' });
   expect(evidence!.observed_result).toBe('not_revalidated');
 });
 
-test('a rerun whose preserved job is missing fails closed instead of inventing history', () => {
+test('a rerun without failed child annotations keeps the child but cannot name a test', () => {
+  const verdict = evidenceVerdict('no-annotations');
+  expect(verdict.ready).toBe(true);
+  const [evidence] = verdict.check_failures;
+  expect(evidence!.failed).toMatchObject({ job_id: 460, job_name: SHARD_ONE, shape: 'logs_unavailable', tests: [] });
+  expect(evidence!.failed_children[0]!.failure.job_id).toBe(460);
+  expect(evidence!.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false,
+    reason: 'failed_test_identifier_unavailable' });
+});
+
+test('the default test execution source reads the attempt JUnit artifacts and fails closed', async () => {
+  const junit = (cases: string) => '<?xml version="1.0" encoding="UTF-8"?>\n'
+    + '<testsuites name="bun test">\n  <testsuite name="tests/unit/session-runtime.test.ts" file="tests/unit/session-runtime.test.ts">\n'
+    + cases + '\n  </testsuite>\n</testsuites>\n';
+  const executed = junit('    <testcase name="chunk boundary" classname="session-runtime" file="tests/unit/session-runtime.test.ts" />');
+  const skipped = junit('    <testcase name="chunk boundary" classname="session-runtime" file="tests/unit/session-runtime.test.ts"><skipped /></testcase>');
+  const list = (names: readonly string[]) => ({ status: 0, stdout: JSON.stringify({
+    total_count: names.length,
+    artifacts: names.map((name, index) => ({ id: index + 1, name, expired: false })),
+  }) });
+  const writeReport = (name: string, directory: string) => {
+    writeFileSync(join(directory, 'junit.xml'), name === 'junit-affected-shard-1-2' ? skipped : executed);
+    return true;
+  };
+  const base = { repository: 'example/repo-harness', run_id: 123, attempt: 2, repo_root: '/tmp/merge-readiness-effect-fixture' };
+  expect(selectAttemptTestArtifacts([{ name: 'junit-affected-shard-0-1' }, { name: 'junit-affected-shard-0-2' }], 2))
+    .toEqual([{ name: 'junit-affected-shard-0-2' }]);
+  expect(testArtifactAttempt('junit-daily-12')).toBe(12);
+  // A non-JUnit artifact with an attempt suffix is not a test execution source.
+  expect(testArtifactAttempt('test-projection-2')).toBeNull();
+
+  const available = readTestExecutionEvidence({ ...base, download: writeReport,
+    gh_runner: () => list(['junit-affected-shard-0-1', 'junit-affected-shard-0-2']) });
+  expect(available).toEqual({ status: 'available',
+    executed: ['session-runtime > chunk boundary', 'tests/unit/session-runtime.test.ts > chunk boundary',
+      'tests/unit/session-runtime.test.ts > session-runtime > chunk boundary'],
+    skipped: [] });
+
+  expect(readTestExecutionEvidence({ ...base, download: writeReport, gh_runner: () => list(['junit-affected-shard-0-1']) }))
+    .toEqual({ status: 'unavailable' });
+  expect(readTestExecutionEvidence({ ...base, download: writeReport, gh_runner: () => list(['junit-affected-shard-1-2']) }))
+    .toEqual({ status: 'available', executed: [], skipped: ['session-runtime > chunk boundary',
+      'tests/unit/session-runtime.test.ts > chunk boundary',
+      'tests/unit/session-runtime.test.ts > session-runtime > chunk boundary'] });
+  expect(readTestExecutionEvidence({ ...base, gh_runner: () => ({ status: 1, stdout: '', stderr: 'provider unavailable' }) }))
+    .toEqual({ status: 'unavailable' });
+  expect(readTestExecutionEvidence({ ...base, download: writeReport,
+    gh_runner: () => ({ status: 0, stdout: '<not json>' }) })).toEqual({ status: 'unavailable' });
+});
+
+test('the attempt artifact read is available on the abortable path', async () => {
+  const report = '<?xml version="1.0"?><testsuites><testsuite><testcase name="chunk boundary" classname="session-runtime" /></testsuite></testsuites>';
+  const result = await readTestExecutionEvidenceAbortable({
+    repository: 'example/repo-harness', run_id: 123, attempt: 2, repo_root: '/tmp/merge-readiness-effect-fixture',
+    gh_runner: () => ({ status: 0, stdout: JSON.stringify({ total_count: 1,
+      artifacts: [{ id: 1, name: 'junit-daily-2', expired: false }] }) }),
+    download: (_name, directory) => { writeFileSync(join(directory, 'report.xml'), report); return true; },
+  }, undefined);
+  expect(result).toEqual({ status: 'available', executed: ['session-runtime > chunk boundary'], skipped: [] });
+});
+
+test('a rerun whose preserved summary job is missing fails closed instead of inventing history', () => {
   const gh_runner = evidenceGh('missing-previous-job');
   const identity = observeProviderReadinessIdentity({ ...input, gh_runner });
   expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
@@ -883,8 +1054,7 @@ describe('required-check coverage reads', () => {
 
   test('the executor reuses its base policy read instead of a second contents read', () => {
     const calls: string[][] = [];
-    const source = fakeGh({ changedFilePages: [[{ filename: 'api-surface/entries.json' }]],
-      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'pass' }] });
+    const source = fakeGh({ changedFilePages: [[{ filename: 'api-surface/entries.json' }]],      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'pass' }] });
     const verdict = collectPullRequestMergeReadiness({ ...input,
       policy_file_at_base: { status: 'present', text: ACTIVE_POLICY },
       gh_runner: args => { calls.push([...args]); return source(args); } });

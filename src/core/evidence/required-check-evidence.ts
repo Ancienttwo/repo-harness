@@ -1,18 +1,29 @@
 /**
- * Required-check failure evidence (repo-harness issue #1211).
+ * Required-check failure evidence (repo-harness issues #1211, #1256).
  *
  * A required-check failure is observable provider evidence, not a verdict.
  * This module records the exact head/base (or merge tree), the workflow
- * version, the run/attempt/job links, the executed and skipped scope, the
- * failed job and step, the retry outcome and a typed cause with the evidence
- * that supports it.
+ * version, the run/attempt/job links, the executed and skipped job/step scope,
+ * the failed job and step, the retry outcome and a typed cause with the
+ * evidence that supports it.
  *
- * A same-SHA rerun that passes is recorded as `failed_then_passed`. It is
- * never converted into a proven infrastructure flake, and a rerun that skips
- * the originally failed test is not revalidation. The merge decision is made
+ * A summary required job (a job with declared `needs`) fails because a child
+ * failed. Its failed children keep their own identity, failed steps,
+ * annotations and attempt history. When the workflow revision does not prove
+ * the association, the association is `unknown` and the summary job's own
+ * failure stays the reported failure point.
+ *
+ * Test-level revalidation compares the originally failed test identifiers with
+ * the rerun attempt's test execution report, never with job or step names. A
+ * same-SHA rerun that passes is recorded as `failed_then_passed`. It is never
+ * converted into a proven infrastructure flake, and a rerun without a test
+ * execution source is `failed_then_not_revalidated`. The merge decision is made
  * separately, by the existing publication policy, from the observed check
  * buckets; this module never clears a blocker.
  */
+
+import type { RequiredCheckTestExecutionV1 } from './test-execution-evidence';
+import { testIdentifierPresent } from './test-execution-evidence';
 
 export const REQUIRED_CHECK_FAILURE_PROTOCOL = 1 as const;
 export const REQUIRED_CHECK_FAILURE_KIND = 'repo-harness-required-check-failure' as const;
@@ -34,6 +45,16 @@ export type RequiredCheckRetryOutcome =
   | 'failed_then_passed'
   | 'failed_then_not_revalidated'
   | 'still_failing';
+
+/** Why a retry is not revalidation. Null unless the outcome is `failed_then_not_revalidated`. */
+export type RequiredCheckRetryReason =
+  | 'test_execution_evidence_unavailable'
+  | 'original_test_skipped'
+  | 'original_test_not_executed'
+  | 'failed_test_identifier_unavailable';
+
+/** How the reported failure point relates to the required check's linked job. */
+export type RequiredCheckAssociationV1 = 'direct' | 'declared_needs' | 'unknown';
 
 export type RequiredCheckAttemptConclusion =
   | 'success'
@@ -81,12 +102,30 @@ export interface RequiredCheckFailurePointV1 extends RequiredCheckJobLinkV1 {
   readonly scope: RequiredCheckScopeV1;
 }
 
+/** One attempt's identity for a preserved failed child job. */
+export interface RequiredCheckChildAttemptV1 {
+  readonly attempt: number;
+  readonly job_id: number;
+  readonly job_name: string;
+  readonly conclusion: RequiredCheckAttemptConclusion;
+}
+
+/** A failed child job of a summary required job, with its own attempt history. */
+export interface RequiredCheckChildFailureV1 {
+  readonly association: 'declared_needs' | 'unknown';
+  readonly failure: RequiredCheckFailurePointV1;
+  /** Ordered identity history of this child across the check's attempts. */
+  readonly attempts: readonly RequiredCheckChildAttemptV1[];
+}
+
 export interface RequiredCheckRetryV1 {
   readonly attempted: boolean;
   readonly attempts: number;
   readonly outcome: RequiredCheckRetryOutcome;
   /** True only when an observed failed child/test identifier executed again and was not skipped. */
   readonly revalidated: boolean;
+  /** Why this retry is not revalidation; null for passed, not attempted and still failing. */
+  readonly reason: RequiredCheckRetryReason | null;
   readonly latest: RequiredCheckJobLinkV1 & {
     readonly conclusion: RequiredCheckAttemptConclusion;
     readonly scope: RequiredCheckScopeV1;
@@ -102,7 +141,12 @@ export interface RequiredCheckFailureEvidenceV1 {
   /** Provider merge-tree proof when the observation has one; null otherwise. */
   readonly merge_tree_sha: string | null;
   readonly workflow: RequiredCheckWorkflowV1;
+  readonly association: RequiredCheckAssociationV1;
+  /** The required check's linked job when it is a summary; null for a direct job. */
+  readonly summary: RequiredCheckJobLinkV1 | null;
   readonly failed: RequiredCheckFailurePointV1;
+  /** Every preserved failed child of a summary check. Empty for a direct check. */
+  readonly failed_children: readonly RequiredCheckChildFailureV1[];
   readonly retry: RequiredCheckRetryV1;
   readonly observed_result: RequiredCheckObservedResult;
   readonly cause: RequiredCheckCause;
@@ -119,6 +163,16 @@ export interface RequiredCheckAttemptObservationV1 extends RequiredCheckJobLinkV
   readonly failure_excerpt: string | null;
   readonly platform_evidence: readonly string[];
   readonly scope: RequiredCheckScopeV1;
+  /** Test-level execution results for this attempt, or null when not observed. */
+  readonly test_execution: RequiredCheckTestExecutionV1 | null;
+}
+
+/** The failed children of a summary check, as the collector observed them. */
+export interface RequiredCheckChildObservationV1 {
+  readonly job_name: string;
+  readonly association: 'declared_needs' | 'unknown';
+  /** Ordered observations of this child across the check's attempts. */
+  readonly attempts: readonly RequiredCheckAttemptObservationV1[];
 }
 
 /** A caller-declared cause is limited to causes evidence can support; never `infrastructure`. */
@@ -135,6 +189,9 @@ export interface RequiredCheckObservationV1 {
   readonly workflow: RequiredCheckWorkflowV1;
   /** Ordered, earliest attempt first. The last entry is the observed result. */
   readonly attempts: readonly RequiredCheckAttemptObservationV1[];
+  /** How the summary check's failed children were proven from its declared needs. */
+  readonly association: RequiredCheckAssociationV1;
+  readonly children: readonly RequiredCheckChildObservationV1[];
   readonly declared_cause: RequiredCheckDeclaredCauseV1 | null;
 }
 
@@ -225,6 +282,15 @@ function retryOutcome(value: unknown, label: string): RequiredCheckRetryOutcome 
   return oneOf(value, ['not_attempted', 'failed_then_passed', 'failed_then_not_revalidated', 'still_failing'], label);
 }
 
+function retryReason(value: unknown, label: string): RequiredCheckRetryReason | null {
+  if (value === null) return null;
+  return oneOf<RequiredCheckRetryReason>(value, ['test_execution_evidence_unavailable', 'original_test_skipped', 'original_test_not_executed', 'failed_test_identifier_unavailable'], label);
+}
+
+function associationValue(value: unknown, label: string): RequiredCheckAssociationV1 {
+  return oneOf(value, ['direct', 'declared_needs', 'unknown'], label);
+}
+
 function workflow(value: unknown, label: string): RequiredCheckWorkflowV1 {
   if (!isRecord(value)) fail(`${label} is invalid`);
   exactKeys(value, label, ['path', 'id', 'revision']);
@@ -248,47 +314,96 @@ function jobLink(value: unknown, label: string): RequiredCheckJobLinkV1 {
   });
 }
 
+function failurePoint(value: unknown, label: string): RequiredCheckFailurePointV1 {
+  if (!isRecord(value)) fail(`${label} is invalid`);
+  exactKeys(value, label, ['run_id', 'attempt', 'job_id', 'job_name',
+    'run_url', 'job_url', 'steps', 'tests', 'shape', 'logs_available', 'failure_excerpt', 'platform_evidence', 'scope']);
+  if (typeof value.logs_available !== 'boolean') fail(`${label}.logs_available is invalid`);
+  return Object.freeze({
+    ...jobLink({
+      run_id: value.run_id, attempt: value.attempt, job_id: value.job_id,
+      job_name: value.job_name, run_url: value.run_url, job_url: value.job_url,
+    }, label),
+    steps: Object.freeze(stringArray(value.steps, `${label}.steps`)),
+    tests: Object.freeze(stringArray(value.tests, `${label}.tests`)),
+    shape: failureShape(value.shape, `${label}.shape`),
+    logs_available: value.logs_available,
+    failure_excerpt: nullableString(value.failure_excerpt, `${label}.failure_excerpt`),
+    platform_evidence: Object.freeze(stringArray(value.platform_evidence, `${label}.platform_evidence`)),
+    scope: scope(value.scope, `${label}.scope`),
+  });
+}
+
+function childFailure(value: unknown, label: string): RequiredCheckChildFailureV1 {
+  if (!isRecord(value)) fail(`${label} is invalid`);
+  exactKeys(value, label, ['association', 'failure', 'attempts']);
+  if (!Array.isArray(value.attempts) || value.attempts.length === 0) fail(`${label}.attempts is invalid`);
+  const attempts = value.attempts.map((entry, index) => {
+    if (!isRecord(entry)) fail(`${label}.attempts[${index}] is invalid`);
+    exactKeys(entry, `${label}.attempts[${index}]`, ['attempt', 'job_id', 'job_name', 'conclusion']);
+    return Object.freeze({
+      attempt: positiveInteger(entry.attempt, `${label}.attempts[${index}].attempt`),
+      job_id: positiveInteger(entry.job_id, `${label}.attempts[${index}].job_id`),
+      job_name: requiredString(entry.job_name, `${label}.attempts[${index}].job_name`),
+      conclusion: attemptConclusion(entry.conclusion, `${label}.attempts[${index}].conclusion`),
+    });
+  });
+  return Object.freeze({
+    association: oneOf(value.association, ['declared_needs', 'unknown'], `${label}.association`),
+    failure: failurePoint(value.failure, `${label}.failure`),
+    attempts: Object.freeze(attempts),
+  });
+}
+
 /** Strict reader for a stored evidence record; a receipt may not carry an invented shape. */
 export function validateRequiredCheckFailureEvidence(value: unknown): RequiredCheckFailureEvidenceV1 {
   if (!isRecord(value)) fail('RequiredCheckFailureEvidence must be an object');
   exactKeys(value, 'RequiredCheckFailureEvidence', ['protocol', 'kind', 'check_name', 'head_sha', 'base_sha',
-    'merge_tree_sha', 'workflow', 'failed', 'retry', 'observed_result', 'cause', 'cause_evidence']);
+    'merge_tree_sha', 'workflow', 'association', 'summary', 'failed', 'failed_children', 'retry', 'observed_result', 'cause', 'cause_evidence']);
   if (value.protocol !== REQUIRED_CHECK_FAILURE_PROTOCOL || value.kind !== REQUIRED_CHECK_FAILURE_KIND) {
     fail('RequiredCheckFailureEvidence kind/protocol is invalid');
   }
-  const failed = (() => {
-    if (!isRecord(value.failed)) fail('RequiredCheckFailureEvidence.failed is invalid');
-    exactKeys(value.failed, 'RequiredCheckFailureEvidence.failed', ['run_id', 'attempt', 'job_id', 'job_name',
-      'run_url', 'job_url', 'steps', 'tests', 'shape', 'logs_available', 'failure_excerpt', 'platform_evidence', 'scope']);
-    if (typeof value.failed.logs_available !== 'boolean') fail('RequiredCheckFailureEvidence.failed.logs_available is invalid');
-    return Object.freeze({
-      ...jobLink({
-        run_id: value.failed.run_id, attempt: value.failed.attempt, job_id: value.failed.job_id,
-        job_name: value.failed.job_name, run_url: value.failed.run_url, job_url: value.failed.job_url,
-      }, 'RequiredCheckFailureEvidence.failed'),
-      steps: Object.freeze(stringArray(value.failed.steps, 'RequiredCheckFailureEvidence.failed.steps')),
-      tests: Object.freeze(stringArray(value.failed.tests, 'RequiredCheckFailureEvidence.failed.tests')),
-      shape: failureShape(value.failed.shape, 'RequiredCheckFailureEvidence.failed.shape'),
-      logs_available: value.failed.logs_available,
-      failure_excerpt: nullableString(value.failed.failure_excerpt, 'RequiredCheckFailureEvidence.failed.failure_excerpt'),
-      platform_evidence: Object.freeze(stringArray(value.failed.platform_evidence, 'RequiredCheckFailureEvidence.failed.platform_evidence')),
-      scope: scope(value.failed.scope, 'RequiredCheckFailureEvidence.failed.scope'),
-    });
-  })();
+  const association = associationValue(value.association, 'RequiredCheckFailureEvidence.association');
+  const summary = value.summary === null ? null : jobLink(value.summary, 'RequiredCheckFailureEvidence.summary');
+  if (association === 'direct' && summary !== null) fail('RequiredCheckFailureEvidence.summary must be null for a direct check');
+  if (association !== 'direct' && summary === null) fail('RequiredCheckFailureEvidence.summary is required for a summary check');
+  const failed = failurePoint(value.failed, 'RequiredCheckFailureEvidence.failed');
+  if (!Array.isArray(value.failed_children)) fail('RequiredCheckFailureEvidence.failed_children is invalid');
+  const failedChildren = value.failed_children.map((entry, index) =>
+    childFailure(entry, `RequiredCheckFailureEvidence.failed_children[${index}]`));
+  if (association === 'direct' && failedChildren.length > 0) {
+    fail('RequiredCheckFailureEvidence.failed_children must be empty for a direct check');
+  }
+  if (association === 'declared_needs' && (failedChildren.length === 0 || failedChildren[0]!.association !== 'declared_needs'
+    || failedChildren[0]!.failure.job_id !== failed.job_id)) {
+    fail('RequiredCheckFailureEvidence.failed must be the first proven failed child');
+  }
+  if (association === 'unknown' && (failed.job_id !== summary!.job_id || failed.attempt !== summary!.attempt)) {
+    fail('RequiredCheckFailureEvidence.failed must stay on the summary job when the association is unknown');
+  }
   const retry = (() => {
     if (!isRecord(value.retry)) fail('RequiredCheckFailureEvidence.retry is invalid');
-    exactKeys(value.retry, 'RequiredCheckFailureEvidence.retry', ['attempted', 'attempts', 'outcome', 'revalidated', 'latest']);
+    exactKeys(value.retry, 'RequiredCheckFailureEvidence.retry', ['attempted', 'attempts', 'outcome', 'revalidated', 'reason', 'latest']);
     if (typeof value.retry.attempted !== 'boolean' || typeof value.retry.revalidated !== 'boolean') {
       fail('RequiredCheckFailureEvidence.retry flags are invalid');
     }
     if (!isRecord(value.retry.latest)) fail('RequiredCheckFailureEvidence.retry.latest is invalid');
     exactKeys(value.retry.latest, 'RequiredCheckFailureEvidence.retry.latest', ['run_id', 'attempt', 'job_id',
       'job_name', 'run_url', 'job_url', 'conclusion', 'scope']);
+    const outcome = retryOutcome(value.retry.outcome, 'RequiredCheckFailureEvidence.retry.outcome');
+    const reason = retryReason(value.retry.reason, 'RequiredCheckFailureEvidence.retry.reason');
+    if (outcome === 'failed_then_not_revalidated' && reason === null) {
+      fail('RequiredCheckFailureEvidence.retry.reason is required when not revalidated');
+    }
+    if (outcome !== 'failed_then_not_revalidated' && reason !== null) {
+      fail('RequiredCheckFailureEvidence.retry.reason is only valid when not revalidated');
+    }
     return Object.freeze({
       attempted: value.retry.attempted,
       attempts: positiveInteger(value.retry.attempts, 'RequiredCheckFailureEvidence.retry.attempts'),
-      outcome: retryOutcome(value.retry.outcome, 'RequiredCheckFailureEvidence.retry.outcome'),
+      outcome,
       revalidated: value.retry.revalidated,
+      reason,
       latest: Object.freeze({
         ...jobLink({
           run_id: value.retry.latest.run_id, attempt: value.retry.latest.attempt, job_id: value.retry.latest.job_id,
@@ -299,6 +414,9 @@ export function validateRequiredCheckFailureEvidence(value: unknown): RequiredCh
       }),
     });
   })();
+  if (retry.latest.attempt !== retry.attempts) {
+    fail('RequiredCheckFailureEvidence.retry.latest must link the last attempt');
+  }
   return Object.freeze({
     protocol: REQUIRED_CHECK_FAILURE_PROTOCOL,
     kind: REQUIRED_CHECK_FAILURE_KIND,
@@ -308,7 +426,10 @@ export function validateRequiredCheckFailureEvidence(value: unknown): RequiredCh
     merge_tree_sha: value.merge_tree_sha === null ? null
       : requiredString(value.merge_tree_sha, 'RequiredCheckFailureEvidence.merge_tree_sha', GIT_OID),
     workflow: workflow(value.workflow, 'RequiredCheckFailureEvidence.workflow'),
+    association,
+    summary,
     failed,
+    failed_children: Object.freeze(failedChildren),
     retry,
     observed_result: observedResult(value.observed_result, 'RequiredCheckFailureEvidence.observed_result'),
     cause: cause(value.cause, 'RequiredCheckFailureEvidence.cause'),
@@ -374,21 +495,95 @@ function frozenScope(value: RequiredCheckScopeV1): RequiredCheckScopeV1 {
   return Object.freeze({ executed: Object.freeze([...value.executed]), skipped: Object.freeze([...value.skipped]) });
 }
 
-function revalidation(attempts: readonly RequiredCheckAttemptObservationV1[]): { outcome: RequiredCheckRetryOutcome; revalidated: boolean } {
+function attemptLink(attempt: RequiredCheckAttemptObservationV1): RequiredCheckJobLinkV1 {
+  return Object.freeze({    run_id: attempt.run_id,
+    attempt: attempt.attempt,
+    job_id: attempt.job_id,
+    job_name: attempt.job_name,
+    run_url: attempt.run_url,
+    job_url: attempt.job_url,
+  });
+}
+
+function failurePointOf(attempt: RequiredCheckAttemptObservationV1): RequiredCheckFailurePointV1 {
+  return Object.freeze({
+    ...attemptLink(attempt),
+    steps: Object.freeze([...attempt.steps]),
+    tests: Object.freeze([...attempt.failed_tests]),
+    shape: failureShapeOf(attempt),
+    logs_available: attempt.logs_available,
+    failure_excerpt: attempt.failure_excerpt,
+    platform_evidence: Object.freeze(platformLines(attempt)),
+    scope: frozenScope(attempt.scope),
+  });
+}
+
+interface RetryAssessment {
+  readonly outcome: RequiredCheckRetryOutcome;
+  readonly revalidated: boolean;
+  readonly reason: RequiredCheckRetryReason | null;
+}
+
+function revalidation(
+  attempts: readonly RequiredCheckAttemptObservationV1[],
+  failedTests: readonly string[],
+): RetryAssessment {
   const latest = attempts[attempts.length - 1]!;
-  if (attempts.length === 1) return { outcome: 'not_attempted', revalidated: false };
-  if (latest.conclusion !== 'success') return { outcome: 'still_failing', revalidated: false };
-  const incident = attempts.find(isFailureAttempt)!;
-  const identifiers = incident.failed_tests;
-  // A generic step label such as "Run tests" can pass while the failed child is
-  // skipped. Without an observed failed child/test identifier the retry cannot
-  // prove revalidation, whether the failure shape is assertion, timeout or an
-  // unavailable log.
-  if (identifiers.length === 0) return { outcome: 'failed_then_not_revalidated', revalidated: false };
-  const skipped = new Set(latest.scope.skipped);
-  const executed = new Set(latest.scope.executed);
-  const revalidated = identifiers.every((identifier) => executed.has(identifier) && !skipped.has(identifier));
-  return { outcome: revalidated ? 'failed_then_passed' : 'failed_then_not_revalidated', revalidated };
+  if (attempts.length === 1) return { outcome: 'not_attempted', revalidated: false, reason: null };
+  if (latest.conclusion !== 'success') return { outcome: 'still_failing', revalidated: false, reason: null };
+  // The failure must name the test it observed. A summary job's own step label
+  // cannot stand in for the failed test identifier.
+  if (failedTests.length === 0) {
+    return { outcome: 'failed_then_not_revalidated', revalidated: false, reason: 'failed_test_identifier_unavailable' };
+  }
+  // Job and step names are not test identifiers. Without a test-level source,
+  // the retry cannot prove that the failed test ran again.
+  const execution = latest.test_execution;
+  if (execution === null || execution.status === 'unavailable') {
+    return { outcome: 'failed_then_not_revalidated', revalidated: false, reason: 'test_execution_evidence_unavailable' };
+  }
+  if (failedTests.some((identifier) => testIdentifierPresent(execution.skipped, identifier))) {
+    return { outcome: 'failed_then_not_revalidated', revalidated: false, reason: 'original_test_skipped' };
+  }
+  const revalidated = failedTests.every((identifier) => testIdentifierPresent(execution.executed, identifier));
+  return {
+    outcome: revalidated ? 'failed_then_passed' : 'failed_then_not_revalidated',
+    revalidated,
+    reason: revalidated ? null : 'original_test_not_executed',
+  };
+}
+
+interface ObservedChildFailure {
+  readonly failure: RequiredCheckChildFailureV1;
+  readonly observation: RequiredCheckAttemptObservationV1;
+}
+
+function childFailures(
+  children: readonly RequiredCheckChildObservationV1[],
+  runId: number,
+): ObservedChildFailure[] {
+  const failures: ObservedChildFailure[] = [];
+  for (const child of children) {
+    for (const attempt of child.attempts) {
+      if (attempt.run_id !== runId) fail('RequiredCheckObservation children must share one run');
+    }
+    const failed = child.attempts.find(isFailureAttempt);
+    if (!failed) continue;
+    failures.push(Object.freeze({
+      observation: failed,
+      failure: Object.freeze({
+        association: child.association,
+        failure: failurePointOf(failed),
+        attempts: Object.freeze(child.attempts.map((attempt) => Object.freeze({
+          attempt: attempt.attempt,
+          job_id: attempt.job_id,
+          job_name: attempt.job_name,
+          conclusion: attempt.conclusion,
+        }))),
+      }),
+    }));
+  }
+  return failures;
 }
 
 /**
@@ -406,16 +601,32 @@ export function assessRequiredCheckFailure(input: RequiredCheckObservationV1): R
     if (attempt.run_id !== input.attempts[0]!.run_id) fail('RequiredCheckObservation attempts must share one run');
   }
   const incident = input.attempts.find(isFailureAttempt);
-  if (!incident) fail('RequiredCheckObservation has no failed attempt');
-  const latest = input.attempts[input.attempts.length - 1]!;
-  const shape = failureShapeOf(incident);
-  const retry = revalidation(input.attempts);
-  const assessed = causeOf(shape, incident, input.declared_cause);
+  const children = childFailures(input.children, input.attempts[0]!.run_id);
+  const proven = children.filter((child) => child.failure.association === 'declared_needs');
+  const association: RequiredCheckAssociationV1 = proven.length > 0 ? 'declared_needs'
+    : input.association === 'direct' ? 'direct'
+    : 'unknown';
+  if (association !== 'declared_needs' && !incident) {
+    fail('RequiredCheckObservation has no failed attempt');
+  }
+  const summary = association === 'direct' ? null : attemptLink(incident ?? input.attempts[0]!);
+  if (association === 'unknown' && summary!.job_id !== incident!.job_id) {
+    fail('RequiredCheckObservation unknown association must stay on the summary job');
+  }
+  const failure = association === 'declared_needs' ? proven[0]!.failure.failure : failurePointOf(incident!);
+  const incidentObservation = association === 'declared_needs' ? proven[0]!.observation : incident!;
+  const failedChildren = association === 'declared_needs'
+    ? proven.map((child) => child.failure)
+    : children.map((child) => child.failure);
+  const shape = failure.shape;
+  const retry = revalidation(input.attempts, failure.tests);
+  const assessed = causeOf(shape, incidentObservation, input.declared_cause);
   const failedThenPassed = retry.outcome === 'failed_then_passed' || retry.outcome === 'failed_then_not_revalidated';
   // A passing rerun is not proof of an infrastructure flake, even when the
   // caller declared one; keep the observed evidence and stay unknown.
   const finalCause = failedThenPassed && assessed.cause === 'infrastructure' ? 'unknown' : assessed.cause;
   const causeEvidence = finalCause === 'unknown' ? [] : assessed.evidence;
+  const latest = input.attempts[input.attempts.length - 1]!;
   return Object.freeze({
     protocol: REQUIRED_CHECK_FAILURE_PROTOCOL,
     kind: REQUIRED_CHECK_FAILURE_KIND,
@@ -424,25 +635,18 @@ export function assessRequiredCheckFailure(input: RequiredCheckObservationV1): R
     base_sha: input.base_sha,
     merge_tree_sha: input.merge_tree_sha,
     workflow: Object.freeze({ ...input.workflow }),
-    failed: Object.freeze({
-      ...jobLink({ run_id: incident.run_id, attempt: incident.attempt, job_id: incident.job_id,
-        job_name: incident.job_name, run_url: incident.run_url, job_url: incident.job_url }, 'RequiredCheckObservation.failed'),
-      steps: Object.freeze([...incident.steps]),
-      tests: Object.freeze([...incident.failed_tests]),
-      shape,
-      logs_available: incident.logs_available,
-      failure_excerpt: incident.failure_excerpt,
-      platform_evidence: Object.freeze(platformLines(incident)),
-      scope: frozenScope(incident.scope),
-    }),
+    association,
+    summary,
+    failed: failure,
+    failed_children: Object.freeze(failedChildren),
     retry: Object.freeze({
       attempted: input.attempts.length > 1,
       attempts: input.attempts.length,
       outcome: retry.outcome,
       revalidated: retry.revalidated,
+      reason: retry.reason,
       latest: Object.freeze({
-        ...jobLink({ run_id: latest.run_id, attempt: latest.attempt, job_id: latest.job_id,
-          job_name: latest.job_name, run_url: latest.run_url, job_url: latest.job_url }, 'RequiredCheckObservation.latest'),
+        ...attemptLink(latest),
         conclusion: latest.conclusion,
         scope: frozenScope(latest.scope),
       }),
