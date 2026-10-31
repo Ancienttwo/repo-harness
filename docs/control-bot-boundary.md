@@ -96,6 +96,10 @@ the rule it is merged under.
   blocker names the protected path, the check and the fix.
 - The declared check is read from the PR check list, not from branch
   protection. A skipped matrix job is therefore visible.
+- A rename protects both the source and the destination path.
+- Readiness reads the block at the base SHA. It reads the changed paths and the
+  check list only when the block is active. The executor reuses the policy read
+  it already made for `acceptance_merge`.
 - The only waiver is a check named `coverage-waiver` with conclusion success on
   the same PR head. The protocol 4 acceptance record stores the waiver, the
   protected paths and the per-check bucket. No local waiver file and no

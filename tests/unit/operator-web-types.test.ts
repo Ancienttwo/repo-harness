@@ -13,6 +13,7 @@ import {
 } from '../../src/operator-web/types';
 import { repositoryObservationFixture, repositorySnapshot, operatorFixtures } from '../../src/operator-web/fixture';
 import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import type { RequiredCheckCoverageEvidenceV1 } from '../../src/core/publication/required-check-coverage';
 import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
 
@@ -174,6 +175,34 @@ describe('operator browser payload contracts', () => {
 
     expect(decodeOperatorFleetSnapshot(payload).repositories[0]?.cards[0]?.inbox.effect_sha256).toBe(digest);
     expect(decodeOperatorFleetSnapshot(validFleetPayload()).repositories[0]?.cards[0]?.inbox.effect_sha256).toBeNull();
+  });
+
+  // A coverage blocker carries action text. The transport must preserve it, and
+  // the snapshot projection must not drop it before the browser sees it.
+  test('preserves the coverage blocker detail and the coverage evidence through the transport', () => {
+    const head = 'a'.repeat(40), base = 'b'.repeat(40);
+    const coverage: RequiredCheckCoverageEvidenceV1 = {
+      protocol: 1, kind: 'repo-harness-required-check-coverage', head_sha: head, base_sha: base,
+      protected_paths: ['api-surface/entries.json'],
+      checks: [{ check: 'build, typecheck, test (matrix)', bucket: 'skipping', requirement: 'required' }], waiver: null,
+    };
+    const detail = 'required check "build, typecheck, test (matrix)" is skipping for protected path "api-surface/entries.json"; run it or add a passing "coverage-waiver" check';
+    const readiness = {
+      protocol: 2, kind: 'repo-harness-pull-request-readiness',
+      provider_repository_id: '1001', repository: 'example/repo-harness', pr_number: 1, ready: false,
+      expected_head_sha: head, expected_base_sha: base, integration_mode: 'unmerged', attention_owner: 'agent',
+      blockers: [{ code: 'required_check_coverage_missing', attention_owner: 'agent', detail }],
+      check_failures: [],
+      required_check_coverage: coverage,
+    };
+    const card = decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: readiness })).repositories[0]!.cards[0]!;
+    expect(card.merge_readiness?.blockers[0]?.detail).toBe(detail);
+    expect(card.merge_readiness?.required_check_coverage).toEqual(coverage);
+
+    // A detail on a blocker that has no action text is not a valid document.
+    expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: {
+      ...readiness, blockers: [{ code: 'draft', attention_owner: 'agent', detail: 'not allowed' }],
+    } }))).toThrow(OperatorPayloadError);
   });
 
   // The browser fixture is the payload the UI suites render. If the production

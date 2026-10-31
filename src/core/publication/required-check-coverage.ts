@@ -181,15 +181,16 @@ export function buildRequiredCheckCoverageEvidence(input: {
 }): RequiredCheckCoverageEvidenceV1 {
   const protectedPaths = [...new Set(input.changed_paths.filter((path) =>
     input.policy.protected_paths.some((pattern) => protectedPathMatches(pattern, path))))].sort();
-  const waived = protectedPaths.length > 0
-    && input.observed_checks.some((check) => check.name === REQUIRED_CHECK_COVERAGE_WAIVER && check.bucket === 'pass');
+  const waiverObservations = input.observed_checks.filter((check) => check.name === REQUIRED_CHECK_COVERAGE_WAIVER);
+  const waived = protectedPaths.length > 0 && waiverObservations.length > 0
+    && waiverObservations.every((check) => check.bucket === 'pass');
   const waiver: RequiredCheckCoverageWaiverV1 | null = waived
     ? Object.freeze({ check: REQUIRED_CHECK_COVERAGE_WAIVER, bucket: 'pass' as const })
     : null;
   const requirement = protectedPaths.length === 0 ? 'not_required' as const : waived ? 'waived' as const : 'required' as const;
   const checks = input.policy.required_checks.map((check): RequiredCheckCoverageDetailV1 => Object.freeze({
     check,
-    bucket: input.observed_checks.find((observed) => observed.name === check)?.bucket ?? 'missing',
+    bucket: declaredCheckBucket(check, input.observed_checks),
     requirement,
   }));
   return Object.freeze({
@@ -201,6 +202,20 @@ export function buildRequiredCheckCoverageEvidence(input: {
     checks: Object.freeze(checks),
     waiver,
   });
+}
+
+/**
+ * The bucket of one declared check. A provider can report the same name more
+ * than once; every observation must then pass, so the verdict cannot depend on
+ * observation order. The first non-pass bucket is reported for the message.
+ */
+function declaredCheckBucket(
+  check: string,
+  observed: readonly { readonly name: string; readonly bucket: RequiredCheckCoverageBucket }[],
+): RequiredCheckCoverageBucket {
+  const buckets = observed.filter((entry) => entry.name === check).map((entry) => entry.bucket);
+  if (buckets.length === 0) return 'missing';
+  return buckets.find((bucket) => bucket !== 'pass') ?? 'pass';
 }
 
 function coverageFix(check: string, bucket: RequiredCheckCoverageBucket): string {

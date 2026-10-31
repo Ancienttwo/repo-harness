@@ -42,8 +42,10 @@ interface FakeGhOptions {
   readonly wrongBase?: boolean;
   /** Policy file text at the base; null is an absent file (404). */
   readonly policy?: string | null;
-  /** Changed paths the provider reports for the PR head. */
+  /** Changed paths the provider reports for the PR head, as one REST page. */
   readonly changedPaths?: readonly string[];
+  /** Explicit REST pages; a full page of 100 entries asks for the next page. */
+  readonly changedFilePages?: readonly (readonly { readonly filename: string; readonly previous_filename?: string }[])[];
   /** Buckets `pr checks --required` reports for the required CI check. */
   readonly requiredBucket?: 'pass' | 'pending' | 'fail' | 'skipping' | 'cancel';
   /** The unfiltered `pr checks` answer, used only for the waiver lookup. */
@@ -75,12 +77,12 @@ function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessIn
       const checks = args.includes('--required') ? requiredChecks : (options.allChecks ?? requiredChecks);
       return { status: checks.some(check => check.bucket === 'pending') ? 8 : 0, stdout: JSON.stringify(checks) };
     }
-    if (command === 'api graphql') {
-      const query = args.find(arg => arg.startsWith('query=')) ?? '';
-      if (query.includes('files(')) {
-        return { status: 0, stdout: JSON.stringify(changedFilesGraph(options.changedPaths ?? [])) };
-      }
-      return { status: 0, stdout: JSON.stringify(reviewGraph()) };
+    if (command === 'api graphql') return { status: 0, stdout: JSON.stringify(reviewGraph()) };
+    if (args[0] === 'api' && args[1]?.startsWith('repos/example/repo-harness/pulls/42/files?')) {
+      const page = Number(new URLSearchParams(args[1].slice(args[1].indexOf('?') + 1)).get('page'));
+      const pages = options.changedFilePages
+        ?? [(options.changedPaths ?? []).map((filename) => ({ filename }))];
+      return { status: 0, stdout: JSON.stringify(pages[page - 1] ?? []) };
     }
     if (args[0] === 'api' && args[1] === `repos/example/repo-harness/contents/.ai/harness/policy.json?ref=${BASE}`) {
       if (options.policy === undefined || options.policy === null) return { status: 1, stdout: JSON.stringify({ status: '404', message: 'Not Found' }) };
@@ -96,12 +98,7 @@ function fakeGh(options: FakeGhOptions = {}): NonNullable<PublicationReadinessIn
   };
 }
 
-function changedFilesGraph(paths: readonly string[]) {
-  return { data: { node: { id: receipt.provider_repo_id, pullRequest: {
-    number: receipt.pr_number, headRefOid: HEAD, baseRefOid: BASE,
-    files: { pageInfo: { hasNextPage: false, endCursor: null }, nodes: paths.map(path => ({ path })) },
-  } } } };
-}
+
 
 function reviewGraph() {
   return { data: { node: { id: receipt.provider_repo_id, pullRequest: {
@@ -607,8 +604,10 @@ describe('required-check coverage reads', () => {
     const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { calls.push([...args]); return source(args); } });
     expect(verdict.ready).toBe(true);
     expect(verdict.required_check_coverage).toBeNull();
-    expect(calls.some(args => args.some(arg => arg.startsWith('query=') && arg.includes('files(')))).toBe(false);
+    expect(calls.some(args => args[1]?.startsWith('repos/example/repo-harness/pulls/42/files?'))).toBe(false);
     expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks')).toHaveLength(1);
+    // One policy read is the whole extra cost when the block is inactive.
+    expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
   });
 
   test('a protected changed path blocks a skipped declared check and reads each check view once', () => {
@@ -631,8 +630,58 @@ describe('required-check coverage reads', () => {
     expect(verdict.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
     expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && args.includes('--required'))).toHaveLength(1);
     expect(calls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
-    expect(calls.filter(args => args[1] === 'graphql'
-      && args.some(arg => arg.startsWith('query=') && arg.includes('files(')))).toHaveLength(1);
+    expect(calls.filter(args => args[1]?.startsWith('repos/example/repo-harness/pulls/42/files?'))).toHaveLength(1);
+    // Inactive-to-active: policy + one file page + one all-checks read.
+    expect(calls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
+  });
+
+  test('a rename protects both the source and the destination path', () => {
+    const renamed = (source: string, destination: string) => fakeGh({
+      policy: ACTIVE_POLICY,
+      changedFilePages: [[{ filename: destination, previous_filename: source }]],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'pass' }],
+    });
+    const sourceProtected = collectPullRequestMergeReadiness({ ...input, gh_runner: renamed('api-surface/entries.json', 'src/entries.json') });
+    expect(sourceProtected.ready).toBe(true);
+    expect(sourceProtected.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+
+    const destinationProtected = collectPullRequestMergeReadiness({ ...input, gh_runner: renamed('src/entries.json', 'api-surface/entries.json') });
+    expect(destinationProtected.ready).toBe(true);
+    expect(destinationProtected.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+
+    // A rename whose source is protected still needs every declared check.
+    const skipped = collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh({
+      policy: ACTIVE_POLICY,
+      changedFilePages: [[{ filename: 'src/entries.json', previous_filename: 'api-surface/entries.json' }]],
+      requiredBucket: 'pass',
+      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
+    }) });
+    expect(skipped.ready).toBe(false);
+    expect(skipped.blockers.map((entry) => entry.code)).toContain('required_check_coverage_missing');
+  });
+
+  test('the file read paginates and the read budget follows the page count', () => {
+    const fullPage = Array.from({ length: 100 }, (_, index) => ({ filename: `src/file-${index}.ts` }));
+    const onePage = fakeGh({ policy: ACTIVE_POLICY, changedFilePages: [fullPage.slice(0, 1)],
+      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }] });
+    const onePageCalls: string[][] = [];
+    collectPullRequestMergeReadiness({ ...input, gh_runner: args => { onePageCalls.push([...args]); return onePage(args); } });
+    expect(onePageCalls.filter(args => args[1]?.includes('/files?'))).toHaveLength(1);
+    expect(onePageCalls.filter(args => args[1]?.includes('/files?')).map(args => /[?&]page=(\d+)/u.exec(args[1]!)?.[1]))
+      .toEqual(['1']);
+
+    const twoPages = fakeGh({ policy: ACTIVE_POLICY, changedFilePages: [fullPage, [{ filename: 'src/last.ts' }]],
+      requiredBucket: 'pass', allChecks: [{ name: 'Required / CI', bucket: 'pass' }] });
+    const twoPageCalls: string[][] = [];
+    const verdict = collectPullRequestMergeReadiness({ ...input, gh_runner: args => { twoPageCalls.push([...args]); return twoPages(args); } });
+    expect(twoPageCalls.filter(args => args[1]?.includes('/files?'))).toHaveLength(2);
+    expect(twoPageCalls.filter(args => args[1]?.includes('/files?')).map(args => /[?&]page=(\d+)/u.exec(args[1]!)?.[1]))
+      .toEqual(['1', '2']);
+    // Policy + two file pages + one all-checks read.
+    expect(twoPageCalls.filter(args => args[1]?.includes('/contents/.ai/harness/policy.json'))).toHaveLength(1);
+    expect(twoPageCalls.filter(args => args[0] === 'pr' && args[1] === 'checks' && !args.includes('--required'))).toHaveLength(1);
+    expect(verdict.ready).toBe(true);
   });
 
   test('an unprotected changed path under an active block stays ready', () => {

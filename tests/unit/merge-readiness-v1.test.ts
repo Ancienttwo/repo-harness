@@ -491,6 +491,43 @@ describe('required-check coverage', () => {
     expect(validateRequiredCheckCoverageEvidenceOrNull(verdict.required_check_coverage)).toEqual(verdict.required_check_coverage);
   });
 
+  test('duplicate observed names are order-independent and every observation must pass', () => {
+    const duplicates = (first: 'pass' | 'skipping', second: 'pass' | 'skipping') => [
+      { name: 'Required / CI', bucket: 'pass' as const },
+      { name: matrix, bucket: first },
+      { name: matrix, bucket: second },
+    ];
+    for (const observed of [duplicates('pass', 'skipping'), duplicates('skipping', 'pass')]) {
+      const verdict = projectPullRequestMergeReadiness(coverageInput(
+        { changed_paths: ['api-surface/entries.json'], observed },
+        [{ name: 'Required / CI', bucket: 'pass' }],
+      ));
+      expect(verdict.ready).toBe(false);
+      expect(verdict.blockers.map((blocker) => blocker.code)).toContain('required_check_coverage_missing');
+      expect(verdict.required_check_coverage?.checks[1]?.bucket).not.toBe('pass');
+    }
+    // Two passing observations of the same name stay ready.
+    const allPass = projectPullRequestMergeReadiness(coverageInput(
+      { changed_paths: ['api-surface/entries.json'], observed: duplicates('pass', 'pass') },
+      [{ name: 'Required / CI', bucket: 'pass' }],
+    ));
+    expect(allPass.ready).toBe(true);
+    expect(allPass.required_check_coverage?.checks[1]).toEqual({ check: matrix, bucket: 'pass', requirement: 'required' });
+  });
+
+  test('a duplicate coverage-waiver observation does not waive when one is not passing', () => {
+    for (const order of [['pass', 'skipping'], ['skipping', 'pass']] as const) {
+      const verdict = projectPullRequestMergeReadiness(coverageInput(
+        { changed_paths: ['api-surface/entries.json'],
+          observed: [{ name: 'Required / CI', bucket: 'pass' }, { name: matrix, bucket: 'skipping' },
+            { name: 'coverage-waiver', bucket: order[0] }, { name: 'coverage-waiver', bucket: order[1] }] },
+        [{ name: 'Required / CI', bucket: 'pass' }],
+      ));
+      expect(verdict.ready).toBe(false);
+      expect(verdict.required_check_coverage?.waiver).toBeNull();
+    }
+  });
+
   test('a non-passing coverage-waiver check does not waive', () => {
     const verdict = projectPullRequestMergeReadiness(coverageInput(
       { changed_paths: ['api-surface/entries.json'],

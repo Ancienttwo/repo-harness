@@ -60,6 +60,12 @@ export interface PublicationReadinessInput {
   readonly now_ms?: number;
   /** Internal effect/test seam for caller-owned provider execution, such as a protected helper environment. */
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
+  /**
+   * Internal effect seam: the publication executor already read this file at
+   * the base SHA for the acceptance-merge switch. Readiness reuses it instead
+   * of a second contents read. The ref must be the expected base.
+   */
+  readonly policy_file_at_base?: PolicyFileAtRef;
 }
 
 export interface AbortablePublicationReadinessInput extends Omit<PublicationReadinessInput, 'gh_runner'> {
@@ -729,51 +735,48 @@ async function driveRequestsAbortable<T>(
   return request.value;
 }
 
-const CHANGED_FILES_QUERY = 'query($repoId:ID!,$number:Int!,$after:String){node(id:$repoId){id ... on Repository{pullRequest(number:$number){number headRefOid baseRefOid files(first:100,after:$after){pageInfo{hasNextPage endCursor} nodes{path}}}}}}';
-/** The provider page cap; a PR with more changed files than this fails closed instead of looping. */
-const CHANGED_FILE_PAGES = 50;
+const CHANGED_FILE_PAGE_SIZE = 100;
+/** GitHub caps the PR file list at 3000 entries; a longer list fails closed instead of looping. */
+const CHANGED_FILE_PAGES = 30;
 
 interface ChangedFilePage {
+  /** The file names plus every rename source path. */
   readonly paths: string[];
-  readonly next: string | null;
+  /** A full page means another page may exist. */
+  readonly full: boolean;
 }
 
-/** One page of changed paths, bound to the same PR/head/base as every other provider read. */
-function changedFilePage(identity: ProviderIdentity, value: unknown): ChangedFilePage {
-  const graph = object(value, 'changed file GraphQL result');
-  if (graph.errors !== undefined && (!Array.isArray(graph.errors) || graph.errors.length > 0)) {
-    throw new MergeReadinessError('provider_data_incomplete', 'changed file query has errors');
+/**
+ * One page of the REST pull-request files view. It is the only provider view
+ * that reports a rename source (`previous_filename`), so a protected path
+ * cannot be lost by a rename.
+ *
+ * The page cannot carry a head/base SHA. The enclosing identity fence binds it:
+ * readiness reads the PR identity before and after the facts, and a head or
+ * base move during the read discards the round as `changed_during_read`.
+ */
+function changedFilePage(value: unknown): ChangedFilePage {
+  if (!Array.isArray(value)) throw new MergeReadinessError('provider_data_incomplete', 'changed files must be an array');
+  const paths: string[] = [];
+  for (const entry of value) {
+    const file = object(entry, 'changed file');
+    paths.push(string(file.filename, 'changed file name'));
+    if (file.previous_filename !== undefined && file.previous_filename !== null) {
+      paths.push(string(file.previous_filename, 'changed file previous name'));
+    }
   }
-  const node = object(object(graph.data, 'changed file GraphQL data').node, 'changed file repository node');
-  const pr = object(node.pullRequest, 'changed file PR');
-  if (node.id !== identity.provider_repo_id || pr.number !== identity.pr_number
-    || pr.headRefOid !== identity.head_sha || pr.baseRefOid !== identity.base_sha) {
-    throw new MergeReadinessError('provider_data_incomplete', 'changed files do not bind this PR/head/base');
-  }
-  const files = object(pr.files, 'changed files');
-  const pageInfo = object(files.pageInfo, 'changed file pageInfo');
-  if (typeof pageInfo.hasNextPage !== 'boolean' || !Array.isArray(files.nodes)) {
-    throw new MergeReadinessError('provider_data_incomplete', 'changed files were not exhaustively observed');
-  }
-  const paths = files.nodes.map((entry) => string(object(entry, 'changed file').path, 'changed file path'));
-  return Object.freeze({
-    paths,
-    next: pageInfo.hasNextPage ? string(pageInfo.endCursor, 'changed file cursor') : null,
-  });
+  return Object.freeze({ paths, full: value.length === CHANGED_FILE_PAGE_SIZE });
 }
 
-/** Every changed path of the PR head. Read only when the base policy declares a coverage block. */
+/** Every changed path of the PR head, including rename sources. Read only when the coverage block is active. */
 function* changedPaths(identity: ProviderIdentity): Generator<ProviderRequest, string[], unknown> {
   const paths: string[] = [];
-  let after: string | null = null;
-  for (let page = 0; page < CHANGED_FILE_PAGES; page++) {
-    const args = ['api', 'graphql', '-f', `query=${CHANGED_FILES_QUERY}`,
-      '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${identity.pr_number}`];
-    if (after !== null) args.push('-f', `after=${after}`);
-    const parsed = changedFilePage(identity, yield { args });
+  for (let page = 1; page <= CHANGED_FILE_PAGES; page++) {
+    const parsed = changedFilePage(yield {
+      args: ['api', `repos/${identity.repo_name_with_owner}/pulls/${identity.pr_number}/files?per_page=${CHANGED_FILE_PAGE_SIZE}&page=${page}`],
+    });
     paths.push(...parsed.paths);
-    after = parsed.next;
-    if (after === null) return paths;
+    if (!parsed.full) return [...new Set(paths)].sort();
   }
   throw new MergeReadinessError('provider_data_incomplete', 'changed file pages were not exhaustively observed');
 }
@@ -784,7 +787,17 @@ function policyAtRef(contents: unknown, ref: string): PolicyFileAtRef {
   return file;
 }
 
+function reusedPolicyFile(input: PublicationReadinessInput, ref: string): PolicyFileAtRef | null {
+  if (input.policy_file_at_base === undefined) return null;
+  const expectedBase = 'expected_base_sha' in input ? (input as { readonly expected_base_sha?: unknown }).expected_base_sha : undefined;
+  // The executor read this file at the expected base. A moved base is a cache
+  // miss, not a refusal: the normal read reports base_moved_since_verification.
+  return expectedBase === ref ? input.policy_file_at_base : null;
+}
+
 function coveragePolicy(input: PublicationReadinessInput, ref: string): RequiredCheckCoveragePolicyAtRef {
+  const reused = reusedPolicyFile(input, ref);
+  if (reused !== null) return requiredCheckCoveragePolicyAtRef(reused);
   const contents = ghOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
   return contents === null ? { status: 'absent' } : requiredCheckCoveragePolicyAtRef(policyAtRef(contents, ref));
 }
@@ -793,6 +806,8 @@ async function coveragePolicyAbortable(
   input: AbortablePublicationReadinessInput,
   ref: string,
 ): Promise<RequiredCheckCoveragePolicyAtRef> {
+  const reused = reusedPolicyFile(input, ref);
+  if (reused !== null) return requiredCheckCoveragePolicyAtRef(reused);
   const contents = await ghAbortableOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
   return contents === null ? { status: 'absent' } : requiredCheckCoveragePolicyAtRef(policyAtRef(contents, ref));
 }
@@ -801,6 +816,15 @@ async function coveragePolicyAbortable(
  * The all-checks read is the only view that shows a declared check which branch
  * protection does not require. A declared matrix job is usually such a check:
  * it appears in the PR rollup as skipped, and the required list never names it.
+ *
+ * Read budget for one readiness round:
+ * - inactive block: zero extra reads when the executor passes
+ *   `policy_file_at_base`, otherwise one policy contents read;
+ * - active block: that policy read, ceil(changed names / 100) REST file pages
+ *   (one page for at most 100 names, including rename sources) and one
+ *   all-checks read.
+ * So an active PR costs two extra reads with one file page and three with two
+ * pages on the executor path, plus the policy read on the standalone path.
  */
 function observedCheckFacts(checks: readonly ProviderCheck[]): readonly { readonly name: string; readonly bucket: RequiredCheckBucketV1 }[] {
   return Object.freeze(checks.map(({ name, bucket }) => Object.freeze({ name, bucket })));
