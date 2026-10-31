@@ -55,13 +55,13 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, ".claude/templates/implementation-notes.template.md"))).toBe(false);
       expect(existsSync(join(cwd, ".claude/templates/review.template.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/spa-day-protocol.md"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/reference-configs/handoff-protocol.md"))).toBe(true);
+      expect(existsSync(join(cwd, "docs/reference-configs/handoff-protocol.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/harness-overview.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/hook-operations.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/evaluator-rubric.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/agentic-development-flow.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/external-tooling.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/reference-configs/sprint-contracts.md"))).toBe(true);
+      expect(existsSync(join(cwd, "docs/reference-configs/sprint-contracts.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/reference-configs/heartbeat-triage.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/document-generation.md"))).toBe(true);
       expect(existsSync(join(cwd, "docs/reference-configs/global-working-rules.md"))).toBe(true);

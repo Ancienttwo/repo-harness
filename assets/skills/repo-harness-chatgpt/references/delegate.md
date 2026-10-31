@@ -99,7 +99,7 @@ access by using this mode.
    the placeholders into concrete content instead of leaving them generic:
 
    ```markdown
-   # Delegation Brief: <slug>
+   # External Engineer Brief: <slug>
 
    ## Background & Goal
    <why this task exists, one paragraph>

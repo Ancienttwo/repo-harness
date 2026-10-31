@@ -116,11 +116,13 @@ The bot selects scope, worker and verification by risk. Use independent gatekeep
 ### Review by risk
 The diff sets the tier. The author does not: a human change and a model change with the same diff get the same tier. One hit on a higher signal sets the higher tier.
 
-| Tier | Signals | Independent review | Human reading |
-| --- | --- | --- | --- |
-| Low | No Medium or High signal, including local changes with clear behavior and docs, tests, comments or translations alone. | None. CI and the author's recorded evidence are the gate. | None. |
-| Medium | Cross-module behavior changes; public API changes; more than 10 non-generated implementation files; shared runtime changes; authentication-adjacent changes; or unresolved behavior uncertainty. | One fresh-context review: `/code-review` or the gatekeeper, not both. | The findings and their disposition, not the diff. |
-| High | Credentials, permissions or sandbox grants; hooks and the mutation guard; deletion paths; release, publish, update or install scripts; `deploy/sql/`; code that writes to GitHub; or a change across more than one capability boundary in `.archcontext/model/`. | The gatekeeper and one cross-model review, one round each. | Yes. Write the most likely failure first, then read the diff against it. |
+| Tier | Signals |
+| --- | --- |
+| Low | No Medium or High signal, including local changes with clear behavior and docs, tests, comments or translations alone. |
+| Medium | Cross-module behavior changes; public API changes; more than 10 non-generated implementation files; shared runtime changes; authentication-adjacent changes; or unresolved behavior uncertainty. |
+| High | Credentials, permissions or sandbox grants; hooks and the mutation guard; deletion paths; release, publish, update or install scripts; `deploy/sql/`; code that writes to GitHub; or a change across more than one capability boundary in `.archcontext/model/`. |
+
+Review follows the `repo-harness-issue-flow` skill, [references/acceptor.md](../../assets/skills/repo-harness-issue-flow/references/acceptor.md). The tier selects the depth: no independent review for Low, one fresh-context review for Medium, and the gatekeeper plus one cross-model review for High, one round each. The Acceptor SOP owns the round, findings and publish steps.
 
 Rules for every tier:
 - The reviewer reads the current diff only. A defect in code the diff did not touch is a non-blocking note; open an issue for it, do not add a finding.
@@ -131,10 +133,6 @@ Rules for every tier:
 - A parent, coordinator or merge session reuses recorded acceptance when the reviewed diff, relevant base context, verification inputs and environment still match, and the review meets the current tier. The PR records the reviewed revision or diff, commands, results and finding dispositions. A change of session or reviewer is not a reason to repeat acceptance.
 - After a change, verify the affected behavior and review the changed hunks with their affected context. Retain valid evidence for unchanged scope; add only missing tier coverage. A rebase alone does not require a new full review, but changed base behavior or conflict resolution can invalidate affected evidence. Reuse never substitutes for required checks on the current head or the current-main merge requirement.
 - A downstream repository maps its own release surfaces, for example public API, wire format, DDL/SQL and permissions, to the High tier.
-
-A worker gets Goal, Scope, Context, Acceptance, Verify, Rollback, Timebox, Forbidden, Report and Standing as defined in [the delegation brief](sprint-contracts.md#delegation-brief), then loads concrete techniques on demand. Do not put routing catalogs or every technology guide in its brief.
-
-A coding session that spawns sub-agents is their parent. Investigate first, then split work by write ownership. Give each parallel writer its own worktree from a clean source. Implementation sub-agents edit only their scope. They may run scoped typecheck and affected tests in their own worktree. They commit early in their own worktree and return their check results. In a shared checkout they do not commit; the parent commits. An evidence role whose task is a named check, such as a root-cause reproduction or an evaluation profile, still runs that check and does not commit. The brief's Verify section names the checks that the parent runs after integration. The parent owns task management, conflict resolution, build and post-merge integration verification, including typecheck and affected tests. After integration, the parent removes each sub-agent worktree and branch whose commits are in the task branch and whose checkout is clean. It also removes the intermediate build output and temporary files that the work created. Other deletion still needs the user.
 
 The bot measures progress by side effects only: commits, pushes, evidence events and PR or check changes. It does not resume a worker to check liveness. A worker past its timebox with no new side effect is stalled; stop it or ask the user.
 Retry by failure mode. Reduce scope after a limit or out-of-memory stop. Move a tool error to another model. A network drop or an unknown failure gets one retry only for a read-only or idempotent call. For a call that can change remote state, check the original request and the provider receipt first; do not retry an unknown effect. After two failures of one task, stop and ask the user.
