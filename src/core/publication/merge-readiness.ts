@@ -284,7 +284,7 @@ function observedStack(
     if ((status !== 'not_member' && status !== 'unobserved') || depth !== 0 || chain.length !== 0 || finalBaseSha !== null) return null;
     return Object.freeze({ member: false, depth: 0, chain: Object.freeze([]), final_base_sha: null, status });
   }
-  if (status === 'not_member' || status === 'unobserved' || chain.length === 0 || depth !== chain.length - 1) return null;
+  if (status === 'not_member' || chain.length === 0 || depth !== chain.length - 1) return null;
   if (chain[0]!.head_sha !== expectedHeadSha || chain[0]!.base_sha !== expectedBaseSha) return null;
   const numbers = new Set<number>();
   const refs = new Set<string>();

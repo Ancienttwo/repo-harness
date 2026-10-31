@@ -402,7 +402,7 @@ function decodeStack(value: unknown): NonNullable<OperatorFleetCardV1['merge_rea
     if ((status !== 'not_member' && status !== 'unobserved') || depth !== 0 || chain.length !== 0 || finalBaseSha !== null) {
       throw new OperatorPayloadError();
     }
-  } else if (status === 'not_member' || status === 'unobserved' || chain.length === 0 || depth !== chain.length - 1) {
+  } else if (status === 'not_member' || chain.length === 0 || depth !== chain.length - 1) {
     throw new OperatorPayloadError();
   }
   if (status === 'complete') {

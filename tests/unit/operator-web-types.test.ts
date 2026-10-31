@@ -206,6 +206,17 @@ describe('operator browser payload contracts', () => {
       ...readiness, stack: { ...readiness.stack, depth: 1 },
     } }))).toThrow(OperatorPayloadError);
 
+    // A known member may carry an unobserved chain: membership alone blocks it.
+    const memberStack = {
+      member: true, depth: 0,
+      chain: [{ pr_number: 1, head_ref: 'feature', head_sha: head, base_ref: 'feature-base', base_sha: base }],
+      final_base_sha: null, status: 'unobserved' as const,
+    };
+    const memberCard = decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: {
+      ...readiness, stack: memberStack,
+    } })).repositories[0]!.cards[0]!;
+    expect(memberCard.merge_readiness?.stack).toEqual(memberStack);
+
     // A detail on a blocker that has no action text is not a valid document.
     expect(() => decodeOperatorFleetSnapshot(fleetPayloadWithCard({ merge_readiness: {
       ...readiness, blockers: [{ code: 'draft', attention_owner: 'agent', detail: 'not allowed' }],

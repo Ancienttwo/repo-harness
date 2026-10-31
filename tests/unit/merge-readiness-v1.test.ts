@@ -168,6 +168,16 @@ describe('stacked pull request readiness projection', () => {
     expect(verdict.stack).toEqual({ member: true, depth: 0, chain, final_base_sha: null, status });
   });
 
+  test('a member with an unobserved chain is blocked by membership alone', () => {
+    const verdict = projectPullRequestMergeReadiness({
+      ...readyInput(),
+      stack: { member: true, depth: 0, chain: [memberChain[0]!], final_base_sha: null, status: 'unobserved' },
+    });
+    expect(verdict.ready).toBe(false);
+    expect(verdict.blockers.map((blocker) => blocker.code)).toEqual(['stack_member']);
+    expect(verdict.stack.status).toBe('unobserved');
+  });
+
   test('a malformed, misbound or forged member chain fails closed', () => {
     const malformed = [
       { ...memberStack(), depth: 0 },
