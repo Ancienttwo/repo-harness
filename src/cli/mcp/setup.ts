@@ -1358,7 +1358,7 @@ export async function runMcpLiveDoctor(opts: { repo?: string; json?: boolean }):
       const expectedSpecialTools: readonly Pick<CodingToolDefinition, 'name' | 'inputSchema' | 'annotations'>[] | null = capabilities?.workspaceCoder
         ? buildCodingToolDefinitions()
         : capabilities?.taskDispatch
-          ? [...buildHerdrToolDefinitions(), ...buildReviewPublishToolDefinitions(), ...(capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [])]
+          ? [...buildHerdrToolDefinitions(), ...(profile === 'orchestrator' ? buildReviewPublishToolDefinitions() : []), ...(capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [])]
           : null;
       const required = expectedSpecialTools ? expectedSpecialTools.map((tool) => tool.name) : REQUIRED_CODEX_TOOLS;
       const missing = required.filter((name) => !toolNames.includes(name));
