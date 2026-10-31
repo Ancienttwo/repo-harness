@@ -446,9 +446,12 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['tests/unrelated.test.ts'], sources, [])).toEqual(['tests/unrelated.test.ts']);
     expect(await selectAffectedTests(['docs/researches/observation.md'], sources, [])).toEqual([]);
     expect(await selectAffectedTests(['DEBUG.md', 'examples/agent-architecture.md'], sources, [])).toEqual([]);
+    expect(await selectAffectedTests(['tasks/lessons.md'], sources, [])).toEqual([]);
+    await expect(selectAffectedTests(['tasks/todos.md'], sources, [])).rejects.toThrow('coverage is unknown');
+    await expect(selectAffectedTests(['plans/plan.md'], sources, [])).rejects.toThrow('coverage is unknown');
     await expect(selectAffectedTests(['unknown/product.conf'], sources, [])).rejects.toThrow('coverage is unknown');
     const hub = new Map([...sources, ['tests/docs.test.ts', 'export {}'], ['src/core/feature.ts', "export const targetFiles = ['plans', 'docs/guide.md']; export const feature = 1"]]);
-    expect(await selectAffectedTests(['plans/plan.md', 'docs/guide.md'], hub, ['tests/docs.test.ts'])).toEqual(['tests/docs.test.ts']);
+    expect(await selectAffectedTests(['tasks/lessons.md', 'docs/guide.md'], hub, ['tests/docs.test.ts'])).toEqual(['tests/docs.test.ts']);
     expect(await selectAffectedTests(['docs/guide.md', 'src/core/feature.ts'], hub, ['tests/docs.test.ts'])).toEqual(['tests/cli/consumer.test.ts', 'tests/docs.test.ts', 'tests/unit/feature.test.ts']);
     expect(await selectAffectedTests(['src/core/deleted.ts'], new Map([...sources, ['src/core/deleted.ts', 'export const feature=1'], ['src/effects/feature.ts', "// old imported edge kept for this diff\nimport { feature } from '../core/deleted';"]]), [])).toEqual(['tests/cli/consumer.test.ts', 'tests/unit/feature.test.ts']);
   });
@@ -701,7 +704,7 @@ describe('single affected verification and daily fallback', () => {
       write('tests/feature.test.ts', "import { targetDirectories } from '../src/feature';");
       write('tests/guide.test.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readFileSync(join(ROOT, 'docs/guide.md'));");
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
-      write('docs/guide.md', '# Changed guide'); write('plans/plan.md', '# Plan'); git('add', '.'); git('commit', '-qm', 'candidate'); const head = git('rev-parse', 'HEAD');
+      write('docs/guide.md', '# Changed guide'); write('tasks/lessons.md', '# Lessons'); git('add', '.'); git('commit', '-qm', 'candidate'); const head = git('rev-parse', 'HEAD');
       const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output');
       writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } })); writeFileSync(output, '');
       const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });

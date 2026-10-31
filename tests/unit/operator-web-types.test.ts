@@ -390,22 +390,6 @@ describe('placement protocol and count conservation', () => {
   });
 });
 
-describe('historical activity browser transport', () => {
-  test('sends only the exact selector, no-store and AbortSignal, then binds the decoded response', async () => {
-    const { fetchTaskActivity }=await import('../../src/operator-web/task-activity');
-    const request={repository_id:'repo-a',task_id:taskId,limit:50,after:null,message_id:null};
-    const snapshot={...request,protocol:1,kind:'operator_task_activity',observed_at:'2026-09-22T00:00:00.000Z',consistency:'observed',entries:[],coverage:{scope:'task',complete:true,reason:null,scanned:0,bytes:0},next_cursor:null} as const;
-    const original=globalThis.fetch;const controller=new AbortController();let observed:RequestInit|undefined;let url='';
-    try {
-      globalThis.fetch=(async(input:RequestInfo|URL,init?:RequestInit)=>{url=String(input);observed=init;return Response.json(snapshot);}) as typeof fetch;
-      expect(await fetchTaskActivity(request,controller.signal)).toEqual(snapshot);
-      expect(url).toBe(`/api/v1/fleet/tasks/repo-a/${taskId}/history/activity?limit=50`);expect(observed).toMatchObject({cache:'no-store',signal:controller.signal});
-      globalThis.fetch=(async()=>Response.json({...snapshot,repository_id:'repo-b'})) as unknown as typeof fetch;
-      await expect(fetchTaskActivity(request,controller.signal)).rejects.toThrow('Invalid task activity response');
-    } finally {globalThis.fetch=original;}
-  });
-});
-
 test('current context transport preserves selected approval, abort and uncached read semantics',async()=>{
   const {fetchTaskContext}=await import('../../src/operator-web/task-context');
   const {admittedTaskContextFixture}=await import('../../src/operator-web/fixture');

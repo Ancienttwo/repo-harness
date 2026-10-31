@@ -13,7 +13,6 @@ import {
   degradedSnapshot,
   emptySnapshot,
   stableSnapshot,
-  taskActivityFixture,
   admittedTaskContextFixture,
 } from '../fixture';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
@@ -120,7 +119,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     fetchRepositorySnapshot: (repositoryId: string) => repositoryId === HARNESS_ID && fixture === 'busy'
       ? Promise.resolve(repositorySnapshot) : Promise.reject(new Error('fixture repository snapshot unavailable')),
     readTaskContext: request => Promise.resolve(admittedTaskContextFixture(request)),
-    readTaskActivity: request => Promise.resolve(taskActivityFixture(request)),
     readNotifyStatus: () => Promise.resolve(notifyStatus),
     initialNotifyStatus: notifyStatus,
     readSetup: () => Promise.resolve(setup),

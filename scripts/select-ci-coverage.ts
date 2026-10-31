@@ -16,7 +16,7 @@ export function isDocumentationPath(path: string): boolean {
   if (path.startsWith('docs/reference-configs/')) return false;
   return path === 'README.md' || path === 'DEBUG.md' || path === 'docs/architecture/.projection-manifest.json'
     || (path.startsWith('examples/') && path.endsWith('.md'))
-    || path.startsWith('tasks/') || path.startsWith('plans/') || path.startsWith('.ai/harness/handoff/')
+    || path === 'tasks/lessons.md' || path.startsWith('.ai/harness/handoff/')
     || (path.startsWith('docs/') && path.endsWith('.md'));
 }
 export function diffBase(eventName: string, event: unknown): unknown {

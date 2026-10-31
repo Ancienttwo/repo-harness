@@ -18,7 +18,7 @@ import { OrganizationSummary } from './OrganizationSummary';
 import { PlanningView } from './PlanningView';
 import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { TaskDiff, TaskSessions } from './TaskDiff';
-import { type TaskActivityReader, type TaskContextReader } from './TaskEvidence';
+import type { TaskContextReader } from './AdmittedTaskContext';
 import type { TaskLocation } from './task-location';
 import {
   OPERATOR_COLUMNS,
@@ -670,7 +670,7 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
   );
 }
 
-function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, fleetStaleError, readTaskContext, readTaskActivity, onClose, onRefresh, t }: {
+function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, fleetStaleError, readTaskContext, onClose, onRefresh, t }: {
   readonly snapshot: OperatorFleetSnapshotV1 | null;
   readonly card: OperatorFleetCardV1;
   readonly revisionChangedFrom: string | null;
@@ -678,7 +678,6 @@ function DetailPane({ snapshot, card, revisionChangedFrom, evidenceGeneration, f
   /** Set while the Fleet read that produced `card` is stale; the retained facts carry the mark. */
   readonly fleetStaleError: OperatorApiErrorV1 | null;
   readonly readTaskContext?: TaskContextReader;
-  readonly readTaskActivity?: TaskActivityReader;
   readonly onClose: () => void;
   readonly onRefresh: () => void;
   readonly t: OperatorTranslate;
@@ -757,7 +756,6 @@ export interface RepositoryWorkspaceProps {
   readonly onSelect: (card: OperatorFleetCardV1) => void;
   readonly onCloseSelection: () => void;
   readonly readTaskContext?: TaskContextReader;
-  readonly readTaskActivity?: TaskActivityReader;
   readonly onBack: () => void;
   readonly now: number;
   readonly t: OperatorTranslate;
@@ -820,7 +818,6 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
           evidenceGeneration={props.refreshGeneration}
           fleetStaleError={staleErrorForState(state)}
           readTaskContext={props.readTaskContext}
-          readTaskActivity={props.readTaskActivity}
           onClose={props.onCloseSelection}
           onRefresh={props.onRefresh}
           t={t}

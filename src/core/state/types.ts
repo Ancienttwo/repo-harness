@@ -145,7 +145,7 @@ export interface ContinuationEnvelopeV2 {
   readonly protocol: 2;
   readonly kind: 'repo-harness-continuation-envelope';
   readonly route: ContinuationRoute;
-  /** Content identity of the actionable unit; null only for `idle`. */
+  /** Content identity of the actionable unit; null for `halt` and `idle`. */
   readonly unit_ref: string | null;
   readonly authority_revision: string;
   readonly progress_token: string;
