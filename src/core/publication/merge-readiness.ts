@@ -3,6 +3,11 @@ import {
   type RequiredCheckFailureEvidenceV1,
 } from '../evidence/required-check-evidence';
 import {
+  GENERATED_ARTIFACTS_FAILURE_CODES,
+  type GeneratedArtifactsFactsV1,
+  type GeneratedArtifactsFailureCode,
+} from './generated-artifacts';
+import {
   buildRequiredCheckCoverageEvidence,
   requiredCheckCoverageFailures,
   type RequiredCheckCoverageEvidenceV1,
@@ -32,6 +37,7 @@ export type MergeReadinessBlockerCode =
   | 'already_integrated'
   | 'required_check_coverage_missing'
   | 'required_check_coverage_policy_invalid'
+  | GeneratedArtifactsFailureCode
   | 'stack_member'
   | 'stack_depth_exceeded'
   | 'stack_cycle'
@@ -126,6 +132,8 @@ export interface ProviderMergeReadinessFactsV1 {
   readonly check_failures: readonly RequiredCheckFailureEvidenceV1[];
   /** Observed required-check coverage rule; `absent` keeps the pre-#1205 behavior. */
   readonly required_check_coverage: RequiredCheckCoverageFactsV1;
+  /** Observed generated-artifact regeneration; `absent` keeps the pre-#1257 behavior. */
+  readonly generated_artifacts: GeneratedArtifactsFactsV1;
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
@@ -197,6 +205,15 @@ const ATTENTION: Readonly<Record<MergeReadinessBlockerCode, MergeReadinessAttent
   already_integrated: 'agent',
   required_check_coverage_missing: 'agent',
   required_check_coverage_policy_invalid: 'agent',
+  generated_artifacts_policy_invalid: 'agent',
+  generated_artifacts_conflict_outside: 'agent',
+  generated_artifacts_mixed_without_rule: 'agent',
+  generated_artifacts_command_failed: 'agent',
+  generated_artifacts_timeout: 'agent',
+  generated_artifacts_network_attempt: 'agent',
+  generated_artifacts_diff_outside: 'agent',
+  generated_artifacts_unstable: 'agent',
+  generated_artifacts_unavailable: 'external',
   stack_member: 'agent',
   stack_depth_exceeded: 'agent',
   stack_cycle: 'agent',
@@ -316,6 +333,11 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
     || !['absent', 'invalid', 'active'].includes(String(coverage.status)))) {
     push(blockers, 'provider_data_incomplete');
   }
+  const generated = input.provider === null ? null : input.provider.generated_artifacts;
+  if (input.provider !== null && (!generated || typeof generated !== 'object' || Array.isArray(generated)
+    || !['absent', 'invalid', 'active'].includes(String(generated.status)))) {
+    push(blockers, 'provider_data_incomplete');
+  }
   const checkFailures = Array.isArray(input.provider?.check_failures) ? input.provider.check_failures : [];
   for (const failure of checkFailures) {
     try {
@@ -385,6 +407,25 @@ export function projectPullRequestMergeReadiness(input: PullRequestMergeReadines
       const failures = requiredCheckCoverageFailures(requiredCheckCoverage);
       if (failures.length > 0) {
         push(blockers, 'required_check_coverage_missing', failures.map((failure) => failure.message).join('; '));
+      }
+    }
+    if (generated?.status === 'invalid') {
+      push(blockers, 'generated_artifacts_policy_invalid',
+        `generated-artifact policy is invalid: ${generated.message}; fix publication.generated_artifacts in .ai/harness/policy.json on the base branch`);
+    } else if (generated?.status === 'active') {
+      const check = generated.check;
+      if (!check || typeof check !== 'object' || Array.isArray(check)
+        || check.head_sha !== provider.head_sha || check.base_sha !== provider.base_sha
+        || check.head_sha !== input.expected_head_sha || check.base_sha !== input.expected_base_sha) {
+        push(blockers, 'provider_data_incomplete');
+      } else if (check.failure !== null) {
+        const failure = check.failure;
+        if (!GENERATED_ARTIFACTS_FAILURE_CODES.includes(failure?.code as GeneratedArtifactsFailureCode)
+          || typeof failure.message !== 'string' || failure.message.trim() === '') {
+          push(blockers, 'provider_data_incomplete');
+        } else {
+          push(blockers, failure.code, failure.message);
+        }
       }
     }
   }
