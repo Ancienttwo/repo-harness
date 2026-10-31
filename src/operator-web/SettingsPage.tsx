@@ -76,14 +76,15 @@ function UseToggle({ use, row, draft, locked, onEdit, t }: {
   );
 }
 
-function RuntimeRow({ row, draft, locked, onEdit, t }: {
-  readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean;
+function RuntimeRow({ row, draft, locked, docsAvailable, onEdit, t }: {
+  readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean; readonly docsAvailable: boolean;
   readonly onEdit: (change: (draft: AgentsDraft) => AgentsDraft) => void; readonly t: OperatorTranslate;
 }) {
   const enabled = draft.enabled.includes(row.id);
   const installed = row.entry?.installation.kind === 'available';
+  // No runtime is docs-supported while the launch allowlist is empty, so the docs use and default stay off the page.
   const unsupported = row.entry === null ? [] : [
-    ...(row.entry.docs_supported ? [] : [UNSUPPORTED_REASON.docs]),
+    ...(!docsAvailable || row.entry.docs_supported ? [] : [UNSUPPORTED_REASON.docs]),
     ...(row.entry.review_supported ? [] : [UNSUPPORTED_REASON.review]),
   ];
   return (
@@ -91,7 +92,7 @@ function RuntimeRow({ row, draft, locked, onEdit, t }: {
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex flex-wrap items-center gap-2">
           <span className="font-mono text-sm font-medium text-kumo-strong">{row.id}</span>
-          {draft.default_docs === row.id && <span className="rounded-full bg-(--rh-accent) px-1.5 text-xs font-semibold text-(--rh-on-accent)">{t('settings.default')}</span>}
+          {docsAvailable && draft.default_docs === row.id && <span className="rounded-full bg-(--rh-accent) px-1.5 text-xs font-semibold text-(--rh-on-accent)">{t('settings.default')}</span>}
         </div>
         <p className="flex min-w-0 items-start gap-2 text-xs text-kumo-subtle" data-installation={row.entry?.installation.kind ?? 'missing'}>
           <StatusDot tone={row.entry ? INSTALL_TONE[row.entry.installation.kind] : 'unknown'} className="mt-1" />
@@ -100,7 +101,7 @@ function RuntimeRow({ row, draft, locked, onEdit, t }: {
         {enabled && unsupported.length > 0 && <p className="text-xs text-kumo-subtle" data-use-reasons>{unsupported.map(key => t(key)).join(' ')}</p>}
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-2">
-        <UseToggle use="docs" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />
+        {docsAvailable && <UseToggle use="docs" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />}
         <UseToggle use="review" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />
         {/* Not installed and off: there is nothing to turn on. An enabled runtime can always be turned off. */}
         {(installed || enabled) && (
@@ -112,8 +113,9 @@ function RuntimeRow({ row, draft, locked, onEdit, t }: {
   );
 }
 
-function RuntimeGroup({ id, title, rows, draft, locked, onEdit, t }: {
+function RuntimeGroup({ id, title, rows, draft, locked, docsAvailable, onEdit, t }: {
   readonly id: string; readonly title: string; readonly rows: readonly Row[]; readonly draft: AgentsDraft; readonly locked: boolean;
+  readonly docsAvailable: boolean;
   readonly onEdit: (change: (draft: AgentsDraft) => AgentsDraft) => void; readonly t: OperatorTranslate;
 }) {
   if (rows.length === 0) return null;
@@ -121,13 +123,13 @@ function RuntimeGroup({ id, title, rows, draft, locked, onEdit, t }: {
     <section aria-labelledby={id} className="flex flex-col gap-2" data-runtime-group={id}>
       <h3 id={id} className="type-caption text-kumo-subtle">{title}</h3>
       <ul className="divide-y divide-kumo-hairline rounded-lg border border-kumo-hairline">
-        {rows.map(row => <RuntimeRow key={row.id} row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />)}
+        {rows.map(row => <RuntimeRow key={row.id} row={row} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={onEdit} t={t} />)}
       </ul>
     </section>
   );
 }
 
-/** A runtime without verified docs isolation is offered only while it is the saved default, so the saved state stays visible. */
+/** Shown only while a runtime has verified docs isolation; otherwise no runtime can take the docs use, so the default is not offered. */
 function DefaultDocs({ draft, settings, locked, onEdit, t }: {
   readonly draft: AgentsDraft; readonly settings: AgentsSettingsV1; readonly locked: boolean;
   readonly onEdit: (change: (draft: AgentsDraft) => AgentsDraft) => void; readonly t: OperatorTranslate;
@@ -205,6 +207,8 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
   // During a save, a newer revision is most likely this page's own write.
   const changedElsewhere = base !== null && form.request !== null && form.save.kind !== 'saving' && settings.config.revision !== base.revision;
   const rows = rowsOf(settings);
+  // The settings response is the one source: the docs use and default appear only while a runtime reports docs_supported.
+  const docsAvailable = runtimes.entries.some(entry => entry.docs_supported);
   const stale = runtimes.status === 'stale' && runtimes.reason !== null && runtimes.collected_at !== null;
   return (
     <div className="flex flex-col gap-5">
@@ -226,10 +230,10 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
             description={t('settings.runtimes.stale', { age: ageWords(runtimes.collected_at!, now, t), reason: t(`settings.runtimes.reason.${runtimes.reason!}`) })} />
         )}
         {runtimes.status !== 'unavailable' && draft !== null && <>
-          <RuntimeGroup id="settings-group-default" title={t('settings.group.default')} rows={rows.main} draft={draft} locked={locked} onEdit={form.edit} t={t} />
-          <RuntimeGroup id="settings-group-extra" title={t('settings.group.extra')} rows={rows.extra} draft={draft} locked={locked} onEdit={form.edit} t={t} />
-          <RuntimeGroup id="settings-group-missing" title={t('settings.group.missing')} rows={rows.missing} draft={draft} locked={locked} onEdit={form.edit} t={t} />
-          <DefaultDocs draft={draft} settings={settings} locked={locked} onEdit={form.edit} t={t} />
+          <RuntimeGroup id="settings-group-default" title={t('settings.group.default')} rows={rows.main} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+          <RuntimeGroup id="settings-group-extra" title={t('settings.group.extra')} rows={rows.extra} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+          <RuntimeGroup id="settings-group-missing" title={t('settings.group.missing')} rows={rows.missing} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+          {docsAvailable && <DefaultDocs draft={draft} settings={settings} locked={locked} onEdit={form.edit} t={t} />}
           {/* Next to Save, where the result of a save is read. */}
           <SaveResult form={form} changedElsewhere={changedElsewhere} t={t} />
           <div className="flex flex-wrap items-center gap-3 border-t border-kumo-hairline pt-4">
