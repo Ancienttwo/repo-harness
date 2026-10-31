@@ -492,7 +492,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(pkg.scripts["check:context-files"]).toBe("repo-harness run check-context-files");
       expect(pkg.scripts["check:deploy-sql"]).toBe("repo-harness run check-deploy-sql-order");
       expect(pkg.scripts["check:architecture-sync"]).toBeUndefined();
-      expect(pkg.scripts["check:task-sync"]).toBe("repo-harness run check-task-sync");
+      expect(pkg.scripts["check:task-sync"]).toBeUndefined();
       expect(pkg.scripts["check:task-workflow"]).toBeUndefined();
       expect(pkg.scripts["check:brain"]).toBe("repo-harness brain check");
       expect(pkg.scripts["sync:brain"]).toBe("repo-harness brain sync");

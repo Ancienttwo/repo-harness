@@ -67,7 +67,7 @@ import { TestsPage } from './TestsPage';
 import { ToolsPage } from './ToolsPage';
 import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } from './CliPage';
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
-import type { TaskActivityReader, TaskContextReader } from './TaskEvidence';
+import type { TaskContextReader } from './AdmittedTaskContext';
 import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
 import { useTheme } from './theme';
 import {
@@ -109,7 +109,6 @@ export interface OperatorAppProps {
   readonly readRuntimeStatus?: RuntimeOverlayReader;
   readonly initialRuntimeOverlay?: RuntimeOverlay;
   readonly readTaskContext?: TaskContextReader;
-  readonly readTaskActivity?: TaskActivityReader;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
@@ -258,7 +257,6 @@ export function OperatorApp({
   readRuntimeStatus = fetchRuntimeOverlay,
   initialRuntimeOverlay,
   readTaskContext,
-  readTaskActivity,
   readNotifyStatus,
   initialNotifyStatus,
   readSetup = fetchSetup,
@@ -534,7 +532,7 @@ export function OperatorApp({
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
             view={view} onView={setView} repositorySnapshot={repositorySnapshot}
             refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
-            readTaskContext={readTaskContext} readTaskActivity={readTaskActivity}
+            readTaskContext={readTaskContext}
             onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}
           {workspace === 'architecture' && <>
             <header className="border-b border-kumo-hairline pb-4">

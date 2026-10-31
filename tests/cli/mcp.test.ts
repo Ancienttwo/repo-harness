@@ -143,38 +143,44 @@ describe('mcp command', () => {
     }
   }, 30_000);
 
-  test('prepare-goal reports the latest active claim and treats a release as no claim', () => {
+  test('prepare-goal parses the claim status word before the first semicolon', () => {
     const repoRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-goal-claim-'));
     const comment = (login: string, status: string, id: number) => ({
       author: { login },
       body: `repo-harness issue claim\n\nStatus: ${status}\nAgent: test`,
       url: `https://github.com/example/repo/issues/123#issuecomment-${id}`,
     });
+    const goal = (env: NodeJS.ProcessEnv, comments: StubComment[]) => runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123'], {
+      ...env,
+      ...issueEnv({ ...ISSUE, comments }),
+    });
     try {
       withGhStub((env) => {
-        const active = runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123'], {
-          ...env,
-          ...issueEnv({
-            ...ISSUE,
-            comments: [
-              comment('carol', 'released', 1),
-              comment('dave', 'active', 2),
-              { author: { login: 'erin' }, body: 'unrelated review note', url: 'https://github.com/example/repo/issues/123#issuecomment-3' },
-            ],
-          }),
-        });
+        const active = goal(env, [
+          comment('carol', 'released', 1),
+          comment('dave', 'active', 2),
+          { author: { login: 'erin' }, body: 'unrelated review note', url: 'https://github.com/example/repo/issues/123#issuecomment-3' },
+        ]);
         expect(active.status).toBe(0);
         expect(active.stdout).toContain('Claim: dave (https://github.com/example/repo/issues/123#issuecomment-2)');
 
-        const released = runMcp(['prepare-goal', '--repo', repoRoot, '--issue', '123'], {
-          ...env,
-          ...issueEnv({
-            ...ISSUE,
-            comments: [comment('dave', 'active', 2), comment('dave', 'released', 4)],
-          }),
-        });
-        expect(released.status).toBe(0);
-        expect(released.stdout).toContain('Claim: no active claim; assignees: alice, bob (https://github.com/example/repo/issues/123)');
+        for (const retained of ['active; D1 blocked by the docs-host network boundary', 'blocked; waiting for review', 'ready for review; checks pass']) {
+          const result = goal(env, [comment('dave', retained, 2)]);
+          expect(result.status).toBe(0);
+          expect(result.stdout).toContain('Claim: dave (https://github.com/example/repo/issues/123#issuecomment-2)');
+          expect(result.stdout).not.toContain('no active claim');
+        }
+
+        for (const cleared of ['released; handoff complete', 'done; checks passed']) {
+          const result = goal(env, [comment('dave', cleared, 4)]);
+          expect(result.status).toBe(0);
+          expect(result.stdout).toContain('Claim: no active claim; assignees: alice, bob (https://github.com/example/repo/issues/123)');
+        }
+
+        const unknown = goal(env, [comment('dave', 'reviewing; pending owner reply', 5)]);
+        expect(unknown.status).toBe(0);
+        expect(unknown.stdout).toContain('Claim: claim status unknown: reviewing; pending owner reply dave (https://github.com/example/repo/issues/123#issuecomment-5)');
+        expect(unknown.stdout).not.toContain('no active claim');
       });
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });

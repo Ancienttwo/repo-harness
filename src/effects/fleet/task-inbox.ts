@@ -908,11 +908,6 @@ export class TaskReplyStoreError extends Error {
 }
 function replyInconsistent(message: string): never { throw new TaskReplyStoreError(message); }
 
-function isOriginalSteer(event: historicalMessage.TaskMessageEventV1): boolean {
-  return event.audience === 'owner' && event.in_reply_to === null && event.sender_trust === 'local_operator'
-    && (event.sender_kind === 'user' || event.sender_kind === 'operator');
-}
-
 function optionalReplyRecord<T>(commonDirectory: string, path: string, validate: (value: unknown) => T, canonical: (value: T) => string, charge?: (bytes: number) => void): T | null {
   if (!inspectSafeDirectoryChain(commonDirectory, dirname(path), false, 'reply record directory')) return null;
   let stat;
@@ -925,115 +920,11 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
   return value;
 }
 
-function readReplyChain(input: { repo_root: string; task_id: string; recipient: historicalMessage.TaskMessageRecipient }, parent: historicalMessage.TaskMessageEventV1, charge?: (bytes: number) => void, commonDirectory = resolveGitCommonDirectory(input.repo_root)) {
-  assertTaskId(input.task_id); assertMessageId(parent.message_id);
-  const taskDirectory = join(commonDirectory, TASK_INBOX_RELATIVE_PATH, input.task_id);
-  const recipientKey = historicalRecipientStorageKey(input.recipient);
-  const directory = join(taskDirectory, 'reply-effects', parent.message_id, recipientKey);
-  const intent = optionalReplyRecord(commonDirectory, join(directory, 'intent.json'), validateTaskReplyIntent, canonicalTaskReplyIntentBytes, charge);
-  const commit = optionalReplyRecord(commonDirectory, join(directory, 'commit.json'), validateTaskReplyCommit, canonicalTaskReplyCommitBytes, charge);
-  const effectId = intent?.effect_id ?? commit?.effect_id;
-  const event = effectId ? optionalReplyRecord(commonDirectory, join(taskDirectory, 'events', `${effectId}.json`), historicalMessage.validateTaskMessageEvent, historicalMessage.canonicalTaskMessageEventBytes, charge) : null;
-  const acknowledgement = optionalReplyRecord(commonDirectory, join(taskDirectory, 'delivery', parent.message_id, `${recipientKey}.json`), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes, charge);
-  if (intent && (intent.parent.message_id !== parent.message_id || intent.claim_actor.claim_id !== (input.recipient.kind === 'claim' ? input.recipient.claim_id : null)
-    || intent.claim_actor.lease_generation !== (input.recipient.kind === 'claim' ? input.recipient.generation : null))) replyInconsistent('reply record is in a different parent/recipient slot');
-  return { intent, event, commit, acknowledgement, observation: inspectTaskReplyChain({ parent, acknowledgement, intent, event, commit }) };
-}
-
-export interface TaskActivityCoverage {
+interface TaskActivityCoverage {
   readonly complete: boolean;
   readonly reason: 'scan' | 'bytes' | 'deadline' | 'page' | null;
   readonly scanned: number;
   readonly bytes: number;
-}
-
-/** Historical observations never acquire a Lease/Binding lock or perform delivery. */
-export function readHistoricalTaskActivity(input: {
-  repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
-  budget: { max_scan: number; max_bytes: number; deadline_ms: number };
-}) {
-  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
-  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
-  const result = (() => {
-  assertTaskId(input.task_id);
-  if (input.message_id !== null) assertMessageId(input.message_id);
-  if (input.after !== null) assertMessageId(input.after);
-  if (!Number.isInteger(input.limit) || input.limit < 1 || input.limit > 100) fail('task_message_invalid', 'invalid activity limit');
-  const common = resolveGitCommonDirectory(input.repo_root);
-  const directory = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'events');
-  const started = Date.now();
-  let scanned = 0, bytes = 0;
-  let exhausted: 'scan' | 'bytes' | 'deadline' | null = null;
-  const stop = (reason: NonNullable<typeof exhausted>): never => { exhausted = reason; throw new Error('activity read budget exhausted'); };
-  const charge = (size: number) => {
-    if (Date.now() - started >= input.budget.deadline_ms) stop('deadline');
-    if (bytes + size > input.budget.max_bytes) stop('bytes');
-    bytes += size;
-  };
-  const count = () => { charge(0); if (scanned >= input.budget.max_scan) stop('scan'); scanned++; };
-  const each = (path: string, visit: (name: string) => void) => {
-    if (!inspectSafeDirectoryChain(common, path, false, 'historical activity directory')) return;
-    const stream = opendirSync(path);
-    try { for (let entry = stream.readSync(); entry; entry = stream.readSync()) {
-      count();
-      if (!entry.isFile() || !entry.name.endsWith('.json')) fail('task_message_unreadable', 'invalid historical activity entry');
-      visit(entry.name);
-    } } finally { stream.closeSync(); }
-  };
-  const eventAt = (id: string) => {
-    assertMessageId(id);
-    const event = optionalReplyRecord(common, join(directory, `${id}.json`), historicalMessage.validateTaskMessageEvent, historicalMessage.canonicalTaskMessageEventBytes, charge);
-    if (!event) return null;
-    assertEventStored(event, input.task_id);
-    if (event.message_id !== id) fail('task_message_unreadable', 'historical event path identity is mismatched');
-    return event;
-  };
-  const receiptsAt = (event: historicalMessage.TaskMessageEventV1) => {
-    const receipts: historicalMessage.TaskMessageDeliveryReceiptV1[] = [];
-    const path = join(common, TASK_INBOX_RELATIVE_PATH, input.task_id, 'delivery', event.message_id);
-    each(path, name => {
-      const receipt = optionalReplyRecord(common, join(path, name), historicalMessage.validateTaskMessageDeliveryReceipt, historicalMessage.canonicalTaskMessageDeliveryReceiptBytes, charge);
-      if (!receipt || receipt.message_id !== event.message_id || receipt.recipient_task_revision !== event.task_revision
-        || `${historicalRecipientStorageKey(historicalMessage.recipientFromTaskMessageReceipt(receipt))}.json` !== name) fail('task_message_unreadable', 'historical receipt path identity is mismatched');
-      receipts.push(receipt);
-    });
-    return receipts.sort((a,b) => historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(a)).localeCompare(historicalMessage.deriveTaskMessageRecipientKey(historicalMessage.recipientFromTaskMessageReceipt(b))));
-  };
-  type Reply = { claim_id: string; generation: number; reply_message_id: string | null; observation: ReturnType<typeof inspectTaskReplyChain> };
-  const repliesAt = (parent: historicalMessage.TaskMessageEventV1, receipts: historicalMessage.TaskMessageDeliveryReceiptV1[]): Reply[] => {
-    const replies: Reply[] = [];
-    if (!isOriginalSteer(parent)) return replies;
-    for (const receipt of receipts) {
-      const recipient = historicalMessage.recipientFromTaskMessageReceipt(receipt);
-      if (recipient.kind !== 'claim') continue;
-      const chain = readReplyChain({ ...input, recipient }, parent, charge, common);
-      replies.push({ claim_id: recipient.claim_id, generation: recipient.generation, reply_message_id: chain.intent?.effect_id ?? chain.commit?.effect_id ?? null, observation: chain.observation });
-    }
-    return replies;
-  };
-  const events: historicalMessage.TaskMessageEventV1[] = [];
-  const entries: { event: historicalMessage.TaskMessageEventV1; receipts: historicalMessage.TaskMessageDeliveryReceiptV1[]; replies: Reply[] }[] = [];
-  let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
-  try {
-    if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) events.push(event); }
-    else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); events.push(event); });
-    events.sort((a,b) => a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0);
-    for (const event of events.filter(e => input.after === null || e.message_id > input.after).slice(0,input.limit)) {
-      const receipts = receiptsAt(event);
-      const parent = event.in_reply_to === null ? event : eventAt(event.in_reply_to);
-      const parentReceipts = parent === event ? receipts : parent ? receiptsAt(parent) : [];
-      const replies = parent ? repliesAt(parent, parentReceipts).filter(r => parent === event || r.reply_message_id === event.message_id) : [];
-      entries.push({ event, receipts, replies });
-    }
-  } catch (error) { if (!exhausted) throw error; }
-  const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
-  const reason = exhausted ?? (more ? 'page' as const : null);
-  const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
-  return { history_exists: historyExists, entries, coverage,
-    next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
-  })();
-  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
-  return result;
 }
 
 /** Historical correlation only; never used to authorize active delivery. */
