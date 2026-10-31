@@ -563,7 +563,7 @@ describe('optional strategy and progressive memory', () => {
       ...pilot.realityConstraints.flatMap(constraint => constraint.evidence),
       ...pilot.architecture.flatMap(item => item.evidence),
       ...pilot.evidence.map(evidence => evidence.path),
-      ...pilot.memory.map(memory => memory.body.path),
+      ...pilot.memory.flatMap(memory => memory.body ? [memory.body.path] : []),
       ...pilot.memory.flatMap(memory => memory.provenance),
     ];
     expect(paths).toContain('docs/strategy/optional-strategy-memory.md');
