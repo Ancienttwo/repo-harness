@@ -1,12 +1,16 @@
 /**
  * A fake `gh` for the publication merge executor. It answers the readiness
  * reads and the executor's own reads and mutation from one scenario, and
- * records every call. Run as a script, it reads the scenario and log paths
- * that `installFakeGh` bakes into its wrapper.
+ * records every call. On POSIX it reads the scenario and log paths that
+ * `installFakeGh` bakes into its wrapper; on Windows the compiled executable
+ * reads the same paths from the environment.
  */
+import { spawnSync } from 'child_process';
 import { appendFileSync, chmodSync, readFileSync, writeFileSync } from 'fs';
 import { createHash } from 'crypto';
 import { join } from 'path';
+
+import { compileNativeTestExecutable } from './native-executable';
 
 export const REPOSITORY = 'example/repo-harness';
 export const REPOSITORY_ID = '1001';
@@ -242,15 +246,33 @@ export function installFakeGh(dir: string, scenario: PublicationMergeScenario): 
   const inputLogPath = join(dir, 'fake-gh-inputs.jsonl');
   const readbackCountPath = join(dir, 'fake-gh-readbacks');
   const prViewCountPath = join(dir, 'fake-gh-pr-views');
-  const bin = join(dir, 'fake-gh');
   const quote = (value: string) => `'${value.replace(/'/g, `'\\''`)}'`;
   writeFileSync(scenarioPath, JSON.stringify(scenario));
   writeFileSync(logPath, '');
   writeFileSync(inputLogPath, '');
   writeFileSync(readbackCountPath, '0');
   writeFileSync(prViewCountPath, '0');
-  writeFileSync(bin, `#!/bin/sh\nFAKE_GH_SCENARIO=${quote(scenarioPath)} FAKE_GH_LOG=${quote(logPath)} FAKE_GH_INPUT_LOG=${quote(inputLogPath)} FAKE_GH_READBACKS=${quote(readbackCountPath)} FAKE_GH_PR_VIEWS=${quote(prViewCountPath)} exec ${quote(process.execPath)} ${quote(import.meta.path)} "$@"\n`);
-  chmodSync(bin, 0o755);
+  const windows = process.platform === 'win32';
+  let bin: string;
+  if (windows) {
+    // A compiled PE needs no shebang. The executable reads the fixture paths
+    // from the environment, so production and the control spawn one path.
+    process.env.FAKE_GH_SCENARIO = scenarioPath;
+    process.env.FAKE_GH_LOG = logPath;
+    process.env.FAKE_GH_INPUT_LOG = inputLogPath;
+    process.env.FAKE_GH_READBACKS = readbackCountPath;
+    process.env.FAKE_GH_PR_VIEWS = prViewCountPath;
+    bin = compileNativeTestExecutable(dir, 'fake-gh', import.meta.path);
+  } else {
+    bin = join(dir, 'fake-gh');
+    writeFileSync(bin, `#!/bin/sh\nFAKE_GH_SCENARIO=${quote(scenarioPath)} FAKE_GH_LOG=${quote(logPath)} FAKE_GH_INPUT_LOG=${quote(inputLogPath)} FAKE_GH_READBACKS=${quote(readbackCountPath)} FAKE_GH_PR_VIEWS=${quote(prViewCountPath)} exec ${quote(process.execPath)} ${quote(import.meta.path)} "$@"\n`);
+    chmodSync(bin, 0o755);
+  }
+  const control = spawnSync(bin, ['--version'], { cwd: dir, encoding: 'utf-8', env: { ...process.env }, timeout: 30_000 });
+  if (control.error || control.status === null) throw new Error('fake gh control failed to run: ' + (control.error?.message ?? 'no status'));
+  if (!readFileSync(logPath, 'utf-8').includes('--version')) throw new Error('fake gh control did not record its argv');
+  writeFileSync(logPath, '');
+  writeFileSync(inputLogPath, '');
   return {
     bin,
     calls: () => readFileSync(logPath, 'utf-8').split('\n').filter(Boolean).map((line) => JSON.parse(line) as string[]),
