@@ -2,9 +2,17 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.25.0] - 2026-10-31
 
 ### Breaking
+
+- Remove the local plan, sprint, contract, review, notes and workstream flow.
+  Issue and PR state are the only task source; init and upgrade stop seeding
+  `plans/`, `tasks/todos.md`, `tasks/current.md`, `check:task-*` scripts and
+  the retired policy keys. Existing PRDs move to `docs/prds/`. (#1177-#1184,
+  #1225)
+- Add the issue/PR architecture map (`docs/architecture/archimap.html`) and
+  refresh the generated architecture outputs. (#1184, #1209)
 
 - Remove the MCP and ChatGPT bridge plan and sprint tools:
   `write_sprint`, `write_checklist_sprint`, `write_plan`, `list_sprints` and
@@ -22,6 +30,15 @@ All notable changes to this skill are documented here.
 - Remove the MCP `run_workflow_check` tool. Its `check-task-workflow`
   helper is retired, so the tool would fail as an unknown helper. The old
   name now returns the MCP unknown-tool error. (#1182)
+
+### Added
+
+- The DSH host plugin ships in the npm package; `prepack` builds it. (#1206)
+
+### Fixed
+
+- `contract-worktree start` writes one branch metadata source and `cleanup`
+  reads only that source; missing metadata or a missing branch exits 2. (#1230)
 
 ## [0.24.3] - 2026-10-26
 
