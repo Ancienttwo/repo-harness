@@ -38,9 +38,10 @@ hard boundaries; the latter two require user approval. Reviewers consume existin
 
 ## Testing Policy and Artifact Standards
 
-[AGENTS.md](../../AGENTS.md#testing) is the repo's testing policy: verify changed
-behavior once, run full coverage daily, open repair tasks for failures, and report gaps.
-Record actual commands and outcomes in the PR; do not require receipts, waivers or pre-fix logs.
+[Global Working Rules](global-working-rules.md#test-budget) is the shipped testing policy:
+budget the test lines, verify changed behavior once, run full coverage daily, open repair
+tasks for failures, and report gaps. Record actual commands and outcomes in the PR; do not
+require receipts, waivers or pre-fix logs.
 
 ## Task History
 
