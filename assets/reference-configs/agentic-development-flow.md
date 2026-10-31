@@ -67,6 +67,7 @@ Size PR CI by the diff, the same as step 4. A full suite on each small PR spends
 ```
 
 - For a repeat, copy the `Name` and `Mistake pattern` text exactly. Maintenance triage groups entries by `Mistake pattern`. `Seen` counts the entries with that text, this entry included. Do not edit `Seen` on older entries.
+- A consolidation, merge or promotion keeps every `Triggered by correction` reference of the entries it replaces and keeps `Seen` as the sum. Add the consolidating PR to that list; never substitute it for the earlier references. Maintenance triage reads the ledger history and fails an entry whose only reference is a consolidation commit.
 - `Enforced by` names the file that fails when the mistake comes back. For an architecture or type fix, name the file that makes the mistake impossible. `judgment` means that no file catches the mistake.
 - `Missed by` names the check layer that should have caught the mistake before merge. Two entries with `Missed by: independent-review` on the same [Review by risk](#review-by-risk) signal move that signal up one tier in the PR that adds the second entry.
 - From `Seen: 2×`, fix the mistake class in the PR that adds the entry. Use the highest level that works:
