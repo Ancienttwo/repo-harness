@@ -1,11 +1,17 @@
-import { useState } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { Loader, cn } from '@cloudflare/kumo';
 import { CaretRightIcon, FileTextIcon } from '@phosphor-icons/react';
+import type { DocCitationV1 } from '../core/operator/doc-citation';
+import { DOC_CITATION_MAX_LINES, DOC_SESSION_MAX_CITATIONS } from '../core/operator/doc-session-api';
 import type { DocsFileV1, DocsTreeV1 } from '../core/operator/docs';
 import { DocsMarkdown, type MermaidRenderer } from './DocsMarkdown';
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { useDocsFile, useDocsTree, type DocsFileReader, type DocsReason, type DocsTreeReader } from './repository-reads';
+import { buildCitation, selectionLineRange } from './doc-citation';
+import { draftFull, withCitation } from './doc-draft';
+import { DocSessionComposer, type DocSessionStart } from './DocSessionComposer';
+import { docSessionStartState, docSessionsLive } from './doc-sessions';
 import type { ThemeMode } from './theme';
 import { PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
@@ -22,6 +28,8 @@ export interface DocsPageProps {
   readonly now: number;
   readonly onOpen: (next: WorkspaceLocation) => void;
   readonly renderMermaid?: MermaidRenderer;
+  /** The doc session list and draft; citing and starting a session show only for a server that lists `docs`. */
+  readonly start?: DocSessionStart;
   readonly t: OperatorTranslate;
 }
 
@@ -152,10 +160,70 @@ function SourceLines({ file }: { readonly file: DocsFileV1 }) {
   );
 }
 
-function FileView({ file, mode, onOpen, renderMermaid, t }: {
+/** The line range the reader's selection covers, and where the 「引用」 action sits under it. */
+interface PendingCitation { readonly start_line: number; readonly end_line: number; readonly top: number; readonly left: number }
+
+/**
+ * Wraps the reader body so a selected passage offers 「引用」. The citation is
+ * hashed from the committed file the page shows, not from the selected text.
+ */
+function Citable({ file, draftFullFor, onCite, t, children }: {
+  readonly file: DocsFileV1; readonly draftFullFor: boolean; readonly onCite: (citation: DocCitationV1) => void;
+  readonly t: OperatorTranslate; readonly children: ReactNode;
+}) {
+  const containerRef = useRef<HTMLDivElement>(null);
+  const [pending, setPending] = useState<PendingCitation | null>(null);
+  const [tooLong, setTooLong] = useState(false);
+  useEffect(() => {
+    const update = () => {
+      const container = containerRef.current;
+      const selection = document.getSelection();
+      const lines = container !== null && selection !== null && selection.rangeCount > 0 && container.contains(selection.getRangeAt(0).commonAncestorContainer)
+        ? selectionLineRange(selection, container, file) : null;
+      if (container === null || selection === null || lines === null) { setPending(null); return; }
+      setTooLong(false);
+      const rect = selection.getRangeAt(0).getBoundingClientRect();
+      const box = container.getBoundingClientRect();
+      setPending({ ...lines, top: rect.bottom - box.top + 4, left: Math.max(0, rect.left - box.left) });
+    };
+    document.addEventListener('selectionchange', update);
+    return () => document.removeEventListener('selectionchange', update);
+  }, [file]);
+  const cite = () => {
+    if (pending === null) return;
+    if (pending.end_line - pending.start_line + 1 > DOC_CITATION_MAX_LINES) { setTooLong(true); return; }
+    void buildCitation(file, pending.start_line, pending.end_line).then(citation => {
+      onCite(citation);
+      document.getSelection()?.removeAllRanges();
+    });
+  };
+  return (
+    <div ref={containerRef} className="relative min-w-0" data-docs-citable>
+      {children}
+      {pending !== null && (
+        <div className="absolute z-10 flex flex-col items-start gap-1" style={{ top: pending.top, left: pending.left }} data-docs-cite-range={`${pending.start_line}-${pending.end_line}`}>
+          {/* Pressing the action must not collapse the selection it cites. */}
+          <button type="button" data-docs-cite disabled={draftFullFor} onMouseDown={event => event.preventDefault()} onClick={cite}
+            className="h-8 cursor-pointer rounded-md border border-kumo-interact bg-kumo-base px-3 text-sm font-medium text-kumo-strong shadow-sm hover:bg-kumo-tint disabled:cursor-not-allowed disabled:opacity-60">
+            {t('docs.cite')}
+          </button>
+          {draftFullFor && <span className="type-caption rounded bg-kumo-base px-1.5 text-kumo-subtle">{t('composer.limit.citations', { count: DOC_SESSION_MAX_CITATIONS })}</span>}
+          {tooLong && <span role="alert" className="type-caption rounded bg-kumo-base px-1.5 text-kumo-danger" data-docs-cite-too-long>{t('docs.cite.tooLong', { count: DOC_CITATION_MAX_LINES })}</span>}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function FileView({ file, mode, onOpen, onCite, draftFullFor, renderMermaid, t }: {
   readonly file: DocsFileV1; readonly mode: ThemeMode; readonly onOpen: (next: WorkspaceLocation) => void;
+  /** Absent where the server cannot start a doc session: the reader then has no citing action. */
+  readonly onCite?: (citation: DocCitationV1) => void; readonly draftFullFor: boolean;
   readonly renderMermaid?: MermaidRenderer; readonly t: OperatorTranslate;
 }) {
+  const body = MARKDOWN.test(file.path)
+    ? <DocsMarkdown text={file.text} path={file.path} mode={mode} onOpen={onOpen} renderMermaid={renderMermaid} t={t} />
+    : <SourceLines file={file} />;
   return (
     <>
       <header className="flex flex-col gap-1.5 border-b border-kumo-hairline pb-3" data-docs-file-header>
@@ -173,17 +241,15 @@ function FileView({ file, mode, onOpen, renderMermaid, t }: {
           )}
         </p>
       </header>
-      {MARKDOWN.test(file.path)
-        ? <DocsMarkdown text={file.text} path={file.path} mode={mode} onOpen={onOpen} renderMermaid={renderMermaid} t={t} />
-        : <SourceLines file={file} />}
+      {onCite === undefined ? body : <Citable file={file} draftFullFor={draftFullFor} onCite={onCite} t={t}>{body}</Citable>}
     </>
   );
 }
 
-function Reader({ repositoryId, path, commit, readFile, generation, mode, onOpen, renderMermaid, t }: {
+function Reader({ repositoryId, path, commit, readFile, generation, mode, onOpen, start, renderMermaid, t }: {
   readonly repositoryId: string; readonly path: string; readonly commit: string; readonly readFile: DocsFileReader;
   readonly generation: number; readonly mode: ThemeMode; readonly onOpen: (next: WorkspaceLocation) => void;
-  readonly renderMermaid?: MermaidRenderer; readonly t: OperatorTranslate;
+  readonly start?: DocSessionStart; readonly renderMermaid?: MermaidRenderer; readonly t: OperatorTranslate;
 }) {
   const read = useDocsFile(readFile, repositoryId, path, commit, generation);
   if (read === null) return <p role="status" className="flex items-center gap-1.5 text-sm text-kumo-subtle" data-docs-file-loading><Loader size={12} />{t('docs.file.loading')}</p>;
@@ -195,16 +261,21 @@ function Reader({ repositoryId, path, commit, readFile, generation, mode, onOpen
       </>
     );
   }
-  return <FileView file={read.value} mode={mode} onOpen={onOpen} renderMermaid={renderMermaid} t={t} />;
+  const citing = start !== undefined && docSessionsLive(start.docSessions.view) ? start : null;
+  return <FileView file={read.value} mode={mode} onOpen={onOpen} renderMermaid={renderMermaid} t={t}
+    onCite={citing === null ? undefined : citation => citing.onDraft(current => withCitation(current, repositoryId, citation))}
+    draftFullFor={citing !== null && draftFull(citing.draft, repositoryId)} />;
 }
 
 /**
- * The read-only docs page (G7): the `docs/` tree of one repository's default
- * branch and one rendered file, with the commit it came from. It has no
- * citation or session control in this phase.
+ * The docs page (G7): the `docs/` tree of one repository's default branch and
+ * one rendered file, with the commit it came from. Where the server can start
+ * a doc session, a selected passage can be cited and the composer sits beside
+ * the reader.
  */
-export function DocsPage({ repositoryId, path, readTree, readFile, generation, mode, now, onOpen, renderMermaid, t }: DocsPageProps) {
+export function DocsPage({ repositoryId, path, readTree, readFile, generation, mode, now, onOpen, start, renderMermaid, t }: DocsPageProps) {
   const tree = useDocsTree(readTree, repositoryId, generation);
+  const composer = start !== undefined && docSessionStartState(start.docSessions.view).show ? start : null;
   return (
     <div className="flex min-w-0 flex-col gap-5" data-docs-page>
       <header className="border-b border-kumo-hairline pb-4">
@@ -214,14 +285,20 @@ export function DocsPage({ repositoryId, path, readTree, readFile, generation, m
         : tree === null ? <p role="status" className="flex items-center gap-1.5 text-sm text-kumo-subtle" data-docs-loading><Loader size={12} />{t('docs.loading')}</p>
         : tree.state === 'unavailable' ? <Refusal reason={tree.reason} t={t} />
         : (
-          <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(13rem,17rem)_minmax(0,1fr)] lg:items-start">
+          <div className={cn('grid min-w-0 gap-6 lg:grid-cols-[minmax(13rem,17rem)_minmax(0,1fr)] lg:items-start',
+            composer !== null && 'xl:grid-cols-[minmax(13rem,17rem)_minmax(0,1fr)_minmax(18.75rem,22.5rem)]')}>
             <DocsTree tree={tree.value} selected={path} now={now} onOpen={onOpen} t={t} />
             <article className="docs-reader" data-docs-reader={path ?? ''}>
               {path === null
                 ? <p className="flex items-center gap-2 text-sm text-kumo-subtle"><FileTextIcon size={16} aria-hidden="true" />{t('docs.choose')}</p>
                 : <Reader repositoryId={repositoryId} path={path} commit={tree.value.commit} readFile={readFile} generation={generation}
-                  mode={mode} onOpen={onOpen} renderMermaid={renderMermaid} t={t} />}
+                  mode={mode} onOpen={onOpen} start={start} renderMermaid={renderMermaid} t={t} />}
             </article>
+            {composer !== null && (
+              <div className="min-w-0 lg:col-span-2 xl:sticky xl:top-16 xl:col-span-1" data-docs-composer>
+                <DocSessionComposer start={composer} currentRepositoryId={repositoryId} onOpen={onOpen} openDocsOnCite={false} t={t} />
+              </div>
+            )}
           </div>
         )}
     </div>

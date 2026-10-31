@@ -18,6 +18,9 @@ import {
   type ExecutionResult,
   type ItemOwner,
 } from './repository-reads';
+import type { DocSessionSummary } from '../core/operator/doc-session-views';
+import { DocSessionComposer, type DocSessionStart } from './DocSessionComposer';
+import { DOC_SESSION_STATUS_TONE, docSessionReadText, docSessionRuntimeName, docSessionStartState, docSessionStatus, listFailure } from './doc-sessions';
 import { ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
@@ -30,6 +33,7 @@ const BOARD: WorkspaceLocation = { workspace: 'board', module: null, item: null 
 const SYSTEM: WorkspaceLocation = { workspace: 'system', module: null, item: null };
 const WORKTREES: WorkspaceLocation = { workspace: 'worktrees', module: null, item: null };
 const boardItem = (item: string): WorkspaceLocation => ({ workspace: 'board', module: null, item });
+const sessionPlace = (id: string): WorkspaceLocation => ({ workspace: 'session', module: null, item: id });
 
 type Open = (next: WorkspaceLocation) => void;
 
@@ -127,6 +131,33 @@ function ContinueRow({ item, snapshot, executions, now, onOpen, t }: {
         <span className="w-20 text-xs text-kumo-subtle">{t(`column.${item.column}`)}</span>
         <AgentCell owner={itemOwner(executions, item)} t={t} />
         <span className="w-24 text-xs tabular-nums text-kumo-subtle">{item.column_since ? ageWords(item.column_since, now, t) : '—'}</span>
+      </div>
+    </li>
+  );
+}
+
+type ContinueEntry =
+  | { readonly kind: 'task'; readonly item: DevActivityItem; readonly at: number }
+  | { readonly kind: 'session'; readonly session: DocSessionSummary; readonly at: number };
+
+/** The list summary carries no finalization progress, so a row shows the docs host state only. */
+function SessionRow({ session, now, onOpen, t }: {
+  readonly session: DocSessionSummary; readonly now: number; readonly onOpen: Open; readonly t: OperatorTranslate;
+}) {
+  const status = docSessionStatus(session.state, null);
+  return (
+    <li className={ROW} data-continue-session={session.session_id}>
+      <div className="flex min-w-0 flex-1 items-start gap-3">
+        <StatusDot tone={DOC_SESSION_STATUS_TONE[status]} className="mt-1.5" />
+        <div className="min-w-0">
+          <PageLink to={sessionPlace(session.session_id)} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{session.title}</PageLink>
+          <p className="type-caption truncate text-kumo-subtle">{t('docSession.title')} · {session.repository_name}</p>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap items-center gap-x-5 gap-y-1 pl-5 rail:pl-0">
+        <span className="w-20 text-xs text-kumo-subtle" data-session-status={status}>{t(`docSession.status.${status}`)}</span>
+        <span className="inline-flex w-28 items-center gap-1.5 text-xs text-kumo-default"><StatusDot tone={DOC_SESSION_STATUS_TONE[status]} /><span className="truncate">{docSessionRuntimeName(session.runtime, t)}</span></span>
+        <span className="w-24 text-xs tabular-nums text-kumo-subtle">{ageWords(session.last_activity_at, now, t)}</span>
       </div>
     </li>
   );
@@ -277,11 +308,13 @@ function SourceBanner({ view, snapshot, now, onOpen, t }: {
     title={failures.length > 1 ? `${sentence} · ${t('home.banner.more', { count: failures.length - 1 })}` : sentence} />;
 }
 
-export function Home({ view, worktrees, readCiRepairs, readExecution, generation, now, onOpen, t }: {
+export function Home({ view, worktrees, readCiRepairs, readExecution, start, generation, now, onOpen, t }: {
   readonly view: DevActivityView;
   readonly worktrees: WorktreesView;
   readonly readCiRepairs: CiRepairsReader;
   readonly readExecution: ExecutionReader;
+  /** The doc session list and its composer; a start control shows only for a server that lists the `docs` kind. */
+  readonly start?: DocSessionStart;
   readonly generation: number;
   readonly now: number;
   readonly onOpen: Open;
@@ -303,10 +336,19 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, generation
 
   const waiting = ready.attention;
   const subjects = new Set(waiting.map(row => row.subject_id));
-  // Only tasks continue here; document sessions join this list with slice 4.
-  const continuing = ready.items
+  const tasks = ready.items
     .filter(item => item.hidden === null && (item.column === 'building' || item.column === 'verifying') && !subjects.has(item.id))
     .sort((left, right) => time(right.pull_request?.updated_at) - time(left.pull_request?.updated_at) || (left.id < right.id ? -1 : 1));
+  const sessionList = start?.docSessions.view;
+  const sessions = sessionList?.kind === 'ready' ? sessionList.list.sessions : [];
+  // Tasks and doc sessions share one list, newest activity first.
+  const continuing: readonly ContinueEntry[] = [
+    ...tasks.map((item): ContinueEntry => ({ kind: 'task', item, at: time(item.pull_request?.updated_at) })),
+    ...sessions.map((session): ContinueEntry => ({ kind: 'session', session, at: time(session.last_activity_at) })),
+  ].sort((left, right) => right.at - left.at);
+  const startState = start === undefined ? null : docSessionStartState(start.docSessions.view);
+  const failedReason = sessionList === undefined ? null : listFailure(sessionList);
+  const sessionsFailure = failedReason === null ? null : docSessionReadText(failedReason, t);
   const trouble = view.refreshFailed || ready.repositories.some(repository => failedSources(repository).length > 0);
   const lead = greeting(now, t);
   return (
@@ -319,6 +361,9 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, generation
         <Mascot name={trouble ? 'cloud-off' : 'buddy-happy'} className="max-rail:hidden" />
       </header>
       <SourceBanner view={view} snapshot={ready} now={now} onOpen={onOpen} t={t} />
+      {start !== undefined && startState?.show === true && (
+        <DocSessionComposer start={start} currentRepositoryId={null} onOpen={onOpen} openDocsOnCite t={t} />
+      )}
       <ListGroup id="home-waiting" title={t('attention.title')} count={waiting.length}>
         {waiting.length === 0 ? <p className="px-5 py-4 text-sm text-kumo-subtle">{t('attention.empty')}</p> : (
           <ul>{(waitingExpanded ? waiting : waiting.slice(0, WAITING_PREVIEW)).map(row =>
@@ -327,9 +372,11 @@ export function Home({ view, worktrees, readCiRepairs, readExecution, generation
         {waiting.length > WAITING_PREVIEW && <FoldButton expanded={waitingExpanded} hidden={waiting.length - WAITING_PREVIEW} onToggle={() => setWaitingExpanded(value => !value)} t={t} />}
       </ListGroup>
       <ListGroup id="home-continue" title={t('home.continue')} count={continuing.length}>
-        {continuing.length === 0 ? <p className="px-5 py-4 text-sm text-kumo-subtle">{t('board.empty.title')}</p> : (
-          <ul>{(continueExpanded ? continuing : continuing.slice(0, CONTINUE_PREVIEW)).map(item =>
-            <ContinueRow key={item.id} item={item} snapshot={ready} executions={executions} now={now} onOpen={onOpen} t={t} />)}</ul>
+        {sessionsFailure !== null && <p role="alert" className="border-b border-kumo-hairline px-5 py-3 text-sm text-kumo-danger" data-continue-sessions-failure>{sessionsFailure.message} {sessionsFailure.next_action}</p>}
+        {continuing.length === 0 ? (sessionsFailure === null ? <p className="px-5 py-4 text-sm text-kumo-subtle">{t('board.empty.title')}</p> : null) : (
+          <ul>{(continueExpanded ? continuing : continuing.slice(0, CONTINUE_PREVIEW)).map(entry => entry.kind === 'task'
+            ? <ContinueRow key={entry.item.id} item={entry.item} snapshot={ready} executions={executions} now={now} onOpen={onOpen} t={t} />
+            : <SessionRow key={entry.session.session_id} session={entry.session} now={now} onOpen={onOpen} t={t} />)}</ul>
         )}
         {continuing.length > CONTINUE_PREVIEW && <FoldButton expanded={continueExpanded} hidden={continuing.length - CONTINUE_PREVIEW} onToggle={() => setContinueExpanded(value => !value)} t={t} />}
       </ListGroup>

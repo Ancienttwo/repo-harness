@@ -1,4 +1,4 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { Banner, Button } from '@cloudflare/kumo';
 import { WarningIcon } from '@phosphor-icons/react';
 import { WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupItem, type WorktreeCleanupResult } from '../core/operator/worktree-cleanup';
@@ -6,27 +6,35 @@ import type { WorktreeView } from '../core/operator/worktrees';
 import type { OperatorApiErrorV1 } from './types';
 import { BoardState } from './Board';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
+import type { CleanupSessionCreateWriter } from './cleanup-session';
+import { docSessionReadText, docSessionsLive, localizeDocSessionRefusal, useSessionWrite, type DocSessions } from './doc-sessions';
 import { ageWords } from './labels';
-import { Age, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
+import type { AgentsSettingsV1 } from '../core/operator/agents-settings';
+import { docsRuntimes, type AgentsSettingsRead, type AgentsSettingsReader } from './settings';
+import { Age, CommandLine, PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
 import {
-  cleanupCommand, formatBytes, reclaimableSpace, spaceTotal, spaceWords, useRowDigests, worktreesOf,
+  allWorktrees, cleanupCommand, formatBytes, reclaimableSpace, spaceTotal, spaceWords, useRowDigests, worktreesOf,
   type SpaceTotal, type WorktreeCleanup, type WorktreesView,
 } from './worktrees';
+import type { WorkspaceLocation } from './workspace-location';
 
 type Judgment = WorktreeView['judgment'];
 
 const JUDGMENTS: readonly Judgment[] = ['green', 'yellow', 'red'];
-const TONE: Readonly<Record<Judgment, DotTone>> = { green: 'ok', yellow: 'warn', red: 'danger' };
+export const JUDGMENT_TONE: Readonly<Record<Judgment, DotTone>> = { green: 'ok', yellow: 'warn', red: 'danger' };
 const BAR: Readonly<Record<Judgment, string>> = { green: 'bg-kumo-success', yellow: 'bg-kumo-warning', red: 'bg-kumo-danger' };
 
-/** The disk bar shares only measured bytes; each judgment's count stays next to its words. */
-function DiskBar({ worktrees, t }: { readonly worktrees: readonly WorktreeView[]; readonly t: OperatorTranslate }) {
+/**
+ * The disk bar shares only measured bytes; each judgment's count stays next to its words.
+ * `scale` is the byte total a full-width bar stands for, so a bar for fewer bytes is shorter.
+ */
+export function DiskBar({ worktrees, scale, t }: { readonly worktrees: readonly WorktreeView[]; readonly scale?: number; readonly t: OperatorTranslate }) {
   const totals = Object.fromEntries(JUDGMENTS.map(judgment => [judgment, spaceTotal(worktrees.filter(tree => tree.judgment === judgment))])) as Record<Judgment, SpaceTotal>;
   const measured = JUDGMENTS.reduce((sum, judgment) => sum + totals[judgment].bytes, 0);
   return (
     <div className="flex flex-col gap-1.5">
       {measured > 0
-        ? <div className="flex h-2 w-full overflow-hidden rounded-full bg-kumo-recessed" data-disk-bar>
+        ? <div className="flex h-2 overflow-hidden rounded-full bg-kumo-recessed" style={{ width: scale === undefined || scale <= 0 ? '100%' : `${Math.min(100, (measured / scale) * 100)}%` }} data-disk-bar>
           {JUDGMENTS.filter(judgment => totals[judgment].bytes > 0).map(judgment => (
             <span key={judgment} className={BAR[judgment]} style={{ width: `${(totals[judgment].bytes / measured) * 100}%` }} data-disk-segment={judgment} data-bytes={totals[judgment].bytes} />
           ))}
@@ -37,7 +45,7 @@ function DiskBar({ worktrees, t }: { readonly worktrees: readonly WorktreeView[]
           const count = totals[judgment].measured + totals[judgment].unknown;
           return (
             <li key={judgment} className="inline-flex items-center gap-1.5" data-judgment-count={judgment} data-count={count}>
-              <StatusDot tone={TONE[judgment]} />
+              <StatusDot tone={JUDGMENT_TONE[judgment]} />
               {t(`worktrees.judgment.${judgment}`)} {count}
               {count > 0 && <span className="text-kumo-subtle">· {spaceWords(totals[judgment], t)}</span>}
             </li>
@@ -107,7 +115,7 @@ function WorktreeRow({ tree, cleanup, now, t }: { readonly tree: WorktreeView; r
         onChange={event => cleanup.toggle(tree.id, event.target.checked)} />
       <div className="flex min-w-0 flex-1 flex-col gap-1">
         <div className="flex min-w-0 flex-wrap items-baseline gap-x-3 gap-y-1">
-          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-kumo-strong"><StatusDot tone={TONE[tree.judgment]} />{t(`worktrees.judgment.${tree.judgment}`)}</span>
+          <span className="inline-flex items-center gap-1.5 text-xs font-medium text-kumo-strong"><StatusDot tone={JUDGMENT_TONE[tree.judgment]} />{t(`worktrees.judgment.${tree.judgment}`)}</span>
           <code className="min-w-0 truncate font-mono text-sm text-kumo-strong" data-directory>{tree.directory}</code>
           <span className="min-w-0 truncate font-mono text-xs text-kumo-subtle">{tree.branch ?? t('worktrees.noBranch')}</span>
           <span className="ml-auto shrink-0 font-mono text-xs tabular-nums text-kumo-default" data-size={tree.size_bytes ?? 'unknown'}>{sizeWords(tree, now, t)}</span>
@@ -155,6 +163,64 @@ function WorktreeGroup({ group, title, status, worktrees, rowCleanup, now, t }: 
           ? <p className="px-4 py-3 text-sm text-kumo-subtle">{t('worktrees.repository.empty')}</p>
           : <ul>{worktrees.map(tree => <WorktreeRow key={tree.id} tree={tree} cleanup={rowCleanup(tree)} now={now} t={t} />)}</ul>}
     </section>
+  );
+}
+
+/** The runtime a cleanup session starts with: the default docs agent, or the one runtime enabled for docs. Null when the choice is open. */
+function cleanupRuntime({ config }: AgentsSettingsV1): string | null {
+  const { ids, defaultDocs } = docsRuntimes(config);
+  return defaultDocs ?? (ids.length === 1 ? ids[0]! : null);
+}
+
+/**
+ * The 「让 agent 清理」 entry. It reads the agent settings itself, starts with the
+ * runtime they name and opens the new session; with no usable runtime it links
+ * to the settings instead of starting.
+ */
+function CleanupSessionEntry({ readAgentsSettings, startCleanupSession, onOpen, t }: {
+  readonly readAgentsSettings: AgentsSettingsReader; readonly startCleanupSession: CleanupSessionCreateWriter;
+  readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
+}) {
+  const [read, setRead] = useState<AgentsSettingsRead | null>(null);
+  useEffect(() => {
+    const controller = new AbortController();
+    readAgentsSettings(controller.signal).then(
+      result => { if (!controller.signal.aborted) setRead(result); },
+      () => { if (!controller.signal.aborted) setRead({ state: 'unavailable', reason: 'unreachable' }); },
+    );
+    return () => controller.abort();
+  }, [readAgentsSettings]);
+  const write = useSessionWrite(startCleanupSession);
+  if (read === null) return null;
+  if (read.state === 'unavailable') return <p className="text-sm text-kumo-subtle" data-cleanup-entry="settings-unavailable">{t('cleanupSession.entry.settingsUnavailable')}</p>;
+  const runtime = cleanupRuntime(read.settings);
+  if (runtime === null) {
+    return (
+      <p className="text-sm text-kumo-default" data-cleanup-entry="setup">
+        {t('cleanupSession.entry.setup')}{' '}
+        <PageLink to={{ workspace: 'settings', module: null, item: null }} onOpen={onOpen} className="text-kumo-link hover:underline">{t('cleanupSession.entry.settings')}</PageLink>
+      </p>
+    );
+  }
+  const sending = write.state.kind === 'sending';
+  const start = () => {
+    void write.submit({ kind: 'worktree_cleanup', runtime }).then((outcome) => {
+      if (outcome?.state === 'ok') onOpen({ workspace: 'cleanup', module: null, item: outcome.result.session_id });
+    });
+  };
+  const answered = write.state.kind === 'answered' ? write.state.outcome : null;
+  const failure = answered === null || answered.state === 'ok' ? null
+    : answered.state === 'refused' ? localizeDocSessionRefusal(answered.refusal, t) : docSessionReadText(answered.state, t);
+  return (
+    <>
+      <Button variant="secondary" onClick={start} disabled={sending} data-cleanup-entry="start">
+        {sending ? t('cleanupSession.entry.starting') : t('cleanupSession.entry')}
+      </Button>
+      {failure !== null && (
+        <Banner variant="error" className="basis-full" data-cleanup-entry-failure={answered?.state === 'refused' ? answered.refusal.code : answered?.state}
+          title={t('cleanupSession.entry.refused')} description={<><span className="block">{failure.message}</span><span className="block">{failure.next_action}</span></>} />
+      )}
+    </>
   );
 }
 
@@ -209,7 +275,17 @@ function CleanupResult({ cleanup, t }: { readonly cleanup: WorktreeCleanup; read
  * Every worktree the collector found. Green rows start checked and one click
  * cleans the checked ones; yellow and red rows cannot be selected (5.1).
  */
-export function WorktreesPage({ view, cleanup, now, t }: { readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly now: number; readonly t: OperatorTranslate }) {
+export function WorktreesPage({ view, cleanup, now, t, docSessions, readAgentsSettings, startCleanupSession, onOpen }: {
+  readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly now: number; readonly t: OperatorTranslate;
+  /**
+   * The doc session list; the cleanup session entry shows while it answers. No field names the kinds a
+   * server starts, so a server that does not accept `worktree_cleanup` says so in its create refusal.
+   */
+  readonly docSessions?: DocSessions;
+  readonly readAgentsSettings?: AgentsSettingsReader;
+  readonly startCleanupSession?: CleanupSessionCreateWriter;
+  readonly onOpen?: (next: WorkspaceLocation) => void;
+}) {
   const digests = useRowDigests(cleanup.selectable);
   const header = <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.title')}</h1></header>;
   if (view.kind === 'loading') return <div data-worktrees-page="pending">{header}<BoardState loading title={t('freshness.worktrees.loading')} description={t('worktrees.pending.body')} /></div>;
@@ -221,6 +297,9 @@ export function WorktreesPage({ view, cleanup, now, t }: { readonly view: Worktr
   const running = cleanup.state.kind === 'running';
   const count = cleanup.state.kind === 'running' ? cleanup.state.count : cleanup.selected.length;
   const overLimit = cleanup.selected.length > WORKTREE_CLEANUP_MAX_IDS;
+  // A yellow row is the only thing a session can decide; without one there is nothing to ask the agent.
+  const offerSession = docSessions !== undefined && readAgentsSettings !== undefined && startCleanupSession !== undefined && onOpen !== undefined
+    && docSessionsLive(docSessions.view) && allWorktrees(snapshot).some(tree => tree.judgment === 'yellow');
   const selectable = new Set(cleanup.selectable.map(tree => tree.id));
   const checked = new Set(cleanup.selected.map(tree => tree.id));
   const rowCleanup = (tree: WorktreeView): RowCleanup => ({
@@ -234,11 +313,14 @@ export function WorktreesPage({ view, cleanup, now, t }: { readonly view: Worktr
         <p className="text-sm text-kumo-default" data-reclaimable={reclaimable.bytes} data-reclaimable-unknown={reclaimable.unknown}>
           <span className="font-medium text-kumo-strong">{t('worktrees.reclaimable')}</span> · <span className="font-mono">{spaceWords(reclaimable, t)}</span>
         </p>
-        {cleanup.selectable.length > 0 && (
-          <Button variant="primary" onClick={cleanup.submit} disabled={running || count === 0 || overLimit} data-clean={count}>
-            {running ? t('worktrees.cleaning', { count }) : t('worktrees.clean', { count })}
-          </Button>
-        )}
+        <div className="flex flex-wrap items-center gap-3">
+          {offerSession && <CleanupSessionEntry readAgentsSettings={readAgentsSettings} startCleanupSession={startCleanupSession} onOpen={onOpen} t={t} />}
+          {cleanup.selectable.length > 0 && (
+            <Button variant="primary" onClick={cleanup.submit} disabled={running || count === 0 || overLimit} data-clean={count}>
+              {running ? t('worktrees.cleaning', { count }) : t('worktrees.clean', { count })}
+            </Button>
+          )}
+        </div>
       </div>
       {overLimit && <p className="text-sm text-kumo-warning" data-clean-limit>{t('worktrees.cleanLimit', { max: WORKTREE_CLEANUP_MAX_IDS })}</p>}
       <CleanupResult cleanup={cleanup} t={t} />

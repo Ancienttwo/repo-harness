@@ -25,6 +25,7 @@ import { decodeTestsSnapshot } from '../../core/operator/tests';
 import { docsAnswer, type CiRepairsRead, type ExecutionRead, type TestsRead } from '../repository-reads';
 import { decodeDocsFile, decodeDocsTree } from '../../core/operator/docs';
 import { docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from './docs';
+import { docSessionFixture } from './doc-sessions';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
@@ -140,5 +141,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     readDocsTree: repositoryId => docsAnswer(answer(fixture === 'busy' ? docsTreeAnswer(repositoryId, now) : fixture === 'empty' ? docsPendingAnswer
       : { status: 503, body: { error: { code: 'docs_reader_unavailable', message: 'The docs reader is unavailable.', next_action: 'Retry after the next collection.' } } }), decodeDocsTree),
     readDocsFile: (repositoryId, path) => docsAnswer(answer(docsFileAnswer(repositoryId, path)), decodeDocsFile),
+    // busy: three doc sessions and a cleanup session with a ready plan; empty: no session yet; degraded: a server without the session routes.
+    ...docSessionFixture(now, fixture, worktrees),
   };
 }

@@ -1,3 +1,4 @@
+import { DOC_SESSION_ID } from '../core/operator/doc-session-api';
 import { TOOL_CATALOG } from '../core/tools/catalog';
 
 /** The `<cap>` path parameter of the architecture routes. */
@@ -29,8 +30,12 @@ export type NavWorkspace = typeof WORKSPACES[number]['id'];
 export type NavGroup = NonNullable<typeof WORKSPACES[number]['group']>;
 /** The three pages read from one `repo-harness setup check` result. */
 export const SETUP_WORKSPACES = ['agents', 'skills', 'hooks'] as const;
-/** `repository` is the detail page of one repository; it is reached from the list, not the nav. */
-export type Workspace = NavWorkspace | 'repository';
+/**
+ * Pages outside the rail. `repository` is the detail page of one repository,
+ * reached from the list. `session` is one doc session and `cleanup` one
+ * worktree cleanup session; each needs its session id.
+ */
+export type Workspace = NavWorkspace | 'repository' | 'session' | 'cleanup';
 
 export interface WorkspaceLocation {
   readonly workspace: Workspace;
@@ -40,7 +45,8 @@ export interface WorkspaceLocation {
    * The drawer subject. `#board/<item>` opens one board item; its id is
    * URI-encoded in the hash. `#tools/<id>` opens one catalog entry.
    * `#docs/<path>` names one repository-relative file; the docs route decides
-   * whether it may be read.
+   * whether it may be read. `#session/<id>` and `#cleanup/<id>` name one
+   * session by its 32-hex id.
    */
   readonly item: string | null;
 }
@@ -76,6 +82,9 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
     // Catalog ids already match the decoder's strict id pattern.
     return TOOL_CATALOG.tools.some(tool => tool.id === parameter) ? { workspace: 'tools', module: null, item: parameter } : HOME;
   }
+  if (name === 'session' || name === 'cleanup') {
+    return parameter !== undefined && DOC_SESSION_ID.test(parameter) ? { workspace: name, module: null, item: parameter } : HOME;
+  }
   if (name === 'board') {
     if (parameter === undefined) return { workspace: 'board', module: null, item: null };
     const item = decodeItem(parameter);
@@ -88,6 +97,7 @@ export function workspaceHash({ workspace, module, item }: WorkspaceLocation): s
   if (workspace === 'board') return item === null ? '#board' : `#board/${encodeURIComponent(item)}`;
   if (workspace === 'architecture' && module !== null) return `#architecture/${module}`;
   if (workspace === 'tools' && item !== null) return `#tools/${item}`;
+  if ((workspace === 'session' || workspace === 'cleanup') && item !== null) return `#${workspace}/${item}`;
   // Each segment is encoded on its own, so the path stays readable in the address bar.
   if (workspace === 'docs' && item !== null) return `#docs/${item.split('/').map(encodeURIComponent).join('/')}`;
   return `#${workspace}`;

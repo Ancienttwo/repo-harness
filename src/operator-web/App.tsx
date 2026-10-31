@@ -7,6 +7,17 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
+import type { DocSessionCitationView } from '../core/operator/doc-session-api';
+import { fetchCleanupPlan, postCleanupSessionCreate, type CleanupPlanReader, type CleanupSessionCreateWriter } from './cleanup-session';
+import {
+  fetchDocSessionDetail, fetchDocSessionDiff, fetchDocSessionEvents, fetchDocSessionFinalization, fetchDocSessionLoss, fetchDocSessions,
+  postDocSessionCommit, postDocSessionCreate, postDocSessionDiscard, postDocSessionMessage, postDocSessionStop, useDocSessions,
+  type DocSessionCommitWriter, type DocSessionCreateWriter, type DocSessionDetailReader, type DocSessionDiffReader, type DocSessionDiscardWriter,
+  type DocSessionEventsReader, type DocSessionFinalizationReader, type DocSessionLossReader, type DocSessionMessageWriter, type DocSessionsReader,
+  type DocSessionStopWriter,
+} from './doc-sessions';
+import { EMPTY_DOC_DRAFT, type DocDraft } from './doc-draft';
+import type { DocSessionStart } from './DocSessionComposer';
 import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
@@ -140,6 +151,23 @@ export interface OperatorAppProps {
   /** The docs page's tree and file reads; the browser default is the same-origin docs routes. */
   readonly readDocsTree?: DocsTreeReader;
   readonly readDocsFile?: DocsFileReader;
+  /** The doc session list: the one authority on whether sessions are served. */
+  readonly readDocSessions?: DocSessionsReader;
+  /** One doc session's detail, record, diff, loss and finalization reads. */
+  readonly readDocSession?: DocSessionDetailReader;
+  readonly readDocSessionEvents?: DocSessionEventsReader;
+  readonly readDocSessionDiff?: DocSessionDiffReader;
+  readonly readDocSessionLoss?: DocSessionLossReader;
+  readonly readDocSessionFinalization?: DocSessionFinalizationReader;
+  /** The doc session writes: start from citations, follow-up message, stop, commit with Draft PR, discard. */
+  readonly writeDocSessionCreate?: DocSessionCreateWriter;
+  readonly writeDocSessionMessage?: DocSessionMessageWriter;
+  readonly writeDocSessionStop?: DocSessionStopWriter;
+  readonly writeDocSessionCommit?: DocSessionCommitWriter;
+  readonly writeDocSessionDiscard?: DocSessionDiscardWriter;
+  /** The worktree cleanup session: its plan read and its start from the Worktree page. */
+  readonly readCleanupPlan?: CleanupPlanReader;
+  readonly writeCleanupSessionCreate?: CleanupSessionCreateWriter;
 }
 
 export const OPERATOR_REPOSITORY_STORAGE_KEY = 'repo-harness:operator-repository';
@@ -174,6 +202,10 @@ function writeStorage(key: string, value: string | null): void {
 const ArchitectureWorkspace = lazy(() => import('./ArchitectureWorkspace').then(module => ({ default: module.ArchitectureWorkspace })));
 // The markdown renderer and Mermaid load only with the docs page.
 const DocsPage = lazy(() => import('./DocsPage').then(module => ({ default: module.DocsPage })));
+// The session pages load only when a session opens.
+const HOME_PLACE: WorkspaceLocation = { workspace: 'home', module: null, item: null };
+const DocSessionPage = lazy(() => import('./DocSessionPage').then(module => ({ default: module.DocSessionPage })));
+const CleanupSessionPage = lazy(() => import('./CleanupSessionPage').then(module => ({ default: module.CleanupSessionPage })));
 
 /** Fleet names a duplicate display name by its registry id, so two rows never look the same. */
 function fleetLabel(repositories: readonly OperatorFleetRepositoryV1[], repository: OperatorFleetRepositoryV1): string {
@@ -278,6 +310,19 @@ export function OperatorApp({
   readTests = fetchTestsSnapshot,
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
+  readDocSessions = fetchDocSessions,
+  readDocSession = fetchDocSessionDetail,
+  readDocSessionEvents = fetchDocSessionEvents,
+  readDocSessionDiff = fetchDocSessionDiff,
+  readDocSessionLoss = fetchDocSessionLoss,
+  readDocSessionFinalization = fetchDocSessionFinalization,
+  writeDocSessionCreate = postDocSessionCreate,
+  writeDocSessionMessage = postDocSessionMessage,
+  writeDocSessionStop = postDocSessionStop,
+  writeDocSessionCommit = postDocSessionCommit,
+  writeDocSessionDiscard = postDocSessionDiscard,
+  readCleanupPlan = fetchCleanupPlan,
+  writeCleanupSessionCreate = postCleanupSessionCreate,
 }: OperatorAppProps) {
   const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
@@ -322,9 +367,20 @@ export function OperatorApp({
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
+  // One list read decides on every page whether session controls exist at all.
+  const docSessions = useDocSessions(readDocSessions, refreshGeneration);
+  // A session route opens a page only on a server that lists sessions; an absent list sends it Home, and no read starts before the list answers.
+  const sessionRoute = workspace === 'session' || workspace === 'cleanup';
+  const sessionsAbsent = docSessions.view.kind === 'absent';
+  const sessionsLoading = docSessions.view.kind === 'loading';
   // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
   const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
   const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
+  useEffect(() => {
+    if (!sessionRoute || !sessionsAbsent) return;
+    window.history.replaceState(null, '', window.location.pathname + window.location.search + workspaceHash(HOME_PLACE));
+    setPlace(HOME_PLACE);
+  }, [sessionRoute, sessionsAbsent]);
   // A stored board filter for a repository that left the snapshot shows every repository.
   const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
     ? { ...filters, repositoryId: null } : filters;
@@ -355,6 +411,26 @@ export function OperatorApp({
     window.history.pushState(null, '', window.location.pathname + window.location.search + workspaceHash(next));
     setPlace(next);
   }, []);
+  // One draft for the Home composer and the Docs page, so a citation added on one shows in the other.
+  const [docDraft, setDocDraft] = useState<DocDraft>(EMPTY_DOC_DRAFT);
+  const [composerFocus, setComposerFocus] = useState(false);
+  const composerFocused = useCallback(() => setComposerFocus(false), []);
+  const newSession = useCallback(() => {
+    openPlace({ workspace: 'home', module: null, item: null });
+    setComposerFocus(true);
+  }, [openPlace]);
+  // The create answer is the only source of a session's verified citations; the page that opens right after it shows them.
+  const [createdCitations, setCreatedCitations] = useState<Readonly<Record<string, readonly DocSessionCitationView[]>>>({});
+  const sessionCreated = useCallback((created: { readonly session_id: string; readonly citations: readonly DocSessionCitationView[] }) => {
+    setCreatedCitations(current => ({ ...current, [created.session_id]: created.citations }));
+  }, []);
+  // A `steer_unsupported` answer disables「插入本轮」for that session while the console stays open.
+  const [noSteer, setNoSteer] = useState<ReadonlySet<string>>(() => new Set());
+  const steerRefused = useCallback((sessionId: string) => setNoSteer(current => new Set(current).add(sessionId)), []);
+  const docStart: DocSessionStart = {
+    docSessions, readAgentsSettings, createDocSession: writeDocSessionCreate, onCreated: sessionCreated, draft: docDraft, onDraft: setDocDraft,
+    focusRequested: composerFocus, onFocusHandled: composerFocused,
+  };
   const switchRepository = (id: string) => {
     if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); }
     setRepositoryId(id);
@@ -496,7 +572,7 @@ export function OperatorApp({
     >
       <NavRail current={workspace} attention={attention} onOpen={openPlace} repositorySwitch={repositorySwitch}
         collapsed={railCollapsed} onToggleCollapsed={toggleRail} drawerOpen={drawerOpen} onCloseDrawer={closeDrawer}
-        activity={devActivity} locale={locale} onLocale={setLocale} theme={theme.preference} onTheme={theme.cycle} t={t} />
+        activity={devActivity} docSessions={docSessions} currentSession={workspace === 'session' ? place.item : null} onNewSession={newSession} locale={locale} onLocale={setLocale} theme={theme.preference} onTheme={theme.cycle} t={t} />
       <div className="flex min-w-0 flex-1 flex-col">
         <header className="operator-header sticky top-0 z-10 flex items-center gap-3 border-b border-kumo-line bg-kumo-canvas/95 px-4 py-2 backdrop-blur rail:px-6">
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
@@ -513,11 +589,13 @@ export function OperatorApp({
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
-          {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
+          {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution}
+            start={docStart} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <Board view={devActivity} runtime={runtime} worktrees={worktreesOf(worktrees)} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
             onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
-          {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
+          {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} docSessions={docSessions} readAgentsSettings={readAgentsSettings}
+            startCleanupSession={writeCleanupSessionCreate} onOpen={openPlace} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
@@ -526,7 +604,18 @@ export function OperatorApp({
             onClose={() => openPlace({ workspace: 'tools', module: null, item: null })} locale={locale} t={t} />}
           {workspace === 'docs' && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
             <DocsPage repositoryId={activeRepository?.repository_id ?? null} path={place.item} readTree={readDocsTree} readFile={readDocsFile}
+              start={docStart} generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
+          </Suspense>}
+          {sessionRoute && sessionsLoading && <p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}
+          {workspace === 'session' && place.item !== null && !sessionsAbsent && !sessionsLoading && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
+            <DocSessionPage sessionId={place.item} readDetail={readDocSession} readEvents={readDocSessionEvents}
+              readDiff={readDocSessionDiff} readLoss={readDocSessionLoss} readFinalization={readDocSessionFinalization}
+              writeMessage={writeDocSessionMessage} writeStop={writeDocSessionStop} writeCommit={writeDocSessionCommit} writeDiscard={writeDocSessionDiscard}
+              citations={createdCitations[place.item] ?? null} steerUnsupported={noSteer.has(place.item)} onSteerUnsupported={() => steerRefused(place.item!)}
               generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
+          </Suspense>}
+          {workspace === 'cleanup' && place.item !== null && !sessionsAbsent && !sessionsLoading && <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
+            <CleanupSessionPage sessionId={place.item} readEvents={readDocSessionEvents} readPlan={readCleanupPlan} generation={refreshGeneration} t={t} />
           </Suspense>}
           {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'repository' && <RepositoryWorkspace

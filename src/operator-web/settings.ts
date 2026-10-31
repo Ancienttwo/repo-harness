@@ -40,6 +40,12 @@ export async function fetchAgentsSettings(signal: AbortSignal): Promise<AgentsSe
   try { return { state: 'ok', settings: decodeAgentsSettings(body) }; } catch { return { state: 'unavailable', reason: 'settings_invalid' }; }
 }
 
+/** The runtimes enabled with the docs use, and the default docs agent when it is one of them. */
+export function docsRuntimes(config: AgentsSettingsV1['config']): { readonly ids: readonly string[]; readonly defaultDocs: string | null } {
+  const ids = config.uses.docs.filter(id => config.enabled.includes(id));
+  return { ids, defaultDocs: config.default_docs !== null && ids.includes(config.default_docs) ? config.default_docs : null };
+}
+
 export type AgentsSettingsPost = AgentsSettingsRequestV1 & { readonly request_id: string };
 
 /**
@@ -138,8 +144,8 @@ export function draftRequest(base: AgentsSettingsV1['config'], draft: AgentsDraf
     : { expected_revision: base.revision, changes };
 }
 
-/** Codes after which a resend with the same request_id is the documented recovery. */
-const RETRY_SAME_REQUEST = new Set(['busy', 'audit_unavailable', 'body_timeout']);
+/** Codes after which a resend with the same request_id is the documented recovery. Every write of the channel shares them. */
+export const RETRY_SAME_REQUEST: ReadonlySet<string> = new Set(['busy', 'audit_unavailable', 'body_timeout']);
 /** Codes after which the form must re-read the settings before another save. */
 const RELOAD_REQUIRED = new Set(['revision_conflict', 'reconcile_required']);
 

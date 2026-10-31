@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { DOC_CITATION_MAX_LINES } from './doc-session-api';
 
 /**
  * G8 reference protocol. A citation names whole lines of one file at one
@@ -24,8 +25,6 @@ export type DocCitationCheck =
   | { readonly state: 'stale' }
   | { readonly state: 'over_budget' };
 
-// Each relocation candidate is hashed, so the line cap bounds the work of one check.
-export const DOC_CITATION_MAX_LINES = 500;
 /**
  * Hash work that all citation checks of one request may share. A relocation
  * hashes one candidate range per line, so one 512 KiB file can cost about
