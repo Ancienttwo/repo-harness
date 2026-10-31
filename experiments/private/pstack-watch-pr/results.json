@@ -10,7 +10,7 @@
       "harnessBlockers": [],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -22,7 +22,7 @@
       ],
       "observerDecision": "waiting",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -58,7 +58,7 @@
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -70,7 +70,7 @@
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -82,7 +82,7 @@
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -94,7 +94,7 @@
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -118,7 +118,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 11,
+      "collectorLogicalProviderReads": 12,
       "observerLogicalProviderReads": 4
     },
     {
@@ -142,7 +142,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -154,7 +154,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -166,7 +166,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 20,
+      "collectorLogicalProviderReads": 22,
       "observerLogicalProviderReads": 4,
       "temporalReplay": {
         "trigger": "facts response captured; identity moves before observation returns",
@@ -189,7 +189,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 20,
+      "collectorLogicalProviderReads": 22,
       "observerLogicalProviderReads": 4,
       "temporalReplay": {
         "trigger": "facts response captured; identity moves before observation returns",
@@ -212,7 +212,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 7,
+      "collectorLogicalProviderReads": 8,
       "observerLogicalProviderReads": 4
     },
     {
@@ -224,7 +224,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 7,
+      "collectorLogicalProviderReads": 8,
       "observerLogicalProviderReads": 4
     },
     {
@@ -236,7 +236,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 7,
+      "collectorLogicalProviderReads": 8,
       "observerLogicalProviderReads": 4
     },
     {
@@ -246,7 +246,7 @@
       "harnessBlockers": [],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -258,7 +258,7 @@
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -270,7 +270,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 7,
+      "collectorLogicalProviderReads": 8,
       "observerLogicalProviderReads": 4
     }
   ],
@@ -297,7 +297,7 @@
     "observerDuplicates": 2,
     "baselineDuplicates": 0,
     "observerLogicalProviderReads": 12,
-    "collectorLogicalProviderReads": 30
+    "collectorLogicalProviderReads": 33
   },
   "recovery": {
     "serviceAvailableAtSeconds": 120,
@@ -306,7 +306,7 @@
     "observerAttempts": 3,
     "baselineAttempts": 13,
     "observerLogicalProviderReads": 6,
-    "collectorLogicalProviderReads": 22,
+    "collectorLogicalProviderReads": 23,
     "observerRetries": 2,
     "baselineNotifications": 2,
     "warning": "Endpoint totals include different observation contracts. Attempts and logical time show the scheduler tradeoff."
@@ -415,7 +415,8 @@
       "integration_mode": "unmerged",
       "attention_owner": "none",
       "blockers": [],
-      "check_failures": []
+      "check_failures": [],
+      "required_check_coverage": null
     }
   },
   "measurementUnits": "Logical provider reads are injected collector gh commands or watcher reader methods. They are not actual HTTP requests, latency, CPU, or production throughput. External API requests are zero.",

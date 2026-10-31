@@ -18,6 +18,10 @@ const REPOSITORY_NODE = 'R_publication_merge';
 const PR_NODE = 'PR_publication_merge';
 
 export const POLICY_ON = `${JSON.stringify({ merge_gate: { enabled: true }, publication: { acceptance_merge: 'on' } }, null, 2)}\n`;
+export const POLICY_COVERAGE = `${JSON.stringify({ merge_gate: { enabled: true }, publication: {
+  acceptance_merge: 'on',
+  required_check_coverage: { protected_paths: ['api-surface/**'], required_checks: ['Required / CI', 'build, typecheck, test (matrix)'] },
+} }, null, 2)}\n`;
 
 export interface PublicationMergeScenario {
   /** Policy text at the base and head SHAs; null is a 404. */
@@ -31,6 +35,15 @@ export interface PublicationMergeScenario {
   readonly protection?: { readonly strict: boolean; readonly enforce_admins: boolean } | null;
   readonly rules?: readonly { readonly type: string }[];
   readonly checks?: 'pass' | 'pending';
+  /** The PR head and base this scenario reports; defaults to the module constants. */
+  readonly head?: string;
+  readonly base?: string;
+  /** The required-check view; defaults to one Required / CI check with `checks`. */
+  readonly requiredChecks?: readonly { readonly name: string; readonly bucket: string; readonly link?: string }[];
+  /** The unfiltered check view the coverage rule reads. */
+  readonly allChecks?: readonly { readonly name: string; readonly bucket: string }[];
+  /** The REST pull-request files view; `previous_filename` marks a rename source. */
+  readonly changedFiles?: readonly { readonly filename: string; readonly previous_filename?: string }[];
   readonly unresolvedThreads?: number;
   readonly changesRequested?: boolean;
   readonly title?: string;
@@ -96,18 +109,21 @@ function graphqlQuery(args: readonly string[]): string {
 export function fakeGhResponse(args: readonly string[], scenario: PublicationMergeScenario, prReadbackAttempt = 0, input = '', prViewAttempt = 0): FakeGhResponse {
   const root = `repos/${REPOSITORY}`;
   const [command, sub] = args;
+  const headSha = scenario.head ?? HEAD;
+  const baseSha = scenario.base ?? BASE;
   if (command === 'repo' && sub === 'view') return ok({ id: REPOSITORY_NODE, nameWithOwner: REPOSITORY });
   if (command === 'pr' && sub === 'view') {
     const sequence = scenario.headSequence;
-    const head = sequence?.length ? sequence[Math.min(prViewAttempt, sequence.length - 1)]! : HEAD;
+    const head = sequence?.length ? sequence[Math.min(prViewAttempt, sequence.length - 1)]! : headSha;
     return ok({ number: PR, url: `https://github.com/${REPOSITORY}/pull/${PR}`, state: 'OPEN', isDraft: false,
-      headRefOid: head, headRefName: 'feat/executor', baseRefOid: BASE, baseRefName: 'main', body: scenario.body ?? '',
-      reviewDecision: '', mergeable: 'MERGEABLE' });
+      headRefOid: head, headRefName: 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
+      reviewDecision: '', changedFiles: scenario.changedFiles?.length ?? 0, mergeable: 'MERGEABLE' });
   }
   if (command === 'pr' && sub === 'checks') {
     const bucket = scenario.checks ?? 'pass';
-    return { status: bucket === 'pending' ? 8 : 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket,
-      link: `https://github.com/${REPOSITORY}/actions/runs/123/job/456` }]) };
+    const defaults = [{ name: 'Required / CI', bucket, link: `https://github.com/${REPOSITORY}/actions/runs/123/job/456` }];
+    const checks = args.includes('--required') ? (scenario.requiredChecks ?? defaults) : (scenario.allChecks ?? defaults);
+    return { status: checks.some((check) => check.bucket === 'pending') ? 8 : 0, stdout: JSON.stringify(checks) };
   }
   if (command !== 'api') return { status: 2, stdout: '', stderr: `unexpected fake gh args: ${args.join(' ')}` };
   if (sub === 'graphql') {
@@ -128,7 +144,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (query.includes('closingIssuesReferences')) {
       return ok({ data: { repository: { nameWithOwner: REPOSITORY, pullRequest: {
         id: PR_NODE, number: PR, title: scenario.title ?? '', body: scenario.body ?? '', state: 'OPEN',
-        isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: HEAD, baseRefOid: BASE, baseRefName: 'main',
+        isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: headSha, baseRefOid: baseSha, baseRefName: 'main',
         ...(scenario.mergeQueueEnabled === 'missing' ? {} : { isMergeQueueEnabled: scenario.mergeQueueEnabled ?? false }),
         autoMergeRequest: scenario.autoMerge ? { enabledAt: '2026-10-30T00:00:00Z' } : null,
         closingIssuesReferences: { pageInfo: { hasNextPage: scenario.closingHasNextPage ?? false },
@@ -139,7 +155,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
       } } } });
     }
     return ok({ data: { node: { id: REPOSITORY_NODE, pullRequest: {
-      number: PR, headRefOid: HEAD, baseRefOid: BASE, reviewDecision: null,
+      number: PR, headRefOid: headSha, baseRefOid: baseSha, reviewDecision: null,
       latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: scenario.changesRequested ? [{ state: 'CHANGES_REQUESTED' }] : [] },
       reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: scenario.unresolvedThreads ?? 0 }, () => ({ isResolved: false })) },
     } } } });
@@ -166,12 +182,16 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
   }
   if (sub === root) return ok({ id: Number(REPOSITORY_ID), node_id: REPOSITORY_NODE, full_name: REPOSITORY, default_branch: 'main' });
   if (sub === `${root}/actions/runs/123`) {
-    return ok({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: HEAD, status: 'completed', conclusion: 'success',
-      pull_requests: [{ number: PR, head: { sha: HEAD }, base: { sha: BASE } }] });
+    return ok({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: headSha, status: 'completed', conclusion: 'success',
+      pull_requests: [{ number: PR, head: { sha: headSha }, base: { sha: baseSha } }] });
+  }
+  if (sub?.startsWith(`${root}/pulls/${PR}/files?`)) {
+    return ok((scenario.changedFiles ?? []).map((file) => ({ filename: file.filename,
+      ...(file.previous_filename === undefined ? {} : { previous_filename: file.previous_filename }) })));
   }
   if (sub?.startsWith(`${root}/contents/.github/workflows/ci-report.yml`)) return notFound();
-  if (sub === `${root}/contents/.ai/harness/policy.json?ref=${BASE}`) return policyFile(scenario.policyBase);
-  if (sub === `${root}/contents/.ai/harness/policy.json?ref=${HEAD}`) return policyFile(scenario.policyHead);
+  if (sub === `${root}/contents/.ai/harness/policy.json?ref=${baseSha}`) return policyFile(scenario.policyBase);
+  if (sub === `${root}/contents/.ai/harness/policy.json?ref=${headSha}`) return policyFile(scenario.policyHead);
   if (sub === `${root}/branches/main/protection`) {
     const protection = scenario.protection === undefined ? { strict: true, enforce_admins: true } : scenario.protection;
     if (protection === null) return notFound();
@@ -182,8 +202,8 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     const sequence = scenario.readbackSequence;
     const state = sequence === undefined ? scenario.readback : sequence[Math.min(prReadbackAttempt, sequence.length - 1)];
     if (state === 'fail') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
-    if (state === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: HEAD }, base: { ref: 'main' } });
-    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? MERGE_COMMIT, head: { sha: HEAD }, base: { ref: 'main' } });
+    if (state === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: headSha }, base: { ref: 'main' } });
+    return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? MERGE_COMMIT, head: { sha: headSha }, base: { ref: 'main' } });
   }
   if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
     return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });

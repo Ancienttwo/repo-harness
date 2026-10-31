@@ -22,7 +22,8 @@ import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepar
 import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
 import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
-  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceAuthor, type AcceptanceReceipt } from './acceptance-receipt';
+  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceAuthor, type AcceptancePullRequestSelection,
+  type AcceptanceReceipt } from './acceptance-receipt';
 import { oarObservationFile, readOarObservation } from '../terminal/task-runtime-observation';
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
@@ -63,6 +64,8 @@ export interface ReviewOptions {
   harness?: Harness;
   timeoutMs?: number;
   authorityHome?: string;
+  /** Explicit PR identity for the coverage read; required when the base policy declares a coverage block. */
+  pullRequest?: AcceptancePullRequestSelection;
   admitSession: () => void;
 }
 
@@ -454,7 +457,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     const receipt = await recordAcceptance({ root, authorityHome: options.authorityHome ?? osAccountHome(), authority: options.authority,
       verification: options.verification!, expectedContext: identity,
       disposition: output.verdict === 'PASS' ? 'external_pass' : 'reject', reviewer, source: 'generic-review', actor: null,
-      summary: output.summary, findings, reviewResult, author: client.author(root, session) });
+      summary: output.summary, findings, reviewResult, author: client.author(root, session), pull_request: options.pullRequest });
     writeSessionArtifact(join(dir, `accepted-${round}.json`), { output, receipt });
     const projection = join(dir, 'acceptance.review.md');
     if (!existsSync(projection)) writeFileSync(projection, '# Acceptance Review\n\n', { flag: 'wx', mode: 0o600 });

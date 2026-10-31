@@ -23,6 +23,7 @@ import { executeAdmittedVerification, evaluateAdmittedVerification, materializeV
 import { acceptanceContext, authorityFingerprint, acceptanceReceiptPath, acceptanceVerificationObservationPath, inspectAcceptanceEvidence, inspectAcceptanceCurrentBinding, projectAcceptance, recordAcceptance, recordUserWaiverAcceptance, recordUserWaiverGrant, revokeUserWaiverGrant, verifyAcceptance, verifyUserWaiverGrant } from '../scripts/acceptance-receipt';
 import { readAcceptanceReceiptRecord } from '../src/effects/review/acceptance-receipt';
 import { assertionThenPassedEvidence, productFailureEvidence } from './helpers/required-check-evidence-fixture';
+import { installFakeGh, passingScenario, POLICY_COVERAGE, PR, REPOSITORY, REPOSITORY_ID } from './helpers/publication-merge-fake-gh';
 
 const tempDirs: string[] = [];
 const admissions = new Map<string, ReturnType<typeof seedReviewAdmissionFixture>>();
@@ -221,7 +222,7 @@ function writePassingChecks(root: string): void {
   replaceChangeAssessment(root, changeAssessmentEnvelope(prepared.assessment, prepared.packet));
 }
 
-function makeFixture(waiver: 'allowed' | 'forbidden' = 'allowed') {
+function makeFixture(waiver: 'allowed' | 'forbidden' = 'allowed', options: { readonly coverage?: boolean } = {}) {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-acceptance-repo-'));
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-acceptance-home-'));
   tempDirs.push(root, home);
@@ -237,6 +238,9 @@ function makeFixture(waiver: 'allowed' | 'forbidden' = 'allowed') {
   writeFileSync(join(root, '.ai', 'harness', 'policy.json'), `${JSON.stringify({
     worktree_strategy: { review_base: 'main' },
     merge_gate: { enabled: true, rule: 'fixture' },
+    ...(options.coverage ? { publication: { required_check_coverage: {
+      protected_paths: ['api-surface/**'], required_checks: ['Required / CI', 'build, typecheck, test (matrix)'],
+    } } } : {}),
   }, null, 2)}\n`);
   writeFileSync(join(root, 'base.txt'), 'base\n');
   commit(root, 'base');
@@ -1019,7 +1023,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
       if (args[0] === 'pr' && args[1] === 'view') {
         return { status: 0, stdout: JSON.stringify({ number: PR_NUMBER, url: `https://github.com/${SLUG}/pull/${PR_NUMBER}`,
           state: 'OPEN', isDraft: false, headRefOid: PUBLISH_HEAD, headRefName: 'feat/review-publish',
-          baseRefOid: PUBLISH_BASE, baseRefName: 'main', body: '', reviewDecision: '', mergeable: 'MERGEABLE' }) };
+          baseRefOid: PUBLISH_BASE, baseRefName: 'main', body: '', reviewDecision: '', changedFiles: 0, mergeable: 'MERGEABLE' }) };
       }
       if (args[0] === 'pr' && args[1] === 'checks') {
         return { status: 0, stdout: JSON.stringify([{ name: 'Required / CI', bucket: 'pass',
@@ -1031,6 +1035,9 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
       if (path === `repos/${SLUG}/actions/runs/123`) {
         return { status: 0, stdout: JSON.stringify({ path: '.github/workflows/ci.yml', event: 'pull_request', head_sha: PUBLISH_HEAD,
           status: 'completed', conclusion: 'success', pull_requests: [{ number: PR_NUMBER, head: { sha: PUBLISH_HEAD }, base: { sha: PUBLISH_BASE } }] }) };
+      }
+      if (path === `repos/${SLUG}/contents/.ai/harness/policy.json?ref=${PUBLISH_BASE}`) {
+        return { status: 1, stdout: JSON.stringify({ status: '404' }), stderr: 'gh: Not Found' };
       }
       if (path.startsWith(`repos/${SLUG}/contents/.github/workflows/ci-report.yml`)) {
         return { status: 1, stdout: JSON.stringify({ status: '404' }), stderr: 'gh: Not Found' };
@@ -1090,5 +1097,113 @@ test('protocol 4 acceptance record durably stores check failures and projects th
   writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify({ ...receipt, failures: [{ check_name: 'incomplete' }] }));
   await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home }))
     .rejects.toThrow('RequiredCheckFailureEvidence');
+});
+
+const MATRIX_CHECK = 'build, typecheck, test (matrix)';
+
+/** The fixture policy with an active coverage block; the record path reads it at the reviewed revision. */
+function coverageFixture() {
+  const { root, home } = makeFixture('allowed', { coverage: true });
+  // The reviewed target is the review base; the reviewed head is HEAD.
+  return { root, home, head: git(root, 'rev-parse', 'HEAD'), target: git(root, 'rev-parse', 'main') };
+}
+
+/** A fake provider for the record path's own readiness read, bound to the fixture head. */
+function installCoverageProvider(head: string, base: string, overrides: Parameters<typeof passingScenario>[0] = {}) {
+  const dir = mkdtempSync(join(tmpdir(), 'repo-harness-acceptance-gh-'));
+  tempDirs.push(dir);
+  const fake = installFakeGh(dir, passingScenario({
+    head, base, policyBase: POLICY_COVERAGE, policyHead: POLICY_COVERAGE,
+    requiredChecks: [{ name: 'Required / CI', bucket: 'pass', link: 'https://github.com/example/repo-harness/actions/runs/123/job/456' }],
+    allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX_CHECK, bucket: 'skipping' },
+      { name: 'coverage-waiver', bucket: 'pass' }],
+    changedFiles: [{ filename: 'api-surface/entries.json' }],
+    ...overrides,
+  }));
+  const previous = process.env.REPO_HARNESS_GH_BIN;
+  process.env.REPO_HARNESS_GH_BIN = fake.bin;
+  return () => {
+    if (previous === undefined) delete process.env.REPO_HARNESS_GH_BIN;
+    else process.env.REPO_HARNESS_GH_BIN = previous;
+  };
+}
+
+test('the record path reads required-check coverage from the bound PR readiness', async () => {
+  const { root, home, head, target } = coverageFixture();
+  const base = target;
+  const restore = installCoverageProvider(head, base);
+  try {
+    const input = {
+      root, authority: authorityFor(root), authorityHome: home,
+      verification: '.ai/harness/runs/acceptance.report.json',
+      disposition: 'external_pass' as const, reviewer: 'Claude', source: 'generic-review', actor: null,
+      summary: 'candidate accepted with recorded coverage evidence', findings: [], failures: [],
+      pull_request: { repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR, expected_base_sha: base },
+    };
+    const receipt = await recordFixtureAcceptance(input);
+    expect(receipt.required_check_coverage?.head_sha).toBe(head);
+    expect(receipt.required_check_coverage?.base_sha).toBe(target);
+    expect(receipt.required_check_coverage?.protected_paths).toEqual(['api-surface/entries.json']);
+    expect(receipt.required_check_coverage?.waiver).toEqual({ check: 'coverage-waiver', bucket: 'pass' });
+
+    const bytes = readFileSync(acceptanceReceiptPath(root, home));
+    expect(JSON.parse(bytes.toString('utf8')).required_check_coverage).toEqual(receipt.required_check_coverage);
+    const digest = `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+    expect(readAcceptanceReceiptRecord(root, home, digest).receipt.required_check_coverage).toEqual(receipt.required_check_coverage);
+    expect((await verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home })).required_check_coverage)
+      .toEqual(receipt.required_check_coverage);
+
+    // An active block without a PR selection fails closed instead of recording null.
+    await expect(recordFixtureAcceptance({ ...input, pull_request: undefined, summary: 'no selection' }))
+      .rejects.toThrow('an active required-check coverage policy requires an explicit pull request selection');
+
+    // A base that is not the reviewed target is refused, not recorded.
+    await expect(recordFixtureAcceptance({ ...input, summary: 'wrong base',
+      pull_request: { ...input.pull_request, expected_base_sha: 'c'.repeat(40) } }))
+      .rejects.toThrow('the pull request base is not the reviewed target revision');
+
+    // A head that moved after the reviewed head is refused.
+    const restoreMoved = installCoverageProvider('d'.repeat(40), base);
+    try {
+      await expect(recordFixtureAcceptance({ ...input, summary: 'moved head' }))
+        .rejects.toThrow('required-check coverage does not bind the reviewed head');
+    } finally { restoreMoved(); }
+
+    // A tampered coverage observation cannot pass the protocol 4 reader.
+    const coverage = receipt.required_check_coverage!;
+    const tampered = [
+      { ...coverage, checks: [{ check: 'Required / CI', bucket: 'pass', requirement: 'required' }] },
+      { ...coverage, waiver: null },
+      { ...coverage, protected_paths: ['../escape'] },
+      { ...coverage, checks: [{ check: 'Required / CI', bucket: 'green', requirement: 'waived' }] },
+    ];
+    for (const value of tampered) {
+      writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify({ ...receipt, required_check_coverage: value }));
+      await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home }))
+        .rejects.toThrow('RequiredCheckCoverageEvidence');
+    }
+    writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify({ ...receipt,
+      required_check_coverage: { ...coverage, base_sha: 'e'.repeat(40) } }));
+    await expect(verifyAcceptance({ root, authority: authorityFor(root), authorityHome: home }))
+      .rejects.toThrow('does not bind the target revision');
+
+    // The waiver identity, the protected path and the check are readable in the review projection.
+    writeFileSync(acceptanceReceiptPath(root, home), JSON.stringify(receipt));
+    const reviewPath = join(root, 'tasks', 'reviews', 'demo.review.md');
+    projectAcceptance(reviewPath, receipt);
+    expect(readFileSync(reviewPath, 'utf8'))
+      .toContain('Required Check Coverage: protected "api-surface/entries.json"; waived by coverage-waiver: pass');
+  } finally { restore(); }
+});
+
+test('a policy without a coverage block records null coverage', async () => {
+  const { root, home } = makeFixture();
+  const receipt = await recordFixtureAcceptance({
+    root, authority: authorityFor(root), authorityHome: home,
+    verification: '.ai/harness/runs/acceptance.report.json',
+    disposition: 'external_pass' as const, reviewer: 'Claude', source: 'generic-review', actor: null,
+    summary: 'candidate accepted without a coverage block', findings: [], failures: [],
+  });
+  expect(receipt.required_check_coverage).toBeNull();
 });
 
