@@ -154,11 +154,11 @@ decides what to schedule.
 
 Apply ends with `=== Migration Report ===`, naming where generated hook behavior
 comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`
-adapter target, the repo-local surfaces created or refreshed, the
-`.ai/harness/scripts/*` helper runtime, and an `--- External Tooling ---`
-readiness block. Stable intent then lives in `docs/spec.md` and `docs/prds/`,
-task state in the GitHub issue and PR, resume state in `.ai/harness/handoff/`. If the dry run
-looks wrong, stop and read
+adapter target, the repo-local surfaces created or refreshed, and an
+`--- External Tooling ---` readiness block. Stable intent then lives in
+`docs/spec.md` and `docs/prds/`, task state in the GitHub issue and PR,
+resume state in `.ai/harness/handoff/`. If the dry run looks wrong, stop and
+read
 [`hook-operations.md`](docs/reference-configs/hook-operations.md) first.
 
 ### Update and remove
