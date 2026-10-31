@@ -76,8 +76,10 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
     if (change.uses.includes('review') && !isReviewRuntimeId(change.runtime)) {
       throw new AgentsConfigurationError('use_not_supported', `Runtime ${change.runtime} cannot review; supported review runtimes: ${REVIEW_RUNTIME_IDS.join(', ')}.`);
     }
-    // A docs use already stored stays and can be removed; only a new docs use of an unverified runtime is refused.
-    if (change.uses.includes('docs') && !current.uses.docs.includes(change.runtime) && !isDocsHostRuntimeId(change.runtime)) {
+    // Only a new docs use is a launch decision. A stored docs use stays inert and never blocks a write, and
+    // removing it needs no verification, so a legacy value can still leave.
+    const storedDocsUse = current.uses.docs.includes(change.runtime);
+    if (change.uses.includes('docs') && !storedDocsUse && !isDocsHostRuntimeId(change.runtime)) {
       throw docsIsolationUnverified(change.runtime);
     }
     if (change.enabled) enabled.add(change.runtime);
@@ -88,6 +90,7 @@ function nextSection(current: AgentsConfigV1, request: AgentsSettingsRequestV1, 
     }
   }
   const defaultDocs = request.default_docs_runtime === undefined ? current.default_docs : request.default_docs_runtime;
+  // An unchanged stored default never blocks a write; only a new default needs a verified runtime.
   if (defaultDocs !== null && defaultDocs !== current.default_docs && !isDocsHostRuntimeId(defaultDocs)) throw docsIsolationUnverified(defaultDocs);
   if (defaultDocs !== null && !docs.has(defaultDocs)) {
     throw new AgentsConfigurationError('default_docs_invalid', 'The default docs runtime must be enabled for docs. Choose another default or clear it.');

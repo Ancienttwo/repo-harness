@@ -44,17 +44,17 @@ const REVISION_B = `sha256:${'b'.repeat(64)}`;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/u;
 
 const entry = (id: string, installation: Record<string, unknown>, group = 'default') => ({
-  id, group, installation, review_supported: isReviewRuntimeId(id), docs_supported: id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
+  id, group, installation, review_supported: isReviewRuntimeId(id), docs_supported: false, capabilities: AGENT_RUNTIME_CAPABILITIES,
 });
 
 /**
- * claude is on for docs and review and is the default, a docs use stored before the docs isolation check;
- * codex and kimi are installed and off; grok is not installed. Only codex has verified docs isolation.
+ * claude is on for review; codex and kimi are installed and off; grok is not installed. No runtime reports
+ * docs support: the launch allowlist is empty, so the docs use and default are not offered (#1234).
  */
 function settings(config: Partial<AgentsSettingsV1['config']> = {}, extra: readonly Record<string, unknown>[] = []): AgentsSettingsV1 {
   return decodeAgentsSettings({
     protocol: 1, kind: 'operator_agents_settings',
-    config: { revision: REVISION_A, enabled: ['claude'], uses: { docs: ['claude'], review: ['claude'] }, default_docs: 'claude', ...config },
+    config: { revision: REVISION_A, enabled: ['claude'], uses: { docs: [], review: ['claude'] }, default_docs: null, ...config },
     runtimes: {
       status: 'ready', reason: null, collected_at: new Date(NOW - 120_000).toISOString(),
       entries: [
@@ -112,7 +112,6 @@ const all = (selector: string, scope: ParentNode = document) => Array.from(scope
 const row = (id: string) => document.querySelector<HTMLElement>(`[data-runtime="${id}"]`)!;
 const toggle = (id: string) => row(id).querySelector<HTMLButtonElement>(`[aria-label="Enable ${id}"], [aria-label="启用 ${id}"]`);
 const use = (id: string, name: 'docs' | 'review') => row(id).querySelector<HTMLButtonElement>(`[data-use="${name}"]`)!;
-const radio = (value: string) => document.querySelector<HTMLInputElement>(`[data-default-docs] input[value="${value}"]`)!;
 const saveButton = () => document.querySelector<HTMLButtonElement>('[data-save]')!;
 const result = () => document.querySelector<HTMLElement>('[data-save-result]');
 const buttonWithText = (label: string) => all('button').find(button => button.textContent?.trim() === label)!;
@@ -126,44 +125,42 @@ afterEach(async () => {
 });
 
 describe('settings page', () => {
-  test('3-SET-P1 enabling codex for docs and making it the default sends one request with all three changes', async () => {
-    const route = server(settings(), [{ state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['agents.enabled', 'agents.uses.docs', 'agents.default_docs'] } }]);
+  test('3-SET-P1 enabling codex for review sends one request and offers no docs use or default', async () => {
+    const route = server(settings(), [{ state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['agents.enabled', 'agents.uses.review'] } }]);
     await mount(props(route));
     expect(saveButton().disabled).toBe(true);
+    // No runtime is docs-supported, so the docs use and the default docs control are absent.
+    expect(all('[data-use="docs"]')).toEqual([]);
+    expect(document.querySelector('[data-default-docs]')).toBeNull();
     await click(toggle('codex')!);
-    await click(use('codex', 'docs'));
-    await click(radio('codex'));
+    await click(use('codex', 'review'));
     await click(saveButton());
     expect(route.posts).toHaveLength(1);
     const { request_id, ...body } = route.posts[0]!;
     expect(request_id).toMatch(UUID);
-    expect(body).toEqual({ expected_revision: REVISION_A, changes: [{ runtime: 'codex', enabled: true, uses: ['docs'] }], default_docs_runtime: 'codex' });
+    expect(body).toEqual({ expected_revision: REVISION_A, changes: [{ runtime: 'codex', enabled: true, uses: ['review'] }] });
     expect(result()?.getAttribute('data-save-result')).toBe('saved');
-    expect(result()?.textContent).toContain('3 settings changed');
+    expect(result()?.textContent).toContain('2 settings changed');
     // Saved means nothing is left to send.
     expect(saveButton().disabled).toBe(true);
   });
 
-  test('3-SET-N1 the form has no credential input, offers review only on supported runtimes, docs only with verified isolation, and gives no switch to an agent that is not installed', async () => {
+  test('3-SET-N1 the form has no credential input, offers review only on supported runtimes, hides docs and gives no switch to an agent that is not installed', async () => {
     await mount(props(server(settings({ enabled: ['claude', 'codex', 'kimi'] }), [])));
     // The switches carry their own checkbox inputs; nothing takes typed text.
     expect(all('input').map(input => input.getAttribute('type')).filter(type => type !== 'radio' && type !== 'checkbox')).toEqual([]);
     expect(all('textarea, select, [contenteditable]')).toHaveLength(0);
-    expect(use('kimi', 'docs').disabled).toBe(true);
-    expect(use('kimi', 'docs').title).toBe('Docs sessions need verified docs isolation; this agent has none.');
-    expect(row('kimi').querySelector('[data-use-reasons]')?.textContent).toBe('Docs sessions need verified docs isolation; this agent has none. Only claude, codex and pi can review.');
-    await click(use('codex', 'docs'));
-    expect(use('codex', 'docs').getAttribute('aria-pressed')).toBe('true');
+    // The settings response reports no docs-supported runtime, so no row offers the docs use or the default.
+    expect(all('[data-use="docs"]')).toEqual([]);
+    expect(all('[data-default-docs]')).toEqual([]);
+    expect(row('kimi').querySelector('[data-use-reasons]')?.textContent).toBe('Only claude, codex and pi can review.');
+    await click(use('codex', 'review'));
+    expect(use('codex', 'review').getAttribute('aria-pressed')).toBe('true');
     expect(row('codex').querySelector('[data-use-reasons]')).toBeNull();
-    // A stored docs use of an agent without verified isolation stays on and can be removed; it stays the default it was.
-    expect(use('claude', 'docs').getAttribute('aria-pressed')).toBe('true');
-    expect(use('claude', 'docs').disabled).toBe(false);
-    expect(all('[data-default-docs] input').map(input => input.getAttribute('value'))).toEqual(['', 'claude', 'codex']);
+    expect(use('claude', 'review').disabled).toBe(false);
     expect(use('kimi', 'review').disabled).toBe(true);
     expect(use('kimi', 'review').title).toBe('Only claude, codex and pi can review.');
-    expect(use('claude', 'review').disabled).toBe(false);
     expect(toggle('grok')).toBeNull();
-    expect(use('grok', 'docs').disabled).toBe(true);
     expect(row('grok').textContent).toContain('No executable found');
     expect(row('cursor').closest('[data-runtime-group]')?.getAttribute('data-runtime-group')).toBe('settings-group-extra');
     expect(row('cursor').textContent).toContain('@cursor/sdk');
@@ -192,7 +189,7 @@ describe('settings page', () => {
     expect(result()?.textContent).toContain('The settings changed after this page read them. Nothing was saved.');
     expect(saveButton().disabled).toBe(true);
     expect(toggle('codex')!.disabled).toBe(true);
-    route.set({ state: 'ok', settings: settings({ revision: REVISION_B, enabled: ['claude', 'codex'], uses: { docs: ['claude'], review: ['codex'] } }) });
+    route.set({ state: 'ok', settings: settings({ revision: REVISION_B, enabled: ['claude', 'codex'], uses: { docs: [], review: ['codex'] } }) });
     await click(buttonWithText('Reload settings'));
     expect(route.posts).toHaveLength(1);
     expect(result()).toBeNull();
@@ -224,13 +221,12 @@ describe('settings page', () => {
     expect(result()?.textContent).toContain('待核对');
     expect(document.querySelectorAll('p p, p div')).toHaveLength(0);
     expect(saveButton().disabled).toBe(true);
-    expect(use('claude', 'docs').disabled).toBe(true);
-    expect(radio('claude').disabled).toBe(true);
+    expect(use('claude', 'review').disabled).toBe(true);
     await click(saveButton());
     expect(route.posts).toHaveLength(1);
     await click(buttonWithText('重新加载设置'));
     expect(result()).toBeNull();
-    expect(use('claude', 'docs').disabled).toBe(false);
+    expect(use('claude', 'review').disabled).toBe(false);
     expect(route.posts).toHaveLength(1);
   });
 
@@ -241,37 +237,34 @@ describe('settings page', () => {
     await click(saveButton());
     expect(result()?.getAttribute('data-save-result')).toBe('unreachable');
     await click(saveButton());
-    await click(use('claude', 'docs'));
-    // The banner promised the same request; a changed draft is a new one.
+    // A different draft: turning the runtime off is not the review change the banner promised to resend.
+    await click(toggle('claude')!);
     expect(result()).toBeNull();
     await click(saveButton());
     const [first, second, third] = route.posts.map(post => post.request_id);
     expect(second).toBe(first);
     expect(third).not.toBe(first);
-    expect(route.posts[2]).toMatchObject({ changes: [{ runtime: 'claude', enabled: true, uses: [] }], default_docs_runtime: null });
+    expect(route.posts[2]).toMatchObject({ changes: [{ runtime: 'claude', enabled: false, uses: [] }] });
   });
 
-  test('a runtime that left the runtime list can only be turned off, and turning it off clears its uses and the default', async () => {
-    const route = server(settings({ enabled: ['claude', 'gemini'], uses: { docs: ['claude', 'gemini'], review: ['claude'] }, default_docs: 'gemini' }),
-      [{ state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['agents.enabled', 'agents.uses.docs', 'agents.default_docs'] } }]);
+  test('a runtime that left the runtime list can only be turned off, and turning it off clears its uses', async () => {
+    const route = server(settings({ enabled: ['claude', 'gemini'], uses: { docs: [], review: ['claude'] } }),
+      [{ state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['agents.enabled'] } }]);
     await mount(props(route));
     expect(row('gemini').closest('[data-runtime-group]')?.getAttribute('data-runtime-group')).toBe('settings-group-missing');
     expect(use('gemini', 'review').disabled).toBe(true);
-    // The server accepts an unlisted runtime only in a change that turns it off, so its docs use goes only with the switch.
-    expect(use('gemini', 'docs').getAttribute('aria-pressed')).toBe('true');
-    expect(use('gemini', 'docs').disabled).toBe(true);
     await click(toggle('gemini')!);
     expect(toggle('gemini')).toBeNull();
-    expect(radio('').checked).toBe(true);
     await click(saveButton());
-    expect(route.posts[0]).toMatchObject({ changes: [{ runtime: 'gemini', enabled: false, uses: [] }], default_docs_runtime: null });
+    expect(route.posts[0]).toMatchObject({ changes: [{ runtime: 'gemini', enabled: false, uses: [] }] });
+    expect(route.posts[0]!.default_docs_runtime).toBeUndefined();
   });
 
   test('a newer read keeps the unsaved draft and warns that the settings changed elsewhere', async () => {
     const route = server(settings(), []);
     await mount(props(route));
     await click(use('claude', 'review'));
-    route.set({ state: 'ok', settings: settings({ revision: REVISION_B, enabled: ['claude', 'codex'], uses: { docs: ['claude'], review: ['claude', 'codex'] } }) });
+    route.set({ state: 'ok', settings: settings({ revision: REVISION_B, enabled: ['claude', 'codex'], uses: { docs: [], review: ['claude', 'codex'] } }) });
     await click(buttonWithText('Refresh'));
     expect(use('claude', 'review').getAttribute('aria-pressed')).toBe('false');
     expect(toggle('codex')!.getAttribute('aria-checked')).toBe('false');

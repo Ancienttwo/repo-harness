@@ -5,7 +5,7 @@ import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost } from
 const REVISION = `sha256:${'4'.repeat(64)}`;
 
 const entry = (id: string, group: 'default' | 'community' | 'host_dependency', installation: Record<string, unknown>) => ({
-  id, group, installation, review_supported: isReviewRuntimeId(id), docs_supported: id === 'codex', capabilities: AGENT_RUNTIME_CAPABILITIES,
+  id, group, installation, review_supported: isReviewRuntimeId(id), docs_supported: false, capabilities: AGENT_RUNTIME_CAPABILITIES,
 });
 
 /** The probe of one machine: the 7 OAR defaults, Mister Morph, and the two runtimes that need optional packages. */
@@ -24,15 +24,15 @@ function entries() {
   ];
 }
 
-/** busy: codex writes docs and reviews, claude reviews. degraded: the last probe timed out, and the section names a runtime the probe no longer lists. */
+/** busy: codex reviews and claude reviews. degraded: the last probe timed out, and the section names a runtime the probe no longer lists. No runtime is docs-supported: the docs host is closed. */
 export function agentsSettingsFixture(now: number, fixture: 'busy' | 'degraded'): AgentsSettingsV1 {
   const collected = new Date(now - (fixture === 'busy' ? 4 : 47) * 60_000).toISOString();
   return decodeAgentsSettings({
     protocol: 1,
     kind: 'operator_agents_settings',
     config: fixture === 'busy'
-      ? { revision: REVISION, enabled: ['claude', 'codex'], uses: { docs: ['codex'], review: ['claude', 'codex'] }, default_docs: 'codex' }
-      : { revision: REVISION, enabled: ['claude', 'gemini'], uses: { docs: ['claude', 'gemini'], review: ['claude'] }, default_docs: 'gemini' },
+      ? { revision: REVISION, enabled: ['claude', 'codex'], uses: { docs: [], review: ['claude', 'codex'] }, default_docs: null }
+      : { revision: REVISION, enabled: ['claude', 'gemini'], uses: { docs: [], review: ['claude'] }, default_docs: null },
     runtimes: fixture === 'busy'
       ? { status: 'ready', reason: null, collected_at: collected, entries: entries() }
       : { status: 'stale', reason: 'probe_timeout', collected_at: collected, entries: entries() },
