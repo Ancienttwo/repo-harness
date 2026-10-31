@@ -122,7 +122,7 @@ describe("Bootstrap Script Contracts", () => {
     for (const file of ["CLAUDE.md", "AGENTS.md"]) {
       expect(lstatSync(join(ROOT, file)).isFile()).toBe(true);
       expect(read(file)).not.toMatch(/^@(?:AGENTS|CLAUDE)\.md\s*$/m);
-      for (const section of ["Workflow", "Code Optimization Principles", "Testing", "Handoff"]) {
+      for (const section of ["Workflow", "Code Optimization Principles", "Testing", "Writing", "UI"]) {
         expect(read(file)).toContain(`## ${section}\n`);
       }
     }

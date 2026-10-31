@@ -40,21 +40,31 @@ describe("reference-configs projection", () => {
     ).toEqual([]);
   });
 
-  test("the sprint-contracts testing link points at the shipped Test Budget section", () => {
-    const doc = readFileSync(join(SOURCE_DIR, "sprint-contracts.md"), "utf-8");
-    const link = doc.match(/\[Global Working Rules\]\(([^)#]+)#([^)]+)\)/);
-    expect(link).not.toBeNull();
-    const [, file, anchor] = link!;
-    const target = readFileSync(join(SOURCE_DIR, file), "utf-8");
-    const headings = [...target.matchAll(/^## (.+?)\s*$/gm)].map((match) =>
-      match[1].toLowerCase().replace(/[^a-z0-9]+/g, "-").replace(/^-|-$/g, ""),
-    );
-    expect(headings).toContain(anchor);
+  // #1227 retired six duplicated flow documents. The projection accepts
+  // docs-only files, so a retired document that returns to docs/ would not
+  // fail the mirror test above. This list makes the retirement explicit.
+  const RETIRED_FLOW_DOCS = [
+    "handoff-protocol.md",
+    "workflow-orchestration.md",
+    "development-protocol.md",
+    "sprint-contracts.md",
+    "contract-brief-example.md",
+    "contract-brief-example-bugfix.md",
+  ];
+
+  test("retired flow docs stay out of both mirrors", () => {
+    const present: string[] = [];
+    for (const dir of [SOURCE_DIR, PROJECTION_DIR]) {
+      for (const name of RETIRED_FLOW_DOCS) {
+        if (existsSync(join(dir, name))) present.push(`${dir}/${name}`);
+      }
+    }
+    expect(present).toEqual([]);
   });
 
-  // docs/reference-configs additionally carries docs-only material (install profiles, MCP
-  // guides, contract brief examples) that never ships in assets. Those are outside the
-  // mirror by design, so the projection is one-directional and must not delete them.
+  // docs/reference-configs additionally carries docs-only material (install profiles,
+  // MCP guides) that never ships in assets. Those are outside the mirror by design, so
+  // the projection is one-directional and must not delete them.
   test("docs-only reference configs stay outside the mirror", () => {
     const sources = new Set(markdownFiles(SOURCE_DIR));
     const docsOnly = markdownFiles(PROJECTION_DIR).filter((name) => !sources.has(name));

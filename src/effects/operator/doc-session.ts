@@ -1,9 +1,7 @@
-// Doc session creation (PRD G5 step 1, G8; issue #1021). It verifies every
-// citation against the docs view the console serves, then creates the
-// session's `docs/<slug>` worktree under the managed worktree root and the
-// session record. The runtime must have verified docs isolation and the docs
-// use in the agent settings. It starts no agent: the agent launch needs the
-// user's approval of its confirmation bypass first.
+// Doc session creation (PRD G5 step 1, G8; issue #1021). The owner closed the
+// docs host stack (#1149, option 3): no runtime has verified docs isolation, so
+// every creation is refused with `docs_host_disabled` and writes nothing. The
+// verified creation shape stays for a future host.
 //
 // The route runs only through the shared write run (lock, idempotency,
 // audit). Production OPERATOR_ROUTES admits it after the local config write
@@ -42,7 +40,7 @@ const SESSION_ID = /^[0-9a-f]{32}$/u;
 
 export interface DocSessionCreateInput {
   readonly kind: 'docs';
-  /** Any runtime id; creation refuses one without verified docs isolation or the docs use. */
+  /** Any runtime id; creation refuses every one while the launch allowlist is empty. */
   readonly runtime: string;
   readonly repository_id: string;
   readonly citations: readonly DocCitationV1[];
@@ -194,10 +192,11 @@ function writeSessionRecord(env: NodeJS.ProcessEnv, sessionId: string, record: J
   syncDirectoryDurably(directory);
 }
 
-/** The runtime has verified docs isolation and the docs use in the agent settings. */
+/** The runtime is in the launch allowlist and has the docs use in the agent settings. */
 function assertDocsRuntime(runtime: string, env: NodeJS.ProcessEnv): void {
   if (!isDocsHostRuntimeId(runtime)) {
-    throw refuse(422, 'docs_isolation_unverified', `Runtime ${runtime} has no verified docs isolation.`, 'Start the session with a runtime that has verified docs isolation.');
+    // The allowlist is empty since #1149 was closed; retrying with another runtime cannot help.
+    throw refuse(501, 'docs_host_disabled', 'The docs host is closed: no runtime has verified docs isolation.', 'Use the docs view to read; doc sessions are not available.');
   }
   let docs: readonly string[];
   try { docs = readAgentsConfiguration(env).agents.uses.docs; }

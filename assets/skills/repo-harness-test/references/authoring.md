@@ -1,7 +1,7 @@
 # Authoring a test
 
 Policy (when a case is admitted at all, and which layer owns it) lives in
-`docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`.
+`docs/reference-configs/global-working-rules.md#test-budget`.
 This file only records the mechanics that are specific to this repository.
 
 ## Focused regression first

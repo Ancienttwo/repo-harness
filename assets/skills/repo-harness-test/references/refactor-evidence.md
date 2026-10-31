@@ -1,6 +1,6 @@
 # Test-refactor evidence techniques
 
-`docs/reference-configs/sprint-contracts.md#testing-policy-and-artifact-standards`
+`docs/reference-configs/global-working-rules.md#test-budget`
 owns coverage selection and artifact requirements; the contract's Verification
 Plan selects executions. The recipes below support different evidence needs.
 They do not require every refactor to run all recipes or create a notes file.
