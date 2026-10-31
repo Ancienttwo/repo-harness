@@ -295,6 +295,22 @@ Claim: <acceptance claim URL>
 Author: <writer>. Tier: <tier>. Follow-ups: #<n> (P3).
 ```
 
+### review reply (in the PR review thread)
+
+```text
+repo-harness review reply
+Agent: <kind>, session <id>
+Disposition: fixed <sha> | disputed | rejected
+Why: <reason; for fixed, the test that fails on the base>
+```
+
+The head owner replies `fixed` or `disputed` and leaves the thread open.
+Only the coordinator replies `rejected`, then resolves the thread
+(`board.md` rule 5). A comment from a reviewer without a seat, such as an
+outside contributor or an independent bot, is optional input: the head
+owner or the coordinator decides whether to adopt it, and answers with the
+same reply.
+
 ### unblocked
 
 ```text
