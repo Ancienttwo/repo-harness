@@ -2,12 +2,13 @@
 
 ## Scope and authority
 
-- Base: `280fcbcaf9be54b96ea32b51f5788de58905971a` (#1209, architecture refresh) on `origin/main`.
-  Its parent is `8916d116a09fd11a4c74e2cf3e921204b1b10d03` (#1233, #1225 residue cleanup).
+- Base: `9205bf541d5ac6aa65f1b318523b9694586157eb` (#1242, Windows tripwire skip) on
+  `origin/main`. Its parent is `280fcbcaf9be54b96ea32b51f5788de58905971a`
+  (#1209, architecture refresh).
 - Previous release: 0.24.3 on npm and in Git. Tag `v0.24.3`, annotated tag
   object `357673f5fd4e0686c59866496b573a22c5d4eacb`, target
   `bd3a40bd5c874a20c55916238f120e7cd884ca75` (#976).
-- Merged range: `v0.24.3..280fcbca`; 141 commits. Each subject ends with a PR number.
+- Merged range: `v0.24.3..9205bf54`; 142 commits. Each subject ends with a PR number.
 - The npm package goes from 0.24.3 to 0.25.0. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.0.
@@ -47,8 +48,8 @@ The owner runs `npm publish`; the agent does not publish.
 ## Hosted daily CI
 
 - Dispatch: `gh workflow run ci.yml --repo Ancienttwo/repo-harness --ref main`
-  at 2026-10-31T04:47:17Z on `280fcbca`.
-- Run 41169982862. Result: pending at release-preparation time; fill in before
+  at 2026-10-31T04:58:02Z on `9205bf54`.
+- Run 41170680746. Result: pending at release-preparation time; fill in before
   publishing.
 - Daily jobs must include Daily architecture freshness and both MCP path
   matrices. PR-only jobs are skipped by design in daily mode.
