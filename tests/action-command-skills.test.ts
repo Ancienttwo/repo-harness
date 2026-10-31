@@ -559,4 +559,75 @@ describe("repo-harness action command skills", () => {
     expect(failure?.status).toBe(2);
     expect(String(failure?.stderr)).toContain("--model is required");
   });
+
+  test("issue-flow board keeps a closed comment set with the plan kind", () => {
+    const board = readReference("repo-harness-issue-flow", "board.md");
+
+    expect(board).toContain("| `plan` | Parent issue | Coordinator |");
+    expect(board).toContain("Seat-only comment kinds");
+    for (const kind of ["plan", "decision", "scope change", "unblocked"]) {
+      expect(board).toContain("`" + kind + "`");
+    }
+    expect(board).toContain("only when the coordinator confirms it");
+    expect(board).toContain("Coordinator: none");
+    expect(board).toContain("Status: released");
+    expect(board).toContain("Prior claim");
+    expect(board).toContain("read back");
+    for (const status of ["unclaimed", "unclaimed · waits for #n", "writer <agent> · active", "writer <agent> · PR #p", "merged"]) {
+      expect(board).toContain(status);
+    }
+  });
+
+  test("issue-flow templates carry the plan, the claim fields and the parent status values", () => {
+    const templates = readReference("repo-harness-issue-flow", "templates.md");
+
+    for (const field of ["repo-harness plan", "Coordinator:", "Baseline: main@<sha>", "Waves:", "Merge order:", "Blocked:", "Supersedes:"]) {
+      expect(templates).toContain(field);
+    }
+    for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:", "Coordinator: none"]) {
+      expect(templates).toContain(field);
+    }
+    for (const status of ["unclaimed", "unclaimed · waits for #n", "writer <agent> · active", "writer <agent> · PR #p", "merged", "待认领", "待认领 · 等待 #n 合并"]) {
+      expect(templates).toContain(status);
+    }
+  });
+
+  test("issue-flow orchestrator runs on any host, plans large parents and caps review rounds", () => {
+    const orchestrator = readReference("repo-harness-issue-flow", "orchestrator.md");
+    const worker = readReference("repo-harness-issue-flow", "worker.md");
+    const acceptor = readReference("repo-harness-issue-flow", "acceptor.md");
+
+    expect(orchestrator).toContain("any host");
+    expect(orchestrator).toContain("agents/fleet/orchestrator.md");
+    expect(orchestrator).toContain("more than two children");
+    expect(orchestrator).toContain("Supersedes:");
+    expect(orchestrator).toContain("Limit each artifact to two review rounds");
+    expect(orchestrator.toLowerCase()).toContain("default model preference");
+    expect(orchestrator).toContain("responsibility, not by file list");
+    expect(orchestrator).not.toContain("a Claude session");
+
+    expect(worker).toContain("Read the parent too");
+    expect(worker).toContain("Coordinator: none");
+    expect(worker).toContain("Status: released");
+    expect(worker).toContain("Read the claim back");
+
+    expect(acceptor).toContain("repo-harness review publish --pr <n> --receipt <path>");
+    expect(acceptor).toContain("repo-harness-review-publish-receipt");
+    expect(acceptor).toContain("review_publish_unknown");
+    expect(acceptor).toContain("model_relation");
+  });
+
+  test("issue-flow and fleet guidance requires no host or model", () => {
+    const paths = ["SKILL.md", "references/board.md", "references/orchestrator.md", "references/worker.md", "references/templates.md", "references/acceptor.md"];
+    const sources = paths.map((path) => readFileSync(join(SKILLS_ROOT, "repo-harness-issue-flow", path), "utf-8"));
+    const fleet = readFileSync(join(ROOT, "agents", "fleet", "orchestrator.md"), "utf-8");
+    const pattern = /claude (session|only)|must (use|run) (claude|codex)/i;
+    const offenders = [...sources, fleet].flatMap((text) => text.split("\n").filter((line) => pattern.test(line)));
+
+    expect(offenders).toEqual([]);
+    expect(sources[0]).toContain("Suggested model");
+    expect(sources[0]).toContain("Any host's long-lived top-level session");
+    expect(fleet).toContain("Suggested model: Opus");
+    expect(fleet).toContain("Any host may run this seat");
+  });
 });
