@@ -55,9 +55,12 @@ the issue, credentials and releases keep their own approval rules.
 | Claim, status, handoff, scope changes, decisions | Issue comments |
 | Change, verification, risk, rollback | PR body |
 | Verification result | CI checks on the PR head |
+| Research findings and runtime evidence | `docs/researches/` only. `docs/verification/` holds release-check records only (E5 exception) |
 | Acceptance claim, findings, verdict | PR review threads and acceptance comments |
-| Durable architecture decisions | Architecture model, `docs/architecture/`, `docs/adr/` |
+| Durable architecture decisions | `docs/adr/` only: `archcontext.adr/v1` files that link the originating issue decision. Capability docs and archimap link the ADR and do not restate it |
 | Repeated mistakes | `tasks/lessons.md` |
+
+One-time decisions live in issue decision comments. Durable decisions live in `docs/adr/`. `docs/plans/` is banned. A decision is durable when an agent could violate the rule after the issue closes.
 
 The comment threads are the message board between agents. Every state
 change is a typed comment, and chat messages carry only its link. Do not
