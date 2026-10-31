@@ -3,7 +3,12 @@
 // and coverage of the architecture model's capability nodes.
 //
 // Usage (run from the target repo root, or pass --root):
-//   bun measure.ts (--map <archimap.html> | --modules <modules.json>) [--model <dir>] [--include-tests] [--root <repo>]
+//   bun measure.ts (--map <archimap.html> | --modules <modules.json>) --model <dir> [--include-tests] [--root <repo>]
+//
+// --model is required: the map is a projection of an adopted architecture model, never of a
+// package or directory layout. --model names the model node directory (.archcontext/model/nodes).
+// The capability document of each node comes from docs/architecture/.projection-manifest.json.
+// A missing model option or manifest is a usage error (exit 2): no guessed path, no layout fallback.
 //
 // Module definitions come from the JSON block `<script type="application/json" id="archimap-meta">`
 // in the map HTML, or from a JSON file. Shape:
@@ -36,6 +41,8 @@ const OTHER_CODE_EXT = [".py", ".go", ".rs", ".java", ".kt", ".swift", ".rb", ".
 const TEST_GLOBS = ["**/*.test.*", "**/*.spec.*", "tests/**", "test/**", "**/__tests__/**", "**/fixtures/**"].map((p) => new Bun.Glob(p));
 const LIST_LIMIT = 20;
 const EXAMPLE_LIMIT = 10;
+// The projection manifest is the only authority for a capability's document path.
+const MANIFEST_PATH = "docs/architecture/.projection-manifest.json";
 
 function git(root: string, ...args: string[]): string {
   return execFileSync("git", ["-C", root, ...args], { encoding: "utf8", maxBuffer: 1 << 28 });
@@ -105,6 +112,67 @@ function loadModel(dir: string): { id: string; kind: string }[] {
     if (typeof doc?.id !== "string") throw new UsageError(`${path.join(dir, name)}: missing string "id"`);
     return { id: doc.id, kind: typeof doc.kind === "string" ? doc.kind : "" };
   });
+}
+
+interface CapabilityDocs {
+  /** Node id -> document path, from the entity-summary targets of the manifest. */
+  byNode: Map<string, string>;
+  /** Capability ids that an entity-summary target documents. */
+  capabilities: Set<string>;
+}
+
+function record(value: unknown): Record<string, unknown> | null {
+  return typeof value === "object" && value !== null && !Array.isArray(value) ? value as Record<string, unknown> : null;
+}
+
+// The capability-to-document map comes from the committed projection manifest. A target row that
+// does not carry the fields this script needs fails closed: a guessed path would link the wrong
+// document.
+function loadManifest(root: string): CapabilityDocs {
+  const file = path.join(root, MANIFEST_PATH);
+  let raw: string;
+  try {
+    raw = readFileSync(file, "utf8");
+  } catch {
+    throw new UsageError(`${MANIFEST_PATH} is missing under ${root}; publish the architecture projection before you measure`);
+  }
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(raw);
+  } catch (error) {
+    throw new UsageError(`${MANIFEST_PATH} does not parse: ${(error as Error).message}`);
+  }
+  const targets = record(parsed)?.targets;
+  if (targets === undefined || targets === null || record(targets) === null) {
+    throw new UsageError(`${MANIFEST_PATH}: "targets" must be an object keyed by targetId`);
+  }
+  const byNode = new Map<string, string>();
+  const capabilities = new Set<string>();
+  for (const [targetId, row] of Object.entries(targets as Record<string, unknown>)) {
+    const target = record(row);
+    const where = `${MANIFEST_PATH}: targets[${JSON.stringify(targetId)}]`;
+    if (target === null) throw new UsageError(`${where} must be an object`);
+    if (target.type !== "entity-summary") continue;
+    const scope = record(target.scope);
+    if (scope?.kind !== "entity" || scope.entityKind !== "capability") continue;
+    const capabilityId = scope.id;
+    if (typeof capabilityId !== "string" || capabilityId === "") throw new UsageError(`${where}.scope.id must be a capability id`);
+    const docPath = target.path;
+    if (typeof docPath !== "string" || docPath === "") throw new UsageError(`${where}.path must be a document path`);
+    if (capabilities.has(capabilityId) && byNode.get(capabilityId) !== docPath) {
+      throw new UsageError(`${MANIFEST_PATH}: capability ${capabilityId} is documented by more than one target`);
+    }
+    capabilities.add(capabilityId);
+    const stamps = record(target.sourceStamps) ?? {};
+    for (const nodeId of [capabilityId, ...Object.keys(stamps)]) {
+      const existing = byNode.get(nodeId);
+      if (existing !== undefined && existing !== docPath) {
+        throw new UsageError(`${MANIFEST_PATH}: node ${nodeId} is documented by both ${existing} and ${docPath}`);
+      }
+      byNode.set(nodeId, docPath);
+    }
+  }
+  return { byNode, capabilities };
 }
 
 function isFile(abs: string): boolean {
@@ -249,8 +317,15 @@ function main(): void {
     allowPositionals: false,
   });
   const root = path.resolve(values.root ?? process.cwd());
+  // The model option has no default: the map does not fall back to package or directory layout.
+  if (values.model === undefined || values.model === "") {
+    throw new UsageError("--model is required: pass the architecture model directory (.archcontext/model/nodes)");
+  }
   const modules = loadModules(values.map, values.modules);
-  const modelNodes = values.model ? loadModel(path.resolve(root, values.model)) : null;
+  const modelNodes = loadModel(path.resolve(root, values.model));
+  const capabilityDocs = loadManifest(root);
+  const docsOf = (m: ModuleDef): string[] =>
+    [...new Set(m.nodes.map((id) => capabilityDocs.byNode.get(id)).filter((p): p is string => p !== undefined))].sort();
   const includeTests = values["include-tests"] === true;
 
   let listed: string[];
@@ -277,7 +352,7 @@ function main(): void {
     if (hits.length > 1) overlaps.push({ path: file, modules: hits.map((i) => modules[i]!.id) });
   }
 
-  const rows = modules.map((m) => ({ id: m.id, files: 0, loc: 0, self: 0 }));
+  const rows = modules.map((m) => ({ id: m.id, files: 0, loc: 0, self: 0, docs: docsOf(m) }));
   const edges = new Map<string, number>();
   const unresolved: string[] = [];
   const unparsed: string[] = [];
@@ -382,16 +457,17 @@ function main(): void {
     },
   };
 
-  if (modelNodes) {
-    const listedBy = new Map<string, number>();
-    for (const m of modules) for (const id of new Set(m.nodes)) listedBy.set(id, (listedBy.get(id) ?? 0) + 1);
-    const known = new Set(modelNodes.map((n) => n.id));
-    output.model = {
-      uncoveredNodes: modelNodes.filter((n) => n.kind === "capability" && !listedBy.has(n.id)).map((n) => n.id).sort(),
-      unknownNodes: [...listedBy.keys()].filter((id) => !known.has(id)).sort(),
-      duplicateNodes: [...listedBy].filter(([, count]) => count > 1).map(([id]) => id).sort(),
-    };
-  }
+  const listedBy = new Map<string, number>();
+  for (const m of modules) for (const id of new Set(m.nodes)) listedBy.set(id, (listedBy.get(id) ?? 0) + 1);
+  const known = new Set(modelNodes.map((n) => n.id));
+  output.model = {
+    uncoveredNodes: modelNodes.filter((n) => n.kind === "capability" && !listedBy.has(n.id)).map((n) => n.id).sort(),
+    unknownNodes: [...listedBy.keys()].filter((id) => !known.has(id)).sort(),
+    duplicateNodes: [...listedBy].filter(([, count]) => count > 1).map(([id]) => id).sort(),
+    // A capability node with no entity-summary target has no document to link to. Report it; do
+    // not build a path from its id.
+    undocumentedNodes: modelNodes.filter((n) => n.kind === "capability" && !capabilityDocs.capabilities.has(n.id)).map((n) => n.id).sort(),
+  };
   process.stdout.write(`${JSON.stringify(output, null, 2)}\n`);
 }
 
