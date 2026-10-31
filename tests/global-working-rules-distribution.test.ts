@@ -14,6 +14,7 @@ import {
 const ROOT = join(import.meta.dir, "..");
 const ASSETS_TEMPLATE = join(ROOT, "assets/reference-configs/global-working-rules.md");
 const STANDARD_PLAN = join(ROOT, "src/effects/adoption/standard-plan.ts");
+const ROOT_CONTEXT_TEMPLATE = join(ROOT, "assets/templates/root-context.md");
 
 function countOccurrences(haystack: string, needle: string): number {
   let count = 0;
@@ -129,8 +130,12 @@ describe("global working rules distribution", () => {
     );
     expect(rules).toContain("Forbid steady-state compatibility behavior");
 
-    const rootContext = readFileSync(STANDARD_PLAN, "utf-8");
-    expect(rootContext).toContain("one source of truth, and no steady-state compatibility paths");
+    // The generated root context now has one source: the shipped template that
+    // init copies and the upgrade refresh restores.
+    const rootContext = readFileSync(ROOT_CONTEXT_TEMPLATE, "utf-8");
+    expect(rootContext).toContain("Keep one source of truth for each datum");
+    expect(rootContext).toContain("one-shot migrations fail closed and remove the retired path");
+    expect(readFileSync(STANDARD_PLAN, "utf-8")).toContain("root-context.md");
   });
 
   // Merge semantics moved here from init, which no longer writes host files;

@@ -5,7 +5,7 @@ Generated repos use a minimal documentation profile by default.
 ## Required
 
 - `docs/spec.md`: stable product or operator outcome.
-- `docs/architecture/index.md`: umbrella architecture ledger, snapshots, and diagram links.
+- `docs/architecture/index.md`: umbrella architecture ledger and diagram links.
 - `tasks/lessons.md`: the one local task document. Issue/PR owns current and deferred work.
 - `.ai/harness/`: workflow policy, checks, handoff, failures, and run state.
 
@@ -16,8 +16,7 @@ Create these only when the agent has concrete repo evidence or the user asks:
 - `docs/brief.md`: product positioning and user scope.
 - `docs/tech-stack.md`: confirmed runtime, framework, and dependency choices.
 - `docs/decisions.md`: accepted architecture decisions with trade-offs.
-- `docs/architecture/snapshots/*.md`: current module boundaries and data flow for architecture-sensitive changes.
-- Mermaid fenced blocks in `docs/architecture/modules/**.md` or `docs/architecture/snapshots/*.md`: semantic diagram source for agents and review diffs.
+- Mermaid fenced blocks in `docs/architecture/modules/**.md`: semantic diagram source for agents and review diffs.
 - `docs/packages.md`: package inventory for real multi-package repos.
 - `docs/prds/*.prd.md`: upper-layer PRDs generated through `repo-harness-product`'s PRD mode from `docs/prds/prd.template.md`.
 - `docs/prds/DESIGN-*.md`: optional design briefs generated from `.claude/templates/design-brief.template.md` when the task requests design work.

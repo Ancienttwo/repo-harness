@@ -125,6 +125,10 @@ export type WorkflowContract = {
         paths: string[];
         targetPaths?: string[];
         cleanupMode?: "always" | "generated_helper" | "exact_fingerprint";
+        fingerprints?: Record<string, string>;
+        historicalFingerprints?: Record<string, string[]>;
+        sourcePaths?: Record<string, string>;
+        onlyWhenSoleEntry?: string[];
         summary: string;
       }>;
     };

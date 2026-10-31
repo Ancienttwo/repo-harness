@@ -73,10 +73,10 @@ describe("create-project-dirs runtime smoke", () => {
       expect(existsSync(join(cwd, "docs/tech-stack.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/decisions.md"))).toBe(false);
       expect(existsSync(join(cwd, "docs/architecture/index.md"))).toBe(true);
-      expect(existsSync(join(cwd, "docs/architecture/domains/.gitkeep"))).toBe(true);
+      expect(existsSync(join(cwd, "docs/architecture/domains"))).toBe(false);
       expect(existsSync(join(cwd, "docs/architecture/modules/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/architecture/requests"))).toBe(false);
-      expect(existsSync(join(cwd, "docs/architecture/snapshots/.gitkeep"))).toBe(true);
+      expect(existsSync(join(cwd, "docs/architecture/snapshots"))).toBe(false);
       expect(existsSync(join(cwd, "docs/architecture/diagrams/.gitkeep"))).toBe(true);
       expect(existsSync(join(cwd, "docs/api"))).toBe(false);
       expect(existsSync(join(cwd, "scripts/verify-contract.sh"))).toBe(false);
@@ -216,6 +216,7 @@ describe("create-project-dirs runtime smoke", () => {
 
       const architectureIndex = readFileSync(join(cwd, "docs/architecture/index.md"), "utf-8");
       expect(architectureIndex).toContain("## Architecture Flow");
+      expect(architectureIndex).not.toContain("Latest snapshot");
       expect(architectureIndex).not.toContain("ARCHITECTURE PENDING REQUESTS");
 
       expect(existsSync(join(cwd, "docs/PROGRESS.md"))).toBe(false);
@@ -285,7 +286,8 @@ describe("create-project-dirs runtime smoke", () => {
       expect(workflowContract.artifacts.requiredDirectories).toContain(".ai/harness/planning");
       expect(workflowContract.artifacts.requiredDirectories).not.toContain(".ai/harness/scripts");
       expect(workflowContract.artifacts.requiredDirectories).not.toContain("scripts");
-      expect(workflowContract.artifacts.requiredDirectories).toContain("docs/architecture/domains");
+      expect(workflowContract.artifacts.requiredDirectories).not.toContain("docs/architecture/domains");
+      expect(workflowContract.artifacts.requiredDirectories).not.toContain("docs/architecture/snapshots");
       expect(workflowContract.artifacts.requiredDirectories).toContain("docs/architecture/modules");
       expect(workflowContract.agenticDevelopment.routing.productDiscovery).toBe("parent-agent:geju");
       expect(workflowContract.agenticDevelopment.routing.complexEngineeringPlan).toBe("parent-agent:geju");
@@ -464,7 +466,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.worktree_strategy.worktree_dir_template).toBe(tsDefaultPolicy.worktree_strategy.worktree_dir_template);
       expect(policy.worktree_strategy.auto_on_conflict).toBe(true);
       expect(policy.worktree_strategy.auto_for_contract_tasks).toBe(true);
-      expect(policy.worktree_strategy.start_script).toBe("repo-harness run contract-worktree start --plan <plan-file>");
+      expect(policy.worktree_strategy.start_script).toBe("repo-harness run contract-worktree start --issue <number>");
       expect(policy.worktree_strategy.cleanup_script).toBe("repo-harness run contract-worktree cleanup --slug <slug>");
       expect(policy.worktree_strategy.validation_route).toBe("waza:check");
       expect(policy.context_budget).toBeUndefined();

@@ -211,9 +211,7 @@
       ".ai/harness/runs",
       ".ai/harness/triage",
       "docs/architecture",
-      "docs/architecture/domains",
       "docs/architecture/modules",
-      "docs/architecture/snapshots",
       "docs/architecture/diagrams",
       "docs/reference-configs",
       "deploy",
@@ -241,9 +239,7 @@
       "docs/reference-configs/harness-overview.md",
       "docs/reference-configs/agentic-development-flow.md",
       "docs/reference-configs/external-tooling.md",
-      "docs/reference-configs/sprint-contracts.md",
       "docs/reference-configs/heartbeat-triage.md",
-      "docs/reference-configs/handoff-protocol.md",
       "docs/reference-configs/document-generation.md",
       "docs/reference-configs/global-working-rules.md",
       "docs/reference-configs/minimal-change-hooks.md",
@@ -1656,6 +1652,191 @@
               "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
             ]
           }
+        },
+        {
+          "id": "retired-flow-reference-configs",
+          "signal": "retired-flow-reference-configs",
+          "action": "remove",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "cleanupMode": "exact_fingerprint",
+          "paths": [
+            "docs/reference-configs/handoff-protocol.md",
+            "docs/reference-configs/workflow-orchestration.md",
+            "docs/reference-configs/development-protocol.md",
+            "docs/reference-configs/sprint-contracts.md",
+            "docs/reference-configs/contract-brief-example.md",
+            "docs/reference-configs/contract-brief-example-bugfix.md",
+            "docs/architecture/snapshots/.gitkeep",
+            "docs/architecture/domains/.gitkeep"
+          ],
+          "onlyWhenSoleEntry": [
+            "docs/architecture/snapshots/.gitkeep",
+            "docs/architecture/domains/.gitkeep"
+          ],
+          "fingerprints": {
+            "docs/reference-configs/handoff-protocol.md": "sha256:9a9d3735db86d81f44d576d6cccef78d03df9d8caea0d81eed35de766628eb0c",
+            "docs/reference-configs/workflow-orchestration.md": "sha256:221f0cce30b0cf244c6d0523fcf06afa27029ebdea159fb0fa3c1959253bbf58",
+            "docs/reference-configs/development-protocol.md": "sha256:b6acb6b88569011b435b49e02842a75b3ebd8e4af511fbcaaa6bd1e2b603e6f0",
+            "docs/reference-configs/sprint-contracts.md": "sha256:da4ad6c458c2d35d9b8335678c477cf3ffd62f9ece7751a7b4de5a6a467767ef",
+            "docs/reference-configs/contract-brief-example.md": "sha256:847fb849ed9a579434a14054cbf10a2b6859a3092b2823af6d7ee4177eed1d50",
+            "docs/reference-configs/contract-brief-example-bugfix.md": "sha256:e022be0dfc07d3757cfc3763a15ff28c3ddddff1b63eb0c115ef596601468299",
+            "docs/architecture/snapshots/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+            "docs/architecture/domains/.gitkeep": "sha256:e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+          },
+          "historicalFingerprints": {
+            "docs/reference-configs/handoff-protocol.md": [
+              "sha256:b1b3ae28c3f69497f74e452511a18c68d21b39f5dd52b38a43ea85f3bb5ddf71",
+              "sha256:59165ed0b137052d27a2b96bae626092622317c4a09be2fe235c3ca609501eb2",
+              "sha256:6f983c5be0e6ea87ea5c8af941bde7f6cd7cbb53be632e4aa8a3898068a60cf2",
+              "sha256:4ea0a6383cc7105f3c06ae2d40ddbe56c40b7d818b854c5c729792a3468cc95f",
+              "sha256:8d6e4034b65b0ba62dfe446c9ba97783ae18ae15e96057ff0a2c6cc05f38ea78",
+              "sha256:886ab11f079c4dff73124d2cad11b941ac1147818268ad40511d6b1f0c26effb",
+              "sha256:0334ec77895e6ccd3e17a1ddfe76f16f84c646e5abae08b732e77f4b37ed58af"
+            ],
+            "docs/reference-configs/workflow-orchestration.md": [
+              "sha256:7fb4954bc2fc60d29d061bf06d55cf0faee825e1ef2394fc90b95c4f85a4fa6d",
+              "sha256:fa11322682e62ea362baebcb49297b7b1fb8baae934c0370cd35d5b4e369af18",
+              "sha256:4541befd2ceeb1bca460238e247efa0112b5f4f18c7864d15766adaa2058496a",
+              "sha256:1db1f5259be4072dc02e6341011289c5a84380d0260e66d4c1e7c680a1a1f4de",
+              "sha256:069ab5e9754cc555789651ab4a26e9083392a2980f220420459f0bcb5d498e76",
+              "sha256:cc82af10d8064ac676aa746b48a977940819b8304a1911d488ab7ee1fecd0695",
+              "sha256:1543c2d492024adbfb06ea432f5ff354a1c96e190750f1e29c04cbb36248667b",
+              "sha256:3a0b60467ab6ca5d17249106aa9e21b8da8c03b5e253693f9a7616ab8eb3da04",
+              "sha256:ef83a00298de973c3c9a831b5eb9c77285db67be106945bba2bf7c7dfc9440a8",
+              "sha256:bbfa6d293cb8f53b95dd9a644b1352d974b0aaf8ce8d75ec5499d192dd99a9cb",
+              "sha256:3cf5521168368e493cbe53fbb1b85de2b11b093585d02003e675599f8a798ccc",
+              "sha256:8a1321c58e9ba64e7e63f672374615cb0d12627562d146e9ae47848494a7c173"
+            ],
+            "docs/reference-configs/development-protocol.md": [
+              "sha256:383fb6676c62279f114d61666aed31cc165fbdd7921b781bfdd16a92066530e9",
+              "sha256:b8786b09f5e86fd852cb6d9c86121d12d677d26ef21fb55f3f6bbc181dc67387",
+              "sha256:25b9ad00d2d5924023a0bf76cda6c85733cc44584948cea5a37dc5a1b8b02fb4",
+              "sha256:152d8f8c9e4fb54796e3af738ea4089d1e67a8f0a29c4222effc931704f09d92",
+              "sha256:723a947817eee432519805fdc4e51ca1e35accb399f8389f49edb8e97c31c503",
+              "sha256:2ba29a52f43f7024cd1faae2fc705bdfabd88cf08699c412c4a530b2717658ef",
+              "sha256:a735c6241be5725ca4540ae15fbd770338048d92071bfb23b48fe7955e7c4f8e",
+              "sha256:b605dca38e786c196a7864a29c8b41c8a199ce6650396a1074ec7b8f66033104",
+              "sha256:13cc4865a5c41bad7f10d217f0cc18760546973d70e1500430ef04f8a70d9dee",
+              "sha256:3ea9427437d348fe3c19d675693caa30d9c7c89c9af5a35e4e218bbf6d43145b",
+              "sha256:544f6487f1d64a7ff6af5a9fd4cc9bdc51c517f49959bf8c0426efe8c080ae3b",
+              "sha256:e22d637ef44ca67444d9345b69cd53a868356addfad41d2571d70e39b0e82cdb",
+              "sha256:9a0bf60b0463df561bc023ba42210e9876120c8c43511ea07a0f541fd26ff50b"
+            ],
+            "docs/reference-configs/sprint-contracts.md": [
+              "sha256:b3652b86342e5c5a66780e63183f8381729efd5a1f73946b2e942f41116b211f",
+              "sha256:d0bd29462e5a67133a1ed47b548333b80f72d1c2193f2b110426881c837c1739",
+              "sha256:2afe565af4e0f781d55e0ca35f83fdbf9cf86940e0800fcc85b44283b1cc8821",
+              "sha256:b6c2809f04d4e4eee216cf3ad82dda7ce13487ea3d0039f8c214a799363df95d",
+              "sha256:197d9149485777d777c005a0ce77e8c2035bb184897aea12808f449034ed90a8",
+              "sha256:e96c7292b6d20259eaff37f2dfeb2d78e7abc51643bb44b90eb93f73c488b539",
+              "sha256:de04ebe4afd3a64001b895624dd9af74d65fd5e76026a04da3246e10d5f9e80f",
+              "sha256:b25ed8113576ef88c6c7cfc07656289f51f494cff8bc0fb15fd4261559505213",
+              "sha256:e7a38f4b535e15790ee65e89b9dfd8696a86fc48729b13b92a6d9fd41df50c59",
+              "sha256:2d69de2f51858e6dbf20a431c168e22973548debc303274b4c106004c1c1b273",
+              "sha256:6d89bf9640e63a192a2cd42f1186be18f63f02ceed368bb531b94285f2a9f530",
+              "sha256:44c4603236edacc9a54e9221b2e175ed5a293f84cd1c098378c60e7e6449aa09",
+              "sha256:4b004446f1ce9755d12884c4476897054a5760a3c0e267efb07ca980897b14cb",
+              "sha256:4a42ed7dad5820986d32c5a8277b2e038ad06295cee2630e3d8eadd7c66edc9c",
+              "sha256:cca2d3f49b7fdaeea09f84b45d89c617cd01c3a0eb3d3495cc28d8dd92346a55",
+              "sha256:1f371a9f231ac15c9dcf715567b55496b98362bdd269d84e87639db955a4842b",
+              "sha256:87e16d19b2fec181de0784f3ed65b3e5b0aa6be14aaf305a7db41bbdba9d7b96",
+              "sha256:777682dc2d124b7532cf37d1d75cd51651899bf99138766cd27f4797895d0efe",
+              "sha256:512a2dd8a90d2bb6cb368ceaecf67ae9e8f8d2dfa6f3f1e5eb6917d7f668ab24",
+              "sha256:e8675ca25ae9b2eb0561050c7441cd0cd51e735841bd74f21d9902b096f84193",
+              "sha256:36c2d7c019279ea8465c652087d9706fd1fd4ba0da478b76152687c3becc0f28",
+              "sha256:430cf67ec75a0b919d31c942362776f2544e0b18c87091e94172f6ee77b8ee7e",
+              "sha256:2fb8090529cf4cf9c16f77bf062f6556f105b84979393eceb8c7481c738c1dec",
+              "sha256:acfdf4b39a6721254d1cf8b58a1b3f96cc0f62e3867f003186150f78a725058c",
+              "sha256:ae7a40ce88b013ae7b90286893314321a692152a57f7fc736ae20ca1a1a38760",
+              "sha256:c217f0673abf7bf1f641fd5c8e30aa0eb9ece290c9d590a6143fe4e28b540e80",
+              "sha256:8db090feaf50aa48b82d76d2638cb590f72a4e8c4f02df88392de54cff8c2f39",
+              "sha256:f2f2621c4545ded34a92c6c28f89487646c316f002d9278940dc4ed0f47074e0",
+              "sha256:0363404f7a5574e94048f1ba894a4a3afd383af445528e8cdb3e0fae5a9030f6",
+              "sha256:68d34d5856b7a1ed30abb9ee1f3ec20f385a51139071c9580e1bdd4a1ed8cf4a",
+              "sha256:b5a8647eedc28484a2656bdb256618144d439a6f60b2ede150acafeceb83443f",
+              "sha256:dfcd747db4dd9d8b9b4e15da3236b9eefaf77ed498bb1d435798116628386803",
+              "sha256:7d97084deb62d36857333146316e578403e81d658675b41fe8feeaba0431e1d9",
+              "sha256:2e731bcbe8458fca443f619ef167449d9bb2dd6e15777d85b9b6ffcbf48b1177",
+              "sha256:da36e87c49ec142683d2ebb2266868a7138c072c9b3c2a628dd6edfbf26b6865",
+              "sha256:341c36b8e8786e488893a2ce2c4199a086c58dfe528f22503e86c045970fb274",
+              "sha256:8cb897d6dee6cbdd7a7e21d863e844a492ad03b309eb2774a111551de7804e28",
+              "sha256:f3d05f905f7411cc270b822e3e81f7168702db809e8fa3bea0fca52121bf9079",
+              "sha256:005e99d57ef336ae3d3d90cfcaf006e0d94ea75b951c2948aa29710ad781c97e",
+              "sha256:04ae8ca9fb0ebd010385c3323a009d21b3a313273d694ecbf6719a71bad5a7af",
+              "sha256:98fe5065834c1e1aaa146e692b17e005e083bbbe6a2541c1ac8231d4b668fc00",
+              "sha256:f21f8edd68da56285e66fa4573d8b3094da180e417b01c0f71201f682c47e7a6",
+              "sha256:99684801abed7b9dde97b5388e4255d9fa3cb3ce2cd3e6b01cd7a845f825b502",
+              "sha256:bde2ae6b6f9ea64f674a1ce76289569d33d2d56781a7dd741bd46321adf33958",
+              "sha256:c009e5029cec4013cac86c6ea57f71f85edd518d0b7fd0b845ec3224000df65e",
+              "sha256:73ab414c78dc0dd57b183ed0640a7397b70dac9baa985a97d73944bbf89f84fe",
+              "sha256:fe0ede1a617795d2456e413cbb4b67fea21e8457eeda8ba89b5dd7ef4747eab6"
+            ],
+            "docs/reference-configs/contract-brief-example.md": [
+              "sha256:91531e2b951f93bf5e48d73b5693746b1f84da03fba6b096bdcb37f1f10cca1a",
+              "sha256:7f3a1da01511e30bde0d70c1174a2178365e1a9fdb5b658e72e288503893db0e",
+              "sha256:e731e42aa68cec20a6496d0bdb7b9236064b6b99c4befc1f02f7343463ba738a",
+              "sha256:f814777db14481f079060e82f75edfdcf76b37cd7accc4854414e920d0607868",
+              "sha256:c2075a39a9572edec2ce0a860291122a4e57b7337550af438e16e9c116a7acdc",
+              "sha256:94198679861523c0dcee81399b63e31e62c9587d23fba6eadadaecb27c8cbbe8",
+              "sha256:4244735b69b9fdebaa506ab08e932120ef9e07ec970489bd17875bbf8e9a8abe",
+              "sha256:98786c0e87ef70b8871c9095b0fa9362bd7a57f3d77f32c73a5ed9e8d4034806",
+              "sha256:f16b685f8ce21bee1ce8f2dc0d98b3d33cc24e82b38647139b1e8e463b5dd0e1",
+              "sha256:937dfb3bb6847fd003beffdca73b78383f47defa8ef25c28b23b9489764d43c3",
+              "sha256:50cf54edc2778d56f4c01a35b6f03d33f857c65ae3cb709da4a5212c21c2d990",
+              "sha256:42f722bd624c2219b4b9bfbfec78df861415adca1471ff5ec1145f8f88daa49d"
+            ],
+            "docs/reference-configs/contract-brief-example-bugfix.md": [
+              "sha256:5ec40442920bca2507490de06a87cfcb13ea29712d721e056a4c912760178cf3",
+              "sha256:02024f4e8ade85ba560da7669cce06ff53996e3e9bf6acb6b79c9ce83c5eddd9",
+              "sha256:0eb40980aaf90450f7966f9019eb161b54285d3da03353514c06f2b2d34b20ee",
+              "sha256:5d9c33fe9054f97e4f65f2c3ec26de0eed349603be703ad4c1f38c07cea8d5ab",
+              "sha256:6c81f7475c7c8fbfda1870347e714d0f9d3fdb3edee9fd85c57117863723214b",
+              "sha256:51565b756aa361868312bb7e1f2d34da2b8db3ce8c2c6ab50c04cd26b6d653c9",
+              "sha256:449711f8acb40ac30958281cf36c794cd0fe6c620bc45f100aca9481d7ff2a14",
+              "sha256:767f338f963c5492d8a655942ea77b0b80440c3c69b76607f1b1933183ad5837",
+              "sha256:ed015c76b958b4efdd43d92f34041a883a0cb75ccfdc64744e1f8166fb583975",
+              "sha256:e3fea95b30253f8376d57efb86a7d88349a5050e6fa2ceb80659f50d85250e5e"
+            ]
+          },
+          "summary": "Remove the six duplicated flow reference docs and the empty architecture placeholders that the IPDD cutover retired; keep any byte-modified file and any placeholder whose directory holds user files.",
+          "retiredBy": "1229",
+          "location": "project"
+        },
+        {
+          "id": "retired-flow-root-context",
+          "signal": "retired-flow-root-context",
+          "action": "refresh",
+          "risk": "medium",
+          "ownership": "known_generated",
+          "cleanupMode": "exact_fingerprint",
+          "paths": [
+            "CLAUDE.md",
+            "AGENTS.md"
+          ],
+          "sourcePaths": {
+            "CLAUDE.md": "assets/templates/root-context.md",
+            "AGENTS.md": "assets/templates/root-context.md"
+          },
+          "fingerprints": {
+            "CLAUDE.md": "sha256:bd02a59fe0c8fa11a6b66b1fd36169e001e9512345a115a1f303543c25fea776",
+            "AGENTS.md": "sha256:bd02a59fe0c8fa11a6b66b1fd36169e001e9512345a115a1f303543c25fea776"
+          },
+          "historicalFingerprints": {
+            "CLAUDE.md": [
+              "sha256:956b22a5a55e517e0253b636d3a4c542b03ccbe2a3ce40c3beea573ef03204db",
+              "sha256:d0a9dbfe744eeb5907a729a5bffc20e7605144e62804641febf3c7d9c82fbf04",
+              "sha256:0885ee7d538eab0e71defb0f49e02c3f15ef40c81135ea5208b8d08f8c482440"
+            ],
+            "AGENTS.md": [
+              "sha256:956b22a5a55e517e0253b636d3a4c542b03ccbe2a3ce40c3beea573ef03204db",
+              "sha256:d0a9dbfe744eeb5907a729a5bffc20e7605144e62804641febf3c7d9c82fbf04",
+              "sha256:0885ee7d538eab0e71defb0f49e02c3f15ef40c81135ea5208b8d08f8c482440"
+            ]
+          },
+          "summary": "Replace the unchanged pre-IPDD root context with the invariant root context; keep any user-edited file as user-owned.",
+          "retiredBy": "1229",
+          "location": "project"
         },
         {
           "id": "custom-claude-hooks-preserve",
