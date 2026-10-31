@@ -163,6 +163,15 @@ function changedPaths(cwd: string, from: string, to: string, input: GeneratedArt
   return [...new Set(result.stdout.toString('utf8').split('\0').filter((path) => path !== ''))].sort();
 }
 
+function mergeBase(cwd: string, base: string, head: string, input: GeneratedArtifactsCheckInput): string {
+  const result = git(cwd, ['merge-base', base, head], input);
+  const sha = result.stdout.toString('utf8').trim();
+  if (result.status !== 0 || !/^[0-9a-f]{40}$/u.test(sha)) {
+    fail('generated_artifacts_unavailable', `git merge-base failed: ${excerpt(result.stderr.toString('utf8'))}`);
+  }
+  return sha;
+}
+
 function diffExcerpt(cwd: string, from: string, to: string, paths: readonly string[], input: GeneratedArtifactsCheckInput): string {
   const result = git(cwd, ['diff-tree', '--no-commit-id', '-r', '-p', '-U1', from, to, '--', ...paths], input);
   return excerpt(result.stdout.toString('utf8'));
@@ -426,7 +435,7 @@ function check(input: GeneratedArtifactsCheckInput, observed: ObservedPaths): vo
     // A generated file that the PR edited must already be the generator's
     // output: readiness proves convergence, it does not repair the PR. A
     // conflict resolution is exempt because the author still has to push it.
-    const prChanged = changedPaths(input.repo_root, input.base_sha, input.head_sha, input);
+    const prChanged = changedPaths(input.repo_root, mergeBase(input.repo_root, input.base_sha, input.head_sha, input), input.head_sha, input);
     const unpushed = observed.regenerated.filter((path) =>
       prChanged.includes(path) && !observed.resolved.includes(path));
     if (unpushed.length > 0) {

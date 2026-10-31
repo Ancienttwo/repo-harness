@@ -76,6 +76,30 @@ function staleGeneratedFixture(options: { prTouchesGenerated?: boolean } = {}): 
   return { ...created, base: git(created.repo, 'rev-parse', 'HEAD'), head };
 }
 
+/**
+ * Base changes input a and regenerates gen.txt; the PR changes input b and
+ * leaves gen.txt stale. The PR-changed set must exclude the base-only a.txt
+ * and gen.txt changes.
+ */
+function divergedBaseFixture(): Fixture & { base: string; head: string } {
+  const created = fixture((repo, writeFile) => {
+    writeFile('a.txt', 'one\n');
+    writeFile('b.txt', 'one\n');
+    writeFile('gen.txt', 'one+one\n');
+    writeFile('regen.sh', 'cat a.txt b.txt > gen.txt\n');
+  });
+  commitAll(created.repo, 'base');
+  git(created.repo, 'checkout', '-q', '-b', 'pr');
+  write(created.repo, 'b.txt', 'two\n');
+  commitAll(created.repo, 'pr changes b');
+  const head = git(created.repo, 'rev-parse', 'HEAD');
+  git(created.repo, 'checkout', '-q', 'main');
+  write(created.repo, 'a.txt', 'oneX\n');
+  write(created.repo, 'gen.txt', 'oneX+one\n');
+  commitAll(created.repo, 'main changes a and regenerates');
+  return { ...created, base: git(created.repo, 'rev-parse', 'HEAD'), head };
+}
+
 describe('generated-artifact policy block', () => {
   function file(value: unknown) {
     return { status: 'present' as const, text: JSON.stringify(value) };
@@ -225,6 +249,15 @@ describe('generated-artifact regeneration on the merge tree', () => {
     expect(check.merge_tree_sha).toMatch(/^[0-9a-f]{40}$/u);
     expect(check.regenerated_paths).toEqual(['gen.txt']);
     expect(check.generated_paths).toEqual(['gen.txt']);
+  });
+
+  darwinTest('a base-only declared change is not a PR edit, so the merge tree regenerates', () => {
+    const created = divergedBaseFixture();
+    const check = observeGeneratedArtifacts({
+      repo_root: created.repo, base_sha: created.base, head_sha: created.head, tmp_root: created.root, policy: policy(),
+    });
+    expect(check.failure).toBeNull();
+    expect(check.regenerated_paths).toEqual(['gen.txt']);
   });
 
   darwinTest('a generated file that is already current passes without a change', () => {
