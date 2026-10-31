@@ -13,6 +13,9 @@
 - This record covers `30bca275`. PR #1290 (lessons evidence) is open at
   record time. If #1290 merges before publish, sync `origin/main`, update
   the candidate and the range, and re-run the count.
+- `origin/main` moved to `6b197f86e` (#1266, generated projection refresh)
+  after this record. The owner updates the candidate and the range at publish
+  if `main` moves again.
 - The npm package goes from 0.24.3 to 0.25.0. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.0.
