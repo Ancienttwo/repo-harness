@@ -1,4 +1,5 @@
 import type { ReviewAdmission, ReviewAuthorityContext } from './authority-context';
+import type { RequiredCheckFailureEvidenceV1 } from '../evidence/required-check-evidence';
 import { createHash } from 'crypto';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
@@ -61,6 +62,12 @@ export type AcceptanceReceipt = {
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
+  /**
+   * Required-check failure evidence observed before this acceptance. It is a
+   * durable observation, not the acceptance decision: a `failed_then_passed`
+   * rerun never clears a blocker or proves an infrastructure flake here.
+   */
+  failures: RequiredCheckFailureEvidenceV1[];
   waiver_grant_sha256: string | null;
   issued_at: string;
 };
@@ -588,6 +595,7 @@ export function validateDisposition(
  */
 export type AcceptanceValidatorRuleId =
   | 'receipt_protocol_kind'
+  | 'check_failure_evidence'
   | 'repository_root'
   | 'campaign_identity'
   | 'admission_binding'
@@ -617,7 +625,7 @@ export type AcceptanceValidatorRuleId =
   | 'validator_threw';
 
 export const ACCEPTANCE_VALIDATOR_RULE_IDS: readonly AcceptanceValidatorRuleId[] = [
-  'receipt_protocol_kind', 'repository_root', 'campaign_identity', 'admission_binding',
+  'receipt_protocol_kind', 'check_failure_evidence', 'repository_root', 'campaign_identity', 'admission_binding',
   'reviewer_policy', 'grant_digest_shape', 'goal_fingerprint', 'verification_file_shape',
   'verification_evidence_shape', 'benchmark_evidence_present', 'subject_sha256_shape',
   'subject_scope', 'target_ref_present', 'target_revision_shape', 'reviewed_paths_shape',
@@ -650,7 +658,7 @@ export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
   'grant_sha256', 'goal_sha256', 'verification_file', 'verification_evidence_sha256',
   'benchmark_evidence_sha256', 'subject_sha256', 'subject_scope', 'target_ref',
   'target_revision', 'reviewed_paths', 'disposition', 'expected_reviewer',
-  'reviewer', 'source', 'actor', 'summary', 'findings', 'waiver_grant_sha256',
+  'reviewer', 'source', 'actor', 'summary', 'findings', 'failures', 'waiver_grant_sha256',
   'issued_at', 'request_id', 'context_sha256', 'result_sha256', 'actual_harness', 'actual_role', 'actual_model',
   'author_session_binding_sha256', 'author_actual_models', 'model_relation',
 ];
@@ -658,7 +666,7 @@ export const CONSUMED_RECEIPT_KEYS: readonly (keyof AcceptanceReceipt)[] = [
 /** Human-readable projection only; archived source text grants no receipt validity. */
 export function renderAcceptanceProjection(receipt: Pick<AcceptanceReceipt,
   'disposition' | 'reviewer' | 'actor' | 'subject_sha256' | 'subject_scope' | 'target_revision'
-  | 'verification_evidence_sha256' | 'issued_at' | 'summary' | 'findings' | 'model_relation'> & { source: string }): string {
+  | 'verification_evidence_sha256' | 'issued_at' | 'summary' | 'findings' | 'failures' | 'model_relation'> & { source: string }): string {
   return [
     '## Acceptance Receipt Projection',
     '',
@@ -675,5 +683,7 @@ export function renderAcceptanceProjection(receipt: Pick<AcceptanceReceipt,
     '',
     `- Summary: ${receipt.summary}`,
     `- Findings: ${receipt.findings.length === 0 ? 'none' : receipt.findings.map((item) => `${item.severity}: ${item.message}`).join('; ')}`,
+    `- Check Failures: ${receipt.failures.length === 0 ? 'none' : receipt.failures.map((failure) =>
+      `${failure.check_name}: ${failure.failed.shape}/${failure.retry.outcome}/${failure.cause} (run ${failure.failed.run_id} attempt ${failure.failed.attempt} job ${failure.failed.job_id})`).join('; ')}`,
   ].join('\n');
 }

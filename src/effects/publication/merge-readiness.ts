@@ -1,6 +1,11 @@
 import { gitExecFileSync } from '../git/runner';
 import { spawn, spawnSync } from 'child_process';
 import {
+  assessRequiredCheckFailure,
+  type RequiredCheckAttemptObservationV1,
+  type RequiredCheckFailureEvidenceV1,
+} from '../../core/evidence/required-check-evidence';
+import {
   projectPullRequestMergeReadiness,
   type MergeReadinessObservation,
   type PullRequestReadinessV2,
@@ -304,15 +309,10 @@ function parseProviderReadinessFacts(
   checksValue: unknown,
   rollbackBoundary: ProviderMergeReadinessFactsV1['rollback_boundary'],
   graphValue: unknown,
+  checkFailures: readonly RequiredCheckFailureEvidenceV1[],
 ): ProviderMergeReadinessFactsV1 {
   if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
-  const checks = checksValue.map((entry) => {
-    const check = object(entry, 'provider required check');
-    if (!['pass', 'fail', 'pending', 'skipping', 'cancel'].includes(String(check.bucket))) {
-      throw new MergeReadinessError('provider_data_incomplete', 'provider required check bucket is unknown');
-    }
-    return Object.freeze({ name: string(check.name, 'provider required check name'), bucket: check.bucket as 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel' });
-  });
+  const checks = checksValue.map(providerCheck).map(({ name, bucket }) => Object.freeze({ name, bucket }));
   const graph = object(graphValue, 'provider GraphQL result');
   if (graph.errors !== undefined && (!Array.isArray(graph.errors) || graph.errors.length > 0)) {
     throw new MergeReadinessError('provider_data_incomplete', 'provider review query has errors');
@@ -356,6 +356,7 @@ function parseProviderReadinessFacts(
     unresolved_thread_count: unresolved,
     rollback_boundary: rollbackBoundary,
     checks: Object.freeze(checks),
+    check_failures: Object.freeze([...checkFailures]),
     mergeable: identity.mergeable,
   });
 }
@@ -366,12 +367,50 @@ function providerReviewArgs(identity: ProviderIdentity): string[] {
   return ['api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${identity.pr_number}`];
 }
 
-function requiredCIRunPath(identity: ProviderIdentity, checksValue: unknown): string {
-  if (!Array.isArray(checksValue)) throw new MergeReadinessError('provider_data_incomplete', 'required CI checks unavailable');
-  const required = checksValue.filter(check => check?.name === 'Required / CI');
+type ProviderCheckBucket = 'pass' | 'fail' | 'pending' | 'skipping' | 'cancel';
+
+interface ProviderCheck {
+  readonly name: string;
+  readonly bucket: ProviderCheckBucket;
+  readonly link: string;
+}
+
+function providerCheck(value: unknown): ProviderCheck {
+  const check = object(value, 'provider required check');
+  if (typeof check.bucket !== 'string'
+    || !['pass', 'fail', 'pending', 'skipping', 'cancel'].includes(check.bucket)) {
+    throw new MergeReadinessError('provider_data_incomplete', 'provider required check bucket is unknown');
+  }
+  return Object.freeze({
+    name: string(check.name, 'provider required check name'),
+    bucket: check.bucket as ProviderCheckBucket,
+    // A required check can be external and have no Actions link; only
+    // Required / CI is required to link one.
+    link: typeof check.link === 'string' ? check.link : '',
+  });
+}
+
+function checkArray(value: unknown): ProviderCheck[] {
+  if (!Array.isArray(value)) throw new MergeReadinessError('provider_data_incomplete', 'provider required checks must be an array');
+  return value.map(providerCheck);
+}
+
+function requiredCIRunPath(identity: ProviderIdentity, checks: readonly ProviderCheck[]): string {
+  const required = checks.filter(check => check.name === 'Required / CI');
   if (required.length !== 1) throw new MergeReadinessError('provider_data_incomplete', 'exactly one Required / CI check is required');
+  return checkLink(identity, required[0]!).run_api_path;
+}
+
+interface RequiredCheckLink {
+  readonly run_id: number;
+  readonly job_id: number;
+  readonly run_api_path: string;
+  readonly job_url: string;
+}
+
+function checkLink(identity: ProviderIdentity, check: ProviderCheck): RequiredCheckLink {
   let url: URL;
-  try { url = new URL(required[0].link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required CI check URL unavailable'); }
+  try { url = new URL(check.link); } catch { throw new MergeReadinessError('provider_data_incomplete', 'required CI check URL unavailable'); }
   const segments = url.pathname.split('/').filter(Boolean);
   const [owner, repo] = identity.repo_name_with_owner.split('/');
   if (url.protocol !== 'https:' || url.hostname !== 'github.com' || segments.length !== 7
@@ -379,19 +418,268 @@ function requiredCIRunPath(identity: ProviderIdentity, checksValue: unknown): st
     || segments[3] !== 'runs' || segments[5] !== 'job' || !/^\d+$/.test(segments[4]!) || !/^\d+$/.test(segments[6]!)) {
     throw new MergeReadinessError('provider_data_incomplete', 'required CI is not a repository Actions check');
   }
-  return `repos/${identity.repo_name_with_owner}/actions/runs/${segments[4]}`;
+  return Object.freeze({
+    run_id: Number(segments[4]),
+    job_id: Number(segments[6]),
+    run_api_path: `repos/${identity.repo_name_with_owner}/actions/runs/${segments[4]}`,
+    job_url: check.link,
+  });
 }
-function validateRequiredCIRun(identity: ProviderIdentity, value: unknown, checks: unknown): void {
-  const run = object(value, 'required CI run');
-  if (run.path !== '.github/workflows/ci.yml' || run.event !== 'pull_request' || run.head_sha !== identity.head_sha
+
+interface RequiredCheckRunFacts {
+  readonly path: string;
+  readonly head_sha: string;
+  readonly run_attempt: number;
+  readonly workflow_id: number | null;
+}
+
+function requiredCheckRunFacts(identity: ProviderIdentity, value: unknown, label: string): RequiredCheckRunFacts {
+  const run = object(value, label);
+  if (typeof run.path !== 'string' || run.path.trim() === '' || typeof run.event !== 'string'
+    || run.head_sha !== identity.head_sha
     || !Array.isArray(run.pull_requests) || !run.pull_requests.some(pr => pr?.number === identity.pr_number
       && pr.head?.sha === identity.head_sha && pr.base?.sha === identity.base_sha)) {
+    throw new MergeReadinessError('provider_data_incomplete', `${label} does not bind this PR/head/base`);
+  }
+  const attempt = run.run_attempt === undefined ? 1 : run.run_attempt;
+  if (!Number.isSafeInteger(attempt) || Number(attempt) < 1) {
+    throw new MergeReadinessError('provider_data_incomplete', `${label} attempt is invalid`);
+  }
+  return Object.freeze({
+    path: run.path,
+    head_sha: run.head_sha,
+    run_attempt: Number(attempt),
+    workflow_id: Number.isSafeInteger(run.workflow_id) && Number(run.workflow_id) > 0 ? Number(run.workflow_id) : null,
+  });
+}
+
+function validateRequiredCIRun(identity: ProviderIdentity, value: unknown, checks: readonly ProviderCheck[]): RequiredCheckRunFacts {
+  const run = object(value, 'required CI run');
+  if (run.path !== '.github/workflows/ci.yml' || run.event !== 'pull_request') {
     throw new MergeReadinessError('provider_data_incomplete', 'required CI does not bind this PR/head/base');
   }
-  const required = (checks as { name: string; bucket: string }[]).find(check => check.name === 'Required / CI')!;
+  const facts = requiredCheckRunFacts(identity, value, 'required CI run');
+  const required = checks.find(check => check.name === 'Required / CI')!;
   if (required.bucket === 'pass' && (run.status !== 'completed' || run.conclusion !== 'success')) {
     throw new MergeReadinessError('provider_data_incomplete', 'green required check has no successful trusted CI run');
   }
+  return facts;
+}
+
+type AttemptConclusion = 'success' | 'failure' | 'timed_out' | 'cancelled' | 'skipped' | 'unknown';
+
+function attemptConclusion(value: unknown): AttemptConclusion {
+  return ['success', 'failure', 'timed_out', 'cancelled', 'skipped'].includes(String(value))
+    ? value as AttemptConclusion : 'unknown';
+}
+
+interface AttemptJob {
+  readonly id: number;
+  readonly name: string;
+  readonly conclusion: AttemptConclusion;
+  readonly check_run_id: number | null;
+  readonly steps: readonly { readonly name: string; readonly conclusion: AttemptConclusion }[];
+}
+
+function attemptJob(value: unknown): AttemptJob {
+  const job = object(value, 'required check attempt job');
+  if (!Number.isSafeInteger(job.id) || Number(job.id) < 1 || typeof job.name !== 'string' || job.name.trim() === '') {
+    throw new MergeReadinessError('provider_data_incomplete', 'required check attempt job identity is incomplete');
+  }
+  if (!Array.isArray(job.steps)) throw new MergeReadinessError('provider_data_incomplete', 'required check attempt steps are unavailable');
+  const steps = job.steps.map(entry => {
+    const step = object(entry, 'required check attempt step');
+    return Object.freeze({ name: string(step.name, 'required check attempt step name'), conclusion: attemptConclusion(step.conclusion) });
+  });
+  const checkRun = typeof job.check_run_url === 'string'
+    ? /^https:\/\/api\.github\.com\/repos\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/check-runs\/(\d+)$/u.exec(job.check_run_url)
+    : null;
+  return Object.freeze({ id: Number(job.id), name: job.name, conclusion: attemptConclusion(job.conclusion),
+    check_run_id: checkRun ? Number(checkRun[1]) : null, steps: Object.freeze(steps) });
+}
+
+function attemptJobs(value: unknown): AttemptJob[] {
+  const page = object(value, 'required check attempt jobs');
+  if (!Array.isArray(page.jobs) || !Number.isSafeInteger(page.total_count) || Number(page.total_count) < 1
+    || Number(page.total_count) >= 100) {
+    throw new MergeReadinessError('provider_data_incomplete', 'required check attempt jobs were not exhaustively observed');
+  }
+  const jobs = page.jobs.map(attemptJob);
+  if (jobs.length !== page.total_count) throw new MergeReadinessError('provider_data_incomplete', 'required check attempt jobs were not exhaustively observed');
+  return jobs;
+}
+
+interface EvidenceRequest {
+  readonly path: string;
+  /** Best-effort evidence: a missing annotation feed is not a provider outage. */
+  readonly optional?: boolean;
+}
+
+interface AnnotationEvidence {
+  readonly excerpt: string | null;
+  readonly tests: readonly string[];
+}
+
+/** A test reporter names the failed child in the annotation title or first message line. */
+const TEST_IDENTIFIER = /(?:[^\s]+\.(?:test|spec)\.[cm]?[jt]sx?(?::\d+)?|\S+\s+>\s+\S+)/u;
+
+function annotationEvidence(value: unknown): AnnotationEvidence {
+  if (!Array.isArray(value)) return Object.freeze({ excerpt: null, tests: Object.freeze([]) });
+  const messages: string[] = [];
+  const tests: string[] = [];
+  for (const entry of value) {
+    const annotation = object(entry, 'job annotation');
+    if (typeof annotation.title === 'string') {
+      const title = annotation.title.trim();
+      if (title !== '' && TEST_IDENTIFIER.test(title)) tests.push(title);
+    }
+    if (typeof annotation.message !== 'string') continue;
+    const message = annotation.message.trim();
+    if (message === '') continue;
+    messages.push(message);
+    const firstLine = message.split(/\r?\n/u)[0]!.trim();
+    if (TEST_IDENTIFIER.test(firstLine)) tests.push(firstLine);
+  }
+  const joined = messages.slice(0, 3).join('\n');
+  return Object.freeze({
+    excerpt: joined === '' ? null : joined.length > 4_000 ? `${joined.slice(0, 4_000)}…` : joined,
+    tests: Object.freeze([...new Set(tests)]),
+  });
+}
+
+const FAILED_ATTEMPT_CONCLUSIONS: ReadonlySet<AttemptConclusion> = new Set(['failure', 'timed_out', 'cancelled']);
+
+/**
+ * Reads the attempt history of one required check. A rerun keeps one run id
+ * and increments the attempt; this collector follows that link. Evidence is
+ * read only for checks that failed or were rerun, so a first-attempt green
+ * check keeps the existing single-run read.
+ */
+function* checkEvidence(
+  identity: ProviderIdentity,
+  check: ProviderCheck,
+  run: RequiredCheckRunFacts,
+  link: RequiredCheckLink,
+): Generator<EvidenceRequest, RequiredCheckFailureEvidenceV1 | null, unknown> {
+  // A first-attempt green or pending check has no failure history to record.
+  if (run.run_attempt === 1 && (check.bucket === 'pass' || check.bucket === 'pending')) return null;
+  const pages: AttemptJob[][] = [];
+  for (let attempt = 1; attempt <= run.run_attempt; attempt++) {
+    pages.push(attemptJobs(yield { path: `${link.run_api_path}/attempts/${attempt}/jobs?per_page=100` }));
+  }
+  const linked = pages.flat().find(job => job.id === link.job_id);
+  if (!linked) throw new MergeReadinessError('provider_data_incomplete', 'required check job link does not resolve');
+  const jobs = pages.map((page, index) => page.find(job => job.name === linked.name)
+    ?? (index + 1 === run.run_attempt ? linked : undefined));
+  if (jobs.some(job => job === undefined)) {
+    throw new MergeReadinessError('provider_data_incomplete', 'required check rerun did not preserve the failed job');
+  }
+  const annotations: AnnotationEvidence[] = [];
+  for (const job of jobs as AttemptJob[]) {
+    if (!FAILED_ATTEMPT_CONCLUSIONS.has(job.conclusion) || job.check_run_id === null) {
+      annotations.push(Object.freeze({ excerpt: null, tests: Object.freeze([]) }));
+      continue;
+    }
+    annotations.push(annotationEvidence(yield {
+      path: `repos/${identity.repo_name_with_owner}/check-runs/${job.check_run_id}/annotations?per_page=100`,
+      optional: true,
+    }));
+  }
+  const runUrl = `https://github.com/${identity.repo_name_with_owner}/actions/runs/${link.run_id}`;
+  const attempts = (jobs as AttemptJob[]).map((job, index): RequiredCheckAttemptObservationV1 => {
+    const skipped = job.steps.filter(step => step.conclusion === 'skipped').map(step => step.name);
+    const executed = [job.name, ...job.steps.filter(step => step.conclusion !== 'skipped').map(step => step.name)];
+    return Object.freeze({
+      run_id: link.run_id,
+      attempt: index + 1,
+      job_id: job.id,
+      job_name: job.name,
+      run_url: runUrl,
+      job_url: job.id === link.job_id ? link.job_url : `${runUrl}/job/${job.id}`,
+      conclusion: job.conclusion,
+      steps: Object.freeze(job.steps.filter(step => FAILED_ATTEMPT_CONCLUSIONS.has(step.conclusion)).map(step => step.name)),
+      failed_tests: annotations[index]?.tests ?? Object.freeze([]),
+      logs_available: false,
+      failure_excerpt: annotations[index]?.excerpt ?? null,
+      platform_evidence: Object.freeze([]),
+      scope: Object.freeze({ executed: Object.freeze(executed), skipped: Object.freeze(skipped) }),
+    });
+  });
+  if (!attempts.some(attempt => FAILED_ATTEMPT_CONCLUSIONS.has(attempt.conclusion) || attempt.steps.length > 0)) return null;
+  return assessRequiredCheckFailure({
+    check_name: check.name,
+    head_sha: identity.head_sha,
+    base_sha: identity.base_sha,
+    merge_tree_sha: null,
+    workflow: Object.freeze({ path: run.path, id: run.workflow_id, revision: run.head_sha }),
+    attempts: Object.freeze(attempts),
+    declared_cause: null,
+  });
+}
+
+/** Shared read protocol; the sync and abortable drivers only differ in transport. */
+function* requiredCheckFailures(
+  identity: ProviderIdentity,
+  checks: readonly ProviderCheck[],
+  firstRun: RequiredCheckRunFacts,
+): Generator<EvidenceRequest, RequiredCheckFailureEvidenceV1[], unknown> {
+  const evidence: RequiredCheckFailureEvidenceV1[] = [];
+  for (const check of checks) {
+    let link: RequiredCheckLink;
+    try {
+      link = checkLink(identity, check);
+    } catch (error) {
+      // Only Required / CI must be a repository Actions check. Other required
+      // checks keep their bucket and blocker without invented evidence.
+      if (check.name === 'Required / CI') throw error;
+      continue;
+    }
+    const run = check.name === 'Required / CI' ? firstRun
+      : requiredCheckRunFacts(identity, yield { path: link.run_api_path }, 'required check run');
+    const failure = yield* checkEvidence(identity, check, run, link);
+    if (failure) evidence.push(failure);
+  }
+  return evidence;
+}
+
+function collectRequiredCheckFailuresSync(
+  identity: ProviderIdentity,
+  checks: readonly ProviderCheck[],
+  firstRun: RequiredCheckRunFacts,
+  input: PublicationReadinessInput,
+): RequiredCheckFailureEvidenceV1[] {
+  const protocol = requiredCheckFailures(identity, checks, firstRun);
+  let request = protocol.next();
+  while (!request.done) {
+    let value: unknown = null;
+    try {
+      value = gh(input, ['api', request.value.path]);
+    } catch (error) {
+      if (!request.value.optional) throw error;
+    }
+    request = protocol.next(value);
+  }
+  return request.value;
+}
+
+async function collectRequiredCheckFailuresAbortable(
+  identity: ProviderIdentity,
+  checks: readonly ProviderCheck[],
+  firstRun: RequiredCheckRunFacts,
+  input: AbortablePublicationReadinessInput,
+): Promise<RequiredCheckFailureEvidenceV1[]> {
+  const protocol = requiredCheckFailures(identity, checks, firstRun);
+  let request = protocol.next();
+  while (!request.done) {
+    let value: unknown = null;
+    try {
+      value = await ghAbortable(input, ['api', request.value.path]);
+    } catch (error) {
+      if (!request.value.optional) throw error;
+    }
+    request = protocol.next(value);
+  }
+  return request.value;
 }
 
 /** One read protocol for synchronous and abortable consumers; reads only the current commit boundary. */
@@ -450,11 +738,13 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
   const checks = gh(input, [
     'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
-  validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, checks)]), checks);
+  const providers = checkArray(checks);
+  const firstRun = validateRequiredCIRun(identity, gh(input, ['api', requiredCIRunPath(identity, providers)]), providers);
+  const checkFailures = collectRequiredCheckFailuresSync(identity, providers, firstRun, input);
   const boundary = rollbackBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(gh(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)));
+  return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)), checkFailures);
 }
 
 export async function observeProviderReadinessFactsAbortable(
@@ -465,11 +755,13 @@ export async function observeProviderReadinessFactsAbortable(
   const checks = await ghAbortable(input, [
     'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
   ], [0, 1, 8]);
-  validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, checks)]), checks);
+  const providers = checkArray(checks);
+  const firstRun = validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, providers)]), providers);
+  const checkFailures = await collectRequiredCheckFailuresAbortable(identity, providers, firstRun, input);
   const boundary = rollbackBoundary(identity);
   let request = boundary.next();
   while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)));
+  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)), checkFailures);
 }
 
 export interface PullRequestReadinessInput extends PublicationReadinessInput {

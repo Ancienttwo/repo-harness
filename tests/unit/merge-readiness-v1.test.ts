@@ -6,6 +6,8 @@ import {
   type PullRequestMergeReadinessInput,
 } from '../../src/core/publication/merge-readiness';
 import { checkClosingReferences, parseClosingReferences } from '../../src/core/publication/closing-references';
+import { assessRequiredCheckFailure, validateRequiredCheckFailureEvidence } from '../../src/core/evidence/required-check-evidence';
+import { assertionThenPassedEvidence, productFailureEvidence, requiredCheckAttempt, requiredCheckObservation } from '../helpers/required-check-evidence-fixture';
 import { parsePublicationPolicy, publicationPolicyChanged } from '../../src/core/publication/acceptance-merge-policy';
 
 const HEAD = 'a'.repeat(40);
@@ -26,6 +28,7 @@ function readyInput(): PullRequestMergeReadinessInput {
       unresolved_thread_count: 0,
       rollback_boundary: { status: 'not_active' },
       checks: [{ name: 'Required / CI', bucket: 'pass' }],
+      check_failures: [],
       mergeable: 'MERGEABLE',
     },
   };
@@ -40,6 +43,7 @@ describe('projectPullRequestMergeReadiness', () => {
       integration_mode: 'unmerged',
       attention_owner: 'none',
       blockers: [],
+      check_failures: [],
     });
   });
 
@@ -248,3 +252,148 @@ describe('acceptance merge policy switch', () => {
     }
   });
 });
+
+
+describe('required-check failure evidence', () => {
+  test('a same-SHA assertion failure then pass is failed_then_passed and is never infrastructure', () => {
+    const evidence = assertionThenPassedEvidence();
+    expect(evidence.observed_result).toBe('failed_then_passed');
+    expect(evidence.failed.shape).toBe('assertion_mismatch');
+    expect(evidence.retry).toMatchObject({ attempted: true, attempts: 2, outcome: 'failed_then_passed', revalidated: true });
+    expect(evidence.cause).not.toBe('infrastructure');
+    expect(evidence.cause).toBe('unknown');
+    // The run/attempt/job link survives the rerun.
+    expect([evidence.failed.run_id, evidence.failed.attempt, evidence.failed.job_id]).toEqual([123, 1, 456]);
+    expect([evidence.retry.latest.run_id, evidence.retry.latest.attempt, evidence.retry.latest.job_id]).toEqual([123, 2, 789]);
+    expect(evidence.workflow).toEqual({ path: '.github/workflows/ci.yml', id: 99, revision: HEAD });
+  });
+
+  test('a platform-evidenced runner abort that later passes is still not a proven infrastructure flake', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: ['Run tests'], failed_tests: ['session-runtime > chunk boundary'],
+        failure_excerpt: null, logs_available: false,
+        platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests', 'session-runtime > chunk boundary'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('runner_abort');
+    expect(evidence.observed_result).toBe('failed_then_passed');
+    expect(evidence.cause).toBe('unknown');
+  });
+
+  test('a runner abort without platform or log evidence stays unknown', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: [], failure_excerpt: null, logs_available: false }),
+    ]));
+    expect(evidence.failed.shape).toBe('runner_abort');
+    expect(evidence.observed_result).toBe('failed');
+    expect(evidence.retry.outcome).toBe('not_attempted');
+    expect(evidence.cause).toBe('unknown');
+    expect(evidence.cause_evidence).toEqual([]);
+  });
+
+  test('a runner abort with platform evidence is infrastructure', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ conclusion: 'cancelled', steps: [], failure_excerpt: null, logs_available: false,
+        platform_evidence: ['The runner has received a shutdown signal and the job was cancelled'] }),
+    ]));
+    expect(evidence.cause).toBe('infrastructure');
+    expect(evidence.cause_evidence).toEqual(['The runner has received a shutdown signal and the job was cancelled']);
+  });
+
+  test('a retry that skips the originally failed test is not revalidation', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ failed_tests: ['session-runtime > chunk boundary'], scope: { executed: ['Run tests'], skipped: [] } }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['Run tests', 'session-runtime > unrelated'], skipped: ['session-runtime > chunk boundary'] } }),
+    ]));
+    expect(evidence.observed_result).toBe('not_revalidated');
+    expect(evidence.retry.outcome).toBe('failed_then_not_revalidated');
+    expect(evidence.retry.revalidated).toBe(false);
+    expect(evidence.cause).toBe('unknown');
+  });
+
+  test('an assertion retry with only a generic step label is not revalidation', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: [], scope: { executed: ['Run tests'], skipped: [] } }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('assertion_mismatch');
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('stored evidence rejects array, object and number enum values', () => {
+    const valid = assertionThenPassedEvidence();
+    expect(validateRequiredCheckFailureEvidence(valid)).toEqual(valid);
+    const fields: readonly (readonly [string, string])[] = [
+      ['failed.shape', 'timeout'],
+      ['retry.outcome', 'failed_then_passed'],
+      ['retry.latest.conclusion', 'success'],
+      ['observed_result', 'failed_then_passed'],
+      ['cause', 'unknown'],
+    ];
+    for (const [field, value] of fields) {
+      for (const malformed of [[value], { value }, 7]) {
+        const tampered = JSON.parse(JSON.stringify(valid)) as Record<string, unknown>;
+        const parts = field.split('.');
+        let target = tampered;
+        for (const part of parts.slice(0, -1)) target = target[part] as Record<string, unknown>;
+        target[parts[parts.length - 1]!] = malformed;
+        let message: string | null = null;
+        try { validateRequiredCheckFailureEvidence(tampered); } catch (error) { message = (error as Error).message; }
+        expect([field, Array.isArray(malformed) ? 'array' : typeof malformed, message !== null && message.includes('is invalid')])
+          .toEqual([field, Array.isArray(malformed) ? 'array' : typeof malformed, true]);
+      }
+    }
+  });
+
+  test('a retry without a failed child identifier is not revalidated even when the aggregate step passes', () => {
+    const evidence = assessRequiredCheckFailure(requiredCheckObservation([
+      requiredCheckAttempt({ steps: ['Run tests'], failed_tests: [], failure_excerpt: null, logs_available: false }),
+      requiredCheckAttempt({ attempt: 2, job_id: 789, job_url: 'https://github.com/example/repo-harness/actions/runs/123/job/789',
+        conclusion: 'success', steps: [], failure_excerpt: null,
+        scope: { executed: ['test (ubuntu-latest)', 'Run tests'], skipped: [] } }),
+    ]));
+    expect(evidence.failed.shape).toBe('logs_unavailable');
+    expect(evidence.retry).toMatchObject({ outcome: 'failed_then_not_revalidated', revalidated: false });
+    expect(evidence.observed_result).toBe('not_revalidated');
+  });
+
+  test('a real product failure remains a blocker and a rerun pass never clears it', () => {
+    const productFailure = productFailureEvidence();
+    expect(productFailure.cause).toBe('product_defect');
+    expect(productFailure.cause_evidence).toEqual(['AssertionError: expected product response code 200 but received 500']);
+    const base = readyInput();
+    const blocked = projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, checks: [{ name: 'Required / CI', bucket: 'fail' }], check_failures: [productFailure] } });
+    expect(blocked.ready).toBe(false);
+    expect(blocked.blockers.map((blocker) => blocker.code)).toContain('checks_failed');
+    expect(blocked.check_failures).toEqual([productFailure]);
+
+    // A passing rerun is evidence, not an automatic pass: the observed failed
+    // bucket still blocks and the executor decision is unchanged.
+    const rerun = assertionThenPassedEvidence();
+    const stillBlocked = projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, checks: [{ name: 'Required / CI', bucket: 'fail' }], check_failures: [rerun] } });
+    expect(stillBlocked.ready).toBe(false);
+    expect(stillBlocked.blockers.map((blocker) => blocker.code)).toContain('checks_failed');
+    expect(stillBlocked.check_failures).toEqual([rerun]);
+  });
+
+  test('failure evidence for another head or a malformed shape fails closed', () => {
+    const base = readyInput();
+    const otherHead = { ...assertionThenPassedEvidence(), head_sha: '9'.repeat(40) };
+    expect(projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, check_failures: [otherHead] } }).blockers.map((blocker) => blocker.code))
+      .toContain('provider_data_incomplete');
+    expect(projectPullRequestMergeReadiness({ ...base,
+      provider: { ...base.provider!, check_failures: [{ check_name: 'incomplete' }] } as unknown as ProviderMergeReadinessFactsV1 })
+      .blockers.map((blocker) => blocker.code)).toContain('provider_data_incomplete');
+  });
+});
+

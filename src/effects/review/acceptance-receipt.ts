@@ -59,6 +59,10 @@ import {
   type ReviewSubject,
   type UserWaiverGrant,
 } from '../../core/review/acceptance-receipt';
+import {
+  validateRequiredCheckFailureEvidenceList,
+  type RequiredCheckFailureEvidenceV1,
+} from '../../core/evidence/required-check-evidence';
 
 export {
   ACCEPTANCE_VALIDATOR_RULE_IDS,
@@ -544,6 +548,11 @@ export function validateAcceptanceReceiptAgainstPolicy(
     if (receipt.protocol !== 4 || receipt.kind !== 'repo-harness-acceptance-receipt') {
       return no('receipt_protocol_kind', 'AcceptanceReceipt kind/protocol is invalid');
     }
+    try {
+      validateRequiredCheckFailureEvidenceList(receipt.failures);
+    } catch (error) {
+      return no('check_failure_evidence', `AcceptanceReceipt failures are invalid: ${(error as Error).message}`);
+    }
     if (receipt.repository_root !== input.repositoryRoot) return no('repository_root', 'AcceptanceReceipt repository root is stale');
     if (receipt.campaign_sha256 !== input.admission.campaign_sha256) return no('campaign_identity', 'AcceptanceReceipt campaign is stale');
     if (receipt.admission_sha256 !== input.admission.admission_sha256 || receipt.grant_sha256 !== input.grantSha256) return no('admission_binding', 'AcceptanceReceipt admission is stale');
@@ -639,7 +648,8 @@ function parseReceipt(text: string): AcceptanceReceipt {
   if ((value.disposition === 'user_waiver') !== (value.waiver_grant_sha256 !== null)) {
     fail('AcceptanceReceipt waiver grant binding does not match disposition');
   }
-  const receipt = { ...value, findings: validateFindings(value.findings) } as AcceptanceReceipt;
+  const receipt = { ...value, findings: validateFindings(value.findings),
+    failures: validateRequiredCheckFailureEvidenceList(value.failures) } as AcceptanceReceipt;
   assertReviewFields(receipt);
   return receipt;
 }
@@ -772,6 +782,7 @@ function buildReceipt(
   actor: string | null,
   summary: string,
   findings: AcceptanceFinding[],
+  failures: RequiredCheckFailureEvidenceV1[],
   waiverGrantSha256: string | null,
   now: () => Date,
 ): AcceptanceReceipt {
@@ -801,6 +812,7 @@ function buildReceipt(
     actor,
     summary,
     findings,
+    failures,
     waiver_grant_sha256: waiverGrantSha256,
     issued_at: now().toISOString(),
   };
@@ -887,6 +899,8 @@ export async function recordAcceptance(args: {
   actor: string | null;
   summary: string;
   findings: AcceptanceFinding[];
+  /** Observed required-check failure evidence; a rerun pass never becomes a proven flake. */
+  failures?: readonly RequiredCheckFailureEvidenceV1[];
   /** A provider must bind its opinion to the context it actually reviewed. */
   expectedContext?: {
     admission_sha256: string;
@@ -923,6 +937,7 @@ export async function recordAcceptance(args: {
     args.actor,
     args.summary,
     args.findings,
+    validateRequiredCheckFailureEvidenceList(args.failures ?? []),
     null,
     args.now ?? (() => new Date()),
   );
@@ -966,6 +981,7 @@ export async function recordUserWaiverAcceptance(args: {
     grant.actor,
     grant.summary,
     findings,
+    [],
     waiverGrantFingerprint(grant),
     args.now ?? (() => new Date()),
   );
@@ -1187,6 +1203,8 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       return 0;
     }
     const findingsRaw = option(argv, '--findings-json', false) ?? '[]';
+    const failuresRaw = option(argv, '--failures-json', false) ?? '[]';
+    const failures = validateRequiredCheckFailureEvidenceList(JSON.parse(failuresRaw));
     const reviewResultFile = option(argv, '--review-result')!;
     if (!lstatSync(reviewResultFile).isFile() || lstatSync(reviewResultFile).isSymbolicLink()) fail('--review-result must be a regular file');
     const receipt = await recordAcceptance({
@@ -1203,6 +1221,7 @@ export async function runAcceptanceReceiptCli(argv: string[], opts: Options = {}
       author: null,
       summary: option(argv, '--summary')!,
       findings: validateFindings(JSON.parse(findingsRaw)),
+      failures,
       now: opts.now,
     });
     projectRecordedAcceptance({ root, review, receipt });

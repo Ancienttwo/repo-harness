@@ -30,11 +30,11 @@
       "category": "same-scope",
       "harnessReady": false,
       "harnessBlockers": [
-        "checks_failed"
+        "provider_data_incomplete"
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 6,
       "observerLogicalProviderReads": 4
     },
     {
@@ -46,7 +46,7 @@
       ],
       "observerDecision": "blocker",
       "falseReadyIfMisusedAsGate": false,
-      "collectorLogicalProviderReads": 7,
+      "collectorLogicalProviderReads": 4,
       "observerLogicalProviderReads": 4
     },
     {
@@ -118,7 +118,7 @@
       ],
       "observerDecision": "ready",
       "falseReadyIfMisusedAsGate": true,
-      "collectorLogicalProviderReads": 10,
+      "collectorLogicalProviderReads": 11,
       "observerLogicalProviderReads": 4
     },
     {
@@ -414,7 +414,8 @@
       "ready": true,
       "integration_mode": "unmerged",
       "attention_owner": "none",
-      "blockers": []
+      "blockers": [],
+      "check_failures": []
     }
   },
   "measurementUnits": "Logical provider reads are injected collector gh commands or watcher reader methods. They are not actual HTTP requests, latency, CPU, or production throughput. External API requests are zero.",

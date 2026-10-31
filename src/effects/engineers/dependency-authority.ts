@@ -297,6 +297,8 @@ function providerClosed(input: DependencyAuthorityInput, read: DependencyAuthori
  */
 export const OBSERVATION_PATH_RULE_COVERAGE: Readonly<Record<AcceptanceValidatorRuleId, 'record_time' | 'subject_key' | 'resolver'>> = Object.freeze({
   receipt_protocol_kind: 'record_time',
+  // The record path validates the failure array before writing the receipt.
+  check_failure_evidence: 'record_time',
   // The observation reader requires repository_root === realpath(repo path).
   repository_root: 'resolver',
   campaign_identity: 'subject_key',
