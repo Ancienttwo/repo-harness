@@ -161,7 +161,16 @@ sequenceDiagram
 | `component.execution-primitives.repository-registry`（Repository Registry and Account Home） | effects | `src/effects/repo-registry.ts`（859 行）、`src/effects/repo-harness-home.ts`（8 行） | 注册仓库记录、read_write 授权与授权 revision；account 级 repo-harness home 根目录 |
 | `component.execution-primitives.secret-patterns`（Secret Patterns） | core | `src/core/security/**`（1 个文件，32 行） | 脱敏与只读投影共用的密钥 token 模式 |
 
-`repo-registry.ts` 只导入 Node 内置模块、`./locking/exclusive-directory-lock`、`./git/runner` 与 `./repo-harness-home`。`repo-harness-home.ts` 只导入 `node:os` 与 `node:path`。`secret-patterns.ts` 没有 import。所以本 capability 没有新增出向边。
+`repo-registry.ts` 只导入 Node 内置模块、`./locking/exclusive-directory-lock`、`./git/runner` 与 `./repo-harness-home`。`repo-harness-home.ts` 只导入 `node:os` 与 `node:path`。`secret-patterns.ts` 没有 import。所以 #1343 没有新增出向边。
+
+#1352 slice A 再增加两个组件：
+
+| 组件 | 层 | footprint | 职责 |
+| --- | --- | --- | --- |
+| `component.execution-primitives.task-message-claim`（Task Message Claim Primitives） | core | `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts`（3 个文件，106 行） | task inbox 与 feedback 记录共用的 claim 校验、消息错误类型与封闭字段检查 |
+| `component.execution-primitives.session-artifact-io`（Immutable Session Artifact I/O） | effects | `src/effects/terminal/task-session-io.ts`（29 行） | 持久写入与读取 session JSON 产物，读取进程身份 |
+
+`mechanics.ts` 导入 evidence-ledger 的 `core/evidence/canonical-json` 与 `core/evidence/types`。这是本 capability 唯一的新出向边（`relation.execution-primitives.task-message-claim.evidence-ledger`）。evidence-ledger 也调用本 capability 的锁，所以两个 capability 之间有双向关系；文件级没有环。`task-session-io.ts` 只导入 Node 内置模块。
 
 ### 3.4 10x 规模下先垮的点
 
@@ -187,6 +196,11 @@ sequenceDiagram
 - `src/effects/repo-registry.ts`、`src/effects/repo-harness-home.ts` 与 `src/core/security/**` 从 mcp-sidecar 移到本 capability 的两个新组件。只改模型，源码与 import 不变。
 - 原因：`src/core/review`、`src/core/operator` 与多个 capability 读这些文件。#1287 的依赖检查不应把它们算作 core → MCP 边。
 - 新路径只写在组件 include 上，不写在 capability include 上，与 `src/effects/runtime/os-account-home.ts` 相同。
+
+### 2026-11-02 Task message claim and session artifact I/O moved in (#1352 slice A)
+
+- `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts` 从 task-fleet 移到 `component.execution-primitives.task-message-claim`。`src/effects/terminal/task-session-io.ts` 从 task-agent-host 移到 `component.execution-primitives.session-artifact-io`。只改模型，源码与 import 不变。
+- 原因：publication 与 acceptance-review 导入这些文件。#1352 要求它们不经过 task-fleet 或 task-agent-host。
 
 ## Optimization Backlog
 
