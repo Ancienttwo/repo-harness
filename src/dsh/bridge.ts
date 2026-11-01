@@ -5,12 +5,13 @@ import { HookBridge } from '../cli/hook/bridge-client';
 /**
  * DSH binding for the shared bridge client.
  *
- * The published package ships `dist/dsh-plugin.js` beside `dist/hook-entry.js`,
- * so the bundle resolves the entry as a sibling. The TypeScript source used by
- * tests does not, and tests supply the entry explicitly.
+ * The published package ships the DSH plugin as `dist/dsh/plugin.js`, one
+ * directory below `dist/hook-entry.js`, so the bundle resolves the entry in
+ * its parent directory. The TypeScript source used by tests does not, and
+ * tests supply the entry explicitly.
  */
 
-export const DSH_HOOK_ENTRY = fileURLToPath(new URL('./hook-entry.js', import.meta.url));
+export const DSH_HOOK_ENTRY = fileURLToPath(new URL('../hook-entry.js', import.meta.url));
 
 export interface DshBridgeOptions {
   readonly hookEntry?: string;

@@ -6,6 +6,8 @@ import SystemPrompt from '@deepseek-ai/dsh-system-prompt';
 import ToolRuntime, { defineTool } from '@deepseek-ai/dsh-tools';
 import type { ToolCallId } from '@deepseek-ai/dsh-llm/brand';
 import { createDshPlugin } from '../src/dsh/plugin';
+import { guardDenialsProjection } from '../src/dsh/guard-denials';
+import { GUARD_DENIED_ERROR_CODE, GUARD_DENIED_ERROR_NAME } from '../src/dsh/protocol';
 import type { BridgeHookRequest } from '../src/cli/hook/bridge-client';
 import { HookBridge } from '../src/cli/hook/bridge-client';
 import type { BridgeHookOutput } from '../src/cli/hook/hook-protocol';
@@ -126,6 +128,9 @@ describe('DSH plugin', () => {
 
     expect(result.isError).toBe(true);
     expect(JSON.stringify(result.content)).toContain('protected path');
+    expect((result as { error?: { info?: unknown } }).error?.info).toEqual({
+      name: GUARD_DENIED_ERROR_NAME, code: GUARD_DENIED_ERROR_CODE, reason: 'protected path',
+    });
     expect(harness.ran()).toBe(0);
     const guard = harness.bridge.calls.find((call) => call.event === 'PreToolUse');
     expect(guard?.routeId).toBe('edit');
@@ -308,6 +313,28 @@ describe('DSH plugin', () => {
     expect(stop?.payload).toMatchObject({ session_id: 'session-1', aborted: true });
   });
 
+  test('projects denied calls from DSH tool events and skips other failures', async () => {
+    const harness = await setup((request) => request.event === 'PreToolUse'
+      ? output('PreToolUse', 'edit', { decision: 'block', exit_code: 2, reason: 'blocked', diagnostics: 'protected path' })
+      : output(request.event, request.routeId));
+    await step(harness.app, harness.agent);
+    const denied = await run(harness.app, 'write', { file_path: '/repo/a.ts', content: 'x' }, harness.agent);
+    // Labeled fixture: DSH's agent loop logs the call and the result with these fields.
+    const events = [
+      { type: 'tool/call', data: { turn: 1, step: 1, callId: 'write-call', name: 'write', arguments: '{}' } },
+      { type: 'tool/call', data: { turn: 1, step: 1, callId: 'bash-call', name: 'bash', arguments: '{}' } },
+      { type: 'tool/result', data: { turn: 1, step: 1, message: { toolCallId: 'write-call' }, error: (denied as { error?: { info?: unknown } }).error?.info } },
+      { type: 'tool/result', data: { turn: 1, step: 1, message: { toolCallId: 'bash-call' }, error: { name: 'Error', code: 'EXIT_1', reason: 'exit 1' } } },
+    ];
+    let state = guardDenialsProjection.init();
+    for (const event of events) state = guardDenialsProjection.apply(state, event as never);
+
+    expect(guardDenialsProjection.wire.view(state)).toEqual([{ call_id: 'write-call', tool: 'write', reason: 'protected path' }]);
+    expect(state.pending).toEqual({});
+    expect(guardDenialsProjection.apply(state, { type: 'turn/start', data: {} } as never)).toBe(state);
+    expect(guardDenialsProjection.stateSchema.parse(state)).toEqual(state);
+  });
+
   test('bundle patch row matches the package wiring and the bundle name', () => {
     const manifest = JSON.parse(readFileSync(join(import.meta.dir, '../package.json'), 'utf8')) as {
       dsh?: { bundle?: { patch?: string } };
@@ -315,6 +342,13 @@ describe('DSH plugin', () => {
     expect(manifest.dsh?.bundle?.patch).toBe('./cordis.patch.yml');
     const patch = readFileSync(join(import.meta.dir, '../cordis.patch.yml'), 'utf8');
     expect(patch).toContain('id: repo-harness');
-    expect(patch).toContain("'repo-harness/dist/dsh-plugin.js'");
+    expect(patch).toContain("'./dist/dsh/plugin.js'");
+    const nested = JSON.parse(readFileSync(join(import.meta.dir, '../src/dsh/package.dist.json'), 'utf8')) as {
+      exports?: Record<string, string>;
+      dsh?: { client?: { platform?: string } };
+    };
+    expect(nested.exports?.['.']).toBe('./plugin.js');
+    expect(nested.exports?.['./client']).toBe('./client.js');
+    expect(nested.dsh?.client?.platform).toBe('web');
   });
 });
