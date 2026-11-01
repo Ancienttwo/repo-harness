@@ -458,7 +458,7 @@ Read committed architecture facts or export a module review prompt:
 
 ```bash
 repo-harness module list --json
-repo-harness module review-prompt capability.runtime-harness.engineer-bindings --json
+repo-harness module review-prompt capability.runtime-harness.task-agent-host --json
 ```
 
 The prompt uses HEAD content. It reports uncommitted paths and their content

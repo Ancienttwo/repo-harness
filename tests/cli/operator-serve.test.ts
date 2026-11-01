@@ -1009,7 +1009,7 @@ describe('current Task context route',()=>{
   const context:import('../../src/core/operator/admitted-task-context').AdmittedTaskContext={
     protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:'Current goal'},verification:{plan_sha256:hash,plan_json:'{}'},
     scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},approval:{admission_sha256:hash,grant_sha256:hash,revision:1,goal_revision:hash,scope_sha256:hash},
-    profile_selection:{state:'unassigned'},execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
+    execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
   };
   test('validates Host, Origin and selectors before reading, then binds expected revision',async()=>{
     let calls=0;const server=await startOperatorServer({port:0,read_task_context:async()=>{calls++;return context;}});

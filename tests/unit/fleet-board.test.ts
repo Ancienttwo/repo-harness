@@ -12,7 +12,7 @@ const taskRevision = 'b'.repeat(64);
 
 function session(): AdmittedTaskSession {
   const digest = `sha256:${'a'.repeat(64)}`;
-  return { admission_sha256: digest, profile_selection: { state: 'unassigned' }, branch: 'task', runtime: 'terminal', harness_kind: 'codex', selector: {
+  return { admission_sha256: digest, branch: 'task', runtime: 'terminal', harness_kind: 'codex', selector: {
     repository_id: 'repo-a', provider_repository_id: '1001', issue_id: '2001', campaign_id: 'campaign', task: taskId, role: 'worker', claim_ref: 'claim',
     claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: digest } };
 }

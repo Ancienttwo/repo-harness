@@ -38,7 +38,7 @@ function validFleetPayload(): Record<string, unknown> {
         task_id: taskId,
         provider_repository_id: '1001', provider_issue_id: '2001', issue_state: 'open', issue_revision: `sha256:${taskRevision}`,
         execution_status: 'observed', execution: {
-          admission_sha256: snapshotDigest, profile_selection: { state: 'unassigned' }, branch: 'task', runtime: 'terminal', harness_kind: 'codex',
+          admission_sha256: snapshotDigest, branch: 'task', runtime: 'terminal', harness_kind: 'codex',
           selector: { repository_id: 'repo-1', provider_repository_id: '1001', issue_id: '2001', campaign_id: 'campaign', task: taskId, role: 'worker',
             claim_ref: claimId, claim_revision: snapshotDigest, grant_sha256: snapshotDigest, policy_sha256: snapshotDigest, actor_id: 'owner', session_binding_sha256: snapshotDigest },
         },

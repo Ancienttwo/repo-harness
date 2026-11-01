@@ -320,7 +320,7 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
         'issue-id': execution.selector.issue_id, 'campaign-id': execution.selector.campaign_id, 'grant-sha256': execution.selector.grant_sha256,
         'policy-sha256': execution.selector.policy_sha256, actor: execution.selector.actor_id });
       const feedbackInput = { repo_root: repo.path, selection: selections[0]!.pull_request,
-        source: { authority: { source, claim: current_claim, engineer_profile: observed.identity.engineer_profile }, session: { task: execution.selector.task, role: execution.selector.role } } };
+        source: { authority: { source, claim: current_claim }, session: { task: execution.selector.task, role: execution.selector.role } } };
       const subject = prepareFeedbackSubject(feedbackInput);
       const projection = projectFleetFeedback({ ...feedbackInput, publication_id: subject.publication_id });
       feedback = { observation_status: 'observed', pending_count: projection.pending_count, no_progress: projection.no_progress, repair_actions: projection.repair_actions };

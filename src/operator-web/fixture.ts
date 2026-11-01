@@ -104,7 +104,7 @@ function card(
 ): OperatorFleetCardV1 {
   const digest = `sha256:${task.task_revision}`;
   const execution: OperatorFleetCardV1['execution'] = column === 'available' || column === 'done' ? null : {
-    profile_selection: { state: 'unassigned' }, admission_sha256: digest, branch: `codex/${task.slug}`, runtime: 'terminal', harness_kind: 'codex',
+    admission_sha256: digest, branch: `codex/${task.slug}`, runtime: 'terminal', harness_kind: 'codex',
     selector: { repository_id: repositoryId, provider_repository_id: '1001', issue_id: String(2000 + task.task_index), campaign_id: 'fixture',
       task: task.task_id, role: 'worker', claim_ref: task.claim_id, claim_revision: digest, grant_sha256: digest, policy_sha256: digest,
       actor_id: 'fixture-user', session_binding_sha256: `sha256:${task.task_id}` },
@@ -318,6 +318,6 @@ export function admittedTaskContextFixture(selector: import('../core/sessions/se
   const task=Object.values(fixtureTasks).find(task=>task.task_id===selector.task);
   return {protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:`${task?.task_label ?? 'Provider task'}: The exact candidate passes independent verification.`},
     verification:{plan_sha256:hash,plan_json:'{"protocol":1,"checks":[]}'},scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},
-    approval:{admission_sha256:hash,grant_sha256:selector.grant_sha256,revision:1,goal_revision:hash,scope_sha256:hash},profile_selection:{state:'unassigned'},
+    approval:{admission_sha256:hash,grant_sha256:selector.grant_sha256,revision:1,goal_revision:hash,scope_sha256:hash},
     execution:{branch:'codex/fixture',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z'};
 }

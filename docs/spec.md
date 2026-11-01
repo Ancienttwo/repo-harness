@@ -29,11 +29,6 @@ a GitHub issue and PR. The agent works in an isolated branch or worktree. The
 maintainer reviews completion from the issue, PR checks, CI, the PR description
 and the claim status comments.
 
-The same authority model may support persistent logical Module Engineers. The
-engineer is a repo-defined role with a reviewed SOP and repo-grounded knowledge;
-a Codex App Thread or Herdr CLI Agent is only its replaceable runtime binding,
-while native Subagents remain bounded workers under one canonical task claim.
-
 ## Primary Users
 
 - Maintainers adopting an existing repository that already has product code.
@@ -88,11 +83,6 @@ repos.
   journal records operation progress for explicit recovery only (never workflow
   state, never read by state resolution), and attempt receipts are liveness
   evidence that never enter effective state or `progress_token`.
-- Agent Runtime effects are provider-neutral, at-most-once control-plane effects.
-  An adapter receives only a bounded inbox-control reference after intent and
-  `effect_started` are durable; only the exact persisted Task Inbox
-  receipt proves delivery, and every ambiguous outcome requires reconciliation
-  without an automatic retry.
 - repo-harness keeps no scheduler, budget ledger or unattended controller. The
   Bot schedules long-running work through the repo-harness CLI and Herdr.
   repo-harness supplies the tools and the evidence for that decision.
@@ -125,18 +115,8 @@ repos.
   The C9 live gate keeps one writer, records exact provider JSONL usage, and
   requires repeated evidence before any persistent same-capability seat can be
   proposed.
-- A Module Engineer binding is shared git-common-dir authorization state for
-  engineer-scoped commands only. It cannot create, transfer, or replace task
-  Lease, Publication, Acceptance, or merge authority.
-- Engineer binding transitions publish an immutable idempotency-fenced event
-  before CAS-replacing the sole current pointer. Dangling events remain audit
-  evidence only; retries cannot select by time, change payload under one key,
-  or fabricate current state after a crash.
-- Engineer identity is derived by an authenticated runtime boundary; an LLM may
-  not gain authority by supplying `engineer_id` or binding generation as command
-  arguments.
 - One claimed worktree has at most one writer actor, including the parent
-  Engineer itself. A writable delegated worker must hold an independently
+  agent itself. A writable delegated worker must hold an independently
   enforced child grant and settle it before publication. Writable delegation
   is available only when a Worker Host controls both Parent and child mutation
   capability; unmanaged Provider Sessions remain read-only.
@@ -145,11 +125,7 @@ repos.
   states admit no mutation or publication and never silently restore a writer.
 - Provider threads, transcripts, auto memory, and context summaries are caches.
   Durable module knowledge remains in architecture, research and lessons, with
-  any engineer memory kept as a rebuildable index.
-- Agent Runtime adapters are a closed set (`codex-app-thread`,
-  `herdr-cli-agent`). They cannot create endpoints, carry message bodies, execute
-  generic terminal commands, infer receipt state, or change Task, Lease,
-  Collaboration, Publication, Acceptance, or Fleet column authority.
+  any agent memory kept as a rebuildable index.
 
 ## Human Review Expectations
 
@@ -207,62 +183,6 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   `registry` source resolves paths by longest-prefix match. The `archcontext`
   source resolves them through `archctx resolve`. A capability owns local agent
   context and ownership boundaries for the files under it.
-- **Module Engineer**: A stable logical engineering role that references one
-  canonical capability and a reviewed SOP. It is not a Session, task owner,
-  Lease, or acceptance identity.
-- **Engineer binding**: The current shared, generation-fenced association between
-  a Module Engineer and one Agent runtime endpoint. Its contract revision covers
-  the canonical Profile bytes, SOP bytes, and capability revision. It authorizes
-  only explicitly engineer-scoped runtime commands issued through a trusted
-  principal boundary.
-- **Agent Runtime effect**: An immutable V2 intent and observation chain that
-  fences one subject to one current endpoint and admits at most one closed Host
-  action per intent. `notify_inbox` fences one persisted inbox message;
-  `wake_for_offer` fences one `EngineerOffersV1` snapshot revision. Reachability
-  and delivery are read-model facts, never scheduling or acceptance authority.
-- **Task-offer wake**: A durable `wake_for_offer` effect armed from an offer
-  snapshot that has been re-proved against the offer authority's own
-  whole-document validator and fenced to this repository and the exact current
-  Binding, bound to the Engineer Binding generation, repository ID,
-  authorization revision, offer snapshot revision and a closed reason. Exactly
-  one wake is current per Binding: every wake mutation linearizes on the
-  per-Binding wake lock taken before the per-effect lock, a newer snapshot
-  supersedes an unstarted one into the terminal `superseded` state inside a
-  bounded coalescing window that it inherits rather than extends, and a started
-  one is never superseded. The Host action carries no claim token and no
-  writable authority, and success requires a controller-step receipt bound to
-  the effect control reference — never a message-delivery receipt and never a
-  process exit code. Binding, capability and authorization fences are re-read
-  after the start becomes durable, so a fence that commits during the start
-  yields a recorded failure instead of a stale Host action. A wake is a hint
-  that work may exist; the awakened controller re-reads current offers and
-  authorization, and a stale or empty snapshot is a no-op, not a claim.
-- **Engineer acquire-next**: An idempotent effects operation that reads the
-  current `EngineerOffersV1`, selects the first offer in its authoritative
-  order under closed filters, constructs the full revision assertion, and
-  delegates to the existing scheduled acquire path. Stale selections and lost
-  elections may be re-read only within a caller-supplied bound. A persisted
-  pending receipt after an uncertain side-effect boundary fails closed as
-  reconciliation-required.
-- **Dependency authority**: The single read-only resolver that answers one
-  declared Work Graph dependency state from the one authority that already owns
-  that verdict: the canonical Sprint row for `canonical_done`, the acceptance
-  authority's own verification observation for `module_accepted`, the Lease
-  publication pointer plus the immutable PublicationReceipt and integration
-  observation for `publication_integrated`, and the ME-4C product acceptance
-  projection for `product_accepted`. Every branch reads a record-time artifact
-  the owning authority published; none of them re-derives a verdict. A readable negative is `unsatisfied`; a missing,
-  unreadable, unauthorized or unsupported authority is `authority_unavailable`;
-  an unknown authority is never ready. Each observation carries an
-  `authority_revision` digest of its canonical validated evidence projection, so
-  receipt, target-revision or registry-authorization movement stales the
-  Engineer offer that asserted it.
-- **Dependency acceptance authority reference**: The closed, revision-bound
-  `acceptance_authority` field on a Work Graph dependency edge that names the
-  exact acceptance subject for `module_accepted` and `product_accepted`. It is
-  validated against the same canonical commit as the target Work Graph;
-  `required_acceptance` policy documents cannot select a receipt subject and are
-  never used as a substitute.
 - **Acceptance verification observation**: The immutable record the acceptance
   authority writes for itself inside the same transaction that records an
   AcceptanceReceipt. It freezes what only that authority can prove — the live
@@ -274,10 +194,7 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   observation and re-recording the same subject overwrites it while a changed
   contract lands under a different key. Readers verify identity, canonical
   bytes and the derived observation id; they never recompute the acceptance
-  verdict. A dependency edge naming an archive-projected contract is
-  fail-closed `authority_unavailable`, because the acceptance fingerprint
-  normalizes the archive envelope away and only the authority's own seal can
-  distinguish a projected contract from its source.
+  verdict.
 - **Delegated worker grant**: A non-transferable child mutation permit under one
   current task claim and one exclusive worktree writer slot. It is not a second
   task Lease and cannot authorize publication or acceptance.

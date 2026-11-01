@@ -57,8 +57,6 @@ function projectExecution(execution: AdmittedTaskSession | null): AdmittedTaskSe
   if (execution === null) return null;
   const selector = Object.fromEntries(SESSION_SELECTOR_KEYS.map(key => [key, execution.selector[key]])) as unknown as AdmittedTaskSession['selector'];
   return Object.freeze({ selector: Object.freeze(selector), admission_sha256: execution.admission_sha256,
-    profile_selection: Object.freeze(execution.profile_selection.state === 'unassigned' ? { state: 'unassigned' as const }
-      : { state: 'selected' as const, engineer_id: execution.profile_selection.engineer_id, engineer_contract_revision: execution.profile_selection.engineer_contract_revision }),
     branch: execution.branch, runtime: execution.runtime, harness_kind: execution.harness_kind });
 }
 

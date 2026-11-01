@@ -6,7 +6,7 @@ import { projectProviderBoard } from '../../src/core/state/provider-board';
 import type { AdmittedTaskSession } from '../../src/core/sessions/task-sessions';
 const digest = `sha256:${'a'.repeat(64)}`;
 function session(task: string, issue = '200'): AdmittedTaskSession {
-  return { profile_selection: { state: 'unassigned' }, admission_sha256: digest, branch: 'refs/heads/task', runtime: 'terminal', harness_kind: 'codex', selector: {
+  return { admission_sha256: digest, branch: 'refs/heads/task', runtime: 'terminal', harness_kind: 'codex', selector: {
     repository_id: 'repo_1', provider_repository_id: '100', issue_id: issue, campaign_id: 'campaign', task, role: 'worker',
     claim_ref: `claim:${task}`, claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: `sha256:${task.repeat(64)}`,
   } };
