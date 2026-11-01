@@ -1088,6 +1088,13 @@ describe('upgrade operator decisions', () => {
     expect(removed.projectBackupPath).toBeDefined();
   }, false));
 
+  test('retired runtime state below a symlinked .claude is outside the repository and is not listed', () => sandbox((opts) => {
+    const outside = join(dirname(opts.cwd), 'outside-claude');
+    put(join(outside, '.session-id'), 'session\n');
+    symlinkSync(outside, join(opts.cwd, '.claude'));
+    expect(runUpgrade({ ...opts, scope: 'project' }).items.map((item) => item.path)).not.toContain(join(opts.cwd, '.claude/.session-id'));
+  }, false));
+
   const invalidFiles: readonly [string, (cwd: string, hash: string) => void][] = [
     ['not JSON', (cwd) => put(join(cwd, decisionsFile), '{"version":1,')],
     ['an unknown version', (cwd, contentHash) => put(join(cwd, decisionsFile), JSON.stringify({ version: 2, decisions: [{ path: library, decision: 'keep', contentHash }] }))],
