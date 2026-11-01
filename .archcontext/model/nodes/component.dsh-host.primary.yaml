@@ -1,0 +1,8 @@
+schemaVersion: archcontext.node/v2
+id: component.dsh-host.primary
+kind: component
+name: "DSH Guard Plugin"
+status: active
+parent: capability.runtime-harness.dsh-host
+layer: "cli"
+summary: "Creates the repo-harness Cordis plugin and resolves the hook bridge that judges each DSH tool call."
