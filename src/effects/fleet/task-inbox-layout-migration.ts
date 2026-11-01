@@ -106,10 +106,10 @@ function mappedPath(root: string, entry: Entry): string | null {
   const directory = entry.kind === 'directory';
   if (!task || !/^[a-f0-9]{64}$/.test(task) || extra.length) refuse('unknown Task Inbox path');
   if (!area && directory) return entry.path;
-  if (!['events', 'delivery', 'staging'].includes(area!)) refuse('unknown Task Inbox area');
+  if (!['events', 'delivery', 'reply-effects', 'staging'].includes(area!)) refuse('unknown Task Inbox area');
   if (!id && directory) return area === 'staging' ? null : entry.path;
   if (area === 'staging') {
-    if (!['events', 'delivery'].includes(id!) || leaf
+    if (!['events', 'delivery', 'reply-effects'].includes(id!) || leaf
       || (name ? directory || !/^\..+\.tmp$/.test(name) : !directory)) refuse('unknown staging residue');
     return null;
   }
@@ -137,9 +137,14 @@ function mappedPath(root: string, entry: Entry): string | null {
     }
     return `${task}/${area}/${id}/${token}.json`;
   }
-  refuse('unknown Task Inbox path');
+  // A journal or receipt from before #1345 can bind reply records. They move as opaque bytes that the
+  // frozen inventory verifies by hash; their target comes from the path alone.
+  const target = `${task}/${area}/${id}/${token}`;
+  if (!leaf && directory) return target;
+  if (directory || (leaf !== 'intent.json' && leaf !== 'commit.json')) refuse('unknown reply path');
+  return `${target}/${leaf}`;
 }
-/** The reply protocol (v0.19.4) was removed in #820 (v0.23.1). No reader exists for its records. */
+/** The reply protocol (v0.19.4) was removed in #820 (v0.23.1). Only a fresh plan refuses its records. */
 function refuseRetiredReplyRecords(sourceRoot: string, source: Entry[]): void {
   const retired = source.filter(entry => {
     const [, area, id] = entry.path.split('/');
@@ -149,11 +154,11 @@ function refuseRetiredReplyRecords(sourceRoot: string, source: Entry[]): void {
     + `(added in v0.19.4, removed in #820 / v0.23.1): ${retired.join(', ')}. Remove or archive the reply-effects `
     + 'directories, then run `repo-harness fleet inbox migrate-layout` again.');
 }
-function buildManifest(common: string, sourceRoot: string): Manifest {
+function buildManifest(common: string, sourceRoot: string, fresh = false): Manifest {
   const stat = inboxPathStat(common)!;
   const identity = `${stat.dev}:${stat.ino}`;
   const source = inventory(sourceRoot);
-  refuseRetiredReplyRecords(sourceRoot, source);
+  if (fresh) refuseRetiredReplyRecords(sourceRoot, source);
   const targets = new Set<string>();
   const target = source.flatMap(entry => {
     const path = mappedPath(sourceRoot, entry);
@@ -382,7 +387,7 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
       const receipt = checkedRollbackHistory(common);
       if ([p.current, p.backup, p.stage, `${p.rollback}.pending`].some(path => inboxPathStat(path))) refuse('unexpected completed rollback state');
       if (mode === 'dry-run' || mode === 'apply' || inboxPathStat(`${p.journal}.pending`)) {
-        return { state: 'planned', manifest: buildManifest(common, p.legacy) };
+        return { state: 'planned', manifest: buildManifest(common, p.legacy, true) };
       }
       return { state: 'rolled_back', manifest: checkedManifest(common, receipt.manifest) };
     }
@@ -392,7 +397,7 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
       return { state: 'not_required', manifest: null };
     }
     if ([p.current, p.backup, p.stage].some(path => inboxPathStat(path))) refuse('unexpected pre-migration tree');
-    return { state: 'planned', manifest: buildManifest(common, p.legacy) };
+    return { state: 'planned', manifest: buildManifest(common, p.legacy, true) };
   }
   function result(state: string, manifest: Manifest | null) {
     return { ok: true, state, ...(manifest ? receiptFor(manifest) : {}) };
