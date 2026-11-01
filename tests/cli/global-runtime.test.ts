@@ -3,6 +3,9 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, 
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { runGlobalRuntimeSetup, updateLeftoverSummary, updateRegisteredUpgradeSummary } from '../../src/cli/commands/global-runtime';
+import { formatUpgradeSummaryLine, type UpgradeResult } from '../../src/cli/commands/upgrade';
+import type { LeftoverItem } from '../../src/effects/upgrade/legacy-inventory';
+import type { LegacyWorktreeCandidate } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry } from '../helpers/registered-repos';
 
 /**
@@ -87,14 +90,13 @@ describe('global runtime setup command env base', () => {
 });
 
 describe('update leftover summary', () => {
-  // The fake Bun stands in for the package entrypoint and prints a fixed upgrade --json result.
-  function withFakeUpgrade(stdout: string, stderr: string, body: () => void): void {
+  // The fake Bun stands in for the installed package entrypoint and runs a bash script.
+  function withFakeBun(script: (root: string) => string, body: () => void): void {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-update-leftovers-'));
     const previous = process.env.REPO_HARNESS_BUN_EXECUTABLE;
     try {
       const bun = join(root, 'bun');
-      writeFileSync(join(root, 'stdout.json'), stdout);
-      writeFileSync(bun, `#!/bin/bash\ncat "${join(root, 'stdout.json')}"\nprintf '%s' '${stderr}' >&2\nexit 1\n`);
+      writeFileSync(bun, `#!/bin/bash\n${script(root)}`);
       chmodSync(bun, 0o755);
       process.env.REPO_HARNESS_BUN_EXECUTABLE = bun;
       body();
@@ -105,8 +107,58 @@ describe('update leftover summary', () => {
     }
   }
 
-  test('counts a payload above the default output cap with secret-like path segments', () => {
-    const items = Array.from({ length: 400 }, (_, index) => ({
+  // The fake package prints a fixed result for any upgrade call.
+  function withFakeUpgrade(stdout: string, stderr: string, body: () => void): void {
+    withFakeBun((root) => {
+      writeFileSync(join(root, 'stdout.json'), stdout);
+      return `cat "${join(root, 'stdout.json')}"\nprintf '%s' '${stderr}' >&2\nexit 1\n`;
+    }, body);
+  }
+
+  test('an updater forwards the summary line of a newer package whose upgrade --json shape changed', () => {
+    withFakeBun(() => [
+      'if [[ " $* " == *" --summary-line "* ]]; then echo \'3 leftovers (1 removable). Run: repo-harness upgrade\'; exit 1; fi',
+      'echo \'{"leftovers":{"count":3}}\'',
+      'exit 1',
+      '',
+    ].join('\n'), () => {
+      expect(updateLeftoverSummary(tmpdir(), false)).toBe('3 leftovers (1 removable). Run: repo-harness upgrade');
+    });
+  });
+
+  test('an updater reports a package that prints no summary line as a failed check', () => {
+    withFakeUpgrade('', 'error: unknown option --summary-line token=hunter2', () => {
+      expect(updateLeftoverSummary(tmpdir(), false))
+        .toBe('Leftover check failed: error: unknown option --summary-line token=[redacted]. Run: repo-harness upgrade');
+    });
+  });
+
+  test('an updater forwards the summary line that the real package entrypoint prints', () => {
+    const root = mkdtempSync(join(tmpdir(), 'repo-harness-update-leftovers-real-'));
+    const keys = ['HOME', 'REPO_HARNESS_HOME', 'REPO_HARNESS_BUN_EXECUTABLE'] as const;
+    const previous = Object.fromEntries(keys.map((key) => [key, process.env[key]]));
+    try {
+      mkdirSync(join(root, 'home'));
+      mkdirSync(join(root, 'cwd'));
+      process.env.HOME = join(root, 'home');
+      process.env.REPO_HARNESS_HOME = join(root, 'home', '.repo-harness');
+      delete process.env.REPO_HARNESS_BUN_EXECUTABLE;
+      expect(updateLeftoverSummary(join(root, 'cwd'), false)).toBe('0 leftovers (0 removable). Run: repo-harness upgrade');
+    } finally {
+      for (const key of keys) {
+        if (previous[key] === undefined) delete process.env[key];
+        else process.env[key] = previous[key];
+      }
+      rmSync(root, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  const checkResult = (overrides: Partial<UpgradeResult>): UpgradeResult => ({
+    items: [], apply: false, exitCode: 1, removedPaths: [], refreshedPaths: [], keptPaths: [], operatorKept: [], ...overrides,
+  });
+
+  test('summary line counts leftovers and keeps secret-like path segments out', () => {
+    const items = Array.from({ length: 400 }, (_, index): LeftoverItem => ({
       location: 'global',
       surface: 'skill',
       path: `/fixture/token=abc/skill-${index}`,
@@ -114,66 +166,42 @@ describe('update leftover summary', () => {
       ownership: index === 0 ? 'owned-clean' : 'unowned',
       proof: null,
       action: index === 0 ? 'remove' : 'report',
-      reason: 'Fixture leftover for the update summary parser.',
+      reason: 'Fixture leftover for the update summary line.',
     }));
-    const payload = `${JSON.stringify({ items, apply: false, exitCode: 1 }, null, 2)}\n`;
-    expect(Buffer.byteLength(payload)).toBeGreaterThan(64 * 1024);
-    withFakeUpgrade(payload, '', () => {
-      expect(updateLeftoverSummary(tmpdir(), false)).toBe('400 leftovers (1 removable). Run: repo-harness upgrade');
-    });
+    expect(formatUpgradeSummaryLine(checkResult({ items }))).toBe('400 leftovers (1 removable). Run: repo-harness upgrade');
   });
 
-  test('reports a failed check as a warning with redacted error text', () => {
-    withFakeUpgrade('{"items":[],"error":"catalog failed"}\n', 'catalog failed token=hunter2', () => {
-      expect(updateLeftoverSummary(tmpdir(), false))
-        .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
-    });
+  test('summary line reports a failed check as a warning with redacted error text', () => {
+    expect(formatUpgradeSummaryLine(checkResult({ error: 'catalog failed token=hunter2' })))
+      .toBe('Leftover check failed: catalog failed token=[redacted]. Run: repo-harness upgrade');
   });
 
-  test('reports a pending template rewrite with no leftover items as pending, not failed', () => {
-    const payload = JSON.stringify({ items: [], apply: false, exitCode: 1, worktreeTemplate: { applied: false, item: { path: '.ai/harness/policy.json', action: 'rewrite', current: '../{{repo}}-wt-{{slug}}', replacement: '{{system_tmp}}/{{repo}}-wt-{{slug}}', reason: 'Legacy template.' } } });
-    withFakeUpgrade(`${payload}\n`, '', () => {
-      expect(updateLeftoverSummary(tmpdir(), false)).toBe(
-        '0 leftovers (0 removable). Run: repo-harness upgrade; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template',
-      );
-    });
+  test('summary line reports a pending template rewrite with no leftover items as pending, not failed', () => {
+    const worktreeTemplate = { applied: false, item: { path: '.ai/harness/policy.json', action: 'rewrite', current: '../{{repo}}-wt-{{slug}}', replacement: '{{system_tmp}}/{{repo}}-wt-{{slug}}', reason: 'Legacy template.' } } as UpgradeResult['worktreeTemplate'];
+    expect(formatUpgradeSummaryLine(checkResult({ worktreeTemplate }))).toBe(
+      '0 leftovers (0 removable). Run: repo-harness upgrade; policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template',
+    );
   });
 
-  test('reports a removable legacy sibling worktree as pending, not failed', () => {
-    const candidates = [
+  test('summary line reports a removable legacy sibling worktree as pending, not failed', () => {
+    const candidates: LegacyWorktreeCandidate[] = [
       { path: '/fixture/repo-old', branch: 'feat/old', head: 'a'.repeat(40), verdict: 'remove', reason: 'merged into origin/main', rebuild: 'git worktree add -b feat/old /fixture/repo-old aaa' },
       { path: '/fixture/repo-squash', branch: 'feat/squash', head: 'b'.repeat(40), verdict: 'keep', reason: 'merge proof needs the provider; checked only with --apply', rebuild: null },
     ];
-    const payload = JSON.stringify({ items: [], apply: false, exitCode: 1, legacyWorktrees: { candidates } });
-    withFakeUpgrade(`${payload}\n`, '', () => {
-      expect(updateLeftoverSummary(tmpdir(), false)).toBe(
-        '0 leftovers (0 removable). Run: repo-harness upgrade; 1 legacy sibling worktree can be removed; run repo-harness upgrade --scope project --apply',
-      );
-    });
+    expect(formatUpgradeSummaryLine(checkResult({ legacyWorktrees: { candidates } }))).toBe(
+      '0 leftovers (0 removable). Run: repo-harness upgrade; 1 legacy sibling worktree can be removed; run repo-harness upgrade --scope project --apply',
+    );
   });
 
-  test('counts a deferred legacy sibling worktree as pending and names the provider proof', () => {
-    const candidate = (name: string, verdict: string) => ({ path: `/fixture/${name}`, branch: `feat/${name}`, head: 'c'.repeat(40), verdict, reason: 'fixture', rebuild: null });
-    const hint = (candidates: unknown[]) => {
-      let summary = '';
-      withFakeUpgrade(`${JSON.stringify({ items: [], apply: false, exitCode: 1, legacyWorktrees: { candidates } })}\n`, '', () => {
-        summary = updateLeftoverSummary(tmpdir(), false);
-      });
-      return summary;
-    };
+  test('summary line counts a deferred legacy sibling worktree as pending and names the provider proof', () => {
+    const candidate = (name: string, verdict: LegacyWorktreeCandidate['verdict']): LegacyWorktreeCandidate => ({ path: `/fixture/${name}`, branch: `feat/${name}`, head: 'c'.repeat(40), verdict, reason: 'fixture', rebuild: null });
+    const hint = (candidates: LegacyWorktreeCandidate[]) => formatUpgradeSummaryLine(checkResult({ legacyWorktrees: { candidates } }));
     expect(hint([candidate('old', 'remove'), candidate('squash', 'deferred'), candidate('dirty', 'keep')])).toBe(
       '0 leftovers (0 removable). Run: repo-harness upgrade; 2 legacy sibling worktrees can be removed (1 needs provider proof); run repo-harness upgrade --scope project --apply',
     );
     expect(hint([candidate('a', 'deferred'), candidate('b', 'deferred')])).toBe(
       '0 leftovers (0 removable). Run: repo-harness upgrade; 2 legacy sibling worktrees can be removed (2 need provider proof); run repo-harness upgrade --scope project --apply',
     );
-  });
-
-  test('a bare array payload is a failed check', () => {
-    withFakeUpgrade('[]\n', '', () => {
-      expect(updateLeftoverSummary(tmpdir(), false))
-        .toBe('Leftover check failed: upgrade --json returned no leftover list. Run: repo-harness upgrade');
-    });
   });
 
   test('registered summary counts pending ready repos and names skipped and failed repos', () => {
@@ -200,13 +228,6 @@ describe('update leftover summary', () => {
       expect(updateRegisteredUpgradeSummary(tmpdir(), false)).toBe(
         'Registered repo upgrade check could not be computed: upgrade --registered --json returned no repo list. Preview: repo-harness upgrade --registered',
       );
-    });
-  });
-
-  test('an object with an error field is a failed check', () => {
-    withFakeUpgrade('{"items":[],"apply":false,"exitCode":1,"error":"project upgrade needs a git repository"}\n', '', () => {
-      expect(updateLeftoverSummary(tmpdir(), false))
-        .toBe('Leftover check failed: project upgrade needs a git repository. Run: repo-harness upgrade');
     });
   });
 });
