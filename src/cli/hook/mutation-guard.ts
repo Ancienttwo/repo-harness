@@ -9,8 +9,10 @@
  * record. An allowed edit can carry the `[CapabilityOwner]` line.
  */
 
-import { appendFileSync, mkdirSync } from 'fs';
-import { dirname, join, posix, win32 } from 'path';
+import { appendFileSync, mkdirSync, realpathSync } from 'fs';
+import { tmpdir } from 'os';
+import { dirname, isAbsolute, join, posix, relative, sep, win32 } from 'path';
+import { managedWorktreeRoot } from '../../effects/git/managed-worktree';
 import {
   canonicalExternalPath,
   canonicalRepoRelativePath,
@@ -66,11 +68,38 @@ export function runMutationGuard(opts: MutationGuardInput): MutationGuardResult 
   return { exitCode: 0, stdout: capabilityOwnerLines(repoRoot, paths), stderr: '' };
 }
 
-/** Bash uses the same private path authority and adds a repository-only boundary. */
+/** Bash uses the same private path authority; outside the repository it may write only below a Bash write root. */
 export function runMutationPathGuard(opts: MutationGuardInput, rawPaths: readonly string[]): MutationGuardResult {
   const paths = rawPaths.map(raw => normalizeFilePath(opts.repoRoot, raw));
-  const denial = firstDenial(opts.repoRoot, paths, true);
+  const denial = firstDenial(opts.repoRoot, paths, bashWriteRoots());
   return denial ? deny(opts.repoRoot, denial, opts.identity.runId) : { exitCode: 0, stdout: '', stderr: '' };
+}
+
+/** Canonical system temp roots and the managed worktree root. */
+function bashWriteRoots(): readonly string[] {
+  const roots: string[] = [];
+  const candidates: Array<() => string> = [
+    () => realpathSync(tmpdir()),
+    ...(process.platform === 'win32' ? [] : [() => realpathSync('/tmp')]),
+    () => managedWorktreeRoot(),
+  ];
+  for (const candidate of candidates) {
+    // A root that does not exist contains no canonical target, so it adds no allowance.
+    try { roots.push(candidate()); } catch { /* fail closed for this root */ }
+  }
+  return roots;
+}
+
+/** Strictly below the root: the root itself and prefix neighbours such as /tmp-x are outside. */
+function isBelowRoot(root: string, target: string): boolean {
+  const rel = relative(root, target);
+  return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`) && !isAbsolute(rel);
+}
+
+function externalTargetAllowed(repoRoot: string, filePath: string, bashRoots: readonly string[] | null): boolean {
+  const external = canonicalExternalPath(repoRoot, filePath);
+  if (bashRoots === null) return external !== null || isForeignDriveAbsolutePath(repoRoot, filePath);
+  return external !== null && bashRoots.some(root => isBelowRoot(root, external));
 }
 
 /** A caller that owns its own decision reports it through the same denial record and exit code. */
@@ -78,20 +107,24 @@ export function runMutationDenial(opts: MutationGuardInput, denial: Denial): Mut
   return deny(opts.repoRoot, denial, opts.identity.runId);
 }
 
-function firstDenial(repoRoot: string, paths: readonly string[], repoOnly = false): Denial | null {
+/** `bashRoots` null is the Edit/Write rule: any verified external path passes. */
+function firstDenial(repoRoot: string, paths: readonly string[], bashRoots: readonly string[] | null = null): Denial | null {
   for (const filePath of paths) {
     // normalizeFilePath leaves an absolute path raw both for a verified external
     // target and for input it could not resolve (e.g. `/repo/src/../_ops/x`);
-    // only the first, or a foreign Win32 drive path, may skip the repository
-    // boundary checks below.
+    // only the first, or for Edit/Write a foreign Win32 drive path, may skip
+    // the repository boundary checks below.
     if (isRepoScopedPath(filePath)
       ? canonicalRepoRelativePath(repoRoot, filePath) !== filePath
-      : repoOnly || (canonicalExternalPath(repoRoot, filePath) === null
-        && !isForeignDriveAbsolutePath(repoRoot, filePath))) {
+      : !externalTargetAllowed(repoRoot, filePath, bashRoots)) {
       return {
         guard: 'RepoScopeGuard',
-        reason: `${filePath} is not a canonical path contained by the current repository.`,
-        fix: 'Use a canonical repository-relative path without traversal or symlink escape.',
+        reason: bashRoots === null
+          ? `${filePath} is not a canonical path contained by the current repository.`
+          : `${filePath} is not a canonical path contained by the current repository or below a Bash write root (${bashRoots.join(', ')}).`,
+        fix: bashRoots === null
+          ? 'Use a canonical repository-relative path without traversal or symlink escape.'
+          : 'Write inside the repository or below a system temp root or the managed worktree root, without traversal or symlink escape.',
       };
     }
     if (protectedRepoDir(filePath) === '_ref') {
