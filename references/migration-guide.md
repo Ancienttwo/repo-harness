@@ -90,7 +90,7 @@ treats mutating update commands as probes.
 8. Run `bash scripts/check-agent-tooling.sh --host both --check-updates` for a
    fresh advisory snapshot when needed.
 9. Run project smoke checks, `check:task-sync`, and `check:task-workflow`.
-10. Run `repo-harness run prepare-handoff migration` if active task state changed.
+10. Record changed task state in the issue or PR.
 11. Run `repo-harness run verify-sprint` when an active sprint review exists.
 12. Commit the migration as one isolated change-set.
 

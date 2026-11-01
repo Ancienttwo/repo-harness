@@ -236,7 +236,7 @@ describe("repo-harness action command skills", () => {
     expect(ciScope).not.toMatch(/#\d{2,}|\b[0-9a-f]{7,40}\b|byok|familyOwners|select-impact/i);
   });
 
-  test("architecture stays focused and root handoff reference stays scoped to handoff packet files", () => {
+  test("architecture stays focused and root handoff reference uses the issue claim board", () => {
     const architecture = readFileSync(join(COMMAND_ROOT, "repo-harness-architecture/references/worker.md"), "utf-8");
     const handoff = readFileSync(join(ROOT, "references", "handoff.md"), "utf-8");
 
@@ -251,9 +251,10 @@ describe("repo-harness action command skills", () => {
     expect(architecture).toContain("Does not run `repo-harness init`");
     expect(architecture).toContain("architecture updates are explicit");
 
-    expect(handoff).toContain("repo-harness run prepare-codex-handoff");
-    expect(handoff).toContain("repo-harness run codex-handoff-resume");
-    expect(handoff).toContain("handoff packet");
+    expect(handoff).toContain("issue claim status");
+    expect(handoff).toContain("Does not write a local handoff, resume or Codex-global packet file.");
+    expect(handoff).not.toContain("prepare-codex-handoff");
+    expect(handoff).not.toContain("codex-handoff-resume");
   });
 
   test("architecture worker runs archctx through the status command and has an adoption flow", () => {

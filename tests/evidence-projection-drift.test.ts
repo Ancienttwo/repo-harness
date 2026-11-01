@@ -2,7 +2,7 @@ import { withTempRepo } from "./helpers/repo-fixture";
 /**
  * EPC-09 Program closeout, Goal 1: cross-package projection-drift check.
  *
- * The remaining EPC-06/07/08 canonical projections (the checkpoint machine/human views, the EPC-07 recovery views,
+ * The remaining EPC-06/07/08 canonical projections (the checkpoint machine/human views,
  * tracked tasks/current.md) claims to be a deterministic recomputation from
  * declared sources (the evidence ledger, or -- for tasks/current.md -- the
  * repo's own tracked workflow artifacts). This suite recomputes each
@@ -14,7 +14,7 @@ import { withTempRepo } from "./helpers/repo-fixture";
  * never silently patched in this package.
  */
 import { describe, expect, test } from "bun:test";
-import { existsSync, mkdirSync, writeFileSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
 
 import { buildCheckpointProjection, renderCheckpointMarkdown } from "../src/core/evidence/checkpoint";
@@ -26,7 +26,6 @@ import {
 } from "../src/effects/evidence/checkpoint-store";
 import { LEDGER_EPOCH_START_SHA } from "../src/effects/evidence/epoch";
 import { appendEvidenceEvent, appendGenesisRecord, readAcceptedEvents } from "../src/effects/evidence/event-log";
-import { materializeRecoveryViews } from "../src/effects/evidence/recovery-materializer";
 
 const REPO_ROOT = join(import.meta.dir, "..");
 const SUBJECT_A = `sha256:${"a".repeat(64)}`;
@@ -156,52 +155,5 @@ describe("projection drift: checkpoint machine/human views", () => {
     expect(recomputed.checkpoint_id).toBe(checkpointId);
     expect(JSON.stringify(recomputed)).toBe(JSON.stringify(projection));
     expect(renderCheckpointMarkdown(recomputed)).toBe(humanView);
-  });
-});
-
-// ---------------------------------------------------------------------------
-// Recovery views (EPC-07): handoff + resume, single hop from the checkpoint
-// ---------------------------------------------------------------------------
-describe("projection drift: recovery views (checkpoint -> handoff/resume)", () => {
-  test("fixture ledger: re-materializing from the same published checkpoint and the same context inputs reproduces byte-identical handoff/resume, and the rendered evidence resolves to the real checkpoint", () => {
-    withTempRepo("drift-recovery-fixture", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
-      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), "{}\n");
-      seedGenesis(repoRoot);
-      const event = seedEvent(repoRoot, { marker: "recovery-drift" });
-      const published = publishCheckpointFromLedger(repoRoot, FIXED_NOW);
-      expect(published.status).toBe("published");
-      if (published.status !== "published") return;
-
-      const options = { reason: "drift-check", now: FIXED_NOW, runId: "drift-fixed-run" };
-      const resultA = materializeRecoveryViews(repoRoot, {}, options);
-      const resultB = materializeRecoveryViews(repoRoot, {}, options);
-
-      expect(resultA.handoff).toBe(resultB.handoff);
-      expect(resultA.resume).toBe(resultB.resume);
-
-      // The rendered claim must resolve to the REAL checkpoint just
-      // published, not a fabricated or stale evidence block.
-      expect(resultA.evidence.available).toBe(true);
-      if (!resultA.evidence.available) return;
-      expect(resultA.evidence.checkpointId).toBe(published.checkpointId);
-      expect(resultA.evidence.sourceEventIds).toEqual([event.event_id]);
-      expect(resultA.handoff).toContain(`- Checkpoint: ${published.checkpointId}`);
-      expect(resultA.handoff).toContain(`verify_sprint.result: ${event.event_id}`);
-      expect(resultA.resume).toContain("<!-- generated-by: repo-harness codex-handoff-resume v1 -->");
-    });
-  });
-
-  test("no checkpoint published yet recomputes to the same typed unavailable state on every call -- never a fabricated evidence claim", () => {
-    withTempRepo("drift-recovery-no-checkpoint", (repoRoot) => {
-      mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
-      writeFileSync(join(repoRoot, ".ai/harness/policy.json"), "{}\n");
-      const env = {};
-      const resultA = materializeRecoveryViews(repoRoot, env, { reason: "drift-check", now: FIXED_NOW });
-      const resultB = materializeRecoveryViews(repoRoot, env, { reason: "drift-check", now: FIXED_NOW });
-      expect(resultA.evidence).toEqual({ available: false, reason: "no-checkpoint" });
-      expect(resultA.handoff).toBe(resultB.handoff);
-      expect(resultA.resume).toBe(resultB.resume);
-    });
   });
 });

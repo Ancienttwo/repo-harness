@@ -126,14 +126,8 @@ function policyPath(policy: WorkflowPolicy, jqPath: string, fallback: string, ro
 /** The edit guard writes failure records here and `summarize-failures` reads them. No policy override (#692). */
 export const FAILURE_LOG_FILE = '.ai/harness/failures/latest.jsonl';
 
-/**
- * Repo-relative workflow paths that the policy may relocate. `handoff` and
- * `resume` serve only the manual prepare-handoff helpers; Effective State
- * reads neither.
- */
+/** Repo-relative workflow paths that the policy may relocate. */
 export interface HarnessPaths {
-  readonly handoff: string;
-  readonly resume: string;
   readonly runsDir: string;
   readonly contextMap: string;
   /** Display text only; nothing reads or writes through it. */
@@ -147,8 +141,6 @@ export interface HarnessPaths {
 export function resolveHarnessPaths(cwd: string): HarnessPaths {
   const policy = readWorkflowPolicy(cwd);
   return {
-    handoff: policyPath(policy, '.harness.handoff_file', '.ai/harness/handoff/current.md'),
-    resume: policyPath(policy, '.handoff_resume.resume_packet_file', '.ai/harness/handoff/resume.md'),
     runsDir: policyPath(policy, '.harness.runs_dir', '.ai/harness/runs'),
     contextMap: policyPath(policy, '.context.map_file', '.ai/context/context-map.json', '.ai/context'),
     researchDir: policyString(policy, '.tasks.research_dir', 'docs/researches'),

@@ -804,7 +804,6 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from the global registry and explicit allowed discovery roots. Pass query, name, or repo_path for repo-like user inputs such as "my-app/".', inputSchema: discoverySchema, annotations: readOnly },
     { name: 'list_workflow_files', description: 'List policy-readable workflow files. Pass repo_path to target a registered adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'read_workflow_file', description: 'Read one policy-allowed workflow file path from the current or target registered repo.', inputSchema: stringPathSchema, annotations: readOnly },
-    { name: 'latest_handoff', description: 'Return latest repo-harness handoff artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'list_prds', description: 'List PRD artifacts under docs/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
     ...buildStateToolDefinitions(),
@@ -1034,19 +1033,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
           redactions: redacted.redactions,
           content: redacted.text,
         });
-      }
-      case 'latest_handoff': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const paths = ['.ai/harness/handoff/resume.md', '.ai/harness/handoff/task-goal.md', '.ai/harness/handoff/chatgpt-plan.md'];
-        const handoff = paths.map((path) => {
-          const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'read');
-          if (!decision.ok || !decision.absolutePath || !existsSync(decision.absolutePath)) return { path, exists: false };
-          const content = redactMcpText(readFileSync(decision.absolutePath, 'utf-8')).text;
-          return { path, exists: true, preview: content.split(/\r?\n/).slice(0, 10).join('\n').slice(0, 1600) };
-        });
-        audit(ctx, name, 'ok', args);
-        return textResult({ handoff });
       }
       case 'latest_checks': {
         const target = targetRepoRoot(ctx, args);

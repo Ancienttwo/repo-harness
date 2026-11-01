@@ -1,29 +1,27 @@
 # Root Reference: Handoff
 
-Runtime helpers: `scripts/prepare-codex-handoff.sh` and
-`scripts/codex-handoff-resume.sh`.
+Use when work must resume later in another session or with another agent.
 
-Use when the user wants to save, refresh, or resume the repo-local handoff
-surface without running a full check or repair pass.
+The GitHub issue, its claim comments and the PR carry the session handoff. No
+local file carries resume state. `.ai/harness/handoff/` holds only the MCP
+bridge inputs `task-goal.md` and `chatgpt-plan.md`.
 
 ## Protocol
 
-1. Confirm the target repo path and handoff reason.
-2. To prepare a rollover packet, run `repo-harness run prepare-codex-handoff --reason <reason>`.
-3. Use `--print-prompt` when the user needs the exact fresh-session prompt.
-4. To resume from an existing packet, run `repo-harness run codex-handoff-resume --cwd <repo> --reason <reason> --print-prompt`.
-5. Verify the handoff files exist and are current: `.ai/harness/handoff/current.md` and `.ai/harness/handoff/resume.md`.
-6. Report the exact next step from the handoff packet.
+1. Confirm the issue, the branch and the claim that the work runs under.
+2. Push the branch head that the next session continues from.
+3. Post an `issue claim status` comment on the issue. Give the branch, the head
+   SHA, what is done, what is left and the next command.
+4. When the seat moves to another agent, post a `handoff` comment that names
+   the next head owner and the exact head SHA.
+5. To resume, read the issue with all comments, the latest claim status and
+   the PR. Continue from the next command that the latest status gives.
 
-## Failure Modes
-
-- If there is no active plan, the resume packet must report `(none)` for plan, contract, and notes.
-- If `resume.md` is older than `current.md`, regenerate with `repo-harness run prepare-codex-handoff`.
-- If the user asks for readiness, route to the check workflow instead of expanding this reference.
+The comment shapes are in
+`assets/skills/repo-harness-issue-flow/references/templates.md`.
 
 ## Boundaries
 
-- Does not run `/check`.
-- Does not run `repo-harness run check-task-workflow` unless the user asks for readiness verification.
-- Does not mutate plans, tasks, source code, or architecture docs except the handoff packet files.
-- Does not replace task sync, review, or release-readiness checks.
+- Does not write a local handoff, resume or Codex-global packet file.
+- Does not run `/check`. Route a readiness request to the check workflow.
+- A handoff comment does not grant commit, push, merge or deletion authority.

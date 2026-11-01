@@ -23,8 +23,8 @@ This Skill has four modes:
 Before acting, read the repo-local source of truth that matches the mode:
 
 - Setup: `docs/repo-harness-chatgpt-mcp-setup.md`, `.repo-harness/mcp.local.json` if present, and `repo-harness mcp doctor --repo .`.
-- Planning handoff: `docs/spec.md`, `tasks/lessons.md`, existing `docs/prds/`, and latest `.ai/harness/handoff/`.
-- Execution: the prepared Goal prompt, the current GitHub issue, any referenced PRD under `docs/prds/`, `tasks/lessons.md`, and `.ai/harness/handoff/resume.md` when present.
+- Planning handoff: `docs/spec.md`, `tasks/lessons.md`, existing `docs/prds/`, and the bridge files `.ai/harness/handoff/task-goal.md` and `.ai/harness/handoff/chatgpt-plan.md` when present.
+- Execution: the prepared Goal prompt, the current GitHub issue and its claim comments, any referenced PRD under `docs/prds/`, and `tasks/lessons.md`.
 
 Do not rely on chat history when these files exist.
 
@@ -32,7 +32,7 @@ Do not rely on chat history when these files exist.
 
 1. Treat ChatGPT as planner/reviewer and Codex as executor.
 2. Prefer `repo-harness mcp` CLI commands over manual file edits when preparing setup or handoff artifacts.
-3. In planner mode, keep ChatGPT write access limited to PRDs under `docs/prds/`, `tasks/lessons.md`, and approved handoff artifacts. Direct source writes require the separate coding profile.
+3. In planner mode, keep ChatGPT write access limited to PRDs under `docs/prds/`, `tasks/lessons.md`, and the two bridge files under `.ai/harness/handoff/`. Direct source writes require the separate coding profile.
 4. Treat the GitHub issue as task authority. A PRD or other planning document does not widen execution scope.
 5. Prepare Goal prompts from an OPEN GitHub issue; do not invent task identity from local files.
 6. Report exact commands run, files changed, checks passed, and any remaining blocker.

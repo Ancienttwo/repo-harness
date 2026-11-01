@@ -58,7 +58,7 @@ Record only artifacts selected for this task. Omit unused optional contract entr
 ## Handoff
 
 - Verification: declare and execute a non-empty Verification Plan. Select its native report explicitly.
-- Session handoff: `.ai/harness/handoff/current.md`
+- Session handoff: the issue, the PR and the claim status comments
 
 ## Promotion Gate
 

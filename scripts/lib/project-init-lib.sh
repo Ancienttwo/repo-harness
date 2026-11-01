@@ -1239,11 +1239,6 @@ pi_write_harness_policy() {
       "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
     }
   },
-  "handoff_resume": {
-    "resume_packet_file": ".ai/harness/handoff/resume.md",
-    "global_handoff_dir": "~/.codex/handoffs",
-    "auto_start_new_session": false
-  },
   "planning": {
     "pending_orchestration_file": ".ai/harness/planning/pending.json",
     "source_of_truth": "transient host planning bridge only; no repository plan is authoritative"
