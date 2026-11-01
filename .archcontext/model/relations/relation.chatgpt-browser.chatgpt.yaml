@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.chatgpt-browser.chatgpt"
-kind: "calls"
-source: "capability.runtime-mcp.chatgpt-browser"
-target: "external.chatgpt"
-intent: "Drive ChatGPT sessions through Chrome or oracle."

@@ -283,7 +283,7 @@ provider_skill_for_root() {
   [[ -n "$host" ]] && grep -Fxq "$host $wanted" <<< "$PROVIDER_PLACEMENTS"
 }
 
-# An integration (for example repo-harness-chatgpt) is linked by its own
+# An integration skill is linked by its own
 # explicit setup command. Facade preflight and retirement never own it.
 integration_skill() {
   [[ -n "$INTEGRATION_NAMES" ]] && grep -Fxq "$1" <<< "$INTEGRATION_NAMES"

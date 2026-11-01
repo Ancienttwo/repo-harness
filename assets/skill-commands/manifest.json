@@ -298,25 +298,6 @@
       "audience": "bot"
     },
     {
-      "name": "repo-harness-chatgpt",
-      "kind": "integration",
-      "source": "assets/skills/repo-harness-chatgpt",
-      "provider": null,
-      "hosts": [
-        "claude",
-        "codex",
-        "pi"
-      ],
-      "profiles": [],
-      "discoverability": "explicit-setup",
-      "component": "host-adapters",
-      "requires": [],
-      "mutatesRepoByDefault": true,
-      "summary": "Canonical rule owner for repo-harness ChatGPT integration: Oracle-first browser/GPT Pro consult and continuation, MCP Connector setup, MCP bridge planning handoff, and Connector invocation read-back evidence. Additive only after an explicit ChatGPT setup action; never implied by either install profile.",
-      "retirementCandidate": null,
-      "audience": "bot"
-    },
-    {
       "name": "herdr",
       "kind": "external",
       "source": null,
@@ -773,8 +754,8 @@
     },
     {
       "name": "repo-harness-gptpro",
-      "replacement": "repo-harness-chatgpt",
-      "note": "Consolidated into repo-harness-chatgpt's consult/continue/read-back references.",
+      "replacement": null,
+      "note": "Consolidated into repo-harness-chatgpt's consult/continue/read-back references. repo-harness-chatgpt itself was removed in #1354 with no replacement.",
       "cleanup": [
         {
           "actionId": "retired-skill-facades",
@@ -792,8 +773,8 @@
     },
     {
       "name": "repo-harness-gptpro-setup",
-      "replacement": "repo-harness-chatgpt",
-      "note": "Consolidated into repo-harness-chatgpt's setup reference.",
+      "replacement": null,
+      "note": "Consolidated into repo-harness-chatgpt's setup reference. repo-harness-chatgpt itself was removed in #1354 with no replacement.",
       "cleanup": [
         {
           "actionId": "retired-skill-facades",
@@ -825,13 +806,13 @@
     },
     {
       "name": "repo-harness-chatgpt-bridge",
-      "replacement": "repo-harness-chatgpt",
-      "note": "Consolidated into repo-harness-chatgpt's bridge reference. The installed runtime skill name repo-harness-chatgpt-bridge remains the canonical bridge.md-frontmatter-driven projection identity for the MCP connector, generated on demand rather than shipped as a static directory."
+      "replacement": null,
+      "note": "Consolidated into repo-harness-chatgpt's bridge reference. The bridge, its mcp install-skill projection and repo-harness-chatgpt were removed in #1354 with no replacement."
     },
     {
       "name": "repo-harness-chatgpt-browser",
-      "replacement": "repo-harness-chatgpt",
-      "note": "Consolidated into repo-harness-chatgpt's continue reference. The underlying browser/session CLI engine at src/cli/chatgpt-browser survives unchanged, documented at docs/repo-harness-chatgpt-browser-engine.md."
+      "replacement": null,
+      "note": "Consolidated into repo-harness-chatgpt's continue reference. The browser/session CLI engine and repo-harness-chatgpt were removed in #1354 with no replacement."
     },
     {
       "name": "claude-review",

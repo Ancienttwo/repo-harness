@@ -16,9 +16,6 @@ const at = (time: number) => new Date(time).toISOString();
 /** The observation pin the server compares a running Herdr server against. */
 const EXPECTED = { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION };
 const REGISTRY_REVISION = `sha256:${'4c'.repeat(32)}`;
-export const HERMES_CLIENT = '3f6c1a2e-8b9d-4e5f-a1b2-c3d4e5f60718';
-export const EXECUTOR_CLIENT = '9b2d7e41-5a6c-4f80-b3d2-1e0f9a8c7b65';
-const IDLE_CLIENT = 'c0ffee00-1234-4abc-9def-0123456789ab';
 
 function notifyStatus(now: number, enabled: NotifyStatusV1['enabled'], last: NotifyDeliveryV1): NotifyStatusV1 {
   return {
@@ -28,26 +25,20 @@ function notifyStatus(now: number, enabled: NotifyStatusV1['enabled'], last: Not
   };
 }
 
-/** Every section read: two registered Bots, three OAuth clients, an aligned Herdr server with three agent panes. */
+/** Every section read: two registered Bots, an aligned Herdr server with three agent panes. */
 export function busyBotAccess(now: number): BotAccessSnapshotV1 {
   const sent = at(now - 40 * MINUTE);
   return {
     protocol: 1, kind: 'operator_bot_access', observed_at: at(now - 20_000),
     bots: { state: 'ok', bots: [
-      { bot_id: 'grok-pm', name: 'Grok PM', host: 'Grok', mcp_client_id: null, slack_bot_id: null, herdr_agent: 'grok-pm' },
-      { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: HERMES_CLIENT, slack_bot_id: 'B07HERMES1', herdr_agent: 'hermes' },
+      { bot_id: 'grok-pm', name: 'Grok PM', host: 'Grok', slack_bot_id: null, herdr_agent: 'grok-pm' },
+      { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B07HERMES1', herdr_agent: 'hermes' },
     ] },
     mcp: { state: 'ok', doctor: {
-      status: 'ready_user', package_version: '0.25.0', config_version_ok: true, auth_mode: 'oauth', auth_configured: true,
-      capabilities: { workspace_reader: true, workflow_planner: true, workflow_executor: true, workspace_coder: false },
-      registered_repo_count: 3, allowed_root_count: 1, unsafe_allowed_root_count: 0, legacy_full_disk_read: false, authorization_revision: 12,
-      codex: { cli_available: true, configured: true }, chatgpt: { server_name_configured: true, public_endpoint_configured: true },
+      status: 'ready_user', package_version: '0.25.0', config_version_ok: true,
+      capabilities: { workspace_reader: true, workflow_planner: true, workflow_executor: true },
+      registered_repo_count: 3, allowed_root_count: 1, unsafe_allowed_root_count: 0, legacy_full_disk_read: false,
     } },
-    oauth: { state: 'ok', unreadable_clients: 0, clients: [
-      { client_id: HERMES_CLIENT, bot: { state: 'registered', bot_id: 'hermes' }, issued_at: at(now - 9 * DAY), profiles: ['planner'], expires_at: at(now + 21 * DAY + 3 * HOUR) },
-      { client_id: EXECUTOR_CLIENT, bot: { state: 'unregistered' }, issued_at: at(now - 28 * DAY), profiles: ['executor'], expires_at: at(now + 2 * DAY - HOUR) },
-      { client_id: IDLE_CLIENT, bot: { state: 'unregistered' }, issued_at: at(now - 64 * DAY), profiles: [], expires_at: null },
-    ] },
     registry: { state: 'ok', authorization_revision: 12, registry_revision: REGISTRY_REVISION, repos: [
       { repo_id: HARNESS_ID, label: 'repo-harness', access_mode: 'read_write',
         last_audit: { state: 'ok', entry: { at: at(now - 12 * MINUTE), tool: 'write_plan', status: 'ok', bot: { state: 'registered', bot_id: 'hermes' } } } },
@@ -84,9 +75,6 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
     protocol: 1, kind: 'operator_bot_access', observed_at: at(now - 6 * MINUTE),
     bots: { state: 'unavailable', reason: 'bot_registry_invalid' },
     mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
-    oauth: { state: 'ok', unreadable_clients: 1, clients: [
-      { client_id: EXECUTOR_CLIENT, bot: { state: 'unavailable' }, issued_at: at(now - 29 * DAY), profiles: ['executor'], expires_at: at(now + 20 * HOUR) },
-    ] },
     registry: { state: 'ok', authorization_revision: 12, registry_revision: REGISTRY_REVISION, repos: [
       { repo_id: HARNESS_ID, label: 'repo-harness', access_mode: 'read_write', last_audit: { state: 'unavailable', reason: 'audit_unreadable' } },
       { repo_id: SITE_ID, label: 'operator-site', access_mode: 'read_only',

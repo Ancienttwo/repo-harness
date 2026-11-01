@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { decodeBotAccessSnapshot, type BotAccessSnapshotV1, type BotAttribution, type OAuthClientProjection } from '../core/operator/bot-access';
+import { decodeBotAccessSnapshot, type BotAccessSnapshotV1, type BotAttribution } from '../core/operator/bot-access';
 import { asApiError } from './fleet-api';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -68,23 +68,9 @@ export function botLabel(snapshot: BotAccessSnapshotV1, bot: BotAttribution): Bo
   return { kind: 'registered', name: record?.name ?? bot.bot_id };
 }
 
-const DAY_MS = 86_400_000;
-
-/** `none`: no live grant. `unknown`: a live grant records no end. */
-export type TokenLife = { readonly kind: 'none' } | { readonly kind: 'unknown' } | { readonly kind: 'expired' } | { readonly kind: 'days'; readonly days: number };
-
-/** The collector lists a profile only for a live grant, so a client without profiles holds no live token. */
-export function tokenLife(client: OAuthClientProjection, now: number): TokenLife {
-  if (client.profiles.length === 0) return { kind: 'none' };
-  if (client.expires_at === null) return { kind: 'unknown' };
-  const left = Date.parse(client.expires_at) - now;
-  return left <= 0 ? { kind: 'expired' } : { kind: 'days', days: Math.floor(left / DAY_MS) };
-}
-
 // Access changes are credential and permission operations: the page only gives the command.
 export const MCP_DOCTOR_COMMAND = 'repo-harness mcp doctor';
 /** `--repo` takes the repository's local path, which the page never shows, so the path stays a placeholder. */
 export const MCP_ACCESS_COMMAND = 'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write';
-export const revokeCommand = (clientId: string): string => `repo-harness mcp clients revoke ${clientId}`;
 /** `herdr notify install` needs the session; without an install record the session is unknown. */
 export const notifyInstallCommand = (session: string | null): string => `repo-harness herdr notify install --session ${session ?? '<session>'}`;

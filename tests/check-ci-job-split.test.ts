@@ -288,13 +288,24 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['agents/fleet/example.md'], sources, [])).toEqual(['tests/default.test.ts', 'tests/export.test.ts', 'tests/fleet.test.ts']);
   });
 
-  test('retains directories returned by the real canonical ChatGPT skill source', async () => {
+  test('retains directories returned through a named constant and an environment branch', async () => {
+    const source = [
+      "import { dirname, isAbsolute, join, resolve } from 'path';",
+      "import { fileURLToPath } from 'url';",
+      "export const SKILL_NAME = 'example-skill';",
+      "const PACKAGE_ROOT = resolve(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');",
+      'export function skillRoot(): string {',
+      '  const sourceRoot = process.env.REPO_HARNESS_SOURCE_ROOT?.trim();',
+      "  if (sourceRoot) return join(sourceRoot, 'assets', 'skills', SKILL_NAME);",
+      "  return join(PACKAGE_ROOT, 'assets', 'skills', SKILL_NAME);",
+      '}',
+    ].join('\n');
     const sources = new Map([
-      ['assets/skills/repo-harness-chatgpt/SKILL.md', '# Skill'],
-      ['src/cli/chatgpt-skill/source.ts', readFileSync(join(ROOT, 'src/cli/chatgpt-skill/source.ts'), 'utf8')],
-      ['tests/skill-root.test.ts', "import '../src/cli/chatgpt-skill/source';"],
+      ['assets/skills/example-skill/SKILL.md', '# Skill'],
+      ['src/cli/example-skill/source.ts', source],
+      ['tests/skill-root.test.ts', "import '../src/cli/example-skill/source';"],
     ]);
-    expect(await selectAffectedTests(['assets/skills/repo-harness-chatgpt/SKILL.md'], sources, [])).toEqual(['tests/skill-root.test.ts']);
+    expect(await selectAffectedTests(['assets/skills/example-skill/SKILL.md'], sources, [])).toEqual(['tests/skill-root.test.ts']);
   });
 
   test('path transformations retain directories passed through returned or exported values', async () => {

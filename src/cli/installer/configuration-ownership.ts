@@ -62,9 +62,19 @@ function jsonObject(raw: string): Record<string, any> {
   return value;
 }
 
+/**
+ * `mcp_servers.repo_harness` stays a valid selector so that an older home
+ * receipt or pending entry that names it still parses. No writer records it.
+ * The repository receipts that the removed `mcp setup codex` wrote have no
+ * reader; `mcp doctor` names them as retired state (#1354).
+ */
 function validSelector(path: string, selector: string): boolean {
   if (path.endsWith('.toml')) return selector === 'default_mode_request_user_input' || selector === 'mcp_servers.codegraph' || selector === 'mcp_servers.repo_harness';
   return selector === 'mcpServers.codegraph' || selector === 'allowedTools.codegraph';
+}
+
+function recordedSelectors(path: string): string[] {
+  return path.endsWith('.toml') ? ['default_mode_request_user_input', 'mcp_servers.codegraph'] : ['mcpServers.codegraph', 'allowedTools.codegraph'];
 }
 
 function tomlValue(raw: string, selector: string): unknown {
@@ -174,7 +184,7 @@ export function recordConfigurationChange(path: string, before: string, after: s
   assertConfigurationPath(path, root);
   const receipt = readConfigurationReceipt(root);
   if (receipt.pending && receipt.pending.id !== pendingId) throw new Error(`interrupted configuration transaction; preimage retained at ${configurationReceiptPath(root)}`);
-  const selectors = path.endsWith('.toml') ? ['default_mode_request_user_input', 'mcp_servers.codegraph', 'mcp_servers.repo_harness'] : ['mcpServers.codegraph', 'allowedTools.codegraph'];
+  const selectors = recordedSelectors(path);
   for (const selector of selectors) {
     const previous = readConfigurationFragment(path, before, selector);
     const installed = readConfigurationFragment(path, after, selector);
@@ -225,8 +235,7 @@ export function withConfigurationMutation<T>(paths: readonly string[], root: str
     return { path, raw: existsSync(path) ? readFileSync(path, 'utf8') : '' };
   });
   const id = randomUUID();
-  receipt.pending = { id, before: before.flatMap(({ path, raw }) => (path.endsWith('.toml')
-    ? ['default_mode_request_user_input', 'mcp_servers.codegraph', 'mcp_servers.repo_harness'] : ['mcpServers.codegraph', 'allowedTools.codegraph'])
+  receipt.pending = { id, before: before.flatMap(({ path, raw }) => recordedSelectors(path)
     .map((selector) => ({ path, selector, value: readConfigurationFragment(path, raw, selector) }))) };
   saveConfigurationReceipt(receipt, root);
   const result = mutate();

@@ -9,7 +9,8 @@
   "summary": "Builds one MCP server per context and dispatches every tool call to the exact profile tool block.",
   "responsibilities": [
     "Build the server instructions and the closed tool inventory for the selected profile.",
-    "Route each tool call to the state, Fleet, coding, reader or Herdr task-dispatch block.",
+    "Load the user-level config once per server context and refuse a legacy repo-scope config.",
+    "Route each tool call to the workflow, state, publication readiness or reader tool block.",
     "Serve the PM MCP binding beside the main server."
   ],
   "source": {
@@ -18,7 +19,6 @@
       "src/cli/mcp/tools.ts",
       "src/cli/mcp/state-tools.ts",
       "src/cli/mcp/fleet-tools.ts",
-      "src/cli/mcp/herdr-tools.ts",
       "src/cli/mcp/instructions.ts",
       "src/cli/mcp/version.ts"
     ],
@@ -34,6 +34,27 @@
                 "id": "sink.mcp-sidecar.path-policy",
                 "path": "src/cli/mcp/paths.ts",
                 "symbol": "resolveMcpPath"
+              }
+            ]
+          }
+        ]
+      },
+      {
+        "id": "entrypoint.mcp-sidecar.tool-context",
+        "path": "src/cli/mcp/server.ts",
+        "symbols": [
+          {
+            "name": "createMcpToolContext",
+            "sinks": [
+              {
+                "id": "sink.mcp-sidecar.startup-config",
+                "path": "src/cli/mcp/auth.ts",
+                "symbol": "loadMcpLocalConfig"
+              },
+              {
+                "id": "sink.mcp-sidecar.legacy-refusal",
+                "path": "src/cli/mcp/auth.ts",
+                "symbol": "assertNoLegacyRepoScopeMcpConfig"
               }
             ]
           }

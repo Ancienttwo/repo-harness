@@ -25,8 +25,7 @@ installs six on Claude and five on Codex. `src/cli/hook/route-registry.ts` is
 the authority for these counts.
 Profile switching removes only package-owned surfaces. Unknown or modified
 canonical/facade directories fail closed before mutation; user-authored
-content is preserved. ChatGPT remains an explicit setup surface and is not
-implied by either profile.
+content is preserved.
 
 `repo-harness update` reads the recorded protocol-2 profile and refreshes that
 projection; when no state exists, its fallback is `full`. Adapter-only refresh

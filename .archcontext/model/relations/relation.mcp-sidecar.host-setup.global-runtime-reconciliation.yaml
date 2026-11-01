@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.host-setup.global-runtime-reconciliation
+kind: reads
+source: component.mcp-sidecar.host-setup
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Resolve host skill roots to name leftover ChatGPT skill links for mcp doctor"

@@ -396,11 +396,6 @@ export function isImplementationSurfacePath(path: string): boolean {
   return !isWorkflowSurfacePath(path);
 }
 
-/** The two MCP bridge files that still live under handoff/; no session recovery files remain. */
-function isHandoffBridgePath(path: string): boolean {
-  return path === '.ai/harness/handoff/task-goal.md' || path === '.ai/harness/handoff/chatgpt-plan.md';
-}
-
 function isOperationalReviewPath(path: string): boolean {
   return (
     /^tasks\/(?:contracts|reviews|notes|archive)\//.test(path) ||
@@ -411,7 +406,6 @@ function isOperationalReviewPath(path: string): boolean {
     path.startsWith('.ai/harness/checks/') ||
     path.startsWith('.ai/harness/evidence/') ||
     path.startsWith('.ai/harness/failures/') ||
-    isHandoffBridgePath(path) ||
     path.startsWith('.ai/harness/planning/') ||
     path.startsWith('.ai/harness/runs/') ||
     path.startsWith('.ai/harness/state/') ||

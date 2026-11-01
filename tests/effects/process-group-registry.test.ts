@@ -21,13 +21,7 @@ const SERVICE_SOURCE = `
 const [site, dir] = process.argv.slice(2);
 const SRC = ${JSON.stringify(SRC)};
 const signal = new AbortController().signal;
-if (site === 'mcp' || site === 'restart-mcp') {
-  const { McpProcessSessionManager } = await import(SRC + '/cli/mcp/process-sessions.ts');
-  const manager = new McpProcessSessionManager();
-  if (site === 'mcp') {
-    await manager.start({ ownerId: 'o', workspaceId: 'w', command: 'sleep 300 & sleep 301; wait', cwd: dir, workspaceRoot: dir, yieldTimeMs: 0 });
-  }
-} else if (site === 'setup') {
+if (site === 'setup') {
   const { runSetupProcess } = await import(SRC + '/effects/setup/collector.ts');
   void runSetupProcess(['-e', 'require("child_process").spawnSync("sleep", ["302"])'], { cwd: dir, env: process.env, timeout_ms: 600000, signal });
 } else if (site === 'dev-activity') {
@@ -138,7 +132,6 @@ function registerFixture(root: string, site: string): { home: string; writer: Ch
 
 describe('detached process group registry', () => {
   for (const [site, restart] of [
-    ['mcp', 'restart-mcp'],
     ['setup', 'restart-operator'],
     ['dev-activity', 'restart-operator'],
     ['operator', 'restart-operator'],

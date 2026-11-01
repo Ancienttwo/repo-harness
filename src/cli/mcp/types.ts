@@ -1,4 +1,4 @@
-export type McpProfileName = 'planner' | 'executor' | 'orchestrator' | 'coding';
+export type McpProfileName = 'planner' | 'executor';
 export type McpPathIntent = 'read' | 'write';
 
 export interface McpPolicy {
@@ -9,18 +9,12 @@ export interface McpPolicy {
     workspaceReader: boolean;
     workflowPlanner: boolean;
     workflowExecutor: boolean;
-    workspaceCoder: boolean;
-    taskDispatch: boolean;
-    publicationMerge: boolean;
   };
   readGlobs: string[];
   writeGlobs: string[];
   denyGlobs: string[];
   allowAbsoluteRead?: boolean;
   maxFileBytes: number;
-  execution: {
-    codingShell: boolean;
-  };
 }
 
 export interface McpPathDecision {
@@ -53,17 +47,4 @@ export interface McpAuditEntry {
   targetPath?: string;
   inputHash?: string;
   error?: string;
-  sessionId?: number;
-  commandHash?: string;
-  relativeCwd?: string;
-  exitCode?: number;
-  signal?: string;
-  totalOutputBytes?: number;
-  droppedOutputBytes?: number;
-  pr_number?: number;
-  head_sha?: string;
-  base_sha?: string;
-  /** Result code of a publication merge: `merged` or the executor error code. */
-  outcome?: string;
-  merge_commit_sha?: string;
 }

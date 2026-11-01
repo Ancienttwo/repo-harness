@@ -131,7 +131,7 @@ then `repo-harness uninstall --recover-interrupted` to apply it. This explicit
 recovery restores the recorded fragments even if they were edited after interruption;
 sibling fields remain. The target must include every affected host.
 
-Package-manager globals, the official Codex plugin, independent MCP setup/workspaces,
+Package-manager globals, the official Codex plugin, the MCP config,
 archives and runtime history remain. Repository unadoption and package removal are
 separate operations; this command does not enumerate other repositories or remove
 third-party packages. Remove the CLI package only after configuration cleanup.

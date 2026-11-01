@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
-id: flow.mcp-sidecar.http-session
+id: flow.mcp-sidecar.stdio-session
 capabilityId: capability.runtime-harness.mcp-sidecar
-name: Serve an authorized HTTP MCP session
+name: Serve a stdio MCP session
 applicability: required
 participants:
   - id: cli
@@ -16,27 +16,27 @@ steps:
   - id: start-transport
     from: cli
     to: transport
-    label: mcp serve starts the HTTP transport
+    label: mcp serve starts the stdio transport
     evidence:
       entrypointId: entrypoint.mcp-sidecar.cli
       sourceSymbol: buildMcpCommand
-      sinkId: sink.mcp-sidecar.http-start
-  - id: load-startup-config
-    from: transport
-    to: policy
-    label: Load the user-level config and credentials and fix the startup profile
-    evidence:
-      entrypointId: entrypoint.mcp-sidecar.http-transport
-      sourceSymbol: startMcpHttp
-      sinkId: sink.mcp-sidecar.startup-config
-  - id: create-session-server
+      sinkId: sink.mcp-sidecar.stdio-start
+  - id: create-server
     from: transport
     to: dispatch
-    label: Create one MCP server for the new authorized session
+    label: Create one MCP server for the startup profile
     evidence:
-      entrypointId: entrypoint.mcp-sidecar.http-transport
-      sourceSymbol: handleMcpPost
+      entrypointId: entrypoint.mcp-sidecar.stdio-transport
+      sourceSymbol: startMcpStdio
       sinkId: sink.mcp-sidecar.session-server
+  - id: load-config
+    from: dispatch
+    to: policy
+    label: Load the user-level config and refuse a retired key
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.tool-context
+      sourceSymbol: createMcpToolContext
+      sinkId: sink.mcp-sidecar.startup-config
 outcomes:
   - id: success
     kind: success
@@ -55,16 +55,16 @@ outcomes:
       label: Return the redacted tool result
   - id: error
     kind: error
-    label: Local profile changed after startup
+    label: Repository keeps a legacy repo-scope MCP config
     steps:
-      - id: recheck-profile
-        from: transport
+      - id: refuse-legacy-config
+        from: dispatch
         to: policy
-        label: Reload the config for a new session and refuse a profile that differs from the startup profile
+        label: Refuse the legacy repo-scope config before the server starts
         evidence:
-          entrypointId: entrypoint.mcp-sidecar.http-transport
-          sourceSymbol: handleMcpPost
-          sinkId: sink.mcp-sidecar.request-config
+          entrypointId: entrypoint.mcp-sidecar.tool-context
+          sourceSymbol: createMcpToolContext
+          sinkId: sink.mcp-sidecar.legacy-refusal
     terminal:
-      participant: transport
-      label: Return 503 PROFILE_CHANGED without creating a session
+      participant: dispatch
+      label: Exit with the legacy config error and serve no tool

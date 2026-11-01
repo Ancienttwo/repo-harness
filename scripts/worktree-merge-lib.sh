@@ -2,8 +2,7 @@
 # Single authority for "is this contract worktree branch already in the target".
 #
 # Sourced by scripts/contract-worktree.sh (single-slug cleanup). Run by the
-# TypeScript worktree topology (the cleanup barrier and the sweep) and by the
-# MCP coding workspace cleanup (src/cli/mcp/coding-workspaces.ts). Two
+# TypeScript worktree topology (the cleanup barrier and the sweep). Two
 # entrypoints once answered this question independently and disagreed: a batch path checked
 # ancestry only, so every squash-merged worktree -- which is every worktree
 # under this project's house ship flow -- was reported unmerged and skipped,
