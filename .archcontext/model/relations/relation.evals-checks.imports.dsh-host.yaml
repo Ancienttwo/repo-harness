@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.imports.dsh-host
+kind: depends-on
+source: capability.verification.evals-checks
+target: capability.runtime-harness.dsh-host
+intent: "Test DSH Host Plugin behavior through its source modules."
