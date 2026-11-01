@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.imports.codegraph-readiness
+kind: depends-on
+source: capability.runtime-harness.mcp-sidecar
+target: capability.verification.codegraph-readiness
+intent: "Type the reader tool context with the CodeGraph adapter interface"

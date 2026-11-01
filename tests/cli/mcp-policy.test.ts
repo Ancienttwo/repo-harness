@@ -1,16 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
+import { mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, statSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
-import { hashMcpInput, mcpAuditBotForClient, mcpAuditLogPath, runWithMcpAuditBot, tryWriteMcpAuditEntry, writeMcpAuditEntry } from '../../src/cli/mcp/audit';
-import { registerBot } from '../../src/effects/bot-registry';
+import { hashMcpInput, mcpAuditLogPath, tryWriteMcpAuditEntry, writeMcpAuditEntry } from '../../src/cli/mcp/audit';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { redactMcpText } from '../../src/cli/mcp/redaction';
 import { globMatches, normalizeMcpRelativePath, resolveMcpPath } from '../../src/cli/mcp/paths';
 import { buildMcpToolDefinitions, callMcpTool } from '../../src/cli/mcp/tools';
-import { setRepoHarnessAccessMode } from '../../src/effects/repo-registry';
 import { SEGMENTED_LOG_SEGMENT_BYTES } from '../../src/effects/segmented-log';
-import { HEAD as PUBLISH_HEAD, PR as PUBLISH_PR, installFakeGh, passingScenario } from '../helpers/publication-merge-fake-gh';
 
 async function jsonTool(repoRoot: string, policy: ReturnType<typeof getMcpPolicy>, name: string, args: Record<string, unknown> = {}) {
   const result = await callMcpTool({ repoRoot, policy }, name, args);
@@ -76,7 +73,6 @@ describe('mcp policy and paths', () => {
       const executor = getMcpPolicy('executor');
       expect(executor.allowAbsoluteRead).toBe(false);
       expect(executor.readGlobs).not.toContain('**');
-      expect(executor.execution).toEqual({ codingShell: false });
       expect(resolveMcpPath(tmp, 'tasks/secrets/token.txt', executor, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, '.ai/harness/nested/private.key', executor, 'read')).toMatchObject({ ok: false });
     } finally {
@@ -99,7 +95,6 @@ describe('mcp policy and paths', () => {
       const scoped = getMcpPolicy('planner');
       expect(scoped.allowAbsoluteRead).toBe(false);
       expect(scoped.readGlobs).not.toContain('**');
-      expect(scoped.execution).toEqual({ codingShell: false });
       expect(resolveMcpPath(tmp, join(tmp, '.env'), scoped, 'read')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'docs/prds/readme.md', scoped, 'read')).toMatchObject({
         ok: true,
@@ -182,7 +177,6 @@ describe('mcp policy and paths', () => {
       const executor = getMcpPolicy('executor');
       expect(executor.allowAbsoluteRead).toBe(false);
       expect(executor.readGlobs).not.toContain('**');
-      expect(executor.execution).toEqual({ codingShell: false });
       const executorTools = buildMcpToolDefinitions(executor).map((tool) => tool.name);
       expect(executor.capabilities).toMatchObject({
         workspaceReader: false,
@@ -209,146 +203,6 @@ describe('mcp policy and paths', () => {
       expect(executorWrite.path).toMatch(/^docs\/prds\/\d{8}-\d{4}-executor-write\.prd\.md$/);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test('orchestrator profile exposes exactly the Herdr dispatch tools and the merge executor', async () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-'));
-    const home = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-orchestrator-home-'));
-    const previousHome = process.env.REPO_HARNESS_HOME;
-    process.env.REPO_HARNESS_HOME = home;
-    try {
-      mkdirSync(join(tmp, 'docs/prds'), { recursive: true });
-      mkdirSync(join(tmp, '.ai/harness/handoff'), { recursive: true });
-      writeFileSync(join(tmp, 'docs/prds/existing.prd.md'), '# Existing\n');
-      writeFileSync(join(tmp, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
-      writeFileSync(join(tmp, '.ai/harness/policy.json'), '{}\n');
-      expect(setRepoHarnessAccessMode(tmp, 'read_write').accessMode).toBe('read_write');
-
-      const orchestrator = getMcpPolicy('orchestrator', { enableReader: true });
-      expect(orchestrator.capabilities).toEqual({
-        workspaceReader: false,
-        workflowPlanner: false,
-        workflowExecutor: false,
-        workspaceCoder: false,
-        taskDispatch: true,
-        publicationMerge: true,
-      });
-      expect(orchestrator.execution).toEqual({ codingShell: false });
-      const dispatchTools = ['list_task_agents', 'prompt_task_agent', 'read_task_agent', 'review_publish', 'merge_pull_request'];
-      expect(buildMcpToolDefinitions(orchestrator).map((tool) => tool.name)).toEqual(dispatchTools);
-      expect(buildMcpToolDefinitions(orchestrator, { enableChatgptBrowser: true }).map((tool) => tool.name)).toEqual(dispatchTools);
-      for (const profile of ['planner', 'executor', 'coding'] as const) {
-        const names = buildMcpToolDefinitions(getMcpPolicy(profile)).map((tool) => tool.name);
-        expect(names.filter((name) => dispatchTools.includes(name))).toEqual([]);
-      }
-
-      const deniedTools = ['write_prd', 'read_workflow_file', 'harness_status', 'exec_command', 'open_workspace', 'read_text', 'publication_readiness'];
-      for (const name of deniedTools) {
-        const denied = await jsonTool(tmp, orchestrator, name, { path: 'docs/prds/existing.prd.md' });
-        expect(denied.error.code).toBe('TOOL_NOT_AVAILABLE');
-      }
-      const auditRows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map((line) => JSON.parse(line));
-      expect(auditRows.map((row) => [row.tool, row.status])).toEqual(deniedTools.map((name) => [name, 'blocked']));
-      const blockedReview = await jsonTool(tmp, getMcpPolicy('planner'), 'review_publish', { pr_number: 1, receipt_path: 'receipt.json' });
-      expect(blockedReview.error.code).toBe('TOOL_NOT_AVAILABLE');
-      const missingReceipt = await jsonTool(tmp, orchestrator, 'review_publish', { pr_number: 1, receipt_path: 'missing-receipt.json' });
-      expect(missingReceipt.error.code).toBe('review_receipt_invalid');
-      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', orchestrator, 'read')).toMatchObject({ ok: false });
-      expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', orchestrator, 'read')).toMatchObject({ ok: false });
-    } finally {
-      if (previousHome === undefined) delete process.env.REPO_HARNESS_HOME;
-      else process.env.REPO_HARNESS_HOME = previousHome;
-      rmSync(tmp, { recursive: true, force: true });
-      rmSync(home, { recursive: true, force: true });
-    }
-  });
-
-  test('review_publish requires the exact adopted read_write grant, not allowed roots', async () => {
-    const parent = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-review-grant-'));
-    const previous = { home: process.env.REPO_HARNESS_HOME, gh: process.env.REPO_HARNESS_GH_BIN };
-    process.env.REPO_HARNESS_HOME = join(parent, 'home');
-    try {
-      const granted = join(parent, 'granted');
-      const outsideRepo = join(parent, 'outside');
-      const readOnlyRepo = join(parent, 'read-only');
-      for (const dir of [granted, outsideRepo, readOnlyRepo]) {
-        mkdirSync(join(dir, '.ai/harness'), { recursive: true });
-        writeFileSync(join(dir, '.ai/harness/policy.json'), '{}\n');
-      }
-      expect(setRepoHarnessAccessMode(granted, 'read_write').accessMode).toBe('read_write');
-      expect(setRepoHarnessAccessMode(readOnlyRepo, 'read_only').accessMode).toBe('read_only');
-      const gh = installFakeGh(parent, passingScenario());
-      process.env.REPO_HARNESS_GH_BIN = gh.bin;
-      const receiptPath = join(granted, 'receipt.json');
-      writeFileSync(receiptPath, JSON.stringify({
-        protocol: 1, kind: 'repo-harness-review-publish-receipt', round: 1, subject_sha: PUBLISH_HEAD, risk_tier: 'high',
-        reviewer: { harness: 'codex', actual_model: null }, verdict: 'PASS', model_relation: 'different-family',
-        summary: 'The grant regression is fixed.', findings: [],
-      }));
-      const deny = (policy: ReturnType<typeof getMcpPolicy>, target: string) => jsonTool(granted, policy, 'review_publish', {
-        repo_path: target, pr_number: PUBLISH_PR, receipt_path: join(target, 'receipt.json'),
-      });
-
-      // Empty allowed roots must deny, not permit any target.
-      const emptyRoots = getMcpPolicy('orchestrator');
-      expect(emptyRoots.allowedRoots).toBeUndefined();
-      const outsideDenied = await deny(emptyRoots, outsideRepo);
-      expect(outsideDenied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
-      // Naming the target in allowed roots does not grant write authority.
-      const namedRoots = getMcpPolicy('orchestrator', { allowedRoots: [outsideRepo] });
-      const namedDenied = await deny(namedRoots, outsideRepo);
-      expect(namedDenied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
-      // A read_only row is denied even when allowed roots name it.
-      const readOnlyDenied = await deny(getMcpPolicy('orchestrator', { allowedRoots: [readOnlyRepo] }), readOnlyRepo);
-      expect(readOnlyDenied.error).toMatchObject({ code: 'REPO_NOT_ALLOWED' });
-      expect(readOnlyDenied.error.message).toContain('explicit read_write grant');
-      expect(gh.calls()).toEqual([]);
-
-      // The exact read_write target still publishes.
-      const published = await jsonTool(granted, emptyRoots, 'review_publish', {
-        repo_path: granted, pr_number: PUBLISH_PR, receipt_path: receiptPath,
-      });
-      expect(published).toMatchObject({ ok: true, pr: PUBLISH_PR, head_sha: PUBLISH_HEAD });
-      expect(gh.inputs().filter((entry) => entry.input !== '')).toHaveLength(3);
-    } finally {
-      for (const [key, value] of [['REPO_HARNESS_HOME', previous.home], ['REPO_HARNESS_GH_BIN', previous.gh]] as const) {
-        if (value === undefined) delete process.env[key];
-        else process.env[key] = value;
-      }
-      rmSync(parent, { recursive: true, force: true });
-    }
-  });
-
-  test('coding exposes workflow, publication, and direct coding tools exactly once', () => {
-    const coding = getMcpPolicy('coding');
-    const definitions = buildMcpToolDefinitions(coding);
-    const codingNames = ['open_workspace', 'read', 'apply_patch', 'exec_command', 'write_stdin'];
-    expect(coding.capabilities).toMatchObject({
-      workflowPlanner: true,
-      workspaceReader: false,
-      workspaceCoder: true,
-    });
-    expect(coding.execution).toMatchObject({ codingShell: true });
-    expect(definitions).toHaveLength(18);
-    expect(definitions.filter((tool) => codingNames.includes(tool.name)).map((tool) => tool.name)).toEqual(codingNames);
-    expect(definitions.map((tool) => tool.name)).toContain('write_prd');
-    for (const removed of ['write_sprint', 'write_checklist_sprint', 'write_plan', 'list_sprints', 'prepare_task_goal_from_sprint']) {
-      expect(definitions.map((tool) => tool.name)).not.toContain(removed);
-    }
-    expect(definitions.map((tool) => tool.name)).toEqual(expect.arrayContaining([
-      'publication_readiness',
-    ]));
-    expect(new Set(definitions.map((tool) => tool.name)).size).toBe(definitions.length);
-    expect(definitions.find((tool) => tool.name === 'exec_command')?.annotations).toMatchObject({
-      destructiveHint: true,
-      openWorldHint: true,
-    });
-
-    for (const profile of ['planner', 'executor', 'orchestrator'] as const) {
-      const legacyNames = buildMcpToolDefinitions(getMcpPolicy(profile)).map((tool) => tool.name);
-      expect(legacyNames).not.toContain('exec_command');
-      expect(legacyNames).not.toContain('write_stdin');
     }
   });
 });
@@ -392,32 +246,6 @@ describe('mcp redaction and audit', () => {
       expect(line).toContain('Authorization: Bearer [REDACTED]');
       expect(line).not.toContain('secret body');
       expect(line).not.toContain('token-value');
-    } finally {
-      rmSync(tmp, { recursive: true, force: true });
-    }
-  });
-
-  test('audit rows carry the Bot of the calling OAuth client, or null', () => {
-    const tmp = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-mcp-audit-bot-')));
-    try {
-      const env = { REPO_HARNESS_HOME: join(tmp, 'home') };
-      registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: 'client-a' }, env);
-      expect(mcpAuditBotForClient('client-a', env)).toEqual({ state: 'resolved', botId: 'hermes' });
-      expect(mcpAuditBotForClient('client-z', env)).toEqual({ state: 'resolved', botId: null });
-      expect(mcpAuditBotForClient(undefined, env)).toEqual({ state: 'resolved', botId: null });
-      writeFileSync(join(tmp, 'home', 'bots', 'broken.json'), '{');
-      // An unreadable registry makes the Bot unknown; it never blocks the call.
-      const unknown = mcpAuditBotForClient('client-a', env);
-      expect(unknown).toEqual({ state: 'unavailable' });
-
-      const entry = (tool: string) => ({ timestamp: '2026-10-27T00:00:00.000Z', tool, status: 'ok' as const, inputHash: hashMcpInput({}) });
-      runWithMcpAuditBot({ state: 'resolved', botId: 'hermes' }, () => writeMcpAuditEntry(tmp, entry('from_bot')));
-      runWithMcpAuditBot(unknown, () => writeMcpAuditEntry(tmp, entry('registry_unreadable')));
-      writeMcpAuditEntry(tmp, entry('outside_call'));
-      const rows = readFileSync(mcpAuditLogPath(tmp), 'utf-8').trim().split('\n').map(line => JSON.parse(line));
-      expect(rows.map(row => [row.tool, row.botId, row.botLookup])).toEqual([
-        ['from_bot', 'hermes', undefined], ['registry_unreadable', null, 'unavailable'], ['outside_call', null, undefined],
-      ]);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

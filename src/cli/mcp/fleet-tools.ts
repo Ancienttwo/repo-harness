@@ -11,9 +11,8 @@ import { realpathSync } from 'fs';
 import { resolve } from 'path';
 
 import { MergeReadinessError, assertLocalPullRequestRepository, collectPullRequestMergeReadiness } from '../../effects/publication/merge-readiness';
-import { executePublicationMerge } from '../../effects/publication/merge-executor';
 import { readRepoHarnessRegistrySnapshot, type RepoHarnessRegisteredRepo, type RepoHarnessRegistrySnapshot } from '../../effects/repo-registry';
-import { currentMcpActor, hashMcpInput, tryWriteMcpAuditEntry } from './audit';
+import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
 import type { McpPolicy } from './types';
 
@@ -23,18 +22,14 @@ export const FLEET_MCP_TOOL_NAMES = [
 
 export type FleetMcpToolName = typeof FLEET_MCP_TOOL_NAMES[number];
 
-/** Granted only by the publicationMerge capability; listing and dispatch both check it. */
-export const PUBLICATION_MERGE_TOOL_NAME = 'merge_pull_request';
-
 const PULL_REQUEST_SELECTION_PARAMETERS = ['repo_id', 'repo_path', 'repository', 'provider_repository_id', 'pr_number', 'expected_head_sha', 'expected_base_sha'];
 
-const FLEET_MCP_PARAMETER_NAMES: Readonly<Record<FleetMcpToolName | typeof PUBLICATION_MERGE_TOOL_NAME, readonly string[]>> = Object.freeze({
+const FLEET_MCP_PARAMETER_NAMES: Readonly<Record<FleetMcpToolName, readonly string[]>> = Object.freeze({
   publication_readiness: PULL_REQUEST_SELECTION_PARAMETERS,
-  merge_pull_request: PULL_REQUEST_SELECTION_PARAMETERS,
 });
 
 export interface FleetMcpToolDefinition {
-  readonly name: FleetMcpToolName | typeof PUBLICATION_MERGE_TOOL_NAME;
+  readonly name: FleetMcpToolName;
   readonly description: string;
   readonly inputSchema: Record<string, unknown>;
   readonly annotations: Record<string, unknown>;
@@ -154,7 +149,7 @@ function positiveInteger(args: Record<string, unknown>, name: string): number {
 
 
 /** Validate the actual MCP call envelope; inputSchema is only documentation. */
-export function fleetToolArgumentError(name: FleetMcpToolName | typeof PUBLICATION_MERGE_TOOL_NAME, args: Record<string, unknown>): string | undefined {
+export function fleetToolArgumentError(name: FleetMcpToolName, args: Record<string, unknown>): string | undefined {
   const allowed = FLEET_MCP_PARAMETER_NAMES[name];
   const unknown = Object.keys(args).filter((key) => !allowed.includes(key)).sort();
   if (unknown.length === 0) return undefined;
@@ -229,84 +224,6 @@ function pullRequestSelection(args: Record<string, unknown>) {
     expected_head_sha: requiredString(args, 'expected_head_sha'),
     expected_base_sha: requiredString(args, 'expected_base_sha'),
   };
-}
-
-/**
- * Resolve the exact target repository from the adopted registry and require its
- * explicit read_write grant. This is the only write-authorized target check on
- * the MCP surface; merge_pull_request and review_publish both use it.
- */
-export function resolveGrantedWriteTarget(
-  ctx: FleetMcpToolContext,
-  args: Record<string, unknown>,
-  tool: string,
-): { readonly repoRoot: string; readonly registeredRepo: RepoHarnessRegisteredRepo } {
-  const target = targetFromArgs(ctx, args);
-  if (target.registeredRepo?.accessMode !== 'read_write') {
-    throw new FleetMcpError('REPO_NOT_ALLOWED', `${tool} requires an adopted repo with an explicit read_write grant`);
-  }
-  return { repoRoot: target.repoRoot, registeredRepo: target.registeredRepo };
-}
-
-/** The same executor as `repo-harness publication merge`, bound to a read_write granted checkout of the repository. */
-function callPublicationMerge(ctx: FleetMcpToolContext, args: Record<string, unknown>): FleetMcpToolResult {
-  const target = resolveGrantedWriteTarget(ctx, args, PUBLICATION_MERGE_TOOL_NAME);
-  const selection = pullRequestSelection(args);
-  try { assertLocalPullRequestRepository(target.repoRoot, selection.repository); }
-  catch (error) { throw new FleetMcpError('REPO_NOT_ALLOWED', error instanceof Error ? error.message : String(error)); }
-  const result = executePublicationMerge({ ...publicationEnvironment(), repo_root: target.repoRoot, ...selection });
-  const merged = result.exit_code === 0;
-  const outcome = result.exit_code === 0 ? 'merged' : result.document.error;
-  const audited = tryWriteMcpAuditEntry(ctx.repoRoot, {
-    timestamp: new Date().toISOString(),
-    tool: PUBLICATION_MERGE_TOOL_NAME,
-    status: merged ? 'ok' : result.exit_code === 3 || result.exit_code === 4 ? 'blocked' : 'failed',
-    actor: currentMcpActor(),
-    repoId: target.registeredRepo.id,
-    inputHash: hashMcpInput(args),
-    pr_number: selection.pr_number,
-    head_sha: selection.expected_head_sha,
-    base_sha: selection.expected_base_sha,
-    outcome,
-    ...(result.exit_code === 0 ? { merge_commit_sha: result.document.merge_commit_sha } : { errorCode: outcome }),
-  });
-  // A merged PR stays merged when its audit row cannot be written; the merge is never retried.
-  const auditFlag = audited ? {} : { audit_write_failed: true };
-  if (result.exit_code === 0) return textResult({ ...result.document, ...auditFlag });
-  return errorResult(result.document.error, result.document.message, {
-    exit_code: result.exit_code,
-    ...(result.document.blockers ? { blockers: result.document.blockers } : {}),
-    ...auditFlag,
-  });
-}
-
-export function buildPublicationMergeToolDefinitions(): FleetMcpToolDefinition[] {
-  return [{
-    name: PUBLICATION_MERGE_TOOL_NAME,
-    description: 'Squash-merge one same-repository PR into the default branch through the repo-harness publication merge executor. It merges only when publication.acceptance_merge is "on" in the policy at the PR base, branch protection requires strict checks and enforce_admins, readiness has no blockers, and closing references match.',
-    inputSchema: pullRequestSelectionSchema(),
-    annotations: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: true },
-  }];
-}
-
-/** Merge tool dispatch. The caller checks the publicationMerge capability first. */
-export function callPublicationMergeTool(ctx: FleetMcpToolContext, args: Record<string, unknown> = {}): FleetMcpToolResult {
-  try {
-    const argumentError = fleetToolArgumentError(PUBLICATION_MERGE_TOOL_NAME, args);
-    if (argumentError !== undefined) throw new FleetMcpError('INVALID_ARGUMENT', argumentError);
-    return callPublicationMerge(ctx, args);
-  } catch (error) {
-    tryWriteMcpAuditEntry(ctx.repoRoot, {
-      timestamp: new Date().toISOString(),
-      tool: PUBLICATION_MERGE_TOOL_NAME,
-      status: isBlocked(error) ? 'blocked' : 'failed',
-      actor: currentMcpActor(),
-      inputHash: hashMcpInput(args),
-      error: error instanceof Error ? error.message : String(error),
-      ...(error instanceof FleetMcpError ? { errorCode: error.code } : {}),
-    });
-    return errorFromUnknown(error);
-  }
 }
 
 function errorFromUnknown(error: unknown): FleetMcpToolResult {

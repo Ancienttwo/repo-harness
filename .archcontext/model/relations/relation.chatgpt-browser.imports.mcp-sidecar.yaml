@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.chatgpt-browser.imports.mcp-sidecar",
-  "kind": "depends-on",
-  "source": "capability.runtime-mcp.chatgpt-browser",
-  "target": "capability.runtime-harness.mcp-sidecar",
-  "intent": "Apply shared file policy to browser prompts and sessions."
-}

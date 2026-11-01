@@ -2578,10 +2578,7 @@
             ".agents/skills/auto-campaign",
             ".claude/skills/repo-harness-cross-review",
             ".codex/skills/repo-harness-cross-review",
-            ".agents/skills/repo-harness-cross-review",
-            ".claude/skills/repo-harness-chatgpt",
-            ".codex/skills/repo-harness-chatgpt",
-            ".agents/skills/repo-harness-chatgpt"
+            ".agents/skills/repo-harness-cross-review"
           ],
           "sourcePaths": {
             ".claude/skills/repo-harness-setup": "assets/skills/repo-harness-setup",
@@ -2610,10 +2607,7 @@
             ".agents/skills/auto-campaign": "assets/skills/auto-campaign",
             ".claude/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review",
             ".codex/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review",
-            ".agents/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review",
-            ".claude/skills/repo-harness-chatgpt": "assets/skills/repo-harness-chatgpt",
-            ".codex/skills/repo-harness-chatgpt": "assets/skills/repo-harness-chatgpt",
-            ".agents/skills/repo-harness-chatgpt": "assets/skills/repo-harness-chatgpt"
+            ".agents/skills/repo-harness-cross-review": "assets/skills/repo-harness-cross-review"
           },
           "historicalFingerprints": {
             ".claude/skills/repo-harness-setup": [
@@ -2834,39 +2828,6 @@
               "sha256:ba31016fb654436b161694f6e9c72841a6b8148bb8c1f54d16c33c70ad0f66a3",
               "sha256:c06b4ff6828bcbd4df59f84c5dfc94d868b742e13b86053f6886d3386bdf2e74",
               "sha256:e5db6c4ae6d274f650e80cac1358617b40a20e138a2d1e7191f5d8210c7c4feb"
-            ],
-            ".claude/skills/repo-harness-chatgpt": [
-              "sha256:07bf2f36816fe64eacd8f04902fc0a088a2f742cc90848980d94edc7721ccd98",
-              "sha256:1d0f8d9acb4e11e9f3d8f2029a1eb151ad902829860504b18f4cdd3cae626426",
-              "sha256:3f9e5f5245e13ed74db78ca206665ae0b0553f811781c3bec1e3f11d0cbd39b5",
-              "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
-              "sha256:8afbe3b73e553e44ecb3e62702be5d04ad1b6d076bf10307d17a3e3f1c4b5fce",
-              "sha256:9aa9e8dff5c75be7ebaaa1c1b20b397cbe394174500ee84620fb0b8bc0082ff6",
-              "sha256:b926f38987cdeb06a049ac5afc771aebc9764408eb08f5548d931b14f280f17c",
-              "sha256:d156465499240e8d6676c6fcaa8702161dd1624fb63bf90e82cd03f7a3fad138",
-              "sha256:fe8ed9adeb4b56ef02e893160bf073a1dd0ef052b6d6f98a056e66c75988b91a"
-            ],
-            ".codex/skills/repo-harness-chatgpt": [
-              "sha256:07bf2f36816fe64eacd8f04902fc0a088a2f742cc90848980d94edc7721ccd98",
-              "sha256:1d0f8d9acb4e11e9f3d8f2029a1eb151ad902829860504b18f4cdd3cae626426",
-              "sha256:3f9e5f5245e13ed74db78ca206665ae0b0553f811781c3bec1e3f11d0cbd39b5",
-              "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
-              "sha256:8afbe3b73e553e44ecb3e62702be5d04ad1b6d076bf10307d17a3e3f1c4b5fce",
-              "sha256:9aa9e8dff5c75be7ebaaa1c1b20b397cbe394174500ee84620fb0b8bc0082ff6",
-              "sha256:b926f38987cdeb06a049ac5afc771aebc9764408eb08f5548d931b14f280f17c",
-              "sha256:d156465499240e8d6676c6fcaa8702161dd1624fb63bf90e82cd03f7a3fad138",
-              "sha256:fe8ed9adeb4b56ef02e893160bf073a1dd0ef052b6d6f98a056e66c75988b91a"
-            ],
-            ".agents/skills/repo-harness-chatgpt": [
-              "sha256:07bf2f36816fe64eacd8f04902fc0a088a2f742cc90848980d94edc7721ccd98",
-              "sha256:1d0f8d9acb4e11e9f3d8f2029a1eb151ad902829860504b18f4cdd3cae626426",
-              "sha256:3f9e5f5245e13ed74db78ca206665ae0b0553f811781c3bec1e3f11d0cbd39b5",
-              "sha256:5db6b941e914136fc699b2711415393d403e197b0fbf1e5b6b1c4d45299824c5",
-              "sha256:8afbe3b73e553e44ecb3e62702be5d04ad1b6d076bf10307d17a3e3f1c4b5fce",
-              "sha256:9aa9e8dff5c75be7ebaaa1c1b20b397cbe394174500ee84620fb0b8bc0082ff6",
-              "sha256:b926f38987cdeb06a049ac5afc771aebc9764408eb08f5548d931b14f280f17c",
-              "sha256:d156465499240e8d6676c6fcaa8702161dd1624fb63bf90e82cd03f7a3fad138",
-              "sha256:fe8ed9adeb4b56ef02e893160bf073a1dd0ef052b6d6f98a056e66c75988b91a"
             ]
           },
           "summary": "Refresh unchanged old copies of skills that the current package still ships."

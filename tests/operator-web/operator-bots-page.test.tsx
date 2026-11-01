@@ -3,14 +3,14 @@ import { act } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 
-import { decodeBotAccessSnapshot, type BotAccessSnapshotV1, type OAuthClientProjection } from '../../src/core/operator/bot-access';
+import { decodeBotAccessSnapshot, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
-import { fetchBotAccess, tokenLife, type BotAccessRead, type BotAccessReader } from '../../src/operator-web/bots';
+import { fetchBotAccess, type BotAccessRead, type BotAccessReader } from '../../src/operator-web/bots';
 import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
-import { busyBotAccess, degradedBotAccess, EXECUTOR_CLIENT, HERMES_CLIENT } from '../../src/operator-web/fixtures/bots';
+import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
@@ -130,21 +130,12 @@ describe('navigation', () => {
 });
 
 describe('Bots page', () => {
-  test('1-BOTS-P1 one section per path; each MCP client names its Bot, profile and token days, each repository its mode and last call', async () => {
+  test('1-BOTS-P1 one section per path; each repository names its mode and last call', async () => {
     await mount('#bots', props(serve(ok(busyBotAccess(NOW)))));
     expect(all('[data-bots-section]').map(element => element.getAttribute('data-bots-section'))).toEqual(['mcp', 'notify', 'herdr']);
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.getAttribute('data-mcp-status')).toBe('ready_user');
-    const clients = all('[data-oauth-client]', mcp);
-    expect(clients.map(row => row.getAttribute('data-oauth-client'))).toEqual([HERMES_CLIENT, EXECUTOR_CLIENT, 'c0ffee00-1234-4abc-9def-0123456789ab']);
-    expect(clients.map(row => row.querySelector('[data-bot]')?.textContent)).toEqual(['Hermes', 'Unregistered', 'Unregistered']);
-    expect(clients.map(row => row.querySelector('[data-token]')?.textContent)).toEqual(['token 21d left', 'token 1d left', 'no live token']);
-    expect(clients[0]!.textContent).toContain('planner');
-    expect(clients[1]!.textContent).toContain('executor');
     expect(commands(mcp)).toEqual([
-      `repo-harness mcp clients revoke ${HERMES_CLIENT}`,
-      `repo-harness mcp clients revoke ${EXECUTOR_CLIENT}`,
-      'repo-harness mcp clients revoke c0ffee00-1234-4abc-9def-0123456789ab',
       'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write',
     ]);
     const repositories = all('[data-registry-repo]', mcp);
@@ -219,7 +210,6 @@ describe('Bots page', () => {
   test('1-BOTS-N1 a response with any field outside the snapshot contract is refused, and none of its values render', async () => {
     const poison = (change: (raw: Record<string, any>) => void) => edited(busyBotAccess(NOW), change);
     const responses = [
-      poison(raw => { raw.oauth.clients[0].access_token = 'rh_at_SECRET_ACCESS'; }),
       poison(raw => { raw.notify.status.webhook_url = 'https://hooks.slack.com/services/T000/B000/SECRET_HOOK'; }),
       poison(raw => { raw.mcp.doctor.passphrase = 'SECRET_PASSPHRASE'; }),
       poison(raw => { raw.herdr.socket = '/private/tmp/herdr-SECRET.sock'; }),
@@ -244,11 +234,8 @@ describe('Bots page', () => {
     expect(mcp.querySelector('[data-mcp-status]')?.textContent).toBe('mcp doctor timed out.');
     expect(commands(mcp)).toEqual([
       'repo-harness mcp doctor',
-      `repo-harness mcp clients revoke ${EXECUTOR_CLIENT}`,
       'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write',
     ]);
-    expect(all('[data-oauth-client] [data-bot]', mcp).map(name => [name.getAttribute('data-bot'), name.textContent])).toEqual([['unknown', 'Bot unknown']]);
-    expect(mcp.textContent).toContain('Unreadable client records, not listed: 1');
     expect(all('[data-last-call]', mcp).map(call => call.getAttribute('data-last-call'))).toEqual(['audit_unreadable', 'failed']);
     expect(all('[data-last-call="failed"] [data-bot]', mcp).map(name => name.textContent)).toEqual(['Bot unknown']);
     const notify = section('notify');
@@ -313,16 +300,5 @@ describe('Bot access reader', () => {
       ]);
       expect(new Set(requests)).toEqual(new Set(['GET /api/v1/bot-access']));
     } finally { globalThis.fetch = original; }
-  });
-
-  test('token days count whole days of the last live grant; a client without a profile holds no live token', () => {
-    const client = (profiles: readonly string[], expires: number | null): OAuthClientProjection => ({
-      client_id: HERMES_CLIENT, bot: { state: 'unregistered' }, issued_at: null, profiles, expires_at: expires === null ? null : new Date(expires).toISOString(),
-    });
-    expect(tokenLife(client([], NOW + 86_400_000), NOW)).toEqual({ kind: 'none' });
-    expect(tokenLife(client(['planner'], null), NOW)).toEqual({ kind: 'unknown' });
-    expect(tokenLife(client(['planner'], NOW - 1), NOW)).toEqual({ kind: 'expired' });
-    expect(tokenLife(client(['planner'], NOW + 86_399_999), NOW)).toEqual({ kind: 'days', days: 0 });
-    expect(tokenLife(client(['planner'], NOW + 30 * 86_400_000), NOW)).toEqual({ kind: 'days', days: 30 });
   });
 });

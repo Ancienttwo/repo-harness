@@ -35,8 +35,6 @@ allowlist:
 - `README.md` and `DEBUG.md`
 - `docs/architecture/.projection-manifest.json`
 - `tasks/lessons.md`
-- the MCP bridge files `.ai/harness/handoff/task-goal.md` and
-  `.ai/harness/handoff/chatgpt-plan.md`
 - any `.md` under `docs/` or `examples/`, **except** anything under
   `docs/reference-configs/`
 

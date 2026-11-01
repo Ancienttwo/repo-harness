@@ -1607,7 +1607,7 @@ test('directory source hashing rejects missing and invalid surfaces while file h
 });
 
 function nonRouterSkillSandbox(
-  name: 'repo-harness-cross-review' | 'repo-harness-chatgpt',
+  name: 'repo-harness-cross-review',
   run: (opts: { cwd: string; home: string; packageRoot: string }, source: string, installed: string) => void,
 ): void {
   projectionSandbox((opts) => {
@@ -1625,7 +1625,7 @@ function nonRouterSkillSandbox(
   });
 }
 
-for (const name of ['repo-harness-cross-review', 'repo-harness-chatgpt'] as const) {
+for (const name of ['repo-harness-cross-review'] as const) {
   test(`${name} refresh keeps top-level examples and matches a whole-folder copy with plain excludes`, async () => {
     const { installedCopyTreeOptions, managedTreeEntries } = await import('../../src/effects/managed-tree');
     nonRouterSkillSandbox(name, (opts, source, installed) => {

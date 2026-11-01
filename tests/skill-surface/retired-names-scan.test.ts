@@ -21,13 +21,9 @@ const MANIFEST = JSON.parse(
 };
 
 // R2: `repo-harness-chatgpt-bridge` is a retiredPackages[] entry but is NOT a
-// scannable retired name -- it is the permanent, generated
-// bridge.md-frontmatter-driven runtime projection identity (setup.ts's
-// CHATGPT_BRIDGE_FRONTMATTER_NAME, bridge.md frontmatter, and every
-// install-skill destination path). Only the static self-hosted
-// `.agents/skills/repo-harness-chatgpt-bridge/` *directory* retired, and its
-// non-existence is proven directly by
-// tests/skill-surface/chatgpt-package.test.ts instead of a name-string scan.
+// scannable retired name: `mcp doctor` (src/cli/mcp/doctor.ts) names the
+// leftover `.agents/skills/repo-harness-chatgpt-bridge/` directory that the
+// removed `mcp install-skill` wrote (#1354), so the user can delete it.
 const SCAN_EXEMPT_RETIRED_NAMES = new Set(["repo-harness-chatgpt-bridge"]);
 
 // Derived from the manifest rather than hand-listed: retiredPackages[] is
@@ -104,16 +100,6 @@ const R1_PROVENANCE_ENUM_FILES = [
 // residual is recorded the same way.
 const OUT_OF_SCOPE_RESIDUALS: Record<string, string> = {};
 
-// Reference-provenance convention: repo-harness-chatgpt's reconciled
-// references open with "Reconciles the `repo-harness-X` facade/rules ...",
-// which names the retired facades the content came from. This is the plan's
-// "allowed migration metadata" category, expressed per-package instead of
-// centrally. The other packages carry no provenance line, so the scan covers
-// their references in full.
-const REFERENCE_PROVENANCE_DIR_PREFIXES = [
-  "assets/skills/repo-harness-chatgpt/references",
-];
-
 function allFiles(root: string): string[] {
   const stats = statSync(root);
   if (stats.isFile()) return [root];
@@ -178,7 +164,6 @@ describe("retired Skill package names: live-reference scan", () => {
     for (const absolute of files) {
       const rel = relative(ROOT, absolute).split(sep).join("/");
       if (FILE_ALLOWLIST[rel] || OUT_OF_SCOPE_RESIDUALS[rel] || R1_PROVENANCE_ENUM_FILES.includes(rel)) continue;
-      if (REFERENCE_PROVENANCE_DIR_PREFIXES.some((prefix) => rel.startsWith(`${prefix}/`))) continue;
 
       let content: string;
       try {
@@ -233,20 +218,6 @@ describe("retired Skill package names: live-reference scan", () => {
       const stillHasRetiredName = RETIRED_NAMES.some((name) => hasLiveHit(content, name));
       expect(stillHasRetiredName).toBe(true);
     }
-  });
-
-  test("the reference-provenance directories actually exist and carry the Reconciles convention", () => {
-    let sawAtLeastOneProvenanceLine = false;
-    for (const prefix of REFERENCE_PROVENANCE_DIR_PREFIXES) {
-      const dir = join(ROOT, prefix);
-      const filesInDir = allFiles(dir);
-      expect(filesInDir.length).toBeGreaterThan(0);
-      for (const f of filesInDir) {
-        const content = readFileSync(f, "utf-8");
-        if (/^Reconciles the /mu.test(content)) sawAtLeastOneProvenanceLine = true;
-      }
-    }
-    expect(sawAtLeastOneProvenanceLine).toBe(true);
   });
 
   test("retiredPackages[] records every retired name with a live-or-null replacement", () => {

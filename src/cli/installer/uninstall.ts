@@ -258,7 +258,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
     const next = { ...receipt, changes: receipt.changes.map((entry) => restored.includes(entry) ? { ...entry, active: false } : entry) };
     change(configurationReceiptPath(home), `${JSON.stringify(next, null, 2)}\n`, 'deactivate restored ownership; retain static installation history', 'restore');
   }
-  items.push({ path: join(home, '.repo-harness'), action: 'preserve', reason: 'archives, runtime history and independent MCP setup/workspaces retained; third-party packages/plugins retained' });
+  items.push({ path: join(home, '.repo-harness'), action: 'preserve', reason: 'archives, runtime history and the MCP config retained; third-party packages/plugins retained' });
 
   if (!opts.dryRun) {
     try {

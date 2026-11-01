@@ -76,7 +76,7 @@ describe("skill-routing corpus (evals/skill-routing/routing-corpus.json)", () =>
     for (const id of ids) expect(id).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*$/);
   });
 
-  test("discovery-baseline.json's canonical_routes has exactly the 9 target routes", () => {
+  test("discovery-baseline.json's canonical_routes has exactly the 8 target routes", () => {
     expect(canonicalRoutes).toEqual([
       "repo-harness",
       "repo-harness-setup",
@@ -86,7 +86,6 @@ describe("skill-routing corpus (evals/skill-routing/routing-corpus.json)", () =>
       "repo-harness-architecture",
       "repo-harness-cross-review",
       "merge-gate",
-      "repo-harness-chatgpt",
     ]);
   });
 
@@ -108,7 +107,7 @@ describe("skill-routing corpus (evals/skill-routing/routing-corpus.json)", () =>
   });
 
   test("every required overlap term has at least one non-positive case tagging it", () => {
-    expect(REQUIRED_OVERLAP_TERMS).toEqual(["review", "check", "plan", "ship", "merge-gate", "gptpro", "architecture"]);
+    expect(REQUIRED_OVERLAP_TERMS).toEqual(["review", "check", "plan", "ship", "merge-gate", "architecture"]);
     for (const term of REQUIRED_OVERLAP_TERMS) {
       const covered = corpus.cases.some((c) => c.kind !== "positive" && (c.overlap_terms ?? []).includes(term));
       expect({ term, covered }).toEqual({ term, covered: true });
@@ -248,7 +247,7 @@ describe("scripts/run-skill-routing-eval.ts CLI", () => {
     for (const route of [
       "repo-harness", "repo-harness-setup", "repo-harness-product",
       "repo-harness-check", "repo-harness-ship", "repo-harness-architecture",
-      "repo-harness-cross-review", "merge-gate", "repo-harness-chatgpt", "none",
+      "repo-harness-cross-review", "merge-gate", "none",
     ]) {
       expect(result.stdout).toContain(`${route}:`);
     }
@@ -280,7 +279,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("minimal discovers router, plan/check facades, and explicit-setup packages", () => {
       const names = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name).sort();
       expect(names).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-chatgpt", "repo-harness-check", "repo-harness-strategy", "windows-python-first"],
+        ["obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-strategy", "windows-python-first"],
       );
       expect(buildDiscoveredSkillSurface(catalog, "minimal", "claude").find(e => e.name === "repo-harness-strategy")?.reason).toBe("explicit-setup");
     });
@@ -455,7 +454,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         record({ id: "q1", kind: "ordinary-qa", expected_route: "none", primary_route: "none" }),
         record({ id: "q2", kind: "ordinary-qa", expected_route: "none", primary_route: "none" }),
         record({ id: "q3", kind: "ordinary-qa", expected_route: "none", primary_route: "none" }),
-        record({ id: "q4", kind: "ordinary-qa", expected_route: "none", primary_route: "repo-harness-chatgpt", selected_routes: ["repo-harness-chatgpt"] }),
+        record({ id: "q4", kind: "ordinary-qa", expected_route: "none", primary_route: "repo-harness", selected_routes: ["repo-harness"] }),
       ];
       const oneMetrics = computeRoutingMetrics(oneFalse, canonicalRoutes);
       expect(oneMetrics.ordinary_qa_false_activation.small_sample).toBe(true);
@@ -499,10 +498,10 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       }
       const metrics = computeRoutingMetrics(records, canonicalRoutes);
       expect(metrics.per_route_recall["merge-gate"].rate).toBe(0);
-      expect(metrics.top1_accuracy.rate).toBeCloseTo(32 / 36, 5); // 8 of 9 routes perfect, 1 dead
+      expect(metrics.top1_accuracy.rate).toBeCloseTo(28 / 32, 5); // 7 of 8 routes perfect, 1 dead
       const thresholds = evaluateThresholds(metrics);
       expect(thresholds.per_route_recall["merge-gate"].pass).toBe(false);
-      expect(thresholds.overall_pass).toBe(false); // aggregate top-1 (88.9%) also misses the 95% floor here, but the point is the per-route gate alone is sufficient to fail
+      expect(thresholds.overall_pass).toBe(false); // aggregate top-1 (87.5%) also misses the 95% floor here, but the point is the per-route gate alone is sufficient to fail
     });
 
     test("provider_error records are excluded from every rate but counted separately", () => {
@@ -518,7 +517,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   });
 
   describe("runProviderEval against the real frozen corpus (perfect-echo stub)", () => {
-    test("full/claude reaches ceiling recall for all 9 canonical routes", () => {
+    test("full/claude reaches ceiling recall for all 8 canonical routes", () => {
       const reportPath = tmpReportPath("full-perfect");
       const report = runProviderEval({
         profile: "full",
@@ -528,16 +527,16 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
-      expect(report.metrics.top1_accuracy).toEqual({ numerator: 42, denominator: 42, rate: 1 });
+      expect(report.metrics.top1_accuracy).toEqual({ numerator: 38, denominator: 38, rate: 1 });
       for (const route of canonicalRoutes) {
         expect(report.metrics.per_route_recall[route].rate).toBe(1);
         expect(report.metrics.per_route_recall[route].reachable).toBe(true);
       }
       expect(report.metrics.excluded_unreachable_count).toBe(0);
-      expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 68, rate: 0 });
+      expect(report.metrics.double_trigger).toEqual({ count: 0, denominator: 64, rate: 0 });
       expect(report.metrics.provider_error_count).toBe(0);
       expect(report.discovered_surface.map((d) => d.name).sort()).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-archimap", "repo-harness-architecture", "repo-harness-check", "repo-harness-chatgpt", "repo-harness-cross-review", "repo-harness-herdr-portal", "repo-harness-issue-flow", "repo-harness-product", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test", "windows-python-first"].sort(),
+        ["obsidian-memory", "repo-harness", "repo-harness-archimap", "repo-harness-architecture", "repo-harness-check", "repo-harness-cross-review", "repo-harness-herdr-portal", "repo-harness-issue-flow", "repo-harness-product", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test", "windows-python-first"].sort(),
       );
     }, 30_000);
 
@@ -581,7 +580,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       });
       expect(report.corpus_sha256).toBe(String(baseline.corpus_sha256));
       expect(report.manifest_sha256).toBe(sha256Hex(readFileSync(join(ROOT, "assets", "skill-commands", "manifest.json"))));
-      expect(report.records).toHaveLength(68);
+      expect(report.records).toHaveLength(64);
       expect(report.protocol).toBe(1);
     }, 30_000);
 
@@ -617,7 +616,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const report = JSON.parse(readFileSync(reportPath, "utf-8"));
       expect(report.provider).toBe("stub");
       expect(report.dry_run).toBe(true);
-      expect(report.metrics.evaluated_cases).toBe(68);
+      expect(report.metrics.evaluated_cases).toBe(64);
       expect(report.metrics.per_route_recall["repo-harness"].rate).toBe(1);
       expect(report.metrics.ordinary_qa_false_activation.small_sample).toBe(true);
     });
@@ -740,7 +739,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       return { claude, codex, claudePath, codexPath };
     }
 
-    test("aggregate over full Claude + full Codex covers all 9 canonical routes and passes", () => {
+    test("aggregate over full Claude + full Codex covers all 8 canonical routes and passes", () => {
       const corpus = loadCorpus();
       const { claude, codex, claudePath, codexPath } = runTwoReports();
 
@@ -758,8 +757,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(aggregate.advisory).toBe(true);
       expect(aggregate.advisory_reason).toBe(AGGREGATE_ADVISORY_REASON);
       expect(aggregate.evidence_note).toContain("ADVISORY EVIDENCE, NOT A MERGE GATE");
-      expect(aggregate.records).toHaveLength(68);
-      expect(aggregate.case_sources).toHaveLength(68);
+      expect(aggregate.records).toHaveLength(64);
+      expect(aggregate.case_sources).toHaveLength(64);
       expect(aggregate.metrics.excluded_unreachable_count).toBe(0);
 
       for (const route of canonicalRoutes) {
@@ -916,8 +915,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
       const aggregateReport = JSON.parse(readFileSync(aggregateReportPath, "utf-8"));
       expect(aggregateReport.evidence_scope).toBe("aggregate_package_acceptance");
-      expect(aggregateReport.records).toHaveLength(68);
-      expect(aggregateReport.case_sources).toHaveLength(68);
+      expect(aggregateReport.records).toHaveLength(64);
+      expect(aggregateReport.case_sources).toHaveLength(64);
       const sidecar = readFileSync(`${aggregateReportPath}.sha256`, "utf-8").trim();
       const bytes = readFileSync(aggregateReportPath);
       expect(sidecar.startsWith(sha256Hex(bytes))).toBe(true);

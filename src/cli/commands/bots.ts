@@ -5,7 +5,6 @@ interface BotsRegisterOptions {
   readonly id: string;
   readonly name: string;
   readonly host: string;
-  readonly mcpClientId?: string;
   readonly slackBotId?: string;
   readonly herdrAgent?: string;
   readonly replace?: boolean;
@@ -20,7 +19,6 @@ export function buildBotsCommand(): Command {
     .requiredOption('--id <bot-id>', 'Bot id: [a-z][a-z0-9-]{0,62}')
     .requiredOption('--name <name>', 'Display name')
     .requiredOption('--host <host>', 'Bot host, for example Hermes, Grok or Dot')
-    .option('--mcp-client-id <client-id>', 'MCP OAuth client id (see `repo-harness mcp clients list`)')
     .option('--slack-bot-id <slack-bot-id>', 'Slack bot id')
     .option('--herdr-agent <name>', 'Herdr agent name of the Bot pane')
     .option('--replace', 'Overwrite an existing record with the same id')
@@ -31,7 +29,6 @@ export function buildBotsCommand(): Command {
           bot_id: options.id,
           name: options.name,
           host: options.host,
-          mcp_client_id: options.mcpClientId ?? null,
           slack_bot_id: options.slackBotId ?? null,
           herdr_agent: options.herdrAgent ?? null,
           replace: options.replace === true,

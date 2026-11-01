@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.mcp-sidecar.primary.task-agent-host
-kind: calls
-source: component.mcp-sidecar.primary
-target: capability.runtime-harness.task-agent-host
-intent: "Start task agents, send task requests, and list, prompt and read in-scope agent panes through Herdr"

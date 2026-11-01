@@ -171,8 +171,6 @@ repo-harness upgrade decide --keep <path> # record an operator decision for a re
 repo-harness upgrade --registered # preview project refresh for every registered repo; no writes
 repo-harness uninstall --dry-run # preview owned user configuration cleanup
 repo-harness uninstall           # remove owned configuration; preserve user changes/history
-repo-harness mcp uninstall --dry-run # preview independent MCP setup cleanup
-repo-harness mcp uninstall --services-stopped # after stopping all MCP HTTP services
 ```
 
 `update` and `setup check` print one leftover count. `update` does not apply
@@ -262,7 +260,7 @@ callers while the contract lifecycle is removed.
 | **Session handoff** | Record the issue, branch, evidence and next action so another agent can continue |
 | **Progressive context loading** | A ~12KB stable root context plus ~1KB capability contracts loaded only for the files actually being touched |
 | **CodeGraph integration** | Structural queries (callers, callees, definitions) answered from a pre-built index instead of repeated grep-and-read passes |
-| **MCP planner sidecar** | ChatGPT reads real repo state and writes PRD/Sprint/Goal artifacts; Codex executes them, with no default source-code write access |
+| **MCP planner sidecar** | A local MCP client reads real repo state over stdio and writes PRD artifacts, with no default source-code write access |
 | **Claude + Codex alignment** | One user-level adapter contract, one workflow contract, and one set of repo-local artifacts shared by both hosts |
 
 ## How It Works
@@ -396,7 +394,7 @@ A dedicated linked checkout hosts one fleet `deep-reasoner` task-agent in the ad
 
 ### Bot merge
 
-A local Herdr Bot merges through the MCP `merge_pull_request` tool of the `orchestrator` profile. A cloud-only Bot runs `repo-harness publication merge` in a sandbox that has repo-harness, a working `gh auth` and a checkout. Both use the same executor. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](docs/control-bot-boundary.md#bot-modes-and-merge).
+A local Herdr Bot runs `repo-harness publication merge` in its shell. A cloud-only Bot runs the same command in a sandbox that has repo-harness, a working `gh auth` and a checkout. It merges only when `publication.acceptance_merge` is `on` in the policy on the PR base, and it needs strict required checks and enforce_admins on the default branch. A Bot record does not grant merge permission. See [the control Bot boundary](docs/control-bot-boundary.md#bot-modes-and-merge).
 
 ## Hooks
 
@@ -469,29 +467,19 @@ shards arrive. Diff mode requires both `--base <rev>` and `--head <rev>`.
 
 ## MCP Connector
 
-As an optional sidecar, `repo-harness mcp` exposes workflow artifacts to MCP
-clients through the default `planner` profile. ChatGPT reads real repo state,
-writes PRDs under `docs/prds/`, and reads the linked GitHub issue — with no
-default source-code write access, arbitrary shell execution, or default runner. The task owner directs an explicitly addressed Herdr agent to execute the task goal.
+As an optional sidecar, `repo-harness mcp serve` exposes workflow artifacts to a
+local MCP client over stdio through the default `planner` profile or the
+`executor` profile. The client reads real repo state and writes PRDs under
+`docs/prds/`. It has no default source-code write access, no shell and no runner. The
+task owner directs an explicitly addressed Herdr agent to execute the task goal.
 
 ```bash
-repo-harness mcp setup chatgpt --repo .
-repo-harness mcp serve --repo . --transport http --host 127.0.0.1 --port 8765 --profile planner
+repo-harness mcp serve --repo . --profile planner
+repo-harness mcp doctor --repo .
 ```
 
-Expose that local server through an HTTPS tunnel, register the `/mcp` URL, and
-the human workflow is:
-
-1. ChatGPT reads repo-harness workflow files through MCP.
-2. ChatGPT writes a PRD with `write_prd_from_idea`.
-3. ChatGPT lists existing PRDs under `docs/prds/` and reads the linked issue.
-4. The task owner orders GitHub issues through `repo-harness-issue-flow` and
-   sends the issue Goal to an explicitly addressed Herdr agent.
-
-General repo reader/writer tools, snapshot and index consistency, server
-profiles, and the opt-in dev runner:
-[`general-repo-mcp.md`](docs/reference-configs/general-repo-mcp.md). Direct-coding
-profile: [`chatgpt-coding-mcp.md`](docs/reference-configs/chatgpt-coding-mcp.md).
+General repo reader/writer tools, snapshot and index consistency, and server profiles:
+[`general-repo-mcp.md`](docs/reference-configs/general-repo-mcp.md).
 Index-stale, CodeGraph-down, and rollback operations:
 [`general-repo-mcp-codegraph.md`](deploy/runbooks/general-repo-mcp-codegraph.md).
 
@@ -542,7 +530,6 @@ control context loading. They do not add a host permission boundary.
 | `repo-harness-ship` | Bot | Explicit publication and cleanup decisions |
 | `obsidian-memory` | Bot | Explicit memory recall or persistence |
 | `repo-harness-cross-review` | Bot | Generic review; direct advisory runtime retired |
-| `repo-harness-chatgpt` | Bot | Explicit integration mode and advisory decisions |
 | `repo-harness-setup` | Worker | Assigned install, migration, repair or scaffold |
 | `repo-harness-test` | Worker | Source tests and real fixtures |
 | `repo-harness-architecture` | Worker | Assigned model, projection or diagram work |
@@ -609,7 +596,6 @@ dependencies.
 | [herdr](https://herdr.dev/) | Required peer-terminal runtime: notification dispatch, peer collaboration, and hosting the persistent acceptance reviewer | Externally installed binary, checksum-pinned in `.ai/harness/policy.json`; replaces the retired tmux runtime |
 | [`reverse-skill-router`](https://github.com/zhaoxuya520/reverse-skill) | Routes reverse-engineering and security tasks to specialist playbooks | Recommended explicit-only Skill (`--with-reverse-skill`); not profile-selected because upstream's target-mention authorization assumption requires independent scope review |
 | CodeGraph (`@colbymchenry/codegraph`) | Symbol-aware navigation, impact tracing, and readiness checks for this self-host repo | Dev dependency in this repo; generated repos stay global-MCP-first unless policy opts in |
-| [Oracle](https://github.com/steipete/oracle) by [Peter Steinberger](https://x.com/steipete) (`@steipete/oracle`, MIT) | Default GPT Pro / ChatGPT Web browser consult engine that the `chatgpt-browser` Oracle provider shells out to for `gptpro` consults | Externally-resolved binary (`--oracle-bin`, `REPO_HARNESS_ORACLE_BIN`, `node_modules/.bin`, or `PATH`); never auto-downloaded, and a missing binary is a hard `ORACLE_NOT_INSTALLED` failure |
 | OpenAI Codex | Primary execution agent for repo-local implementation, verification, and GitHub contributor attribution when a commit materially includes Codex-authored work | External agent runtime; attribution is an explicit commit trailer, not hidden hook automation |
 
 ### GitHub Contributor Attribution

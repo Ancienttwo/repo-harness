@@ -2,7 +2,6 @@ import { describe, expect, test } from "bun:test";
 import { execFileSync } from "child_process";
 import { existsSync, readFileSync } from "fs";
 import { join, posix } from "path";
-import { assertChatGptMcpContract } from "./helpers/chatgpt-mcp-contract";
 
 // SSD-06 migration: the pre-cutover 19-facade public action command surface
 // (all living flat under assets/skill-commands/) collapses into the plan's
@@ -30,7 +29,6 @@ const TARGET_CANONICAL_PACKAGES = [
   "repo-harness-architecture",
   "repo-harness-cross-review",
   "merge-gate",
-  "repo-harness-chatgpt",
 ];
 
 const TARGET_FACADE_KIND_PACKAGES = [
@@ -428,54 +426,6 @@ describe("repo-harness action command skills", () => {
       .toContain("copy the approved direction into the GitHub issue brief");
   });
 
-  test("chatgpt's setup mode separates browser/session from MCP connector setup", () => {
-    const setup = readReference("repo-harness-chatgpt", "setup.md");
-
-    expect(setup).toContain("gptpro_browser");
-    expect(setup).toContain("gptpro_mcp");
-    expect(setup).toContain("repo-harness chatgpt browser-setup");
-    expect(setup).toContain("repo-harness chatgpt browser-doctor");
-    expect(setup).toContain("--provider oracle --json");
-    expect(setup).toContain("node >=24");
-    expect(setup).toContain("REPO_HARNESS_ORACLE_BIN");
-    expect(setup).toContain("agent_actions");
-    expect(setup).toContain("chatgpt-oracle-install-pinned");
-    expect(setup).toContain("chatgpt-oracle-upgrade-pinned");
-    expect(setup).toContain("chatgpt-oracle-fix-configured-source");
-    expect(setup).toContain("Does not install/upgrade Oracle from a default repo-harness install");
-    expect(setup).toContain("repo-harness mcp setup chatgpt");
-    expect(setup).toContain("--server-name <name>");
-    expect(setup).toContain("--enable-chatgpt-browser");
-    expect(setup).toContain("HTTPS tunnel");
-    expect(setup).toContain("Does not create OpenAI API keys");
-  });
-
-  test("chatgpt's consult/continue modes use GPT Pro language over the browser session engine commands", () => {
-    const consult = readReference("repo-harness-chatgpt", "consult.md");
-    const continueMode = readReference("repo-harness-chatgpt", "continue.md");
-
-    expect(consult).toContain("gptpro consult");
-    expect(consult).toContain("repo-harness chatgpt browser-consult");
-    expect(consult).toContain("repo-harness chatgpt browser-followup");
-    expect(continueMode).toContain("repo-harness chatgpt browser-session");
-    expect(continueMode).toContain("repo-harness chatgpt browser-open");
-    expect(consult).toContain("date -u +%Y%m%dT%H%M%SZ");
-    expect(consult).toContain(".ai/harness/handoff/gptpro/gptpro-${stamp}-<slug>.md");
-    expect(consult).toContain("--model gpt-5.5-pro");
-    expect(continueMode).toContain("docs/researches/YYYYMMDD-<topic>.md");
-    expect(continueMode).toContain("raw artifact path");
-    expect(consult).toContain("15");
-    expect(consult).toContain("Do not treat elapsed time as failure");
-    expect(consult).toContain("no thinking status detected yet");
-    expect(consult).toContain("Does not rename or replace the underlying");
-  });
-
-  test("chatgpt's read-back mode binds the MCP Connector invocation evidence contract", () => {
-    const readBack = readReference("repo-harness-chatgpt", "read-back.md");
-    expect(readBack).toContain("chatgpt.serverName");
-    expect(readBack).toContain("MCP Read Evidence".replace("MCP Read Evidence", "Called tool"));
-    assertChatGptMcpContract(readBack);
-  });
   test("issue-flow child template carries an architecture slice of the capability document", () => {
     const templates = readReference("repo-harness-issue-flow", "templates.md");
 

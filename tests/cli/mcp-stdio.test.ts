@@ -37,8 +37,6 @@ describe('mcp stdio transport', () => {
           'serve',
           '--repo',
           repoRoot,
-          '--transport',
-          'stdio',
           '--profile',
           'planner',
           '--enable-reader',

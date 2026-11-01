@@ -80,7 +80,7 @@ test('a binding with a retired engineer_profile fails its reader with the record
 test('a message sent for a registered Bot keeps local operator trust and names the Bot as sender', async () => {
   const f = await admittedInboxFixture();
   try {
-    const hermes = { protocol: 1, kind: 'repo-harness-bot', bot_id: 'hermes', name: 'Hermes', host: 'Hermes', mcp_client_id: null, slack_bot_id: null, herdr_agent: 'hermes', registered_at: time.replace('Z', '.000Z') } as const;
+    const hermes = { protocol: 1, kind: 'repo-harness-bot', bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: null, herdr_agent: 'hermes', registered_at: time.replace('Z', '.000Z') } as const;
     expect(taskMessageSender(null, [hermes])).toEqual({ sender_kind: 'user', sender_id: null, sender_trust: 'local_operator' });
     expect(() => taskMessageSender('ghost', [hermes])).toThrow('--bot ghost is not a registered Bot');
     const event = buildTaskMessageEvent({ ...f.event, ...taskMessageSender('hermes', [hermes]) });

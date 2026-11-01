@@ -268,34 +268,6 @@
       "expected_route": "merge-gate"
     },
     {
-      "id": "pos-chatgpt-setup-zh",
-      "lang": "zh",
-      "kind": "positive",
-      "prompt": "我想把 ChatGPT Web 浏览器登录配置好，方便本地会话调用。",
-      "expected_route": "repo-harness-chatgpt"
-    },
-    {
-      "id": "pos-chatgpt-consult-zh",
-      "lang": "zh",
-      "kind": "positive",
-      "prompt": "拿这个设计问题去问一下 GPT Pro，看它怎么说。",
-      "expected_route": "repo-harness-chatgpt"
-    },
-    {
-      "id": "pos-chatgpt-bridge-en",
-      "lang": "en",
-      "kind": "positive",
-      "prompt": "Set up the MCP bridge so ChatGPT can connect back into this repo.",
-      "expected_route": "repo-harness-chatgpt"
-    },
-    {
-      "id": "pos-chatgpt-consult-en",
-      "lang": "en",
-      "kind": "positive",
-      "prompt": "Consult GPT Pro on this design question through the browser session.",
-      "expected_route": "repo-harness-chatgpt"
-    },
-    {
       "id": "amb-check-casual-zh",
       "lang": "zh",
       "kind": "ambiguous",
@@ -481,10 +453,7 @@
       "lang": "zh",
       "kind": "ordinary-qa",
       "prompt": "GPT Pro 好像最近更新了底层模型，你听说了吗？",
-      "expected_route": "none",
-      "overlap_terms": [
-        "gptpro"
-      ]
+      "expected_route": "none"
     },
     {
       "id": "qa-jscopy-en",
@@ -498,10 +467,7 @@
       "lang": "en",
       "kind": "ordinary-qa",
       "prompt": "I heard OpenAI shipped a new GPT Pro tier recently, any idea what changed?",
-      "expected_route": "none",
-      "overlap_terms": [
-        "gptpro"
-      ]
+      "expected_route": "none"
     }
   ]
 }

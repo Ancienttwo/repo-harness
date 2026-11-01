@@ -7,17 +7,13 @@
   "layer": "cli",
   "summary": "Provides the local MCP sidecar and its repository access policy boundary.",
   "responsibilities": [
-    "Own MCP lifecycle, workspace registration, access policy, and local browser integration.",
-    "Bind coding and orchestrator MCP sessions to verified OAuth authorization IDs and current repository policy."
+    "Own the stdio MCP server lifecycle, the mcp doctor, workspace registration and access policy.",
+    "Serve the planner and executor profiles and fail closed on a config that keeps a retired ChatGPT, HTTP, OAuth, coding or orchestrator key."
   ],
   "source": {
     "include": [
       "src/cli/mcp/**",
-      "src/cli/commands/mcp.ts",
-      "src/cli/chatgpt-browser/file-policy.ts",
-      "docs/repo-harness-chatgpt-mcp-setup.md",
-      "docs/reference-configs/chatgpt-coding-mcp.md",
-      "docs/reference-configs/herdr-orchestrator-mcp.md"
+      "src/cli/commands/mcp.ts"
     ],
     "exclude": [
       "src/cli/mcp/codegraph-adapter.ts",
@@ -52,7 +48,7 @@
     "verification": [
       "bun test tests/cli/mcp*.test.ts",
       "bun run check:type",
-      "repo-harness mcp doctor --repo . --live"
+      "repo-harness mcp doctor --repo ."
     ]
   }
 }

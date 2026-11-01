@@ -40,19 +40,15 @@ function overrideExit(command: Command): void {
  * converted to thrown `CommanderError`s by `exitOverride`, after the help or
  * error text has already been written.
  *
- * A command body's own exit is recorded rather than thrown: the single
- * `process.exit(2)` the `chatgpt` group can reach is the last statement of its
- * error funnel, and throwing from it would surface as an unhandled rejection
- * that Bun's test runner fails on, because the action handlers discard the work
- * promise (`void runChatgptAction(...)`).
+ * A command body's own exit is recorded rather than thrown: a command whose
+ * error funnel ends in `process.exit(2)` would otherwise surface an unhandled
+ * rejection that Bun's test runner fails on, because the action handler
+ * discards the work promise.
  *
  * That discarded promise is also why completion needs its own barrier: commander
- * resolves `parseAsync` before the action finishes. Every `chatgpt` action ends
- * by writing its result to stdout or by reaching that error exit, and nothing
- * under `src/cli/chatgpt-browser/` writes to stdout, so the first stdout write or
- * the recorded exit marks the command as finished. Both are the action's
- * terminal statement, so by the time this function observes one, the remaining
- * synchronous work in that action has already run.
+ * resolves `parseAsync` before the action finishes. The first stdout write or
+ * the recorded exit marks the command as finished, so the helper fits only a
+ * command whose result write or error exit is its terminal statement.
  */
 export async function runCliInProcess(
   args: readonly string[],

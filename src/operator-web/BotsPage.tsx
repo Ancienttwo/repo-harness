@@ -6,7 +6,6 @@ import type {
   HerdrAgentStatus,
   HerdrStatusProjection,
   McpAuditProjection,
-  OAuthClientProjection,
   RegistryRepoProjection,
 } from '../core/operator/bot-access';
 import { NOTIFY_CHANNELS, type NotifyDeliveryState, type NotifyDeliveryV1 } from '../core/operator/notify-status';
@@ -15,8 +14,6 @@ import {
   MCP_ACCESS_COMMAND,
   MCP_DOCTOR_COMMAND,
   notifyInstallCommand,
-  revokeCommand,
-  tokenLife,
   type BotAccessReason,
   type BotAccessView,
   type BotLabel,
@@ -82,56 +79,15 @@ function McpServer({ mcp, t }: { readonly mcp: Snapshot['mcp']; readonly t: Oper
     ...doctor.unsafe_allowed_root_count > 0 ? [t('bots.mcp.warn.unsafeRoots', { count: doctor.unsafe_allowed_root_count })] : [],
     ...doctor.config_version_ok ? [] : [t('bots.mcp.warn.configVersion')],
   ];
-  const auth = doctor.auth_mode === 'missing' ? t('bots.mcp.authMode.missing')
-    : doctor.auth_configured ? t(`bots.mcp.authMode.${doctor.auth_mode}`) : t('bots.mcp.authNotSet', { mode: t(`bots.mcp.authMode.${doctor.auth_mode}`) });
   return (
     <div className="flex min-w-0 flex-col gap-2" data-mcp-status={doctor.status}>
       <Line tone={doctor.status === 'not_adopted' ? 'warn' : 'ok'}>
         <span className="font-medium text-kumo-strong">{t(doctor.status === 'not_adopted' ? 'bots.mcp.notAdopted' : 'bots.mcp.ready')}</span>
         {doctor.package_version && <span className="text-kumo-subtle"> · repo-harness {doctor.package_version}</span>}
-        <span className="text-kumo-subtle"> · {auth}</span>
       </Line>
       {warnings.length > 0 && <>
         <ul className="flex list-disc flex-col gap-1 pl-5 text-sm text-kumo-warning" data-mcp-warnings={warnings.length}>{warnings.map(text => <li key={text}>{text}</li>)}</ul>
         <CommandLine command={MCP_DOCTOR_COMMAND} t={t} className="max-w-full md:max-w-3xl" />
-      </>}
-    </div>
-  );
-}
-
-function TokenLifeText({ client, now, t }: { readonly client: OAuthClientProjection; readonly now: number; readonly t: OperatorTranslate }) {
-  const life = tokenLife(client, now);
-  const soon = life.kind === 'expired' || (life.kind === 'days' && life.days < 3);
-  const text = life.kind !== 'days' ? t(`bots.token.${life.kind}`) : life.days === 0 ? t('bots.token.underDay') : t('bots.token.days', { count: life.days });
-  return <span className={cn('text-xs whitespace-nowrap', soon ? 'text-kumo-warning' : 'text-kumo-subtle')} data-token={life.kind}>{text}</span>;
-}
-
-function ClientRow({ snapshot, client, now, t }: { readonly snapshot: Snapshot; readonly client: OAuthClientProjection; readonly now: number; readonly t: OperatorTranslate }) {
-  return (
-    <li className="flex min-w-0 flex-col gap-1.5 px-3 py-2.5" data-oauth-client={client.client_id}>
-      <div className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 text-sm">
-        <BotName label={botLabel(snapshot, client.bot)} t={t} />
-        <code className="min-w-0 font-mono text-xs text-kumo-subtle [overflow-wrap:anywhere]">{client.client_id}</code>
-        {client.profiles.map(profile => <Badge key={profile} variant="secondary">{profile}</Badge>)}
-        <TokenLifeText client={client} now={now} t={t} />
-      </div>
-      <CommandLine command={revokeCommand(client.client_id)} t={t} className="max-w-full md:max-w-3xl" />
-    </li>
-  );
-}
-
-function Clients({ snapshot, now, t }: { readonly snapshot: Snapshot; readonly now: number; readonly t: OperatorTranslate }) {
-  const { oauth } = snapshot;
-  return (
-    <div className="flex min-w-0 flex-col gap-2" data-oauth={oauth.state === 'unavailable' ? oauth.reason : oauth.state}>
-      <Subheading count={oauth.state === 'ok' ? oauth.clients.length : undefined}>{t('bots.mcp.clients')}</Subheading>
-      {oauth.state === 'missing' && <p className="text-sm text-kumo-subtle">{t('bots.mcp.clientsMissing')}</p>}
-      {oauth.state === 'unavailable' && <Line tone="danger">{t('bots.mcp.clientsUnreadable')}</Line>}
-      {oauth.state === 'ok' && <>
-        {oauth.clients.length === 0
-          ? <p className="text-sm text-kumo-subtle">{t('bots.mcp.clientsEmpty')}</p>
-          : <ul className={ROWS}>{oauth.clients.map(client => <ClientRow key={client.client_id} snapshot={snapshot} client={client} now={now} t={t} />)}</ul>}
-        {oauth.unreadable_clients > 0 && <p className="text-xs text-kumo-warning">{t('bots.mcp.clientsSkipped', { count: oauth.unreadable_clients })}</p>}
       </>}
     </div>
   );
@@ -187,7 +143,6 @@ function McpSection({ snapshot, now, t }: { readonly snapshot: Snapshot; readonl
     <Card section="mcp">
       <SectionTitle id="bots-mcp-heading"><PlugIcon size={16} aria-hidden="true" />{t('bots.mcp.title')}</SectionTitle>
       <McpServer mcp={snapshot.mcp} t={t} />
-      <Clients snapshot={snapshot} now={now} t={t} />
       <Repositories snapshot={snapshot} now={now} t={t} />
     </Card>
   );

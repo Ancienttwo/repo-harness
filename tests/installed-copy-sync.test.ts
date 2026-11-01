@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, relative } from "path";
 import { spawnSync } from "child_process";
@@ -822,23 +822,24 @@ describe('minimal provider ownership boundary', () => {
 describe('separately installed integration ownership boundary', () => {
   for (const profile of ['minimal', 'full'] as const) {
     for (const link of [true, false]) {
-      test(`${profile} ${link ? 'link' : 'copy'} sync keeps an installed ChatGPT skill link`, async () => {
-        const { runChatgptSkillProjection } = await import('../src/cli/chatgpt-skill/installer');
+      test(`${profile} ${link ? 'link' : 'copy'} sync keeps an installed Strategy skill link`, async () => {
+        const { projectStrategySkill } = await import('../src/effects/strategy/skill');
         const tmp = mkdtempSync('/tmp/rh-integration-boundary-');
         try {
           const home = join(tmp, 'home');
           const source = join(tmp, 'source');
           seedSkillSurfaceRuntime(source);
           writeFileSync(join(source, 'SKILL.md'), '---\nname: repo-harness\n---\n');
-          const installed = runChatgptSkillProjection({ action: 'install', home });
-          const links = ['.codex', '.claude'].map(host => join(home, host, 'skills', 'repo-harness-chatgpt'));
+          mkdirSync(home);
+          const installed = projectStrategySkill({ action: 'install', home });
+          const links = ['.codex', '.claude'].map(host => join(realpathSync(home), host, 'skills', 'repo-harness-strategy'));
           expect([...installed.changed].sort()).toEqual([...links].sort());
           const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], {
             env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
               AGENTIC_DEV_LINK_INSTALLED_COPIES: link ? '1' : '0', REPO_HARNESS_INSTALL_PROFILE: profile }, encoding: 'utf8',
           });
           expect(result.status, result.stderr).toBe(0);
-          for (const dest of links) expect(readlinkSync(dest)).toBe(installed.source);
+          for (const dest of links) expect(readlinkSync(dest)).toBe(realpathSync(join(ROOT, 'assets/skills/repo-harness-strategy')));
           expect(lstatSync(join(home, '.codex', 'skills', 'repo-harness')).isSymbolicLink()).toBe(link);
         } finally { rmSync(tmp, { recursive: true, force: true }); }
       }, 30000);

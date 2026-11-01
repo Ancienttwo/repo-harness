@@ -1,67 +1,24 @@
 import { createHash } from 'crypto';
-import { existsSync, mkdirSync, readdirSync, readFileSync, realpathSync, statSync, appendFileSync } from 'fs';
+import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
-import { basename, dirname, isAbsolute, join, resolve } from 'path';
+import { basename, isAbsolute, join, resolve } from 'path';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
-import { listSessions, openSession, readSession, runBrowserConsult, runBrowserFollowup } from '../chatgpt-browser/engine';
-import type { BrowserProviderName, NativeBrowserChannel } from '../chatgpt-browser/types';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
 import { guardedWriteFile } from './guarded-write';
 import { isPathInside, resolveMcpPath } from './paths';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, isReaderTool } from './reader-tools';
-import { buildCodingToolDefinitions, callCodingTool, isCodingTool, type CodingToolContext } from './coding-tools';
-import type { CodingWorkspaceManager } from './coding-workspaces';
-import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
-import type { McpProcessSessionManager } from './process-sessions';
 import { currentGitBranch, isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { redactMcpText } from './redaction';
 import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-tools';
-import {
-  PUBLICATION_MERGE_TOOL_NAME,
-  buildFleetToolDefinitions,
-  buildPublicationMergeToolDefinitions,
-  callFleetTool,
-  callPublicationMergeTool,
-  fleetToolArgumentError,
-  isFleetTool,
-} from './fleet-tools';
-import { buildHerdrToolDefinitions, callHerdrTool, isHerdrTool } from './herdr-tools';
-import { REVIEW_PUBLISH_TOOL_NAME, buildReviewPublishToolDefinitions, callReviewPublishTool } from './review-publish-tool';
+import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
 
 export interface McpToolContext {
   repoRoot: string;
   policy: McpPolicy;
-  enableChatgptBrowser?: boolean;
-  /**
-   * The local config records the publicationMerge consent of this profile.
-   * Set by `createMcpToolContext`; `false` hides the merge tool from listing
-   * and refuses its call, so a grant that predates the capability cannot use
-   * it without rerunning setup. Test-built contexts without the field follow
-   * the policy capability alone.
-   */
-  publicationMergeConsented?: boolean;
   workspaceManager?: WorkspaceManager;
-  codingWorkspaceManager?: CodingWorkspaceManager;
-  processManager?: McpProcessSessionManager;
-  sessionOwnerId?: string;
-  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
-}
-
-function codingContext(ctx: McpToolContext): CodingToolContext {
-  if (!ctx.codingWorkspaceManager || !ctx.processManager || !ctx.sessionOwnerId) {
-    throw new Error('coding MCP runtime is not initialized');
-  }
-  return {
-    repoRoot: ctx.repoRoot,
-    policy: ctx.policy,
-    ownerId: ctx.sessionOwnerId,
-    workspaceManager: ctx.codingWorkspaceManager,
-    processManager: ctx.processManager,
-    codeGraphAdapter: ctx.codeGraphAdapter,
-  };
 }
 
 function readerContext(ctx: McpToolContext) {
@@ -509,13 +466,11 @@ function bodyWithFrontmatter(title: string, kind: string, body: string): string 
 /**
  * The workflow-artifact write tools. Each one commits through
  * `guardedWriteFile` and accepts `expected_sha256` as its revision
- * precondition. `append_handoff_note` is deliberately not a member: append
- * concurrency is a separate design.
+ * precondition.
  */
 const GUARDED_WRITE_TOOLS: readonly string[] = [
   'write_prd',
   'write_prd_from_idea',
-  'write_task_goal',
 ];
 
 /**
@@ -593,43 +548,6 @@ function writeMarkdownArtifact(
   });
 }
 
-// Canonical anti-extras clause injected into every runner-reachable surface (this
-// task-goal path, the native child context,
-// and subagent start context). Keep the first sentence byte-identical across all
-// sources; a parity test asserts they never drift apart.
-const EXECUTION_BOUNDARY = [
-  'Execution boundary: implement exactly the Goal, In scope items, Allowed Paths, and Exit Criteria in this brief. Treat absent requirements as forbidden design space, not as permission to improve.',
-  '',
-  'Do not add optional features, alternate UX, extra integrations, migration paths, compatibility behavior, fallback behavior, telemetry, broad cleanup, refactors, new abstractions, extra docs, or polish unless that work is explicitly listed under In scope or required by Exit Criteria.',
-  '',
-  'If you discover useful additional work, record it under Out of scope / Future work in the notes or review artifact. Do not implement it. Do not end with unsolicited offers to do more work.',
-  '',
-  'If the requested outcome cannot be completed without expanding scope, fail closed: stop, name the missing decision, and cite the exact file/section that blocks execution.',
-].join('\n');
-
-function withExecutionBoundary(body: string): string {
-  const firstSentence = EXECUTION_BOUNDARY.split('\n', 1)[0]!;
-  if (body.includes(firstSentence)) return body;
-  const heading = '## Execution boundary';
-  const headingAt = body.indexOf(heading);
-  if (headingAt < 0) return body;
-  const insertAt = headingAt + heading.length;
-  return `${body.slice(0, insertAt)}\n\n${EXECUTION_BOUNDARY}${body.slice(insertAt)}`;
-}
-
-function validateGoal(body: string): string[] {
-  return [
-    '# Task Goal',
-    '## Source of truth',
-    '## Role',
-    '## Scope',
-    '## Execution boundary',
-    '## Required workflow',
-    '## Required checks',
-    '## Done when',
-  ].filter((section) => !body.includes(section));
-}
-
 function stringList(value: unknown): string[] {
   if (!Array.isArray(value)) return [];
   return value.map((entry) => String(entry).trim()).filter((entry) => entry.length > 0);
@@ -667,7 +585,7 @@ function renderPrdFromIdeaBody(args: Record<string, unknown>): string {
     '',
     '## Non-goals',
     '',
-    ...(nonGoals.length > 0 ? nonGoals.map((entry) => `- ${entry}`) : ['- Directly executing implementation work from ChatGPT.']),
+    ...(nonGoals.length > 0 ? nonGoals.map((entry) => `- ${entry}`) : ['- Directly executing implementation work through MCP.']),
     '',
     '## Acceptance Criteria',
     '',
@@ -685,36 +603,7 @@ function renderPrdFromIdeaBody(args: Record<string, unknown>): string {
   ].join('\n');
 }
 
-function parseBrowserProvider(value: unknown): BrowserProviderName | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === 'oracle' || value === 'native') return value;
-  throw new Error(`invalid browser provider: ${String(value)}`);
-}
-
-function parseNativeBrowserChannel(value: unknown): NativeBrowserChannel | undefined {
-  if (value === undefined || value === null || value === '') return undefined;
-  if (value === 'chrome' || value === 'chrome-beta' || value === 'chrome-dev' || value === 'chrome-canary') return value;
-  throw new Error(`invalid browser channel: ${String(value)}`);
-}
-
-/**
- * The listing surface of one context. A grant that predates the
- * publicationMerge capability hides the merge tool here as well as at call
- * time, so tools/list cannot advertise a merge the consent never covered.
- */
-export function visibleMcpToolDefinitions(ctx: McpToolContext): McpToolDefinition[] {
-  const definitions = buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: ctx.enableChatgptBrowser === true });
-  if (ctx.policy.capabilities.publicationMerge && ctx.publicationMergeConsented === false) {
-    return definitions.filter((definition) => definition.name !== PUBLICATION_MERGE_TOOL_NAME);
-  }
-  return definitions;
-}
-
-export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgptBrowser?: boolean } = {}): McpToolDefinition[] {
-  const mergeTools = policy.capabilities.publicationMerge ? buildPublicationMergeToolDefinitions() : [];
-  // The dispatch surface is exclusive: a task-dispatch token reaches no workflow, file or shell tool.
-  const reviewPublishTools = policy.profile === 'orchestrator' ? buildReviewPublishToolDefinitions() : [];
-  if (policy.capabilities.taskDispatch) return [...buildHerdrToolDefinitions(), ...reviewPublishTools, ...mergeTools];
+export function buildMcpToolDefinitions(policy: McpPolicy): McpToolDefinition[] {
   const readOnly = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
   const write = { readOnlyHint: false, openWorldHint: false, destructiveHint: false };
   const optionalRepoSchema = {
@@ -770,34 +659,6 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     required: ['title', 'slug', 'idea'],
     additionalProperties: false,
   };
-  const browserRunSchema = {
-    type: 'object',
-    properties: {
-      prompt: { type: 'string' },
-      title: { type: 'string' },
-      files: { type: 'array', items: { type: 'string' } },
-      model: { type: 'string' },
-      thinking: {
-        type: 'string',
-        description: 'Thinking level passed to Oracle (validated by Oracle; e.g. light|standard|extended|extra-high|pro|heavy or UI alias instant|medium|high|xhigh)',
-      },
-      provider: { type: 'string', enum: ['oracle', 'native'] },
-      browserChannel: { type: 'string', enum: ['chrome', 'chrome-beta', 'chrome-dev', 'chrome-canary'] },
-      followups: { type: 'array', items: { type: 'string' } },
-      writeOutput: { type: 'string' },
-      overwriteOutput: { type: 'boolean' },
-      timeoutMs: { type: 'number' },
-      dryRun: { type: 'boolean' },
-    },
-    required: ['prompt'],
-    additionalProperties: false,
-  };
-  const browserSessionSchema = {
-    type: 'object',
-    properties: { sessionId: { type: 'string' } },
-    required: ['sessionId'],
-    additionalProperties: false,
-  };
   const tools: McpToolDefinition[] = [
     { name: 'harness_status', description: 'Return repo-harness adoption and workflow status. Pass repo_path after discover_harness_repos when targeting another adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'harness_doctor', description: 'Return compact MCP setup diagnostics.', inputSchema: optionalRepoSchema, annotations: readOnly },
@@ -808,120 +669,18 @@ export function buildMcpToolDefinitions(policy: McpPolicy, opts: { enableChatgpt
     { name: 'list_prds', description: 'List PRD artifacts under docs/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
     ...buildStateToolDefinitions(),
     ...buildFleetToolDefinitions(),
-    ...mergeTools,
     { name: 'write_prd', description: 'Write a PRD under docs/prds/*.prd.md.', inputSchema: markdownWriterSchema, annotations: write },
     { name: 'write_prd_from_idea', description: 'Turn a product idea into a strict-compatible draft PRD under docs/prds/*.prd.md.', inputSchema: ideaPrdSchema, annotations: write },
-    {
-      name: 'write_task_goal',
-      description: 'Write .ai/harness/handoff/task-goal.md after required section validation.',
-      inputSchema: {
-        type: 'object',
-        properties: { repo_path: { type: 'string' }, body: { type: 'string' }, expected_sha256: { type: 'string' } },
-        required: ['body'],
-        additionalProperties: false,
-      },
-      annotations: write,
-    },
-    {
-      name: 'append_handoff_note',
-      description: 'Append a timestamped planner handoff note.',
-      inputSchema: {
-        type: 'object',
-        properties: { repo_path: { type: 'string' }, actor: { type: 'string' }, body: { type: 'string' } },
-        required: ['body'],
-        additionalProperties: false,
-      },
-      annotations: write,
-    },
   ];
 
   if (policy.capabilities.workspaceReader) {
     tools.push(...buildReaderToolDefinitions(policy));
-  }
-  if (policy.capabilities.workspaceCoder && policy.execution.codingShell) {
-    tools.push(...buildCodingToolDefinitions());
-  }
-  if (opts.enableChatgptBrowser === true) {
-    tools.push(
-      {
-        name: 'run_chatgpt_browser_consult',
-        description: 'Run a local ChatGPT Web browser consult through repo-harness. This may create a real ChatGPT Web conversation unless dryRun is true.',
-        inputSchema: browserRunSchema,
-        annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
-      },
-      {
-        name: 'read_chatgpt_browser_session',
-        description: 'Read a saved repo-harness ChatGPT browser consult session.',
-        inputSchema: browserSessionSchema,
-        annotations: readOnly,
-      },
-      {
-        name: 'list_chatgpt_browser_sessions',
-        description: 'List saved repo-harness ChatGPT browser consult sessions.',
-        inputSchema: {
-          type: 'object',
-          properties: { limit: { type: 'number' } },
-          additionalProperties: false,
-        },
-        annotations: readOnly,
-      },
-      {
-        name: 'open_chatgpt_browser_session',
-        description: 'Return the ChatGPT conversation URL for a saved browser session. The MCP tool does not launch the local browser.',
-        inputSchema: browserSessionSchema,
-        annotations: readOnly,
-      },
-      {
-        name: 'continue_chatgpt_browser_session',
-        description: 'Create a follow-up ChatGPT browser consult record linked to an existing session.',
-        inputSchema: {
-          type: 'object',
-          properties: {
-            sessionId: { type: 'string' },
-            prompt: { type: 'string' },
-            dryRun: { type: 'boolean' },
-          },
-          required: ['sessionId', 'prompt'],
-          additionalProperties: false,
-        },
-        annotations: { readOnlyHint: false, openWorldHint: true, destructiveHint: false },
-      },
-    );
   }
   return tools;
 }
 
 export async function callMcpTool(ctx: McpToolContext, name: string, args: Record<string, unknown> = {}): Promise<CallToolResult> {
   try {
-    if (name === PUBLICATION_MERGE_TOOL_NAME) {
-      if (ctx.publicationMergeConsented === false) {
-        audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
-        return errorResult('TOOL_NOT_AVAILABLE', `${name} requires rerunning setup for the ${ctx.policy.profile} profile: the recorded grant predates the publicationMerge capability.`);
-      }
-      if (!ctx.policy.capabilities.publicationMerge) {
-        audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
-        return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
-      }
-      return callPublicationMergeTool({ repoRoot: ctx.repoRoot, policy: ctx.policy }, args);
-    }
-    if (name === REVIEW_PUBLISH_TOOL_NAME) {
-      if (ctx.policy.profile !== 'orchestrator') {
-        audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
-        return errorResult('TOOL_NOT_AVAILABLE', `${name} is only available in the orchestrator profile.`);
-      }
-      return callReviewPublishTool({ repoRoot: ctx.repoRoot, policy: ctx.policy }, args);
-    }
-    if (ctx.policy.capabilities.taskDispatch) {
-      if (isHerdrTool(name)) return await callHerdrTool({ repoRoot: ctx.repoRoot }, name, args);
-      audit(ctx, name, 'blocked', args, undefined, 'TOOL_NOT_AVAILABLE');
-      return errorResult('TOOL_NOT_AVAILABLE', `${name} is not available in the ${ctx.policy.profile} profile.`);
-    }
-    if (name === 'prepare_codex_goal_from_sprint' || name === 'write_codex_goal') {
-      return errorResult('TOOL_RETIRED', `Upgrade to write_task_goal or repo-harness mcp prepare-goal --issue <n>; the retired tool has no alias.`);
-    }
-    if (isCodingTool(name) && ctx.policy.capabilities.workspaceCoder) {
-      return callCodingTool(codingContext(ctx), name, args);
-    }
     if (isReaderTool(name, ctx.policy)) {
       if (!ctx.policy.capabilities.workspaceReader) {
         return errorResult('TOOL_NOT_AVAILABLE', 'reader tools require the workspace reader capability to be enabled in MCP config.');
@@ -971,7 +730,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         // REPO_HARNESS_HOME); it is not per-repo, so this must not probe the
         // retired <repo>/.repo-harness path. Same shape as runMcpDoctor.
         const localConfig = Boolean(loadMcpLocalConfig());
-        const codexConfig = existsSync(join(target.repoRoot, '.codex', 'config.toml'));
         audit(ctx, name, 'ok', args);
         return textResult({
           status: isRepoHarnessAdopted(target.repoRoot) ? 'ready_local' : 'not_adopted',
@@ -981,15 +739,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
             localConfig,
             policy: 'builtin',
             deniedPaths: ctx.policy.denyGlobs.length,
-          },
-          codex: {
-            configured: codexConfig,
-            fix: codexConfig ? null : 'repo-harness mcp setup codex --repo . --scope project',
-          },
-          chatgpt: {
-            localEndpoint: 'http://127.0.0.1:8765/mcp',
-            manualStepsRequired: true,
-            guide: 'docs/repo-harness-chatgpt-mcp-setup.md',
           },
         });
       }
@@ -1069,113 +818,6 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const slug = slugify(String(args.slug ?? title));
         const body = renderPrdFromIdeaBody(args);
         return writeMarkdownArtifact(ctx, target.repoRoot, name, prdArtifactPath(slug), title, 'prd', body, expectedSha256Arg(args), args);
-      }
-      case 'write_task_goal': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const body = withExecutionBoundary(String(args.body ?? ''));
-        const missing = validateGoal(body);
-        if (body.trim().length < 120 || missing.length > 0) {
-          audit(ctx, name, 'blocked', args, '.ai/harness/handoff/task-goal.md', `missing required goal sections: ${missing.join(', ')}`);
-          return errorResult('INVALID_GOAL', 'task goal is missing required sections or is too small.', { missing });
-        }
-        return writeMarkdownArtifact(ctx, target.repoRoot, name, '.ai/harness/handoff/task-goal.md', 'Task Goal', 'task-goal', body, expectedSha256Arg(args), args);
-      }
-      case 'append_handoff_note': {
-        const target = targetRepoRoot(ctx, args);
-        if (!target.ok) return target.result;
-        const path = '.ai/harness/handoff/chatgpt-plan.md';
-        const decision = resolveMcpPath(target.repoRoot, path, ctx.policy, 'write');
-        if (!decision.ok || !decision.absolutePath) return errorResult('POLICY_DENIED', decision.reason ?? 'path denied');
-        mkdirSync(dirname(decision.absolutePath), { recursive: true });
-        const actor = String(args.actor ?? 'chatgpt-planner').trim() || 'chatgpt-planner';
-        const body = String(args.body ?? '').trim();
-        const block = [``, `## ${new Date().toISOString()}`, ``, `Actor: ${actor}`, ``, body, ``].join('\n');
-        appendFileSync(decision.absolutePath, block, 'utf-8');
-        audit(ctx, name, 'ok', args, path);
-        return textResult({ status: 'appended', repoRoot: target.repoRoot, path });
-      }
-      case 'run_chatgpt_browser_consult': {
-        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
-        const result = await runBrowserConsult({
-          repoRoot: ctx.repoRoot,
-          title: typeof args.title === 'string' ? args.title : undefined,
-          prompt: String(args.prompt ?? ''),
-          files: stringList(args.files).map((path) => ({ path })),
-          followups: stringList(args.followups),
-          model: typeof args.model === 'string' ? args.model : undefined,
-          thinking: typeof args.thinking === 'string' ? args.thinking : undefined,
-          provider: parseBrowserProvider(args.provider),
-          browserChannel: parseNativeBrowserChannel(args.browserChannel),
-          writeOutput: typeof args.writeOutput === 'string' ? args.writeOutput : undefined,
-          writeOutputPolicy: 'mcp',
-          overwriteOutput: args.overwriteOutput === true,
-          timeoutMs: typeof args.timeoutMs === 'number' ? args.timeoutMs : undefined,
-          dryRun: args.dryRun === true,
-        });
-        audit(ctx, name, result.error ? 'failed' : 'ok', args, result.meta.output.outputPath, result.error?.message);
-        return textResult({
-          sessionId: result.sessionId,
-          status: result.status,
-          output: result.output,
-          conversationUrl: result.conversationUrl,
-          paths: {
-            sessionDir: result.paths.sessionDir,
-            output: result.paths.output,
-            transcript: result.paths.transcript,
-          },
-          dryRun: result.dryRun,
-          error: result.error,
-        });
-      }
-      case 'read_chatgpt_browser_session': {
-        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
-        const sessionId = String(args.sessionId ?? '').trim();
-        const session = readSession(ctx.repoRoot, sessionId);
-        audit(ctx, name, 'ok', args);
-        return textResult({
-          meta: session.meta,
-          output: session.output,
-          transcript: session.transcript,
-        });
-      }
-      case 'list_chatgpt_browser_sessions': {
-        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
-        const limit = typeof args.limit === 'number' && Number.isInteger(args.limit) && args.limit > 0 ? args.limit : 20;
-        const sessions = listSessions(ctx.repoRoot, limit);
-        audit(ctx, name, 'ok', args);
-        return textResult({ sessions });
-      }
-      case 'open_chatgpt_browser_session': {
-        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
-        const sessionId = String(args.sessionId ?? '').trim();
-        const result = openSession(ctx.repoRoot, sessionId, false);
-        audit(ctx, name, 'ok', args);
-        return textResult({ sessionId, url: result.url, launched: false });
-      }
-      case 'continue_chatgpt_browser_session': {
-        if (ctx.enableChatgptBrowser !== true) return errorResult('TOOL_DISABLED', 'ChatGPT browser tools require repo-harness mcp serve --enable-chatgpt-browser');
-        const sessionId = String(args.sessionId ?? '').trim();
-        const prompt = String(args.prompt ?? '').trim();
-        const result = await runBrowserFollowup({
-          repoRoot: ctx.repoRoot,
-          sessionId,
-          title: `followup ${sessionId}`,
-          prompt,
-          dryRun: args.dryRun === true,
-        });
-        audit(ctx, name, result.error ? 'failed' : 'ok', args, result.meta.output.outputPath, result.error?.message);
-        return textResult({
-          sourceSessionId: sessionId,
-          sessionId: result.sessionId,
-          status: result.status,
-          output: result.output,
-          paths: {
-            output: result.paths.output,
-            transcript: result.paths.transcript,
-          },
-          error: result.error,
-        });
       }
       default:
         return errorResult('UNKNOWN_TOOL', `unknown MCP tool: ${name}`);

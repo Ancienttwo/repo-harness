@@ -54,10 +54,7 @@ const INTRA_LAYER_ROOTS = ['src/cli', 'src/core', 'src/effects'] as const;
 
 // Keyed by "<dir> <-> <dir>" in sorted order; each value states why the cycle remains.
 // Remove an entry when its cycle is gone; the checker reports a stale entry.
-export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {
-  'src/cli/chatgpt-browser <-> src/cli/mcp':
-    'browser file policy reuses resolveMcpPath; a shared path-policy helper is open mcp-sidecar backlog work',
-};
+export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {};
 
 // Loads the Pi SDK selected on PATH at runtime.
 const RUNTIME_SDK_LOADS: Readonly<Record<string, string>> = {

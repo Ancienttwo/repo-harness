@@ -5,7 +5,7 @@ import { piAgentDir } from './pi-agent-dir';
  * Host skill root rules. Every host skill writer derives its root here:
  * scripts/sync-codex-installed-copies.sh (through skill-surface-select.ts
  * profile-projection), the bundled and staged skill projections, the Herdr
- * skill, the Strategy and ChatGPT Skills, and install ownership.
+ * skill, the Strategy Skill, and install ownership.
  */
 export const SKILL_HOSTS = ['claude', 'codex', 'pi'] as const;
 export type SkillHost = (typeof SKILL_HOSTS)[number];

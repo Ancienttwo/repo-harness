@@ -372,11 +372,11 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   });
 
   // Current closed catalog excludes the retired headless plan skill.
-  test("covers all 16 repo-owned entries plus the 9 external skills (25 packages)", () => {
+  test("covers all 15 repo-owned entries plus the 9 external skills (24 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(25);
+    expect(resolution.catalog.packages.length).toBe(24);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
-    expect(repoOwned.length).toBe(16);
+    expect(repoOwned.length).toBe(15);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
@@ -495,15 +495,6 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       pi: ["repo-harness-cross-review"],
       dsh: [],
     });
-  });
-
-  test("explicit ChatGPT setup is never implied by either install profile", () => {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-chatgpt");
-    }
-    const chatgpt = catalog.packages.find((p) => p.name === "repo-harness-chatgpt");
-    expect(chatgpt?.discoverability).toBe("explicit-setup");
-    expect(chatgpt?.profiles).toEqual([]);
   });
 
   test("externalSkillsForProfile: full gets Waza and Mermaid while Reverse Skill stays explicit-only", () => {
@@ -669,7 +660,7 @@ test("audience source selection returns disjoint complete load groups and reject
   const lines = (body: string) => body.trim().split("\n");
   expect(lines(bot.stdout).map((line) => line.split("\t")[0])).toEqual([
     "repo-harness", "repo-harness-check", "repo-harness-product", "repo-harness-issue-flow", "repo-harness-ship",
-    "obsidian-memory", "repo-harness-cross-review", "repo-harness-herdr-portal", "repo-harness-chatgpt",
+    "obsidian-memory", "repo-harness-cross-review", "repo-harness-herdr-portal",
     "repo-harness-strategy",
   ]);
   expect(lines(worker.stdout).map((line) => line.split("\t")[0])).toEqual([

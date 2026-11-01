@@ -76,13 +76,11 @@ describe('review subject', () => {
       mkdirSync(join(cwd, '.ai/harness/checks'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/evidence/events'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/failures'), { recursive: true });
-      mkdirSync(join(cwd, '.ai/harness/handoff'), { recursive: true });
       mkdirSync(join(cwd, '.ai/harness/state'), { recursive: true });
       writeFileSync(join(cwd, 'tasks/reviews/demo.review.md'), '> **Recommendation**: pass\n');
       writeFileSync(join(cwd, '.ai/harness/checks/latest.json'), '{"status":"pass"}\n');
       writeFileSync(join(cwd, '.ai/harness/evidence/events/log.jsonl'), '{"type":"evidence_event"}\n');
       writeFileSync(join(cwd, '.ai/harness/failures/latest.jsonl'), '{"guard":"demo"}\n');
-      writeFileSync(join(cwd, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
       writeFileSync(join(cwd, '.ai/harness/state/effective.json'), '{}\n');
 
       const operationalOnly = buildReviewSubject(cwd);
@@ -90,7 +88,6 @@ describe('review subject', () => {
         '.ai/harness/checks/latest.json',
         '.ai/harness/evidence/events/log.jsonl',
         '.ai/harness/failures/latest.jsonl',
-        '.ai/harness/handoff/task-goal.md',
         '.ai/harness/state/effective.json',
         'tasks/reviews/demo.review.md',
       ]);

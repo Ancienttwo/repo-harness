@@ -110,7 +110,7 @@ sequenceDiagram
 3. **本地依赖优先于全局。** 解析顺序是 `AGENTIC_DEV_CODEGRAPH_LOCAL_BIN`、平台包 `node_modules/@colbymchenry/codegraph-<platform>-<arch>/bin/codegraph`、`node_modules/.bin/codegraph`，最后是 PATH 上的 `codegraph`（`check-agent-tooling.sh:1605-1625`）。`AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL=0` 和 `AGENTIC_DEV_CODEGRAPH_ALLOW_GLOBAL=0` 可以关掉其中一侧。
 4. **host 配置只在显式命令下写入。** 只有 `tools configure codegraph` 和 `init --configure-codegraph-mcp` 改写 host MCP 配置。`install` 和默认 ensure/check 路径不写。
 5. **全局配置写入受 host 锁和归属回执保护。** `--location global` 时，`tools configure` 在 runtime host 事务锁内运行（`src/cli/commands/tools.ts:155-158`）。`configureCodegraph` 再通过 `withConfigurationMutation` 记录配置归属（`src/cli/tools/codegraph.ts:716-721`）。卸载因此能精确还原（`46405ed9`，complete user configuration uninstall）。
-6. **MCP 执行面不信任仓库内的可执行文件。** mcp-sidecar 的 coding runtime 以 `allowRepoLocalBin: false` 构造适配器（`src/cli/mcp/server.ts:138-141`）。PATH 中位于仓库内的目录被剔除，仓库内的显式 bin 覆盖被拒绝（`src/cli/mcp/codegraph-adapter.ts:94-109`）。被索引的仓库不能控制索引器。
+6. **仓库内可执行文件的拒绝只在调用方要求时生效。** 以 `allowRepoLocalBin: false` 构造的适配器剔除 PATH 中位于仓库内的目录，并拒绝仓库内的显式 bin 覆盖（`src/cli/mcp/codegraph-adapter.ts:94-109`）。唯一这样构造适配器的 MCP 路径是 coding runtime，#1354 删除了它。保留的 reader 工具用 `src/cli/mcp/general-repo-access.ts:196` 的默认适配器，`allowRepoLocalBin` 默认为 true（`codegraph-adapter.ts:224`）。#1354 之前 planner 与 executor 也走这个默认值。
 7. **下游生成仓库默认使用全局 MCP。** 本仓库把 CodeGraph 作为 devDependency 是自托管特例。下游仓库只有在本地 policy 显式选择时才使用 vendored 依赖。
 
 ### 3.2 关键权衡
@@ -133,7 +133,7 @@ sequenceDiagram
 - `src/cli/commands/tools.ts` 原本没有归属，现在加入本 capability。它的子命令只有 `tools ensure codegraph` 和 `tools configure codegraph`（`tools.ts:108-165`）。
 - `src/cli/mcp/codegraph-adapter.ts` 同时被本 capability 和 mcp-sidecar 的 `src/cli/mcp/**` 声明。按最长前缀，registry 判给本 capability。重复归属等待 include 收窄（arch-context#296）。
 - 本 capability 的 include 包含它自己的投影文档 `docs/architecture/modules/verification/codegraph-readiness.md`。其他 capability 不拥有自己的投影页。归属提议 §1f 建议删除这一条。按用户决定，收窄推迟。
-- 开放问题：`src/cli/mcp/coding-tools.ts:79` 用默认参数构造适配器，`allowRepoLocalBin` 默认为 true（`codegraph-adapter.ts:224`）。这条路径是否在生产中可达？没有验证。如果可达，§3.1 第 6 条在这条路径上不成立。
+- 开放问题：`src/cli/mcp/general-repo-access.ts:196` 用默认参数构造适配器，`allowRepoLocalBin` 默认为 true（`codegraph-adapter.ts:224`）。planner 与 executor 的 reader 工具走这条路径，所以被索引的仓库可以提供 codegraph 可执行文件。
 
 ## 4. 历史决策记录（append-only）
 
@@ -221,4 +221,4 @@ scripts/ensure-codegraph.sh --init|--sync
 ## Optimization Backlog
 
 - 在 arch-context#296 之后：从 mcp-sidecar 删除 `codegraph-adapter.ts` 的重叠声明；删除本 capability 对自己投影页的 include；删除 `tests/cli/codegraph-resolver.test.ts` 条目（测试归 evals-checks）。
-- 确认 `coding-tools.ts:79` 的默认适配器是否可达。如果可达，改为 `allowRepoLocalBin: false`。
+- 决定 `general-repo-access.ts:196` 的默认适配器是否改为 `allowRepoLocalBin: false`。
