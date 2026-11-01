@@ -31,7 +31,6 @@ source:
     - src/effects/sessions/task-sessions.ts
     - src/effects/terminal/native-task-session.ts
     - src/effects/terminal/task-session-reader.ts
-    - src/effects/terminal/task-session-io.ts
   entrypoints:
     - id: "entrypoint.task-agent-host.session"
       path: "src/effects/terminal/task-session.ts"

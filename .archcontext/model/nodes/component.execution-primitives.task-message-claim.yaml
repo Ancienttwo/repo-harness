@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.task-message-claim
+kind: component
+name: Task Message Claim Primitives
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: core
+summary: Holds the shared task message claim, the message error type and the closed message field checks as core code.
+responsibilities:
+  - Validate the exact task message claim reference that the task inbox and provider feedback records share.
+  - Provide the closed message field, UUID, SHA-256 and timestamp checks and the task message error type.
+source:
+  include:
+    - src/core/messages/task-message-claim.ts
+    - src/core/messages/task-message-error.ts
+    - src/core/messages/mechanics.ts
