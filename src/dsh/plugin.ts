@@ -6,6 +6,8 @@ import type { UserMessage } from '@deepseek-ai/dsh-llm/message';
 import type { BridgeHookOutput } from '../cli/hook/hook-protocol';
 import type { HookEvent, RouteId } from '../cli/hook/route-registry';
 import { resolveDshBridge, type DshBridgeOptions } from './bridge';
+import { guardDenialsProjection } from './guard-denials';
+import { GUARD_DENIED_ERROR_CODE, GUARD_DENIED_ERROR_NAME } from './protocol';
 import type { HookBridge } from '../cli/hook/bridge-client';
 
 /**
@@ -15,8 +17,10 @@ import type { HookBridge } from '../cli/hook/bridge-client';
  * maps `write`, `edit` and `bash` calls to the existing typed hook runtime and
  * denies the call when the runtime denies it. Session context is injected once
  * through `agent/pre-step`; `agent/turn-stopping` records the existing Stop
- * observation. The plugin never changes tool definitions and never inspects
- * repository policy itself.
+ * observation. Every denial carries `REPO_HARNESS_GUARD_DENIED` as its error
+ * code; the `guard-denials` projection lists those calls for the web client.
+ * The plugin never changes tool definitions and never inspects repository
+ * policy itself.
  *
  * Scope: native `write`, `edit`, `bash`, including nested PTC calls that use
  * the same pipeline. MCP writes, `pwsh`, user `!` commands and writes from
@@ -113,7 +117,13 @@ export function createDshPlugin(config: DshPluginConfig = {}): DshPlugin {
       const bridge = resolved.bridge;
       const sessions = new WeakMap<Session, SessionState>();
 
-      const deny = (reason: string): PreToolDecision => ({ kind: 'deny', reason });
+      // DSH persists `info` on the `tool/result` event, so the client can tell
+      // a repo-harness denial from any other tool failure without parsing text.
+      const deny = (reason: string): PreToolDecision => ({
+        kind: 'deny',
+        reason,
+        info: { name: GUARD_DENIED_ERROR_NAME, code: GUARD_DENIED_ERROR_CODE, reason },
+      });
 
       const stateFor = (session: Session): SessionState => {
         let state = sessions.get(session);
@@ -251,6 +261,12 @@ export function createDshPlugin(config: DshPluginConfig = {}): DshPlugin {
         } catch {
           // Stop is advisory. Never retry an uncertain effect.
         }
+      });
+
+      // The denial list is optional: a composition without the projection
+      // registry (headless, SDK) still runs the guard.
+      ctx.inject(['sessionProjections'], (inner) => {
+        inner.sessionProjections.register(guardDenialsProjection);
       });
 
       ctx.effect(() => () => bridge.close());

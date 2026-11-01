@@ -4,4 +4,4 @@
 # different placement overrides this row by id in its own cordis.patch.yml.
 - insert:
     - id: repo-harness
-      name: 'repo-harness/dist/dsh-plugin.js'
+      name: './dist/dsh/plugin.js'

@@ -475,6 +475,57 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   }
 }
 
+// These flags run a script in another package or directory, or allow a missing script.
+const RUN_SCOPE_FLAGS = new Set(['--filter', '-F', '-w', '--workspace', '--workspaces', '-ws', '--cwd', '--prefix', '-C', '--if-present']);
+const RUN_SWITCHES = new Set(['-s', '--silent', '--bun']);
+
+/**
+ * Return the root script that one `bun run` / `npm run` invocation names, or
+ * null when the invocation does not name a root script unambiguously. A flag
+ * that may take a separate value makes the target unknown.
+ */
+function rootRunTarget(args: string): string | null {
+  const tokens = args.split(/&&|\|\||[;|&()`\n]/)[0]!.trim().split(/\s+/).map((token) => token.replace(/^(['"])(.*)\1$/, '$2'));
+  if (tokens.some((token) => RUN_SCOPE_FLAGS.has(token.split('=')[0]!))) return null;
+  for (const token of tokens) {
+    if (!token.startsWith('-')) return token || null;
+    if (token === '--' || (!token.includes('=') && !RUN_SWITCHES.has(token))) return null;
+  }
+  return null;
+}
+
+/**
+ * `repo-harness run` resolves only the helpers in the shipped registry, and
+ * init deletes generated script keys that other scripts may still run. Both
+ * fail at run time. User scripts stay as they are; the report lists each key
+ * and command.
+ */
+function scanPackageScripts(root: string, add: AddItem): void {
+  const path = join(root, 'package.json');
+  if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
+  const value = readJson(path);
+  if (!record(value) || !record(value.scripts)) return;
+  const scripts = value.scripts;
+  const helpers = loadWorkflowContractAsset<Contract>().helpers?.scripts;
+  if (!helpers) throw new Error('package script inventory requires the helper registry');
+  const runnable = new Set(helpers.flatMap((name) => [name, name.replace(/\.[^.]+$/, '')]));
+  // `bun run` falls back to a file or a local binary; `npm run` runs only script keys.
+  const resolves = (runner: string, target: string): boolean => Object.hasOwn(scripts, target)
+    || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
+  const findings = Object.entries(scripts).flatMap(([key, command]) => {
+    if (typeof command !== 'string') return [];
+    const retired = [...command.matchAll(/\brepo-harness run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
+    const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {
+      const target = rootRunTarget(command.slice(match.index + match[0].length));
+      return target === null || resolves(match[1]!, target) ? [] : [` (missing script "${target}")`];
+    });
+    return retired || missing.length > 0 ? [`${key}: ${command}${missing.join('')}`] : [];
+  });
+  if (findings.length === 0) return;
+  add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
+    reason: `Package scripts call a helper that this package does not ship or a script that package.json does not define; review them without automatic edits: ${findings.join('; ')}` });
+}
+
 /** Fail closed: an unreadable directory counts as user content. */
 function directoryHasOtherEntries(directory: string, ownName: string): boolean {
   try {
@@ -587,6 +638,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
       }
     };
     walk(join(root, '.ai'));
+    scanPackageScripts(root, add);
   }
   if (projectEnabled) scanProjectRefresh(options, actions, manifest, add);
   if (options.scope !== 'project') {
