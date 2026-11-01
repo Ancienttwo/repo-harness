@@ -12,3 +12,7 @@ source:
   include:
     - src/effects/setup/**
     - src/effects/dev-activity/**
+  exclude:
+    - src/effects/setup/pi-host-probe.ts
+    - src/effects/setup/pi-herdr-integration.ts
+    - src/effects/setup/pi-capability-child.ts
