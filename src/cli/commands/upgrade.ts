@@ -549,7 +549,9 @@ export interface UpgradeDecideResult {
 
 /**
  * Record decisions for current project report items. The decision binds the
- * current content hash. Any rejected path stops the write, and nothing is deleted here.
+ * current content hash. Each path is judged alone: one atomic write records
+ * every valid path, and any rejected path makes the exit code 1. Nothing is
+ * deleted here.
  */
 export function runUpgradeDecide(opts: UpgradeDecideOptions): UpgradeDecideResult {
   try {
@@ -575,13 +577,14 @@ export function runUpgradeDecide(opts: UpgradeDecideOptions): UpgradeDecideResul
       if (reason) rejected.push({ path, reason });
       else recorded.push({ path, decision: opts.decision, contentHash: snapshot!.contentHash! });
     }
-    if (rejected.length > 0) return { exitCode: 1, recorded: [], rejected };
+    const exitCode = rejected.length > 0 ? 1 : 0;
+    if (recorded.length === 0) return { exitCode, recorded, rejected };
     const target = join(cwd, UPGRADE_DECISIONS_PATH);
     if (!isLegacyPathSafe(cwd, target, false)) throw new Error(`unsafe upgrade decision path: ${target}`);
     mkdirSync(dirname(target), { recursive: true });
     if (!isLegacyPathSafe(cwd, target, false)) throw new Error(`unsafe upgrade decision path: ${target}`);
     atomicWriteFileSync(target, formatJson({ version: 1, decisions: mergeUpgradeDecisions(existing, recorded) }));
-    return { exitCode: 0, decisionsPath: target, recorded, rejected };
+    return { exitCode, decisionsPath: target, recorded, rejected };
   } catch (error) {
     return { exitCode: 1, recorded: [], rejected: [], error: error instanceof Error ? error.message : String(error) };
   }
@@ -592,7 +595,7 @@ export function formatUpgradeDecideResult(result: UpgradeDecideResult, asJson = 
   const lines = result.recorded.map((decision) => `Recorded ${decision.decision}: ${decision.path}`);
   if (result.decisionsPath) lines.push(`Decisions: ${result.decisionsPath}`);
   for (const rejection of result.rejected) lines.push(`Rejected ${rejection.path}: ${rejection.reason}`);
-  if (result.rejected.length > 0) lines.push('No decisions were written.');
+  if (result.rejected.length > 0 && result.recorded.length === 0) lines.push('No decisions were written.');
   if (result.error) lines.push(`Failed: ${result.error}`);
   return `${lines.join('\n')}\n`;
 }
