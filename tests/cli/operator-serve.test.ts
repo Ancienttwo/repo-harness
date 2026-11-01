@@ -14,7 +14,9 @@ import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
 import { spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
-import { readArchitecture } from '../../src/effects/operator/architecture';
+import { readArchitecture, readHistory } from '../../src/effects/operator/architecture';
+import type { ArchctxProcessResult } from '../../src/effects/architecture/archctx-provider';
+import { ARCHITECTURE_FAILURES } from '../../src/core/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import type { DevActivitySnapshotV2 } from '../../src/core/dev-activity/types';
@@ -32,6 +34,7 @@ import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
 
 import {
+  architectureStatus,
   startOperatorServer,
   type OperatorServerOptions,
 } from '../../src/effects/operator/server';
@@ -1676,6 +1679,22 @@ test('architecture public outputs hide secrets and path escape never reads an ou
       const escaped = await fetch(server.url + path + `/${MODULE_ID}`); expect(escaped.status).toBe(422); expect(await escaped.json()).toEqual({ code: 'path_escape' });
     } finally { spy.mockRestore(); rmSync(outside, { recursive: true, force: true }); }
   } finally { await server.close(); for (const path of [root, registry.home]) rmSync(path, { recursive: true, force: true }); }
+});
+
+test('architecture history names each archctx failure with its public code and status', () => {
+  // The error envelopes are archctx 0.11.0 output: a shallow clone, and an unknown --ref.
+  const failure = (error: Record<string, unknown>): ArchctxProcessResult => ({ status: 1, signal: null, stderr: '',
+    stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'history', error: { code: 'AC_PRECONDITION_FAILED', severity: 'warning', ...error } }) });
+  const cases: [ArchctxProcessResult, string, number][] = [
+    [failure({ message: 'Architecture history requires a complete Git repository.', retryable: true, action: 'unshallow-repository', reasonCode: 'history-shallow-repository', details: {} }), 'history_shallow_repository', 422],
+    [failure({ message: 'native-context-ref-unavailable', retryable: false, action: 'repair-native-input', reasonCode: 'native-context-ref-unavailable', details: { selector: 'ref' } }), 'commit_not_found', 404],
+    [{ status: null, signal: null, stdout: '', stderr: '', timedOut: true }, 'timeout', 504],
+  ];
+  for (const [result, code, status] of cases) {
+    expect(() => readHistory(process.cwd(), { kind: 'architecture_history', repository_id: 'repo_0123456789abcdef', offset: 0, limit: 25, ref: null }, { env: process.env, run: () => result })).toThrow(code);
+    expect(ARCHITECTURE_FAILURES).toContain(code as typeof ARCHITECTURE_FAILURES[number]);
+    expect(architectureStatus(code)).toBe(status);
+  }
 });
 
 test('architecture prompt keeps public absolute-path examples in CLI digest parity', async () => {

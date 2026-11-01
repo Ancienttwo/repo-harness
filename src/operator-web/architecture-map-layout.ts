@@ -4,6 +4,7 @@
 // the model's layer order, each top-level node sits in its own layer's band,
 // the first layer at the top. Box width follows the node's line count from the
 // collector. This module computes positions only and adds no fact to the map.
+// A history milestone has no sizes, layer order or imports, so those inputs are optional.
 
 import * as dagre from '@dagrejs/dagre';
 import type { ArchitectureMapNodeV1, ArchitectureMapRelationV1, ArchitectureMapV1 } from '../core/operator/architecture-map';
@@ -19,8 +20,19 @@ const MAP_GROUP_GAP = 12;
 /** Relations between processes, hosts and data. The canvas draws them dashed; code relations stay solid. */
 export const DASHED_KINDS: ReadonlySet<string> = new Set(['spawns', 'runs-in', 'deployed-on', 'mounts', 'reads', 'writes', 'publishes', 'subscribes']);
 
+/** The node and relation fields that the layout and the canvases read. */
+export type MapLayoutInputNode = Pick<ArchitectureMapNodeV1, 'id' | 'kind' | 'name' | 'layer' | 'parent'>;
+export type MapLayoutInputRelation = Pick<ArchitectureMapRelationV1, 'id' | 'kind' | 'source' | 'target'>;
+export interface MapLayoutInput {
+  readonly nodes: readonly MapLayoutInputNode[];
+  readonly relations: readonly MapLayoutInputRelation[];
+  readonly sizes?: ArchitectureMapV1['sizes'];
+  readonly layer_order?: ArchitectureMapV1['layer_order'];
+  readonly dependencies?: ArchitectureMapV1['dependencies'];
+}
+
 export interface MapLayoutNode {
-  readonly node: ArchitectureMapNodeV1;
+  readonly node: MapLayoutInputNode;
   /** Top-left corner on the canvas. */
   readonly x: number;
   readonly y: number;
@@ -32,7 +44,7 @@ export interface MapLayoutNode {
 }
 
 export interface MapLayoutEdge {
-  readonly relation: ArchitectureMapRelationV1;
+  readonly relation: MapLayoutInputRelation;
   readonly dashed: boolean;
   /** Imports behind a capability-to-capability relation; null when `archctx deps` has no count for it. */
   readonly imports: number | null;
@@ -61,9 +73,9 @@ export interface MapLayout {
 
 interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
-export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
-  const sizes = new Map(map.sizes.state === 'ok' ? map.sizes.nodes.map(size => [size.id, { files: size.files, lines: size.lines }]) : []);
-  const members = new Map<string, ArchitectureMapNodeV1[]>();
+export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
+  const sizes = new Map(map.sizes?.state === 'ok' ? map.sizes.nodes.map(size => [size.id, { files: size.files, lines: size.lines }]) : []);
+  const members = new Map<string, MapLayoutInputNode[]>();
   for (const node of map.nodes) if (node.parent !== null) members.set(node.parent, [...(members.get(node.parent) ?? []), node]);
   const leafLines = map.nodes.flatMap(node => members.has(node.id) ? [] : [sizes.get(node.id)?.lines ?? 0]);
   const maxLines = Math.max(1, ...leafLines);
@@ -108,7 +120,7 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
   graph.setDefaultEdgeLabel(() => ({}));
   for (const node of top) graph.setNode(node.id, sizeOf(node.id));
   // Band of each top-level node: its layer's position in the order; the model's unlayered nodes go below the last layer.
-  const order = map.layer_order.state === 'ok' ? map.layer_order.layers : null;
+  const order = map.layer_order?.state === 'ok' ? map.layer_order.layers : null;
   const band = new Map(order === null ? [] : top.map(node => [node.id, node.layer === null ? order.length : order.indexOf(node.layer)]));
   const used = [...new Set(band.values())].sort((a, b) => a - b);
   // A zero-size anchor above each band and one below the last: every node of a band ranks below its anchor and above the next.
@@ -141,7 +153,7 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
   }
   // Parents before members at every depth: React Flow places a member relative to a parent it has already seen.
   const nodes: MapLayoutNode[] = [];
-  const visit = (node: ArchitectureMapNodeV1, parent: Box | null) => {
+  const visit = (node: MapLayoutInputNode, parent: Box | null) => {
     const own = parent === null ? placed.get(node.id)! : inner.get(node.id)!;
     const box = { x: (parent?.x ?? 0) + own.x, y: (parent?.y ?? 0) + own.y, width: own.width, height: own.height };
     nodes.push({ node, ...box, group: members.has(node.id), size: sizes.get(node.id) ?? null });
@@ -149,7 +161,7 @@ export function layoutArchitectureMap(map: ArchitectureMapV1): MapLayout {
   };
   for (const node of top) visit(node, null);
 
-  const imports = new Map(map.dependencies.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
+  const imports = new Map(map.dependencies?.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
   const maxImports = Math.max(1, ...imports.values());
   const edges = map.relations.map(relation => {
     const count = imports.get(`${relation.source}\n${relation.target}`) ?? null;

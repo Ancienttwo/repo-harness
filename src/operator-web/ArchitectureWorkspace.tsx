@@ -3,6 +3,7 @@ import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
+import { ArchitectureHistory } from './ArchitectureHistory';
 import { ArchitectureMap, type ArchitectureBaseMap, type ArchitectureMapReader } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
@@ -63,6 +64,9 @@ function useArchitectureRead<T>(path: string | null, decode: (value: unknown) =>
 
 function repositoryPath(repositoryId: string): string {
   return `/api/v1/repositories/${encodeURIComponent(repositoryId)}/architecture/modules`;
+}
+function historyPath(repositoryId: string): string {
+  return `/api/v1/repositories/${encodeURIComponent(repositoryId)}/architecture/history`;
 }
 
 /** The exact command the Bot runs for the shard on screen. */
@@ -237,10 +241,10 @@ function ModulePage({ detail, base, generation, onModule, t }: {
  * Read-only view of the committed architecture model. Every action is a command
  * for the Bot to copy; the board sends no request that acts on it.
  */
-/** Design order: the module base map (layered by the model's layer order), sequence, topology, then the module list. */
-type ArchitectureView = 'map' | 'sequence' | 'topology' | 'modules';
-const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'sequence', 'topology', 'modules'];
-const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules'>, ArchitectureBaseMap>> = { map: 'modules', sequence: 'sequence', topology: 'topology' };
+/** Design order: the module base map (layered by the model's layer order), sequence, topology, the module list, then history. */
+type ArchitectureView = 'map' | 'sequence' | 'topology' | 'modules' | 'history';
+const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'sequence', 'topology', 'modules', 'history'];
+const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules' | 'history'>, ArchitectureBaseMap>> = { map: 'modules', sequence: 'sequence', topology: 'topology' };
 
 function ViewTabs({ view, onChange, t }: { readonly view: ArchitectureView; readonly onChange: (view: ArchitectureView) => void; readonly t: OperatorTranslate }) {
   return <div className="architecture-tabs" role="tablist" aria-label={t('architecture.views')}>
@@ -259,8 +263,10 @@ function ViewTabs({ view, onChange, t }: { readonly view: ArchitectureView; read
   </div>;
 }
 
-export function ArchitectureWorkspace({ repositoryId, moduleId, onModule, refreshGeneration, readMap, t }: {
+export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule, refreshGeneration, readMap, t }: {
   readonly repositoryId: string;
+  /** `owner/name` on GitHub, for commit links in the history. */
+  readonly github: string | null;
   readonly moduleId: string | null;
   readonly onModule: (id: string | null) => void;
   readonly refreshGeneration: number;
@@ -283,10 +289,11 @@ export function ArchitectureWorkspace({ repositoryId, moduleId, onModule, refres
     {moduleId === null ? <>
       <ViewTabs view={view} onChange={setView} t={t} />
       <div id="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
-        {view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} t={t} /> : <>
-          <ReadStatus read={index} loading="architecture.loading" t={t} />
-          {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
-        </>}
+        {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} t={t} />
+          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} t={t} /> : <>
+            <ReadStatus read={index} loading="architecture.loading" t={t} />
+            {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
+          </>}
       </div>
     </> : <>
       <ReadStatus read={detail} loading="architecture.module.loading" t={t} />
