@@ -1,5 +1,3 @@
-# runtime-harness/engineer-bindings 架構文檔
-
 <!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4b7d6fd02c8f2f808bd092acd720b763b234392f96c97874971bb40ade7ef0e7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-bindings`(kind `capability`)
@@ -99,28 +97,3 @@ sequenceDiagram
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-bindings" -->
-
-## 3. P3: Retained read invariants
-
-- Profile and SOP files must be tracked. The capability model owns the referenced capability contract.
-- A session selects an engineer profile only through explicit admitted metadata: the engineer ID and its exact contract revision.
-- `src/core/engineers/principal-claim.ts` keeps the historical principal mapping and Claim Actor codecs. They validate canonical historical bytes. No reader resolves a lease owner.
-- Engineer CLI, OAuth principal registration, acquisition, the binding store reader, the claim actor store and all binding writers are removed. Stored bytes below the Git common directory stay in place.
-
-## 4. 歷史決策記錄(append-only)
-
-### 2026-08-24 ME-0A authority foundation
-
-- The original implementation plan is not tracked. The requirement is in the [historical PRD](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/20260824-1653-engineer-profile-binding-projection.prd.md).
-- Accepted architecture change: `changeset.plan-20260824-2126-me0a-engineer-profile-binding`, bound to archived external approval `event.review-20260824-2050-persistent-module-engineer-me0a-approval`.
-- EngineerPrincipal, Session mutation, ClaimActorReceipt, delegation, messaging, Worker Host, Provider lifecycle, handoff, Human Board, and remote access remain separate Draft children and receive no authority from this module.
-
-### 2026-08-25 ME-0B principal and claim actor
-
-- Approved work-package: [archived plan-20260825-0029-me0b-engineer-principal-claim-actor.md](https://github.com/Ancienttwo/repo-harness/blob/ed438b88e71e8f7d1c753163d2a27bf7225e9d4c/plans/plan-20260825-0029-me0b-engineer-principal-claim-actor.md).
-- Accepted architecture change: `changeset.plan-20260825-0029-me0b-engineer-principal-claim-actor`, bound to Human approval `event.review-20260825-0029-me0b-engineer-principal-claim-actor-approval`; the final residual refresh covered `verified-flow-proof-changed` for `capability.runtime-harness.engineer-bindings` and `capability.runtime-harness.mcp-sidecar`.
-- EngineerPrincipal and ClaimActorReceipt are now in scope; Provider adapters, Session lifecycle, Worker Host, Work Package Graph, delegation, messaging, writer grant, handoff, interface request, Human Board, and remote access remain separate children.
-
-### 2026-10-11 P2 flow 改为三个不同步骤
-
-- P2 flow 原来三个步骤都是同一个 selector。现在分别是：operator CLI 发布 Binding，主体解析读取当前 Binding，`acquireEngineerTaskLocked` 构建 ClaimActorReceipt。

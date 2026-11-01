@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.evals-checks.imports.engineer-bindings",
-  "kind": "depends-on",
-  "source": "capability.verification.evals-checks",
-  "target": "capability.runtime-harness.engineer-bindings",
-  "intent": "Test Engineer Bindings behavior through its source modules."
-}

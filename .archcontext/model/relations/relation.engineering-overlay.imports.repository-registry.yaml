@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.engineering-overlay.imports.repository-registry",
-  "kind": "depends-on",
-  "source": "capability.runtime-harness.engineering-overlay",
-  "target": "component.execution-primitives.repository-registry",
-  "intent": "Read the repository registry for overlay observations."
-}

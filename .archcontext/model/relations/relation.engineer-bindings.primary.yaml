@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.engineer-bindings.primary",
-  "kind": "calls",
-  "source": "capability.runtime-harness.engineer-bindings",
-  "target": "component.engineer-bindings.primary",
-  "intent": "Resolve and validate tracked Engineer profiles"
-}

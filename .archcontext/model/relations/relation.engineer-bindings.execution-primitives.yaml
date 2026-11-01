@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.engineer-bindings.execution-primitives
-kind: calls
-source: capability.runtime-harness.engineer-bindings
-target: capability.workflow-engine.execution-primitives
-intent: "List tracked Engineer profile and SOP paths through the shared Git runner"

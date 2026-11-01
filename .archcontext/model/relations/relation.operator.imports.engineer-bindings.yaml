@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.operator.imports.engineer-bindings",
-  "kind": "depends-on",
-  "source": "capability.runtime-harness.operator",
-  "target": "capability.runtime-harness.engineer-bindings",
-  "intent": "Use claim identity types for task activity."
-}

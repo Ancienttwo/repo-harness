@@ -1,5 +1,3 @@
-# runtime-harness/integration-acceptance 架構文檔
-
 <!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:18d41c267499efee3f1d8bfc37b0fce9d0e47e84f090daf668527994360c0435" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.integration-acceptance`(kind `capability`)
@@ -114,56 +112,3 @@ sequenceDiagram
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-integration-acceptance" -->
-
-## 3. P3:設計決策與不變量
-
-### 3.1 必须保持的不变量
-
-1. **组合候选是一个已存在的 Git commit 与 tree。** Envelope 证明 base 与每个必需 PR 的 provider merge commit 都是该候选的祖先（`src/effects/integration/product-acceptance.ts#observeSelectedPullRequest`）。本能力从不构造或排序合并（[historical record](https://github.com/Ancienttwo/repo-harness/blob/f3f2862df/tasks/archive/notes-20260826-0246-me4c-integration-product-acceptance.md)，[PRD](https://github.com/Ancienttwo/repo-harness/blob/1072bbfb91fac8a9f26bdd4feb09fd933a4e1437/docs/prds/20260824-1653-integration-product-acceptance.prd.md#L21)）。
-2. **`AcceptanceReceipt` 是唯一的产品裁决。** `ProductAcceptanceProjectionV1` 只验证并引用现有的 protocol-2 receipt。它不能签发、豁免、合并或改变验收状态（notes，PRD `:21`）。
-3. **每个可变读取都绑定确切的字节与摘要。** 范围包括 Approved PRD 与 spec、仓库身份、每个必需 PR 的 provider integration 观察、Git refs 与 tree、matrix 证据与 target revision（notes）。
-4. **必需 PR 观察两次。** Envelope 对 contract 中的每个 `required_pull_requests` 读两次 provider merge commit 与 tree。两次不同时以 `publication_stale` 失败。provider merge tree 必须等于本地 commit 的 tree（`src/effects/integration/product-acceptance.ts:402-457`）。
-5. **记录不可变且按内容寻址。** IntegrationContract、IntegrationEnvelope、AcceptanceMatrix 与 ProductAcceptanceProjection 存在 git common dir 下，没有可变的当前指针（notes，`src/effects/integration/product-acceptance.ts:340-345`）。
-6. **拒绝 symlink 证据。** CLI 输入边界与仓库证据边界都拒绝词法与解析后的 symlink，防止之后重定向改变已冻结的主体（notes）。
-7. **本能力不改任何权威。** CLI 只做 build、read 与 accept。它不构造合并，也不改 GitHub issue、PR、review admission 或 Acceptance 状态（capability responsibilities）。
-
-### 3.2 关键权衡
-
-| 决策 | 权衡 |
-| --- | --- |
-| 不在本能力内构造合并候选 | Git 已拥有 commit 构造与排序。加入合并副作用会扩大权威与回滚范围（notes） |
-| 不引入第二个产品裁决 | 已验证的 `AcceptanceReceipt` 是权威。第二个签发者会产生无法调和的双重事实（notes） |
-| 不存可变的集成指针 | 内容寻址加显式 ID 足以支持有界的本地 CLI，也不引入新的协调平面（notes） |
-| Accept 时重读并重新验证所有围栏 | 代价是重复的 Git 与文件系统读取。收益是陈旧的指针、证据、需求与候选都 fail closed（notes） |
-| 复用 publication 的 `stablePublicationJson` 与 `publicationSha256` 计算摘要 | 摘要规则与 publication receipt 一致。代价：本能力依赖 publication 的 core 模块 |
-
-### 3.3 消费方
-
-- Engineer scheduling 的 dependency authority 读取本能力持久化的投影来回答 `product_accepted`（`docs/spec.md:255`，#298）。它从不重新计算产品裁决。
-
-## 4. 歷史決策記錄(append-only)
-
-### ME-4C 交付 (2026-08-26, `03db824d`)
-
-- P3：组合候选、单一裁决与内容寻址这三条决定见 notes 的 Tradeoffs 表。
-
-### CLI 归属与 publication 依赖进入模型 (2026-10-11)
-
-- P1：`src/cli/commands/integration.ts` 此前没有 owner。它只调用本能力的模块。
-- P3：这次变更把它加入 capability 与 primary 组件。Flow 增加读取 PublicationReceipt 缓存的一步，并声明 integration-acceptance → publication 关系。
-
-## Optimization Backlog
-
-- **验证命令不符合仓库约定。** Capability 的 verification 用 `bun test ... --timeout 60000`。仓库约定是 `bun run test:files <files> --timeout 60000 --max-concurrency 1`（`CLAUDE.md` Testing）。
-
-## Selector evidence (2026-10-18)
-
-The envelope entry delegates to `buildCurrentEnvelope`. That helper calls the schema builder. `observeSelectedPullRequest` reads provider integration evidence for each required PR (`src/effects/integration/product-acceptance.ts:402-426`). The provider read is `collectPullRequestIntegration` in `src/effects/publication/merge-readiness.ts`.
-
-The product command selector covers the accept action registered by `buildIntegrationCommand`.
-`src/cli/commands/integration.ts:168-177` contains the callback's call to `createProductAcceptanceProjection`.
-Command registration alone does not execute acceptance.
-`src/effects/integration/product-acceptance.ts:543-554` selects `dependencies.verify_acceptance` or `verifyAcceptance`, then calls that local verifier.
-CodeGraph does not prove this indirect verifier call.
-`src/effects/integration/product-acceptance.ts:567-574` contains the separate product schema selector's direct call to `buildProductAcceptanceProjection`.
-A proven command selector does not establish end-to-end acceptance proof.

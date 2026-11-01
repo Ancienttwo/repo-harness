@@ -190,4 +190,4 @@ sequenceDiagram
 
 - **After arch-context#296：决定 `src/effects/terminal/` 的目录归属。** 现在目录中的新文件会成为 unowned。
 - **`task-session.ts` 过大。** 候选拆分：身份证明、request 轮次、清理。可展开，现在不拆。
-- **入向调用者分散。** `scripts/contract-worktree-runtime.ts`、`src/effects/review/generic-review.ts`、`src/cli/mcp/tools.ts` 与 agent-runtime-effects 的 `herdr-cli-agent.ts` 直接调用 task-session 或 herdr。
+- **入向调用者分散。** `scripts/contract-worktree-runtime.ts`、`src/effects/review/generic-review.ts` 与 `src/cli/mcp/tools.ts` 直接调用 task-session 或 herdr。

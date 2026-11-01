@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.engineer-scheduling.workflow-state
-kind: reads
-source: capability.runtime-harness.engineer-scheduling
-target: capability.workflow-engine.workflow-state
-intent: "Read the canonical target ref for provider PR dependency and scheduling evidence"

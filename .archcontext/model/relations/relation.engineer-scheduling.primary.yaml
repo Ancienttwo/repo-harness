@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.engineer-scheduling.primary"
-kind: "calls"
-source: "capability.runtime-harness.engineer-scheduling"
-target: "component.engineer-scheduling.primary"
-intent: "Validate and project the immutable provider graph selected by exact commit and path"

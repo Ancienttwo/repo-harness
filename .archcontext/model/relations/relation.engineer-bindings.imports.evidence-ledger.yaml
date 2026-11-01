@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.engineer-bindings.imports.evidence-ledger",
-  "kind": "depends-on",
-  "source": "capability.runtime-harness.engineer-bindings",
-  "target": "capability.runtime-harness.evidence-ledger",
-  "intent": "Use canonical evidence JSON and evidence types for profiles and historical principal records."
-}
