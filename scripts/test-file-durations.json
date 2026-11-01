@@ -219,7 +219,6 @@
     "tests/unit/sprint-schema-v2-identity.test.ts": 2.1,
     "tests/unit/task-inbox-v1.test.ts": 16664.77,
     "tests/unit/task-message-v1.test.ts": 0.73,
-    "tests/unit/task-reply.test.ts": 19.35,
     "tests/unit/verification-plan.test.ts": 1.29,
     "tests/unit/verifier-evidence-lifecycle-cutover.test.ts": 3124.52,
     "tests/unit/verifier-failure-log-retention.test.ts": 4637.0,

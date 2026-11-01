@@ -253,6 +253,20 @@ test('invalid canonical bytes and forged path identities are rejected before a j
   expect(existsSync(f.paths.journal)).toBeFalse();
 });
 
+test('retired reply records refuse migration, list their paths, and change nothing', () => {
+  const f = fixture();
+  put(join(f.paths.legacy, TASK, 'reply-effects', ID, 'claim', 'intent.json'), '{}\n');
+  const before = tree(f.common);
+  for (const mode of ['dry-run', 'apply'] as const) {
+    expect(() => migrateTaskInboxLayout({ repo_root: f.root, mode, confirm_quiescent: true,
+      expected_source_sha256: f.plan.manifest.source_sha256 })).toThrow(new RegExp(
+      `retired reply protocol .*v0\\.19\\.4.*#820 / v0\\.23\\.1.*${TASK}/reply-effects/${ID}/claim/intent\\.json.*`
+      + 'Remove or archive the reply-effects directories, then run `repo-harness fleet inbox migrate-layout` again'));
+  }
+  expect(tree(f.common)).toEqual(before);
+  expect(existsSync(f.paths.journal)).toBeFalse();
+});
+
 test.skipIf(process.platform === 'win32')('unsafe links and conflicting staging bytes are never followed or overwritten', () => {
   const f = fixture();
   symlinkSync(f.paths.legacy, join(f.paths.legacy, TASK, 'linked'));

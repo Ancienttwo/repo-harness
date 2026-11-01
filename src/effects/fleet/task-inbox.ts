@@ -46,14 +46,6 @@ import {
   type TaskMessageEventV2,
   type TaskMessageRecipient,
 } from '../../core/fleet/admitted-task-message';
-import {
-  TASK_REPLY_RECORD_MAX_BYTES,
-  canonicalTaskReplyIntentBytes,
-  canonicalTaskReplyCommitBytes,
-  validateTaskReplyIntent,
-  validateTaskReplyCommit,
-  inspectTaskReplyChain,
-} from '../../core/fleet/task-reply';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
@@ -903,6 +895,7 @@ export function acknowledgeTaskInbox(input: AcknowledgeTaskInboxInput): TaskMess
 /** CLI-facing spelling retained at the effect boundary. */
 export const ackTaskInbox = acknowledgeTaskInbox;
 
+const TASK_REPLY_RECORD_MAX_BYTES = 64 * 1024;
 export class TaskReplyStoreError extends Error {
   readonly code = 'task_reply_inconsistent';
 }

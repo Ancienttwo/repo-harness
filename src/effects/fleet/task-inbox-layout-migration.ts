@@ -5,7 +5,6 @@ import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
   validateTaskMessageEvent, validateTaskMessageDeliveryReceipt, recipientFromTaskMessageReceipt, type TaskMessageRecipient } from '../../core/fleet/task-message';
-import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateTaskReplyCommit, validateTaskReplyIntent } from '../../core/fleet/task-reply';
 import { createFileExclusiveDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
@@ -100,10 +99,10 @@ function mappedPath(root: string, entry: Entry): string | null {
   const directory = entry.kind === 'directory';
   if (!task || !/^[a-f0-9]{64}$/.test(task) || extra.length) refuse('unknown Task Inbox path');
   if (!area && directory) return entry.path;
-  if (!['events', 'delivery', 'reply-effects', 'staging'].includes(area!)) refuse('unknown Task Inbox area');
+  if (!['events', 'delivery', 'staging'].includes(area!)) refuse('unknown Task Inbox area');
   if (!id && directory) return area === 'staging' ? null : entry.path;
   if (area === 'staging') {
-    if (!['events', 'delivery', 'reply-effects'].includes(id!) || leaf
+    if (!['events', 'delivery'].includes(id!) || leaf
       || (name ? directory || !/^\..+\.tmp$/.test(name) : !directory)) refuse('unknown staging residue');
     return null;
   }
@@ -131,20 +130,23 @@ function mappedPath(root: string, entry: Entry): string | null {
     }
     return `${task}/${area}/${id}/${token}.json`;
   }
-  const target = `${task}/${area}/${id}/${token}`;
-  if (!leaf && directory) return target;
-  if (directory || (leaf !== 'intent.json' && leaf !== 'commit.json')) refuse('unknown reply path');
-  if (leaf === 'intent.json') {
-    const intent = canonicalRecord(join(root, entry.path), validateTaskReplyIntent, canonicalTaskReplyIntentBytes);
-    const actual = { kind: 'claim' as const, claim_id: intent.claim_actor.claim_id, generation: intent.claim_actor.lease_generation };
-    if (intent.parent.task_id !== task || intent.parent.message_id !== id || deriveTaskMessageRecipientKey(actual) !== key) refuse('reply path identity mismatch');
-  } else canonicalRecord(join(root, entry.path), validateTaskReplyCommit, canonicalTaskReplyCommitBytes);
-  return `${target}/${leaf}`;
+  refuse('unknown Task Inbox path');
+}
+/** The reply protocol (v0.19.4) was removed in #820 (v0.23.1). No reader exists for its records. */
+function refuseRetiredReplyRecords(sourceRoot: string, source: Entry[]): void {
+  const retired = source.filter(entry => {
+    const [, area, id] = entry.path.split('/');
+    return area === 'reply-effects' || (area === 'staging' && id === 'reply-effects');
+  }).map(entry => entry.path);
+  if (retired.length) refuse(`Task Inbox at ${sourceRoot} holds records of the retired reply protocol `
+    + `(added in v0.19.4, removed in #820 / v0.23.1): ${retired.join(', ')}. Remove or archive the reply-effects `
+    + 'directories, then run `repo-harness fleet inbox migrate-layout` again.');
 }
 function buildManifest(common: string, sourceRoot: string): Manifest {
   const stat = inboxPathStat(common)!;
   const identity = `${stat.dev}:${stat.ino}`;
   const source = inventory(sourceRoot);
+  refuseRetiredReplyRecords(sourceRoot, source);
   const targets = new Set<string>();
   const target = source.flatMap(entry => {
     const path = mappedPath(sourceRoot, entry);
