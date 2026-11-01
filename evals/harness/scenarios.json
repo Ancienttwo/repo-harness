@@ -62,10 +62,9 @@
     {
       "id": "cross-session-recovery",
       "category": "cross-session-recovery",
-      "prompt": "Read .ai/harness/handoff/resume.md, continue the exact recorded next action, and run the recorded targeted check.",
+      "prompt": "Resume from this issue claim status comment: \"Status: active; claim remains active. Done: located the recovery state in src/recovery.ts. Next: make recoveryState() return 'complete', then run bun test tests/recovery.test.ts.\" Continue the exact recorded next step and run the recorded targeted check.",
       "expected_paths": ["src/recovery.ts"],
-      "acceptance_command": "bun test tests/recovery.test.ts",
-      "requires_resume_projection": true
+      "acceptance_command": "bun test tests/recovery.test.ts"
     }
   ]
 }
