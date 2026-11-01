@@ -63,7 +63,7 @@ export function classify(name, payload, orchestratorLogin) {
     }
     case 'workflow_run': {
       const run = payload.workflow_run;
-      // `Required / CI` does not run on push. A newer push cancels the older run, so a cancelled run is no result.
+      // `Required / CI` does not run on push. A cancelled run has no result.
       if (action !== 'completed' || run.event !== 'push' || run.head_branch !== payload.repository.default_branch || run.conclusion === 'cancelled') return null;
       return { kind: 'ci.main', data: { branch: run.head_branch, workflow: run.name, url: run.html_url, head_sha: run.head_sha, conclusion: run.conclusion } };
     }
