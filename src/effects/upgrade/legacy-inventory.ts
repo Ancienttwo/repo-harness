@@ -475,6 +475,26 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   }
 }
 
+/**
+ * `repo-harness run` resolves only the helpers in the shipped registry, so a
+ * package script that names any other helper fails at run time. User scripts
+ * stay as they are; the report lists each key and command.
+ */
+function scanPackageScripts(root: string, add: AddItem): void {
+  const path = join(root, 'package.json');
+  if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
+  const value = readJson(path);
+  if (!record(value) || !record(value.scripts)) return;
+  const helpers = loadWorkflowContractAsset<Contract>().helpers?.scripts;
+  if (!helpers) throw new Error('package script inventory requires the helper registry');
+  const runnable = new Set(helpers.flatMap((name) => [name, name.replace(/\.[^.]+$/, '')]));
+  const broken = Object.entries(value.scripts).filter((entry): entry is [string, string] => typeof entry[1] === 'string'
+    && [...entry[1].matchAll(/\brepo-harness run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!)));
+  if (broken.length === 0) return;
+  add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
+    reason: `Package scripts call a helper that this package does not ship; review them without automatic edits: ${broken.map(([key, command]) => `${key}: ${command}`).join('; ')}` });
+}
+
 /** Fail closed: an unreadable directory counts as user content. */
 function directoryHasOtherEntries(directory: string, ownName: string): boolean {
   try {
@@ -587,6 +607,7 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
       }
     };
     walk(join(root, '.ai'));
+    scanPackageScripts(root, add);
   }
   if (projectEnabled) scanProjectRefresh(options, actions, manifest, add);
   if (options.scope !== 'project') {

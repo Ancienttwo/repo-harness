@@ -897,6 +897,26 @@ describe('legacy workflow-state upgrade report', () => {
     expect(readFileSync(path)).toEqual(bytes);
   }, false));
 
+  test('package scripts that call a helper outside the shipped registry are report-only', () => sandbox((opts) => {
+    const path = join(opts.cwd, 'package.json');
+    const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
+      'workflow:check': 'repo-harness run check-task-workflow --strict',
+      'check:task-sync': 'repo-harness run check-task-sync',
+      'plan:new': 'bunx repo-harness run new-plan',
+      'check:context-files': 'repo-harness run check-context-files',
+      'spec:new': 'repo-harness run new-spec.sh',
+      test: 'bun test',
+    } }, null, '\t')}\n`;
+    put(path, bytes);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report', ownership: 'unowned' })]);
+    expect(check.items[0]?.reason).toContain('workflow:check: repo-harness run check-task-workflow --strict; check:task-sync: repo-harness run check-task-sync; plan:new: bunx repo-harness run new-plan');
+    for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
+    expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  }, false));
+
   test('leaf links are report-only and a symlink parent is never followed', () => sandbox((opts) => {
     const target = join(opts.home, 'operator-library.sh'); put(target, '# Outside operator file\n');
     const libDir = join(opts.cwd, '.ai/hooks/lib'); mkdirSync(libDir, { recursive: true });

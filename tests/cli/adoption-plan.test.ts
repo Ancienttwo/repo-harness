@@ -159,6 +159,42 @@ describe("canonical adoption plan", () => {
     }
   });
 
+  test("standard plan rewrites only the changed package.json members and keeps the user's formatting", () => {
+    const repo = tempRepo();
+    const packageOperation = () => {
+      const operation = planAdoption({ repoRoot: repo, mode: "standard" }).operations.find((op) => op.path === "package.json");
+      if (!operation || operation.kind !== "writeFile") throw new Error("package.json operation missing");
+      return operation;
+    };
+    try {
+      writeFileSync(join(repo, "package.json"), [
+        "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
+        '        "check:task-workflow": "repo-harness run check-task-workflow --strict",',
+        '\t\t"check:context-files": "old"', "\t}", "}", "",
+      ].join("\n"));
+      const mixed = packageOperation();
+      expect(mixed.content).toBe([
+        "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
+        '\t\t"check:context-files": "repo-harness run check-context-files",',
+        '\t\t"check:brain": "repo-harness brain check",',
+        '\t\t"check:deploy-sql": "repo-harness run check-deploy-sql-order",',
+        '\t\t"sync:brain": "repo-harness brain sync"', "\t},", '    "private": true', "}", "",
+      ].join("\n"));
+      writeFileSync(join(repo, "package.json"), mixed.content);
+      expect(packageOperation().status).toBe("skipped");
+
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture" }));
+      expect(packageOperation().content).toBe(JSON.stringify({ name: "fixture", private: true, scripts: {
+        "check:brain": "repo-harness brain check",
+        "check:context-files": "repo-harness run check-context-files",
+        "check:deploy-sql": "repo-harness run check-deploy-sql-order",
+        "sync:brain": "repo-harness brain sync",
+      } }));
+    } finally {
+      cleanup(repo);
+    }
+  });
+
   test("standard apply preserves a custom task workflow script", () => {
     const repo = tempRepo();
     try {
