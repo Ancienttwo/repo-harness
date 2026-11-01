@@ -612,7 +612,8 @@ export function inspectWorktree(root: string, path: string, callerCwd: string | 
     reject('owner', () => assertNoOwner(main, path, limits));
     if (entry && existsSync(path)) {
       reject('probe_failed', () => {
-        const status = git(path, ['status', '--porcelain=v2', '-z', '--untracked-files=all'], limits);
+        // A read-only judgment: no index refresh, so no index.lock in the inspected worktree.
+        const status = git(path, ['--no-optional-locks', 'status', '--porcelain=v2', '-z', '--untracked-files=all'], limits);
         // Rename records have a second NUL field containing the old name.
         result.dirty_files = status.split('\0').filter(line => /^[12u?] /u.test(line)).length;
         if (result.dirty_files > 0) reasons.push('dirty');
@@ -838,7 +839,8 @@ const reasonOf = (error: unknown) => error instanceof Error ? error.message.spli
 /**
  * The read-only form of `sweepManagedWorktrees`: the same inputs, checks and
  * green predicate, without the topology lock, the provider merge query or any
- * write. Null means the sweep has nothing to inspect. The sweep's per-run budget
+ * ref, index or worktree write; the local merge check's `git merge-tree` can add
+ * unreferenced loose objects. Null means the sweep has nothing to inspect. The sweep's per-run budget
  * is not applied, so a run executes a subset of these steps.
  */
 export function planManagedWorktreeSweep(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: { readonly deadlineMs?: number } = {}): WorktreeSweepPlan | null {

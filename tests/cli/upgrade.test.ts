@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join, relative } from 'path';
 import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
@@ -1900,8 +1900,14 @@ describe('upgrade --registered', () => {
     for (const branch of ['kept', 'rebuilt', 'other', 'fresh']) mergedBranch(f, repo, branch);
     const kept = managedCheckout(f, repo, 'kept');
     const rebuilt = managedCheckout(f, repo, 'rebuilt');
+    // A stat-stale index: a plain `git status` would refresh and rewrite it.
+    const index = join(git(f, kept, 'rev-parse', '--absolute-git-dir'), 'index');
+    utimesSync(policyPath(kept), new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+    utimesSync(index, new Date(Date.now() - 7_200_000), new Date(Date.now() - 7_200_000));
+    const indexMtime = statSync(index).mtimeMs;
     const plan = planManagedWorktreeSweep(repo, f.root, f.env, { deadlineMs: 30_000 })!;
     expect(plan.items.map((item) => [item.action, item.path])).toEqual([['remove', kept], ['remove', rebuilt]]);
+    expect(statSync(index).mtimeMs).toBe(indexMtime);
 
     // The same path now holds another clean, merged branch, and a new candidate appears.
     git(f, repo, 'worktree', 'remove', rebuilt);
