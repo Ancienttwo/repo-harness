@@ -689,3 +689,16 @@ export function withExclusiveDirectoryLock<T>(
     handle.release();
   }
 }
+/** Runs an async action under a session directory's caller lock, retrying contention until the wait timeout. */
+export async function withCallerLock<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
+  const deadline = Date.now() + waitTimeoutMs;
+  for (;;) {
+    let lock;
+    try { lock = acquireExclusiveDirectoryLock(root, relative(root, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true }); }
+    catch (error) {
+      if (!(error instanceof ExclusiveLockContentionError) || Date.now() >= deadline) throw error;
+      contended?.(); await Bun.sleep(25); continue;
+    }
+    try { lock.assertOwned(); return await action(); } finally { lock.release(); }
+  }
+}

@@ -1,5 +1,5 @@
 import { readOarObservation, oarObservationFile } from '../terminal/task-runtime-observation';
-import type { PrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
+import type { PrePromptInboxAccepted } from './task-pre-prompt-inbox-consumer';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../../core/fleet/admitted-task-message';
@@ -7,9 +7,9 @@ import { deliverTaskInbox, listTaskInbox, readTaskMessageDelivery, readAdmittedT
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readTaskAgent } from '../terminal/task-session-reader';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import type { TaskRequest, TaskPrePromptInbox } from '../terminal/task-session';
+import type { TaskRequest, TaskPrePromptInbox } from '../../core/review/runner-port';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
-import { canonical, digest, MAX_AGE_MS, requestSubject, assertCurrent, assertCompanionRequestIdentity, type Companion } from './pre-prompt-inbox-consumer';
+import { canonical, digest, MAX_AGE_MS, requestSubject, assertCurrent, assertCompanionRequestIdentity, type Companion } from './task-pre-prompt-inbox-consumer';
 /** Controller-only reservation. No delivery receipt is written before actual prompt acceptance. */
 export function preparePrePromptInbox(input: { source: TaskInboxSessionSource; request: TaskRequest; now?: number }): TaskPrePromptInbox {
   const { source, request } = input, now = input.now ?? Date.now();

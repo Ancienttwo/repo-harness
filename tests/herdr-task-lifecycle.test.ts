@@ -808,7 +808,7 @@ for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host bin
       // application delivery supplies only result bytes, never bindings or requests.
       writeFileSync(join(repo, 'context.txt'), 'offline admitted context\n');
       const delivered: number[] = [];
-      const deliver = async (request: import('../src/effects/terminal/task-session').TaskRequest) => {
+      const deliver = async (request: import('../src/core/review/runner-port').TaskRequest) => {
         expect(readFileSync(request.context_ref, 'utf8')).toBe('offline admitted context\n');
         delivered.push(request.round);
         api.writeSessionArtifact(request.result_ref, { request_id: request.request_id,

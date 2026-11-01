@@ -134,7 +134,7 @@ function writeManagedHostSurfaces(
     for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
       writePath(join(home, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
     }
-    writePath(join(source, 'src/effects/review/oar-review-host.ts'), '// managed\n');
+    writePath(join(source, 'src/effects/review-runner/task-oar-host.ts'), '// managed\n');
     writePath(join(source, 'scripts/verify-sprint.sh'), '# managed\n');
     writePath(join(source, 'scripts/ship-worktrees.sh'), '# managed\n');
     writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
@@ -1175,7 +1175,7 @@ describe('install profiles', () => {
     for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
       writePath(join(env.HOME!, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
     }
-    writePath(join(source, 'src/effects/review/oar-review-host.ts'), '// managed\n');
+    writePath(join(source, 'src/effects/review-runner/task-oar-host.ts'), '// managed\n');
     writePath(join(source, 'scripts/verify-sprint.sh'), '# managed\n');
     writePath(join(source, 'scripts/ship-worktrees.sh'), '# managed\n');
     writePath(join(env.HOME!, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');

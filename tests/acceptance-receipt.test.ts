@@ -4,7 +4,10 @@ import { observeActiveReviewAdmission } from '../src/effects/admission/issue-goa
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { parseAcceptancePolicy, acceptanceBenchmarkRequirement, modelFamily, modelRelation } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
-import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskRequest } from '../src/effects/terminal/task-session';
+import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskPaneBinding } from '../src/effects/terminal/task-session';
+import type { TaskRequest } from '../src/core/review/runner-port';
+import type { HerdrEndpoint } from '../src/effects/terminal/herdr';
+import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
@@ -615,7 +618,7 @@ function reviewFixture() {
   const calls: string[] = [];
   let request: TaskRequest; let domain: Record<string, unknown>; let sent = 0;
   let verdict: 'PASS' | 'FAIL' = 'FAIL'; let prior = false;
-  const effects: ReviewEffects = {
+  const effects: TaskReviewEffects = { ...taskReviewRunner,
     owner: () => 'codex', installation: async (_kind, executable) => ({ kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }), model: () => 'fixture-model', assertBinding: () => {}, ready: async () => {}, dispose: async () => { calls.push('dispose'); },
     start: async (repo, spec, _command, _ready, _guard, authority) => {
       calls.push(`start:${spec.harness_kind}:${spec.role}`);
@@ -659,8 +662,9 @@ function reviewFixture() {
     verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
 }
 
+type TaskReviewEffects = ReviewEffects<TaskPaneBinding, HerdrEndpoint>;
 /** Effects for a delivered request whose host has not observed a finished turn. */
-function pendingTurnEffects(f: ReturnType<typeof reviewFixture>, collect: ReviewEffects['collect']): ReviewEffects {
+function pendingTurnEffects(f: ReturnType<typeof reviewFixture>, collect: TaskReviewEffects['collect']): TaskReviewEffects {
   return { ...f.effects, collect, send: async (...args) => {
     const request = await f.effects.send!(...args);
     rmSync(join(reviewLocation(f.root, f.options.authority).dir, `observed-${request.round}.json`));

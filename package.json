@@ -90,7 +90,7 @@
     "prepublishOnly": "bash scripts/check-npm-release.sh --prepublish",
     "sync:brain": "repo-harness brain sync",
     "sync:codex-installed": "bash scripts/sync-codex-installed-copies.sh",
-    "build:oar-review-host": "bun build src/effects/review/oar-review-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
+    "build:oar-review-host": "bun build src/effects/review-runner/task-oar-host.ts --target=node --format=esm --packages=external --outfile=dist/oar-review-host.js"
   },
   "devDependencies": {
     "@cloudflare/kumo": "2.14.0",

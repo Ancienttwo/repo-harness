@@ -3,14 +3,16 @@ import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import * as herdr from '../../src/effects/terminal/herdr';
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
-import { startTaskAgent, readSessionArtifact, taskSessionDirectory, type TaskClaimReference, type TaskAgentSpec, type TaskSessionAuthority, type HerdrTaskBinding } from '../../src/effects/terminal/task-session';
+import { startTaskAgent, readSessionArtifact, taskSessionDirectory, type HerdrTaskAgentSpec, type HerdrTaskBinding } from '../../src/effects/terminal/task-session';
+import type { TaskClaimReference } from '../../src/core/review/runner-port';
+import type { TaskSessionAuthority } from '../../src/effects/admission/admission-source';
 import { taskRepository } from '../../src/effects/git/task-repository';
 import { readActiveReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import type { ExecutionHost } from '../../src/core/operator/execution-state';
 
 /** In-process Herdr transport double for one task agent. The test process is the
  * observed provider. The caller restores the returned spy. */
-export function mockOfflineHerdr(root: string, spec: TaskAgentSpec) {
+export function mockOfflineHerdr(root: string, spec: HerdrTaskAgentSpec) {
   const repository = taskRepository(root);
   const primary = { workspace_id: 'fixture-primary-workspace', worktree: {
     repo_key: repository.repository_id, checkout_path: repository.primary_root, repo_root: repository.primary_root,
@@ -58,7 +60,7 @@ export function mockOfflineHerdr(root: string, spec: TaskAgentSpec) {
 
 /** Real public session admission and binding, with an explicit in-process transport double.
  * The test process is the observed provider; this does not start a model or service. */
-export async function startOfflineTaskAgent(root: string, spec: TaskAgentSpec, taskAuthority: TaskSessionAuthority) {
+export async function startOfflineTaskAgent(root: string, spec: HerdrTaskAgentSpec, taskAuthority: TaskSessionAuthority) {
   const offline = mockOfflineHerdr(root, spec);
   try {
     return await startTaskAgent(root, spec, { taskAuthority, start: async (_endpoint, name) => { offline.nameAgent(name); } });
