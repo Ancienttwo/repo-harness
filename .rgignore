@@ -9,7 +9,5 @@ tasks/archive/
 .ai/harness/checks/*.latest.json
 .ai/harness/checks/*.latest.md
 .ai/harness/failures/latest.jsonl
-.ai/harness/handoff/current.md
-.ai/harness/handoff/resume.md
 .ai/harness/runs/
 .ai/harness/state/

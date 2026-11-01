@@ -222,7 +222,7 @@ passphrases, or Connector secrets.
 ## Migration Guide
 
 Workflow-artifact tools such as `list_workflow_files`, `read_workflow_file`,
-`latest_handoff`, and related writers are bounded workflow operations. Use them
+`latest_checks`, and related writers are bounded workflow operations. Use them
 only when the task is specifically about repo-harness workflow artifacts.
 
 For repository analysis, migrate prompts and integrations to the general repo

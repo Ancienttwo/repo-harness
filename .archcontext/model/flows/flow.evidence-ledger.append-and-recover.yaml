@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
 id: flow.evidence-ledger.append-and-recover
 capabilityId: capability.runtime-harness.evidence-ledger
-name: Append one attested receipt and recover views from the accepted set
+name: Append one attested receipt and publish a checkpoint from the accepted set
 applicability: required
 participants:
   - id: evidence
@@ -20,7 +20,7 @@ steps:
 outcomes:
   - id: success
     kind: success
-    label: The accepted set folds and a validated checkpoint backs recovery
+    label: The accepted set folds into a validated checkpoint
     steps:
       - id: publish-checkpoint
         from: evidence
@@ -30,17 +30,9 @@ outcomes:
           entrypointId: entrypoint.evidence-ledger.checkpoint
           sourceSymbol: publishCheckpointFromLedger
           sinkId: sink.evidence-ledger.accepted-events
-      - id: resolve-recovery
-        from: evidence
-        to: store
-        label: Resolve the checkpoint only through the last-published marker
-        evidence:
-          entrypointId: entrypoint.evidence-ledger.recovery
-          sourceSymbol: resolveRecoveryEvidence
-          sinkId: sink.evidence-ledger.last-checkpoint
     terminal:
       participant: evidence
-      label: Render handoff and resume views from the validated projection
+      label: The last-published marker names the validated checkpoint
   - id: corrupt-tail
     kind: error
     label: The last write was truncated or a record does not parse
