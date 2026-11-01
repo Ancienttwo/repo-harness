@@ -643,7 +643,7 @@ export function buildUpgradeCommand(): Command {
     .option('--include-state-artifacts', 'Include proven owned obsolete state artifacts with --apply')
     .option('--migrate-worktree-template', 'With --apply, rewrite a legacy policy worktree template to {{system_tmp}}')
     .option('--registered', 'Preview init refresh and project upgrade for every registered repo; never commits')
-    .option('--expected-revision <digest>', 'With --registered --apply: exact registry revision from the preview')
+    .option('--expected-revision <digest>', 'With --registered --apply: exact plan revision from the preview')
     .option('--json', 'Print JSON')
     .option('--summary-line', 'Print the one-line check summary that repo-harness update shows')
     .action((opts: UpgradeCommandOptions, command: Command) => {

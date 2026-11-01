@@ -1,12 +1,12 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join, relative } from 'path';
+import { basename, dirname, join, relative } from 'path';
 import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { runAdoptionApply } from '../../src/cli/commands/adoption-plan';
 import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
-import { localMergeMode } from '../../src/effects/state/coordination-worktree-topology';
+import { localMergeMode, planManagedWorktreeSweep, sweepManagedWorktrees, type WorktreeSweepPlan } from '../../src/effects/state/coordination-worktree-topology';
 import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
@@ -18,6 +18,8 @@ import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
 import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRepoResult } from '../../src/cli/commands/upgrade-registered';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
+// The sweep's process inventory is a fixture input: Linux CI cannot prove that /proc lists every process.
+import '../helpers/controlled-worktree-processes';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
@@ -1746,9 +1748,9 @@ describe('upgrade --registered', () => {
     }
     expect(result.exitCode).toBe(1);
     const text = formatRegisteredUpgradeResult(result);
-    expect(text).toContain(`Registry revision: ${result.revision}`);
+    expect(text).toContain(`Plan revision: ${result.revision}`);
     expect(text).toContain(`${dirty}: skipped (dirty_worktree)`);
-    expect(text).toContain('no dry-run path');
+    expect(text).toContain('  sweep: no managed worktrees');
     expect(text).toContain(`--apply --expected-revision ${result.revision}`);
 
     const json = cli(f, '--registered', '--json');
@@ -1776,13 +1778,13 @@ describe('upgrade --registered', () => {
 
     writeRegistry(f, [stale], 2);
     const changed = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
-    expect(changed).toMatchObject({ exitCode: 2, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(changed).toMatchObject({ exitCode: 2, repos: [], error: 'registry or worktree sweep plan changed; preview again before applying' });
     expect(changed.revision).not.toBe(preview.revision);
     expect(worktreeSnapshot(stale)).toEqual(before);
 
     const mismatch = cli(f, '--registered', '--apply', '--expected-revision', preview.revision!, '--json');
     expect(mismatch.status).toBe(2);
-    expect(JSON.parse(mismatch.stdout)).toMatchObject({ apply: true, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(JSON.parse(mismatch.stdout)).toMatchObject({ apply: true, repos: [], error: 'registry or worktree sweep plan changed; preview again before applying' });
     expect(cli(f, '--expected-revision', preview.revision!).status).toBe(2);
     expect(cli(f, '--registered', '--scope', 'global').status).toBe(2);
     expect(worktreeSnapshot(stale)).toEqual(before);
@@ -1907,5 +1909,77 @@ describe('upgrade --registered', () => {
     expect(swept.sweep).toMatchObject({ ran: true });
     expect((swept.sweep as { report: string | null }).report).toContain(`${managed}: kept; session cwd`);
     expect(existsSync(managed)).toBe(true);
+  }), 120_000);
+
+  /** A branch with a commit of its own, merged into main and pushed; its scratch checkout is gone. */
+  function mergedBranch(f: RegisteredReposFixture, repo: string, branch: string): void {
+    const scratch = join(f.root, `scratch-${branch}`);
+    git(f, repo, 'worktree', 'add', '-q', '-b', branch, scratch);
+    commitAll(f, scratch, branch);
+    git(f, repo, 'worktree', 'remove', scratch);
+    git(f, repo, 'merge', '-q', '--no-ff', '-m', `merge ${branch}`, branch);
+    git(f, repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  }
+  const managedCheckout = (f: RegisteredReposFixture, repo: string, branch: string, slug = branch) => {
+    const path = join(f.env.REPO_HARNESS_WORKTREE_ROOT!, `${basename(repo)}-wt-${slug}`);
+    git(f, repo, 'worktree', 'add', '-q', path, branch);
+    return path;
+  };
+
+  test('preview lists the sweep steps and apply refuses a plan that changed after the preview', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'swept');
+    writeRegistry(f, [repo]);
+    for (const branch of ['done', 'late']) mergedBranch(f, repo, branch);
+    const done = managedCheckout(f, repo, 'done');
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    const row = byPath(preview.repos, repo);
+    expect(row).toMatchObject({ status: 'ready', pending: true, sweep: { ran: false } });
+    expect((row.sweep as { plan: WorktreeSweepPlan }).plan.items.map((item) => [item.action, item.path, item.branch])).toEqual([['remove', done, 'done']]);
+    expect(formatRegisteredUpgradeResult(preview)).toContain(`    remove ${done} (done)`);
+    expect(existsSync(done)).toBe(true);
+
+    const late = managedCheckout(f, repo, 'late');
+    const refused = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
+    expect(refused).toMatchObject({ exitCode: 2, repos: [], error: 'registry or worktree sweep plan changed; preview again before applying' });
+    expect([existsSync(done), existsSync(late)]).toEqual([true, true]);
+
+    const again = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: again.revision!, env: f.env, callerCwd: f.root });
+    expect((byPath(result.repos, repo).sweep as { report: string }).report).toContain('removed=2');
+    expect([existsSync(done), existsSync(late)]).toEqual([false, false]);
+  }), 120_000);
+
+  test('an approved sweep acts only on the identities and prune scope of its plan', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'bound');
+    for (const branch of ['kept', 'rebuilt', 'other', 'fresh']) mergedBranch(f, repo, branch);
+    const kept = managedCheckout(f, repo, 'kept');
+    const rebuilt = managedCheckout(f, repo, 'rebuilt');
+    // A stat-stale index: a plain `git status` would refresh and rewrite it.
+    const index = join(git(f, kept, 'rev-parse', '--absolute-git-dir'), 'index');
+    utimesSync(policyPath(kept), new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+    utimesSync(index, new Date(Date.now() - 7_200_000), new Date(Date.now() - 7_200_000));
+    const indexMtime = statSync(index).mtimeMs;
+    const plan = planManagedWorktreeSweep(repo, f.root, f.env, { deadlineMs: 30_000 })!;
+    expect(plan.items.map((item) => [item.action, item.path])).toEqual([['remove', kept], ['remove', rebuilt]]);
+    expect(statSync(index).mtimeMs).toBe(indexMtime);
+
+    // The same path now holds another clean, merged branch, and a new candidate appears.
+    git(f, repo, 'worktree', 'remove', rebuilt);
+    managedCheckout(f, repo, 'other', 'rebuilt');
+    const fresh = managedCheckout(f, repo, 'fresh');
+    const report = sweepManagedWorktrees(repo, f.root, f.env, { deadlineMs: 30_000, approved: plan })!;
+    expect(report).toContain(`${kept}: removed`);
+    expect(report).toContain(`${rebuilt}: kept; not in the preview`);
+    expect(report).toContain(`${fresh}: kept; not in the preview`);
+    expect([existsSync(kept), existsSync(rebuilt), existsSync(fresh)]).toEqual([false, true, true]);
+
+    // A checkout lost after the plan: Git's whole prune would drop its registration, so nothing runs.
+    const next = planManagedWorktreeSweep(repo, f.root, f.env, { deadlineMs: 30_000 })!;
+    rmSync(fresh, { recursive: true });
+    const blocked = sweepManagedWorktrees(repo, f.root, f.env, { deadlineMs: 30_000, approved: next })!;
+    expect(blocked).toContain(`prune: kept; not in the preview`);
+    expect(blocked).toContain(`${rebuilt}: kept; not in the preview`);
+    expect(existsSync(rebuilt)).toBe(true);
+    expect(git(f, repo, 'worktree', 'list', '--porcelain')).toContain(`worktree ${fresh}`);
   }), 120_000);
 });
