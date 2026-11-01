@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'bun:test';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
-import { parseArchitectureRequest } from '../../src/core/operator/architecture';
+import { isArchitectureRequest, parseArchitectureRequest } from '../../src/core/operator/architecture';
 import { MODULE_ID, MODULE_NODE, MODULE_FLOW, moduleRepository, fixtureWrite, fixtureCommit, fixtureGit, fixtureYaml } from '../helpers/module-repository';
 import { readFileSync, realpathSync, rmSync } from 'node:fs';
 import {
@@ -116,6 +116,13 @@ test('request parser uses closed query fields and mode-specific full SHA inputs'
   expect(parseArchitectureRequest(new URL('http://localhost' + path + '/' + id + '/review-prompt?shard=1'))).toMatchObject({ kind: 'architecture_review_prompt', shard: 1 });
   expect(() => parseArchitectureRequest(new URL('http://localhost' + path + '?mode=module'))).toThrow('invalid_request');
   expect(parseArchitectureRequest(new URL('http://localhost' + path + '/bad-cap'))).toBeNull();
+  const history = (query: string) => parseArchitectureRequest(new URL('http://localhost/api/v1/repositories/repo_0123456789abcdef/architecture/history' + query));
+  const head = 'a'.repeat(40);
+  expect(history('?offset=25&limit=25&ref=' + head)).toEqual({ kind: 'architecture_history', repository_id: 'repo_0123456789abcdef', offset: 25, limit: 25, ref: head });
+  expect(isArchitectureRequest(history('?offset=0&limit=25'))).toBe(true);
+  for (const query of ['?limit=25', '?offset=0', '?offset=0&limit=1000', '?offset=01&limit=25', '?offset=0&limit=25&ref=HEAD', '?offset=0&limit=25&cursor=x']) {
+    expect(() => history(query)).toThrow('invalid_request');
+  }
 });
 
 

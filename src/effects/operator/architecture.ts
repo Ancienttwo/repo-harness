@@ -1,5 +1,7 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { ArchitectureModelReader } from '../architecture/model-reader';
+import { readArchitectureHistory } from '../architecture/archctx-provider';
+import { ArchctxClientError } from '../../core/architecture/projection';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { ModuleReadError } from '../../core/architecture/module-view';
 import { SECRET_TOKEN_PATTERNS, containsSecret } from '../../core/security/secret-patterns';
@@ -25,6 +27,7 @@ export function readArchitecture(input: ArchitectureRequest, env?: NodeJS.Proces
   catch { throw new ModuleReadError('unavailable'); }
   const repo = registry.repos.find(repo => repo.id === input.repository_id);
   if (!repo) throw new ModuleReadError('repository_not_found');
+  if (input.kind === 'architecture_history') return publicValue(readHistory(repo.path, input, env), repo.path);
   const reader = new ArchitectureModelReader(repo.path);
   if (input.kind === 'architecture_modules') return decodeArchitectureModuleIndex(publicValue(reader.list(), reader.root));
   if (input.kind === 'architecture_module') return decodeArchitectureModuleDetail(publicValue(reader.detail(input.capability_id), reader.root));
@@ -39,6 +42,18 @@ export function readArchitecture(input: ArchitectureRequest, env?: NodeJS.Proces
   const home = env?.HOME ?? process.env.HOME;
   if (containsSecret(packet.prompt) || packet.prompt.includes(reader.root) || (home && home.length > 1 && packet.prompt.includes(home))) throw new ModuleReadError('secret_detected');
   return decodeArchitectureReviewPrompt(packet);
+}
+
+/** The public code for an archctx history failure. archctx decides each failure; this only names it. */
+function readHistory(root: string, input: Extract<ArchitectureRequest, { kind: 'architecture_history' }>, env?: NodeJS.ProcessEnv): unknown {
+  try { return readArchitectureHistory(root, input, { env: env ?? process.env }); }
+  catch (error) {
+    if (!(error instanceof ArchctxClientError)) throw error;
+    if (error.reasonCode === 'history-shallow-repository') throw new ModuleReadError('history_shallow_repository');
+    if (error.reasonCode === 'native-context-ref-unavailable') throw new ModuleReadError('commit_not_found');
+    if (error.code === 'RH_ARCHCTX_TIMEOUT') throw new ModuleReadError('timeout');
+    throw error;
+  }
 }
 
 if (!isMainThread && parentPort) {
