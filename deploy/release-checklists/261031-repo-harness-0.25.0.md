@@ -113,8 +113,31 @@ The owner runs `npm publish`; the agent does not publish.
 - Run the #987 local upgrade test from 0.24.3. Registry install verification
   and release-note claims for the DSH plugin are deferred (#1206).
 - The owner records the npm version, the Git tag, and the published tarball
-  digest here. This record does not state a publish SHA or digest.
+  digest here.
 
-  - npm version: (owner)
-  - Git tag: (owner)
-  - published tarball digest: (owner)
+  - npm version: `repo-harness@0.25.0`, `latest`, published
+    2026-11-01T03:47:40Z. The first `npm publish` failed with E404 because the
+    local npm token had expired (`npm whoami`: E401); the second ran after
+    `npm login`.
+  - Git tag: `v0.25.0`, annotated tag object
+    `1a188c7e3998af0409e06352019259d05a41be40`, target
+    `aa01147103647326e70829046d244b4b111a33b2`.
+  - published tarball digest: shasum
+    `705520c08a51c4e2ce9d7c3b18723f7825adc652`, integrity
+    `sha512-BHmYR/y3WlF76Wy38QdkJmKLRt5GWRrNziCbRCR/jVcPCtFaVRtoTPQU3SJNIPOKCIsTaueyL8csw+VBfCZ6jQ==`.
+  - `bun run check:release-published`: `[release-published] OK`. The first
+    run failed on a CDN-cached 404 for the tarball URL; a rerun some minutes
+    later passed.
+
+## Local upgrade test from 0.24.3 (#987)
+
+- `repo-harness update --version 0.25.0` on the Max host, from 0.24.3:
+  install and candidate reconcile passed; `repo-harness --version` is 0.25.0.
+  The global working rules block in `~/.claude/CLAUDE.md` and
+  `~/.codex/AGENTS.md` was refreshed; text outside the managed markers was kept.
+- The update ended with a false `Leftover check failed` line. The 0.24.3
+  updater parses the `upgrade --json` array shape that #983 replaced with an
+  object (#1301). `repo-harness upgrade --json` on 0.25.0 returns the list.
+- `repo-harness upgrade --registered --apply` refreshed aiphabee, 97app and
+  DeVision. Repos with a dirty worktree or off the default branch were
+  skipped. Follow-ups: #1302, #1304, #1305.
