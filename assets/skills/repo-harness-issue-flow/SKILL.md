@@ -78,6 +78,8 @@ is current.
 - Any seat, claim, handoff, dependency or board question: read
   `references/board.md`.
 - Every body and comment shape: `references/templates.md`.
+- GitHub events pushed to the orchestrator (install, verify, errors): read
+  `references/events.md`.
 
 A worker reads `references/worker.md`, `references/board.md` and the issue.
 Keep the issue self-contained so that this is enough.
