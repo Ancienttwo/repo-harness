@@ -10,7 +10,6 @@ responsibilities:
   - Hold the core-layer source files of Operator Board so layer direction is checked per directory.
 source:
   include:
-    - src/core/tools/catalog.ts
     - src/core/operator/**
     - src/core/setup/**
     - src/core/dev-activity/**

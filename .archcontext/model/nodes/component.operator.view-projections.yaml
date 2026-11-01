@@ -17,3 +17,7 @@ responsibilities:
 source:
   include:
     - "src/core/operator/**"
+  exclude:
+    - "src/core/operator/public-text.ts"
+    - "src/core/operator/tests.ts"
+    - "src/core/operator/worktrees.ts"
