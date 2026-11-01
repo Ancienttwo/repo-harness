@@ -4,7 +4,7 @@ kind: "capability"
 name: "Operator Board"
 status: "active"
 layer: "web"
-summary: "Provides bounded read-only HTTP views of registered provider issues, admitted sessions, planning and explicit task history."
+summary: "Provides bounded read-only HTTP views of registered provider issues, admitted sessions and explicit task history."
 responsibilities:
   - "Serve public observations through GET and HEAD routes."
   - "Read architecture facts through the shared model reader in a bounded worker."
@@ -12,7 +12,7 @@ responsibilities:
   - "Keep commands in the Bot and CLI channel."
   - "Expose bounded shared admitted-session discovery over HTTP; closed, revoked or unavailable selections never become implicit current tasks. Task Agent Host owns the shared selector and discovery effects."
   - "Serve exact-selector diff, activity and protected goal/verification context with live admission reobservation and closed response decoding."
-  - "Project provider planning and fleet cards without inferring engineer identity from actor identity; retain explicit historical routes without current-to-history fallback."
+  - "Project provider fleet cards; retain explicit historical routes without current-to-history fallback."
 source:
   include:
     - docs/kanban-runtime-status.md
@@ -34,14 +34,6 @@ source:
             - id: "sink.operator.model-reader-list"
               path: "src/effects/architecture/model-reader.ts"
               symbol: "list"
-    - id: "entrypoint.operator.organization-validation"
-      path: "src/effects/operator/repository-snapshot.ts"
-      symbols:
-        - name: "assertOperatorRepositorySnapshotIdentity"
-          sinks:
-            - id: "sink.operator.organization-validation"
-              path: "src/core/operator/organization-snapshot.ts"
-              symbol: "decodeOperatorOrganizationSnapshot"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

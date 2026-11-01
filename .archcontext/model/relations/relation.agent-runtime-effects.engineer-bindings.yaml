@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.agent-runtime-effects.engineer-bindings"
-kind: "calls"
-source: "capability.runtime-harness.agent-runtime-effects"
-target: "capability.runtime-harness.engineer-bindings"
-intent: "Use canonical engineer JSON and digest helpers for profile evidence; do not resolve a legacy binding endpoint"

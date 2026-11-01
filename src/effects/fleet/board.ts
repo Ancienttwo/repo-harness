@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { lstatSync, realpathSync } from 'fs';
 import { sep } from 'path';
 
@@ -36,7 +35,6 @@ import {
 } from '../publication/merge-readiness';
 import { FeedbackError, projectFleetFeedback, prepareFeedbackSubject } from './provider-feedback';
 import { summarizeTaskInboxForFleet, TaskInboxError } from './task-inbox';
-import { observeAgentRuntimeEffects, projectTaskAgentRuntimeState, AgentRuntimeEffectStoreError, type AgentRuntimeEffectStatus } from '../engineers/agent-runtime-effect-store';
 
 export type FleetBoardFatalErrorCode =
   | 'fleet_registry_unavailable'
@@ -213,17 +211,7 @@ function emptyInbox(): FleetBoardInboxSummaryV1 {
     observation_status: 'unavailable',
     unread_count: 0,
     addressed_to_current_claim: false,
-    delivery_state: 'pending',
-    runtime_reachability: 'unknown',
-    effect_sha256: null,
-    failure_class: null,
-    delivery_evidence: null,
   });
-}
-
-/** Identity of one Agent Runtime effect-store read, for A/B tear detection. */
-function runtimeEffectsRevision(statuses: readonly AgentRuntimeEffectStatus[]): string {
-  return createHash('sha256').update(JSON.stringify(statuses), 'utf-8').digest('hex');
 }
 
 /**
@@ -238,7 +226,6 @@ function yieldToEventLoop(): Promise<void> {
 function mapRepositoryError(error: unknown): FleetBoardErrorCode {
   if (error instanceof FleetRepositoryError) return error.code;
   if (error instanceof TaskInboxError) return 'repo_inbox_unreadable';
-  if (error instanceof AgentRuntimeEffectStoreError) return 'repo_runtime_effect_unreadable';
   if (error instanceof FeedbackError) return 'repo_feedback_unreadable';
   if (error instanceof MergeReadinessError) {
     return 'repo_readiness_unavailable';
@@ -272,8 +259,7 @@ function baseCard(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, ex
     feedback: emptyFeedback(), inbox: emptyInbox(), snapshot_consistency: consistency, error: null };
 }
 async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCardV2, execution: AdmittedTaskSession | null,
-  options: FleetRepositoryCollectionOptions, consistency: 'stable' | 'changed_during_read',
-  runtimeEffects: readonly AgentRuntimeEffectStatus[], runtimeRevision: string): Promise<FleetBoardCardInputV2> {
+  options: FleetRepositoryCollectionOptions, consistency: 'stable' | 'changed_during_read'): Promise<FleetBoardCardInputV2> {
   await yieldToEventLoop();
   assertCollectionActive(options.signal, options.deadline_exceeded);
   const base = baseCard(repo, card, execution, consistency);
@@ -324,8 +310,7 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
     const current_claim = { reference: execution.selector.claim_ref, revision: execution.selector.claim_revision };
     const input = { repo_root: repo.path, task_id: execution.selector.task, admission_sha256: execution.admission_sha256, current_claim };
     const messages = summarizeTaskInboxForFleet(input);
-    const runtime = projectTaskAgentRuntimeState({ ...input, session_binding_sha256: execution.selector.session_binding_sha256, statuses: runtimeEffects });
-    inbox = { observation_status: 'observed', unread_count: messages.unread_count, addressed_to_current_claim: messages.addressed_to_current_claim, ...runtime };
+    inbox = { observation_status: 'observed', unread_count: messages.unread_count, addressed_to_current_claim: messages.addressed_to_current_claim };
     if (messages.snapshot_consistency !== 'stable') observedConsistency = 'changed_during_read';
     if (selections.length === 1) {
       const observed = observeAdmittedSessionSource({ ...execution.selector, env: options.env });
@@ -334,14 +319,13 @@ async function cardInput(repo: RepoHarnessRegisteredRepo, card: ProviderBoardCar
         'issue-id': execution.selector.issue_id, 'campaign-id': execution.selector.campaign_id, 'grant-sha256': execution.selector.grant_sha256,
         'policy-sha256': execution.selector.policy_sha256, actor: execution.selector.actor_id });
       const feedbackInput = { repo_root: repo.path, selection: selections[0]!.pull_request,
-        source: { authority: { source, claim: current_claim, engineer_profile: observed.identity.engineer_profile }, session: { task: execution.selector.task, role: execution.selector.role } } };
+        source: { authority: { source, claim: current_claim }, session: { task: execution.selector.task, role: execution.selector.role } } };
       const subject = prepareFeedbackSubject(feedbackInput);
       const projection = projectFleetFeedback({ ...feedbackInput, publication_id: subject.publication_id });
       feedback = { observation_status: 'observed', pending_count: projection.pending_count, no_progress: projection.no_progress, repair_actions: projection.repair_actions };
       if (projection.snapshot_consistency !== 'stable') observedConsistency = 'changed_during_read';
     }
   }
-  if (runtimeEffectsRevision(observeAgentRuntimeEffects(repo.path)) !== runtimeRevision) observedConsistency = 'changed_during_read';
   let executionReadiness = base.execution_readiness, blockers = base.readiness_blockers;
   if (admitted && source) {
     try {
@@ -390,10 +374,9 @@ async function collectRepository(repo: RepoHarnessRegisteredRepo, registry: Repo
         throw new FleetRepositoryError('repo_readiness_unavailable', 'selected admission has no exact provider issue display association');
       }
     }
-    const runtimeEffects = observeAgentRuntimeEffects(repo.path), runtimeRevision = runtimeEffectsRevision(runtimeEffects);
     const rows = board.cards.flatMap<{ card: ProviderBoardCardV2; execution: AdmittedTaskSession | null }>(card => card.sessions.length ? card.sessions.map(execution => ({ card, execution })) : [{ card, execution: null }]);
     const cards = await collectBounded(rows, options.max_concurrency, async ({ card, execution }) => {
-      try { return await cardInput(repo, card, execution, { ...options, signal: controller.signal }, board.snapshot_consistency, runtimeEffects, runtimeRevision); }
+      try { return await cardInput(repo, card, execution, { ...options, signal: controller.signal }, board.snapshot_consistency); }
       catch (error) {
         if (isCollectionPreemption(error)) throw error;
         const code = mapRepositoryError(error);

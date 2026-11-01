@@ -5,9 +5,7 @@ import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { createConnection } from 'node:net';
 import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
-import type { OperatorRepositorySnapshotV1 } from '../../src/core/operator/repository-snapshot';
 import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { OperatorRepositoryError, readOperatorRepositorySnapshot } from '../../src/effects/operator/repository-snapshot';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
@@ -55,12 +53,6 @@ import { runSetupProcess } from '../../src/effects/setup/collector';
 import type { OperatorWriteRoute } from '../../src/effects/operator/write-channel';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
-
-function unavailableRepository(repositoryId: string): OperatorRepositorySnapshotV1 {
-  return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
-    planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
-}
 
 function snapshot(sequence = 1) {
   return projectFleetBoardSnapshot({
@@ -259,13 +251,12 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       collect_fleet_board: async () => { reads++; return snapshot(); },
-      read_repository_snapshot: async input => { reads++; return unavailableRepository(input.repository_id); },
       read_task_context: async () => { reads++; throw new Error('unexpected read'); },
       read_task_diff: async () => { reads++; throw new Error('unexpected read'); },
     });
     try {
       const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/dev-activity', '/api/v1/setup',
-        '/api/v1/repositories/repo-a/snapshot', ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
+        ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         for (const path of paths) {
           for (const headers of [new Headers(), new Headers({ Origin: server.url })]) {
@@ -651,203 +642,6 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('bounds repository reads and permits a healthy retry after timeout', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-timeout-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    let repositoryCalls = 0;
-    let abortObserved = false;
-    let healthy = false;
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      timeout_ms: 1_000,
-      collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
-      read_repository_snapshot: async ({ signal }) => {
-        repositoryCalls += 1;
-        if (healthy) return unavailableRepository('repo-write');
-        return new Promise<never>((_resolve, reject) => {
-          signal.addEventListener('abort', () => { abortObserved = true; reject(new Error('cancelled')); }, { once: true });
-        });
-      },
-    });
-    try {
-      const startedAt = Date.now();
-      const timedOut = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
-      expect(Date.now() - startedAt).toBeLessThan(2_500);
-      expect(timedOut.status).toBe(503);
-      expect(await timedOut.json()).toMatchObject({
-        error: {
-          code: 'repository_snapshot_timeout',
-          message: 'The repository snapshot timed out.',
-        },
-      });
-      expect(repositoryCalls).toBe(1);
-      expect(abortObserved).toBe(true);
-
-      healthy = true;
-      const retry = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
-      expect(retry.status).toBe(200);
-      expect(await retry.json()).toEqual(unavailableRepository('repo-write'));
-      expect(repositoryCalls).toBe(2);
-    } finally {
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('coalesces same-repository repository reads and retains work for a remaining subscriber', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-coalesce-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    let calls = 0;
-    let aborts = 0;
-    let healthy = false;
-    let resolveFirst!: (snapshot: OperatorRepositorySnapshotV1) => void;
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      max_concurrency: 1,
-      collect_fleet_board: async () => snapshot(),
-      read_repository_snapshot: ({ signal }) => {
-        calls += 1;
-        if (healthy) return Promise.resolve(unavailableRepository('repo-write'));
-        signal.addEventListener('abort', () => { aborts += 1; }, { once: true });
-        return new Promise((resolve) => { resolveFirst = resolve as (snapshot: OperatorRepositorySnapshotV1) => void; });
-      },
-    });
-    const firstController = new AbortController();
-    const url = `${server.url}/api/v1/repositories/repo-write/snapshot`;
-    const first = fetch(url, { signal: firstController.signal }).catch(() => null);
-    try {
-      await waitFor(() => calls === 1, 'first repository reader did not start');
-      const second = fetch(url);
-      await Bun.sleep(30);
-      expect(calls).toBe(1);
-
-      firstController.abort();
-      await first;
-      await Bun.sleep(30);
-      expect(aborts).toBe(0);
-
-      resolveFirst(unavailableRepository('repo-write'));
-      expect((await second).status).toBe(200);
-      healthy = true;
-      expect((await fetch(url)).status).toBe(200);
-      expect(calls).toBe(2);
-    } finally {
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('bounds cross-repository repository workers and rejects queue overflow', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-queue-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    const started: string[] = [];
-    const resolvers = new Map<string, (snapshot: OperatorRepositorySnapshotV1) => void>();
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      max_concurrency: 1,
-      collect_fleet_board: async () => snapshot(),
-      read_repository_snapshot: ({ repository_id }) => new Promise((resolve) => {
-        started.push(repository_id);
-        resolvers.set(repository_id, resolve as (snapshot: OperatorRepositorySnapshotV1) => void);
-      }),
-    });
-    const url = (repositoryId: string) => `${server.url}/api/v1/repositories/${repositoryId}/snapshot`;
-    try {
-      const first = fetch(url('repo-a'));
-      await waitFor(() => started.length === 1, 'first repository reader did not start');
-      const second = fetch(url('repo-b'));
-      const third = fetch(url('repo-c'));
-      const overloaded = await fetch(url('repo-d'));
-      expect(overloaded.status).toBe(503);
-      expect(await overloaded.json()).toMatchObject({ error: { code: 'repository_snapshot_busy' } });
-      expect(started).toEqual(['repo-a']);
-
-      resolvers.get('repo-a')!(unavailableRepository('repo-a'));
-      expect((await first).status).toBe(200);
-      await waitFor(() => started.length === 2, 'queued repository reader did not start');
-      expect(started).toEqual(['repo-a', 'repo-b']);
-      resolvers.get('repo-b')!(unavailableRepository('repo-b'));
-      expect((await second).status).toBe(200);
-      await waitFor(() => started.length === 3, 'second queued repository reader did not start');
-      resolvers.get('repo-c')!(unavailableRepository('repo-c'));
-      expect((await third).status).toBe(200);
-    } finally {
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('isolates the default Repository reader and holds capacity until the blocked Worker exits', async () => {
-    if (process.platform === 'win32') return;
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-worker-'));
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-repo-')));
-    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
-    const secondRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-second-')));
-    expect(spawnSync('git', ['init', '-q', secondRoot]).status).toBe(0);
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }, { path: secondRoot, accessMode: 'read_write' }]);
-    // Block a remaining Git read. The retired collaboration policy is no longer read.
-    const policyPath = join(repoRoot, 'git-read-gate');
-    const bin = join(repoRoot, 'bin');
-    mkdirSync(bin);
-    const realGit = Bun.which('git')!;
-    writeFileSync(join(bin, 'git'), `#!/bin/sh\ncat < '${policyPath}' > /dev/null\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
-    const originalPath = process.env.PATH;
-    process.env.PATH = `${bin}:${originalPath}`;
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    const fifo = spawnSync('mkfifo', [policyPath], { encoding: 'utf8' });
-    expect(fifo.status).toBe(0);
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      max_concurrency: 1,
-      // Real Worker and Git startup share this deadline under the eight-file CI load.
-      // Injected-reader tests above retain their one-second deadlines.
-      timeout_ms: 5_000,
-      env: registry.env,
-      collect_fleet_board: async (options) => snapshot(options?.sequence ?? 1),
-    });
-    const fifoWriter = spawn('bash', ['-c', 'exec 3>"$1"; exec sleep 10', 'bash', policyPath], {
-      stdio: 'ignore',
-    });
-    try {
-      const startedAt = Date.now();
-      const url = `${server.url}/api/v1/repositories/${registry.ids[0]!}/snapshot`;
-      const timedOut = await fetch(url);
-      expect(Date.now() - startedAt).toBeLessThan(6_500);
-      expect(timedOut.status).toBe(503);
-      expect(await timedOut.json()).toMatchObject({ error: { code: 'repository_snapshot_timeout' } });
-      const busy = await fetch(url);
-      expect(busy.status).toBe(503);
-      expect(await busy.json()).toMatchObject({ error: { code: 'repository_snapshot_busy' } });
-      let queuedFinished = false;
-      const queued = fetch(`${server.url}/api/v1/repositories/${registry.ids[1]!}/snapshot`).then(response => { queuedFinished = true; return response; });
-      await Bun.sleep(30);
-      expect(queuedFinished).toBe(false);
-
-      rmSync(policyPath);
-      writeFileSync(policyPath, `${JSON.stringify({})}\n`);
-      fifoWriter.kill('SIGTERM');
-      expect((await queued).status).toBe(200);
-      const retry = await fetch(url);
-      expect(retry.status).toBe(200);
-      expect(await retry.json()).toMatchObject({
-        kind: 'operator_repository_snapshot',
-        repository_id: registry.ids[0],
-      });
-    } finally {
-      process.env.PATH = originalPath;
-      fifoWriter.kill('SIGTERM');
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-      rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(secondRoot, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
-    }
-  });
-
   test('isolates default Fleet collection and clears a blocked Worker for retry and shutdown', async () => {
     if (process.platform === 'win32') return;
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-worker-'));
@@ -905,67 +699,6 @@ describe('operator serve command and HTTP boundary', () => {
       if (!closed) await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
       rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
-    }
-  });
-
-  test('default Repository reads never lazy-fetch a missing promisor provider graph blob', async () => {
-    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-promisor-')));
-    const remote = join(parent, 'remote.git');
-    const source = moduleRepository();
-    const clone = join(parent, 'clone');
-    const graph = '.ai/harness/work-graph.v2.json';
-    const git = (cwd: string, ...args: string[]) => {
-      const result = spawnSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, encoding: 'utf8' });
-      expect(result.status, result.stderr).toBe(0);
-      return result.stdout.trim();
-    };
-    // Keep an immutable provider graph on the policy-selected branch.
-    git(parent, 'init', '-q', '--bare', '-b', 'main', remote);
-    git(remote, 'config', 'uploadpack.allowFilter', 'true');
-    git(source, 'branch', '-M', 'main');
-    fixtureWrite(source, 'agents/engineers/profiles/.gitkeep', '');
-    fixtureWrite(source, graph, JSON.stringify({ protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: repoHarnessRepoIdFor(clone), work_packages: [] }));
-    git(source, 'add', '.');
-    git(source, 'commit', '-qm', 'base');
-    git(source, 'push', '-q', `file://${remote}`, 'main');
-    git(parent, 'clone', '-q', '--filter=blob:none', `file://${remote}`, clone);
-    git(clone, 'switch', '-qc', 'work');
-    expect(existsSync(join(clone, graph))).toBe(true);
-    // Whitespace produces a distinct missing blob while preserving valid graph semantics.
-    writeFileSync(join(source, graph), readFileSync(join(source, graph), 'utf8') + '\n');
-    git(source, 'commit', '-qam', 'moved');
-    git(source, 'push', '-q', `file://${remote}`, 'main');
-    git(clone, 'fetch', '-q', 'origin', 'main:main');
-    const blob = git(clone, 'rev-parse', `main:${graph}`);
-    const blobPresent = () => spawnSync('git', ['cat-file', '-e', blob], { cwd: clone, env: { ...process.env, GIT_NO_LAZY_FETCH: '1' } }).status === 0;
-    expect(blobPresent()).toBe(false);
-    const fetchMarker = join(parent, 'fetch-ran');
-    git(clone, 'config', 'remote.origin.uploadpack', `touch '${fetchMarker}'; git-upload-pack`);
-    const packs = readdirSync(join(clone, '.git/objects/pack')).sort();
-    const registry = registryHome([{ path: clone, accessMode: 'read_only' }]);
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: parent,
-      // A caller value must not reopen lazy fetch for the read-only worker.
-      env: { ...registry.env, GIT_NO_LAZY_FETCH: '0' },
-    });
-    try {
-      for (const route of [`/api/v1/repositories/${registry.ids[0]}/snapshot`]) {
-        const response = await fetch(`${server.url}${route}`);
-        expect(response.status).toBe(200);
-        const payload = await response.json();
-        expect(payload.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'unavailable', code: 'needs_provider_graph' } } });
-        const body = JSON.stringify(payload);
-        expect(body).not.toContain('moved');
-        expect(existsSync(fetchMarker)).toBe(false);
-        expect(blobPresent()).toBe(false);
-        expect(readdirSync(join(clone, '.git/objects/pack')).sort()).toEqual(packs);
-      }
-    } finally {
-      await server.close();
-      rmSync(parent, { recursive: true, force: true });
-      rmSync(source, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
     }
   });
@@ -1050,35 +783,6 @@ describe('operator serve command and HTTP boundary', () => {
       await server.close();
       rmSync(staticRoot, { recursive: true, force: true });
       rmSync(outsideRoot, { recursive: true, force: true });
-    }
-  });
-
-  test('turns a repository repository identity mismatch into a typed refusal', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-repository-echo-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      collect_fleet_board: async () => snapshot(),
-      read_repository_snapshot: async () => {
-        throw new OperatorRepositoryError(
-          'repository_mismatch',
-          'repository snapshot for /private/tmp/other-repo answered repo-other',
-        );
-      },
-    });
-    try {
-      const response = await fetch(`${server.url}/api/v1/repositories/repo-write/snapshot`);
-      expect(response.status).toBe(500);
-      const body = await response.json() as { error: { code: string; message: string; next_action: string } };
-      expect(body.error.code).toBe('repository_mismatch');
-      expect(body.error.message).toBe('The repository snapshot does not belong to the requested repository.');
-      expect(body.error.next_action.length).toBeGreaterThan(0);
-      expect(JSON.stringify(body)).not.toContain('/private/tmp/other-repo');
-      expect(JSON.stringify(body)).not.toContain('repo-other');
-    } finally {
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
     }
   });
 
@@ -1176,93 +880,65 @@ describe('reader retirement', () => {
     target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
     observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
   };
-  for (const kind of ['repository', 'diff'] as const) {
-    const path = kind === 'diff' ? diffPath : '/api/v1/repositories/repo-a/snapshot';
-    for (const ending of ['timeout', 'disconnect'] as const) {
-      test(`${kind} ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
-        let calls = 0, secondaryCalls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
-        const hold = (signal: AbortSignal) => {
-          calls++; if (calls > 1) return Promise.resolve();
-          firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
-        };
-        const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
-          read_repository_snapshot: async input => { await hold(input.signal); return unavailableRepository(input.repository_id); },
-          read_task_diff: async input => { await hold(input.signal); return diff; },
-          read_admitted_task_activity: async () => { secondaryCalls++; throw new Error('retired slot must block activity'); },
-          read_task_context: async () => { secondaryCalls++; throw new Error('retired slot must block context'); },
-        });
-        const abort = new AbortController();
-        const first = fetch(server.url + path, { signal: abort.signal }).catch(() => null);
-        try {
-          await waitFor(() => calls === 1, 'reader not started');
-          if (ending === 'disconnect') abort.abort();
-          const response = await first;
-          if (ending === 'timeout') expect(response?.status).toBe(503);
-          await waitFor(() => firstSignal?.aborted === true, 'reader cancellation not observed');
-          const busy = await fetch(server.url + path);
-          expect(busy.status).toBe(503);
-          expect(await busy.json()).toMatchObject(kind === 'diff' ? { code: 'busy' } : { error: { code: 'repository_snapshot_busy' } });
-          expect(calls).toBe(1);
-          if (kind === 'diff') {
-            for (const route of ['activity', 'context']) {
-              const blocked = await fetch(server.url + diffPath.replace('/diff?', `/${route}?`));
-              expect(blocked.status).toBe(503);
-              expect(await blocked.json()).toEqual({ code: 'busy' });
-            }
-          }
-          expect(secondaryCalls).toBe(0);
-          retire(); await Bun.sleep(0);
-          const fresh = await fetch(server.url + path);
-          expect(fresh.status).toBe(200);
-          expect(await fresh.json()).toEqual(kind === 'diff' ? diff : unavailableRepository('repo-a'));
-          expect(calls).toBe(2);
-        } finally { retire?.(); abort.abort(); await first; await server.close(); }
-      });
-    }
-
-    test(`${kind} shutdown awaits retirement for every concurrent close caller`, async () => {
-      let signal: AbortSignal | undefined, retire!: () => void;
-      const hold = (value: AbortSignal) => { signal = value; return new Promise<void>(resolve => { retire = resolve; }); };
-      const server = await startOperatorServer({ port: 0,
-        read_repository_snapshot: async input => { await hold(input.signal); return unavailableRepository(input.repository_id); },
+  const path = diffPath;
+  for (const ending of ['timeout', 'disconnect'] as const) {
+    test(`diff ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
+      let calls = 0, secondaryCalls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
+      const hold = (signal: AbortSignal) => {
+        calls++; if (calls > 1) return Promise.resolve();
+        firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
+      };
+      const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
         read_task_diff: async input => { await hold(input.signal); return diff; },
+        read_admitted_task_activity: async () => { secondaryCalls++; throw new Error('retired slot must block activity'); },
+        read_task_context: async () => { secondaryCalls++; throw new Error('retired slot must block context'); },
       });
-      const request = fetch(server.url + path).catch(() => null);
+      const abort = new AbortController();
+      const first = fetch(server.url + path, { signal: abort.signal }).catch(() => null);
       try {
-        await waitFor(() => signal !== undefined, 'reader not started');
-        const closed = [false, false];
-        const first = server.close().then(() => { closed[0] = true; });
-        const second = server.close().then(() => { closed[1] = true; });
-        await waitFor(() => signal?.aborted === true, 'shutdown did not abort');
-        await Bun.sleep(30);
-        expect(closed).toEqual([false, false]);
-        retire(); await Promise.all([first, second]);
-        expect(closed).toEqual([true, true]);
-        expect((await request)?.status).not.toBe(200);
-      } finally { retire?.(); await server.close(); await request; }
+        await waitFor(() => calls === 1, 'reader not started');
+        if (ending === 'disconnect') abort.abort();
+        const response = await first;
+        if (ending === 'timeout') expect(response?.status).toBe(503);
+        await waitFor(() => firstSignal?.aborted === true, 'reader cancellation not observed');
+        const busy = await fetch(server.url + path);
+        expect(busy.status).toBe(503);
+        expect(await busy.json()).toMatchObject({ code: 'busy' });
+        expect(calls).toBe(1);
+        for (const route of ['activity', 'context']) {
+          const blocked = await fetch(server.url + diffPath.replace('/diff?', `/${route}?`));
+          expect(blocked.status).toBe(503);
+          expect(await blocked.json()).toEqual({ code: 'busy' });
+        }
+        expect(secondaryCalls).toBe(0);
+        retire(); await Bun.sleep(0);
+        const fresh = await fetch(server.url + path);
+        expect(fresh.status).toBe(200);
+        expect(await fresh.json()).toEqual(diff);
+        expect(calls).toBe(2);
+      } finally { retire?.(); abort.abort(); await first; await server.close(); }
     });
   }
 
-  test('closing cancels queued Repository observations before waiting for the active reader', async () => {
-    const starts: string[] = []; let retire!: () => void;
-    const server = await startOperatorServer({ port: 0, max_concurrency: 1,
-      read_repository_snapshot: async input => {
-        starts.push(input.repository_id);
-        if (starts.length === 1) await new Promise<void>(resolve => { retire = resolve; });
-        return unavailableRepository(input.repository_id);
-      },
+  test(`diff shutdown awaits retirement for every concurrent close caller`, async () => {
+    let signal: AbortSignal | undefined, retire!: () => void;
+    const hold = (value: AbortSignal) => { signal = value; return new Promise<void>(resolve => { retire = resolve; }); };
+    const server = await startOperatorServer({ port: 0,
+      read_task_diff: async input => { await hold(input.signal); return diff; },
     });
-    const first = fetch(server.url + '/api/v1/repositories/repo-a/snapshot').catch(() => null);
-    let queued: Promise<Response | null> | undefined;
+    const request = fetch(server.url + path).catch(() => null);
     try {
-      await waitFor(() => starts.length === 1, 'reader not started');
-      queued = fetch(server.url + '/api/v1/repositories/repo-b/snapshot').catch(() => null);
+      await waitFor(() => signal !== undefined, 'reader not started');
+      const closed = [false, false];
+      const first = server.close().then(() => { closed[0] = true; });
+      const second = server.close().then(() => { closed[1] = true; });
+      await waitFor(() => signal?.aborted === true, 'shutdown did not abort');
       await Bun.sleep(30);
-      const closing = server.close(); await Bun.sleep(30);
-      expect(starts).toEqual(['repo-a']);
-      retire(); await closing; await Promise.all([first, queued]);
-      expect(starts).toEqual(['repo-a']);
-    } finally { retire?.(); await server.close(); await Promise.all([first, queued]); }
+      expect(closed).toEqual([false, false]);
+      retire(); await Promise.all([first, second]);
+      expect(closed).toEqual([true, true]);
+      expect((await request)?.status).not.toBe(200);
+    } finally { retire?.(); await server.close(); await request; }
   });
 });
 
@@ -1333,7 +1009,7 @@ describe('current Task context route',()=>{
   const context:import('../../src/core/operator/admitted-task-context').AdmittedTaskContext={
     protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:'Current goal'},verification:{plan_sha256:hash,plan_json:'{}'},
     scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},approval:{admission_sha256:hash,grant_sha256:hash,revision:1,goal_revision:hash,scope_sha256:hash},
-    profile_selection:{state:'unassigned'},execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
+    execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
   };
   test('validates Host, Origin and selectors before reading, then binds expected revision',async()=>{
     let calls=0;const server=await startOperatorServer({port:0,read_task_context:async()=>{calls++;return context;}});
@@ -1390,81 +1066,6 @@ test('fleet snapshots use a new service epoch after server restart', async () =>
     }
     expect(epochs[0]).not.toBe(epochs[1]);
   } finally { rmSync(root, { recursive: true, force: true }); }
-});
-
-describe('repository source collection', () => {
-  test('a corrupt Planning source does not hide Organization data, write files or leak paths', () => {
-    const repoRoot = realpathSync(moduleRepository());
-    fixtureWrite(repoRoot, 'agents/engineers/profiles/.gitkeep', '');
-    fixtureCommit(repoRoot);
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_only' }]);
-    const policy = join(repoRoot, '.ai/harness/policy.json');
-    mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
-    const tree = (root: string): string[] => readdirSync(root, { withFileTypes: true }).flatMap(entry => {
-      const path = join(root, entry.name);
-      return entry.isDirectory() ? tree(path) : [`${path}:${readFileSync(path).toString('base64')}`];
-    }).sort();
-    try {
-      writeFileSync(policy, JSON.stringify({ worktree_strategy: { merge_back: { target: 'HEAD' } } }));
-      fixtureWrite(repoRoot, '.ai/harness/work-graph.v2.json', JSON.stringify({ protocol: 2, kind: 'repo-harness-provider-work-graph', repository_id: registry.ids[0], work_packages: [] }));
-      fixtureCommit(repoRoot);
-      const before = tree(repoRoot);
-      const observed = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(observed.protocol).toBe(1);
-      expect(observed.organization.status).toBe('observed');
-      expect(observed.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'observed', snapshot: { packages: [] } } } });
-      expect(JSON.stringify(observed)).not.toContain(repoRoot);
-      expect(tree(repoRoot)).toEqual(before);
-      // The graph source is independent of Organization's provider/session observation.
-      fixtureWrite(repoRoot, '.ai/harness/work-graph.v2.json', '{invalid graph');
-      fixtureCommit(repoRoot);
-      const corruptBefore = tree(repoRoot);
-      const corrupt = readOperatorRepositorySnapshot({ env: registry.env, repository_id: registry.ids[0]! });
-      expect(corrupt.planning).toMatchObject({ status: 'observed', snapshot: { graph: { status: 'unavailable', code: 'source_unavailable' } } });
-      expect(corrupt.organization.status).toBe('observed');
-      expect(JSON.stringify(corrupt)).not.toContain(repoRoot);
-      expect(tree(repoRoot)).toEqual(corruptBefore);
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
-    }
-  });
-});
-
-test('repository identities bind responses and partition single-flight within the shared worker budget', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'operator-repository-query-'));
-  const calls: string[] = [];
-  const resolvers: Array<(value: OperatorRepositorySnapshotV1) => void> = [];
-  const server = await startOperatorServer({ port: 0, static_root: root, max_concurrency: 1,
-    read_repository_snapshot: input => { calls.push(input.repository_id); return new Promise(resolve => resolvers.push(resolve)); },
-  });
-  const url = server.url + '/api/v1/repositories/repo-a/snapshot';
-  const secondUrl = server.url + '/api/v1/repositories/repo-b/snapshot';
-  try {
-    for (const query of ['?cursor=', '?cursor=../secret', '?path=private', '?cursor=a&cursor=a']) {
-      expect((await fetch(url + query)).status).toBe(400);
-    }
-    expect(calls).toEqual([]);
-    const first = fetch(url);
-    await waitFor(() => calls.length === 1, 'first repository not started');
-    const second = fetch(secondUrl);
-    const samePage = fetch(secondUrl);
-    await Bun.sleep(30);
-    expect(calls).toEqual(['repo-a']);
-    resolvers[0]!(unavailableRepository('repo-a'));
-    expect((await first).status).toBe(200);
-    await waitFor(() => calls.length === 2, 'next repository not started');
-    expect(calls).toEqual(['repo-a', 'repo-b']);
-    resolvers[1]!(unavailableRepository('repo-b'));
-    expect((await second).status).toBe(200); expect((await samePage).status).toBe(200);
-    expect(calls.length).toBe(2);
-    const mismatch = fetch(secondUrl);
-    await waitFor(() => calls.length === 3, 'mismatch probe not started');
-    resolvers[2]!(unavailableRepository('repo-a'));
-    const refused = await mismatch;
-    expect(refused.status).toBe(500);
-    expect(await refused.json()).toMatchObject({ error: { code: 'repository_mismatch' } });
-  } finally { await server.close(); rmSync(root, { recursive: true, force: true }); }
 });
 
 // Phase B uses the real Phase A fixture and the production worker/supervisor.

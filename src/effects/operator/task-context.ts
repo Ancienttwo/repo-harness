@@ -20,11 +20,9 @@ export function readOperatorTaskContext(input: AdmittedSessionSelector & { reado
     });
     const active=observeActiveReviewAdmission(source),admission=active.admission;
     if(active.grant_sha256!==before.approval.grant_sha256||active.revision!==before.approval.revision||admission.admission_sha256!==before.approval.admission_sha256)throw new SessionObservationError('stale');
-    const profile=before.identity.engineer_profile;
     const result:AdmittedTaskContext={protocol:2,kind:'operator_admitted_task_context',selector,
       goal:admission.goal,verification:{plan_sha256:hashVerificationPlan(admission.verification_plan),plan_json:canonicalize(admission.verification_plan as unknown as JsonValue)},
       scope:{allowed_paths:admission.allowed_paths,benchmark:admission.benchmark,oracles_json:canonicalize(admission.oracles as unknown as JsonValue)},approval:before.approval,
-      profile_selection:profile?{state:'selected',...profile}:{state:'unassigned'},
       execution:{branch:before.branch,runtime:before.identity.runtime,harness_kind:before.identity.harness_kind},observed_at:new Date().toISOString()};
     if(JSON.stringify(before)!==JSON.stringify(observeAdmittedSessionSource(input,effects)))throw new SessionObservationError('stale');
     if(Buffer.byteLength(JSON.stringify(result))>ADMITTED_CONTEXT_MAX_BYTES)throw new SessionObservationError('too_large');

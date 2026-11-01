@@ -24,8 +24,7 @@ export function AdmittedTaskContext({selector,generation=0,read=fetchTaskContext
       <p><code>{value.goal.revision}</code> · {value.observed_at}</p>
       <h4>{t('evidence.plan')}</h4><pre>{value.verification.plan_json}</pre><code>{value.verification.plan_sha256}</code>
       <h4>{t('evidence.claim')}</h4><p><code>{value.selector.claim_ref} · {value.selector.claim_revision}</code></p>
-      <p>{value.profile_selection.state==='selected'?`${value.profile_selection.engineer_id} · ${value.profile_selection.engineer_contract_revision}`:t('org.unassigned')}</p>
-      <details><summary>{t('evidence.original')}</summary><pre>{JSON.stringify({approval:value.approval,scope:value.scope,execution:value.execution,profile_selection:value.profile_selection},null,2)}</pre></details>
+      <details><summary>{t('evidence.original')}</summary><pre>{JSON.stringify({approval:value.approval,scope:value.scope,execution:value.execution},null,2)}</pre></details>
     </>}
   </section>;
 }

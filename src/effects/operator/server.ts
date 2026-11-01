@@ -35,7 +35,6 @@ import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/ope
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { createHash, randomUUID } from 'node:crypto';
 import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
-import { Worker as ObservationWorker } from 'node:worker_threads';
 import { TASK_ACTIVITY_FAILURES } from '../../core/operator/task-activity';
 import { decodeOperatorTaskDiff, parseTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
@@ -55,17 +54,10 @@ import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
 
-import type { OperatorRepositorySnapshotV1 } from '../../core/operator/repository-snapshot';
 import {
   projectOperatorFleetSnapshot,
   type OperatorFleetSnapshotV1,
 } from '../../core/operator/fleet-snapshot';
-import {
-  OperatorRepositoryError,
-  assertOperatorRepositorySnapshotIdentity,
-  type OperatorRepositoryErrorCode,
-  type ReadOperatorRepositorySnapshotInput,
-} from './repository-snapshot';
 import {
   FleetBoardError,
   type FleetBoardFatalErrorCode,
@@ -86,7 +78,6 @@ const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for di
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
 const OPERATOR_REOBSERVE_ACTION = 'Refresh the board to re-observe the task, then retry.';
 const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, then refresh the board.';
-const OPERATOR_REPOSITORY_ACTION = 'Check the repository repository store, then refresh the board.';
 
 /**
  * The dispatcher's own matchers, exported so the inventory below and the test
@@ -103,11 +94,10 @@ export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/(
 export const OPERATOR_TASK_SESSIONS_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
 export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/diff$/u;
 /**
- * The repository id is matched loosely and resolved strictly, the same split the
- * repository snapshot route uses: the registry is the authority on which ids
- * exist, and duplicating its shape here would be a second opinion about it.
+ * The repository id is matched loosely and resolved strictly: the registry is
+ * the authority on which ids exist, and duplicating its shape here would be a
+ * second opinion about it.
  */
-export const OPERATOR_REPOSITORY_SNAPSHOT_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/snapshot$/u;
 export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tests$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
 export const OPERATOR_DOCS_TREE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/tree$/u;
@@ -139,12 +129,6 @@ export interface OperatorRouteV1 {
 export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'health', method: 'GET', pattern: OPERATOR_HEALTH_PATH, write: false }),
   Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: OPERATOR_FLEET_SNAPSHOT_PATH, write: false }),
-  Object.freeze({
-    id: 'repository_snapshot',
-    method: 'GET',
-    pattern: OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source,
-    write: false,
-  }),
   Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_sessions', method: 'GET', pattern: OPERATOR_TASK_SESSIONS_ROUTE.source, write: false }),
@@ -189,11 +173,6 @@ const DOC_SESSION_READ_STATUS: Readonly<Record<DocSessionReadFailure, number>> =
 });
 
 export type OperatorServerHost = '127.0.0.1' | '::1';
-
-/** The route supplies cancellation to every asynchronous repository reader. */
-export type OperatorRepositorySnapshotReaderInput = ReadOperatorRepositorySnapshotInput & {
-  readonly signal: AbortSignal;
-};
 
 export interface OperatorServerOptions {
   /** Cache read only. Observation lifecycle runs outside the HTTP request. */
@@ -259,9 +238,6 @@ export interface OperatorServerOptions {
   readonly collect_fleet_board?: (
     options?: FleetBoardCollectorOptions,
   ) => Promise<FleetBoardSnapshotV2>;
-  readonly read_repository_snapshot?: (
-    input: OperatorRepositorySnapshotReaderInput,
-  ) => Promise<OperatorRepositorySnapshotV1>;
   /**
    * Write routes admitted for POST in addition to the production ones. Each
    * one must match a `POST`, `write: true` entry of the route inventory, or the
@@ -537,110 +513,6 @@ class OperatorFleetTimeoutError extends Error {
   }
 }
 
-interface PublicFailure {
-  readonly status: number;
-  readonly message: string;
-  readonly next_action: string;
-}
-
-/**
- * Every repository read failure as a fixed public sentence. The effect's own
- * message names a repository id and its cause carries a store path and a
- * provider diagnostic; the transport keeps the typed code and drops both.
- */
-const REPOSITORY_FAILURES: Readonly<Record<OperatorRepositoryErrorCode, PublicFailure>> = Object.freeze({
-  registry_unavailable: {
-    status: 503,
-    message: 'The fleet registry cannot be read.',
-    next_action: OPERATOR_DIAGNOSTIC_ACTION,
-  },
-  repository_not_found: {
-    status: 404,
-    message: 'The repository is not in the fleet registry.',
-    next_action: OPERATOR_ADOPT_ACTION,
-  },
-  repository_snapshot_unavailable: {
-    status: 503,
-    message: 'The repository store cannot be read.',
-    next_action: OPERATOR_REPOSITORY_ACTION,
-  },
-  repository_mismatch: {
-    status: 500,
-    message: 'The repository snapshot does not belong to the requested repository.',
-    next_action: OPERATOR_REPOSITORY_ACTION,
-  },
-});
-
-function publicRepositoryError(error: unknown): {
-  readonly status: number;
-  readonly body: OperatorErrorResponseV1;
-} {
-  if (error instanceof OperatorRepositoryBusyError) {
-    return {
-      status: 503,
-      body: errorBody(
-        'repository_snapshot_busy',
-        'The repository snapshot service is busy.',
-        'Wait for the current repository refresh to finish, then retry.',
-      ),
-    };
-  }
-  if (error instanceof OperatorRepositoryTimeoutError) {
-    return {
-      status: 503,
-      body: errorBody(
-        'repository_snapshot_timeout',
-        'The repository snapshot timed out.',
-        'Refresh the repository panel and retry.',
-      ),
-    };
-  }
-  if (error instanceof OperatorRepositoryError) {
-    const failure = REPOSITORY_FAILURES[error.code];
-    if (failure) {
-      return { status: failure.status, body: errorBody(error.code, failure.message, failure.next_action) };
-    }
-  }
-  return {
-    status: 503,
-    body: errorBody(
-      'repository_snapshot_unavailable',
-      'The repository store cannot be read.',
-      OPERATOR_REPOSITORY_ACTION,
-    ),
-  };
-}
-
-class OperatorRepositoryTimeoutError extends Error {
-  readonly code = 'repository_snapshot_timeout' as const;
-
-  constructor() {
-    super('repository snapshot deadline exceeded');
-    this.name = 'OperatorRepositoryTimeoutError';
-  }
-}
-
-class OperatorRepositoryBusyError extends Error {
-  readonly code = 'repository_snapshot_busy' as const;
-
-  constructor() {
-    super('repository snapshot queue is full');
-    this.name = 'OperatorRepositoryBusyError';
-  }
-}
-
-const OPERATOR_REPOSITORY_REQUEST_ABORTED = Symbol('operator-repository-request-aborted');
-
-type OperatorRepositoryWorkerResponse =
-  | {
-      readonly ok: true;
-      readonly snapshot: OperatorRepositorySnapshotV1;
-    }
-  | {
-      readonly ok: false;
-      readonly code: OperatorRepositoryErrorCode;
-    };
-
 // Observation children are read-only. Git must not fetch promised objects,
 // take optional locks or prompt. Apply these last so caller values cannot reopen them.
 const OPERATOR_READ_ONLY_GIT_ENVIRONMENT = { GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;
@@ -650,107 +522,6 @@ function repositoryWorkerEnvironment(env: NodeJS.ProcessEnv | undefined): Record
   return Object.fromEntries(
     Object.entries(env).filter((entry): entry is [string, string] => entry[1] !== undefined),
   );
-}
-
-function repositoryWorkerResponse(value: unknown): OperatorRepositoryWorkerResponse | null {
-  if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
-  if (value.ok === true && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as OperatorRepositorySnapshotV1 };
-  }
-  if (
-    value.ok === false
-    && 'code' in value
-    && (value.code === 'registry_unavailable'
-      || value.code === 'repository_not_found'
-      || value.code === 'repository_snapshot_unavailable'
-      || value.code === 'repository_mismatch')
-  ) {
-    return { ok: false, code: value.code };
-  }
-  return null;
-}
-
-/**
- * The repository collector is synchronous and can block in filesystem or
- * provider reads. Run the production reader outside the HTTP event loop so the
- * route deadline can terminate the work rather than merely race a blocked turn.
- */
-function readDefaultRepositorySnapshot(
-  input: OperatorRepositorySnapshotReaderInput,
-): Promise<OperatorRepositorySnapshotV1> {
-  return new Promise((resolveRead, rejectRead) => {
-    const worker = new ObservationWorker(new URL('./repository-snapshot-worker.ts', import.meta.url), {
-      workerData: {
-        env: repositoryWorkerEnvironment(input.env),
-        repository_id: input.repository_id,
-      },
-      env: { ...process.env, ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT },
-    });
-    let settled = false;
-    let result:
-      | { readonly ok: true; readonly snapshot: OperatorRepositorySnapshotV1 }
-      | { readonly ok: false; readonly error: unknown }
-      | undefined;
-    const finish = (
-      outcome:
-        | { readonly ok: true; readonly snapshot: OperatorRepositorySnapshotV1 }
-        | { readonly ok: false; readonly error: unknown },
-    ): void => {
-      if (settled) return;
-      settled = true;
-      result = outcome;
-      input.signal.removeEventListener('abort', onAbort);
-      // The outer subscription can finish at its deadline, but this promise
-      // continues owning capacity until the worker's exit event.
-      void worker.terminate().catch(() => {});
-    };
-    const onAbort = (): void => finish({ ok: false, error: OPERATOR_REPOSITORY_REQUEST_ABORTED });
-    input.signal.addEventListener('abort', onAbort, { once: true });
-    worker.once('exit', () => {
-      input.signal.removeEventListener('abort', onAbort);
-      if (result?.ok) resolveRead(result.snapshot);
-      else rejectRead(result?.error ?? new OperatorRepositoryError('repository_snapshot_unavailable', 'repository worker exited without a response'));
-    });
-    worker.once('message', (value: unknown) => {
-      const response = repositoryWorkerResponse(value);
-      if (response === null) {
-        finish({
-          ok: false,
-          error: new OperatorRepositoryError(
-            'repository_snapshot_unavailable',
-            'repository worker returned an invalid response',
-          ),
-        });
-      } else if (response.ok) {
-        try {
-          assertOperatorRepositorySnapshotIdentity(response.snapshot, input.repository_id);
-        } catch (error) {
-          finish({ ok: false, error });
-          return;
-        }
-        finish({ ok: true, snapshot: response.snapshot });
-      } else {
-        finish({
-          ok: false,
-          error: new OperatorRepositoryError(response.code, `repository worker failed with ${response.code}`),
-        });
-      }
-    });
-    worker.once('error', (error) => {
-      finish({
-        ok: false,
-        error: new OperatorRepositoryError(
-          'repository_snapshot_unavailable',
-          'repository worker failed',
-          error,
-        ),
-      });
-    });
-    if (input.signal.aborted) {
-      onAbort();
-      return;
-    }
-  });
 }
 
 type OperatorFleetCollectorResponse =
@@ -1229,130 +1000,9 @@ export async function startOperatorServer(
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
   const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
   const collect = options.collect_fleet_board;
-  const readRepository = options.read_repository_snapshot ?? readDefaultRepositorySnapshot;
   let nextSnapshotSequence = 1;
-  const activeRepositoryRequestCancellers = new Set<() => void>();
-  const repositoryObservations = new Map<string, RepositoryObservation>();
-  const repositoryQueue: RepositoryObservation[] = [];
-  const repositoryQueueCapacity = maxConcurrency * 2;
-  const repositoryCompletions = new Set<Promise<void>>();
   const activeTaskReadCancellers = new Set<() => void>();
   const activeTaskReadCompletions = new Set<Promise<void>>();
-  let activeRepositoryWorkers = 0;
-
-  interface RepositoryObservation {
-    readonly repositoryId: string;
-    readonly key: string;
-    readonly controller: AbortController;
-    readonly promise: Promise<OperatorRepositorySnapshotV1>;
-    readonly resolve: (snapshot: OperatorRepositorySnapshotV1) => void;
-    readonly reject: (error: unknown) => void;
-    timer: ReturnType<typeof setTimeout> | null;
-    subscribers: number;
-    started: boolean;
-    settled: boolean;
-  }
-
-  const drainRepositoryQueue = (): void => {
-    if (closed) return;
-    while (activeRepositoryWorkers < maxConcurrency && repositoryQueue.length > 0) {
-      const next = repositoryQueue.shift()!;
-      if (next.settled || next.subscribers === 0) continue;
-      startRepositoryObservation(next);
-    }
-  };
-
-  const settleRepositoryObservation = (
-    observation: RepositoryObservation,
-    outcome:
-      | { readonly ok: true; readonly snapshot: OperatorRepositorySnapshotV1 }
-      | { readonly ok: false; readonly error: unknown },
-  ): void => {
-    if (observation.settled) return;
-    observation.settled = true;
-    if (observation.timer !== null) clearTimeout(observation.timer);
-    if (!observation.started) {
-      const queuedAt = repositoryQueue.indexOf(observation);
-      if (queuedAt >= 0) repositoryQueue.splice(queuedAt, 1);
-      if (repositoryObservations.get(observation.key) === observation) repositoryObservations.delete(observation.key);
-    }
-    if (outcome.ok) observation.resolve(outcome.snapshot);
-    else observation.reject(outcome.error);
-  };
-
-  const cancelRepositoryObservation = (observation: RepositoryObservation, error: unknown): void => {
-    if (observation.settled) return;
-    observation.controller.abort();
-    settleRepositoryObservation(observation, { ok: false, error });
-  };
-
-  const startRepositoryObservation = (observation: RepositoryObservation): void => {
-    if (closed || observation.settled || observation.subscribers === 0) return;
-    observation.started = true;
-    activeRepositoryWorkers += 1;
-    const completion = Promise.resolve().then(() => {
-      if (observation.controller.signal.aborted) throw OPERATOR_REPOSITORY_REQUEST_ABORTED;
-      return readRepository({
-      env: options.env,
-      repository_id: observation.repositoryId,
-      signal: observation.controller.signal,
-      });
-    }).then(
-      (snapshot) => settleRepositoryObservation(observation, { ok: true, snapshot }),
-      (error) => settleRepositoryObservation(observation, { ok: false, error }),
-    ).finally(() => {
-      activeRepositoryWorkers -= 1;
-      if (repositoryObservations.get(observation.key) === observation) repositoryObservations.delete(observation.key);
-      repositoryCompletions.delete(completion);
-      drainRepositoryQueue();
-    });
-    repositoryCompletions.add(completion);
-  };
-
-  const acquireRepositoryObservation = (repositoryId: string): RepositoryObservation => {
-    if (closed) throw OPERATOR_REPOSITORY_REQUEST_ABORTED;
-    const key = repositoryId;
-    const existing = repositoryObservations.get(key);
-    if (existing !== undefined) {
-      if (existing.settled) throw new OperatorRepositoryBusyError();
-      existing.subscribers += 1;
-      return existing;
-    }
-    if (activeRepositoryWorkers >= maxConcurrency && repositoryQueue.length >= repositoryQueueCapacity) {
-      throw new OperatorRepositoryBusyError();
-    }
-    let resolveObservation!: (snapshot: OperatorRepositorySnapshotV1) => void;
-    let rejectObservation!: (error: unknown) => void;
-    const observation: RepositoryObservation = {
-      repositoryId, key,
-      controller: new AbortController(),
-      promise: new Promise<OperatorRepositorySnapshotV1>((resolveObservationPromise, rejectObservationPromise) => {
-        resolveObservation = resolveObservationPromise;
-        rejectObservation = rejectObservationPromise;
-      }),
-      resolve: (snapshot) => resolveObservation(snapshot),
-      reject: (error) => rejectObservation(error),
-      timer: null,
-      subscribers: 1,
-      started: false,
-      settled: false,
-    };
-    observation.timer = setTimeout(() => {
-      cancelRepositoryObservation(observation, new OperatorRepositoryTimeoutError());
-    }, timeoutMs);
-    repositoryObservations.set(key, observation);
-    if (activeRepositoryWorkers < maxConcurrency) startRepositoryObservation(observation);
-    else repositoryQueue.push(observation);
-    return observation;
-  };
-
-  const releaseRepositoryObservation = (observation: RepositoryObservation): void => {
-    if (observation.subscribers === 0) return;
-    observation.subscribers -= 1;
-    if (observation.subscribers === 0 && !observation.settled) {
-      cancelRepositoryObservation(observation, OPERATOR_REPOSITORY_REQUEST_ABORTED);
-    }
-  };
 
   interface FleetObservation {
     readonly key: string;
@@ -1476,72 +1126,6 @@ export async function startOperatorServer(
       sendRefusal(request, response, failure.status, failure.body, headOnly);
     } finally {
       release();
-      request.removeListener('aborted', onClientDisconnect);
-      response.removeListener('close', onClientDisconnect);
-    }
-  };
-
-  const handleRepositorySnapshot = async (
-    request: IncomingMessage,
-    response: ServerResponse,
-    repositoryId: string,
-    headOnly = false,
-  ): Promise<void> => {
-    let observation: RepositoryObservation;
-    try {
-      observation = acquireRepositoryObservation(repositoryId);
-    } catch (error) {
-      const failure = publicRepositoryError(error);
-      sendRefusal(request, response, failure.status, failure.body, headOnly);
-      return;
-    }
-    let finished = false;
-    let clientDisconnected = false;
-    let serverClosing = false;
-    let released = false;
-    let rejectCancellation: ((reason: unknown) => void) | null = null;
-    const cancellation = new Promise<never>((_resolve, reject) => {
-      rejectCancellation = reject;
-    });
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      releaseRepositoryObservation(observation);
-    };
-    const cancel = (reason: 'client_disconnect' | 'server_shutdown'): void => {
-      if (finished) return;
-      if (reason === 'client_disconnect') clientDisconnected = true;
-      else serverClosing = true;
-      release();
-      if (reason === 'server_shutdown' && !response.destroyed) {
-        const failure = publicRepositoryError(OPERATOR_REPOSITORY_REQUEST_ABORTED);
-        sendJson(response, failure.status, failure.body, headOnly);
-      }
-      rejectCancellation?.(OPERATOR_REPOSITORY_REQUEST_ABORTED);
-    };
-    const onClientDisconnect = () => cancel('client_disconnect');
-    const cancelForServerClose = () => cancel('server_shutdown');
-    request.once('aborted', onClientDisconnect);
-    response.once('close', onClientDisconnect);
-    activeRepositoryRequestCancellers.add(cancelForServerClose);
-    try {
-      const repository = await Promise.race([
-        observation.promise,
-        cancellation,
-      ]);
-      if (clientDisconnected || serverClosing || response.destroyed) return;
-      finished = true;
-      assertOperatorRepositorySnapshotIdentity(repository, repositoryId);
-      sendJson(response, 200, repository, headOnly);
-    } catch (error) {
-      if (clientDisconnected || serverClosing || response.destroyed) return;
-      finished = true;
-      const failure = publicRepositoryError(error);
-      sendRefusal(request, response, failure.status, failure.body, headOnly);
-    } finally {
-      finished = true;
-      release();
-      activeRepositoryRequestCancellers.delete(cancelForServerClose);
       request.removeListener('aborted', onClientDisconnect);
       response.removeListener('close', onClientDisconnect);
     }
@@ -2147,16 +1731,6 @@ export async function startOperatorServer(
       return;
     }
 
-    const repositoryRoute = OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.exec(pathname);
-    if (repositoryRoute !== null) {
-      if (url.searchParams.size > 0) {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'Repository snapshots do not accept query parameters.'), headOnly);
-        return;
-      }
-      await handleRepositorySnapshot(request, response, repositoryRoute[1]!, headOnly);
-      return;
-    }
-
     /**
      * The API prefix is claimed case-insensitively while the routes above stay
      * exact, because the static fallback resolves case-insensitively on macOS
@@ -2289,11 +1863,9 @@ export async function startOperatorServer(
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
-      for (const observation of [...repositoryObservations.values()]) cancelRepositoryObservation(observation, OPERATOR_REPOSITORY_REQUEST_ABORTED);
       for (const cancel of activeTaskReadCancellers) cancel();
-      for (const cancel of activeRepositoryRequestCancellers) cancel();
       await Promise.allSettled([
-        ...fleetCompletions, ...repositoryCompletions,
+        ...fleetCompletions,
         ...activeTaskReadCompletions,
       ]);
       if (!server.listening) return;

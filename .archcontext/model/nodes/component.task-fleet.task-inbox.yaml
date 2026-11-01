@@ -5,15 +5,14 @@ name: "Task Inbox"
 status: "active"
 parent: "capability.organization.task-fleet"
 layer: "core"
-summary: "Owns admitted task messages, exact recipient delivery receipts and separate historical message, reply and activity readers."
+summary: "Owns admitted task messages, exact recipient delivery receipts and separate historical message and activity readers."
 responsibilities:
   - "Write immutable TaskMessageEventV2 records under the shared task mutex."
   - "Reobserve the selected session and live approval; fence current messages to admission SHA and exact claim reference and revision."
-  - "Retain historical message and reply codecs and explicit historical activity/layout reads without current-authority fallback."
+  - "Retain historical message codecs and explicit historical activity/layout reads without current-authority fallback."
 source:
   include:
     - src/core/fleet/task-message.ts
-    - src/core/fleet/task-reply.ts
     - src/core/fleet/task-inbox-layout.ts
     - src/core/fleet/admitted-task-message.ts
     - src/core/messages/task-message-claim.ts

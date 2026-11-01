@@ -127,17 +127,16 @@ sequenceDiagram
 - Task messages remain immutable communication records. Per-recipient delivery receipts do not change a provider claim or PR state.
 - Admitted messages name the admission digest and the exact claim reference and revision. The manual inbox path checks that recipient before delivery or acknowledgement.
 - Message bodies remain untrusted data. The UserPromptSubmit inbox adapter is a no-op and prints no message context.
-- Historical reply inspection validates the stored intent, event and commit chain without granting current authorization.
-- Inbox layout migration retains canonical recipient keys and checks record bytes. The operator reader performs no migration.
+- Inbox layout migration retains canonical recipient keys and checks record bytes. It refuses retired reply records and deletes nothing. The operator reader performs no migration.
 - Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Publication feedback and per-repository board reads remain for slice C.
 - A provider issue or PR owns current task identity, claim, status and dependency. A local board, Sprint row or lease record is a bounded observation. It cannot grant admission, transfer a claim or complete an issue.
-- Protected admission binds an approved goal and scope to an exact execution session and claim. A matching actor name is not an engineer selection; engineer association requires an explicit profile and contract revision.
+- Protected admission binds an approved goal and scope to an exact execution session and claim. A matching actor name grants no admission.
 - `fleet board` compares complete projected provider and session revisions, with at most three observations. A continued change returns `changed_during_read`. A discovery failure is a typed unavailable observation, not an empty session list.
 - An issue without an admitted session remains a provider issue card. Runtime progress does not determine issue status.
 - Current diff, activity and context routes require the closed session selector and reobserve current admission. Historical routes are explicit. A missing current session never falls back to Sprint or lease history.
-- Admitted inbox delivery binds the admission SHA and the exact claim reference and revision. Runtime effects also bind the session digest and selected profile revision. Owner preparation reserves a bounded pre-prompt companion without marking messages delivered. The host consumer checks native/request attribution, local approval and expiry before it reads the companion. Only exact input-scoped accepted OAR proof lets the owner commit delivery receipts. Missing or unknown acceptance leaves delivery pending; recovery repeats the ledger commit without resending the prompt. Native host attribution grants no admission.
+- Admitted inbox delivery binds the admission SHA and the exact claim reference and revision. Owner preparation reserves a bounded pre-prompt companion without marking messages delivered. The host consumer checks native/request attribution, local approval and expiry before it reads the companion. Only exact input-scoped accepted OAR proof lets the owner commit delivery receipts. Missing or unknown acceptance leaves delivery pending; recovery repeats the ledger commit without resending the prompt. Native host attribution grants no admission.
 - The task mutex stays at `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock`. Moving its implementation out of the retired lease reader created no new lock namespace.
-- Worktree safety keeps exact worktree identity and merge-proof checks. Dirty, locked, marked or unknown worktrees stay protected. `ship-worktrees` journals operation progress, not task authority. PR readiness reobserves canonical provider identity, expected head/base, checks, reviews and threads before it reports readiness. Product integration also proves the provider's actual merge commit and tree locally and its ancestry into the exact final candidate; a merged PR state alone is not proof. Historical Sprint documents, owner bytes and message codecs remain for explicit history reads; they cannot replace current approval or provider evidence.
+- Worktree safety keeps exact worktree identity and merge-proof checks. Dirty, locked, marked or unknown worktrees stay protected. `ship-worktrees` journals operation progress, not task authority. PR readiness reobserves canonical provider identity, expected head/base, checks, reviews and threads before it reports readiness. Historical Sprint documents, owner bytes and message codecs remain for explicit history reads; they cannot replace current approval or provider evidence.
 - Shared neutral source directories reuse implementations. They do not create another task state store. Provider feedback remains a Publication responsibility and joins the same admitted inbox context to explicit provider PR evidence.
 
 ## 4. 歷史決策記錄(append-only)
@@ -150,6 +149,4 @@ sequenceDiagram
 
 ## Optimization Backlog
 
-- **双向依赖（重构证据）。** `src/effects/fleet/board.ts` 读取 agent-runtime-effects 的 runtime 投影。`src/effects/engineers/agent-runtime-effect-store.ts` 又反向导入 `src/core/fleet/board.ts`、`src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`。模型只声明 task-fleet → agent-runtime-effects。反向边记录在此，不作为意图关系。
-- **agent-runtime-effects 的方向（集成）。** 反向有 7 条边，`relation.task-fleet.agent-runtime-effects` 一侧有 4 条。集成保留已声明的方向。是否翻转方向是开放问题。
 - **repository registry 关系的目标（#1343）。** 导入只指向 `src/effects/repo-registry.ts`。这个文件现在归 `component.execution-primitives.repository-registry`。`relation.task-fleet.repo-registry` 已删除，由 `relation.task-fleet.repository-registry` 代替。task-fleet 与 mcp-sidecar 之间因此没有经过 registry 的环。

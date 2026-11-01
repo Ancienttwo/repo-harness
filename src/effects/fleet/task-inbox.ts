@@ -1,4 +1,4 @@
-import { TaskMessageError } from '../../core/messages/task-message-error';
+import { retiredDeliveryChannelRecord, TaskMessageError } from '../../core/messages/task-message-error';
 import { sameTaskMessageClaim, type TaskMessageClaim } from '../../core/messages/task-message-claim';
 import { TASK_INBOX_V2_RELATIVE_PATH, admittedTaskInboxRecipientStorageKey as taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import {
@@ -46,14 +46,6 @@ import {
   type TaskMessageEventV2,
   type TaskMessageRecipient,
 } from '../../core/fleet/admitted-task-message';
-import {
-  TASK_REPLY_RECORD_MAX_BYTES,
-  canonicalTaskReplyIntentBytes,
-  canonicalTaskReplyCommitBytes,
-  validateTaskReplyIntent,
-  validateTaskReplyCommit,
-  inspectTaskReplyChain,
-} from '../../core/fleet/task-reply';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
@@ -77,7 +69,8 @@ export type TaskInboxErrorCode =
   | 'task_unowned'
   | 'claim_mismatch'
   | 'recipient_unavailable'
-  | 'task_message_transition_invalid';
+  | 'task_message_transition_invalid'
+  | 'task_message_channel_retired';
 
 export class TaskInboxError extends Error {
   constructor(readonly code: TaskInboxErrorCode, message: string, readonly cause?: unknown) {
@@ -332,11 +325,18 @@ function readEventAt(path: string): TaskMessageEventV2 {
   return event;
 }
 
+function rejectRetiredRecord(error: unknown, path: string): void {
+  if (error instanceof TaskMessageError && error.code === 'task_message_channel_retired') {
+    fail('task_message_unreadable', retiredDeliveryChannelRecord(path));
+  }
+}
+
 function readReceiptAt(path: string): TaskMessageDeliveryReceiptV2 {
   let receipt: TaskMessageDeliveryReceiptV2;
   try {
     receipt = validateTaskMessageDeliveryReceipt(JSON.parse(readCanonicalFile(path, 'task message delivery receipt')));
   } catch (error) {
+    rejectRetiredRecord(error, path);
     throw new TaskInboxError('task_message_unreadable', `task message delivery receipt is malformed: ${path}`, error);
   }
   if (canonicalTaskMessageDeliveryReceiptBytes(receipt) !== readCanonicalFile(path, 'task message delivery receipt')) {
@@ -806,7 +806,7 @@ export function readTaskMessageDelivery(input: TaskInboxListInput & { readonly m
 export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliveryResult {
   const recipient = input.recipient;
   assertTaskId(input.task_id);
-  if ((input.delivery_channel === 'agent_runtime_effect' || input.delivery_channel === 'controlled_request')) {
+  if (input.delivery_channel === 'controlled_request') {
     if (input.delivery_ref === undefined || input.delivery_ref.length === 0) {
       fail('task_message_invalid', 'controlled delivery requires its bounded control reference');
     }
@@ -816,7 +816,7 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
   } else if (input.delivery_ref !== undefined || input.message_id !== undefined) {
     fail('task_message_invalid', 'only controlled delivery carries a bounded control reference');
   }
-  if (input.delivery_channel !== 'agent_runtime_effect' && input.delivery_channel !== 'controlled_request' && input.delivery_ref !== undefined) {
+  if (input.delivery_channel !== 'controlled_request' && input.delivery_ref !== undefined) {
     fail('task_message_invalid', 'only controlled delivery carries a bounded control reference');
   }
   const observed = observeInboxAdmission(input);
@@ -845,7 +845,7 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
         continue;
       }
       if (isGloballySatisfied(input.repo_root, input.task_id, event)) continue;
-      if ((input.delivery_channel === 'agent_runtime_effect' || input.delivery_channel === 'controlled_request') && event.message_id !== input.message_id) continue;
+      if (input.delivery_channel === 'controlled_request' && event.message_id !== input.message_id) continue;
       const prior = receiptFor(input.repo_root, input.task_id, event, recipient, input.delivery_channel);
       if (prior.delivery_state === 'acknowledged' || prior.delivery_state === 'superseded' || prior.delivery_state === 'delivered') continue;
       const bodyBytes = Buffer.byteLength(event.body, 'utf-8');
@@ -856,8 +856,8 @@ export function deliverTaskInbox(input: DeliverTaskInboxInput): TaskInboxDeliver
         pendingCount += 1;
         continue;
       }
-      const delivered = transitionTaskMessageDeliveryReceipt(prior, (input.delivery_channel === 'agent_runtime_effect' || input.delivery_channel === 'controlled_request')
-        ? { state: 'delivered', at: input.delivered_at, delivery_ref: input.delivery_ref, ...(input.delivery_channel === 'controlled_request' ? { delivery_channel: input.delivery_channel } : {}) }
+      const delivered = transitionTaskMessageDeliveryReceipt(prior, input.delivery_channel === 'controlled_request'
+        ? { state: 'delivered', at: input.delivered_at, delivery_ref: input.delivery_ref, delivery_channel: input.delivery_channel }
         : { state: 'delivered', at: input.delivered_at, delivery_channel: input.delivery_channel });
       writeReceipt(input.repo_root, input.task_id, delivered);
       deliveries.push({ event, receipt: delivered });
@@ -903,6 +903,7 @@ export function acknowledgeTaskInbox(input: AcknowledgeTaskInboxInput): TaskMess
 /** CLI-facing spelling retained at the effect boundary. */
 export const ackTaskInbox = acknowledgeTaskInbox;
 
+const TASK_REPLY_RECORD_MAX_BYTES = 64 * 1024;
 export class TaskReplyStoreError extends Error {
   readonly code = 'task_reply_inconsistent';
 }
@@ -915,7 +916,8 @@ function optionalReplyRecord<T>(commonDirectory: string, path: string, validate:
   if (!stat.isFile() || stat.isSymbolicLink() || stat.size > TASK_REPLY_RECORD_MAX_BYTES) fail('task_message_unreadable', 'reply record is unsafe or exceeds its byte bound');
   charge?.(stat.size);
   const bytes = readCanonicalFile(path, 'reply record');
-  const value = validate(JSON.parse(bytes));
+  let value: T;
+  try { value = validate(JSON.parse(bytes)); } catch (error) { rejectRetiredRecord(error, path); throw error; }
   if (canonical(value) !== bytes) replyInconsistent('reply record is not canonical');
   return value;
 }

@@ -355,6 +355,7 @@ describe('retention command', () => {
       ['{common}/repo-harness/feedback/v1', 'keep'],
       ['{common}/repo-harness/integration/v1', 'keep'],
       ['{common}/repo-harness/integration/v2', 'keep'],
+      ['{common}/repo-harness/agent-runtime-effects/admitted-v2', 'keep'],
     ]);
     expect(report.roots.find((entry) => entry.rule === 'delete')?.detail).toBe('archived entries are deleted 90 days after their newest write');
     expect(report.roots[0]?.detail).toBe(`check-logs move to ${DEFAULT_ARCHIVE_ROOT} after 30 days`);

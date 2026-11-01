@@ -6,7 +6,7 @@ import { projectProviderBoard } from '../../src/core/state/provider-board';
 import type { AdmittedTaskSession } from '../../src/core/sessions/task-sessions';
 const digest = `sha256:${'a'.repeat(64)}`;
 function session(task: string, issue = '200'): AdmittedTaskSession {
-  return { profile_selection: { state: 'unassigned' }, admission_sha256: digest, branch: 'refs/heads/task', runtime: 'terminal', harness_kind: 'codex', selector: {
+  return { admission_sha256: digest, branch: 'refs/heads/task', runtime: 'terminal', harness_kind: 'codex', selector: {
     repository_id: 'repo_1', provider_repository_id: '100', issue_id: issue, campaign_id: 'campaign', task, role: 'worker',
     claim_ref: `claim:${task}`, claim_revision: digest, grant_sha256: digest, policy_sha256: digest, actor_id: 'owner', session_binding_sha256: `sha256:${task.repeat(64)}`,
   } };
@@ -44,7 +44,7 @@ function fleetCard(execution: AdmittedTaskSession | null, issueState: 'open' | '
     execution_status: 'observed', execution, task_id: execution?.selector.task ?? null, task_label: 'Provider title', task_index: 7,
     merge_readiness: null, execution_readiness: null, readiness_blockers: null,
     feedback: { observation_status: 'unavailable', pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null, delivery_evidence: null },
+    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false },
     snapshot_consistency: 'stable', error: null };
 }
 function fleet(cards: readonly FleetBoardCardInputV2[]) {

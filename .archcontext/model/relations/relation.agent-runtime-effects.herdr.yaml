@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.agent-runtime-effects.herdr"
-kind: "calls"
-source: "capability.runtime-harness.agent-runtime-effects"
-target: "external.herdr"
-intent: "Start Herdr CLI agents for agent runtime effects."

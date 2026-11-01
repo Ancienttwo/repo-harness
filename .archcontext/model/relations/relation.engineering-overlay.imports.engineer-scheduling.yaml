@@ -1,8 +1,0 @@
-{
-  "schemaVersion": "archcontext.relation/v1",
-  "id": "relation.engineering-overlay.imports.engineer-scheduling",
-  "kind": "depends-on",
-  "source": "capability.runtime-harness.engineering-overlay",
-  "target": "capability.runtime-harness.engineer-scheduling",
-  "intent": "Resolve the registered repository before reading the overlay."
-}

@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.integration-acceptance.publication"
-kind: "reads"
-source: "capability.runtime-harness.integration-acceptance"
-target: "capability.organization.publication"
-intent: "Reuse the shared provider PR integration collector and canonical JSON helpers without historical receipt authority"

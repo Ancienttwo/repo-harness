@@ -5,7 +5,7 @@ import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
   validateTaskMessageEvent, validateTaskMessageDeliveryReceipt, recipientFromTaskMessageReceipt, type TaskMessageRecipient } from '../../core/fleet/task-message';
-import { canonicalTaskReplyCommitBytes, canonicalTaskReplyIntentBytes, validateTaskReplyCommit, validateTaskReplyIntent } from '../../core/fleet/task-reply';
+import { retiredDeliveryChannelRecord, TaskMessageError } from '../../core/messages/task-message-error';
 import { createFileExclusiveDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
@@ -78,7 +78,13 @@ function inventory(root: string): Entry[] {
 }
 function canonicalRecord<T>(path: string, validate: (value: unknown) => T, serialize: (value: T) => string): T {
   const bytes = readFile(path);
-  const value = validate(JSON.parse(bytes.toString('utf8')));
+  let value: T;
+  try { value = validate(JSON.parse(bytes.toString('utf8'))); } catch (error) {
+    if (error instanceof TaskMessageError && error.code === 'task_message_channel_retired') {
+      refuse(retiredDeliveryChannelRecord(path));
+    }
+    throw error;
+  }
   if (`${serialize(value)}\n` !== bytes.toString('utf8')) refuse('record bytes are not canonical');
   return value;
 }
@@ -131,20 +137,28 @@ function mappedPath(root: string, entry: Entry): string | null {
     }
     return `${task}/${area}/${id}/${token}.json`;
   }
+  // A journal or receipt from before #1345 can bind reply records. They move as opaque bytes that the
+  // frozen inventory verifies by hash; their target comes from the path alone.
   const target = `${task}/${area}/${id}/${token}`;
   if (!leaf && directory) return target;
   if (directory || (leaf !== 'intent.json' && leaf !== 'commit.json')) refuse('unknown reply path');
-  if (leaf === 'intent.json') {
-    const intent = canonicalRecord(join(root, entry.path), validateTaskReplyIntent, canonicalTaskReplyIntentBytes);
-    const actual = { kind: 'claim' as const, claim_id: intent.claim_actor.claim_id, generation: intent.claim_actor.lease_generation };
-    if (intent.parent.task_id !== task || intent.parent.message_id !== id || deriveTaskMessageRecipientKey(actual) !== key) refuse('reply path identity mismatch');
-  } else canonicalRecord(join(root, entry.path), validateTaskReplyCommit, canonicalTaskReplyCommitBytes);
   return `${target}/${leaf}`;
 }
-function buildManifest(common: string, sourceRoot: string): Manifest {
+/** The reply protocol (v0.19.4) was removed in #820 (v0.23.1). Only a fresh plan refuses its records. */
+function refuseRetiredReplyRecords(sourceRoot: string, source: Entry[]): void {
+  const retired = source.filter(entry => {
+    const [, area, id] = entry.path.split('/');
+    return area === 'reply-effects' || (area === 'staging' && id === 'reply-effects');
+  }).map(entry => entry.path);
+  if (retired.length) refuse(`Task Inbox at ${sourceRoot} holds records of the retired reply protocol `
+    + `(added in v0.19.4, removed in #820 / v0.23.1): ${retired.join(', ')}. Remove or archive the reply-effects `
+    + 'directories, then run `repo-harness fleet inbox migrate-layout` again.');
+}
+function buildManifest(common: string, sourceRoot: string, fresh = false): Manifest {
   const stat = inboxPathStat(common)!;
   const identity = `${stat.dev}:${stat.ino}`;
   const source = inventory(sourceRoot);
+  if (fresh) refuseRetiredReplyRecords(sourceRoot, source);
   const targets = new Set<string>();
   const target = source.flatMap(entry => {
     const path = mappedPath(sourceRoot, entry);
@@ -373,7 +387,7 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
       const receipt = checkedRollbackHistory(common);
       if ([p.current, p.backup, p.stage, `${p.rollback}.pending`].some(path => inboxPathStat(path))) refuse('unexpected completed rollback state');
       if (mode === 'dry-run' || mode === 'apply' || inboxPathStat(`${p.journal}.pending`)) {
-        return { state: 'planned', manifest: buildManifest(common, p.legacy) };
+        return { state: 'planned', manifest: buildManifest(common, p.legacy, true) };
       }
       return { state: 'rolled_back', manifest: checkedManifest(common, receipt.manifest) };
     }
@@ -383,7 +397,7 @@ export function migrateTaskInboxLayout(input: InboxMigrationInput) {
       return { state: 'not_required', manifest: null };
     }
     if ([p.current, p.backup, p.stage].some(path => inboxPathStat(path))) refuse('unexpected pre-migration tree');
-    return { state: 'planned', manifest: buildManifest(common, p.legacy) };
+    return { state: 'planned', manifest: buildManifest(common, p.legacy, true) };
   }
   function result(state: string, manifest: Manifest | null) {
     return { ok: true, state, ...(manifest ? receiptFor(manifest) : {}) };

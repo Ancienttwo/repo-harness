@@ -163,8 +163,6 @@ The lifecycle behavior below is historical. Slice C retired its writers.
 
 ## Remaining boundary
 
-No publication receipt reader remains. Provider merge commit and tree evidence
-comes from `collectPullRequestIntegration`
-(`src/effects/publication/merge-readiness.ts`). Product acceptance then proves
-locally that the provider merge commit is an ancestor of the final candidate
-(`src/effects/integration/product-acceptance.ts#observeSelectedPullRequest`).
+No publication receipt reader remains. `collectPullRequestIntegration`
+(`src/effects/publication/merge-readiness.ts`) reads the provider merge commit
+and tree. It has no caller since product acceptance was deleted (#1345).

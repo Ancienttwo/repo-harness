@@ -262,12 +262,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       helper_runtime_dir: "package:scripts",
       helper_source: "package",
     },
-    agent_runtime: {
-      mode: "off",
-      adapters: {
-        "herdr-cli-agent": { enabled: false },
-      },
-    },
     operations: {
       dir: "deploy",
       private_dir: "_ops",
@@ -622,7 +616,7 @@ function retireArchitecturePolicy(policy: Record<string, unknown>): void {
   if (Object.keys(architecture).length === 0) delete policy.architecture;
 }
 
-/** Policy keys that no reader consumes after the plan/task artifact retirement. */
+/** Policy keys that no reader consumes after the plan/task artifact and agent runtime retirements. */
 const RETIRED_ADOPTION_POLICY_KEYS: ReadonlyArray<{ readonly path: readonly [string] | readonly [string, string]; readonly label: string }> = [
   { path: ["active_plan"], label: "active_plan" },
   { path: ["plan_capture"], label: "plan_capture" },
@@ -630,6 +624,7 @@ const RETIRED_ADOPTION_POLICY_KEYS: ReadonlyArray<{ readonly path: readonly [str
   { path: ["tasks", "workstreams_dir"], label: "tasks.workstreams_dir" },
   { path: ["guards", "edit_plan_gate"], label: "guards.edit_plan_gate" },
   { path: ["guards", "edit_plan_gate_modes"], label: "guards.edit_plan_gate_modes" },
+  { path: ["agent_runtime"], label: "agent_runtime" },
 ];
 
 function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {

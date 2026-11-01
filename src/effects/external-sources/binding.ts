@@ -42,7 +42,7 @@ function observeSession(root: string, session: AdmittedSessionSelector, deps: Ex
   });
   return observeTaskInboxContext({ repo_root: root, task_id: session.task, source: {
     session: { task: session.task, role: session.role }, authority: { source,
-      claim: { reference: session.claim_ref, revision: session.claim_revision }, engineer_profile: binding.task_admission.identity.engineer_profile } } });
+      claim: { reference: session.claim_ref, revision: session.claim_revision } } } });
 }
 function authority(input: BindExternalSourceInput, deps: ExternalSourceBindingDependencies) {
   const registry = deps.registry(input.env), repo = registry.repos.find(r => r.id === input.registered_repository_id);

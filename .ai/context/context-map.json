@@ -115,36 +115,6 @@
       "lsp_profile": "typescript-lsp",
       "doc_scope": "capability-contract",
       "verification_hint": "record local commands here before implementation"
-    },
-    {
-      "path": "src/core/engineers/CLAUDE.md",
-      "priority": "high",
-      "char_budget": 1000,
-      "purpose": "capability-contract",
-      "capability_id": "runtime-harness-agent-runtime-effects",
-      "functional_block": "src/effects/engineers/agent-runtime-adapters",
-      "matched_prefix": "src/effects/engineers/agent-runtime-adapters",
-      "architecture_domain": "runtime-harness",
-      "architecture_capability": "agent-runtime-effects",
-      "target_agent": "claude",
-      "lsp_profile": "typescript-lsp",
-      "doc_scope": "capability-contract",
-      "verification_hint": "record local commands here before implementation"
-    },
-    {
-      "path": "src/core/engineers/AGENTS.md",
-      "priority": "high",
-      "char_budget": 1000,
-      "purpose": "capability-contract",
-      "capability_id": "runtime-harness-agent-runtime-effects",
-      "functional_block": "src/effects/engineers/agent-runtime-adapters",
-      "matched_prefix": "src/effects/engineers/agent-runtime-adapters",
-      "architecture_domain": "runtime-harness",
-      "architecture_capability": "agent-runtime-effects",
-      "target_agent": "codex",
-      "lsp_profile": "typescript-lsp",
-      "doc_scope": "capability-contract",
-      "verification_hint": "record local commands here before implementation"
     }
   ],
   "budgets": {

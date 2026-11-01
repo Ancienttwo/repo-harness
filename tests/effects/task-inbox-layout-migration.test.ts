@@ -2,6 +2,7 @@ import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import { seedLeaseDirectory } from '../helpers/sprint-fixture';
 import { afterEach, expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
+import { createHash } from 'node:crypto';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { existsSync, linkSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -253,6 +254,47 @@ test('invalid canonical bytes and forged path identities are rejected before a j
   expect(existsSync(f.paths.journal)).toBeFalse();
 });
 
+test('retired reply records refuse migration, list their paths, and change nothing', () => {
+  const f = fixture();
+  put(join(f.paths.legacy, TASK, 'reply-effects', ID, 'claim', 'intent.json'), '{}\n');
+  const before = tree(f.common);
+  for (const mode of ['dry-run', 'apply'] as const) {
+    expect(() => migrateTaskInboxLayout({ repo_root: f.root, mode, confirm_quiescent: true,
+      expected_source_sha256: f.plan.manifest.source_sha256 })).toThrow(new RegExp(
+      `retired reply protocol .*v0\\.19\\.4.*#820 / v0\\.23\\.1.*${TASK}/reply-effects/${ID}/claim/intent\\.json.*`
+      + 'Remove or archive the reply-effects directories, then run `repo-harness fleet inbox migrate-layout` again'));
+  }
+  expect(tree(f.common)).toEqual(before);
+  expect(existsSync(f.paths.journal)).toBeFalse();
+});
+
+
+test('a journal from before #1345 moves bound reply records as opaque bytes through resume and rollback', () => {
+  const f = fixture();
+  const recipient = { kind: 'claim' as const, claim_id: ID, generation: 1 };
+  const from = `${TASK}/reply-effects/${ID}/${deriveTaskMessageRecipientKey(recipient)}`;
+  const to = `${TASK}/reply-effects/${ID}/${taskInboxRecipientStorageKey(recipient)}`;
+  const sha = (bytes: string) => `sha256:${createHash('sha256').update(bytes).digest('hex')}`;
+  const json = (value: unknown) => `${JSON.stringify(value)}\n`;
+  const byPath = (a: { path: string }, b: { path: string }) => a.path < b.path ? -1 : a.path > b.path ? 1 : 0;
+  const files = { 'intent.json': 'opaque intent bytes\n', 'commit.json': 'opaque commit bytes\n' };
+  for (const [leaf, bytes] of Object.entries(files)) put(join(f.paths.legacy, from, leaf), bytes);
+  const dirs = (root: string) => [`${TASK}/reply-effects`, `${TASK}/reply-effects/${ID}`, root].map(path => ({ path, kind: 'directory' as const }));
+  const leaves = (root: string) => Object.entries(files).map(([leaf, bytes]) => ({ path: `${root}/${leaf}`, kind: 'file' as const, size: bytes.length, sha256: sha(bytes) }));
+  const m = f.plan.manifest;
+  const source = [...m.source, ...dirs(from), ...leaves(from)].sort(byPath), target = [...m.target, ...dirs(to), ...leaves(to)].sort(byPath);
+  const manifest = { ...m, source, target, source_sha256: sha(json({ common: m.common, identity: m.identity, source })), target_sha256: sha(json(target)) };
+  put(f.paths.journal, json(manifest));
+  const original = tree(f.paths.legacy);
+  expect(migrateTaskInboxLayout({ repo_root: f.root }).state).toBe('recovery_required');
+  const resumed = migrateTaskInboxLayout({ repo_root: f.root, mode: 'resume', confirm_quiescent: true, expected_source_sha256: manifest.source_sha256 });
+  expect(resumed.state).toBe('committed');
+  for (const [leaf, bytes] of Object.entries(files)) expect(readFileSync(join(f.paths.current, to, leaf), 'utf8')).toBe(bytes);
+  expect(migrateTaskInboxLayout({ repo_root: f.root }).state).toBe('committed');
+  expect(migrateTaskInboxLayout({ repo_root: f.root, mode: 'rollback', confirm_quiescent: true, receipt_sha256: resumed.receipt_sha256 }).state).toBe('rolled_back');
+  expect(tree(f.paths.legacy)).toEqual(original);
+  expect(() => migrateTaskInboxLayout({ repo_root: f.root })).toThrow('retired reply protocol');
+});
 test.skipIf(process.platform === 'win32')('unsafe links and conflicting staging bytes are never followed or overwritten', () => {
   const f = fixture();
   symlinkSync(f.paths.legacy, join(f.paths.legacy, TASK, 'linked'));

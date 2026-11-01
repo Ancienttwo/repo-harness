@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, TASK_SESSIONS_MAX_BYTES, TASK_SESSIONS_MAX_ENTRIES, type AdmittedTaskSession, type AdmittedTaskSessions, type AdmittedTaskSessionsRequest } from '../../core/sessions/task-sessions';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { readSessionArtifact, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session';
+import { readTaskBinding, taskSessionDirectory } from '../terminal/task-session';
 import { taskRepository } from '../git/task-repository';
 import { readCurrentReviewAdmissionSource } from '../admission/admission-source';
 import { observeAdmittedSessionSource, SessionObservationError } from './admitted-source';
@@ -44,7 +44,7 @@ export function readAdmittedTaskSessions(input: AdmittedTaskSessionsRequest & { 
         const stat = lstatSync(path);
         totalBytes += stat.size;
         if (stat.size > 1024 * 1024 || totalBytes > 8 * 1024 * 1024) return fail('too_large');
-        const binding = readSessionArtifact<TaskPaneBinding>(path);
+        const binding = readTaskBinding(path);
         if (!binding.task_admission) continue; // Generic runtime has no approved issue identity.
         if (taskSessionDirectory(root, binding.task, binding.role) !== dir) return fail('unavailable');
         const identity = binding.task_admission.identity;
@@ -59,7 +59,7 @@ export function readAdmittedTaskSessions(input: AdmittedTaskSessionsRequest & { 
           grant_sha256: source.expectedGrantSha256, policy_sha256: source.expectedPolicySha256, actor_id: source.expectedActor,
           session_binding_sha256: `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}` };
         const observed = observeAdmittedSessionSource({ ...selector, env }, { admissionSource: () => source });
-        sessions.push({ selector, profile_selection: identity.engineer_profile ? { state: 'selected', ...identity.engineer_profile } : { state: 'unassigned' }, admission_sha256: observed.approval.admission_sha256, branch: observed.branch, runtime: binding.runtime, harness_kind: binding.harness_kind });
+        sessions.push({ selector, admission_sha256: observed.approval.admission_sha256, branch: observed.branch, runtime: binding.runtime, harness_kind: binding.harness_kind });
       }
       return { root, revision: registry.authorizationRevision, sessions };
     };

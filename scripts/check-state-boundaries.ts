@@ -57,8 +57,6 @@ const INTRA_LAYER_ROOTS = ['src/cli', 'src/core', 'src/effects'] as const;
 export const INTRA_LAYER_CYCLE_ALLOWANCES: Readonly<Record<string, string>> = {
   'src/cli/chatgpt-browser <-> src/cli/mcp':
     'browser file policy reuses resolveMcpPath; a shared path-policy helper is open mcp-sidecar backlog work',
-  'src/effects/engineers <-> src/effects/fleet':
-    'agent-runtime effects read task inbox deliveries and the fleet board reads runtime effects; the model declares both relations',
 };
 
 // Loads the Pi SDK selected on PATH at runtime.

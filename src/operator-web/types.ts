@@ -1,12 +1,8 @@
 import { decodeAdmittedTaskSessions } from '../core/sessions/task-sessions';
-import type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
-export type { OperatorRepositorySnapshotV1 } from '../core/operator/repository-snapshot';
 import { isOperatorServiceEpoch } from '../core/operator/observation-identity';
 import { validateRequiredCheckFailureEvidence } from '../core/evidence/required-check-evidence';
 import { GENERATED_ARTIFACTS_FAILURE_CODES } from '../core/publication/generated-artifacts';
 import { validateRequiredCheckCoverageEvidence } from '../core/publication/required-check-coverage';
-import { decodeOperatorPlanningSnapshot } from '../core/operator/planning-snapshot';
-import { decodeOperatorOrganizationSnapshot } from '../core/operator/organization-snapshot';
 export type {
   OperatorFleetCardV1,
   OperatorFleetColumn,
@@ -36,13 +32,6 @@ import type {
  */
 export const OPERATOR_FLEET_PAYLOAD_PROTOCOL: OperatorFleetSnapshotV1['protocol'] = 8;
 
-/**
- * The repository protocol the browser transport accepts, restated for the
- * same reason and typed against the core literal, so a bump that forgets the
- * browser fails typecheck.
- */
-export const OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL: OperatorRepositorySnapshotV1['protocol'] = 1;
-
 export interface OperatorApiErrorV1 {
   readonly code: string;
   readonly message: string;
@@ -63,8 +52,6 @@ export const OPERATOR_API_ERROR_CODES = [
   // Raised in the browser.
   'operator_api_unavailable',
   'operator_payload_invalid',
-  'operator_repository_payload_invalid',
-  'repository_mismatch',
   'task_message_response_invalid',
   'task_message_unavailable',
   // GET /api/v1/fleet/snapshot
@@ -74,10 +61,6 @@ export const OPERATOR_API_ERROR_CODES = [
   'fleet_registry_invalid',
   'fleet_board_argument_invalid',
   'fleet_watch_aborted_before_first_snapshot',
-  // GET /api/v1/repositories/{repository}/snapshot
-  'repository_snapshot_unavailable',
-  'repository_snapshot_busy',
-  'repository_snapshot_timeout',
   // POST /api/v1/fleet/tasks/{repository}/{task}/messages
   'task_message_timeout',
   'task_message_invalid',
@@ -151,14 +134,6 @@ export const OPERATOR_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze(
   next_action: 'Run `repo-harness fleet board --json` for diagnostics, then retry.',
 });
 
-/** Repository decoding has its own typed failure so the panel can preserve
- * the operation that failed without exposing response contents. */
-export const OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR: OperatorApiErrorV1 = Object.freeze({
-  code: 'operator_repository_payload_invalid',
-  message: 'Repository snapshot response is invalid',
-  next_action: 'Check the repository repository observation sources, then refresh the board.',
-});
-
 /** Thrown only after the complete browser transport contract fails decoding. */
 export class OperatorPayloadError extends Error {
   readonly code = OPERATOR_PAYLOAD_INVALID_ERROR.code;
@@ -167,17 +142,6 @@ export class OperatorPayloadError extends Error {
   constructor() {
     super(OPERATOR_PAYLOAD_INVALID_ERROR.message);
     this.name = 'OperatorPayloadError';
-  }
-}
-
-/** Thrown only after the complete repository transport contract fails. */
-export class OperatorRepositoryPayloadError extends Error {
-  readonly code = OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR.code;
-  readonly next_action = OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR.next_action;
-
-  constructor() {
-    super(OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR.message);
-    this.name = 'OperatorRepositoryPayloadError';
   }
 }
 
@@ -263,7 +227,6 @@ export const OPERATOR_REPOSITORY_ERROR_CODES = [
   'repo_readiness_unavailable',
   'repo_feedback_unreadable',
   'repo_inbox_unreadable',
-  'repo_runtime_effect_unreadable',
   'repo_collection_timeout',
 ] as const;
 const EXECUTION_READINESS = ['execution_ready', 'planning_required', 'inline_ready', 'unsupported'] as const;
@@ -553,37 +516,11 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
   const inbox = requireRecord(card.inbox);
   const unreadCount = requireNonNegativeInteger(inbox.unread_count);
   const addressedToCurrentClaim = requireBoolean(inbox.addressed_to_current_claim);
-  const deliveryState = requireOneOf(inbox.delivery_state, ['pending', 'delivered', 'acknowledged', 'failed', 'reconciliation_required'] as const);
-  const runtimeReachability = requireOneOf(inbox.runtime_reachability, ['reachable', 'unavailable', 'unknown'] as const);
-  // The board renders this as a copyable identifier, so an arbitrary non-empty
-  // string would be presented as evidence it is not.
-  const effectSha256 = inbox.effect_sha256 === null ? null : requireSha256(inbox.effect_sha256);
-  const failureClass = inbox.failure_class === null ? null : requireOneOf(inbox.failure_class, [
-    'none', 'binding_stale', 'claim_stale', 'capability_unsupported', 'adapter_unavailable',
-    'receipt_missing', 'receipt_mismatch', 'unknown',
-  ] as const);
   const snapshotConsistency = requireOneOf(card.snapshot_consistency, ['stable', 'changed_during_read'] as const);
   const error = decodeError(card.error);
   if (error !== null && (placement.kind !== 'unclassified' || placement.reason !== 'observation_failed')) throw new OperatorPayloadError();
   if (issueState === null && placement.kind !== 'unclassified') throw new OperatorPayloadError();
-  const evidence = inbox.delivery_evidence === null ? null : requireRecord(inbox.delivery_evidence);
-  if (error !== null && evidence !== null) throw new OperatorPayloadError();
   const inboxObservation = requireOneOf(inbox.observation_status, ['observed', 'unavailable'] as const);
-  if (inboxObservation === 'observed' && evidence === null) throw new OperatorPayloadError();
-  const candidateCount = evidence === null ? 0 : requireNonNegativeInteger(evidence.candidate_count);
-  const latest = evidence === null || evidence.latest === null ? null : requireRecord(evidence.latest);
-  if ((candidateCount === 1) !== (latest !== null)) throw new OperatorPayloadError();
-  const deliveryEvidence = evidence === null ? null : Object.freeze({
-    candidate_count: candidateCount,
-    latest: latest === null ? null : Object.freeze({
-      adapter_kind: requireOneOf(latest.adapter_kind, ['herdr-cli-agent'] as const),
-      effect_state: requireOneOf(latest.effect_state, ['intent_persisted', 'effect_started', 'observed_success', 'observed_failure', 'reconciliation_required', 'stopped', 'superseded'] as const),
-      receipt_kind: latest.receipt_kind === null ? null : requireOneOf(latest.receipt_kind, ['task_message_delivery_receipt', 'controller_step_receipt'] as const),
-      observed_at: requireNotificationInstant(latest.observed_at),
-      observation_sequence: requireNonNegativeInteger(latest.observation_sequence),
-      observation_sha256: requireSha256(latest.observation_sha256),
-    }),
-  });
   return Object.freeze({
     repository_id: repositoryId,
     provider_repository_id: providerRepositoryId, provider_issue_id: providerIssueId,
@@ -605,11 +542,6 @@ function decodeCard(value: unknown, repositoryId: string): OperatorFleetCardV1 {
       observation_status: inboxObservation,
       unread_count: unreadCount,
       addressed_to_current_claim: addressedToCurrentClaim,
-      delivery_state: deliveryState,
-      runtime_reachability: runtimeReachability,
-      effect_sha256: effectSha256,
-      failure_class: failureClass,
-      delivery_evidence: deliveryEvidence,
     }),
     snapshot_consistency: snapshotConsistency,
     error,
@@ -641,45 +573,6 @@ function decodeRepository(value: unknown): OperatorFleetRepositoryV1 {
     cards: Object.freeze(cards),
     error,
   });
-}
-
-/** Same UTC timestamp wire grammar as the notification authority; no Node imports in this bundle. */
-function requireNotificationInstant(value: unknown): string {
-  const instant = requireInstant(value);
-  if (!/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d+)?Z$/u.test(instant)) throw new OperatorPayloadError();
-  return instant;
-}
-
-function requireInstant(value: unknown): string {
-  const instant = requireString(value);
-  if (Number.isNaN(Date.parse(instant))) throw new OperatorPayloadError();
-  return instant;
-}
-
-export function decodeOperatorRepositorySnapshot(value: unknown): OperatorRepositorySnapshotV1 {
-  try {
-    const v = requireRecord(value);
-    requireExactKeys(v, ['protocol', 'kind', 'repository_id', 'organization', 'planning']);
-    if (v.protocol !== OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL || v.kind !== 'operator_repository_snapshot') throw new OperatorPayloadError();
-    const repositoryId = requireString(v.repository_id);
-    const source = <T,>(value: unknown, decode: (snapshot: unknown) => T): import('../core/operator/repository-snapshot').RepositorySourceObservation<T> => {
-      const s = requireRecord(value);
-      const observed_at = requireInstant(s.observed_at);
-      if (s.status === 'unavailable') {
-        requireExactKeys(s, ['status', 'observed_at', 'code']);
-        if (s.code !== 'source_unavailable') throw new OperatorPayloadError();
-        return { status: 'unavailable', observed_at, code: 'source_unavailable' };
-      }
-      requireExactKeys(s, ['status', 'observed_at', 'snapshot']);
-      if (s.status !== 'observed') throw new OperatorPayloadError();
-      return { status: 'observed', observed_at, snapshot: decode(s.snapshot) };
-    };
-    return {
-      protocol: OPERATOR_REPOSITORY_PAYLOAD_PROTOCOL, kind: 'operator_repository_snapshot', repository_id: repositoryId,
-      organization: source(v.organization, raw => decodeOperatorOrganizationSnapshot(raw, repositoryId)),
-      planning: source(v.planning, raw => decodeOperatorPlanningSnapshot(raw, repositoryId)),
-    };
-  } catch { throw new OperatorRepositoryPayloadError(); }
 }
 
 /** Decode the complete browser payload before any component receives it. */

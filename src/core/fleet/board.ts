@@ -1,7 +1,6 @@
 import { createHash } from 'crypto';
 import type { MergeReadinessBlockerCode, PullRequestReadinessV2 } from '../publication/merge-readiness';
 import type { AdmittedTaskSession } from '../sessions/task-sessions';
-import type { AgentRuntimeFailureClass, AgentRuntimeAdapterKind, AgentRuntimeEffectState, AgentRuntimeReceiptKind } from '../engineers/agent-runtime-effect';
 
 export type FleetExecutionReadiness =
   | 'execution_ready'
@@ -50,8 +49,6 @@ export type FleetBoardPlacement =
 export type FleetBoardAttentionOwner = 'user' | 'agent' | 'external' | 'none';
 export type FleetBoardSnapshotConsistency = 'stable' | 'changed_during_read' | 'degraded';
 export type FleetRepositoryStatus = 'ok' | 'unreadable';
-export type RuntimeDeliveryState = 'pending' | 'delivered' | 'acknowledged' | 'failed' | 'reconciliation_required';
-export type RuntimeReachability = 'reachable' | 'unavailable' | 'unknown';
 
 export type FleetBoardErrorCode =
   | 'repo_unreadable'
@@ -62,7 +59,6 @@ export type FleetBoardErrorCode =
   | 'repo_readiness_unavailable'
   | 'repo_feedback_unreadable'
   | 'repo_inbox_unreadable'
-  | 'repo_runtime_effect_unreadable'
   | 'repo_collection_timeout';
 
 export interface FleetBoardErrorV1 {
@@ -70,30 +66,10 @@ export interface FleetBoardErrorV1 {
   readonly message: string;
 }
 
-export interface FleetBoardDeliveryObservationV1 {
-  readonly adapter_kind: AgentRuntimeAdapterKind;
-  readonly effect_state: AgentRuntimeEffectState;
-  readonly receipt_kind: AgentRuntimeReceiptKind | null;
-  /** Notification observation time, never worker activity or receipt ACK time. */
-  readonly observed_at: string;
-  readonly observation_sequence: number;
-  readonly observation_sha256: string;
-}
-
-export interface FleetBoardDeliveryEvidenceV1 {
-  readonly candidate_count: number;
-  readonly latest: FleetBoardDeliveryObservationV1 | null;
-}
-
 export interface FleetBoardInboxSummaryV1 {
   readonly observation_status: 'observed' | 'unavailable';
-  readonly delivery_evidence: FleetBoardDeliveryEvidenceV1 | null;
   readonly unread_count: number;
   readonly addressed_to_current_claim: boolean;
-  readonly delivery_state: RuntimeDeliveryState;
-  readonly runtime_reachability: RuntimeReachability;
-  readonly effect_sha256: string | null;
-  readonly failure_class: AgentRuntimeFailureClass | null;
 }
 
 export interface FleetBoardFeedbackSummaryV1 {
@@ -218,7 +194,6 @@ export const FLEET_BOARD_ERROR_MESSAGES: Readonly<Record<FleetBoardErrorCode, st
   repo_readiness_unavailable: 'repository readiness observation is unavailable',
   repo_feedback_unreadable: 'repository feedback observation is unavailable',
   repo_inbox_unreadable: 'repository inbox observation is unavailable',
-  repo_runtime_effect_unreadable: 'repository Agent Runtime effect store is unavailable',
   repo_collection_timeout: 'repository collection exceeded the fleet round deadline',
 });
 
@@ -297,23 +272,8 @@ export function projectFleetBoardCard(repositoryId: string, input: FleetBoardCar
     }),
     inbox: Object.freeze({
       observation_status: error === null ? input.inbox.observation_status : 'unavailable',
-      delivery_evidence: error !== null || input.inbox.delivery_evidence === null ? null : Object.freeze({
-        candidate_count: input.inbox.delivery_evidence.candidate_count,
-        latest: input.inbox.delivery_evidence.latest === null ? null : Object.freeze({
-          adapter_kind: input.inbox.delivery_evidence.latest.adapter_kind,
-          effect_state: input.inbox.delivery_evidence.latest.effect_state,
-          receipt_kind: input.inbox.delivery_evidence.latest.receipt_kind,
-          observed_at: input.inbox.delivery_evidence.latest.observed_at,
-          observation_sequence: input.inbox.delivery_evidence.latest.observation_sequence,
-          observation_sha256: input.inbox.delivery_evidence.latest.observation_sha256,
-        }),
-      }),
       unread_count: input.inbox.unread_count,
       addressed_to_current_claim: input.inbox.addressed_to_current_claim,
-      delivery_state: input.inbox.delivery_state,
-      runtime_reachability: input.inbox.runtime_reachability,
-      effect_sha256: input.inbox.effect_sha256,
-      failure_class: input.inbox.failure_class,
     }),
     snapshot_consistency: input.snapshot_consistency,
     error: error === null ? null : Object.freeze({ code: error.code, message: fleetBoardErrorMessage(error.code) }),

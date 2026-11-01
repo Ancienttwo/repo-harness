@@ -3,23 +3,13 @@ import { OPERATOR_SESSION_EVENTS_ROUTE } from '../../src/effects/operator/doc-se
 import { OPERATOR_SESSION_FINALIZATION_ROUTE } from '../../src/core/operator/doc-session-finalization-view';
 import { describe, expect, test } from 'bun:test';
 
-import {
-  OPERATOR_REPOSITORY_PROTOCOL,
-  OPERATOR_REPOSITORY_SNAPSHOT_KIND,
-  type OperatorRepositorySnapshotV1,
-} from '../../src/core/operator/repository-snapshot';
 import { OPERATOR_ARCHITECTURE_MAP_ROUTE } from '../../src/core/operator/architecture-map';
-import {
-  OperatorRepositoryError,
-  assertOperatorRepositorySnapshotIdentity,
-} from '../../src/effects/operator/repository-snapshot';
 import {
   OPERATOR_API_PATH_PREFIX,
   OPERATOR_ARCHITECTURE_MODULES_ROUTE,
   OPERATOR_ARCHITECTURE_MODULE_ROUTE,
   OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE,
   OPERATOR_ARCHITECTURE_HISTORY_ROUTE,
-  OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_TESTS_ROUTE,
   OPERATOR_EXECUTION_STATE_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
@@ -54,19 +44,6 @@ function writeRouteIds(routes: readonly OperatorRouteV1[]): readonly string[] {
   return routes.filter((route) => route.write || !['GET', 'HEAD'].includes(route.method)).map((route) => route.id);
 }
 
-function repositorySnapshot(
-  overrides: Partial<OperatorRepositorySnapshotV1> = {},
-): OperatorRepositorySnapshotV1 {
-  return {
-    protocol: OPERATOR_REPOSITORY_PROTOCOL,
-    kind: OPERATOR_REPOSITORY_SNAPSHOT_KIND,
-    repository_id: 'repo-a',
-    planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    ...overrides,
-  } as OperatorRepositorySnapshotV1;
-}
-
 describe('operator structural write boundary', () => {
   test('declares only the three admitted write routes and rejects every mutation verb even when mislabeled read-only', () => {
     expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'settings_agents_write', 'sessions_create']);
@@ -95,7 +72,6 @@ describe('operator structural write boundary', () => {
     expect([...patterns.keys()]).toEqual([
       'health',
       'fleet_snapshot',
-      'repository_snapshot',
       'task_context',
       'task_activity',
       'task_sessions',
@@ -130,7 +106,6 @@ describe('operator structural write boundary', () => {
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
     expect(patterns.get('fleet_snapshot')).toBe(OPERATOR_FLEET_SNAPSHOT_PATH);
-    expect(patterns.get('repository_snapshot')).toBe(OPERATOR_REPOSITORY_SNAPSHOT_ROUTE.source);
     expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
     expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
     expect(patterns.get('task_sessions')).toBe(OPERATOR_TASK_SESSIONS_ROUTE.source);
@@ -168,25 +143,5 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 
     expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
-  });
-
-  test('refuses a repository snapshot that does not echo the requested identity', () => {
-    expect(() => assertOperatorRepositorySnapshotIdentity(repositorySnapshot(), 'repo-a')).not.toThrow();
-
-    for (const [snapshot, requested] of [
-      [repositorySnapshot({ repository_id: 'repo-b' }), 'repo-a'],
-      [repositorySnapshot({ protocol: 99 as never }), 'repo-a'],
-      [repositorySnapshot({ kind: 'operator_fleet_snapshot' as never }), 'repo-a'],
-      [{} as OperatorRepositorySnapshotV1, 'repo-a'],
-    ] as const) {
-      let thrown: unknown;
-      try {
-        assertOperatorRepositorySnapshotIdentity(snapshot, requested);
-      } catch (error) {
-        thrown = error;
-      }
-      expect(thrown).toBeInstanceOf(OperatorRepositoryError);
-      expect((thrown as OperatorRepositoryError).code).toBe('repository_mismatch');
-    }
   });
 });

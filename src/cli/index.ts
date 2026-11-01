@@ -48,7 +48,6 @@ import { buildWorktreesCommand } from './commands/worktrees';
 import { buildCatchUpCommand } from './commands/catch-up';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
-import { buildIntegrationCommand } from './commands/integration';
 import { buildExternalSourceCommand } from './commands/external-source';
 import { buildRetentionCommand } from './commands/retention';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
@@ -134,7 +133,6 @@ export const SUBCOMMANDS = [
   'fleet',
   'architecture-projection',
   'architecture-debt',
-  'integration',
   'external-source',
   'refactor',
 ] as const;
@@ -904,7 +902,6 @@ export function buildProgram(): Command {
   program.addCommand(buildRefactorCommand());
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildArchitectureDebtCommand());
-  program.addCommand(buildIntegrationCommand());
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildExternalSourceCommand());
   program.addCommand(buildRetentionCommand());

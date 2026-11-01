@@ -6,13 +6,10 @@ import {
   type OperatorTranslate,
 } from './i18n';
 import {
-  decodeOperatorRepositorySnapshot,
   decodeOperatorFleetSnapshot,
-  OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   type OperatorApiErrorCode,
   type OperatorApiErrorV1,
-  type OperatorRepositorySnapshotV1,
   type OperatorFleetSnapshotV1,
 } from './types';
 
@@ -30,8 +27,6 @@ export function clientApiError(code: OperatorApiErrorCode): OperatorApiErrorV1 {
 }
 
 const DEFAULT_API_ERROR: OperatorApiErrorV1 = clientApiError('operator_api_unavailable');
-export const REPOSITORY_UNAVAILABLE_ERROR: OperatorApiErrorV1 = clientApiError('repository_snapshot_unavailable');
-const REPOSITORY_MISMATCH_ERROR: OperatorApiErrorV1 = clientApiError('repository_mismatch');
 
 export interface LocalizedApiError {
   readonly message: string;
@@ -90,39 +85,4 @@ export async function fetchOperatorSnapshot(signal?: AbortSignal): Promise<Opera
     if (error instanceof Error && error.name === 'OperatorPayloadError') throw error;
     throw OPERATOR_PAYLOAD_INVALID_ERROR;
   }
-}
-
-export function assertSnapshotRepository(
-  snapshot: OperatorRepositorySnapshotV1,
-  repositoryId: string,
-): OperatorRepositorySnapshotV1 {
-  if (snapshot.repository_id !== repositoryId) throw REPOSITORY_MISMATCH_ERROR;
-  return snapshot;
-}
-
-export async function fetchOperatorRepositorySnapshot(
-  repositoryId: string,
-  signal?: AbortSignal,
-): Promise<OperatorRepositorySnapshotV1> {
-  const response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/snapshot`, {
-    headers: { Accept: 'application/json' },
-    cache: 'no-store',
-    signal,
-  });
-  let body: unknown = null;
-  try {
-    body = await response.json();
-  } catch {
-    body = null;
-  }
-  if (!response.ok) throw asApiError(body, REPOSITORY_UNAVAILABLE_ERROR);
-  let snapshot: OperatorRepositorySnapshotV1;
-  try {
-    snapshot = decodeOperatorRepositorySnapshot(body);
-  } catch {
-    // Fleet and repository payloads are separate authorities. Keep a
-    // malformed repository response from borrowing Fleet diagnostics.
-    throw OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR;
-  }
-  return assertSnapshotRepository(snapshot, repositoryId);
 }

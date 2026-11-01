@@ -25,9 +25,6 @@ import {
 } from './dev-activity';
 import {
   asApiError,
-  assertSnapshotRepository,
-  REPOSITORY_UNAVAILABLE_ERROR,
-  fetchOperatorRepositorySnapshot,
   fetchOperatorSnapshot,
 } from './fleet-api';
 import { Home } from './Home';
@@ -58,7 +55,6 @@ import {
   RepositoryWorkspace,
   snapshotForState,
   staleErrorForState,
-  type RepositoryViewState,
   type ObservationView,
 } from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
@@ -71,10 +67,8 @@ import type { TaskContextReader } from './AdmittedTaskContext';
 import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
 import { useTheme } from './theme';
 import {
-  decodeOperatorRepositorySnapshot,
   OPERATOR_PAYLOAD_INVALID_ERROR,
   projectSnapshotViewState,
-  type OperatorRepositorySnapshotV1,
   type OperatorFleetCardV1,
   type OperatorFleetRepositoryV1,
   type OperatorFleetSnapshotV1,
@@ -96,10 +90,6 @@ export interface OperatorAppProps {
   /** A deterministic initial response; production uses the same-origin API. */
   readonly initialSnapshot?: OperatorFleetSnapshotV1;
   readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
-  /** The read-only repository snapshot read, injectable on the same terms. */
-  readonly fetchRepositorySnapshot?: (repositoryId: string, signal: AbortSignal) => Promise<OperatorRepositorySnapshotV1>;
-  /** A deterministic repository snapshot state for fixtures and server renders. */
-  readonly initialRepositorySnapshot?: RepositoryViewState;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
   /** Server renders have no URL; they name the page to render. The browser reads the fragment. */
@@ -248,8 +238,6 @@ export function OperatorApp({
   initialState,
   initialSnapshot,
   fetchSnapshot = fetchOperatorSnapshot,
-  fetchRepositorySnapshot = fetchOperatorRepositorySnapshot,
-  initialRepositorySnapshot,
   initialLocale,
   initialPlace,
   fetchDevActivity: readDevActivity = fetchDevActivity,
@@ -281,11 +269,10 @@ export function OperatorApp({
   const [state, setState] = useState<OperatorSnapshotViewState>(initial);
   const [location, setLocation] = useState(() => parseTaskLocation(typeof window === 'undefined' ? '' : window.location.search));
   const [repositoryId, setRepositoryId] = useState<string | null>(() => location.repositoryId ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
-  const [view, setView] = useState<ObservationView>('organization');
+  const [view, setView] = useState<ObservationView>('attention');
   const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? routeFor(typeof window === 'undefined' ? '' : window.location.hash, location));
   const searchRef = useRef(typeof window === 'undefined' ? '' : window.location.search);
   const [selection, setSelection] = useState<Selection | null>(location.selection);
-  const [repositorySnapshot, setRepositorySnapshot] = useState<RepositoryViewState>(initialRepositorySnapshot ?? { kind: 'idle' });
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const [filters, setFilters] = useState<BoardFilters>(() => ({ ...DEFAULT_BOARD_FILTERS, repositoryId: readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY) }));
   const { locale, setLocale, t } = useLocale(initialLocale);
@@ -335,7 +322,6 @@ export function OperatorApp({
       if (window.location.search === searchRef.current) return;
       searchRef.current = window.location.search;
       setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
-      setRepositorySnapshot({ kind: 'idle' });
     };
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);
@@ -354,12 +340,10 @@ export function OperatorApp({
     setPlace(next);
   }, []);
   const switchRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); }
     setRepositoryId(id);
     navigate(id, null);
   };
   const openRepository = (id: string) => {
-    if (id !== activeRepository?.repository_id) { setRepositorySnapshot({ kind: 'idle' }); }
     setRepositoryId(id);
     const next: WorkspaceLocation = { workspace: 'repository', module: null, item: null };
     navigate(id, null, workspaceHash(next));
@@ -377,10 +361,7 @@ export function OperatorApp({
       const nextSnapshot = await fetchSnapshot(signal);
       if (signal.aborted) return false;
       if (previous?.service_epoch === nextSnapshot.service_epoch && nextSnapshot.sequence < previous.sequence) throw OPERATOR_PAYLOAD_INVALID_ERROR;
-      if (previous && previous.service_epoch !== nextSnapshot.service_epoch) {
-        setRepositorySnapshot({ kind: 'idle' });
-        setRefreshGeneration(current => current + 1);
-      }
+      if (previous && previous.service_epoch !== nextSnapshot.service_epoch) setRefreshGeneration(current => current + 1);
       const nextState = projectSnapshotViewState(nextSnapshot);
       stateRef.current = nextState; setState(nextState);
       return true;
@@ -398,7 +379,6 @@ export function OperatorApp({
   const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: singleRepository });
   const refresh = () => {
     // Explicit refresh supersedes every scoped observation.
-    setRepositorySnapshot({ kind: 'idle' });
     setRefreshGeneration(current => current + 1);
     requestFleet();
   };
@@ -418,26 +398,6 @@ export function OperatorApp({
       : current);
   }, [selection, selectedCard]);
   const revisionChangedFrom = selectedCard && selection && selectedCard.issue_revision !== selection.revision ? selection.revision : null;
-  const snapshotRepositoryId = activeRepository?.repository_id ?? null;
-
-  // One observation belongs to the selected repository; task selection shares it.
-  const readRepositorySnapshot = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    if (snapshotRepositoryId === null) return false;
-    setRepositorySnapshot({ kind: 'loading', repository_id: snapshotRepositoryId });
-    try {
-      const next = await fetchRepositorySnapshot(snapshotRepositoryId, signal);
-      if (signal.aborted) return false;
-      setRepositorySnapshot({ kind: 'ready', snapshot: assertSnapshotRepository(decodeOperatorRepositorySnapshot(next), snapshotRepositoryId) });
-      return true;
-    } catch (error) {
-      if (signal.aborted) return false;
-      setRepositorySnapshot({ kind: 'failed', repository_id: snapshotRepositoryId, error: asApiError(error, REPOSITORY_UNAVAILABLE_ERROR) });
-      return false;
-    }
-  }, [snapshotRepositoryId, fetchRepositorySnapshot]);
-  useObservationRefresh(readRepositorySnapshot, JSON.stringify([snapshotRepositoryId, refreshGeneration]), {
-    enabled: !initialRepositorySnapshot && snapshotRepositoryId !== null && workspace === 'repository',
-  });
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), providerRepositoryId: card.provider_repository_id, issueId: card.provider_issue_id, sessionBinding: card.execution?.selector.session_binding_sha256 ?? null, revision: card.issue_revision, historical: false });
   const setBoardRepository = (id: string | null) => {
     writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
@@ -530,7 +490,7 @@ export function OperatorApp({
           {workspace === 'repository' && <RepositoryWorkspace
             state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId}
             location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
-            view={view} onView={setView} repositorySnapshot={repositorySnapshot}
+            view={view} onView={setView}
             refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
             readTaskContext={readTaskContext}
             onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}

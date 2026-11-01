@@ -420,8 +420,6 @@ The persistent reviewer still requires POSIX process groups: use macOS/Linux or
 WSL. Native Windows review lifecycle support is not implied by Herdr support.
 Admitted task sessions start only in a Herdr pane, so they and their Task Inbox and operator diff consumers are POSIX-only; on Windows, session start fails closed with `herdr_endpoint_platform_unsupported`.
 Drain old tmux reviewers with the previous repo-harness version before upgrading.
-Rebind endpoints explicitly as `herdr-cli-agent`; old adapter policy, capabilities
-and live session metadata are not translated. The self-host runtime remains off.
 No runtime or collaboration path automatically falls back to tmux.
 The native protected-helper tool contract below remains a separate boundary.
 

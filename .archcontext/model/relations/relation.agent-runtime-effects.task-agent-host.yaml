@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.agent-runtime-effects.task-agent-host"
-kind: "calls"
-source: "capability.runtime-harness.agent-runtime-effects"
-target: "capability.runtime-harness.task-agent-host"
-intent: "Observe the exact admitted task session and use its closed Herdr transport endpoint"
