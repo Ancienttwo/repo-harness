@@ -10,7 +10,7 @@ responsibilities:
   - Read and write the single user-level MCP config and credential store.
   - Resolve repository roots and paths under the profile policy and contain workspace paths.
   - Redact secrets and append the redacted MCP audit log.
-  - Own registered repository records and read_write grants with their authorization revision.
+  - Set repository access grants through the shared repository registry.
 source:
   include:
     - src/cli/mcp/auth.ts

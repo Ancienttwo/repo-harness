@@ -127,7 +127,7 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **本 capability 不持有工作流策略。** 它只提供进程、锁与 Git 读取原语。调用方决定超时类别、锁路径与重试。`src/` 与 `scripts/` 下有 54 个文件导入这些原语（`git grep`，2026-10-11）。
+1. **本 capability 不持有工作流策略。** 它提供进程、锁与 Git 读取原语，以及 core 与插件共用的 repository registry、account home 根目录与密钥模式（#1343）。调用方决定超时类别、锁路径与重试。`src/` 与 `scripts/` 下有 54 个文件导入这些原语（`git grep`，2026-10-11）。
 2. **每个子进程都有截止时间和输出上限。** 默认超时 120 s，默认输出上限 64 KiB（`src/effects/process-runner.ts:43-44`）。命令行与输出都经过密钥脱敏（`:73-82`、`:135-140`）。
 3. **监督者回执必须与退出状态一致。** 监督者的回执、退出码或信号不一致时，`runSupervisedProcess` 终止被遗弃的进程组，并把结果改为失败（`process-runner.ts:209-230`）。
 4. **未确认进程组已死时不释放 expensive-run 锁。** 清理被异常打断时，监督者设置 `preserveExpensiveRunLock`，`supervise()` 不释放锁（`src/effects/process-supervisor.ts:17-22`）。
@@ -148,7 +148,16 @@ sequenceDiagram
 
 ### 3.3 组件
 
-本 capability 只有一个组件：`component.execution-primitives.primary`，8 个文件、1,755 行（`archctx refactor scan`，2026-10-11）。源码里有三类职责：进程生命周期（runner、supervisor、launcher、expensive-run 锁）、目录锁、Git 读取。它们目前都很小，所以没有拆分。
+`component.execution-primitives.primary`：8 个文件、1,755 行（`archctx refactor scan`，2026-10-11）。源码里有三类职责：进程生命周期（runner、supervisor、launcher、expensive-run 锁）、目录锁、Git 读取。它们目前都很小，所以没有拆分。
+
+#1343 增加两个组件：
+
+| 组件 | 层 | footprint | 职责 |
+| --- | --- | --- | --- |
+| `component.execution-primitives.repository-registry`（Repository Registry and Account Home） | effects | `src/effects/repo-registry.ts`（859 行）、`src/effects/repo-harness-home.ts`（8 行） | 注册仓库记录、read_write 授权与授权 revision；account 级 repo-harness home 根目录 |
+| `component.execution-primitives.secret-patterns`（Secret Patterns） | core | `src/core/security/**`（1 个文件，32 行） | 脱敏与只读投影共用的密钥 token 模式 |
+
+`repo-registry.ts` 只导入 Node 内置模块、`./locking/exclusive-directory-lock`、`./git/runner` 与 `./repo-harness-home`。`repo-harness-home.ts` 只导入 `node:os` 与 `node:path`。`secret-patterns.ts` 没有 import。所以本 capability 没有新增出向边。
 
 ### 3.4 10x 规模下先垮的点
 
@@ -168,6 +177,12 @@ sequenceDiagram
 - state 目录中的只读观察原语移到 `src/effects/readonly-observation.ts`。evidence 目录中的原子追加原语移到 `src/effects/atomic-append.ts`。两个文件只导入 Node 内置模块。
 - 结果：git、capabilities、evidence、review 与 state 目录之间的 4 对层内目录环消失。`bun run check:state-boundaries` 现在检查层内目录环。
 - `relation.execution-primitives.imports.workflow-state` 不再有源码边。
+
+### 2026-11-01 Shared repository registry and secret patterns moved in (#1343)
+
+- `src/effects/repo-registry.ts`、`src/effects/repo-harness-home.ts` 与 `src/core/security/**` 从 mcp-sidecar 移到本 capability 的两个新组件。只改模型，源码与 import 不变。
+- 原因：`src/core/review`、`src/core/operator` 与多个 capability 读这些文件。#1287 的依赖检查不应把它们算作 core → MCP 边。
+- 新路径只写在组件 include 上，不写在 capability include 上，与 `src/effects/runtime/os-account-home.ts` 相同。
 
 ## Optimization Backlog
 
