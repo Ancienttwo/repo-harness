@@ -85,7 +85,17 @@ jobs:
     needs: selection
     if: needs.selection.outputs.mode == 'daily' || (needs.selection.outputs.mode == 'affected' && needs.selection.outputs.native_oar != 'false')
     runs-on: macos-latest
+    # One file per leg: each leg gets its own 10-minute budget, and one leg's
+    # failure does not cancel the other legs' evidence (#1296).
     timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        test:
+          - tests/generic-review.test.ts
+          - tests/acceptance-receipt.test.ts
+          - tests/herdr-task-lifecycle.test.ts
+          - tests/docs-host-isolation.test.ts
     steps:
       - uses: actions/checkout@v4
         with:
@@ -104,6 +114,7 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.selection.outputs.sha }}
           MODE: ${{ needs.selection.outputs.mode }}
+          TEST_FILE: ${{ matrix.test }}
         run: |
           set -euo pipefail
           test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
@@ -119,7 +130,7 @@ jobs:
             daily) set -- ;;
             *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;
           esac
-          bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts "$@" --timeout 60000 --max-concurrency 1
+          bun run test:files "$TEST_FILE" "$@" --timeout 60000 --max-concurrency 1
 
   verify:
     name: Affected tests (shard ${{ matrix.shard }}/3)

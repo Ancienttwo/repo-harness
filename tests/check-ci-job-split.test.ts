@@ -20,9 +20,12 @@ function writePlatformFixture(write: (path: string, content: string) => void) {
       - name: Run the isolation tests
         run: run_bun_test_file tests/home.test.ts
   native-oar:
+    strategy:
+      matrix:
+        test: [tests/native.test.ts]
     steps:
       - name: Run native OAR acceptance tests
-        run: bun run test:files tests/native.test.ts
+        run: bun run test:files "$TEST_FILE"
 `);
   write('bunfig.toml', '[test]\npreload = ["./tests/preload.ts"]\n');
   write('tests/preload.ts', 'export {};');
@@ -637,6 +640,10 @@ describe('single affected verification and daily fallback', () => {
     expect(() => platformImportClosure(['tests/missing.ts'], sources)).toThrow('requires source');
     expect(() => platformImportClosure(['tests/broken.ts'], new Map([['tests/broken.ts', "import './missing';"]]))).toThrow('Unresolved');
     expect(() => discoverPlatformInputs(new Map())).toThrow('Platform coverage requires');
+    expect(() => discoverPlatformInputs(new Map([
+      ['bunfig.toml', '[test]\npreload = ["./tests/preload.ts"]\n'],
+      ['.github/workflows/ci.yml', 'jobs:\n  native-oar:\n    strategy:\n      matrix:\n        test: [tests/native.test.ts, scripts/native.ts]\n    steps:\n      - name: Run native OAR acceptance tests\n        run: bun run test:files "$TEST_FILE"\n'],
+    ]))).toThrow('Platform tests are missing');
   });
 
   test('separate platform jobs run on their trigger flags and keep exact candidate checks', () => {
@@ -655,6 +662,10 @@ describe('single affected verification and daily fallback', () => {
     expect(workflow.jobs.required.steps[0].env.NATIVE_OAR).toBe('${{ needs.selection.outputs.native_oar }}');
     expect(workflow.jobs.required.steps[0].env.HOME_ISOLATION).toBe('${{ needs.selection.outputs.home_isolation }}');
     expect(job['runs-on']).toBe('macos-latest');
+    expect(job['timeout-minutes']).toBe(10);
+    expect(job.strategy).toEqual({ 'fail-fast': false, matrix: { test: [
+      'tests/generic-review.test.ts', 'tests/acceptance-receipt.test.ts', 'tests/herdr-task-lifecycle.test.ts', 'tests/docs-host-isolation.test.ts',
+    ] } });
     expect(job['continue-on-error']).toBeUndefined();
     expect(job.steps.every((step: any) => step['continue-on-error'] === undefined)).toBe(true);
     expect(job.steps.find((step: any) => step.uses === 'actions/checkout@v4').with).toEqual({
@@ -671,7 +682,7 @@ describe('single affected verification and daily fallback', () => {
     expect(native).toHaveLength(1);
     expect(native[0].if).toBeUndefined();
     expect(native[0].shell).toBe('bash');
-    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}' });
+    expect(native[0].env).toEqual({ EXPECTED_SHA: '${{ needs.selection.outputs.sha }}', MODE: '${{ needs.selection.outputs.mode }}', TEST_FILE: '${{ matrix.test }}' });
     expect(native[0].run.trim().split('\n')).toEqual([
       'set -euo pipefail',
       'test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"',
@@ -687,7 +698,7 @@ describe('single affected verification and daily fallback', () => {
       '  daily) set -- ;;',
       '  *) echo "Unknown coverage mode: $MODE" >&2; exit 1 ;;',
       'esac',
-      'bun run test:files tests/generic-review.test.ts tests/acceptance-receipt.test.ts tests/herdr-task-lifecycle.test.ts tests/docs-host-isolation.test.ts "$@" --timeout 60000 --max-concurrency 1',
+      'bun run test:files "$TEST_FILE" "$@" --timeout 60000 --max-concurrency 1',
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([

@@ -53,6 +53,10 @@ describe('Bash write tripwire host route', () => {
       mkdirSync(cwd); mkdirSync(home);
       initRepo(cwd);
       mkdirSync(join(cwd, 'src'));
+      // Test HOME lives under /tmp, so a missing directory below / stands in for $HOME. The hook only decides; no command runs.
+      const outsideHome = '/repo-harness-bash-guard-home';
+      symlinkSync('/', join(root, 'root-alias'));
+      symlinkSync(join(outsideHome, 'new-file'), join(root, 'dangling'));
       const invokeBash = (command: string, hookCwd = cwd) => spawnSync(process.execPath,
         [HOOK_ENTRY, 'PreToolUse', '--route', 'bash'], {
           cwd: hookCwd, encoding: 'utf8',
@@ -67,7 +71,15 @@ describe('Bash write tripwire host route', () => {
         'cp safe.txt _ops/copy.txt 2>/dev/null', 'sed -i "" s/a/b/ _ref/x.txt 2>/dev/null',
         'cp safe.txt _ops/copy.txt 2>&1', 'sed -i "" s/a/b/ _ref/x.txt 2>&1',
         'echo value > _ops/file\nv=$(date)',
-        `echo value > '${root}/outside.txt'`,
+        // Outside the repository, Bash writes only strictly below a temp or managed worktree root.
+        `echo value > '${outsideHome}/x.txt'`,
+        `echo value > '${root}/root-alias/repo-harness-bash-guard-home/new.txt'`,
+        // The kernel follows the link before `..`; the shell creates a dangling link's target.
+        `echo value > '${root}/root-alias/../x.txt'`, `echo value > '${root}/dangling'`,
+        'echo value > /tmp-repo-harness-bash-guard-neighbour/x.txt',
+        'rm -rf /tmp/*',
+        `echo value > '${cwd}/_ops/fixture'`, `echo value > '${cwd}/_ref/fixture'`,
+        `cp safe.txt '${root}/ok.txt' && cp safe.txt '${outsideHome}/x.txt'`,
         `python3 -c "open('_ops/a.env', 'w').write('x')"`,
         `node -e "require('fs').writeFileSync('_ref/a.txt', 'x')"`,
         "python3 - <<'PY'\nopen('_ops/a.env', 'w').write('x')\nPY",
@@ -89,6 +101,8 @@ describe('Bash write tripwire host route', () => {
         'cat <<"$D" > report.txt\nrm -rf /tmp/example\n$D',
         'cat <<A > a.txt; cat <<B > b.txt\nx\nA\nrm -rf /tmp/example\nB',
         "cat <<'EOF' > report.txt\nrm -rf _ops/cache\nEOF",
+        `echo value > '${root}/outside.txt'`, 'echo value > /tmp/repo-harness-bash-guard-scratch.json',
+        `cp safe.txt '${root}/ok.txt' && rm -rf '${root}/scratch'`,
       ]) {
         const result = invokeBash(command);
         expect({ command, status: result.status, stderr: result.stderr }).toMatchObject({ command, status: 0 });

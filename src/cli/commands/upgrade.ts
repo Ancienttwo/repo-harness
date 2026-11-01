@@ -6,6 +6,7 @@ import { dirname, join, relative, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { Command } from 'commander';
 import {
+  formatLegacyLeftoverSummary,
   isLegacyPathSafe,
   hashUpgradeSource,
   legacyPathSnapshot,
@@ -47,6 +48,7 @@ import {
 } from '../installer/install-profile';
 import { globalRuntimeScope, withRuntimeTransactionLock, type RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
+import { redactProcessOutput } from '../../effects/process-runner';
 import { gitExecFileSync } from '../../effects/git/runner';
 import { formatRegisteredUpgradeResult, runRegisteredUpgrade } from './upgrade-registered';
 
@@ -503,6 +505,32 @@ export function formatUpgradeResult(result: UpgradeResult, asJson = false): stri
   return `${lines.join('\n')}\n`;
 }
 
+export function leftoverCheckWarning(reason: string): string {
+  return `Leftover check failed: ${reason}. Run: repo-harness upgrade`;
+}
+
+/**
+ * The one line that `repo-harness update` prints after an install. The package
+ * that ran the check writes it, so an updater from an older release never
+ * parses this release's result shape. Paths stay out of the line; only counts
+ * and the redacted error appear.
+ */
+export function formatUpgradeSummaryLine(result: UpgradeResult): string {
+  if (result.error) return leftoverCheckWarning(redactProcessOutput(result.error.trim()));
+  const parts = [formatLegacyLeftoverSummary(result.items)];
+  if (result.worktreeTemplate?.item?.action === 'rewrite') {
+    parts.push('policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template');
+  }
+  const candidates = result.legacyWorktrees?.candidates ?? [];
+  const deferred = candidates.filter((candidate) => candidate.verdict === 'deferred').length;
+  const total = candidates.filter((candidate) => candidate.verdict === 'remove').length + deferred;
+  if (total > 0) {
+    const proof = deferred > 0 ? ` (${deferred} need${deferred === 1 ? 's' : ''} provider proof)` : '';
+    parts.push(`${total} legacy sibling worktree${total === 1 ? '' : 's'} can be removed${proof}; run repo-harness upgrade --scope project --apply`);
+  }
+  return parts.join('; ');
+}
+
 export interface UpgradeDecideOptions {
   readonly cwd?: string;
   readonly home?: string;
@@ -589,7 +617,7 @@ function buildUpgradeDecideCommand(): Command {
     });
 }
 
-type UpgradeCommandOptions = UpgradeOptions & { json?: boolean; registered?: boolean; expectedRevision?: string };
+type UpgradeCommandOptions = UpgradeOptions & { json?: boolean; summaryLine?: boolean; registered?: boolean; expectedRevision?: string };
 
 function runRegisteredUpgradeCommand(opts: UpgradeCommandOptions, command: Command): void {
   // Each registered repo always runs at project scope; the global surfaces belong to plain `upgrade`.
@@ -617,6 +645,7 @@ export function buildUpgradeCommand(): Command {
     .option('--registered', 'Preview init refresh and project upgrade for every registered repo; never commits')
     .option('--expected-revision <digest>', 'With --registered --apply: exact registry revision from the preview')
     .option('--json', 'Print JSON')
+    .option('--summary-line', 'Print the one-line check summary that repo-harness update shows')
     .action((opts: UpgradeCommandOptions, command: Command) => {
       if (opts.registered === true) {
         runRegisteredUpgradeCommand(opts, command);
@@ -630,7 +659,7 @@ export function buildUpgradeCommand(): Command {
       const result = runUpgrade(opts, {
         beforeLegacyWorktreeRemove: (candidate) => process.stderr.write(`Removing legacy worktree ${candidate.path}; rebuild: ${candidate.rebuild}\n`),
       });
-      process.stdout.write(formatUpgradeResult(result, opts.json));
+      process.stdout.write(opts.summaryLine === true ? `${formatUpgradeSummaryLine(result)}\n` : formatUpgradeResult(result, opts.json));
       if (result.error && opts.json && !result.apply) process.stderr.write(`${result.error}\n`);
       process.exitCode = result.exitCode;
     })

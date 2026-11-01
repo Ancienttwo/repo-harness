@@ -12,9 +12,9 @@ appliesTo:
 
 - Status: Accepted for the Sprint 0 contract freeze.
 - Date: 2026-06-22
-- Sources: `docs/prds/20260622-1700-gpt-codegraph.prd.md` and
-  `plans/sprints/20260622-repo-harness-codegraph-sprint-plan.md`. Commit
-  `07a5d63a5` removed both files; read them at `07a5d63a5^`.
+- Origin: https://github.com/Ancienttwo/repo-harness/pull/18 (Module S0:
+  Freeze CodeGraph repo access contract). The PR merged this decision with
+  its PRD and sprint plan.
 - Moved from `docs/architecture/decisions/20260622-general-repo-codegraph-access.md`
   on 2026-10-27 (#1015). The decision text is unchanged.
 
