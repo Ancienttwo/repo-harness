@@ -62,16 +62,37 @@ Supply all values again. An omitted value removes that channel.
 4. Enter `WEBHOOK_URL` and `WEBHOOK_KEY` during install.
 
 The Bot needs this webhook to receive pushes.
-The plugin sends JSON with the pane, workspace, session, agent, status, repository, task, request id, and time.
+The plugin sends one bot event envelope as JSON. `assets/herdr/webhook-notify/bot-event.mjs` is the one source of its shape.
+The GitHub event Worker sends the same envelope.
 It sends the key in `Authorization: Bearer` and `x-webhook-key` headers.
 The receiving routine must check the key before it acts on an event.
 
-The payload names the repository by its name from the Herdr workspace context. It never holds a path.
-It names the task and the latest request id when the pane belongs to a repo-harness task agent.
+```json
+{
+  "protocol": "repo-harness.bot-event/v1",
+  "source": "herdr",
+  "repository": "repo-harness",
+  "kind": "agent.blocked",
+  "ts": "2026-11-01T08:00:00.000Z",
+  "data": { "host": "mac", "session": "default", "pane_id": "p1", "workspace_id": "w1", "agent": "codex", "display_agent": "Codex", "title": "Needs input", "state_labels": null, "workspace_label": "repo-harness", "tab_label": null, "task": "1310", "request_id": "r1" }
+}
+```
+
+| Field | Rule |
+|---|---|
+| `protocol` | Exactly `repo-harness.bot-event/v1`. |
+| `source` | `herdr` or `github`. Herdr notify sends `herdr`. |
+| `repository` | The repository name from the Herdr workspace context, or `null` when Herdr gives no valid name. It never holds a path. |
+| `kind` | Lowercase dotted name. Herdr notify sends `agent.done` or `agent.blocked`. |
+| `ts` | ISO-8601 UTC time in `Date.prototype.toISOString` form. |
+| `data` | A plain object. Herdr notify puts `host`, `session`, `pane_id`, `workspace_id`, `agent`, `display_agent`, `title`, `state_labels`, `workspace_label` and `tab_label` in it, and `task` and `request_id` when known. |
+
+`assertBotEvent` checks a received body against these rules. It throws `invalid bot event: <field>` for the first invalid field.
+
+`data` names the task and the latest request id when the pane belongs to a repo-harness task agent.
 The plugin reads them from that agent's session files in the repository.
-Without exactly one readable open session for the pane, the payload leaves out `task` and `request_id`. The plugin never guesses them.
-Without a repository name, the payload leaves out `repository`.
-The payload does not name the branch.
+Without exactly one readable open session for the pane, `data` leaves out `task` and `request_id`. The plugin never guesses them.
+The event does not name the branch.
 On `done`, the Bot assesses the worker's checks with `repo-harness-check`.
 When the branch changed source files, the Bot also reads the architecture evidence in that skill.
 On `blocked`, the Bot reads the pane and resolves the blocker.

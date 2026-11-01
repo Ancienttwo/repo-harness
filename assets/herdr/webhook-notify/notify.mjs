@@ -1,6 +1,7 @@
 // Adapted from ~/herdr-plugins/webhook-notify. Config and identity come from Herdr.
 import { constants, closeSync, fchmodSync, fstatSync, mkdirSync, openSync, readSync, readdirSync, rmdirSync, existsSync, lstatSync, readFileSync, realpathSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { systemWorktreeRoot } from './worktree-location.mjs';
+import { NAME_PATTERN, botEvent } from './bot-event.mjs';
 import { createHash, randomUUID } from 'node:crypto';
 import { hostname, tmpdir } from 'node:os';
 import { basename, dirname, isAbsolute, join, resolve, sep } from 'node:path';
@@ -63,7 +64,6 @@ function isTemporary(path, managedRoot) {
 }
 
 const ID_PATTERN = /^[\w.:@/-]{1,128}$/;
-const NAME_PATTERN = /^[\w.-]{1,128}$/;
 
 function readIdentityFile(path) {
   const stat = lstatSync(path);
@@ -75,12 +75,12 @@ function readIdentityFile(path) {
 // repo-harness task-agent session that owns this pane. A value that cannot be read, or
 // that two open sessions both claim, is left out: this notice never guesses a task.
 // Herdr's repo_key is a path. It only matches the session's repository_id here and never
-// leaves this function; the payload names the repository by Herdr's repo_name.
+// leaves this function; the bot event names the repository by Herdr's repo_name.
 function taskIdentity(data, context, session) {
   const key = context.worktree?.repo_key;
   const repoKey = typeof key === 'string' && key.length <= 1024 && !/[\u0000-\u001f]/.test(key) ? key : undefined;
   const name = context.worktree?.repo_name;
-  const identity = { ...(typeof name === 'string' && NAME_PATTERN.test(name) ? { repository: name } : {}) };
+  const identity = { repository: typeof name === 'string' && NAME_PATTERN.test(name) ? name : null };
   const root = context.worktree?.repo_root;
   if (typeof root !== 'string' || !isAbsolute(root)) return identity;
   try {
@@ -133,21 +133,22 @@ export async function notify(env = process.env, send = fetch, options = {}) {
   if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) throw new Error('Bot webhook config is missing.');
 
   const now = Date.now();
-  const payload = {
-    source: 'herdr', host: hostname(), session: config.NOTIFY_SESSION,
-    pane_id: data.pane_id, workspace_id: data.workspace_id, agent_status: data.agent_status,
+  const { repository, ...task } = taskIdentity(data, context, config.NOTIFY_SESSION);
+  const fields = {
+    host: hostname(), session: config.NOTIFY_SESSION, pane_id: data.pane_id, workspace_id: data.workspace_id,
     agent: data.agent ?? null, display_agent: data.display_agent ?? null, title: data.title ?? null,
     state_labels: data.state_labels ?? null, workspace_label: context.workspace_label ?? null,
-    tab_label: context.tab_label ?? null, ...taskIdentity(data, context, config.NOTIFY_SESSION), ts: new Date(now).toISOString(),
+    tab_label: context.tab_label ?? null, ...task,
   };
-  const trace = [payload.repository && `repo ${payload.repository}`, payload.task && `task ${payload.task}`,
-    payload.request_id && `request ${payload.request_id}`].filter(Boolean).join(' · ');
-  const where = [payload.workspace_label, payload.tab_label].filter(Boolean).join(' / ') || payload.workspace_id;
-  const text = `Herdr ${payload.agent_status}: ${payload.display_agent || payload.agent || 'agent'} @ ${where}` +
-    (payload.title ? `\n${payload.title}` : '') + `\npane ${payload.pane_id} · ${payload.host}` +
+  const envelope = botEvent({ source: 'herdr', repository, kind: `agent.${data.agent_status}`, ts: new Date(now).toISOString(), data: fields });
+  const trace = [repository && `repo ${repository}`, fields.task && `task ${fields.task}`,
+    fields.request_id && `request ${fields.request_id}`].filter(Boolean).join(' · ');
+  const where = [fields.workspace_label, fields.tab_label].filter(Boolean).join(' / ') || fields.workspace_id;
+  const text = `Herdr ${data.agent_status}: ${fields.display_agent || fields.agent || 'agent'} @ ${where}` +
+    (fields.title ? `\n${fields.title}` : '') + `\npane ${fields.pane_id} · ${fields.host}` +
     (trace ? `\n${trace}` : '');
   const targets = [
-    { channel: 'WEBHOOK', url: config.WEBHOOK_URL, body: payload,
+    { channel: 'WEBHOOK', url: config.WEBHOOK_URL, body: envelope,
       headers: { authorization: `Bearer ${config.WEBHOOK_KEY}`, 'x-webhook-key': config.WEBHOOK_KEY } },
     { channel: 'SLACK', url: config.SLACK_WEBHOOK_URL,
       body: { text: text.replaceAll('&', '&amp;').replaceAll('<', '&lt;').replaceAll('>', '&gt;') } },
