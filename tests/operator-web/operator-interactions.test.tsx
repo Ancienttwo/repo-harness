@@ -6,6 +6,10 @@ import { Window } from 'happy-dom';
 import { useObservationRefresh } from '../../src/operator-web/useObservationRefresh';
 
 import { OperatorApp, OPERATOR_REPOSITORY_STORAGE_KEY } from '../../src/operator-web/App';
+import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
+import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
+import { busyDevActivity, emptyExecution, HARNESS_ID } from '../../src/operator-web/fixtures/dev-activity';
+import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { LOGO_MARK, MASCOTS } from '../../src/operator-web/brand';
 import { copyOperatorIdentifier } from '../../src/operator-web/clipboard';
 import { asApiError, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
@@ -554,6 +558,40 @@ describe('operator web interactions', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
     expect(document.activeElement).toBe(trigger);
     expect(document.body.style.overflow).toBe('');
+  });
+
+  test('drawer Tab traversal skips copy controls inside a closed disclosure until it opens', async () => {
+    const now = Date.now(), activity = decodeDevActivitySnapshot(busyDevActivity(now)), worktrees = busyWorktrees(now);
+    window.location.hash = `#board/${encodeURIComponent(`${HARNESS_ID}:feat/pipeline-observer`)}`;
+    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
+      initialDevActivity={activity} fetchDevActivity={async () => activity}
+      initialRuntimeOverlay={unavailableRuntimeOverlay()} readRuntimeStatus={async () => unavailableRuntimeOverlay()}
+      readNotifyStatus={() => new Promise(() => {})} initialWorktrees={worktrees} readWorktrees={async () => worktrees}
+      readExecution={async id => emptyExecution(id, now)} />);
+    const dialog = document.querySelector('[role="dialog"]')!;
+    const details = Array.from(dialog.querySelectorAll<HTMLDetailsElement>('details')).at(-1)!;
+    const summary = details.querySelector<HTMLElement>('summary')!;
+    const hidden = Array.from(details.querySelectorAll<HTMLButtonElement>('button'));
+    expect(details.open).toBe(false);
+    expect(hidden.length).toBeGreaterThan(0);
+    // Closed: the summary is the last tab stop, in both directions.
+    summary.focus();
+    await tab();
+    const first = focusKey();
+    expect(first).not.toBe(elementKey(summary));
+    expect(hidden.map(elementKey)).not.toContain(first);
+    await tab(true);
+    expect(focusKey()).toBe(elementKey(summary));
+    // Open: the copy controls become reachable, and the trap wraps after them.
+    await act(async () => { details.open = true; });
+    summary.focus();
+    await tab();
+    expect(focusKey()).toBe(elementKey(summary));
+    hidden.at(-1)!.focus();
+    await tab();
+    expect(focusKey()).toBe(first);
+    await tab(true);
+    expect(focusKey()).toBe(elementKey(hidden.at(-1)!));
   });
 
   test('detail pane shows every blocker and the no-progress flag as text', async () => {
