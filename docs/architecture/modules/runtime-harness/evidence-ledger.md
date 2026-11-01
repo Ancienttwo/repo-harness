@@ -1,13 +1,13 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5a72b0621dc0951c580e09cf8009205dec79c3970f12bd522c84fc6765fb964c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d44fefc538a2b1dee6cb6ae5719c31703e89640c2e7c55374b6a8e3fb959fab8" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, imports attested evidence and materializes handoff and resume recovery views.
+Appends and folds the per-worktree harness evidence event log, stores write-once blobs and checkpoints, and imports attested evidence.
 
 ## 1. P1:能力架構地圖
 
@@ -27,7 +27,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:31681952cab84b381e9bb12641338111d8a5745d4c568335445386bdd5a7d3ad`).
+- Proof: `proven` (`sha256:5783a6e8e27c7a9e93a38b1f4073f1c32c955c39b6b5ca1f2e90af9519307698`).
 - Semantic nodes: `5`; declared relations: `1`.
 
 ### 1.2 模組職責表
@@ -36,7 +36,6 @@ flowchart LR
 | --- | --- | --- |
 | `entrypoint.evidence-ledger.attested-import` | `src/effects/evidence/attested-import.ts#importAttestedEvidence` | `sink.evidence-ledger.append` → `src/effects/evidence/event-log.ts#appendEvidenceEvent` |
 | `entrypoint.evidence-ledger.checkpoint` | `src/effects/evidence/checkpoint-store.ts#publishCheckpointFromLedger` | `sink.evidence-ledger.accepted-events` → `src/effects/evidence/event-log.ts#readAcceptedEvents` |
-| `entrypoint.evidence-ledger.recovery` | `src/effects/evidence/recovery-materializer.ts#resolveRecoveryEvidence` | `sink.evidence-ledger.last-checkpoint` → `src/effects/evidence/checkpoint-store.ts#resolveLastPublishedCheckpoint` |
 | `entrypoint.evidence-ledger.log-read` | `src/effects/evidence/event-log.ts#readLogSnapshot` | `sink.evidence-ledger.corrupt-tail` → `src/core/evidence/fold.ts#findCorruptTail` |
 
 組件入口:
@@ -86,12 +85,12 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.evidence-ledger.primary` | Evidence Event Store | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evidence-ledger.primary-core` | Evidence Event Store (core) | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.evidence-ledger.primary-scripts` | Evidence Event Store (scripts) | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.evidence-ledger.primary-scripts` | Evidence Event Store (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.evidence-ledger.scripts-layer` | Evidence Ledger (scripts) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:31681952cab84b381e9bb12641338111d8a5745d4c568335445386bdd5a7d3ad`); selectors `4/4`.
+> **Proof**: `proven` (`sha256:5783a6e8e27c7a9e93a38b1f4073f1c32c955c39b6b5ca1f2e90af9519307698`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -100,10 +99,9 @@ sequenceDiagram
   participant p2_evidence_edecec53 as Evidence Ledger
   participant p2_store_52b5e20f as Evidence Event Store
   p2_evidence_edecec53->>p2_store_52b5e20f: Import one attested receipt through the closed trust mapping and the writer path
-  alt The accepted set folds and a validated checkpoint backs recovery
+  alt The accepted set folds into a validated checkpoint
   p2_evidence_edecec53->>p2_store_52b5e20f: Fold accepted events and publish a validated content-addressed checkpoint
-  p2_evidence_edecec53->>p2_store_52b5e20f: Resolve the checkpoint only through the last-published marker
-    Note over p2_evidence_edecec53: Render handoff and resume views from the validated projection
+    Note over p2_evidence_edecec53: The last-published marker names the validated checkpoint
   else The last write was truncated or a record does not parse
   p2_evidence_edecec53->>p2_store_52b5e20f: Treat every line from the first bad record onward as corrupt tail
     Note over p2_store_52b5e20f: Quarantine the tail under the log lock and fold only the valid prefix
