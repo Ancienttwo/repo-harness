@@ -213,7 +213,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(content).toContain("cat > docs/researches/README.md");
     expect(content).not.toContain("docs/TODO.md");
     expect(sharedLib).toContain("pi_install_helpers requires contract helper inventory");
-    expect(contract.helpers.scripts).toContain("prepare-handoff.sh");
+    expect(contract.helpers.scripts).not.toContain("prepare-handoff.sh");
     expect(contract.helpers.scripts).toContain("verify-sprint.sh");
     expect(contract.helpers.scripts).toContain("acceptance-receipt.ts");
     expect(contract.helpers.scripts).toContain("contract-worktree.sh");
@@ -249,8 +249,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.documentation.referenceConfigs.packageDirectory).toBe("assets/reference-configs");
     expect(contract.documentation.referenceConfigs.resolverCommand).toBe("repo-harness docs path <doc-id>");
     expect(contract.documentation.referenceConfigs.stubMarker).toBe("<!-- repo-harness: reference-config-stub v1 -->");
-    expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
-    expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
+    expect(contract.helpers.scripts).not.toContain("prepare-codex-handoff.sh");
+    expect(contract.helpers.scripts).not.toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("check-agent-tooling.sh");
     expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
     expect(contract.helpers.scripts).not.toContain("check-brain-manifest.sh");
@@ -387,8 +387,8 @@ describe("Bootstrap Script Contracts", () => {
     expect(contract.helpers.scripts).toContain("verification-plan.ts");
     expect(contract.helpers.scripts).toContain("acceptance-receipt.ts");
     expect(contract.helpers.scripts).not.toContain("context-budget.ts");
-    expect(contract.helpers.scripts).toContain("prepare-codex-handoff.sh");
-    expect(contract.helpers.scripts).toContain("codex-handoff-resume.sh");
+    expect(contract.helpers.scripts).not.toContain("prepare-codex-handoff.sh");
+    expect(contract.helpers.scripts).not.toContain("codex-handoff-resume.sh");
     expect(contract.helpers.scripts).toContain("check-agent-tooling.sh");
     expect(contract.helpers.scripts).not.toContain("check-architecture-sync.sh");
     expect(contract.helpers.scripts).toContain("check-deploy-sql-order.sh");

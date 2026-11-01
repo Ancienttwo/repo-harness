@@ -60,7 +60,6 @@
   },
   "harness": {
     "policy_file": ".ai/harness/policy.json",
-    "handoff_file": ".ai/harness/handoff/current.md",
     "failure_log_file": ".ai/harness/failures/latest.jsonl",
     "events_file": ".ai/harness/events.jsonl",
     "runs_dir": ".ai/harness/runs",
@@ -101,11 +100,6 @@
       "rule": "external knowledge stores long-lived explanations, runbooks, and patterns only; repo-local contracts, hooks, scripts, checks, and evidence remain authoritative",
       "sync_rule": "external sync and drift checks are operator-invoked only; hooks and workflow verification never read, write, or gate on external vault state"
     }
-  },
-  "handoff_resume": {
-    "resume_packet_file": ".ai/harness/handoff/resume.md",
-    "global_handoff_dir": "~/.codex/handoffs",
-    "auto_start_new_session": false
   },
   "guards": {
     "edit_plan_gate": "off",

@@ -10,6 +10,7 @@ import { execFileSync, execSync, spawnSync } from 'child_process';
 import {
   checkSkillProjection,
   clearRegisteredChecks,
+  compareVersions,
   formatDoctor,
   readLatestPackageVersion,
   registerCheck,
@@ -363,6 +364,14 @@ describe('doctor command (Phase 1C)', () => {
       });
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
+
+  test('compareVersions orders a pre-release before its release', () => {
+    expect(compareVersions('0.26.0-rc.1', '0.26.0')).toBe(-1);
+    expect(compareVersions('0.26.0', '0.26.0-rc.1')).toBe(1);
+    expect(compareVersions('1.0.0-beta.10', '1.0.0-beta.9')).toBe(1);
+    expect(compareVersions('v1.2.3+sha.1', '1.2.3')).toBe(0);
+    expect(compareVersions('', '1.0.0')).toBeNull();
+  });
 
   test('cli-update scopes the recommended runtime refresh to the requested target', () => {
     withTempHome(() => {

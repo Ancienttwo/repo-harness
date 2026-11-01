@@ -22,6 +22,7 @@ _ref/
 !.archcontext/practices/
 !.archcontext/projections/
 .codegraph/
+.claude/.codegraph-state/
 
 # Local operations state
 _ops/

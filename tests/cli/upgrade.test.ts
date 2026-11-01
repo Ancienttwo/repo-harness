@@ -1,22 +1,25 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join, relative } from 'path';
+import { basename, dirname, join, relative } from 'path';
 import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { runAdoptionApply } from '../../src/cli/commands/adoption-plan';
 import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
-import { localMergeMode } from '../../src/effects/state/coordination-worktree-topology';
+import { localMergeMode, planManagedWorktreeSweep, sweepManagedWorktrees, type WorktreeSweepPlan } from '../../src/effects/state/coordination-worktree-topology';
 import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
 import { hashManagedTree } from '../../src/effects/managed-tree';
+import { applyGlobalContextRefresh, preflightGlobalContextRefresh } from '../../src/cli/installer/global-context';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
 import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRepoResult } from '../../src/cli/commands/upgrade-registered';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
+// The sweep's process inventory is a fixture input: Linux CI cannot prove that /proc lists every process.
+import '../helpers/controlled-worktree-processes';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
@@ -731,6 +734,15 @@ describe('upgrade with real release bytes', () => {
     expect(applied.items.find((item) => item.path === unowned)?.action).toBe('report');
   }, false));
 
+  test('a global rules copy adds no upgrade leftover', () => sandbox((opts) => {
+    put(join(opts.home, '.codex/AGENTS.md'), '# Notes\n');
+    const refresh = applyGlobalContextRefresh(preflightGlobalContextRefresh(ROOT, opts.home, ['codex'], 'en'), opts.home);
+    expect(refresh.detail).toContain(' (backup: ');
+    const check = runUpgrade({ ...opts, scope: 'global' });
+    expect(check.items).toEqual([]);
+    expect(check.exitCode).toBe(0);
+  }, false));
+
   test('third-party Codex plugin and user rule lines always remain report-only', () => sandbox((opts) => {
     const plugin = join(opts.home, '.claude/plugins/cache/openai-codex/codex/1.0.0');
     put(join(plugin, 'plugin.json'), '{"name":"codex"}\n');
@@ -897,6 +909,50 @@ describe('legacy workflow-state upgrade report', () => {
     expect(readFileSync(path)).toEqual(bytes);
   }, false));
 
+  test('package scripts that call a helper outside the shipped registry are report-only', () => sandbox((opts) => {
+    const path = join(opts.cwd, 'package.json');
+    const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
+      'workflow:check': 'repo-harness run check-task-workflow --strict',
+      'check:task-sync': 'repo-harness run check-task-sync',
+      'plan:new': 'bunx repo-harness run new-plan',
+      'check:context-files': 'repo-harness run check-context-files',
+      'spec:new': 'repo-harness run new-spec.sh',
+      test: 'bun test',
+    } }, null, '\t')}\n`;
+    put(path, bytes);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report', ownership: 'unowned' })]);
+    expect(check.items[0]?.reason).toContain('workflow:check: repo-harness run check-task-workflow --strict; check:task-sync: repo-harness run check-task-sync; plan:new: bunx repo-harness run new-plan');
+    for (const live of ['check:context-files', 'spec:new', 'test:']) expect(check.items[0]?.reason).not.toContain(live);
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
+    expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  }, false));
+
+  test('package scripts that run a missing script key are report-only', () => sandbox((opts) => {
+    const path = join(opts.cwd, 'package.json');
+    put(join(opts.cwd, 'build.ts'), 'console.log("build");\n');
+    put(join(opts.cwd, 'node_modules/.bin/vite'), '#!/bin/sh\n');
+    const bytes = `${JSON.stringify({ name: 'fixture', workspaces: ['packages/*'], scripts: {
+      check: 'bun run check:task-workflow && bun run typecheck',
+      verify: 'npm run -s lint',
+      typecheck: 'tsc',
+      build: 'bun run build.ts && bun run vite',
+      'build:all': 'bun run --filter "*" build',
+      'lint:app': 'bun run --filter app lint',
+      'dev:a': 'npm run dev -w packages/a',
+      'test:ws': 'npm run -w packages/a test',
+    } }, null, 2)}\n`;
+    put(path, bytes);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report' })]);
+    expect(check.items[0]?.reason).toContain('check: bun run check:task-workflow && bun run typecheck (missing script "check:task-workflow"); verify: npm run -s lint (missing script "lint")');
+    for (const live of ['typecheck: tsc', 'build:', 'lint:app', 'dev:a', 'test:ws']) expect(check.items[0]?.reason).not.toContain(live);
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
+    expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  }, false));
+
   test('leaf links are report-only and a symlink parent is never followed', () => sandbox((opts) => {
     const target = join(opts.home, 'operator-library.sh'); put(target, '# Outside operator file\n');
     const libDir = join(opts.cwd, '.ai/hooks/lib'); mkdirSync(libDir, { recursive: true });
@@ -1003,6 +1059,35 @@ describe('upgrade operator decisions', () => {
     expect(kept.operatorKept.map((item) => item.path).sort()).toEqual([directory, doc].sort());
   }, false));
 
+  test('a retired generated handoff packet accepts remove, and an edit after the decision keeps it', () => sandbox((opts) => {
+    const packet = '.ai/harness/handoff/resume.md';
+    const path = join(opts.cwd, packet);
+    const bytes = `# Codex Resume Packet\n<!-- generated-by: repo-harness codex-handoff-resume v1 -->\n\nRead ${projectHook} first.\n`;
+    put(path, bytes);
+    put(join(opts.cwd, 'CLAUDE.md'), `Run ${projectHook} for the old setup.\n`);
+    // The marker classifies the file only; without a decision upgrade never removes it.
+    expect(runUpgrade({ ...opts, scope: 'project' }).items.find((item) => item.path === path)).toEqual(expect.objectContaining({
+      retiredBy: 'retired-generated-artifact', ownership: 'unowned', proof: null, action: 'report',
+    }));
+
+    const decided = runUpgradeDecide({ ...opts, decision: 'remove', paths: [packet, 'CLAUDE.md'] });
+    expect(decided.exitCode).toBe(1);
+    expect(decided.recorded).toEqual([{ path: packet, decision: 'remove', contentHash: sha(path) }]);
+    expect(decided.rejected).toEqual([{ path: 'CLAUDE.md', reason: expect.stringContaining('retired path') }]);
+
+    writeFileSync(path, `${bytes}\nOperator note: keep this.\n`);
+    const stale = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(stale.removedPaths).toEqual([]);
+    expect(stale.items.find((item) => item.path === path)?.operatorDecision).toEqual({ decision: 'remove', status: 'stale' });
+    expect(readFileSync(path, 'utf8')).toContain('Operator note');
+
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: [packet] }).exitCode).toBe(0);
+    const removed = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(removed.exitCode, removed.error).toBe(0);
+    expect(removed.removedPaths).toEqual([path]);
+    expect(removed.projectBackupPath).toBeDefined();
+  }, false));
+
   const invalidFiles: readonly [string, (cwd: string, hash: string) => void][] = [
     ['not JSON', (cwd) => put(join(cwd, decisionsFile), '{"version":1,')],
     ['an unknown version', (cwd, contentHash) => put(join(cwd, decisionsFile), JSON.stringify({ version: 2, decisions: [{ path: library, decision: 'keep', contentHash }] }))],
@@ -1044,7 +1129,9 @@ describe('upgrade operator decisions', () => {
       { path: 'README.md', reason: 'Path is not a current project upgrade report item.' },
       { path: '../outside.md', reason: 'Path is outside the repository.' },
     ]);
-    expect(existsSync(join(opts.cwd, decisionsFile))).toBe(false);
+    // Each path is judged alone, so the valid path in the batch is written.
+    expect(rejected.recorded).toEqual([{ path: library, decision: 'keep', contentHash: sha(path) }]);
+    expect(readDecisions(opts.cwd).decisions).toEqual(rejected.recorded);
 
     expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: ['CLAUDE.md'] }).exitCode).toBe(0);
     expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: [library] }).exitCode).toBe(0);
@@ -1692,9 +1779,9 @@ describe('upgrade --registered', () => {
     }
     expect(result.exitCode).toBe(1);
     const text = formatRegisteredUpgradeResult(result);
-    expect(text).toContain(`Registry revision: ${result.revision}`);
+    expect(text).toContain(`Plan revision: ${result.revision}`);
     expect(text).toContain(`${dirty}: skipped (dirty_worktree)`);
-    expect(text).toContain('no dry-run path');
+    expect(text).toContain('  sweep: no managed worktrees');
     expect(text).toContain(`--apply --expected-revision ${result.revision}`);
 
     const json = cli(f, '--registered', '--json');
@@ -1722,13 +1809,13 @@ describe('upgrade --registered', () => {
 
     writeRegistry(f, [stale], 2);
     const changed = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
-    expect(changed).toMatchObject({ exitCode: 2, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(changed).toMatchObject({ exitCode: 2, repos: [], error: 'registry or worktree sweep plan changed; preview again before applying' });
     expect(changed.revision).not.toBe(preview.revision);
     expect(worktreeSnapshot(stale)).toEqual(before);
 
     const mismatch = cli(f, '--registered', '--apply', '--expected-revision', preview.revision!, '--json');
     expect(mismatch.status).toBe(2);
-    expect(JSON.parse(mismatch.stdout)).toMatchObject({ apply: true, repos: [], error: 'registry revision changed; preview again before applying' });
+    expect(JSON.parse(mismatch.stdout)).toMatchObject({ apply: true, repos: [], error: 'registry or worktree sweep plan changed; preview again before applying' });
     expect(cli(f, '--expected-revision', preview.revision!).status).toBe(2);
     expect(cli(f, '--registered', '--scope', 'global').status).toBe(2);
     expect(worktreeSnapshot(stale)).toEqual(before);
@@ -1853,5 +1940,77 @@ describe('upgrade --registered', () => {
     expect(swept.sweep).toMatchObject({ ran: true });
     expect((swept.sweep as { report: string | null }).report).toContain(`${managed}: kept; session cwd`);
     expect(existsSync(managed)).toBe(true);
+  }), 120_000);
+
+  /** A branch with a commit of its own, merged into main and pushed; its scratch checkout is gone. */
+  function mergedBranch(f: RegisteredReposFixture, repo: string, branch: string): void {
+    const scratch = join(f.root, `scratch-${branch}`);
+    git(f, repo, 'worktree', 'add', '-q', '-b', branch, scratch);
+    commitAll(f, scratch, branch);
+    git(f, repo, 'worktree', 'remove', scratch);
+    git(f, repo, 'merge', '-q', '--no-ff', '-m', `merge ${branch}`, branch);
+    git(f, repo, 'update-ref', 'refs/remotes/origin/main', 'HEAD');
+  }
+  const managedCheckout = (f: RegisteredReposFixture, repo: string, branch: string, slug = branch) => {
+    const path = join(f.env.REPO_HARNESS_WORKTREE_ROOT!, `${basename(repo)}-wt-${slug}`);
+    git(f, repo, 'worktree', 'add', '-q', path, branch);
+    return path;
+  };
+
+  test('preview lists the sweep steps and apply refuses a plan that changed after the preview', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'swept');
+    writeRegistry(f, [repo]);
+    for (const branch of ['done', 'late']) mergedBranch(f, repo, branch);
+    const done = managedCheckout(f, repo, 'done');
+    const preview = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    const row = byPath(preview.repos, repo);
+    expect(row).toMatchObject({ status: 'ready', pending: true, sweep: { ran: false } });
+    expect((row.sweep as { plan: WorktreeSweepPlan }).plan.items.map((item) => [item.action, item.path, item.branch])).toEqual([['remove', done, 'done']]);
+    expect(formatRegisteredUpgradeResult(preview)).toContain(`    remove ${done} (done)`);
+    expect(existsSync(done)).toBe(true);
+
+    const late = managedCheckout(f, repo, 'late');
+    const refused = runRegisteredUpgrade({ apply: true, expectedRevision: preview.revision!, env: f.env, callerCwd: f.root });
+    expect(refused).toMatchObject({ exitCode: 2, repos: [], error: 'registry or worktree sweep plan changed; preview again before applying' });
+    expect([existsSync(done), existsSync(late)]).toEqual([true, true]);
+
+    const again = runRegisteredUpgrade({ env: f.env, callerCwd: f.root });
+    const result = runRegisteredUpgrade({ apply: true, expectedRevision: again.revision!, env: f.env, callerCwd: f.root });
+    expect((byPath(result.repos, repo).sweep as { report: string }).report).toContain('removed=2');
+    expect([existsSync(done), existsSync(late)]).toEqual([false, false]);
+  }), 120_000);
+
+  test('an approved sweep acts only on the identities and prune scope of its plan', () => registeredSandbox((f) => {
+    const repo = adoptedRepo(f, 'bound');
+    for (const branch of ['kept', 'rebuilt', 'other', 'fresh']) mergedBranch(f, repo, branch);
+    const kept = managedCheckout(f, repo, 'kept');
+    const rebuilt = managedCheckout(f, repo, 'rebuilt');
+    // A stat-stale index: a plain `git status` would refresh and rewrite it.
+    const index = join(git(f, kept, 'rev-parse', '--absolute-git-dir'), 'index');
+    utimesSync(policyPath(kept), new Date(Date.now() - 3_600_000), new Date(Date.now() - 3_600_000));
+    utimesSync(index, new Date(Date.now() - 7_200_000), new Date(Date.now() - 7_200_000));
+    const indexMtime = statSync(index).mtimeMs;
+    const plan = planManagedWorktreeSweep(repo, f.root, f.env, { deadlineMs: 30_000 })!;
+    expect(plan.items.map((item) => [item.action, item.path])).toEqual([['remove', kept], ['remove', rebuilt]]);
+    expect(statSync(index).mtimeMs).toBe(indexMtime);
+
+    // The same path now holds another clean, merged branch, and a new candidate appears.
+    git(f, repo, 'worktree', 'remove', rebuilt);
+    managedCheckout(f, repo, 'other', 'rebuilt');
+    const fresh = managedCheckout(f, repo, 'fresh');
+    const report = sweepManagedWorktrees(repo, f.root, f.env, { deadlineMs: 30_000, approved: plan })!;
+    expect(report).toContain(`${kept}: removed`);
+    expect(report).toContain(`${rebuilt}: kept; not in the preview`);
+    expect(report).toContain(`${fresh}: kept; not in the preview`);
+    expect([existsSync(kept), existsSync(rebuilt), existsSync(fresh)]).toEqual([false, true, true]);
+
+    // A checkout lost after the plan: Git's whole prune would drop its registration, so nothing runs.
+    const next = planManagedWorktreeSweep(repo, f.root, f.env, { deadlineMs: 30_000 })!;
+    rmSync(fresh, { recursive: true });
+    const blocked = sweepManagedWorktrees(repo, f.root, f.env, { deadlineMs: 30_000, approved: next })!;
+    expect(blocked).toContain(`prune: kept; not in the preview`);
+    expect(blocked).toContain(`${rebuilt}: kept; not in the preview`);
+    expect(existsSync(rebuilt)).toBe(true);
+    expect(git(f, repo, 'worktree', 'list', '--porcelain')).toContain(`worktree ${fresh}`);
   }), 120_000);
 });

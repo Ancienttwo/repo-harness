@@ -750,8 +750,8 @@
     {
       "id": 18,
       "slug": "route-repo-harness-root-handoff-action",
-      "prompt": "Prepare a Codex handoff for this long task and print the resume prompt. Do not run the full workflow check.",
-      "expected_output": "Routes the request to the root repo-harness router's handoff action, runs prepare-codex-handoff or codex-handoff-resume as appropriate, verifies current.md and resume.md, and reports the exact next step without running /check by default.",
+      "prompt": "Prepare a handoff for this long task so another session can continue it. Do not run the full workflow check.",
+      "expected_output": "Routes the request to the root repo-harness router's handoff action, pushes the branch head, posts an issue claim status comment with the branch, head SHA, done, left and next command, writes no local resume file, and does not run /check by default.",
       "files": [
         "references/handoff.md"
       ],
@@ -766,11 +766,11 @@
           },
           {
             "path": "final-response.md",
-            "pattern": "prepare-codex-handoff"
+            "pattern": "claim status"
           },
           {
             "path": "final-response.md",
-            "pattern": "resume.md"
+            "pattern": "head|SHA"
           }
         ]
       },
@@ -779,12 +779,16 @@
           {
             "path": "final-response.md",
             "pattern": "check-task-workflow.*--strict"
+          },
+          {
+            "path": "final-response.md",
+            "pattern": "prepare-codex-handoff|codex-handoff-resume"
           }
         ]
       },
       "expectations": [
-        "Limits mutation to the handoff packet files.",
-        "Reports the resume prompt when requested.",
+        "Records the handoff on the issue, not in a local file.",
+        "Names the exact head SHA and next command.",
         "Does not substitute handoff preparation for readiness verification."
       ]
     },
@@ -883,47 +887,6 @@
         "Keeps any autoresearch hook advisory and self-host/dev-only rather than making it a default user-installed hook.",
         "Keeps hooks as advisory guards over repo-local plans, tasks, contracts, checks, and handoff artifacts.",
         "Does not silently run a full autoresearch mutation loop from PostEdit or Prompt hooks."
-      ]
-    },
-    {
-      "id": 21,
-      "slug": "handoff-no-active-plan-resume",
-      "prompt": "The repo has no active plan but still has old plan files. Refresh the Codex handoff and make sure the resume packet does not point a fresh session at old work.",
-      "expected_output": "Routes to the root repo-harness router's handoff action, runs prepare-codex-handoff or codex-handoff-resume, and reports that plan, contract, and notes are none when there is no active marker.",
-      "files": [
-        "references/handoff.md"
-      ],
-      "graders": {
-        "files_exist": [
-          "final-response.md"
-        ],
-        "files_contain": [
-          {
-            "path": "final-response.md",
-            "pattern": "handoff"
-          },
-          {
-            "path": "final-response.md",
-            "pattern": "prepare-codex-handoff|codex-handoff-resume"
-          },
-          {
-            "path": "final-response.md",
-            "pattern": "no active plan|\\(none\\)"
-          }
-        ]
-      },
-      "anti_graders": {
-        "files_not_contain": [
-          {
-            "path": "final-response.md",
-            "pattern": "latest historical plan|tail -1"
-          }
-        ]
-      },
-      "expectations": [
-        "Does not infer active work from the newest plan file.",
-        "Keeps current user input above handoff recovery artifacts.",
-        "Reports the exact next step from current.md."
       ]
     },
     {

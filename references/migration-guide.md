@@ -22,8 +22,9 @@ tasks-first contract. The canonical public entrypoint is `repo-harness init`.
 - `plans/` is the timestamped plan catalog; `.ai/harness/active-plan` selects
   the active plan.
 - Sprint done definitions live in `tasks/contracts/` and `tasks/reviews/`.
-- Structured verification and resumable state live in
-  Verification Plan execution records and `.ai/harness/handoff/current.md`.
+- Structured verification lives in Verification Plan execution records.
+- Session handoff uses the issue, the PR and the claim comments. No local file
+  carries resume state.
 - `tasks/todos.md` is the deferred-goal ledger; durable progress lives in
   `tasks/workstreams/` and release history in `docs/CHANGELOG.md`.
 - `scripts/check-task-sync.sh` observes the diff.
@@ -90,7 +91,7 @@ treats mutating update commands as probes.
 8. Run `bash scripts/check-agent-tooling.sh --host both --check-updates` for a
    fresh advisory snapshot when needed.
 9. Run project smoke checks, `check:task-sync`, and `check:task-workflow`.
-10. Run `repo-harness run prepare-handoff migration` if active task state changed.
+10. Record changed task state in the issue or PR.
 11. Run `repo-harness run verify-sprint` when an active sprint review exists.
 12. Commit the migration as one isolated change-set.
 

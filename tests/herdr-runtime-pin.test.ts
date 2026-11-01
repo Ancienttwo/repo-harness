@@ -490,7 +490,7 @@ describe('Herdr notify install', () => {
       expect(readFileSync(fixture.record, 'utf8')).toBe('{"protocol":1,"kind":"herdr_notify_install","session":"notify-test"}\n');
       expect(statSync(fixture.record).mode & 0o777).toBe(0o600);
       expect(statSync(dirname(fixture.record)).mode & 0o777).toBe(0o700);
-      for (const name of ['herdr-plugin.toml', 'notify.mjs', 'worktree-location.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
+      for (const name of ['herdr-plugin.toml', 'notify.mjs', 'worktree-location.mjs', 'bot-event.mjs']) expect(readFileSync(join(fixture.config, 'source', name), 'utf8')).toBe(readFileSync(join(ROOT, 'assets/herdr/webhook-notify', name), 'utf8'));
       const { notify: installedNotify } = await import(join(fixture.config, 'source/notify.mjs'));
       const delivered: string[] = [];
       await installedNotify({ ...fixture.env, HERDR_SESSION: 'notify-test', HERDR_PLUGIN_CONFIG_DIR: fixture.config,
@@ -640,6 +640,7 @@ await installNotify({ session: 'notify-test', nonInteractive: true,
 
 const pluginPath = join(ROOT, 'assets/herdr/webhook-notify/notify.mjs');
 const { notify } = await import(pluginPath) as { notify: (env: NodeJS.ProcessEnv, send: typeof fetch, options?: { managedRoot?: string }) => Promise<void> };
+const { assertBotEvent } = await import(join(ROOT, 'assets/herdr/webhook-notify/bot-event.mjs')) as { assertBotEvent: (value: unknown) => unknown };
 
 describe('shipped Herdr notify event handler', () => {
   function eventFixture(status = 'blocked') {
@@ -760,8 +761,8 @@ describe('shipped Herdr notify event handler', () => {
       ]);
       expect(statSync(join(f.state, 'decision-shadow.jsonl')).mode & 0o777).toBe(0o600);
       expect(statSync(join(f.config, 'decision-state.json')).mode & 0o777).toBe(0o600);
-      expect(JSON.parse(String(delivered[0]!.init.body)).agent_status).toBe('done');
-      expect(JSON.parse(String(delivered[0]!.init.body)).decision).toBeUndefined();
+      expect(JSON.parse(String(delivered[0]!.init.body)).kind).toBe('agent.done');
+      expect(JSON.parse(String(delivered[0]!.init.body)).data.decision).toBeUndefined();
       rmSync(join(f.state, 'debounce-state.json'));
       writeFileSync(join(f.config, '.env'), f.configText.replace('CLEF_MODE=shadow', 'CLEF_MODE=off'));
       f.calls.length = 0;
@@ -1064,7 +1065,10 @@ await notify(process.env, async()=>new Response(JSON.stringify({ok:true,success:
       await notify(fixture.env, fixture.send);
       expect(fixture.calls).toHaveLength(4);
       expect(fixture.calls[0]!.init.headers).toMatchObject({ authorization: 'Bearer fixture-secret-key', 'x-webhook-key': 'fixture-secret-key' });
-      expect(JSON.parse(String(fixture.calls[0]!.init.body))).toMatchObject({ pane_id: 'pane-1', agent_status: 'blocked', session: 'notify-test' });
+      const envelope = JSON.parse(String(fixture.calls[0]!.init.body));
+      expect(assertBotEvent(envelope)).toMatchObject({ protocol: 'repo-harness.bot-event/v1', source: 'herdr', repository: null,
+        kind: 'agent.blocked', data: { pane_id: 'pane-1', workspace_id: 'workspace-1', session: 'notify-test', agent: 'codex' } });
+      expect(envelope.data.agent_status).toBeUndefined();
       expect(JSON.parse(String(fixture.calls[1]!.init.body)).text).toContain('Herdr blocked');
       expect(JSON.parse(String(fixture.calls[2]!.init.body)).allowed_mentions).toEqual({ parse: [] });
       expect(fixture.calls[3]!.url).toBe('https://api.telegram.org/bot123:token/sendMessage');
@@ -1073,6 +1077,13 @@ await notify(process.env, async()=>new Response(JSON.stringify({ok:true,success:
       await notify(fixture.env, fixture.send);
       expect(fixture.calls).toHaveLength(4);
     } finally { fixture.cleanup(); }
+  });
+
+  test('a received bot event fails on the first invalid field', () => {
+    const valid = { protocol: 'repo-harness.bot-event/v1', source: 'herdr', repository: 'repo-harness', kind: 'agent.blocked', ts: '2026-11-01T00:00:00.000Z', data: {} };
+    expect(assertBotEvent(valid)).toBe(valid);
+    expect(() => assertBotEvent({ ...valid, protocol: 'repo-harness.bot-event/v0' })).toThrow(new Error('invalid bot event: protocol'));
+    expect(() => assertBotEvent({ ...valid, source: 'slack' })).toThrow(new Error('invalid bot event: source'));
   });
 
   test('done is opt-in for each channel, and working sends nothing', async () => {
@@ -1107,7 +1118,7 @@ await notify(process.env, async()=>new Response(JSON.stringify({ok:true,success:
       }
       expect(slack).toContain('&amp;lt;!here&amp;gt; &amp; text');
       expect(slack).not.toMatch(/[<>]/);
-      expect(JSON.parse(String(fixture.calls[0]!.init.body)).title).toBe(event.data.title);
+      expect(JSON.parse(String(fixture.calls[0]!.init.body)).data.title).toBe(event.data.title);
     } finally { fixture.cleanup(); }
   });
 

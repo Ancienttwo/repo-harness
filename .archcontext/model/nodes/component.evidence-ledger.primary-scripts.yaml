@@ -11,6 +11,3 @@ responsibilities:
 source:
   include:
     - scripts/evidence-gc.ts
-    - scripts/recovery-view-cli.ts
-    - scripts/prepare-*.sh
-    - scripts/codex-handoff-resume.sh

@@ -17,7 +17,7 @@ claim comment. One seat has at most one active holder.
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this seat pushes | Merge, or a handoff that names the next head owner |
 | Acceptor | One review round of one PR | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its round |
-| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner seat) | Merge done, or handoff |
+| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner seat), the batch branch and batch PR (`orchestrator.md` §9) | Merge done, or handoff |
 
 Rules that keep the topology safe:
 
@@ -38,6 +38,10 @@ Rules that keep the topology safe:
   `repo-harness publication merge`. When `publication.acceptance_merge` is
   `off` on the PR base, the executor does not merge. The integrator posts
   that the PR is ready, and the owner merges.
+- **One integrator.** Only the integrator seat merges into main, builds a
+  batch or asks a head owner to sync. Main requires strict checks, so a
+  merge by a second session makes every queued PR stale. Each one then
+  needs a new sync and a new CI run.
 - **Earliest claim wins.** For two claims on one seat without an explicit
   handoff, the earliest comment wins. Break ties by comment ID. The later
   claimant posts a released status and stops.
@@ -115,7 +119,7 @@ Parent issue ── coordinator seat
  │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
  │    └─ PR-B2 ── writer B2, Depends on PR-B1
  └─ Child C (module Z) ── Depends on #A ── PR-C draft until PR-A merges
-Integrator seat (coordinator) merges in the parent's order.
+Integrator seat (coordinator) merges in the parent's order, one PR or one batch at a time.
 ```
 
 **Parent table status.** The seat/status column of the parent child table
@@ -159,10 +163,19 @@ after each claim or status change.
   that a consumer already uses, the producer posts a `boundary question` on
   its own issue. The coordinator decides and posts a `scope change` on
   every affected issue.
-- **Serial integration.** The integrator merges in the parent's order.
-  After each merge, the next PR syncs with main. When the sync delta has no
-  conflict and leaves the reviewed source unchanged, the acceptance stays
-  valid with the delta recorded. A changed subject needs a new round.
+- **Serial integration.** The default for one PR. The integrator merges in
+  the parent's order. After each merge, the next PR syncs with main. When
+  the sync delta has no conflict and leaves the reviewed source unchanged,
+  the acceptance stays valid with the delta recorded. A changed subject
+  needs a new round.
+- **Batch integration.** When two or more PRs are eligible at the same
+  time, the integrator may merge them through one batch PR with one CI run.
+  The integrator picks the members (at most 6) and their order. The batch
+  branch holds only `--no-ff` merges of the member heads: no conflict
+  resolution, no fix and no commit of its own. A member that conflicts or
+  owns a red check leaves the batch, syncs with main and joins a later
+  batch. Each member keeps its own acceptance record. The batch merges only
+  with `repo-harness publication merge`. Procedure: `orchestrator.md` §9.3.
 
 ## Comment protocol
 
@@ -183,7 +196,7 @@ lines, then at most a short free-text body. The exact shapes are in
 | `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: seat, round, subject SHA, tier (`acceptor.md`) |
 | `acceptance record` | PR | Acceptor or coordinator | Round table: seat, subject SHA, verdict, findings, `model_relation` (`acceptor.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
-| `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; or a merge result with the executor exit code |
+| `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code; or a batch drop or batch closeout on a member PR |
 
 `plan`, `decision`, `scope change`, `unblocked` and `issue claim`
 are seat-only (see above). Every other kind may come from any seat holder

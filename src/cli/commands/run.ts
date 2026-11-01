@@ -28,12 +28,8 @@ export const RUN_HELP_GROUPS = [
     ],
   },
   {
-    label: 'State & handoff',
+    label: 'State',
     helpers: [
-      'prepare-handoff',
-      'prepare-codex-handoff',
-      'codex-handoff-resume',
-      'recovery-view-cli',
       'decision-trail',
       'workflow-contract',
       'inspect-project-state',

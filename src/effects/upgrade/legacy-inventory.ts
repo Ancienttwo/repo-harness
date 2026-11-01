@@ -475,6 +475,99 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   }
 }
 
+// These flags run a script in another package or directory, or allow a missing script.
+const RUN_SCOPE_FLAGS = new Set(['--filter', '-F', '-w', '--workspace', '--workspaces', '-ws', '--cwd', '--prefix', '-C', '--if-present']);
+const RUN_SWITCHES = new Set(['-s', '--silent', '--bun']);
+
+/**
+ * Return the root script that one `bun run` / `npm run` invocation names, or
+ * null when the invocation does not name a root script unambiguously. A flag
+ * that may take a separate value makes the target unknown.
+ */
+function rootRunTarget(args: string): string | null {
+  const tokens = args.split(/&&|\|\||[;|&()`\n]/)[0]!.trim().split(/\s+/).map((token) => token.replace(/^(['"])(.*)\1$/, '$2'));
+  if (tokens.some((token) => RUN_SCOPE_FLAGS.has(token.split('=')[0]!))) return null;
+  for (const token of tokens) {
+    if (!token.startsWith('-')) return token || null;
+    if (token === '--' || (!token.includes('=') && !RUN_SWITCHES.has(token))) return null;
+  }
+  return null;
+}
+
+/**
+ * `repo-harness run` resolves only the helpers in the shipped registry, and
+ * init deletes generated script keys that other scripts may still run. Both
+ * fail at run time. User scripts stay as they are; the report lists each key
+ * and command.
+ */
+function scanPackageScripts(root: string, add: AddItem): void {
+  const path = join(root, 'package.json');
+  if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
+  const value = readJson(path);
+  if (!record(value) || !record(value.scripts)) return;
+  const scripts = value.scripts;
+  const helpers = loadWorkflowContractAsset<Contract>().helpers?.scripts;
+  if (!helpers) throw new Error('package script inventory requires the helper registry');
+  const runnable = new Set(helpers.flatMap((name) => [name, name.replace(/\.[^.]+$/, '')]));
+  // `bun run` falls back to a file or a local binary; `npm run` runs only script keys.
+  const resolves = (runner: string, target: string): boolean => Object.hasOwn(scripts, target)
+    || (runner === 'bun' && (stat(join(root, target)) !== null || stat(join(root, 'node_modules/.bin', target)) !== null));
+  const findings = Object.entries(scripts).flatMap(([key, command]) => {
+    if (typeof command !== 'string') return [];
+    const retired = [...command.matchAll(/\brepo-harness run ([^\s;&|'"`)]+)/g)].some((match) => !runnable.has(match[1]!));
+    const missing = [...command.matchAll(/\b(bun|npm) run(?=\s)/g)].flatMap((match) => {
+      const target = rootRunTarget(command.slice(match.index + match[0].length));
+      return target === null || resolves(match[1]!, target) ? [] : [` (missing script "${target}")`];
+    });
+    return retired || missing.length > 0 ? [`${key}: ${command}${missing.join('')}`] : [];
+  });
+  if (findings.length === 0) return;
+  add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report',
+    reason: `Package scripts call a helper that this package does not ship or a script that package.json does not define; review them without automatic edits: ${findings.join('; ')}` });
+}
+
+/** Session-recovery packets from retired generators carry this marker in their first lines. */
+const RETIRED_GENERATOR_MARKER = /^<!-- generated-by: repo-harness (codex-handoff-resume|prepare-handoff|prepare-codex-handoff) v\d+ -->$/;
+const RETIRED_GENERATOR_MARKER_LINES = 3;
+
+/**
+ * Rules that left the managed .gitignore block while older releases still
+ * wrote their files. Removing a rule while its files exist turns that runtime
+ * state into untracked files, so init keeps each rule until no file that it
+ * matches exists, and the inventory lists those files.
+ * Each rule is a path, a directory with a trailing `/`, or a name prefix with a trailing `*`.
+ */
+export const RETIRED_RUNTIME_IGNORE_RULES: readonly string[] = [
+  '.claude/.session-id',
+  '.claude/.trace.jsonl',
+  '.ai/harness/active-plan',
+  '.ai/harness/sprint/',
+  '.ai/harness/handoff/current.md',
+  '.ai/harness/handoff/resume.md',
+  '.claude/.active-plan',
+  '.claude/.plan-state/',
+  'tasks/current.md',
+  'tasks/.current.md.tmp.*',
+];
+
+/** A link counts as one file; it is never followed. */
+function filesBelow(repoRoot: string, path: string): string[] {
+  const entry = stat(join(repoRoot, path));
+  if (!entry) return [];
+  if (!entry.isDirectory()) return [path];
+  return readdirSync(join(repoRoot, path)).sort().flatMap((name) => filesBelow(repoRoot, `${path}/${name}`));
+}
+
+/** Repo-relative POSIX paths of the files that a retired rule matches. */
+export function retiredRuntimeRuleFiles(repoRoot: string, rule: string): string[] {
+  if (!rule.endsWith('*')) return filesBelow(repoRoot, rule.replace(/\/$/, ''));
+  const parent = dirname(rule);
+  const prefix = basename(rule).slice(0, -1);
+  if (!stat(join(repoRoot, parent))?.isDirectory()) return [];
+  return readdirSync(join(repoRoot, parent)).sort().filter((name) => name.startsWith(prefix))
+    .flatMap((name) => filesBelow(repoRoot, `${parent}/${name}`));
+}
+
 /** Fail closed: an unreadable directory counts as user content. */
 function directoryHasOtherEntries(directory: string, ownName: string): boolean {
   try {
@@ -574,7 +667,13 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     const scanDocument = (path: string): void => {
       if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
       const content = readFileSync(path, 'utf8');
-      if (retiredPaths.some((retired) => content.includes(retired))) add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report', reason: 'Document refers to a retired path; review it without automatic edits.' });
+      if (!retiredPaths.some((retired) => content.includes(retired))) return;
+      const generator = content.split('\n', RETIRED_GENERATOR_MARKER_LINES)
+        .map((line) => RETIRED_GENERATOR_MARKER.exec(line.trim())?.[1]).find((name) => name !== undefined);
+      // The marker classifies the file only. It is not an ownership proof, so the item stays a report item.
+      add({ location: 'project', surface: 'file', path, ownership: 'unowned', proof: null, action: 'report', ...(generator
+        ? { retiredBy: 'retired-generated-artifact', reason: `Output of the retired ${generator} generator. Upgrade does not remove it; record upgrade decide --remove or --keep.` }
+        : { retiredBy: 'retired-script-reference', reason: 'Document refers to a retired path; review it without automatic edits.' }) });
     };
     for (const name of ['AGENTS.md', 'CLAUDE.md']) scanDocument(join(root, name));
     const walk = (directory: string): void => {
@@ -587,6 +686,16 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
       }
     };
     walk(join(root, '.ai'));
+    scanPackageScripts(root, add);
+    // init keeps the ignore rule while these files exist; the rule leaves the block only after they are gone.
+    for (const rule of RETIRED_RUNTIME_IGNORE_RULES) {
+      for (const file of retiredRuntimeRuleFiles(root, rule)) {
+        const path = resolve(root, file);
+        add({ location: 'project', surface: stat(path)?.isSymbolicLink() ? 'symlink' : 'file', path, retiredBy: 'retired-runtime-ignore-rule',
+          ownership: 'unowned', proof: null, action: 'report',
+          reason: `Retired runtime state. The managed .gitignore block keeps ${rule} while this file exists; record upgrade decide --remove or --keep.` });
+      }
+    }
   }
   if (projectEnabled) scanProjectRefresh(options, actions, manifest, add);
   if (options.scope !== 'project') {

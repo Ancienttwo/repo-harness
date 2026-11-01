@@ -7,8 +7,8 @@
       "dependencies": {
         "@botiverse/oar": "0.80.1",
         "@modelcontextprotocol/sdk": "^1.31.0",
-        "archctx": "0.10.0",
-        "archctx-contracts": "0.10.0",
+        "archctx": "0.11.0",
+        "archctx-contracts": "0.11.0",
         "commander": "^15.0.0",
         "express": "^5.2.1",
       },
@@ -39,6 +39,7 @@
         "tailwindcss": "^4.3.3",
         "typescript": "^7.0.2",
         "vite": "^8.3.1",
+        "zod": "4.4.3",
       },
       "peerDependencies": {
         "@deepseek-ai/cordis": "~4.0.5",
@@ -563,9 +564,9 @@
 
     "ajv-formats": ["ajv-formats@3.0.1", "", { "dependencies": { "ajv": "^8.0.0" } }, "sha512-8iUql50EUR+uUcdRQ3HDqa6EVyo3docL8g5WJ3FNcWmu62IbkGUue/pEyLBW8VGKKucTPgqeks4fIU1DA4yowQ=="],
 
-    "archctx": ["archctx@0.10.0", "", { "dependencies": { "@colbymchenry/codegraph": "1.6.2", "@node-rs/jieba": "^2.0.1", "koffi": "3.1.6" }, "bin": { "archctx": "bin/archctx.mjs" } }, "sha512-m/KNWvqMf5M75Rio8zmT6o3V8r0Txg9PX3jfzKxRHQlE5P+cYWJhq2fC9U3LJ/4UWH41Gc0Na4Zgse0KGZQh9A=="],
+    "archctx": ["archctx@0.11.0", "", { "dependencies": { "@colbymchenry/codegraph": "1.6.2", "@node-rs/jieba": "^2.0.1", "koffi": "3.1.6" }, "bin": { "archctx": "bin/archctx.mjs" } }, "sha512-tTQlK5/QZwdIi4g921OfpBG//ZrnAlsKJtuw/fZeCpeAu6Y0jVsweVqyvFGxx+nh7B5rW74vf+7i+sm/ykW/CQ=="],
 
-    "archctx-contracts": ["archctx-contracts@0.10.0", "", {}, "sha512-mhNna8uaGiudYkVRxTRndwgmc5pQFcCXZ/BymdnZNq3fEqOHuRI0hTw34uzwoiXCG7dJK2kMoTU9ic92n7M+Xw=="],
+    "archctx-contracts": ["archctx-contracts@0.11.0", "", {}, "sha512-NECt6puJ0d32AHdVXQ0YwjvN6OycAHITe1L2z18n5paweh8QTanvgASzHncShVbB0h5XAgC3Ku0L3y8Rh5U/hw=="],
 
     "bail": ["bail@2.0.2", "", {}, "sha512-0xO6mYd7JB2YesxDKplafRpsiOzPt9V02ddPCLbY1xYGPOX24NTyN50qnUxgCPcSoYMhKpAuBTjQoRZCAkUDRw=="],
 

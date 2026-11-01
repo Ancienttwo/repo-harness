@@ -123,7 +123,6 @@
       "merge-gate.ts",
       "ship-worktrees.sh",
       "worktree-merge-lib.sh",
-      "prepare-handoff.sh",
       "verification-plan.ts",
       "validate-harness-profile-benchmark.ts",
       "summarize-failures.sh",
@@ -147,9 +146,6 @@
       "inspect-project-state.ts",
       "capability-resolver.ts",
       "capability-config.ts",
-      "prepare-codex-handoff.sh",
-      "codex-handoff-resume.sh",
-      "recovery-view-cli.ts",
       "decision-trail.ts"
     ],
     "descriptions": {
@@ -162,7 +158,6 @@
       "merge-gate": "Create or verify the provider-free SHA-bound local merge seal for an exact merge candidate",
       "ship-worktrees": "Commit, push, and open draft PRs for finished contract worktrees",
       "worktree-merge-lib": "Decide whether a contract worktree branch is already merged into its target",
-      "prepare-handoff": "Write the current-state handoff snapshot and trigger a resume refresh",
       "verification-plan": "Validate, evaluate, or explicitly execute the canonical Verification Plan",
       "validate-harness-profile-benchmark": "Validate a harness profile benchmark report and emit its byte-bound evidence hash",
       "summarize-failures": "Summarize recorded workflow failure log entries",
@@ -186,9 +181,6 @@
       "inspect-project-state": "Detect legacy contract drift and produce an initialize, migrate, audit, or repair plan",
       "capability-resolver": "List, match, validate, or export capability registry entries",
       "capability-config": "Register a new capability prefix and sync its contract files",
-      "prepare-codex-handoff": "Refresh the handoff snapshot, resume packet, and global Codex handoff pointer",
-      "codex-handoff-resume": "Rebuild the repo's resume packet, optionally printing the resume prompt",
-      "recovery-view-cli": "Materialize the handoff/resume recovery views (and optionally the Codex-global packet) from the last-published checkpoint plus live workflow context",
       "decision-trail": "Record decisions in the evidence ledger and render their TSV or Markdown view",
       "contract-worktree-runtime": "Bind Git-owned task worktrees to Herdr and close recorded runtime before checkout cleanup"
     },
@@ -2951,7 +2943,7 @@
     "scripts/",
     "src/",
     "docs/",
-    "dist/dsh-plugin.js",
+    "dist/dsh/",
     "dist/hook-entry.js",
     "dist/oar-review-host.js",
     "dist/operator-ui/"

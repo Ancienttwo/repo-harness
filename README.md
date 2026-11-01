@@ -145,9 +145,8 @@ bun test
 
 ### Success looks like this
 
-Init writes repo-local files and two files under `HOME`: the repo registry
-entry and, when verification runs, the global Codex handoff packet under
-`~/.codex/handoffs/`. It writes no install-managed host files. When the
+Init writes repo-local files and one file under `HOME`: the repo registry
+entry. It writes no install-managed host files. When the
 required Herdr skill or the architecture projection preference is missing, init
 reports a skipped step that names `repo-harness update`. repo-harness supplies tools and evidence; the Bot
 decides what to schedule.
@@ -156,8 +155,8 @@ Apply ends with `=== Migration Report ===`, naming where generated hook behavior
 comes from, the user-level `~/.claude/settings.json` and `~/.codex/hooks.json`
 adapter target, the repo-local surfaces created or refreshed, and an
 `--- External Tooling ---` readiness block. Stable intent then lives in
-`docs/spec.md` and `docs/prds/`, task state in the GitHub issue and PR,
-resume state in `.ai/harness/handoff/`. If the dry run looks wrong, stop and
+`docs/spec.md` and `docs/prds/`, task and resume state in the GitHub issue,
+its claim comments and the PR. If the dry run looks wrong, stop and
 read
 [`hook-operations.md`](docs/reference-configs/hook-operations.md) first.
 
@@ -216,10 +215,9 @@ release line have no supported historical proof and remain report-only.
 ## Why repo-harness
 
 - **File-backed sessions, not chat memory.** Separate Claude and Codex sessions
-  stay coordinated through the repo. `SessionStart` injects the prior session's
-  resume packet, and `Stop` writes the handoff and resume views. A session can
-  end mid-task and the next one resumes the exact next step, blockers, and
-  changed files without re-deriving them.
+  stay coordinated through the repo and its GitHub issue and PR. A session can
+  end mid-task. The next one reads the issue, the latest claim status and the
+  PR, and resumes the exact next step without re-deriving it.
 - **Token-lean by design.** Instead of grep-and-read loops that re-scan the repo
   every session, the harness leans on a pre-built CodeGraph index for structural
   queries and on progressive context loading: a stable ~12KB root context plus
@@ -237,7 +235,6 @@ In an adopted repo, the surface area is intentionally small:
 | `docs/spec.md` and `docs/reference-configs/` | Shared standards and stable product intent that every agent session can read. |
 | `docs/prds/` | Product intent and optional design briefs. |
 | `tasks/lessons.md` | The one local lesson ledger. Task identity and history stay in the issue and PR. |
-| `.ai/harness/handoff/` | Session journal and resumable status, derived from the issue, PR and repository state instead of chat memory. |
 
 ## Task Authority
 
@@ -517,7 +514,7 @@ Agents read source artifacts before derived summaries:
 | Current user prompt and referenced files | PR description |
 | `AGENTS.md` / `CLAUDE.md` | Changed files and diff |
 | The GitHub issue and PR | Verification Plan execution records and run trace |
-| Latest handoff in `.ai/harness/handoff/` | Residual risks and rollback |
+| Latest claim status comment on the issue | Residual risks and rollback |
 If it disagrees with the issue, PR, checks, or handoff, the source artifacts win.
 
 Runtime-heavy validators (Unity, browser E2E, mobile simulators, hardware rigs,

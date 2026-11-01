@@ -13,7 +13,7 @@ export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codi
   }
   return [
     'repo-harness exposes one MCP connector whose capabilities are selected by local configuration.',
-    'Use workflow tools to read product intent, PRDs under docs/prds/, lessons, checks, and handoff.',
+    'Use workflow tools to read product intent, PRDs under docs/prds/, lessons, and checks.',
     opts.codingEnabled === true
       ? 'The explicitly enabled coding profile may open only read-write granted repos, defaults to isolated worktrees, and exposes workspace-relative read, guarded atomic patch, and local-user-authority Bash tools. Shell is open-world and is not a filesystem sandbox.'
       : 'Direct coding tools and arbitrary shell are disabled unless the local user enables the separate coding profile and explicit read-write repo grants.',
@@ -25,6 +25,6 @@ export function buildMcpServerInstructions(opts: { readerEnabled?: boolean; codi
       ? 'Use direct coding tools only inside the returned workspace_id; preserve repo instructions and never request secret paths or credentials.'
       : 'Do not edit application source through this server. Codex is the executor.',
     'Do not run Codex remotely through planner or executor MCP profiles; prepare .ai/harness/handoff/task-goal.md for the local Codex host instead.',
-    'Before writing a PRD, inspect docs/spec.md, tasks/lessons.md, latest handoff, and existing PRDs under docs/prds/.',
+    'Before writing a PRD, inspect docs/spec.md, tasks/lessons.md, and existing PRDs under docs/prds/.',
   ].join(' ');
 }

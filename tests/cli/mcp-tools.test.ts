@@ -273,11 +273,10 @@ describe('mcp tools', () => {
       const scanRoot = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-discovery-'));
       const repoRoot = join(scanRoot, 'workspace', 'agentic-dev');
       try {
-        mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
+        mkdirSync(join(repoRoot, '.ai/harness'), { recursive: true });
         mkdirSync(join(repoRoot, 'docs/prds'), { recursive: true });
         mkdirSync(join(repoRoot, 'tasks'), { recursive: true });
         writeFileSync(join(repoRoot, '.ai/harness/policy.json'), '{}\n');
-        writeFileSync(join(repoRoot, '.ai/harness/handoff/resume.md'), '# Resume\n\nready\n');
         writeFileSync(join(repoRoot, 'tasks/lessons.md'), '# Lessons\n\nstatus=Active\n');
         registerRepoHarnessRepo(repoRoot, 'init');
         const canonicalRepoRoot = realpathSync(repoRoot);
@@ -314,15 +313,6 @@ describe('mcp tools', () => {
         expect(aliasStatus.repoRoot).toBe(canonicalRepoRoot);
         expect(aliasStatus.adopted).toBe(true);
 
-        const handoff = await jsonTool(ctx, 'latest_handoff', { repo_path: repoRoot });
-        const resume = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
-        expect(resume).toMatchObject({ exists: true });
-        expect(resume.preview).toContain('# Resume');
-
-        const aliasHandoff = await jsonTool(ctx, 'latest_handoff', { repo_path: 'agentic-dev/' });
-        const aliasResume = aliasHandoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/resume.md');
-        expect(aliasResume).toMatchObject({ exists: true });
-
         const current = await jsonTool(ctx, 'read_workflow_file', { repo_path: repoRoot, path: 'tasks/lessons.md' });
         expect(current.content).toContain('status=Active');
 
@@ -340,11 +330,11 @@ describe('mcp tools', () => {
         expect(existsSync(join(repoRoot, prd.path))).toBe(true);
 
         const siblingRoot = join(scanRoot, 'sibling');
-        mkdirSync(join(siblingRoot, '.ai/harness/handoff'), { recursive: true });
+        mkdirSync(join(siblingRoot, '.ai/harness'), { recursive: true });
         writeFileSync(join(siblingRoot, '.ai/harness/policy.json'), '{}\n');
-        const deniedAbsoluteTarget = await jsonTool(ctx, 'latest_handoff', { repo_path: siblingRoot });
+        const deniedAbsoluteTarget = await jsonTool(ctx, 'list_workflow_files', { repo_path: siblingRoot });
         expect(deniedAbsoluteTarget.error.code).toBe('POLICY_DENIED');
-        const deniedRelativeTarget = await jsonTool(ctx, 'latest_handoff', { repo_path: 'sibling' });
+        const deniedRelativeTarget = await jsonTool(ctx, 'list_workflow_files', { repo_path: 'sibling' });
         expect(deniedRelativeTarget.error.code).toBe('POLICY_DENIED');
       } finally {
         rmSync(scanRoot, { recursive: true, force: true });
@@ -670,10 +660,8 @@ describe('mcp tools', () => {
 
       await jsonTool(ctx, 'write_task_goal', { body: validBody });
 
-      const handoff = await jsonTool(ctx, 'latest_handoff');
-      const goal = handoff.handoff.find((entry: { path: string }) => entry.path === '.ai/harness/handoff/task-goal.md');
-      expect(goal).toMatchObject({ exists: true });
-      expect(goal.preview).toContain('# Task Goal');
+      expect(buildMcpToolDefinitions(ctx.policy).map((tool) => tool.name)).not.toContain('latest_handoff');
+      expect((await jsonTool(ctx, 'latest_handoff')).error.code).toBe('UNKNOWN_TOOL');
 
       const readGoal = await jsonTool(ctx, 'read_workflow_file', { path: '.ai/harness/handoff/task-goal.md' });
       expect(readGoal.content).toContain('## Required checks');

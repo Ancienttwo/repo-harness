@@ -2,7 +2,29 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- `repo-harness update` prints the leftover summary line that the installed
+  package writes with the new `repo-harness upgrade --summary-line`. The
+  updater no longer parses the `upgrade --json` result, so a later change of
+  that shape does not cause a false "Leftover check failed" line. (#1301)
+- Version checks follow semver precedence: a pre-release such as
+  `0.26.0-rc.1` is older than `0.26.0`. Before, the suffix was ignored, so
+  `doctor` reported `ok` for an installed release candidate after the release
+  was published. A Bun canary of the minimum version (`1.4.0-canary.*`) is now
+  below `MIN_BUN_VERSION=1.4.0`. (#1322)
+
 ## [0.25.0] - 2026-10-31
+
+### Upgrade
+
+- `repo-harness update` from 0.24.3 always ends with "Leftover check failed:
+  upgrade --json returned no leftover list. Run: repo-harness upgrade". This
+  line is expected, and the update is complete. The 0.24.3 updater cannot
+  read the `upgrade --json` object of 0.25.0 (#983). Ignore the line, and run
+  `repo-harness upgrade --json` to see the leftovers. (#1301)
 
 ### Breaking
 

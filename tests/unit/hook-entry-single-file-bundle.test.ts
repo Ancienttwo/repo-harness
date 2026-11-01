@@ -182,7 +182,7 @@ describe('hook-entry single-file bundle', () => {
     // as part of its own JSON, so any build's chatter would break release tooling.
     expect(pkg.scripts.prepack).toBe('bun run build:hook-bundle 1>&2 && bun run build:dsh-plugin 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2');
     expect(pkg.files).toContain('dist/oar-review-host.js');
-    expect(pkg.files).toContain('dist/dsh-plugin.js');
+    expect(pkg.files).toContain('dist/dsh/');
     expect(pkg.scripts['build:hook-bundle']).toContain('--define REPO_HARNESS_BUNDLED_CLI_VERSION');
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf-8')).toMatch(/^dist\/$/m);
   });

@@ -242,16 +242,114 @@ Act on the exit code. Post every result as `integration status` on the PR.
 | 5 | `merge_outcome_unknown` | Stop. Report to the owner. Never retry |
 | 6 | `provider_rejected` | Post the GitHub error as it is. Hand it to the owner |
 
-- Merge in the parent's order. After each merge, the next PR merges or
-  rebases onto the current main. A PR that passed review on an old base
-  needs its affected checks again on the new base. It does not need a new
-  full review unless the merge changed its subject.
 - Use `Closes #N` only in the PR that finishes the issue. Earlier PRs of a
   multi-PR issue use `Refs #N`. Before merge, check
   `gh pr view <n> --json closingIssuesReferences`. An edited body can keep
   an old closing link. The executor also checks the closing references and
   refuses with `closing_references_mismatch`, also for a closing keyword
   that targets a pull-request URL.
+
+### 9.1 Choose the mode
+
+Use serial integration (§9.2) when one PR is eligible. When two or more
+PRs are eligible at the same time, you may use batch integration (§9.3).
+You decide whether to batch, which PRs go in and their order: the
+parent's merge order first. A batch has at most 6 members.
+
+A PR is eligible when all of these are true:
+
+- It is open and not draft.
+- Its required checks are SUCCESS on its own head.
+- Its tier review passed on a subject SHA. Low needs no review.
+- Its head equals the reviewed subject, or adds only conflict-free merges
+  of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
+  prints nothing.
+- It has no unresolved review thread.
+- Its closing references are correct.
+
+```bash
+gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesReferences,reviewDecision
+```
+
+### 9.2 Serial integration
+
+Merge in the parent's order. After each merge, the next PR merges or
+rebases onto the current main. A PR that passed review on an old base
+needs its affected checks again on the new base. It does not need a new
+full review unless the merge changed its subject.
+
+### 9.3 Batch integration
+
+The batch branch holds the member merge commits and nothing else. Never
+resolve a conflict, push a fix or add a commit of your own in it. Never
+merge it by any path other than `repo-harness publication merge`.
+
+1. **Build.** Record each member's eligible head SHA. Create the branch
+   from the current main and merge each member in order:
+
+   ```bash
+   git fetch origin main
+   git worktree add -b integration/<parent>-batch-<n> /tmp/<repo>-wt-batch-<parent>-<n> origin/main
+   cd /tmp/<repo>-wt-batch-<parent>-<n>
+   git fetch origin refs/pull/<p>/head          # once per member
+   git merge --no-ff --no-edit <member head sha>
+   ```
+
+   Merge the recorded SHA, not the branch name, so that a later push to a
+   member does not enter the batch.
+2. **Conflict.** Run `git merge --abort` and drop that member. Post the
+   batch-drop `integration status` on its PR to its head owner: sync with
+   main, then it joins a later batch. Continue with the next member.
+3. **Local check.** Run the repository's typecheck and the test files that
+   two or more members change. In repo-harness:
+
+   ```bash
+   for p in <member PRs>; do gh pr diff "$p" --name-only; done | grep '^tests/' | sort | uniq -d
+   bun run check:type
+   bun run test:files <shared test files> --timeout 60000 --max-concurrency 1
+   ```
+
+   CI on the batch head is the authority.
+4. **Open the batch PR.** Push the branch and open the PR with the batch
+   PR body (`templates.md`):
+
+   ```bash
+   git push -u origin integration/<parent>-batch-<n>
+   gh pr create --base main --head integration/<parent>-batch-<n> --title "chore(integration): merge accepted PRs #<a> #<b> as one batch (#<parent>)" --body-file <file>
+   gh pr view <batch> --json closingIssuesReferences
+   ```
+
+   The closing references must name each issue that a member closes, and
+   nothing else.
+5. **Review.** Every member merged without conflict, and the batch adds no
+   commit of its own. The batch reuses the member acceptance records and
+   needs no new review round
+   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
+6. **Red CI.** Do not fix it in the batch branch. Classify the failure
+   first; a known flake gets one rerun (§8). Drop the member that changes
+   the failing test or the source it covers, and post the batch-drop
+   `integration status` on its PR. When you cannot attribute the failure,
+   split the members into two halves. Close the red batch PR with
+   `gh pr close <batch>`, then rebuild from the current main with the next
+   `<n>`: the remaining members, or each half in turn.
+7. **Main moved.** When main moves after the build, rebuild from the
+   current main with the next `<n>`. Do not merge main into the batch
+   branch.
+8. **Merge.** Call `repo-harness publication merge --batch` on the batch
+   PR with the batch head and the main SHA you built on. The executor
+   refuses a head ref outside `integration/<parent>-batch-<n>`
+   (`batch_ref_invalid`) and a batch with a commit of its own
+   (`batch_has_own_commit`), both with exit 4 and no merge request. It
+   merges with a merge commit whose parents are the main SHA and the batch
+   head, so each member's commits land on main. Act on the exit code as
+   the table above says.
+9. **Close out.** After exit 0, on each member PR post the batch-closeout
+   `integration status` with the batch merge SHA. Do not close the member
+   PRs: GitHub marks each one Merged. The member branch stays. Post
+   `unblocked` on each dependent PR.
+10. **Rollback.** `git revert -m 1 <batch merge commit>` reverts the whole
+    batch. To revert one member, revert its member merge commit on main:
+    `git revert -m 1 <member merge commit on main>`.
 
 ## 10. Close out
 

@@ -3,8 +3,9 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readd
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { planAdoption } from "../../src/effects/adoption/plan";
+import { planLegacyLeftovers } from "../../src/effects/upgrade/legacy-inventory";
 import { isRepoHarnessSourceCheckout } from "../../src/effects/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
@@ -141,6 +142,45 @@ describe("canonical adoption plan", () => {
     }
   });
 
+  test("init refresh keeps a retired runtime ignore rule while its files exist and lists them as leftovers", () => {
+    const repo = tempRepo();
+    try {
+      expect(spawnSync("git", ["init", "-q", repo]).status).toBe(0);
+      // Rules that the 0.24 managed block held and 0.25.0 dropped (#1307).
+      const oldRules = [".claude/.session-id", ".claude/.trace.jsonl", ".claude/.codegraph-state/", ".ai/harness/handoff/current.md",
+        ".ai/harness/handoff/resume.md", ".ai/harness/active-plan", ".ai/harness/sprint/", ".claude/.active-plan", ".claude/.plan-state/", "tasks/current.md"];
+      const codegraph = ".claude/.codegraph-state/index.used";
+      const retired = [".claude/.session-id", ".claude/.trace.jsonl", ".ai/harness/handoff/current.md", ".ai/harness/handoff/resume.md",
+        ".ai/harness/active-plan", ".ai/harness/sprint/s1.md", ".claude/.active-plan", ".claude/.plan-state/plan.json", "tasks/current.md"];
+      for (const path of [codegraph, ...retired]) {
+        mkdirSync(join(repo, dirname(path)), { recursive: true });
+        writeFileSync(join(repo, path), "old runtime state\n");
+      }
+      writeFileSync(join(repo, ".gitignore"), `# BEGIN: repo-harness generated-runtime\n${oldRules.join("\n")}\n# END: repo-harness generated-runtime\n`);
+      const untracked = () => spawnSync("git", ["status", "--porcelain", "--untracked-files=all", "--", codegraph, ...retired], { cwd: repo, encoding: "utf8" }).stdout;
+      const refresh = () => expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true })).ok).toBe(true);
+
+      refresh();
+      expect(untracked()).toBe("");
+      // A file that a retirement action already lists keeps that item; every other file gets a runtime-rule item.
+      const leftovers = planLegacyLeftovers({ scope: "project", cwd: repo, home: join(repo, "no-home"), packageRoot: ROOT }).items;
+      for (const path of retired) {
+        expect(leftovers.find((item) => item.path === join(repo, path))).toEqual(expect.objectContaining({ action: "report", ownership: "unowned" }));
+      }
+      expect(leftovers.filter((item) => item.retiredBy === "retired-runtime-ignore-rule")).toHaveLength(7);
+      expect(leftovers.some((item) => item.path.includes(".codegraph-state"))).toBe(false);
+
+      for (const path of retired) rmSync(join(repo, path));
+      refresh();
+      const rules = readFileSync(join(repo, ".gitignore"), "utf-8").split("\n");
+      expect(rules).toContain(".claude/.codegraph-state/");
+      for (const rule of oldRules.filter((rule) => rule !== ".claude/.codegraph-state/")) expect(rules).not.toContain(rule);
+      expect(untracked()).toBe("");
+    } finally {
+      cleanup(repo);
+    }
+  });
+
   test("minimal and standard init preserve existing contract artifacts without generating them", () => {
     for (const mode of ["minimal", "standard"] as const) {
       const repo = tempRepo();
@@ -156,6 +196,42 @@ describe("canonical adoption plan", () => {
         expect(readFileSync(join(repo, "tasks/contracts/history.contract.md"), "utf8")).toBe("# Historical contract\n");
         expect(readFileSync(join(repo, ".claude/templates/contract.template.md"), "utf8")).toBe("# Local contract template\n");
       } finally { cleanup(repo); }
+    }
+  });
+
+  test("standard plan rewrites only the changed package.json members and keeps the user's formatting", () => {
+    const repo = tempRepo();
+    const packageOperation = () => {
+      const operation = planAdoption({ repoRoot: repo, mode: "standard" }).operations.find((op) => op.path === "package.json");
+      if (!operation || operation.kind !== "writeFile") throw new Error("package.json operation missing");
+      return operation;
+    };
+    try {
+      writeFileSync(join(repo, "package.json"), [
+        "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
+        '        "check:task-workflow": "repo-harness run check-task-workflow --strict",',
+        '\t\t"check:context-files": "old"', "\t}", "}", "",
+      ].join("\n"));
+      const mixed = packageOperation();
+      expect(mixed.content).toBe([
+        "{", '\t"name": "fixture",', '    "scripts": {', '\t\t"test": "bun test",',
+        '\t\t"check:context-files": "repo-harness run check-context-files",',
+        '\t\t"check:brain": "repo-harness brain check",',
+        '\t\t"check:deploy-sql": "repo-harness run check-deploy-sql-order",',
+        '\t\t"sync:brain": "repo-harness brain sync"', "\t},", '    "private": true', "}", "",
+      ].join("\n"));
+      writeFileSync(join(repo, "package.json"), mixed.content);
+      expect(packageOperation().status).toBe("skipped");
+
+      writeFileSync(join(repo, "package.json"), JSON.stringify({ name: "fixture" }));
+      expect(packageOperation().content).toBe(JSON.stringify({ name: "fixture", private: true, scripts: {
+        "check:brain": "repo-harness brain check",
+        "check:context-files": "repo-harness run check-context-files",
+        "check:deploy-sql": "repo-harness run check-deploy-sql-order",
+        "sync:brain": "repo-harness brain sync",
+      } }));
+    } finally {
+      cleanup(repo);
     }
   });
 
@@ -569,8 +645,15 @@ describe("canonical adoption plan", () => {
       const backup = manifest.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.backupPath;
       expect(backup).toBeDefined();
       expect(readFileSync(join(repo, backup!), "utf8")).toBe(legacy);
+      const report = { protocol: 1, command: "init", repoRoot: repo, mode: "minimal", ok: true, plan: {} } as const;
+      const restore = `cp '${join(repo, backup!)}' '${target}'`;
+      expect(renderApplyReport({ ...report, apply }))
+        .toContain(`[init] backup: .ai/harness/workflow-contract.json -> ${join(repo, backup!)} (restore: ${restore})\n`);
       const next = planAdoption({ repoRoot: repo, mode: "minimal", apply: true });
       expect(next.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.status).toBe("skipped");
+      expect(renderApplyReport({ ...report, apply: applyAdoptionPlan(next) })).not.toContain("[init] backup:");
+      expect(spawnSync("sh", ["-c", restore]).status).toBe(0);
+      expect(readFileSync(target, "utf8")).toBe(legacy);
     } finally {
       cleanup(repo);
     }
@@ -652,6 +735,7 @@ describe("canonical adoption plan", () => {
 
       const report = { protocol: 1, command: "init", repoRoot: repo, mode: "minimal", ok: false, plan: {} } as const;
       expect(renderApplyReport({ ...report, apply })).toContain("[init] rollback: complete - 3 rolled back, 0 failed\n");
+      expect(renderApplyReport({ ...report, apply })).not.toContain("[init] backup:");
       const incomplete = renderApplyReport({
         ...report,
         apply: {

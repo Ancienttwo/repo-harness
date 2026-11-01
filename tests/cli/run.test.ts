@@ -349,32 +349,21 @@ describe("run command", () => {
   }, 30_000);
 
 
-  test("package prepare-handoff runs its recovery helper from the package and ignores a target library copy", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-prepare-handoff-"));
+  test("removed session-recovery helpers fail as unknown helpers and write no handoff file", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-run-removed-handoff-"));
     try {
-      mkdirSync(join(tmp, ".ai/hooks/lib"), { recursive: true });
-      mkdirSync(join(tmp, "tasks"), { recursive: true });
-      writeFileSync(
-        join(tmp, ".ai/hooks/lib/workflow-state.sh"),
-        "workflow_write_handoff() { echo stale-target-workflow >&2; return 91; }\n",
-      );
-      writeFileSync(join(tmp, "tasks/todos.md"), "# Deferred Goals\n");
       expect(spawnSync("git", ["init"], { cwd: tmp }).status).toBe(0);
-
-      const result = runHelper({
-        helper: "prepare-handoff",
-        args: ["--reason", "package-runtime"],
+      const res = spawnSync("bun", [CLI, "run", "prepare-handoff", "--reason", "removed"], {
         cwd: tmp,
+        encoding: "utf-8",
         env: packageRuntimeEnv(),
-        stdio: "pipe",
       });
-
-      expect(result.exitCode, result.stderr).toBe(0);
-      expect(result.stderr ?? "").not.toContain("stale-target-workflow");
-      expect(existsSync(join(tmp, "scripts/recovery-view-cli.ts"))).toBe(false);
-      expect(readFileSync(join(tmp, ".ai/harness/handoff/current.md"), "utf-8")).toContain(
-        "**Reason**: package-runtime",
-      );
+      expect(res.status).toBe(2);
+      expect(res.stderr).toContain('repo-harness run: unknown helper "prepare-handoff"');
+      expect(existsSync(join(tmp, ".ai/harness/handoff"))).toBe(false);
+      for (const id of ["prepare-handoff", "prepare-codex-handoff", "codex-handoff-resume", "recovery-view-cli"]) {
+        expect(resolveHelper(id)).toBeNull();
+      }
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -487,7 +476,7 @@ describe('packaged state helpers', () => {
           mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
           writeFileSync(join(repo, '.ai/hooks/lib/workflow-state.sh'), 'exit 91\n');
         }
-        for (const [helper, args] of [['prepare-handoff', ['--status']], ['summarize-failures', []]] as const) {
+        for (const [helper, args] of [['summarize-failures', []]] as const) {
           const result = runHelper({ helper, args, cwd: repo, env: packageRuntimeEnv(), stdio: 'pipe' });
           expect(result.exitCode, `${helper}: ${result.stderr}`).toBe(0);
           expect(result.stdout).toBeTruthy();
