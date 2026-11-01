@@ -31,6 +31,7 @@ import { buildReviewCommand } from './commands/review';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
+import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
 import { buildDocsCommand } from './commands/docs';
@@ -884,6 +885,7 @@ export function buildProgram(): Command {
 
   program.addCommand(buildToolsCommand());
   program.addCommand(buildHerdrCommand());
+  program.addCommand(buildEventsCommand());
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());

@@ -1,0 +1,11 @@
+{
+  "name": "repo-harness-github-events",
+  "main": "worker.mjs",
+  "compatibility_date": "2025-09-01",
+  "workers_dev": true,
+  "kv_namespaces": [{ "binding": "EVENTS_STATE" }],
+  "queues": {
+    "producers": [{ "binding": "EVENTS_QUEUE", "queue": "repo-harness-github-events" }],
+    "consumers": [{ "queue": "repo-harness-github-events", "max_retries": 10, "retry_delay": 60 }]
+  }
+}
