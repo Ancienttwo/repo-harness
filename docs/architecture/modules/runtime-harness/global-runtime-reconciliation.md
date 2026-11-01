@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2a1fbc649a98d86545bc491ceedd917ef799b257d26c53cc09291a9e206d46ec" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b3a8339cac93875b09b949a5c3e05ede76545be65e6c8ab5f39762c7fe90621e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -82,7 +82,6 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.adoption` — Use the legacy inventory during adoption planning.
-- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Read the architecture model for Engineer profiles.
 - `depends-on` ← `capability.verification.evals-checks` — Test Global Runtime Reconciliation behavior through its source modules.
 - `calls` ← `component.hook-adapters.host-installer` — Read the shared host skill roots for install projections and report architecture projection readiness in status
 - `calls` ← `component.hook-adapters.primary` — Write host output through the shared blocking writer
@@ -116,10 +115,8 @@ flowchart LR
   - `calls` → `capability.runtime-mcp.chatgpt-browser` — Register the chatgpt command
   - `calls` → `capability.verification.codegraph-readiness` — Probe CodeGraph readiness for doctor
   - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands
-  - `calls` → `capability.runtime-harness.engineer-bindings` — Register the engineer command
   - `calls` → `capability.runtime-harness.external-source-intake` — Register the external-source command
   - `calls` → `capability.runtime-harness.hook-adapters` — Register the install and status and security and hook commands and run host transactions with the install profile
-  - `calls` → `capability.runtime-harness.integration-acceptance` — Register the integration command
   - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp command
   - `calls` → `capability.runtime-harness.operator` — Register the operator command
   - `calls` → `component.global-runtime-reconciliation.primary` — Register the update and upgrade commands and run the setup inside the candidate runtime

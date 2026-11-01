@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8cd729adbe4d624b92d24bf0958a05c5c09fed4026cd70749748b0c41c942ed9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:eb937c376bf1239226578713c9c6c5d9a45938602b1072526ba309b5b47c9904" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
@@ -75,13 +75,11 @@ flowchart LR
 
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Locate the acceptance receipt and the protected Git runtime
 - `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
-- `calls` ← `capability.runtime-harness.engineer-scheduling` — Compute the acceptance authority fingerprint for a dependency
 - `depends-on` ← `capability.verification.evals-checks` — Test Acceptance Review behavior through its source modules.
 - `depends-on` ← `capability.runtime-harness.external-source-intake` — Read protected review admission sources for current source-binding validation
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Build the module review prompt from the committed architecture model
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Read the diff fingerprint for mutation guards.
-- `calls` ← `component.integration-acceptance.primary` — Locate the acceptance receipt for an integration candidate
 - `depends-on` ← `capability.runtime-harness.operator` — Read and reobserve protected current review admission for exact session discovery and current goal context
 - `depends-on` ← `component.operator.view-projections` — Decode the module review prompt shape that the review prompt builder declares
 - `depends-on` ← `capability.organization.publication` — Read the acceptance receipt for publication evidence.

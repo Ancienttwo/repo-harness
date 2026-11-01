@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fb5dc0b2587d5789e87f8021d74611965c9dc4011bd01c1c52e41424e6f44a05" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a03b0261b1890eeb28433e9441fccfe064242bc520d862d2323d485ebaaf151c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -60,13 +60,10 @@ flowchart LR
 
 - `calls` ← `component.acceptance-review.primary` — Hold an exclusive directory lock around one generic review run
 - `depends-on` ← `capability.public-surface.adoption` — Run bounded processes for adoption and file transactions.
-- `calls` ← `component.agent-runtime-effects.journal` — Hold exclusive directory locks under the Git common directory
 - `depends-on` ← `capability.verification.codegraph-readiness` — Run bounded CodeGraph processes.
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
 - `calls` ← `component.contract-assets.planning-helpers` — Run each helper as a bounded child process
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes
-- `calls` ← `capability.runtime-harness.engineer-bindings` — List tracked Engineer profile and SOP paths through the shared Git runner
-- `calls` ← `capability.runtime-harness.engineer-scheduling` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.evals-checks.evals-and-benchmarks` — Take the expensive-run lock before a costly benchmark profile runs
 - `calls` ← `component.evidence-ledger.primary` — Hold exclusive directory locks under the Git common directory and read the virtual tree
 - `calls` ← `component.external-source-intake.immutable-evidence` — Hold exclusive directory locks under the Git common directory
@@ -77,7 +74,6 @@ flowchart LR
 - `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner
 - `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries
 - `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
-- `calls` ← `component.integration-acceptance.primary` — Resolve the Git common directory for integration records
 - `calls` ← `component.mcp-sidecar.coding-profile` — Use the configured Git binary for coding workspaces
 - `calls` ← `component.mcp-sidecar.host-setup` — Hold the MCP setup ownership lock
 - `calls` ← `component.mcp-sidecar.primary` — Read the worktree topology for the PM server scope

@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b1501ca04a1e1a765ec8a936c3656a8a045c9fa6691dd4f01033fbfd5704ae66" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3abfdef07e45cda156a1869df5a39b2423f93eabc344632646a9137a2816a290" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
@@ -53,9 +53,7 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `capability.runtime-harness.agent-runtime-effects` — Read task agent runtime effects as board observations only
 - `reads` → `component.mcp-sidecar.repo-policy-registry-effects` — Read the Bot registry to name the sender of a fleet task message
-- `calls` → `capability.runtime-harness.engineer-bindings` — Validate principal claims and claim actor receipts before a steer reply is recorded
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
 - `calls` → `component.task-fleet.primary` — Project per-repository task observations and fleet board cards from the owning readers
 - `calls` → `capability.organization.publication` — Read publication receipts readiness and provider feedback for fleet commands and board cards
@@ -64,7 +62,6 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.acceptance-review.primary` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
-- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Read the exact Task message and delivery receipt before action admission and success.
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Fleet behavior through its source modules.
 - `calls` ← `capability.runtime-harness.external-source-intake` — Reobserve exact admitted inbox context to bind source evidence to the same current provider issue
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
@@ -96,7 +93,7 @@ flowchart LR
 | `component.task-fleet.primary` | Fleet Task Observations and Board | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.task-fleet.primary-core` | Fleet Task Observations and Board (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-fleet.primary-effects` | Fleet Task Observations and Board (effects) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
-| `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.task-fleet.task-inbox-effects` | Task Inbox (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流

@@ -1,5 +1,5 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:76525e81894b959ca693a1249be0164d97d0562e85a401aa1c3c919bce6f1318" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6fea5fcd565ec7886cf9020fcb259e1732ddfd6521f25747e3d3473d79f57983" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/reference-configs/herdr-orchestrator-mcp.md`
@@ -66,7 +66,6 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `capability.runtime-harness.agent-runtime-effects` — Expose read-only runtime capability and current-effect projections to the authenticated Engineer without Host mutation authority
 - `deployed-on` → `process.mcp-server` — The MCP sidecar runs in the MCP server process.
 - `depends-on` → `capability.workflow-engine.contract-assets` — Run declared helpers from MCP tools.
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
