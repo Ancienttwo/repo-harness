@@ -12,6 +12,7 @@ import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory'
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
 import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
 import { hashManagedTree } from '../../src/effects/managed-tree';
+import { applyGlobalContextRefresh, preflightGlobalContextRefresh } from '../../src/cli/installer/global-context';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
 import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
@@ -729,6 +730,15 @@ describe('upgrade with real release bytes', () => {
     for (const path of [gate, archive, backup]) expect(existsSync(path)).toBe(false);
     expect(readFileSync(unowned, 'utf8')).toBe('{"status":"user"}\n');
     expect(applied.items.find((item) => item.path === unowned)?.action).toBe('report');
+  }, false));
+
+  test('a global rules copy adds no upgrade leftover', () => sandbox((opts) => {
+    put(join(opts.home, '.codex/AGENTS.md'), '# Notes\n');
+    const refresh = applyGlobalContextRefresh(preflightGlobalContextRefresh(ROOT, opts.home, ['codex'], 'en'), opts.home);
+    expect(refresh.detail).toContain(' (backup: ');
+    const check = runUpgrade({ ...opts, scope: 'global' });
+    expect(check.items).toEqual([]);
+    expect(check.exitCode).toBe(0);
   }, false));
 
   test('third-party Codex plugin and user rule lines always remain report-only', () => sandbox((opts) => {
