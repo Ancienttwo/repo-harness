@@ -162,7 +162,12 @@ export function bashWriteTargets(command: string, repoRoot: string, cwd: string)
     if (!isAbsolute(candidate) && !commandCwd) return;
     const target = resolve(commandCwd ?? cwd, candidate);
     const rel = relative(repoRoot, target);
-    if (isAbsolute(rel) || rel === '..' || rel.startsWith('../') || protectedRepoDir(rel)) candidates.push(target);
+    const leaves = isAbsolute(rel) || rel === '..' || rel.startsWith('../');
+    // resolve() drops `..` before any symlink is followed, but the kernel follows the link first.
+    // Keep `..` in a target that leaves the repository, so the canonical check refuses it.
+    if (leaves && candidate.replaceAll('\\', '/').split('/').includes('..')) {
+      candidates.push(isAbsolute(candidate) ? candidate : `${commandCwd}/${candidate}`);
+    } else if (leaves || protectedRepoDir(rel)) candidates.push(target);
   };
   walkCommands(command, cwd, {
     command: (segment, body, commandCwd) => { for (const target of commandTargets(segment, body)) add(target, commandCwd); },
