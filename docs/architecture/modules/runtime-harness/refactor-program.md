@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:28bb1c7d065548b2bc7c951b61c94b2ac4d8cbbde1cf2121247ad75c449a4b9d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7665bbeea514490e48cd5b317e008d5399ba6b4a0a926a05af98f455d44289f5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/effects/refactor/**`
@@ -50,7 +50,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.refactor-program.archctx-provider` — Scan for structural observations and record user decisions through the pinned package-local ArchContext CLI
-- `calls` → `capability.runtime-harness.mcp-sidecar` — Resolve the canonical repository path through the repo registry
+- `calls` → `component.execution-primitives.repository-registry` — Resolve the canonical repository path through the repo registry
 
 入向關係:
 

@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d63a4be503f21d128573721df4d7ea239d8ca7e8b241c61bb079539be1fdb115" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:746393b2a871f75340509179b02149865b697c99d11206855a7f030d2e7800a2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
@@ -85,7 +85,7 @@ flowchart LR
   - 無。
 - `component.task-agent-host.primary`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner and hold task session locks
-  - `reads` → `component.mcp-sidecar.repo-policy-registry` — Root the Herdr notify install record in the account-level repo-harness home.
+  - `reads` → `component.execution-primitives.repository-registry` — Root the Herdr notify install record in the account-level repo-harness home.
 - `component.task-agent-host.primary-assets`:
   - 無。
 - `component.task-agent-host.primary-cli`:

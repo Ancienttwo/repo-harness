@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:05f0caab023f66465459175bdf7a1fe68c4f6dd0e3c696d5e670cf4772f52df7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1a93448f4b36f560ff7099916c408001521ad2f105a0c0195586a4ae246ccbca" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
@@ -121,7 +121,8 @@ flowchart LR
   - `reads` → `external.github` — Read the newest daily CI run, download its JUnit and test projection artifacts, and list open CI repair issues with gh.
   - `reads` → `external.herdr` — Run herdr status, the session snapshot and the notify plugin list, config-dir and log list probes on collector cycles.
   - `calls` → `component.operator.primary` — Check the herdr status version and request session.snapshot through the Herdr observation transport.
-  - `reads` → `capability.runtime-harness.mcp-sidecar` — Run mcp doctor without live registration and read the OAuth token store and the newest audit rows for Bot access, and read the strict repository registry snapshot for Bot access, docs and tests.
+  - `reads` → `capability.runtime-harness.mcp-sidecar` — Run mcp doctor without live registration and read the Bot registry, the OAuth token store and the newest audit rows for Bot access.
+  - `reads` → `component.execution-primitives.repository-registry` — Read the strict repository registry snapshot and the account home for Bot access, docs and tests.
   - `reads` → `component.task-agent-host.primary` — Read the Herdr session from the notify install record at the start of each notify, Bot access and execution cycle, and read the task agent binding, native session and closed records.
   - `calls` → `component.operator.view-projections` — Build cache values with the strict Bot access, notify, docs and tests decoders and the JUnit and projection parsers.
   - `depends-on` → `capability.workflow-engine.workflow-state` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
@@ -133,7 +134,7 @@ flowchart LR
   - `reads` → `capability.runtime-harness.engineer-scheduling` — Read the tracked work graph projection for the Planning view
   - `reads` → `capability.runtime-harness.engineering-overlay` — Collect the engineering board for the Organization view
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
-  - `reads` → `capability.runtime-harness.mcp-sidecar` — Resolve a registered repository root from the strict repo-harness registry snapshot
+  - `reads` → `component.execution-primitives.repository-registry` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
   - `reads` → `component.acceptance-review.primary` — Read the docs host platform and runtimes that a doc session may use.
   - `calls` → `component.workflow-state.coordination-plane` — Create a doc session worktree under the worktree topology lock of its clone.
@@ -144,7 +145,7 @@ flowchart LR
 - `component.operator.view-projections`:
   - `depends-on` → `capability.verification.acceptance-review` — Decode the module review prompt shape that the review prompt builder declares
   - `depends-on` → `component.operator.architecture-view` — Decode the module index and module detail shapes that the architecture view declares
-  - `reads` → `component.mcp-sidecar.repo-policy-registry` — Read the shared secret token rules that redact doc session events.
+  - `reads` → `component.execution-primitives.secret-patterns` — Read the shared secret token rules that redact doc session events.
   - `reads` → `capability.organization.task-fleet` — Render fleet board errors and task message shapes
 - `component.operator.web-console`:
   - `calls` → `component.operator.activity-feeds` — Decode the development activity and setup snapshots with the decoders the server uses

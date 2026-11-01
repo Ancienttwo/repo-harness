@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ab3f4890cb5fcc2f05efb065597228491367b19d82d6c14413a4cc5cbaf70416" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:8cd729adbe4d624b92d24bf0958a05c5c09fed4026cd70749748b0c41c942ed9" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
@@ -67,8 +67,8 @@ flowchart LR
 - `calls` → `external.codex` — Run Codex as a sandboxed reviewer in the OAR review host.
 - `deployed-on` → `process.oar-review-host` — Acceptance review runs review sessions in the OAR review host.
 - `calls` → `capability.runtime-harness.hook-adapters` — Admit at most one persistent semantic review session per work package through the circuit breaker
-- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Apply secret patterns to module review context.
 - `depends-on` → `capability.runtime-harness.operator` — Use the architecture module view in review prompts.
+- `depends-on` → `component.execution-primitives.secret-patterns` — Apply secret patterns to module review context.
 - `calls` → `component.acceptance-review.primary` — Run one generic acceptance review round for an admitted review campaign
 
 入向關係:

@@ -28,6 +28,7 @@ import { oarObservationFile, readOarObservation } from '../terminal/task-runtime
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { piExecutable } from '../pi-executable';
+import { piReviewLaunchBlocker } from '../setup/pi-host-probe';
 
 type Harness = ReviewRuntimeId;
 interface ReviewSession {
@@ -175,6 +176,7 @@ const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApp
   owner: boundOwner, author: boundAuthor, model: completedModel, bindNative: bindNativeTaskSession,
   installation: probeReviewInstallation,
   piExecutable,
+  piReviewLaunchBlocker,
   ready: waitHostFile,
   dispose: async (repo: string, task: string, output: string, terminal = false): Promise<void> => {
     const request = join(output, 'close.request');
@@ -306,6 +308,13 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
           || (await client.installation(owner)).kind !== 'available') throw new Error('review_provider_executable_missing_or_unsupported');
         actual = owner; reason = `${requested} executable missing before start`;
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
+      }
+      // The Herdr start requires the PATH Pi to meet MIN_PI_VERSION (#1100 Option C). The Herdr Pi
+      // integration is not checked: the reviewer Pi uses an isolated PI_CODING_AGENT_DIR that never
+      // loads that extension, and pane state comes from `pane report-agent`.
+      if (actual === 'pi' && !terminal) {
+        const blocker = client.piReviewLaunchBlocker(client.piExecutable()!);
+        if (blocker) throw new Error(`review_pi_launch_not_ready: ${blocker}`);
       }
       options.admitSession();
       session = { protocol: 1, owner_root: root, campaign_sha256: campaign, task_claim: taskClaim, goal_sha256: identity.goal_sha256, task: key, reviewer_repo: reviewerRepo,
