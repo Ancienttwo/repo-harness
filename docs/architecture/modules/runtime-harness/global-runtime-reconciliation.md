@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7ed1d7214e9ff73b354a2d99b61ba8632f167afb4d1357107d988581a21dca4d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2a1fbc649a98d86545bc491ceedd917ef799b257d26c53cc09291a9e206d46ec" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -98,7 +98,7 @@ flowchart LR
   - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize architecture closure records
   - `calls` → `capability.workflow-engine.execution-primitives` — Run the archctx binary through the process runner
   - `calls` → `capability.runtime-harness.hook-adapters` — Write the private global configuration through the installer ownership writer
-  - `calls` → `capability.runtime-harness.mcp-sidecar` — Resolve registered repositories for the model reader
+  - `calls` → `component.execution-primitives.repository-registry` — Resolve registered repositories for the model reader
   - `reads` → `capability.workflow-engine.workflow-state` — Parse Markdown headers of plans and contracts
 - `component.global-runtime-reconciliation.archctx-closure-cli`:
   - 無。

@@ -1,5 +1,5 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b97bf87458e8ce972ffa881e0cd8b7605e6f996c7c0a49e1280c5e040b862054" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:29a24474475e8d09ad044e0534dbd75eb349abda11c0d8f272c720bd74e3e09f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`assets/mcp/**`
@@ -57,7 +57,8 @@ flowchart LR
 
 - `component.general-repo-access.primary`:
   - `calls` → `capability.verification.codegraph-readiness` — Read CodeGraph index metadata through the adapter after path authorization
-  - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve registered repositories then redact and audit through the shared MCP policy
+  - `calls` → `component.mcp-sidecar.repo-policy-registry` — Contain paths, redact and audit through the shared MCP policy
+  - `calls` → `component.execution-primitives.repository-registry` — Resolve registered repositories and their access mode from the shared repository registry
 - `component.general-repo-access.tests-layer`:
   - 無。
 

@@ -1,6 +1,6 @@
 # runtime-harness/engineering-overlay 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b340fe89a41a8adfb042428870b19ef0dcaf69c4cf3db88ffa97b26a01114930" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineering-overlay" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:261a5e9e307e39ab00dea02c9a854a848ba1632bc493b40413fc03d4ca46f8e7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineering-overlay`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/engineering-overlay.ts`、`src/effects/engineers/engineering-overlay.ts`
@@ -53,7 +53,7 @@ flowchart LR
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Observe exact current runtime-effect and reconciliation states without executing or repairing an effect
 - `calls` → `capability.runtime-harness.engineer-bindings` — Use canonical engineer JSON and digest helpers for admitted overlay evidence without reading legacy binding or ClaimActor stores
 - `depends-on` → `capability.runtime-harness.engineer-scheduling` — Resolve the registered repository before reading the overlay.
-- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read the repository registry for overlay observations.
+- `depends-on` → `component.execution-primitives.repository-registry` — Read the repository registry for overlay observations.
 - `calls` → `capability.runtime-harness.engineering-overlay` — Within the existing engineering overlay collector, collectEngineeringBoard calls its local read pass and read calls runtimeProjection for exact admitted-session runtime evidence; these are internal calls, not recursive invocation or a dependency on another capability
 - `calls` → `component.engineering-overlay.primary` — Validate and content-address the read-only Engineer and organization-attention projections
 

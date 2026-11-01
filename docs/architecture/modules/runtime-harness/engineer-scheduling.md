@@ -1,6 +1,6 @@
 # runtime-harness/engineer-scheduling 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bfe754bdff52faeb9979ff97fd25556e7d1e17bc8b27f6d63162883fb9f679fb" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-engineer-scheduling" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:84881defac438cb9bbde076fd678ff668a3255c572df1a1732559e7a8e652672" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.engineer-scheduling`(kind `capability`)
 > **Matched Prefixes**:`src/core/engineers/scheduling.ts`、`src/effects/engineers/dependency-authority.ts`、`src/effects/engineers/scheduling.ts`
@@ -54,7 +54,7 @@ flowchart LR
 - `calls` → `capability.verification.acceptance-review` — Compute the acceptance authority fingerprint for a dependency
 - `calls` → `capability.runtime-harness.engineer-bindings` — Resolve declared graph capabilities through the Engineer profile authority reader
 - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory
-- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read registered repository identity for scheduling.
+- `depends-on` → `component.execution-primitives.repository-registry` — Read registered repository identity for scheduling.
 - `reads` → `capability.runtime-harness.integration-acceptance` — Read ME-4C product acceptance projections as one closed dependency authority and never reconstruct acceptance from prose
 - `calls` → `component.engineer-scheduling.primary` — Validate and project the immutable provider graph selected by exact commit and path
 - `reads` → `capability.organization.publication` — Read cached publication receipts as dependency authority

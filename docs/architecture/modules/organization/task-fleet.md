@@ -1,6 +1,6 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:640d3f97e2ebb04ead01245d521166ecc754254207f96a02eb4be0acabe921bf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b1501ca04a1e1a765ec8a936c3656a8a045c9fa6691dd4f01033fbfd5704ae66" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
 > **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
@@ -54,11 +54,12 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.runtime-harness.agent-runtime-effects` — Read task agent runtime effects as board observations only
+- `reads` → `component.mcp-sidecar.repo-policy-registry-effects` — Read the Bot registry to name the sender of a fleet task message
 - `calls` → `capability.runtime-harness.engineer-bindings` — Validate principal claims and claim actor receipts before a steer reply is recorded
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
 - `calls` → `component.task-fleet.primary` — Project per-repository task observations and fleet board cards from the owning readers
 - `calls` → `capability.organization.publication` — Read publication receipts readiness and provider feedback for fleet commands and board cards
-- `reads` → `component.mcp-sidecar.repo-policy-registry` — Read the strict repository registry snapshot for offer and board authorization
+- `reads` → `component.execution-primitives.repository-registry` — Read the strict repository registry snapshot for offer and board authorization
 
 入向關係:
 
