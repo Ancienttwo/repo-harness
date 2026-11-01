@@ -85,6 +85,7 @@ export function decisionSnapshot(cwd: string, item: LeftoverItem): LegacyPathSna
 /**
  * Remove uses the project rollback, which restores regular files only.
  * A document that refers to a retired path is user prose, so only keep is valid.
+ * A retired generated artifact accepts remove: the operator decision is the authority.
  */
 export function upgradeDecisionRejection(
   item: LeftoverItem, decision: UpgradeDecisionKind, snapshot: LegacyPathSnapshot | null,

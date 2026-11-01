@@ -1059,6 +1059,35 @@ describe('upgrade operator decisions', () => {
     expect(kept.operatorKept.map((item) => item.path).sort()).toEqual([directory, doc].sort());
   }, false));
 
+  test('a retired generated handoff packet accepts remove, and an edit after the decision keeps it', () => sandbox((opts) => {
+    const packet = '.ai/harness/handoff/resume.md';
+    const path = join(opts.cwd, packet);
+    const bytes = `# Codex Resume Packet\n<!-- generated-by: repo-harness codex-handoff-resume v1 -->\n\nRead ${projectHook} first.\n`;
+    put(path, bytes);
+    put(join(opts.cwd, 'CLAUDE.md'), `Run ${projectHook} for the old setup.\n`);
+    // The marker classifies the file only; without a decision upgrade never removes it.
+    expect(runUpgrade({ ...opts, scope: 'project' }).items.find((item) => item.path === path)).toEqual(expect.objectContaining({
+      retiredBy: 'retired-generated-artifact', ownership: 'unowned', proof: null, action: 'report',
+    }));
+
+    const decided = runUpgradeDecide({ ...opts, decision: 'remove', paths: [packet, 'CLAUDE.md'] });
+    expect(decided.exitCode).toBe(1);
+    expect(decided.recorded).toEqual([{ path: packet, decision: 'remove', contentHash: sha(path) }]);
+    expect(decided.rejected).toEqual([{ path: 'CLAUDE.md', reason: expect.stringContaining('retired path') }]);
+
+    writeFileSync(path, `${bytes}\nOperator note: keep this.\n`);
+    const stale = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(stale.removedPaths).toEqual([]);
+    expect(stale.items.find((item) => item.path === path)?.operatorDecision).toEqual({ decision: 'remove', status: 'stale' });
+    expect(readFileSync(path, 'utf8')).toContain('Operator note');
+
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: [packet] }).exitCode).toBe(0);
+    const removed = runUpgrade({ ...opts, scope: 'project', apply: true });
+    expect(removed.exitCode, removed.error).toBe(0);
+    expect(removed.removedPaths).toEqual([path]);
+    expect(removed.projectBackupPath).toBeDefined();
+  }, false));
+
   const invalidFiles: readonly [string, (cwd: string, hash: string) => void][] = [
     ['not JSON', (cwd) => put(join(cwd, decisionsFile), '{"version":1,')],
     ['an unknown version', (cwd, contentHash) => put(join(cwd, decisionsFile), JSON.stringify({ version: 2, decisions: [{ path: library, decision: 'keep', contentHash }] }))],
@@ -1100,7 +1129,9 @@ describe('upgrade operator decisions', () => {
       { path: 'README.md', reason: 'Path is not a current project upgrade report item.' },
       { path: '../outside.md', reason: 'Path is outside the repository.' },
     ]);
-    expect(existsSync(join(opts.cwd, decisionsFile))).toBe(false);
+    // Each path is judged alone, so the valid path in the batch is written.
+    expect(rejected.recorded).toEqual([{ path: library, decision: 'keep', contentHash: sha(path) }]);
+    expect(readDecisions(opts.cwd).decisions).toEqual(rejected.recorded);
 
     expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: ['CLAUDE.md'] }).exitCode).toBe(0);
     expect(runUpgradeDecide({ ...opts, decision: 'keep', paths: [library] }).exitCode).toBe(0);
