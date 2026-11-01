@@ -28,6 +28,7 @@ import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
+import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
@@ -852,7 +853,7 @@ export function buildProgram(): Command {
     });
 
   program.addCommand(buildInitHookCommand());
-  program.addCommand(buildReviewCommand());
+  program.addCommand(buildReviewCommand(taskReviewRunner));
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());
   program.addCommand(buildUpgradeCommand());

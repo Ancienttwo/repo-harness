@@ -2,16 +2,8 @@ import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync,
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname } from 'node:path';
 import { piAgentDir } from '../pi-agent-dir';
+import type { ReviewIsolationAdmission, ReviewIsolationPaths } from '../../core/review/runner-port';
 
-export interface ReviewIsolationPaths {
-  readonly subject: string;
-  readonly primary: string;
-  readonly ownerRecord: string;
-  readonly journal: string;
-  readonly gitCommonDir: string;
-  readonly output: string;
-  readonly piAgentDirectory?: string;
-}
 
 /** Credentials stay at their source. Only the native model defaults are projected into private settings. */
 export function preparePiAgentDirectory(output: string, sourceHome: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
@@ -213,10 +205,6 @@ export function reviewHostTemporaryDirectory(output: string): string {
   return path;
 }
 
-export interface ReviewIsolationAdmission {
-  paths: ReviewIsolationPaths;
-  policyFile: string;
-}
 
 /** Require the owner-admitted profile and live inherited Seatbelt before SDK Session creation. */
 export function assertReviewIsolation(admission: ReviewIsolationAdmission): void {

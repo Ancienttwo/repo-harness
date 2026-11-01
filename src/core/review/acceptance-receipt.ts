@@ -5,6 +5,12 @@ import { createHash } from 'crypto';
 import { isReviewRuntimeId, type ReviewRuntimeId } from './review-runtimes';
 
 export type AcceptanceDisposition = 'external_pass' | 'user_waiver' | 'reject';
+/** The bound author task session and the models its OAR host observed. */
+export interface AcceptanceAuthor {
+  binding_sha256: string;
+  /** Sorted unique models of the ended author turns; null is unknown. */
+  models: string[] | null;
+}
 
 export type AcceptancePolicyV1 = {
   protocol: 1;

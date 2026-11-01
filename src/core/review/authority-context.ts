@@ -4,6 +4,14 @@ import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
 import { normalizeDeclaredReviewOracles, type DeclaredReviewOracle } from './change-assessment';
 import { validateVerificationPlan, hashVerificationPlan, type VerificationPlan } from '../evidence/verification-plan';
+import type { TaskClaimReference } from './runner-port';
+
+export function validateTaskClaimReference(claim: TaskClaimReference): TaskClaimReference {
+  if (!claim || typeof claim.reference !== 'string' || !claim.reference.trim() || /[\x00-\x1f\x7f]/.test(claim.reference)
+    || typeof claim.revision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(claim.revision)
+    || Object.keys(claim).length !== 2 || !Object.keys(claim).every(key => key === 'reference' || key === 'revision')) throw new Error('task_agent_claim_invalid');
+  return { reference: claim.reference, revision: claim.revision };
+}
 
 /** An explicit input snapshot, not an authorization grant. Effects must verify
  * grant_sha256 against protected authority before constructing or consuming it.

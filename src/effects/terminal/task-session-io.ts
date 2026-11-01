@@ -1,9 +1,9 @@
 /** Node-safe process identity and durable session artifact I/O.
  * Keep profile and architecture observation in the task admission owner. */
-import { constants, closeSync, existsSync, fsyncSync, linkSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
+import { constants, closeSync, existsSync, fsyncSync, linkSync, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
-import { dirname } from 'node:path';
+import { dirname, isAbsolute, join, relative } from 'node:path';
 
 export function processIdentity(pid: number): string {
   if (!Number.isSafeInteger(pid) || pid < 1) throw new Error('task_agent_invalid_process');
@@ -26,4 +26,26 @@ export function writeSessionBytes(path: string, bytes: string, immutable = true)
   finally { if (existsSync(temporary)) unlinkSync(temporary); }
   const directory = openSync(dirname(path), constants.O_RDONLY);
   try { fsyncSync(directory); } finally { closeSync(directory); }
+}
+export function ensureSessionDirectory(root: string, path: string): void {
+  const parts = relative(root, path).split('/');
+  if (parts.includes('..') || isAbsolute(relative(root, path))) throw new Error('task_agent_unsafe_directory');
+  let current = root;
+  for (const part of parts) {
+    current = join(current, part);
+    try { mkdirSync(current, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
+    if (!lstatSync(current).isDirectory() || lstatSync(current).isSymbolicLink()) throw new Error('task_agent_unsafe_directory');
+  }
+}
+/** File artifacts, never a new process/session, own the monotonic round budget. */
+export function nextSessionRound<T>(dir: string, maximum: number, subject: string,
+  subjectOf: (request: T) => string, completionPrefix = 'accepted'): number {
+  let round = 1;
+  for (; round <= maximum && existsSync(join(dir, `request-${round}.json`)); round++) {
+    const previous = readSessionArtifact<T>(join(dir, `request-${round}.json`));
+    if (!existsSync(join(dir, `${completionPrefix}-${round}.json`))) throw new Error('task_agent_ambiguous_round');
+    if (subjectOf(previous) === subject) throw new Error('task_agent_duplicate_subject');
+  }
+  if (round > maximum) throw new Error('task_agent_round_budget_exhausted');
+  return round;
 }

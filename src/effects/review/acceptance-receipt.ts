@@ -46,6 +46,7 @@ import {
   validateFindings,
   validateUserWaiverAuthorization,
   waiverGrantFingerprint,
+  type AcceptanceAuthor,
   type AcceptanceDisposition,
   type AcceptanceEvidence,
   type AcceptanceFinding,
@@ -93,6 +94,7 @@ export {
 } from '../../core/review/acceptance-receipt';
 
 export type {
+  AcceptanceAuthor,
   AcceptanceDisposition,
   AcceptanceEvidence,
   AcceptanceFinding,
@@ -111,12 +113,6 @@ export type {
 } from '../../core/review/acceptance-receipt';
 export type { RequiredCheckCoverageEvidenceV1 } from '../../core/publication/required-check-coverage';
 
-/** The bound author task session and the models its OAR host observed. */
-export interface AcceptanceAuthor {
-  binding_sha256: string;
-  /** Sorted unique models of the ended author turns; null is unknown. */
-  models: string[] | null;
-}
 
 
 function reviewResultPath(root: string, authorityHome: string): string {
