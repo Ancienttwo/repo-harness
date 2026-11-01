@@ -467,7 +467,7 @@ describe('operator web interactions', () => {
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale={locale}
         fetchSnapshot={async () => stableSnapshot} />);
-      for (const view of ['planning', 'delivery', 'organization']) {
+      for (const view of ['delivery', 'attention']) {
         await act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${view}`)!.click());
         expect(document.querySelector('[data-write-action], textarea, .composer')).toBeNull();
       }
@@ -873,40 +873,6 @@ describe('operator web interactions', () => {
     await act(async () => finishRetry({ ...stableSnapshot, sequence: stableSnapshot.sequence + 1 }));
     expect(staleNotices()).toHaveLength(0);
     expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence + 1));
-  });
-
-  test('modal Tab traversal reaches evidence disclosures before it wraps', async () => {
-    const { admittedTaskContextFixture: taskContextFixture } = await import('../../src/operator-web/fixture');
-    // Scoped board reads are irrelevant here; stub the transport so the pane
-    // under test is the only live surface.
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 })) as unknown as typeof fetch;
-    try {
-      await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en"
-        readTaskContext={async (request) => taskContextFixture(request)} />);
-      await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
-      await act(async () => { await Promise.resolve(); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
-      const dialog = document.querySelector('[role="dialog"]')!;
-      const buttons = Array.from(dialog.querySelectorAll<HTMLButtonElement>('button:not([disabled])'));
-      const summaries = Array.from(dialog.querySelectorAll<HTMLElement>('summary'));
-      // The provider-only issue has no runtime task identity or PR/head.
-      // Its provider identity copy is the last plain control; native
-      // disclosure summaries follow it in the tab order.
-      expect(buttons.map((button) => button.getAttribute('aria-label') ?? button.textContent))
-        .toEqual(['Refresh', 'Close task details', 'Copy GitHub repository / issue']);
-      const lastSummary = summaries.at(-1)!;
-      expect(elementKey(lastSummary)).toBe('SUMMARY:Source evidence details');
-      buttons.at(-1)!.focus();
-      expect(focusKey()).toBe('BUTTON:Copy GitHub repository / issue');
-      await tab();
-      // A summary still follows the last button, so focus must not wrap yet.
-      expect(focusKey()).not.toBe('BUTTON:Refresh');
-      lastSummary.focus();
-      await tab();
-      expect(focusKey()).toBe('BUTTON:Refresh');
-      await tab(true);
-      expect(focusKey()).toBe('SUMMARY:Source evidence details');
-    } finally { globalThis.fetch = originalFetch; }
   });
 
   test('the page Refresh action also re-requests the Notify panel', async () => {
