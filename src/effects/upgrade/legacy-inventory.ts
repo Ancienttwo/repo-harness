@@ -526,6 +526,10 @@ function scanPackageScripts(root: string, add: AddItem): void {
     reason: `Package scripts call a helper that this package does not ship or a script that package.json does not define; review them without automatic edits: ${findings.join('; ')}` });
 }
 
+/** Session-recovery packets from retired generators carry this marker in their first lines. */
+const RETIRED_GENERATOR_MARKER = /^<!-- generated-by: repo-harness (codex-handoff-resume|prepare-handoff|prepare-codex-handoff) v\d+ -->$/;
+const RETIRED_GENERATOR_MARKER_LINES = 3;
+
 /** Fail closed: an unreadable directory counts as user content. */
 function directoryHasOtherEntries(directory: string, ownName: string): boolean {
   try {
@@ -625,7 +629,13 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     const scanDocument = (path: string): void => {
       if (!isLegacyPathSafe(root, path, false) || !stat(path)?.isFile()) return;
       const content = readFileSync(path, 'utf8');
-      if (retiredPaths.some((retired) => content.includes(retired))) add({ location: 'project', surface: 'file', path, retiredBy: 'retired-script-reference', ownership: 'unowned', proof: null, action: 'report', reason: 'Document refers to a retired path; review it without automatic edits.' });
+      if (!retiredPaths.some((retired) => content.includes(retired))) return;
+      const generator = content.split('\n', RETIRED_GENERATOR_MARKER_LINES)
+        .map((line) => RETIRED_GENERATOR_MARKER.exec(line.trim())?.[1]).find((name) => name !== undefined);
+      // The marker classifies the file only. It is not an ownership proof, so the item stays a report item.
+      add({ location: 'project', surface: 'file', path, ownership: 'unowned', proof: null, action: 'report', ...(generator
+        ? { retiredBy: 'retired-generated-artifact', reason: `Output of the retired ${generator} generator. Upgrade does not remove it; record upgrade decide --remove or --keep.` }
+        : { retiredBy: 'retired-script-reference', reason: 'Document refers to a retired path; review it without automatic edits.' }) });
     };
     for (const name of ['AGENTS.md', 'CLAUDE.md']) scanDocument(join(root, name));
     const walk = (directory: string): void => {
