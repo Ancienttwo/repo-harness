@@ -232,9 +232,12 @@ export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, roo
   const testsFor = (job: string, name: string): string[] => {
     const steps = workflow?.jobs?.[job]?.steps?.filter((step: any) => step.name === name);
     if (steps?.length !== 1 || typeof steps[0].run !== 'string') throw new Error(`Platform coverage requires ${job}: ${name}`);
-    const tests = [...new Set<string>(steps[0].run.match(/tests\/[\w/.-]+\.test\.tsx?/g) ?? [])];
-    if (!tests.length) throw new Error(`Platform tests are missing: ${name}`);
-    return tests;
+    // A job with a `test` matrix runs one file per leg, so its legs are the inventory.
+    const legs = workflow.jobs[job].strategy?.matrix?.test;
+    const commands: unknown[] = Array.isArray(legs) ? legs : [steps[0].run];
+    const found = commands.map(command => typeof command === 'string' ? command.match(/tests\/[\w/.-]+\.test\.tsx?/g) ?? [] : []);
+    if (!found.length || found.some(tests => !tests.length)) throw new Error(`Platform tests are missing: ${name}`);
+    return [...new Set(found.flat())];
   };
   const preloads = configuredTestPreloads(sources);
   if (!preloads.length) throw new Error('Platform coverage requires test preloads');
