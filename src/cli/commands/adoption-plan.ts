@@ -1,4 +1,4 @@
-import { resolve } from "path";
+import { join, resolve } from "path";
 import type { AdoptionMode } from "../../core/adoption/modes";
 import type { AdoptionPlan } from "../../core/adoption/operations";
 import { planAdoption } from "../../effects/adoption/plan";
@@ -99,6 +99,10 @@ export function runAdoptionPlan(opts: RunAdoptionPlanOptions): RunAdoptionPlanRe
   };
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 export function renderApplyReport(report: AdoptionApplyReport, json = false): string {
   if (json) return `${JSON.stringify(report, null, 2)}\n`;
   const lines = [
@@ -114,6 +118,15 @@ export function renderApplyReport(report: AdoptionApplyReport, json = false): st
     }, {});
     for (const [status, count] of Object.entries(counts).sort()) lines.push(`[init] ${status}: ${count}`);
     if (report.apply.transactionManifestPath) lines.push(`[init] transaction: ${report.apply.transactionManifestPath}`);
+    // A failed transaction rolls back by itself; a committed one keeps each replaced file's copy for a manual restore.
+    if (!report.apply.rollback) {
+      for (const result of report.apply.results) {
+        if (result.status !== "applied" || !result.backupPath || !result.path) continue;
+        const backup = join(report.repoRoot, result.backupPath);
+        const target = join(report.repoRoot, result.path);
+        lines.push(`[init] backup: ${result.path} -> ${backup} (restore: cp ${shellQuote(backup)} ${shellQuote(target)})`);
+      }
+    }
     for (const result of report.apply.results.filter((entry) => entry.status === "failed")) {
       lines.push(`[init] failed operation: ${result.id}${result.error ? ` - ${result.error}` : ""}`);
     }

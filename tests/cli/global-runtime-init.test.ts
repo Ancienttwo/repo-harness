@@ -2910,6 +2910,15 @@ describe('Global Working Rules refresh during install and update', () => {
 
   const rulesStep = (result: ReturnType<typeof runGlobalRuntimeSetup>) =>
     result.steps.find((step) => step.step === 'refresh global working rules');
+  const backupDir = (home: string) => join(home, '.repo-harness', 'backups', 'global-context');
+
+  /** The write detail with the backup suffix, after a check that the named copy holds the replaced bytes. */
+  const backedUp = (home: string, path: string, write: string, replaced: string, detail: string | undefined): string => {
+    const backup = detail?.match(/ \(backup: (.+?); restore: /)?.[1] ?? '';
+    expect(dirname(backup)).toBe(backupDir(home));
+    expect(readFileSync(backup, 'utf-8')).toBe(replaced);
+    return `${write} (backup: ${backup}; restore: cp '${backup}' '${path}')`;
+  };
 
   // An older parent CLI hands update to the candidate without a report language.
   test('a candidate-style update without a language skips legacy and unrecorded files and exits 0', () => withRulesRuntime(({ home, path, run }) => {
@@ -2970,7 +2979,7 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
   }), 30_000);
 
-  test('a CRLF file with a recorded header stays CRLF and a second update is a no-op', () => withRulesRuntime(({ path, run }) => {
+  test('a CRLF file with a recorded header stays CRLF and a second update is a no-op', () => withRulesRuntime(({ home, path, run }) => {
     const crlf = (text: string) => text.replace(/\n/g, '\r\n');
     const expected = crlf(`${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })}\n${userAfter}`);
     writeFileSync(path, expected);
@@ -2979,11 +2988,14 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(rulesStep(unchanged)).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
     expect(readFileSync(path, 'utf-8')).toBe(expected);
 
-    writeFileSync(path, expected.replace('Rule 0:', 'Old rule 0:'));
+    const stale = expected.replace('Rule 0:', 'Old rule 0:');
+    writeFileSync(path, stale);
     const refreshed = run();
-    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: `updated:${path}` });
+    const detail = rulesStep(refreshed)?.detail;
+    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: backedUp(home, path, `updated:${path}`, stale, detail) });
     expect(readFileSync(path, 'utf-8')).toBe(expected);
     expect(rulesStep(run())).toMatchObject({ status: 'ok', detail: `unchanged:${path}` });
+    expect(readdirSync(backupDir(home))).toHaveLength(1);
   }), 60_000);
 
   test('a file that changes between preflight and apply fails with the re-run message', () => withRulesRuntime(({ home, path }) => {
@@ -2996,6 +3008,20 @@ describe('Global Working Rules refresh during install and update', () => {
       detail: `failed:${path} (changed after preflight; re-run)`,
     });
     expect(readFileSync(path, 'utf-8')).toBe(`${mixedLegacy}\n## Added later\n`);
+  }));
+
+  test.skipIf(process.getuid?.() === 0)('a failed backup copy leaves the rules file unwritten', () => withRulesRuntime(({ home, path }) => {
+    writeFileSync(path, mixedLegacy);
+    mkdirSync(backupDir(home), { recursive: true });
+    chmodSync(backupDir(home), 0o500);
+    try {
+      const applied = applyGlobalContextRefresh(preflightGlobalContextRefresh(ROOT, home, ['codex'], 'en'), home);
+      expect(applied.status).toBe('failed');
+      expect(applied.detail).toStartWith(`failed:${path} (EACCES`);
+    } finally {
+      chmodSync(backupDir(home), 0o700);
+    }
+    expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
   }));
 
   test('a failed install transaction restores both rules files from the backup', () => withRulesRuntime(({ home, path }) => {
@@ -3013,13 +3039,14 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(readFileSync(claudePath, 'utf-8')).toBe('claude user notes\n');
   }));
 
-  test('a flag migrates the legacy span, keeps every user section, and a second update is a no-op', () => withRulesRuntime(({ path, run }) => {
+  test('a flag migrates the legacy span, keeps every user section, and a second update is a no-op', () => withRulesRuntime(({ home, path, run }) => {
     writeFileSync(path, mixedLegacy);
     const migrated = run('zh-CN');
     expect(migrated.exitCode).toBe(0);
+    const migratedDetail = rulesStep(migrated)?.detail;
     expect(rulesStep(migrated)).toMatchObject({
       status: 'ok',
-      detail: `migrated-legacy:${path} (replaced: Global Working Rules, Sufficiency and Stop Boundaries, Progressive Due Diligence; kept user sections: Model Routing, Herdr 跨 harness 协作, Disk hygiene on the Mac mini)`,
+      detail: backedUp(home, path, `migrated-legacy:${path} (replaced: Global Working Rules, Sufficiency and Stop Boundaries, Progressive Due Diligence; kept user sections: Model Routing, Herdr 跨 harness 协作, Disk hygiene on the Mac mini)`, mixedLegacy, migratedDetail),
     });
     const block = renderGlobalRulesBlock(ROOT, { preset: 'zh-CN', instruction: 'Use Chinese to report to user.' });
     const expected = `${userBefore}${block}\n${userBetween}${userAfter}`;
@@ -3035,13 +3062,20 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(readFileSync(path, 'utf-8')).toBe(expected);
 
     // A recorded header refreshes a stale block without a flag; the header wins over a flag.
-    writeFileSync(path, expected.replace('Rule 0:', 'Old rule 0:'));
+    const stale = expected.replace('Rule 0:', 'Old rule 0:');
+    writeFileSync(path, stale);
     const refreshed = run('en');
-    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: `updated:${path}` });
+    const refreshedDetail = rulesStep(refreshed)?.detail;
+    expect(rulesStep(refreshed)).toMatchObject({ status: 'ok', detail: backedUp(home, path, `updated:${path}`, stale, refreshedDetail) });
     expect(readFileSync(path, 'utf-8')).toBe(expected);
+
+    // The printed restore command puts the user's pre-migration file back.
+    const restore = migratedDetail?.match(/; restore: (.+)\)$/)?.[1] ?? '';
+    expect(spawnSync('sh', ['-c', restore]).status).toBe(0);
+    expect(readFileSync(path, 'utf-8')).toBe(mixedLegacy);
   }), 60_000);
 
-  test('an unrecorded block needs a flag, and install also runs the refresh', () => withRulesRuntime(({ path, run }) => {
+  test('an unrecorded block needs a flag, and install also runs the refresh', () => withRulesRuntime(({ home, path, run }) => {
     const unrecorded = `${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })
       .replace(/^<!-- repo-harness reporting-language: .*\n/m, '')}`;
     writeFileSync(path, unrecorded);
@@ -3053,7 +3087,8 @@ describe('Global Working Rules refresh during install and update', () => {
 
     const recorded = run('en', false);
     expect(recorded.exitCode).toBe(0);
-    expect(rulesStep(recorded)).toMatchObject({ status: 'ok', detail: `updated:${path}` });
+    const recordedDetail = rulesStep(recorded)?.detail;
+    expect(rulesStep(recorded)).toMatchObject({ status: 'ok', detail: backedUp(home, path, `updated:${path}`, unrecorded, recordedDetail) });
     expect(readFileSync(path, 'utf-8'))
       .toBe(`${userBefore}${renderGlobalRulesBlock(ROOT, { preset: 'en', instruction: 'Use English to report to user.' })}`);
   }), 60_000);

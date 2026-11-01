@@ -11,7 +11,7 @@
  */
 
 import { accessSync, constants, lstatSync, mkdirSync, readFileSync, writeFileSync, type Stats } from 'fs';
-import { dirname, join } from 'path';
+import { basename, dirname, join } from 'path';
 import { assertConfigurationPath } from './configuration-ownership';
 
 export const GLOBAL_RULES_BEGIN = '<!-- BEGIN: repo-harness global-working-rules -->';
@@ -505,6 +505,26 @@ export interface GlobalContextRefresh {
   readonly detail: string;
 }
 
+function shellQuote(value: string): string {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
+/**
+ * Keeps the bytes and mode that a changed write replaces, under one fixed
+ * directory. The install transaction deletes its own snapshot on success, so
+ * this copy is the only one left after an update. A failed copy throws, and
+ * the caller then does not write the target. Nothing deletes these copies.
+ */
+function backupGlobalContextFile(path: string, home: string): string {
+  const dir = join(home, '.repo-harness', 'backups', 'global-context');
+  mkdirSync(dir, { recursive: true, mode: 0o700 });
+  const host = basename(dirname(path)).replace(/^\./, '');
+  const stamp = new Date().toISOString().replace(/[:.]/g, '-');
+  const backup = join(dir, `${host}-${basename(path)}.${stamp}-${process.pid}.bak`);
+  writeFileSync(backup, readFileSync(path), { flag: 'wx', mode: lstatSync(path).mode & 0o777 });
+  return backup;
+}
+
 /**
  * Writes the preflight plan. Status is ok only when every file is current or
  * written, skipped when a file was not synced, and failed only for an error
@@ -527,9 +547,12 @@ export function applyGlobalContextRefresh(plan: GlobalContextRefreshPlan, home: 
         details.push(`failed:${file.path} (changed after preflight; re-run)`);
         continue;
       }
+      const backup = file.current !== null && file.next !== file.current ? backupGlobalContextFile(file.path, home) : null;
       mkdirSync(dirname(file.path), { recursive: true });
       writeFileSync(file.path, file.next!, 'utf-8');
-      details.push(file.detail);
+      details.push(backup === null
+        ? file.detail
+        : `${file.detail} (backup: ${backup}; restore: cp ${shellQuote(backup)} ${shellQuote(file.path)})`);
     } catch (error) {
       failed = true;
       details.push(`failed:${file.path} (${(error as Error).message})`);
