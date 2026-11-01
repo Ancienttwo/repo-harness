@@ -11,3 +11,9 @@ responsibilities:
 source:
   include:
     - src/effects/managed-tree.ts
+    - src/effects/pi-executable.ts
+    - src/effects/pi-agent-dir.ts
+    - src/effects/path-identity.ts
+    - src/effects/setup/pi-host-probe.ts
+    - src/effects/setup/pi-herdr-integration.ts
+    - src/effects/setup/pi-capability-child.ts
