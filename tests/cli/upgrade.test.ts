@@ -921,17 +921,21 @@ describe('legacy workflow-state upgrade report', () => {
     const path = join(opts.cwd, 'package.json');
     put(join(opts.cwd, 'build.ts'), 'console.log("build");\n');
     put(join(opts.cwd, 'node_modules/.bin/vite'), '#!/bin/sh\n');
-    const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
+    const bytes = `${JSON.stringify({ name: 'fixture', workspaces: ['packages/*'], scripts: {
       check: 'bun run check:task-workflow && bun run typecheck',
       verify: 'npm run -s lint',
       typecheck: 'tsc',
       build: 'bun run build.ts && bun run vite',
+      'build:all': 'bun run --filter "*" build',
+      'lint:app': 'bun run --filter app lint',
+      'dev:a': 'npm run dev -w packages/a',
+      'test:ws': 'npm run -w packages/a test',
     } }, null, 2)}\n`;
     put(path, bytes);
     const check = runUpgrade({ ...opts, scope: 'project' });
     expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report' })]);
     expect(check.items[0]?.reason).toContain('check: bun run check:task-workflow && bun run typecheck (missing script "check:task-workflow"); verify: npm run -s lint (missing script "lint")');
-    for (const live of ['typecheck: tsc', 'build:']) expect(check.items[0]?.reason).not.toContain(live);
+    for (const live of ['typecheck: tsc', 'build:', 'lint:app', 'dev:a', 'test:ws']) expect(check.items[0]?.reason).not.toContain(live);
     expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
     expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
     expect(readFileSync(path, 'utf8')).toBe(bytes);
