@@ -3,4 +3,4 @@ id: relation.task-fleet.task-inbox.execution-primitives
 kind: calls
 source: component.task-fleet.task-inbox
 target: capability.workflow-engine.execution-primitives
-intent: "Hold exclusive directory locks under the Git common directory for the task inbox"
+intent: "Hold exclusive directory locks under the Git common directory for the task inbox, and validate the shared task message claim and message fields"

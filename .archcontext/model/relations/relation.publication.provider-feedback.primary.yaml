@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.publication.provider-feedback.primary"
-kind: "calls"
-source: "component.publication.provider-feedback"
-target: "component.publication.primary"
-intent: "Observe explicit provider PR identity and exact head/base through the shared readiness implementation before admitted feedback intake"
