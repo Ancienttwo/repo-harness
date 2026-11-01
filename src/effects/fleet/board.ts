@@ -1,4 +1,3 @@
-import { createHash } from 'crypto';
 import { lstatSync, realpathSync } from 'fs';
 import { sep } from 'path';
 

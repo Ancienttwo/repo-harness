@@ -9,7 +9,7 @@
   "summary": "Builds one MCP server per context and dispatches every tool call to the exact profile tool block.",
   "responsibilities": [
     "Build the server instructions and the closed tool inventory for the selected profile.",
-    "Route each tool call to the state, Engineer, Fleet, coding, reader or Herdr task-dispatch block.",
+    "Route each tool call to the state, Fleet, coding, reader or Herdr task-dispatch block.",
     "Serve the PM MCP binding beside the main server."
   ],
   "source": {

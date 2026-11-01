@@ -513,12 +513,6 @@ class OperatorFleetTimeoutError extends Error {
   }
 }
 
-interface PublicFailure {
-  readonly status: number;
-  readonly message: string;
-  readonly next_action: string;
-}
-
 // Observation children are read-only. Git must not fetch promised objects,
 // take optional locks or prompt. Apply these last so caller values cannot reopen them.
 const OPERATOR_READ_ONLY_GIT_ENVIRONMENT = { GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;

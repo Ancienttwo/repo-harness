@@ -2,7 +2,6 @@ import { canonicalize } from '../evidence/canonical-json';
 import { retiredDeliveryChannel } from '../messages/task-message-error';
 import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 import {
-  assertMessageBoundedUtf8,
   assertMessageExactKeys,
   assertMessageTimestamp,
   assertMessageUuid,
@@ -377,7 +376,7 @@ export function canonicalTaskMessageDeliveryReceiptBytes(receipt: TaskMessageDel
 }
 
 export type TaskMessageReceiptTransition =
-  | { readonly state: 'delivered'; readonly at: string; readonly delivery_channel?: TaskMessageDeliveryChannel; readonly delivery_ref?: string }
+  | { readonly state: 'delivered'; readonly at: string; readonly delivery_channel?: TaskMessageDeliveryChannel }
   | { readonly state: 'acknowledged'; readonly at: string }
   | { readonly state: 'superseded' };
 
@@ -393,10 +392,7 @@ export function transitionTaskMessageDeliveryReceipt(
     if (valid.delivery_state !== 'pending') {
       throw new TaskMessageError('task_message_transition_invalid', `cannot deliver a ${valid.delivery_state} receipt`);
     }
-    // The channel and its bounded control reference settle together at
-    // delivery: a human-facing channel that delivers a receipt reserved for an
-    // effect records its own channel, never a fabricated effect reference.
-    const settled = Object.freeze({ ...valid, delivery_state: 'delivered', delivery_channel: transition.delivery_channel ?? valid.delivery_channel, delivery_ref: transition.delivery_ref ?? valid.delivery_ref, delivered_at: transition.at });
+    const settled = Object.freeze({ ...valid, delivery_state: 'delivered', delivery_channel: transition.delivery_channel ?? valid.delivery_channel, delivered_at: transition.at });
     return validateTaskMessageDeliveryReceipt(settled);
   }
   if (transition.state === 'acknowledged') {

@@ -184,7 +184,6 @@
     "tests/unit/closeout-runner-guardrails.test.ts": 23561.14,
     "tests/unit/contract-worktree-runtime-bootstrap.test.ts": 1064.02,
     "tests/unit/cutover-closure-gate.test.ts": 899.17,
-    "tests/unit/engineer-binding-store.test.ts": 4330.28,
     "tests/unit/external-source-authority.test.ts": 2.64,
     "tests/unit/external-source-binding-wp2.test.ts": 3.49,
     "tests/unit/external-source-intake-p0.test.ts": 0.94,
