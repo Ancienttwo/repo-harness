@@ -8,25 +8,30 @@ required version from `package.json`; there is no separate version constant.
 
 ## Published package evidence
 
-On 2026-11-01 the `Ancienttwo/arch-context` repository had no `v0.11.0` tag and
-no GitHub Release. The newest tag and Release were `v0.10.0`. The npm registry
-published `archctx-contracts@0.11.0` at 12:21:24Z and `archctx@0.11.0` at
-12:23:00Z, and reported `latest` 0.11.0 for both. Neither registry manifest has
-a `gitHead` field. The registry `dist.integrity` values are:
+Source: `Ancienttwo/arch-context` `04b4c1084d78f7c2fa805f4cebd64a84bee84924`,
+the merge of arch-context PR #441 (`release/0.11.0`). Release:
+<https://github.com/Ancienttwo/arch-context/releases/tag/v0.11.0>, published
+2026-11-01T12:35:16Z. Its annotated tag `v0.11.0` (tag object
+`b83f3702be52292b3542ebe3602f8d2d67f106ec`, tagger date 12:35:08Z) points to
+that commit. The tag is unsigned. The npm registry published
+`archctx-contracts@0.11.0` at 12:21:24Z and `archctx@0.11.0` at 12:23:00Z, and
+reported `latest` 0.11.0 for both. Neither registry manifest has a `gitHead`
+field. The registry `dist.integrity` values are:
 
 - `archctx@0.11.0`: `sha512-tTQlK5/QZwdIi4g921OfpBG//ZrnAlsKJtuw/fZeCpeAu6Y0jVsweVqyvFGxx+nh7B5rW74vf+7i+sm/ykW/CQ==`.
 - `archctx-contracts@0.11.0`: `sha512-NECt6puJ0d32AHdVXQ0YwjvN6OycAHITe1L2z18n5paweh8QTanvgASzHncShVbB0h5XAgC3Ku0L3y8Rh5U/hw==`.
 
-Source candidate: `04b4c1084d78f7c2fa805f4cebd64a84bee84924`, the merge of
-arch-context PR #441 (`release/0.11.0`) at 12:05:09Z and the `origin/main` head
-at verification time. A clean-room pack of that commit gives an
+The Release has three assets: `archctx-0.11.0.tgz`, `archctx-contracts-0.11.0.tgz`
+and `SHA256SUMS`. Each tarball asset is byte-identical (`cmp`) to the registry
+tarball, so its SHA-512 equals the `dist.integrity` above. Both `SHA256SUMS`
+lines equal the SHA-256 values below, and `shasum -a 256 -c SHA256SUMS` passes.
+
+Supporting evidence: a clean-room pack of `04b4c108` gives an
 `archctx-contracts` tarball whose SHA-512 equals the registry `dist.integrity`.
 Its `archctx` tarball has the same 106 members as the registry tarball. Only
 `bin/archctx.mjs` differs, and only in bundler comment lines that record the
 absolute path of linked build dependencies. After those comment paths are
-normalized, the bundles are identical. The missing tag and Release are a
-provenance gap: the source revision is inferred from this rebuild and the
-merge time, not from a signed upstream reference.
+normalized, the bundles are identical.
 
 Installed with `bun add --exact archctx@0.11.0 archctx-contracts@0.11.0`. The
 script downloaded each published npm tarball, compared every regular archive
