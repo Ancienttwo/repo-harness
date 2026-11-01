@@ -526,8 +526,8 @@ function scanPackageScripts(root: string, add: AddItem): void {
     reason: `Package scripts call a helper that this package does not ship or a script that package.json does not define; review them without automatic edits: ${findings.join('; ')}` });
 }
 
-/** Session-recovery packets from retired generators carry this marker in their first lines. */
-const RETIRED_GENERATOR_MARKER = /^<!-- generated-by: repo-harness (codex-handoff-resume|prepare-handoff|prepare-codex-handoff) v\d+ -->$/;
+/** codex-handoff-resume is the only retired generator that a release shipped with this marker (resume.md). */
+const RETIRED_GENERATOR_MARKER = /^<!-- generated-by: repo-harness (codex-handoff-resume) v\d+ -->$/;
 const RETIRED_GENERATOR_MARKER_LINES = 3;
 
 /**
@@ -558,12 +558,18 @@ function filesBelow(repoRoot: string, path: string): string[] {
   return readdirSync(join(repoRoot, path)).sort().flatMap((name) => filesBelow(repoRoot, `${path}/${name}`));
 }
 
-/** Repo-relative POSIX paths of the files that a retired rule matches. */
+/**
+ * Repo-relative POSIX paths of the files that a retired rule matches. A rule
+ * below a symlinked ancestor matches nothing: those files are outside the repository.
+ */
 export function retiredRuntimeRuleFiles(repoRoot: string, rule: string): string[] {
-  if (!rule.endsWith('*')) return filesBelow(repoRoot, rule.replace(/\/$/, ''));
+  if (!rule.endsWith('*')) {
+    const path = rule.replace(/\/$/, '');
+    return isLegacyPathSafe(repoRoot, join(repoRoot, path)) ? filesBelow(repoRoot, path) : [];
+  }
   const parent = dirname(rule);
   const prefix = basename(rule).slice(0, -1);
-  if (!stat(join(repoRoot, parent))?.isDirectory()) return [];
+  if (!isLegacyPathSafe(repoRoot, join(repoRoot, parent), false) || !stat(join(repoRoot, parent))?.isDirectory()) return [];
   return readdirSync(join(repoRoot, parent)).sort().filter((name) => name.startsWith(prefix))
     .flatMap((name) => filesBelow(repoRoot, `${parent}/${name}`));
 }
