@@ -90,9 +90,8 @@ a host file descriptor.
 
 No shell operator library exists. Product changes to handler behavior belong
 in `src/cli/hook/` and its tests. Run packaged helpers with
-`repo-harness run <helper>`. `prepare-handoff` runs only
-`recovery-view-cli.ts`. `summarize-failures` reads the same `FAILURE_LOG_FILE`
-that the edit guard writes.
+`repo-harness run <helper>`. `summarize-failures` reads the same
+`FAILURE_LOG_FILE` that the edit guard writes.
 
 Init and upgrade preserve an old `.ai/hooks/lib/workflow-state.sh`, including
 edits. Doctor reports it as legacy. Change its callers to

@@ -27,7 +27,7 @@ inside the repository while keeping unified workflow helper implementation in
 the global package runtime. A maintainer hands Claude, Codex, or a future agent
 a GitHub issue and PR. The agent works in an isolated branch or worktree. The
 maintainer reviews completion from the issue, PR checks, CI, the PR description
-and the handoff.
+and the claim status comments.
 
 The same authority model may support persistent logical Module Engineers. The
 engineer is a repo-defined role with a reviewed SOP and repo-grounded knowledge;
@@ -62,8 +62,9 @@ repos.
 ## Core Invariants
 
 - Durable truth lives in the GitHub issue and PR, `docs/prds/`,
-  `.ai/harness/evidence/events/log.jsonl`, `.ai/harness/runs/*.json`, and
-  `.ai/harness/handoff/`.
+  `.ai/harness/evidence/events/log.jsonl` and `.ai/harness/runs/*.json`.
+- Session handoff uses the issue, the PR and the claim comments. No local file
+  carries resume state.
 - Helper implementation is package-owned for adopted downstream repositories;
   root `scripts/` in this repository are self-hosted source/runtime only.
 - No local plan, todo, workstream or contract artifact carries task state.
@@ -108,7 +109,7 @@ repos.
 | `docs/prds/DESIGN-*.md` | Designer | Optional design brief and UX guard, used only when the task requests it |
 | `.ai/harness/evidence/events/log.jsonl` | Verification Plan executor | Accepted execution events bind immutable runs |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
-| `.ai/harness/handoff/` | Session owner | Resume packets and exact next step |
+| `.ai/harness/handoff/task-goal.md`, `.ai/harness/handoff/chatgpt-plan.md` | MCP planner bridge | Goal and plan notes that the planner hands to the local executor; no task authority |
 | `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; a frontend task cites the design brief when the task requests one, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries
@@ -181,8 +182,8 @@ readback is a separate release check, never a task AcceptanceReceipt field.
   repo-harness helper scripts under `scripts/` or `.ai/harness/scripts/`.
 - A GitHub issue with a PR can be implemented, verified and closed using only
   the issue, PR description and CI.
-- A fresh agent session can read the issue, PR and handoff first and resume from
-  the exact next step.
+- A fresh agent session can read the issue, the PR and the latest claim status
+  comment and resume from the exact next step.
 - A maintainer can reject or accept an agent change from the PR description and
   the machine evidence.
 - The issue/PR loop can drive work to completion using only `repo-harness state

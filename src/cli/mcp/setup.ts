@@ -48,7 +48,6 @@ export interface McpSetupResult {
 const REQUIRED_CODEX_TOOLS = [
   'harness_status',
   'read_workflow_file',
-  'latest_handoff',
   'latest_checks',
   'write_task_goal',
 ];
@@ -459,7 +458,7 @@ repo-harness mcp prepare-goal --repo . --issue <n>
 ## Test Prompt
 
 \`\`\`text
-Use repo-harness to inspect this repo. Call harness_status, latest_handoff, and list_workflow_files. Do not write files.
+Use repo-harness to inspect this repo. Call harness_status and list_workflow_files. Do not write files.
 \`\`\`
 
 ## Reader Test Prompt
@@ -536,7 +535,7 @@ supported path off it.
 ## PRD Prompt
 
 \`\`\`text
-Use repo-harness discover_harness_repos first, pass query/name/repo_path when the user gives repo-like text such as "my-app/", choose the exact target repo_path, inspect docs/spec.md, tasks/lessons.md, latest handoff, and existing PRDs under docs/prds/ in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
+Use repo-harness discover_harness_repos first, pass query/name/repo_path when the user gives repo-like text such as "my-app/", choose the exact target repo_path, inspect docs/spec.md, tasks/lessons.md, and existing PRDs under docs/prds/ in that repo, then convert this idea into a PRD with write_prd_from_idea using the same repo_path. Do not edit source code.
 \`\`\`
 
 ## Goal Prompt
@@ -563,7 +562,7 @@ Use repo-harness-chatgpt-bridge. Execute the Goal prompt prepared for the curren
 - If ChatGPT returns unauthorized, verify OAuth discovery works and re-run the authorization passphrase flow.
 - If tools are missing, restart \`repo-harness mcp serve\` and rescan tools.
 - Run \`repo-harness mcp doctor --repo . --live\` to verify config, local server, tunnel, OAuth, initialize, and exact \`tools/list\` schema without printing credentials.
-- If workflow artifact writes fail, verify the target path is a PRD under \`docs/prds/\` or an approved handoff file.
+- If workflow artifact writes fail, verify the target path is a PRD under \`docs/prds/\` or a bridge file (\`.ai/harness/handoff/task-goal.md\` or \`chatgpt-plan.md\`).
 - If a workflow artifact write returns \`WOULD_OVERWRITE\` or \`REVISION_CONFLICT\`, call \`read_workflow_file\` on the target and retry with its \`sha256\` as \`expected_sha256\`. If it returns \`RETIRED_PARAMETER\`, drop the \`overwrite\` field: it was removed in 0.16.1 and replaced by \`expected_sha256\`.
 - If general repo writes fail, call \`get_repo_capabilities\`; write tools require a repo registered with \`accessMode: "read_write"\`.
 - If Codex cannot see the server, run \`repo-harness mcp setup codex --repo . --scope project\`.
@@ -889,7 +888,6 @@ args = [
 enabled_tools = [
   "harness_status",
   "read_workflow_file",
-  "latest_handoff",
   "latest_checks",
   "write_task_goal"
 ]

@@ -470,7 +470,7 @@ describe("create-project-dirs runtime smoke", () => {
       expect(policy.worktree_strategy.cleanup_script).toBe("repo-harness run contract-worktree cleanup --slug <slug>");
       expect(policy.worktree_strategy.validation_route).toBe("waza:check");
       expect(policy.context_budget).toBeUndefined();
-      expect(policy.handoff_resume.auto_start_new_session).toBe(false);
+      expect(policy.handoff_resume).toBeUndefined();
       expect(policy.planning.pending_orchestration_file).toBe(".ai/harness/planning/pending.json");
       expect(policy.planning.source_of_truth).toContain("transient host planning bridge");
       expect(policy.sidecar_research.output_dir).toBe("docs/researches");
