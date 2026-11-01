@@ -59,6 +59,31 @@ export type MergeReadinessRollbackBoundary =
   | { readonly status: 'not_active' }
   | { readonly status: 'ready'; readonly pr_number: number; readonly before_sha: string; readonly after_sha: string };
 
+/** The head refs that `publication merge --batch` accepts. */
+export const BATCH_REF = /^integration\/[1-9][0-9]*-batch-[1-9][0-9]*$/u;
+
+export interface RollbackParentV1 {
+  readonly before_sha: string;
+  /** `1` when the revert is `git revert -m 1`; null for a single-parent commit. */
+  readonly mainline: 1 | null;
+}
+
+/**
+ * The one decoder for the commit that a revert of a merged main PR restores. A squash commit has one parent.
+ * A `publication merge --batch` commit has the base as its first parent and the batch PR head as its second.
+ * Every other parent list returns null, and the caller fails closed.
+ */
+export function rollbackParent(afterSha: string, parents: readonly unknown[], prHead: unknown): RollbackParentV1 | null {
+  const shas = parents.map(parent => parent !== null && typeof parent === 'object' ? (parent as Record<string, unknown>).sha : undefined);
+  if (!shas.every((sha): sha is string => validSha(sha) && sha !== afterSha) || new Set(shas).size !== shas.length) return null;
+  if (shas.length === 1) return Object.freeze({ before_sha: shas[0]!, mainline: null });
+  if (shas.length !== 2 || prHead === null || typeof prHead !== 'object') return null;
+  const head = prHead as Record<string, unknown>;
+  return typeof head.ref === 'string' && BATCH_REF.test(head.ref) && head.sha === shas[1]
+    ? Object.freeze({ before_sha: shas[0]!, mainline: 1 })
+    : null;
+}
+
 /**
  * The closed stack-chain vocabulary. A member is an open PR whose base is not
  * the repository default branch. The effect follows the baseRefName chain and

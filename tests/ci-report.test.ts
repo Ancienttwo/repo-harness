@@ -380,6 +380,21 @@ test.each([
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
 }));
 
+test('a publication merge --batch commit reports its first parent and a mainline revert that restores it', () => fixture(async f => {
+  const batch = f.git('commit-tree', `${f.after}^{tree}`, '-p', f.before, '-p', f.after, '-m', 'batch merge');
+  f.git('merge', '-q', '--ff-only', batch);
+  const report = await reportCI('test/repo', 12, async (path, method, body) => {
+    if (path.startsWith('/repos/test/repo/pulls?')) return (await f.api(path) as Record<string, unknown>[]).map(pr => ({ ...pr, merge_commit_sha: batch }));
+    if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: batch, base: { ref: 'main' }, head: { ref: 'integration/1287-batch-3', sha: f.after } };
+    if (path.endsWith(`/git/commits/${batch}`)) return { sha: batch, parents: [{ sha: f.before }, { sha: f.after }] };
+    return f.api(path, method, body);
+  });
+  expect(report.errors).toEqual([]);
+  expect(report.merges).toEqual([{ pr: 7, before: f.before, after: batch, rollback: `git revert --no-edit -m 1 ${batch}` }]);
+  f.git(...report.merges[0]!.rollback.split(' ').slice(1));
+  expect(f.git('rev-parse', 'HEAD^{tree}')).toBe(f.git('rev-parse', `${f.before}^{tree}`));
+}));
+
 test('a parent introduced by another PR keeps the squash boundary valid', () => fixture(async f => {
   const report = await reportCI('test/repo', 12, (path, method, body) =>
     path === `/repos/test/repo/commits/${f.before}/pulls?per_page=100` ? Promise.resolve([{ number: 6 }]) : f.api(path, method, body));
