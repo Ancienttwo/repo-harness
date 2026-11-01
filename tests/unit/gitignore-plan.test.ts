@@ -9,6 +9,9 @@ import {
   gitignoreManagedBlockOperation,
 } from "../../src/effects/adoption/gitignore-plan";
 
+// A repository root without files: no retired runtime rule is kept.
+const ABSENT_REPO = join(tmpdir(), "gitignore-plan-absent-repo");
+
 describe("gitignore managed block .repo-harness rule", () => {
   test("relocated package readers share the asset and missing asset cannot write a fallback", () => {
     const root = join(import.meta.dir, "../..");
@@ -124,14 +127,14 @@ describe("gitignore managed block .repo-harness rule", () => {
   });
 
   test("the emitted operation carries the directory-level rule", () => {
-    const operation = gitignoreManagedBlockOperation("planned");
+    const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned");
     expect(operation.path).toBe(".gitignore");
     expect(operation.content.split("\n")).toContain(".repo-harness/");
     expect(operation.content).not.toContain(".repo-harness/chatgpt-browser.tokens.json");
   });
 
   test("extra content is appended without disturbing the directory rule", () => {
-    const operation = gitignoreManagedBlockOperation("planned", "custom-local/\n");
+    const operation = gitignoreManagedBlockOperation(ABSENT_REPO, "planned", "custom-local/\n");
     expect(operation.content.split("\n")).toContain(".repo-harness/");
     expect(operation.content).toContain("custom-local/");
   });

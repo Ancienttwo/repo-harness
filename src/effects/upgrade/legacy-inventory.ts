@@ -6,6 +6,7 @@ import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarn
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
+import { RETIRED_RUNTIME_IGNORE_RULES, retiredRuntimeRuleFiles } from '../adoption/gitignore-plan';
 
 export interface LeftoverItem {
   readonly location: 'project' | 'global';
@@ -649,6 +650,15 @@ export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: L
     };
     walk(join(root, '.ai'));
     scanPackageScripts(root, add);
+    // init keeps the ignore rule while these files exist; the rule leaves the block only after they are gone.
+    for (const rule of RETIRED_RUNTIME_IGNORE_RULES) {
+      for (const file of retiredRuntimeRuleFiles(root, rule)) {
+        const path = resolve(root, file);
+        add({ location: 'project', surface: stat(path)?.isSymbolicLink() ? 'symlink' : 'file', path, retiredBy: 'retired-runtime-ignore-rule',
+          ownership: 'unowned', proof: null, action: 'report',
+          reason: `Retired runtime state. The managed .gitignore block keeps ${rule} while this file exists; record upgrade decide --remove or --keep.` });
+      }
+    }
   }
   if (projectEnabled) scanProjectRefresh(options, actions, manifest, add);
   if (options.scope !== 'project') {

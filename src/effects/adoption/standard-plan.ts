@@ -720,7 +720,7 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   operations.push(writeOperation(opts.repoRoot, ".ai/harness/workflow-contract.json", renderWorkflowContractMarker(declaredMinimumHarnessVersion(fileContent(opts.repoRoot, ".ai/harness/workflow-contract.json"))), "Install the repo-harness opt-in marker"));
 
   const gitignore = fileContent(opts.repoRoot, ".gitignore") ?? "";
-  const gitignoreOperation = gitignoreManagedBlockOperation("planned");
+  const gitignoreOperation = gitignoreManagedBlockOperation(opts.repoRoot, "planned");
   operations.push({
     ...gitignoreOperation,
     status: managedBlockNeedsUpdate(gitignore, gitignoreOperation) ? "planned" : "skipped",
