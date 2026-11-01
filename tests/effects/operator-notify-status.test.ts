@@ -625,7 +625,7 @@ describe('notify plugin status', () => {
         const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
         expect(sent).toHaveLength(4);
         const bot = sent.find(item => item.url.includes('bot.example'))!;
-        expect(bot.body).toMatchObject({ repository: 'demo-repo', task: 'task-1019', request_id: 'req-2' });
+        expect(bot.body).toMatchObject({ repository: 'demo-repo', data: { task: 'task-1019', request_id: 'req-2' } });
         const slack = sent.find(item => item.url === SLACK)!;
         expect(String(slack.body.text)).toContain('task task-1019 · request req-2');
         expect(String(slack.body.text)).not.toContain('repo-key-1');
@@ -647,14 +647,15 @@ describe('notify plugin status', () => {
           const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
           const bot = sent.find(item => item.url.includes('bot.example'))!;
           expect(bot.body).toMatchObject({ repository: 'demo-repo' });
-          expect(bot.body).not.toHaveProperty('task');
-          expect(bot.body).not.toHaveProperty('request_id');
+          expect(bot.body.data).not.toHaveProperty('task');
+          expect(bot.body.data).not.toHaveProperty('request_id');
           expect(String(sent.find(item => item.url === SLACK)!.body.text)).not.toContain('task ');
         }
         rmSync(join(f.root, 'state'), { recursive: true, force: true });
         const { sent } = await run(f);
         const bare = sent.find(item => item.url.includes('bot.example'))!.body;
-        for (const key of ['repository', 'task', 'request_id']) expect(bare).not.toHaveProperty(key);
+        expect(bare.repository).toBeNull();
+        for (const key of ['task', 'request_id']) expect(bare.data).not.toHaveProperty(key);
       } finally { f.cleanup(); }
     });
 
@@ -668,7 +669,7 @@ describe('notify plugin status', () => {
         const path = join(repoRoot, '.ai/harness/runs/task-agents/key-1/binding.json');
         writeFileSync(path, readFileSync(path, 'utf8').replace('"repo-key-1"', JSON.stringify(key)));
         const { sent, stderr, state } = await run(f, { worktree: { repo_key: key, repo_root: repoRoot, repo_name: 'demo-repo' } });
-        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: 'demo-repo', task: 'task-1019', request_id: 'req-2' });
+        expect(sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ repository: 'demo-repo', data: { task: 'task-1019', request_id: 'req-2' } });
         const everything = JSON.stringify(sent.map(item => item.body)) + stderr.join('\n')
           + readdirSync(state).map(name => readFileSync(join(state, name), 'utf8')).join('\n');
         expect(everything).not.toContain('/Users/some one');
@@ -681,13 +682,13 @@ describe('notify plugin status', () => {
       const f = fixture();
       try {
         const { sent } = await run(f, { worktree: { repo_key: '/Users/someone/Projects/demo-repo/.git' } });
-        expect(sent.find(item => item.url.includes('bot.example'))!.body).not.toHaveProperty('repository');
+        expect(sent.find(item => item.url.includes('bot.example'))!.body.repository).toBeNull();
         expect(JSON.stringify(sent)).not.toContain('/Users/someone');
         // A repo_name that is not a plain name is not forwarded.
         rmSync(join(f.root, 'state'), { recursive: true, force: true });
         const odd = await run(f, { worktree: { repo_key: 'k', repo_name: '/Users/someone/demo-repo' } });
         expect(JSON.stringify(odd.sent)).not.toContain('/Users/someone');
-        expect(odd.sent.find(item => item.url.includes('bot.example'))!.body).not.toHaveProperty('repository');
+        expect(odd.sent.find(item => item.url.includes('bot.example'))!.body.repository).toBeNull();
       } finally { f.cleanup(); }
     });
 
@@ -702,8 +703,8 @@ describe('notify plugin status', () => {
           rmSync(join(f.root, 'state'), { recursive: true, force: true });
           const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
           const bot = sent.find(item => item.url.includes('bot.example'))!;
-          expect(bot.body).toMatchObject({ task: 'task-1019' });
-          expect(bot.body).not.toHaveProperty('request_id');
+          expect(bot.body).toMatchObject({ data: { task: 'task-1019' } });
+          expect(bot.body.data).not.toHaveProperty('request_id');
           expect(JSON.stringify(sent)).not.toContain('req-1');
         }
       } finally { f.cleanup(); }
@@ -718,15 +719,15 @@ describe('notify plugin status', () => {
         const { sent } = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
         const bot = sent.find(item => item.url.includes('bot.example'))!;
         expect(bot.body).toMatchObject({ repository: 'demo-repo' });
-        expect(bot.body).not.toHaveProperty('task');
-        expect(bot.body).not.toHaveProperty('request_id');
+        expect(bot.body.data).not.toHaveProperty('task');
+        expect(bot.body.data).not.toHaveProperty('request_id');
         expect(JSON.stringify(sent)).not.toContain('task-other');
         expect(JSON.stringify(sent)).not.toContain('task-1019');
         // Closing one of the two leaves a single open session, which is reported.
         writeFileSync(join(repoRoot, '.ai/harness/runs/task-agents/key-2/closed.json'), '{}');
         rmSync(join(f.root, 'state'), { recursive: true, force: true });
         const single = await run(f, { worktree: { repo_key: 'repo-key-1', repo_root: repoRoot, repo_name: 'demo-repo' } });
-        expect(single.sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ task: 'task-1019', request_id: 'req-2' });
+        expect(single.sent.find(item => item.url.includes('bot.example'))!.body).toMatchObject({ data: { task: 'task-1019', request_id: 'req-2' } });
       } finally { f.cleanup(); }
     });
 
