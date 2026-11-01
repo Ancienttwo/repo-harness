@@ -8,7 +8,7 @@ import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../.
 import { readActiveReviewAdmission } from '../admission/admission-store';
 import { readTaskAgent } from '../terminal/task-session-reader';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import type { TaskRequest } from '../terminal/task-session';
+import type { TaskRequest } from '../../core/review/runner-port';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
 export const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(value)));
 export const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonical(value)).digest('hex')}`;

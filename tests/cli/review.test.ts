@@ -2,6 +2,7 @@ import { afterEach, expect, spyOn, test } from 'bun:test';
 import { createHash } from 'node:crypto';
 import { readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
+import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { buildReviewCommand, pullRequestSelectionFromOptions } from '../../src/cli/commands/review';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
 import { readCurrentReviewAdmissionSelection, readReviewAdmission } from '../../src/effects/admission/admission-store';
@@ -44,7 +45,7 @@ async function runReview(home: string, args: readonly string[]) {
   const err = spyOn(console, 'error').mockImplementation((value: unknown) => { stderr += `${String(value)}\n`; });
   try {
     process.exitCode = 0;
-    await buildReviewCommand().parseAsync([...args], { from: 'user' });
+    await buildReviewCommand(taskReviewRunner).parseAsync([...args], { from: 'user' });
     return { status: Number(process.exitCode ?? 0), stdout, stderr };
   } finally {
     homeSpy.mockRestore(); out.mockRestore(); err.mockRestore(); process.exitCode = exitCode;
@@ -299,7 +300,7 @@ test('head movement between the review and the record stops before the record', 
 
 
 test('review round registers one admission repository id and parses the optional PR selection', () => {
-  const command = buildReviewCommand();
+  const command = buildReviewCommand(taskReviewRunner);
   const round = command.commands.find((child) => child.name() === 'round');
   if (!round) throw new Error('review round is missing');
   const longs = round.options.map((option) => option.long).filter((value): value is string => value !== undefined);
