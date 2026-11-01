@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.repository-registry
+kind: component
+name: Repository Registry and Account Home
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: effects
+summary: Reads and writes the registered repository records under the account-level repo-harness home.
+responsibilities:
+  - Own registered repository records, read_write grants and their authorization revision.
+  - Resolve the account-level repo-harness home root.
+source:
+  include:
+    - src/effects/repo-registry.ts
+    - src/effects/repo-harness-home.ts

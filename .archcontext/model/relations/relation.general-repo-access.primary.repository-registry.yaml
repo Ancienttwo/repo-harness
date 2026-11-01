@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.general-repo-access.primary.repository-registry
+kind: calls
+source: component.general-repo-access.primary
+target: component.execution-primitives.repository-registry
+intent: "Resolve registered repositories and their access mode from the shared repository registry"

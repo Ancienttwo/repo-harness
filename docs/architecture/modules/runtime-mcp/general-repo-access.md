@@ -133,7 +133,8 @@ sequenceDiagram
 已声明的出向 relation：
 
 - primary → codegraph-readiness：`general-repo-access.ts` 通过 `codegraph-adapter.ts` 读取索引元数据。路径先授权，再合并元数据（I1、I2）。
-- primary → `component.mcp-sidecar.repo-policy-registry`：`general-repo-access.ts` 和 `authority.ts` 调用 `repo-registry.ts`、`paths.ts`、`redaction.ts` 和 `audit.ts`。
+- primary → `component.mcp-sidecar.repo-policy-registry`：`general-repo-access.ts` 和 `authority.ts` 调用 `paths.ts`、`redaction.ts` 和 `audit.ts`。
+- primary → `component.execution-primitives.repository-registry`：`general-repo-access.ts` 和 `authority.ts` 调用 `src/effects/repo-registry.ts`（#1343）。
 
 入向调用来自 mcp-sidecar 的 primary 组件：`tools.ts` 分派到 `reader-tools.ts`，`reader-tools.ts` 调用 `callGeneralRepoTool`。
 
