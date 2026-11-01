@@ -2910,7 +2910,7 @@ describe('Global Working Rules refresh during install and update', () => {
 
   const rulesStep = (result: ReturnType<typeof runGlobalRuntimeSetup>) =>
     result.steps.find((step) => step.step === 'refresh global working rules');
-  const backupDir = (home: string) => join(home, '.repo-harness', 'backups', 'global-context');
+  const backupDir = (home: string) => join(home, '.repo-harness', 'global-context-backups');
 
   /** The write detail with the backup suffix, after a check that the named copy holds the replaced bytes. */
   const backedUp = (home: string, path: string, write: string, replaced: string, detail: string | undefined): string => {

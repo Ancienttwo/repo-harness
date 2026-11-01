@@ -514,9 +514,11 @@ function shellQuote(value: string): string {
  * directory. The install transaction deletes its own snapshot on success, so
  * this copy is the only one left after an update. A failed copy throws, and
  * the caller then does not write the target. Nothing deletes these copies.
+ * The directory is outside `~/.repo-harness/backups/`: the upgrade inventory
+ * reports each child there without a package version as a retired leftover.
  */
 function backupGlobalContextFile(path: string, home: string): string {
-  const dir = join(home, '.repo-harness', 'backups', 'global-context');
+  const dir = join(home, '.repo-harness', 'global-context-backups');
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const host = basename(dirname(path)).replace(/^\./, '');
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
