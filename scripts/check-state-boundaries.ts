@@ -1,9 +1,12 @@
 #!/usr/bin/env bun
 
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync, readFileSync } from 'node:fs';
-import { dirname, relative, resolve } from 'node:path';
+import { existsSync, lstatSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { dirname, join, relative, resolve } from 'node:path';
 import { API, type Checker, type Project, type Snapshot } from 'typescript/unstable/async';
+import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
+import { readArchitectureNativeContext, runPackageLocalArchctxJson } from '../src/effects/architecture/archctx-provider';
 import {
   NodeFlags,
   SyntaxKind,
@@ -51,6 +54,12 @@ import {
 const CORE_ROOTS = ['src/core'] as const;
 
 const INTRA_LAYER_ROOTS = ['src/cli', 'src/core', 'src/effects'] as const;
+
+// The core/plugin rule reads every non-test source file in these roots.
+const TIER_ROOTS = ['src', 'scripts'] as const;
+const HARNESS_TIERS = new Set(['core', 'plugin', 'composition']);
+const HARNESS_CONTRACTS = new Set(['Host', 'Event', 'Review', 'Surface', 'Check']);
+const ARCHCTX_RESOLVE_TIMEOUT_MS = 30_000;
 
 // Keyed by "<dir> <-> <dir>" in sorted order; each value states why the cycle remains.
 // Remove an entry when its cycle is gone; the checker reports a stale entry.
@@ -249,7 +258,7 @@ function collectTypeScriptFiles(
         ));
       } else if (entry.isDirectory()) {
         stack.push(absoluteEntry);
-      } else if (entry.isFile() && entry.name.endsWith('.ts')) {
+      } else if (entry.isFile() && /\.tsx?$/.test(entry.name)) {
         files.push(absoluteEntry);
       }
     }
@@ -881,6 +890,178 @@ function checkGeneratedCapabilityProjection(
   }
 }
 
+function isTierSource(file: string): boolean {
+  return !file.endsWith('.d.ts') && !/\.test\.tsx?$/.test(file);
+}
+
+interface TierEdge {
+  readonly source: SourceFile;
+  readonly node: Node;
+  readonly specifier: string;
+  readonly from: string;
+  readonly to: string;
+}
+
+function tierEdges(
+  repoRoot: string,
+  files: ReadonlySet<string>,
+  sources: ReadonlyMap<string, SourceFile>,
+  references: ReadonlyMap<SourceFile, ModuleReferences>,
+): TierEdge[] {
+  const edges: TierEdge[] = [];
+  for (const from of [...files].sort()) {
+    const source = sources.get(from);
+    if (!source) continue;
+    for (const { node, specifier } of references.get(source)!.resolved) {
+      if (!specifier.startsWith('.')) continue;
+      const base = relPath(repoRoot, resolve(dirname(source.fileName), specifier)).replace(/\.js$/, '');
+      const to = [base, `${base}.ts`, `${base}.tsx`, `${base}/index.ts`, `${base}/index.tsx`].find((candidate) => files.has(candidate));
+      if (to && to !== from) edges.push({ source, node, specifier, from, to });
+    }
+  }
+  return edges;
+}
+
+type TierOwner =
+  | { readonly kind: 'owned'; readonly nodeId: string; readonly capabilityId: string; readonly candidates: readonly string[] }
+  | { readonly kind: 'unowned' }
+  | { readonly kind: 'ambiguous'; readonly candidates: readonly string[] };
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
+}
+
+/**
+ * The capability resolver keeps only the owning capability. The tier rule
+ * also needs the matched node (`stableId`), because a component can carry its
+ * own tier. Both come from one package-local `archctx resolve` batch.
+ */
+function resolveTierOwners(repoRoot: string, paths: readonly string[]): Map<string, TierOwner> {
+  const dir = mkdtempSync(join(tmpdir(), 'repo-harness-tier-resolve-'));
+  try {
+    const listPath = join(dir, 'paths.txt');
+    writeFileSync(listPath, `${paths.join('\n')}\n`, { mode: 0o600 });
+    // Exit 2 means at least one ambiguous path; the envelope still carries every result.
+    const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ['resolve', '--paths-from', listPath, '--json'], {}, ARCHCTX_RESOLVE_TIMEOUT_MS, true);
+    if (!isRecord(value) || value.ok !== true) {
+      const error = isRecord(value) && isRecord(value.error) ? `${String(value.error.code)}: ${String(value.error.message)}` : 'invalid envelope';
+      throw new Error(`archctx resolve rejected the model: ${error}`);
+    }
+    const results = isRecord(value.data) ? value.data.results : undefined;
+    if (!Array.isArray(results) || results.length !== paths.length) throw new Error('archctx resolve returned a result count that does not match the request');
+    return new Map(results.map((result: unknown, index): [string, TierOwner] => {
+      const path = paths[index]!;
+      if (!isRecord(result) || result.path !== path || typeof result.ambiguous !== 'boolean'
+        || (result.candidates !== undefined && (!Array.isArray(result.candidates) || result.candidates.some((entry) => typeof entry !== 'string')))) {
+        throw new Error(`archctx resolve returned an invalid result for ${path}`);
+      }
+      const candidates = (result.candidates ?? []) as string[];
+      const capabilityId = result.owningCapabilityId;
+      if (capabilityId === null || capabilityId === undefined) {
+        return [path, result.ambiguous ? { kind: 'ambiguous', candidates } : { kind: 'unowned' }];
+      }
+      // An ambiguous result between components of one capability names no matched node.
+      const nodeId = result.ambiguous ? capabilityId : result.stableId;
+      if (typeof capabilityId !== 'string' || typeof nodeId !== 'string') throw new Error(`archctx resolve returned an invalid owner for ${path}`);
+      return [path, { kind: 'owned', nodeId, capabilityId, candidates }];
+    }));
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+interface NodeTier {
+  readonly tier: string;
+  readonly contract: string | null;
+}
+
+/** Tiers come only from `extensions.harnessTier` and `extensions.harnessContract` in the model. */
+function readNodeTiers(repoRoot: string, violations: StateBoundaryViolation[]): Map<string, NodeTier> {
+  const { model } = readArchitectureNativeContext(repoRoot, { kind: 'worktree' });
+  const tiers = new Map<string, NodeTier>();
+  for (const node of model.nodes) {
+    const id = String(node.id);
+    const file = model.sourcePaths.nodes[id] ?? `.archcontext/model/nodes/${id}.yaml`;
+    const extensions = isRecord(node.extensions) ? node.extensions : {};
+    const tier = extensions.harnessTier;
+    if (tier === undefined) {
+      if (node.kind === 'capability') violations.push(violation('HARNESS_TIER_MISSING', file, `${id} has no extensions.harnessTier (core, plugin or composition)`));
+      continue;
+    }
+    if (typeof tier !== 'string' || !HARNESS_TIERS.has(tier)) {
+      violations.push(violation('HARNESS_TIER_INVALID', file, `${id} has an unknown extensions.harnessTier: ${JSON.stringify(tier)}`));
+      continue;
+    }
+    const contract = extensions.harnessContract;
+    if (tier === 'plugin' && (typeof contract !== 'string' || !HARNESS_CONTRACTS.has(contract))) {
+      violations.push(violation('HARNESS_CONTRACT_INVALID', file, `plugin ${id} needs extensions.harnessContract (Host, Event, Review, Surface or Check); found ${JSON.stringify(contract ?? null)}`));
+      continue;
+    }
+    tiers.set(id, { tier, contract: tier === 'plugin' ? contract as string : null });
+  }
+  return tiers;
+}
+
+/**
+ * Core files may import only core files. The tier of a file is the tier of
+ * the node that ArchContext matched, else the tier of its owning capability.
+ * Plugins and the composition root may import core.
+ */
+function checkCoreTierImports(
+  repoRoot: string,
+  files: ReadonlySet<string>,
+  sources: ReadonlyMap<string, SourceFile>,
+  references: ReadonlyMap<SourceFile, ModuleReferences>,
+  violations: StateBoundaryViolation[],
+): void {
+  const edges = tierEdges(repoRoot, files, sources, references);
+  const endpoints = [...new Set(edges.flatMap((edge) => [edge.from, edge.to]))].sort();
+  if (endpoints.length === 0) return;
+  let owners: Map<string, TierOwner>;
+  let tiers: Map<string, NodeTier>;
+  try {
+    tiers = readNodeTiers(repoRoot, violations);
+    owners = resolveTierOwners(repoRoot, endpoints);
+  } catch (error) {
+    violations.push(violation(
+      'HARNESS_TIER_AUTHORITY_UNAVAILABLE',
+      '.archcontext/model/nodes',
+      `core/plugin tiers need the ArchContext model: ${error instanceof Error ? error.message : String(error)}`,
+    ));
+    return;
+  }
+
+  const fileTier = new Map<string, NodeTier & { readonly nodeId: string; readonly capabilityId: string }>();
+  for (const path of endpoints) {
+    const owner = owners.get(path)!;
+    if (owner.kind === 'unowned') {
+      violations.push(violation('HARNESS_TIER_OWNER_MISSING', path, 'no ArchContext node owns this file, so its core/plugin tier is unknown'));
+    } else if (owner.kind === 'ambiguous' || owner.candidates.some((candidate) => tiers.has(candidate) && candidate !== owner.capabilityId)) {
+      violations.push(violation('HARNESS_TIER_OWNER_AMBIGUOUS', path, `ambiguous ArchContext owner, so its core/plugin tier is unknown: ${owner.candidates.join(', ')}`));
+    } else {
+      // A missing or invalid tier is already reported on its node.
+      const tier = tiers.get(owner.nodeId) ?? tiers.get(owner.capabilityId);
+      if (tier) fileTier.set(path, { ...tier, nodeId: owner.nodeId, capabilityId: owner.capabilityId });
+    }
+  }
+
+  for (const edge of edges) {
+    if (fileTier.get(edge.from)?.tier !== 'core') continue;
+    const target = fileTier.get(edge.to);
+    if (!target || target.tier === 'core') continue;
+    const owner = target.nodeId === target.capabilityId ? target.capabilityId : `${target.nodeId} in ${target.capabilityId}`;
+    violations.push(nodeViolation(
+      repoRoot,
+      edge.source,
+      edge.node,
+      target.tier === 'plugin' ? 'CORE_IMPORTS_PLUGIN' : 'CORE_IMPORTS_COMPOSITION',
+      target.tier === 'plugin'
+        ? `core imports ${edge.to} (plugin ${owner}) through ${edge.specifier}; depend on the core ${target.contract} contract, or move or re-own the code`
+        : `core imports the composition root ${edge.to} (${owner}) through ${edge.specifier}; only the composition root may import plugins`,
+    ));
+  }
+}
+
 async function parseSources(
   repoRoot: string,
   relativeFiles: readonly string[],
@@ -902,10 +1083,11 @@ async function parseSources(
   let snapshot: Snapshot | undefined;
   try {
     const absoluteFiles = relativeFiles.map((file) => resolve(repoRoot, file));
-    const scriptPath = resolve(repoRoot, CAPABILITY_SCRIPT);
+    // tsconfig.json covers src/; scripts/ files get their default project.
+    const scriptFiles = absoluteFiles.filter((file) => !relPath(repoRoot, file).startsWith('src/'));
     snapshot = await api.updateSnapshot({
       openProjects: [configPath],
-      openFiles: existsSync(scriptPath) ? [scriptPath] : [],
+      openFiles: scriptFiles,
     });
     const configuredProject = snapshot.getProjects().find(
       (project) => resolve(project.configFileName) === configPath,
@@ -916,10 +1098,12 @@ async function parseSources(
 
     const projectsByFile = new Map<string, Project>();
     for (const file of absoluteFiles) projectsByFile.set(file, configuredProject);
-    if (existsSync(scriptPath) && !configuredProject.rootFiles.some((file) => resolve(file) === scriptPath)) {
-      const scriptProject = await snapshot.getDefaultProjectForFile(scriptPath);
-      if (!scriptProject) throw new Error(`TypeScript did not assign a project to ${CAPABILITY_SCRIPT}`);
-      projectsByFile.set(scriptPath, scriptProject);
+    const rootFiles = new Set(configuredProject.rootFiles.map((file) => resolve(file)));
+    for (const scriptFile of scriptFiles) {
+      if (rootFiles.has(scriptFile)) continue;
+      const scriptProject = await snapshot.getDefaultProjectForFile(scriptFile);
+      if (!scriptProject) throw new Error(`TypeScript did not assign a project to ${relPath(repoRoot, scriptFile)}`);
+      projectsByFile.set(scriptFile, scriptProject);
     }
 
     const violations: StateBoundaryViolation[] = [];
@@ -1014,8 +1198,16 @@ export async function checkStateBoundaries(
       ...effectsFiles,
       resolve(repoRoot, CAPABILITY_SCRIPT),
     ].filter((file) => existsSync(file)))].map((file) => relPath(repoRoot, file));
-    const parsed = await parseSources(repoRoot, sourceFiles);
+    // The layer roots above already report their own path problems.
+    const tierScanViolations: StateBoundaryViolation[] = [];
+    const tierFiles = new Set(TIER_ROOTS.flatMap((root) => collectTypeScriptFiles(repoRoot, root, tierScanViolations))
+      .map((file) => relPath(repoRoot, file)).filter(isTierSource));
+    violations.push(...tierScanViolations.filter((item) =>
+      !INTRA_LAYER_ROOTS.some((root) => item.file === root || item.file.startsWith(`${root}/`))));
+    const parsed = await parseSources(repoRoot, [...new Set([...sourceFiles, ...tierFiles])]);
     violations.push(...parsed.violations);
+    const layerSourceFiles = new Set(sourceFiles);
+    const layerSources = new Map([...parsed.sources].filter(([file]) => layerSourceFiles.has(file)));
 
     const coreSet = new Set(coreFiles.map((file) => relPath(repoRoot, file)));
     for (const file of coreSet) {
@@ -1036,8 +1228,9 @@ export async function checkStateBoundaries(
       const source = parsed.sources.get(file);
       if (source) checkSrcScriptImports(repoRoot, source, parsed.references.get(source)!, violations);
     }
-    checkIntraLayerCycles(repoRoot, parsed.sources, parsed.references, intraLayerCycleAllowances, violations);
-    checkCanonicalDeclarations(repoRoot, parsed.sources, violations);
+    checkIntraLayerCycles(repoRoot, layerSources, parsed.references, intraLayerCycleAllowances, violations);
+    checkCanonicalDeclarations(repoRoot, layerSources, violations);
+    checkCoreTierImports(repoRoot, tierFiles, parsed.sources, parsed.references, violations);
     checkCapabilityScript(repoRoot, parsed.sources.get(CAPABILITY_SCRIPT), violations);
     checkStateSnapshotAdapter(repoRoot, parsed.sources.get(STATE_SNAPSHOT_ADAPTER), violations);
     checkGeneratedCapabilityProjection(repoRoot, violations);

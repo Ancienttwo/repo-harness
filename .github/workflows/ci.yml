@@ -33,6 +33,10 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
+      # The core/plugin rule in check:state-boundaries runs package-local archctx, which needs Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
