@@ -11,8 +11,6 @@ responsibilities:
 source:
   include:
     - src/core/decision/**
-    - src/core/sessions/session-selector.ts
-    - src/core/sessions/task-sessions.ts
   exclude:
     - src/core/decision/pane-status.d.mts
     - src/core/decision/pane-status.mjs

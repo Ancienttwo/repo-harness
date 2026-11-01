@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.external-source-intake.workflow-state"
+kind: "depends-on"
+source: "capability.runtime-harness.external-source-intake"
+target: "capability.workflow-engine.workflow-state"
+intent: "Validate source bindings with the shared closed admitted-session selector"
