@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-view-core.acceptance-review
+kind: depends-on
+source: component.operator.architecture-view-core
+target: capability.verification.acceptance-review
+intent: "Plugin → core: apply the shared review finding rules in module review prompts"

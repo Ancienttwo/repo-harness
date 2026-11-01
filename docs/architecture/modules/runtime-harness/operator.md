@@ -427,11 +427,17 @@ The host installer, shared skill roots and catalog retain those responsibilities
 - 本 capability 的 include 和 architecture-view 组件删除了 `src/core/review/module-review-prompt.ts`。这个条目只在本分支上加过，main 上没有。
 - 新增 3 条关系到 acceptance-review：primary 和 architecture-view 使用 `ModuleReadError`，view-projections 使用 `ModuleReviewPromptV1` 类型。
 
+### 架构读取器、review prompt builder 与 agents 配置归 operator（2026-11-02，#1365）
+
+- 三个文件归 operator，文件路径不变：`src/effects/architecture/model-reader.ts` 归新的 `component.operator.architecture-reader`，`src/effects/configuration/agents-configuration.ts` 归新的 `component.operator.agents-configuration`，`src/core/review/module-review-prompt.ts` 归 `component.operator.architecture-view-core`。三个文件的导入方都是 operator 文件。
+- `flow.operator.primary` 的 `model-reader` 参与者改为 `component.operator.architecture-reader`。`read-model` 步骤由新的 `relation.operator.http-reader.architecture-reader` 证明。
+- 本 capability 读 global-runtime-reconciliation、contract-assets、acceptance-review、evidence-ledger 与 execution-primitives 的边都是 plugin → core。删除 `relation.operator.architecture-view.model-reader`、`relation.operator.http-reader.model-reader` 与 `relation.operator.view-projections.acceptance-review`。
+
 ## Optimization Backlog
 
 - `startOperatorServer` 仍集中处理路由、repository observation 队列、Fleet 队列和任务读取监督。拆分需要改动频率或性能证据。
 - `ModuleReadError` 现在在 `src/core/architecture/module-view.ts` 声明（#907）。architecture-view 与 primary 不再导入 acceptance-review。`relation.operator.architecture-view.acceptance-review` 与 `relation.operator.http-reader.acceptance-review` 没有源码边，需要删除。view-projections 仍导入 `ModuleReviewPromptV1` 类型。
-- 在 arch-context#296 之后，把 `src/core/review/module-review-prompt.ts` 放回 architecture-view 组件（归属提议 §5 的原方案）。那时 operator 到 acceptance-review 的 3 条关系可以删除。
+- `src/core/review/module-review-prompt.ts` 已归 architecture-view-core（#1365）。view-projections 导入 `ModuleReviewPromptV1` 现在是本 capability 内部的边。
 
 
 ### 提交范围的宿主策略交接

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.agents-configuration.archctx-closure
+kind: calls
+source: component.operator.agents-configuration
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Plugin → core: change the agents section through the shared global configuration transaction"

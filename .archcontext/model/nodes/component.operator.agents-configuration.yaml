@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.agents-configuration
+kind: component
+name: Agents Configuration
+status: active
+parent: capability.runtime-harness.operator
+layer: effects
+summary: Reads and changes the agents section of the global configuration for the operator settings route and doc sessions.
+responsibilities:
+  - Read and change the agents section of the global configuration; the operator target lock precedes the shared global runtime transaction lock.
+source:
+  include:
+    - src/effects/configuration/agents-configuration.ts

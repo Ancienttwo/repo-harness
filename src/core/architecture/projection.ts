@@ -32,7 +32,6 @@ import nativeContextExportSchema from 'archctx-contracts/schemas/runtime/native-
 import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.json';
 import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
 import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
-import type { GeneratedSummaryFreshness } from './module-view';
 import { dependencies } from '../../../package.json';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
@@ -180,6 +179,16 @@ export function assertProjectionApplyReadbackResult(value: unknown, request: Pro
   const issues = projectionApplyReadbackResultInvariantIssues(result, request);
   if (issues.length > 0) throw new Error(`projection readback invalid: ${issues.join('; ')}`);
   return result;
+}
+
+/**
+ * Generated-summary freshness from one `architecture-projection check` result.
+ * `complete` is false when the check failed for a reason that is not per node.
+ */
+export interface GeneratedSummaryFreshness {
+  readonly commit: string;
+  readonly staleNodeIds: ReadonlySet<string>;
+  readonly complete: boolean;
 }
 
 /**
