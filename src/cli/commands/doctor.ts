@@ -16,6 +16,7 @@ import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnava
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
 import { probePiHerdrIntegration } from '../../effects/setup/pi-herdr-integration';
+import { probeInstalledPi } from '../../effects/setup/pi-host-probe';
 
 import * as fs from 'fs';
 import * as os from 'os';
@@ -138,21 +139,7 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
     return checks;
   }
   try {
-    // The package requires Bun; this TypeScript child uses Bun's module loader.
-    if (!process.versions.bun) throw new Error('PI_CAPABILITY_PROBE_REQUIRES_BUN');
-    let root = path.dirname(fs.realpathSync(executable));
-    while (true) {
-      const manifest = path.join(root, 'package.json');
-      if (fs.existsSync(manifest) && JSON.parse(fs.readFileSync(manifest, 'utf8')).name === '@earendil-works/pi-coding-agent') break;
-      const parent = path.dirname(root);
-      if (parent === root) throw new Error('Pi package root unavailable');
-      root = parent;
-    }
-    const child = fileURLToPath(new URL('../../effects/setup/pi-capability-child.ts', import.meta.url));
-    const result = spawnSync(process.execPath, [child, root],
-      { cwd: env.HOME, env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] });
-    if (result.error || result.status !== 0) throw new Error(result.error?.message || result.stderr.trim() || 'Pi SDK probe failed');
-    const { version, ...capability } = JSON.parse(result.stdout) as { version: string; state: PiCapability['state']; code?: PiHostUnavailableCode };
+    const { version, ...capability } = probeInstalledPi(executable, env);
     checks.push({ id: 'pi-cli-version', describe: 'Pi CLI version', status: piVersionSupported(version) ? 'ok' : 'fail',
       detail: piVersionSupported(version) ? `${version} >= ${MIN_PI_VERSION}` : `PI_HOST_UNSUPPORTED_VERSION: ${version}; minimum ${MIN_PI_VERSION}`,
       ...(/^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?(?:\+[0-9A-Za-z.-]+)?$/.test(version) ? { version } : {}) });
