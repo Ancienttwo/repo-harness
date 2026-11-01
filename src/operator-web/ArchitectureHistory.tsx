@@ -284,9 +284,9 @@ function HistoryLegend({ t }: { readonly t: OperatorTranslate }) {
   </dl>;
 }
 
-function CommitLink({ github, rev, arrow = false }: { readonly github: string | null; readonly rev: string; readonly arrow?: boolean }) {
+function CommitLink({ github, rev }: { readonly github: string | null; readonly rev: string }) {
   return github === null ? <code>{short(rev)}</code>
-    : <a href={`https://github.com/${github}/commit/${rev}`} target="_blank" rel="noreferrer" onClick={event => event.stopPropagation()}><code>{short(rev)}</code>{arrow && ' ↗'}</a>;
+    : <a href={`https://github.com/${github}/commit/${rev}`} target="_blank" rel="noreferrer"><code>{short(rev)}</code> ↗</a>;
 }
 
 /** Counts of the delta archctx reports; nothing here is derived from two shapes. */
@@ -304,19 +304,18 @@ function MilestoneChips({ milestone, skipped, t }: { readonly milestone: History
   </span>;
 }
 
-function Timeline({ timeline, selected, onSelect, github, more, onMore, t }: {
+function Timeline({ timeline, selected, onSelect, more, onMore, t }: {
   readonly timeline: { readonly head: string; readonly total: number; readonly milestones: readonly HistoryMilestone[] };
   readonly selected: string;
   readonly onSelect: (rev: string) => void;
-  readonly github: string | null;
   readonly more: { readonly loading: boolean; readonly error: string | null };
   readonly onMore: () => void;
   readonly t: OperatorTranslate;
 }) {
   const { milestones } = timeline;
   const list = useRef<HTMLOListElement>(null);
-  const move = (step: number) => {
-    const next = milestones[Math.min(milestones.length - 1, Math.max(0, milestones.findIndex(item => item.rev === selected) + step))]!;
+  const move = (index: number) => {
+    const next = milestones[Math.min(milestones.length - 1, Math.max(0, index))]!;
     onSelect(next.rev);
     list.current?.querySelector(`[data-milestone-rev="${next.rev}"]`)?.scrollIntoView({ block: 'nearest' });
   };
@@ -328,13 +327,15 @@ function Timeline({ timeline, selected, onSelect, github, more, onMore, t }: {
     {timeline.total === 0 && <p className="architecture-history__empty">{t('architecture.history.empty')}</p>}
     <ol ref={list} role="listbox" tabIndex={0} aria-labelledby="architecture-history-timeline" aria-activedescendant={`history-milestone-${selected}`}
       onKeyDown={event => {
-        if (event.key !== 'ArrowDown' && event.key !== 'ArrowUp') return;
-        event.preventDefault(); move(event.key === 'ArrowDown' ? 1 : -1);
+        const current = milestones.findIndex(item => item.rev === selected);
+        const index = { ArrowDown: current + 1, ArrowUp: current - 1, Home: 0, End: milestones.length - 1 }[event.key];
+        if (index === undefined || milestones.length === 0) return;
+        event.preventDefault(); move(index);
       }}>
       {milestones.map(item => <li key={item.rev} id={`history-milestone-${item.rev}`} role="option" aria-selected={item.rev === selected}
         data-milestone-rev={item.rev} data-state={item.error ? 'error' : 'ok'} onClick={() => onSelect(item.rev)}>
         <span className="architecture-history__dot" aria-hidden="true" />
-        <span className="architecture-history__date"><time dateTime={item.date}>{item.date.slice(0, 10)}</time><CommitLink github={github} rev={item.rev} arrow /></span>
+        <span className="architecture-history__date"><time dateTime={item.date}>{item.date.slice(0, 10)}</time><code>{short(item.rev)}</code></span>
         <span className="architecture-history__subject">{item.subject}</span>
         <MilestoneChips milestone={item} skipped={item.error ? 0 : skippedMilestones(milestones, item)} t={t} />
       </li>)}
@@ -375,9 +376,9 @@ function Inspector({ milestones, milestone, shape, github, onSelect, t }: {
   readonly t: OperatorTranslate;
 }) {
   const facts = <dl className="architecture-history__facts">
-    <dt>{t('architecture.history.commit')}</dt><dd><CommitLink github={github} rev={milestone.rev} arrow /></dd>
+    <dt>{t('architecture.history.commit')}</dt><dd><CommitLink github={github} rev={milestone.rev} /></dd>
     {milestone.delta && <><dt>{t('architecture.history.base')}</dt>
-      <dd data-base-rev={milestone.delta.baseRev ?? ''}>{milestone.delta.baseRev === null ? '—' : <CommitLink github={github} rev={milestone.delta.baseRev} arrow />}</dd></>}
+      <dd data-base-rev={milestone.delta.baseRev ?? ''}>{milestone.delta.baseRev === null ? '—' : <CommitLink github={github} rev={milestone.delta.baseRev} />}</dd></>}
   </dl>;
   const header = <header>
     <p className="architecture-history__eyebrow"><time dateTime={milestone.date}>{milestone.date.slice(0, 10)}</time></p>
@@ -467,7 +468,7 @@ export function ArchitectureHistory({ path, github, read, refreshGeneration, t }
     </div>}
     <div className="architecture-history__body" data-stale={history.error !== null || undefined}>
       {milestone === null ? <p className="architecture-history__empty">{t('architecture.history.empty')}</p> : <>
-        <Timeline timeline={timeline} selected={milestone.rev} onSelect={select} github={github} more={history.more} onMore={history.loadMore} t={t} />
+        <Timeline timeline={timeline} selected={milestone.rev} onSelect={select} more={history.more} onMore={history.loadMore} t={t} />
         {milestone.error
           ? <section className="architecture-history__canvas" aria-label={t('architecture.history.map')}>
             <div className="architecture-history__canvas-error"><code>{milestone.error.code}</code>{milestone.error.path && <p><code>{milestone.error.path}</code></p>}</div>

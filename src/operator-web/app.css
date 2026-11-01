@@ -364,8 +364,7 @@
   .architecture-history__timeline li[data-state="error"] .architecture-history__dot { @apply rounded-[2px]; border-color: var(--color-kumo-danger); background: var(--color-kumo-danger-tint); }
   .architecture-history__timeline li[aria-selected="true"] .architecture-history__dot { border-color: var(--rh-accent); background: var(--rh-accent); }
   .architecture-history__date { @apply flex items-center gap-2 font-mono text-xs text-kumo-subtle; }
-  .architecture-history__date a { @apply ml-auto text-kumo-subtle no-underline hover:underline; }
-  .architecture-history__date a:hover { color: var(--text-color-kumo-link); }
+  .architecture-history__date code { @apply ml-auto; }
   .architecture-history__subject { @apply col-start-2 line-clamp-2 text-[13px] text-kumo-strong; overflow-wrap: anywhere; }
   .architecture-history__chips { @apply col-start-2 mt-1 flex flex-wrap gap-1; }
   .architecture-history__canvas { @apply relative h-[60vh] min-h-[22rem] min-w-0 overflow-hidden rounded-xl border xl:h-auto xl:min-h-0; border-color: var(--rh-diagram-line); background: var(--rh-diagram-bg); }

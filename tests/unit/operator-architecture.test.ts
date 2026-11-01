@@ -120,7 +120,8 @@ test('request parser uses closed query fields and mode-specific full SHA inputs'
   const head = 'a'.repeat(40);
   expect(history('?offset=25&limit=25&ref=' + head)).toEqual({ kind: 'architecture_history', repository_id: 'repo_0123456789abcdef', offset: 25, limit: 25, ref: head });
   expect(isArchitectureRequest(history('?offset=0&limit=25'))).toBe(true);
-  for (const query of ['?limit=25', '?offset=0', '?offset=0&limit=1000', '?offset=01&limit=25', '?offset=0&limit=25&ref=HEAD', '?offset=0&limit=25&cursor=x']) {
+  expect(history('?offset=0&limit=200')).toMatchObject({ limit: 200 });
+  for (const query of ['?limit=25', '?offset=0', '?offset=0&limit=201', '?offset=0&limit=1000', '?offset=01&limit=25', '?offset=0&limit=25&ref=HEAD', '?offset=0&limit=25&cursor=x']) {
     expect(() => history(query)).toThrow('invalid_request');
   }
 });

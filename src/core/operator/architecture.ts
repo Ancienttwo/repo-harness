@@ -91,7 +91,8 @@ export type ArchitectureRequest = { repository_id: string } & (
   /** One page of `archctx history`. `ref` pins later pages to the `head` of the first page. */
   | { kind: 'architecture_history'; offset: number; limit: number; ref: string | null }
 );
-const HISTORY_OFFSET = /^(?:0|[1-9][0-9]{0,5})$/, HISTORY_LIMIT = /^[1-9][0-9]{0,2}$/;
+// A page of at most 200 milestones stays below the 8 MB archctx stdout cap (about 16 KB per milestone here).
+const HISTORY_OFFSET = /^(?:0|[1-9][0-9]{0,5})$/, HISTORY_LIMIT = /^(?:[1-9][0-9]?|1[0-9]{2}|200)$/;
 export function parseArchitectureRequest(url: URL): ArchitectureRequest | null {
   const history = OPERATOR_ARCHITECTURE_HISTORY_ROUTE.exec(url.pathname);
   if (history) {

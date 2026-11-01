@@ -1215,7 +1215,7 @@ function expectedRequestAuthority(host: OperatorServerHost, request: IncomingMes
 }
 
 /** HTTP status for an architecture read failure code. */
-function architectureStatus(code: string): number {
+export function architectureStatus(code: string): number {
   return code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
     : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422;
 }
