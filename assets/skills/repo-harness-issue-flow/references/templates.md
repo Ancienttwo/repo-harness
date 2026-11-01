@@ -200,7 +200,7 @@ Run on `<batch head sha>` (<os>, <runtime version>):
 None in this PR. Each member PR lists its own test changes.
 
 ## Risk and rollback
-Risk: an interaction between the members that no single PR's CI saw; the batch CI run covers it. Rollback: `git revert <squash-commit>` reverts the whole batch.
+Risk: an interaction between the members that no single PR's CI saw; the batch CI run covers it. Rollback: `git revert -m 1 <batch merge commit>` reverts the whole batch; `git revert -m 1 <member merge commit on main>` reverts one member.
 ````
 
 Name a member PR only in the table, never after a closing keyword. The
@@ -415,7 +415,7 @@ repo-harness integration status
 Re: <batch PR URL>
 To: head owner #<p>
 Batch: merged in #<batch> as <merge_commit_sha>; member head <sha>
-Next: this PR closes with gh pr close; the branch stays
+Next: GitHub marks this PR Merged; do not close it; the branch stays
 ```
 
 ## Dispatch packet

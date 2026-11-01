@@ -335,13 +335,21 @@ merge it by any path other than `repo-harness publication merge`.
 7. **Main moved.** When main moves after the build, rebuild from the
    current main with the next `<n>`. Do not merge main into the batch
    branch.
-8. **Merge.** Call `repo-harness publication merge` on the batch PR with
-   the batch head and the main SHA you built on. Act on the exit code as
+8. **Merge.** Call `repo-harness publication merge --batch` on the batch
+   PR with the batch head and the main SHA you built on. The executor
+   refuses a head ref outside `integration/<parent>-batch-<n>`
+   (`batch_ref_invalid`) and a batch with a commit of its own
+   (`batch_has_own_commit`), both with exit 4 and no merge request. It
+   merges with a merge commit whose parents are the main SHA and the batch
+   head, so each member's commits land on main. Act on the exit code as
    the table above says.
 9. **Close out.** After exit 0, on each member PR post the batch-closeout
-   `integration status` with the batch merge SHA, then close it with
-   `gh pr close <p>`. The member branch stays. Post `unblocked` on each
-   dependent PR.
+   `integration status` with the batch merge SHA. Do not close the member
+   PRs: GitHub marks each one Merged. The member branch stays. Post
+   `unblocked` on each dependent PR.
+10. **Rollback.** `git revert -m 1 <batch merge commit>` reverts the whole
+    batch. To revert one member, revert its member merge commit on main:
+    `git revert -m 1 <member merge commit on main>`.
 
 ## 10. Close out
 

@@ -27,6 +27,19 @@ import {
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 const OTHER_COMMIT = 'd'.repeat(40);
+const BATCH_REF = 'integration/1309-batch-2';
+const MEMBER_1 = 'e'.repeat(40);
+const MEMBER_1_MERGE = 'f'.repeat(40);
+const MEMBER_2 = '1'.repeat(40);
+/** Built as orchestrator §9.3 builds a batch: `git merge --no-ff` of each member onto the base. */
+const BATCH_COMMITS = [
+  { sha: MEMBER_1, parents: [BASE] },
+  { sha: MEMBER_1_MERGE, parents: [BASE, MEMBER_1] },
+  { sha: MEMBER_2, parents: [BASE] },
+  { sha: HEAD, parents: [MEMBER_1_MERGE, MEMBER_2] },
+];
+const batchScenario = (overrides: Partial<PublicationMergeScenario> = {}) =>
+  passingScenario({ headRef: BATCH_REF, compareCommits: BATCH_COMMITS, parents: [BASE, HEAD], ...overrides });
 const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-publication-merge-'));
 afterAll(() => rmSync(scratch, { recursive: true, force: true }));
 
@@ -39,6 +52,7 @@ interface MergeInProcessOptions {
   readonly beforeCall?: (args: readonly string[]) => void;
   /** Internal seam: observe the timeout passed to each readback call. */
   readonly readbackTimeout?: (milliseconds: number) => void;
+  readonly batch?: boolean;
 }
 
 function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProcessOptions = {}) {
@@ -46,7 +60,7 @@ function mergeInProcess(scenario: PublicationMergeScenario, options: MergeInProc
   let readbacks = 0;
   const result = executePublicationMerge({
     repo_root: scratch, repository: REPOSITORY, provider_repository_id: REPOSITORY_ID, pr_number: PR,
-    expected_head_sha: HEAD, expected_base_sha: BASE,
+    expected_head_sha: HEAD, expected_base_sha: BASE, batch: options.batch,
     gh_runner: (args) => {
       options.beforeCall?.(args);
       calls.push([...args]);
@@ -67,12 +81,12 @@ function failureOf(result: PublicationMergeResult): PublicationMergeFailure {
 }
 
 let cliRun = 0;
-function mergeCli(scenario: PublicationMergeScenario) {
+function mergeCli(scenario: PublicationMergeScenario, extraArgs: readonly string[] = []) {
   const dir = join(scratch, `cli-${cliRun++}`);
   mkdirSync(dir);
   const gh = installFakeGh(dir, scenario);
   const result = spawnSync('bun', [CLI, 'publication', 'merge', '--repository', REPOSITORY, '--repository-id', REPOSITORY_ID,
-    '--pr', String(PR), '--head', HEAD, '--base', BASE, '--json'], {
+    '--pr', String(PR), '--head', HEAD, '--base', BASE, '--json', ...extraArgs], {
     cwd: dir, encoding: 'utf-8', env: { ...process.env, REPO_HARNESS_GH_BIN: gh.bin }, timeout: 120_000,
   });
   const calls = gh.calls();
@@ -377,5 +391,47 @@ describe('publication merge execution', () => {
     expect(failureOf(result).message).toContain(`merged at ${OTHER_COMMIT}`);
     expect(failureOf(result).message).toContain(`merge response reported ${MERGE_COMMIT}`);
     expect(calls.filter((args) => args[0] === 'api' && args[1] === `repos/${REPOSITORY}/pulls/${PR}`)).toHaveLength(1);
+  });
+});
+
+describe('publication merge --batch', () => {
+  test('the CLI merges a batch once with a merge commit and proves both parents', () => {
+    const run = mergeCli(batchScenario(), ['--batch']);
+    expect(run.status).toBe(0);
+    expect(run.document).toMatchObject({
+      merge_commit_sha: MERGE_COMMIT,
+      parent_sha: BASE,
+      parent_shas: [BASE, HEAD],
+      revert: `git revert -m 1 ${MERGE_COMMIT}`,
+    });
+    expect(run.mutations).toHaveLength(1);
+    expect(graphqlVariable(run.mutations[0]!, 'query')).toContain('mergeMethod:MERGE');
+    expect(graphqlVariable(run.mutations[0]!, 'commitHeadline')).toBe(`Ship the executor (#${PR})`);
+  }, 120_000);
+
+  test('the CLI refuses --batch on a head ref outside integration/ without a request', () => {
+    const run = mergeCli(batchScenario({ headRef: 'feat/executor' }), ['--batch']);
+    expect(run.status).toBe(4);
+    expect(run.document).toMatchObject({ ok: false, exit_code: 4, error: 'batch_ref_invalid' });
+    expect(run.mutations).toHaveLength(0);
+  }, 120_000);
+
+  test('a batch commit of its own on the first-parent chain is refused without a request', () => {
+    const own = OTHER_COMMIT;
+    const { result, mutations } = mergeInProcess(batchScenario({ compareCommits: [
+      { sha: own, parents: [BASE] },
+      { sha: MEMBER_1, parents: [BASE] },
+      { sha: HEAD, parents: [own, MEMBER_1] },
+    ] }), { batch: true });
+    expect(failureOf(result)).toMatchObject({ exit_code: 4, error: 'batch_has_own_commit' });
+    expect(failureOf(result).message).toContain(`commit ${own} on the batch first-parent chain is not a two-parent member merge`);
+    expect(mutations).toHaveLength(0);
+  });
+
+  test('a provider merge with one parent under --batch is a contradiction, not a merge', () => {
+    const { result, mutations } = mergeInProcess(batchScenario({ parents: [BASE] }), { batch: true, readbackWait: () => {} });
+    expect(failureOf(result)).toMatchObject({ exit_code: 5, error: 'merge_outcome_unknown' });
+    expect(failureOf(result).message).toContain(`expected exactly [${BASE}, ${HEAD}]`);
+    expect(mutations).toHaveLength(1);
   });
 });

@@ -4,8 +4,9 @@
  * Every step before the mutation reads; a refusal at any step sends no merge
  * request. The mutation is sent once. After it is sent, the result is a
  * rejection only when an error response is followed by a readback of the PR
- * still open at the expected head, and a merge only when the single-parent
- * squash commit is proven. Everything else is an unknown outcome. The executor
+ * still open at the expected head, and a merge only when the merge commit has
+ * the expected parents: the expected base for a squash, the expected base and
+ * head for a batch merge commit. Everything else is an unknown outcome. The executor
  * never resends the merge request; only the provider readback repeats, inside
  * a bounded window, because a merge response can arrive before the read model
  * shows the merge.
@@ -43,7 +44,9 @@ export type PublicationMergeRefusalCode =
   | 'merge_readiness_blocked'
   | 'pr_changed_after_readiness'
   | 'closing_references_incomplete'
-  | 'closing_references_mismatch';
+  | 'closing_references_mismatch'
+  | 'batch_ref_invalid'
+  | 'batch_has_own_commit';
 
 export type PublicationMergeErrorCode =
   | 'acceptance_merge_off'
@@ -61,7 +64,10 @@ export interface PublicationMergeDocument {
   readonly base_ref: string;
   readonly base_sha: string;
   readonly merge_commit_sha: string;
+  /** The first parent: the expected base, the mainline that `git revert -m 1` keeps. */
   readonly parent_sha: string;
+  /** Batch only: both proven parents, `[expected base, expected head]`. */
+  readonly parent_shas?: readonly [string, string];
   readonly policy_ref: string;
   readonly revert: string;
   /** GraphQL errors that came with a merge the readback proved. */
@@ -115,8 +121,10 @@ function readbackDelays(windowMs: number): readonly number[] {
 }
 const READBACK_DELAYS_MS = readbackDelays(READBACK_WINDOW_MS);
 
-/** The executor's own test seam; the CLI and MCP never set it. */
 type PublicationMergeInput = PullRequestReadinessInput & {
+  /** `--batch`: merge an `integration/<parent>-batch-<n>` PR with a two-parent merge commit instead of a squash. */
+  readonly batch?: boolean;
+  // The executor's own test seam; the CLI and MCP never set it.
   readonly readback_wait?: (milliseconds: number) => void;
   readonly readback_now?: () => number;
   readonly readback_timeout?: (milliseconds: number) => void;
@@ -196,13 +204,14 @@ interface MergeTarget {
   readonly merge_queue_enabled: boolean | null;
   readonly auto_merge_enabled: boolean;
   readonly head_sha: string;
+  readonly head_ref: string;
   readonly base_sha: string;
   readonly base_ref: string;
   readonly closing_references: readonly ClosingIssueReference[];
   readonly closing_has_next_page: boolean;
 }
 
-const TARGET_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number title body state isCrossRepository headRefOid baseRefOid baseRefName isMergeQueueEnabled autoMergeRequest{enabledAt} closingIssuesReferences(first:100){pageInfo{hasNextPage} nodes{number repository{nameWithOwner}}}}}}';
+const TARGET_QUERY = 'query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){nameWithOwner pullRequest(number:$number){id number title body state isCrossRepository headRefOid headRefName baseRefOid baseRefName isMergeQueueEnabled autoMergeRequest{enabledAt} closingIssuesReferences(first:100){pageInfo{hasNextPage} nodes{number repository{nameWithOwner}}}}}}';
 
 /** One read of the PR fields the executor owns: fork, auto-merge, message text and closing links. */
 function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
@@ -217,8 +226,8 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
   if (repository.nameWithOwner !== input.repository || pr.number !== input.pr_number
     || typeof pr.id !== 'string' || pr.id === '' || typeof pr.title !== 'string' || typeof pr.body !== 'string'
     || !['OPEN', 'CLOSED', 'MERGED'].includes(String(pr.state)) || typeof pr.isCrossRepository !== 'boolean'
-    || typeof pr.headRefOid !== 'string' || typeof pr.baseRefOid !== 'string'
-    || typeof pr.baseRefName !== 'string' || pr.baseRefName === ''
+    || typeof pr.headRefOid !== 'string' || typeof pr.headRefName !== 'string' || pr.headRefName === ''
+    || typeof pr.baseRefOid !== 'string' || typeof pr.baseRefName !== 'string' || pr.baseRefName === ''
     || (pr.autoMergeRequest !== null && !isObject(pr.autoMergeRequest))
     || typeof pageInfo.hasNextPage !== 'boolean' || !Array.isArray(closing.nodes)) {
     throw new Refusal('provider_data_incomplete', 'provider PR identity is incomplete');
@@ -240,6 +249,7 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
     merge_queue_enabled: typeof pr.isMergeQueueEnabled === 'boolean' ? pr.isMergeQueueEnabled : null,
     auto_merge_enabled: pr.autoMergeRequest !== null,
     head_sha: pr.headRefOid,
+    head_ref: pr.headRefName,
     base_sha: pr.baseRefOid,
     base_ref: pr.baseRefName,
     closing_references: references,
@@ -250,6 +260,63 @@ function readMergeTarget(input: PullRequestReadinessInput): MergeTarget {
 function assertSameRepositoryTarget(target: MergeTarget): void {
   if (target.is_cross_repository) throw new Refusal('cross_repository_pr', 'the executor merges only same-repository PRs');
   if (target.auto_merge_enabled) throw new Refusal('auto_merge_enabled', 'the PR has an auto-merge request');
+}
+
+const BATCH_REF = /^integration\/[1-9][0-9]*-batch-[1-9][0-9]*$/u;
+/** One compare page; a batch with more commits fails closed instead of a partial proof. */
+const BATCH_COMPARE_LIMIT = 100;
+
+function assertBatchRef(target: MergeTarget): void {
+  if (!BATCH_REF.test(target.head_ref)) {
+    throw new Refusal('batch_ref_invalid', `--batch needs a head ref integration/<parent>-batch-<n>; the PR head ref is ${target.head_ref}`);
+  }
+}
+
+/** Every commit in expected base..expected head, keyed by SHA, with its parent SHAs. */
+function readBatchCommits(input: PullRequestReadinessInput): ReadonlyMap<string, readonly string[]> {
+  const compare = field(read(input, ['api',
+    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMPARE_LIMIT}`]), 'provider compare');
+  const commits = compare.commits;
+  if (!Array.isArray(commits) || !Number.isSafeInteger(compare.total_commits) || commits.length !== compare.total_commits) {
+    throw new Refusal('provider_data_incomplete',
+      `provider compare did not list every commit in base..head (at most ${BATCH_COMPARE_LIMIT} are read)`);
+  }
+  const graph = new Map<string, readonly string[]>();
+  for (const entry of commits) {
+    const commit = field(entry, 'provider compare commit');
+    const parents = Array.isArray(commit.parents) ? commit.parents.map((parent) => isObject(parent) ? parent.sha : undefined) : [];
+    if (typeof commit.sha !== 'string' || !SHA.test(commit.sha) || parents.length === 0
+      || !parents.every((sha): sha is string => typeof sha === 'string' && SHA.test(sha))) {
+      throw new Refusal('provider_data_incomplete', 'provider compare commit is incomplete');
+    }
+    graph.set(commit.sha, parents);
+  }
+  return graph;
+}
+
+/**
+ * The batch adds no commit of its own. Its first-parent chain from the head
+ * must reach the expected base through two-parent member merges only. A
+ * member head is the second parent of such a merge, never the first, so every
+ * non-merge commit in base..head is then reachable from a member head. This
+ * proves the commit graph only; the merge trees stay the integrator's check.
+ */
+function assertBatchHasNoOwnCommit(input: PullRequestReadinessInput): void {
+  const graph = readBatchCommits(input);
+  let sha = input.expected_head_sha;
+  for (let step = 0; step <= graph.size && sha !== input.expected_base_sha; step++) {
+    const parents = graph.get(sha);
+    if (parents === undefined) {
+      throw new Refusal('batch_has_own_commit',
+        `the batch first-parent chain leaves base..head at ${sha} instead of reaching the expected base ${input.expected_base_sha}`);
+    }
+    if (parents.length !== 2) {
+      throw new Refusal('batch_has_own_commit',
+        `commit ${sha} on the batch first-parent chain is not a two-parent member merge (parents: ${parents.length})`);
+    }
+    sha = parents[0]!;
+  }
+  if (sha !== input.expected_base_sha) throw new Refusal('provider_data_incomplete', 'provider compare commits form a cycle');
 }
 
 function readPolicyAt(input: PullRequestReadinessInput, ref: string): PolicyFileAtRef {
@@ -322,14 +389,14 @@ function readPolicy(input: PullRequestReadinessInput): BasePolicy {
   return { policy: base, file };
 }
 
-const MERGE_MUTATION = 'mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,$commitHeadline:String!,$commitBody:String!){mergePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,mergeMethod:SQUASH,commitHeadline:$commitHeadline,commitBody:$commitBody}){pullRequest{number state mergeCommit{oid}}}}';
+const mergeMutation = (method: 'SQUASH' | 'MERGE') => `mutation($pullRequestId:ID!,$expectedHeadOid:GitObjectID!,$commitHeadline:String!,$commitBody:String!){mergePullRequest(input:{pullRequestId:$pullRequestId,expectedHeadOid:$expectedHeadOid,mergeMethod:${method},commitHeadline:$commitHeadline,commitBody:$commitBody}){pullRequest{number state mergeCommit{oid}}}}`;
 
 type MutationOutcome = { readonly merged: string } | { readonly provider_errors: string };
 
 /** Sent once. An error response is not proof of a rejection; the caller reads the PR back. */
-function sendMerge(input: PullRequestReadinessInput, target: MergeTarget, headline: string): MutationOutcome {
+function sendMerge(input: PublicationMergeInput, target: MergeTarget, headline: string): MutationOutcome {
   // -f keeps every value a raw string; -F would read a body that starts with "@" as a file.
-  const args = ['api', 'graphql', '-f', `query=${MERGE_MUTATION}`, '-f', `pullRequestId=${target.id}`,
+  const args = ['api', 'graphql', '-f', `query=${mergeMutation(input.batch ? 'MERGE' : 'SQUASH')}`, '-f', `pullRequestId=${target.id}`,
     '-f', `expectedHeadOid=${input.expected_head_sha}`, '-f', `commitHeadline=${headline}`, '-f', `commitBody=${target.body}`];
   const result = runGh(input, args);
   if (result.failure || result.status === null) throw new UnknownOutcome(`merge request did not complete: ${describeCall(args, result)}`);
@@ -388,7 +455,12 @@ function readbackValue(input: PublicationMergeInput, args: readonly string[], ti
   return isObject(value) ? { ok: true, value } : { ok: false, failure: `readback failed: ${describeCall(args, result)}` };
 }
 
-/** One readback attempt: the PR is merged at the response SHA by one commit whose only parent is the expected base. */
+/** A squash has the expected base as its only parent; a batch merge commit has the expected base, then the expected head. */
+function expectedParents(input: PublicationMergeInput): readonly string[] {
+  return input.batch ? [input.expected_base_sha, input.expected_head_sha] : [input.expected_base_sha];
+}
+
+/** One readback attempt: the PR is merged at the response SHA by one commit with exactly the expected parents. */
 function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string, baseRef: string, deadline: number): ProofAttempt {
   const now = input.readback_now ?? Date.now;
   const remaining = () => deadline - now();
@@ -414,10 +486,11 @@ function attemptMergeProof(input: PublicationMergeInput, mergeCommitSha: string,
   if (!commitRead.ok) return { kind: 'pending', evidence: commitRead.failure, pr: evidence };
   const commit = commitRead.value;
   const parents = commit.parents;
-  if (commit.sha !== mergeCommitSha || !Array.isArray(parents) || parents.length !== 1
-    || !isObject(parents[0]) || parents[0].sha !== input.expected_base_sha) {
+  const expected = expectedParents(input);
+  if (commit.sha !== mergeCommitSha || !Array.isArray(parents) || parents.length !== expected.length
+    || !expected.every((sha, index) => isObject(parents[index]) && parents[index].sha === sha)) {
     const observed = Array.isArray(parents) ? `[${parents.map((parent) => isObject(parent) ? String(parent.sha) : '?').join(', ')}]` : String(parents);
-    return { kind: 'contradiction', evidence: `commit ${String(commit.sha)} has parents ${observed}; expected exactly [${input.expected_base_sha}]` };
+    return { kind: 'contradiction', evidence: `commit ${String(commit.sha)} has parents ${observed}; expected exactly [${expected.join(', ')}]` };
   }
   return { kind: 'proven' };
 }
@@ -460,7 +533,7 @@ interface PreparedMerge {
 }
 
 /** Steps 1-6. Each refusal throws before any mutation. */
-function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
+function prepareMerge(input: PublicationMergeInput): PreparedMerge {
   try {
     validatePullRequestSelection({ provider_repository_id: input.provider_repository_id, repository: input.repository,
       pr_number: input.pr_number, expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha });
@@ -469,6 +542,10 @@ function prepareMerge(input: PullRequestReadinessInput): PreparedMerge {
   }
   const initial = readMergeTarget(input);
   assertSameRepositoryTarget(initial);
+  if (input.batch) {
+    assertBatchRef(initial);
+    assertBatchHasNoOwnCommit(input);
+  }
   const policy = readPolicy(input);
   const defaultBranch = readDefaultBranch(input);
   assertBaseProtection(input, defaultBranch, initial);
@@ -532,8 +609,9 @@ export function executePublicationMerge(input: PublicationMergeInput): Publicati
       base_sha: input.expected_base_sha,
       merge_commit_sha: mergeCommitSha,
       parent_sha: input.expected_base_sha,
+      ...(input.batch ? { parent_shas: [input.expected_base_sha, input.expected_head_sha] as const } : {}),
       policy_ref: input.expected_base_sha,
-      revert: `git revert ${mergeCommitSha}`,
+      revert: input.batch ? `git revert -m 1 ${mergeCommitSha}` : `git revert ${mergeCommitSha}`,
       ...(providerErrors ? { provider_errors: providerErrors } : {}),
     },
   };
