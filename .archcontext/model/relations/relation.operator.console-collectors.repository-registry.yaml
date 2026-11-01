@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.repository-registry
+kind: reads
+source: component.operator.console-collectors
+target: component.execution-primitives.repository-registry
+intent: "Read the strict repository registry snapshot and the account home for Bot access, docs and tests."

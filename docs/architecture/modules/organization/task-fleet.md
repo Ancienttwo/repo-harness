@@ -151,4 +151,4 @@ sequenceDiagram
 
 - **双向依赖（重构证据）。** `src/effects/fleet/board.ts` 读取 agent-runtime-effects 的 runtime 投影。`src/effects/engineers/agent-runtime-effect-store.ts` 又反向导入 `src/core/fleet/board.ts`、`src/core/fleet/task-message.ts` 与 `src/effects/fleet/task-inbox.ts`。模型只声明 task-fleet → agent-runtime-effects。反向边记录在此，不作为意图关系。
 - **agent-runtime-effects 的方向（集成）。** 反向有 7 条边，`relation.task-fleet.agent-runtime-effects` 一侧有 4 条。集成保留已声明的方向。是否翻转方向是开放问题。
-- **`relation.task-fleet.repo-registry` 的目标（集成）。** 目标从 mcp-sidecar capability 改为 `component.mcp-sidecar.repo-policy-registry`。导入只指向 `src/effects/repo-registry.ts`。mcp-sidecar primary → task-fleet 因此不形成节点级的环。
+- **repository registry 关系的目标（#1343）。** 导入只指向 `src/effects/repo-registry.ts`。这个文件现在归 `component.execution-primitives.repository-registry`。`relation.task-fleet.repo-registry` 已删除，由 `relation.task-fleet.repository-registry` 代替。task-fleet 与 mcp-sidecar 之间因此没有经过 registry 的环。

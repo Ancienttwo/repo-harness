@@ -1,6 +1,6 @@
 schemaVersion: archcontext.relation/v1
-id: relation.global-runtime-reconciliation.archctx-closure.mcp-sidecar
+id: relation.global-runtime-reconciliation.archctx-closure.repository-registry
 kind: calls
 source: component.global-runtime-reconciliation.archctx-closure
-target: capability.runtime-harness.mcp-sidecar
+target: component.execution-primitives.repository-registry
 intent: "Resolve registered repositories for the model reader"

@@ -8,7 +8,6 @@
   "summary": "Provides the local MCP sidecar and its repository access policy boundary.",
   "responsibilities": [
     "Own MCP lifecycle, workspace registration, access policy, and local browser integration.",
-    "Own the shared secret token patterns that MCP redaction and the operator architecture reads use.",
     "Bind coding and orchestrator MCP sessions to verified OAuth authorization IDs and current repository policy."
   ],
   "source": {
@@ -16,11 +15,9 @@
       "src/cli/mcp/**",
       "src/cli/commands/mcp.ts",
       "src/cli/chatgpt-browser/file-policy.ts",
-      "src/effects/repo-registry.ts",
       "docs/repo-harness-chatgpt-mcp-setup.md",
       "docs/reference-configs/chatgpt-coding-mcp.md",
-      "docs/reference-configs/herdr-orchestrator-mcp.md",
-      "src/core/security/**"
+      "docs/reference-configs/herdr-orchestrator-mcp.md"
     ],
     "exclude": [
       "src/cli/mcp/codegraph-adapter.ts",
