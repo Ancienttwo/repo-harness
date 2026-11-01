@@ -23,6 +23,8 @@ source:
     - "src/effects/admission/admission-source.ts"
     - "src/effects/admission/issue-goal.ts"
     - "src/effects/admission/control-admission.ts"
+  exclude:
+    - "src/core/review/module-review-prompt.ts"
   entrypoints:
     - id: "entrypoint.acceptance-review.primary"
       path: "src/cli/commands/review.ts"

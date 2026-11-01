@@ -183,7 +183,7 @@ sequenceDiagram
 | Codex 使用独立的 `CODEX_HOME`，只复制 `auth.json` | 真实的 `~/.codex` 没有写权限（PR #476）。代价是复制的凭据必须在 close、cancel 和失败时删除；删除失败报告为 `cleanup_pending`（`review-isolation.ts:84`）。 |
 | 每个 review campaign 最多 3 轮，每轮最多 30 分钟 | `REVIEW_MAX_ROUNDS = 3`，`REVIEW_TIMEOUT_MS = 1_800_000`（`src/core/review/generic-review.ts:6`）。轮数和成本有上限。代价是第 3 轮后必须由人决定下一步。 |
 | change assessment 只用最终 subject 和 policy base | 选择结果可以复算，hook 历史和模型输出不能改变路由（`evals-checks.md` 的 Change Assessment v1 小节）。代价是缺少 policy 或 base 时验证直接失败。 |
-| module review prompt builder 归 operator（#1365） | `component.acceptance-review.primary-core` 用 `source.exclude` 去掉 `src/core/review/module-review-prompt.ts`，文件归 `component.operator.architecture-view-core`。operator 对本 capability 只剩 plugin → core 依赖：review finding 规则与 review runtime id。代价是 `src/core/review/**` 不再只有一个 owner。 |
+| module review prompt builder 归 operator（#1365） | 本 capability 与 `component.acceptance-review.primary-core` 用 `source.exclude` 去掉 `src/core/review/module-review-prompt.ts`，文件归 `component.operator.architecture-view-core`。operator 对本 capability 只剩 plugin → core 依赖：review finding 规则与 review runtime id。代价是 `src/core/review/**` 不再只有一个 owner。 |
 
 ### 3.3 开放问题
 
