@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:746393b2a871f75340509179b02149865b697c99d11206855a7f030d2e7800a2" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1afef5188219c14833807d8a838ded7aba2fe1877cf06938ed5a9bd96f6a3f91" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
@@ -63,7 +63,6 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.acceptance-review.primary` — Run the persistent review session, bind exact native attribution, read immutable session/request and OAR observations, and persist the accepted-input proof through protected session artifacts
-- `calls` ← `capability.runtime-harness.agent-runtime-effects` — Observe the exact admitted task session and use its closed Herdr transport endpoint
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Register and clean up task worktrees and read session artifacts
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Agent Host behavior through its source modules.
 - `calls` ← `capability.runtime-harness.external-source-intake` — Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding

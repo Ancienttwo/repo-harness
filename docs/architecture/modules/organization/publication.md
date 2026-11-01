@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5632449bc38ccb985e675c5fbaf553a5ea618f043fd0b9120bdf214c1ae91774" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:12aa5e3bbc63f317f7c1c406045c2b521cc6986d88b2d7f37dcf0c288d0a0120" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
@@ -61,10 +61,8 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.workflow-engine.contract-assets` — Read publication merge readiness from the merge helper.
-- `reads` ← `capability.runtime-harness.engineer-scheduling` — Read cached publication receipts as dependency authority
 - `depends-on` ← `capability.verification.evals-checks` — Test PR Publication behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
-- `reads` ← `capability.runtime-harness.integration-acceptance` — Reuse the shared provider PR integration collector and canonical JSON helpers without historical receipt authority
 - `calls` ← `component.mcp-sidecar.primary` — Reopen and take over publications and read merge readiness
 - `depends-on` ← `capability.runtime-harness.operator` — Use publication readiness types in the Operator fixture.
 - `calls` ← `capability.organization.task-fleet` — Read publication receipts readiness and provider feedback for fleet commands and board cards

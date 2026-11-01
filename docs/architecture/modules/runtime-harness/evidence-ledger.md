@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:d44fefc538a2b1dee6cb6ae5719c31703e89640c2e7c55374b6a8e3fb959fab8" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:954d6ce08a27f56e4956115a5084a8972310bb36807fb2aca4ca1fb99bdbb16c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
@@ -60,7 +60,6 @@ flowchart LR
 入向關係:
 
 - `calls` ← `component.acceptance-review.primary` — Canonicalize review records and load verification execution results
-- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Use canonical evidence JSON and evidence types for profiles and historical principal records.
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it

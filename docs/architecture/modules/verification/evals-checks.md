@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5999535efcbb06b75890c12953ebc000f8e631bb48e35d8444f84e1af2507b9c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0ba107b7c91c7797daf8619958ee46aa0087f494b1ba29bd0d2ac9a2c21ff4ef" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -59,15 +59,10 @@ flowchart LR
 - `depends-on` → `capability.verification.acceptance-review` — Test Acceptance Review behavior through its source modules.
 - `depends-on` → `capability.public-surface.action-commands` — Test Action Commands behavior through its source modules.
 - `depends-on` → `capability.public-surface.adoption` — Test Adoption behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.agent-runtime-effects` — Test Agent Runtime Effects behavior through its source modules.
 - `depends-on` → `capability.runtime-mcp.chatgpt-browser` — Test ChatGPT Browser Consult behavior through its source modules.
 - `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.engineer-bindings` — Test Engineer Bindings behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.engineer-scheduling` — Test Engineer Scheduling behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.engineering-overlay` — Test Engineering Overlay behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.external-source-intake` — Test External Source Intake behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Test Global Runtime Reconciliation behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.integration-acceptance` — Test Integration Product Acceptance behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Test MCP Sidecar behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.operator` — Test Operator Board behavior through its source modules; the CI report builds and finds repair issues, and the test projection script names its schema, with the operator tests contract.
 - `depends-on` → `capability.organization.publication` — Test PR Publication behavior through its source modules.
