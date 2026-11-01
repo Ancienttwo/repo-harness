@@ -304,7 +304,7 @@ describe("canonical packages: activation proof — present in manifest v2 and co
 // lane, not only in the action-command content tests.
 describe("issue-flow facade: board protocol surface ships with the package", () => {
   const DIR = join(SKILLS_ROOT, "repo-harness-issue-flow");
-  const REFERENCE_NAMES = ["acceptor.md", "board.md", "orchestrator.md", "templates.md", "worker.md"];
+  const REFERENCE_NAMES = ["acceptor.md", "board.md", "events.md", "orchestrator.md", "templates.md", "worker.md"];
   const read = (reference: string) => readFileSync(join(DIR, "references", reference), "utf-8");
 
   test("SKILL.md routes every reference and the directory has no extra file", () => {
