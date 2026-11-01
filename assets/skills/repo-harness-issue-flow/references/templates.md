@@ -161,6 +161,51 @@ Never commit a generated region. `.projection-manifest.json` and the
 machine regions of `docs/architecture/modules/**` come from the rolling
 writer, not from this PR.
 
+## Batch PR body
+
+Title: `chore(integration): merge accepted PRs #<a> #<b> as one batch (#<parent>)`.
+Procedure: `orchestrator.md` §9.3.
+
+````markdown
+Closes #<issue>            <!-- one line per issue that a member closes -->
+Refs #<issue>              <!-- one line per other issue: non-final members, the parent -->
+
+## Goal
+Merge <N> accepted PRs with one CI run instead of <N> serial up-to-date syncs.
+
+## Scope
+One `--no-ff` merge of each member head onto main@<sha>, in this order. Each member keeps its own commits and review history. This PR adds no change of its own.
+
+| PR | Issue | Reviewed subject | Merged head | Acceptance |
+|---|---|---|---|---|
+| #<p> | #<issue> | `<sha>` (round <n> PASS, <tier>) | `<sha>` (<"adds main only" when it differs>) | <acceptance record URL> |
+| #<p> | #<issue> | not required (Low: <reason>) | `<sha>` | — |
+
+Not in this PR: <eligible or open PRs left out, and why; "none">.
+
+## Changes
+- <N> merge commits. All merged without conflicts.
+- Deleted: nothing beyond what each member deletes.
+
+## Architecture slice
+Architecture slice unchanged by the batch, see each member PR.
+
+## Verification
+Run on `<batch head sha>` (<os>, <runtime version>):
+- `<typecheck command>` — pass
+- `<test command with the files that two or more members change>` — <N pass, 0 fail>
+- PR CI is the authority for the combined head.
+
+## Test changes
+None in this PR. Each member PR lists its own test changes.
+
+## Risk and rollback
+Risk: an interaction between the members that no single PR's CI saw; the batch CI run covers it. Rollback: `git revert <squash-commit>` reverts the whole batch.
+````
+
+Name a member PR only in the table, never after a closing keyword. The
+executor refuses a closing keyword that names a pull request.
+
 ## Comments
 
 Every protocol comment starts with its header line. Fields come next, then
@@ -352,6 +397,26 @@ Detail: <exit 3: "PR ready, owner merges" | exit 4: the blockers | exit 5, 6: th
 
 Write `Merge SHA` and `Revert` only for exit 0. For exit 4, `<error>` is the
 error code in the executor JSON.
+
+Batch drop (integrator, on the member PR, after a conflict or a red check):
+
+```text
+repo-harness integration status
+Re: <batch PR URL, or the build log comment>
+To: head owner #<p>
+Batch: dropped from integration/<parent>-batch-<n>: <merge conflict in <files> | owns failing check <job>, run <URL>>
+Next: merge main into your branch (no force push), run affected checks, post integration status; the PR joins a later batch
+```
+
+Batch closeout (integrator, on each member PR, after exit 0):
+
+```text
+repo-harness integration status
+Re: <batch PR URL>
+To: head owner #<p>
+Batch: merged in #<batch> as <merge_commit_sha>; member head <sha>
+Next: this PR closes with gh pr close; the branch stays
+```
 
 ## Dispatch packet
 
