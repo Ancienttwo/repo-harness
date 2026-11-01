@@ -29,6 +29,10 @@ diff, the issue and the recorded verification. From the second round, read
 only the hunks that changed after the previous round. Do not rerun a
 passing check. Use the recorded command, result, revision and environment.
 
+When the repository has `agents/fleet/known-gaps.md`, read the row for the
+PR's producer and run its named checks in addition to the tier's review.
+The table rules govern how the row combines with the review.
+
 Return `PASS` or `FAIL`. A `FAIL` has at least one P1 or P2 finding.
 
 ## 3. Findings

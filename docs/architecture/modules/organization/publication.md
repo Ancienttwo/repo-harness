@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a16b2994d967ac9a7777df2c9ee9dab27b7953ac4ab31199ad49430190e9a377" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5632449bc38ccb985e675c5fbaf553a5ea618f043fd0b9120bdf214c1ae91774" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
@@ -45,7 +45,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`10–20` 個文件 / `2000–5000` 行
+- 規模量級:`10–20` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -91,7 +91,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.publication.primary` | PR Readiness and Integration Evidence | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.publication.primary` | PR Readiness and Integration Evidence | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.publication.primary-cli` | PR Readiness and Integration Evidence (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.publication.primary-effects` | PR Readiness and Integration Evidence (effects) | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.publication.provider-feedback` | Provider Feedback | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
