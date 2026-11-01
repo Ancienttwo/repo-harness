@@ -3,7 +3,6 @@ import { Command } from 'commander';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../../core/fleet/task-inbox-layout';
 import { RETENTION_CLASSES, runArtifactRetention, type RetentionConfig, type RetentionReport } from '../../effects/artifact-retention';
 import { gitExecFileSync } from '../../effects/git/runner';
-import { INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH } from '../../effects/integration/product-acceptance';
 import { FEEDBACK_ROOT_RELATIVE_PATH } from '../../effects/publication/feedback-store';
 import { SEGMENTED_LOG_ARCHIVE_BYTES, SEGMENTED_LOG_ARCHIVE_SEGMENTS, SEGMENTED_LOG_SEGMENT_BYTES } from '../../effects/segmented-log';
 import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
@@ -48,7 +47,8 @@ export function retentionRoots(config: RetentionConfig): RetentionRoot[] {
     { path: `{common}/${TASK_INBOX_V2_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
     { path: `{common}/${FEEDBACK_ROOT_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
     { path: '{common}/repo-harness/integration/v1', rule: 'keep', detail: 'Historical integration evidence; no active authority reader.' },
-    { path: `{common}/${INTEGRATION_EVIDENCE_ROOT_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
+    { path: '{common}/repo-harness/integration/v2', rule: 'keep', detail: 'Historical integration evidence; no active authority reader.' },
+    { path: '{common}/repo-harness/agent-runtime-effects/admitted-v2', rule: 'keep', detail: 'Historical agent runtime effects; no active authority reader.' },
   ];
 }
 

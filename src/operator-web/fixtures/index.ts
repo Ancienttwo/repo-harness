@@ -9,7 +9,6 @@ import { NOTIFY_PLUGIN_ID } from '../../core/operator/notify-status';
 import { unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import type { OperatorAppProps } from '../App';
 import {
-  repositorySnapshot,
   degradedSnapshot,
   emptySnapshot,
   stableSnapshot,
@@ -116,8 +115,6 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialRuntimeOverlay: runtime,
     fetchSnapshot: () => Promise.resolve(snapshot),
     initialSnapshot: snapshot,
-    fetchRepositorySnapshot: (repositoryId: string) => repositoryId === HARNESS_ID && fixture === 'busy'
-      ? Promise.resolve(repositorySnapshot) : Promise.reject(new Error('fixture repository snapshot unavailable')),
     readTaskContext: request => Promise.resolve(admittedTaskContextFixture(request)),
     readNotifyStatus: () => Promise.resolve(notifyStatus),
     initialNotifyStatus: notifyStatus,

@@ -108,14 +108,6 @@
     ],
     "rule": "Ordinary editing has no plan/contract approval permit. Path and permission safety remain runtime invariants."
   },
-  "agent_runtime": {
-    "mode": "off",
-    "adapters": {
-      "herdr-cli-agent": {
-        "enabled": false
-      }
-    }
-  },
   "delegation": {
     "mode": "explicit",
     "brief_source": ".claude/templates/delegation-brief.template.md"

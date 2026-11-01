@@ -29,7 +29,6 @@ import {
   watchFleetBoard,
   type FleetBoardDependencies,
 } from '../../src/effects/fleet/board';
-import { AgentRuntimeEffectStoreError } from '../../src/effects/engineers/agent-runtime-effect-store';
 import { TaskInboxError } from '../../src/effects/fleet/task-inbox';
 import type { FleetBoardCardInputV2 } from '../../src/core/fleet/board';
 import {
@@ -62,7 +61,7 @@ function card(index: number): FleetBoardCardInputV2 {
     execution_status: 'observed', execution: null, task_id: null, task_label: `fixture row ${index}`, task_index: index,
     merge_readiness: null, execution_readiness: null, readiness_blockers: null,
     feedback: { observation_status: 'unavailable', pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
+    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false },
     snapshot_consistency: 'stable', error: null };
 }
 function seedIssues(root: string, repositoryId: string, titles: readonly string[], eligibilityReasons: readonly string[] = [], firstIssueNumber = 1, observedAt = '2026-08-31T00:00:00.000Z'): void {
@@ -616,31 +615,16 @@ describe('fleet board collector', () => {
     expect(rendered).not.toContain('gh stderr');
   });
 
-  test('keeps Agent Runtime effect-store failures distinct from Task Inbox failures', async () => {
-    const collectWith = async (error: Error) => collectFleetBoard({ timeout_ms: 1_000 }, {
+  test('maps Task Inbox failures to a redacted repository error', async () => {
+    const inbox = await collectFleetBoard({ timeout_ms: 1_000 }, {
       read_registry: () => registry([repo(0)]),
-      collect_repository: async () => { throw error; },
+      collect_repository: async () => { throw new TaskInboxError('task_message_unreadable', 'task inbox /private/task-inbox secret=redacted'); },
     });
-    const runtime = await collectWith(new AgentRuntimeEffectStoreError(
-      'agent_runtime_effect_unreadable',
-      'runtime store /private/runtime-effects secret=redacted',
-    ));
-    const inbox = await collectWith(new TaskInboxError(
-      'task_message_unreadable',
-      'task inbox /private/task-inbox secret=redacted',
-    ));
 
-    expect(runtime.repositories[0]?.error).toEqual({
-      code: 'repo_runtime_effect_unreadable',
-      message: 'repository Agent Runtime effect store is unavailable',
-    });
     expect(inbox.repositories[0]?.error).toEqual({
       code: 'repo_inbox_unreadable',
       message: 'repository inbox observation is unavailable',
     });
-    expect(runtime.repositories[0]?.error?.code).not.toBe(inbox.repositories[0]?.error?.code);
-    expect(JSON.stringify(runtime)).not.toContain('/private/runtime-effects');
-    expect(JSON.stringify(runtime)).not.toContain('secret=redacted');
     expect(JSON.stringify(inbox)).not.toContain('/private/task-inbox');
     expect(JSON.stringify(inbox)).not.toContain('secret=redacted');
   });
@@ -673,7 +657,7 @@ describe('fleet board collector', () => {
       expect(failed[0]?.blocker_codes).toEqual([]);
       expect(readable).toHaveLength(1);
       // No admitted execution was supplied: neither issue can claim a runtime delivery observation.
-      for (const entry of repository.cards) expect(entry.inbox).toMatchObject({ observation_status: 'unavailable', delivery_evidence: null });
+      for (const entry of repository.cards) expect(entry.inbox).toMatchObject({ observation_status: 'unavailable' });
       expect(readable[0]?.placement.kind).toBe('column');
       expect(repository.snapshot_consistency).toBe('degraded');
       expect(result.counts.unclassified).toBe(1);

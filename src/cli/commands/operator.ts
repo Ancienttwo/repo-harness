@@ -1,4 +1,3 @@
-import { readOperatorPlanningSnapshot } from '../../effects/operator/repository-snapshot';
 import { isAbsolute } from 'node:path';
 import { Command } from 'commander';
 import { RUNTIME_CAPTURE_PYTHON_UNAVAILABLE } from '../../effects/operator/runtime-capture-pty';
@@ -174,19 +173,6 @@ export function buildOperatorCommand(): Command {
         process.stderr.write(`${JSON.stringify({ ok: false, error: code })}\n`);
         process.exitCode = 1;
       }
-    });
-  operator.command('planning')
-    .description('Read provider planning with an explicit committed V2 graph')
-    .requiredOption('--repository-id <id>', 'Registered repository ID')
-    .requiredOption('--graph-path <path>', 'Repository-relative V2 graph JSON path')
-    .requiredOption('--graph-commit <oid>', 'Immutable Git commit containing the graph and its references')
-    .action((raw: { repositoryId: string; graphPath: string; graphCommit: string }) => {
-      try {
-        const snapshot = readOperatorPlanningSnapshot({ repository_id: raw.repositoryId,
-          graph_source: { graph_path: raw.graphPath, commit: raw.graphCommit } });
-        process.stdout.write(`${JSON.stringify(snapshot)}\n`);
-        if (snapshot.graph.status === 'unavailable') process.exitCode = 1;
-      } catch (error) { outputOperatorError(error); }
     });
   operator.addCommand(buildDocSessionsCommand());
   return operator;

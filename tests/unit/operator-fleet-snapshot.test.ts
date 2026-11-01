@@ -34,7 +34,7 @@ function sourceSnapshot(readiness: PullRequestReadinessV2 | null = null): FleetB
             merge_readiness: readiness,
             execution_readiness: 'execution_ready', readiness_blockers: [],
             feedback: { observation_status: 'observed', pending_count: 1, no_progress: false, repair_actions: [] },
-            inbox: { observation_status: 'observed', unread_count: 2, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+            inbox: { observation_status: 'observed', unread_count: 2, addressed_to_current_claim: false },
             snapshot_consistency: 'changed_during_read',
             error: null,
           },
@@ -125,30 +125,6 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     expect(typed.counts.available).toBe(source.counts.available);
   });
 
-  test('projects the Agent Runtime effect-store error as a safe dedicated DTO value', () => {
-    const source = sourceSnapshot();
-    const withRuntimeError = {
-      ...source,
-      repositories: source.repositories.map((repository, index) => index === 1
-        ? {
-            ...repository,
-            error: {
-              code: 'repo_runtime_effect_unreadable' as const,
-              message: 'runtime store /private/runtime-effects secret=redacted',
-            },
-          }
-        : repository),
-    } as FleetBoardSnapshotV2;
-
-    const projected = projectOperatorFleetSnapshot(withRuntimeError, serviceEpoch, basename);
-    expect(projected.repositories[1]?.error).toEqual({
-      code: 'repo_runtime_effect_unreadable',
-      message: 'repository Agent Runtime effect store is unavailable',
-    });
-    expect(JSON.stringify(projected)).not.toContain('/private/runtime-effects');
-    expect(JSON.stringify(projected)).not.toContain('secret=redacted');
-  });
-
   test('carries the unclassified count and one failed card error through the transport view', () => {
     const source = projectFleetBoardSnapshot({
       registry_revision: 'sha256:registry',
@@ -168,7 +144,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
             merge_readiness: null,
             execution_readiness: 'execution_ready', readiness_blockers: [],
             feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
-            inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+            inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false },
             snapshot_consistency: 'stable',
             error: null,
           },
@@ -179,7 +155,7 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
             merge_readiness: null,
             execution_readiness: null, readiness_blockers: null,
             feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
-            inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: null, failure_class: null },
+            inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false },
             snapshot_consistency: 'stable',
             error: { code: 'repo_inbox_unreadable', message: 'inbox stderr /private/agent-root' },
           },
@@ -239,21 +215,6 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
   });
 });
 
-
-test('notification evidence is copied by allowlist without exposing raw runtime fields', () => {
-  const latest = { adapter_kind: 'herdr-cli-agent' as const, effect_state: 'stopped' as const, receipt_kind: null,
-    observed_at: '2026-09-07T00:00:00.000Z', observation_sequence: 2, observation_sha256: `sha256:${'f'.repeat(64)}`,
-    endpoint_id: 'private-endpoint', host_id: 'private-host' };
-  const baseline = sourceSnapshot();
-  const source = { ...baseline, repositories: baseline.repositories.map(repo => ({ ...repo,
-    cards: repo.cards.map(card => ({ ...card, inbox: { ...card.inbox, delivery_evidence: { candidate_count: 1, latest } } })),
-  })) };
-  const result = projectOperatorFleetSnapshot(source, serviceEpoch, basename);
-  expect(JSON.stringify(result)).not.toContain('private-endpoint');
-  expect(JSON.stringify(result)).not.toContain('private-host');
-  expect(result.repositories[0]!.cards[0]!.inbox.delivery_evidence!.latest!.observation_sha256).toBe(latest.observation_sha256);
-  expect(Object.isFrozen(result.repositories[0]!.cards[0]!.inbox.delivery_evidence!.latest)).toBe(true);
-});
 
  test('Fleet projection requires the actual service epoch and never synthesizes one', () => {
   for (const epoch of [undefined, null, '', 'unknown', '00000000-0000-1000-8000-000000000001']) {

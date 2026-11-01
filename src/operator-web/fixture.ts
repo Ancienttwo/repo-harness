@@ -18,10 +18,6 @@ const baseInbox = {
   observation_status: 'observed',
   unread_count: 0,
   addressed_to_current_claim: false,
-  delivery_state: 'pending',
-  runtime_reachability: 'unknown',
-  effect_sha256: null,
-  delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null,
 } as const;
 
 function mergeReadiness(
@@ -157,18 +153,6 @@ const stableRepositories: readonly OperatorFleetRepositoryV1[] = [
     card('repo-harness', fixtureTasks.working, 'working', {
       attention_owner: 'agent',
       feedback: { observation_status: 'observed', pending_count: 1, no_progress: false, repair_actions: [] },
-      inbox: {
-        ...baseInbox,
-        delivery_state: 'reconciliation_required',
-        runtime_reachability: 'unavailable',
-        effect_sha256: `sha256:${'9'.repeat(64)}`,
-        failure_class: 'adapter_unavailable',
-        delivery_evidence: { candidate_count: 1, latest: {
-          adapter_kind: 'herdr-cli-agent', effect_state: 'reconciliation_required',
-          receipt_kind: null, observed_at: '2026-08-31T00:00:00.000Z',
-          observation_sequence: 2, observation_sha256: `sha256:${'8'.repeat(64)}`,
-        } },
-      },
     }),
     card('repo-harness', fixtureTasks.review, 'in_review', {
       attention_owner: 'external',
@@ -328,35 +312,6 @@ export const operatorFixtures = {
   preparation: preparationSnapshot,
 } as const;
 
-/** Independent repository observations for browser fixtures. */
-export function repositoryObservationFixture(repositoryId = 'repo_a5b76eee64af71c3'): import('../core/operator/repository-snapshot').OperatorRepositorySnapshotV1 {
-  return { protocol: 1, kind: 'operator_repository_snapshot', repository_id: repositoryId,
-    planning: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' },
-    organization: { status: 'unavailable', observed_at: '2026-09-22T00:00:00.000Z', code: 'source_unavailable' } };
-}
-export const repositorySnapshot = repositoryObservationFixture();
-
-export function planningObservationFixture(repositoryId: string, cards: readonly OperatorFleetCardV1[]): import('../core/operator/planning-snapshot').OperatorPlanningSnapshot {
-  const hash = `sha256:${'b'.repeat(64)}`, at = '2026-09-22T07:00:00+08:00';
-  const tasks: import('../core/engineers/scheduling').ProviderEngineerSchedulingSnapshot['tasks'][number][] = [];
-  for (const card of cards) {
-    let row = tasks.find(task => task.provider_repository_id === card.provider_repository_id && task.issue_id === card.provider_issue_id);
-    const issue: import('../core/external-sources/issue-observation').ProviderIssueObservationV1 | null = card.issue_state === null ? null : {
-      protocol:1,kind:'repo-harness-provider-issue-observation',registered_repository_id:repositoryId,provider:'github',provider_host:'github.com',
-      provider_repository_id:card.provider_repository_id,provider_issue_id:card.provider_issue_id,display_ref:'example/fixture',url:`https://github.com/example/fixture/issues/${card.task_index}`,
-      observed_at:at,provider_created_at:at,provider_updated_at:at,state:card.issue_state,title:card.task_label ?? card.provider_issue_id,
-      body:'Read the provider issue and preserve its admitted execution identity.',labels:[],assignees:[],comments_policy:'omitted',policy_revision:hash,eligible:true,eligibility_reasons:[],source_revision:card.issue_revision ?? hash,observation_sha256:hash,
-    };
-    if (!row) { row={provider_repository_id:card.provider_repository_id,issue_id:card.provider_issue_id,issue,sessions:[]};tasks.push(row); }
-    if (card.execution) {
-      const selection = card.execution.profile_selection.state === 'unassigned' ? {state:'unassigned' as const} : {state:'profile_missing' as const,engineer_id:card.execution.profile_selection.engineer_id,engineer_contract_revision:card.execution.profile_selection.engineer_contract_revision};
-      tasks[tasks.indexOf(row)]={...row,sessions:[...row.sessions,{session:{...card.execution,selector:{...card.execution.selector,repository_id:repositoryId}},selection}]};
-    }
-  }
-  return {protocol:2,kind:'operator_planning_snapshot',repository_id:repositoryId,
-    scheduling:{protocol:2,kind:'provider_engineer_scheduling',repository_id:repositoryId,profiles:[],tasks,source_revision:hash},
-    observation:{observed_at:at,authorization_revision:1},graph:{status:'unavailable',code:'needs_provider_graph'}};
-}
 /** Browser fixture for the current admitted context transport, not approval evidence. */
 export function admittedTaskContextFixture(selector: import('../core/sessions/session-selector').AdmittedSessionSelector): import('../core/operator/admitted-task-context').AdmittedTaskContext {
   const hash=`sha256:${'a'.repeat(64)}`;

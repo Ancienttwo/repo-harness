@@ -11,12 +11,10 @@ import { copyOperatorIdentifier } from '../../src/operator-web/clipboard';
 import { asApiError, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
 import { defaultCollapsedGroups, groupWorklist, primaryCause, taskDisplayLabel, taskKey } from '../../src/operator-web/worklist';
 import {
-  repositorySnapshot,
   degradedSnapshot,
   fixtureTasks,
   leaseStateSnapshot,
   preparationSnapshot,
-  planningObservationFixture,
   stableSnapshot,
 } from '../../src/operator-web/fixture';
 import {
@@ -34,52 +32,22 @@ import {
   type OperatorFleetSnapshotV1,
 } from '../../src/operator-web/types';
 
-describe('three observation views',()=>{
-  test('defaults to Organization, supports roving keyboard tabs and preserves delivery placement counts',async()=>{
-    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+describe('two observation views',()=>{
+  test('defaults to Attention, supports roving keyboard tabs and preserves delivery placement counts',async()=>{
+    await mount(<OperatorApp initialSnapshot={preparationSnapshot} initialLocale="en" />);
     const tabs = () => Array.from(document.querySelectorAll<HTMLButtonElement>('[role="tab"]'));
-    expect(tabs()).toHaveLength(3);expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
-    await act(async()=>tabs()[2]!.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true})));
-    expect(document.activeElement).toBe(tabs()[0]);expect(tabs()[0]!.tabIndex).toBe(0);
+    expect(tabs()).toHaveLength(2);expect(tabs()[0]!.getAttribute('aria-selected')).toBe('true');
     await act(async()=>tabs()[0]!.dispatchEvent(new KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true})));
-    expect(document.activeElement).toBe(tabs()[1]);
+    expect(document.activeElement).toBe(tabs()[1]);expect(tabs()[1]!.getAttribute('aria-selected')).toBe('true');
     expect(document.querySelectorAll('.delivery-columns > section')).toHaveLength(5);
     expect(document.querySelectorAll('.delivery-view button.worklist-row')).toHaveLength(4);
     expect(document.querySelectorAll('[data-delivery-stage="available"] button.worklist-row')).toHaveLength(1);
     expect(document.querySelectorAll('[data-delivery-stage="preparation"] button.worklist-row')).toHaveLength(2);
     expect(document.querySelectorAll('[data-delivery-stage="alternate_workflow"] button.worklist-row')).toHaveLength(1);
-    await act(async()=>tabs()[1]!.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true})));
-    expect(tabs()[2]!.getAttribute('aria-selected')).toBe('true');
-  });
-
-  test('Planning opens the exact Task revision and view changes preserve details without extra reads',async()=>{
-    const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
-    let reads=0,contextReads=0;
-    const payload={...repositorySnapshot,repository_id:repository.repository_id,planning:{status:'observed' as const,observed_at:planning.observation.observed_at,snapshot:planning}};
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchRepositorySnapshot={async()=>{reads++;return payload;}}
-      readTaskContext={async()=>{contextReads++;throw Error('fixture unavailable');}} />);
-    const tab=(name:string)=>document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!;
-    await act(async()=>tab('planning').click());
-    expect(document.querySelector('.planning-view')?.textContent).toContain('dependency coverage is unknown');
-    expect(document.querySelector('.planning-view')?.textContent).not.toContain('declares no dependencies');
-    const task=repository.cards.find(card=>card.task_id===fixtureTasks.working.task_id)!;
-    await act(async()=>document.querySelector<HTMLButtonElement>(`[data-planning-task="${task.provider_repository_id}:${task.provider_issue_id}"] > button`)!.click());
-    expect(document.querySelector('#detail-pane-title')?.textContent).toBe(task.task_label!);
-    const counts=[reads,contextReads];
-    await act(async()=>tab('delivery').click());await act(async()=>tab('organization').click());await act(async()=>tab('planning').click());
-    expect(document.querySelector('#detail-pane-title')?.textContent).toBe(task.task_label!);
-    expect(document.querySelector('[data-write-action], textarea')).toBeNull();
-    expect([reads,contextReads]).toEqual(counts);
-  });
-
-  test('Planning source with the same Task id but a different revision cannot open details',async()=>{
-    const repository=stableSnapshot.repositories[0]!,planning=planningObservationFixture(repository.repository_id,repository.cards);
-    const stale={...planning,scheduling:{...planning.scheduling,tasks:planning.scheduling.tasks.map(task=>({...task,issue:task.issue?{...task.issue,source_revision:'sha256:'+'f'.repeat(64)}:null}))}};
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="zh" initialRepositorySnapshot={{kind:'ready',snapshot:{...repositorySnapshot,repository_id:repository.repository_id,planning:{status:'observed',observed_at:planning.observation.observed_at,snapshot:stale}}}} />);
-    await act(async()=>document.querySelector<HTMLButtonElement>('#view-tab-planning')!.click());
-    const buttons=Array.from(document.querySelectorAll<HTMLButtonElement>('.planning-tasks > li > button'));
-    expect(buttons.length).toBeGreaterThan(0);expect(buttons.every(button=>button.disabled)).toBe(true);
-    expect(document.querySelector('.planning-view')?.textContent).toContain('没有匹配此 Task 精确版本');
+    await act(async()=>tabs()[1]!.dispatchEvent(new KeyboardEvent('keydown',{key:'Home',bubbles:true})));
+    expect(document.activeElement).toBe(tabs()[0]);expect(tabs()[0]!.tabIndex).toBe(0);
+    await act(async()=>tabs()[0]!.dispatchEvent(new KeyboardEvent('keydown',{key:'End',bubbles:true})));
+    expect(tabs()[1]!.getAttribute('aria-selected')).toBe('true');
   });
 });
 
@@ -246,29 +214,21 @@ describe('bounded observation lifecycle',()=>{
     const { admittedTaskContextFixture: taskContextFixture } = await import('../../src/operator-web/fixture');
     const clock = observationClock();
     const counts = { fleet: 0, context: 0 };
-    const repositories: string[] = [];
     let visibility = 'visible';
     Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
     const setVisibility = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new Event('visibilitychange'))); };
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
-        fetchRepositorySnapshot={async id => {
-          repositories.push(id);
-          return { ...repositorySnapshot, repository_id: id };
-        }}
         readTaskContext={async request => { counts.context++; return taskContextFixture(request); }} />);
       await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
       expect(counts).toEqual({ fleet: 0, context: 1 });
       await clock.advance(30_000);
       expect(counts).toEqual({ fleet: 1, context: 2 });
-      expect(repositories).toEqual([stableSnapshot.repositories[0]!.repository_id, stableSnapshot.repositories[0]!.repository_id]);
       await setVisibility('hidden'); await clock.advance(120_000);
       expect(counts).toEqual({ fleet: 1, context: 2 });
-      expect(repositories).toHaveLength(2);
       await setVisibility('visible');
       expect(counts).toEqual({ fleet: 2, context: 3 });
-      expect(repositories).toHaveLength(3); expect(repositories.at(-1)).toBe(stableSnapshot.repositories[0]!.repository_id);
     } finally {
       await act(async () => root?.unmount()); root = null; clock.restore();
     }
@@ -280,7 +240,7 @@ describe('bounded observation lifecycle',()=>{
     const tab = (name: string) => act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${name}`)!.click());
     const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     try {
-      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { counts.fleet++; return stableSnapshot; }}
         readNotifyStatus={async () => { counts.notify++; return notifyStatus; }} />);
       // Notify belongs to the System page; the repository page never reads it.
@@ -288,14 +248,14 @@ describe('bounded observation lifecycle',()=>{
       await tab('delivery');
       await clock.advance(600_000);
       expect(counts).toEqual({ fleet: 20, notify: 0 });
-      await tab('organization');
+      await tab('attention');
       expect(counts).toEqual({ fleet: 20, notify: 0 });
       await clock.advance(30_000);
       expect(counts).toEqual({ fleet: 21, notify: 0 });
-      await tab('planning');
+      await tab('delivery');
       await act(async () => buttonWithText('Refresh').click());
       expect(counts).toEqual({ fleet: 22, notify: 0 });
-      await tab('organization');
+      await tab('attention');
       expect(counts).toEqual({ fleet: 22, notify: 0 });
       await page('system');
       expect(counts).toMatchObject({ notify: 1 });
@@ -321,7 +281,7 @@ describe('bounded observation lifecycle',()=>{
     const page = (name: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${name}"]`)!.click());
     window.location.hash = '#system';
     try {
-      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
+      await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => stableSnapshot}
         initialNotifyStatus={notifyStatus} readNotifyStatus={async () => { counts.notify++; return notifyStatus; }} />);
       expect(counts).toEqual({ notify: 0 });
@@ -506,7 +466,7 @@ describe('operator web interactions', () => {
     window.localStorage.setItem(draftKey, 'existing draft stays untouched');
     try {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale={locale}
-        fetchSnapshot={async () => stableSnapshot} initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+        fetchSnapshot={async () => stableSnapshot} />);
       for (const view of ['planning', 'delivery', 'organization']) {
         await act(async () => document.querySelector<HTMLButtonElement>(`#view-tab-${view}`)!.click());
         expect(document.querySelector('[data-write-action], textarea, .composer')).toBeNull();
@@ -566,52 +526,6 @@ describe('operator web interactions', () => {
 
     await act(async () => buttonWithText('External').click());
     expect(document.querySelector('.worklist')?.textContent).toContain(fixtureTasks.review.task_label);
-  });
-
-  test('projects R1 runtime evidence without changing authoritative worklist grouping', async () => {
-    const working = stableSnapshot.repositories[0].cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
-    expect(groupWorklist(stableSnapshot).find((group) => group.id === 'claimed')?.cards).toContain(working);
-
-    await mount(<OperatorApp initialState={projectSnapshotViewState(stableSnapshot)} initialLocale="en" />);
-    await act(async () => buttonWithText('Claimed / under review').click());
-    const row = buttonWithText(fixtureTasks.working.task_label);
-    expect(row.textContent).toContain('runtime unavailable');
-    expect(row.textContent).toContain('reconciliation required');
-
-    await act(async () => row.click());
-    expect(paneText()).toContain('Message delivery evidence');
-    expect(paneText()).toContain(`sha256:${'9'.repeat(64)}`);
-    expect(paneText()).toContain('adapter_unavailable');
-  });
-
-  test('keeps Agent Runtime effect-store failures distinct from Task Inbox failures in both locales', async () => {
-    const runtimeEffectFailure: OperatorFleetSnapshotV1 = {
-      ...degradedSnapshot,
-      repositories: degradedSnapshot.repositories.map((repository) => repository.repository_id === 'repo-unreadable'
-        ? {
-          ...repository,
-          error: {
-            code: 'repo_runtime_effect_unreadable',
-            message: 'repository Agent Runtime effect store is unavailable',
-          },
-        }
-        : repository),
-    };
-
-    installDom(true);
-    await mount(<OperatorApp initialState={projectSnapshotViewState(runtimeEffectFailure)} initialLocale="en" />);
-    await selectRepository('repo-unreadable');
-    await act(async () => buttonWithText('Unreadable repos').click());
-    const english = document.querySelector('.worklist')?.textContent ?? '';
-    expect(english).toContain('Agent Runtime effect evidence is unavailable');
-    expect(english).toContain('Reconcile runtime delivery evidence');
-    expect(english).not.toContain('Task Inbox');
-
-    await act(async () => buttonWithText('中').click());
-    const chinese = document.querySelector('.worklist')?.textContent ?? '';
-    expect(chinese).toContain('Agent Runtime effect 证据不可用');
-    expect(chinese).toContain('reconcile runtime 投递证据');
-    expect(chinese).not.toContain('Task Inbox');
   });
 
   test('pane owns modal focus, traps Tab, closes on Escape, and restores the trigger', async () => {
@@ -995,47 +909,6 @@ describe('operator web interactions', () => {
     } finally { globalThis.fetch = originalFetch; }
   });
 
-  test('modal Tab traversal skips copy controls inside a closed disclosure until it opens', async () => {
-    const available = stableSnapshot.repositories[0]!.cards.find((card) => card.task_label === fixtureTasks.available.task_label)!;
-    const working = stableSnapshot.repositories[0]!.cards.find((card) => card.task_id === fixtureTasks.working.task_id)!;
-    // An unclaimed card with recorded delivery evidence: the closed
-    // "Source evidence details" disclosure holds two copy buttons and is the
-    // last keyboard-operable content in the pane once evidence reads fail.
-    const card = { ...available, inbox: { ...available.inbox, effect_sha256: working.inbox.effect_sha256, delivery_evidence: working.inbox.delivery_evidence } };
-    const snapshot: OperatorFleetSnapshotV1 = { ...stableSnapshot, repositories: [{ ...stableSnapshot.repositories[0]!, cards: [card] }] };
-    const originalFetch = globalThis.fetch;
-    globalThis.fetch = (async () => new Response(JSON.stringify({ code: 'unavailable' }), { status: 503 })) as unknown as typeof fetch;
-    try {
-      await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en"
-        readTaskContext={async () => { throw new Error('unavailable'); }} />);
-      await act(async () => buttonWithText(fixtureTasks.available.task_label).click());
-      await act(async () => { await Promise.resolve(); await new Promise<void>((resolve) => setTimeout(resolve, 0)); });
-      const dialog = document.querySelector('[role="dialog"]')!;
-      const details = dialog.querySelector<HTMLDetailsElement>('[aria-labelledby="detail-delivery-heading"] details')!;
-      const summary = details.querySelector<HTMLElement>('summary')!;
-      const hidden = Array.from(details.querySelectorAll<HTMLButtonElement>('button'));
-      expect(details.open).toBe(false);
-      expect(hidden.map(elementKey)).toEqual(['BUTTON:Copy effect sha256', 'BUTTON:Copy Observation digest']);
-      expect(elementKey(Array.from(dialog.querySelectorAll('summary, button')).at(-1)!)).toBe('BUTTON:Copy Observation digest');
-      // Closed: the summary is the true last tab stop, in both directions.
-      summary.focus();
-      await tab();
-      expect(focusKey()).toBe('BUTTON:Refresh');
-      await tab(true);
-      expect(focusKey()).toBe('SUMMARY:Source evidence details');
-      // Open: the copy controls become reachable, and the trap wraps after them.
-      await act(async () => { details.open = true; });
-      summary.focus();
-      await tab();
-      expect(focusKey()).toBe('SUMMARY:Source evidence details');
-      hidden.at(-1)!.focus();
-      await tab();
-      expect(focusKey()).toBe('BUTTON:Refresh');
-      await tab(true);
-      expect(focusKey()).toBe('BUTTON:Copy Observation digest');
-    } finally { globalThis.fetch = originalFetch; }
-  });
-
   test('the page Refresh action also re-requests the Notify panel', async () => {
     let notify = 0;
     window.location.hash = '#system';
@@ -1297,47 +1170,6 @@ describe('operator web interactions', () => {
   });
 });
 
-describe('notification evidence detail', () => {
-  const working = stableSnapshot.repositories[0]!.cards.find(card => card.task_id === fixtureTasks.working.task_id)!;
-  const observation = working.inbox.delivery_evidence!.latest!;
-  test.each([
-    ['stopped', 'Notification stopped'], ['superseded', 'Notification superseded'],
-  ] as const)('renders %s without an active delivery claim and copies its source observation', async (state, label) => {
-    const snapshot: OperatorFleetSnapshotV1 = { ...stableSnapshot, repositories: [{ ...stableSnapshot.repositories[0]!, cards: [{ ...working,
-      inbox: { ...working.inbox, delivery_state: 'pending', delivery_evidence: { candidate_count: 1, latest: { ...observation, effect_state: state } } },
-    }] }] };
-    await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" />);
-    await act(async () => buttonWithText(fixtureTasks.working.task_label).click());
-    const section = document.querySelector('[aria-labelledby="detail-delivery-heading"]')!;
-    expect(section.textContent).toContain(label);
-    expect(section.textContent).not.toContain('pending');
-    expect(section.textContent).toContain('not worker activity or completion');
-    const details = section.querySelector('details')!;
-    expect(details.open).toBe(false);
-    await act(async () => details.querySelector('summary')!.click());
-    expect(section.querySelector('time')?.getAttribute('datetime')).toBe(observation.observed_at);
-    let copied = '';
-    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (text: string) => { copied = text; } } });
-    const copyButtons = details.querySelectorAll('button');
-    await act(async () => (copyButtons[copyButtons.length - 1] as HTMLButtonElement).click());
-    expect(copied).toBe(observation.observation_sha256);
-  });
-  test.each([
-    ['no claim', null, { candidate_count: 0, latest: null }, null, 'No current Claim.'],
-    ['empty', working.execution, { candidate_count: 0, latest: null }, null, 'No notification records'],
-    ['multiple', working.execution, { candidate_count: 2, latest: null }, null, '2 notification records'],
-    ['unavailable', working.execution, null, { code: 'repo_runtime_effect_unreadable' as const, message: 'unavailable' }, 'Delivery evidence is unavailable'],
-  ] as const)('distinguishes %s', async (_name, claimId, evidence, error, expected) => {
-    const snapshot: OperatorFleetSnapshotV1 = { ...stableSnapshot, repositories: [{ ...stableSnapshot.repositories[0]!, cards: [{ ...working,
-      execution:claimId,task_id:claimId?.selector.task ?? null,error,
-      inbox: { ...working.inbox, delivery_evidence: evidence },
-    }] }] };
-    await mount(<OperatorApp initialState={projectSnapshotViewState(snapshot)} initialLocale="en" />);
-    await act(async () => buttonWithText(fixtureTasks.working.task_label).click());
-    expect(paneText()).toContain(expected);
-  });
-});
-
 describe('preparation and available work', () => {
   test('keeps healthy preparation and inline work out of claimed execution', async () => {
     const groups = groupWorklist(preparationSnapshot);
@@ -1413,7 +1245,7 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
 
  test('Fleet rejects a same-epoch sequence regression but accepts a new service epoch', async () => {
   let next = { ...stableSnapshot, sequence: 1 };
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next} />);
   await act(async () => buttonWithText('Refresh').click());
   expect(document.querySelector('[data-fact="sequence"]')?.textContent).toContain(String(stableSnapshot.sequence));
   expect(document.querySelector('[data-state]')?.getAttribute('data-state')).toBe('stale');
@@ -1426,7 +1258,6 @@ test('OperatorApp selects, refreshes and cancels exact task evidence without a m
 test('automatic epoch change cancels associated evidence and late responses cannot restore the old service view', async () => {
   const { admittedTaskContextFixture: taskContextFixture } = await import('../../src/operator-web/fixture');
   const clock = observationClock(), originalFetch = globalThis.fetch;
-  const repositoryReads: Array<{signal: AbortSignal; finish: (value: typeof repositorySnapshot) => void}> = [];
   const contexts: Array<{signal: AbortSignal; finish: (value: ReturnType<typeof taskContextFixture>) => void; request: Parameters<typeof taskContextFixture>[0]}> = [];
   let diffSignal: AbortSignal | null = null, finishDiff!: (response: Response) => void;
   const selector = { repository_id: stableSnapshot.repositories.find(repo => repo.cards.some(card => card.task_id === fixtureTasks.blocked.task_id))!.repository_id, provider_repository_id: '123', issue_id: '456', campaign_id: 'review',
@@ -1447,23 +1278,20 @@ test('automatic epoch change cancels associated evidence and late responses cann
   }) as typeof fetch;
   try {
     await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => next}
-      fetchRepositorySnapshot={(_id, signal) => new Promise(resolve => repositoryReads.push({ signal: signal!, finish: resolve }))}
       readTaskContext={(request, signal) => new Promise(resolve => contexts.push({request, signal, finish: resolve}))} />);
     await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
     await act(async () => document.querySelector<HTMLButtonElement>('.task-sessions > button')!.click());
     await act(async () => { const select = document.querySelector<HTMLSelectElement>('.task-sessions select')!;
       select.value = selector.session_binding_sha256; select.dispatchEvent(new Event('change', { bubbles: true })); });
     await act(async () => document.querySelector<HTMLButtonElement>('.task-diff button')!.click());
-    expect(repositoryReads).toHaveLength(1); expect(contexts).toHaveLength(1);
+    expect(contexts).toHaveLength(1);
     const previousDiff = document.querySelector('.task-diff');
     await clock.advance(30_000);
-    expect(repositoryReads[0]!.signal.aborted).toBe(true);
     expect(contexts[0]!.signal.aborted).toBe(true);
     expect(diffSignal!.aborted).toBe(true);
     expect(document.querySelector('.task-diff')).not.toBe(previousDiff);
-    expect(repositoryReads).toHaveLength(2); expect(contexts).toHaveLength(2);
+    expect(contexts).toHaveLength(2);
     await act(async () => {
-      repositoryReads[0]!.finish(repositorySnapshot);
       contexts[0]!.finish(taskContextFixture(contexts[0]!.request));
       finishDiff(Response.json({ code:'stale' }, {status:409}));
     });
@@ -1516,7 +1344,7 @@ for (const transition of ['service epoch', 'explicit refresh'] as const) {
       await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
         fetchSnapshot={async () => { fleetReads++; return { ...stableSnapshot, sequence: stableSnapshot.sequence + fleetReads,
           service_epoch: transition === 'service epoch' ? `00000000-0000-4000-8000-${String(fleetReads + 1).padStart(12, '0')}` : stableSnapshot.service_epoch }; }}
-        fetchRepositorySnapshot={async () => repositorySnapshot} readTaskContext={async () => { throw new Error('unavailable'); }} />);
+        readTaskContext={async () => { throw new Error('unavailable'); }} />);
       await act(async () => buttonWithText(fixtureTasks.blocked.task_label).click());
       expect(document.querySelector('.task-sessions select')).toBeNull();
       await load(); expect(requests).toHaveLength(2);
@@ -1551,7 +1379,7 @@ for (const transition of ['service epoch', 'explicit refresh'] as const) {
 test('current Task links open current detail and selecting cards writes only navigation identifiers',async()=>{
   const card=stableSnapshot.repositories[0]!.cards.find(c=>c.task_id===fixtureTasks.blocked.task_id)!;
   window.history.replaceState(null,'',`?repository=${card.repository_id}&provider_repository_id=${card.provider_repository_id}&issue_id=${card.provider_issue_id}&session_binding_sha256=${card.execution!.selector.session_binding_sha256}`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" />);
   expect(paneText()).toContain(fixtureTasks.blocked.task_label);
   await act(async()=>document.querySelector<HTMLButtonElement>('.detail-pane__actions button[aria-label]')!.click());
   await act(async()=>buttonWithText(fixtureTasks.blocked.task_label).click());
@@ -1561,7 +1389,7 @@ test('current Task links open current detail and selecting cards writes only nav
 
 test('an invalid Task URL shows the link refusal without a task drawer',async()=>{
   window.history.replaceState(null,'',`?repository=repo-harness&task=${'a'.repeat(64)}&ref=HEAD`);
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" />);
   expect(document.body.textContent).toContain('Invalid Task link');
   expect(document.querySelector('.detail-pane')).toBeNull();
 });
@@ -1574,7 +1402,7 @@ test('refresh removes stale acceptance readiness without creating Done or a merg
   const stale={...current,placement,merge_readiness:readiness,blocker_codes:readiness.blockers.map(b=>b.code),attention_owner:'user' as const};
   const next={...stableSnapshot,sequence:stableSnapshot.sequence+1,counts:{...stableSnapshot.counts,ready_to_merge:stableSnapshot.counts.ready_to_merge-1,in_review:stableSnapshot.counts.in_review+1},repositories:stableSnapshot.repositories.map(r=>({...r,cards:r.cards.map(c=>c.task_id===current.task_id?stale:c)}))};
 
-  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async()=>next} initialRepositorySnapshot={{kind:'ready',snapshot:repositorySnapshot}} />);
+  await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async()=>next} />);
   expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('1');
   await act(async()=>buttonWithText('Refresh').click());
   expect(document.querySelector('.worklist-group--ready_to_merge .worklist-group__count')?.textContent).toBe('0');

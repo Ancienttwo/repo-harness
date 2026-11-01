@@ -22,7 +22,7 @@ import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/
 // Three real `archctx history --ref dd9ccef3 --offset N --limit M --json` pages of this repository.
 import historyPages from '../fixtures/architecture-history/repo-harness-pages.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
-import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
+import { stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
 
 const t = (key: Parameters<typeof translate>[1], values?: Parameters<typeof translate>[2]) => translate('en', key, values);
@@ -994,12 +994,12 @@ describe('architecture history', () => {
 describe('workspace navigation', () => {
   const repositoryId = stableSnapshot.repositories[0]!.repository_id;
   function app(): ReactElement {
-    return <OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" initialRepositorySnapshot={{ kind: 'ready', snapshot: repositorySnapshot }}
+    return <OperatorApp initialSnapshot={stableSnapshot} initialLocale="en"
       readNotifyStatus={() => new Promise(() => {})} />;
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
-  test('names Home, thirteen sections in three groups and Settings at the foot, starts on Home and keeps the repository page with its three tabs', async () => {
+  test('names Home, thirteen sections in three groups and Settings at the foot, starts on Home and keeps the repository page with its two tabs', async () => {
     await mount(app());
     expect([...document.querySelectorAll('.workspace-nav a')].map(item => item.textContent)).toEqual(['Home', 'Board', 'Repositories', 'Worktrees', 'Docs', 'Agents', 'Skills', 'Hooks', 'CLI', 'Bots', 'Architecture', 'Tests', 'System', 'Tools', 'Settings']);
     expect([...document.querySelectorAll('.workspace-nav [id^="nav-group-"]')].map(item => item.textContent)).toEqual(['Work', 'Setup', 'Observe']);
@@ -1016,10 +1016,10 @@ describe('workspace navigation', () => {
       window.dispatchEvent(new window.HashChangeEvent('hashchange'));
     });
     expect(link('repositories').getAttribute('aria-current')).toBe('page');
-    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(3);
+    expect(document.querySelectorAll('[role="tab"]')).toHaveLength(2);
     await act(async () => link('board').click());
     expect(window.location.hash).toBe('#board');
-    expect(document.querySelectorAll('#view-tab-organization')).toHaveLength(0);
+    expect(document.querySelectorAll('#view-tab-attention')).toHaveLength(0);
   });
 
   test('loads Architecture on demand and keeps the module in the hash when a neighbor recenters', async () => {

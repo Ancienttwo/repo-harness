@@ -1,48 +1,22 @@
 import { describe, expect, test } from 'bun:test';
 
 import {
-  decodeOperatorRepositorySnapshot,
   decodeOperatorFleetSnapshot,
   decodeOperatorTaskMessageResponse,
   OPERATOR_API_ERROR_CODES,
-  OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR,
   OPERATOR_REPOSITORY_ERROR_CODES,
-  OperatorRepositoryPayloadError,
   OperatorPayloadError,
   OperatorTaskMessageResponseError,
 } from '../../src/operator-web/types';
-import { repositoryObservationFixture, repositorySnapshot, operatorFixtures } from '../../src/operator-web/fixture';
-import { planningObservationFixture, stableSnapshot } from '../../src/operator-web/fixture';
+import { operatorFixtures } from '../../src/operator-web/fixture';
 import { GENERATED_ARTIFACTS_FAILURE_CODES } from '../../src/core/publication/generated-artifacts';
 import type { RequiredCheckCoverageEvidenceV1 } from '../../src/core/publication/required-check-coverage';
-import { decodeOperatorPlanningSnapshot } from '../../src/core/operator/planning-snapshot';
 import { isOperatorMessageKey, translate, type OperatorMessageKey } from '../../src/operator-web/i18n';
 
 const taskId = 'a'.repeat(64);
 const taskRevision = 'b'.repeat(64);
 const claimId = '00000000-0000-4000-8000-000000000001';
 const snapshotDigest = `sha256:${'c'.repeat(64)}`;
-
-test('Planning transport binds provider tasks, explicit admitted sessions and independent graph observations',()=>{
-  const repository=stableSnapshot.repositories[0]!,snapshot=planningObservationFixture(repositorySnapshot.repository_id,repository.cards);
-  const envelope={...repositorySnapshot,planning:{status:'observed' as const,observed_at:snapshot.observation.observed_at,snapshot}};
-  expect(decodeOperatorRepositorySnapshot(envelope).planning).toEqual(envelope.planning);
-  const {planning:_,...missing}=envelope;
-  expect(()=>decodeOperatorRepositorySnapshot(missing)).toThrow();
-  const task=snapshot.scheduling.tasks[0]!;
-  for(const bad of [
-    {...snapshot,repository_id:'another-repo'},
-    {...snapshot,protocol:1},
-    {...snapshot,scheduling:{...snapshot.scheduling,tasks:[task,task]}},
-    {...snapshot,scheduling:{...snapshot.scheduling,tasks:Array.from({length:201},()=>task)}},
-    {...snapshot,scheduling:{...snapshot.scheduling,repository_id:'another-repo'}},
-    {...snapshot,graph:{status:'unavailable',code:'unclassified'}},
-    {...snapshot,graph:{status:'observed',snapshot:{packages:[],sources:[]}}},
-    {...snapshot,observation:{...snapshot.observation,authorization_revision:-1}},
-  ])expect(()=>decodeOperatorPlanningSnapshot(bad,repositorySnapshot.repository_id)).toThrow();
-  const unavailable={status:'unavailable' as const,observed_at:snapshot.observation.observed_at,code:'source_unavailable' as const};
-  expect(decodeOperatorRepositorySnapshot({...envelope,planning:unavailable}).organization.status).toBe('unavailable');
-});
 
 function validFleetPayload(): Record<string, unknown> {
   return {
@@ -80,10 +54,6 @@ function validFleetPayload(): Record<string, unknown> {
           observation_status: 'observed',
           unread_count: 0,
           addressed_to_current_claim: false,
-          delivery_state: 'pending',
-          runtime_reachability: 'unknown',
-          effect_sha256: null,
-          delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null,
         },
         snapshot_consistency: 'stable',
         error: null,
@@ -149,33 +119,6 @@ describe('operator browser payload contracts', () => {
       execution.selector = { ...execution.selector, ...delta };
       expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
     }
-  });
-
-  // `effect_sha256` is rendered as a copyable identifier, so a value that is
-  // merely a non-empty string is not enough: it must be the prefixed digest the
-  // runtime effect store writes, or explicitly absent.
-  test.each([
-    ['unprefixed digest', 'e'.repeat(64)],
-    ['short digest', `sha256:${'e'.repeat(63)}`],
-    ['uppercase digest', `sha256:${'E'.repeat(64)}`],
-    ['prose', 'effect evidence unavailable'],
-  ])('rejects a %s in inbox.effect_sha256', (_name, effectSha256) => {
-    const payload = validFleetPayload();
-    const repositories = payload.repositories as Array<Record<string, unknown>>;
-    const cards = repositories[0]!.cards as Array<Record<string, unknown>>;
-    cards[0] = { ...cards[0], inbox: { ...(cards[0]!.inbox as Record<string, unknown>), effect_sha256: effectSha256 } };
-    expect(() => decodeOperatorFleetSnapshot(payload)).toThrow(OperatorPayloadError);
-  });
-
-  test('accepts a prefixed effect digest and its explicit absence', () => {
-    const digest = `sha256:${'e'.repeat(64)}`;
-    const payload = validFleetPayload();
-    const repositories = payload.repositories as Array<Record<string, unknown>>;
-    const cards = repositories[0]!.cards as Array<Record<string, unknown>>;
-    cards[0] = { ...cards[0], inbox: { ...(cards[0]!.inbox as Record<string, unknown>), effect_sha256: digest } };
-
-    expect(decodeOperatorFleetSnapshot(payload).repositories[0]?.cards[0]?.inbox.effect_sha256).toBe(digest);
-    expect(decodeOperatorFleetSnapshot(validFleetPayload()).repositories[0]?.cards[0]?.inbox.effect_sha256).toBeNull();
   });
 
   // A coverage blocker carries action text. The transport must preserve it, and
@@ -323,30 +266,6 @@ describe('operator browser payload contracts', () => {
     expect(() => decodeOperatorTaskMessageResponse(response, expected, status)).toThrow(OperatorTaskMessageResponseError);
   });
 
-  test('uses a repository-specific validation contract while Fleet keeps its own contract', () => {
-    expect(() => decodeOperatorFleetSnapshot({ ...validFleetPayload(), protocol: 99 })).toThrow(OperatorPayloadError);
-
-    let protocolError: unknown;
-    try {
-      decodeOperatorRepositorySnapshot({ ...repositoryObservationFixture(), protocol: 99 });
-    } catch (error) {
-      protocolError = error;
-    }
-    expect(protocolError).toBeInstanceOf(OperatorRepositoryPayloadError);
-    expect(protocolError).toMatchObject(OPERATOR_REPOSITORY_PAYLOAD_INVALID_ERROR);
-    expect(protocolError).not.toBeInstanceOf(OperatorPayloadError);
-
-    expect(() => decodeOperatorRepositorySnapshot({
-      ...repositoryObservationFixture(),
-      exchange: {},
-    })).toThrow(OperatorRepositoryPayloadError);
-  });
-
-  test('provides runtime-effect recovery copy in both operator locales', () => {
-    expect(translate('en', 'repo.error.repo_runtime_effect_unreadable')).toContain('Reconcile runtime delivery evidence');
-    expect(translate('zh', 'repo.error.repo_runtime_effect_unreadable')).toContain('reconcile runtime 投递证据');
-  });
-
   // Every repository error code the transport can carry is client-owned copy.
   // The server sentence is a diagnostic contract, not board copy, so leaving a
   // code unlocalized is what put nine English sentences in the Chinese board.
@@ -375,43 +294,6 @@ describe('operator browser payload contracts', () => {
     expect(isOperatorMessageKey('error.not_a_real_operator_code.message')).toBe(false);
     expect(translate('en', 'error.untranslated').length).toBeGreaterThan(0);
     expect(translate('zh', 'error.untranslated')).not.toBe(translate('en', 'error.untranslated'));
-  });
-});
-
-
-describe('notification delivery evidence protocol', () => {
-  const latest = { adapter_kind: 'herdr-cli-agent', effect_state: 'stopped', receipt_kind: null,
-    observed_at: '2026-09-07T00:00:00.000Z', observation_sequence: 2, observation_sha256: `sha256:${'e'.repeat(64)}` } as const;
-  function payload(evidence: unknown) {
-    const value = validFleetPayload();
-    const card = (value.repositories as { cards: Record<string, unknown>[] }[])[0]!.cards[0]!;
-    (card.inbox as Record<string, unknown>).delivery_evidence = evidence;
-    return { value, card };
-  }
-  test('accepts exact single, zero, multiple and failed observations', () => {
-    for (const evidence of [{ candidate_count: 0, latest: null }, { candidate_count: 2, latest: null }, { candidate_count: 1, latest }]) {
-      const { value } = payload(evidence);
-      expect(decodeOperatorFleetSnapshot(value).repositories[0]!.cards[0]!.inbox.delivery_evidence).toEqual(evidence);
-    }
-    const { value, card } = payload(null);
-    card.error = { code: 'repo_runtime_effect_unreadable', message: 'unavailable' };
-    (card.inbox as Record<string, unknown>).observation_status = 'unavailable';
-    card.placement = { kind: 'unclassified', reason: 'observation_failed' };
-    value.snapshot_consistency = 'degraded';
-    (value.repositories as Record<string, unknown>[])[0]!.snapshot_consistency = 'degraded';
-    value.counts = { ...(value.counts as object), working: 0, unclassified: 1 };
-    expect(decodeOperatorFleetSnapshot(value).repositories[0]!.cards[0]!.inbox.delivery_evidence).toBeNull();
-  });
-  test('rejects old protocol and missing, inconsistent or malformed evidence', () => {
-    const invalid = [undefined, null, { candidate_count: -1, latest: null }, { candidate_count: 1, latest: null }, { candidate_count: 2, latest },
-      ...[{ adapter_kind: 'claude' }, { effect_state: 'working' }, { receipt_kind: 'ack' }, { observed_at: 'yesterday' }, { observed_at: '2026-09-07' }, { observation_sequence: -1 }, { observation_sha256: 'opaque' }].map(delta => ({ candidate_count: 1, latest: { ...latest, ...delta } }))];
-    for (const evidence of invalid) expect(() => decodeOperatorFleetSnapshot(payload(evidence).value)).toThrow(OperatorPayloadError);
-    const old = payload({ candidate_count: 0, latest: null }).value;
-    old.protocol = 3;
-    expect(() => decodeOperatorFleetSnapshot(old)).toThrow(OperatorPayloadError);
-    const failed = payload({ candidate_count: 0, latest: null });
-    failed.card.error = { code: 'repo_runtime_effect_unreadable', message: 'unavailable' };
-    expect(() => decodeOperatorFleetSnapshot(failed.value)).toThrow(OperatorPayloadError);
   });
 });
 

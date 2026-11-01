@@ -25,7 +25,7 @@ function card(overrides: Partial<FleetBoardCardInputV2> = {}): FleetBoardCardInp
     merge_readiness: null,
     execution_readiness: 'execution_ready', readiness_blockers: [],
     feedback: { observation_status: 'observed', pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+    inbox: { observation_status: 'observed', unread_count: 0, addressed_to_current_claim: false },
     snapshot_consistency: 'stable',
     error: null,
     ...overrides,
@@ -76,26 +76,6 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
     expect(classifyFleetBoardPlacement({ ...blocked, execution: session() })).toEqual({ kind: 'column', column: 'working' });
   });
 
-  test('keeps runtime delivery facts out of Fleet column and execution readiness authority', () => {
-    const baseline = card();
-    const reconciled = card({
-      inbox: {
-        ...baseline.inbox,
-        delivery_state: 'reconciliation_required',
-        runtime_reachability: 'unavailable',
-        effect_sha256: `sha256:${'f'.repeat(64)}`,
-        failure_class: 'receipt_missing',
-      },
-    });
-    const projected = projectFleetBoardSnapshot({
-      registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-08-30T00:00:00.000Z',
-      repositories: [{ repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok', snapshot_consistency: 'stable', cards: [reconciled], error: null }],
-    }).repositories[0]!.cards[0]!;
-    expect(projected.placement).toEqual(classifyFleetBoardPlacement(baseline));
-    expect(projected.execution_readiness).toBe(baseline.execution_readiness);
-    expect(projected.inbox.delivery_state).toBe('reconciliation_required');
-  });
-
   test('uses explicit provider readiness without a legacy pointer and preserves attention precedence', () => {
     const reviewing = card({
       merge_readiness: {
@@ -113,7 +93,7 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
         stack: { member: false, depth: 0, chain: [], final_base_sha: null, status: 'not_member' },
       },
       feedback: { observation_status: 'observed', pending_count: 2, no_progress: true, repair_actions: [] },
-      inbox: { observation_status: 'observed', unread_count: 1, addressed_to_current_claim: true, delivery_state: 'delivered', runtime_reachability: 'reachable', effect_sha256: `sha256:${'f'.repeat(64)}`, delivery_evidence: { candidate_count: 0, latest: null }, failure_class: null },
+      inbox: { observation_status: 'observed', unread_count: 1, addressed_to_current_claim: true },
     });
     expect(classifyFleetBoardPlacement({ ...reviewing, execution: null })).toEqual({ kind: 'column', column: 'in_review' });
     expect(classifyFleetBoardPlacement({ ...reviewing, merge_readiness: null, execution_status: 'unavailable' })).toEqual({ kind: 'unclassified', reason: 'readiness_unavailable' });
@@ -267,11 +247,11 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
 
     expect(repository.status).toBe('ok');
     expect(repository.snapshot_consistency).toBe('degraded');
-    expect(repository.cards[0]).toMatchObject({ placement: { kind: 'column', column: 'available' }, error: null, inbox: { delivery_evidence: { candidate_count: 0, latest: null } } });
+    expect(repository.cards[0]).toMatchObject({ placement: { kind: 'column', column: 'available' }, error: null, inbox: { observation_status: 'observed' } });
     expect(repository.cards[1]).toMatchObject({
       placement: { kind: 'unclassified', reason: 'observation_failed' },
       error: { code: 'repo_inbox_unreadable', message: 'repository inbox observation is unavailable' },
-      inbox: { delivery_evidence: null },
+      inbox: { observation_status: 'unavailable' },
     });
     expect(result.counts.available).toBe(1);
     expect(result.counts.unclassified).toBe(1);
@@ -301,23 +281,6 @@ describe('FleetBoardSnapshotV2 pure projection', () => {
     expect(rendered).not.toContain('/private/raw-provider-stderr');
     expect(rendered).not.toContain('gh stderr');
   });
-});
-
-
-test('delivery observations affect the digest without changing classification', () => {
-  const make = (observationSequence: number) => projectFleetBoardSnapshot({
-    registry_revision: 'sha256:registry', sequence: 1, observed_at: '2026-09-07T00:00:00.000Z',
-    repositories: [{ repository_id: 'repo-a', repo_root: '/fixtures/a', access_mode: 'read_write', status: 'ok', snapshot_consistency: 'stable', error: null,
-      cards: [card({ inbox: { ...card().inbox, delivery_evidence: { candidate_count: 1, latest: {
-        adapter_kind: 'herdr-cli-agent', effect_state: 'stopped', receipt_kind: null,
-        observed_at: '2026-09-07T00:00:00.000Z', observation_sequence: observationSequence, observation_sha256: `sha256:${'e'.repeat(64)}`,
-      } } } })],
-    }],
-  });
-  const before = make(1); const after = make(2);
-  expect(before.snapshot_sha256).not.toBe(after.snapshot_sha256);
-  expect(before.counts).toEqual(after.counts);
-  expect(before.repositories[0]!.cards[0]!.attention_owner).toBe(after.repositories[0]!.cards[0]!.attention_owner);
 });
 
 

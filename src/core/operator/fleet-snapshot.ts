@@ -116,23 +116,8 @@ function projectCard(card: FleetBoardCardV2): OperatorFleetCardV1 {
     }),
     inbox: Object.freeze({
       observation_status: card.inbox.observation_status,
-      delivery_evidence: card.inbox.delivery_evidence === null ? null : Object.freeze({
-        candidate_count: card.inbox.delivery_evidence.candidate_count,
-        latest: card.inbox.delivery_evidence.latest === null ? null : Object.freeze({
-          adapter_kind: card.inbox.delivery_evidence.latest.adapter_kind,
-          effect_state: card.inbox.delivery_evidence.latest.effect_state,
-          receipt_kind: card.inbox.delivery_evidence.latest.receipt_kind,
-          observed_at: card.inbox.delivery_evidence.latest.observed_at,
-          observation_sequence: card.inbox.delivery_evidence.latest.observation_sequence,
-          observation_sha256: card.inbox.delivery_evidence.latest.observation_sha256,
-        }),
-      }),
       unread_count: card.inbox.unread_count,
       addressed_to_current_claim: card.inbox.addressed_to_current_claim,
-      delivery_state: card.inbox.delivery_state,
-      runtime_reachability: card.inbox.runtime_reachability,
-      effect_sha256: card.inbox.effect_sha256,
-      failure_class: card.inbox.failure_class,
     }),
     snapshot_consistency: card.snapshot_consistency,
     error: card.error === null

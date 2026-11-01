@@ -44,7 +44,7 @@ function fleetCard(execution: AdmittedTaskSession | null, issueState: 'open' | '
     execution_status: 'observed', execution, task_id: execution?.selector.task ?? null, task_label: 'Provider title', task_index: 7,
     merge_readiness: null, execution_readiness: null, readiness_blockers: null,
     feedback: { observation_status: 'unavailable', pending_count: 0, no_progress: false, repair_actions: [] },
-    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false, delivery_state: 'pending', runtime_reachability: 'unknown', effect_sha256: null, failure_class: null, delivery_evidence: null },
+    inbox: { observation_status: 'unavailable', unread_count: 0, addressed_to_current_claim: false },
     snapshot_consistency: 'stable', error: null };
 }
 function fleet(cards: readonly FleetBoardCardInputV2[]) {

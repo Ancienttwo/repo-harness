@@ -64,7 +64,7 @@ describe("canonical adoption plan", () => {
         throw new Error("expected a writeFile operation for .ai/harness/policy.json");
       }
       const generatedPolicy = JSON.parse(policyOperation.content);
-      expect(generatedPolicy.agent_runtime).toEqual({ mode: 'off', adapters: { 'herdr-cli-agent': { enabled: false } } });
+      expect(generatedPolicy.agent_runtime).toBeUndefined();
       expect(generatedPolicy.agentic_development.routing.design_options_choice).toBe("convention:design-options");
       expect(plan.operations.some((operation) => operation.path === ".ai/context/capabilities.json")).toBe(true);
       expect(plan.operations.some((operation) => operation.path === "deploy/README.md")).toBe(true);
@@ -110,7 +110,7 @@ describe("canonical adoption plan", () => {
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true }));
 
       expect(apply.ok).toBe(true);
-      expect(JSON.parse(readFileSync(join(repo, '.ai/harness/policy.json'), 'utf8')).agent_runtime.adapters).toEqual({ 'herdr-cli-agent': {enabled:false} });
+      expect(JSON.parse(readFileSync(join(repo, '.ai/harness/policy.json'), 'utf8')).agent_runtime).toBeUndefined();
       expect(apply.transactionManifestPath).toBeDefined();
       expect(existsSync(join(repo, ".ai", "harness", "workflow-contract.json"))).toBe(true);
       expect(existsSync(join(repo, ".ai", "harness", "policy.json"))).toBe(true);
@@ -368,12 +368,13 @@ describe("canonical adoption plan", () => {
           workstreams_dir: "tasks/workstreams",
           lessons_file: "custom/lessons.md",
         },
+        agent_runtime: { mode: "off", adapters: { "herdr-cli-agent": { enabled: false } } },
         custom_key: { keep: true },
       }, null, 2));
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
       expect(plan.warnings).toContainEqual(expect.objectContaining({
         code: "retired-policy-keys",
-        message: "Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir",
+        message: "Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir, agent_runtime",
       }));
       expect(applyAdoptionPlan(plan).ok).toBe(true);
       const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));
@@ -381,6 +382,7 @@ describe("canonical adoption plan", () => {
       expect(policy.tasks.current_status_file).toBeUndefined();
       expect(policy.tasks.workstreams_dir).toBeUndefined();
       expect(policy.tasks.lessons_file).toBe("custom/lessons.md");
+      expect(policy.agent_runtime).toBeUndefined();
       expect(policy.custom_key).toEqual({ keep: true });
     } finally {
       cleanup(repo);

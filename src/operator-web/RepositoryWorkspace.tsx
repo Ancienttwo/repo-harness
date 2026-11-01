@@ -13,9 +13,7 @@ import {
 } from '@phosphor-icons/react';
 import { DrawerFrame, useModalFocus } from './Drawer';
 import { localizeApiError } from './fleet-api';
-import { relativeAge, type OperatorMessageKey, type OperatorTranslate } from './i18n';
-import { OrganizationSummary } from './OrganizationSummary';
-import { PlanningView } from './PlanningView';
+import { type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { AdmittedTaskActivity } from './AdmittedTaskActivity';
 import { TaskDiff, TaskSessions } from './TaskDiff';
 import type { TaskContextReader } from './AdmittedTaskContext';
@@ -24,7 +22,6 @@ import {
   OPERATOR_COLUMNS,
   snapshotViewKind,
   type OperatorApiErrorV1,
-  type OperatorRepositorySnapshotV1,
   type OperatorFleetCardV1,
   type OperatorFleetErrorV1,
   type OperatorFleetRepositoryV1,
@@ -43,25 +40,6 @@ import {
   type WorklistCause,
   type WorklistGroupId,
 } from './worklist';
-
-/**
- * The board's repository snapshot read, as a state machine rather than a nullable
- * snapshot.
- *
- * `idle` and an empty snapshot are different facts and are kept apart on
- * purpose: the first says nothing has been read for this repository yet, the
- * second says the store was read and holds nothing. Collapsing them is how a
- * repository observation source that could not be read starts looking quiet.
- */
-export type RepositoryViewState =
-  | { readonly kind: 'idle' }
-  | { readonly kind: 'loading'; readonly repository_id: string }
-  | { readonly kind: 'ready'; readonly snapshot: OperatorRepositorySnapshotV1 }
-  | {
-      readonly kind: 'failed';
-      readonly repository_id: string;
-      readonly error: OperatorApiErrorV1;
-    };
 
 export function snapshotForState(state: OperatorSnapshotViewState): OperatorFleetSnapshotV1 | null {
   if (state.kind === 'loading') return state.previous;
@@ -218,19 +196,6 @@ function CauseLine({ cause, t }: { readonly cause: WorklistCause | null; readonl
   );
 }
 
-function RuntimeExceptionBadges({ card, t }: { readonly card: OperatorFleetCardV1; readonly t: OperatorTranslate }) {
-  return (
-    <>
-      {card.inbox.runtime_reachability === 'unavailable' && (
-        <ToneBadge tone="tone-danger">{t('runtime.unavailable')}</ToneBadge>
-      )}
-      {(card.inbox.delivery_state === 'failed' || card.inbox.delivery_state === 'reconciliation_required') && (
-        <ToneBadge tone="tone-danger">{t(`delivery.${card.inbox.delivery_state}` as OperatorMessageKey)}</ToneBadge>
-      )}
-    </>
-  );
-}
-
 function WorklistRow({ card, selected, onSelect, t }: {
   readonly card: OperatorFleetCardV1;
   readonly selected: boolean;
@@ -252,7 +217,6 @@ function WorklistRow({ card, selected, onSelect, t }: {
         {card.attention_owner !== 'none' && (
           <ToneBadge tone={attentionTone(card.attention_owner)}>{t('attention.owned', { owner: t(attentionKey(card.attention_owner)) })}</ToneBadge>
         )}
-        <RuntimeExceptionBadges card={card} t={t} />
       </span>
       <span className="worklist-row__meta">
         <span className="worklist-row__stage">{t(stageKey(card.placement))}</span>
@@ -284,7 +248,6 @@ const REPOSITORY_ERROR_KEYS: Readonly<Record<OperatorFleetErrorV1['code'], Opera
   repo_readiness_unavailable: 'repo.error.repo_readiness_unavailable',
   repo_feedback_unreadable: 'repo.error.repo_feedback_unreadable',
   repo_inbox_unreadable: 'repo.error.repo_inbox_unreadable',
-  repo_runtime_effect_unreadable: 'repo.error.repo_runtime_effect_unreadable',
   repo_collection_timeout: 'repo.error.repo_collection_timeout',
 };
 
@@ -411,8 +374,8 @@ function Worklist({ snapshot, selectedKey, onSelect, t }: {
   );
 }
 
-export type ObservationView = 'planning' | 'delivery' | 'organization';
-const OBSERVATION_VIEWS: readonly ObservationView[] = ['planning', 'delivery', 'organization'];
+export type ObservationView = 'attention' | 'delivery';
+const OBSERVATION_VIEWS: readonly ObservationView[] = ['attention', 'delivery'];
 
 function ObservationTabs({ view, onChange, t }: { readonly view: ObservationView; readonly onChange: (view: ObservationView) => void; readonly t: OperatorTranslate }) {
   return (
@@ -566,10 +529,6 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
   readonly revisionChangedFrom: string | null;
   readonly t: OperatorTranslate;
 }) {
-  const evidence = card.inbox.delivery_evidence;
-  const observation = evidence?.latest ?? null;
-  const observationAge = observation === null ? null : relativeAge(observation.observed_at, Date.now());
-  const terminalNotice = observation?.effect_state === 'stopped' || observation?.effect_state === 'superseded';
   return (
     <>
       {revisionChangedFrom && (
@@ -617,39 +576,6 @@ function TaskDetail({ card, revisionChangedFrom, t }: {
             <dt>{t('field.execution')}</dt>
             <dd>{card.execution_readiness ? t(`execution.${card.execution_readiness}` as OperatorMessageKey) : t('field.notApplicable')}</dd>
           </div>
-        </dl>
-      </section>
-      <section className="detail-block" aria-labelledby="detail-delivery-heading">
-        <h3 className="detail-eyebrow" id="detail-delivery-heading">{t('detail.deliveryRuntime')}</h3>
-        <p className="detail-description">{t('deliveryEvidence.explanation')}</p>
-        {evidence === null ? <p>{t('deliveryEvidence.unavailable')}</p>
-          : evidence.candidate_count === 0 ? <p>{t(card.execution === null ? 'deliveryEvidence.noClaim' : 'deliveryEvidence.empty')}</p>
-          : evidence.candidate_count > 1 ? <p>{t('deliveryEvidence.multiple', { count: evidence.candidate_count })}</p>
-          : null}
-        {observation && <dl className="detail-list">
-          <div><dt>{t('deliveryEvidence.adapter')}</dt><dd>{observation.adapter_kind}</dd></div>
-          <div><dt>{t('deliveryEvidence.phase')}</dt><dd>{t(`effect.${observation.effect_state}` as OperatorMessageKey)}</dd></div>
-          <div><dt>{t('deliveryEvidence.observedAt')}</dt><dd><time dateTime={observation.observed_at} title={observation.observed_at}>{observationAge && t('deliveryEvidence.observedAgo', { age: t(observationAge.key, { count: observationAge.count }) })}</time></dd></div>
-          <div><dt>{t('deliveryEvidence.receipt')}</dt><dd>{t(`receipt.${observation.receipt_kind ?? 'none'}` as OperatorMessageKey)}</dd></div>
-        </dl>}
-        <details>
-          <summary>{t('deliveryEvidence.identifiers')}</summary>
-          <CopyValue label={t('field.effectSha')} value={card.inbox.effect_sha256} t={t} />
-          {observation && <>
-            <dl className="detail-list">
-              <div><dt>{t('deliveryEvidence.sequence')}</dt><dd>{observation.observation_sequence}</dd></div>
-              <div><dt>{t('deliveryEvidence.observedAt')}</dt><dd><time dateTime={observation.observed_at}>{observation.observed_at}</time></dd></div>
-            </dl>
-            <CopyValue label={t('deliveryEvidence.observationSha')} value={observation.observation_sha256} t={t} />
-          </>}
-        </details>
-        <dl className="detail-list">
-          <div>
-            <dt>{t('field.deliveryState')}</dt>
-            <dd>{terminalNotice ? t(`effect.${observation.effect_state}` as OperatorMessageKey) : t(`delivery.${card.inbox.delivery_state}` as OperatorMessageKey)}</dd>
-          </div>
-          <div><dt>{t('field.runtimeReachability')}</dt><dd>{t(`runtime.${card.inbox.runtime_reachability}` as OperatorMessageKey)}</dd></div>
-          <div><dt>{t('field.failureClass')}</dt><dd className="mono-value">{card.inbox.failure_class ?? t('field.none')}</dd></div>
         </dl>
       </section>
       <section className="detail-block" aria-labelledby="detail-signals-heading">
@@ -750,7 +676,6 @@ export interface RepositoryWorkspaceProps {
   readonly revisionChangedFrom: string | null;
   readonly view: ObservationView;
   readonly onView: (view: ObservationView) => void;
-  readonly repositorySnapshot: RepositoryViewState;
   readonly refreshGeneration: number;
   readonly onRefresh: () => void;
   readonly onSelect: (card: OperatorFleetCardV1) => void;
@@ -761,12 +686,12 @@ export interface RepositoryWorkspaceProps {
   readonly t: OperatorTranslate;
 }
 
-/** One repository's Fleet tasks and organization, with the task drawer. */
+/** One repository's Fleet tasks, with the task drawer. */
 export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
-  const { state, activeRepository, selection, selectedCard, view, repositorySnapshot, t } = props;
+  const { state, activeRepository, selection, selectedCard, view, t } = props;
   const snapshot = snapshotForState(state);
   const visibleRepositories = useMemo(() => activeRepository ? [activeRepository] : [], [activeRepository]);
-  const organizationActive = activeRepository === null || view === 'organization';
+  const attentionActive = activeRepository === null || view === 'attention';
   return (
     <>
       <header className="flex flex-col gap-3 border-b border-kumo-hairline pb-4">
@@ -780,8 +705,7 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
       {selection && snapshot !== null && !selectedCard && <p role="status">{t('sessions.selectionStale')}</p>}
       {activeRepository && <TaskSessions key={JSON.stringify([snapshot?.service_epoch, activeRepository.repository_id, props.refreshGeneration])} repositoryId={activeRepository.repository_id} t={t} />}
       {activeRepository && <ObservationTabs view={view} onChange={props.onView} t={t} />}
-      <div role="tabpanel" id="view-panel-organization" aria-labelledby="view-tab-organization" hidden={!organizationActive} className="flex flex-col gap-6">
-        {activeRepository && <OrganizationSummary state={repositorySnapshot} repositoryId={activeRepository.repository_id} t={t} />}
+      <div role="tabpanel" id="view-panel-attention" aria-labelledby="view-tab-attention" hidden={!attentionActive} className="flex flex-col gap-6">
         <SnapshotNotice state={state} onRetry={props.onRefresh} t={t} />
         {state.kind === 'loading' && state.previous === null ? <LoadingState t={t} />
           : state.kind === 'fatal' ? <FatalState error={state.error} onRetry={props.onRefresh} t={t} />
@@ -791,13 +715,10 @@ export function RepositoryWorkspace(props: RepositoryWorkspaceProps) {
                   : <Worklist key={activeRepository.repository_id} snapshot={{ repositories: visibleRepositories }} selectedKey={selection?.key ?? null} onSelect={props.onSelect} t={t} />
             ) : null}
       </div>
-      <div role="tabpanel" id="view-panel-planning" aria-labelledby="view-tab-planning" hidden={view !== 'planning'}>
-        {view === 'planning' && activeRepository && <PlanningView state={repositorySnapshot} repositoryId={activeRepository.repository_id} cards={activeRepository.cards} onSelect={props.onSelect} t={t} />}
-      </div>
       <div role="tabpanel" id="view-panel-delivery" aria-labelledby="view-tab-delivery" hidden={view !== 'delivery'}>
         {view === 'delivery' && activeRepository && <DeliveryView repository={activeRepository} selectedKey={selection?.key ?? null} onSelect={props.onSelect} t={t} />}
       </div>
-      {view !== 'organization' && <SnapshotNotice state={state} onRetry={props.onRefresh} t={t} />}
+      {view !== 'attention' && <SnapshotNotice state={state} onRetry={props.onRefresh} t={t} />}
       {activeRepository && <details className="repository-overview">
         <summary>{t('detail.overviewTitle')}</summary>
         <StageMatrix snapshot={{ repositories: visibleRepositories }} t={t} />
