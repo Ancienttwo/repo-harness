@@ -56,6 +56,7 @@ describe('Bash write tripwire host route', () => {
       // Test HOME lives under /tmp, so a missing directory below / stands in for $HOME. The hook only decides; no command runs.
       const outsideHome = '/repo-harness-bash-guard-home';
       symlinkSync('/', join(root, 'root-alias'));
+      symlinkSync(join(outsideHome, 'new-file'), join(root, 'dangling'));
       const invokeBash = (command: string, hookCwd = cwd) => spawnSync(process.execPath,
         [HOOK_ENTRY, 'PreToolUse', '--route', 'bash'], {
           cwd: hookCwd, encoding: 'utf8',
@@ -73,6 +74,8 @@ describe('Bash write tripwire host route', () => {
         // Outside the repository, Bash writes only strictly below a temp or managed worktree root.
         `echo value > '${outsideHome}/x.txt'`,
         `echo value > '${root}/root-alias/repo-harness-bash-guard-home/new.txt'`,
+        // The kernel follows the link before `..`; the shell creates a dangling link's target.
+        `echo value > '${root}/root-alias/../x.txt'`, `echo value > '${root}/dangling'`,
         'echo value > /tmp-repo-harness-bash-guard-neighbour/x.txt',
         'rm -rf /tmp/*',
         `echo value > '${cwd}/_ops/fixture'`, `echo value > '${cwd}/_ref/fixture'`,

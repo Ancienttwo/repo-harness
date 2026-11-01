@@ -9,7 +9,7 @@
  * record. An allowed edit can carry the `[CapabilityOwner]` line.
  */
 
-import { appendFileSync, mkdirSync, realpathSync } from 'fs';
+import { appendFileSync, existsSync, lstatSync, mkdirSync, realpathSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, posix, relative, sep, win32 } from 'path';
 import { managedWorktreeRoot } from '../../effects/git/managed-worktree';
@@ -99,7 +99,12 @@ function isBelowRoot(root: string, target: string): boolean {
 function externalTargetAllowed(repoRoot: string, filePath: string, bashRoots: readonly string[] | null): boolean {
   const external = canonicalExternalPath(repoRoot, filePath);
   if (bashRoots === null) return external !== null || isForeignDriveAbsolutePath(repoRoot, filePath);
-  return external !== null && bashRoots.some(root => isBelowRoot(root, external));
+  return external !== null && bashRoots.some(root => isBelowRoot(root, external)) && !isDanglingSymlink(filePath);
+}
+
+/** canonicalTarget reads a dangling leaf link as a missing file, but the shell writes through it to the link target. */
+function isDanglingSymlink(filePath: string): boolean {
+  return lstatSync(filePath, { throwIfNoEntry: false })?.isSymbolicLink() === true && !existsSync(filePath);
 }
 
 /** A caller that owns its own decision reports it through the same denial record and exit code. */
