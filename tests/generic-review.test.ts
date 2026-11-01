@@ -663,8 +663,10 @@ test('an unready Pi blocks only a new Pi Herdr review before admission', async (
     .rejects.toThrow('review_pi_launch_not_ready: PI_HERDR_INTEGRATION_MISSING');
   expect(f.calls).toEqual(['installation']);
   expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
+  // Claude passes the gate position and reaches admission; it fails later on every platform.
   await expect(runReviewRound(f.options, { ...f.effects, piHerdrLaunchBlocker: () => { throw new Error('claude must not read Pi readiness'); } }))
-    .rejects.toThrow('fixture_start_failure');
+    .rejects.not.toThrow('claude must not read Pi readiness');
+  expect(f.calls).toContain('admit');
 });
 
 type SeamHarness = 'claude' | 'codex' | 'pi';
