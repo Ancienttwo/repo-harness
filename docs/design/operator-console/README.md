@@ -11,6 +11,7 @@ the PRD is the snapshot
 | Design canvas (21 artboards, light/dark) | Claude design artifact: https://claude.ai/artifact/JVJiUztNTXwx1wvmFwdcyw (private until shared). Read for the brief at version `1793028533-d1e8` (`project/canvas.json` sha256 `61876184…4e6a7a`) |
 | Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared). Read at version `1793028749-cefd` |
 | Design system (repo copy) | [`design-system/`](design-system/README.md): README, `tokens.json`, component guidelines, logos and mascots |
+| Architecture History view (#1300) | [`mockups/1300-architecture-history.html`](mockups/1300-architecture-history.html): self-contained HTML. Timeline, milestone map, delta styles for added, removed and renamed nodes and changed relations, and six states. Data is the repo-harness model at 28 real milestones, aggregated per capability in the `archctx history` v1 shape |
 
 ## Page inventory
 

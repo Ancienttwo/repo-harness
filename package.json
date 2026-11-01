@@ -28,7 +28,7 @@
     "agents/",
     "assets/",
     "dist/hook-entry.js",
-    "dist/dsh-plugin.js",
+    "dist/dsh/",
     "cordis.patch.yml",
     "dist/oar-review-host.js",
     "dist/operator-ui/",
@@ -83,7 +83,7 @@
     "check:context-files": "repo-harness run check-context-files",
     "check:deploy-sql": "repo-harness run check-deploy-sql-order",
     "build:hook-bundle": "bun build src/cli/hook-entry.ts --target=bun --outfile dist/hook-entry.js --define REPO_HARNESS_BUNDLED_CLI_VERSION=\"\\\"$npm_package_version\\\"\" && head -1 dist/hook-entry.js | grep -q '^#!/usr/bin/env bun' && ! grep -q REPO_HARNESS_BUNDLED_CLI_VERSION dist/hook-entry.js",
-    "build:dsh-plugin": "bun build src/dsh/plugin.ts --target=node --format=esm --packages=external --outfile dist/dsh-plugin.js && ! grep -q '@deepseek-ai/' dist/dsh-plugin.js",
+    "build:dsh-plugin": "bun src/dsh/build.ts",
     "build:operator-web": "vite build --config vite.operator.config.ts",
     "dev:operator": "vite --config vite.operator.config.ts",
     "prepack": "bun run build:hook-bundle 1>&2 && bun run build:dsh-plugin 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2",
@@ -118,7 +118,8 @@
     "remark-gfm": "4.0.1",
     "tailwindcss": "^4.3.3",
     "typescript": "^7.0.2",
-    "vite": "^8.3.1"
+    "vite": "^8.3.1",
+    "zod": "4.4.3"
   },
   "dependencies": {
     "@botiverse/oar": "0.80.1",

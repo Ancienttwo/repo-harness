@@ -1,3 +1,4 @@
+import { createHash } from 'crypto';
 import { lstatSync, readFileSync } from 'fs';
 import { join } from 'path';
 import { formatJson } from '../installer/shared';
@@ -9,7 +10,7 @@ import {
   repoCheckoutProbeEnv,
   repoHarnessCheckoutRejection,
 } from '../../effects/repo-registry';
-import { sweepManagedWorktrees } from '../../effects/state/coordination-worktree-topology';
+import { boundSweepSteps, planManagedWorktreeSweep, sweepManagedWorktrees, type WorktreeSweepPlan } from '../../effects/state/coordination-worktree-topology';
 import { planRepoAdoption, runAdoptionApply } from './adoption-plan';
 import { formatUpgradeResult, runUpgrade, type UpgradeResult } from './upgrade';
 
@@ -41,8 +42,10 @@ export interface RegisteredInitApply {
   readonly errors?: readonly string[];
 }
 
+/** Preview: the sweep plan, null when there is nothing to sweep. Apply: the sweep report. */
 export type RegisteredSweep =
-  | { readonly ran: false; readonly reason: string }
+  | { readonly ran: false; readonly plan: WorktreeSweepPlan | null }
+  | { readonly ran: false; readonly error: string }
   | { readonly ran: true; readonly report: string | null };
 
 export interface RegisteredRepoResult {
@@ -74,11 +77,6 @@ export interface RegisteredUpgradeOptions {
   /** The real process cwd. The sweep and the legacy worktree cleanup never remove it or anything below it. */
   readonly callerCwd?: string;
 }
-
-const SWEEP_PREVIEW: RegisteredSweep = {
-  ran: false,
-  reason: 'The managed worktree sweep has no dry-run path; it runs only with --apply.',
-};
 
 type Classification =
   | { readonly ready: true }
@@ -134,12 +132,41 @@ function classifyRepo(path: string, env: NodeJS.ProcessEnv): Classification {
   return { ready: true };
 }
 
+/** Each repo's classification and sweep plan. The plan revision binds every sweep plan, so apply runs only previewed steps. */
+type RepoPlan =
+  | { readonly classification: Classification; readonly sweep?: Exclude<RegisteredSweep, { ran: true }> }
+  | { readonly error: string };
+
+const NO_STEPS: WorktreeSweepPlan = { target_oid: null, items: [] };
+const message = (error: unknown) => error instanceof Error ? error.message : String(error);
+
+function planRepo(path: string, env: NodeJS.ProcessEnv, callerCwd: string): RepoPlan {
+  try {
+    const classification = classifyRepo(path, env);
+    if (!classification.ready) return { classification };
+    try { return { classification, sweep: { ran: false, plan: planManagedWorktreeSweep(path, callerCwd, env, { deadlineMs: SWEEP_DEADLINE_MS }) } }; }
+    catch (error) { return { classification, sweep: { ran: false, error: `sweep plan failed: ${message(error)}` } }; }
+  } catch (error) { return { error: message(error) }; }
+}
+
+/** The plan that binds an apply sweep. A skipped repo or a failed plan approves no sweep step. */
+function approvedSweep(plan: RepoPlan): WorktreeSweepPlan {
+  return 'classification' in plan && plan.sweep && 'plan' in plan.sweep && plan.sweep.plan ? plan.sweep.plan : NO_STEPS;
+}
+
+/** Repo classification is checked again before each write, so the revision binds only the registry and the sweep steps. */
+function planRevision(registryRevision: string, repos: readonly { readonly path: string }[], plans: readonly RepoPlan[]): string {
+  const sweeps = plans.map((plan, index) => ({ path: repos[index]!.path, sweep: boundSweepSteps(approvedSweep(plan)) }));
+  return `sha256:${createHash('sha256').update(JSON.stringify({ registry: registryRevision, repos: sweeps })).digest('hex')}`;
+}
+
 function skipped(path: string, classification: Exclude<Classification, { ready: true }>): RegisteredRepoResult {
   return { path, status: 'skipped', reason: classification.reason, detail: classification.detail };
 }
 
-function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.ProcessEnv, callerCwd: string): RegisteredRepoResult {
-  const classification = classifyRepo(path, env);
+function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.ProcessEnv, callerCwd: string, plan: RepoPlan): RegisteredRepoResult {
+  if ('error' in plan) throw new Error(plan.error);
+  const { classification, sweep } = plan;
   if (!classification.ready) return skipped(path, classification);
   const planned = planRepoAdoption({ repo: path, mode: 'standard', explicitRepo: true, env });
   const init: RegisteredInitPreview | undefined = planned.plan && {
@@ -153,10 +180,11 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
     ...(upgrade.error ? [`project upgrade check failed: ${upgrade.error}`] : []),
   ];
   if (errors.length > 0) {
-    return { path, status: 'failed', ...(init ? { init } : {}), upgrade, sweep: SWEEP_PREVIEW, error: errors.join('; ') };
+    return { path, status: 'failed', ...(init ? { init } : {}), upgrade, sweep, error: errors.join('; ') };
   }
   // A preview upgrade exits 1 for every pending item: leftovers, a template rewrite and a removable or deferred legacy worktree.
-  return { path, status: 'ready', pending: init!.planned > 0 || upgrade.exitCode !== 0, init, upgrade, sweep: SWEEP_PREVIEW };
+  const sweepSteps = sweep && 'plan' in sweep ? boundSweepSteps(sweep.plan).steps.length : 0;
+  return { path, status: 'ready', pending: init!.planned > 0 || upgrade.exitCode !== 0 || sweepSteps > 0, init, upgrade, sweep };
 }
 
 /**
@@ -164,7 +192,7 @@ function previewRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.P
  * before the first write; the init transaction then changes the worktree, so
  * later steps do not re-check it. A failed step stops this repo only.
  */
-function applyRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.ProcessEnv, callerCwd: string): RegisteredRepoResult {
+function applyRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.ProcessEnv, callerCwd: string, approved: WorktreeSweepPlan): RegisteredRepoResult {
   const classification = classifyRepo(path, env);
   if (!classification.ready) return skipped(path, classification);
 
@@ -192,15 +220,16 @@ function applyRepo(path: string, opts: RegisteredUpgradeOptions, env: NodeJS.Pro
   const upgrade = runUpgrade({ cwd: path, callerCwd, scope: 'project', apply: true, migrateWorktreeTemplate: opts.migrateWorktreeTemplate, env });
   if (upgrade.error) return { path, status: 'failed', init, upgrade, error: `project upgrade failed: ${upgrade.error}` };
 
-  const sweep: RegisteredSweep = { ran: true, report: sweepManagedWorktrees(path, callerCwd, env, { deadlineMs: SWEEP_DEADLINE_MS }) };
+  const sweep: RegisteredSweep = { ran: true, report: sweepManagedWorktrees(path, callerCwd, env, { deadlineMs: SWEEP_DEADLINE_MS, approved }) };
   return { path, status: 'applied', init, upgrade, sweep };
 }
 
 /**
  * Project upgrade for every registered repo. Targets come from one strict
  * registry snapshot; nothing scans directories. The default is a read-only
- * preview. `apply` needs the preview's registry revision, and each repo is
- * classified, written and reported on its own. Nothing is committed.
+ * preview. `apply` needs the preview's plan revision, which binds the registry
+ * revision and every sweep plan; each repo is classified, written and reported
+ * on its own. Nothing is committed.
  */
 export function runRegisteredUpgrade(opts: RegisteredUpgradeOptions = {}): RegisteredUpgradeResult {
   const apply = opts.apply === true;
@@ -209,12 +238,17 @@ export function runRegisteredUpgrade(opts: RegisteredUpgradeOptions = {}): Regis
   try {
     assertRegistryRevisionFence({ apply, expectedRevision: opts.expectedRevision });
     const snapshot = readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false });
-    revision = snapshot.registryRevision;
-    assertRegistryRevisionFence({ apply, expectedRevision: opts.expectedRevision }, snapshot);
     const callerCwd = opts.callerCwd ?? process.cwd();
-    const repos = snapshot.repos.map((repo): RegisteredRepoResult => {
+    const plans = snapshot.repos.map((repo) => planRepo(repo.path, env, callerCwd));
+    revision = planRevision(snapshot.registryRevision, snapshot.repos, plans);
+    if (opts.expectedRevision !== undefined && opts.expectedRevision !== revision) {
+      throw new Error('registry or worktree sweep plan changed; preview again before applying');
+    }
+    const repos = snapshot.repos.map((repo, index): RegisteredRepoResult => {
+      const plan = plans[index]!;
       try {
-        return apply ? applyRepo(repo.path, opts, env, callerCwd) : previewRepo(repo.path, opts, env, callerCwd);
+        if (!apply) return previewRepo(repo.path, opts, env, callerCwd, plan);
+        return applyRepo(repo.path, opts, env, callerCwd, approvedSweep(plan));
       } catch (error) {
         return { path: repo.path, status: 'failed', error: error instanceof Error ? error.message : String(error) };
       }
@@ -243,10 +277,18 @@ function formatInit(init: RegisteredInitPreview | RegisteredInitApply): string[]
   return lines;
 }
 
+function formatSweep(sweep: RegisteredSweep): string[] {
+  if (sweep.ran) return sweep.report === null ? ['  sweep: no managed worktrees'] : ['  sweep:', ...indent(sweep.report, '    ')];
+  if ('error' in sweep) return [`  sweep: ${sweep.error}; apply takes no sweep step`];
+  if (sweep.plan === null) return ['  sweep: no managed worktrees'];
+  return [`  sweep plan: target ${sweep.plan.target_oid ?? 'none'}`, ...sweep.plan.items.map((item) =>
+    `    ${item.action} ${item.path}${item.branch ? ` (${item.branch})` : ''}${item.reason ? `: ${item.reason}` : ''}`)];
+}
+
 export function formatRegisteredUpgradeResult(result: RegisteredUpgradeResult, asJson = false): string {
   if (asJson) return formatJson(result);
   const lines = [
-    `${result.apply ? 'Registered upgrade apply' : 'Registered upgrade preview'}. Registry revision: ${result.revision ?? 'unavailable'}`,
+    `${result.apply ? 'Registered upgrade apply' : 'Registered upgrade preview'}. Plan revision: ${result.revision ?? 'unavailable'}`,
   ];
   for (const repo of result.repos) {
     const head = repo.status === 'skipped' ? `skipped (${repo.reason}): ${repo.detail}`
@@ -254,11 +296,7 @@ export function formatRegisteredUpgradeResult(result: RegisteredUpgradeResult, a
     lines.push(`${repo.path}: ${head}`);
     if (repo.init) lines.push(...formatInit(repo.init));
     if (repo.upgrade) lines.push('  upgrade:', ...indent(formatUpgradeResult(repo.upgrade), '    '));
-    if (repo.sweep) {
-      if (!repo.sweep.ran) lines.push(`  sweep: not run; ${repo.sweep.reason}`);
-      else if (repo.sweep.report === null) lines.push('  sweep: no managed worktrees');
-      else lines.push('  sweep:', ...indent(repo.sweep.report, '    '));
-    }
+    if (repo.sweep) lines.push(...formatSweep(repo.sweep));
     if (repo.error) lines.push(`  failed: ${repo.error}`);
   }
   if (result.repos.length === 0 && !result.error) lines.push('No registered repos.');

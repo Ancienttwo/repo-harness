@@ -2951,7 +2951,7 @@
     "scripts/",
     "src/",
     "docs/",
-    "dist/dsh-plugin.js",
+    "dist/dsh/",
     "dist/hook-entry.js",
     "dist/oar-review-host.js",
     "dist/operator-ui/"
