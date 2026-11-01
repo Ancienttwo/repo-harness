@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.acceptance-review
+kind: calls
+source: capability.runtime-harness.task-agent-host
+target: capability.verification.acceptance-review
+intent: "Plugin → core: bind task sessions to the active review admission and its source, and resolve the policy review base of the diff fingerprint"

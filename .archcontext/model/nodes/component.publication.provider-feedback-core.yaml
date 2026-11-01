@@ -1,13 +1,13 @@
 schemaVersion: archcontext.node/v2
 id: component.publication.provider-feedback-core
 kind: component
-name: Provider Feedback (core)
+name: Feedback Records (core)
 status: active
 parent: capability.organization.publication
 layer: core
-summary: The core-layer files of Provider Feedback. Responsibilities stay with the parent node.
+summary: The core-layer feedback fact and delivery receipt types of Publication Observations. Responsibilities stay with the parent node.
 responsibilities:
-  - Hold the core-layer source files of Provider Feedback so layer direction is checked per directory.
+  - Hold the core-layer feedback record files so layer direction is checked per directory.
 source:
   include:
     - src/core/publication/feedback.ts

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.provider-feedback.acceptance-review
+kind: calls
+source: component.task-fleet.provider-feedback
+target: capability.verification.acceptance-review
+intent: "Plugin → core: observe the active review admission before admitted feedback intake"

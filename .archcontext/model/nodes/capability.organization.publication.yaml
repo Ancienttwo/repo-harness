@@ -4,19 +4,18 @@ kind: "capability"
 name: "Publication Observations"
 status: "active"
 layer: "effects"
-summary: "Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and records admitted manual feedback."
+summary: "Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and stores provider feedback facts and delivery receipts."
 responsibilities:
   - "Provide the canonical publication JSON and SHA-256 helpers that integration evidence digests use; no publication receipt or lifecycle store reader or writer remains."
   - "Derive PullRequestReadinessV2 from explicit canonical REST repository identity, PR number and exact expected head/base through provider identity, facts and reobservation."
   - "Bind registry-scoped readiness to the local GitHub origin before provider reads; preserve the standalone explicit PR CLI capability."
-  - "Record manual feedback against exact admitted claim and provider PR evidence with separate delivery receipts."
+  - "Store immutable provider feedback facts and separate delivery receipts; Task Fleet owns admitted feedback intake."
   - "Provide live provider merge commit/tree evidence for exact integration candidates and guarded worktree cleanup without changing GitHub issue or PR authority."
 source:
   include:
     - "src/core/publication/**"
     - "src/effects/publication/**"
     - "src/cli/commands/publication.ts"
-    - "src/effects/fleet/provider-feedback.ts"
   entrypoints:
     - id: "entrypoint.publication.command"
       path: "src/cli/commands/publication.ts"
