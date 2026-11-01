@@ -1,13 +1,13 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:989467d22fc385aadf6c0ee22c834941a5f29287f8b35dda0aec8c20c99da4bc" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fb5dc0b2587d5789e87f8021d74611965c9dc4011bd01c1c52e41424e6f44a05" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It holds no workflow policy.
+Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It also holds the shared repository registry, the account home root and the secret patterns that core and plugins read. It holds no workflow policy.
 
 ## 1. P1:能力架構地圖
 
@@ -17,6 +17,8 @@ Runs bounded child processes and provides the canonical directory lock and Git c
 flowchart LR
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_component_execution_primitives_primary_800678c8["Bounded Process And Lock Primitives"]:::component
+  p1_component_execution_primitives_repository_registry_49e2fbe9["Repository Registry and Account Home"]:::component
+  p1_component_execution_primitives_secret_patterns_075f309a["Secret Patterns"]:::component
   p1_capability_workflow_engine_execution_primitives_b3033934 -->|"Run a bounded child process"| p1_component_execution_primitives_primary_800678c8
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -24,8 +26,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:9f41aa6d777c6e47efb1e2c13e4246852eac82a8a414adbdf98efa8c636d2d9c`).
-- Semantic nodes: `2`; declared relations: `1`.
+- Proof: `proven` (`sha256:ce4cc2fa11c15105955c9bf86d78836847338383cc19c7963b3027c4e27a0143`).
+- Semantic nodes: `4`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -93,16 +95,22 @@ flowchart LR
 
 - `component.execution-primitives.primary`:
   - 無。
+- `component.execution-primitives.repository-registry`:
+  - 無。
+- `component.execution-primitives.secret-patterns`:
+  - 無。
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.execution-primitives.repository-registry` | Repository Registry and Account Home | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.execution-primitives.secret-patterns` | Secret Patterns | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:9f41aa6d777c6e47efb1e2c13e4246852eac82a8a414adbdf98efa8c636d2d9c`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:ce4cc2fa11c15105955c9bf86d78836847338383cc19c7963b3027c4e27a0143`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

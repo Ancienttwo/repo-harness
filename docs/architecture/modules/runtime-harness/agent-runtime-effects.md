@@ -1,6 +1,6 @@
 # runtime-harness/agent-runtime-effects 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0f1f7bed73e3db0ec59486c636b6a104ca052e0da88c555abe4d36ed8b90d94f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-agent-runtime-effects" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:96f6edbc7ec165149cc8460cd940258caa38bd097f6f7741bdbf275da3b27c39" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.agent-runtime-effects`(kind `capability`)
 > **Matched Prefixes**:`src/effects/engineers/agent-runtime-effect-store.ts`、`src/effects/engineers/agent-runtime-feature.ts`、`src/effects/engineers/agent-runtime-adapters/**`
@@ -63,7 +63,7 @@ flowchart LR
 - `calls` → `capability.runtime-harness.engineer-scheduling` — Validate the whole offers document with the scheduling validator before a wake is armed
 - `calls` → `external.herdr` — Start Herdr CLI agents for agent runtime effects.
 - `calls` → `component.agent-runtime-effects.journal` — Persist immutable effect intents and observations before one closed Host action or a reconcile-only state can be returned
-- `calls` → `capability.runtime-harness.mcp-sidecar` — Read the strict repo registry and the authorization revision for the wake fence
+- `calls` → `component.execution-primitives.repository-registry` — Read the strict repo registry and the authorization revision for the wake fence
 - `calls` → `capability.runtime-harness.task-agent-host` — Observe the exact admitted task session and use its closed Herdr transport endpoint
 - `calls` → `capability.organization.task-fleet` — Read the exact Task message and delivery receipt before action admission and success.
 

@@ -1,5 +1,5 @@
 # public-surface/adoption 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:82af4d2d17e623bafe8ec35ea8f0d8f163299bfa0c39c7b4f7151c3228d1069c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-adoption" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5b512665f2b66dedb13476eff19395e68deb68bc4ff7a5c64905531e586db7e2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.adoption`(kind `capability`)
 > **Matched Prefixes**:`src/core/adoption/**`
@@ -52,7 +52,7 @@ flowchart LR
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded processes for adoption and file transactions.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Use the legacy inventory during adoption planning.
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use installer setup during repository migration.
-- `depends-on` → `capability.runtime-harness.mcp-sidecar` — Read registered repository identity for adoption planning.
+- `depends-on` → `component.execution-primitives.repository-registry` — Read registered repository identity for adoption planning.
 - `depends-on` → `capability.workflow-engine.workflow-state` — Resolve worktree locations during adoption planning.
 - `calls` → `component.adoption.primary` — Apply repository adoption
 
