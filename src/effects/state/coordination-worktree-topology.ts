@@ -654,8 +654,85 @@ function createSweepContext(root: string, callerCwd: string, env: NodeJS.Process
   return { main, cwd, env, common, managedRoot, managed, limits, trashDeadline, options, processes };
 }
 
+/**
+ * One planned sweep step. `path` is the checkout path, or the trash directory for
+ * `resume` and `discard_approval`. `registration` is the Git admin directory and
+ * its inode. `resume` finishes an earlier removal whose receipt is already on disk.
+ * `prune` drops the registration of a missing checkout, and `cleanup_pruned`
+ * finishes an earlier prune; both delete the branch only when its merge is proven.
+ */
+export interface WorktreeSweepPlanItem {
+  readonly action: 'resume' | 'discard_approval' | 'cleanup_pruned' | 'prune' | 'remove' | 'keep';
+  readonly path: string;
+  readonly branch?: string;
+  readonly head?: string;
+  readonly registration?: string;
+  readonly reason?: string;
+}
+export interface WorktreeSweepPlan {
+  /** The merge-back target OID that the `remove`, `prune` and `cleanup_pruned` steps are judged against. */
+  readonly target_oid: string | null;
+  readonly items: readonly WorktreeSweepPlanItem[];
+}
+
+/** The part of a plan that binds a run: every step except `keep`, without reasons. */
+export function boundSweepSteps(plan: WorktreeSweepPlan | null): { readonly target_oid: string | null; readonly steps: readonly WorktreeSweepPlanItem[] } {
+  const steps = (plan?.items ?? []).filter(item => item.action !== 'keep')
+    .map(({ action, path, branch, head, registration }) => ({ action, path, branch, head, registration }));
+  return { target_oid: steps.length ? plan!.target_oid : null, steps };
+}
+
+const NOT_IN_PREVIEW = 'not in the preview';
+type SweepApproval = { readonly target_oid: string | null; readonly allows: (step: WorktreeSweepPlanItem) => boolean };
+const stepKey = (step: WorktreeSweepPlanItem) => JSON.stringify([step.action, step.path, step.branch ?? null, step.head ?? null, step.registration ?? null]);
+function sweepApproval(plan: WorktreeSweepPlan): SweepApproval {
+  const bound = boundSweepSteps(plan);
+  const keys = new Set(bound.steps.map(stepKey));
+  return { target_oid: bound.target_oid, allows: step => keys.has(stepKey(step)) };
+}
+
+const registrationId = (directory: string, stat: { readonly dev: number; readonly ino: number }) => `${directory}@${stat.dev}:${stat.ino}`;
+/** Git admin directories keyed by the checkout path that their `gitdir` backpointer names. Read only. */
+function registrations(common: string): Map<string, string> {
+  const directory = join(common, 'worktrees');
+  const found = new Map<string, string>();
+  if (!pathExists(directory)) return found;
+  for (const name of readdirSync(directory)) {
+    const admin = join(directory, name), stat = lstatSync(admin), pointer = join(admin, 'gitdir');
+    if (!stat.isDirectory() || stat.isSymbolicLink() || !pathExists(pointer) || !lstatSync(pointer).isFile()) continue;
+    const value = readFileSync(pointer, 'utf8').trim();
+    if (isAbsolute(value) && basename(value) === '.git') found.set(dirname(value), registrationId(admin, stat));
+  }
+  return found;
+}
+function trashStep(context: SweepContext, directory: string): WorktreeSweepPlanItem {
+  const receipt = readWorktreeTrash(context.common, context.managedRoot, directory);
+  if (!receipt) return { action: 'resume', path: directory };
+  const unused = !pathExists(trashPayload(receipt)) && pathExists(receipt.expected.worktree);
+  return { action: unused ? 'discard_approval' : 'resume', path: directory, branch: receipt.expected.branch, head: receipt.expected.head_sha,
+    registration: registrationId(receipt.git_directory, { dev: receipt.git_directory_dev, ino: receipt.git_directory_ino }) };
+}
+function intentStep(intent: PrunedWorktreeIntent): WorktreeSweepPlanItem {
+  return { action: 'cleanup_pruned', path: intent.worktree, branch: intent.branch, head: intent.head,
+    registration: registrationId(intent.git_directory, { dev: intent.git_directory_dev, ino: intent.git_directory_ino }) };
+}
+/** A `prune` step approves the cleanup of the intent that its prune records. */
+const intentApproved = (approval: SweepApproval, intent: PrunedWorktreeIntent) => {
+  const step = intentStep(intent);
+  return approval.allows(step) || approval.allows({ ...step, action: 'prune' });
+};
+function liveStep(action: 'prune' | 'remove', entry: ReturnType<typeof entries>[number], registered: Map<string, string>): WorktreeSweepPlanItem {
+  return { action, path: checkoutPath(entry.path), branch: entry.branch?.replace(/^refs\/heads\//, ''), head: entry.head ?? undefined, registration: registered.get(entry.path) };
+}
+/** Git prune drops every missing registration of the clone. An approved run prunes only when each one is a planned step. */
+function pruneScopeApproved(context: SweepContext, approval: SweepApproval): boolean {
+  const registered = registrations(context.common);
+  return entries(context.main, context.limits).filter(item => item.prunable && !item.locked).every(item => approval.allows(liveStep('prune', item, registered)))
+    && readPrunedWorktreeIntents(context.common).filter(intent => pathExists(intent.git_directory)).every(intent => intentApproved(approval, intent));
+}
+
 /** Recovery precedes live selection, so an interrupted registration is not mistaken for reboot loss. */
-function recoverSweepTrash(context: SweepContext, notes: string[]): { readonly resumed: number; readonly blocked: boolean; readonly ignored: boolean; readonly deferred: number } {
+function recoverSweepTrash(context: SweepContext, notes: string[], approval?: SweepApproval): { readonly resumed: number; readonly blocked: boolean; readonly ignored: boolean; readonly deferred: number } {
   const trash = worktreeTrashNames(context.common, context.managedRoot);
   let blocked = false, ignored = false, resumed = 0;
   for (const directory of trash.slice(0, 8)) {
@@ -663,6 +740,7 @@ function recoverSweepTrash(context: SweepContext, notes: string[]): { readonly r
     catch (error) { ignored = true; notes.push(`${directory}: ignored; ${error instanceof Error ? error.message : String(error)}`); continue; }
     try {
       timeout(context.limits);
+      if (approval && !approval.allows(trashStep(context, directory))) throw new Error(NOT_IN_PREVIEW);
       const outcome = resumeSweepTrash(context, directory);
       if (outcome === 'resumed') resumed++;
       notes.push(`${directory}: ${outcome === 'unused approval discarded' ? 'unused approval discarded; source kept for fresh selection' : outcome}`);
@@ -738,13 +816,85 @@ export function removeGreenWorktrees(root: string, callerCwd: string, env: NodeJ
   return { recovery_blocked: false, results };
 }
 
+/** The sweep's checks before the shared green predicate. Read-only; a throw is the reason to keep the entry. */
+function selectLiveWorktree(context: SweepContext, entry: ReturnType<typeof entries>[number], ignoredTrash: boolean) {
+  const { main, cwd, common, limits } = context;
+  const path = checkoutPath(entry.path);
+  timeout(limits);
+  if (path === main || protectsCwd(path, cwd)) throw new Error('session cwd');
+  if (entry.locked) throw new Error('locked');
+  if (!entry.branch?.startsWith('refs/heads/') || !entry.head) throw new Error('no local branch');
+  const branch = entry.branch.slice('refs/heads/'.length);
+  assertNoOwner(main, path, limits);
+  assertBranchHasCommits(main, branch, limits);
+  if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('runtime is open');
+  const missing = !existsSync(path);
+  if (missing && ignoredTrash) throw new Error('missing entry retained while trash ownership is unknown');
+  return { path, branch, head: entry.head, missing };
+}
+
+const reasonOf = (error: unknown) => error instanceof Error ? error.message.split('\n')[0]! : String(error);
+
+/**
+ * The read-only form of `sweepManagedWorktrees`: the same inputs, checks and
+ * green predicate, without the topology lock, the provider merge query or any
+ * write. Null means the sweep has nothing to inspect. The sweep's per-run budget
+ * is not applied, so a run executes a subset of these steps.
+ */
+export function planManagedWorktreeSweep(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: { readonly deadlineMs?: number } = {}): WorktreeSweepPlan | null {
+  const limits = { deadline: Date.now() + (options.deadlineMs ?? 2_000), gitBin: configuredGitBinary(env) };
+  const context = createSweepContext(root, callerCwd, env, limits, limits.deadline, {}, deadline => worktreeProcesses(deadline));
+  if (!context) return null;
+  const { main, common, managed } = context;
+  const items: WorktreeSweepPlanItem[] = [];
+  let ignoredTrash = false;
+  for (const directory of worktreeTrashNames(common, context.managedRoot)) {
+    try {
+      assertOwnedTrashDirectory(directory);
+    } catch (error) {
+      ignoredTrash = true;
+      items.push({ action: 'keep', path: directory, reason: reasonOf(error) });
+      continue;
+    }
+    try { items.push(trashStep(context, directory)); }
+    catch (error) { items.push({ action: 'keep', path: directory, reason: reasonOf(error) }); }
+  }
+  const live = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
+  const intents = readPrunedWorktreeIntents(common);
+  if (!live.length && !intents.length) return items.length ? { target_oid: null, items } : null;
+  const { target } = mergeBackTarget(main, limits);
+  for (const intent of intents) {
+    const step = intentStep(intent);
+    if (ignoredTrash) items.push({ ...step, action: 'keep', reason: 'missing entry retained while trash ownership is unknown' });
+    else if (!managed(intent.worktree) || protectsCwd(intent.worktree, context.cwd)) items.push({ ...step, action: 'keep', reason: 'pruned intent is outside the managed scope' });
+    else if (pathExists(intent.worktree)) items.push({ ...step, action: 'keep', reason: 'pruned worktree path or registration reappeared' });
+    else items.push(step);
+  }
+  const registered = registrations(common);
+  const processes = worktreeProcesses(limits.deadline);
+  for (const entry of live) {
+    try {
+      const selected = selectLiveWorktree(context, entry, ignoredTrash);
+      if (selected.missing) { items.push(liveStep('prune', entry, registered)); continue; }
+      const inspection = inspectWorktree(main, selected.path, context.cwd, { env, deadline: limits.deadline, processes });
+      const step = liveStep('remove', entry, registered);
+      items.push(inspection.judgment === 'green' ? step : { ...step, action: 'keep', reason: new WorktreeNotGreenError(inspection.reasons).message });
+    } catch (error) {
+      items.push({ ...liveStep('remove', entry, registered), action: 'keep', reason: reasonOf(error) });
+    }
+  }
+  return { target_oid: target, items };
+}
+
 /**
  * Local refs and this clone's Git inventory are the only live worktree inputs.
  * `contract-worktree start` runs this before it creates a checkout. Every
  * destructive step takes the same topology lock as start. `callerCwd` and
- * everything below it are never removed.
+ * everything below it are never removed. With `approved`, the sweep takes only
+ * the bound steps of that plan and reports every other step as kept.
  */
-export function sweepManagedWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env, options: WorktreeRemovalOptions & { readonly ghBin?: string } = {}): string | null {
+export function sweepManagedWorktrees(root: string, callerCwd: string, env: NodeJS.ProcessEnv = process.env,
+  options: WorktreeRemovalOptions & { readonly ghBin?: string; readonly approved?: WorktreeSweepPlan } = {}): string | null {
   const started = Date.now();
   const budget = options.deadlineMs ?? 2_000;
   const limits = { deadline: started + budget, gitBin: configuredGitBinary(env), ghBin: options.ghBin };
@@ -756,7 +906,8 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
     const context = createSweepContext(root, callerCwd, env, limits, trashDeadline, options, deadline => worktreeProcesses(deadline));
     if (!context) return null;
     const { main, cwd, common, managed } = context;
-    const recovery = recoverSweepTrash(context, notes);
+    const approval = options.approved && sweepApproval(options.approved);
+    const recovery = recoverSweepTrash(context, notes, approval);
     resumed += recovery.resumed;
     const ignoredTrash = recovery.ignored;
     deferred += recovery.deferred;
@@ -764,15 +915,19 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
     const candidates = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
     if (!candidates.length && !readPrunedWorktreeIntents(common).length) return notes.length ? `[WorktreeSweep] removed=${removed} pruned=${pruned} resumed=${resumed} deferred=${deferred}\n${notes.join('\n')}` : null;
     const { targetRef, target } = mergeBackTarget(main, limits);
+    const targetApproved = !approval || approval.target_oid === target;
+    if (approval && approval.target_oid !== null && !targetApproved) notes.push(`merge target moved since the preview (${approval.target_oid} -> ${target})`);
     // Save every missing registration before global prune, including deferred refs.
     const beforePrune = readPrunedWorktreeIntents(common);
     if (!ignoredTrash && (candidates.some(entry => !pathExists(checkoutPath(entry.path))) || beforePrune.some(entry => pathExists(entry.git_directory)))) {
-      withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
+      if (approval && !pruneScopeApproved(context, approval)) notes.push(`prune: kept; ${NOT_IN_PREVIEW}`);
+      else withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
     }
     const pending = readPrunedWorktreeIntents(common);
     const liveAvailable = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path))).length;
     const pendingBatch = pending.slice(0, 8 - Math.min(4, liveAvailable));
     for (const intent of pendingBatch) {
+      if (approval && !(targetApproved && intentApproved(approval, intent))) { notes.push(`${intent.worktree}: kept; ${NOT_IN_PREVIEW}`); continue; }
       let complete = false;
       try {
         timeout(limits);
@@ -815,24 +970,20 @@ export function sweepManagedWorktrees(root: string, callerCwd: string, env: Node
     const liveCandidates = entries(main, limits).slice(1).filter(entry => managed(checkoutPath(entry.path)));
     const processes = worktreeProcesses(limits.deadline!);
     const liveBudget = 8 - pendingBatch.length;
+    const registered = approval ? registrations(common) : null;
     for (const entry of liveCandidates.slice(0, liveBudget)) {
       const path = checkoutPath(entry.path);
       try {
-        timeout(limits);
-        if (path === main || protectsCwd(path, cwd)) throw new Error('session cwd');
-        if (entry.locked) throw new Error('locked');
-        if (!entry.branch?.startsWith('refs/heads/') || !entry.head) throw new Error('no local branch');
-        const branch = entry.branch.slice('refs/heads/'.length);
-        assertNoOwner(main, path, limits);
-        assertBranchHasCommits(main, branch, limits);
-        if (!taskWorktreeRuntimeClosed({ repository_id: common, primary_root: main, execution_root: path })) throw new Error('runtime is open');
-        if (!existsSync(path)) {
-          if (ignoredTrash) throw new Error('missing entry retained while trash ownership is unknown');
+        const { branch, head, missing } = selectLiveWorktree(context, entry, ignoredTrash);
+        // A removal also runs Git's whole prune, so both steps need the prune scope approved.
+        if (approval && (!approval.allows(liveStep(missing ? 'prune' : 'remove', entry, registered!)) || (!missing && !targetApproved)
+          || !pruneScopeApproved(context, approval))) throw new Error(NOT_IN_PREVIEW);
+        if (missing) {
           withWorktreeTopologyLock(main, () => { pruned += pruneManagedWorktrees(context); }, limits);
           notes.push(`${path}: pruned; branch cleanup deferred (${branch})`);
           continue;
         }
-        const receipt = removeGreenWorktree(context, { path, branch, head: entry.head, targetRef, target, processes });
+        const receipt = removeGreenWorktree(context, { path, branch, head, targetRef, target, processes });
         removed++;
         notes.push(`${path}: removed`);
         // No detached child: each unlink checks the shared trash deadline.
