@@ -3,8 +3,9 @@ import { chmodSync, cpSync, existsSync, lstatSync, mkdtempSync, mkdirSync, readd
 import { spawnSync } from "child_process";
 import { createHash } from "crypto";
 import { tmpdir } from "os";
-import { join } from "path";
+import { dirname, join } from "path";
 import { planAdoption } from "../../src/effects/adoption/plan";
+import { planLegacyLeftovers } from "../../src/effects/upgrade/legacy-inventory";
 import { isRepoHarnessSourceCheckout } from "../../src/effects/source-checkout";
 import { applyAdoptionPlan, rollbackAdoptionTransaction } from "../../src/effects/fs-transaction";
 import type { AdoptionOperation, AdoptionPlan } from "../../src/core/adoption/operations";
@@ -136,6 +137,45 @@ describe("canonical adoption plan", () => {
       expect(readFileSync(join(repo, "docs", "architecture", "index.md"), "utf-8")).not.toContain("Latest snapshot");
       expect(readFileSync(join(repo, ".gitignore"), "utf-8")).toContain(".ai/harness/evidence/");
       expect(readFileSync(join(repo, apply.transactionManifestPath!), "utf-8")).toContain('"command": "adopt"');
+    } finally {
+      cleanup(repo);
+    }
+  });
+
+  test("init refresh keeps a retired runtime ignore rule while its files exist and lists them as leftovers", () => {
+    const repo = tempRepo();
+    try {
+      expect(spawnSync("git", ["init", "-q", repo]).status).toBe(0);
+      // Rules that the 0.24 managed block held and 0.25.0 dropped (#1307).
+      const oldRules = [".claude/.session-id", ".claude/.trace.jsonl", ".claude/.codegraph-state/", ".ai/harness/handoff/current.md",
+        ".ai/harness/handoff/resume.md", ".ai/harness/active-plan", ".ai/harness/sprint/", ".claude/.active-plan", ".claude/.plan-state/", "tasks/current.md"];
+      const codegraph = ".claude/.codegraph-state/index.used";
+      const retired = [".claude/.session-id", ".claude/.trace.jsonl", ".ai/harness/handoff/current.md", ".ai/harness/handoff/resume.md",
+        ".ai/harness/active-plan", ".ai/harness/sprint/s1.md", ".claude/.active-plan", ".claude/.plan-state/plan.json", "tasks/current.md"];
+      for (const path of [codegraph, ...retired]) {
+        mkdirSync(join(repo, dirname(path)), { recursive: true });
+        writeFileSync(join(repo, path), "old runtime state\n");
+      }
+      writeFileSync(join(repo, ".gitignore"), `# BEGIN: repo-harness generated-runtime\n${oldRules.join("\n")}\n# END: repo-harness generated-runtime\n`);
+      const untracked = () => spawnSync("git", ["status", "--porcelain", "--untracked-files=all", "--", codegraph, ...retired], { cwd: repo, encoding: "utf8" }).stdout;
+      const refresh = () => expect(applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: "standard", apply: true })).ok).toBe(true);
+
+      refresh();
+      expect(untracked()).toBe("");
+      // A file that a retirement action already lists keeps that item; every other file gets a runtime-rule item.
+      const leftovers = planLegacyLeftovers({ scope: "project", cwd: repo, home: join(repo, "no-home"), packageRoot: ROOT }).items;
+      for (const path of retired) {
+        expect(leftovers.find((item) => item.path === join(repo, path))).toEqual(expect.objectContaining({ action: "report", ownership: "unowned" }));
+      }
+      expect(leftovers.filter((item) => item.retiredBy === "retired-runtime-ignore-rule")).toHaveLength(7);
+      expect(leftovers.some((item) => item.path.includes(".codegraph-state"))).toBe(false);
+
+      for (const path of retired) rmSync(join(repo, path));
+      refresh();
+      const rules = readFileSync(join(repo, ".gitignore"), "utf-8").split("\n");
+      expect(rules).toContain(".claude/.codegraph-state/");
+      for (const rule of oldRules.filter((rule) => rule !== ".claude/.codegraph-state/")) expect(rules).not.toContain(rule);
+      expect(untracked()).toBe("");
     } finally {
       cleanup(repo);
     }
