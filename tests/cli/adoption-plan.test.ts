@@ -605,8 +605,15 @@ describe("canonical adoption plan", () => {
       const backup = manifest.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.backupPath;
       expect(backup).toBeDefined();
       expect(readFileSync(join(repo, backup!), "utf8")).toBe(legacy);
+      const report = { protocol: 1, command: "init", repoRoot: repo, mode: "minimal", ok: true, plan: {} } as const;
+      const restore = `cp '${join(repo, backup!)}' '${target}'`;
+      expect(renderApplyReport({ ...report, apply }))
+        .toContain(`[init] backup: .ai/harness/workflow-contract.json -> ${join(repo, backup!)} (restore: ${restore})\n`);
       const next = planAdoption({ repoRoot: repo, mode: "minimal", apply: true });
       expect(next.operations.find((operation) => operation.path === ".ai/harness/workflow-contract.json")?.status).toBe("skipped");
+      expect(renderApplyReport({ ...report, apply: applyAdoptionPlan(next) })).not.toContain("[init] backup:");
+      expect(spawnSync("sh", ["-c", restore]).status).toBe(0);
+      expect(readFileSync(target, "utf8")).toBe(legacy);
     } finally {
       cleanup(repo);
     }
@@ -688,6 +695,7 @@ describe("canonical adoption plan", () => {
 
       const report = { protocol: 1, command: "init", repoRoot: repo, mode: "minimal", ok: false, plan: {} } as const;
       expect(renderApplyReport({ ...report, apply })).toContain("[init] rollback: complete - 3 rolled back, 0 failed\n");
+      expect(renderApplyReport({ ...report, apply })).not.toContain("[init] backup:");
       const incomplete = renderApplyReport({
         ...report,
         apply: {

@@ -22,7 +22,7 @@ import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
 import { configureCodegraph } from "../tools/codegraph";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
-import { formatLegacyLeftoverSummary, type LeftoverItem } from "../../effects/upgrade/legacy-inventory";
+import { leftoverCheckWarning } from "./upgrade";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
   PROFILE_COMPONENTS,
@@ -852,65 +852,38 @@ function reconcileWithInstalledCandidate(
 /**
  * Run the installed package's read-only `upgrade` check. Bun replaces the
  * package files in place, but the updater keeps its predecessor modules. Old
- * modules cannot be trusted to parse new assets, so the package that now owns
- * the runtime runs the check. The payload is parsed before any redaction or
- * cap: a path such as token=x would otherwise lose its closing quote. Callers
- * print parsed counts only.
+ * modules cannot be trusted to parse new assets or output shapes, so the
+ * package that now owns the runtime runs the check. Output stays raw: a JSON
+ * payload is parsed before any redaction or cap, because a path such as
+ * token=x would otherwise lose its closing quote.
  */
-function runInstalledUpgradeCheck(args: readonly string[], cwd: string, installedCli: boolean, timeoutMs?: number):
-  { readonly payload: unknown; readonly stderr: string } | { readonly failure: string } {
+function runInstalledUpgrade(args: readonly string[], cwd: string, installedCli: boolean, timeoutMs?: number):
+  { readonly stdout: string; readonly stderr: string } | { readonly failure: string } {
   const bunExecutable = resolveBunExecutable();
   const env = bindBunRuntimeEnv(commandEnv(defaultSourceRoot()), bunExecutable);
   const packageRoot = installedCli ? bunGlobalPackageRoot(env) : defaultSourceRoot();
   if (packageRoot === null) return { failure: 'unable to resolve the installed package root' };
-  const check = runBoundedProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', ...args, '--json'], {
+  const check = runBoundedProcess(bunExecutable, [join(realPathOrResolved(packageRoot), 'src', 'cli', 'index.ts'), 'upgrade', ...args], {
     cwd,
     env,
     redactions: [],
     maxOutputBytes: DEFAULT_PROCESS_MAX_BUFFER_BYTES,
     ...(timeoutMs === undefined ? {} : { timeoutMs }),
   });
-  let payload: unknown;
-  try {
-    payload = JSON.parse(check.stdout);
-  } catch (_error) {
-    payload = null;
-  }
-  return { payload, stderr: (check.stderr || check.error || '').trim() };
+  return { stdout: check.stdout, stderr: (check.stderr || check.error || '').trim() };
 }
 
+/**
+ * The installed package writes its own leftover summary line, and the updater
+ * forwards it unparsed. The check exits 1 when work is pending, so only a
+ * missing line is a failed check.
+ */
 export function updateLeftoverSummary(cwd: string, installedCli: boolean): string {
-  const run = runInstalledUpgradeCheck([], cwd, installedCli);
+  const run = runInstalledUpgrade(['--summary-line'], cwd, installedCli);
   if ('failure' in run) return leftoverCheckWarning(run.failure);
-  const payload = run.payload as {
-    items?: unknown; error?: unknown; worktreeTemplate?: { item?: { action?: unknown } }; legacyWorktrees?: { candidates?: unknown };
-  } | null;
-  // The check exits 1 when anything is pending, including a policy rewrite or a
-  // removable or deferred legacy worktree with no leftover items.
-  // Only a missing items list or an error field is a failed check.
-  const items = payload !== null && typeof payload === 'object' && !Array.isArray(payload) ? payload.items : undefined;
-  const reportedError = typeof payload?.error === 'string' ? payload.error : '';
-  if (!Array.isArray(items) || reportedError !== '') {
-    return leftoverCheckWarning(redactProcessOutput(run.stderr || reportedError.trim()) || 'upgrade --json returned no leftover list');
-  }
-  const parts = [formatLegacyLeftoverSummary(items as LeftoverItem[])];
-  if (payload?.worktreeTemplate?.item?.action === 'rewrite') {
-    parts.push('policy worktree template migration pending; run repo-harness upgrade --scope project --apply --migrate-worktree-template');
-  }
-  const candidates = payload?.legacyWorktrees?.candidates;
-  const count = (verdict: string) => Array.isArray(candidates)
-    ? candidates.filter((candidate) => (candidate as { verdict?: unknown } | null)?.verdict === verdict).length : 0;
-  const deferred = count('deferred');
-  const total = count('remove') + deferred;
-  if (total > 0) {
-    const proof = deferred > 0 ? ` (${deferred} need${deferred === 1 ? 's' : ''} provider proof)` : '';
-    parts.push(`${total} legacy sibling worktree${total === 1 ? '' : 's'} can be removed${proof}; run repo-harness upgrade --scope project --apply`);
-  }
-  return parts.join('; ');
-}
-
-function leftoverCheckWarning(reason: string): string {
-  return `Leftover check failed: ${reason}. Run: repo-harness upgrade`;
+  const line = run.stdout.trim();
+  if (line === '') return leftoverCheckWarning(redactProcessOutput(run.stderr) || 'upgrade --summary-line printed no summary line');
+  return line;
 }
 
 /** `update` must not wait the default two minutes on a hung git probe. */
@@ -924,10 +897,16 @@ const REGISTERED_PREVIEW_TIMEOUT_MS = 30_000;
 export function updateRegisteredUpgradeSummary(cwd: string, installedCli: boolean): string {
   const hint = 'Preview: repo-harness upgrade --registered';
   const unavailable = (reason: string) => `Registered repo upgrade check could not be computed: ${reason}. ${hint}`;
-  const run = runInstalledUpgradeCheck(['--registered'], cwd, installedCli, REGISTERED_PREVIEW_TIMEOUT_MS);
+  const run = runInstalledUpgrade(['--registered', '--json'], cwd, installedCli, REGISTERED_PREVIEW_TIMEOUT_MS);
   if ('failure' in run) return unavailable(run.failure);
-  const record = run.payload !== null && typeof run.payload === 'object' && !Array.isArray(run.payload)
-    ? run.payload as { repos?: unknown; error?: unknown } : null;
+  let payload: unknown;
+  try {
+    payload = JSON.parse(run.stdout);
+  } catch (_error) {
+    payload = null;
+  }
+  const record = payload !== null && typeof payload === 'object' && !Array.isArray(payload)
+    ? payload as { repos?: unknown; error?: unknown } : null;
   const reportedError = typeof record?.error === 'string' ? record.error.trim() : '';
   if (!record || !Array.isArray(record.repos) || reportedError !== '') {
     return unavailable(redactProcessOutput(reportedError || run.stderr) || 'upgrade --registered --json returned no repo list');
