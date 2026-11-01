@@ -962,21 +962,32 @@ describe('architecture history', () => {
     await settle();
     expect(paths).toEqual([`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25`]);
     const pick = async (prefix: string) => {
-      await act(async () => document.querySelector<HTMLButtonElement>(`li[data-milestone-rev^="${prefix}"] button`)!.click());
+      await act(async () => document.querySelector<HTMLElement>(`li[data-milestone-rev^="${prefix}"]`)!.click());
       await settle();
     };
     await pick('827a2e47');
     expect(document.querySelector('[data-gap="milestone"]')?.getAttribute('data-code')).toBe('history-model-invalid');
-    expect(document.querySelector('.architecture-history__map')).toBeNull();
+    expect(document.querySelector('.architecture-history__canvas-error code')?.textContent).toBe('history-model-invalid');
+    expect(document.querySelector('.architecture-history__canvas .react-flow')).toBeNull();
     await pick('c17d3b51');
     expect(skippedMilestones(gap.milestones, milestone(gap, 'c17d3b51'))).toBe(1);
     expect(document.querySelector('[data-base-rev]')?.getAttribute('data-base-rev')).toBe(milestone(gap, '06a42cf1').rev);
     expect(document.querySelector('[data-gap="skipped"]')?.getAttribute('data-count')).toBe('1');
 
-    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__timeline > button')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__timeline footer button')!.click());
     await settle();
     expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=3&limit=25&ref=${gap.head}`);
     expect(document.querySelectorAll('li[data-milestone-rev]')).toHaveLength(5);
+  });
+
+  test('a shallow clone shows only the archctx code and the repair command, with no timeline', async () => {
+    respond = () => json({ code: 'history_shallow_repository' }, 422);
+    await mount(workspace());
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
+    await settle();
+    expect(document.querySelector('.architecture-history__whole-error')?.getAttribute('data-error-code')).toBe('history_shallow_repository');
+    expect(document.querySelector('[data-command] code')?.textContent).toBe('git fetch --unshallow');
+    expect(document.querySelector('li[data-milestone-rev]')).toBeNull();
   });
 });
 
