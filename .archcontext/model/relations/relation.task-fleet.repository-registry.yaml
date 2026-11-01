@@ -1,6 +1,6 @@
 schemaVersion: archcontext.relation/v1
-id: relation.task-fleet.repo-registry
+id: relation.task-fleet.repository-registry
 kind: reads
 source: capability.organization.task-fleet
-target: component.mcp-sidecar.repo-policy-registry
+target: component.execution-primitives.repository-registry
 intent: "Read the strict repository registry snapshot for offer and board authorization"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.bot-registry
+kind: reads
+source: capability.organization.task-fleet
+target: component.mcp-sidecar.repo-policy-registry-effects
+intent: "Read the Bot registry to name the sender of a fleet task message"

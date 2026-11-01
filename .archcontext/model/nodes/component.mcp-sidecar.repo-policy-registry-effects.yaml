@@ -1,15 +1,13 @@
 schemaVersion: archcontext.node/v2
 id: component.mcp-sidecar.repo-policy-registry-effects
 kind: component
-name: Config Policy and Repository Registry (effects)
+name: Bot Registry (effects)
 status: active
 parent: capability.runtime-harness.mcp-sidecar
 layer: effects
-summary: The effects-layer files of Config Policy and Repository Registry. Responsibilities stay with the parent node.
+summary: The effects-layer Bot registry file of the MCP sidecar. Responsibilities stay with the parent node.
 responsibilities:
-  - Hold the effects-layer source files of Config Policy and Repository Registry so layer direction is checked per directory.
+  - Hold the effects-layer Bot registry file so layer direction is checked per directory.
 source:
   include:
-    - src/effects/repo-registry.ts
-    - src/effects/repo-harness-home.ts
     - src/effects/bot-registry.ts
