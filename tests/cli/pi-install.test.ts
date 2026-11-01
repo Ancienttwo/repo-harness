@@ -16,7 +16,7 @@ import { piAgentDir } from '../../src/effects/pi-agent-dir';
 import { piExecutable } from '../../src/effects/pi-executable';
 import { configureRequiredHerdrSkill } from '../../src/cli/commands/herdr-skill';
 import { probePiHerdrIntegration } from '../../src/effects/setup/pi-herdr-integration';
-import { piHerdrLaunchBlocker } from '../../src/effects/setup/pi-host-probe';
+import { piReviewLaunchBlocker } from '../../src/effects/setup/pi-host-probe';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -547,13 +547,13 @@ describe('Pi Herdr integration diagnostics', () => {
     expect(probePiHerdrIntegration({ ...f.env, PI_CODING_AGENT_DIR: 'relative/path' })).toMatchObject({ state: 'unavailable', code: 'PI_HERDR_INTEGRATION_PROBE_FAILED' });
   }));
 
-  test('a Herdr Pi launch is blocked by an old Pi before Herdr, then by a missing integration', () => fixture(f => {
+  test('the Pi review launch gate blocks an old Pi or a failed probe, never a missing Herdr integration', () => fixture(f => {
     const executable = piExecutable(f.env)!;
-    expect(piHerdrLaunchBlocker(executable, f.env)).toBeNull();
     writeHerdrStatus(f, 'pi: not installed (/fixture/pi)\n');
-    expect(piHerdrLaunchBlocker(executable, { ...f.env, PI_FIXTURE_VERSION: '1.3.9' })).toBe('PI_HOST_UNSUPPORTED_VERSION');
+    expect(piReviewLaunchBlocker(executable, f.env)).toBeNull();
+    expect(piReviewLaunchBlocker(executable, { ...f.env, PI_FIXTURE_VERSION: '1.3.9' })).toBe('PI_HOST_UNSUPPORTED_VERSION');
+    expect(piReviewLaunchBlocker('/usr/bin/true', f.env)).toBe('PI_HOST_PROBE_FAILED');
     expect(existsSync(join(f.root, 'herdr-argv.jsonl'))).toBe(false);
-    expect(piHerdrLaunchBlocker(executable, f.env)).toBe('PI_HERDR_INTEGRATION_MISSING');
   }));
 
   test('absent Pi leaves the integration diagnostic n/a and does not call Herdr', () => fixture(f => {

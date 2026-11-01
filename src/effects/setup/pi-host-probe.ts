@@ -3,7 +3,6 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
-import { probePiHerdrIntegration } from './pi-herdr-integration';
 
 export interface InstalledPi { version: string; state: PiCapability['state']; code?: PiHostUnavailableCode }
 
@@ -25,9 +24,9 @@ export function probeInstalledPi(executable: string, env: NodeJS.ProcessEnv): In
   return JSON.parse(result.stdout) as InstalledPi;
 }
 
-/** Pi-only gate for a new Herdr pane launch. Returns the fixed blocking code, or null when ready. */
-export function piHerdrLaunchBlocker(executable: string, env: NodeJS.ProcessEnv = process.env): string | null {
-  if (!piVersionSupported(probeInstalledPi(executable, env).version)) return 'PI_HOST_UNSUPPORTED_VERSION';
-  const integration = probePiHerdrIntegration(env);
-  return integration.state === 'current' ? null : integration.code;
+/** Pi-only review launch gate. Returns a fixed blocking code, or null when the PATH Pi meets MIN_PI_VERSION. */
+export function piReviewLaunchBlocker(executable: string, env: NodeJS.ProcessEnv = process.env): 'PI_HOST_UNSUPPORTED_VERSION' | 'PI_HOST_PROBE_FAILED' | null {
+  let version: string;
+  try { version = probeInstalledPi(executable, env).version; } catch { return 'PI_HOST_PROBE_FAILED'; }
+  return piVersionSupported(version) ? null : 'PI_HOST_UNSUPPORTED_VERSION';
 }

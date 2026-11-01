@@ -18,7 +18,7 @@ under `node_modules/@botiverse/oar/dist/runtimes/pi/`.
 | Resume | With `resume: <id>`, OAR finds the session file by exact ID in the session directory for that cwd only. It then starts Pi with `--session <file>`. | `rpc/open.js:63,83`, `resolve.js:34-54` |
 | Resume ID check | After `get_state`, OAR throws `Pi resumed a different session` if `state.sessionId` is not the requested ID. | `rpc/open.js:119-120` |
 | Unpersisted session | Pi writes the session file on the first message. A resume of an unprompted session throws `SessionNotFoundError`. | `resolve.js:28-33,52-55` |
-| Dispose | `disposePiAgentSession` aborts and shuts the session down. It does not make a new ID. | `lifecycle.js:3-33` |
+| Dispose | The subprocess session (`index.js:59` routes `execution: 'subprocess'` to `rpc/session.js`) sends no abort. It closes the child (native EOF), waits for the child to exit and the event pump to end, then removes the private RPC directory. It does not make a new ID. | `rpc/session.js:202-213` |
 
 OAR does not join by cwd or actor. It uses the ID that Pi reports, and it
 checks a resumed ID against the request.
@@ -47,36 +47,44 @@ observation come from `seedAcceptanceFixture` in a disposable repository with
 an isolated authority HOME. Real parts: a named Herdr session, the review
 pane, the OAR host, native Pi and two provider turns. The Herdr endpoint HOME
 is the real HOME, so Pi uses the native provider login through the Part B
-links. A driver script called `runReviewRound` with production effects.
+links. A driver script called `runReviewRound` with production effects. The
+Herdr Pi integration was not installed on this Mac during both runs.
 
-| Step | Observed |
-|---|---|
-| New Pi Herdr review, all effects real | `review_pi_launch_not_ready: PI_HERDR_INTEGRATION_MISSING` before admission |
-| Round 1, launch gate replaced by `() => null`, other effects real | `accepted`, `PASS`, `actual_harness: pi`, `actual_model: magpie/opencode-go/deepseek-v4.1-flash` |
-| Admitted binding | `runtime: herdr`, `harness_kind: pi`, pane `w5:p2`, provider PID 65146 (node host), `task_admission` with grant and claim |
-| `native-session.json` | `host: "pi"`, `native_session_id: 01a197dc-b5a6-77b8-aefa-f1b9423ee5d3`, the same ID as the OAR `sessionId` events in the pane |
-| Pi session file | `.pi-agent/sessions/.../2026-11-01T16-06-26-471Z_01a197dc-b5a6-77b8-aefa-f1b9423ee5d3.jsonl` under the review output, not under `~/.pi/agent` |
-| Round 2, same campaign, new subject | `accepted`, `PASS`; same binding, same native session ID; no relaunch |
-| `bindNativeTaskSession` with a changed `pane_id` | `native_task_session_binding_changed` |
-| Close | `closed` |
-| Round after close | `review_session_closed`; `native-session.json` unchanged |
+Run A used the first gate revision, which also checked the Herdr Pi
+integration. Run B used the final gate (version floor only) with no effect
+replaced.
+
+| Step | Run A (first gate) | Run B (final gate, all effects real) |
+|---|---|---|
+| New Pi Herdr review | All effects real: `review_pi_launch_not_ready: PI_HERDR_INTEGRATION_MISSING` before admission. Then the gate was replaced by `() => null`. | Gate passed (Pi 1.4.0) |
+| Round 1 | `accepted`, `PASS`, `actual_harness: pi`, `actual_model: magpie/opencode-go/deepseek-v4.1-flash` | Same result |
+| Admitted binding | `runtime: herdr`, `harness_kind: pi`, pane `w5:p2`, node host as provider, `task_admission` with grant and claim | Same shape |
+| `native-session.json` | `host: "pi"`, `native_session_id: 01a197dc-b5a6-77b8-aefa-f1b9423ee5d3`, the same ID as the OAR `sessionId` events in the pane | `host: "pi"`, `native_session_id: 01a19834-a16b-7128-9e13-2f378bfa7643` |
+| Pi session file | `.pi-agent/sessions/.../2026-11-01T16-06-26-471Z_01a197dc-….jsonl` under the review output, not under `~/.pi/agent` | Under the review output |
+| Round 2, same campaign, new subject | `accepted`, `PASS`; same binding and native ID; no relaunch | Same result |
+| `bindNativeTaskSession` with a changed `pane_id` | `native_task_session_binding_changed` | Same result |
+| Close, then a new round | `closed`, then `review_session_closed`; `native-session.json` unchanged | Same result |
 
 The native `auth.json`, `models.json` and `settings.json` mtimes are older
-than the run. Two other files under `~/.pi/agent/sessions/permission-forwarding/`
-changed during the run. Their IDs are not the reviewer's ID, and the reviewer
-runs with an isolated agent directory under Seatbelt, so this report does not
-attribute them to the run.
+than both runs. During run A, two other files under
+`~/.pi/agent/sessions/permission-forwarding/` changed. Their IDs are not the
+reviewer's ID, and the reviewer runs with an isolated agent directory under
+Seatbelt, so this report does not attribute them to the run.
 
 ## Herdr Pi launch readiness
 
-`herdr integration status` on this Mac on 2026-11-02 reported
-`pi: not installed (~/.pi/agent/extensions/herdr-agent-state.ts)`. A new Pi
-review in a Herdr pane now stops before session admission with
-`review_pi_launch_not_ready: PI_HERDR_INTEGRATION_MISSING`. A Pi version below
-`MIN_PI_VERSION` stops it with `PI_HOST_UNSUPPORTED_VERSION`. Claude, Codex and
-app-terminal Pi launches do not read this gate.
+A new Pi review in a Herdr pane stops before session admission with
+`review_pi_launch_not_ready: PI_HOST_UNSUPPORTED_VERSION` when the PATH Pi is
+below `MIN_PI_VERSION`, or with `review_pi_launch_not_ready: PI_HOST_PROBE_FAILED`
+when the installed-Pi probe cannot run. Claude, Codex and app-terminal Pi
+launches do not read this gate.
 
-The review host labels its pane with `pane report-agent --agent pi`. That
-label does not need the Herdr Pi extension. The extension reports state for a
-native `pi` that Herdr itself starts (`herdr agent start --kind pi`), which no
-product path does today (Option A, open in #1100).
+The gate does not check the Herdr Pi integration. The reviewer Pi runs with an
+isolated `PI_CODING_AGENT_DIR` under the review output, so it never loads
+`~/.pi/agent/extensions/herdr-agent-state.ts`. The review host labels its pane
+with `pane report-agent --agent pi`. On this Mac, `herdr integration status`
+reported `pi: not installed` on 2026-11-02, and the Pi review ran. The
+integration reports state for a native `pi` that Herdr itself starts
+(`herdr agent start --kind pi`). No product path does that today; the
+task-worker dispatch entry (Option A) stays open in #1100, and `setup check`
+keeps reporting the integration status.

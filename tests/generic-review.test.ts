@@ -200,7 +200,7 @@ function packetRoundFixture() {
       throw new Error('fixture_start_failure');
     },
     send: async () => { calls.push('send'); throw new Error('must not send'); },
-    piHerdrLaunchBlocker: () => null,
+    piReviewLaunchBlocker: () => null,
   };
   const refresh = () => {
     const report = executeAdmittedVerification({ repoRoot: fixture.root, authority: fixture.authority, reportFile: fixture.verification });
@@ -658,13 +658,13 @@ test('Pi review requires explicit selection and cannot be a missing-provider fal
 
 test('an unready Pi blocks only a new Pi Herdr review before admission', async () => {
   const f = packetRoundFixture();
-  const blocker = () => 'PI_HERDR_INTEGRATION_MISSING';
-  await expect(runReviewRound({ ...f.options, harness: 'pi' }, { ...f.effects, piExecutable: () => '/usr/bin/true', piHerdrLaunchBlocker: blocker }))
-    .rejects.toThrow('review_pi_launch_not_ready: PI_HERDR_INTEGRATION_MISSING');
+  const blocker = () => 'PI_HOST_UNSUPPORTED_VERSION' as const;
+  await expect(runReviewRound({ ...f.options, harness: 'pi' }, { ...f.effects, piExecutable: () => '/usr/bin/true', piReviewLaunchBlocker: blocker }))
+    .rejects.toThrow('review_pi_launch_not_ready: PI_HOST_UNSUPPORTED_VERSION');
   expect(f.calls).toEqual(['installation']);
   expect(existsSync(join(f.dir, 'session.json'))).toBe(false);
   // Claude passes the gate position and reaches admission; it fails later on every platform.
-  await expect(runReviewRound(f.options, { ...f.effects, piHerdrLaunchBlocker: () => { throw new Error('claude must not read Pi readiness'); } }))
+  await expect(runReviewRound(f.options, { ...f.effects, piReviewLaunchBlocker: () => { throw new Error('claude must not read Pi readiness'); } }))
     .rejects.not.toThrow('claude must not read Pi readiness');
   expect(f.calls).toContain('admit');
 });
