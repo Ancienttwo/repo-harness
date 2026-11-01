@@ -6,7 +6,6 @@ import { isRepoHarnessLegacyTypedHookCommand, retiredHookCommands, stripRepoHarn
 import { isRepoHarnessSourceCheckout } from '../source-checkout';
 import { loadWorkflowContractAsset } from '../../core/adoption/workflow-contract-asset';
 import { parseSkillSurfaceCatalog, type SkillSurfacePackage } from '../../core/skill-surface/catalog';
-import { RETIRED_RUNTIME_IGNORE_RULES, retiredRuntimeRuleFiles } from '../adoption/gitignore-plan';
 
 export interface LeftoverItem {
   readonly location: 'project' | 'global';
@@ -530,6 +529,44 @@ function scanPackageScripts(root: string, add: AddItem): void {
 /** Session-recovery packets from retired generators carry this marker in their first lines. */
 const RETIRED_GENERATOR_MARKER = /^<!-- generated-by: repo-harness (codex-handoff-resume|prepare-handoff|prepare-codex-handoff) v\d+ -->$/;
 const RETIRED_GENERATOR_MARKER_LINES = 3;
+
+/**
+ * Rules that left the managed .gitignore block while older releases still
+ * wrote their files. Removing a rule while its files exist turns that runtime
+ * state into untracked files, so init keeps each rule until no file that it
+ * matches exists, and the inventory lists those files.
+ * Each rule is a path, a directory with a trailing `/`, or a name prefix with a trailing `*`.
+ */
+export const RETIRED_RUNTIME_IGNORE_RULES: readonly string[] = [
+  '.claude/.session-id',
+  '.claude/.trace.jsonl',
+  '.ai/harness/active-plan',
+  '.ai/harness/sprint/',
+  '.ai/harness/handoff/current.md',
+  '.ai/harness/handoff/resume.md',
+  '.claude/.active-plan',
+  '.claude/.plan-state/',
+  'tasks/current.md',
+  'tasks/.current.md.tmp.*',
+];
+
+/** A link counts as one file; it is never followed. */
+function filesBelow(repoRoot: string, path: string): string[] {
+  const entry = stat(join(repoRoot, path));
+  if (!entry) return [];
+  if (!entry.isDirectory()) return [path];
+  return readdirSync(join(repoRoot, path)).sort().flatMap((name) => filesBelow(repoRoot, `${path}/${name}`));
+}
+
+/** Repo-relative POSIX paths of the files that a retired rule matches. */
+export function retiredRuntimeRuleFiles(repoRoot: string, rule: string): string[] {
+  if (!rule.endsWith('*')) return filesBelow(repoRoot, rule.replace(/\/$/, ''));
+  const parent = dirname(rule);
+  const prefix = basename(rule).slice(0, -1);
+  if (!stat(join(repoRoot, parent))?.isDirectory()) return [];
+  return readdirSync(join(repoRoot, parent)).sort().filter((name) => name.startsWith(prefix))
+    .flatMap((name) => filesBelow(repoRoot, `${parent}/${name}`));
+}
 
 /** Fail closed: an unreadable directory counts as user content. */
 function directoryHasOtherEntries(directory: string, ownName: string): boolean {

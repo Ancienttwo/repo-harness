@@ -17,8 +17,9 @@ describe("gitignore managed block .repo-harness rule", () => {
     const root = join(import.meta.dir, "../..");
     const cwd = mkdtempSync(join(tmpdir(), "gitignore-package-"));
     try {
-      for (const directory of ["scripts/lib", "src/core/adoption", "assets/templates"]) mkdirSync(join(cwd, directory), { recursive: true });
-      for (const path of ["scripts/lib/project-init-lib.sh", "src/effects/adoption/gitignore-plan.ts", "src/core/adoption/operations.ts", "assets/templates/runtime.gitignore"]) cpSync(join(root, path), join(cwd, path));
+      // The TypeScript reader imports the upgrade inventory, so the relocated package carries src/ and assets/ whole.
+      mkdirSync(join(cwd, "scripts/lib"), { recursive: true });
+      for (const path of ["scripts/lib/project-init-lib.sh", "src", "assets"]) cpSync(join(root, path), join(cwd, path), { recursive: true });
       const emitted = spawnSync(process.execPath, ["-e", 'import { GITIGNORE_MANAGED_BLOCK_CONTENT } from "./src/effects/adoption/gitignore-plan.ts"; process.stdout.write(GITIGNORE_MANAGED_BLOCK_CONTENT)'], { cwd, encoding: "utf8" });
       expect(emitted.status).toBe(0);
       expect(emitted.stdout).toBe(GITIGNORE_MANAGED_BLOCK_CONTENT);
