@@ -6,12 +6,15 @@ export const ARCHITECTURE_COMMIT = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/;
 export const OPERATOR_ARCHITECTURE_MODULES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/modules$/u;
 export const OPERATOR_ARCHITECTURE_MODULE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/modules\/(capability\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)$/u;
 export const OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/modules\/(capability\.[a-z0-9-]+(?:\.[a-z0-9-]+)+)\/review-prompt$/u;
+export const OPERATOR_ARCHITECTURE_HISTORY_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/history$/u;
+/** A cold `archctx history` derives every model revision (10.9 s for 50 milestones), so it has its own limit. */
+export const ARCHITECTURE_HISTORY_TIMEOUT_MS = 120_000;
 
 export const ARCHITECTURE_FAILURES = ['repository_not_found', 'capability_not_found', 'commit_not_found', 'invalid_request', 'unavailable', 'timeout',
   'model_invalid', 'model_missing', 'path_escape', 'secret_detected', 'worktree_changed_during_read', 'shard_out_of_range', 'budget_too_small', 'diff_refs_required', 'dirty_path_invalid', 'git_path_encoding_invalid', 'git_read_failed',
   'model_relation_target_invalid', 'path_invalid',
   'revision_invalid', 'source_missing', 'tree_path_invalid',
-  'capability_uncommitted', 'diff_owner_resolution_failed'] as const;
+  'capability_uncommitted', 'diff_owner_resolution_failed', 'history_shallow_repository'] as const;
 
 type Check = (value: unknown) => boolean;
 const text: Check = value => typeof value === 'string';
@@ -85,8 +88,21 @@ export type ArchitectureRequest = { repository_id: string } & (
   | { kind: 'architecture_modules' }
   | { kind: 'architecture_module'; capability_id: string }
   | { kind: 'architecture_review_prompt'; capability_id: string; shard: number; base?: string; head?: string }
+  /** One page of `archctx history`. `ref` pins later pages to the `head` of the first page. */
+  | { kind: 'architecture_history'; offset: number; limit: number; ref: string | null }
 );
+// A page of at most 200 milestones stays below the 8 MB archctx stdout cap (about 16 KB per milestone here).
+const HISTORY_OFFSET = /^(?:0|[1-9][0-9]{0,5})$/, HISTORY_LIMIT = /^(?:[1-9][0-9]?|1[0-9]{2}|200)$/;
 export function parseArchitectureRequest(url: URL): ArchitectureRequest | null {
+  const history = OPERATOR_ARCHITECTURE_HISTORY_ROUTE.exec(url.pathname);
+  if (history) {
+    const query = url.searchParams;
+    const keys = [...query.keys()];
+    const offset = query.get('offset') ?? '', limit = query.get('limit') ?? '', ref = query.get('ref');
+    if (keys.some(key => !['offset', 'limit', 'ref'].includes(key)) || new Set(keys).size !== keys.length
+      || !HISTORY_OFFSET.test(offset) || !HISTORY_LIMIT.test(limit) || (ref !== null && !ARCHITECTURE_COMMIT.test(ref))) throw new Error('invalid_request');
+    return { kind: 'architecture_history', repository_id: history[1], offset: Number(offset), limit: Number(limit), ref };
+  }
   const index = OPERATOR_ARCHITECTURE_MODULES_ROUTE.exec(url.pathname);
   const detail = OPERATOR_ARCHITECTURE_MODULE_ROUTE.exec(url.pathname);
   const prompt = OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.exec(url.pathname);
@@ -113,6 +129,10 @@ export function isArchitectureRequest(value: unknown): value is ArchitectureRequ
   if (!match(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/)(record.repository_id)) return false;
   if (record.kind === 'architecture_modules') return object({ kind: one(record.kind), repository_id: text })(value);
   if (record.kind === 'architecture_module') return object({ kind: one(record.kind), repository_id: text, capability_id: capability })(value);
+  if (record.kind === 'architecture_history') {
+    return object({ kind: one(record.kind), repository_id: text, offset: value => integer(value) && HISTORY_OFFSET.test(String(value)),
+      limit: value => integer(value) && HISTORY_LIMIT.test(String(value)), ref: nullable(commit) })(value);
+  }
   if (record.kind !== 'architecture_review_prompt') return false;
   const fields = { kind: one(record.kind), repository_id: text, capability_id: capability, shard: match(/^[1-9][0-9]{0,3}$/) };
   const fixed = { ...record, shard: String(record.shard) };

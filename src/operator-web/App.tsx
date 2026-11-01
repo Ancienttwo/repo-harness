@@ -540,7 +540,7 @@ export function OperatorApp({
             </header>
             {!activeRepository ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
               : <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-                <ArchitectureWorkspace repositoryId={activeRepository.repository_id} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
+                <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
                   onModule={module => openPlace({ workspace: 'architecture', module, item: null })} t={t} />
               </Suspense>}
           </>}

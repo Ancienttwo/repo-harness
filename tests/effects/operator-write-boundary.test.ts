@@ -18,6 +18,7 @@ import {
   OPERATOR_ARCHITECTURE_MODULES_ROUTE,
   OPERATOR_ARCHITECTURE_MODULE_ROUTE,
   OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE,
+  OPERATOR_ARCHITECTURE_HISTORY_ROUTE,
   OPERATOR_REPOSITORY_SNAPSHOT_ROUTE,
   OPERATOR_TESTS_ROUTE,
   OPERATOR_EXECUTION_STATE_ROUTE,
@@ -123,6 +124,7 @@ describe('operator structural write boundary', () => {
       'architecture_modules',
       'architecture_module',
       'architecture_review_prompt',
+      'architecture_history',
       'architecture_map',
       'static_asset',
     ]);
@@ -161,6 +163,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('architecture_modules')).toBe(OPERATOR_ARCHITECTURE_MODULES_ROUTE.source);
     expect(patterns.get('architecture_module')).toBe(OPERATOR_ARCHITECTURE_MODULE_ROUTE.source);
     expect(patterns.get('architecture_review_prompt')).toBe(OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'architecture_history')).toEqual({ id: 'architecture_history', method: 'GET', pattern: OPERATOR_ARCHITECTURE_HISTORY_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'architecture_map')).toEqual({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false });
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 

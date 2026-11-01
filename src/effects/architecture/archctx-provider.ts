@@ -2,7 +2,7 @@ import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration }
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type NativeContextExportV1, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, decodeArchitectureHistory, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type ArchitectureHistory, type DocsAnchorsReportV1, type Json, type NativeContextExportV1, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
@@ -23,6 +23,7 @@ import {
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
 import { gitExecFileSync } from '../git/runner';
+import { ARCHITECTURE_HISTORY_TIMEOUT_MS } from '../../core/operator/architecture';
 export { ArchctxClientError, type NativeContextSource } from '../../core/architecture/projection';
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
@@ -578,6 +579,26 @@ export function readArchitectureDocsAnchors(repoRoot: string, options: ArchctxPr
   archctxCapabilities(repoRoot, { ...options, policy });
   const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
   return decodeDocsAnchorsReport(client.data(['docs', 'anchors', '--json'], policy.timeoutMs));
+}
+
+export interface ArchitectureHistoryPage { readonly offset: number; readonly limit: number; readonly ref: string | null }
+
+/** archctx owns the milestone and delta rules; this checks only that the page answers the request. */
+export function decodeArchitectureHistoryPage(value: unknown, page: ArchitectureHistoryPage): ArchitectureHistory {
+  const history = decodeArchitectureHistory(value);
+  if (history === undefined || history.offset !== page.offset || history.limit !== page.limit
+    || (page.ref !== null && history.head !== page.ref)) throw new Error('architecture_history_invalid');
+  return history;
+}
+
+/**
+ * Runs the read-only `archctx history` for one page. Like the map collector, it does not
+ * read the projection policy: that policy controls projection writes, not reads.
+ */
+export function readArchitectureHistory(repoRoot: string, page: ArchitectureHistoryPage, options: ArchctxProviderOptions = {}): ArchitectureHistory {
+  const client = new ArchctxClient(repoRoot, ARCHCTX_REQUIRED_VERSION, options);
+  const args = ['history', ...(page.ref === null ? [] : ['--ref', page.ref]), '--offset', String(page.offset), '--limit', String(page.limit), '--json'];
+  return decodeArchitectureHistoryPage(client.data(args, ARCHITECTURE_HISTORY_TIMEOUT_MS), page);
 }
 
 /**
