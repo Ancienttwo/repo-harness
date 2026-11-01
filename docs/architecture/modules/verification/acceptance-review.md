@@ -183,7 +183,7 @@ sequenceDiagram
 | Codex 使用独立的 `CODEX_HOME`，只复制 `auth.json` | 真实的 `~/.codex` 没有写权限（PR #476）。代价是复制的凭据必须在 close、cancel 和失败时删除；删除失败报告为 `cleanup_pending`（`review-isolation.ts:84`）。 |
 | 每个 review campaign 最多 3 轮，每轮最多 30 分钟 | `REVIEW_MAX_ROUNDS = 3`，`REVIEW_TIMEOUT_MS = 1_800_000`（`src/core/review/generic-review.ts:6`）。轮数和成本有上限。代价是第 3 轮后必须由人决定下一步。 |
 | change assessment 只用最终 subject 和 policy base | 选择结果可以复算，hook 历史和模型输出不能改变路由（`evals-checks.md` 的 Change Assessment v1 小节）。代价是缺少 policy 或 base 时验证直接失败。 |
-| module review prompt builder 放在本 capability | `src/core/review/**` 整个目录归一个 owner，不需要 `source.exclude`（brief 规则 6）。代价是 operator 和 module CLI 对本 capability 有依赖。拆分计划见 Optimization Backlog。 |
+| module review prompt builder 归 operator（#1365） | 本 capability 与 `component.acceptance-review.primary-core` 用 `source.exclude` 去掉 `src/core/review/module-review-prompt.ts`，文件归 `component.operator.architecture-view-core`。operator 对本 capability 只剩 plugin → core 依赖：review finding 规则与 review runtime id。代价是 `src/core/review/**` 不再只有一个 owner。 |
 
 ### 3.3 开放问题
 
@@ -208,8 +208,13 @@ sequenceDiagram
 - include 使用 `src/core/review/**` 和 `src/effects/review/**` 两个目录 glob。在 main 上，这两个目录的文件都没有 owner。operator 分支上有一个未合并的 `module-review-prompt.ts` 显式条目。该条目已删除，文件归本 capability。
 - flow `flow.acceptance-review.primary` 的 5 个 selector 都是 CodeGraph 中的直接调用。
 
+### module review prompt builder 归 operator（2026-11-02，#1365）
+
+- `src/core/review/module-review-prompt.ts` 归 `component.operator.architecture-view-core`，文件路径不变。capability 删除"为 module CLI 与 operator 架构视图构建有界 module review prompt"这条职责，该职责移到 architecture-view-core。
+- 删除 `relation.acceptance-review.imports.secret-patterns`：本 capability 只有这个文件导入 secret patterns。
+
 ## Optimization Backlog
 
-- 在 arch-context#296 之后拆分目录：`src/core/review/module-review-prompt.ts` 归 operator 的 architecture-view 组件；`src/effects/review/diff-fingerprint.ts` 归 workflow-state（归属提议 §4）。拆分前，operator 与 module CLI 对本 capability 的关系是归属造成的，不是职责依赖。
+- `src/effects/review/diff-fingerprint.ts` 可以归 workflow-state（归属提议 §4）。`src/core/review/module-review-prompt.ts` 已归 operator（#1365）。
 - `src/effects/review/acceptance-receipt.ts` 可以按 receipt、waiver、archive projection 和 verification observation 拆分。拆分前需要先确认 §3.3 的原因。
 - 本 capability 现在只有一个组件。源码有三个可分的职责：review round（`src/effects/review/generic-review.ts`）、change assessment（`src/*/review/change-assessment.ts`）和 receipt（`src/core/review/acceptance-receipt.ts`、`src/effects/review/acceptance-receipt.ts`）。需要独立 owner 时再拆。

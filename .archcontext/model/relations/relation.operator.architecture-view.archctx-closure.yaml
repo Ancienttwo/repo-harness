@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-view.archctx-closure
+kind: reads
+source: component.operator.architecture-view
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Plugin → core: decode the docs anchors report and the saved projection check freshness"

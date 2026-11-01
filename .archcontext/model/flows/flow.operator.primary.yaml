@@ -9,7 +9,7 @@ participants:
   - id: view-projections
     nodeId: component.operator.view-projections
   - id: model-reader
-    nodeId: capability.runtime-harness.global-runtime-reconciliation
+    nodeId: component.operator.architecture-reader
 steps:
   - id: parse-request
     from: http-reader

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-reader.archctx-closure
+kind: calls
+source: component.operator.architecture-reader
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Plugin → core: read the native architecture context and the generated-summary freshness type through the shared archctx provider"

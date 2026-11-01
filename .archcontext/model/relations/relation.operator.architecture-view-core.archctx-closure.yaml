@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-view-core.archctx-closure
+kind: depends-on
+source: component.operator.architecture-view-core
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Plugin → core: use the generated-summary freshness type that the projection decoder returns"

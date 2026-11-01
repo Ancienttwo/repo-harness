@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.agents-configuration.acceptance-review
+kind: reads
+source: component.operator.agents-configuration
+target: capability.verification.acceptance-review
+intent: "Plugin → core: validate review runtime ids against the declared review runtimes"

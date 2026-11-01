@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-reader.contract-assets
+kind: reads
+source: component.operator.architecture-reader
+target: capability.workflow-engine.contract-assets
+intent: "Plugin → core: decode the capability registry from the native context and resolve changed paths to capability owners"
