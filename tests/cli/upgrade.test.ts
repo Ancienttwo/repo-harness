@@ -17,6 +17,8 @@ import expectedReleaseInventory from './upgrade.expected.json';
 import { copyUpgradeFixture, readUpgradeFixture, upgradeFixtureProvenance as provenance, UPGRADE_BLOBS, type UpgradeFixture } from '../helpers/upgrade-fixtures';
 import { formatRegisteredUpgradeResult, runRegisteredUpgrade, type RegisteredRepoResult } from '../../src/cli/commands/upgrade-registered';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry, type RegisteredReposFixture } from '../helpers/registered-repos';
+// The sweep's process inventory is a fixture input: Linux CI cannot prove that /proc lists every process.
+import '../helpers/controlled-worktree-processes';
 
 const ROOT = join(import.meta.dir, '../..');
 const FIXTURES = join(ROOT, 'tests/fixtures');
