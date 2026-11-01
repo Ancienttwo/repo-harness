@@ -42,7 +42,9 @@ async function deliver(env, { delivery, event, debounce, at }) {
   if (await wasSent(env, delivery)) return 'duplicate';
   if (debounce && Number(await env.EVENTS_STATE.get(debounce)) > at) return 'superseded';
   await sendToBot(env, event);
-  await env.EVENTS_STATE.put(`delivery:${delivery}`, '1', { expirationTtl: DELIVERY_TTL_SECONDS });
+  // The Bot has the event. A failed mark write must not make the caller send it again.
+  try { await env.EVENTS_STATE.put(`delivery:${delivery}`, '1', { expirationTtl: DELIVERY_TTL_SECONDS }); }
+  catch { console.error(`Delivery ${delivery} was sent, but its dedupe mark was not written.`); }
   return 'sent';
 }
 
@@ -67,8 +69,9 @@ export default {
     if (match.debounce) {
       if (await wasSent(env, delivery)) return reply(200, 'duplicate');
       // Each push moves the PR mark forward. The queued copy sends only when no later push arrived.
-      await env.EVENTS_STATE.put(match.debounce, String(at), { expirationTtl: MARK_TTL_SECONDS });
+      // Queue first: a failed mark write then repeats the older push instead of dropping this one.
       await env.EVENTS_QUEUE.send({ delivery, at, event, debounce: match.debounce }, { delaySeconds: DEBOUNCE_SECONDS });
+      await env.EVENTS_STATE.put(match.debounce, String(at), { expirationTtl: MARK_TTL_SECONDS });
       return reply(202, 'queued');
     }
     try {

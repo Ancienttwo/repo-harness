@@ -69,10 +69,10 @@ function appJwt(appId: string, key: KeyObject, now: number): string {
 
 // wrangler writes one JSON entry per line to WRANGLER_OUTPUT_FILE_PATH; the deploy entry lists the Worker URLs.
 function wranglerWorkerUrl(outputFile: string): string {
-  const noUrl = new Error('wrangler deploy reported no HTTPS Worker URL. The Worker may be deployed; the GitHub App was not changed.');
-  let text: string;
-  try { text = readFileSync(outputFile, 'utf8'); } catch { throw noUrl; }
-  const deploy = text.split('\n').filter(Boolean).map((line) => JSON.parse(line)).find((entry) => entry?.type === 'deploy');
+  const noUrl = new Error('wrangler deploy reported no HTTPS Worker URL.');
+  let entries: { type?: unknown; targets?: unknown }[];
+  try { entries = readFileSync(outputFile, 'utf8').split('\n').filter(Boolean).map((line) => JSON.parse(line)); } catch { throw noUrl; }
+  const deploy = entries.find((entry) => entry?.type === 'deploy');
   const target = Array.isArray(deploy?.targets) ? deploy.targets.find((value: unknown) => typeof value === 'string' && value.startsWith('https://')) : undefined;
   if (!target) throw noUrl;
   return target;
@@ -83,13 +83,17 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
   const inputs = await readInputs(options, deps);
   let key: KeyObject;
   try { key = createPrivateKey(readFileSync(inputs.privateKey)); } catch { throw new Error('Cannot read the GitHub App private key.'); }
-  const jwt = appJwt(inputs.appId, key, deps.now());
   const github = async (method: string, path: string, body?: object) => {
-    const response = await deps.fetch(`${GITHUB_API}${path}`, {
-      method, redirect: 'error', body: body && JSON.stringify(body),
-      headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${jwt}`, 'user-agent': 'repo-harness', 'x-github-api-version': '2022-11-28' },
-    });
-    if (!response.ok) throw new Error(`GitHub API ${method} ${path.split('?')[0]} returned HTTP ${response.status}.`);
+    const endpoint = `GitHub API ${method} ${path.split('?')[0]}`;
+    let response: Response;
+    try {
+      // A new JWT for each call: the approval prompt and wrangler can outlast one JWT.
+      response = await deps.fetch(`${GITHUB_API}${path}`, {
+        method, redirect: 'error', body: body && JSON.stringify(body),
+        headers: { accept: 'application/vnd.github+json', authorization: `Bearer ${appJwt(inputs.appId, key, deps.now())}`, 'user-agent': 'repo-harness', 'x-github-api-version': '2022-11-28' },
+      });
+    } catch { throw new Error(`${endpoint} is unreachable.`); }
+    if (!response.ok) throw new Error(`${endpoint} returned HTTP ${response.status}.`);
     return response.json();
   };
 
@@ -97,6 +101,8 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
   if (typeof app?.slug !== 'string' || !/^[a-z0-9-]{1,64}$/.test(app.slug) || !Array.isArray(app.events)) throw new Error('GitHub returned invalid App data. No change was made.');
   const missing = APP_EVENTS.filter((event) => !app.events.includes(event));
   if (missing.length) throw new Error(`GitHub App ${app.slug} does not subscribe to: ${missing.join(', ')}. Add them in the App settings. No change was made.`);
+  const installations = await github('GET', '/app/installations?per_page=100');
+  const accounts: string[] = Array.isArray(installations) ? installations.map((entry) => String(entry?.account?.login)) : [];
   const config = JSON.parse(readFileSync(join(WORKER_ASSETS, 'wrangler.json'), 'utf8'));
   const queue: string = config.queues.producers[0].queue;
 
@@ -131,10 +137,14 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
     const outputFile = join(project, 'wrangler-output.json');
     run(['deploy', '--config', 'wrangler.json', '--secrets-file', 'secrets.json', '--var', `ORCHESTRATOR_LOGIN:${inputs.orchestratorLogin}`],
       { ...childEnv, WRANGLER_OUTPUT_FILE_PATH: outputFile });
-    const url = wranglerWorkerUrl(outputFile);
-    await github('PATCH', '/app/hook/config', { url, content_type: 'json', secret, insecure_ssl: '0' });
-    const installations = await github('GET', '/app/installations?per_page=100');
-    const accounts: string[] = Array.isArray(installations) ? installations.map((entry) => String(entry?.account?.login)) : [];
+    let url = '';
+    try {
+      url = wranglerWorkerUrl(outputFile);
+      await github('PATCH', '/app/hook/config', { url, content_type: 'json', secret, insecure_ssl: '0' });
+    } catch (error) {
+      throw new Error(`The Worker has a new webhook secret, but the GitHub App was not updated: ${(error as Error).message} `
+        + 'Deliveries to an existing Worker URL get HTTP 401 until events install succeeds. Run it again.');
+    }
     process.stdout.write(`GitHub events Worker: ${url}\nGitHub App ${app.slug} sends its webhooks there. Installations: ${accounts.length ? accounts.join(', ') : 'none'}.\n`
       + (accounts.length ? '' : `Install the App: https://github.com/apps/${app.slug}/installations/new\n`));
   } finally {

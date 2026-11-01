@@ -39,9 +39,11 @@ function workerFixture(botStatus = 200) {
       'x-hub-signature-256': `sha256=${createHmac('sha256', secret).update(body).digest('hex')}` } }), env);
     return { status: response.status, text: await response.text() };
   };
+  // A retried message stays queued, as Cloudflare Queues redelivers it.
   const drainQueue = async () => {
     const acks: string[] = [];
-    const messages = queued.splice(0).map(({ body }) => ({ body, ack: () => acks.push('ack'), retry: () => acks.push('retry') }));
+    const batch = queued.splice(0);
+    const messages = batch.map((entry) => ({ body: entry.body, ack: () => acks.push('ack'), retry: () => { acks.push('retry'); queued.push(entry); } }));
     await worker.queue({ messages }, env);
     return acks;
   };
@@ -70,9 +72,10 @@ describe('GitHub events Worker', () => {
     expect(run.sent).toHaveLength(1);
   });
 
-  test('a protocol comment from the orchestrator login is dropped; the same comment from a worker is sent', async () => {
+  test('a protocol comment or new issue from the orchestrator login, in any letter case, is dropped; the same comment from a worker is sent', async () => {
     const run = workerFixture();
-    expect((await run.post('issue_comment', 'd-1', comment('coord-bot', 'repo-harness decision\nDecision: x'))).status).toBe(204);
+    expect((await run.post('issue_comment', 'd-1', comment('Coord-Bot', 'repo-harness decision\nDecision: x'))).status).toBe(204);
+    expect((await run.post('issues', 'd-3', { action: 'opened', sender: { login: 'coord-bot' }, issue: { number: 11, title: 'Child', html_url: 'u' } })).status).toBe(204);
     expect(run.sent).toEqual([]);
     await run.post('issue_comment', 'd-2', comment('worker-a', 'repo-harness decision\nDecision: x'));
     expect(run.sent.map((event) => [event.kind, event.data.header])).toEqual([['issue.comment', 'repo-harness decision']]);
@@ -96,15 +99,26 @@ describe('GitHub events Worker', () => {
     expect(run.sent).toHaveLength(1);
   });
 
-  test('a failed Bot delivery returns 502 and the queue retries it once', async () => {
+  test('a failed Bot delivery returns 502 and the queue retries it until it is sent once', async () => {
     const run = workerFixture(503);
     const payload = comment('worker-a', 'repo-harness boundary question');
     expect((await run.post('issue_comment', 'd-1', payload)).status).toBe(502);
-    expect(run.queued).toHaveLength(1);
+    expect(await run.drainQueue()).toEqual(['retry']);
     run.fixture.botStatus = 200;
     expect(await run.drainQueue()).toEqual(['ack']);
     expect((await run.post('issue_comment', 'd-1', payload)).text).toBe('duplicate');
     expect(run.sent).toHaveLength(1);
+  });
+
+  test('a dedupe mark write that fails after the Bot accepted the event does not queue a resend', async () => {
+    const run = workerFixture();
+    run.env.EVENTS_STATE.put = async () => { throw new Error('KV write limit'); };
+    const error = spyOn(console, 'error').mockImplementation(() => {});
+    try {
+      expect(await run.post('issue_comment', 'd-1', comment('worker-a', 'repo-harness handoff'))).toEqual({ status: 200, text: 'sent' });
+      expect(run.queued).toEqual([]);
+      expect(run.sent).toHaveLength(1);
+    } finally { error.mockRestore(); }
   });
 
   test('pushes to one PR within the debounce window send one event for the last push', async () => {
@@ -115,6 +129,39 @@ describe('GitHub events Worker', () => {
     expect(run.queued.map(({ options }) => options?.delaySeconds)).toEqual([60, 60]);
     expect(await run.drainQueue()).toEqual(['ack', 'ack']);
     expect(run.sent.map((event) => [event.kind, event.data.head_sha])).toEqual([['pr.pushed', 's2']]);
+  });
+
+  test('review events: new threads, protocol replies and real reviews are sent; plain replies, empty wrappers and the orchestrator are dropped', async () => {
+    const run = workerFixture();
+    const pull_request = { number: 5, html_url: 'https://github.com/o/r/pull/5', head: { sha: 's2' } };
+    const reviewComment = (login: string, body: string, in_reply_to_id?: number) => ({ action: 'created', sender: { login }, pull_request,
+      comment: { body, in_reply_to_id, html_url: 'https://github.com/o/r/pull/5#r1' } });
+    const review = (login: string, state: string, body: string | null) => ({ action: 'submitted', sender: { login }, pull_request,
+      review: { state, body, html_url: 'https://github.com/o/r/pull/5#pr1' } });
+    const statuses = [
+      await run.post('pull_request_review_comment', 'd-1', reviewComment('reviewer', 'Handle the empty case.')),
+      await run.post('pull_request_review_comment', 'd-2', reviewComment('worker-a', 'repo-harness review reply\nResult: fixed abc', 1)),
+      await run.post('pull_request_review_comment', 'd-3', reviewComment('worker-a', 'Thanks, will do.', 1)),
+      await run.post('pull_request_review_comment', 'd-4', reviewComment('coord-bot', 'Please split this.')),
+      await run.post('pull_request_review', 'd-5', review('reviewer', 'commented', null)),
+      await run.post('pull_request_review', 'd-6', review('coord-bot', 'approved', 'LGTM')),
+      await run.post('pull_request_review', 'd-7', review('reviewer', 'changes_requested', 'See threads.')),
+    ].map(({ status }) => status);
+    expect(statuses).toEqual([200, 200, 204, 204, 204, 204, 200]);
+    expect(run.sent.map((event) => [event.kind, event.data.header ?? null])).toEqual([
+      ['pr.review_thread', null], ['pr.review_reply', 'repo-harness review reply'], ['pr.review', null]]);
+  });
+
+  test('a completed push run on the default branch sends ci.main with its workflow; cancelled runs and other branches are dropped', async () => {
+    const run = workerFixture();
+    const workflowRun = (head_branch: string, conclusion: string) => ({ action: 'completed',
+      workflow_run: { name: 'CI', event: 'push', head_branch, conclusion, head_sha: 'm1', html_url: 'https://github.com/o/r/actions/runs/3' } });
+    const statuses = [await run.post('workflow_run', 'd-1', workflowRun('main', 'cancelled')),
+      await run.post('workflow_run', 'd-2', workflowRun('feat/x', 'failure')),
+      await run.post('workflow_run', 'd-3', workflowRun('main', 'failure'))].map(({ status }) => status);
+    expect(statuses).toEqual([204, 204, 200]);
+    expect(run.sent.map((event) => [event.kind, event.data])).toEqual([['ci.main',
+      { branch: 'main', workflow: 'CI', url: 'https://github.com/o/r/actions/runs/3', head_sha: 'm1', conclusion: 'failure' }]]);
   });
 
   test('comments without a protocol header are dropped; the header list matches templates.md', async () => {
@@ -129,7 +176,7 @@ describe('GitHub events Worker', () => {
 
 const APP_EVENTS = ['check_run', 'issue_comment', 'issues', 'pull_request', 'pull_request_review', 'pull_request_review_comment', 'workflow_run'];
 
-function installFixture(appEvents = APP_EVENTS) {
+function installFixture(appEvents = APP_EVENTS, patchStatus = 200) {
   const root = mkdtempSync(join(tmpdir(), 'rh-events-install-'));
   const bin = join(root, 'bin');
   mkdirSync(bin);
@@ -156,10 +203,12 @@ if (args[0] === 'deploy') appendFileSync(process.env.WRANGLER_OUTPUT_FILE_PATH, 
     const path = url.replace('https://api.github.com', '');
     api.push({ method: init.method!, path, authorization: new Headers(init.headers).get('authorization')!, body: init.body ? JSON.parse(String(init.body)) : null });
     const reply = path === '/app' ? { slug: 'rh-events', events: appEvents } : path.startsWith('/app/installations') ? [{ account: { login: 'Ancienttwo' } }] : {};
-    return Response.json(reply);
+    return Response.json(reply, { status: init.method === 'PATCH' ? patchStatus : 200 });
   }) as typeof fetch;
   const asked: string[] = [];
-  const deps = (answer: string) => ({ fetch: fetchFake, now: Date.now,
+  // Each clock read is 10 minutes later, longer than one JWT lives.
+  let clock = 1_800_000_000_000;
+  const deps = (answer: string) => ({ fetch: fetchFake, now: () => (clock += 600_000),
     env: { PATH: `${bin}:${process.env.PATH}`, FIXTURE_CALLS: calls, FIXTURE_QUEUE: join(root, 'queue'), WEBHOOK_KEY: 'bot-key' },
     ask: async (question: string) => { asked.push(question); return answer; } });
   const options = { webhookUrl: 'https://bot.example/routine', appId: '123', privateKey: keyFile, orchestratorLogin: 'coord-bot' };
@@ -177,7 +226,7 @@ describe('repo-harness events install', () => {
       for (const point of ['1. Deploy Worker repo-harness-github-events', '2. Write the Worker secrets', '3. Point the webhook of GitHub App rh-events']) expect(listed).toContain(point);
       expect(fixture.asked.filter((question) => question.startsWith('Run these three steps'))).toHaveLength(1);
       expect(fixture.wranglerCalls()).toEqual([]);
-      expect(fixture.api.map(({ method, path }) => `${method} ${path}`)).toEqual(['GET /app']);
+      expect(fixture.api.map(({ method, path }) => `${method} ${path}`)).toEqual(['GET /app', 'GET /app/installations?per_page=100']);
     } finally { stderr.mockRestore(); fixture.cleanup(); }
   });
 
@@ -218,8 +267,21 @@ describe('repo-harness events install', () => {
         { url: 'https://repo-harness-github-events.fixture.workers.dev', content_type: 'json', secret: secrets.GITHUB_WEBHOOK_SECRET, insecure_ssl: '0' }]));
       const [header, claims, signature] = hooks[0].authorization.replace('Bearer ', '').split('.');
       expect(verify('RSA-SHA256', Buffer.from(`${header}.${claims}`), fixture.publicKey, Buffer.from(signature, 'base64url'))).toBe(true);
-      expect(JSON.parse(Buffer.from(claims, 'base64url').toString()).iss).toBe(123);
+      const issuedAt = (authorization: string) => JSON.parse(Buffer.from(authorization.split('.')[1], 'base64url').toString());
+      expect(issuedAt(hooks[0].authorization).iss).toBe(123);
+      expect(issuedAt(hooks[0].authorization).iat).toBeGreaterThan(issuedAt(fixture.api[0].authorization).exp);
       expect(stdout.mock.calls.map(([text]) => String(text)).join('')).toContain('Installations: Ancienttwo.');
     } finally { stdout.mockRestore(); stderr.mockRestore(); fixture.cleanup(); }
+  });
+
+  test('a GitHub App update that fails after the deploy says that the Worker secret changed and install must run again', async () => {
+    const fixture = installFixture(APP_EVENTS, 500);
+    const stderr = spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      await expect(installEvents({ ...fixture.options, nonInteractive: true, yes: true }, fixture.deps('')))
+        .rejects.toThrow('The Worker has a new webhook secret, but the GitHub App was not updated: GitHub API PATCH /app/hook/config returned HTTP 500.');
+      expect(fixture.wranglerCalls().map(({ args }) => args[0])).toContain('deploy');
+      expect(existsSync(fixture.wranglerCalls()[0].cwd)).toBe(false);
+    } finally { stderr.mockRestore(); fixture.cleanup(); }
   });
 });
