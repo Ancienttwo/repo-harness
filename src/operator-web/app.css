@@ -342,6 +342,35 @@
   .architecture-topology__box[data-kind="mount"] { @apply bg-kumo-base; }
   .architecture-topology__member { @apply min-h-0 py-0; }
   .architecture-topology__member strong { @apply text-xs; }
+  .architecture-history { @apply flex min-w-0 flex-col gap-2; }
+  .architecture-history__body { @apply grid min-w-0 gap-3 lg:grid-cols-[minmax(260px,340px)_minmax(0,1fr)]; }
+  .architecture-history__timeline { @apply flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-3 text-sm; }
+  .architecture-history__timeline ol { @apply m-0 flex max-h-[60vh] list-none flex-col gap-0.5 overflow-y-auto p-0; }
+  .architecture-history__timeline li button { @apply flex w-full cursor-pointer flex-col items-start gap-0.5 rounded-md px-2 py-1.5 text-left hover:bg-kumo-tint; }
+  .architecture-history__timeline li button[aria-pressed="true"] { @apply bg-kumo-recessed; }
+  .architecture-history__timeline time { @apply font-mono text-xs text-kumo-subtle; }
+  .architecture-history__subject { @apply line-clamp-2 text-kumo-default; overflow-wrap: anywhere; }
+  .architecture-history__error { @apply text-xs text-kumo-danger; }
+  .architecture-history__detail { @apply flex min-w-0 flex-col gap-2 text-sm; overflow-wrap: anywhere; }
+  .architecture-history__detail h3 { @apply text-base font-semibold text-kumo-strong; }
+  .architecture-history__counts { @apply m-0 flex list-none flex-wrap gap-x-4 gap-y-1 p-0 text-xs text-kumo-subtle; }
+  .architecture-history__items ul { @apply m-0 mt-1 flex max-h-48 list-none flex-col gap-0.5 overflow-y-auto p-0 text-xs; }
+  /* History diff states. The user's design artifact replaces this block; nothing else styles a diff. */
+  .architecture-history__mark { @apply shrink-0 rounded bg-kumo-recessed px-1 text-[11px] leading-4 text-kumo-subtle; }
+  .architecture-history__mark[data-diff="added"] { @apply bg-kumo-success-tint text-kumo-success; }
+  .architecture-history__mark[data-diff="removed"] { @apply bg-kumo-danger-tint text-kumo-danger; }
+  .architecture-history__mark[data-diff="renamed"], .architecture-history__mark[data-diff="inside"] { color: var(--rh-accent); }
+  .architecture-history__node[data-diff="added"] { @apply border-2 border-kumo-success; }
+  .architecture-history__node[data-diff="removed"] { @apply border-2 border-dashed border-kumo-danger; }
+  .architecture-history__node[data-diff="removed"] strong { @apply line-through; }
+  .architecture-history__node[data-diff="renamed"] { border-width: 2px; border-color: var(--rh-accent); }
+  .architecture-history__node[data-diff="inside"] { border-style: dashed; border-color: var(--rh-accent); }
+  .architecture-history__swatch { @apply inline-block h-3 w-6 rounded-sm border-2 align-middle; border-color: var(--rh-diagram-line); }
+  .architecture-history__swatch[data-diff="added"] { @apply border-kumo-success; }
+  .architecture-history__swatch[data-diff="removed"] { @apply border-dashed border-kumo-danger; }
+  .architecture-history__swatch[data-diff="renamed"] { border-color: var(--rh-accent); }
+  .architecture-history__swatch[data-diff="inside"] { border-style: dashed; border-color: var(--rh-accent); }
+  /* End of history diff states. */
   @media (max-width: 47.5rem) { .architecture-map__legend { display: none; } }
 }
 
@@ -357,3 +386,7 @@
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
 .architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
 .architecture-map[data-view="topology"] .architecture-map__edge .react-flow__edge-path { stroke-opacity: .55; }
+.architecture-history__map .react-flow__handle { pointer-events: none; opacity: 0; }
+/* History diff states for relations (React Flow is unlayered). Part of the block above. */
+.architecture-history__edge--added .react-flow__edge-path { stroke: var(--text-color-kumo-success); stroke-opacity: 1; stroke-width: 2; }
+.architecture-history__edge--removed .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: .9; stroke-dasharray: 6 4; }

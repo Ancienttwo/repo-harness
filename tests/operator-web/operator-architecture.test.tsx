@@ -17,6 +17,10 @@ import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
 import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
+import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
+import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
+// Three real `archctx history --ref dd9ccef3 --offset N --limit M --json` pages of this repository.
+import historyPages from '../fixtures/architecture-history/repo-harness-pages.json';
 import { ModuleGraph } from '../../src/operator-web/ModuleGraph';
 import { repositorySnapshot, stableSnapshot } from '../../src/operator-web/fixture';
 import { translate } from '../../src/operator-web/i18n';
@@ -134,7 +138,7 @@ async function mount(element: ReactElement): Promise<void> {
 const pendingMap: ArchitectureMapReader = async () => ({ state: 'unavailable', reason: 'architecture_map_pending' });
 
 function workspace(props: Partial<Parameters<typeof ArchitectureWorkspace>[0]> = {}): ReactElement {
-  return <ArchitectureWorkspace repositoryId={REPO} moduleId={null} onModule={() => {}} refreshGeneration={0} readMap={pendingMap} t={t} {...props} />;
+  return <ArchitectureWorkspace repositoryId={REPO} github={null} moduleId={null} onModule={() => {}} refreshGeneration={0} readMap={pendingMap} t={t} {...props} />;
 }
 
 /** The workspace opens on the map; the module list is the second view. */
@@ -767,7 +771,7 @@ describe('sequence and topology base maps', () => {
 
   test('the tabs follow the design order and the layer stays when the base map changes', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
-    expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => item.textContent)).toEqual(['Modules', 'Sequence', 'Topology', 'Module list']);
+    expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => item.textContent)).toEqual(['Modules', 'Sequence', 'Topology', 'Module list', 'History']);
     await chooseLayer('violations');
     await tab('sequence');
     expect(document.querySelector('#architecture-tab-sequence')?.getAttribute('aria-selected')).toBe('true');
@@ -922,6 +926,57 @@ describe('sequence and topology base maps', () => {
       expect([inspector().getAttribute('data-node-id'), document.querySelectorAll('.architecture-topology__member[data-selected]').length]).toEqual([CENTER, 2]);
       expect(inspector().querySelector('[data-runtime]')).toBeNull();
     }
+  });
+});
+
+describe('architecture history', () => {
+  const page = (name: keyof typeof historyPages) => historyPages[name] as unknown as HistoryPage;
+  const milestone = (history: HistoryPage, prefix: string) => history.milestones.find(item => item.rev.startsWith(prefix)) as ValidMilestone;
+
+  test('#820 draws its two removed capabilities from the base milestone; #1125 marks only the capabilities that own its new components', () => {
+    const removal = page('removal');
+    const pr820 = historyShape(removal.milestones, milestone(removal, 'd02a082f'));
+    expect([...pr820.nodes].filter(([, diff]) => diff !== 'inside')).toEqual([
+      ['capability.runtime-harness.delegated-runs', 'removed'], ['capability.runtime-harness.pm-dispatch', 'removed'],
+    ]);
+    expect(pr820.input.nodes.filter(node => pr820.nodes.get(node.id) === 'removed').map(node => node.parent)).toEqual(['domain:runtime-harness', 'domain:runtime-harness']);
+    expect([...pr820.edges.values()].filter(diff => diff === 'removed')).toHaveLength(17);
+
+    const inside = page('inside');
+    const pr1125 = milestone(inside, '98199c44');
+    const shape = historyShape(inside.milestones, pr1125);
+    expect(new Set(shape.nodes.values())).toEqual(new Set(['inside']));
+    expect(shape.nodes.size).toBe(new Set(pr1125.delta.added.map(item => item.capability)).size);
+    expect(shape.edges.size).toBe(0);
+  });
+
+  test('an error milestone shows only its code, the base across it is named, and the next page pins the first head', async () => {
+    const gap = page('gap');
+    const paths: string[] = [];
+    respond = path => {
+      paths.push(path);
+      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' ? gap : page('removal'), 200, '"history-1"');
+    };
+    await mount(workspace());
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
+    await settle();
+    expect(paths).toEqual([`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25`]);
+    const pick = async (prefix: string) => {
+      await act(async () => document.querySelector<HTMLButtonElement>(`li[data-milestone-rev^="${prefix}"] button`)!.click());
+      await settle();
+    };
+    await pick('827a2e47');
+    expect(document.querySelector('[data-gap="milestone"]')?.getAttribute('data-code')).toBe('history-model-invalid');
+    expect(document.querySelector('.architecture-history__map')).toBeNull();
+    await pick('c17d3b51');
+    expect(skippedMilestones(gap.milestones, milestone(gap, 'c17d3b51'))).toBe(1);
+    expect(document.querySelector('[data-base-rev]')?.getAttribute('data-base-rev')).toBe(milestone(gap, '06a42cf1').rev);
+    expect(document.querySelector('[data-gap="skipped"]')?.getAttribute('data-count')).toBe('1');
+
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__timeline > button')!.click());
+    await settle();
+    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=3&limit=25&ref=${gap.head}`);
+    expect(document.querySelectorAll('li[data-milestone-rev]')).toHaveLength(5);
   });
 });
 
