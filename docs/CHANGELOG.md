@@ -81,6 +81,9 @@ All notable changes to this skill are documented here.
 
 - `contract-worktree start` writes one branch metadata source and `cleanup`
   reads only that source; missing metadata or a missing branch exits 2. (#1230)
+- A lessons consolidation keeps every `Triggered by correction` reference of
+  the entries it replaces and keeps `Seen` as their sum. Maintenance triage
+  fails an entry that cites only a consolidation commit. (#1273)
 
 ## [0.24.3] - 2026-10-26
 

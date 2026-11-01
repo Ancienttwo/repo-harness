@@ -2,20 +2,17 @@
 
 ## Scope and authority
 
-- Publish candidate: `30bca275e0fc8d58bebced78b5a98133da9a0fac` on
-  `origin/main` (#1291, archimap refresh).
+- Publish candidate: `aa01147103647326e70829046d244b4b111a33b2` on
+  `origin/main` (#1290, lessons evidence).
 - Previous release: 0.24.3 on npm and in Git. Tag `v0.24.3`, annotated tag
   object `357673f5fd4e0686c59866496b573a22c5d4eacb`, target
   `bd3a40bd5c874a20c55916238f120e7cd884ca75` (#976).
-- Merged range: `v0.24.3..30bca275`; 178 commits
-  (`git rev-list --count v0.24.3..30bca275`). Each subject ends with a PR
+- Merged range: `v0.24.3..aa011471`; 181 commits
+  (`git rev-list --count v0.24.3..aa011471`). Each subject ends with a PR
   number.
-- This record covers `30bca275`. PR #1290 (lessons evidence) is open at
-  record time. If #1290 merges before publish, sync `origin/main`, update
-  the candidate and the range, and re-run the count.
-- `origin/main` moved to `6b197f86e` (#1266, generated projection refresh)
-  after this record. The owner updates the candidate and the range at publish
-  if `main` moves again.
+- The record PR moves `origin/main` past `aa011471`. It changes only this
+  record and the changelog. If any other commit lands before publish, the
+  owner updates the candidate and the range.
 - The npm package goes from 0.24.3 to 0.25.0. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.0.
@@ -87,11 +84,17 @@ The owner runs `npm publish`; the agent does not publish.
   skipped by design.
 - Daily mode runs Daily architecture freshness and both MCP path matrices.
   PR-only jobs are skipped by design.
+- The hosted daily did not run on `aa011471`. PR CI run 41265787200 passed
+  on the #1290 head `341228632`, whose tree `79cbd7d4` is the tree of
+  `aa011471`.
 
 ## Acceptance environment
 
 - macOS 26 arm64, Bun 1.4.3, Node 24.22.1.
 - `bun install --frozen-lockfile` in a fresh worktree.
+- `bun run check:release` on `aa011471` at 2026-11-01: `[release] OK`.
+  Tarball smoke: `repo-harness-0.25.0.tgz` installs, serves the packaged
+  Operator, and the packaged CLI bins start.
 - `bash scripts/check-npm-release.sh --prepublish`: version must be unpublished
   and helpers must pass.
 - `bash scripts/check-ci.sh architecture`: `noop`, `renderEquivalent: true`.
