@@ -1,13 +1,13 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1a93448f4b36f560ff7099916c408001521ad2f105a0c0195586a4ae246ccbca" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0e1e84f6abcabb1d9cfc26bacf6ea734055808da5a1d482cb6fe9ccdc82e3555" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Provides bounded read-only HTTP views of registered provider issues, admitted sessions, planning and explicit task history.
+Provides bounded read-only HTTP views of registered provider issues, admitted sessions and explicit task history.
 
 ## 1. P1:能力架構地圖
 
@@ -50,7 +50,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:72dd24498bb6d2a9ef6753af25f82c9e607c735d164c72bbde1dd8ec739df8e3`).
+- Proof: `proven` (`sha256:ec50ced070af3ec09e12f0bc66cd5ce4cc3cb6c01e15a688e3937df2cc8b00b1`).
 - Semantic nodes: `15`; declared relations: `14`.
 
 ### 1.2 模組職責表
@@ -58,7 +58,6 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.operator.primary` | `src/effects/operator/architecture.ts#readArchitecture` | `sink.operator.primary` → `src/core/operator/architecture.ts#decodeArchitectureModuleIndex`、`sink.operator.model-reader-list` → `src/effects/architecture/model-reader.ts#list` |
-| `entrypoint.operator.organization-validation` | `src/effects/operator/repository-snapshot.ts#assertOperatorRepositorySnapshotIdentity` | `sink.operator.organization-validation` → `src/core/operator/organization-snapshot.ts#decodeOperatorOrganizationSnapshot` |
 
 組件入口:
 
@@ -82,7 +81,6 @@ flowchart LR
 - `deployed-on` → `process.operator-server` — The operator board runs in the operator server process.
 - `reads` → `external.github` — Collect pull request and CI activity, the newest daily CI run with its JUnit and test projection artifacts, the open CI repair issues, and the CLI inventory repository lookups through gh in background collectors.
 - `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
-- `depends-on` → `capability.runtime-harness.engineer-bindings` — Use claim identity types for task activity.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity.
 - `depends-on` → `capability.organization.publication` — Use publication readiness types in the Operator fixture.
 - `depends-on` → `capability.runtime-harness.task-agent-host` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
@@ -131,8 +129,6 @@ flowchart LR
 - `component.operator.primary`:
   - `calls` → `component.operator.activity-feeds` — Start the bounded background collectors once and serve only their cached, re-decoded snapshots
   - `calls` → `component.operator.console-collectors` — Start the notify, Bot access, docs and tests collectors once, serve only their re-decoded caches, and send a docs file GET as one object request to the resident cat-file worker.
-  - `reads` → `capability.runtime-harness.engineer-scheduling` — Read the tracked work graph projection for the Planning view
-  - `reads` → `capability.runtime-harness.engineering-overlay` — Collect the engineering board for the Organization view
   - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
   - `reads` → `component.execution-primitives.repository-registry` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
@@ -167,12 +163,12 @@ flowchart LR
 | `component.operator.core-layer` | Operator Board (core) | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.primary-cli` | Operator HTTP Reader (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.operator.view-projections` | Operator View Projections | `20–50` 個文件 / `5000–10000` 行 | 未宣告 |
+| `component.operator.view-projections` | Operator View Projections | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.operator.web-console` | Operator Web Console | `100–200` 個文件 / `20k–50k` 行 | `entrypoint.operator.web-dev-activity` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:72dd24498bb6d2a9ef6753af25f82c9e607c735d164c72bbde1dd8ec739df8e3`); selectors `8/8`.
+> **Proof**: `proven` (`sha256:ec50ced070af3ec09e12f0bc66cd5ce4cc3cb6c01e15a688e3937df2cc8b00b1`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -189,22 +185,6 @@ sequenceDiagram
   else Cache is missing or invalid
   p2_http_reader_b98e0942->>p2_activity_feeds_9511dd1f: Replace a missing or invalid cache with the unavailable snapshot
     Note over p2_http_reader_b98e0942: Return 200 with an unavailable snapshot and no writes
-  end
-```
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
-sequenceDiagram
-  autonumber
-  participant p2_http_a321f717 as Operator HTTP Reader
-  participant p2_views_f51ad482 as Operator View Projections
-  p2_http_a321f717->>p2_views_f51ad482: Decode observed organization V2 data using the requested registry repository identity before accepting the repository response
-  alt The bounded closed payload and its linked observations agree
-  p2_http_a321f717->>p2_views_f51ad482: Validate exact fields#44; admitted scheduling identities#44; component consistency#44; SHA syntax and overlay-to-attention digest linkage
-    Note over p2_http_a321f717: Accept the scoped organization observation without changing provider or admission authority
-  else The response violates the closed organization contract
-  p2_http_a321f717->>p2_views_f51ad482: Reject malformed#44; oversized#44; foreign-repository or internally inconsistent organization observations#59; map decoder rejection to the existing scoped-response error
-    Note over p2_http_a321f717: Refuse the invalid scoped repository source#59; never relabel it or restore a legacy DTO
   end
 ```
 
