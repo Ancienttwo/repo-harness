@@ -28,8 +28,9 @@ import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/ope
 import { DocsReadError } from './docs-reader';
 import { decodeDocsFile, decodeDocsTree, OPERATOR_DOCS_FILE_KIND, type DocsUnavailableReason } from '../../core/operator/docs';
 import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
-import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
-export { OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
+import { ARCHITECTURE_FAILURES, ARCHITECTURE_HISTORY_TIMEOUT_MS, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
+import { decodeArchitectureHistoryPage } from '../architecture/archctx-provider';
+export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { createHash, randomUUID } from 'node:crypto';
@@ -176,6 +177,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_module', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULE_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_review_prompt', method: 'GET', pattern: OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE.source, write: false }),
+  Object.freeze({ id: 'architecture_history', method: 'GET', pattern: OPERATOR_ARCHITECTURE_HISTORY_ROUTE.source, write: false }),
   Object.freeze({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false }),
   Object.freeze({ id: 'static_asset', method: 'GET', pattern: OPERATOR_STATIC_ASSET_PATTERN, write: false }),
 ] as const);
@@ -1212,6 +1214,12 @@ function expectedRequestAuthority(host: OperatorServerHost, request: IncomingMes
   return `${authorityHost}:${localPort}`;
 }
 
+/** HTTP status for an architecture read failure code. */
+export function architectureStatus(code: string): number {
+  return code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
+    : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422;
+}
+
 export async function startOperatorServer(
   options: OperatorServerOptions = {},
 ): Promise<OperatorServerHandle> {
@@ -1546,6 +1554,7 @@ export async function startOperatorServer(
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
+    readTimeoutMs = timeoutMs,
   ): void => {
     if (closed) { sendJson(response,503,{code:'unavailable'},headOnly); return; }
     if (activeTaskReadCancellers.size >= maxConcurrency) { sendJson(response,503,{code:'busy'},headOnly); return; }
@@ -1575,7 +1584,7 @@ export async function startOperatorServer(
     };
     activeTaskReadCancellers.add(cancel);
     response.once('close',cancel);
-    timer = setTimeout(()=>finish('timeout'),timeoutMs);
+    timer = setTimeout(()=>finish('timeout'),readTimeoutMs);
     const pending = injected
       ? Promise.resolve().then(()=>{
         if (controller.signal.aborted) throw new OperatorTaskReadError('unavailable');
@@ -1771,6 +1780,16 @@ export async function startOperatorServer(
     if (pathname.startsWith('/api/') && fetchSite !== undefined && fetchSite !== 'same-origin' && fetchSite !== 'none') {
       sendJson(response, 403, { code: 'fetch_site_not_allowed' }, headOnly); return;
     }
+    if (OPERATOR_ARCHITECTURE_HISTORY_ROUTE.test(pathname)) {
+      let input;
+      try { input = parseArchitectureRequest(url)!; }
+      catch { sendJson(response, 400, { code: 'invalid_request' }, headOnly); return; }
+      handleBoundedTaskRead(response, headOnly, input, (value, request) => {
+        if (request.kind !== 'architecture_history') throw new Error('identity');
+        return decodeArchitectureHistoryPage(value, request);
+      }, ARCHITECTURE_FAILURES, 'architecture', undefined, architectureStatus, request, ARCHITECTURE_HISTORY_TIMEOUT_MS);
+      return;
+    }
     if (pathname.startsWith('/api/v1/repositories/') && pathname.includes('/architecture/modules')) {
       let input;
       try { input = parseArchitectureRequest(url); }
@@ -1782,9 +1801,7 @@ export async function startOperatorServer(
         if ('capability_id' in request && ('module' in result ? result.module.id !== request.capability_id
           : 'capability_id' in result && result.capability_id !== request.capability_id)) throw new Error('identity');
         return result;
-      }, ARCHITECTURE_FAILURES, 'architecture', undefined, code =>
-        code === 'timeout' ? 504 : code.endsWith('_not_found') ? 404 : code === 'invalid_request' || code === 'shard_out_of_range' ? 400
-          : code === 'worktree_changed_during_read' ? 409 : code === 'unavailable' || code === 'busy' ? 503 : 422, request);
+      }, ARCHITECTURE_FAILURES, 'architecture', undefined, architectureStatus, request);
       return;
     }
 
