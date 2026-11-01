@@ -1,4 +1,4 @@
-import { existsSync, readFileSync, realpathSync, statSync } from 'fs';
+import { existsSync, lstatSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { join, resolve } from 'path';
 import { hostSkillRoot } from '../../effects/host-skill-roots';
@@ -25,6 +25,11 @@ function displayMcpPath(path: string): string {
   return path;
 }
 
+/** One POSIX shell word, so a copied command cannot split a path with spaces or quotes. */
+function shellQuote(path: string): string {
+  return `'${path.replaceAll("'", `'\\''`)}'`;
+}
+
 /**
  * Files that the removed ChatGPT, HTTP, OAuth and Codex MCP surface wrote
  * (#1354). No reader is left, and nothing deletes them: the doctor names each
@@ -32,22 +37,28 @@ function displayMcpPath(path: string): string {
  */
 function retiredChatgptState(repoRoot: string): { path: string; remove: string }[] {
   const home = process.env.HOME ?? homedir();
-  const files = [
-    ...['mcp.tokens.json', 'mcp.oauth.json', 'mcp.oauth-tokens.json', 'mcp.oauth-doctor-client.json'].map((name) => join(mcpStorageDir(), name)),
+  const candidates = [
+    ...['mcp.tokens.json', 'mcp.oauth.json', 'mcp.oauth-tokens.json', 'mcp.oauth-doctor-client.json', 'mcp-workspaces.json', 'mcp-setup-restore.json']
+      .map((name) => join(mcpStorageDir(), name)),
     join(repoRoot, '.repo-harness', 'chatgpt-browser.local.json'),
+    // At the account home this is the live host install receipt, not a leftover.
+    ...(resolve(repoRoot) === resolve(home) ? [] : [join(repoRoot, '.repo-harness', 'configuration-restore.json')]),
+    join(repoRoot, 'docs', 'repo-harness-chatgpt-mcp-setup.md'),
     join(repoRoot, '.ai', 'harness', 'handoff', 'chatgpt-plan.md'),
-  ];
-  const directories = [
     join(repoRoot, '.ai', 'harness', 'chatgpt', 'sessions'),
     join(repoRoot, '.agents', 'skills', 'repo-harness-chatgpt-bridge'),
     join(hostSkillRoot(home, 'claude'), 'repo-harness-chatgpt'),
     join(hostSkillRoot(home, 'codex'), 'repo-harness-chatgpt'),
     join(hostSkillRoot(home, 'pi'), 'repo-harness-chatgpt'),
   ];
-  const found = [
-    ...files.filter((path) => existsSync(path)).map((path) => ({ path, remove: `rm ${path}` })),
-    ...directories.filter((path) => existsSync(path)).map((path) => ({ path, remove: `rm -r ${path}` })),
-  ];
+  const found: { path: string; remove: string }[] = [];
+  for (const path of candidates) {
+    // lstat, not existsSync: the host skill entries were links into the deleted
+    // package asset, so after an upgrade they dangle and existsSync misses them.
+    const stat = lstatSync(path, { throwIfNoEntry: false });
+    if (stat === undefined) continue;
+    found.push({ path, remove: `${stat.isDirectory() ? 'rm -r' : 'rm'} -- ${shellQuote(path)}` });
+  }
   const codexConfig = join(repoRoot, '.codex', 'config.toml');
   if (existsSync(codexConfig) && readFileSync(codexConfig, 'utf-8').includes(RETIRED_CODEX_MCP_BLOCK)) {
     found.push({ path: codexConfig, remove: `delete the ${RETIRED_CODEX_MCP_BLOCK} block from ${codexConfig}` });

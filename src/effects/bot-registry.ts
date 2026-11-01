@@ -53,9 +53,17 @@ function nullable(value: unknown, grammar: RegExp, field: string): string | null
   return value;
 }
 
-export function validateBotRecord(value: unknown): BotRecordV1 {
+/**
+ * 0.25.0 wrote `mcp_client_id` into every record. #1354 retired the field
+ * with the ChatGPT MCP surface; the read fails closed and names the repair.
+ */
+const RETIRED_RECORD_FIELD = 'mcp_client_id';
+const BOT_RECORD_RETIRED_FIELD = 'BOT_RECORD_RETIRED_FIELD';
+
+export function validateBotRecord(value: unknown, file = 'the Bot record'): BotRecordV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('bot record must be an object');
   const record = value as Record<string, unknown>;
+  if (Object.hasOwn(record, RETIRED_RECORD_FIELD)) invalid(`${BOT_RECORD_RETIRED_FIELD}: ${RETIRED_RECORD_FIELD}; remove the key from ${file}`);
   if (Object.keys(record).sort().join() !== RECORD_FIELDS.join()) invalid('bot record fields are invalid');
   if (record.protocol !== BOT_RECORD_PROTOCOL || record.kind !== BOT_RECORD_KIND) invalid('bot record protocol or kind is invalid');
   if (typeof record.bot_id !== 'string' || !BOT_ID.test(record.bot_id)) invalid('bot_id must match [a-z][a-z0-9-]{0,62}');
@@ -120,10 +128,13 @@ export function readBotRegistry(env: NodeJS.ProcessEnv = process.env): readonly 
     try {
       const stat = lstatSync(path);
       if (!name.endsWith('.json') || !stat.isFile() || stat.size > BOT_RECORD_MAX_BYTES) throw new Error('entry');
-      const bot = validateBotRecord(JSON.parse(readFileSync(path, 'utf8')));
+      const bot = validateBotRecord(JSON.parse(readFileSync(path, 'utf8')), path);
       if (`${bot.bot_id}.json` !== name) throw new Error('name');
       return bot;
-    } catch {
+    } catch (error) {
+      if (error instanceof BotRegistryError && error.message.startsWith(`${BOT_RECORD_RETIRED_FIELD}:`)) {
+        throw new BotRegistryError('bot_registry_invalid', error.message);
+      }
       throw new BotRegistryError('bot_registry_invalid', `bot registry entry ${JSON.stringify(name)} is invalid`);
     }
   });

@@ -63,9 +63,10 @@ function jsonObject(raw: string): Record<string, any> {
 }
 
 /**
- * `mcp_servers.repo_harness` stays readable: receipts written by the removed
- * `mcp setup codex` (#1354) still name it, and uninstall restores their
- * preimage. No writer records it anymore.
+ * `mcp_servers.repo_harness` stays a valid selector so that an older home
+ * receipt or pending entry that names it still parses. No writer records it.
+ * The repository receipts that the removed `mcp setup codex` wrote have no
+ * reader; `mcp doctor` names them as retired state (#1354).
  */
 function validSelector(path: string, selector: string): boolean {
   if (path.endsWith('.toml')) return selector === 'default_mode_request_user_input' || selector === 'mcp_servers.codegraph' || selector === 'mcp_servers.repo_harness';

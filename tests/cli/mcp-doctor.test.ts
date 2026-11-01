@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'bun:test';
 import { spawnSync } from 'child_process';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from 'fs';
+import { existsSync, lstatSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { RETIRED_CHATGPT_STATE_FINDING, runMcpDoctor } from '../../src/cli/mcp/doctor';
@@ -211,30 +211,43 @@ describe('mcp doctor and local config', () => {
   });
 
   test('doctor names leftover ChatGPT state and a Codex repo_harness block, and removes nothing', () => {
-    withTmpRepo((repoRoot, userHome) => {
+    withTmpRepo((tmpRoot, userHome) => {
       const hostHome = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-doctor-host-'));
       const previousHome = process.env.HOME;
       try {
         process.env.HOME = hostHome;
+        // A space and a single quote: each copied command must stay one shell word per path.
+        const repoRoot = join(tmpRoot, "my repo's");
         const oauthStore = join(userHome, 'mcp.oauth.json');
         const handoff = join(repoRoot, '.ai/harness/handoff/chatgpt-plan.md');
+        const sessions = join(repoRoot, '.ai/harness/chatgpt/sessions');
+        // The base installer linked the host skill into the package asset that #1354 deletes.
         const skill = join(hostHome, '.claude/skills/repo-harness-chatgpt');
         const codexConfig = join(repoRoot, '.codex/config.toml');
         writeFileSync(oauthStore, '{}\n');
         mkdirSync(join(repoRoot, '.ai/harness/handoff'), { recursive: true });
         writeFileSync(handoff, '# plan\n');
-        mkdirSync(skill, { recursive: true });
+        mkdirSync(sessions, { recursive: true });
+        mkdirSync(join(hostHome, '.claude/skills'), { recursive: true });
+        symlinkSync(join(tmpRoot, 'deleted-package/assets/skills/repo-harness-chatgpt'), skill);
         mkdirSync(join(repoRoot, '.codex'), { recursive: true });
         writeFileSync(codexConfig, '[mcp_servers.repo_harness]\ncommand = "repo-harness"\n');
 
         const doctor = JSON.parse(runMcpDoctor({ repo: repoRoot, json: true }).lines[0]);
         expect(doctor.findings).toEqual([{
           code: RETIRED_CHATGPT_STATE_FINDING,
-          paths: [oauthStore, handoff, skill, codexConfig],
-          remove: [`rm ${oauthStore}`, `rm ${handoff}`, `rm -r ${skill}`, `delete the [mcp_servers.repo_harness] block from ${codexConfig}`],
+          paths: [oauthStore, handoff, sessions, skill, codexConfig],
+          remove: [
+            `rm -- '${oauthStore}'`,
+            `rm -- '${tmpRoot}/my repo'\\''s/.ai/harness/handoff/chatgpt-plan.md'`,
+            `rm -r -- '${tmpRoot}/my repo'\\''s/.ai/harness/chatgpt/sessions'`,
+            `rm -- '${skill}'`,
+            `delete the [mcp_servers.repo_harness] block from ${codexConfig}`,
+          ],
         }]);
-        expect(runMcpDoctor({ repo: repoRoot }).lines.filter((line) => line.includes(RETIRED_CHATGPT_STATE_FINDING))).toHaveLength(4);
-        for (const path of [oauthStore, handoff, skill, codexConfig]) expect(existsSync(path)).toBe(true);
+        expect(runMcpDoctor({ repo: repoRoot }).lines.filter((line) => line.includes(RETIRED_CHATGPT_STATE_FINDING))).toHaveLength(5);
+        for (const path of [oauthStore, handoff, sessions, codexConfig]) expect(existsSync(path)).toBe(true);
+        expect(lstatSync(skill).isSymbolicLink()).toBe(true);
       } finally {
         if (previousHome === undefined) delete process.env.HOME;
         else process.env.HOME = previousHome;

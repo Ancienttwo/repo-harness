@@ -85,6 +85,19 @@ describe('Bot registry', () => {
     } finally { h.cleanup(); }
   });
 
+  test('a 0.25.0 record that keeps the retired mcp_client_id key fails the read and names the repair', () => {
+    const h = home();
+    try {
+      const hermes = registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', now: NOW }, h.env);
+      const path = join(botRegistryPath(h.env), 'hermes.json');
+      writeFileSync(path, JSON.stringify({ ...hermes, mcp_client_id: null }));
+      let failure: unknown;
+      try { readBotRegistry(h.env); } catch (error) { failure = error; }
+      expect(failure).toBeInstanceOf(BotRegistryError);
+      expect(failure).toMatchObject({ code: 'bot_registry_invalid', message: `BOT_RECORD_RETIRED_FIELD: mcp_client_id; remove the key from ${path}` });
+    } finally { h.cleanup(); }
+  });
+
   test('`repo-harness bots register` writes the record and reports errors as JSON', () => {
     const h = home();
     try {

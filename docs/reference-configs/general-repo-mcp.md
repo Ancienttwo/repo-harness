@@ -279,7 +279,7 @@ Use the affected MCP reader tests for current behavior checks.
 default `planner` profile is read-and-plan only: the client reads workflow and
 repo state, writes PRD artifacts, and holds no default source-code write
 access, arbitrary shell execution, or agent runner. The `executor` profile
-reads `.ai/harness/**` and writes check artifacts.
+also reads `.ai/harness/**`. It has the same write tools as `planner`.
 
 MCP does not start agents. The task owner directs an explicitly addressed
 agent through the herdr skill.
