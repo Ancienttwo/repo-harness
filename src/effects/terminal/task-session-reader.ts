@@ -34,10 +34,19 @@ export function sameSessionData(left: unknown, right: unknown): boolean {
   return canonicalize(JSON.parse(JSON.stringify(left))) === canonicalize(JSON.parse(JSON.stringify(right)));
 }
 
+/** #1345 removed engineer identity. An old binding stops its reader until the operator removes or archives it. */
+export function readTaskBinding(path: string): TaskPaneBinding {
+  const binding = readSessionArtifact<TaskPaneBinding>(path);
+  if (binding.task_admission && Object.hasOwn(binding.task_admission.identity, 'engineer_profile')) {
+    throw new Error(`task_agent_engineer_profile_retired: ${path}. The operator removes or archives this record by hand.`);
+  }
+  return binding;
+}
+
 export function readTaskAgent(repoRoot: string, task: string, role: string): { dir: string; binding: TaskPaneBinding } {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);
   assertSessionDirectory(root, dir);
-  const binding = readSessionArtifact<TaskPaneBinding>(join(dir, 'binding.json'));
+  const binding = readTaskBinding(join(dir, 'binding.json'));
   if (binding.task !== task || binding.role !== role || binding.protocol !== 2 || binding.repository_id !== repository.repository_id
     || !['herdr', 'terminal'].includes(binding.runtime)) throw new Error('task_agent_binding_invalid');
   if (!Number.isSafeInteger(binding.max_requests) || binding.max_requests < 1 || binding.max_requests > 100) throw new Error('task_agent_binding_invalid');

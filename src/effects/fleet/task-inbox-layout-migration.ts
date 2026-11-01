@@ -5,6 +5,7 @@ import { dirname, join } from 'node:path';
 import { TASK_INBOX_RETIREMENT_MARKER, taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { canonicalTaskMessageEventBytes, canonicalTaskMessageDeliveryReceiptBytes, deriveTaskMessageRecipientKey,
   validateTaskMessageEvent, validateTaskMessageDeliveryReceipt, recipientFromTaskMessageReceipt, type TaskMessageRecipient } from '../../core/fleet/task-message';
+import { retiredDeliveryChannelRecord, TaskMessageError } from '../../core/messages/task-message-error';
 import { createFileExclusiveDurably } from '../atomic-append';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock, type ExclusiveDirectoryLockHandle } from '../locking/exclusive-directory-lock';
@@ -77,7 +78,13 @@ function inventory(root: string): Entry[] {
 }
 function canonicalRecord<T>(path: string, validate: (value: unknown) => T, serialize: (value: T) => string): T {
   const bytes = readFile(path);
-  const value = validate(JSON.parse(bytes.toString('utf8')));
+  let value: T;
+  try { value = validate(JSON.parse(bytes.toString('utf8'))); } catch (error) {
+    if (error instanceof TaskMessageError && error.code === 'task_message_channel_retired') {
+      refuse(retiredDeliveryChannelRecord(path));
+    }
+    throw error;
+  }
   if (`${serialize(value)}\n` !== bytes.toString('utf8')) refuse('record bytes are not canonical');
   return value;
 }

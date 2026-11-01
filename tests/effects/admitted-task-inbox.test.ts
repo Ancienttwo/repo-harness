@@ -1,8 +1,9 @@
 import { expect, test } from 'bun:test';
-import { rmSync } from 'node:fs';
+import { readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { join } from 'node:path';
 import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { acknowledgeTaskInbox, deliverTaskInbox, listTaskInbox, readAdmittedTaskActivity, sendTaskMessage } from '../../src/effects/fleet/task-inbox';
+import { acknowledgeTaskInbox, deliverTaskInbox, listTaskInbox, readAdmittedTaskActivity, sendTaskMessage, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { buildTaskMessageEvent, validateTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { taskMessageSender } from '../../src/cli/commands/fleet';
 
@@ -46,6 +47,33 @@ test('bounded admitted activity pages stored events and receipts without legacy 
     expect(next.entries[0]?.event).toEqual(second);
     expect(next.entries[0]?.receipts).toEqual([]);
     expect(readAdmittedTaskActivity({ ...query, budget: { ...budget, max_scan: 0 } }).coverage.reason).toBe('scan');
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('a retired agent_runtime_effect receipt fails its readers with the record path', async () => {
+  const f = await admittedInboxFixture();
+  try {
+    sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event });
+    deliverTaskInbox({ ...f.input, delivery_channel: 'manual', delivered_at: time });
+    const directory = taskInboxTaskDirectory(f.root, f.task);
+    const [name] = readdirSync(join(directory, 'delivery'), { recursive: true }).map(String).filter(entry => entry.endsWith('.json'));
+    const path = join(directory, 'delivery', name!);
+    writeFileSync(path, readFileSync(path, 'utf8').replace('"delivery_channel":"manual"', '"delivery_channel":"agent_runtime_effect"'));
+    const retired = `delivery_channel agent_runtime_effect is retired: ${path}. The operator removes or archives this record by hand.`;
+    expect(() => listTaskInbox(f.input)).toThrow(retired);
+    expect(() => readAdmittedTaskActivity({ repo_root: f.root, task_id: f.task, limit: 1, after: null, message_id: null, budget })).toThrow(retired);
+  } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('a binding with a retired engineer_profile fails its reader with the record path', async () => {
+  const f = await admittedInboxFixture();
+  try {
+    const path = join(f.dir, 'binding.json');
+    const binding = JSON.parse(readFileSync(path, 'utf8'));
+    binding.task_admission.identity.engineer_profile = { engineer_id: 'retired' };
+    writeFileSync(path, `${JSON.stringify(binding, null, 2)}\n`);
+    expect(() => sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event }))
+      .toThrow(`task_agent_engineer_profile_retired: ${path}. The operator removes or archives this record by hand.`);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 

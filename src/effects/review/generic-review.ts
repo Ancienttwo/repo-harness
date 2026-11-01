@@ -289,7 +289,6 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     let session: ReviewSession;
     if (existsSync(join(dir, 'session.json'))) {
       session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-      if (Object.hasOwn(session, 'engineer_profile')) throw new Error('review_session_engineer_profile_retired');
       if (session.protocol !== 1 || session.owner_root !== root || session.campaign_sha256 !== campaign
         || JSON.stringify(session.task_claim) !== JSON.stringify(taskClaim)
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))

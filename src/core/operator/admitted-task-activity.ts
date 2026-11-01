@@ -57,7 +57,7 @@ function receiptValid(v: unknown, event: TaskMessageEventV2): boolean {
   return exact(v, ['protocol','kind','message_id','recipient_kind','recipient_id','recipient_admission_sha256','recipient_claim','delivery_state','delivery_channel','delivery_ref','delivered_at','acknowledged_at'])
     && v.protocol === 2 && v.kind === 'repo-harness-task-message-delivery-receipt' && v.message_id === event.message_id && v.recipient_admission_sha256 === event.admission_sha256
     && one(v.recipient_kind, ['claim','orchestrator','user']) && text(v.recipient_id) && (v.recipient_kind === 'claim' ? claim(v.recipient_claim) : v.recipient_claim === null)
-    && one(v.delivery_state, ['pending','delivered','acknowledged','superseded']) && one(v.delivery_channel, ['hook_session','manual','agent_runtime_effect','controlled_request'])
+    && one(v.delivery_state, ['pending','delivered','acknowledged','superseded']) && one(v.delivery_channel, ['hook_session','manual','controlled_request'])
     && nullable(v.delivery_ref, text) && nullable(v.delivered_at, timestamp) && nullable(v.acknowledged_at, timestamp);
 }
 /** Browser-safe transport validation. The inbox reader validates canonical record bytes. */

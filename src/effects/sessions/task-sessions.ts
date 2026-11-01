@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, TASK_SESSIONS_MAX_BYTES, TASK_SESSIONS_MAX_ENTRIES, type AdmittedTaskSession, type AdmittedTaskSessions, type AdmittedTaskSessionsRequest } from '../../core/sessions/task-sessions';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { readSessionArtifact, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session';
+import { readTaskBinding, taskSessionDirectory } from '../terminal/task-session';
 import { taskRepository } from '../git/task-repository';
 import { readCurrentReviewAdmissionSource } from '../admission/admission-source';
 import { observeAdmittedSessionSource, SessionObservationError } from './admitted-source';
@@ -44,7 +44,7 @@ export function readAdmittedTaskSessions(input: AdmittedTaskSessionsRequest & { 
         const stat = lstatSync(path);
         totalBytes += stat.size;
         if (stat.size > 1024 * 1024 || totalBytes > 8 * 1024 * 1024) return fail('too_large');
-        const binding = readSessionArtifact<TaskPaneBinding>(path);
+        const binding = readTaskBinding(path);
         if (!binding.task_admission) continue; // Generic runtime has no approved issue identity.
         if (taskSessionDirectory(root, binding.task, binding.role) !== dir) return fail('unavailable');
         const identity = binding.task_admission.identity;

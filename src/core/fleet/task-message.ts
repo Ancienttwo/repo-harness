@@ -1,4 +1,5 @@
 import { canonicalize } from '../evidence/canonical-json';
+import { retiredDeliveryChannel } from '../messages/task-message-error';
 import { TASK_DIGEST_PATTERN } from '../state/coordination-identity';
 import {
   assertMessageBoundedUtf8,
@@ -28,7 +29,7 @@ export type TaskMessageSenderKind = 'user' | 'operator' | 'agent';
 export type TaskMessageSenderTrust = 'local_operator' | 'lease_owner' | 'unverified_agent';
 export type TaskMessageRecipientKind = 'claim' | 'orchestrator' | 'user';
 export type TaskMessageDeliveryState = 'pending' | 'delivered' | 'acknowledged' | 'superseded';
-export type TaskMessageDeliveryChannel = 'hook_session' | 'manual' | 'agent_runtime_effect';
+export type TaskMessageDeliveryChannel = 'hook_session' | 'manual';
 
 export interface TaskMessageEventV1 {
   readonly protocol: typeof TASK_MESSAGE_PROTOCOL;
@@ -298,7 +299,7 @@ export function buildTaskMessageDeliveryReceipt(input: {
 }): TaskMessageDeliveryReceiptV1 {
   assertUuid(requiredString(input.message_id, 'message_id'), 'message_id');
   assertTaskDigest(requiredString(input.task_revision, 'task_revision'), 'task_revision');
-  if (input.delivery_channel !== 'hook_session' && input.delivery_channel !== 'manual' && input.delivery_channel !== 'agent_runtime_effect') invalid('delivery_channel is invalid');
+  if (input.delivery_channel !== 'hook_session' && input.delivery_channel !== 'manual') invalid('delivery_channel is invalid');
   const identity = receiptIdentity(input.recipient);
   return Object.freeze({
     protocol: TASK_MESSAGE_PROTOCOL,
@@ -346,12 +347,9 @@ export function validateTaskMessageDeliveryReceipt(value: unknown): TaskMessageD
   const state = record.delivery_state;
   if (state !== 'pending' && state !== 'delivered' && state !== 'acknowledged' && state !== 'superseded') invalid('delivery_state is invalid');
   const channel = record.delivery_channel;
-  if (channel !== 'hook_session' && channel !== 'manual' && channel !== 'agent_runtime_effect') invalid('delivery_channel is invalid');
-  const deliveryRef = record.delivery_ref === null ? null : requiredString(record.delivery_ref, 'delivery_ref');
-  if (deliveryRef !== null) assertMessageBoundedUtf8(deliveryRef, 'delivery_ref', 512, invalid);
-  if (state === 'pending' && deliveryRef !== null) invalid('pending receipt cannot carry a bounded control reference');
-  if (state !== 'pending' && state !== 'superseded' && channel === 'agent_runtime_effect' && deliveryRef === null) invalid('agent_runtime_effect delivery requires its bounded control reference');
-  if (channel !== 'agent_runtime_effect' && deliveryRef !== null) invalid('only agent_runtime_effect delivery carries a bounded control reference');
+  if (channel === 'agent_runtime_effect') retiredDeliveryChannel();
+  if (channel !== 'hook_session' && channel !== 'manual') invalid('delivery_channel is invalid');
+  if (record.delivery_ref !== null) invalid('delivery_ref must be null');
   const deliveredAt = record.delivered_at === null ? null : requiredString(record.delivered_at, 'delivered_at');
   const acknowledgedAt = record.acknowledged_at === null ? null : requiredString(record.acknowledged_at, 'acknowledged_at');
   if (deliveredAt !== null) assertTimestamp(deliveredAt, 'delivered_at');
@@ -368,7 +366,7 @@ export function validateTaskMessageDeliveryReceipt(value: unknown): TaskMessageD
     recipient_task_revision: taskRevision,
     delivery_state: state,
     delivery_channel: channel,
-    delivery_ref: deliveryRef,
+    delivery_ref: null,
     delivered_at: deliveredAt,
     acknowledged_at: acknowledgedAt,
   });

@@ -1,5 +1,5 @@
-import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent } from './task-session-reader';
-export { assertCreated, taskSessionDirectory, readTaskAgent } from './task-session-reader';
+import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent, readTaskBinding } from './task-session-reader';
+export { assertCreated, taskSessionDirectory, readTaskAgent, readTaskBinding } from './task-session-reader';
 import { processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
 export { processIdentity, readSessionArtifact, writeSessionArtifact } from './task-session-io';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
@@ -507,7 +507,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     if (existsSync(join(dir, 'binding.json'))) {
       const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
       if (!sameSessionData(intent.spec, spec)) throw new Error('task_agent_spec_changed');
-      const binding = readSessionArtifact<TaskPaneBinding>(join(dir, 'binding.json'));
+      const binding = readTaskBinding(join(dir, 'binding.json'));
       if (binding.runtime !== 'herdr') throw new Error('task_agent_spec_changed');
       recheckTaskAdmission(repoRoot, binding, effects.taskAuthority);
       assertTaskBinding(binding); return binding;
