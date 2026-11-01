@@ -63,6 +63,10 @@ export interface PublicationMergeScenario {
   /** Per-readback PR answers; the last answer repeats. Defaults to `readback`. */
   readonly readbackSequence?: readonly ('merged' | 'open' | 'fail')[];
   readonly parents?: readonly string[];
+  /** The PR head ref; defaults to `feat/executor`. */
+  readonly headRef?: string;
+  /** The commits that `compare/<base>...<head>` lists; unset leaves that call unanswered. */
+  readonly compareCommits?: readonly { readonly sha: string; readonly parents: readonly string[] }[];
   /** Fail one review publish write after any earlier write succeeded. */
   readonly failPost?: 'review' | 'record';
   /** The head SHA that each successive `pr view` reports; the last entry repeats. */
@@ -120,7 +124,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     const sequence = scenario.headSequence;
     const head = sequence?.length ? sequence[Math.min(prViewAttempt, sequence.length - 1)]! : headSha;
     return ok({ number: PR, url: `https://github.com/${REPOSITORY}/pull/${PR}`, state: 'OPEN', isDraft: false,
-      headRefOid: head, headRefName: 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
+      headRefOid: head, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main', body: scenario.body ?? '',
       reviewDecision: '', changedFiles: scenario.changedFiles?.length ?? 0, mergeable: 'MERGEABLE' });
   }
   if (command === 'pr' && sub === 'checks') {
@@ -148,7 +152,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (query.includes('closingIssuesReferences')) {
       return ok({ data: { repository: { nameWithOwner: REPOSITORY, pullRequest: {
         id: PR_NODE, number: PR, title: scenario.title ?? '', body: scenario.body ?? '', state: 'OPEN',
-        isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: headSha, baseRefOid: baseSha, baseRefName: 'main',
+        isCrossRepository: scenario.isCrossRepository ?? false, headRefOid: headSha, headRefName: scenario.headRef ?? 'feat/executor', baseRefOid: baseSha, baseRefName: 'main',
         ...(scenario.mergeQueueEnabled === 'missing' ? {} : { isMergeQueueEnabled: scenario.mergeQueueEnabled ?? false }),
         autoMergeRequest: scenario.autoMerge ? { enabledAt: '2026-10-30T00:00:00Z' } : null,
         closingIssuesReferences: { pageInfo: { hasNextPage: scenario.closingHasNextPage ?? false },
@@ -208,6 +212,10 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     if (state === 'fail') return { status: 1, stdout: '', stderr: 'gh: connection reset' };
     if (state === 'open') return ok({ number: PR, state: 'open', merged: false, merge_commit_sha: null, head: { sha: headSha }, base: { ref: 'main' } });
     return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? MERGE_COMMIT, head: { sha: headSha }, base: { ref: 'main' } });
+  }
+  if (scenario.compareCommits && sub === `${root}/compare/${baseSha}...${headSha}?per_page=100`) {
+    return ok({ total_commits: scenario.compareCommits.length,
+      commits: scenario.compareCommits.map((commit) => ({ sha: commit.sha, parents: commit.parents.map((sha) => ({ sha })) })) });
   }
   if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
     return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });
