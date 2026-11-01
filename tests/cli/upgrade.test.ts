@@ -917,6 +917,26 @@ describe('legacy workflow-state upgrade report', () => {
     expect(readFileSync(path, 'utf8')).toBe(bytes);
   }, false));
 
+  test('package scripts that run a missing script key are report-only', () => sandbox((opts) => {
+    const path = join(opts.cwd, 'package.json');
+    put(join(opts.cwd, 'build.ts'), 'console.log("build");\n');
+    put(join(opts.cwd, 'node_modules/.bin/vite'), '#!/bin/sh\n');
+    const bytes = `${JSON.stringify({ name: 'fixture', scripts: {
+      check: 'bun run check:task-workflow && bun run typecheck',
+      verify: 'npm run -s lint',
+      typecheck: 'tsc',
+      build: 'bun run build.ts && bun run vite',
+    } }, null, 2)}\n`;
+    put(path, bytes);
+    const check = runUpgrade({ ...opts, scope: 'project' });
+    expect(check.items).toEqual([expect.objectContaining({ path, surface: 'file', retiredBy: 'retired-script-reference', action: 'report' })]);
+    expect(check.items[0]?.reason).toContain('check: bun run check:task-workflow && bun run typecheck (missing script "check:task-workflow"); verify: npm run -s lint (missing script "lint")');
+    for (const live of ['typecheck: tsc', 'build:']) expect(check.items[0]?.reason).not.toContain(live);
+    expect(runUpgradeDecide({ ...opts, decision: 'remove', paths: ['package.json'] }).rejected.map((rejection) => rejection.path)).toEqual(['package.json']);
+    expect(runUpgrade({ ...opts, scope: 'project', apply: true }).keptPaths).toContain(path);
+    expect(readFileSync(path, 'utf8')).toBe(bytes);
+  }, false));
+
   test('leaf links are report-only and a symlink parent is never followed', () => sandbox((opts) => {
     const target = join(opts.home, 'operator-library.sh'); put(target, '# Outside operator file\n');
     const libDir = join(opts.cwd, '.ai/hooks/lib'); mkdirSync(libDir, { recursive: true });
