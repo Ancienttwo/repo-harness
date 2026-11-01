@@ -47,10 +47,11 @@ export function buildPublicationCommand(): Command {
       }
     });
   withSelection(publication.command('merge')
-    .description('Squash-merge one same-repository PR when the base policy enables acceptance merge and every gate passes'),
+    .description('Squash-merge one same-repository PR when the base policy enables acceptance merge and every gate passes')
+    .option('--batch', 'Merge an integration/<parent>-batch-<n> PR with a two-parent merge commit instead of a squash'),
   'Output the publication merge result document')
-    .action((options: PullRequestSelectionOptions) => {
-      const result = executePublicationMerge(selection(options));
+    .action((options: PullRequestSelectionOptions & { readonly batch?: true }) => {
+      const result = executePublicationMerge({ ...selection(options), batch: options.batch === true });
       process.stdout.write(`${JSON.stringify(result.document)}\n`);
       process.exitCode = result.exit_code;
     });

@@ -101,7 +101,9 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   "seen again" comment; the reporter appends evidence through `report-ci`
   only.
 - One child issue has one write scope. It has one PR, or PR slots that the
-  issue names in advance. Parallel workers never share a file.
+  issue names in advance. The one exception is a batch integration PR
+  (`references/orchestrator.md` §9.3): it merges several accepted PRs and
+  adds no change of its own. Parallel workers never share a file.
 - One head owner per PR. Any other agent asks on the board, or takes the
   seat through a handoff comment before it pushes.
 - The worker follows the issue boundary. A needed change outside it is a
