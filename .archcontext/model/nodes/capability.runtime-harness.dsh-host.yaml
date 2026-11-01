@@ -1,0 +1,33 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.dsh-host
+kind: capability
+name: DSH Host Plugin
+status: active
+layer: cli
+summary: Runs the repo-harness guard inside DeepSeek Harness (DSH) as a Cordis plugin and shows its denials in the DSH client.
+responsibilities:
+  - Route DSH native write, edit and bash tool calls through the typed hook runtime and deny a call that the runtime denies, with the REPO_HARNESS_GUARD_DENIED error code.
+  - Inject the session context once per session and record the Stop observation when a turn stops.
+  - Resolve the packaged hook entry and report DSH_HOOK_ENTRY_MISSING when it is absent, so the guard is never silently off.
+  - Fold guard denials into a DSH session projection and render them in the DSH client sidebar.
+  - Build the nested dist/dsh package (plugin, client bundle and package manifest) that DSH loads.
+source:
+  include:
+    - src/dsh/**
+  entrypoints:
+    - id: entrypoint.dsh-host.plugin
+      path: src/dsh/plugin.ts
+      symbols:
+        - name: createDshPlugin
+          sinks:
+            - id: sink.dsh-host.hook-bridge
+              path: src/dsh/bridge.ts
+              symbol: resolveDshBridge
+extensions:
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/dsh-plugin.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"
