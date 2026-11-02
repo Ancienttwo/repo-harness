@@ -256,7 +256,7 @@ regressions verify these separate boundaries.
 | --- | ---: | --- | --- |
 | `component.contract-assets.primary`（Workflow Contract And Policy） | 12 / 4,410 | 契约主体、opt-in marker、harness policy、context map、契约加载器与 context 门禁 | capability-registry（`check-context-map.ts` 读注册表） |
 | `component.contract-assets.capability-registry` | 148 / 6,981 | `.archcontext/**` 模型文件、纯注册表、resolver 与 config CLI、capability context 命令 | 无组件外调用；workflow-state 的 resolver 调用它 |
-| `component.contract-assets.template-projection`（可扩展） | 180 / 35,687 | standalone resolver 与 reference config 投影、`repo-harness init` | primary、planning-helpers、workflow-state、execution-primitives、adoption、hook-adapters、global-runtime-reconciliation、codegraph-readiness |
+| `component.contract-assets.template-projection`（可扩展） | 180 / 35,687 | standalone resolver 与 reference config 投影、`repo-harness init` | primary、planning-helpers、workflow-state、execution-primitives、adoption、hook-adapters、global-runtime-reconciliation |
 | `component.contract-assets.contract-worktree-lifecycle` | 8 / 6,505 | worktree 生命周期、publication、merge gate、contract brief runner、归档 | workflow-state（worktree 拓扑锁）、execution-primitives（Git binary） |
 | `component.contract-assets.planning-helpers` | 21 / 4,034 | 计划、spec、sprint、triage 与 factor-lab helper，`run` 与 `brain` 命令，受保护 helper runner | execution-primitives（有界子进程） |
 
@@ -618,7 +618,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 ## Optimization Backlog
 
 - **template-projection 是可扩展组件。** 先把 `src/cli/commands/init.ts` 拆成独立的 init 组件，再看 `assets/templates/helpers/**` 是否需要单独的投影组件。
-- **`init.ts` 组合根。** 它导入 adoption、hook-adapters、global-runtime-reconciliation、codegraph-readiness、workflow-state 与 execution-primitives，还导入当前无 owner 的 `src/cli/commands/{architecture-configuration,install,herdr-skill}.ts`、`src/core/skill-surface/catalog.ts` 与 `src/effects/skill-tree-integrity.ts`。
+- **`init.ts` 组合根。** 它导入 adoption、hook-adapters、global-runtime-reconciliation、workflow-state 与 execution-primitives。CodeGraph 步骤由 `src/cli/index.ts` 作为 `InitPorts` 传入（#1398）。它还导入当前无 owner 的 `src/cli/commands/{architecture-configuration,install,herdr-skill}.ts`、`src/core/skill-surface/catalog.ts` 与 `src/effects/skill-tree-integrity.ts`。
 - **投影脚本知道源码布局。** `scripts/sync-helper-sources.ts:48-120` 用字符串改写 registry、checkpoint snapshot、readonly-observation 与 worktree-location 的 import 行。被投影文件移动时，这里要同步修改。
 - **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 动态导入 `src/effects/terminal/task-session.ts` 与 `herdr.ts`；`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。集成步骤声明了 contract-worktree-lifecycle → task-agent-host 与 → acceptance-review。到 publication 的关系没有声明：`relation.publication.contract-assets` 已经声明反向。本方向有 3 条边，反向有 2 条。是否翻转方向是开放问题。
 - **planning-helpers 的平台依赖。** `src/effects/runtime/helper-runner.ts` 导入 `node-candidates.ts` 与 `protected-helper-platform.ts`。它们现在归 global-runtime-reconciliation。集成步骤没有声明 planning-helpers → global-runtime-reconciliation：global-runtime-reconciliation 的 cli-root 与 primary 已经声明到本 capability 的关系，新增一条会加深双向依赖。
