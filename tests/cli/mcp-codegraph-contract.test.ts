@@ -529,6 +529,23 @@ describe('general repo CodeGraph contract', () => {
       // The child runs with cwd=repoRoot, so a relative path with a separator would reach the planted binary.
       createCodeGraphCliAdapter({ env: { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: 'node_modules/.bin/codegraph' } }).discoverRepo(repoRoot);
       expect(existsSync(marker)).toBe(false);
+
+      // An in-repo symlink to an outside script is still repo-controlled: the lexical path is what runs.
+      const outsideDir = join(emptyBin, 'outside');
+      mkdirSync(outsideDir);
+      writeFileSync(join(outsideDir, 'codegraph'), `#!/bin/sh\n: > '${marker}'\necho '[]'\n`);
+      chmodSync(join(outsideDir, 'codegraph'), 0o755);
+      symlinkSync(join(outsideDir, 'codegraph'), join(repoRoot, 'node_modules', '.bin', 'linked'));
+      symlinkSync(outsideDir, join(repoRoot, 'linked-dir'));
+      const attempts = [
+        { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: 'node_modules/.bin/linked' },
+        { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: join(repoRoot, 'node_modules', '.bin', 'linked') },
+        { PATH: join(repoRoot, 'linked-dir') },
+      ];
+      for (const env of attempts) {
+        createCodeGraphCliAdapter({ env }).discoverRepo(repoRoot);
+        expect(existsSync(marker)).toBe(false);
+      }
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(emptyBin, { recursive: true, force: true });

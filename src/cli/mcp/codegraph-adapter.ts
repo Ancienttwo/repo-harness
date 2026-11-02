@@ -91,12 +91,19 @@ function canonicalIfPresent(path: string): string {
   }
 }
 
+// The spawned path is the lexical one, so a symlink inside the repo is repo-controlled even when
+// its target is outside. Check both the lexical and the canonical form against both root forms.
+function isInsideRepo(repoRoot: string, candidate: string): boolean {
+  const roots = [resolve(repoRoot), canonicalIfPresent(repoRoot)];
+  const candidates = [resolve(candidate), canonicalIfPresent(candidate)];
+  return roots.some((root) => candidates.some((path) => isPathInside(root, path)));
+}
+
 // The inspected repo is untrusted input: never run a CodeGraph binary found inside it.
 function codegraphExecutionEnv(repoRoot: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const canonicalRoot = canonicalIfPresent(repoRoot);
   const safePath = (env.PATH ?? '')
     .split(delimiter)
-    .filter((entry) => entry && isAbsolute(entry) && !isPathInside(canonicalRoot, canonicalIfPresent(entry)))
+    .filter((entry) => entry && isAbsolute(entry) && !isInsideRepo(repoRoot, entry))
     .join(delimiter);
   return { ...env, PATH: safePath };
 }
@@ -108,7 +115,7 @@ function codegraphBin(repoRoot: string, env: NodeJS.ProcessEnv): string {
   // repoRoot, because the child runs with cwd=repoRoot and would reach a repo-local binary.
   if (!/[\\/]/.test(explicit)) return explicit;
   const resolved = resolve(repoRoot, explicit);
-  return isPathInside(canonicalIfPresent(repoRoot), canonicalIfPresent(resolved)) ? 'codegraph' : resolved;
+  return isInsideRepo(repoRoot, resolved) ? 'codegraph' : resolved;
 }
 
 function normalizeIndexedFile(value: unknown): CodeGraphIndexedFile | null {
