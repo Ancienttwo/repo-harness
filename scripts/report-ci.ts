@@ -12,6 +12,7 @@ export class CIReportError extends Error {
   readonly providerUnavailable: boolean;
   constructor(readonly status: number, message: string) { super(message); this.providerUnavailable = status >= 500; }
 }
+function providerOutage(error: unknown): error is CIReportError { return error instanceof CIReportError && error.providerUnavailable; }
 export type GitHubAPI = (path: string, method?: 'GET' | 'POST' | 'PATCH', body?: unknown) => Promise<unknown>;
 export interface CIReport {
   run_id: number; run_attempt: number; sha: string; conclusion: string; run_url: string;
@@ -254,6 +255,12 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
   const headSha = run.head_sha;
   const report: CIReport = { run_id: runId, run_attempt: run.run_attempt, sha: run.head_sha,
     conclusion: run.conclusion, run_url: run.html_url, repairs: [], merges: [], unresolved_repairs: null, errors: [] };
+  // A read that the provider could not serve proves no defect: the run records it for an external owner and opens no repair issue for it.
+  const providerUnavailable = (label: string, error: unknown): boolean => {
+    if (!providerOutage(error)) return false;
+    report.errors.push(`Provider unavailable (attention_owner: external): ${label}: ${message(error)}`);
+    return true;
+  };
   // The marker key stays the dedupe identity. An architecture repair only changes the title and body.
   const repair = async (identity: string, detail: string, requireOpen = false, cause?: { subject: string; body: string }, subject?: string): Promise<void> => {
     const key = requireOpen ? `${CI_REPAIR_KEY_PREFIX}${identity}` : `${CI_REPAIR_KEY_PREFIX}${run.id}:${run.run_attempt}:${identity}`;
@@ -268,7 +275,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     } catch (error) {
       // The artifact is the pending delivery record. An HTTP refusal never becomes a fake dispatch success.
       report.repairs.push({ key, issue_url: null, delivery: 'pending', error: message(error) });
-      report.errors.push(`Repair dispatch pending: ${identity}: ${message(error)}`);
+      if (!providerUnavailable(`Repair dispatch pending: ${identity}`, error)) report.errors.push(`Repair dispatch pending: ${identity}: ${message(error)}`);
     }
   };
   const architectureCause = (): { subject: string; body: string } => {
@@ -310,7 +317,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       let unreadable = new Set<string>();
       if (testReports && failed.length) {
         try { ({ tests, unreadable } = await readFailedTests(api, root, run.id, run.run_attempt, failed, testReports)); }
-        catch (error) { report.errors.push(`Test report readback incomplete: ${message(error)}`); }
+        catch (error) { if (!providerUnavailable('Test report readback incomplete', error)) report.errors.push(`Test report readback incomplete: ${message(error)}`); }
       }
       const reported = new Set<string>();
       for (const test of tests) {
@@ -323,14 +330,21 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         await repair(`job:${job.name}`, `${job.name}: ${job.conclusion}. Check: ${job.url}${note}`,
           true, job.name === ARCHITECTURE_JOB ? architectureCause() : undefined);
       }
-    } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
+    } catch (error) {
+      // The observed failed run justifies this repair, so a provider 5xx changes only the error owner.
+      if (!providerUnavailable('Failure observation incomplete', error)) report.errors.push(`Failure observation incomplete: ${message(error)}`);
+      await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.');
+    }
   }
 
-  // A merge boundary read that the provider could not serve proves no defect: the run records it for an external owner and opens no repair issue.
-  const providerUnavailable = (label: string, error: unknown): boolean => {
-    if (!(error instanceof CIReportError && error.providerUnavailable)) return false;
-    report.errors.push(`Provider unavailable (attention_owner: external): ${label}: ${message(error)}`);
-    return true;
+  // A provider 5xx on any merge read makes the merge section unavailable for this run: a partial read proves neither a boundary
+  // nor a defect. Defects wait until every read is done. Each merge is in the window of several runs, so a run without a 5xx reports it.
+  const defects: { pr: number; error: unknown }[] = [];
+  const dispatchDefects = async (): Promise<void> => {
+    for (const { pr, error } of defects.splice(0)) {
+      report.errors.push(`Rollback boundary pending for PR #${pr}: ${message(error)}`);
+      await repair(`merge-pr-${pr}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
+    }
   };
   try {
     const createdAt = Date.parse(run.created_at);
@@ -338,10 +352,9 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     const since = createdAt - 24 * 60 * 60 * 1000;
     // Closed PR readback is also recovery: a missed push report is repaired by the next daily report.
     const prs = await githubPages(api, `${root}/pulls?state=closed&sort=updated&direction=desc`);
-    const pending = async (prNumber: number, error: unknown): Promise<void> => {
-      if (providerUnavailable(`Rollback boundary pending for PR #${prNumber}`, error)) return;
-      report.errors.push(`Rollback boundary pending for PR #${prNumber}: ${message(error)}`);
-      await repair(`merge-pr-${prNumber}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
+    const pending = (prNumber: number, error: unknown): void => {
+      if (providerOutage(error)) throw error;
+      defects.push({ pr: prNumber, error });
     };
     // GitHub marks each batch member merged at its member merge on the integration branch; only its batch revert can roll it back.
     type Candidate = { pr: number; after: string; headSha: unknown };
@@ -381,7 +394,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         // rollbackParent proved that a batch PR head is the second parent of the batch commit.
         const batch = parent.mainline === null ? null : { members: [], merges: await batchMembers(api, root, parent.before_sha, headSha as string) };
         decoded.push({ pr: pr.number, after, headSha, boundary, batch });
-      } catch (error) { await pending(pr.number, error); }
+      } catch (error) { pending(pr.number, error); }
     }
     const holds = ({ after, headSha }: Candidate) => (entry: Decoded): entry is Decoded & { batch: NonNullable<Decoded['batch']> } =>
       entry.batch !== null && entry.batch.merges.some(merge => merge.merge_sha === after && merge.member_head_sha === headSha);
@@ -391,13 +404,16 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     for (const candidate of [...nested, ...undecoded]) {
       const outer = boundaries.find(holds(candidate));
       if (outer) outer.batch.members.push(candidate.pr);
-      else await pending(candidate.pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
+      else pending(candidate.pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
     }
     for (const { boundary, batch } of boundaries) {
       report.merges.push(batch === null ? boundary : { ...boundary, members: batch.members.sort((left, right) => left - right) });
     }
+    await dispatchDefects();
   } catch (error) {
-    if (!providerUnavailable('Merge reporting incomplete', error)) {
+    if (providerOutage(error)) report.errors.push(`Merge reporting unavailable (attention_owner: external): ${message(error)}`);
+    else {
+      await dispatchDefects();
       report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.');
     }
   }
@@ -408,7 +424,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       if (!positive(issue.number) || typeof issue.html_url !== 'string') throw new Error('Open repair identity incomplete');
       return { issue_number: issue.number, url: issue.html_url, title: safeText(issue.title) };
     });
-  } catch (error) { report.errors.push(`Unresolved repair readback unavailable: ${message(error)}`); }
+  } catch (error) { if (!providerUnavailable('Unresolved repair readback unavailable', error)) report.errors.push(`Unresolved repair readback unavailable: ${message(error)}`); }
   return report;
 }
 
@@ -499,7 +515,9 @@ if (import.meta.main) {
       if (report.errors.length) process.exitCode = 1;
     }
   } catch (error) {
-    writeFileSync('.ci-report/pending.json', JSON.stringify({ run_id: selectedRunId, delivery: 'pending', error: message(error) }, null, 2));
+    // A 5xx that escapes reportCI (the initial run read) still names the external owner.
+    const pendingError = providerOutage(error) ? `Provider unavailable (attention_owner: external): ${message(error)}` : message(error);
+    writeFileSync('.ci-report/pending.json', JSON.stringify({ run_id: selectedRunId, delivery: 'pending', error: pendingError }, null, 2));
     throw error;
   }
 }
