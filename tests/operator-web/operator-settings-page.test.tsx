@@ -165,7 +165,7 @@ describe('settings seats page', () => {
     await mount(seatsProps(posts), '#settings/seats');
     await click(buttonWithText('Pi'));
     expect(allow('explorer').disabled).toBe(true);
-    expect(buttonWithText('max').disabled).toBe(true);
+    expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(true);
     await click(saveButton());
     expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: null, fleet: [] });
   });
