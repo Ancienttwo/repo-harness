@@ -431,3 +431,14 @@ Model: <model>
 Report: status comments on the issue; nudge <coordinator channel> with the comment URL
 Authority: implement, push the PR branch, open the PR. No merge, no deletion outside the issue, no credentials.
 ```
+
+Paste this checklist under the packet when the issue does not already
+state it (`orchestrator.md` §2 and §8):
+
+```text
+- One concern and one module in this PR; ask for a split before acceptance, not after.
+- Keep the PR draft until the verification evidence exists.
+- Low or docs-only: put the commands and outcomes in the PR body (Review by risk).
+- A second identical CI failure is not a flake: classify it once (diff, infrastructure, stale base).
+- `Affected coverage is unknown for: <paths>` is a map bug: fix the consumer edge or the test import.
+```
