@@ -9,7 +9,7 @@ import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-import { skillProjectionSourceRoot } from './doctor';
+import { skillProjectionSourceRoot, type DoctorPorts } from './doctor';
 import { buildSetupCheck, type SetupCheckBuild } from './init-hook';
 import { HOOK_EVENT_TELEMETRY_PATH, HOOK_EVENT_TELEMETRY_PROTOCOL } from '../hook/event-telemetry';
 import { ROUTES } from '../hook/route-registry';
@@ -84,9 +84,9 @@ function hookUsageAt(cwd: string, nowMs: number): SetupHookUsage | null {
 }
 
 /** Run the setup check builder exactly as `repo-harness setup check --target both` does (no --check-updates). */
-export function collectSetupSnapshotNow(options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly now?: () => number } = {}): SetupSnapshotV2 {
+export function collectSetupSnapshotNow(ports: DoctorPorts, options: { readonly cwd?: string; readonly env?: NodeJS.ProcessEnv; readonly now?: () => number } = {}): SetupSnapshotV2 {
   const env = options.env ?? process.env;
-  const build = buildSetupCheck({ cwd: options.cwd, target: 'both', checkUpdates: false });
+  const build = buildSetupCheck(ports, { cwd: options.cwd, target: 'both', checkUpdates: false });
   const now = (options.now ?? Date.now)();
   return projectSetupBuild(build, { env, collected_at: new Date(now).toISOString(), hook_usage: hookUsageAt(options.cwd ?? process.cwd(), now) });
 }

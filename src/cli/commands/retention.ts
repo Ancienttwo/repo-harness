@@ -1,13 +1,10 @@
 import { resolve } from 'node:path';
 import { Command } from 'commander';
-import { TASK_INBOX_V2_RELATIVE_PATH } from '../../core/fleet/task-inbox-layout';
 import { RETENTION_CLASSES, runArtifactRetention, type RetentionConfig, type RetentionReport } from '../../effects/artifact-retention';
 import { gitExecFileSync } from '../../effects/git/runner';
 import { FEEDBACK_ROOT_RELATIVE_PATH } from '../../effects/publication/feedback-store';
 import { SEGMENTED_LOG_ARCHIVE_BYTES, SEGMENTED_LOG_ARCHIVE_SEGMENTS, SEGMENTED_LOG_SEGMENT_BYTES } from '../../effects/segmented-log';
 import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
-import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../mcp/audit';
-import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from '../mcp/general-repo-access';
 import { UPGRADE_AUDIT_MAX_RECORDS } from './upgrade';
 
 interface RetentionCommandOptions {
@@ -25,10 +22,21 @@ export interface RetentionRoot {
   readonly detail: string;
 }
 
+/**
+ * Plugin storage roots that the composition root (src/cli/index.ts) passes in.
+ * They reach only the `roots` listing; the `--apply` set is RETENTION_CLASSES.
+ */
+export interface RetentionPorts {
+  /** Repo-relative segmented logs that their writer rotates, after the hook telemetry log. */
+  readonly rotatingLogs: readonly string[];
+  /** Git common directory paths that have no reclamation rule, before the publication feedback root. */
+  readonly commonProtocolRoots: readonly string[];
+}
+
 const MIB = 1024 * 1024;
 
 /** Every harness storage root that grows without a user action, and what bounds it. */
-export function retentionRoots(config: RetentionConfig): RetentionRoot[] {
+export function retentionRoots(config: RetentionConfig, ports: RetentionPorts): RetentionRoot[] {
   const rotation = `the writer rotates at ${SEGMENTED_LOG_SEGMENT_BYTES / MIB} MiB and keeps ${SEGMENTED_LOG_ARCHIVE_SEGMENTS} segments up to ${SEGMENTED_LOG_ARCHIVE_BYTES / MIB} MiB`;
   const noRule = 'kept: protocol records have no reclamation rule yet (#918)';
   return [
@@ -38,13 +46,13 @@ export function retentionRoots(config: RetentionConfig): RetentionRoot[] {
       detail: `${retentionClass.id} move to ${config.archiveRoot} after ${config.days} days`,
     })),
     { path: config.archiveRoot, rule: 'delete', detail: `archived entries are deleted ${config.archiveDays} days after their newest write` },
-    ...[HOOK_EVENT_TELEMETRY_PATH, MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH]
+    ...[HOOK_EVENT_TELEMETRY_PATH, ...ports.rotatingLogs]
       .map((path): RetentionRoot => ({ path, rule: 'rotate', detail: rotation })),
     { path: '~/.repo-harness/packages', rule: 'rotate', detail: 'install keeps only the release tarball it installed' },
     { path: '~/.repo-harness/upgrade-cleanup.log.jsonl', rule: 'rotate', detail: `upgrade keeps the newest ${UPGRADE_AUDIT_MAX_RECORDS} records` },
     { path: '.ai/harness/runs/task-agents', rule: 'keep', detail: 'kept: a closed.json tombstone blocks a session restart' },
     { path: '.ai/harness/runs/task-workspaces', rule: 'keep', detail: 'kept: a closed.json tombstone blocks a workspace restart' },
-    { path: `{common}/${TASK_INBOX_V2_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
+    ...ports.commonProtocolRoots.map((path): RetentionRoot => ({ path: `{common}/${path}`, rule: 'keep', detail: noRule })),
     { path: `{common}/${FEEDBACK_ROOT_RELATIVE_PATH}`, rule: 'keep', detail: noRule },
     { path: '{common}/repo-harness/integration/v1', rule: 'keep', detail: 'Historical integration evidence; no active authority reader.' },
     { path: '{common}/repo-harness/integration/v2', rule: 'keep', detail: 'Historical integration evidence; no active authority reader.' },
@@ -52,7 +60,7 @@ export function retentionRoots(config: RetentionConfig): RetentionRoot[] {
   ];
 }
 
-export function buildRetentionCommand(): Command {
+export function buildRetentionCommand(ports: RetentionPorts): Command {
   return new Command('retention')
     .description('Move closed harness artifacts older than the retention window to the local archive root and delete archived entries past the archive window (dry-run unless --apply)')
     .option('--repo <path>', 'Repository root (default: the Git top level of the current directory)')
@@ -65,7 +73,7 @@ export function buildRetentionCommand(): Command {
         }).trim();
         const report = runArtifactRetention({ repoRoot, apply: options.apply === true });
         process.stdout.write(options.json
-          ? `${JSON.stringify({ ...report, roots: retentionRoots(report.config) }, null, 2)}\n`
+          ? `${JSON.stringify({ ...report, roots: retentionRoots(report.config, ports) }, null, 2)}\n`
           : formatRetentionReport(report));
         if (report.failed.length > 0 || report.purgeFailed.length > 0) process.exitCode = 1;
       } catch (error) {
