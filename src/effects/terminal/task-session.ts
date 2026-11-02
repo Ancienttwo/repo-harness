@@ -585,20 +585,20 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
   const options = coreOptions(intent.spec.endpoint);
   const recorded = existsSync(join(dir, 'terminal-created.json')) ? readSessionArtifact<CreatedTerminal>(join(dir, 'terminal-created.json')) : null;
   if (recorded && recorded.intent_id !== intent.intent_id) throw new Error('task_agent_start_identity_unknown');
-  const live = hcList(intentLabels(intent), options);
-  if (live.length > 1 || live.some(item => item.name !== intent.terminal_name || (recorded && item.address !== recorded.terminal_id))) throw new Error('task_agent_start_identity_unknown');
+  // `all` also finds a finished terminal whose run receipt was lost.
+  const found = hcList(intentLabels(intent), { ...options, all: true });
+  if (found.length > 1 || found.some(item => item.name !== intent.terminal_name || (recorded && item.address !== recorded.terminal_id))) throw new Error('task_agent_start_identity_unknown');
   const provider = existsSync(join(dir, 'provider-created.json')) ? readSessionArtifact<HerdrTaskBinding>(join(dir, 'provider-created.json')).provider : null;
-  if (live.length) {
-    if (!await endTerminal(intent.spec.endpoint, live[0]!.address, provider)) return { status: 'cleanup_pending', pids: provider ? [provider.pid] : [] };
-  } else if (recorded) {
-    // A finished terminal stays until it is removed. Remove it only while it still has this start's identity.
-    let terminal: HcTerminal | null = null;
-    try { terminal = hcGet(recorded.terminal_id, options); } catch (error) { if (!notFound(error)) throw error; }
-    if (terminal) {
-      if (terminal.name !== intent.terminal_name || !sameSessionData(ownLabels(terminal.labels), intentLabels(intent))
-        || (provider && terminal.pid !== provider.pid)) throw new Error('task_agent_terminal_identity_lost');
-      hcRm(recorded.terminal_id, options);
-    }
+  const address = found[0]?.address ?? recorded?.terminal_id;
+  let terminal: HcTerminal | null = null;
+  if (address) try { terminal = hcGet(address, options); } catch (error) { if (!notFound(error)) throw error; }
+  if (terminal) {
+    // Remove a terminal only while it still has this start's identity.
+    if (terminal.name !== intent.terminal_name || !sameSessionData(ownLabels(terminal.labels), intentLabels(intent))
+      || (provider && terminal.pid !== provider.pid)) throw new Error('task_agent_terminal_identity_lost');
+    if (terminal.state === 'live') {
+      if (!await endTerminal(intent.spec.endpoint, terminal.address, provider)) return { status: 'cleanup_pending', pids: provider ? [provider.pid] : [] };
+    } else hcRm(terminal.address, options);
   }
   if (provider && processProofAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
   return finish();

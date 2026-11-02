@@ -327,6 +327,16 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(live(unboundPid)).toBe(false);
     expect(gone(unbound.terminal_id)).toBe(true);
     expect(api.taskAgentStatus(fixture, spec.task, 'ambiguous-role').status).toBe('closed');
+    // The run succeeded but its receipt was lost, and the program then exited: cancel still removes the finished terminal.
+    expect(await started('lost-receipt', 'ready-crash')).toBe(79);
+    const lostDir = api.taskSessionDirectory(fixture, spec.task, 'lost-receipt');
+    const lost = api.readSessionArtifact<{ terminal_id: string }>(join(lostDir, 'terminal-created.json'));
+    rmSync(join(lostDir, 'terminal-created.json'));
+    process.kill(JSON.parse(readFileSync(join(fixture, 'lost-receipt.ready'), 'utf8')).pid, 'SIGKILL');
+    await until(() => JSON.parse(hc(['get', '--json', lost.terminal_id])).state === 'finished');
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'lost-receipt')).toEqual({ status: 'closed', pids: [] });
+    const lostIntent = api.readSessionArtifact<{ intent_id: string }>(join(lostDir, 'intent.json'));
+    expect(JSON.parse(hc(['ls', '--json', '--all', '--label', `repo-harness.request=${lostIntent.intent_id}`])).terminals).toEqual([]);
 
     // #754: the program leads its group and is the provider, not its child. hc kill
     // ends the child that ignores TERM and hangup with the leader; cleanup sends no signal.
