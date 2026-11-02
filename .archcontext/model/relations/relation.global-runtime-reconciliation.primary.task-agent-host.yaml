@@ -3,4 +3,4 @@ id: relation.global-runtime-reconciliation.primary.task-agent-host
 kind: calls
 source: component.global-runtime-reconciliation.primary
 target: capability.runtime-harness.task-agent-host
-intent: "Configure the required Herdr skill during global runtime setup"
+intent: "Read task session records during legacy worktree cleanup"

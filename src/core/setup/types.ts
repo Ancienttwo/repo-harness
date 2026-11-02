@@ -5,6 +5,8 @@
 // packaged agent fleet. Values that have no authority are null; consumers must
 // not infer them. Free text is redacted with `publicAgentConfigText`.
 
+import type { SkillProjectionState } from '../skill-surface/projection-state';
+
 export const SETUP_PROJECTION = 'repo-harness.setup.v2' as const;
 
 /** Same members and order as `RouteHost` (src/cli/hook/route-registry.ts). */
@@ -85,14 +87,8 @@ export type SetupHostFacts = {
   cli_version: string | null;
 } & ({ host: 'pi'; package_check: SetupCheckStatus | null } | { host: Exclude<SetupHost, 'pi'> });
 
-/** The `skillProjectionState` vocabulary in src/cli/commands/doctor.ts. Link targets are never exposed. */
-export const SKILL_PROJECTION_STATES = [
-  'missing', 'dangling link', 'wrong link', 'ok link', 'invalid path type',
-  'source missing', 'stale copy', 'unowned real directory', 'ok copy',
-] as const;
-export type SkillProjectionState = typeof SKILL_PROJECTION_STATES[number];
-
 export interface SetupSkillHostRow {
+  /** Link targets are never exposed. */
   state: SkillProjectionState;
   /** False when the state is not an ok state or the install ledger records drift for this skill. */
   ok: boolean;

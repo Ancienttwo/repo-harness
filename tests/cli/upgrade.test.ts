@@ -708,30 +708,39 @@ describe('upgrade with real release bytes', () => {
     expect(tree(opts.home)).toEqual(before);
   }, false));
 
-  test('state artifact removal needs apply, explicit flag, and matching ownership', () => sandbox((opts) => {
-    const gate = join(opts.home, '.repo-harness/gates/project/merge-gate.latest.json');
-    const archive = join(opts.home, '.repo-harness/packages/repo-harness-0.10.0-local.tgz');
-    const backup = join(opts.home, '.repo-harness/backups/pre-0.19.5-skills-local');
-    const unowned = join(opts.home, '.repo-harness/gates/user/merge-gate.latest.json');
-    put(gate, '{"status":"complete"}\n'); put(unowned, '{"status":"user"}\n');
+  test('state artifact removal needs apply, explicit flag, and an ownership proof', () => sandbox((opts) => {
+    const state = join(opts.home, '.repo-harness');
+    const gate = join(state, 'gates/project/merge-gate.latest.json');
+    const archive = join(state, 'packages/repo-harness-0.10.0-local.tgz');
+    const backup = join(state, 'backups/pre-0.19.5-skills-local');
+    const kept = [join(state, 'gates/linked/merge-gate.latest.json'), join(state, 'packages/repo-harness-0.10.0-linked.tgz'),
+      join(state, 'gates/directory/merge-gate.latest.json'), join(state, 'backups/pre-0.19.5-user')];
+    put(gate, '{"status":"complete"}\n');
     mkdirSync(dirname(archive), { recursive: true });
     const archiveSource = join(opts.cwd, 'archive-source');
     copyUpgradeFixture('upgrade-v0.19.5-home', '.codex/skills/repo-harness-cross-review', join(archiveSource, 'repo-harness-cross-review'));
     expect(spawnSync('tar', ['-czf', archive, '-C', archiveSource, 'repo-harness-cross-review']).status).toBe(0);
     cpSync(join(archiveSource, 'repo-harness-cross-review'), backup, { recursive: true });
-    const surfaces = [gate, archive, backup].map((path) => ({ components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: lstatSync(path).isDirectory() ? 'directory-copy' : 'managed-file', content_hash: lstatSync(path).isDirectory() ? hashManagedTree(path) : `sha256:${new Bun.CryptoHasher('sha256').update(readFileSync(path)).digest('hex')}`, managed_marker: 'transaction-created-file', symlink_target: null }));
-    put(join(opts.home, '.repo-harness/install-state.json'), JSON.stringify({ ownership_manifest: surfaces }));
+    put(join(opts.cwd, 'link-target'), '{"status":"user"}\n');
+    for (const link of kept.slice(0, 2)) { mkdirSync(dirname(link), { recursive: true }); symlinkSync(join(opts.cwd, 'link-target'), link); }
+    put(join(kept[2]!, 'note'), 'user\n'); cpSync(backup, kept[3]!, { recursive: true });
+    // Only the backup has an install receipt; the retired gate and archive paths predate the manifest.
+    const surface = { components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: backup, type: 'directory-copy', content_hash: hashManagedTree(backup), managed_marker: 'transaction-created-file', symlink_target: null };
+    put(join(state, 'install-state.json'), JSON.stringify({ ownership_manifest: [surface] }));
     const before = tree(opts.home);
     const check = runUpgrade({ ...opts, scope: 'global', includeStateArtifacts: true });
-    for (const path of [gate, archive, backup]) expect(check.items.find((item) => item.path === path)?.action).toBe('report');
+    for (const path of [gate, archive]) expect(check.items.find((item) => item.path === path)).toMatchObject({ ownership: 'owned-clean',
+      proof: 'state-root-retired-path', action: 'report', reason: 'State artifact cleanup needs --include-state-artifacts.' });
+    expect(check.items.find((item) => item.path === backup)?.action).toBe('report');
     expect(tree(opts.home)).toEqual(before);
     expect(runUpgrade({ ...opts, scope: 'global', apply: true }).removedPaths).toEqual([]);
     expect(tree(opts.home)).toEqual(before);
     const applied = runUpgrade({ ...opts, scope: 'global', apply: true, includeStateArtifacts: true });
-    expect(applied.exitCode).toBe(0);
+    expect(applied.exitCode, applied.error).toBe(0);
+    expect([...applied.removedPaths].sort()).toEqual([archive, backup, gate].sort());
     for (const path of [gate, archive, backup]) expect(existsSync(path)).toBe(false);
-    expect(readFileSync(unowned, 'utf8')).toBe('{"status":"user"}\n');
-    expect(applied.items.find((item) => item.path === unowned)?.action).toBe('report');
+    expect(Object.values(tree(applied.backupPath!))).toContain(Buffer.from('{"status":"complete"}\n').toString('base64'));
+    for (const path of kept) expect([existsSync(path), applied.items.find((item) => item.path === path)]).toMatchObject([true, { ownership: 'unowned', action: 'report' }]);
   }, false));
 
   test('a global rules copy adds no upgrade leftover', () => sandbox((opts) => {
