@@ -3,6 +3,7 @@
 import type { BotAccessSnapshotV1 } from '../../core/operator/bot-access';
 import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from '../../core/operator/herdr-pin';
 import { NOTIFY_PLUGIN_ID, type NotifyDeliveryV1, type NotifyStatusV1 } from '../../core/operator/notify-status';
+import { slackTsToIso, type SlackReviewsSnapshotV1, type SlackReviewThreadV1 } from '../../core/operator/slack-review';
 import { HARNESS_ID } from './dev-activity';
 
 // The same registry ids as the Dev Activity fixture.
@@ -94,4 +95,39 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
       deliveries: { webhook: { at: at(now - 2 * DAY), result: 'failed' }, slack: { at: at(now - 3 * DAY), result: 'unsupported' }, discord: { at: null, result: 'missing' }, telegram: { at: null, result: 'missing' } },
     },
   };
+}
+
+const HARNESS_REPO = 'Ancienttwo/repo-harness';
+/** The head of #1440, the first real Dot round trip on 2026-11-02. */
+const HEAD_1440 = '15dbb25919598d0bd16c63f932f2207be9c20e99';
+const HEAD_B = '7c41e0a9d2b35f8e61c4a07b9d3e2f1a5c6b8d90';
+const HEAD_C = 'a3f9c2d17e4b6085f1d2c3b4a5968778695a4b3c';
+const slackTs = (time: number) => `${Math.floor(time / 1000)}.000100`;
+
+function thread(now: number, ageMs: number, fields: Omit<SlackReviewThreadV1, 'thread_ts' | 'requested_at' | 'replied_at'> & { readonly repliedAfterMs?: number }): SlackReviewThreadV1 {
+  const { repliedAfterMs, ...rest } = fields;
+  const ts = slackTs(now - ageMs);
+  return { thread_ts: ts, requested_at: slackTsToIso(ts), replied_at: repliedAfterMs === undefined ? null : slackTsToIso(slackTs(now - ageMs + repliedAfterMs)), ...rest };
+}
+
+/** One thread per state, newest first, as the collector lists them. Result text never holds a URL or a path. */
+export function busyBotReviews(now: number): SlackReviewsSnapshotV1 {
+  return {
+    protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, collected_at: at(now - 25_000),
+    threads: [
+      thread(now, 4 * MINUTE, { repo: HARNESS_REPO, pr: 1450, head: HEAD_B, state: 'waiting', finding_count: null, text: { state: 'none' } }),
+      thread(now, 9 * MINUTE, { repo: HARNESS_REPO, pr: 1449, head: HEAD_C, state: 'acknowledged', finding_count: null, text: { state: 'none' }, repliedAfterMs: 2 * MINUTE }),
+      thread(now, 3 * HOUR, { repo: HARNESS_REPO, pr: 1440, head: HEAD_1440, state: 'result', finding_count: 1, repliedAfterMs: 10 * MINUTE, text: { state: 'shown', truncated: false,
+        value: `repo-harness review result PR #1440 @ ${HEAD_1440}: 1 findings\nP2 docs/reference-configs/dot-review-protocol.md:41 The ack line does not say which head it acknowledges.` } }),
+      thread(now, 5 * HOUR, { repo: HARNESS_REPO, pr: 1438, head: HEAD_C, state: 'head_mismatch', finding_count: 0, repliedAfterMs: 6 * MINUTE, text: { state: 'shown', truncated: false,
+        value: `repo-harness review result PR #1438 @ ${HEAD_B}: 0 findings` } }),
+      thread(now, 8 * HOUR, { repo: HARNESS_REPO, pr: 1436, head: HEAD_B, state: 'rejected', finding_count: null, repliedAfterMs: MINUTE, text: { state: 'text_withheld' } }),
+      thread(now, 2 * DAY, { repo: null, pr: null, head: null, state: 'request_invalid', finding_count: null, text: { state: 'none' } }),
+    ],
+  };
+}
+
+/** Slack rate-limited the newest cycle: the previous threads stay, marked stale. */
+export function degradedBotReviews(now: number): SlackReviewsSnapshotV1 {
+  return { ...busyBotReviews(now - 7 * MINUTE), reason: 'slack_rate_limited', stale: true };
 }
