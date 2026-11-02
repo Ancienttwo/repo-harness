@@ -170,11 +170,20 @@ Then the repository has no complete ArchContext model, and `apply.enabled` is
    be the exported node. Delete the sample node with the hash from
    `"$NODE" "$ARCHCTX" hash --path .archcontext/model/nodes/capability.architecture.context.yaml`.
    A first apply has no baseline, so it cannot accept an unproven capability. Give
-   each capability a proof in the same ChangeSet:
-   - a child `component.*` node with `parent` set to the capability, and a relation
-     between two nodes in that scope (proof P1);
-   - a flow with `applicability: required` that `flows check` proves, or a flow
-     with `applicability: not-applicable` and a `rationale` (proof P2).
+   each capability both proofs in the same ChangeSet. One proof is not sufficient:
+   - P1: a child `component.*` node with `parent` set to the capability, and a
+     relation between two nodes in that scope. P1 must be `proven`.
+   - P2: a flow with `applicability: required` that `flows check` proves, or a flow
+     with `applicability: not-applicable` and a `rationale`. P2 must be `proven` or
+     `not-applicable`.
+
+   When a capability misses one proof, the apply writes no file. It returns
+   `"status": "human-action-required"`, a `humanActions` entry with
+   `"reasonCode": "unprovable-required-flow"` for that capability, and
+   `"majorChangeAcceptance": "declined-unprovable-proof"`. The capability's
+   `proofStatusAfter` shows the missing proof as `"unprovable"`, for example
+   `{"p1": "proven", "p2": "unprovable"}`. Add the missing proof and run the
+   apply again.
 5. Run `"$NODE" "$ARCHCTX" validate --format json` and
    `"$NODE" "$ARCHCTX" flows check --json`.
 6. Set `context.capability_source` to `archcontext` in `.ai/harness/policy.json`.
