@@ -13,7 +13,7 @@ claim comment. One seat has at most one active holder.
 
 | Seat | Object | Holds it | Can write | Released by |
 |---|---|---|---|---|
-| Coordinator | Parent issue | Orchestrator | Parent body (child table), plan, dispatch, scope changes, merge order | Closing comment, or handoff |
+| Coordinator | Parent issue | Orchestrator | Parent body (child table), plan, plan data (sub-issues, blocked-by, milestone, `tier:` labels), dispatch, scope changes | Closing comment, or handoff |
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this seat pushes | Merge, or a handoff that names the next head owner |
 | Acceptor | One review round of one PR | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its round |
@@ -117,9 +117,9 @@ Parent issue ── coordinator seat
  │                                        └─ acceptance round 1, 2 ... (acceptor seats)
  ├─ Child B (module Y) ── PR slots named in the issue:
  │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
- │    └─ PR-B2 ── writer B2, Depends on PR-B1
- └─ Child C (module Z) ── Depends on #A ── PR-C draft until PR-A merges
-Integrator seat (coordinator) merges in the parent's order, one PR or one batch at a time.
+ │    └─ PR-B2 ── writer B2, base branch = PR-B1's branch
+ └─ Child C (module Z) ── blocked by #A ── PR-C draft until PR-A merges
+Integrator seat (coordinator) merges in the plan block's merge order, one PR or one batch at a time.
 ```
 
 **Parent table status.** The seat/status column of the parent child table
@@ -130,14 +130,20 @@ Chinese-language repository writes `待认领`, `待认领 · 等待 #n 合并`,
 claim comment wins over the table, and the coordinator corrects the table
 after each claim or status change.
 
-- **Issue dependencies** are lines `Depends on #N` in the child's
-  dependency section. The coordinator checks the graph for cycles before
-  publish.
+- **Plan data lives in GitHub fields** (`templates.md`, Plan data). A
+  child is a sub-issue of its parent. An issue dependency is a blocked-by
+  link. A release window is a milestone. The plan tier is one label
+  `tier:low`, `tier:medium` or `tier:high`. The merge order, holds and
+  batches are the plan block in the newest `plan` comment. A body line
+  `Depends on #N` is not a dependency. The coordinator checks the
+  blocked-by graph for cycles before dispatch.
 - **PR slots.** One issue can name several PRs in advance (PR-1a, PR-1b),
   each with its own scope. Each slot is claimed separately: the
   coordinator posts one `issue claim` per slot, with `Slot: PR-1b`.
   Without named slots, one issue is one writer.
-- **PR dependencies** are lines `Depends on #<PR>` in the PR body.
+- **PR dependencies** are base branches. A PR that needs another PR's
+  unmerged code sets its base to that PR's branch. A PR to issue link is
+  `Closes #<issue>` or `Refs #<issue>` in the PR body.
 - **Pushed history is append-only.** A head owner never rewrites a branch
   that someone may have built on. It syncs main with a merge commit, and
   it does not force-push. A rewrite that cannot be avoided needs a
@@ -164,8 +170,8 @@ after each claim or status change.
   its own issue. The coordinator decides and posts a `scope change` on
   every affected issue.
 - **Serial integration.** The default for one PR. The integrator merges in
-  the parent's order. After each merge, the next PR syncs with main. When
-  the sync delta has no conflict and leaves the reviewed source unchanged,
+  the plan block's merge order. After each merge, the next PR syncs with
+  main. When the sync delta has no conflict and leaves the reviewed source unchanged,
   the acceptance stays valid with the delta recorded. A changed subject
   needs a new round.
 - **Batch integration.** When two or more PRs are eligible at the same
@@ -191,10 +197,10 @@ lines, then at most a short free-text body. The exact shapes are in
 | `boundary question` | Issue | Writer | The issue boundary blocks the work. Stop and ask |
 | `scope change` | Issue | Coordinator | The issue body changed: what, why, who is affected |
 | `decision` | Issue (parent for cross-issue ones) | Coordinator | A decision that the body does not hold yet, with its reason |
-| `plan` | Parent issue | Coordinator | Waves, dependencies and merge order for a large parent. A revision supersedes the previous plan |
+| `plan` | Parent issue | Coordinator | The plan block of a large parent: merge order, holds, batches, seat limit. A revision supersedes the previous plan |
 | `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a seat. Names prior claim, next holder, exact state |
 | `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: seat, round, subject SHA, tier (`acceptor.md`) |
-| `acceptance record` | PR | Acceptor or coordinator | Round table: seat, subject SHA, verdict, findings, `model_relation` (`acceptor.md`) |
+| `acceptance record` | PR | Acceptor or coordinator | One row per round: round, seat, subject SHA, verdict; then the model relation and the findings. The same shape for every round (`templates.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code; or a batch drop or batch closeout on a member PR |
 

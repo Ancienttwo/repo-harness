@@ -100,8 +100,7 @@ where the issue names a concrete reason.
 
 ## 4. Parent issue
 
-The parent issue holds the goal, the child table, the merge order and the
-done criteria. Use the parent template. Keep the table current. Edit the
+The parent issue holds the goal, the child table and the done criteria. Use the parent template. Keep the table current. Edit the
 status column when a child changes state, so that the parent is one
 screenful of truth.
 
@@ -110,16 +109,16 @@ The seat/status column uses only `unclaimed`, `unclaimed · waits for
 The claim comment wins over the table.
 
 A parent with more than two children gets a `plan` comment before
-dispatch: the waves, the dependencies inside each wave, the merge order
-and the cross-issue preconditions. A plan change is a new `plan` with
+dispatch. Its plan block holds the merge order, the holds, the batches and
+the seat limit (`templates.md`, plan). A plan change is a new `plan` with
 `Supersedes:`; never edit the old comment. A parent with two children or
 fewer needs no plan.
 
-Write each dependency as a line `Depends on #N` in the child's `依赖 /
-Depends on` section, so that a search can find it. Add `(closed)` when the
-dependency is merged. When the repository uses GitHub sub-issues, also link
-each child to the parent. The body lines are still required, because
-agents read the body text.
+Put the rest of the plan in GitHub fields (`templates.md`, Plan data):
+link each child as a sub-issue of the parent, add one blocked-by link for
+each dependency, set the milestone of the release window, and add one
+`tier:` label. Do not write `Depends on` lines. Nothing reads them. A
+dependency is done when its blocker issue is closed.
 
 ## 5. Gap review
 
@@ -144,7 +143,9 @@ findings and the disposition of each.
    `gh issue create --title <title> --body-file <file>`. Never build bodies
    with shell interpolation.
 2. Create children in dependency order, then edit the parent table with the
-   real numbers (`gh issue edit <parent> --body-file <file>`).
+   real numbers (`gh issue edit <parent> --body-file <file>`). Add the
+   sub-issue links, the blocked-by links, the milestone and the `tier:`
+   labels.
 3. Read every issue back (`gh issue view <n>`) and check the links and the
    rendering.
 
@@ -197,8 +198,8 @@ host's PR events or check when the worker reports.
 - **Draft PR.** A writer keeps its PR draft until its verification
   evidence exists. Do not follow CI on a draft push by push. Act on the
   worker's `ready for review` notice (§8.1).
-- **Frontier.** Work on the lowest unmerged PR in the parent's merge order
-  first. Do not spend fix or review rounds on a PR above a red PR in the
+- **Frontier.** Work on the lowest unmerged PR in the plan block's merge
+  order first. Do not spend fix or review rounds on a PR above a red PR in the
   same chain.
 - **Low and docs-only PR.** Read the status and report it. Do not push fix
   rounds of your own. The Low accept-seat skip
@@ -229,8 +230,8 @@ host's PR events or check when the worker reports.
   - P2 — real defect, small: fix in this PR, or defer with an issue link.
   - P3 — improvement: becomes a follow-up issue, not a PR blocker.
   Send the findings to the worker that wrote the PR. Record the result in
-  one acceptance record comment on the PR: round, reviewer, subject SHA,
-  verdict.
+  one acceptance record comment on the PR, in the row shape of
+  `templates.md`: round, seat, subject, verdict and model relation.
 - **Defensive code.** Reject compatibility branches, fallbacks and
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
@@ -329,8 +330,8 @@ Act on the exit code. Post every result as `integration status` on the PR.
 
 Use serial integration (§9.2) when one PR is eligible. When two or more
 PRs are eligible at the same time, you may use batch integration (§9.3).
-You decide whether to batch, which PRs go in and their order: the
-parent's merge order first. A batch has at most 6 members.
+You decide whether to batch, which PRs go in and their order: the plan
+block's merge order first. A batch has at most 6 members.
 
 A PR is eligible when all of these are true:
 
@@ -352,7 +353,7 @@ gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesRe
 
 ### 9.2 Serial integration
 
-Merge in the parent's order. After each merge, the next PR merges or
+Merge in the plan block's merge order. After each merge, the next PR merges or
 rebases onto the current main. A PR that passed review on an old base
 needs its affected checks again on the new base. It does not need a new
 full review unless the merge changed its subject.
