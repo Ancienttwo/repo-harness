@@ -1,6 +1,6 @@
 import { syncCrossReviewSkills } from '../src/cli/commands/init';
 import { describe, expect, test } from 'bun:test';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import { createHash } from 'crypto';
 import { tmpdir } from 'os';
@@ -51,7 +51,9 @@ const PLANNING_CAPABILITY_PATHS = (() => {
 
 function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-profile-'));
-  try { run({ ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') }); } finally { rmSync(home, { recursive: true, force: true }); }
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
+  delete env.XDG_STATE_HOME;
+  try { run(env); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
 function writePath(path: string, content = ''): void {
@@ -965,6 +967,93 @@ describe('install profiles', () => {
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
     expect(readInstalledProfile(env)).toBeNull();
   }), 30_000);
+
+  test('failed install restores the provider lock under XDG_STATE_HOME', () => withHome((env) => {
+    const bin = join(env.HOME!, 'fake-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; exit 0; fi\nexit 0\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nprintf "{\\"skills\\":{\\"think\\":{}}}\\n" > "$XDG_STATE_HOME/skills/.skill-lock.json"\nexit 19\n', { mode: 0o755 });
+    const stateHome = join(env.HOME!, '.local', 'state');
+    const lock = join(stateHome, 'skills', '.skill-lock.json');
+    const before = '{"skills":{"user-skill":{}}}\n';
+    writePath(lock, before);
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--json'], {
+      cwd: ROOT,
+      env: { ...env, PATH: `${bin}:/bin:/usr/bin`, XDG_STATE_HOME: stateHome, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') },
+      encoding: 'utf-8',
+    });
+    expect(failed.status).not.toBe(0);
+    expect(readFileSync(lock, 'utf-8')).toBe(before);
+    expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
+  }), 30_000);
+
+  // A full-profile CLI install whose only live step is the Waza rule refresh. FAKE_CURL_FAIL makes the fetch fail.
+  function installWithFreshRules(env: NodeJS.ProcessEnv, extraEnv: NodeJS.ProcessEnv = {}) {
+    const bin = join(env.HOME!, 'fake-bin');
+    if (!existsSync(bin)) {
+      writeManagedHostSurfaces(env, 'full');
+      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid', 'repo-harness-cross-review']) rmSync(join(env.HOME!, '.codex', 'skills', skill), { recursive: true });
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'curl'), '#!/bin/sh\n[ -n "$FAKE_CURL_FAIL" ] && { echo "fixture HTTP 503" >&2; exit 22; }\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'herdr'), '#!/bin/sh\nprintf "%s\\n" "---" "name: herdr" "---" "Check HERDR_ENV before control." "" "## Learn the current CLI"\n', { mode: 0o755 });
+    }
+    const run = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
+      cwd: ROOT, env: { ...env, ...extraEnv, PATH: `${bin}:/bin:/usr/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') }, encoding: 'utf-8',
+    });
+    return { status: run.status, rules: JSON.parse(run.stdout).steps.find(({ step }: { step: string }) => step === 'sync Waza shared rules') };
+  }
+
+  test('a failed fresh Waza rule fetch rolls the install back and reports the step', () => withHome((env) => {
+    const failed = installWithFreshRules(env, { FAKE_CURL_FAIL: '1' });
+    expect(failed.status).not.toBe(0);
+    expect(failed.rules).toMatchObject({ status: 'failed', detail: expect.stringContaining('fixture HTTP 503') });
+    expect(readInstalledProfile(env)).toBeNull();
+    for (const root of ['.agents', '.codex']) expect(existsSync(join(env.HOME!, root, 'rules'))).toBe(false);
+  }), 30_000);
+
+  test('a regular file at the staging rules path gives the JSON failure and restores HOME', () => withHome((env) => {
+    const staging = join(env.HOME!, '.agents', 'rules');
+    writePath(staging, 'not a directory\n');
+    const failed = installWithFreshRules(env);
+    expect(failed.status).not.toBe(0);
+    expect(failed.rules).toMatchObject({ status: 'failed', detail: expect.stringContaining('ENOTDIR') });
+    expect(readFileSync(staging, 'utf-8')).toBe('not a directory\n');
+    expect(readInstalledProfile(env)).toBeNull();
+    expect(existsSync(join(env.HOME!, '.codex', 'rules'))).toBe(false);
+  }), 30_000);
+
+  test('a fresh rule refresh keeps a locally edited owned host rule', () => withHome((env) => {
+    expect(installWithFreshRules(env).status).toBe(0);
+    const english = join(env.HOME!, '.codex', 'rules', 'english.md');
+    rmSync(join(env.HOME!, '.agents', 'rules'), { recursive: true });
+    writeFileSync(english, '# local edit\n');
+    const refused = installWithFreshRules(env);
+    expect(refused.status).not.toBe(0);
+    expect(refused.rules).toMatchObject({ status: 'failed', detail: `refusing to overwrite unowned rule ${english}` });
+    expect(readFileSync(english, 'utf-8')).toBe('# local edit\n');
+  }), 60_000);
+
+  test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('an install retries the fresh rules after a rolled-back host write', () => withHome((env) => {
+    const hostRules = join(env.HOME!, '.codex', 'rules');
+    mkdirSync(hostRules, { recursive: true });
+    chmodSync(hostRules, 0o500);
+    expect(installWithFreshRules(env).status).not.toBe(0);
+    expect(readdirSync(join(env.HOME!, '.agents', 'rules'))).toEqual([]);
+    chmodSync(hostRules, 0o700);
+    const retried = installWithFreshRules(env);
+    expect(retried.status).toBe(0);
+    expect(retried.rules).toMatchObject({ status: 'ok' });
+    expect(readFileSync(join(hostRules, 'english.md'), 'utf-8')).toBe('# upstream english.md\n');
+  }), 60_000);
+
+  test('a relative XDG_STATE_HOME fails before the install takes its runtime lock', () => withHome((env) => {
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'minimal', '--json'], { cwd: ROOT, env: { ...env, XDG_STATE_HOME: 'state' }, encoding: 'utf-8' });
+    expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain('XDG_STATE_HOME must be an absolute path: state');
+    expect(existsSync(join(env.HOME!, '.repo-harness'))).toBe(false);
+  }));
 
   test('committing a host transaction only discards its backups', () => withHome((env) => {
     const path = join(env.HOME!, 'surface');

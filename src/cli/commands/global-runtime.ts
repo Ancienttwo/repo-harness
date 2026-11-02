@@ -10,7 +10,7 @@ import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
-import { syncWazaSharedRules } from "../installer/waza-rules";
+import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import {
@@ -936,6 +936,29 @@ function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJ
   );
 }
 
+const WAZA_RULES_STEP = "sync Waza shared rules";
+
+/**
+ * The Skills CLI never writes ~/.agents/rules, so the setup step skips the
+ * rules on a fresh install. The refresh path needs an installed profile to own
+ * new rules. An install therefore runs it once after its profile state write.
+ * That write renews existing receipts, so `priorReceipts` (the receipts from
+ * before the transaction) judge whether a host rule may be overwritten.
+ */
+export function ownFreshWazaSharedRules(
+  result: GlobalRuntimeResult,
+  target: InstallTargetSpec,
+  env: NodeJS.ProcessEnv,
+  priorReceipts: readonly ManagedInstallSurface[],
+): GlobalRuntimeResult {
+  const index = result.steps.findIndex((step) => step.step === WAZA_RULES_STEP);
+  const wazaInstalled = result.steps.some((step) => step.step === externalSkillStepName("tw93/Waza") && step.status === "ok");
+  const home = homeDir(env);
+  if (index < 0 || !wazaInstalled || !wazaStagingRulesAbsent(home)) return result;
+  const owned: GlobalRuntimeStep = { step: WAZA_RULES_STEP, ...syncWazaSharedRules(home, hostIds(target), env, true, priorReceipts) };
+  return finalizeRuntimeResult(result.steps.map((step, i) => (i === index ? owned : step)));
+}
+
 /** True only when this run's fleet helper verified every agent target (see applyInstallProfile). */
 export function agentFleetVerified(result: Pick<GlobalRuntimeResult, 'steps'>): boolean {
   return result.steps.some((step) => step.step === AGENT_FLEET_STEP && step.status === 'ok');
@@ -1032,6 +1055,7 @@ function installExternalSkillGroup(
       USERPROFILE: isolatedHome,
       XDG_CONFIG_HOME: join(isolatedHome, ".config"),
       XDG_CACHE_HOME: join(isolatedHome, ".cache"),
+      XDG_STATE_HOME: join(isolatedHome, ".local", "state"),
       BUN_INSTALL: join(isolatedHome, ".bun"),
       BUN_INSTALL_CACHE_DIR: join(isolatedHome, ".bun", "install", "cache"),
       NPM_CONFIG_CACHE: join(isolatedHome, ".npm"),
@@ -1548,8 +1572,8 @@ export function runGlobalRuntimeSetup(
     steps.push(waza);
     if (waza.status === "failed") return finalizeRuntimeResult(steps);
     steps.push(waza.status === "ok"
-      ? { step: "sync Waza shared rules", ...syncWazaSharedRules(homeDir(env), hostIds(target), env, updateMode) }
-      : { step: "sync Waza shared rules", status: "skipped", detail: "Waza install failed" });
+      ? { step: WAZA_RULES_STEP, ...syncWazaSharedRules(homeDir(env), hostIds(target), env, updateMode) }
+      : { step: WAZA_RULES_STEP, status: "skipped", detail: "Waza install failed" });
     if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
     const mermaid = installMermaidSkill(sourceRoot, target, env, updateMode);
     steps.push(mermaid);

@@ -38,7 +38,7 @@ import {
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
-import { hostSkillRoot, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
+import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { CLAUDE_ONLY_AGENTS, MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
@@ -734,7 +734,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(home, '.repo-harness', 'config.json'),
     installProfileStatePath(env),
     configurationReceiptPath(home),
-    join(home, '.agents', '.skill-lock.json'),
+    providerSkillLock(home, env).path,
   ];
   for (const root of hostSkillRoots(home, env)) {
     for (const skill of [...skills, ...externalSkills]) paths.push(join(root, skill));
@@ -879,6 +879,8 @@ export function rollbackInstallHostTransaction(
           restoreGlobalConfiguration(snapshot.path, snapshot.existed && snapshot.backup_path !== null ? readFileSync(snapshot.backup_path) : null, context);
           continue;
         }
+        // A path under a regular file cannot exist, so an absent snapshot there is already restored.
+        if (!snapshot.existed && lstatSync(dirname(snapshot.path), { throwIfNoEntry: false })?.isFile()) continue;
         rmSync(snapshot.path, { recursive: true, force: true });
         if (snapshot.existed && snapshot.backup_path !== null) {
           mkdirSync(dirname(snapshot.path), { recursive: true });
@@ -998,9 +1000,9 @@ function transactionOwnedSurfaces(
   });
 }
 
-function removeOwnedSkillLockEntries(home: string, skillNames: ReadonlySet<string>): void {
+function removeOwnedSkillLockEntries(env: NodeJS.ProcessEnv, skillNames: ReadonlySet<string>): void {
   if (skillNames.size === 0) return;
-  const lockPath = join(home, '.agents', '.skill-lock.json');
+  const lockPath = providerSkillLock(env.HOME ?? homedir(), env).path;
   if (!existsSync(lockPath)) return;
   const parsed = JSON.parse(readFileSync(lockPath, 'utf-8')) as { skills?: Record<string, unknown> };
   if (!parsed || typeof parsed !== 'object' || !parsed.skills || typeof parsed.skills !== 'object') {
@@ -1036,7 +1038,7 @@ function removeRetiredOwnedSurfaces(
     if (surface.managed_marker === CODEGRAPH_CONFIG_MARKER) removeCodegraphProjection(surface.path);
     else rmSync(surface.path, { recursive: true, force: true });
   }
-  removeOwnedSkillLockEntries(env.HOME ?? homedir(), removedSkills);
+  removeOwnedSkillLockEntries(env, removedSkills);
   return unique.map(({ path }) => path);
 }
 
