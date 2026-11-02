@@ -8,22 +8,27 @@ import { createHash } from 'crypto';
 import { join } from 'path';
 import { REVIEW_MAX_ROUNDS, validateReviewOutput } from '../src/core/review/generic-review';
 import { composeReviewPacket, type ReviewPacketInput } from '../src/core/review/review-packet';
-import { closeReview, reviewLocation, reviewSessionOptions, reviewStatus, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
+import { closeReview, reviewLocation, reviewStatus, runReviewRound, type ReviewEffects } from '../src/effects/review/generic-review';
+import { reviewSessionOptions, taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
 import { acceptanceContext, acceptanceReviewContextDigest, acceptanceReceiptPath } from '../scripts/acceptance-receipt';
 import { seedAcceptanceFixture } from './helpers/verification-plan-fixture';
 import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
-import { observeTaskSessionAdmission, ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact, sendTaskRequest, taskSessionDirectory, type TaskAgentSpec, type TaskPaneBinding, type TaskRequest, type TaskSessionAuthority } from '../src/effects/terminal/task-session';
+import { observeTaskSessionAdmission, readSessionArtifact, writeSessionArtifact, taskSessionDirectory, type HerdrTaskAgentSpec, type TaskPaneBinding } from '../src/effects/terminal/task-session';
+import { ensureSessionDirectory, nextSessionRound } from '../src/effects/terminal/task-session-io';
+import type { ReviewHostSpec, TaskRequest } from '../src/core/review/runner-port';
+import type { TaskSessionAuthority } from '../src/effects/admission/admission-source';
+import type { HerdrEndpoint } from '../src/effects/terminal/herdr';
 import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 import { randomUUID } from 'crypto';
 import { mockOfflineHerdr, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
 import { readTaskMessageDelivery, sendTaskMessage } from '../src/effects/fleet/task-inbox';
-import { recordPrePromptInboxAccepted } from '../src/effects/review/pre-prompt-inbox-consumer';
+import { recordPrePromptInboxAccepted } from '../src/effects/review-runner/task-pre-prompt-inbox-consumer';
 import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../src/effects/terminal/task-runtime-observation';
-import type { ReviewHostSpec } from '../src/effects/review/oar-review-host';
+type TaskReviewEffects = ReviewEffects<TaskPaneBinding, HerdrEndpoint>;
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -60,7 +65,7 @@ test('generic review refuses tampered empty and missing approved plans before an
     else delete record.admission.verification_plan;
     writeFileSync(file, JSON.stringify(record), { mode: 0o600 });
     const calls: string[] = [];
-    const effects: ReviewEffects = {
+    const effects: TaskReviewEffects = { ...taskReviewRunner,
       owner: () => { calls.push('owner'); throw new Error('provider lookup must not run'); },
       installation: async () => { calls.push('installation'); throw new Error('provider probe must not run'); },
       start: async () => { calls.push('start'); throw new Error('provider start must not run'); },
@@ -124,7 +129,7 @@ for (const selection of [
     let ownerCalls = 0;
     await expect(runReviewRound({ repoRoot: f.root, authority, verification: f.verification, reviewerRepo, authorityHome: f.home,
       endpoint: { session: 's', home: f.home }, parentPane: 'fixture-owner', taskClaim,
-      admitSession: () => { throw new Error('must not launch'); } }, {
+      admitSession: () => { throw new Error('must not launch'); } }, { ...taskReviewRunner,
       owner: () => { ownerCalls++; throw new Error('offline-runtime-boundary-reached'); },
     })).rejects.toThrow('offline-runtime-boundary-reached');
     expect(ownerCalls).toBe(1);
@@ -189,7 +194,7 @@ function packetRoundFixture() {
   const location = reviewLocation(fixture.root, fixture.authority);
   const packetPath = (round = 1) => join(reviewerRepo, '.ai/harness/runs/generic-review-input', location.key, `packet-${round}.txt`);
   const calls: string[] = [];
-  const effects: ReviewEffects = {
+  const effects: TaskReviewEffects = { ...taskReviewRunner,
     installation: async (_kind, executable) => { calls.push('installation'); return { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' }; },
     start: async (_repo, _spec, _command, _ready, _guard, taskAuthority) => {
       expect(taskAuthority?.source).toBe(fixture.authority);
@@ -282,15 +287,15 @@ darwinTest('app-terminal round returns the exact host command, sends nothing and
   const exited = spawnSync('/usr/bin/true');
   writeSessionArtifact(join(f.dir, 'host-claim.json'), { pid: exited.pid });
   await expect(runReviewRound(options, f.effects)).rejects.toThrow('review_host_start_failed');
-  expect((reviewStatus(f.root, f.options.authority) as { lifecycle: { status: string } }).lifecycle.status).toBe('launch_pending');
+  expect((reviewStatus(f.root, f.options.authority, taskReviewRunner) as { lifecycle: { status: string } }).lifecycle.status).toBe('launch_pending');
   // After Session opening began, a host exit without a disposal receipt is not cleanup proof.
   writeSessionArtifact(join(f.dir, 'session-opening.json'), { pid: exited.pid });
-  await expect(closeReview(f.root, f.options.authority, true, f.home)).rejects.toThrow('review_host_cleanup_pending');
-  expect(reviewStatus(f.root, f.options.authority).status).toBe('open');
+  await expect(closeReview(f.root, f.options.authority, true, f.home, taskReviewRunner)).rejects.toThrow('review_host_cleanup_pending');
+  expect(reviewStatus(f.root, f.options.authority, taskReviewRunner).status).toBe('open');
   writeSessionArtifact(join(f.dir, 'disposed.json'), { disposed: true, fixture: false });
-  expect((await closeReview(f.root, f.options.authority, true, f.home)).status).toBe('closed');
+  expect((await closeReview(f.root, f.options.authority, true, f.home, taskReviewRunner)).status).toBe('closed');
   expect(existsSync(join(f.dir, 'close.request'))).toBe(true);
-  expect(reviewStatus(f.root, f.options.authority).status).toBe('closed');
+  expect(reviewStatus(f.root, f.options.authority, taskReviewRunner).status).toBe('closed');
   expect(existsSync(acceptanceReceiptPath(f.root, f.home))).toBe(false);
 }, 60_000);
 
@@ -299,7 +304,7 @@ darwinTest('app-terminal cancel before any claim leaves a tombstone, so a late l
   const { endpoint: _endpoint, parentPane: _parentPane, ...base } = f.options;
   const launch = await runReviewRound({ ...base, launch: 'app-terminal' }, f.effects);
   if (launch.status !== 'launch_required') throw new Error('fixture_launch_required_expected');
-  expect((await closeReview(f.root, f.options.authority, true, f.home)).status).toBe('closed');
+  expect((await closeReview(f.root, f.options.authority, true, f.home, taskReviewRunner)).status).toBe('closed');
   const claim = join(f.dir, 'host-claim.json');
   expect(JSON.parse(readFileSync(claim, 'utf8'))).toEqual({ pid: null, closed: true });
   const late = spawnSync(launch.argv[0]!, launch.argv.slice(1), { encoding: 'utf8', timeout: 30_000 });
@@ -580,7 +585,7 @@ for (const example of [
   writeFileSync(join(source, 'settings.json'), settings);
   let binding: Awaited<ReturnType<typeof startOfflineTaskAgent>>, request: TaskRequest;
   let actualModel: string | null = 'fixture-provider/fixture-actual', verdict = example.verdict, sent = 0;
-  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
+  const effects: TaskReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
     dispose: async () => {}, close: async () => ({ status: 'closed', pids: [] }), cancel: async () => ({ status: 'closed', pids: [] }),
     installation: async () => ({ kind: 'available', via: 'bundled' }),
     start: async (repo, spec, _command, _ready, _guard, authority) => {
@@ -674,7 +679,7 @@ type ScriptedTurn = NonNullable<Parameters<typeof import('@botiverse/oar/testing
 /** Zero-model host seam: a scripted OAR Session behind the real OarReviewHost.
  * A null model is a runtime that never reported one; OAR's fold stays null. */
 async function scriptedSeamHost(kind: SeamHarness, model: string | null, cwd: string, turn?: ScriptedTurn) {
-  const { OarReviewHost } = await import('../src/effects/review/oar-review-host');
+  const { OarReviewHost } = await import('../src/effects/review-runner/task-oar-host');
   const { scriptedRuntime } = await import('@botiverse/oar/testing');
   const session = await scriptedRuntime({ id: kind, ...(model === null ? {} : { model }),
     turn: turn ?? (async ({ say }) => { say('[fixture observation; no provider call]'); }) }).session({ kind: 'available', via: 'bundled' }, { cwd });
@@ -716,7 +721,7 @@ type ReviewRoundAuthority = ReturnType<typeof packetRoundFixture>['authority'];
 /** One review round whose reviewer observation is written by runHostFileRequest. */
 async function seamReview(f: ReturnType<typeof packetRoundFixture>, harness: SeamHarness, reviewerModel: string | null, parentPane = f.options.parentPane) {
   const { mkdirSync } = await import('node:fs');
-  const { runHostFileRequest } = await import('../src/effects/review/oar-review-host');
+  const { runHostFileRequest } = await import('../src/effects/review-runner/task-oar-host');
   const hostDir = join(f.home, `seam-host-${harness}`); mkdirSync(hostDir);
   if (harness === 'codex') {
     mkdirSync(join(f.options.endpoint.home, '.codex'), { recursive: true });
@@ -725,7 +730,7 @@ async function seamReview(f: ReturnType<typeof packetRoundFixture>, harness: Sea
   }
   const host = await scriptedSeamHost(harness, reviewerModel, hostDir);
   let binding: TaskPaneBinding | undefined, request: TaskRequest;
-  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
+  const effects: TaskReviewEffects = { ...f.effects, assertBinding: () => {}, piExecutable: () => '/usr/bin/true',
     installation: async (_kind, executable) => harness === 'pi' ? { kind: 'available', via: 'bundled' }
       : { kind: 'available', via: 'executable', command: executable ?? '/usr/bin/true' },
     start: async (repo, spec, _command, _ready, _guard, authority) => {
@@ -1109,7 +1114,7 @@ let calls=0;await assert.rejects(openScriptedReviewHost({cwd:output},()=>{},asyn
 
 darwinTest('OAR installation is probed by the fixed Node host, never the Bun controller', async () => {
   const { mkdirSync, writeFileSync, realpathSync, chmodSync } = await import('node:fs');
-  const { probeReviewInstallation } = await import('../src/effects/review/generic-review');
+  const probeReviewInstallation = (await import('../src/effects/review-runner/task-review-runner')).taskReviewRunner.installation;
   const root = tmpWorkspace('oar-node-installation'); roots.push(root);
   const trace = join(root, 'parent.txt'), executable = join(root, 'fake-codex');
   writeFileSync(executable, `#!/bin/sh\n/bin/ps -p "$PPID" -o command= >> '${trace}'\nprintf '0.0.0\\n'\n`); chmodSync(executable, 0o700);
@@ -1257,9 +1262,9 @@ test('same content with a new approved context consumes the next campaign round'
 
 darwinTest('a round records acceptance only after its accepted inbox delivery is committed', async () => {
   const f = packetRoundFixture();
-  let binding: TaskPaneBinding | undefined, authority: TaskSessionAuthority | undefined, agentSpec: TaskAgentSpec | undefined, messageId = '';
+  let binding: TaskPaneBinding | undefined, authority: TaskSessionAuthority | undefined, agentSpec: HerdrTaskAgentSpec | undefined, messageId = '';
   const nativeSessionId = 'fixture-native-session';
-  const effects: ReviewEffects = { ...f.effects, assertBinding: () => {}, model: () => 'fixture-model',
+  const effects: TaskReviewEffects = { ...f.effects, assertBinding: () => {}, model: () => 'fixture-model',
     start: async (repo, spec, _command, _ready, _guard, taskAuthority) => {
       if (!taskAuthority) throw new Error('fixture_task_authority_missing');
       authority = taskAuthority; agentSpec = spec;
@@ -1279,7 +1284,7 @@ darwinTest('a round records acceptance only after its accepted inbox delivery is
     // The real send publishes the request and reserves the inbox companion.
     send: async (...args) => {
       const offline = mockOfflineHerdr(args[0], agentSpec!);
-      try { return await sendTaskRequest(...args); } finally { offline.transport.mockRestore(); }
+      try { return await taskReviewRunner.send(...args); } finally { offline.transport.mockRestore(); }
     },
     // Transport ACK: the host turn already ended, so the loop's first observed check succeeds.
     ready: async path => { const ack = /ack-(\d+)\.json$/.exec(path); if (ack) writeFileSync(join(f.dir, `observed-${ack[1]}.json`), '{}'); },

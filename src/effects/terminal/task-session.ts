@@ -1,13 +1,15 @@
 import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent, readTaskBinding } from './task-session-reader';
 export { assertCreated, taskSessionDirectory, readTaskAgent, readTaskBinding } from './task-session-reader';
-import { processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
+import { ensureSessionDirectory, nextSessionRound, processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
 export { processIdentity, readSessionArtifact, writeSessionArtifact } from './task-session-io';
-import { constants, closeSync, existsSync, fsyncSync, lstatSync, mkdirSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
+import { constants, closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { isAbsolute, join, relative } from 'path';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
-import type { ReviewAdmissionSource } from '../admission/admission-source';
+import type { TaskSessionAuthority } from '../admission/admission-source';
+import { validateTaskClaimReference } from '../../core/review/authority-context';
+import type { ProcessProof, TaskAgentSpec, TaskCleanupResult, TaskPrePromptInbox, TaskRequest, TaskResult, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
 import { gitExecFileSync } from '../git/runner';
 import { readWorktreeTopology } from '../git/worktree-topology';
 import { configuredGitBinary } from '../git/common-directory';
@@ -15,37 +17,16 @@ import { taskWorkspaceKey } from '../git/repository-identity';
 import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
+import { ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
 import { terminateProcessGroup } from '../process-group-termination';
 import { herdrCommand, herdrMutation, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
-export interface ProcessProof { pid: number; identity: string }
 export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
-/** Upstream coordination provenance. This is not an authorization credential. */
-export interface TaskClaimReference { reference: string; revision: string }
-export interface TaskSessionAuthority { source: ReviewAdmissionSource; claim: TaskClaimReference }
-export interface TaskSessionAdmission {
-  identity: {
-    repository_id: string; issue_id: string; campaign_id: string; campaign_sha256: string;
-    execution_actor: string; claim: TaskClaimReference;
-    source_root: string; execution_root: string; branch: string | null; task: string; role: string;
-    harness_kind: string; runtime: 'herdr' | 'terminal';
-  };
-  approval: { admission_sha256: string; grant_sha256: string; revision: number; goal_revision: string; scope_sha256: string };
-  /** A normal commit does not change task ownership or reset request budgets. */
-  head_revision: string;
-}
-export function validateTaskClaimReference(claim: TaskClaimReference): TaskClaimReference {
-  if (!claim || typeof claim.reference !== 'string' || !claim.reference.trim() || /[\x00-\x1f\x7f]/.test(claim.reference)
-    || typeof claim.revision !== 'string' || !/^sha256:[0-9a-f]{64}$/.test(claim.revision)
-    || Object.keys(claim).length !== 2 || !Object.keys(claim).every(key => key === 'reference' || key === 'revision')) throw new Error('task_agent_claim_invalid');
-  return { reference: claim.reference, revision: claim.revision };
-}
 
 /** Observe the existing approval; do not create a second claim or task state. */
-export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<TaskAgentSpec, 'task' | 'role' | 'harness_kind'>,
+export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<HerdrTaskAgentSpec, 'task' | 'role' | 'harness_kind'>,
   runtime: 'herdr' | 'terminal', authority: TaskSessionAuthority): TaskSessionAdmission {
   const claim = validateTaskClaimReference(authority.claim);
   const execution = taskRepository(repoRoot), owner = taskRepository(authority.source.repoRoot);
@@ -114,47 +95,11 @@ export interface TerminalTaskBinding extends TaskBindingCommon {
   command: string[];
 }
 export type TaskPaneBinding = HerdrTaskBinding | TerminalTaskBinding;
-export interface TaskAgentSpec {
-  task: string;
-  role: string;
-  harness_kind: string;
-  endpoint: HerdrEndpoint;
-  parent_pane: string;
-  args: string[];
-  max_requests: number;
-}
-export type TerminalHostSpec = Pick<TaskAgentSpec, 'task' | 'role' | 'harness_kind' | 'max_requests'>;
-export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: TaskAgentSpec; runtime?: never }
+export type HerdrTaskAgentSpec = TaskAgentSpec<HerdrEndpoint>;
+export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: HerdrTaskAgentSpec; runtime?: never }
 export interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
 export interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
-export type TaskPrePromptInbox = { status: 'bound'; path: string; sha256: string } | { status: 'unsupported'; reason: 'historical_task_label' };
-export interface TaskRequest {
-  pre_prompt_inbox?: TaskPrePromptInbox;
-  task_admission?: TaskSessionAdmission;
-  session_binding_sha256?: string;
-  protocol: 2;
-  result_contract: { required_fields: string[]; atomic_write: 'temp_rename' };
-  task: string;
-  role: string;
-  round: number;
-  request_id: string;
-  context_ref: string;
-  source_ref: string;
-  context_sha256: string;
-  result_ref: string;
-}
-export interface TaskResult { request_id: string; context_sha256: string; value: unknown }
 
-export function ensureSessionDirectory(root: string, path: string): void {
-  const parts = relative(root, path).split('/');
-  if (parts.includes('..') || isAbsolute(relative(root, path))) throw new Error('task_agent_unsafe_directory');
-  let current = root;
-  for (const part of parts) {
-    current = join(current, part);
-    try { mkdirSync(current, { mode: 0o700 }); } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-    if (!lstatSync(current).isDirectory() || lstatSync(current).isSymbolicLink()) throw new Error('task_agent_unsafe_directory');
-  }
-}
 export function assertProcessProof(proof: ProcessProof): void {
   if (processIdentity(proof.pid) !== proof.identity) throw new Error('task_agent_process_identity_lost');
 }
@@ -199,18 +144,6 @@ function createdProcessGroupAlive(process: OwnedProcess): boolean {
     if (processProofAlive(process)) throw error;
     return false;
   }
-}
-/** File artifacts, never a new process/session, own the monotonic round budget. */
-export function nextSessionRound<T>(dir: string, maximum: number, subject: string,
-  subjectOf: (request: T) => string, completionPrefix = 'accepted'): number {
-  let round = 1;
-  for (; round <= maximum && existsSync(join(dir, `request-${round}.json`)); round++) {
-    const previous = readSessionArtifact<T>(join(dir, `request-${round}.json`));
-    if (!existsSync(join(dir, `${completionPrefix}-${round}.json`))) throw new Error('task_agent_ambiguous_round');
-    if (subjectOf(previous) === subject) throw new Error('task_agent_duplicate_subject');
-  }
-  if (round > maximum) throw new Error('task_agent_round_budget_exhausted');
-  return round;
 }
 export function beginSessionRound(dir: string, round: number, identity: unknown): void {
   writeSessionArtifact(join(dir, `started-${round}.json`), identity);
@@ -364,7 +297,7 @@ export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrEndp
   validateHerdrEndpoint(endpoint);
   const repository = taskRepository(repoRoot); const dir = workspaceDirectory(repository);
   ensureSessionDirectory(repository.primary_root, dir);
-  return locked(repository.primary_root, dir, async () => {
+  return withCallerLock(repository.primary_root, dir, async () => {
     guard?.();
     const path = join(dir, 'binding.json');
     const spaces = workspaceReadback(endpoint);
@@ -417,24 +350,12 @@ export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrEndp
     writeSessionArtifact(path, binding); return binding;
   });
 }
-function validateSpec(spec: TaskAgentSpec): void {
+function validateSpec(spec: HerdrTaskAgentSpec): void {
   validateHerdrEndpoint(spec.endpoint); // Before directory, intent, pane, agent or lock creation.
   if (!spec.task?.trim() || !/^[a-z][a-z0-9_-]{0,31}$/.test(spec.role)
     || !spec.harness_kind?.trim() || !spec.parent_pane?.trim() || !Array.isArray(spec.args)
     || spec.args.some(arg => typeof arg !== 'string') || !Number.isSafeInteger(spec.max_requests) || spec.max_requests < 1 || spec.max_requests > 100) {
     throw new Error('task_agent_spec_invalid');
-  }
-}
-export async function locked<T>(root: string, dir: string, action: () => Promise<T>, contended?: () => void, waitTimeoutMs = 10_000): Promise<T> {
-  const deadline = Date.now() + waitTimeoutMs;
-  for (;;) {
-    let lock;
-    try { lock = acquireExclusiveDirectoryLock(root, relative(root, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true }); }
-    catch (error) {
-      if (!(error instanceof ExclusiveLockContentionError) || Date.now() >= deadline) throw error;
-      contended?.(); await Bun.sleep(25); continue;
-    }
-    try { lock.assertOwned(); return await action(); } finally { lock.release(); }
   }
 }
 function bindStartedAgent(intent: StartIntent, pane: CreatedPane): HerdrTaskBinding {
@@ -491,7 +412,7 @@ export interface TaskStartEffects {
   guard?: () => void;
   taskAuthority?: TaskSessionAuthority;
 }
-export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effects: TaskStartEffects): Promise<HerdrTaskBinding> {
+export async function startTaskAgent(repoRoot: string, spec: HerdrTaskAgentSpec, effects: TaskStartEffects): Promise<HerdrTaskBinding> {
   effects.guard?.();
   spec = structuredClone(spec);
   validateSpec(spec);
@@ -501,7 +422,7 @@ export async function startTaskAgent(repoRoot: string, spec: TaskAgentSpec, effe
     { ...spec, runtime: 'herdr', task_admission: taskAdmission }, effects.taskAuthority); };
   recheck();
   ensureSessionDirectory(root, dir);
-  return locked(root, dir, async () => {
+  return withCallerLock(root, dir, async () => {
     recheck();
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
     if (existsSync(join(dir, 'binding.json'))) {
@@ -572,7 +493,7 @@ export function assertTerminalHostCommand(command: readonly string[]): void {
   assertApplicationHostCommand(command);
   if (command.some(arg => /\s/.test(arg))) throw new Error('task_agent_terminal_host_path_whitespace');
 }
-export async function startTaskApplicationHost(repoRoot: string, spec: TaskAgentSpec,
+export async function startTaskApplicationHost(repoRoot: string, spec: HerdrTaskAgentSpec,
   command: readonly string[], ready: () => Promise<void>, guard?: () => void, taskAuthority?: TaskSessionAuthority): Promise<HerdrTaskBinding> {
   if (spec.args.length !== 0) throw new Error('task_agent_application_host_command_invalid');
   assertApplicationHostCommand(command);
@@ -602,7 +523,7 @@ export async function bindTerminalApplicationHost(repoRoot: string, spec: Termin
   const recheck = () => recheckTaskAdmission(repoRoot, { ...spec, runtime: 'terminal', task_admission: taskAdmission }, taskAuthority);
   recheck();
   ensureSessionDirectory(root, dir);
-  return locked(root, dir, async () => {
+  return withCallerLock(root, dir, async () => {
     recheck();
     if (existsSync(join(dir, 'closed.json'))) throw new Error('task_agent_session_closed');
     let intent: TerminalStartIntent;
@@ -673,7 +594,7 @@ export async function collectTaskResult(repoRoot: string, task: string, role: st
   const { dir, binding } = readTaskAgent(repoRoot, task, role);
   recheckTaskAdmission(repoRoot, binding, taskAuthority);
   if (!Number.isSafeInteger(round) || round < 1) throw new Error('task_agent_round_invalid');
-  return locked(repository.primary_root, dir, async () => {
+  return withCallerLock(repository.primary_root, dir, async () => {
     guard?.();
     const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
     const current = recheckTaskAdmission(repoRoot, binding, taskAuthority);
@@ -704,7 +625,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     const observed = recheckTaskAdmission(repoRoot, binding, taskAuthority);
     if (current && !sameSessionData(observed?.approval ?? null, current.approval)) throw new Error('task_agent_request_context_changed');
   };
-  return locked(root, dir, async () => {
+  return withCallerLock(root, dir, async () => {
     recheck();
     if (!['repeatable', 'changed_only'].includes(contextPolicy)) throw new Error('task_agent_context_policy_invalid');
     assertTaskBinding(binding);
@@ -774,7 +695,6 @@ async function stopCreatedProcess(proof: OwnedProcess, guard: () => void): Promi
   const termination = await terminateProcessGroup(proof.pid, 5000, { confirmMs: 5000, beforeForce: guard });
   return termination.confirmed && !processProofAlive(proof);
 }
-export interface TaskCleanupResult { status: 'closed' | 'cleanup_pending'; pids: number[]; reason?: string }
 
 export interface WorktreeMergeNotice {
   pr: number;
@@ -801,7 +721,7 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
   }
   const dir = workspaceDirectory(execution);
   assertSessionDirectory(repository.primary_root, dir);
-  return locked(repository.primary_root, dir, async () => {
+  return withCallerLock(repository.primary_root, dir, async () => {
     const receipt = join(dir, `merge-notice-${notice.pr}-${notice.merge_sha}.json`);
     if (existsSync(receipt)) {
       const previous = readSessionArtifact<{ notice: WorktreeMergeNotice; owner: string; state: string }>(receipt);
@@ -930,7 +850,7 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
 async function cleanupTaskAgent(repoRoot: string, task: string, role: string, mode: 'close' | 'cancel'): Promise<TaskCleanupResult> {
   const repository = taskRepository(repoRoot); const root = repository.primary_root; const dir = taskSessionDirectory(root, task, role);
   assertSessionDirectory(root, dir);
-  return locked<TaskCleanupResult>(root, dir, async () => {
+  return withCallerLock<TaskCleanupResult>(root, dir, async () => {
     if (!existsSync(join(dir, 'binding.json'))) return closeUnboundTaskStart(dir, task, role, mode);
     const { binding } = readTaskAgent(root, task, role);
     assertCreated(binding.ownership); assertCreated(binding.provider.ownership);
@@ -1019,7 +939,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
   };
   if (!existsSync(dir)) return { status: 'not_registered', pids: [] };
   assertSessionDirectory(repository.primary_root, dir);
-  return locked(repository.primary_root, dir, async () => {
+  return withCallerLock(repository.primary_root, dir, async () => {
     if (existsSync(join(dir, 'closed.json'))) return { status: 'closed', pids: [] };
     if (!existsSync(join(dir, 'binding.json'))) {
       if (!existsSync(join(dir, 'open-intent.json'))) return { status: 'not_registered', pids: [] };

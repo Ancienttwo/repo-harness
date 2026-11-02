@@ -1,5 +1,5 @@
-import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './pre-prompt-inbox-consumer';
-import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
+import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './task-pre-prompt-inbox-consumer';
+import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { claudeRuntime, codexRuntime, createPiRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
 import { scriptedRuntime } from '@botiverse/oar/testing';
 import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
@@ -8,10 +8,9 @@ import { spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { createHash, randomUUID } from 'node:crypto';
 import { processIdentity, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
-import type { ProcessProof, TaskRequest } from '../terminal/task-session';
-import type { AvailableInstallation } from '@botiverse/oar';
+import type { HostRoundObservation, ProcessProof, ReviewHostSpec, ReviewIsolationAdmission, TaskRequest } from '../../core/review/runner-port';
 import { dirname } from 'node:path';
-import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation, type ReviewIsolationAdmission } from './review-isolation';
+import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation } from '../review/review-isolation';
 import { promptWithOarObservation, oarActualModel, oarObservationFile, type OarObservationSink } from '../terminal/task-runtime-observation';
 
 /** OAR owns RPC arguments and its explicit extension. Disable all ambient Pi resources. */
@@ -74,25 +73,6 @@ export async function openScriptedReviewHost(options: SessionOptions, print: (vi
 }
 
 interface FixtureSpec { mode: 'scripted'; cwd: string; inputs: string[]; closeRequest: string; readyFile: string; disposedFile: string; isolation: ReviewIsolationAdmission }
-export interface ReviewHostSpec {
-  mode: 'review';
-  isolation: ReviewIsolationAdmission;
-  kind: ReviewRuntimeId;
-  installation: AvailableInstallation;
-  launcher: string;
-  vendorExecutable: string;
-  options: SessionOptions;
-  requestDirectory: string;
-  output: string;
-  controlDirectory: string;
-  timeoutMs: number;
-}
-export interface HostRoundObservation {
-  request_id: string;
-  kind: string;
-  outcome: string | null;
-  actual_model: string | null;
-}
 
 /** File request is application data, never text extracted from a harness. */
 export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSpec, request: TaskRequest): Promise<HostRoundObservation> {

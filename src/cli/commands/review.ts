@@ -3,7 +3,8 @@ import { readReviewAdmissionSource } from '../../effects/admission/admission-sou
 import { revokeActiveReviewAdmission } from '../../effects/admission/admission-store';
 import { Command } from 'commander';
 import { readFileSync } from 'fs';
-import { closeReview, reviewLocation, reviewStatus, runReviewRound } from '../../effects/review/generic-review';
+import { closeReview, reviewLocation, reviewStatus, runReviewRound, type ReviewEffects } from '../../effects/review/generic-review';
+import { osAccountHome } from '../../effects/runtime/os-account-home';
 import { recordCircuitAttempt } from '../hook/circuit-breaker';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
 import { publishReview, ReviewPublishError } from '../../effects/review/review-publish';
@@ -31,7 +32,8 @@ export function pullRequestSelectionFromOptions(opts: Record<string, string | un
   return { repository: opts.repository!, provider_repository_id: opts.repositoryId!, pr_number: Number(opts.pr), expected_base_sha: opts.base! };
 }
 
-export function buildReviewCommand(): Command {
+/** The composition root passes the one reviewer runner implementation. */
+export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Session, Endpoint>): Command {
   const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
   command.command('admit').description('Apply an already-authorized upstream Bot request (trusted integration only)')
     .requiredOption('--request <file>', 'JSON {admission, approval, expectedRevision}; approval requires upstream authorization_ref and bound scope')
@@ -123,10 +125,10 @@ export function buildReviewCommand(): Command {
                 reason: 'persistent generic review admission', pathOrAction: 'review:session', progressToken: location.campaign,
                 fingerprint: location.campaign, strongBoundary: true });
               if (!decision.allowed) throw new Error('review_session_budget_exhausted; do not start another reviewer');
-            } });
+            } }, runner);
           if (result.status === 'rejected') process.exitCode = 1;
-        } else if (operation === 'status') result = reviewStatus(opts.repo, authority);
-        else result = await closeReview(opts.repo, authority, operation === 'cancel');
+        } else if (operation === 'status') result = reviewStatus(opts.repo, authority, runner);
+        else result = await closeReview(opts.repo, authority, operation === 'cancel', osAccountHome(), runner);
         console.log(JSON.stringify(result, null, opts.json ? undefined : 2));
       } catch (error) {
         console.error(`review: ${error instanceof Error ? error.message : String(error)}`);
