@@ -14,3 +14,5 @@ source:
     - src/core/state/command-outcome.ts
     - src/core/worktree-*
     - src/core/state/provider-board.ts
+    - src/core/sessions/session-selector.ts
+    - src/core/sessions/task-sessions.ts
