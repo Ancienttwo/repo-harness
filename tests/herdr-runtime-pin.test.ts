@@ -77,7 +77,7 @@ describe("herdr runtime pin has one source of truth", () => {
 
   test("the herdr-core pin names an official release asset for each CI runner platform", () => {
     const core = readPolicy().external_tooling?.herdr_core;
-    expect(core.min_version).toBe("0.1.16");
+    expect(core.min_version).toBe("0.1.17");
     for (const platform of ['linux-x86_64', 'macos-aarch64', 'macos-x86_64']) {
       const asset = core.release_assets?.[platform];
       expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
