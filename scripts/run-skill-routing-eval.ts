@@ -25,7 +25,7 @@ export type CaseKind = (typeof CASE_KINDS)[number];
 // The plan's overlap-vocabulary dimensions; "merge-gate vs cross-review" is one
 // dimension covered by tagging both literal terms on the same case.
 export const REQUIRED_OVERLAP_TERMS: readonly string[] =
-  ["review", "check", "plan", "ship", "merge-gate", "gptpro", "architecture"];
+  ["review", "check", "plan", "ship", "merge-gate", "architecture"];
 
 export const ID_PATTERN = /^[a-z0-9]+(-[a-z0-9]+)*$/;
 export const LANGS = ["zh", "en"];
@@ -290,16 +290,12 @@ export function buildDiscoveredSkillSurface(
   for (const name of facadesForProfile(catalog, profile)) add(name, "profile-facade");
   const placements = hostSkillPlacements(catalog, profile);
   for (const name of host === "claude" ? placements.claude : placements.codex) add(name, "cross-model");
-  // discoverability:"explicit-setup" (repo-harness-chatgpt today) is never
+  // discoverability:"explicit-setup" (repo-harness-strategy today) is never
   // profile-gated -- neither facadesForProfile (kind:"facade" only) nor
-  // hostSkillPlacements (kind:"provider-skill" only) covers its
-  // kind:"integration". Real production discovery is "additive only after
-  // an explicit ChatGPT setup action, orthogonal to profile" (per the
-  // plan's target-discovery-matrix notes); for THIS eval's purposes it is
-  // modeled as always reachable regardless of --profile, so a chatgpt-
-  // positive case is genuinely testable (and so the ordinary-qa cases that
-  // mention "GPT Pro" without invoking it are tested against a surface
-  // where repo-harness-chatgpt really is visible, not trivially absent).
+  // hostSkillPlacements (kind:"provider-skill" only) covers it. Production
+  // discovery is additive only after an explicit setup action, orthogonal
+  // to profile; this eval models it as always reachable regardless of
+  // --profile.
   for (const pkg of catalog.packages) {
     if (pkg.discoverability === "explicit-setup" && pkg.hosts.includes(host)) add(pkg.name, "explicit-setup");
   }

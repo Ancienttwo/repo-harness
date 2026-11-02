@@ -1,7 +1,0 @@
-schemaVersion: "archcontext.node/v2"
-id: "external.chatgpt"
-kind: "external-system"
-name: "ChatGPT"
-status: "active"
-layer: "external"
-summary: "Web assistant that the ChatGPT browser provider drives through Chrome or oracle."

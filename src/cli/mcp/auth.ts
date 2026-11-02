@@ -1,33 +1,14 @@
-import { randomBytes } from 'crypto';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'fs';
-import { dirname, join } from 'path';
+import { existsSync, readFileSync } from 'fs';
+import { join } from 'path';
 import { repoHarnessHome } from '../../effects/repo-harness-home';
 
 export interface McpLocalConfig {
   version: 1 | 2 | 3;
   repo?: string;
-  server?: {
-    host?: string;
-    port?: number;
-    transport?: string;
-  };
-  auth?: {
-    mode?: string;
-    tokenFile?: string;
-    oauthFile?: string;
-    allowedRedirectHosts?: string[];
-  };
-  chatgpt?: {
-    serverName?: string;
-    endpoint?: string;
-  };
   capabilities?: {
     workspaceReader?: boolean;
     workflowPlanner?: boolean;
     workflowExecutor?: boolean;
-    workspaceCoder?: boolean;
-    taskDispatch?: boolean;
-    publicationMerge?: boolean;
     /** @deprecated v2 uses workspaceReader; accepted only for older local configs. */
     reader?: boolean;
   };
@@ -38,14 +19,16 @@ export interface McpLocalConfig {
     legacyFullDiskReadDetected?: boolean;
   };
   profile?: string;
-  authorizationRevision?: number;
-  coding?: {
-    environmentAllowlist?: string[];
-    worktreeRoot?: string;
-  };
 }
 
-export type McpHttpAuthMode = 'oauth' | 'bearer' | 'url-token';
+/**
+ * Keys of the removed ChatGPT, HTTP, OAuth, coding and orchestrator surface
+ * (#1354). A config that still carries one fails closed: nothing reads these
+ * keys, and no setup command rewrites the file.
+ */
+const RETIRED_CONFIG_KEYS = ['server', 'auth', 'chatgpt', 'coding', 'authorizationRevision'] as const;
+const RETIRED_CAPABILITY_KEYS = ['workspaceCoder', 'taskDispatch', 'publicationMerge'] as const;
+const RETIRED_PROFILES = ['orchestrator', 'coding'] as const;
 
 /** Single MCP storage authority: `~/.repo-harness/`, overridable with REPO_HARNESS_HOME. */
 export function mcpStorageDir(): string {
@@ -56,105 +39,24 @@ export function mcpLocalConfigPath(): string {
   return join(mcpStorageDir(), 'mcp.local.json');
 }
 
-export function mcpTokenPath(): string {
-  return join(mcpStorageDir(), 'mcp.tokens.json');
-}
-
-export function mcpOAuthPath(): string {
-  return join(mcpStorageDir(), 'mcp.oauth.json');
-}
-
-export function mcpOAuthTokenStorePath(): string {
-  return join(mcpStorageDir(), 'mcp.oauth-tokens.json');
-}
-
-export function mcpOAuthDoctorClientPath(): string {
-  return join(mcpStorageDir(), 'mcp.oauth-doctor-client.json');
-}
-
-export interface McpDoctorClientRecord {
-  version: 1;
-  clientId: string;
-  clientSecret?: string;
-}
-
-/**
- * The live doctor's own dynamic client registration, persisted so repeated
- * `mcp doctor --live` probes reuse one registration instead of consuming the
- * server's fixed dynamic-client quota on every run. This record belongs to the
- * doctor process only; it never replaces the server's token store file.
- */
-export function readMcpDoctorClientRecord(): McpDoctorClientRecord | null {
-  const path = mcpOAuthDoctorClientPath();
-  if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as {
-      version?: unknown;
-      clientId?: unknown;
-      clientSecret?: unknown;
-    };
-    if (parsed.version !== 1 || typeof parsed.clientId !== 'string' || !parsed.clientId.trim()) return null;
-    return {
-      version: 1,
-      clientId: parsed.clientId,
-      ...(typeof parsed.clientSecret === 'string' && parsed.clientSecret ? { clientSecret: parsed.clientSecret } : {}),
-    };
-  } catch (_error) {
-    return null;
-  }
-}
-
-export function writeMcpDoctorClientRecord(clientId: string, clientSecret?: string): void {
-  const path = mcpOAuthDoctorClientPath();
-  mkdirSync(dirname(path), { recursive: true });
-  const record: McpDoctorClientRecord = {
-    version: 1,
-    clientId,
-    ...(clientSecret ? { clientSecret } : {}),
-  };
-  writeFileSync(path, `${JSON.stringify(record, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
-}
-
-export interface LegacyRepoScopeMcpPaths {
-  dir: string;
-  config: string;
-  tokens: string;
-  oauth: string;
-  oauthTokens: string;
-}
-
-/**
- * Retired repo-scope storage layout. Kept only so the migration gate and
- * `repo-harness mcp migrate-scope` can name and remove it; nothing reads
- * configuration or credentials from these paths.
- */
-export function legacyRepoScopeMcpPaths(repoRoot: string): LegacyRepoScopeMcpPaths {
-  const dir = join(repoRoot, '.repo-harness');
-  return {
-    dir,
-    config: join(dir, 'mcp.local.json'),
-    tokens: join(dir, 'mcp.tokens.json'),
-    oauth: join(dir, 'mcp.oauth.json'),
-    oauthTokens: join(dir, 'mcp.oauth-tokens.json'),
-  };
-}
-
-export function legacyRepoScopeMcpFiles(repoRoot: string): string[] {
-  const legacy = legacyRepoScopeMcpPaths(repoRoot);
-  return [legacy.config, legacy.tokens, legacy.oauth, legacy.oauthTokens].filter((path) => existsSync(path));
-}
-
-/**
- * Fail closed when a repo still carries the retired repo-scope MCP config.
- * There is deliberately no read-through fallback: the operator runs the
- * one-shot migration, which rotates credentials instead of relocating them.
- */
+/** Fail closed when a repo still carries the retired repo-scope MCP config. There is no read-through fallback. */
 export function assertNoLegacyRepoScopeMcpConfig(repoRoot: string): void {
-  const legacy = legacyRepoScopeMcpPaths(repoRoot);
-  if (!existsSync(legacy.config)) return;
+  const dir = join(repoRoot, '.repo-harness');
+  const config = join(dir, 'mcp.local.json');
+  if (!existsSync(config)) return;
   throw new Error(
-    `legacy repo-scope MCP config detected at ${legacy.config}; repo scope is retired and MCP now stores config and credentials only under ${mcpStorageDir()}. Run: repo-harness mcp migrate-scope --repo ${repoRoot}`,
+    `legacy repo-scope MCP config detected at ${config}; repo scope is retired and MCP reads config only from ${mcpLocalConfigPath()}. Remove the repo-scope mcp.*.json files under ${dir}.`,
   );
+}
+
+function retiredConfigKeys(raw: Record<string, unknown>): string[] {
+  const keys: string[] = RETIRED_CONFIG_KEYS.filter((key) => Object.hasOwn(raw, key));
+  const capabilities = raw.capabilities;
+  if (typeof capabilities === 'object' && capabilities !== null) {
+    keys.push(...RETIRED_CAPABILITY_KEYS.filter((key) => Object.hasOwn(capabilities, key)).map((key) => `capabilities.${key}`));
+  }
+  if ((RETIRED_PROFILES as readonly unknown[]).includes(raw.profile)) keys.push(`profile=${String(raw.profile)}`);
+  return keys;
 }
 
 export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
@@ -166,6 +68,10 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
   if (version !== 1 && version !== 2 && version !== 3) {
     throw new Error(`unsupported MCP local config version: ${String(version)}`);
   }
+  const retired = retiredConfigKeys(raw);
+  if (retired.length > 0) {
+    throw new Error(`MCP_CONFIG_RETIRED_FIELD: ${retired.join(', ')}; the ChatGPT, HTTP, OAuth, coding and orchestrator MCP surface was removed. Remove these keys from the file.`);
+  }
   const config = raw as unknown as McpLocalConfig;
   if (config.permissions?.allowedRoots !== undefined && !Array.isArray(config.permissions.allowedRoots)) {
     throw new Error('MCP local config permissions.allowedRoots must be an array');
@@ -173,22 +79,13 @@ export function parseMcpLocalConfig(value: unknown): McpLocalConfig {
   if (config.permissions?.discoveryRoots !== undefined && !Array.isArray(config.permissions.discoveryRoots)) {
     throw new Error('MCP local config permissions.discoveryRoots must be an array');
   }
-  if (config.auth?.allowedRedirectHosts !== undefined && !Array.isArray(config.auth.allowedRedirectHosts)) {
-    throw new Error('MCP local config auth.allowedRedirectHosts must be an array');
-  }
-  if (config.coding?.environmentAllowlist !== undefined && !Array.isArray(config.coding.environmentAllowlist)) {
-    throw new Error('MCP local config coding.environmentAllowlist must be an array');
-  }
-  if (config.authorizationRevision !== undefined && (!Number.isInteger(config.authorizationRevision) || config.authorizationRevision < 0)) {
-    throw new Error('MCP local config authorizationRevision must be a non-negative integer');
-  }
   return {
     ...config,
     version,
   };
 }
 
-export function readMcpLocalConfigFile(path: string): McpLocalConfig | null {
+function readMcpLocalConfigFile(path: string): McpLocalConfig | null {
   if (!existsSync(path)) return null;
   try {
     return parseMcpLocalConfig(JSON.parse(readFileSync(path, 'utf-8')));
@@ -199,58 +96,4 @@ export function readMcpLocalConfigFile(path: string): McpLocalConfig | null {
 
 export function loadMcpLocalConfig(): McpLocalConfig | null {
   return readMcpLocalConfigFile(mcpLocalConfigPath());
-}
-
-export function readMcpBearerToken(): string | null {
-  if (process.env.REPO_HARNESS_MCP_TOKEN?.trim()) return process.env.REPO_HARNESS_MCP_TOKEN.trim();
-  const path = mcpTokenPath();
-  if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { bearerToken?: unknown };
-    return typeof parsed.bearerToken === 'string' && parsed.bearerToken.trim().length > 0 ? parsed.bearerToken.trim() : null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-export function ensureMcpBearerToken(): { token: string; path: string; changed: boolean } {
-  const path = mcpTokenPath();
-  const existing = readMcpBearerToken();
-  if (existing) return { token: existing, path, changed: false };
-
-  const token = randomBytes(32).toString('base64url');
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify({ version: 1, bearerToken: token }, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
-  return { token, path, changed: true };
-}
-
-export function parseMcpHttpAuthMode(value: string | undefined): McpHttpAuthMode {
-  const mode = (value ?? 'oauth').trim().toLowerCase();
-  if (mode === 'oauth' || mode === 'bearer' || mode === 'url-token') return mode;
-  throw new Error(`invalid --auth "${value}" (expected: oauth, bearer, url-token)`);
-}
-
-export function readMcpOAuthPassphrase(): string | null {
-  if (process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE?.trim()) {
-    return process.env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE.trim();
-  }
-  const path = mcpOAuthPath();
-  if (!existsSync(path)) return null;
-  try {
-    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { passphrase?: unknown };
-    return typeof parsed.passphrase === 'string' && parsed.passphrase.trim().length > 0 ? parsed.passphrase.trim() : null;
-  } catch (_error) {
-    return null;
-  }
-}
-
-export function ensureMcpOAuthPassphrase(): { passphrase: string; path: string; changed: boolean } {
-  const path = mcpOAuthPath();
-  const existing = readMcpOAuthPassphrase();
-  if (existing) return { passphrase: existing, path, changed: false };
-
-  const passphrase = randomBytes(24).toString('base64url');
-  mkdirSync(dirname(path), { recursive: true });
-  writeFileSync(path, `${JSON.stringify({ version: 1, passphrase }, null, 2)}\n`, { encoding: 'utf-8', mode: 0o600 });
-  return { passphrase, path, changed: true };
 }

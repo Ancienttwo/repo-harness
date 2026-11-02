@@ -4,7 +4,7 @@ kind: "capability"
 name: "Execution Primitives"
 status: "active"
 layer: "effects"
-summary: "Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It also holds the shared repository registry, the account home root and the secret patterns that core and plugins read. It holds no workflow policy."
+summary: "Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It also holds the shared repository registry, the account home root, the secret patterns, the task message claim primitives and the immutable session artifact I/O that core and plugins read. It holds no workflow policy."
 responsibilities:
   - "Run a child process with a timeout, an output cap and secret redaction, and supervise a process group when the caller asks."
   - Terminate a process group with one sequence for every caller: "SIGTERM, a grace period, SIGKILL and an absence check, or `taskkill /T` on Windows."

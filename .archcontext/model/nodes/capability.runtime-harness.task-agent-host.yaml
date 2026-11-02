@@ -16,6 +16,8 @@ responsibilities:
   - "Treat pane and request state as runtime evidence; it never determines canonical GitHub issue status or task acceptance."
   - "Own the shared closed admitted-session selector, bounded readAdmittedTaskSessions discovery and observeAdmittedSessionSource revalidation; HTTP is an operator consumer, not the session contract owner."
   - "Bind native host session attribution to the exact immutable task binding; native attribution never grants admission. Keep immutable session reads usable by Node-safe consumers without loading owner preparation."
+  - "Provide the one reviewer runner for acceptance review and its OAR review host. Apply the review isolation policy that review passes as data, and refuse a session that the host cannot isolate."
+  - "Reserve bounded pre-prompt inbox companions without delivery. The Node-safe host consumer validates and reads context; only exact accepted OAR proof permits the owner to commit existing inbox delivery receipts."
 source:
   include:
     - src/effects/terminal/herdr.ts
@@ -31,7 +33,7 @@ source:
     - src/effects/sessions/task-sessions.ts
     - src/effects/terminal/native-task-session.ts
     - src/effects/terminal/task-session-reader.ts
-    - src/effects/terminal/task-session-io.ts
+    - src/effects/review-runner/**
   entrypoints:
     - id: "entrypoint.task-agent-host.session"
       path: "src/effects/terminal/task-session.ts"
@@ -44,18 +46,69 @@ source:
         - name: "sendTaskRequest"
           sinks:
             - id: "sink.task-agent-host.send"
-              path: "src/effects/terminal/task-session.ts"
+              path: "src/effects/terminal/task-session-io.ts"
               symbol: "nextSessionRound"
         - name: "collectTaskResult"
           sinks:
             - id: "sink.task-agent-host.collect"
               path: "src/effects/terminal/task-session.ts"
               symbol: "readTaskRequestResult"
+    - id: "entrypoint.task-agent-host.review-runner"
+      path: "src/effects/review-runner/task-review-runner.ts"
+      symbols:
+        - name: "send"
+          sinks:
+            - id: "sink.task-agent-host.reserve-inbox"
+              path: "src/effects/review-runner/task-pre-prompt-inbox.ts"
+              symbol: "preparePrePromptInbox"
+        - name: "settleCompanion"
+          sinks:
+            - id: "sink.task-agent-host.commit-inbox"
+              path: "src/effects/review-runner/task-pre-prompt-inbox.ts"
+              symbol: "commitPrePromptInbox"
+        - name: "recoverCompanions"
+          sinks:
+            - id: "sink.task-agent-host.recover-inbox"
+              path: "src/effects/review-runner/task-pre-prompt-inbox.ts"
+              symbol: "commitPrePromptInbox"
+    - id: "entrypoint.task-agent-host.inbox-host"
+      path: "src/effects/review-runner/task-oar-host.ts"
+      symbols:
+        - name: "runHostFileRequest"
+          sinks:
+            - id: "sink.task-agent-host.consume-inbox"
+              path: "src/effects/review-runner/task-pre-prompt-inbox-consumer.ts"
+              symbol: "consumePrePromptInbox"
+            - id: "sink.task-agent-host.accepted-inbox"
+              path: "src/effects/review-runner/task-pre-prompt-inbox-consumer.ts"
+              symbol: "recordPrePromptInboxAccepted"
+    - id: "entrypoint.task-agent-host.inbox-proof"
+      path: "src/effects/review-runner/task-pre-prompt-inbox-consumer.ts"
+      symbols:
+        - name: "recordPrePromptInboxAccepted"
+          sinks:
+            - id: "sink.task-agent-host.persist-inbox-proof"
+              path: "src/effects/terminal/task-session-io.ts"
+              symbol: "writeSessionArtifact"
+    - id: "entrypoint.task-agent-host.inbox-commit"
+      path: "src/effects/review-runner/task-pre-prompt-inbox.ts"
+      symbols:
+        - name: "commitPrePromptInbox"
+          sinks:
+            - id: "sink.task-agent-host.inbox-session"
+              path: "src/effects/terminal/task-session-reader.ts"
+              symbol: "readTaskAgent"
+            - id: "sink.task-agent-host.inbox-oar-proof"
+              path: "src/effects/terminal/task-runtime-observation.ts"
+              symbol: "readOarObservation"
+            - id: "sink.task-agent-host.deliver-inbox"
+              path: "src/effects/fleet/task-inbox.ts"
+              symbol: "deliverTaskInbox"
 extensions:
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun run test:files tests/herdr-transport.test.ts tests/herdr-task-lifecycle.test.ts tests/herdr-runtime-pin.test.ts tests/install-agent-fleet.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/herdr-transport.test.ts tests/herdr-task-lifecycle.test.ts tests/herdr-runtime-pin.test.ts tests/install-agent-fleet.test.ts tests/effects/native-task-session.test.ts tests/effects/oar-host-node-import.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:type"

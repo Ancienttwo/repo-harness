@@ -1,0 +1,70 @@
+schemaVersion: archcontext.flow/v1
+id: flow.mcp-sidecar.stdio-session
+capabilityId: capability.runtime-harness.mcp-sidecar
+name: Serve a stdio MCP session
+applicability: required
+participants:
+  - id: cli
+    nodeId: component.mcp-sidecar.host-setup
+  - id: transport
+    nodeId: component.mcp-sidecar.transport-auth
+  - id: dispatch
+    nodeId: component.mcp-sidecar.primary
+  - id: policy
+    nodeId: component.mcp-sidecar.repo-policy-registry
+steps:
+  - id: start-transport
+    from: cli
+    to: transport
+    label: mcp serve starts the stdio transport
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.cli
+      sourceSymbol: buildMcpCommand
+      sinkId: sink.mcp-sidecar.stdio-start
+  - id: create-server
+    from: transport
+    to: dispatch
+    label: Create one MCP server for the startup profile
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.stdio-transport
+      sourceSymbol: startMcpStdio
+      sinkId: sink.mcp-sidecar.session-server
+  - id: load-config
+    from: dispatch
+    to: policy
+    label: Load the user-level config and refuse a retired key
+    evidence:
+      entrypointId: entrypoint.mcp-sidecar.tool-context
+      sourceSymbol: createMcpToolContext
+      sinkId: sink.mcp-sidecar.startup-config
+outcomes:
+  - id: success
+    kind: success
+    label: Tool call runs under the profile path policy
+    steps:
+      - id: resolve-path
+        from: dispatch
+        to: policy
+        label: Resolve each tool path under the profile policy before any read or write
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.tool-dispatch
+          sourceSymbol: callMcpTool
+          sinkId: sink.mcp-sidecar.path-policy
+    terminal:
+      participant: dispatch
+      label: Return the redacted tool result
+  - id: error
+    kind: error
+    label: Repository keeps a legacy repo-scope MCP config
+    steps:
+      - id: refuse-legacy-config
+        from: dispatch
+        to: policy
+        label: Refuse the legacy repo-scope config before the server starts
+        evidence:
+          entrypointId: entrypoint.mcp-sidecar.tool-context
+          sourceSymbol: createMcpToolContext
+          sinkId: sink.mcp-sidecar.legacy-refusal
+    terminal:
+      participant: dispatch
+      label: Exit with the legacy config error and serve no tool

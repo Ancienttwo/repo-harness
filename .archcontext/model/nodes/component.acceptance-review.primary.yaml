@@ -12,8 +12,7 @@ responsibilities:
   - "Record the AcceptanceReceipt only after the worktrees are unchanged and no cancel request exists."
   - "Record acceptance only under the current review admission and the reobserved issue goal. Fail the round without a receipt when either changed during evidence observation."
   - "Own the shared neutral admission service and trusted delegated approval binding; preserve the OS-account authority root and every exact approval and goal fence."
-  - "Reserve bounded pre-prompt inbox context in the owner without delivery; consume it read-only in the host, record exact input-scoped accepted OAR proof, then commit delivery in the owner. Missing or unknown acceptance stays pending; recovery repeats the ledger commit without resending the prompt."
-  - "Expose the docs host lexical writable-path predicate from the same file and directory deny patterns used in its Seatbelt profile; callers still apply generated-target and hand-edit authorities."
+  - "Drive the reviewer session only through the runner port. Ask the runner to settle the pre-prompt companion of each request during and after the round; recovery settles earlier rounds and never resends a prompt."
 source:
   include:
     - src/effects/review/**
@@ -21,3 +20,5 @@ source:
     - src/effects/admission/admission-source.ts
     - src/effects/admission/issue-goal.ts
     - src/effects/admission/control-admission.ts
+  exclude:
+    - src/effects/review/docs-host-isolation.ts

@@ -4,20 +4,18 @@ kind: "capability"
 name: "Task Fleet"
 status: "active"
 layer: "core"
-summary: "Projects registry-scoped provider issue and admitted session fleet boards and owns admitted task message storage."
+summary: "Projects registry-scoped provider issue and admitted session fleet boards, owns admitted task message storage and records admitted manual provider feedback."
 responsibilities:
   - "Join registered repositories to canonical provider issue observations and nullable exact admitted sessions; local task labels never establish provider identity."
   - "Observe explicit provider PR readiness only after local repository binding and preserve independent issue state, runtime evidence and per-card failures."
   - "Store immutable admitted messages and separate receipts fenced by admission digest and exact claim reference and revision; preserve explicit historical reads."
   - "Project columns and preparation display without persisting readiness, acquiring tasks, implicitly waking runtimes or changing provider claims."
+  - "Record manual feedback against the exact admitted claim and provider PR evidence; the Publication feedback store keeps the feedback facts and separate delivery receipts."
 source:
   include:
     - "src/core/fleet/**"
     - "src/effects/fleet/**"
     - "src/cli/commands/fleet.ts"
-    - "src/core/messages/mechanics.ts"
-    - "src/core/messages/task-message-claim.ts"
-    - "src/core/messages/task-message-error.ts"
   entrypoints:
     - id: "entrypoint.task-fleet.command"
       path: "src/cli/commands/fleet.ts"
@@ -30,8 +28,6 @@ source:
             - id: "sink.task-fleet.deliver-message"
               path: "src/effects/fleet/task-inbox.ts"
               symbol: "deliverTaskInbox"
-  exclude:
-    - "src/effects/fleet/provider-feedback.ts"
 extensions:
   contractFiles:
     agents: "AGENTS.md"

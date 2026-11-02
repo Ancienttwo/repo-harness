@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.evals-checks.ci-report-core
+kind: component
+name: CI Report Core
+status: active
+parent: capability.verification.evals-checks
+layer: core
+summary: Holds the JUnit report parser, the test capability projection schema and the CI repair issue keys that the CI scripts and the operator read.
+responsibilities:
+  - Parse a JUnit report into one test file result and decode the test capability projection and tests snapshot with exact fields.
+  - Own the CI repair and daily-missing issue key prefixes and the issue body marker.
+source:
+  include:
+    - src/core/operator/tests.ts

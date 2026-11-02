@@ -28,6 +28,7 @@ import { formatDoctor, runDoctor } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
+import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
@@ -36,7 +37,6 @@ import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
 import { buildDocsCommand } from './commands/docs';
 import { buildMcpCommand } from './commands/mcp';
-import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
@@ -127,7 +127,6 @@ export const SUBCOMMANDS = [
   'capability-context',
   'docs',
   'mcp',
-  'chatgpt',
   'state',
   'publication',
   'fleet',
@@ -852,7 +851,7 @@ export function buildProgram(): Command {
     });
 
   program.addCommand(buildInitHookCommand());
-  program.addCommand(buildReviewCommand());
+  program.addCommand(buildReviewCommand(taskReviewRunner));
   program.addCommand(buildModuleCommand());
   program.addCommand(buildSetupCommand());
   program.addCommand(buildUpgradeCommand());
@@ -890,7 +889,6 @@ export function buildProgram(): Command {
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
   program.addCommand(buildMcpCommand());
-  program.addCommand(buildChatgptCommand());
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());

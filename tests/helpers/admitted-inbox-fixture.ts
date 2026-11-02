@@ -2,7 +2,8 @@ import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll } from './repo-fixture';
-import { taskSessionDirectory, type TaskClaimReference } from '../../src/effects/terminal/task-session';
+import { taskSessionDirectory } from '../../src/effects/terminal/task-session';
+import type { TaskClaimReference } from '../../src/core/review/runner-port';
 import { startOfflineTaskAgent } from './engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 

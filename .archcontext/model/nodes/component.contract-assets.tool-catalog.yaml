@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.tool-catalog
+kind: component
+name: Tool Catalog
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: core
+summary: Decodes the packaged tool catalog asset into the typed catalog that reference config sync, skill surface profiles and the operator read.
+responsibilities:
+  - Decode assets/tool-catalog.v1.json with exact fields into the tool catalog and its kinds, categories and install profiles.
+source:
+  include:
+    - src/core/tools/catalog.ts

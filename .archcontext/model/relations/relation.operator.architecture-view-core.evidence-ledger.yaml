@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-view-core.evidence-ledger
+kind: depends-on
+source: component.operator.architecture-view-core
+target: capability.runtime-harness.evidence-ledger
+intent: "Plugin → core: canonicalize module review prompt digests"

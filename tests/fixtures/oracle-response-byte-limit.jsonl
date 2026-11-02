@@ -1,4 +1,0 @@
-{"sequence":1,"event":"capture_start","protocol":1,"kind":"oracle-page-response-streams","at":"2026-09-08T02:15:05.337Z","origin":"https://chatgpt.com","sessionId":"allocated-2","targetId":"fixture"}
-{"sequence":2,"event":"response_start","requestId":"fixture","method":"POST","origin":"https://chatgpt.com","pathname":"/backend-api/conversation","queryOmitted":false,"status":200,"mimeType":"text/event-stream"}
-{"sequence":3,"event":"initial_buffer","requestId":"fixture","encoding":"base64","data":""}
-{"event":"capture_end","sequence":5,"at":"2026-09-08T02:15:05.339Z","status":"incomplete","streams":1,"reasons":["byte_limit","stream_open"]}

@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.deployed-on.oar-review-host"
+kind: "deployed-on"
+source: "capability.runtime-harness.task-agent-host"
+target: "process.oar-review-host"
+intent: "The reviewer runner builds and runs the OAR review host bundle."

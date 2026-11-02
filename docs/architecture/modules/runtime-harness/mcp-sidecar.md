@@ -167,75 +167,68 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **单一存储权威。** MCP 配置与凭证只存在 `mcpStorageDir()` 下（`src/cli/mcp/auth.ts:66`）。PR #167 把 repo 级配置迁到用户级。迁移轮换凭证，不搬运凭证。原因写在 `src/cli/mcp/setup.ts:820-830` 的注释里：repo 级 bearer token 和 passphrase 曾在 Git 工作树内，可能留在备份或历史中。迁移删除 repo 级 OAuth token store。用户因此必须重新授权一次。
-2. **授权真相在注册表。** `read_write` 授权和 `authorizationRevision` 存在 `registered-repos.json`。写入先写临时文件，再 rename（`src/effects/repo-registry.ts:206-210`）。写入持有一把带 owner 记录的互斥锁，死锁持有者可以回收（`repo-registry.ts:28`、`:237`）。MCP 配置里的 `authorizationRevision` 只是副本。授权型 profile 的 HTTP 中间件在每个请求上比较两者，不相等就拒绝（`authorizationProfileBlocker`，`src/cli/mcp/server.ts`）。
-3. **每个 profile 默认关闭，各自闭合。** 授权型 profile 只在 `src/cli/mcp/policy.ts` 的授权 profile 表里列出：coding 和 orchestrator，各有自己的必需 OAuth scope。它们需要 v3 配置选中该 profile、至少一个 `read_write` 注册仓库、当前的 authorization revision 和 OAuth。`authorizationProfileBlocker`（`src/cli/mcp/server.ts`）是这组前提的唯一实现；context 构造、HTTP 中间件和清理定时器都调用它。Engineer 和 PM profile 已退役。旧配置中的这两个 profile 会在启动时被拒绝。只有 coding profile 建立 shell runtime。orchestrator 只暴露三个 Herdr 派活工具（`src/cli/mcp/herdr-tools.ts`），没有文件、workflow 或 shell 工具。
-4. **HTTP session 绑定启动时的 profile。** 新 session 初始化时重读配置。profile 与启动时不同，服务返回 503 `PROFILE_CHANGED`，并且不占用 session 名额（`transports/http.ts:484-499`，PR #210）。服务不做热升级，也不静默降级。
-5. **HTTP session 绑定一个已验证的 authorization ID。** 另一个 authorization 复用该 session 会失败（见 §4 的 2026-08-25 条目）。coding session 的权限来自已验证的 authorization ID。请求不能选择另一个授权身份。
-6. **worktree 优先。** `open_workspace` 默认新建独立 worktree，`checkout` 模式必须显式指定（`src/cli/mcp/coding-tools.ts:242-247`）。远端代理的失败只影响一个可丢弃的分支。
-7. **仓库授权选择工作区，不提供 shell 沙箱。** 授权页文案写明：shell 命令能访问本地 OS 用户能访问的一切（`transports/http.ts:222`）。文档和 UI 不得声称 allowed roots 限制了 shell。
-8. **MCP 只投影状态，不解释状态，也不写状态。** `summarize_repo_harness_state`（`src/cli/mcp/state-tools.ts:9`）与 hook 使用同一个只读解析器 `resolveEffectiveStateReadOnly`，工具声明 `readOnlyHint: true`。它报告最后发布的 `state_version`；只有 `repo-harness state resolve` 分配版本。`current` 预览字段标注为非权威。
-9. **CodeGraph 是可选适配器。** 文件系统与注册表是内容和授权的真相。索引刷新失败只返回 `dead_letter` 信息（`coding-tools.ts:174`），不回滚已成功的变更。coding runtime 构造适配器时传 `allowRepoLocalBin: false`（`server.ts:138-141`）。被索引的仓库因此不能提供 codegraph 可执行文件。
+1. **单一存储权威。** MCP 配置只存在 `mcpStorageDir()/mcp.local.json`（`src/cli/mcp/auth.ts:34-40`）。repo 级配置已退役。仓库里还有 `.repo-harness/mcp.local.json` 时，serve 和 doctor 都拒绝启动（`assertNoLegacyRepoScopeMcpConfig`，`auth.ts:43`）。没有 read-through 回退。
+2. **退役键 fail closed。** 配置里还有 `server`、`auth`、`chatgpt`、`coding`、`authorizationRevision`，或 `capabilities` 下的 `workspaceCoder`、`taskDispatch`、`publicationMerge`，或 `profile` 为 `orchestrator`、`coding` 时，解析抛出 `MCP_CONFIG_RETIRED_FIELD` 并列出这些键（`auth.ts:29-31`、`:73`）。没有命令改写这个文件。用户手动删除这些键。
+3. **只有两个 profile。** `isMcpProfileName` 只接受 `planner` 和 `executor`（`src/cli/mcp/policy.ts:144`）。两个 profile 都没有 shell、OAuth 或 HTTP。transport 只有 stdio（`src/cli/mcp/transports/stdio.ts`）。
+4. **doctor 只报告，不删除。** `runMcpDoctor`（`src/cli/mcp/doctor.ts:58`）不做 live 探测。旧 ChatGPT、OAuth 与 Codex MCP 文件还在时，它报告 `retired_chatgpt_state`，给出每个路径和删除命令（`retiredChatgptState`，`doctor.ts:33`）。它不删除 HOME 或用户仓库里的任何文件。
+5. **授权真相在注册表。** `read_write` 授权存在 `registered-repos.json`。`repo-harness mcp access set` 写入它。registry 归 execution-primitives（见 §4 的 2026-11-01 条目）。
+6. **MCP 只投影状态，不解释状态，也不写状态。** `summarize_repo_harness_state`（`src/cli/mcp/state-tools.ts`）与 hook 使用同一个只读解析器 `resolveEffectiveStateReadOnly`，工具声明 `readOnlyHint: true`。它报告最后发布的 `state_version`；只有 `repo-harness state resolve` 分配版本。
+7. **PRD 写入有 revision 前置条件。** `write_prd` 与 `write_prd_from_idea` 经 `guardedWriteFile`（`src/cli/mcp/guarded-write.ts`）写入。替换已有文件需要 `expected_sha256`。
 
 ### 3.2 关键权衡
 
 | 决策 | 权衡 |
 | --- | --- |
-| 每个请求同步重读 `mcp.local.json` 和 `registered-repos.json`（`authorizationProfileBlocker`） | 授权撤销和 revision 变化立即生效。代价是每个请求都做同步文件 IO。QPS 上升时这里先成为热点。 |
-| session 名额满时回收最久未用的空闲 session（PR #175） | ChatGPT Connector 重连时不发 DELETE。只按 TTL 清理会占满 `max_sessions`，之后所有新 initialize 都失败。代价是空闲但有效的客户端可能被回收，必须重新初始化。 |
-| coding runtime 与 session 共用 `maxSessions`（`transports/http.ts:671-673`；默认 64，最大 256） | 一个配置项控制两种资源。代价是授权数与 transport 数的增长曲线不同，先到者可能占满后到者的名额。 |
-| mutation 后串行刷新 CodeGraph 索引（`coding-tools.ts:157-158`） | 变更与索引不竞争。代价是仓库变大后端到端延迟增加。 |
-| 每个 authorization 的进程上限：并发 4、单进程最长 30 分钟、输出环 4 MiB、完成后保留 15 分钟（`process-sessions.ts:6-9`） | 不可信一侧的并发面有硬上限。代价是这些上限不解决吞吐问题（见 §3.4）。 |
+| 删除 HTTP、OAuth、coding 与 orchestrator，只保留 stdio（#1354） | 没有远端 connector，也没有凭证存储。代价是 ChatGPT 与远端 Bot 不能再经本 sidecar 访问仓库。 |
+| 退役键 fail closed，没有迁移命令 | 没有长期兼容代码。代价是升级后旧配置的 serve 和 doctor 会失败，直到用户手动删除这些键。 |
+| `createMcpToolContext` 每个 server context 读一次配置（`src/cli/mcp/server.ts:56-59`） | stdio 进程只服务一个客户端，不需要每请求复核。代价是配置修改要重启 serve 才生效。 |
 
-### 3.3 组件拆分（2026-10-11）
+### 3.3 组件拆分（2026-10-11，2026-11-02 更新）
 
-数据来源：`archctx refactor scan --json`（archctx 0.7.0）和一次相对 import 扫描。组件 footprint 写在各 component 节点的 `source.include` 里。
+数据来源：`archctx refactor scan --json`（archctx 0.7.0）和一次相对 import 扫描。组件 footprint 写在各 component 节点的 `source.include` 里。行数为 `wc -l`，2026-11-02。
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`fleet-tools.ts`、`herdr-tools.ts`、`instructions.ts`、`version.ts` | 7 个文件 | 按保留的 profile 建工具清单，把调用分派到各工具块 |
-| `component.mcp-sidecar.transport-auth` | `transports/**`、`oauth.ts`、`session-store.ts` | 4 / 1648 | stdio 与 HTTP transport、OAuth、session 准入与回收 |
-| `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts` | 9 / 1401（`wc -l`，2026-11-02） | 用户级配置与凭证、路径策略、脱敏、审计；通过共享 repository registry 设置仓库授权。`src/effects/repo-registry.ts`（859 行）与 `src/core/security/**`（32 行）在 #1343 移到 execution-primitives（见 §4） |
-| `component.mcp-sidecar.coding-profile` | `coding-tools.ts`、`coding-workspaces.ts`、`process-sessions.ts` | 3 / 2143 | 受管 worktree、文件编辑、受限 shell 进程 |
-| `component.mcp-sidecar.host-setup` | `src/cli/commands/mcp.ts`、`setup.ts`、`setup-ownership.ts`、`uninstall.ts`、`docs/repo-harness-chatgpt-mcp-setup.md` | 5 / 2452 | mcp CLI、ChatGPT 与 Codex 的 host 设置、doctor、受管卸载 |
+| `component.mcp-sidecar.primary`（Server and Tool Dispatch） | `server.ts`、`tools.ts`、`state-tools.ts`、`fleet-tools.ts`、`instructions.ts`、`version.ts` | 6 / 1396 | 读配置，按 profile 建工具清单，把调用分派到 workflow、state、publication readiness 与 reader 工具块 |
+| `component.mcp-sidecar.transport-auth`（Stdio Transport） | `transports/**` | 1 / 8 | stdio transport |
+| `component.mcp-sidecar.repo-policy-registry` | `auth.ts`、`types.ts`、`policy.ts`、`paths.ts`、`repo.ts`、`redaction.ts`、`guarded-write.ts`、`workspaces.ts`、`audit.ts` | 9 / 1109 | 用户级配置、路径策略、脱敏、审计 |
+| `component.mcp-sidecar.host-setup`（CLI and Doctor） | `src/cli/commands/mcp.ts`、`doctor.ts` | 2 / 205 | mcp CLI 与静态 doctor |
 
-依赖方向：host-setup 调用另外四个组件。transport-auth 调用 primary 和 repo-policy-registry。primary 调用 repo-policy-registry 和 coding-profile。coding-profile 调用 repo-policy-registry。组件之间没有反向边。
+依赖方向：host-setup 调用 transport-auth，读 primary 与 repo-policy-registry。transport-auth 调用 primary。primary 调用 repo-policy-registry。组件之间没有反向边。
 
-与归属提议 §5 的三处差异，原因都来自 import 扫描：
+与归属提议 §5 的差异，原因来自 import 扫描：
 
-- `auth.ts` 放进 repo-policy-registry。它是配置与凭证存储。`server.ts`、`tools.ts`、`setup.ts`、`uninstall.ts` 和两个 transport 都读它。放进 transport-auth 会形成 primary 与 transport-auth 的环。
-- `types.ts` 和 `audit.ts` 放进 repo-policy-registry。`types.ts` 只定义 `McpPolicy`、`McpPathDecision`、`McpAuditEntry` 等策略类型。`audit.ts` 只被工具处理器调用，transport 不调用它。
+- `auth.ts` 放进 repo-policy-registry。它是配置存储。`server.ts` 与 `doctor.ts` 都读它。
+- `types.ts` 和 `audit.ts` 放进 repo-policy-registry。`types.ts` 只定义 `McpPolicy`、`McpPathDecision`、`McpAuditEntry` 等策略类型。`audit.ts` 只被工具处理器调用。
 - `src/cli/commands/mcp.ts` 放进 host-setup。这个命令启动 transport。放进 primary 会形成 primary → transport-auth → primary 的环。
 
-以下文件留在 capability include 上，不进任何组件：`reader-tools.ts`（general-repo-access 的声明入口）、`general-repo-access.ts` 与 `general-repo-access/**`（与 general-repo-access 重复归属）、`codegraph-adapter.ts`（与 codegraph-readiness 重复归属）、`src/cli/chatgpt-browser/file-policy.ts`、`docs/reference-configs/chatgpt-coding-mcp.md`（与 contract-assets 重复归属）和一份 research 文档。
+以下文件留在 capability include 上，不进任何组件：`reader-tools.ts`（general-repo-access 的声明入口）、`general-repo-access.ts` 与 `general-repo-access/**`（与 general-repo-access 重复归属）、`codegraph-adapter.ts`（与 codegraph-readiness 重复归属）和一份 research 文档。
 
 组件到其他 capability 的关系不出现在 §1.4（渲染器缺口），这里列出：
 
-- primary → chatgpt-browser：`tools.ts` 在 `--enable-chatgpt-browser` 时暴露 5 个 browser 工具（`tools.ts:1128-1159`）。
 - primary → general-repo-access：`tools.ts` 分派 reader 与 writer 工具。
-- primary → codegraph-readiness、coding-profile → codegraph-readiness：构造并刷新 CodeGraph 适配器。
-- host-setup → hook-adapters：复用 installer 的配置归属回执和 runtime host 锁。
-- host-setup → chatgpt-browser：`mcp install-skill` 读取打包的 bridge 参考（`setup.ts:69-80`）。
+- primary → publication：`fleet-tools.ts` 的 `publication_readiness` 读 merge readiness。
+- host-setup → global-runtime-reconciliation：`doctor.ts` 用 `hostSkillRoot` 找旧 ChatGPT skill 链接。
+- repo-policy-registry → hook-adapters：`audit.ts` 经共享 segmented log 追加审计行。
+- capability → codegraph-readiness：`reader-tools.ts` 只导入适配器类型。
 
 ### 3.4 10x 规模下先垮的点
 
 按当前实现，压力顺序是：
 
-1. **mutation 后的串行 CodeGraph 全仓刷新。** 仓库变大或并发授权变多时，这一步先吃掉端到端延迟。MCP 路由不是瓶颈。
-2. **`general-repo-access.ts` 的进程内快照缓存。** 上限是 `SNAPSHOT_TTL_MS = 5min`、`MAX_SNAPSHOT_CACHE_ENTRIES = 16`、`MAX_ENTRY_METADATA_CACHE_ENTRIES = 200_000`（`general-repo-access.ts:184-186`）。多个大仓交替访问时，快照命中率接近零，每次都全量 walk。
-3. **session 与 coding runtime 共用一个上限**（见 §3.2）。
-4. **每请求同步复核**（见 §3.2）。
+1. **`general-repo-access.ts` 的进程内快照缓存。** 上限是 `SNAPSHOT_TTL_MS = 5min`、`MAX_SNAPSHOT_CACHE_ENTRIES = 16`（`general-repo-access.ts:191-192`）。多个大仓交替访问时，快照命中率接近零，每次都全量 walk。
+2. **每个 stdio 客户端一个进程。** 客户端数量增长时，进程数和每个进程的快照缓存同比增长。
 
 ### 3.5 已知张力
 
-- 配置的 `repo` 字段仍被写入（`setup.ts:735`、`:879`）。runtime 的 repoRoot 只来自 `--repo` 或 cwd（`server.ts:185`）。这个字段已实现但保留不用：doctor 和迁移输出显示它，没有解析路径消费它。
-- `McpLocalConfig.version` 仍接受 `1 | 2 | 3`（`auth.ts:7`）。授权型 profile 要求 `version === 3`。v1 和 v2 只对非授权型 profile 有效。
-- `capabilities.reader` 是标注为 deprecated 的键（`auth.ts:30-31`）。只有 `workspaceReader` 未定义时它才参与判断。
+- 本 PR 后包里没有写 `mcp.local.json` 的命令。reader 与 executor capability 只能由手写配置或 `serve` 的命令行参数打开。
+- `McpLocalConfig.version` 仍接受 `1 | 2 | 3`（`auth.ts:6`）。
+- `capabilities.reader` 是标注为 deprecated 的键（`auth.ts:12-13`）。只有 `workspaceReader` 未定义时它才参与判断。
 
 ### 3.6 开放问题
 
-- `coding-tools.ts:79` 的 `DEFAULT_CODEGRAPH_ADAPTER` 用默认参数构造，`allowRepoLocalBin` 默认为 true（`codegraph-adapter.ts:224`）。它只在 `ctx.codeGraphAdapter` 未设置时使用（`coding-tools.ts:157`）。是否有生产路径走到这个默认值？没有验证。如果有，§3.1 第 9 条在这条路径上不成立。
-- 已解决（#1343）：`src/core/security/secret-patterns.ts` 由 MCP 脱敏和 operator 的 architecture 读取共用（`src/effects/operator/architecture.ts:7`）。它现在归 `component.execution-primitives.secret-patterns`（core 层），不再归本 capability。
+- 已解决（#1354）：coding runtime 删除后，`DEFAULT_CODEGRAPH_ADAPTER` 的问题不再适用于本 capability。`codegraph-adapter.ts` 的 `allowRepoLocalBin` 默认值只影响 general-repo-access。
+- 已解决（#1343）：`src/core/security/secret-patterns.ts` 归 `component.execution-primitives.secret-patterns`（core 层），不再归本 capability。
 
 ## 4. 历史决策记录（append-only）
 
@@ -262,10 +255,16 @@ sequenceDiagram
 - 只指向这些文件的 12 条入向关系改到新组件，使用新 id，旧 id 删除。其中 4 条是 capability 级 import 关系：`relation.{acceptance-review,adoption,engineer-scheduling,engineering-overlay}.imports.mcp-sidecar`。两条混合关系拆分：MCP 部分留在本 capability，registry 部分指向 `component.execution-primitives.repository-registry`。
 - 新关系 `relation.task-fleet.bot-registry` 声明 `src/cli/commands/fleet.ts:7` → `src/effects/bot-registry.ts`。这个 import 以前由 task-fleet 的 registry 关系在 capability 级覆盖。
 
+### 2026-11-02 删除 ChatGPT、HTTP、OAuth、coding 与 orchestrator surface（#1354）
+
+- 删除 HTTP transport、OAuth、`mcp setup chatgpt|codex`、`mcp clients`、`mcp uninstall`、`mcp prepare-goal`、`mcp install-skill`、coding 与 orchestrator profile 及其工具、`write_task_goal`、`append_handoff_note` 与 `merge_pull_request`。`mcp serve` 只保留 stdio、planner 与 executor。
+- 删除 `capability.runtime-mcp.chatgpt-browser`、`component.chatgpt-browser.primary`、`external.chatgpt`、`component.mcp-sidecar.coding-profile`、`flow.chatgpt-browser.primary` 与它们的关系。`flow.mcp-sidecar.http-session` 换成 `flow.mcp-sidecar.stdio-session`：CLI → stdio transport → server → 配置读取 → 路径策略，错误路径是 repo 级旧配置被拒绝。
+- transport-auth 改名 Stdio Transport，host-setup 改名 CLI and Doctor。删除 host-setup → hook-adapters、execution-primitives，transport-auth → repo-policy-registry，primary → codegraph-readiness、task-agent-host。
+- 新增三条关系，声明仍然存在的 import：host-setup → global-runtime-reconciliation、repo-policy-registry → hook-adapters、capability → codegraph-readiness（第二个 ChangeSet）。
+- 旧配置的退役键 fail closed（`MCP_CONFIG_RETIRED_FIELD`）。doctor 用 `retired_chatgpt_state` 列出旧文件，不删除。Bot 记录删除 `mcp_client_id` 字段。
+
 ## Optimization Backlog
 
-- 在 arch-context#296 和 include 收窄之后：把 `src/cli/mcp/reader-tools.ts` 和 `src/cli/mcp/general-repo-access*` 移给 general-repo-access，把 `src/cli/mcp/codegraph-adapter.ts` 移给 codegraph-readiness，把 `src/cli/chatgpt-browser/file-policy.ts` 移给 chatgpt-browser，把 `docs/reference-configs/chatgpt-coding-mcp.md` 交给 contract-assets（归属提议 §2）。
-- 重构证据：`src/cli/chatgpt-browser/file-policy.ts` 只被 chatgpt-browser 的三个文件调用，但它 import 本 capability 的 `paths.ts` 和 `types.ts`。文件移走后，chatgpt-browser → mcp-sidecar 会变成一条反向边。路径包含检查可以抽成共享 helper。没有声明为 intended relation。
-- primary 组件可展开：`tools.ts` 1558 行。它可以按工具块（state、Fleet、coding、reader、browser）继续拆。
-- 集成步骤添加了到新 capability 的关系：primary → task-fleet、publication、task-agent-host、workflow-state（`reads`）与 execution-primitives；coding-profile → workflow-state、execution-primitives 与 task-agent-host；repo-policy-registry 与 host-setup → execution-primitives。没有声明 transport-auth → pm-dispatch：`src/cli/mcp/transports/http.ts:36` 只导入 `PmError` 类。
-- **repo registry 造成 capability 级的环。** task-fleet 与 pm-dispatch 导入 `src/effects/repo-registry.ts`。集成把 `relation.task-fleet.repo-registry` 与 `relation.pm-dispatch.repo-registry` 的目标改为 `component.mcp-sidecar.repo-policy-registry`。节点级因此没有环。capability 级仍然双向。候选：把 repo registry 移出 mcp-sidecar。已由 #1343 完成：registry 归 `component.execution-primitives.repository-registry`，task-fleet 的关系改为 `relation.task-fleet.repository-registry`。
+- 在 arch-context#296 和 include 收窄之后：把 `src/cli/mcp/reader-tools.ts` 和 `src/cli/mcp/general-repo-access*` 移给 general-repo-access，把 `src/cli/mcp/codegraph-adapter.ts` 移给 codegraph-readiness（归属提议 §2）。
+- `relation.mcp-sidecar.primary.task-fleet`（"Acquire fleet tasks and handle task steers"）在 #1354 之前已没有对应 import。`relation.mcp-sidecar.primary.execution-primitives` 的 import 是 `src/effects/repo-registry.ts`，但 intent 仍写 "Read the worktree topology for the PM server scope"。#1354 没有改这两条，因为目标节点由 #1352 在改。
+- **repo registry 造成 capability 级的环。** 已由 #1343 完成：registry 归 `component.execution-primitives.repository-registry`，task-fleet 的关系改为 `relation.task-fleet.repository-registry`。

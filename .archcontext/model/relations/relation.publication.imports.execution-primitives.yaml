@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.publication.imports.execution-primitives
+kind: depends-on
+source: capability.organization.publication
+target: capability.workflow-engine.execution-primitives
+intent: "Resolve the Git common directory for the feedback store, and validate the shared task message claim in feedback records"

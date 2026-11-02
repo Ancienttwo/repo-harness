@@ -88,78 +88,6 @@ async function withRegistryHome<T>(fn: (home: string) => Promise<T>): Promise<T>
 }
 
 describe('mcp tools', () => {
-  test('exposes ChatGPT browser tools only behind the explicit enable flag', async () => {
-    await withRepo(async (_repoRoot, ctx) => {
-      expect(buildMcpToolDefinitions(ctx.policy).some((tool) => tool.name === 'run_chatgpt_browser_consult')).toBe(false);
-      expect(buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).some((tool) => tool.name === 'run_chatgpt_browser_consult')).toBe(true);
-      expect(buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).some((tool) => tool.name === 'open_chatgpt_browser_session')).toBe(true);
-      const disabled = await jsonTool(ctx, 'run_chatgpt_browser_consult', { prompt: 'Say OK', dryRun: true });
-      expect(disabled.error.code).toBe('TOOL_DISABLED');
-
-      const consultTool = buildMcpToolDefinitions(ctx.policy, { enableChatgptBrowser: true }).find((tool) => tool.name === 'run_chatgpt_browser_consult');
-      const thinkingSchema = (consultTool?.inputSchema as { properties: Record<string, Record<string, unknown>> }).properties.thinking;
-      expect(thinkingSchema.type).toBe('string');
-      expect(thinkingSchema.enum).toBeUndefined();
-      expect(String(thinkingSchema.description)).toContain('validated by Oracle');
-    });
-  });
-
-  test('runs ChatGPT browser dry-run consults through MCP and reads the saved session', async () => {
-    await withRepo(async (repoRoot, ctx) => {
-      const browserCtx = { ...ctx, enableChatgptBrowser: true };
-      const created = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
-        prompt: 'Review this sprint.',
-        files: ['docs/prds/existing.prd.md'],
-        model: 'GPT-5.5 Pro',
-        thinking: 'pro',
-        dryRun: true,
-      });
-      expect(created.status).toBe('dry_run');
-      expect(created.sessionId).toMatch(/^chgpt_/);
-
-      const read = await jsonTool(browserCtx, 'read_chatgpt_browser_session', { sessionId: created.sessionId });
-      expect(read.meta.engine).toBe('chatgpt-browser');
-      expect(read.meta.model.thinking).toBe('pro');
-      expect(read.output).toContain('Dry run only');
-
-      const listed = await jsonTool(browserCtx, 'list_chatgpt_browser_sessions', { limit: 1 });
-      expect(listed.sessions[0].sessionId).toBe(created.sessionId);
-
-      const metaPath = join(repoRoot, '.ai/harness/chatgpt/sessions', created.sessionId, 'meta.json');
-      const meta = JSON.parse(readFileSync(metaPath, 'utf-8'));
-      meta.browser.conversationUrl = 'https://chatgpt.com/c/mcp-open-test';
-      writeFileSync(metaPath, JSON.stringify(meta, null, 2) + '\n');
-      const openedRaw = await callMcpTool(browserCtx, 'open_chatgpt_browser_session', { sessionId: created.sessionId });
-      const opened = JSON.parse(openedRaw.content[0].text);
-      expect(opened.url).toBe('https://chatgpt.com/c/mcp-open-test');
-      expect(openedRaw.structuredContent).toEqual(opened);
-
-      const absolute = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
-        prompt: 'Review this sprint.',
-        writeOutput: '/tmp/repo-harness-mcp-browser-output.md',
-        dryRun: true,
-      });
-      expect(absolute.error.code).toBe('TOOL_FAILED');
-      expect(absolute.error.message).toContain('absolute write output paths are not allowed');
-
-      const denied = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
-        prompt: 'Review this sprint.',
-        writeOutput: '.env',
-        dryRun: true,
-      });
-      expect(denied.error.code).toBe('TOOL_FAILED');
-      expect(denied.error.message).toContain('path is denied by ChatGPT browser policy');
-
-      const allowed = await jsonTool(browserCtx, 'run_chatgpt_browser_consult', {
-        prompt: 'Review this sprint.',
-        writeOutput: 'docs/prds/browser-review.md',
-        dryRun: true,
-      });
-      expect(allowed.status).toBe('dry_run');
-      expect(readFileSync(join(repoRoot, 'docs/prds/browser-review.md'), 'utf-8')).toContain('Dry run only');
-    });
-  });
-
   test('lists and reads allowed workflow files with redaction', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const listed = await jsonTool(ctx, 'list_workflow_files');
@@ -388,10 +316,6 @@ describe('mcp tools', () => {
 
       const listed = await jsonTool(ctx, 'list_prds');
       expect(listed.files.map((entry: { path: string }) => entry.path)).toContain('docs/prds/existing.prd.md');
-
-      const handoff = await jsonTool(ctx, 'append_handoff_note', { actor: 'test', body: 'handoff note' });
-      expect(handoff.path).toBe('.ai/harness/handoff/chatgpt-plan.md');
-      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/chatgpt-plan.md'), 'utf-8')).toContain('handoff note');
     });
   });
 
@@ -509,7 +433,6 @@ describe('mcp tools', () => {
       for (const tool of [
         'write_prd',
         'write_prd_from_idea',
-        'write_task_goal',
       ]) {
         const rejected = await jsonTool(ctx, tool, { overwrite: false });
         expect(rejected.error.code).toBe('RETIRED_PARAMETER');
@@ -522,7 +445,6 @@ describe('mcp tools', () => {
       const guarded = [
         'write_prd',
         'write_prd_from_idea',
-        'write_task_goal',
       ];
       const definitions = buildMcpToolDefinitions(ctx.policy);
       for (const name of guarded) {
@@ -532,12 +454,6 @@ describe('mcp tools', () => {
         expect(properties).toContain('expected_sha256');
         expect(properties).not.toContain('overwrite');
       }
-
-      // append_handoff_note is out of scope for this release and stays unguarded.
-      const handoff = definitions.find((tool) => tool.name === 'append_handoff_note');
-      const handoffProperties = Object.keys((handoff!.inputSchema as { properties: Record<string, unknown> }).properties);
-      expect(handoffProperties).not.toContain('expected_sha256');
-      expect(handoffProperties).not.toContain('overwrite');
     });
   });
 
@@ -566,53 +482,6 @@ describe('mcp tools', () => {
     });
   });
 
-  test('validates fixed task goal path and required sections', async () => {
-    await withRepo(async (repoRoot, ctx) => {
-      const invalid = await jsonTool(ctx, 'write_task_goal', { body: '# Task Goal\nshort' });
-      expect(invalid.error.code).toBe('INVALID_GOAL');
-
-      const missingExecutionBoundary = [
-        '# Task Goal',
-        '## Source of truth',
-        'docs/prds/example.prd.md',
-        '## Role',
-        'Codex executor.',
-        '## Scope',
-        'Only workflow artifacts.',
-        '## Required workflow',
-        'Read the issue and PRD.',
-        '## Required checks',
-        'bun test tests/cli/mcp.test.ts',
-        '## Done when',
-        'Checks pass and handoff is updated.',
-      ].join('\n\n');
-      const missingBoundary = await jsonTool(ctx, 'write_task_goal', { body: missingExecutionBoundary });
-      expect(missingBoundary.error.code).toBe('INVALID_GOAL');
-      expect(missingBoundary.error.details.missing).toContain('## Execution boundary');
-
-      const validBody = [
-        '# Task Goal',
-        '## Source of truth',
-        'docs/prds/example.prd.md',
-        '## Role',
-        'Codex executor.',
-        '## Scope',
-        'Only workflow artifacts.',
-        '## Execution boundary',
-        'Implement exactly the listed scope; do not add unrequested extras.',
-        '## Required workflow',
-        'Read the issue and PRD.',
-        '## Required checks',
-        'bun test tests/cli/mcp.test.ts',
-        '## Done when',
-        'Checks pass and handoff is updated.',
-      ].join('\n\n');
-      const written = await jsonTool(ctx, 'write_task_goal', { body: validBody });
-      expect(written.status).toBe('written');
-      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), 'utf-8')).toContain('# Task Goal');
-    });
-  });
-
   test('writes an idea PRD under docs/prds and makes retired plan and sprint tools unknown', async () => {
     await withRepo(async (repoRoot, ctx) => {
       const prd = await jsonTool(ctx, 'write_prd_from_idea', {
@@ -638,37 +507,6 @@ describe('mcp tools', () => {
     });
   });
 
-  test('exposes a written task goal through the handoff read path', async () => {
-    await withRepo(async (repoRoot, ctx) => {
-      const validBody = [
-        '# Task Goal',
-        '## Source of truth',
-        'docs/prds/example.prd.md',
-        '## Role',
-        'Codex executor.',
-        '## Scope',
-        'Only workflow artifacts.',
-        '## Execution boundary',
-        'Implement exactly the listed scope; do not add unrequested extras.',
-        '## Required workflow',
-        'Read the issue and PRD.',
-        '## Required checks',
-        'bun test tests/cli/mcp.test.ts',
-        '## Done when',
-        'Checks pass and handoff is updated.',
-      ].join('\n\n');
-
-      await jsonTool(ctx, 'write_task_goal', { body: validBody });
-
-      expect(buildMcpToolDefinitions(ctx.policy).map((tool) => tool.name)).not.toContain('latest_handoff');
-      expect((await jsonTool(ctx, 'latest_handoff')).error.code).toBe('UNKNOWN_TOOL');
-
-      const readGoal = await jsonTool(ctx, 'read_workflow_file', { path: '.ai/harness/handoff/task-goal.md' });
-      expect(readGoal.content).toContain('## Required checks');
-      expect(readFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), 'utf-8')).toContain('source: "repo-harness-mcp"');
-    });
-  });
-
   test('latest_checks is not starved by large earlier workflow roots', async () => {
     await withRepo(async (repoRoot, ctx) => {
       for (let index = 0; index < 720; index += 1) {
@@ -678,15 +516,6 @@ describe('mcp tools', () => {
 
       const result = await jsonTool(ctx, 'latest_checks');
       expect(result.files.some((entry: { path: string }) => entry.path === '.ai/harness/checks/change-assessment.latest.json')).toBe(true);
-    });
-  });
-
-  test('retired Codex goal tools return upgrade errors without aliases', async () => {
-    await withRepo(async (repoRoot, ctx) => {
-      for (const name of ['write_codex_goal', 'prepare_codex_goal_from_sprint']) {
-        const result = await jsonTool(ctx, name, {});
-        expect(result.error.code).toBe('TOOL_RETIRED');
-      }
     });
   });
 });

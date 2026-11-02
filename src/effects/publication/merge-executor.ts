@@ -264,6 +264,12 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
 
 /** One compare page; a batch with more commits fails closed instead of a partial proof. */
 const BATCH_COMPARE_LIMIT = 100;
+/**
+ * The compare response also carries file patches, which grow with the diff and
+ * overflow the spawn buffer. gh applies this filter, so stdout holds only the
+ * commit list and its parents.
+ */
+const BATCH_COMPARE_JQ = '{total_commits, commits: [.commits[] | {sha, parents: [.parents[] | {sha}]}]}';
 
 function assertBatchRef(target: MergeTarget): void {
   if (!BATCH_REF.test(target.head_ref)) {
@@ -274,7 +280,8 @@ function assertBatchRef(target: MergeTarget): void {
 /** Every commit in expected base..expected head, keyed by SHA, with its parent SHAs. */
 function readBatchCommits(input: PullRequestReadinessInput): ReadonlyMap<string, readonly string[]> {
   const compare = field(read(input, ['api',
-    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMPARE_LIMIT}`]), 'provider compare');
+    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMPARE_LIMIT}`,
+    '--jq', BATCH_COMPARE_JQ]), 'provider compare');
   const commits = compare.commits;
   if (!Array.isArray(commits) || !Number.isSafeInteger(compare.total_commits) || commits.length !== compare.total_commits) {
     throw new Refusal('provider_data_incomplete',

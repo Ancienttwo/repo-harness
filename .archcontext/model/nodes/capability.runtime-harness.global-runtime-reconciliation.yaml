@@ -11,7 +11,7 @@ responsibilities:
   - Refresh mutable Waza and Mermaid skills only when explicitly requested, plus the exact global CodeGraph CLI and MCP registration.
   - Fail closed before later host mutations when the mandatory runtime closure cannot be reconciled.
   - Own the CLI composition root, the doctor and setup check diagnostics and the retired-surface upgrade.
-  - Own the architecture projection command and the shared archctx provider and model reader.
+  - Own the architecture projection command and the shared archctx provider.
   - Own the shared Claude, Codex and Pi skill root rules and the doctor checks for Pi version, resolver capability, package registration and skill projection.
   - Own the release gates, the package manifest and the runtime evidence receipt.
 source:
@@ -46,6 +46,8 @@ source:
     - src/effects/architecture/archcontext-owners.ts
     - src/effects/architecture/archcontext-resolve-cache.ts
     - src/effects/architecture/capability-resolver.ts
+    - src/effects/architecture/model-reader.ts
+    - src/effects/configuration/agents-configuration.ts
   entrypoints:
     - id: entrypoint.global-runtime-reconciliation.update
       path: "src/cli/commands/global-runtime.ts"

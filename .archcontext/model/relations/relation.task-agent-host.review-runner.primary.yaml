@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.review-runner.primary"
+kind: "calls"
+source: "component.task-agent-host.review-runner"
+target: "component.task-agent-host.primary"
+intent: "Start, send to, collect from and close the reviewer task session, and read its binding and OAR observations"

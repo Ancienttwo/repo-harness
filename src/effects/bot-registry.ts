@@ -1,6 +1,6 @@
 // Account-level Bot registry (PRD G30): one `<home>/bots/<bot-id>.json` per
-// Bot. A record names the Bot and its MCP OAuth client, Slack bot and Herdr
-// agent so that audit rows, task messages and Herdr panes can be attributed.
+// Bot. A record names the Bot and its Slack bot and Herdr agent so that task
+// messages and Herdr panes can be attributed.
 // A record grants nothing: MCP profiles, repository access modes and
 // admission stay the only authority.
 
@@ -18,11 +18,10 @@ export const BOT_REGISTRY_MAX_RECORDS = 256;
 
 const BOT_ID = /^[a-z][a-z0-9-]{0,62}$/;
 const BOT_HOST = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/;
-const MCP_CLIENT_ID = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/;
 const SLACK_BOT_ID = /^[A-Z][A-Z0-9]{2,31}$/;
 const HERDR_AGENT = /^[a-z][a-z0-9_-]{0,31}$/;
 const TIMESTAMP = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/;
-const RECORD_FIELDS = ['bot_id', 'herdr_agent', 'host', 'kind', 'mcp_client_id', 'name', 'protocol', 'registered_at', 'slack_bot_id'];
+const RECORD_FIELDS = ['bot_id', 'herdr_agent', 'host', 'kind', 'name', 'protocol', 'registered_at', 'slack_bot_id'];
 
 export interface BotRecordV1 {
   readonly protocol: typeof BOT_RECORD_PROTOCOL;
@@ -30,7 +29,6 @@ export interface BotRecordV1 {
   readonly bot_id: string;
   readonly name: string;
   readonly host: string;
-  readonly mcp_client_id: string | null;
   readonly slack_bot_id: string | null;
   readonly herdr_agent: string | null;
   readonly registered_at: string;
@@ -55,9 +53,17 @@ function nullable(value: unknown, grammar: RegExp, field: string): string | null
   return value;
 }
 
-export function validateBotRecord(value: unknown): BotRecordV1 {
+/**
+ * 0.25.0 wrote `mcp_client_id` into every record. #1354 retired the field
+ * with the ChatGPT MCP surface; the read fails closed and names the repair.
+ */
+const RETIRED_RECORD_FIELD = 'mcp_client_id';
+const BOT_RECORD_RETIRED_FIELD = 'BOT_RECORD_RETIRED_FIELD';
+
+export function validateBotRecord(value: unknown, file = 'the Bot record'): BotRecordV1 {
   if (!value || typeof value !== 'object' || Array.isArray(value)) invalid('bot record must be an object');
   const record = value as Record<string, unknown>;
+  if (Object.hasOwn(record, RETIRED_RECORD_FIELD)) invalid(`${BOT_RECORD_RETIRED_FIELD}: ${RETIRED_RECORD_FIELD}; remove the key from ${file}`);
   if (Object.keys(record).sort().join() !== RECORD_FIELDS.join()) invalid('bot record fields are invalid');
   if (record.protocol !== BOT_RECORD_PROTOCOL || record.kind !== BOT_RECORD_KIND) invalid('bot record protocol or kind is invalid');
   if (typeof record.bot_id !== 'string' || !BOT_ID.test(record.bot_id)) invalid('bot_id must match [a-z][a-z0-9-]{0,62}');
@@ -75,7 +81,6 @@ export function validateBotRecord(value: unknown): BotRecordV1 {
     bot_id: record.bot_id,
     name,
     host: record.host,
-    mcp_client_id: nullable(record.mcp_client_id, MCP_CLIENT_ID, 'mcp_client_id'),
     slack_bot_id: nullable(record.slack_bot_id, SLACK_BOT_ID, 'slack_bot_id'),
     herdr_agent: nullable(record.herdr_agent, HERDR_AGENT, 'herdr_agent'),
     registered_at: record.registered_at,
@@ -88,7 +93,7 @@ export function botRegistryPath(env: NodeJS.ProcessEnv = process.env): string {
 
 /** Each external identity names at most one Bot; otherwise attribution would be ambiguous. */
 function assertUniqueIdentities(bots: readonly BotRecordV1[], code: 'bot_conflict' | 'bot_registry_invalid'): void {
-  for (const field of ['mcp_client_id', 'slack_bot_id', 'herdr_agent'] as const) {
+  for (const field of ['slack_bot_id', 'herdr_agent'] as const) {
     const owners = new Map<string, string>();
     for (const bot of bots) {
       const value = bot[field];
@@ -123,10 +128,13 @@ export function readBotRegistry(env: NodeJS.ProcessEnv = process.env): readonly 
     try {
       const stat = lstatSync(path);
       if (!name.endsWith('.json') || !stat.isFile() || stat.size > BOT_RECORD_MAX_BYTES) throw new Error('entry');
-      const bot = validateBotRecord(JSON.parse(readFileSync(path, 'utf8')));
+      const bot = validateBotRecord(JSON.parse(readFileSync(path, 'utf8')), path);
       if (`${bot.bot_id}.json` !== name) throw new Error('name');
       return bot;
-    } catch {
+    } catch (error) {
+      if (error instanceof BotRegistryError && error.message.startsWith(`${BOT_RECORD_RETIRED_FIELD}:`)) {
+        throw new BotRegistryError('bot_registry_invalid', error.message);
+      }
       throw new BotRegistryError('bot_registry_invalid', `bot registry entry ${JSON.stringify(name)} is invalid`);
     }
   });
@@ -138,7 +146,6 @@ export interface RegisterBotInput {
   readonly bot_id: string;
   readonly name: string;
   readonly host: string;
-  readonly mcp_client_id?: string | null;
   readonly slack_bot_id?: string | null;
   readonly herdr_agent?: string | null;
   /** Replace an existing record with the same bot_id. Without it, an existing record is an error. */
@@ -153,7 +160,6 @@ export function registerBot(input: RegisterBotInput, env: NodeJS.ProcessEnv = pr
     bot_id: input.bot_id,
     name: input.name,
     host: input.host,
-    mcp_client_id: input.mcp_client_id ?? null,
     slack_bot_id: input.slack_bot_id ?? null,
     herdr_agent: input.herdr_agent ?? null,
     registered_at: (input.now ?? new Date()).toISOString(),
@@ -177,9 +183,4 @@ export function registerBot(input: RegisterBotInput, env: NodeJS.ProcessEnv = pr
     renameSync(temporary, path);
     return bot;
   }, { waitTimeoutMs: 10_000, reclaimStaleEmptyDirectory: true });
-}
-
-/** The registered Bot that owns this MCP OAuth client id, or null. */
-export function botIdForMcpClient(bots: readonly BotRecordV1[], clientId: string): string | null {
-  return bots.find(bot => bot.mcp_client_id === clientId)?.bot_id ?? null;
 }

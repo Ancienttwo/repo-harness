@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.task-agent-host.events-cli
+kind: component
+name: Bot Events Command (cli)
+status: active
+parent: capability.runtime-harness.task-agent-host
+layer: cli
+summary: The events command that deploys the GitHub events Worker with the shared bot event envelope and points the GitHub App at it.
+responsibilities:
+  - Hold the cli-layer events command so layer direction is checked per directory. Responsibilities stay with the parent node.
+source:
+  include:
+    - src/cli/commands/events.ts

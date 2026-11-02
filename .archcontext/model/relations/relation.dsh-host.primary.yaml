@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.dsh-host.primary
+kind: calls
+source: capability.runtime-harness.dsh-host
+target: component.dsh-host.primary
+intent: "Guard a DSH tool call"
