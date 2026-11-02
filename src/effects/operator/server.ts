@@ -51,6 +51,8 @@ import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
+import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE, SEATS_CONFIGURATION_FAILURES, readSeatsSettings, seatsSettingsWriteRoute } from './seats-settings-route';
+import { SeatsConfigurationError } from './seats-configuration';
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
@@ -160,6 +162,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
+  Object.freeze({ id: 'settings_seats', method: 'GET', pattern: OPERATOR_SETTINGS_SEATS_PATH, write: false }),
+  // It changes only the host config's `seats` section; running panes keep their launch arguments.
+  Object.freeze({ id: 'settings_seats_write', method: 'POST', pattern: OPERATOR_SETTINGS_SEATS_ROUTE.source, write: true }),
   // The second write route: it verifies citations, then creates the doc session's worktree in the managed root.
   Object.freeze({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
@@ -1260,6 +1265,7 @@ export async function startOperatorServer(
   const injectedWriteRoutes = options.write_routes ?? [];
   const writeRoutes = [
     agentsSettingsWriteRoute(readAgentRuntimes, options.env),
+    seatsSettingsWriteRoute(options.env),
     docSessionCreateRoute({
       env: options.env ?? process.env,
       platform: options.docs_session_platform,
@@ -1535,6 +1541,21 @@ export async function startOperatorServer(
         if (!(error instanceof AgentsConfigurationError)) throw error;
         sendRefusal(request, response, AGENTS_CONFIGURATION_FAILURES[error.code].status,
           errorBody(error.code, error.message, AGENTS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
+      }
+      return;
+    }
+
+    if (pathname === OPERATOR_SETTINGS_SEATS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Seat settings accept no query selectors.'), headOnly);
+        return;
+      }
+      try {
+        sendJson(response, 200, readSeatsSettings(options.env), headOnly);
+      } catch (error) {
+        if (!(error instanceof SeatsConfigurationError)) throw error;
+        sendRefusal(request, response, SEATS_CONFIGURATION_FAILURES[error.code].status,
+          errorBody(error.code, error.message, SEATS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
       }
       return;
     }

@@ -27,7 +27,7 @@ import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
-import { agentsSettingsStore } from './settings';
+import { agentsSettingsStore, seatsSettingsStore } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
@@ -106,6 +106,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     : fixture === 'empty' ? slackReviewsUnavailable('slack_pending') : degradedBotReviews(now)) };
   // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
   const agentsSettings = agentsSettingsStore(now, fixture);
+  const seatsSettings = seatsSettingsStore(fixture);
   // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
   const tests = (repositoryId: string): TestsRead => fixture === 'busy'
     ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }
@@ -133,6 +134,8 @@ export function fixtureProps(name: string): OperatorAppProps {
     readBotReviews: () => Promise.resolve(botReviews),
     readAgentsSettings: agentsSettings.read,
     writeAgentsSettings: agentsSettings.write,
+    readSeatsSettings: seatsSettings.read,
+    writeSeatsSettings: seatsSettings.write,
     readTests: repositoryId => Promise.resolve(tests(repositoryId)),
     // busy: a tree with a dirty file, a diagram and a refused symlink; empty: no collection yet; degraded: the reader is down.
     readDocsTree: repositoryId => docsAnswer(answer(fixture === 'busy' ? docsTreeAnswer(repositoryId, now) : fixture === 'empty' ? docsPendingAnswer

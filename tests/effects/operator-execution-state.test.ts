@@ -57,14 +57,14 @@ function dropAdmission(dir: string) {
   writeFileSync(join(dir, 'native-session.json'), JSON.stringify({ ...native, session_binding_sha256: digest(binding) }));
 }
 
-test('a fully consistent live session gives the agent, its pane and the follow-up commands', async () => {
+test('a fully consistent live session gives the agent and the follow-up commands', async () => {
   const f = await fixture();
   const snapshot = collectTaskExecutionStates(f.root);
   expect(snapshot).toMatchObject({ protocol: 1, kind: 'operator_task_execution' });
   expect(snapshot.executions).toEqual([{
     state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main',
-    agent: 'codex', runtime: 'herdr', native_session_id: '0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f',
-    herdr_pane: { session: 'fixture', workspace_id: 'fixture-primary-workspace', pane_id: 'fixture-deep-reasoner', agent_name: f.bound.binding.runtime === 'herdr' ? f.bound.binding.agent_name : '' },
+    agent: 'codex', runtime: 'herdr-core', native_session_id: '0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f',
+    herdr_pane: null,
   }]);
   const wire = JSON.stringify(snapshot);
   expect(wire).not.toContain(f.root);
@@ -194,8 +194,9 @@ test('the route shows the agent of a verified session with its follow-up, and no
   expect(status).toBe(200);
   const view = decodeTaskExecutionView(JSON.parse(text));
   expect(view).toMatchObject({ protocol: 1, kind: 'operator_task_execution', repository_id: c.id, unlisted_tasks: 0 });
-  expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main', agent: 'codex', runtime: 'herdr',
-    follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' }, herdr_pane: null } }]);
+  expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main', agent: 'codex', runtime: 'herdr-core',
+    follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
+      herdr_pane: null } }]);
   for (const hidden of [f.root, f.home, '/tmp', '/private']) expect(text).not.toContain(hidden);
 });
 
@@ -350,7 +351,7 @@ test('the route reads only the injected cache and maps each unavailable state to
 });
 
 test('the public view leaves out a session whose task is not public text, and the decoder refuses forged follow-ups', () => {
-  const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', branch: 'main', agent: 'codex' as const, runtime: 'herdr' as const,
+  const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', branch: 'main', agent: 'codex' as const, runtime: 'herdr-core' as const,
     native_session_id: 'thread-1', herdr_pane: { session: 'main', workspace_id: 'w1', pane_id: 'w1:p1', agent_name: 'deep-reasoner' } };
   const snapshot = { protocol: 1 as const, kind: 'operator_task_execution' as const, observed_at: '2026-10-27T00:00:00.000Z',
     executions: [verified, { ...verified, task: '/Users/someone/private task' }, { ...verified, herdr_pane: { ...verified.herdr_pane, pane_id: '../x' } }] };

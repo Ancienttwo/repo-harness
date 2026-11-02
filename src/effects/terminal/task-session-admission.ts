@@ -15,7 +15,7 @@ import { readTaskAgent, sameSessionData, type HerdrTaskAgentSpec, type TaskPaneB
 
 /** Observe the existing approval; do not create a second claim or task state. */
 export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<HerdrTaskAgentSpec, 'task' | 'role' | 'harness_kind'>,
-  runtime: 'herdr' | 'terminal', authority: TaskSessionAuthority): TaskSessionAdmission {
+  runtime: 'herdr-core' | 'terminal', authority: TaskSessionAuthority): TaskSessionAdmission {
   const claim = validateTaskClaimReference(authority.claim);
   const execution = taskRepository(repoRoot), owner = taskRepository(authority.source.repoRoot);
   if (execution.repository_id !== owner.repository_id) throw new Error('task_agent_admission_repository_mismatch');

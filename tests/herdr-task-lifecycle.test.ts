@@ -2,22 +2,22 @@ import { expect, test } from 'bun:test';
 import { darwinTest } from './helpers/darwin-test';
 import { execFileSync, spawn, spawnSync, type ChildProcess } from 'child_process';
 import { randomUUID } from 'crypto';
-import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { copyHelpers } from './helpers/helper-script-fixture';
-import { herdrEnvironment } from '../src/effects/terminal/herdr';
+import { taskRepository } from '../src/effects/git/task-repository';
+import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
 import { processProofAlive } from '../src/effects/terminal/task-session';
 import { processIdentity } from '../src/effects/terminal/task-session-io';
 import type { HerdrTaskBinding } from '../src/effects/terminal/task-session-record';
 
-// This file owns the feasibility boundary, not model judgment. Fixture peers
-// expose explicit deterministic protocol/session IDs under recognizable names.
-// No user HOME, default server, user agent or model endpoint is touched.
+// This file owns the feasibility boundary, not model judgment. Each test runs
+// its own hc core under a private HOME, XDG tree and task-proof session.
+// No default core, user agent or model endpoint is touched.
 function requireFixtureSession(session: string) {
   if (!/^task-proof-[0-9a-f]{16}$/.test(session)) throw new Error('disposable_herdr_session_required');
 }
-const quote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
 function run(command: string, args: string[], cwd: string, env: NodeJS.ProcessEnv) {
   const result = spawnSync(command, args, { cwd, env, encoding: 'utf8', timeout: 10_000 });
   if (result.error || result.status !== 0) throw new Error(`${command} ${args[0]}: ${result.error ?? result.stderr}`);
@@ -41,6 +41,38 @@ async function exited(child: ChildProcess) {
 function live(pid: number) {
   try { process.kill(pid, 0); return true; } catch { return false; }
 }
+interface FixtureCore {
+  fixture: string; env: NodeJS.ProcessEnv; endpoint: { socket: string };
+  hc: (args: string[]) => string; gone: (address: string) => boolean; parent: (cwd: string) => Promise<string>;
+}
+/** Runs body against a private hc core. Any hc call starts a core when none runs, so the stop is the last hc call. */
+async function withCore(prefix: string, body: (core: FixtureCore) => Promise<void>, extraEnv: NodeJS.ProcessEnv = {}) {
+  const fixture = realpathSync(mkdtempSync(`/tmp/${prefix}-`));
+  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
+  requireFixtureSession(session);
+  const env: NodeJS.ProcessEnv = { ...process.env, ...extraEnv, HC_SESSION: session, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
+  for (const key of ['HC_TERMINAL_ID', 'HC_TERMINAL_SOCKET', 'HC_SCOPE', 'HC_SOCKET']) delete env[key];
+  for (const [key, name] of [['HOME', 'h'], ['XDG_CONFIG_HOME', 'c'], ['XDG_STATE_HOME', 's'], ['XDG_RUNTIME_DIR', 'r'], ['TMPDIR', 't']]) {
+    env[key!] = join(fixture, name!); mkdirSync(env[key!]!);
+  }
+  const hc = (args: string[]) => { requireFixtureSession(session); return run('hc', args, fixture, env); };
+  const gone = (address: string) => { requireFixtureSession(session); return spawnSync('hc', ['get', '--json', address], { env }).status === 3; };
+  const parent = async (cwd: string) => {
+    const address = JSON.parse(hc(['run', '--json', '--bg', '--cwd', cwd, '--', '/bin/sleep', '600'])).address as string;
+    await until(() => !!JSON.parse(hc(['get', '--json', address])).foreground);
+    return address;
+  };
+  let started = false;
+  try {
+    hc(['server', 'start', '--json']); started = true;
+    const endpoint = { socket: join(env.XDG_RUNTIME_DIR!, 'herdr-core', `${session}.sock`) };
+    if (!existsSync(endpoint.socket)) throw new Error('fixture_core_socket_missing');
+    await body({ fixture, env, endpoint, hc, gone, parent });
+  } finally {
+    try { if (started) hc(['server', 'stop', '--json']); } // Ends the programs of this core.
+    finally { rmSync(fixture, { recursive: true, force: true }); }
+  }
+}
 
 test('fixture control rejects default and non-disposable sessions before a CLI can run', () => {
   for (const session of ['default', '', 'review-owned', 'task-proof-invalid']) {
@@ -49,186 +81,30 @@ test('fixture control rejects default and non-disposable sessions before a CLI c
   requireFixtureSession(`task-proof-${randomUUID().replaceAll("-", "").slice(0, 16)}`);
 });
 
-test('linked task peers survive owner exit, restore explicit context, and clean up without closing a sentinel', async () => {
-  const fixture = realpathSync(mkdtempSync('/tmp/ht-'));
-  const home = join(fixture, 'home');
-  const repo = join(fixture, 'primary');
-  const checkout = join(fixture, 'task-checkout');
-  mkdirSync(home); mkdirSync(repo);
-  const session = `task-proof-${randomUUID().replaceAll("-", "").slice(0, 16)}`;
-  const configPath = join(fixture, 'herdr.toml');
-  requireFixtureSession(session);
-  const env = { ...herdrEnvironment({ session, configPath }), HOME: home, GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-  const herdr = Bun.which('herdr');
-  if (!herdr) throw new Error('real_herdr_required_for_task_proof');
-  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
-  run('git', ['init', '-q', '-b', 'main'], repo, env);
-  run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'fixture'], repo, env);
-  run('git', ['worktree', 'add', '-qb', 'task-proof', checkout], repo, env);
-  const execute = (args: string[]) => {
-    requireFixtureSession(session); // Includes read, close and server stop.
-    return run(herdr, ['--session', session, ...args], repo, env);
-  };
-  const call = (args: string[]) => {
-    const response = JSON.parse(execute(args));
-    if (response.error || !response.result) throw new Error('invalid_herdr_response');
-    return response.result;
-  };
-  const peer = join(fixture, 'peer.ts');
-  writeFileSync(peer, `
-import {readFileSync, writeFileSync, renameSync} from 'fs';
-import {randomUUID} from 'crypto';import {spawnSync} from 'child_process';
-const role = process.argv[2]; const statePath = process.argv[3];
-const state = { role, pid: process.pid, provider_session: randomUUID(), peer_history: '', requests: [] as {id:string,context:string}[] };
-function save() { writeFileSync(statePath+'.tmp', JSON.stringify(state)); renameSync(statePath+'.tmp',statePath); }
-process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h'); save();
-let input=''; process.stdin.on('data', chunk => {
-  input += chunk.toString();
-  if (!input.includes('\\r') && !input.includes('\\n')) return;
-  const lines=input.split(/[\\r\\n]+/); input=lines.pop() ?? '';
-  for (const line of lines) {
-    const text=line.replaceAll('\\x1b[200~','').replaceAll('\\x1b[201~','');
-    if (!text.trim()) continue;
-    const request=JSON.parse(text);
-    if(request.read_peer){
-      const session=${JSON.stringify(session)};
-      if(!/^task-proof-[0-9a-f]{16}$/.test(session))throw new Error('fixture only');
-      const r=spawnSync(${JSON.stringify(herdr)},['--session',session,'agent','read',request.read_peer,'--source','recent-unwrapped','--lines','100','--format','text'],{env:process.env,encoding:'utf8'});
-      if(r.status!==0)throw new Error(r.stderr);state.peer_history=r.stdout;save();continue;
-    }
-    state.requests.push(request); save();
-    process.stdout.write('ACK '+request.id+' '+state.provider_session+'\\n');
-  }
-});
-`);
-  for (const kind of ['codex', 'claude']) symlinkSync(process.execPath, join(fixture, kind));
-  const serverLog = join(fixture, 'server.log');
-  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: ['ignore', 'ignore', 'pipe'] });
-  let stderr = ''; server.stderr?.on('data', chunk => { stderr += chunk; writeFileSync(serverLog, stderr); });
-  try {
-    let startupError = '';
-    try { await until(() => { try { call(['workspace', 'list']); return true; } catch (error) { startupError = String(error); return false; } }); }
-    catch (error) { throw new Error(`${error}; server exit=${server.exitCode}; stderr=${stderr}; cli=${startupError}`); }
-    const root = call(['workspace', 'create', '--cwd', repo, '--label', 'primary', '--no-focus']);
-    const opened = call(['worktree', 'open', '--workspace', root.workspace.workspace_id, '--path', checkout, '--label', 'task', '--no-focus']);
-    // APIs may nest the root pane with the opened workspace; discover opaque
-    // IDs through authoritative workspace list + pane list, never sidebar order.
-    const workspaces = call(['workspace', 'list']).workspaces as any[];
-    const linked = workspaces.find(workspace => workspace.worktree?.checkout_path === checkout);
-    const primary = workspaces.find(workspace => workspace.worktree?.checkout_path === repo);
-    expect(linked?.worktree?.is_linked_worktree).toBe(true);
-    expect(primary?.worktree?.is_linked_worktree).toBe(false);
-    expect(linked.worktree.repo_key).toBe(primary.worktree.repo_key);
-    expect(linked.worktree.repo_root).toBe(realpathSync(repo));
-    expect(opened).toBeDefined();
-    const taskPane = call(['pane', 'list', '--workspace', linked.workspace_id]).panes[0].pane_id;
-    const gatePane = call(['pane', 'split', '--pane', taskPane, '--direction', 'right', '--cwd', checkout, '--no-focus']).pane.pane_id;
-    const sentinelState = join(fixture, 'sentinel.json');
-    const participants = [
-      { role: 'advisor', kind: 'codex', pane: taskPane, state: join(fixture, 'advisor.json') },
-      { role: 'gatekeeper', kind: 'claude', pane: gatePane, state: join(fixture, 'gatekeeper.json') },
-      { role: 'sentinel', kind: 'codex', pane: root.root_pane.pane_id, state: sentinelState },
-    ];
-    for (const [index, participant] of participants.entries()) {
-      execute(['pane', 'run', participant.pane, `exec ${quote(join(fixture, participant.kind))} ${quote(peer)} ${quote(participant.role)} ${quote(participant.state)}`]);
-      await until(() => existsSync(participant.state));
-      await until(() => { try { return call(['agent', 'get', participant.pane]).agent?.agent === participant.kind; } catch { return false; } });
-      execute(['pane', 'report-agent', participant.pane, '--source', 'fixture', '--agent', participant.kind, '--state', 'working', '--seq', String(index + 1)]);
-      execute(['agent', 'rename', participant.pane, participant.role]);
-    }
-    const initial = participants.map(item => JSON.parse(readFileSync(item.state, 'utf8')));
-    const binding = join(fixture, 'binding.json');
-    writeFileSync(binding, JSON.stringify({ session, herdr, configPath, participants: participants.slice(0, 2), task: 'fixture-task', repo_key: primary.worktree.repo_key }));
-    const owner = join(fixture, 'owner.ts');
-    writeFileSync(owner, `
-import {readFileSync} from 'fs'; import {spawnSync} from 'child_process';
-const binding=JSON.parse(readFileSync(process.argv[2], 'utf8'));
-if (!/^task-proof-[0-9a-f]{16}$/.test(binding.session)) throw new Error('disposable_herdr_session_required');
-for (const participant of binding.participants) {
- const result=spawnSync(binding.herdr,['--session',binding.session,'agent','prompt',participant.role,JSON.stringify({id:process.argv[3],context:process.argv[4]})], {env:process.env,encoding:'utf8',timeout:10000});
- if (result.status!==0) throw new Error(result.stderr);
- const response=JSON.parse(result.stdout); if (response.result?.type!=='agent_prompted') throw new Error('prompt_not_accepted');
-}
-`);
-    run(process.execPath, [owner, binding, 'req-1', 'open finding: scope'], repo, env);
-    for (const participant of participants.slice(0, 2)) await until(() => JSON.parse(readFileSync(participant.state, 'utf8')).requests.length === 1);
-    // A different owner process resumes the existing binding; it cannot spawn
-    // a new peer. Provider/session identity and preceding context must survive.
-    run(process.execPath, [owner, binding, 'req-2', 'resolve finding: scope'], repo, env);
-    for (const participant of participants.slice(0, 2)) await until(() => JSON.parse(readFileSync(participant.state, 'utf8')).requests.length === 2);
-    // The advisor process itself reads the gatekeeper history via Herdr.
-    execute(['agent', 'prompt', 'advisor', JSON.stringify({read_peer:'gatekeeper'})]);
-    await until(() => JSON.parse(readFileSync(participants[0].state, 'utf8')).peer_history.includes('ACK req-2'));
-    expect(JSON.parse(readFileSync(participants[0].state,'utf8')).peer_history).toContain(initial[1].provider_session);
-    for (const [index, participant] of participants.slice(0, 2).entries()) {
-      await until(() => JSON.parse(readFileSync(participant.state, 'utf8')).requests.length === 2);
-      const state = JSON.parse(readFileSync(participant.state, 'utf8'));
-      expect(state.pid).toBe(initial[index].pid);
-      expect(state.provider_session).toBe(initial[index].provider_session);
-      expect(state.requests).toEqual([{ id: 'req-1', context: 'open finding: scope' }, { id: 'req-2', context: 'resolve finding: scope' }]);
-      execute(['pane', 'close', participant.pane]);
-      await until(() => !live(state.pid));
-    }
-    const remaining = call(['workspace', 'list']).workspaces as any[];
-    if (remaining.some(workspace => workspace.workspace_id === linked.workspace_id)) execute(['workspace', 'close', linked.workspace_id]);
-    expect(live(initial[2].pid)).toBe(true);
-    expect(call(['agent', 'get', 'sentinel']).agent.pane_id).toBe(root.root_pane.pane_id);
-    expect((call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes as any[]).map(item => item.pane_id)).toContain(root.root_pane.pane_id);
-    run('git', ['worktree', 'remove', checkout], repo, env);
-    expect(existsSync(checkout)).toBe(false);
-  } finally {
-    requireFixtureSession(session);
-    try { execute(['server', 'stop']); } catch {
-      // This ChildProcess is the exact process created above in this fixture,
-      // not a discovered PID or any user server.
-      if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM');
-    }
-    await exited(server);
-    rmSync(fixture, { recursive: true, force: true });
-  }
-}, 60_000);
-
-test('shared task sessions serialize real concurrent starts, reconcile a launched crash, and fence file delivery and cleanup', async () => {
-  const fixture = realpathSync(mkdtempSync('/tmp/ta-'));
-  const home = join(fixture, 'h'); mkdirSync(home);
-  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  const configPath = join(fixture, 'herdr.toml');
-  const endpoint = { session, configPath, home };
-  const env = herdrEnvironment(endpoint);
-  const herdr = Bun.which('herdr')!;
+test('hc task sessions serialize concurrent starts, reconcile crashes, deliver by hc send and end with their group', () => withCore('ta', async ({ fixture, env, endpoint, hc, gone, parent: parentTerminal }) => {
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   const modulePath = new URL('../src/effects/terminal/task-session.ts', import.meta.url).pathname;
   const ioModulePath = new URL('../src/effects/terminal/task-session-io.ts', import.meta.url).pathname;
   const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
-  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
-  const execute = (args: string[]) => {
-    requireFixtureSession(session); return run(herdr, ['--session', session, ...args], fixture, env);
-  };
+  const parent = await parentTerminal(fixture);
   // These calls must return an existing binding or fail before any launch.
-  const refuseLaunch = { start: async () => { throw new Error('fixture_must_not_launch'); } };
-  // The fixture owns delivery: it types the request pointer into the peer pane.
+  const refuseLaunch = { argv: ['/usr/bin/false'] as [string], ready: async () => { throw new Error('fixture_must_not_launch'); } };
+  // The fixture owns delivery: hc send types the request pointer into the bound terminal.
   const send = (task: string, role: string, context: string, policy: 'repeatable' | 'changed_only' = 'repeatable') =>
     api.sendTaskRequest(fixture, task, role, context, policy, async request => {
       const { dir, binding } = api.readTaskAgent(fixture, task, role);
-      execute(['agent', 'prompt', (binding as HerdrTaskBinding).agent_name, `Read task request ${join(dir, `request-${request.round}.json`)}; write its result only to ${request.result_ref}.`]);
+      hc(['send', '--json', '--', (binding as HerdrTaskBinding).terminal_id, `Read task request ${join(dir, `request-${request.round}.json`)}; write its result only to ${request.result_ref}.`]);
     });
-  const call = (args: string[]) => JSON.parse(execute(args)).result;
-  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' });
-  const owners: ChildProcess[] = [];
-  try {
-    await until(() => { try { call(['workspace', 'list']); return true; } catch { return false; } });
-    const root = call(['workspace', 'create', '--cwd', fixture, '--no-focus']);
-    const parent = root.root_pane.pane_id;
-    symlinkSync(process.execPath, join(fixture, 'codex'));
-    const peer = join(fixture, 'peer.ts');
-    writeFileSync(peer, `
-import {readFileSync,writeFileSync} from 'fs'; import {join} from 'path'; import {spawn} from 'child_process';
+  const peer = join(fixture, 'peer.ts');
+  writeFileSync(peer, `
+import {appendFileSync,readFileSync,renameSync,writeFileSync} from 'fs'; import {spawn} from 'child_process';
 import {writeSessionArtifact} from ${JSON.stringify(ioModulePath)};
+const ready=process.argv[2];
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
-if(process.argv[2].includes('stubborn'))process.on('SIGTERM',()=>writeFileSync(process.argv[2]+'.term','observed'));
-// A child in the leader's process group before ready: Herdr lists both at bind time.
-if(process.argv[2].includes('bind-group-child'))writeFileSync(process.argv[2]+'.child',String(spawn(process.execPath,['-e','setInterval(()=>{},1000)'],{stdio:'ignore'}).pid));
-writeFileSync(process.argv[2],JSON.stringify({pid:process.pid}));
+appendFileSync(${JSON.stringify(join(fixture, 'launches'))},ready.split('/').pop().replace('.ready','')+'\\n');
+// A child in the leader's process group before ready; it ignores TERM and terminal hangup.
+if(ready.endsWith('/grouped.ready'))writeFileSync(ready+'.child',String(spawn(process.execPath,['-e',"process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});setInterval(()=>{},1000)"],{stdio:'ignore'}).pid));
+writeFileSync(ready+'.tmp',JSON.stringify({pid:process.pid})); renameSync(ready+'.tmp',ready);
 let buffer=''; process.stdin.on('data',chunk=>{
  buffer+=chunk.toString(); if (!/[\\r\\n]/.test(buffer)) return;
  const lines=buffer.split(/[\\r\\n]+/); buffer=lines.pop() ?? '';
@@ -239,54 +115,48 @@ let buffer=''; process.stdin.on('data',chunk=>{
   const request=JSON.parse(readFileSync(match[1],'utf8'));
   const content=readFileSync(request.context_ref,'utf8');
   if(content==='hold-result'||content==='via-cli'){process.stdout.write('PASS is not a result artifact\\n');continue;}
-  if(content==='spawn-group-child'){
-   // Same process group as this leader; the child ignores TERM and terminal hangup.
-   spawn(process.execPath,['-e',"const fs=require('fs');process.on('SIGTERM',()=>{});process.on('SIGHUP',()=>{});fs.writeFileSync(process.argv[1]+'.tmp',String(process.pid));fs.renameSync(process.argv[1]+'.tmp',process.argv[1]);setInterval(()=>{},1000)",process.argv[2]+'.child'],{stdio:'ignore'});
-   continue;
-  }
   writeSessionArtifact(request.result_ref,{request_id:request.request_id,context_sha256:request.context_sha256,value:'artifact-result'});
   process.stdout.write('PASS misleading terminal text is not the result artifact\\n');
  }
 });
 `);
-    const driver = join(fixture, 'owner.ts');
-    writeFileSync(driver, `
-import {existsSync,writeFileSync,appendFileSync,readFileSync} from 'fs'; import {spawnSync} from 'child_process'; import {join} from 'path';
+  const driver = join(fixture, 'owner.ts');
+  writeFileSync(driver, `
+import {existsSync,writeFileSync,readFileSync} from 'fs';
 import {startTaskAgent} from ${JSON.stringify(modulePath)};
 const spec=JSON.parse(readFileSync(process.argv[2],'utf8')); const mode=process.argv[3];
-if(!/^task-proof-[0-9a-f]{16}$/.test(spec.endpoint.session)) throw new Error('fixture_session_required');
-const cli=(args)=>{const result=spawnSync(${JSON.stringify(herdr)},['--session',spec.endpoint.session,...args],{env:process.env,encoding:'utf8',timeout:10000});if(result.status!==0)throw new Error(result.stderr);return result.stdout;};
-const ready=join(process.cwd(),spec.role+'.ready');
-const quote=s=>"'"+s.replaceAll("'", "'\\\\''")+"'";
-const binding=await startTaskAgent(process.argv[4] ?? process.cwd(),spec,{
+const ready=${JSON.stringify(fixture)}+'/'+spec.role+'.ready';
+const binding=await startTaskAgent(process.argv[4],spec,{
+ argv:[process.execPath,${JSON.stringify(peer)},ready],
+ ready:async()=>{
+  const end=Date.now()+8000;while(!existsSync(ready)){if(Date.now()>end)throw new Error('peer_deadline');await Bun.sleep(10);}
+  if(mode==='ready-crash')process.exit(79);
+ },
  contended:()=>writeFileSync('contended','observed'),
  boundary:async phase=>{
   if(mode==='hold'&&phase==='intent'){writeFileSync('barrier','intent durable');while(!existsSync('release'))await Bun.sleep(10);}
   if(mode==='crash'&&phase==='launched')process.exit(77);
   if(mode==='intent-crash'&&phase==='intent')process.exit(78);
-  if(mode==='split-crash'&&phase==='split')process.exit(80);
-  if(mode==='pane-crash'&&phase==='pane')process.exit(81);
  },
- start:async(endpoint,name,pane,kind,args)=>{
-  appendFileSync('launches',spec.role+'\\n');
-  // exec-shell replaces the pane shell, so the foreground group leader is the shell PID.
-  cli(['pane','run',pane,(mode==='exec-shell'?'exec ':'')+quote(${JSON.stringify(join(fixture, 'codex'))})+' '+quote(${JSON.stringify(peer)})+' '+quote(ready)]);
-  const end=Date.now()+5000;while(!existsSync(ready)){if(Date.now()>end)throw new Error('peer_deadline');await Bun.sleep(10);}
-  cli(['pane','report-agent',pane,'--source','fixture','--agent',kind,'--state','working','--seq','1']);
-  cli(['agent','rename',pane,name]);
-  if(mode==='ambiguous')process.exit(79);
- }
 });
 writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
 `);
-    const spec = { task: 'owned-task', role: 'advisor', harness_kind: 'codex', endpoint, parent_pane: parent, args: [], max_requests: 1 };
-    const specPath = join(fixture, 'spec.json'); writeFileSync(specPath, JSON.stringify(spec));
-    const owner = (mode: string, path = specPath, executionRoot = fixture) => {
-      const child = spawn(process.execPath, [driver, path, mode, executionRoot], { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] });
-      owners.push(child);
-      let errors = ''; child.stderr?.on('data', data => { errors += data; });
-      return { child, errors: () => errors };
-    };
+  const spec = { task: 'owned-task', role: 'advisor', harness_kind: 'codex', endpoint, args: [], max_requests: 1 };
+  const specPath = join(fixture, 'spec.json'); writeFileSync(specPath, JSON.stringify(spec));
+  const owners: ChildProcess[] = [];
+  const owner = (mode: string, path = specPath, executionRoot = fixture) => {
+    const child = spawn(process.execPath, [driver, path, mode, executionRoot], { cwd: fixture, env, stdio: ['ignore', 'pipe', 'pipe'] });
+    owners.push(child);
+    let errors = ''; child.stderr?.on('data', data => { errors += data; });
+    return { child, errors: () => errors };
+  };
+  const started = async (role: string, mode = 'normal') => {
+    const path = join(fixture, `${role}.json`); writeFileSync(path, JSON.stringify({ ...spec, role }));
+    const launched = owner(mode, path); await exited(launched.child);
+    if (mode === 'normal' && launched.child.exitCode !== 0) throw new Error(launched.errors());
+    return launched.child.exitCode;
+  };
+  try {
     const first = owner('hold');
     await until(() => existsSync(join(fixture, 'barrier')));
     const second = owner('second');
@@ -296,13 +166,18 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     await exited(first.child); await exited(second.child);
     if (first.child.exitCode !== 0 || second.child.exitCode !== 0) throw new Error(first.errors() + second.errors());
     const firstBinding = JSON.parse(readFileSync(join(fixture, 'advisor-hold.binding'), 'utf8'));
-    const secondBinding = JSON.parse(readFileSync(join(fixture, 'advisor-second.binding'), 'utf8'));
-    expect(secondBinding).toEqual(firstBinding);
+    expect(JSON.parse(readFileSync(join(fixture, 'advisor-second.binding'), 'utf8'))).toEqual(firstBinding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
     const binding = api.readTaskAgent(fixture, spec.task, spec.role).binding as HerdrTaskBinding;
     api.assertTaskBinding(binding);
-    const reordered = { max_requests: spec.max_requests, args: spec.args, parent_pane: spec.parent_pane,
-      endpoint: { home, configPath, session }, harness_kind: spec.harness_kind, role: spec.role, task: spec.task };
+    expect(binding).toEqual(firstBinding);
+    expect(binding.provider.pid).toBe(JSON.parse(readFileSync(join(fixture, 'advisor.ready'), 'utf8')).pid);
+    expect(JSON.parse(hc(['get', '--json', binding.terminal_id])).labels).toMatchObject({ 'repo-harness.role': 'task-session', 'repo-harness.harness': 'codex', 'repo-harness.notify': 'on' });
+    // Review never reuses the owner's terminal as its reviewer.
+    expect(() => taskReviewRunner.assertNotOwnerPane(binding, binding.terminal_id)).toThrow('review_must_not_reuse_owner_pane');
+    taskReviewRunner.assertNotOwnerPane(binding, parent);
+    const reordered = { max_requests: spec.max_requests, args: spec.args,
+      endpoint: { socket: endpoint.socket }, harness_kind: spec.harness_kind, role: spec.role, task: spec.task };
     expect(await api.startTaskAgent(fixture, reordered, refuseLaunch)).toEqual(binding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
 
@@ -311,6 +186,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const request = await send(spec.task, spec.role, 'context.md');
     await until(() => existsSync(request.result_ref));
     expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
+    await until(() => hc(['read', binding.terminal_id, '--lines', '200']).includes('PASS misleading terminal text is not the result artifact'));
     const result = api.readSessionArtifact<Record<string, unknown>>(request.result_ref);
     api.writeSessionArtifact(request.result_ref, { ...result, request_id: 'another-request' }, false);
     expect(() => api.readTaskRequestResult(fixture, dir, request)).toThrow('result_identity_mismatch');
@@ -318,6 +194,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     writeFileSync(join(fixture, 'context.md'), 'changed context');
     await expect(send(spec.task, spec.role, 'context.md')).rejects.toThrow('round_budget_exhausted');
     const bindingPath = join(dir, 'binding.json');
+    const records = ['binding.json', 'provider-created.json', 'terminal-created.json'].map(name => [join(dir, name), readFileSync(join(dir, name), 'utf8')] as const);
     for (const attached of [
       { ...binding, ownership: { disposition: 'attached' } },
       { ...binding, provider: { ...binding.provider, ownership: { disposition: 'attached' } } },
@@ -326,16 +203,27 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
       await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow('attached_object_not_closeable');
       expect(live(binding.provider.pid)).toBe(true);
     }
-    api.writeSessionArtifact(bindingPath, { ...binding, provider: { ...binding.provider, identity: binding.provider.identity + ' replaced' } }, false);
-    await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow('process_identity_lost');
-    expect(live(binding.provider.pid)).toBe(true);
-    api.writeSessionArtifact(bindingPath, { ...binding, terminal_id: 'reused-pane-id' }, false);
-    await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow('pane_identity_lost');
-    api.writeSessionArtifact(bindingPath, binding, false);
-    execute(['agent', 'rename', binding.agent_name, 'replacement']);
-    await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow();
-    expect(live(binding.provider.pid)).toBe(true);
-    execute(['agent', 'rename', 'replacement', binding.agent_name]);
+    // A record that disagrees with hc on address, pid, name or labels closes nothing.
+    const intentId = (binding.ownership as { intent_id: string }).intent_id;
+    const parentPid = JSON.parse(hc(['get', '--json', parent])).pid as number;
+    const otherProvider = { ...binding.provider, pid: parentPid, identity: processIdentity(parentPid) };
+    const otherName = `task-${'0'.repeat(20)}`;
+    for (const [tamper, refusal] of [
+      [() => api.writeSessionArtifact(bindingPath, { ...binding, provider: { ...binding.provider, identity: binding.provider.identity + ' replaced' } }, false), 'process_identity_lost'],
+      [() => api.writeSessionArtifact(bindingPath, { ...binding, terminal_id: parent }, false), 'terminal_identity_lost'],
+      [() => { for (const name of ['binding.json', 'provider-created.json']) api.writeSessionArtifact(join(dir, name), { ...binding, provider: otherProvider }, false); }, 'terminal_identity_lost'],
+      [() => { api.writeSessionArtifact(bindingPath, { ...binding, terminal_name: otherName }, false);
+        api.writeSessionArtifact(join(dir, 'terminal-created.json'), { intent_id: intentId, terminal_id: binding.terminal_id, terminal_name: otherName }, false); }, 'terminal_identity_lost'],
+      [() => hc(['label', '--json', '--', binding.terminal_id, 'repo-harness.request=replaced']), 'terminal_identity_lost'],
+    ] as const) {
+      tamper();
+      await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow(refusal);
+      expect([live(binding.provider.pid), live(parentPid), existsSync(join(dir, 'close-intent.json'))]).toEqual([true, true, false]);
+      for (const [path, text] of records) writeFileSync(path, text);
+    }
+    hc(['label', '--json', '--', binding.terminal_id, `repo-harness.request=${intentId}`]);
+    // Herdr.app labels a terminal that it shows; identity reads only the repo-harness keys, so the close below succeeds.
+    hc(['label', '--json', '--', binding.terminal_id, 'herdr.space=s1']);
 
     const crashSpec = { ...spec, role: 'crash-role' };
     const crashPath = join(fixture, 'crash-spec.json'); writeFileSync(crashPath, JSON.stringify(crashSpec));
@@ -357,30 +245,21 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(existsSync(join(crashDir, 'request-2.json'))).toBe(false);
     await expect(api.closeTaskAgent(fixture, crashSpec.task, crashSpec.role)).rejects.toThrow('pending_request');
     await api.cancelTaskAgent(fixture, crashSpec.task, crashSpec.role);
-    await api.closeTaskAgent(fixture, spec.task, spec.role);
+    expect(await api.closeTaskAgent(fixture, spec.task, spec.role)).toEqual({ status: 'closed', pids: [] });
     expect(live(binding.provider.pid)).toBe(false);
-    expect(call(['pane', 'get', parent]).pane.pane_id).toBe(parent);
+    expect(gone(binding.terminal_id)).toBe(true);
+    expect(JSON.parse(hc(['get', '--json', parent])).state).toBe('live');
 
     // One Git clone owns one task state, regardless of which checkout invokes.
     run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'base'], fixture, env);
     // Installed repos ignore runtime evidence; apply the same Git boundary to this minimal fixture.
-    writeFileSync(join(fixture,'.git/info/exclude'), '.ai/harness/runs/\n');
+    writeFileSync(join(fixture, '.git/info/exclude'), '.ai/harness/runs/\n');
     const checkout = join(fixture, 'linked-checkout');
     run('git', ['worktree', 'add', '-qb', 'codex/linked-test', checkout], fixture, env);
     mkdirSync(join(fixture, '.ai/harness/worktrees'), { recursive: true });
     writeFileSync(join(fixture, '.ai/harness/worktrees/linked-test.json'), `${JSON.stringify({ slug: 'linked-test', branch: 'codex/linked-test' })}\n`);
     const linkedSpec = { ...spec, role: 'linked-role', max_requests: 3 };
     const linkedPath = join(fixture, 'linked-spec.json'); writeFileSync(linkedPath, JSON.stringify(linkedSpec));
-    const shim = join(fixture, 'shim'); mkdirSync(shim);
-    const failed = join(fixture, 'open-failed');
-    writeFileSync(join(shim, 'herdr'), `#!/bin/sh\ncase "$*" in *"worktree open"*linked-checkout*) if [ ! -f ${quote(failed)} ]; then touch ${quote(failed)}; echo injected-register-failure >&2; exit 1; fi ;; esac\nexec ${quote(herdr)} "$@"\n`);
-    chmodSync(join(shim, 'herdr'), 0o755);
-    const savedPath = process.env.PATH;
-    try {
-      process.env.PATH = shim + ':' + savedPath;
-      await expect(api.startTaskAgent(checkout, linkedSpec, refuseLaunch)).rejects.toThrow('injected-register-failure');
-      expect(existsSync(join(api.taskSessionDirectory(checkout, spec.task, linkedSpec.role), 'intent.json'))).toBe(false);
-    } finally { process.env.PATH = savedPath; }
     const linkedOwner = owner('linked', linkedPath, checkout); await exited(linkedOwner.child);
     if (linkedOwner.child.exitCode !== 0) throw new Error(linkedOwner.errors());
     const fromPrimary = api.readTaskAgent(fixture, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
@@ -388,12 +267,6 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(fromLinked.dir).toBe(fromPrimary.dir);
     expect(fromLinked.binding).toEqual(fromPrimary.binding);
     expect(fromPrimary.binding.execution_root).toBe(checkout);
-    expect(fromPrimary.binding.workspace_id).not.toBe(root.workspace.workspace_id);
-    const spaces = call(['workspace', 'list']).workspaces;
-    const linkedSpace = spaces.find((item: any) => item.workspace_id === fromPrimary.binding.workspace_id);
-    const primarySpace = spaces.find((item: any) => item.workspace_id === root.workspace.workspace_id);
-    expect(linkedSpace.worktree.repo_key).toBe(primarySpace.worktree.repo_key);
-    expect(linkedSpace.worktree.repo_root).toBe(fixture);
     writeFileSync(join(fixture, 'context.md'), 'via-cli');
     const linkedRequest = await send(spec.task, linkedSpec.role, 'context.md');
     expect(linkedRequest.protocol).toBe(2);
@@ -425,330 +298,155 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const cleaned = spawnSync('bash', [helper, 'cleanup', '--slug', 'linked-test'], { cwd: fixture, env: helperEnv, encoding: 'utf8', timeout: 15000 });
     if (cleaned.status !== 0) throw new Error(cleaned.stderr + cleaned.stdout);
     expect(existsSync(checkout)).toBe(false);
-    expect(call(['workspace', 'list']).workspaces.some((item: any) => item.workspace_id === fromPrimary.binding.workspace_id)).toBe(false);
-    expect(call(['pane', 'get', parent]).pane.pane_id).toBe(parent);
+    expect(gone(fromPrimary.binding.terminal_id)).toBe(true);
 
-    const attachedCheckout = join(fixture, 'attached-checkout');
-    run('git', ['worktree', 'add', '-qb', 'codex/attached', attachedCheckout], fixture, env);
-    const attachedView = call(['worktree', 'open', '--workspace', root.workspace.workspace_id, '--path', attachedCheckout, '--no-focus']);
-    const attachedSpec = { ...spec, role: 'attached-view' };
-    const attachedPath = join(fixture, 'attached-view.json'); writeFileSync(attachedPath, JSON.stringify(attachedSpec));
-    const attachedOwner = owner('normal', attachedPath, attachedCheckout); await exited(attachedOwner.child);
-    if (attachedOwner.child.exitCode !== 0) throw new Error(attachedOwner.errors());
-    await api.closeTaskAgent(fixture, spec.task, attachedSpec.role);
-    expect(await api.cleanupTaskWorktree(fixture, attachedCheckout)).toEqual({ status: 'cleanup_pending', pids: [], reason: 'workspace_attached' });
-
-    expect(call(['workspace', 'get', attachedView.workspace.workspace_id]).workspace.workspace_id).toBe(attachedView.workspace.workspace_id);
-    // Test owns this simulated user workspace; production never closes attached.
-    execute(['workspace', 'close', attachedView.workspace.workspace_id]);
-    run('git', ['worktree', 'remove', attachedCheckout], fixture, env);
-
-    const pendingSpec = { ...spec, role: 'intent-only' };
-    const pendingPath = join(fixture, 'pending.json'); writeFileSync(pendingPath, JSON.stringify(pendingSpec));
-    const pendingOwner = owner('intent-crash', pendingPath); await exited(pendingOwner.child);
-    expect(pendingOwner.child.exitCode).toBe(78);
-    await expect(api.startTaskAgent(fixture, pendingSpec, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
-    expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\nattached-view\n');
-    expect(await api.closeTaskAgent(fixture, pendingSpec.task, pendingSpec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(api.taskAgentStatus(fixture, pendingSpec.task, pendingSpec.role).status).toBe('closed');
-    expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
-    const ambiguousSpec = { ...spec, role: 'ambiguous-role' };
-    const ambiguousPath = join(fixture, 'ambiguous.json'); writeFileSync(ambiguousPath, JSON.stringify(ambiguousSpec));
-    const ambiguousOwner = owner('ambiguous', ambiguousPath); await exited(ambiguousOwner.child);
-    expect(ambiguousOwner.child.exitCode).toBe(79);
-    await expect(api.startTaskAgent(fixture, ambiguousSpec, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
-    expect(api.taskAgentStatus(fixture, spec.task, ambiguousSpec.role).status).toBe('reconciliation_required');
-    expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\nattached-view\nambiguous-role\n');
+    // A fresh start request in the retired shape is refused before any directory, intent or terminal exists.
+    const parentRequest = { ...spec, role: 'parent-request', parent_terminal: parent };
+    await expect(api.startTaskAgent(fixture, parentRequest, refuseLaunch)).rejects.toThrow('task_agent_classic_herdr_record_retired');
+    expect(existsSync(api.taskSessionDirectory(fixture, spec.task, 'parent-request'))).toBe(false);
+    // A crash after intent created no terminal; the start reconciles and never launches.
+    expect(await started('intent-only', 'intent-crash')).toBe(78);
+    await expect(api.startTaskAgent(fixture, { ...spec, role: 'intent-only' }, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
+    expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\n');
+    expect(await api.closeTaskAgent(fixture, spec.task, 'intent-only')).toEqual({ status: 'closed', pids: [] });
+    expect(api.taskAgentStatus(fixture, spec.task, 'intent-only').status).toBe('closed');
+    // A crash after the terminal started leaves no binding; cleanup finds the terminal by its labels.
+    expect(await started('ambiguous-role', 'ready-crash')).toBe(79);
+    await expect(api.startTaskAgent(fixture, { ...spec, role: 'ambiguous-role' }, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
+    expect(api.taskAgentStatus(fixture, spec.task, 'ambiguous-role').status).toBe('reconciliation_required');
+    expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\nambiguous-role\n');
     const unboundPid = JSON.parse(readFileSync(join(fixture, 'ambiguous-role.ready'), 'utf8')).pid;
-    expect(await api.closeTaskAgent(fixture, ambiguousSpec.task, ambiguousSpec.role)).toEqual({ status: 'closed', pids: [] });
+    const unbound = api.readSessionArtifact<{ terminal_id: string }>(join(api.taskSessionDirectory(fixture, spec.task, 'ambiguous-role'), 'terminal-created.json'));
+    // A recorded terminal that no longer has this start's labels is not removed.
+    hc(['label', '--json', '--', unbound.terminal_id, 'repo-harness.request=another-start']);
+    await expect(api.closeTaskAgent(fixture, spec.task, 'ambiguous-role')).rejects.toThrow('terminal_identity_lost');
+    expect([gone(unbound.terminal_id), live(unboundPid)]).toEqual([false, true]);
+    const unboundIntent = api.readSessionArtifact<{ intent_id: string }>(join(api.taskSessionDirectory(fixture, spec.task, 'ambiguous-role'), 'intent.json'));
+    hc(['label', '--json', '--', unbound.terminal_id, `repo-harness.request=${unboundIntent.intent_id}`]);
+    expect(await api.closeTaskAgent(fixture, spec.task, 'ambiguous-role')).toEqual({ status: 'closed', pids: [] });
     expect(live(unboundPid)).toBe(false);
-    expect(api.taskAgentStatus(fixture, spec.task, ambiguousSpec.role).status).toBe('closed');
-    expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
-    const stubbornSpec = { ...spec, role: 'stubborn' };
-    const stubbornPath = join(fixture, 'stubborn.json'); writeFileSync(stubbornPath, JSON.stringify(stubbornSpec));
-    const stubbornOwner = owner('normal', stubbornPath); await exited(stubbornOwner.child);
-    if (stubbornOwner.child.exitCode !== 0) throw new Error(stubbornOwner.errors());
-    const stubbornBinding = api.readTaskAgent(fixture, spec.task, stubbornSpec.role).binding;
-    expect(await api.closeTaskAgent(fixture, spec.task, stubbornSpec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(existsSync(join(fixture, 'stubborn.ready.term'))).toBe(true);
-    expect(live(stubbornBinding.provider.pid)).toBe(false); // Ignored TERM; identity-proven KILL finished.
-    // The leader exits on TERM; its same-group child ignores TERM and HUP.
-    // Cleanup sends no group KILL after leader exit; the Herdr pane close removes the child.
-    const groupedSpec = { ...spec, role: 'grouped' };
-    const groupedPath = join(fixture, 'grouped.json'); writeFileSync(groupedPath, JSON.stringify(groupedSpec));
-    const groupedOwner = owner('normal', groupedPath); await exited(groupedOwner.child);
-    if (groupedOwner.child.exitCode !== 0) throw new Error(groupedOwner.errors());
+    expect(gone(unbound.terminal_id)).toBe(true);
+    expect(api.taskAgentStatus(fixture, spec.task, 'ambiguous-role').status).toBe('closed');
+    // The run succeeded but its receipt was lost, and the program then exited: cancel still removes the finished terminal.
+    expect(await started('lost-receipt', 'ready-crash')).toBe(79);
+    const lostDir = api.taskSessionDirectory(fixture, spec.task, 'lost-receipt');
+    const lost = api.readSessionArtifact<{ terminal_id: string }>(join(lostDir, 'terminal-created.json'));
+    rmSync(join(lostDir, 'terminal-created.json'));
+    process.kill(JSON.parse(readFileSync(join(fixture, 'lost-receipt.ready'), 'utf8')).pid, 'SIGKILL');
+    await until(() => JSON.parse(hc(['get', '--json', lost.terminal_id])).state === 'finished');
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'lost-receipt')).toEqual({ status: 'closed', pids: [] });
+    const lostIntent = api.readSessionArtifact<{ intent_id: string }>(join(lostDir, 'intent.json'));
+    expect(JSON.parse(hc(['ls', '--json', '--all', '--label', `repo-harness.request=${lostIntent.intent_id}`])).terminals).toEqual([]);
+
+    // #754: the program leads its group and is the provider, not its child. hc kill
+    // ends the child that ignores TERM and hangup with the leader; cleanup sends no signal.
+    await started('grouped');
     const leaderPid = JSON.parse(readFileSync(join(fixture, 'grouped.ready'), 'utf8')).pid;
-    writeFileSync(join(fixture, 'context.md'), 'spawn-group-child');
-    await send(spec.task, groupedSpec.role, 'context.md');
-    const groupedChild = join(fixture, 'grouped.ready.child');
-    await until(() => existsSync(groupedChild));
-    const childPid = Number(readFileSync(groupedChild, 'utf8'));
+    const childPid = Number(readFileSync(join(fixture, 'grouped.ready.child'), 'utf8'));
+    const grouped = api.readTaskAgent(fixture, spec.task, 'grouped').binding as HerdrTaskBinding;
+    expect(grouped.provider.pid).toBe(leaderPid);
     expect(run('ps', ['-p', String(childPid), '-o', 'pgid='], fixture, env)).toBe(String(leaderPid));
-    expect(await api.cancelTaskAgent(fixture, spec.task, groupedSpec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(live(leaderPid)).toBe(false);
-    expect(live(childPid)).toBe(false);
-
-    // #754: Herdr lists every process in the foreground group. Bind selects
-    // the group leader, not the only listed process.
-    const bindGroupSpec = { ...spec, role: 'bind-group-child' };
-    const bindGroupPath = join(fixture, 'bind-group-child.json'); writeFileSync(bindGroupPath, JSON.stringify(bindGroupSpec));
-    const bindGroupOwner = owner('normal', bindGroupPath); await exited(bindGroupOwner.child);
-    if (bindGroupOwner.child.exitCode !== 0) throw new Error(bindGroupOwner.errors());
-    const bindGroupLeader = JSON.parse(readFileSync(join(fixture, 'bind-group-child.ready'), 'utf8')).pid;
-    const bindGroupChild = Number(readFileSync(join(fixture, 'bind-group-child.ready.child'), 'utf8'));
-    const bindGroupBinding = api.readTaskAgent(fixture, spec.task, bindGroupSpec.role).binding as HerdrTaskBinding;
-    expect(bindGroupBinding.provider.pid).toBe(bindGroupLeader);
-    const bindGroupInfo = call(['pane', 'process-info', '--pane', bindGroupBinding.pane_id]).process_info;
-    expect(bindGroupInfo.foreground_process_group_id).toBe(bindGroupLeader);
-    expect(bindGroupInfo.foreground_processes.map((item: any) => item.pid).sort()).toEqual([bindGroupLeader, bindGroupChild].sort());
-    expect(await api.cancelTaskAgent(fixture, spec.task, bindGroupSpec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(live(bindGroupLeader)).toBe(false);
-    expect(live(bindGroupChild)).toBe(false);
-
-    // A single foreground process that leads the shell's own group is the pane
-    // shell, never a created provider. Bind fails closed; cleanup closes the pane.
-    const shellLeaderSpec = { ...spec, role: 'shell-leader' };
-    const shellLeaderPath = join(fixture, 'shell-leader.json'); writeFileSync(shellLeaderPath, JSON.stringify(shellLeaderSpec));
-    const shellLeaderOwner = owner('exec-shell', shellLeaderPath); await exited(shellLeaderOwner.child);
-    expect(shellLeaderOwner.child.exitCode).not.toBe(0);
-    expect(shellLeaderOwner.errors()).toContain('task_agent_provider_identity_unknown');
-    const shellLeaderDir = api.taskSessionDirectory(fixture, spec.task, shellLeaderSpec.role);
-    expect(existsSync(join(shellLeaderDir, 'provider-created.json'))).toBe(false);
-    const shellLeaderPid = JSON.parse(readFileSync(join(fixture, 'shell-leader.ready'), 'utf8')).pid;
-    expect(await api.closeTaskAgent(fixture, spec.task, shellLeaderSpec.role)).toEqual({ status: 'closed', pids: [] });
-    expect(live(shellLeaderPid)).toBe(false);
-
-    // #754: the provider exits by itself during cleanup, after a liveness read
-    // proved it alive. A PATH shim kills it at one exact command after
-    // close-intent.json, waits until it is reaped, and then runs the real tool.
-    // Each window must end in the normal closed result.
-    const exitAt = async (role: string, tool: 'herdr' | 'ps', pattern: (pid: string) => string, real: string) => {
-      const exitSpec = { ...spec, role };
-      const exitPath = join(fixture, `${role}.json`); writeFileSync(exitPath, JSON.stringify(exitSpec));
-      const exitOwner = owner('normal', exitPath); await exited(exitOwner.child);
-      if (exitOwner.child.exitCode !== 0) throw new Error(exitOwner.errors());
-      const exitBinding = api.readTaskAgent(fixture, spec.task, role).binding as HerdrTaskBinding;
-      const exitDir = api.taskSessionDirectory(fixture, spec.task, role);
-      const exitShim = join(fixture, `${role}-shim`); mkdirSync(exitShim);
-      const exitMark = join(fixture, `${role}.mark`);
-      const pid = String(exitBinding.provider.pid);
-      writeFileSync(join(exitShim, tool), `#!/bin/sh
-case "$*" in ${pattern(pid)}) if [ -f ${quote(join(exitDir, 'close-intent.json'))} ] && [ ! -f ${quote(exitMark)} ]; then if kill -KILL ${pid}; then echo killed > ${quote(exitMark)}; else echo absent > ${quote(exitMark)}; fi; i=0; while kill -0 ${pid} 2>/dev/null && [ $i -lt 100 ]; do sleep 0.05; i=$((i+1)); done; fi ;; esac
-exec ${quote(real)} "$@"
-`);
-      chmodSync(join(exitShim, tool), 0o755);
-      const exitSavedPath = process.env.PATH;
-      try {
-        process.env.PATH = exitShim + ':' + exitSavedPath;
-        expect(await api.closeTaskAgent(fixture, spec.task, role)).toEqual({ status: 'closed', pids: [] });
-      } finally { process.env.PATH = exitSavedPath; }
-      // The kill succeeded, so the provider was alive at every earlier liveness read.
-      expect(readFileSync(exitMark, 'utf8').trim()).toBe('killed');
-      expect(live(exitBinding.provider.pid)).toBe(false);
-      expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
-    };
-    // The guard's first read (`pane get`) runs before its own liveness read:
-    // the guard must allow the exit (exited checks).
-    await exitAt('exit-in-guard', 'herdr', () => '*" pane get "*', herdr);
-    // `agent get` follows the guard's liveness read: assertTaskBinding must
-    // confirm the same process exited and move to the exited checks.
-    await exitAt('exit-in-live-check', 'herdr', () => '*" agent get "*', herdr);
-    // createdProcessGroupAlive alone reads the process group, after its liveness
-    // read: the failed group read must end as a confirmed exit.
-    await exitAt('exit-in-signal', 'ps', pid => `"-p ${pid} -o pgid="`, '/bin/ps');
-
-    const splitSpec = { ...spec, role: 'split-gap' };
-    const splitPath = join(fixture, 'split-gap.json'); writeFileSync(splitPath, JSON.stringify(splitSpec));
-    const splitOwner = owner('split-crash', splitPath); await exited(splitOwner.child);
-    expect(splitOwner.child.exitCode).toBe(80);
-    expect(await api.cancelTaskAgent(fixture, spec.task, splitSpec.role)).toEqual({ status: 'cleanup_pending', pids: [], reason: 'split_outcome_unrecorded' });
-    expect(existsSync(join(api.taskSessionDirectory(fixture,spec.task,splitSpec.role),'closed.json'))).toBe(false);
-    // Fixture owns every pane; production deliberately cannot guess this one.
-    const gapPane = call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes.find((item: any) => item.pane_id !== parent);
-    execute(['pane','close',gapPane.pane_id]);
-
-    const lostSpec = { ...spec, role: 'pane-gone' };
-    const lostPath = join(fixture, 'pane-gone.json'); writeFileSync(lostPath, JSON.stringify(lostSpec));
-    const lostOwner = owner('ambiguous', lostPath); await exited(lostOwner.child);
-    expect(lostOwner.child.exitCode).toBe(79);
-    const lostDir = api.taskSessionDirectory(fixture,spec.task,lostSpec.role);
-    const lostPane = api.readSessionArtifact<{pane_id:string}>(join(lostDir,'pane-created.json'));
-    execute(['pane','close',lostPane.pane_id]);
-    expect(await api.cancelTaskAgent(fixture,spec.task,lostSpec.role)).toEqual({ status:'cleanup_pending',pids:[],reason:'pane_absent_pid_unobserved' });
-    expect(existsSync(join(lostDir,'closed.json'))).toBe(false);
-
-    // A recovered receipt may still list a PID after its pane disappeared.
-    // That observation does not authorize a signal to an unidentified process.
-    const survivor = spawn(process.execPath, ['-e', "process.on('SIGTERM',()=>{});setInterval(()=>{},1000)"], { cwd: fixture, env, detached: true, stdio: 'ignore' });
-    try {
-      const lingeringSpec = { ...spec, role: 'cleanup-pending' };
-      const lingeringPath = join(fixture, 'lingering.json'); writeFileSync(lingeringPath, JSON.stringify(lingeringSpec));
-      const ownerWithNoReceipt = owner('ambiguous', lingeringPath); await exited(ownerWithNoReceipt.child);
-      expect(ownerWithNoReceipt.child.exitCode).toBe(79);
-      const lingeringDir = api.taskSessionDirectory(fixture, spec.task, lingeringSpec.role);
-      const intent = api.readSessionArtifact<{ intent_id: string }>(join(lingeringDir, 'intent.json'));
-      const pane = api.readSessionArtifact<{ pane_id: string; terminal_id: string }>(join(lingeringDir, 'pane-created.json'));
-      const actualPid = JSON.parse(readFileSync(join(fixture, 'cleanup-pending.ready'), 'utf8')).pid;
-      api.writeSessionArtifact(join(lingeringDir, 'unbound-cleanup.json'), { intent_id: intent.intent_id, ...pane, pids: [actualPid, survivor.pid] });
-      expect(await api.closeTaskAgent(fixture, spec.task, lingeringSpec.role)).toEqual({ status: 'cleanup_pending', pids: [survivor.pid!] });
-      expect(live(survivor.pid!)).toBe(true);
-      expect(api.taskAgentStatus(fixture, spec.task, lingeringSpec.role).status).toBe('cleanup_pending');
-      expect(live(actualPid)).toBe(false);
-      expect(existsSync(join(lingeringDir, 'closed.json'))).toBe(false);
-      expect(call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes).toHaveLength(1);
-      survivor.kill('SIGKILL'); await exited(survivor);
-      expect(await api.closeTaskAgent(fixture, spec.task, lingeringSpec.role)).toEqual({ status: 'closed', pids: [] });
-    } finally { if (survivor.exitCode === null && survivor.signalCode === null) survivor.kill('SIGKILL'); await exited(survivor); }
-
+    expect(await api.cancelTaskAgent(fixture, spec.task, 'grouped')).toEqual({ status: 'closed', pids: [] });
+    expect([live(leaderPid), live(childPid), gone(grouped.terminal_id)]).toEqual([false, false, true]);
   } finally {
-    requireFixtureSession(session);
-    // All server/pane/provider resources in this private HOME belong to this
-    // fixture. No name lookup or signal is issued against the user server.
-    try { execute(['server', 'stop']); } catch { if (server.exitCode === null && server.signalCode === null) server.kill('SIGTERM'); }
-    await exited(server);
-    for (const owner of owners) {
-      if (owner.exitCode === null && owner.signalCode === null) owner.kill('SIGTERM');
-      await exited(owner);
+    for (const child of owners) {
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGTERM');
+      await exited(child);
     }
     // A failed group cleanup must not leave the TERM/HUP-resistant child on the host.
-    for (const childFile of ['grouped.ready.child', 'bind-group-child.ready.child'].map(name => join(fixture, name))) {
-      if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
-    }
-    rmSync(fixture, { recursive: true, force: true });
+    const childFile = join(fixture, 'grouped.ready.child');
+    if (existsSync(childFile)) { try { process.kill(Number(readFileSync(childFile, 'utf8')), 'SIGKILL'); } catch { /* Already absent. */ } }
   }
-}, 60_000);
+}), 60_000);
 
-test('workspace registration recovers vanished, closed and failed-open incarnations through the Bash consumer', async () => {
-  const fixture = realpathSync(mkdtempSync('/tmp/tr-'));
-  const home = join(fixture, 'h'); mkdirSync(home);
-  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  requireFixtureSession(session);
-  const configPath = join(fixture, 'herdr.toml');
-  writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
-  const endpoint = {session, home, configPath}; const env = herdrEnvironment(endpoint);
-  const herdr = Bun.which('herdr')!;
-  const call = (args: string[]) => { requireFixtureSession(session); return JSON.parse(run(herdr, ['--session',session,...args],fixture,env)).result; };
+test('workspace registration records the hc endpoint through the Bash consumer and refuses classic records', () => withCore('tr', async ({ fixture, env, endpoint }) => {
   const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
-  const server = spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});
-  const savedPath = process.env.PATH;
-  try {
-    run('git',['init','-q','-b','main'],fixture,env);
-    run('git',['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','base'],fixture,env);
-    await until(()=>{try{call(['workspace','list']);return true;}catch{return false;}});
-    const root=call(['workspace','create','--cwd',fixture,'--no-focus']); const parent=root.root_pane.pane_id;
-    const baseline=call(['workspace','list']).workspaces.length;
-    const checkout=join(fixture,'recover'); run('git',['worktree','add','-qb','codex/recover',checkout],fixture,env);
-    await expect(api.registerTaskWorktree(checkout,endpoint,'w99:p99')).rejects.toThrow();
-    expect(await api.cleanupTaskWorktree(fixture,checkout)).toEqual({status:'not_registered',pids:[]});
-    const first=await api.registerTaskWorktree(checkout,endpoint,parent);
-    expect((await api.registerTaskWorktree(checkout,endpoint,parent)).workspace_id).toBe(first.workspace_id);
-    call(['workspace','close',first.workspace_id]);
-    const restored=await api.registerTaskWorktree(checkout,endpoint,parent);
-    expect(restored.workspace_id).not.toBe(first.workspace_id);
-    expect((await api.cleanupTaskWorktree(fixture,checkout)).status).toBe('closed');
-    const reopened=await api.registerTaskWorktree(checkout,endpoint,parent);
-    expect(reopened.ownership.disposition).toBe('created');
-    expect((await api.cleanupTaskWorktree(fixture,checkout)).status).toBe('closed');
-    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
-    const shim=join(fixture,'shim');mkdirSync(shim);
-    const marker=join(fixture,'fail-next');
-    writeFileSync(join(shim,'herdr'),`#!/bin/sh\ncase "$*" in *"worktree open"*) if [ -f ${quote(marker)} ]; then rm ${quote(marker)}; echo injected-register-failure >&2; exit 1; fi ;; esac\nexec ${quote(herdr)} "$@"\n`);chmodSync(join(shim,'herdr'),0o755);
-    writeFileSync(join(shim,'gh'),`#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({number:123,title:'Recover fixture',state:'OPEN',url:'https://github.com/example/repo/issues/123'})}'\n`);chmodSync(join(shim,'gh'),0o755);
-    process.env.PATH=shim+':'+savedPath;
-    writeFileSync(marker,'fail');
-    await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
-    expect((await api.cleanupTaskWorktree(fixture,checkout)).status).toBe('closed');
-    writeFileSync(marker,'fail');
-    await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
-    expect((await api.registerTaskWorktree(checkout,endpoint,parent)).ownership.disposition).toBe('created');
-    await api.cleanupTaskWorktree(fixture,checkout);
-    // An ambiguous open that actually created a view is attached on readback.
-    writeFileSync(marker,'fail');
-    await expect(api.registerTaskWorktree(checkout,endpoint,parent)).rejects.toThrow('injected-register-failure');
-    const unknown=call(['worktree','open','--workspace',root.workspace.workspace_id,'--path',checkout,'--no-focus']);
-    expect((await api.registerTaskWorktree(checkout,endpoint,parent)).ownership.disposition).toBe('attached');
-    expect(await api.cleanupTaskWorktree(fixture,checkout)).toEqual({status:'cleanup_pending',pids:[],reason:'workspace_attached'});
-    call(['workspace','close',unknown.workspace.workspace_id]);
-    await api.cleanupTaskWorktree(fixture,checkout);
-    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
-    const history=join(fixture,'.ai/harness/runs/task-workspaces');
-    expect(readdirSync(history).some(key=>existsSync(join(history,key,'history')))).toBe(true);
-    copyHelpers(fixture);
-    const endpointFile=join(fixture,'endpoint.json');writeFileSync(endpointFile,JSON.stringify({endpoint,parent_pane:parent}));
-    const target=join(fixture,'bash-checkout');
-    const helperEnv={...env,PATH:shim+':'+env.PATH,REPO_HARNESS_TARGET_REPO_ROOT:fixture};
-    const args=[join(fixture,'scripts/contract-worktree.sh'),'start','--issue','123','--path',target,'--herdr-endpoint',endpointFile];
-    writeFileSync(marker,'fail');
-    const failed=spawnSync('bash',args,{cwd:fixture,env:helperEnv,encoding:'utf8',timeout:15000});
-    expect(failed.status).toBe(1);expect(existsSync(target)).toBe(true);
-    const retried=spawnSync('bash',args,{cwd:fixture,env:helperEnv,encoding:'utf8',timeout:20000});
-    if(retried.status!==0)throw new Error(retried.stderr+retried.stdout);
-    const space=call(['workspace','list']).workspaces.find((item:any)=>item.worktree?.checkout_path===target);
-    expect(space.worktree.repo_key).toBe(realpathSync(join(fixture,'.git')));
-    expect(existsSync(join(fixture,'.ai/harness/worktrees/123-recover-fixture.json'))).toBe(true);
-    expect((await api.cleanupTaskWorktree(fixture,target)).status).toBe('closed');
-    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
-    expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
+  run('git', ['init', '-q', '-b', 'main'], fixture, env);
+  run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'base'], fixture, env);
+  const checkout = join(fixture, 'recover'); run('git', ['worktree', 'add', '-qb', 'codex/recover', checkout], fixture, env);
+  expect(await api.cleanupTaskWorktree(fixture, checkout)).toEqual({ status: 'not_registered', pids: [] });
+  const first = await api.registerTaskWorktree(checkout, endpoint);
+  expect(first).toEqual({ protocol: 2, repository: taskRepository(checkout), endpoint });
+  expect(await api.registerTaskWorktree(checkout, endpoint)).toEqual(first);
+  await expect(api.registerTaskWorktree(checkout, { socket: join(fixture, 'other.sock') })).rejects.toThrow('task_agent_workspace_endpoint_changed');
+  expect((await api.cleanupTaskWorktree(fixture, checkout)).status).toBe('closed');
+  // A closed incarnation moves to history; the next registration writes a new one.
+  expect(await api.registerTaskWorktree(checkout, endpoint)).toEqual(first);
+  expect(readdirSync(join(api.workspaceDirectory(taskRepository(checkout)), 'history'))).toHaveLength(1);
+  expect((await api.cleanupTaskWorktree(fixture, checkout)).status).toBe('closed');
 
-  } finally {
-    process.env.PATH=savedPath;
-    try { requireFixtureSession(session);run(herdr,['--session',session,'server','stop'],fixture,env); } catch { server.kill('SIGTERM'); }
-    await exited(server);rmSync(fixture,{recursive:true,force:true});
-  }
-},60000);
+  copyHelpers(fixture);
+  const shim = join(fixture, 'shim'); mkdirSync(shim);
+  writeFileSync(join(shim, 'gh'), `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ number: 123, title: 'Recover fixture', state: 'OPEN', url: 'https://github.com/example/repo/issues/123' })}'\n`); chmodSync(join(shim, 'gh'), 0o755);
+  const endpointFile = join(fixture, 'endpoint.json'), target = join(fixture, 'bash-checkout');
+  const start = (address: object) => {
+    writeFileSync(endpointFile, JSON.stringify(address));
+    return spawnSync('bash', [join(fixture, 'scripts/contract-worktree.sh'), 'start', '--issue', '123', '--path', target, '--herdr-endpoint', endpointFile],
+      { cwd: fixture, env: { ...env, PATH: shim + ':' + env.PATH, REPO_HARNESS_TARGET_REPO_ROOT: fixture }, encoding: 'utf8', timeout: 20000 });
+  };
+  // A failed registration preserves the checkout; the same start then registers it.
+  // An address file that still names a parent terminal is a retired classic shape.
+  const failed = start({ endpoint, parent_terminal: 't99' });
+  expect(failed.status).toBe(1); expect(existsSync(target)).toBe(true);
+  expect(failed.stderr + failed.stdout).toContain('task_agent_classic_herdr_record_retired');
+  expect(existsSync(join(api.workspaceDirectory(taskRepository(target)), 'binding.json'))).toBe(false);
+  const retried = start({ endpoint });
+  if (retried.status !== 0) throw new Error(retried.stderr + retried.stdout);
+  expect(api.readSessionArtifact(join(api.workspaceDirectory(taskRepository(target)), 'binding.json'))).toEqual({ protocol: 2, repository: taskRepository(target), endpoint });
+  expect(existsSync(join(fixture, '.ai/harness/worktrees/123-recover-fixture.json'))).toBe(true);
+  expect((await api.cleanupTaskWorktree(fixture, target)).status).toBe('closed');
 
-darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
+  // #1476: classic Herdr records fail closed. They come last: any classic intent stops worktree cleanup.
+  const retired = /task_agent_classic_herdr_record_retired: .+ start the session again/;
+  const classicCheckout = join(fixture, 'classic'); run('git', ['worktree', 'add', '-qb', 'codex/classic', classicCheckout], fixture, env);
+  const classicWorkspace = api.workspaceDirectory(taskRepository(classicCheckout)); mkdirSync(classicWorkspace, { recursive: true });
+  writeFileSync(join(classicWorkspace, 'binding.json'), JSON.stringify({ protocol: 1, workspace_id: 'w1', endpoint: { session: 'task-proof-0000000000000000' } }));
+  await expect(api.registerTaskWorktree(classicCheckout, endpoint)).rejects.toThrow(retired);
+  const classicSpec = { task: 'classic-task', role: 'advisor', harness_kind: 'codex', endpoint, args: [], max_requests: 1 };
+  const sessionDir = api.taskSessionDirectory(fixture, classicSpec.task, classicSpec.role); mkdirSync(sessionDir, { recursive: true });
+  writeFileSync(join(sessionDir, 'intent.json'), JSON.stringify({ protocol: 2, runtime: 'herdr', intent_id: randomUUID(), spec: classicSpec }));
+  writeFileSync(join(sessionDir, 'binding.json'), JSON.stringify({ protocol: 2, runtime: 'herdr', repository_id: taskRepository(fixture).repository_id, execution_root: fixture,
+    task: classicSpec.task, role: classicSpec.role, harness_kind: 'codex', endpoint: { session: 'task-proof-0000000000000000' }, workspace_id: 'w1', pane_id: 'w1:p2', agent_name: 'advisor', max_requests: 1 }));
+  expect(() => api.readTaskAgent(fixture, classicSpec.task, classicSpec.role)).toThrow(retired);
+  await expect(api.startTaskAgent(fixture, classicSpec, { argv: ['/usr/bin/false'], ready: async () => { throw new Error('fixture_must_not_launch'); } })).rejects.toThrow(retired);
+  await expect(api.closeTaskAgent(fixture, classicSpec.task, classicSpec.role)).rejects.toThrow(retired);
+}), 60_000);
+
+darwinTest('OAR fixed host runs visibly in a private hc terminal and disposes before owned terminal cleanup', () => withCore('oh', async ({ fixture, env, endpoint, hc, parent: parentTerminal }) => {
   const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
-  const fixture = realpathSync(mkdtempSync('/tmp/oh-'));
-  const home = join(fixture, 'h'), repo = join(fixture, 'p'), output = join(fixture, 'out');
-  for (const path of [home, repo, output]) mkdirSync(path);
-  const session = `task-proof-${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-  const configPath = join(fixture, 'herdr.toml'), endpoint = { session, configPath, home };
-  requireFixtureSession(session);
-  const env = { ...herdrEnvironment(endpoint), REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1', GIT_CONFIG_GLOBAL: '/dev/null', GIT_CONFIG_NOSYSTEM: '1' };
-  const herdr = Bun.which('herdr'); if (!herdr) throw new Error('fixture_herdr_required');
-  writeFileSync(configPath, 'onboarding=false\n[terminal]\ndefault_shell="/bin/sh"\nshell_mode="non_login"\n[update]\nversion_check=false\nmanifest_check=false\n');
+  const repo = join(fixture, 'p'), output = join(fixture, 'out');
+  for (const path of [repo, output]) mkdirSync(path);
   run('git', ['init', '-qb', 'main'], repo, env);
   run('git', ['-c','user.name=fixture','-c','user.email=fixture@localhost','commit','--allow-empty','-qm','fixture'], repo, env);
-  const execute = (args: string[]) => { requireFixtureSession(session); return run(herdr, ['--session', session, ...args], repo, env); };
-  const call = (args: string[]) => JSON.parse(execute(args)).result;
-  const server = spawn(herdr, ['--session', session, 'server'], { env, stdio: 'ignore' }); server.on('error', () => {});
   const closeRequest = join(output, 'close.request'), readyFile = join(output, 'ready.json'), disposedFile = join(output, 'disposed.json');
   const specFile = join(fixture, 'fixture.json'), profile = join(fixture, 'profile.sb');
   const paths = { subject: repo, primary: repo, ownerRecord: repo, journal: repo, gitCommonDir: join(repo,'.git'), output };
   writeFileSync(profile, reviewIsolationPolicy(paths));
   writeFileSync(specFile, JSON.stringify({ mode: 'scripted', cwd: repo, inputs: ['one','two','three'], closeRequest, readyFile, disposedFile, isolation: { paths, policyFile: profile } }));
-  const priorPath = process.env.PATH, priorFlag = process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE;
+  const priorFlag = process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE;
   process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE='1';
   let binding: Awaited<ReturnType<typeof api.startTaskApplicationHost>> | undefined;
   try {
-    await until(() => { try { return call(['workspace','list']).type==='workspace_list'; } catch { return false; } });
-    const workspace = call(['workspace','create','--cwd',repo,'--label','OAR fixture','--no-focus']);
+    const parent = await parentTerminal(repo);
     const command = reviewHostCommand(realpathSync('/opt/homebrew/opt/node@24/bin/node'), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
     binding = await api.startTaskApplicationHost(repo, { task:'oar-fixture', role:'deep-reasoner', harness_kind:'codex', endpoint,
-      parent_pane:workspace.root_pane.pane_id, args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
+      args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
     expect(binding.provider.pid).toBe(JSON.parse(readFileSync(readyFile,'utf8')).pid);
-    // Match host text independently of the pane width and terminal soft wraps.
-    const screen = execute(['pane','read',binding.pane_id,'--source','recent-unwrapped','--lines','120','--format','text','--raw']);
-    expect(screen).toContain('fixture-oar');
-    await until(() => execute(['pane','read',binding!.pane_id,'--source','recent-unwrapped','--lines','120','--format','text','--raw']).includes('OAR_HOST_ROUNDS_DONE_FIXTURE'));
+    const screen = () => hc(['read', binding!.terminal_id, '--lines', '200']);
+    expect(screen()).toContain('fixture-oar');
+    await until(() => screen().includes('OAR_HOST_ROUNDS_DONE_FIXTURE'));
     writeFileSync(closeRequest, 'close');
     await until(() => existsSync(disposedFile));
     await until(() => !live(binding!.provider.pid));
     expect((await api.cancelTaskAgent(repo,'oar-fixture','deep-reasoner')).status).toBe('closed');
-    expect(call(['pane','get',workspace.root_pane.pane_id]).pane.pane_id).toBe(workspace.root_pane.pane_id);
+    expect(JSON.parse(hc(['get', '--json', parent])).state).toBe('live');
   } finally {
     writeFileSync(closeRequest,'close');
     if (binding && live(binding.provider.pid)) { await until(() => !live(binding!.provider.pid)); }
-    try { execute(['server','stop']); } catch { if (server.exitCode===null && server.signalCode===null) server.kill('SIGTERM'); }
-    await exited(server);
-    process.env.PATH=priorPath;
     if(priorFlag===undefined)delete process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE;else process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE=priorFlag;
-    rmSync(fixture,{recursive:true,force:true});
   }
-}, 60000);
+}, { REPO_HARNESS_OAR_SCRIPTED_FIXTURE: '1' }), 60000);
 
 for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host binds by exact command and process identity without Herdr (${admitted ? 'approved task' : 'generic runtime'})`, async () => {
   const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };

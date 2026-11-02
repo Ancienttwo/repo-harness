@@ -1,5 +1,6 @@
 import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
+import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 
 /**
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
@@ -30,7 +31,7 @@ export class HerdrCoreError extends Error {
 }
 
 export interface HerdrCoreOptions {
-  /** The environment for the child; `HC_SESSION` / `HC_SOCKET` select the core. Defaults to `process.env`. */
+  /** The environment for the child; `HC_SESSION` / `HC_SOCKET` select the core. Defaults to `process.env`. The notify secret keys never reach the child. */
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
 }
@@ -92,13 +93,21 @@ const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
  */
 const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/;
 
+/** True when `value` has hc's terminal address shape (see ADDRESS). */
+export function isHcAddress(value: string): boolean {
+  return ADDRESS.test(value);
+}
+
 const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
 
 function environment(program: HerdrCoreProgram, options: HerdrCoreOptions): NodeJS.ProcessEnv {
   const env = options.env ?? process.env;
   // A classic Herdr pane inside an hc terminal (or the reverse) is a nested multiplexer.
   if (env.HC_TERMINAL_ID && env.HERDR_ENV === '1') throw new HerdrCoreError(program, 'nested', undefined, undefined, 'HC_TERMINAL_ID and HERDR_ENV=1 are both set');
-  return env;
+  // A call can start a stopped core. The core keeps this environment and gives it to every terminal it starts later.
+  const child = { ...env };
+  for (const key of NOTIFY_SECRET_KEYS) delete child[key];
+  return child;
 }
 
 /** Every labeled write and filter carries a repo-harness key, so repo-harness never touches unlabeled terminals. */
@@ -116,7 +125,7 @@ function labelArgs(labels: HcLabels): string[] {
 }
 
 function address(value: string): string {
-  if (!ADDRESS.test(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
+  if (!isHcAddress(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
   return value;
 }
 

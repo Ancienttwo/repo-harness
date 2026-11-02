@@ -715,6 +715,13 @@ export function installProfileStatePath(env: NodeJS.ProcessEnv = process.env): s
   return join(env.HOME ?? homedir(), '.repo-harness', 'install-state.json');
 }
 
+/**
+ * The mandatory runtime dependencies that repo-harness pins in its package
+ * dependencies. Bun hoists them beside the CLI package, so a CLI install
+ * rewrites them and a host transaction must restore them with the CLI.
+ */
+export const ARCHCTX_PACKAGES = ['archctx', 'archctx-contracts'] as const;
+
 export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   const bunRoot = env.BUN_INSTALL ?? join(home, '.bun');
@@ -727,6 +734,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(bunRoot, 'install', 'global', 'bun.lockb'),
     join(bunRoot, 'install', 'global', 'node_modules', 'repo-harness'),
     join(bunRoot, 'install', 'global', 'node_modules', '@colbymchenry', 'codegraph'),
+    ...ARCHCTX_PACKAGES.map(name => join(bunRoot, 'install', 'global', 'node_modules', name)),
     join(home, '.codex', 'hooks.json'),
     join(home, '.codex', 'config.toml'),
     join(home, '.claude', 'settings.json'),
