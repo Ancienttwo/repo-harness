@@ -301,7 +301,7 @@ test.each([
   const refs = f.git('show-ref');
   const api: GitHubAPI = async (path, method, body) => {
     if (path.endsWith(`/git/commits/${f.after}`)) {
-      if ('fail' in scenario) throw new CIReportError(503, 'HTTP 503');
+      if ('fail' in scenario) throw new CIReportError(404, 'HTTP 404');
       if ('sameParent' in scenario) return { sha: f.after, parents: [{ sha: f.after }] };
       if ('commit' in scenario) return Array.isArray(scenario.commit) ? scenario.commit : { sha: f.after, parents: [{ sha: f.before }], ...scenario.commit };
     }
@@ -352,7 +352,7 @@ test.each([
 ])('merged PR identity proof fails closed: $name', scenario => fixture(async f => {
   const report = await reportCI('test/repo', 12, async (path, method, body) => {
     if (path.endsWith('/pulls/7')) {
-      if ('fail' in scenario) throw new CIReportError(503, 'HTTP 503');
+      if ('fail' in scenario) throw new CIReportError(404, 'HTTP 404');
       return scenario.detail === null ? null : { ...(await f.api(path) as object), ...scenario.detail };
     }
     return f.api(path, method, body);
@@ -371,13 +371,26 @@ test.each([
 ])('rollback parent PR observation fails closed: $name', scenario => fixture(async f => {
   const report = await reportCI('test/repo', 12, async (path, method, body) => {
     if (path === `/repos/test/repo/commits/${f.before}/pulls?per_page=100`) {
-      if ('fail' in scenario) throw new CIReportError(503, 'HTTP 503');
+      if ('fail' in scenario) throw new CIReportError(404, 'HTTP 404');
       return scenario.response;
     }
     return f.api(path, method, body);
   });
   expect(report.merges).toEqual([]); expect(report.errors).toHaveLength(1);
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
+}));
+
+test.each([
+  { name: 'snapshot compare 503', status: 503, read: (path: string) => path.includes('/compare/'), error: 'Rollback boundary pending for PR #7' },
+  { name: 'parent PR associations 500', status: 500, read: (path: string) => /\/commits\/[0-9a-f]{40}\/pulls\?/.test(path), error: 'Rollback boundary pending for PR #7' },
+  { name: 'closed PR list 502', status: 502, read: (path: string) => path.startsWith('/repos/test/repo/pulls?'), error: 'Merge reporting incomplete' },
+])('a provider 5xx on a rollback boundary read is an external error and opens no repair issue: $name', scenario => fixture(async f => {
+  const report = await reportCI('test/repo', 12, async (path, method, body) => {
+    if (scenario.read(path)) throw new CIReportError(scenario.status, `GitHub GET ${path}: HTTP ${scenario.status}`);
+    return f.api(path, method, body);
+  });
+  expect(report.merges).toEqual([]); expect(report.repairs).toEqual([]); expect(f.issues).toEqual([]);
+  expect(report.errors).toEqual([expect.stringMatching(new RegExp(`^Provider unavailable \\(attention_owner: external\\): ${scenario.error}: GitHub GET .*: HTTP ${scenario.status}$`))]);
 }));
 
 test.each([
@@ -473,7 +486,7 @@ test('merge boundary repair reuses one open PR issue across new main SHAs, run I
     { number: 3, state: 'open', pull_request: {}, body: '<!-- ci-repair:merge-pr-7 -->', html_url: 'https://github.com/test/repo/pull/3' },
     { number: 4, state: 'closed', body: '<!-- ci-repair:merge-pr-7 -->', html_url: 'https://github.com/test/repo/issues/4' },
   );
-  const api: GitHubAPI = (path, method, body) => path.includes('/git/commits/') ? Promise.reject(new CIReportError(503, 'HTTP 503')) : f.api(path, method, body);
+  const api: GitHubAPI = (path, method, body) => path.includes('/git/commits/') ? Promise.reject(new CIReportError(404, 'HTTP 404')) : f.api(path, method, body);
   const first = await reportCI('test/repo', 12, api);
   expect(first.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created', issue_url: 'https://github.com/test/repo/issues/5' });
   expect((await reportCI('test/repo', 12, api)).repairs[0]?.delivery).toBe('reused');
@@ -525,7 +538,7 @@ test('concurrent reports for one merged PR elect one open shared repair issue', 
       return issue;
     }
     if (path.startsWith('/repos/test/repo/pulls?')) return [{ number: 7, merged_at: now, merge_commit_sha: after, base: { ref: 'main' } }];
-    if (/^\/repos\/test\/repo\/git\/commits\//.test(path)) throw new CIReportError(503, 'HTTP 503');
+    if (/^\/repos\/test\/repo\/git\/commits\//.test(path)) throw new CIReportError(404, 'HTTP 404');
     throw Error(`Unexpected API operation ${method} ${path}`);
   };
   const reports = await Promise.all([reportCI('test/repo', 12, api), reportCI('test/repo', 13, api)]);
