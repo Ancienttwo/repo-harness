@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.cli-diagnostics
+kind: component
+name: CLI Diagnostics and Shared Options
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: cli
+summary: Serves the read-only doctor and init-hook diagnostics, the shared CLI option validators and the bootstrap confirm prompt.
+responsibilities:
+  - Validate shared CLI options for target, location and adoption mode.
+  - Report PATH, version, host install, trust, route and CodeGraph readiness without mutation.
+  - Turn readiness gaps into a read-only Agent bootstrap checklist.
+source:
+  include:
+    - "src/cli/tty-prompt.ts"
+    - "src/cli/commands/validators.ts"
+    - "src/cli/commands/doctor.ts"
+    - "src/cli/commands/init-hook.ts"

@@ -85,6 +85,7 @@ source:
               path: "src/effects/architecture/projection-writer.ts"
               symbol: "runArchitectureWriter"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

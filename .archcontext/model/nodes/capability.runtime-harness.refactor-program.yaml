@@ -31,6 +31,8 @@ source:
               path: "src/effects/refactor/archctx-provider.ts"
               symbol: "decideRecommendation"
 extensions:
+  harnessTier: "plugin"
+  harnessContract: "Surface"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

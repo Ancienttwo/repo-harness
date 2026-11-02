@@ -40,6 +40,8 @@
     ]
   },
   "extensions": {
+    "harnessTier": "plugin",
+    "harnessContract": "Surface",
     "contractFiles": {
       "agents": "AGENTS.md",
       "claude": "CLAUDE.md"

@@ -24,6 +24,8 @@ source:
               path: src/dsh/bridge.ts
               symbol: resolveDshBridge
 extensions:
+  harnessTier: "plugin"
+  harnessContract: "Host"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
