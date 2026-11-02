@@ -6,7 +6,7 @@ export interface AdmittedTaskSession {
   readonly selector: AdmittedSessionSelector;
   readonly admission_sha256: string;
   readonly branch: string;
-  readonly runtime: 'herdr' | 'terminal';
+  readonly runtime: 'herdr-core' | 'terminal';
   readonly harness_kind: string;
 }
 export interface AdmittedTaskSessions {
@@ -33,7 +33,7 @@ export function decodeAdmittedTaskSessions(value: unknown, request: AdmittedTask
     if (!exact(session, ['selector', 'admission_sha256', 'branch', 'runtime', 'harness_kind']) || !isAdmittedSessionSelector(session.selector)
       || typeof session.admission_sha256 !== 'string' || !/^sha256:[0-9a-f]{64}$/u.test(session.admission_sha256)
       || session.selector.repository_id !== request.repository_id || typeof session.branch !== 'string' || !session.branch || session.branch.length > 1024
-      || !['herdr', 'terminal'].includes(session.runtime as string) || typeof session.harness_kind !== 'string' || !session.harness_kind || session.harness_kind.length > 128
+      || !['herdr-core', 'terminal'].includes(session.runtime as string) || typeof session.harness_kind !== 'string' || !session.harness_kind || session.harness_kind.length > 128
       || seen.has(session.selector.session_binding_sha256)) return invalid();
     seen.add(session.selector.session_binding_sha256);
   }

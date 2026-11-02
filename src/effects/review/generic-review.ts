@@ -247,7 +247,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       binding = bound;
     } else {
       binding = await client.start(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
-        endpoint: session.endpoint, parent_pane: session.parent_pane!, args: [], max_requests: REVIEW_MAX_ROUNDS },
+        endpoint: session.endpoint, parent_terminal: session.parent_pane!, args: [], max_requests: REVIEW_MAX_ROUNDS },
         command, () => client.ready(join(dir, 'ready.json')), undefined, taskAuthority);
     }
     client.assertBinding(binding);

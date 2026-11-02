@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
-// Task-agent-host process entry for the worktree actions that need Herdr pane state.
+// Task-agent-host process entry for the worktree actions that need herdr-core state.
 // contract-worktree-runtime.ts runs it as a process; the argv, the JSON on stdout and the exit code are the port.
-import type { HerdrEndpoint } from './task-session-record';
+import type { HerdrCoreEndpoint } from './task-session-record';
 import { cleanupTaskWorktree, notifyTaskWorktreeMerged, registerTaskWorktree } from './task-session';
 import { readSessionArtifact } from './task-session-io';
 
@@ -9,8 +9,8 @@ const [action, ...args] = process.argv.slice(2);
 const value = (key: string) => { const at = args.indexOf(key); if (at < 0 || !args[at + 1]) throw new Error(`runtime requires ${key}`); return args[at + 1]!; };
 try {
   if (action === 'register') {
-    const input = readSessionArtifact<{ endpoint: HerdrEndpoint; parent_pane: string }>(value('--endpoint'));
-    console.log(JSON.stringify(await registerTaskWorktree(value('--worktree'), input.endpoint, input.parent_pane)));
+    const input = readSessionArtifact<{ endpoint: HerdrCoreEndpoint; parent_terminal: string }>(value('--endpoint'));
+    console.log(JSON.stringify(await registerTaskWorktree(value('--worktree'), input.endpoint, input.parent_terminal)));
   } else if (action === 'notify-merged') {
     const result = await notifyTaskWorktreeMerged(value('--repo'), value('--owner'), {
       pr: Number(value('--pr')), merge_sha: value('--merge'), worktree: value('--worktree'), branch: value('--branch'),

@@ -19,7 +19,7 @@ export interface TaskSessionAdmission {
     repository_id: string; issue_id: string; campaign_id: string; campaign_sha256: string;
     execution_actor: string; claim: TaskClaimReference;
     source_root: string; execution_root: string; branch: string | null; task: string; role: string;
-    harness_kind: string; runtime: 'herdr' | 'terminal';
+    harness_kind: string; runtime: 'herdr-core' | 'terminal';
   };
   approval: { admission_sha256: string; grant_sha256: string; revision: number; goal_revision: string; scope_sha256: string };
   /** A normal commit does not change task ownership or reset request budgets. */
@@ -48,7 +48,8 @@ export interface TaskAgentSpec<Endpoint> {
   role: string;
   harness_kind: string;
   endpoint: Endpoint;
-  parent_pane: string;
+  /** The hc terminal that asks for the session; it must work in the same repository. */
+  parent_terminal: string;
   args: string[];
   max_requests: number;
 }
