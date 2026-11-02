@@ -33,8 +33,9 @@ export type SeatsConfigV1 = { readonly [seat in SeatId]: SeatConfigV1 };
 /**
  * The section an absent `seats` key reads as: the canvas defaults, with the
  * orchestrator on Opus high (G36). `repo-harness seats argv` launches from the
- * same value. The configuration effect checks these lists against the fleet
- * role profiles.
+ * same value. No runtime check compares it with the fleet role profiles: a
+ * save checks it as any other section, and a route test compares the default
+ * worker fleet with the worker range.
  */
 export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
   orchestrator: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: Object.freeze(['gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const), fleet: Object.freeze([]) }),

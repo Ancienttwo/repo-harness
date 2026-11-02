@@ -125,6 +125,11 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
   const efforts = [{ value: null, label: t('seats.effort.default') }, ...ranges.efforts.map(effort => ({ value: effort as string | null, label: effort, off: !runtime.effort }))];
   const host = draft.runtime === 'pi' ? null : HOST_TOOLS[draft.runtime];
   const noFleet = range.fleet.length === 0;
+  // A stored role the server no longer lists stays visible, as a stored model does, so it can be switched off.
+  const roles: readonly { readonly name: string; readonly writable: boolean | null }[] = [
+    ...ranges.roles,
+    ...draft.fleet.filter(name => !ranges.roles.some(role => role.name === name)).map(name => ({ name, writable: null })),
+  ];
   return (
     <section aria-labelledby={`seat-${seat}-title`} data-seat-card={seat} className="flex flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
       <div className="flex flex-wrap items-center gap-3 border-b border-kumo-hairline px-4 py-4 sm:px-5">
@@ -171,18 +176,20 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
           <span className="text-xs text-kumo-subtle">{t(`seats.tools.host.${draft.runtime}`)}</span>
         </li>
         {SEAT_TOOLS.map((tool) => {
+          const on = draft.tools.includes(tool);
           const ruled = !range.tools.includes(tool);
-          const fixed = tool === 'read' || (draft.runtime === 'codex' && tool === 'shell');
+          // Codex always runs commands, so its Shell can be turned on but not off.
           const hostWhy = draft.runtime === 'pi' ? t('seats.tools.why.pi')
             : tool === 'read' ? t('seats.tools.why.read')
-              : draft.runtime === 'codex' && tool === 'shell' ? t('seats.tools.why.codexShell')
+              : draft.runtime === 'codex' && tool === 'shell' && on ? t('seats.tools.why.codexShell')
                 : draft.runtime === 'codex' && tool === 'tasks' ? t('seats.tools.why.codexTasks') : null;
           const why = ruled ? t(tool === 'edit' || tool === 'gh' ? `seats.tools.rule.${tool}` : 'seats.tools.rule.other') : hostWhy;
           const enforcement = host === null ? 'none' : host[tool].enforcement;
           return (
             <ToggleRow key={tool} name={t(`seats.tool.${tool}`)} mono={false} detail={host === null ? t('seats.tools.hostDefault') : host[tool].map}
               badge={<Badge className={ENFORCEMENT_TONE[enforcement]}>{t(`seats.enforcement.${enforcement}`)}</Badge>}
-              why={why} locked={locked || why !== null} on={ruled ? false : fixed || draft.tools.includes(tool)}
+              // An out-of-range group that the draft holds can only be switched off; the server refuses the section while it stays.
+              why={why} locked={locked || (why !== null && !(ruled && on))} on={on}
               aria={t('seats.tools.allow', { tool: t(`seats.tool.${tool}`) })}
               onToggle={on => form.edit(current => setSeatTool(current, seat, tool, on))} />
           );
@@ -196,18 +203,21 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
             {noFleet ? t('seats.fleet.fixedEmpty') : t(`seats.fleet.enforce.${draft.runtime}`)}
           </Badge>
         </li>
-        {noFleet
-          ? <li className="m-4 rounded-lg bg-kumo-recessed px-3.5 py-3 text-sm sm:mx-5" data-fleet-locked>{t('seats.fleet.orchestratorLocked')}</li>
-          : ranges.roles.map((role) => {
-            const why = !runtime.fleet ? t('seats.fleet.why.pi') : !range.fleet.includes(role.name) ? t('seats.fleet.why.writable') : null;
-            return (
-              <ToggleRow key={role.name} name={role.name} mono detail={fleetDetail(setup, role.name)}
-                badge={<Badge className={role.writable ? 'bg-kumo-warning-tint text-kumo-warning' : 'bg-kumo-fill text-kumo-subtle'}>{t(role.writable ? 'seats.fleet.writable' : 'seats.fleet.readOnly')}</Badge>}
-                why={why} locked={locked || why !== null} on={why === null && draft.fleet.includes(role.name)}
-                aria={t('seats.fleet.allow', { role: role.name })}
-                onToggle={on => form.edit(current => setSeatRole(current, seat, role.name, on))} />
-            );
-          })}
+        {noFleet && <li className="m-4 rounded-lg bg-kumo-recessed px-3.5 py-3 text-sm sm:mx-5" data-fleet-locked>{t('seats.fleet.orchestratorLocked')}</li>}
+        {/* With no allowed role, only stored roles show, so they can be switched off. */}
+        {roles.filter(role => !noFleet || draft.fleet.includes(role.name)).map((role) => {
+          const on = draft.fleet.includes(role.name);
+          const why = role.writable === null ? t('seats.fleet.why.unknown') : !runtime.fleet ? t('seats.fleet.why.pi')
+            : !range.fleet.includes(role.name) ? t(noFleet ? 'seats.fleet.why.none' : 'seats.fleet.why.writable') : null;
+          return (
+            <ToggleRow key={role.name} name={role.name} mono detail={fleetDetail(setup, role.name)}
+              badge={role.writable === null ? null
+                : <Badge className={role.writable ? 'bg-kumo-warning-tint text-kumo-warning' : 'bg-kumo-fill text-kumo-subtle'}>{t(role.writable ? 'seats.fleet.writable' : 'seats.fleet.readOnly')}</Badge>}
+              why={why} locked={locked || (why !== null && !on)} on={on}
+              aria={t('seats.fleet.allow', { role: role.name })}
+              onToggle={next => form.edit(current => setSeatRole(current, seat, role.name, next))} />
+          );
+        })}
       </ul>
 
       <div className="flex flex-col gap-2 border-t border-kumo-hairline px-4 py-4 sm:px-5" data-seat-launch>
