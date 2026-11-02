@@ -55,7 +55,7 @@ export const RH_LABEL = {
   notify: 'repo-harness.notify',
 } as const;
 /** `repo-harness.role` values. A surface that needs a new role adds it here. */
-export const RH_ROLE = { notifyRelay: 'notify-relay' } as const;
+export const RH_ROLE = { notifyRelay: 'notify-relay', taskSession: 'task-session' } as const;
 /** Terminals that carry this pair send blocked and done notices through the relay. */
 export const RH_NOTIFY_LABELS: HcLabels = { [RH_LABEL.notify]: 'on' };
 export const RH_NOTIFY_RELAY = { name: 'rh-notify-relay', labels: { [RH_LABEL.role]: RH_ROLE.notifyRelay } } as const;
