@@ -67,6 +67,8 @@ export interface PublicationMergeScenario {
   readonly headRef?: string;
   /** The commits that `compare/<base>...<head>` lists; unset leaves that call unanswered. */
   readonly compareCommits?: readonly { readonly sha: string; readonly parents: readonly string[] }[];
+  /** Bytes of patch text in the compare `files`; gh prints them unless a `--jq` filter selects the commits. */
+  readonly comparePatchBytes?: number;
   /** Fail one review publish write after any earlier write succeeded. */
   readonly failPost?: 'review' | 'record';
   /** The head SHA that each successive `pr view` reports; the last entry repeats. */
@@ -108,6 +110,8 @@ function policyFile(text: string | null): FakeGhResponse {
   if (text === null) return notFound();
   return ok({ type: 'file', path: '.ai/harness/policy.json', encoding: 'base64', content: Buffer.from(text).toString('base64') });
 }
+
+const COMPARE_COMMITS_JQ = '{total_commits, commits: [.commits[] | {sha, parents: [.parents[] | {sha}]}]}';
 
 function graphqlQuery(args: readonly string[]): string {
   return args.find((arg) => arg.startsWith('query='))?.slice('query='.length) ?? '';
@@ -165,7 +169,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     return ok({ data: { node: { id: REPOSITORY_NODE, pullRequest: {
       number: PR, headRefOid: headSha, baseRefOid: baseSha, reviewDecision: null,
       latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: scenario.changesRequested ? [{ state: 'CHANGES_REQUESTED' }] : [] },
-      reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: scenario.unresolvedThreads ?? 0 }, () => ({ isResolved: false })) },
+      reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: scenario.unresolvedThreads ?? 0 }, () => ({ isResolved: false, comments: { nodes: [] } })) },
     } } } });
   }
   if (sub === `${root}/issues/${PR}/comments`) {
@@ -214,8 +218,12 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     return ok({ number: PR, state: 'closed', merged: true, merge_commit_sha: scenario.readbackMergeSha ?? MERGE_COMMIT, head: { sha: headSha }, base: { ref: 'main' } });
   }
   if (scenario.compareCommits && sub === `${root}/compare/${baseSha}...${headSha}?per_page=100`) {
-    return ok({ total_commits: scenario.compareCommits.length,
-      commits: scenario.compareCommits.map((commit) => ({ sha: commit.sha, parents: commit.parents.map((sha) => ({ sha })) })) });
+    const selected = { total_commits: scenario.compareCommits.length,
+      commits: scenario.compareCommits.map((commit) => ({ sha: commit.sha, parents: commit.parents.map((sha) => ({ sha })) })) };
+    const jq = args.indexOf('--jq');
+    // gh evaluates the filter; without one it prints the file patches too.
+    if (jq < 0) return ok({ ...selected, files: [{ filename: 'large.txt', patch: 'x'.repeat(scenario.comparePatchBytes ?? 0) }] });
+    if (args[jq + 1] === COMPARE_COMMITS_JQ) return ok(selected);
   }
   if (sub === `${root}/git/commits/${MERGE_COMMIT}`) {
     return ok({ sha: MERGE_COMMIT, parents: (scenario.parents ?? [BASE]).map((sha) => ({ sha })) });

@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.operator.imports.ci-report-core",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.operator",
+  "target": "component.evals-checks.ci-report-core",
+  "intent": "Read the tests snapshot decoder, the test projection types and the CI repair keys for the tests board."
+}

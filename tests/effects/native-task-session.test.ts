@@ -47,11 +47,11 @@ test.each(['claude', 'codex', 'pi'] as const)('%s foreign process, scripted iden
 });
 
 import { randomUUID } from 'node:crypto';
-import { preparePrePromptInbox, commitPrePromptInbox } from '../../src/effects/review/pre-prompt-inbox';
-import { consumePrePromptInbox, recordPrePromptInboxAccepted } from '../../src/effects/review/pre-prompt-inbox-consumer';
+import { preparePrePromptInbox, commitPrePromptInbox } from '../../src/effects/review-runner/task-pre-prompt-inbox';
+import { consumePrePromptInbox, recordPrePromptInboxAccepted } from '../../src/effects/review-runner/task-pre-prompt-inbox-consumer';
 import { buildTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { sendTaskMessage, readTaskMessageDelivery } from '../../src/effects/fleet/task-inbox';
-import type { TaskRequest } from '../../src/effects/terminal/task-session';
+import type { TaskRequest } from '../../src/core/review/runner-port';
 import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../../src/effects/terminal/task-runtime-observation';
 function requestFor(f: Awaited<ReturnType<typeof fixture>>, bindingDigest: string): TaskRequest {
   return { protocol: 2, task: f.bound.binding.task, role: f.bound.binding.role, round: 1, request_id: randomUUID(),
@@ -127,7 +127,8 @@ test('historical review label explicitly refuses automatic inbox without renamin
 });
 
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { nextSessionRound, observeTaskSessionAdmission } from '../../src/effects/terminal/task-session';
+import { observeTaskSessionAdmission } from '../../src/effects/terminal/task-session';
+import { nextSessionRound } from '../../src/effects/terminal/task-session-io';
 function publishAccepted(f: Awaited<ReturnType<typeof fixture>>, request: TaskRequest, nativeSessionId: string) {
   writeFileSync(join(f.bound.dir,`request-${request.round}.json`),JSON.stringify(request));
   writeFileSync(join(f.bound.dir,`started-${request.round}.json`),JSON.stringify({request_id:request.request_id,provider:f.bound.binding.provider}));

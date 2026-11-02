@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.public-projections
+kind: component
+name: Public Text and Worktree Views
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: core
+summary: Holds the public text filter and the worktree view types that Git worktree records, coordination topology and the operator read.
+responsibilities:
+  - Own the public text and repository path filters that core projections and the operator use.
+  - Own the worktree source, reason, lifecycle and view types and the strict worktrees snapshot decoder.
+source:
+  include:
+    - src/core/operator/public-text.ts
+    - src/core/operator/worktrees.ts

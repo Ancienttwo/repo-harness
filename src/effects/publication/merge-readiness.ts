@@ -406,6 +406,20 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
   return identity;
 }
 
+/**
+ * Review bots (Codex, Copilot, CodeRabbit and others) post advisory threads, so
+ * a thread that a GitHub App account started does not block a merge. A thread
+ * with no first comment or a deleted author still blocks.
+ */
+function botStartedThread(thread: Record<string, unknown>): boolean {
+  const comments = object(thread.comments, 'provider review thread comments');
+  if (!Array.isArray(comments.nodes)) throw new MergeReadinessError('provider_data_incomplete', 'provider review thread comments are invalid');
+  const first: unknown = comments.nodes[0];
+  if (first === undefined) return false;
+  const author = object(first, 'provider review thread comment').author;
+  return author !== null && object(author, 'provider review thread comment author').__typename === 'Bot';
+}
+
 function parseProviderReadinessFacts(
   identity: ProviderIdentity,
   checksValue: unknown,
@@ -441,7 +455,7 @@ function parseProviderReadinessFacts(
   for (const entry of threads.nodes as unknown[]) {
     const thread = object(entry, 'provider review thread');
     if (typeof thread.isResolved !== 'boolean') throw new MergeReadinessError('provider_data_incomplete', 'provider review thread isResolved is invalid');
-    if (!thread.isResolved) unresolved++;
+    if (!thread.isResolved && !botStartedThread(thread)) unresolved++;
   }
   let changesRequested = pr.reviewDecision === 'CHANGES_REQUESTED';
   for (const entry of reviews.nodes as unknown[]) {
@@ -469,7 +483,7 @@ function parseProviderReadinessFacts(
 
 function providerReviewArgs(identity: ProviderIdentity): string[] {
   // Latest opinionated reviews preserve a change request across later comment-only reviews.
-  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){id ... on Repository{pullRequest(number:$number){number headRefOid baseRefOid reviewDecision latestOpinionatedReviews(first:100){pageInfo{hasNextPage}nodes{state}} reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved}}}}}}';
+  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){id ... on Repository{pullRequest(number:$number){number headRefOid baseRefOid reviewDecision latestOpinionatedReviews(first:100){pageInfo{hasNextPage}nodes{state}} reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved comments(first:1){nodes{author{__typename}}}}}}}}}';
   return ['api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${identity.pr_number}`];
 }
 

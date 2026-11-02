@@ -4,7 +4,9 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { observeTaskSessionAdmission, collectTaskResult, startTaskAgent, taskSessionDirectory,
-  ensureSessionDirectory, writeSessionArtifact, type HerdrTaskBinding, type TaskRequest } from '../../src/effects/terminal/task-session';
+  writeSessionArtifact, type HerdrTaskBinding } from '../../src/effects/terminal/task-session';
+import { ensureSessionDirectory } from '../../src/effects/terminal/task-session-io';
+import type { TaskRequest } from '../../src/core/review/runner-port';
 import { taskRepository } from '../../src/effects/git/task-repository';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';

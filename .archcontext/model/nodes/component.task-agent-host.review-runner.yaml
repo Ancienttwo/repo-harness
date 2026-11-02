@@ -1,0 +1,16 @@
+schemaVersion: "archcontext.node/v2"
+id: "component.task-agent-host.review-runner"
+kind: "component"
+name: "Reviewer Runner"
+status: "active"
+parent: "capability.runtime-harness.task-agent-host"
+layer: "effects"
+summary: "Implements the acceptance review runner port on task sessions, hosts the OAR review session in the Node review host, and owns the pre-prompt inbox companion."
+responsibilities:
+  - "Provide the one ReviewerRunner implementation. A Herdr or app-terminal launch is an option of each session, not a second implementation."
+  - "Validate the launch endpoint, supply the reviewer session options from the fleet profile, and refuse a reviewer session in the review caller's own pane."
+  - "Open the OAR review session only under the isolation policy in the host spec; refuse a session that the host cannot isolate."
+  - "Reserve bounded pre-prompt inbox context before delivery; consume it read-only in the host, record exact input-scoped accepted OAR proof, then commit delivery when the owner settles the request. Missing or unknown acceptance stays pending; recovery repeats the ledger commit without resending the prompt."
+source:
+  include:
+    - src/effects/review-runner/**

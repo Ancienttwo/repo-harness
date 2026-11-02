@@ -1,8 +1,11 @@
+import type { TaskClaimReference } from '../../core/review/runner-port';
 import { readCurrentReviewAdmissionSelection } from './admission-store';
 import { observeActiveReviewAdmission } from './issue-goal';
 import { readExternalSourcesPolicy } from '../github/policy';
 
 export type ReviewAdmissionSource = Parameters<typeof observeActiveReviewAdmission>[0];
+/** The admission and claim that a task session runs under. */
+export interface TaskSessionAuthority { source: ReviewAdmissionSource; claim: TaskClaimReference }
 
 /** CLI identifiers locate an existing protected approval. They never create one
  * or select an authority directory from the candidate or launch environment.

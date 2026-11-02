@@ -47,7 +47,9 @@ import {
   type TaskMessageRecipient,
 } from '../../core/fleet/admitted-task-message';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { readTaskAgent, observeTaskSessionAdmission, type TaskSessionAuthority, type TaskSessionAdmission } from '../terminal/task-session';
+import { readTaskAgent, observeTaskSessionAdmission } from '../terminal/task-session';
+import type { TaskSessionAuthority } from '../admission/admission-source';
+import type { TaskSessionAdmission } from '../../core/review/runner-port';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readActiveReviewAdmission } from '../admission/admission-store';
 import { canonicalize } from '../../core/evidence/canonical-json';

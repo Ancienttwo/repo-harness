@@ -15,7 +15,7 @@ test('the actual external-package OAR host bundle imports under Node 24 without 
   const directory = join(root, 'dist');mkdirSync(directory, { recursive: true });
   const outfile = join(directory, `oar-host-import-${randomUUID()}.mjs`);
   try {
-    const build = await Bun.build({ entrypoints: [join(root, 'src/effects/review/oar-review-host.ts')],
+    const build = await Bun.build({ entrypoints: [join(root, 'src/effects/review-runner/task-oar-host.ts')],
       target: 'node', format: 'esm', packages: 'external', outdir: directory, naming: basename(outfile) });
     expect(build.success, build.logs.map(String).join('\n')).toBe(true);
     // This must execute Node, not Bun's TS-aware importer. No session/provider starts on import.
