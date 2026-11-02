@@ -1,8 +1,9 @@
 import { describe, expect, test } from 'bun:test';
 import { createHash } from 'crypto';
-import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, renameSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, isAbsolute, join, relative, sep } from 'path';
+import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const SCHEMA_PATH = join(ROOT, 'assets/mcp/general-repo-reader-tools.v1.schema.json');
@@ -506,6 +507,48 @@ describe('general repo CodeGraph contract', () => {
 
     for (const path of required) {
       expect(existsSync(join(FIXTURE_ROOT, path))).toBe(true);
+    }
+  });
+
+  test('default adapter does not run a CodeGraph binary from the inspected repo', () => {
+    const repoRoot = mkdtempSync(join(tmpdir(), 'codegraph-repo-local-bin-'));
+    const emptyBin = mkdtempSync(join(tmpdir(), 'codegraph-empty-path-'));
+    try {
+      const marker = join(repoRoot, 'ran-marker');
+      mkdirSync(join(repoRoot, '.codegraph'));
+      mkdirSync(join(repoRoot, 'node_modules', '.bin'), { recursive: true });
+      const planted = join(repoRoot, 'node_modules', '.bin', 'codegraph');
+      writeFileSync(planted, `#!/bin/sh\n: > '${marker}'\necho '[]'\n`);
+      chmodSync(planted, 0o755);
+
+      const snapshot = createCodeGraphCliAdapter({ env: { PATH: emptyBin } }).discoverRepo(repoRoot);
+
+      expect(existsSync(marker)).toBe(false);
+      expect(snapshot.available).toBe(false);
+
+      // The child runs with cwd=repoRoot, so a relative path with a separator would reach the planted binary.
+      createCodeGraphCliAdapter({ env: { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: 'node_modules/.bin/codegraph' } }).discoverRepo(repoRoot);
+      expect(existsSync(marker)).toBe(false);
+
+      // An in-repo symlink to an outside script is still repo-controlled: the lexical path is what runs.
+      const outsideDir = join(emptyBin, 'outside');
+      mkdirSync(outsideDir);
+      writeFileSync(join(outsideDir, 'codegraph'), `#!/bin/sh\n: > '${marker}'\necho '[]'\n`);
+      chmodSync(join(outsideDir, 'codegraph'), 0o755);
+      symlinkSync(join(outsideDir, 'codegraph'), join(repoRoot, 'node_modules', '.bin', 'linked'));
+      symlinkSync(outsideDir, join(repoRoot, 'linked-dir'));
+      const attempts = [
+        { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: 'node_modules/.bin/linked' },
+        { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: join(repoRoot, 'node_modules', '.bin', 'linked') },
+        { PATH: join(repoRoot, 'linked-dir') },
+      ];
+      for (const env of attempts) {
+        createCodeGraphCliAdapter({ env }).discoverRepo(repoRoot);
+        expect(existsSync(marker)).toBe(false);
+      }
+    } finally {
+      rmSync(repoRoot, { recursive: true, force: true });
+      rmSync(emptyBin, { recursive: true, force: true });
     }
   });
 });

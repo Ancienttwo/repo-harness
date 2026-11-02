@@ -7,6 +7,7 @@ import { formatUpgradeSummaryLine, type UpgradeResult } from '../../src/cli/comm
 import type { LeftoverItem } from '../../src/effects/upgrade/legacy-inventory';
 import type { LegacyWorktreeCandidate } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, writeRegistry } from '../helpers/registered-repos';
+import { CLI_PORTS } from '../../src/cli/index';
 
 /**
  * Regression guard for the #169 base-dropping class on the setup-global surface.
@@ -33,7 +34,7 @@ import { adoptedRepo, commitAll, git, registeredReposFixture, worktreeSnapshot, 
  */
 describe('global runtime setup command env base', () => {
   function runWithSeededHome(sourceRoot: string, home: string): () => unknown {
-    return () => runGlobalRuntimeSetup({
+    return () => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
       sourceRoot,
       cwd: home,
       installCli: false,

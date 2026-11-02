@@ -22,15 +22,15 @@ import { runInstall, runUninstall, type InstallTargetSpec } from './commands/ins
 import { planPiPackage, removePiPackage } from './installer/pi-package';
 import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { writeAllSync } from './runtime/write-all-sync';
-import { runInit } from './commands/init';
+import { runInit, type InitPorts } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
-import { formatDoctor, runDoctor } from './commands/doctor';
+import { formatDoctor, runDoctor, type DoctorPorts } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
 import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
-import { buildToolsCommand } from './commands/tools';
+import { buildToolsCommand, CODEGRAPH_INIT_STEP, codegraphDoctorChecks, configureCodegraphMcpStep } from './commands/tools';
 import { buildHerdrCommand } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
@@ -49,7 +49,11 @@ import { buildCatchUpCommand } from './commands/catch-up';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildExternalSourceCommand } from './commands/external-source';
-import { buildRetentionCommand } from './commands/retention';
+import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
+import { configureRequiredHerdrSkill } from './commands/herdr-skill';
+import { MCP_AUDIT_LOG_RELATIVE_PATH } from './mcp/audit';
+import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './mcp/general-repo-access';
+import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
   GLOBAL_RULES_REFRESH_STEP,
@@ -57,6 +61,7 @@ import {
   agentFleetVerified,
   bunVersionIsSupported,
   runGlobalRuntimeSetup,
+  type GlobalRuntimePorts,
   updateLeftoverSummary,
   updateRegisteredUpgradeSummary,
   type GlobalRuntimeOptions,
@@ -108,6 +113,26 @@ import {
   assertAdoptionMode,
 } from './commands/validators';
 import type { Location } from './installer/types';
+
+/**
+ * The plugin checks, setup steps and storage roots that core commands take as
+ * parameters. This root is the only importer of their implementations. Tests
+ * and the setup check child pass the same value.
+ */
+export const CLI_PORTS: {
+  readonly doctor: DoctorPorts;
+  readonly init: InitPorts;
+  readonly globalRuntime: GlobalRuntimePorts;
+  readonly retention: RetentionPorts;
+} = {
+  doctor: { codegraphChecks: codegraphDoctorChecks },
+  init: { codegraphStep: CODEGRAPH_INIT_STEP },
+  globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
+  retention: {
+    rotatingLogs: [MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH],
+    commonProtocolRoots: [TASK_INBOX_V2_RELATIVE_PATH],
+  },
+};
 
 export const SUBCOMMANDS = [
   'init',
@@ -228,7 +253,7 @@ function runTransactionalProfileProjection(
     let result: GlobalRuntimeResult;
     try {
       migrationSource = prepareProjection();
-      result = runGlobalRuntimeSetup({ ...options, runtimeLock: lock });
+      result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...options, runtimeLock: lock });
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
       throw error;
@@ -333,7 +358,7 @@ export function runCandidateRuntimeReconciliation(
     throw new Error('candidate reconciliation package authority mismatch');
   }
 
-  const runtime = runGlobalRuntimeSetup({
+  const runtime = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
     runtimeLock,
     sourceRoot,
     cwd: request.cwd,
@@ -436,7 +461,7 @@ function candidateHandoffContext(
 
 export function runTransactionalRuntimeRefresh(
   options: GlobalRuntimeOptions,
-  setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = runGlobalRuntimeSetup,
+  setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
@@ -714,7 +739,7 @@ export function buildProgram(): Command {
         mode,
         env,
       };
-      const result = runInit(common);
+      const result = runInit(CLI_PORTS.init, common);
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -774,7 +799,7 @@ export function buildProgram(): Command {
         process.exit(2);
       }
       if (rawOpts.check === true || rawOpts.runtimeRefresh === false) {
-        const report = runInitHook({
+        const report = runInitHook(CLI_PORTS.doctor, {
           target,
           checkUpdates: rawOpts.checkUpdates === true,
         });
@@ -845,15 +870,15 @@ export function buildProgram(): Command {
     .description('Run read-only readiness diagnostics (PATH, version, hosts, trust state)')
     .option('--json', 'Output JSON instead of human-readable text')
     .action((rawOpts: { json?: boolean }) => {
-      const report = runDoctor();
+      const report = runDoctor(CLI_PORTS.doctor);
       console.log(formatDoctor(report, rawOpts.json === true));
       process.exit(report.summary.fail > 0 ? 1 : 0);
     });
 
-  program.addCommand(buildInitHookCommand());
+  program.addCommand(buildInitHookCommand(CLI_PORTS.doctor));
   program.addCommand(buildReviewCommand(taskReviewRunner));
   program.addCommand(buildModuleCommand());
-  program.addCommand(buildSetupCommand());
+  program.addCommand(buildSetupCommand(CLI_PORTS.doctor));
   program.addCommand(buildUpgradeCommand());
 
   program
@@ -902,7 +927,7 @@ export function buildProgram(): Command {
   program.addCommand(buildArchitectureDebtCommand());
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildExternalSourceCommand());
-  program.addCommand(buildRetentionCommand());
+  program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
   program
     .command('__reconcile-installed-runtime', { hidden: true })
     .description('Internal candidate-owned managed runtime reconciliation')

@@ -255,7 +255,7 @@ sequenceDiagram
 | primary | `hook-adapters` | `installHostAdapters` 调用 `runInstall`（`global-runtime.ts:672`）；install-profile、skill-projection、runtime-host-lock |
 | primary | `public-surface.adoption` | `upgrade.ts` 使用 FsTransaction manifest 与 `withTargetLock`；`legacy-inventory.ts` 使用 adoption 指纹 |
 | primary | `workflow-engine.contract-assets` | `syncCrossReviewSkills`（`src/cli/commands/init.ts#syncCrossReviewSkills`） |
-| primary | `verification.codegraph-readiness` | `configureCodegraph`（`global-runtime.ts:1432`） |
+| primary | `task-agent-host` | `legacy-worktree-cleanup.ts` 读取 task session 记录（#1357 S6 的边） |
 | archctx-closure | `hook-adapters` | `writePrivateConfiguration`（`architecture-configuration.ts:15`） |
 | cli-root | 已有 capability | `buildProgram` 注册各命令（`src/cli/index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、delegated-runs、external-source-intake |
 
@@ -329,6 +329,15 @@ the old Pi package sync script remain absent.
 - `src/effects/architecture/model-reader.ts` 归 `component.operator.architecture-reader`，`src/effects/configuration/agents-configuration.ts` 归 `component.operator.agents-configuration`。本 capability 与 archctx-closure 组件用 `source.exclude` 去掉这两个文件。文件路径不变。
 - 两个符号移到本 capability：`GeneratedSummaryFreshness` 类型移到 `src/core/architecture/projection.ts`，`ARCHITECTURE_HISTORY_TIMEOUT_MS` 移到 `src/effects/architecture/archctx-provider.ts`。`projection.ts` 与 `archctx-provider.ts` 因此不再导入 operator 文件。owner 解析（`archcontext-owners.ts`）不动。
 - 删除没有源码边的关系：archctx-closure → acceptance-review、evidence-ledger、repository-registry。
+
+### 插件端口由组合根传入（2026-11-02，#1398）
+
+- `doctor`、`setup check`、`init`、global runtime 和 `retention` 不再引用插件文件。每个 core 入口把插件端口作为必填的第一个参数：`DoctorPorts`、`InitPorts`、`GlobalRuntimePorts`、`RetentionPorts`。端口类型在使用它的 core 文件里。
+- 只有 `src/cli/index.ts` 的 `CLI_PORTS` 引用插件实现：CodeGraph 检查与步骤（`src/cli/commands/tools.ts`）、Herdr skill 步骤、MCP 日志路径和 task inbox 路径。测试和 setup check 子进程使用同一个 `CLI_PORTS`。
+- 端口是有名字的槽，不是列表。检查和步骤的顺序因此不变。没有默认值，缺少端口是编译错误。
+- `retention --apply` 的集合只来自 `RETENTION_CLASSES`。插件路径只进入 `--json` 的 `roots` 列表。
+- `SkillProjectionState` 移到 `src/core/skill-surface/projection-state.ts`。该文件没有 import，operator 的浏览器解码器可以打包它。
+- 删除 primary → codegraph-readiness 和 template-projection → codegraph-readiness 两条没有源码边的关系。
 
 ## Optimization Backlog
 
