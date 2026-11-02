@@ -26,6 +26,10 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
 - `repo-harness upgrade --apply --include-state-artifacts` removes retired
   `~/.repo-harness/gates/*/merge-gate.latest.json` files and 0.10.0 package
   archives. (#1410)
+- If `repo-harness install` reports "refusing to refresh unowned host
+  skill" for a Waza skill, move the named directory out of the host skill
+  root. Then run `repo-harness install --profile full --target <host>`.
+  (#1442)
 
 ### Breaking
 

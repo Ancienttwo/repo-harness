@@ -63,6 +63,10 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
 - Optional: `repo-harness upgrade --apply --include-state-artifacts` removes
   the retired merge-gate state and 0.10.0 archives under `~/.repo-harness/`
   (#1410).
+- If `repo-harness install` reports "refusing to refresh unowned host
+  skill" for a Waza skill, move the named directory out of the host skill
+  root. Then run `repo-harness install --profile full --target <host>`. A
+  real Waza directory from the retired rsync step causes this (#1442).
 
 ## Hosted CI
 
