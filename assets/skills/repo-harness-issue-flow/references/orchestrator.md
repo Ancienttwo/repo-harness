@@ -264,7 +264,8 @@ A PR is eligible when all of these are true:
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
   prints nothing.
-- It has no unresolved review thread.
+- It has no unresolved review thread that a person started. A review bot
+  thread is advisory input and does not block.
 - Its closing references are correct.
 
 ```bash

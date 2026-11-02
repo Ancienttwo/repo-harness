@@ -108,7 +108,7 @@ function reviewGraph() {
   return { data: { node: { id: receipt.provider_repo_id, pullRequest: {
     number: receipt.pr_number, headRefOid: HEAD, baseRefOid: BASE, reviewDecision: null,
     latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] as { state: string }[] },
-    reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] as { isResolved: boolean }[] },
+    reviewThreads: { pageInfo: { hasNextPage: false }, nodes: [] as { isResolved: boolean; comments: { nodes: { author: { __typename: string } | null }[] } }[] },
   } } } };
 }
 
@@ -468,7 +468,7 @@ test('ordinary PR consumer uses trusted CI head/base once and needs no local art
   expect(moved.blockers.map(blocker => blocker.code)).toContain('base_moved_since_verification');
 });
 
-test.each(['changes', 'threads', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('ordinary and abortable consumers enforce provider review state: %s', async scenario => {
+test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('ordinary and abortable consumers enforce provider review state: %s', async scenario => {
   const source = fakeGh();
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
     const observed = source(args);
@@ -480,7 +480,9 @@ test.each(['changes', 'threads', 'dismissed', 'approved', 'outdated-unresolved',
     if (scenario === 'changes') pr.latestOpinionatedReviews.nodes = [{ state: 'CHANGES_REQUESTED' }];
     if (scenario === 'dismissed') pr.latestOpinionatedReviews.nodes = [{ state: 'DISMISSED' }];
     if (scenario === 'approved') pr.latestOpinionatedReviews.nodes = [{ state: 'APPROVED' }];
-    if (scenario === 'threads' || scenario === 'outdated-unresolved') pr.reviewThreads.nodes = [{ isResolved: false }];
+    if (scenario === 'threads' || scenario === 'outdated-unresolved') pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [{ author: { __typename: 'User' } }] } }];
+    if (scenario === 'bot-threads') pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [{ author: { __typename: 'Bot' } }] } }];
+    if (scenario === 'deleted-author-threads') pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [{ author: null }] } }];
     if (scenario === 'outdated-unresolved') Object.assign(pr.reviewThreads.nodes[0]!, { isOutdated: true });
     if (scenario === 'review-truncated') pr.latestOpinionatedReviews.pageInfo.hasNextPage = true;
     if (scenario === 'threads-truncated') pr.reviewThreads.pageInfo.hasNextPage = true;
@@ -496,8 +498,8 @@ test.each(['changes', 'threads', 'dismissed', 'approved', 'outdated-unresolved',
   const verdict = collectPullRequestMergeReadiness({ repository: 'example/repo-harness', provider_repository_id: '1001', repo_root: '/tmp/absent-local-artifacts', pr_number: 42,
     expected_head_sha: HEAD, expected_base_sha: BASE, gh_runner });
   const expected: MergeReadinessBlockerCode[] = scenario === 'changes' ? ['changes_requested']
-    : ['threads', 'outdated-unresolved'].includes(scenario) ? ['unresolved_threads']
-    : ['dismissed', 'approved'].includes(scenario) ? []
+    : ['threads', 'deleted-author-threads', 'outdated-unresolved'].includes(scenario) ? ['unresolved_threads']
+    : ['bot-threads', 'dismissed', 'approved'].includes(scenario) ? []
     : [scenario === 'unavailable' ? 'provider_unavailable' : 'provider_data_incomplete'];
   expect(verdict.blockers.map(blocker => blocker.code)).toEqual(expected);
   const asyncInput = { ...input, gh_runner_async: async (args: readonly string[]) => gh_runner(args) };

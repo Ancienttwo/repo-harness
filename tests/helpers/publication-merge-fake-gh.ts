@@ -165,7 +165,7 @@ export function fakeGhResponse(args: readonly string[], scenario: PublicationMer
     return ok({ data: { node: { id: REPOSITORY_NODE, pullRequest: {
       number: PR, headRefOid: headSha, baseRefOid: baseSha, reviewDecision: null,
       latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: scenario.changesRequested ? [{ state: 'CHANGES_REQUESTED' }] : [] },
-      reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: scenario.unresolvedThreads ?? 0 }, () => ({ isResolved: false })) },
+      reviewThreads: { pageInfo: { hasNextPage: false }, nodes: Array.from({ length: scenario.unresolvedThreads ?? 0 }, () => ({ isResolved: false, comments: { nodes: [] } })) },
     } } } });
   }
   if (sub === `${root}/issues/${PR}/comments`) {
