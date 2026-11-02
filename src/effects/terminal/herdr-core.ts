@@ -269,14 +269,23 @@ export function hcRun(input: {
   return terminalSummary(hc('run', [...args, '--', ...input.argv], options));
 }
 
-/** `hc ls --label`: live terminals that carry every label. The filter must hold a repo-harness label. */
-export function hcList(labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminalSummary[] {
-  return listResult(hc('ls', labelArgs(labels), options));
+export interface HcListOptions extends HerdrCoreOptions {
+  /** `--all`: finished terminals too, not only live ones. */
+  readonly all?: boolean;
+}
+
+function listArgs(labels: HcLabels, options: HcListOptions): string[] {
+  return [...labelArgs(labels), ...(options.all ? ['--all'] : [])];
+}
+
+/** `hc ls --label`: terminals that carry every label, live only unless `all`. The filter must hold a repo-harness label. */
+export function hcList(labels: HcLabels, options: HcListOptions = {}): HcTerminalSummary[] {
+  return listResult(hc('ls', listArgs(labels, options), options));
 }
 
 /** `hcList` without blocking the event loop, for long-running readers such as `operator serve`. */
-export async function hcListAsync(labels: HcLabels, options: HerdrCoreOptions = {}): Promise<HcTerminalSummary[]> {
-  return listResult(await invokeAsync('hc', ['ls', '--json', ...labelArgs(labels)], options));
+export async function hcListAsync(labels: HcLabels, options: HcListOptions = {}): Promise<HcTerminalSummary[]> {
+  return listResult(await invokeAsync('hc', ['ls', '--json', ...listArgs(labels, options)], options));
 }
 
 function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
