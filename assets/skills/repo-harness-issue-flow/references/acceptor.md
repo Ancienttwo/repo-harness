@@ -7,6 +7,11 @@ the board are in `board.md`. The round record is in `orchestrator.md`
 
 ## 1. Who accepts
 
+A Low PR whose required checks are SUCCESS on its head and whose PR body
+holds the author verification evidence takes no round. The orchestrator
+dispatches no accept seat and posts no acceptance record
+(`docs/reference-configs/agentic-development-flow.md`, Review by risk).
+
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. It has no network, so the session that
 runs the round publishes the result.

@@ -138,6 +138,10 @@ The diff sets the tier. The author does not: a human change and a model change w
 
 Review follows the `repo-harness-issue-flow` skill, [references/acceptor.md](../../assets/skills/repo-harness-issue-flow/references/acceptor.md). The tier selects the depth: no independent review for Low, one fresh-context review for Medium, and the gatekeeper plus one cross-model review for High, one round each. The Acceptor SOP owns the round, findings and publish steps.
 
+Low accept-seat skip (Owner lock, #1391, 2026-11-02): a Low PR whose `Required / CI` is SUCCESS on the PR head and whose PR body holds the author verification evidence (the commands and their outcomes) takes no accept seat and no acceptance record. Do not dispatch a Codex, Herdr or OAR accept seat for it. The green required checks and that evidence are the proof surface. Medium and High keep the full Acceptor SOP.
+
+Worked example (docs-only Low path): the PR edits `docs/bot-onboarding.md` only. The author runs one check command and records the command and its outcome (exit 0) in the PR body. `Required / CI` turns SUCCESS on the head. The tier needs no reviewer, so the PR merges with no accept seat and no acceptance record.
+
 Rules for every tier:
 - The reviewer reads the current diff only. A defect in code the diff did not touch is a non-blocking note; open an issue for it, do not add a finding.
 - From the second round, the reviewer reads only the hunks that changed after the previous round. The three-round limit stays.
