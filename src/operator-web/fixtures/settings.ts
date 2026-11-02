@@ -1,6 +1,7 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/operator/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost } from '../settings';
+import { DEFAULT_SEATS_CONFIG, decodeSeatsSettings, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/operator/seats-settings';
+import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost, SettingsRead, SettingsWrite } from '../settings';
 
 const REVISION = `sha256:${'4'.repeat(64)}`;
 
@@ -97,6 +98,70 @@ export function agentsSettingsStore(now: number, fixture: 'busy' | 'empty' | 'de
     ];
     settings = decodeAgentsSettings({ ...settings, config: { revision, ...next } });
     return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changedKeys } });
+  };
+  return { read, write };
+}
+
+const SUB_AGENTS = [
+  { name: 'explorer', writable: false }, { name: 'deep-reasoner', writable: false }, { name: 'fast-worker', writable: true },
+  { name: 'deep-worker', writable: true }, { name: 'gatekeeper', writable: false }, { name: 'root-cause-prover', writable: true },
+  { name: 'harness-evaluator', writable: true },
+];
+
+/** The ranges the server derives from the fleet role profiles, written out for the in-page store. */
+function seatsRanges(enabled: readonly string[]) {
+  const all = ['read', 'edit', 'shell', 'net', 'tasks', 'mcp', 'gh'];
+  return {
+    runtimes: [
+      { id: 'claude', enabled: enabled.includes('claude'), models: ['opus', 'sonnet', 'haiku', 'fable'], effort: true, fleet: true },
+      { id: 'codex', enabled: enabled.includes('codex'), models: ['gpt-6-luna', 'gpt-6-astra', 'gpt-6.1-sol'], effort: true, fleet: true },
+      { id: 'pi', enabled: enabled.includes('pi'), models: [], effort: false, fleet: false },
+    ],
+    efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
+    roles: SUB_AGENTS,
+    seats: {
+      orchestrator: { fleet: [], tools: all.filter(tool => tool !== 'edit') },
+      advisor: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit' && tool !== 'gh') },
+      worker: { fleet: SUB_AGENTS.map(role => role.name), tools: all },
+    },
+  };
+}
+
+/**
+ * An in-page stand-in for the seats route. busy: a stored section with the
+ * worker on Claude, and saves apply. empty: no section and no enabled runtime,
+ * so a save is refused. degraded: the stored worker runtime is no longer
+ * enabled, and a save meets a revision conflict.
+ */
+export function seatsSettingsStore(fixture: 'busy' | 'empty' | 'degraded') {
+  const enabled = fixture === 'busy' ? ['claude', 'codex', 'pi'] : fixture === 'empty' ? [] : ['claude'];
+  const stored = fixture === 'busy'
+    ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' } }
+    : DEFAULT_SEATS_CONFIG;
+  let settings = decodeSeatsSettings({
+    protocol: 1, kind: 'operator_seats_settings', config: { revision: fixture === 'empty' ? 'absent' : REVISION, ...stored },
+    defaults: DEFAULT_SEATS_CONFIG, ranges: seatsRanges(enabled),
+  });
+  let serial = 0;
+  const read = (): Promise<SettingsRead<SeatsSettingsV1>> => Promise.resolve({ state: 'ok', settings });
+  const write = (body: SeatsSettingsRequestV1 & { readonly request_id: string }): Promise<SettingsWrite> => {
+    if (fixture === 'empty') {
+      return Promise.resolve({ state: 'refused', status: 422, error: {
+        code: 'seat_runtime_not_enabled', message: 'The orchestrator seat runtime claude is not enabled in Agent settings.',
+        next_action: 'Enable the runtime in Agent settings, or choose an enabled runtime.',
+      } });
+    }
+    if (fixture === 'degraded' || body.expected_revision !== settings.config.revision) {
+      return Promise.resolve({ state: 'refused', status: 409, error: {
+        code: 'revision_conflict', message: 'The configuration changed after it was read.', next_action: 'Reload the settings, then apply your change again.',
+      } });
+    }
+    serial += 1;
+    const revision = `sha256:${serial.toString(16).padStart(64, '0')}`;
+    const changed = (['orchestrator', 'advisor', 'worker'] as const).flatMap(id => (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
+      .filter(field => String(settings.config[id][field]) !== String(body.seats[id][field])).map(field => `seats.${id}.${field}`));
+    settings = decodeSeatsSettings({ ...settings, config: { revision, ...body.seats } });
+    return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changed } });
   };
   return { read, write };
 }

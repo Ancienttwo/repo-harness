@@ -10,7 +10,9 @@ import { Board } from './Board';
 import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotAccessReader, type BotReviewsReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
-import { SettingsFreshness, SettingsPage } from './SettingsPage';
+import { SettingsFreshness, SettingsLayout, SettingsPage } from './SettingsPage';
+import { SeatsPage } from './SeatsPage';
+import { fetchSeatsSettings, postSeatsSettings, useSeatsSettingsForm, type SeatsSettingsReader, type SeatsSettingsWriter } from './seats';
 import {
   DEFAULT_BOARD_FILTERS,
   fetchDevActivity,
@@ -126,6 +128,9 @@ export interface OperatorAppProps {
   /** The agents section and runtime probe behind the Settings page, and its one write. */
   readonly readAgentsSettings?: AgentsSettingsReader;
   readonly writeAgentsSettings?: AgentsSettingsWriter;
+  /** The seats section and its ranges behind the Settings seats page, and its one write. */
+  readonly readSeatsSettings?: SeatsSettingsReader;
+  readonly writeSeatsSettings?: SeatsSettingsWriter;
   /** The read-only tests page's snapshot read, injectable on the same terms. */
   readonly readTests?: TestsReader;
   /** The docs page's tree and file reads; the browser default is the same-origin docs routes. */
@@ -264,6 +269,8 @@ export function OperatorApp({
   readBotReviews = fetchBotReviews,
   readAgentsSettings = fetchAgentsSettings,
   writeAgentsSettings = postAgentsSettings,
+  readSeatsSettings = fetchSeatsSettings,
+  writeSeatsSettings = postSeatsSettings,
   readTests = fetchTestsSnapshot,
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
@@ -306,9 +313,12 @@ export function OperatorApp({
   }, [attention]);
   const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
   const botReviews = useBotReviews(readBotReviews, refreshGeneration, workspace === 'bots');
-  const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, workspace === 'settings');
+  const seatsSection = workspace === 'settings' && place.item === 'seats';
+  const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, workspace === 'settings' && !seatsSection);
+  const seatsSettings = useSeatsSettingsForm(readSeatsSettings, writeSeatsSettings, refreshGeneration, seatsSection);
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
-  const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
+  // The seats page reads it too, for each fleet role's model and description.
+  const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) || seatsSection);
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
   const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
   // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
@@ -464,7 +474,7 @@ export function OperatorApp({
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
           {/* One freshness line, about the source of the page on screen. */}
           <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
-            {workspace === 'cli' ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+            {workspace === 'cli' || seatsSection ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
               : workspace === 'settings' ? <SettingsFreshness view={agentsSettings.view} now={now} t={t} />
               : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} />
               : workspace === 'worktrees' ? <WorktreesFreshness view={worktrees} now={now} t={t} />
@@ -509,7 +519,11 @@ export function OperatorApp({
               </Suspense>}
           </>}
           {workspace === 'bots' && <BotsPage view={botAccess} reviews={botReviews} now={now} t={t} />}
-          {workspace === 'settings' && <SettingsPage form={agentsSettings} now={now} t={t} />}
+          {workspace === 'settings' && <SettingsLayout current={seatsSection ? 'seats' : 'agents'} onOpen={openPlace} t={t}>
+            {seatsSection
+              ? <SeatsPage form={seatsSettings} setup={setup.kind === 'ready' ? setup.snapshot : null} t={t} />
+              : <SettingsPage form={agentsSettings} now={now} t={t} />}
+          </SettingsLayout>}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>
             <SystemPage view={devActivity} now={now} refreshGeneration={refreshGeneration} active={workspace === 'system'}

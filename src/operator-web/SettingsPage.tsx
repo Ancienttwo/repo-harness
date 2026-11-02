@@ -4,8 +4,9 @@ import type { AgentRuntimeSettingsEntryV1, AgentUse, AgentsSettingsV1 } from '..
 import type { OperatorApiErrorV1 } from './types';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
-import { saveNeedsReload, setDefaultDocs, setEnabled, setUse, type AgentsDraft, type AgentsSettingsForm, type AgentsSettingsView } from './settings';
-import { SectionTitle, StatusDot, type DotTone } from './ui';
+import { saveNeedsReload, setDefaultDocs, setEnabled, setUse, type AgentsDraft, type AgentsSettingsForm, type AgentsSettingsView, type SettingsSaveState } from './settings';
+import { PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
+import type { WorkspaceLocation } from './workspace-location';
 
 /** Copy for a refused save is keyed by its code; a code this bundle does not know shows the server's sentence, marked as such. */
 function refusalText(error: OperatorApiErrorV1, t: OperatorTranslate): { readonly message: string; readonly next_action: string; readonly localized: boolean } {
@@ -156,9 +157,10 @@ function DefaultDocs({ draft, settings, locked, onEdit, t }: {
   );
 }
 
-function SaveResult({ form, changedElsewhere, t }: { readonly form: AgentsSettingsForm; readonly changedElsewhere: boolean; readonly t: OperatorTranslate }) {
-  const { save } = form;
-  const reload = <Banner.Action variant="secondary" onClick={form.reload}>{t('settings.reload')}</Banner.Action>;
+export function SaveResult({ save, reload: onReload, changedElsewhere, t }: {
+  readonly save: SettingsSaveState; readonly reload: () => void; readonly changedElsewhere: boolean; readonly t: OperatorTranslate;
+}) {
+  const reload = <Banner.Action variant="secondary" onClick={onReload}>{t('settings.reload')}</Banner.Action>;
   if (save.kind === 'refused' && save.error.code === 'reconcile_required') {
     return <Banner variant="alert" data-save-result="reconcile_required" title={t('settings.reconcile.title')} description={t('settings.reconcile.body')} action={reload} />;
   }
@@ -192,12 +194,11 @@ function rowsOf(settings: AgentsSettingsV1): { readonly main: readonly Row[]; re
 
 export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsForm; readonly now: number; readonly t: OperatorTranslate }) {
   const { view, draft, base } = form;
-  const header = <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.settings')}</h1>;
   if (view.kind === 'loading') {
-    return <div className="flex flex-col gap-5">{header}<Empty icon={<Loader />} title={t('settings.pending.title')} /></div>;
+    return <Empty icon={<Loader />} title={t('settings.pending.title')} />;
   }
   if (view.kind === 'unavailable') {
-    return <div className="flex flex-col gap-5">{header}
+    return <div className="flex flex-col gap-5">
       <Banner variant="error" data-settings-unavailable={view.reason} title={t('settings.failed.title')} description={t(`settings.reason.${view.reason}`)} />
     </div>;
   }
@@ -212,7 +213,6 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
   const stale = runtimes.status === 'stale' && runtimes.reason !== null && runtimes.collected_at !== null;
   return (
     <div className="flex flex-col gap-5">
-      {header}
       <section aria-labelledby="settings-agents-heading" className="flex flex-col gap-4 rounded-xl border border-kumo-line bg-kumo-base p-4 sm:p-5">
         <SectionTitle id="settings-agents-heading">{t('settings.agents.title')}</SectionTitle>
         {/* The contract gives every runtime the same capabilities before a session opens, so they are stated once. */}
@@ -235,7 +235,7 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
           <RuntimeGroup id="settings-group-missing" title={t('settings.group.missing')} rows={rows.missing} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
           {docsAvailable && <DefaultDocs draft={draft} settings={settings} locked={locked} onEdit={form.edit} t={t} />}
           {/* Next to Save, where the result of a save is read. */}
-          <SaveResult form={form} changedElsewhere={changedElsewhere} t={t} />
+          <SaveResult save={form.save} reload={form.reload} changedElsewhere={changedElsewhere} t={t} />
           <div className="flex flex-wrap items-center gap-3 border-t border-kumo-hairline pt-4">
             <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked} data-save>
               {form.save.kind === 'saving' ? t('settings.saving') : t('settings.save')}
@@ -245,6 +245,33 @@ export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsFo
           </div>
         </>}
       </section>
+    </div>
+  );
+}
+
+export const SETTINGS_SECTIONS = ['agents', 'seats'] as const;
+export type SettingsSectionId = typeof SETTINGS_SECTIONS[number];
+
+/** The Settings heading and its section links; `#settings` is Agent settings, `#settings/seats` the seats. */
+export function SettingsLayout({ current, onOpen, t, children }: {
+  readonly current: SettingsSectionId; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate; readonly children: ReactNode;
+}) {
+  return (
+    <div className="flex flex-col gap-5">
+      <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.settings')}</h1>
+      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
+        <nav aria-label={t('settings.sections')} className="flex shrink-0 gap-1 lg:w-44 lg:flex-col">
+          {SETTINGS_SECTIONS.map(section => (
+            <PageLink key={section} to={{ workspace: 'settings', module: null, item: section === 'agents' ? null : section }} onOpen={onOpen}
+              aria-current={section === current ? 'page' : undefined} data-settings-section={section}
+              className={cn('flex h-8 items-center rounded-md px-2.5 text-sm',
+                section === current ? 'bg-kumo-tint font-medium text-kumo-strong' : 'text-kumo-default hover:bg-kumo-tint')}>
+              {t(`settings.section.${section}`)}
+            </PageLink>
+          ))}
+        </nav>
+        <div className="min-w-0 flex-1">{children}</div>
+      </div>
     </div>
   );
 }
