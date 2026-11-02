@@ -2,6 +2,7 @@ import { parseClosingReferences } from '../publication/closing-references';
 import type { PullRequestReadinessV2 } from '../publication/merge-readiness';
 import { decodePlanBlock, PlanBlockError, type PlanBlockV1 } from './plan-block';
 import {
+  BoardSourceError,
   newestProtocolComment,
   parseAcceptanceRecord,
   parseClaimStatus,
@@ -274,6 +275,6 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
 
 function tierOf(labels: readonly string[]): BoardTier | null {
   const tiers = [...new Set(labels.flatMap(label => (TIER_LABELS[label] ? [TIER_LABELS[label]] : [])))];
-  if (tiers.length > 1) throw new Error(`an issue carries more than one tier label: ${tiers.join(', ')}`);
+  if (tiers.length > 1) throw new BoardSourceError(`an issue carries more than one tier label: ${tiers.join(', ')}`);
   return tiers[0] ?? null;
 }

@@ -108,6 +108,7 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
 }
 
+/** `external_tooling.herdr_core.min_version` of the local policy; null when the file or the pin cannot be read. */
 function hcPin(repoRoot: string): string | null {
   try {
     const policy = JSON.parse(readFileSync(join(repoRoot, POLICY_PATH), 'utf-8')) as { external_tooling?: { herdr_core?: { min_version?: unknown } } };
@@ -121,7 +122,7 @@ function hcPin(repoRoot: string): string | null {
 function tooling(input: BoardCollectInput): BoardToolingV1 {
   const herdrApp = { status: 'not_pinned' } as const;
   const pin = hcPin(input.repo_root);
-  if (pin === null) return { hc: { status: 'unavailable', reason: 'pin_missing' }, herdr_app: herdrApp };
+  if (pin === null) return { hc: { status: 'unavailable', reason: 'pin_unavailable' }, herdr_app: herdrApp };
   try {
     return { hc: { status: 'observed', version: hcVersion({ env: input.hc_env }), min_version: pin }, herdr_app: herdrApp };
   } catch (error) {
