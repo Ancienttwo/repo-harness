@@ -1,0 +1,50 @@
+schemaVersion: "archcontext.flow/v1"
+id: "flow.board.attention"
+capabilityId: "capability.organization.board"
+name: "Read a parent board and its attention findings"
+applicability: "required"
+participants:
+  - id: "board"
+    nodeId: "capability.organization.board"
+  - id: "command"
+    nodeId: "component.board.cli"
+steps:
+  - id: "collect"
+    from: "board"
+    to: "command"
+    label: "Read the parent issue, its linked pull requests, the daily run and the seat terminals"
+    evidence:
+      entrypointId: "entrypoint.board.command"
+      sourceSymbol: "buildBoardCommand"
+      sinkId: "sink.board.collect"
+outcomes:
+  - id: "success"
+    kind: "success"
+    label: "Print the board or its attention findings"
+    steps:
+      - id: "evaluate"
+        from: "board"
+        to: "command"
+        label: "Run the attention rules; list a rule without its input as unevaluated"
+        evidence:
+          entrypointId: "entrypoint.board.command"
+          sourceSymbol: "buildBoardCommand"
+          sinkId: "sink.board.attention"
+    terminal:
+      participant: "board"
+      label: "Return the board or the findings and write nothing"
+  - id: "unavailable"
+    kind: "error"
+    label: "A provider read fails or returns more pages than one read holds"
+    steps:
+      - id: "refuse"
+        from: "board"
+        to: "command"
+        label: "Refuse the incomplete or invalid read with a typed error"
+        evidence:
+          entrypointId: "entrypoint.board.command"
+          sourceSymbol: "buildBoardCommand"
+          sinkId: "sink.board.collect"
+    terminal:
+      participant: "board"
+      label: "Report the error and print no partial board"
