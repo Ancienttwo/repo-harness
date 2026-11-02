@@ -1435,7 +1435,21 @@ pi_write_harness_policy() {
       }
     },
     "herdr_core": {
-      "min_version": "0.1.16"
+      "min_version": "0.1.17",
+      "release_assets": {
+        "linux-x86_64": {
+          "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-linux-x86_64.tar.gz",
+          "sha256": "82ec44043f6894bfdb716b979b87cda43fd7fa46b0104e7b7bd93e64d1a9b877"
+        },
+        "macos-aarch64": {
+          "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-macos-aarch64.tar.gz",
+          "sha256": "cedbd4d4d9ba1385588198dd4d3c67d2654478f33add5b6445d4d0eb9da5fcf3"
+        },
+        "macos-x86_64": {
+          "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-macos-x86_64.tar.gz",
+          "sha256": "e2dc3211edb1f1c77d0e73dd76c1426636d71050f34a5303916a56d363d7062b"
+        }
+      }
     }
   },
   "agentic_development": {
