@@ -1,8 +1,10 @@
 import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun, type HerdrCoreOptions } from '../../effects/terminal/herdr-core.ts';
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
+import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
 import { NOTIFY_SECRET_KEYS, renderNotifyConfig, runNotifyRelay, type NotifyConfig } from '../../effects/terminal/notify-relay.ts';
 import { Command } from 'commander';
 import { rmSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
@@ -109,7 +111,9 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   writePrivateFile(notifyConfigPath(), renderNotifyConfig(config));
   if (!running.length) {
     try {
-      hcRun({ argv: [process.execPath, CLI_ENTRY, 'herdr', 'notify', 'relay'], labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true }, hc);
+      // An hc terminal starts with the core's environment, not the caller's, so the home travels in argv.
+      hcRun({ argv: [process.execPath, CLI_ENTRY, 'herdr', 'notify', 'relay', '--home', repoHarnessHome()],
+        labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true }, hc);
     } catch { throw new Error('hc did not start the relay terminal. The config is written. Run install again.'); }
   }
   // Last step: the operator reads the relay identity only from this record.
@@ -161,8 +165,10 @@ export function buildHerdrCommand(): Command {
       }
     });
   notify.command('relay').description('Follow hc events and send notices (install runs this in an hc terminal)')
-    .action(async () => {
-      try { await runNotifyRelay({ env: process.env }); }
+    .requiredOption('--home <path>', 'Absolute repo-harness home that holds the notify config')
+    .action(async (options: { home: string }) => {
+      if (!isAbsolute(options.home)) { process.stderr.write('[notify-relay] --home must be an absolute path.\n'); process.exitCode = 1; return; }
+      try { await runNotifyRelay({ env: { ...process.env, REPO_HARNESS_HOME: options.home } }); }
       catch { process.stderr.write('[notify-relay] The hc event stream ended. Run: repo-harness herdr notify install\n'); process.exitCode = 1; }
     });
   return command;

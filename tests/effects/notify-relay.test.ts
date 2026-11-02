@@ -228,7 +228,7 @@ describe('herdr notify install and uninstall', () => {
       const [list, run] = f.calls();
       expect(list!.argv).toEqual(['ls', '--json', '--label', 'repo-harness.role=notify-relay']);
       expect(run!.argv).toEqual(['run', '--json', '--bg', '--label', 'repo-harness.role=notify-relay', '--name', 'rh-notify-relay', '--no-parent',
-        '--', process.execPath, join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'relay']);
+        '--', process.execPath, join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', 'relay', '--home', f.env.REPO_HARNESS_HOME!]);
       // Secrets reach the config file only, never the hc environment or argv.
       expect(f.calls().every(call => call.secret === null && !call.argv.join(' ').includes(KEY))).toBe(true);
       expect(result.stdout + result.stderr).not.toContain(KEY);

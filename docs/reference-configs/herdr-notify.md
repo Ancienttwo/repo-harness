@@ -82,6 +82,7 @@ Each active channel has an “also notify on done” question. Its default is no
 The command writes the config to `~/.repo-harness/herdr/notify.env` with file mode `600`.
 Then it starts the relay with `hc run --bg --no-parent` in an hc terminal named `rh-notify-relay` with the label `repo-harness.role=notify-relay`.
 The relay terminal has no parent, so it stays when the install terminal ends.
+An hc terminal starts with the core's environment, so install passes the repo-harness home to the relay as `--home <absolute path>`.
 When a live relay terminal already exists, install starts no second one.
 The relay reads the config again on each event, so a new config takes effect without a restart.
 Last, the command writes `~/.repo-harness/herdr/notify-install.json` with file mode `600`. It names the relay terminal and its label.
@@ -195,7 +196,7 @@ The command prints no config values. The relay terminal's environment and argv c
 
 ## Filters and delivery
 
-The relay runs `repo-harness herdr notify relay`. It follows `hc events --json --label repo-harness.notify=on`.
+The relay runs `repo-harness herdr notify relay --home <path>`. It follows `hc events --json --label repo-harness.notify=on`.
 Only terminals that carry `repo-harness.notify=on` reach it. repo-harness sets this label when it starts or labels an agent terminal.
 A terminal that gets the label after it starts is followed from that point.
 The relay sends on each hc `turn` event whose state is `blocked` or `done`. hc raises a turn when the program's OSC 7501 status leaves `working`.
