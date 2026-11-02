@@ -80,7 +80,7 @@ describe("Bootstrap Script Contracts", () => {
     expect(existsSync(join(ROOT, ".codex/agents/orchestrator.toml"))).toBe(false);
     const orchestrator = read("agents/fleet/orchestrator.md");
     expect(orchestrator).toContain("claude --agent orchestrator");
-    expect(orchestrator).toContain("Opus at xhigh effort");
+    expect(orchestrator).toContain("Opus at high effort");
     expect(orchestrator).toContain("repo-harness publication merge");
     expect(orchestrator).toContain("DISPATCH: <issue> → <seat/agent>");
     const rootCause = read("agents/fleet/root-cause-prover.md");
