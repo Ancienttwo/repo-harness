@@ -335,8 +335,10 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       await repair(`merge-pr-${prNumber}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
     };
     // GitHub marks each batch member merged at its member merge on the integration branch; only its batch revert can roll it back.
-    const batches: { members: number[]; merges: readonly BatchMemberMergeV1[] }[] = [];
-    const undecoded: { pr: number; after: string; head: unknown }[] = [];
+    type Candidate = { pr: number; after: string; headSha: unknown };
+    type Decoded = Candidate & { boundary: CIReport['merges'][number]; batch: { members: number[]; merges: readonly BatchMemberMergeV1[] } | null };
+    const decoded: Decoded[] = [];
+    const undecoded: Candidate[] = [];
     for (const pr of prs) {
       if (pr.merged_at === null) continue;
       const base = record(pr.base, 'PR base');
@@ -354,8 +356,9 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         const detail = record(await api(`${root}/pulls/${pr.number}`), 'Merged PR detail');
         if (detail.number !== pr.number || detail.merged !== true || detail.merge_commit_sha !== after
           || record(detail.base, 'Merged PR detail base').ref !== 'main') throw new Error('Merged PR detail does not match the rollback boundary');
+        const headSha = isRecord(detail.head) ? detail.head.sha : undefined;
         const parent = rollbackParent(after, commit.parents, detail.head);
-        if (!parent) { undecoded.push({ pr: pr.number, after, head: detail.head }); continue; }
+        if (!parent) { undecoded.push({ pr: pr.number, after, headSha }); continue; }
         const parentAssociations = await api(`${root}/commits/${parent.before_sha}/pulls?per_page=100`);
         if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) throw new Error('Rollback parent PR associations incomplete');
         const parentPRs = parentAssociations.map(entry => {
@@ -366,21 +369,24 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         if (parentPRs.includes(pr.number)) throw new Error(`Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${pr.number}`);
         const mainline = parent.mainline === null ? '' : ` -m ${parent.mainline}`;
         const boundary = { pr: pr.number, before: parent.before_sha, after, rollback: `git revert --no-edit${mainline} ${after}` };
-        if (parent.mainline === null) { report.merges.push(boundary); continue; }
-        // rollbackParent proved that the PR head is the second parent of the batch commit.
-        const merges = await batchMembers(api, root, parent.before_sha, record(detail.head, 'Merged PR detail head').sha as string);
-        const members: number[] = [];
-        report.merges.push({ ...boundary, members });
-        batches.push({ members, merges });
+        // rollbackParent proved that a batch PR head is the second parent of the batch commit.
+        const batch = parent.mainline === null ? null : { members: [], merges: await batchMembers(api, root, parent.before_sha, headSha as string) };
+        decoded.push({ pr: pr.number, after, headSha, boundary, batch });
       } catch (error) { await pending(pr.number, error); }
     }
-    for (const { pr, after, head } of undecoded) {
-      const headSha = isRecord(head) ? head.sha : undefined;
-      const batch = batches.find(({ merges }) => merges.some(merge => merge.merge_sha === after && merge.member_head_sha === headSha));
-      if (batch) batch.members.push(pr);
-      else await pending(pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
+    const holds = ({ after, headSha }: Candidate) => (entry: Decoded): entry is Decoded & { batch: NonNullable<Decoded['batch']> } =>
+      entry.batch !== null && entry.batch.merges.some(merge => merge.merge_sha === after && merge.member_head_sha === headSha);
+    // Publication never nests batches. A batch on the chain of another batch is a member, and its own chain proves no member.
+    const nested = decoded.filter(candidate => candidate.batch !== null && decoded.some(holds(candidate)));
+    const boundaries = decoded.filter(candidate => !nested.includes(candidate));
+    for (const candidate of [...nested, ...undecoded]) {
+      const outer = boundaries.find(holds(candidate));
+      if (outer) outer.batch.members.push(candidate.pr);
+      else await pending(candidate.pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
     }
-    for (const { members } of batches) members.sort((left, right) => left - right);
+    for (const { boundary, batch } of boundaries) {
+      report.merges.push(batch === null ? boundary : { ...boundary, members: batch.members.sort((left, right) => left - right) });
+    }
   } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.'); }
   try {
     const open = await githubPages(api, `${root}/issues?state=open`);
