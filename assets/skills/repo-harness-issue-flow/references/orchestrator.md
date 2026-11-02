@@ -194,11 +194,10 @@ host's PR events or check when the worker reports.
   and post a `scope change` comment that says what changed and why), or
   open a new issue for the extra work and keep the PR narrow. Never let the
   worker widen the PR without an issue change.
-- **Review.** Select the review depth by the diff's risk tier. At Low,
-  SUCCESS required checks on the head plus the author verification
-  evidence in the PR body need no accept seat and no acceptance record
-  (§9.1): dispatch no Codex, Herdr or OAR accept seat. Each
-  reviewer posts an `acceptance claim` for its round and subject SHA before
+- **Review.** Select the review depth by the diff's risk tier. A Low PR
+  that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
+  seat (`docs/reference-configs/agentic-development-flow.md`, Review by
+  risk). Each reviewer posts an `acceptance claim` for its round and subject SHA before
   it reads, so that two reviewers do not take the same round. Classify
   findings:
   - P1 — wrong behavior or broken boundary: fix in this PR.
@@ -263,9 +262,8 @@ A PR is eligible when all of these are true:
 
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
-- Its tier review passed on a subject SHA. At Low this is vacuously true
-  when no review is required: the SUCCESS required checks and the author
-  verification evidence in the PR body are the proof surface
+- Its tier review passed on a subject SHA. A Low PR needs no review, but
+  its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
@@ -330,8 +328,9 @@ merge it by any path other than `repo-harness publication merge`.
    nothing else.
 5. **Review.** Every member merged without conflict, and the batch adds no
    commit of its own. The batch reuses the member acceptance records and
-   needs no new review round
-   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
+   needs no new review round. A Low member has no acceptance record to
+   reuse (`docs/reference-configs/agentic-development-flow.md`, Review by
+   risk).
 6. **Red CI.** Do not fix it in the batch branch. Classify the failure
    first; a known flake gets one rerun (§8). Drop the member that changes
    the failing test or the source it covers, and post the batch-drop

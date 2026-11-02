@@ -94,13 +94,10 @@ Every coding / Herdr seat brief must include:
 Incomplete brief = do not seat. The brief's `product=` overrides paths for
 that seat. Other products get their paths from the brief only.
 
-Low-tier default — skip accept (Owner lock, #1391, 2026-11-02): for a Low
-PR (docs, comments, translations, or a local change with clear behavior),
-when `Required / CI` is SUCCESS on the PR head and the PR body holds the
-author verification evidence (commands and outcomes), tinkabot and
-Worker-Herdr seat no Codex/Herdr/OAR accept pane and expect no acceptance
-record. Medium and High keep acceptance panes
-([Review by risk](reference-configs/agentic-development-flow.md#review-by-risk)).
+For a PR that meets the Low accept-seat skip in
+[Review by risk](reference-configs/agentic-development-flow.md#review-by-risk),
+tinkabot and Worker-Herdr seat no Codex, Herdr or OAR accept pane and expect
+no acceptance record.
 
 ## Cursor Worker model lanes
 

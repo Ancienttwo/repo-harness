@@ -58,9 +58,9 @@ A Bot works in one of two modes. Both modes merge through the same executor,
 | Local Herdr | A Herdr pane | The worker produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | `repo-harness publication merge` in the Bot's shell |
 | Cloud only | GitHub issues and comments | CI, and the `acceptance record` on the PR | The cloud sandbox has repo-harness installed, a working `gh auth` (the token needs Administration read permission) and a checkout of the repository. It runs `repo-harness publication merge` |
 
-Low-tier PRs skip acceptance panes and the acceptance record by default when
-required checks are green and the PR body holds the author verification
-evidence; see [bot onboarding](bot-onboarding.md#dispatch-brief-mandatory-fields-hard).
+A PR that meets the Low accept-seat skip in
+[Review by risk](reference-configs/agentic-development-flow.md#review-by-risk)
+gets no acceptance pane and no acceptance record.
 
 - A Bot record does not grant merge permission. This covers `review admit`
   grants and `acceptance record` comments. The executor merges only when
