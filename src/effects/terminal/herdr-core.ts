@@ -42,6 +42,8 @@ export interface HcForeground { readonly pid: number; readonly name: string; rea
 export interface HcTerminal extends HcTerminalSummary {
   readonly labels: HcLabels;
   readonly status: HcStatus | null;
+  /** When the status word last changed, ms since the epoch; absent when hc omits it (schema default null). */
+  readonly status_ms?: number | null;
   readonly turn: number;
   /** The program's pid (it leads its own process group), not the holder's. */
   readonly pid: number | null;
@@ -73,6 +75,11 @@ export const RH_LABEL = {
   repository: 'repo-harness.repository',
   harness: 'repo-harness.harness',
   notify: 'repo-harness.notify',
+  /** Seat labels, written at seat launch (#1473) and read by the board (#1505). */
+  seat: 'repo-harness.seat',
+  issue: 'repo-harness.issue',
+  pr: 'repo-harness.pr',
+  parent: 'repo-harness.parent',
 } as const;
 /** `repo-harness.role` values. A surface that needs a new role adds it here. */
 export const RH_ROLE = { notifyRelay: 'notify-relay', taskSession: 'task-session' } as const;
@@ -194,6 +201,7 @@ function hc(subcommand: string, args: readonly string[], options: HerdrCoreOptio
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isPid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
+const isMs = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 const orNull = <T>(valid: (value: unknown) => value is T) => (value: unknown): value is T | null => value === null || valid(value);
 
 /** The one rule for a field that the hc schema does not require: absent is undefined, present must be valid. */
@@ -234,8 +242,10 @@ function terminal(value: unknown): HcTerminal {
   if (!isRecord(labels) || !Object.values(labels).every(isString)) throw invalidResponse(`${where} has invalid labels`);
   if (!Number.isSafeInteger(record.turn)) throw invalidResponse(`${where} has an invalid turn`);
   const current = optional(record, 'foreground', orNull(isForeground), where) ?? null;
+  const statusMs = optional(record, 'status_ms', orNull(isMs), where);
   return {
-    ...summary, labels: labels as HcLabels, status: status(record.status ?? null, where), turn: record.turn as number,
+    ...summary, labels: labels as HcLabels, status: status(record.status ?? null, where),
+    ...(statusMs === undefined ? {} : { status_ms: statusMs }), turn: record.turn as number,
     pid: optional(record, 'pid', orNull(isPid), where) ?? null,
     foreground: current === null ? null : { pid: current.pid, name: current.name, argv: [...current.argv], cwd: current.cwd },
     reason: optional(record, 'reason', orNull(isString), where) ?? null,
@@ -248,6 +258,18 @@ function ownedTerminal(value: unknown): HcTerminal {
     throw new HerdrCoreError('hc', 'unowned', undefined, undefined, `terminal ${result.address} has no repo-harness label`);
   }
   return result;
+}
+
+/** `hc --version`: the installed client version (`hc 0.1.17`). It reads no core and no terminal. */
+export function hcVersion(options: HerdrCoreOptions = {}): string {
+  const result = spawnSync('hc', ['--version'], {
+    env: environment('hc', options), timeout: timeoutOf(options), killSignal: 'SIGKILL', shell: false, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error) throw spawnError('hc', result.error);
+  if (result.signal || result.status !== 0) throw new HerdrCoreError('hc', 'failed', result.status ?? undefined);
+  const match = /^hc ([0-9]+\.[0-9]+\.[0-9]+)\s*$/u.exec(result.stdout.toString('utf8'));
+  if (!match) throw invalidResponse('version output is not "hc x.y.z"');
+  return match[1]!;
 }
 
 /** `hc get`: one terminal by its `t<n>` address. A terminal without a repo-harness label is refused (`unowned`). */
