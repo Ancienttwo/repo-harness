@@ -3,8 +3,11 @@ import { existsSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
-import { observeTaskSessionAdmission, collectTaskResult, startTaskAgent, taskSessionDirectory,
-  ensureSessionDirectory, writeSessionArtifact, type HerdrTaskBinding, type TaskRequest } from '../../src/effects/terminal/task-session';
+import { collectTaskResult, startTaskAgent } from '../../src/effects/terminal/task-session';
+import { observeTaskSessionAdmission } from '../../src/effects/terminal/task-session-admission';
+import { taskSessionDirectory, type HerdrTaskBinding } from '../../src/effects/terminal/task-session-record';
+import { ensureSessionDirectory, writeSessionArtifact } from '../../src/effects/terminal/task-session-io';
+import type { TaskRequest } from '../../src/core/review/runner-port';
 import { taskRepository } from '../../src/effects/git/task-repository';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';

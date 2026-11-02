@@ -16,7 +16,7 @@ const INVALID_REGISTRY = capabilityOwnershipBlocker(
   'registry',
 );
 const UNAVAILABLE_OWNERSHIP = capabilityOwnershipBlocker(
-  { code: 'ARCHCONTEXT_RESOLVE_FAILED', path: '.archcontext/model/nodes', message: 'package-local archctx@0.7.2 is missing\n  from the consumer dependency tree' },
+  { code: 'ARCHCONTEXT_RESOLVE_FAILED', path: '.archcontext/model/nodes', message: 'package-local archctx@0.7.2 is missing\n  from the consumer dependency tree', archctxErrorCode: 'RH_ARCHCTX_PACKAGE_MISSING' },
   'archcontext',
 );
 

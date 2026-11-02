@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fb5dc0b2587d5789e87f8021d74611965c9dc4011bd01c1c52e41424e6f44a05" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a03b0261b1890eeb28433e9441fccfe064242bc520d862d2323d485ebaaf151c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -60,13 +60,10 @@ flowchart LR
 
 - `calls` ← `component.acceptance-review.primary` — Hold an exclusive directory lock around one generic review run
 - `depends-on` ← `capability.public-surface.adoption` — Run bounded processes for adoption and file transactions.
-- `calls` ← `component.agent-runtime-effects.journal` — Hold exclusive directory locks under the Git common directory
 - `depends-on` ← `capability.verification.codegraph-readiness` — Run bounded CodeGraph processes.
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
 - `calls` ← `component.contract-assets.planning-helpers` — Run each helper as a bounded child process
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes
-- `calls` ← `capability.runtime-harness.engineer-bindings` — List tracked Engineer profile and SOP paths through the shared Git runner
-- `calls` ← `capability.runtime-harness.engineer-scheduling` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.evals-checks.evals-and-benchmarks` — Take the expensive-run lock before a costly benchmark profile runs
 - `calls` ← `component.evidence-ledger.primary` — Hold exclusive directory locks under the Git common directory and read the virtual tree
 - `calls` ← `component.external-source-intake.immutable-evidence` — Hold exclusive directory locks under the Git common directory
@@ -77,7 +74,6 @@ flowchart LR
 - `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner
 - `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries
 - `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
-- `calls` ← `component.integration-acceptance.primary` — Resolve the Git common directory for integration records
 - `calls` ← `component.mcp-sidecar.coding-profile` — Use the configured Git binary for coding workspaces
 - `calls` ← `component.mcp-sidecar.host-setup` — Hold the MCP setup ownership lock
 - `calls` ← `component.mcp-sidecar.primary` — Read the worktree topology for the PM server scope
@@ -165,7 +161,17 @@ sequenceDiagram
 | `component.execution-primitives.repository-registry`（Repository Registry and Account Home） | effects | `src/effects/repo-registry.ts`（859 行）、`src/effects/repo-harness-home.ts`（8 行） | 注册仓库记录、read_write 授权与授权 revision；account 级 repo-harness home 根目录 |
 | `component.execution-primitives.secret-patterns`（Secret Patterns） | core | `src/core/security/**`（1 个文件，32 行） | 脱敏与只读投影共用的密钥 token 模式 |
 
-`repo-registry.ts` 只导入 Node 内置模块、`./locking/exclusive-directory-lock`、`./git/runner` 与 `./repo-harness-home`。`repo-harness-home.ts` 只导入 `node:os` 与 `node:path`。`secret-patterns.ts` 没有 import。所以本 capability 没有新增出向边。
+`repo-registry.ts` 只导入 Node 内置模块、`./locking/exclusive-directory-lock`、`./git/runner` 与 `./repo-harness-home`。`repo-harness-home.ts` 只导入 `node:os` 与 `node:path`。`secret-patterns.ts` 没有 import。所以 #1343 没有新增出向边。
+
+#1352 slice A 再增加两个组件：
+
+| 组件 | 层 | footprint | 职责 |
+| --- | --- | --- | --- |
+| `component.execution-primitives.task-message-claim`（Task Message Claim Primitives） | core | `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts`（3 个文件，106 行） | task inbox 与 feedback 记录共用的 claim 校验、消息错误类型与封闭字段检查 |
+| `component.execution-primitives.session-artifact-io`（Immutable Session Artifact I/O） | effects | `src/effects/terminal/task-session-io.ts`（29 行） | 持久写入与读取 session JSON 产物，读取进程身份 |
+| `component.execution-primitives.task-session-record`（Task Session Record） | effects | `src/effects/terminal/task-session-record.ts`（133 行） | task session 与 task workspace 的记录类型、`HerdrEndpoint` 记录字段、不连接 Herdr 的 binding reader，以及 `taskWorktreeRuntimeClosed` |
+
+`mechanics.ts` 导入 evidence-ledger 的 `core/evidence/canonical-json` 与 `core/evidence/types`。这是本 capability 唯一的新出向边（`relation.execution-primitives.task-message-claim.evidence-ledger`）。evidence-ledger 也调用本 capability 的锁，所以两个 capability 之间有双向关系；文件级没有环。`task-session-io.ts` 只导入 Node 内置模块。`task-session-record.ts` 导入 acceptance-review 的 runner port 类型（`relation.execution-primitives.task-session-record.acceptance-review`），只有类型导入。
 
 ### 3.4 10x 规模下先垮的点
 
@@ -191,6 +197,11 @@ sequenceDiagram
 - `src/effects/repo-registry.ts`、`src/effects/repo-harness-home.ts` 与 `src/core/security/**` 从 mcp-sidecar 移到本 capability 的两个新组件。只改模型，源码与 import 不变。
 - 原因：`src/core/review`、`src/core/operator` 与多个 capability 读这些文件。#1287 的依赖检查不应把它们算作 core → MCP 边。
 - 新路径只写在组件 include 上，不写在 capability include 上，与 `src/effects/runtime/os-account-home.ts` 相同。
+
+### 2026-11-02 Task message claim and session artifact I/O moved in (#1352 slice A)
+
+- `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts` 从 task-fleet 移到 `component.execution-primitives.task-message-claim`。`src/effects/terminal/task-session-io.ts` 从 task-agent-host 移到 `component.execution-primitives.session-artifact-io`。只改模型，源码与 import 不变。
+- 原因：publication 与 acceptance-review 导入这些文件。#1352 要求它们不经过 task-fleet 或 task-agent-host。
 
 ## Optimization Backlog
 

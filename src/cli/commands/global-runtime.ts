@@ -18,9 +18,7 @@ import {
   type InitRuntimeDependencies,
 } from "./init";
 import { runInstall, type InstallTargetSpec } from "./install";
-import { configureRequiredHerdrSkill } from "./herdr-skill";
 import { compareVersions, readLatestPackageVersion } from "./doctor";
-import { configureCodegraph } from "../tools/codegraph";
 import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { leftoverCheckWarning } from "./upgrade";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
@@ -618,7 +616,11 @@ function installCliFromRegistry(
   installSpec: string,
 ): GlobalRuntimeStep {
   const name = "install repo-harness CLI";
-  const lookup = runProcess(bunExecutable, ["pm", "view", installSpec, "version", "--json", "--no-cache"], cwd, env);
+  const globalRoot = bunGlobalPackageRoot(env);
+  if (globalRoot === null) return { step: name, status: "failed", detail: "unable to resolve Bun global package root" };
+  // `bun pm view` exits non-zero in a directory without package.json, so the
+  // lookup runs in the global package root that the install and readback use.
+  const lookup = runProcess(bunExecutable, ["pm", "view", installSpec, "version", "--json", "--no-cache"], globalRoot, env);
   if (lookup.status !== "ok") return withStepName(lookup, name, `unable to resolve ${installSpec} from registry`);
   let expected: unknown;
   try {
@@ -630,8 +632,6 @@ function installCliFromRegistry(
   if (typeof expected !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(expected)) {
     return withStepName({ ...lookup, status: "failed" }, name, `invalid registry version for ${installSpec}: expected an exact version`);
   }
-  const globalRoot = bunGlobalPackageRoot(env);
-  if (globalRoot === null) return { step: name, status: "failed", detail: "unable to resolve Bun global package root" };
   const previous = packageVersion(globalRoot);
   const spec = `repo-harness@${expected}`;
   const install = runProcess(bunExecutable, ["add", "-g", spec, "--no-cache"], cwd, env);
@@ -1458,24 +1458,14 @@ function ensureCodegraphCli(cwd: string, bunExecutable: string, env?: NodeJS.Pro
   };
 }
 
-function configureCodegraphMcp(cwd: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv): GlobalRuntimeStep {
-  try {
-    const result = configureCodegraph({ repoRoot: cwd, target, location: "global", env });
-    return {
-      step: "configure CodeGraph MCP",
-      status: result.actions.some((entry) => entry.status === "failed") ? "failed" : "ok",
-      detail: result.actions.map((entry) => `${entry.action}:${entry.status}`).join(", "),
-    };
-  } catch (error) {
-    return {
-      step: "configure CodeGraph MCP",
-      status: "failed",
-      stderr: String((error as Error).message ?? error),
-    };
-  }
+/** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
+export interface GlobalRuntimePorts {
+  readonly configureCodegraphMcp: (cwd: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv) => GlobalRuntimeStep;
+  readonly configureHerdrSkill: (target: InstallTargetSpec, env: NodeJS.ProcessEnv) => GlobalRuntimeStep;
 }
 
 export function runGlobalRuntimeSetup(
+  ports: GlobalRuntimePorts,
   opts: GlobalRuntimeOptions = {},
   dependencies?: InitRuntimeDependencies,
 ): GlobalRuntimeResult {
@@ -1657,14 +1647,14 @@ export function runGlobalRuntimeSetup(
   if (refreshCodegraph) {
     const ensure = ensureCodegraphCli(cwd, bunExecutable, env, updateMode);
     steps.push(ensure);
-    if (ensure.status === "ok") steps.push(configureCodegraphMcp(cwd, target, env));
+    if (ensure.status === "ok") steps.push(ports.configureCodegraphMcp(cwd, target, env));
     else steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "CodeGraph CLI install failed" });
   } else {
     steps.push({ step: "ensure CodeGraph CLI", status: "skipped", detail: "disabled" });
     steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "disabled" });
   }
 
-  if (steps.every((step) => step.status !== "failed")) steps.push(configureRequiredHerdrSkill(target, env));
+  if (steps.every((step) => step.status !== "failed")) steps.push(ports.configureHerdrSkill(target, env));
   if (steps.every((step) => step.status !== 'failed')) {
     const pi = installPiPackage(bunGlobalPackageRoot(env)!, target === 'both' && opts.hostAdapters !== false, env);
     steps.push({ ...pi, ...(pi.created ? { owned_surface: {

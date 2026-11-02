@@ -60,6 +60,7 @@ describe("global working rules distribution", () => {
     const rendered = renderedManagedBlock("en", "Use English to report to user.");
     expect(rendered).toContain("put at most 3 panes side by side in one tab");
     expect(rendered).toContain("never split down");
+    expect(rendered).toContain("docs/reference-configs/herdr-notify.md#herdr-dispatch");
   });
 
   test("the managed block ships the test-volume budget and its exception path", () => {

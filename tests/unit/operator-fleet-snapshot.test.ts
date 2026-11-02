@@ -174,9 +174,11 @@ describe('OperatorFleetSnapshotV1 browser projection', () => {
     expect(JSON.stringify(projected)).not.toContain('/private/agent-root');
   });
 
-  test('rejects an unsupported Fleet protocol before crossing the browser boundary', () => {
+  test('rejects an unsupported Fleet protocol or kind before crossing the browser boundary', () => {
     const invalid = { ...sourceSnapshot(), protocol: 99 } as unknown as FleetBoardSnapshotV2;
     expect(() => projectOperatorFleetSnapshot(invalid, serviceEpoch, basename)).toThrow('unsupported Fleet snapshot protocol');
+    const otherKind = { ...sourceSnapshot(), kind: 'operator_fleet_snapshot' } as unknown as FleetBoardSnapshotV2;
+    expect(() => projectOperatorFleetSnapshot(otherKind, serviceEpoch, basename)).toThrow('unsupported Fleet snapshot kind');
   });
 
   test('UX-local-human-control-board-v1-N1 allowlists every DTO level against hostile identity-shaped extras', () => {

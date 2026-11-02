@@ -1333,7 +1333,7 @@ function probeInstalledComponents(
     : [];
   const fleetEvidence = completeAgentFleetEvidence(home);
   const verifierEvidence = fleetEvidence.some((path) => /\/gatekeeper\.(?:toml|md)$/.test(path))
-    ? canonicalEvidence(home, ['src/effects/review/oar-review-host.ts'])
+    ? canonicalEvidence(home, ['src/effects/review-runner/task-oar-host.ts'])
     : [];
   const crossModelEvidence = skillEvidence(home, probeExpectations.crossModel);
   const releasePaths = ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'];

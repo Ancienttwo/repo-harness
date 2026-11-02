@@ -23,8 +23,10 @@ import {
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
 import { gitExecFileSync } from '../git/runner';
-import { ARCHITECTURE_HISTORY_TIMEOUT_MS } from '../../core/operator/architecture';
 export { ArchctxClientError, type NativeContextSource } from '../../core/architecture/projection';
+
+/** A cold `archctx history` derives every model revision (10.9 s for 50 milestones), so it has its own limit. */
+export const ARCHITECTURE_HISTORY_TIMEOUT_MS = 120_000;
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
 export type RunArchctxProcess = (binary: string, args: readonly string[], options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }) => ArchctxProcessResult;
@@ -743,7 +745,7 @@ function runProjectionCommand(command: 'run' | 'readback', request: ProjectionRe
 function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'>, maximumMs: number, phase: string): number {
   if (options.deadlineMs === undefined) return maximumMs;
   const remaining = Math.floor(options.deadlineMs - (options.nowMs ?? Date.now)());
-  if (remaining <= 0) throw new Error(`architecture projection timeout before ${phase}`);
+  if (remaining <= 0) throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'retry', message: `architecture projection timeout before ${phase}` });
   return Math.min(maximumMs, remaining);
 }
 

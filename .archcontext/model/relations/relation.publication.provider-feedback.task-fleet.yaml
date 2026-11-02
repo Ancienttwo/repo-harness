@@ -1,6 +1,0 @@
-schemaVersion: "archcontext.relation/v1"
-id: "relation.publication.provider-feedback.task-fleet"
-kind: "calls"
-source: "component.publication.provider-feedback"
-target: "capability.organization.task-fleet"
-intent: "Reobserve exact admitted inbox context and shared message claim identity before provider feedback writes"

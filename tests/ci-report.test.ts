@@ -380,6 +380,60 @@ test.each([
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
 }));
 
+test.each([
+  { name: 'members at their member merges join the batch entry', wrongHead: false, nested: false },
+  { name: 'a member merge whose second parent is not the PR head keeps its repair', wrongHead: true, nested: false },
+  { name: 'a member that decodes as a batch of its own joins the outer batch entry', wrongHead: false, nested: true },
+])('a publication merge --batch commit reports its first parent and a mainline revert that restores it: $name', ({ wrongHead, nested }) => fixture(async f => {
+  // Member 8 is the candidate commit; member 9 adds one file on the base. The integration head is two member merges.
+  // A nested member 9 is itself a batch head: one member merge of member 9 on merge 8.
+  f.git('checkout', '-q', '--detach', f.before); writeFileSync(join(f.root, 'member.txt'), 'member\n'); f.git('add', '.'); f.git('commit', '-qm', 'member 9');
+  const member9 = f.git('rev-parse', 'HEAD'); f.git('checkout', '-q', 'main');
+  const member8 = f.git('rev-parse', 'candidate');
+  const merge8 = f.git('commit-tree', `${member8}^{tree}`, '-p', f.before, '-p', member8, '-m', 'merge member 8');
+  const tree9 = f.git('merge-tree', '--write-tree', merge8, member9);
+  const head9 = nested ? f.git('commit-tree', tree9, '-p', merge8, '-p', member9, '-m', 'inner batch member 9') : member9;
+  const merge9 = f.git('commit-tree', tree9, '-p', merge8, '-p', head9, '-m', 'merge member 9');
+  const batch = f.git('commit-tree', `${merge9}^{tree}`, '-p', f.before, '-p', merge9, '-m', 'batch merge');
+  f.git('reset', '-q', '--hard', batch);
+  const prs = [{ number: 7, merge: batch, head: { ref: 'integration/1287-batch-3', sha: merge9 } },
+    { number: 8, merge: merge8, head: { ref: 'feat/8', sha: member8 } },
+    { number: 9, merge: merge9, head: { ref: nested ? 'integration/100-batch-1' : 'feat/9', sha: wrongHead ? member8 : head9 } }];
+  const commitOf = (sha: string) => {
+    const [own, ...parents] = f.git('rev-list', '--parents', '-n', '1', sha).split(' ');
+    return { sha: own, parents: parents.map(parent => ({ sha: parent })) };
+  };
+  const report = await reportCI('test/repo', 12, async (path, method, body) => {
+    if (path.startsWith('/repos/test/repo/pulls?')) {
+      const [{ merged_at }] = await f.api(path) as Record<string, unknown>[];
+      return prs.map(pr => ({ number: pr.number, merged_at, merge_commit_sha: pr.merge, base: { ref: 'main' } }));
+    }
+    const detail = prs.find(pr => path.endsWith(`/pulls/${pr.number}`));
+    if (detail) return { number: detail.number, merged: true, merge_commit_sha: detail.merge, base: { ref: 'main' }, head: detail.head };
+    const commit = /\/git\/commits\/([0-9a-f]{40})$/.exec(path);
+    if (commit) return commitOf(commit[1]!);
+    const chain = /\/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})\?per_page=100$/.exec(path);
+    if (chain) {
+      const commits = f.git('rev-list', `${chain[1]}..${chain[2]}`).split('\n').map(commitOf);
+      return { total_commits: commits.length, commits };
+    }
+    if (/\/commits\/[0-9a-f]{40}\/pulls\?per_page=100$/.test(path)) return [];
+    return f.api(path, method, body);
+  });
+  const entry = { pr: 7, before: f.before, after: batch, rollback: `git revert --no-edit -m 1 ${batch}` };
+  if (wrongHead) {
+    expect(report.merges).toEqual([{ ...entry, members: [8] }]);
+    expect(report.errors).toEqual([expect.stringContaining('Rollback boundary pending for PR #9')]);
+    expect(report.repairs).toEqual([expect.objectContaining({ key: 'ci-repair:merge-pr-9', delivery: 'created' })]);
+    return;
+  }
+  expect(report.errors).toEqual([]); expect(report.repairs).toEqual([]);
+  expect(report.merges).toEqual([{ ...entry, members: [8, 9] }]);
+  expect(renderReport(report)).toContain(`rollback: \`git revert --no-edit -m 1 ${batch}\`; members: #8, #9`);
+  f.git(...report.merges[0]!.rollback.split(' ').slice(1));
+  expect(f.git('rev-parse', 'HEAD^{tree}')).toBe(f.git('rev-parse', `${f.before}^{tree}`));
+}));
+
 test('a parent introduced by another PR keeps the squash boundary valid', () => fixture(async f => {
   const report = await reportCI('test/repo', 12, (path, method, body) =>
     path === `/repos/test/repo/commits/${f.before}/pulls?per_page=100` ? Promise.resolve([{ number: 6 }]) : f.api(path, method, body));

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.mcp-sidecar.repo-policy-registry.hook-adapters
+kind: calls
+source: component.mcp-sidecar.repo-policy-registry
+target: capability.runtime-harness.hook-adapters
+intent: "Append the MCP audit log through the shared segmented log writer"

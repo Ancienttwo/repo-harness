@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.codegraph-readiness.imports.global-runtime-reconciliation
+kind: depends-on
+source: capability.verification.codegraph-readiness
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Type the CodeGraph doctor checks and global runtime MCP step with the core doctor and global runtime port types"

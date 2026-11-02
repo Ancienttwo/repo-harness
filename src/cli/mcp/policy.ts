@@ -82,8 +82,6 @@ export const PLANNER_READ_GLOBS = [
 export const PLANNER_WRITE_GLOBS = [
   'docs/prds/**',
   'tasks/lessons.md',
-  '.ai/harness/handoff/task-goal.md',
-  '.ai/harness/handoff/chatgpt-plan.md',
 ];
 
 export interface McpPolicyOptions {
@@ -99,21 +97,11 @@ function withWorkspacePrefixGlobs(globs: string[]): string[] {
   ]));
 }
 
-function executionPolicy(overrides: Partial<McpPolicy['execution']> = {}): McpPolicy['execution'] {
-  return {
-    codingShell: false,
-    ...overrides,
-  };
-}
-
 function capabilities(overrides: Partial<McpPolicy['capabilities']> = {}): McpPolicy['capabilities'] {
   return {
     workspaceReader: false,
     workflowPlanner: false,
     workflowExecutor: false,
-    workspaceCoder: false,
-    taskDispatch: false,
-    publicationMerge: false,
     ...overrides,
   };
 }
@@ -133,7 +121,6 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,
-      execution: executionPolicy(),
     };
   }
 
@@ -148,78 +135,17 @@ export function getMcpPolicy(profile: McpProfileName, opts: McpPolicyOptions = {
       denyGlobs: COMMON_DENY_GLOBS,
       allowAbsoluteRead: false,
       maxFileBytes: 512 * 1024,
-      execution: executionPolicy(),
-    };
-  }
-
-  if (profile === 'orchestrator') {
-    // Dispatch and the policy-gated merge executor only: no workflow file, reader, planner write, or shell surface.
-    return {
-      profile,
-      allowedRoots: opts.allowedRoots,
-      discoveryRoots: opts.discoveryRoots,
-      capabilities: capabilities({ taskDispatch: true, publicationMerge: true }),
-      readGlobs: [],
-      writeGlobs: [],
-      denyGlobs: ['**'],
-      maxFileBytes: 0,
-      execution: executionPolicy(),
-    };
-  }
-
-  if (profile === 'coding') {
-    return {
-      profile,
-      allowedRoots: opts.allowedRoots,
-      discoveryRoots: opts.discoveryRoots,
-      capabilities: capabilities({
-        workflowPlanner: true,
-        workspaceCoder: true,
-      }),
-      readGlobs: withWorkspacePrefixGlobs(PLANNER_READ_GLOBS),
-      writeGlobs: withWorkspacePrefixGlobs(PLANNER_WRITE_GLOBS),
-      denyGlobs: COMMON_DENY_GLOBS,
-      maxFileBytes: 512 * 1024,
-      execution: executionPolicy({
-        codingShell: true,
-      }),
     };
   }
 
   throw new Error(`unknown MCP profile: ${String(profile)}`);
 }
 
-/**
- * Profiles whose tokens carry repo authority. This table is the only place
- * that names them: the OAuth scope, the OAuth-only rule, the read_write grant
- * and the authorization revision checks all read it.
- */
-const AUTHORIZATION_PROFILES: Readonly<Partial<Record<McpProfileName, McpAuthorizationProfile>>> = Object.freeze({
-  coding: Object.freeze({ requiredScope: 'repo-harness.coding' }),
-  orchestrator: Object.freeze({ requiredScope: 'repo-harness.orchestrator' }),
-});
-
-export interface McpAuthorizationProfile {
-  readonly requiredScope: string;
-}
-
-export function authorizationProfile(profile: string | undefined): McpAuthorizationProfile | null {
-  return profile !== undefined && Object.hasOwn(AUTHORIZATION_PROFILES, profile)
-    ? AUTHORIZATION_PROFILES[profile as McpProfileName] ?? null
-    : null;
-}
-
-/** Scopes this profile advertises and accepts. */
-export function mcpSupportedScopes(profile: string): string[] {
-  const requiredScope = authorizationProfile(profile)?.requiredScope;
-  return ['repo-harness', ...(requiredScope ? [requiredScope] : []), 'offline_access'];
-}
-
-export function isMcpProfileName(value: string): value is McpProfileName {
-  return value === 'planner' || value === 'executor' || value === 'orchestrator' || value === 'coding';
+function isMcpProfileName(value: string): value is McpProfileName {
+  return value === 'planner' || value === 'executor';
 }
 
 export function parseMcpProfile(value: string): McpProfileName {
   if (isMcpProfileName(value)) return value;
-  throw new Error(`invalid MCP profile "${value}" (expected: planner, executor, orchestrator, coding)`);
+  throw new Error(`invalid MCP profile "${value}" (expected: planner, executor)`);
 }

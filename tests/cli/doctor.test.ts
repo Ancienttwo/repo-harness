@@ -1,4 +1,4 @@
-import { buildProgram } from '../../src/cli/index';
+import { CLI_PORTS, buildProgram } from '../../src/cli/index';
 import { PROFILE_COMPONENTS, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterEach, describe, expect, test } from 'bun:test';
@@ -135,7 +135,7 @@ describe('doctor command (Phase 1C)', () => {
         writeExecutable(path.join(f.fakeBin, 'pi'), `#!/bin/sh\necho pi >> '${log}'\nexit 99\n`);
         writeExecutable(path.join(f.fakeBin, 'herdr'), `#!/bin/sh\necho herdr >> '${log}'\necho 'pi: not installed (/fixture/pi)'\n`);
         withEnv({ HOME: f.home, PATH: f.fakeBin }, () => {
-          const report = runDoctor(f.root, target);
+          const report = runDoctor(CLI_PORTS.doctor, f.root, target);
           expect(report.checks.some(check => check.id.startsWith('pi-'))).toBe(false);
           expect(report.checks.map(check => check.id)).toContain(`${target}-adapter`);
         });
@@ -146,7 +146,7 @@ describe('doctor command (Phase 1C)', () => {
 
   test('runDoctor emits the built-in checks (path/version/hosts/trust)', () => {
     withTempHome(() => {
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const ids = r.checks.map((c) => c.id);
       expect(ids).toContain('cli-on-path');
       expect(ids).toContain('cli-version');
@@ -176,7 +176,7 @@ describe('doctor command (Phase 1C)', () => {
         writeExecutable(fakeHook, '#!/bin/bash\nexit 0\n');
 
         withEnv({ PATH: fakeBin }, () => {
-          const r = runDoctor(tmp);
+          const r = runDoctor(CLI_PORTS.doctor, tmp);
           const pathCheck = r.checks.find((c) => c.id === 'cli-on-path')!;
           expect(pathCheck.status).toBe('ok');
           expect(pathCheck.detail).toBe(`${fakeCli}; repo-harness-hook: ${fakeHook}`);
@@ -200,7 +200,7 @@ describe('doctor command (Phase 1C)', () => {
       fs.writeFileSync(path.join(home, '.codex/hooks.json'), JSON.stringify({ hooks }));
       const before = fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf8');
       withEnv({ PATH: bin }, () => {
-        const report = runDoctor(home, 'codex');
+        const report = runDoctor(CLI_PORTS.doctor, home, 'codex');
         const pathCheck = report.checks.find(check => check.id === 'cli-on-path')!;
         expect(pathCheck.status).toBe('warn');
         expect(pathCheck.detail).toContain('repo-harness-hook not on PATH');
@@ -219,7 +219,7 @@ describe('doctor command (Phase 1C)', () => {
     const envRoot = setupFakeEnvironment('repo-harness-doctor-codex-absent');
     try {
       withEnv({ HOME: envRoot.home, PATH: envRoot.fakeBin }, () => {
-        const r = runDoctor(envRoot.root);
+        const r = runDoctor(CLI_PORTS.doctor, envRoot.root);
         const codex = r.checks.find((c) => c.id === 'codex-cli-version')!;
         expect(codex.status).toBe('na');
         expect(codex.detail).toBe('codex not found on PATH');
@@ -240,7 +240,7 @@ describe('doctor command (Phase 1C)', () => {
       try {
         writeExecutable(fakeCodex, `#!/bin/bash\nprintf 'codex-cli ${expected.version}\\n'\n`);
         withEnv({ HOME: envRoot.home, PATH: envRoot.fakeBin }, () => {
-          const r = runDoctor(envRoot.root);
+          const r = runDoctor(CLI_PORTS.doctor, envRoot.root);
           const codex = r.checks.find((c) => c.id === 'codex-cli-version')!;
           expect(codex.status).toBe(expected.status);
           expect(codex.detail).toContain(`path=${fakeCodex}`);
@@ -259,7 +259,7 @@ describe('doctor command (Phase 1C)', () => {
 
   test('typed-hook-routes reports n/a for non-opt-in repos', () => {
     withTempRepo({ optIn: false }, (repoRoot) => {
-      const r = runDoctor(repoRoot);
+      const r = runDoctor(CLI_PORTS.doctor, repoRoot);
       const hooks = r.checks.find((c) => c.id === 'typed-hook-routes')!;
       expect(hooks.status).toBe('na');
       expect(hooks.detail).toContain('not opted in');
@@ -268,7 +268,7 @@ describe('doctor command (Phase 1C)', () => {
 
   test('typed-hook-routes verifies the exhaustive in-process binding', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
-      const r = runDoctor(repoRoot);
+      const r = runDoctor(CLI_PORTS.doctor, repoRoot);
       const hooks = r.checks.find((c) => c.id === 'typed-hook-routes')!;
       expect(hooks.status).toBe('ok');
       expect(hooks.detail).toContain('all 7 public routes');
@@ -278,7 +278,7 @@ describe('doctor command (Phase 1C)', () => {
 
   test('capability-registry loads the model and fails with the cause and the next step', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
-      const registryCheck = () => runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
+      const registryCheck = () => runDoctor(CLI_PORTS.doctor, repoRoot).checks.find((c) => c.id === 'capability-registry')!;
       expect(registryCheck()).toMatchObject({ status: 'na', detail: 'no capability registry is declared' });
 
       fs.writeFileSync(path.join(repoRoot, '.ai/harness/policy.json'), `${JSON.stringify({ context: { capability_source: 'archcontext' } })}\n`);
@@ -308,14 +308,14 @@ describe('doctor command (Phase 1C)', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
       fs.mkdirSync(path.join(repoRoot, '.ai/context'), { recursive: true });
       fs.writeFileSync(path.join(repoRoot, '.ai/context/capabilities.json'), `${JSON.stringify({ version: 1, capabilities: [] })}\n`);
-      const check = runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
+      const check = runDoctor(CLI_PORTS.doctor, repoRoot).checks.find((c) => c.id === 'capability-registry')!;
       expect(check).toMatchObject({ status: 'ok', detail: 'registry authority loads 0 capabilities' });
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('capability-registry applies the hook rules for an empty registry and the declared path', () => {
     withTempRepo({ optIn: true }, (repoRoot) => {
-      const registryCheck = () => runDoctor(repoRoot).checks.find((c) => c.id === 'capability-registry')!;
+      const registryCheck = () => runDoctor(CLI_PORTS.doctor, repoRoot).checks.find((c) => c.id === 'capability-registry')!;
       fs.mkdirSync(path.join(repoRoot, '.ai/context'), { recursive: true });
       fs.writeFileSync(path.join(repoRoot, '.ai/context/capabilities.json'), '');
       // An empty file counts as missing; without a declaration that is not a fault.
@@ -335,7 +335,7 @@ describe('doctor command (Phase 1C)', () => {
 
   test('codex-trust-state reports n/a when ~/.codex/config.toml is missing', () => {
     withTempHome(() => {
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const trust = r.checks.find((c) => c.id === 'codex-trust-state')!;
       expect(trust.status).toBe('na');
     });
@@ -344,7 +344,7 @@ describe('doctor command (Phase 1C)', () => {
   test('cli-update is agent-triggered and does not check npm by default', () => {
     withTempHome(() => {
       withEnv({ REPO_HARNESS_CHECK_UPDATES: undefined, REPO_HARNESS_LATEST_VERSION: undefined }, () => {
-        const r = runDoctor();
+        const r = runDoctor(CLI_PORTS.doctor);
         const update = r.checks.find((c) => c.id === 'cli-update')!;
         expect(update.status).toBe('na');
         expect(update.detail).toContain('Agent can run REPO_HARNESS_CHECK_UPDATES=1 repo-harness doctor --json');
@@ -355,7 +355,7 @@ describe('doctor command (Phase 1C)', () => {
   test('cli-update warns with an Agent action when the package is stale', () => {
     withTempHome(() => {
       withEnv({ REPO_HARNESS_CHECK_UPDATES: '1', REPO_HARNESS_LATEST_VERSION: '99.0.0' }, () => {
-        const r = runDoctor();
+        const r = runDoctor(CLI_PORTS.doctor);
         const update = r.checks.find((c) => c.id === 'cli-update')!;
         expect(update.status).toBe('warn');
         expect(update.detail).toContain('current=');
@@ -377,7 +377,7 @@ describe('doctor command (Phase 1C)', () => {
     withTempHome(() => {
       withEnv({ REPO_HARNESS_CHECK_UPDATES: '1', REPO_HARNESS_LATEST_VERSION: '99.0.0' }, () => {
         for (const target of ['codex', 'claude'] as const) {
-          const r = runDoctor(process.cwd(), target);
+          const r = runDoctor(CLI_PORTS.doctor, process.cwd(), target);
           const update = r.checks.find((c) => c.id === 'cli-update')!;
           expect(update.status).toBe('warn');
           expect(update.detail).toContain(`agent_action=repo-harness update --target ${target}`);
@@ -439,7 +439,7 @@ describe('doctor command (Phase 1C)', () => {
       fs.mkdirSync(path.dirname(configPath), { recursive: true });
       const content = `[features]\nhooks = true\n\n[hooks.state."${home}/.codex/hooks.json:pre_tool_use:0:0"]\ntrusted_hash = "sha256:a"\n\n[hooks.state."${home}/.codex/hooks.json:post_tool_use:0:0"]\ntrusted_hash = "sha256:b"\n\n[hooks.state."${home}/.codex/hooks.json:session_start:0:0"]\ntrusted_hash = "sha256:c"\n`;
       fs.writeFileSync(configPath, content);
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const trust = r.checks.find((c) => c.id === 'codex-trust-state')!;
       expect(trust.status).toBe('ok');
       expect(trust.detail).toContain('3');
@@ -453,7 +453,7 @@ describe('doctor command (Phase 1C)', () => {
         describe: 'placeholder for Phase 2 wiring',
         run: () => ({ status: 'ok', detail: 'plugin reachable' }),
       });
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const plugin = r.checks.find((c) => c.id === 'codegraph-test');
       expect(plugin).toBeDefined();
       expect(plugin!.status).toBe('ok');
@@ -466,7 +466,7 @@ describe('doctor command (Phase 1C)', () => {
       registerCheck({ id: 'ok-a', describe: '', run: () => ({ status: 'ok', detail: '' }) });
       registerCheck({ id: 'fail-b', describe: '', run: () => ({ status: 'fail', detail: '' }) });
       registerCheck({ id: 'na-c', describe: '', run: () => ({ status: 'na', detail: '' }) });
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const totalReported =
         r.summary.ok + r.summary.warn + r.summary.fail + r.summary.na;
       expect(totalReported).toBe(r.checks.length);
@@ -476,14 +476,14 @@ describe('doctor command (Phase 1C)', () => {
 
   test('formatDoctor includes a Summary line', () => {
     withTempHome(() => {
-      const text = formatDoctor(runDoctor(), false);
+      const text = formatDoctor(runDoctor(CLI_PORTS.doctor), false);
       expect(text).toContain('Summary:');
     });
   }, DOCTOR_CHECK_TIMEOUT_MS);
 
   test('formatDoctor --json produces parseable JSON', () => {
     withTempHome(() => {
-      const json = formatDoctor(runDoctor(), true);
+      const json = formatDoctor(runDoctor(CLI_PORTS.doctor), true);
       expect(() => JSON.parse(json)).not.toThrow();
       const parsed = JSON.parse(json);
       expect(Array.isArray(parsed.checks)).toBe(true);
@@ -496,7 +496,7 @@ describe('doctor command (Phase 1C)', () => {
       const hooksPath = path.join(home, '.codex/hooks.json');
       fs.mkdirSync(path.dirname(hooksPath), { recursive: true });
       fs.writeFileSync(hooksPath, '{ not json');
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const security = r.checks.find((c) => c.id === 'security-config')!;
       expect(security.status).toBe('fail');
       expect(security.detail).toContain('invalid-json');
@@ -533,7 +533,7 @@ describe('doctor command (Phase 1C)', () => {
         }, null, 2),
       );
 
-      const r = runDoctor();
+      const r = runDoctor(CLI_PORTS.doctor);
       const security = r.checks.find((c) => c.id === 'security-config')!;
       expect(security.status).toBe('ok');
       expect(security.detail).toContain('no active findings');
@@ -828,7 +828,7 @@ describe('doctor skill projection', () => {
   test('runDoctor includes the check and filters projection hosts by target', () => withTempHome(home => {
     seed(home);
     withEnv({ BUN_INSTALL: path.join(home, '.bun') }, () => {
-      const result = runDoctor(root, 'codex').checks.find(check => check.id === 'skill-projection');
+      const result = runDoctor(CLI_PORTS.doctor, root, 'codex').checks.find(check => check.id === 'skill-projection');
       expect(result?.detail).toContain(path.join(home, '.codex/skills/repo-harness-cross-review'));
       expect(result?.detail).not.toContain(path.join(home, '.claude/skills'));
     });
@@ -860,7 +860,7 @@ describe('legacy workflow-state diagnostic', () => {
       const content = '# Local operator changes\n';
       fs.writeFileSync(legacy, content);
       withEnv({ PATH: '/usr/bin:/bin', REPO_HARNESS_CHECK_UPDATES: '0' }, () => {
-        const check = runDoctor(path.dirname(legacy)).checks.find((check) => check.id === 'legacy-workflow-state');
+        const check = runDoctor(CLI_PORTS.doctor, path.dirname(legacy)).checks.find((check) => check.id === 'legacy-workflow-state');
         expect(check?.status).toBe('warn');
         expect(check?.detail).toContain('repo-harness run <helper>');
         expect(check?.detail).not.toContain('hook-lib');
@@ -868,7 +868,7 @@ describe('legacy workflow-state diagnostic', () => {
         expect(check?.detail).toContain('edited copies');
         expect(fs.readFileSync(legacy, 'utf8')).toBe(content);
         fs.unlinkSync(legacy);
-        expect(runDoctor(repo).checks.find((check) => check.id === 'legacy-workflow-state')?.status).toBe('ok');
+        expect(runDoctor(CLI_PORTS.doctor, repo).checks.find((check) => check.id === 'legacy-workflow-state')?.status).toBe('ok');
       });
     }));
   }, DOCTOR_CHECK_TIMEOUT_MS);
@@ -878,7 +878,7 @@ describe('DSH host detection', () => {
   test('dsh-plugin reports na, warn and ok from profile declarations', () => withTempHome(home => {
     const dshHome = path.join(home, '.dsh');
     const profile = path.join(dshHome, 'profiles', 'desktop');
-    const check = () => runDoctor().checks.find(candidate => candidate.id === 'dsh-plugin')!;
+    const check = () => runDoctor(CLI_PORTS.doctor).checks.find(candidate => candidate.id === 'dsh-plugin')!;
     expect(check().status).toBe('na');
     fs.mkdirSync(profile, { recursive: true });
     fs.writeFileSync(path.join(profile, 'package.json'), '{}\n');

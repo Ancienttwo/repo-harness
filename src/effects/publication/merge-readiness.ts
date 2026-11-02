@@ -19,6 +19,7 @@ import {
 } from './test-execution-evidence';
 import {
   projectPullRequestMergeReadiness,
+  rollbackParent,
   unobservedStackDetail,
   type MergeReadinessObservation,
   type MergeReadinessStackDetailV1,
@@ -405,6 +406,20 @@ function parseProviderPullRequestIdentity(prNumber: number, repoValue: unknown, 
   return identity;
 }
 
+/**
+ * Review bots (Codex, Copilot, CodeRabbit and others) post advisory threads, so
+ * a thread that a GitHub App account started does not block a merge. A thread
+ * with no first comment or a deleted author still blocks.
+ */
+function botStartedThread(thread: Record<string, unknown>): boolean {
+  const comments = object(thread.comments, 'provider review thread comments');
+  if (!Array.isArray(comments.nodes)) throw new MergeReadinessError('provider_data_incomplete', 'provider review thread comments are invalid');
+  const first: unknown = comments.nodes[0];
+  if (first === undefined) return false;
+  const author = object(first, 'provider review thread comment').author;
+  return author !== null && object(author, 'provider review thread comment author').__typename === 'Bot';
+}
+
 function parseProviderReadinessFacts(
   identity: ProviderIdentity,
   checksValue: unknown,
@@ -440,7 +455,7 @@ function parseProviderReadinessFacts(
   for (const entry of threads.nodes as unknown[]) {
     const thread = object(entry, 'provider review thread');
     if (typeof thread.isResolved !== 'boolean') throw new MergeReadinessError('provider_data_incomplete', 'provider review thread isResolved is invalid');
-    if (!thread.isResolved) unresolved++;
+    if (!thread.isResolved && !botStartedThread(thread)) unresolved++;
   }
   let changesRequested = pr.reviewDecision === 'CHANGES_REQUESTED';
   for (const entry of reviews.nodes as unknown[]) {
@@ -468,7 +483,7 @@ function parseProviderReadinessFacts(
 
 function providerReviewArgs(identity: ProviderIdentity): string[] {
   // Latest opinionated reviews preserve a change request across later comment-only reviews.
-  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){id ... on Repository{pullRequest(number:$number){number headRefOid baseRefOid reviewDecision latestOpinionatedReviews(first:100){pageInfo{hasNextPage}nodes{state}} reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved}}}}}}';
+  const query = 'query($repoId:ID!,$number:Int!){node(id:$repoId){id ... on Repository{pullRequest(number:$number){number headRefOid baseRefOid reviewDecision latestOpinionatedReviews(first:100){pageInfo{hasNextPage}nodes{state}} reviewThreads(first:100){pageInfo{hasNextPage}nodes{isResolved comments(first:1){nodes{author{__typename}}}}}}}}}';
   return ['api', 'graphql', '-f', `query=${query}`, '-F', `repoId=${identity.provider_repo_id}`, '-F', `number=${identity.pr_number}`];
 }
 
@@ -1102,15 +1117,19 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
     throw new MergeReadinessError('provider_data_incomplete', 'activated reporter parent is not an exact single merged PR');
   }
   const commit = object(yield `${root}/git/commits/${identity.base_sha}`, 'base parent commit');
-  if (commit.sha !== identity.base_sha || !Array.isArray(commit.parents) || commit.parents.length !== 1
-    || !validSha(commit.parents[0]?.sha) || commit.parents[0].sha === identity.base_sha) {
-    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit boundary');
+  if (commit.sha !== identity.base_sha || !Array.isArray(commit.parents)) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback base commit is incomplete');
   }
   const detail = object(yield `${root}/pulls/${prNumber}`, 'merged parent PR detail');
   if (detail.number !== prNumber || detail.merged !== true || detail.merge_commit_sha !== identity.base_sha
-    || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {    throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
+    || object(detail.base, 'merged parent PR detail base').ref !== identity.base_ref) {
+    throw new MergeReadinessError('provider_data_incomplete', 'merged parent PR detail does not match the rollback boundary');
   }
-  const parentAssociations = yield `${root}/commits/${commit.parents[0].sha}/pulls?per_page=100`;
+  const parent = rollbackParent(identity.base_sha, commit.parents, detail.head);
+  if (!parent) {
+    throw new MergeReadinessError('provider_data_incomplete', 'rollback parent is not a single commit or batch merge boundary');
+  }
+  const parentAssociations = yield `${root}/commits/${parent.before_sha}/pulls?per_page=100`;
   if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) {
     throw new MergeReadinessError('provider_data_incomplete', 'rollback parent PR associations incomplete');
   }
@@ -1124,7 +1143,7 @@ function* rollbackBoundary(identity: ProviderIdentity): Generator<string, Provid
   if (parentPRs.includes(prNumber)) {
     throw new MergeReadinessError('provider_data_incomplete', `Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${prNumber}`);
   }
-  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: commit.parents[0].sha, after_sha: identity.base_sha });
+  return Object.freeze({ status: 'ready', pr_number: prNumber, before_sha: parent.before_sha, after_sha: identity.base_sha });
 }
 
 export function observeProviderReadinessFacts(identity: ProviderIdentity, receipt: Pick<PullRequestSelectionV2, 'pr_number'>, input: PublicationReadinessInput): ProviderMergeReadinessFactsV1 {

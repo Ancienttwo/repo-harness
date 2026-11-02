@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:79f0276a9021ca9d5e557565e2cb8db0c712ee321786a3c3ba1b4abe5b54dee9" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a244d4494c312d5c867e6d3a9409fb75f43d7d7fa975436a2dc115f4e416b993" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
@@ -77,7 +77,6 @@ flowchart LR
 - `reads` ← `component.acceptance-review.primary` — Observe Git and files read-only and resolve the workflow profile for the review subject
 - `depends-on` ← `capability.public-surface.adoption` — Resolve worktree locations during adoption planning.
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
-- `reads` ← `capability.runtime-harness.engineer-scheduling` — Read the canonical target ref for provider PR dependency and scheduling evidence
 - `depends-on` ← `capability.verification.evals-checks` — Test Workflow State behavior through its source modules.
 - `depends-on` ← `capability.runtime-harness.evidence-ledger` — Read state artifacts and read-only observations for evidence.
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
@@ -238,7 +237,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 
 - **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
-- **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
+- **coordination-plane 读取 task session 记录。** `src/effects/state/coordination-worktree-topology.ts:14` 从 `src/effects/terminal/task-session-record.ts`（execution-primitives）读取 `taskWorktreeRuntimeClosed`，在 prune 前确认 task runtime 已关闭。#1402 后 workflow-state 不导入 task-agent-host，模型也不再声明 coordination-plane → task-agent-host。coordination-plane 拥有 `src/effects/sessions/{task-sessions,admitted-source}.ts` 与 `src/effects/terminal/task-session-admission.ts`。inbox 与外部来源绑定调用 `observeCurrentTaskSession`，并传入各自的拒绝函数，所以错误类与消息不变。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** 早期设计把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。

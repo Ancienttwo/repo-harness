@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.review-runner"
+kind: "calls"
+source: "capability.runtime-harness.task-agent-host"
+target: "component.task-agent-host.review-runner"
+intent: "Run the reviewer session, its OAR review host and its pre-prompt inbox companion for acceptance review"

@@ -38,9 +38,9 @@ and the claim status comments.
   accepting agent-authored changes.
 
 An optional local MCP sidecar can expose the same file-backed workflow contract
-to ChatGPT. Its default profiles remain workflow-scoped; a separate, user-owned
-`coding` profile may directly edit and run Bash only for explicitly granted
-repos.
+to a local MCP client over stdio. Its `planner` and `executor` profiles stay
+workflow-scoped and have no shell tool; repo writes need an explicit
+`read_write` grant.
 
 ## Non-Goals
 
@@ -76,8 +76,6 @@ repos.
   verification evidence.
 - Worktree isolation protects unrelated dirty state; agents must not absorb
   unrelated changes from the target tree.
-- Direct coding MCP is default-off, user-scoped, OAuth profile/revision-bound,
-  worktree-first, and explicit that local-user Bash is not a filesystem sandbox.
 - Continuation surfaces are non-authoritative: the continuation envelope is a
   read-only projection of effective state. The closeout
   journal records operation progress for explicit recovery only (never workflow
@@ -99,7 +97,6 @@ repos.
 | `docs/prds/DESIGN-*.md` | Designer | Optional design brief and UX guard, used only when the task requests it |
 | `.ai/harness/evidence/events/log.jsonl` | Verification Plan executor | Accepted execution events bind immutable runs |
 | `.ai/harness/runs/*.json` | Verifier | Immutable run/trace snapshots |
-| `.ai/harness/handoff/task-goal.md`, `.ai/harness/handoff/chatgpt-plan.md` | MCP planner bridge | Goal and plan notes that the planner hands to the local executor; no task authority |
 | `docs/reference-configs/ux-feature-guard.md`, `docs/reference-configs/design-options.md`, `.claude/templates/design-brief.template.md` | Conventions | Frontend behavior discipline: freeze rules and non-goals before implementation, product boundary before imagegen variants, taste-class refinement ceiling, role-aware visible-concept declaration; a frontend task cites the design brief when the task requests one, and the runtime `[UXFeatureGuard]` advisory fires only on frontend-scoped feature intent |
 
 ## Safety Boundaries

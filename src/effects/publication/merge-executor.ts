@@ -22,7 +22,7 @@ import {
   type PublicationPolicy,
 } from '../../core/publication/acceptance-merge-policy';
 import { checkClosingReferences, type ClosingIssueReference } from '../../core/publication/closing-references';
-import type { MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
+import { BATCH_REF, batchMemberMerges, type MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
 import {
   MergeReadinessError,
   collectPullRequestMergeReadiness,
@@ -262,9 +262,14 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
   if (target.auto_merge_enabled) throw new Refusal('auto_merge_enabled', 'the PR has an auto-merge request');
 }
 
-const BATCH_REF = /^integration\/[1-9][0-9]*-batch-[1-9][0-9]*$/u;
 /** One compare page; a batch with more commits fails closed instead of a partial proof. */
 const BATCH_COMPARE_LIMIT = 100;
+/**
+ * The compare response also carries file patches, which grow with the diff and
+ * overflow the spawn buffer. gh applies this filter, so stdout holds only the
+ * commit list and its parents.
+ */
+const BATCH_COMPARE_JQ = '{total_commits, commits: [.commits[] | {sha, parents: [.parents[] | {sha}]}]}';
 
 function assertBatchRef(target: MergeTarget): void {
   if (!BATCH_REF.test(target.head_ref)) {
@@ -275,7 +280,8 @@ function assertBatchRef(target: MergeTarget): void {
 /** Every commit in expected base..expected head, keyed by SHA, with its parent SHAs. */
 function readBatchCommits(input: PullRequestReadinessInput): ReadonlyMap<string, readonly string[]> {
   const compare = field(read(input, ['api',
-    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMPARE_LIMIT}`]), 'provider compare');
+    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMPARE_LIMIT}`,
+    '--jq', BATCH_COMPARE_JQ]), 'provider compare');
   const commits = compare.commits;
   if (!Array.isArray(commits) || !Number.isSafeInteger(compare.total_commits) || commits.length !== compare.total_commits) {
     throw new Refusal('provider_data_incomplete',
@@ -294,29 +300,18 @@ function readBatchCommits(input: PullRequestReadinessInput): ReadonlyMap<string,
   return graph;
 }
 
-/**
- * The batch adds no commit of its own. Its first-parent chain from the head
- * must reach the expected base through two-parent member merges only. A
- * member head is the second parent of such a merge, never the first, so every
- * non-merge commit in base..head is then reachable from a member head. This
- * proves the commit graph only; the merge trees stay the integrator's check.
- */
+/** The batch adds no commit of its own (`batchMemberMerges`). */
 function assertBatchHasNoOwnCommit(input: PullRequestReadinessInput): void {
-  const graph = readBatchCommits(input);
-  let sha = input.expected_head_sha;
-  for (let step = 0; step <= graph.size && sha !== input.expected_base_sha; step++) {
-    const parents = graph.get(sha);
-    if (parents === undefined) {
-      throw new Refusal('batch_has_own_commit',
-        `the batch first-parent chain leaves base..head at ${sha} instead of reaching the expected base ${input.expected_base_sha}`);
-    }
-    if (parents.length !== 2) {
-      throw new Refusal('batch_has_own_commit',
-        `commit ${sha} on the batch first-parent chain is not a two-parent member merge (parents: ${parents.length})`);
-    }
-    sha = parents[0]!;
+  const chain = batchMemberMerges(input.expected_base_sha, input.expected_head_sha, readBatchCommits(input));
+  if (chain.status === 'leaves_range') {
+    throw new Refusal('batch_has_own_commit',
+      `the batch first-parent chain leaves base..head at ${chain.sha} instead of reaching the expected base ${input.expected_base_sha}`);
   }
-  if (sha !== input.expected_base_sha) throw new Refusal('provider_data_incomplete', 'provider compare commits form a cycle');
+  if (chain.status === 'not_member_merge') {
+    throw new Refusal('batch_has_own_commit',
+      `commit ${chain.sha} on the batch first-parent chain is not a two-parent member merge (parents: ${chain.parent_count})`);
+  }
+  if (chain.status === 'cycle') throw new Refusal('provider_data_incomplete', 'provider compare commits form a cycle');
 }
 
 function readPolicyAt(input: PullRequestReadinessInput, ref: string): PolicyFileAtRef {

@@ -91,27 +91,31 @@ function canonicalIfPresent(path: string): string {
   }
 }
 
-function codegraphExecutionEnv(repoRoot: string, env: NodeJS.ProcessEnv, allowRepoLocalBin: boolean): NodeJS.ProcessEnv {
-  if (allowRepoLocalBin) return env;
-  const canonicalRoot = canonicalIfPresent(repoRoot);
+// The spawned path is the lexical one, so a symlink inside the repo is repo-controlled even when
+// its target is outside. Check both the lexical and the canonical form against both root forms.
+function isInsideRepo(repoRoot: string, candidate: string): boolean {
+  const roots = [resolve(repoRoot), canonicalIfPresent(repoRoot)];
+  const candidates = [resolve(candidate), canonicalIfPresent(candidate)];
+  return roots.some((root) => candidates.some((path) => isPathInside(root, path)));
+}
+
+// The inspected repo is untrusted input: never run a CodeGraph binary found inside it.
+function codegraphExecutionEnv(repoRoot: string, env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
   const safePath = (env.PATH ?? '')
     .split(delimiter)
-    .filter((entry) => entry && isAbsolute(entry) && !isPathInside(canonicalRoot, canonicalIfPresent(entry)))
+    .filter((entry) => entry && isAbsolute(entry) && !isInsideRepo(repoRoot, entry))
     .join(delimiter);
   return { ...env, PATH: safePath };
 }
 
-function codegraphBin(repoRoot: string, env: NodeJS.ProcessEnv, allowRepoLocalBin: boolean): string {
-  if (env.REPO_HARNESS_CODEGRAPH_BIN) {
-    const explicit = env.REPO_HARNESS_CODEGRAPH_BIN;
-    if (allowRepoLocalBin || !isAbsolute(explicit) || !isPathInside(canonicalIfPresent(repoRoot), canonicalIfPresent(explicit))) return explicit;
-  }
-  if (!allowRepoLocalBin) return 'codegraph';
-  const repoLocal = join(repoRoot, 'node_modules', '.bin', 'codegraph');
-  if (existsSync(repoLocal)) return repoLocal;
-  const cwdLocal = join(process.cwd(), 'node_modules', '.bin', 'codegraph');
-  if (existsSync(cwdLocal)) return cwdLocal;
-  return 'codegraph';
+function codegraphBin(repoRoot: string, env: NodeJS.ProcessEnv): string {
+  const explicit = env.REPO_HARNESS_CODEGRAPH_BIN;
+  if (!explicit) return 'codegraph';
+  // A bare name resolves through the filtered PATH. A path with a separator is resolved against
+  // repoRoot, because the child runs with cwd=repoRoot and would reach a repo-local binary.
+  if (!/[\\/]/.test(explicit)) return explicit;
+  const resolved = resolve(repoRoot, explicit);
+  return isInsideRepo(repoRoot, resolved) ? 'codegraph' : resolved;
 }
 
 function normalizeIndexedFile(value: unknown): CodeGraphIndexedFile | null {
@@ -139,14 +143,14 @@ function revisionFor(files: CodeGraphIndexedFile[]): string {
   return `index_${sha256(JSON.stringify(stable)).slice(0, 16)}`;
 }
 
-function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number, allowRepoLocalBin = true): CodeGraphRepoSnapshot {
+function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeoutMs: number): CodeGraphRepoSnapshot {
   const start = Date.now();
   if (!existsSync(join(repoRoot, '.codegraph'))) {
     return unavailable('CodeGraph index is not initialized for this repo', 0, false);
   }
 
-  const executionEnv = codegraphExecutionEnv(repoRoot, env, allowRepoLocalBin);
-  const bin = codegraphBin(repoRoot, executionEnv, allowRepoLocalBin);
+  const executionEnv = codegraphExecutionEnv(repoRoot, env);
+  const bin = codegraphBin(repoRoot, executionEnv);
   const result = spawnSync(bin, ['files', '--path', repoRoot, '--format', 'flat', '--json'], {
     cwd: repoRoot,
     env: executionEnv,
@@ -217,15 +221,13 @@ function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeout
 export function createCodeGraphCliAdapter(opts: {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;
-  allowRepoLocalBin?: boolean;
 } = {}): GeneralRepoCodeGraphAdapter {
   const env = opts.env ?? process.env;
   const timeoutMs = opts.timeoutMs ?? DEFAULT_TIMEOUT_MS;
-  const allowRepoLocalBin = opts.allowRepoLocalBin !== false;
 
   return {
     discoverRepo(repoRoot: string): CodeGraphRepoSnapshot {
-      return discoverCodeGraphRepo(repoRoot, env, timeoutMs, allowRepoLocalBin);
+      return discoverCodeGraphRepo(repoRoot, env, timeoutMs);
     },
     refreshRepo(repoRoot: string, opts: { paths?: string[] } = {}): CodeGraphRefreshResult {
       const start = Date.now();
@@ -246,8 +248,8 @@ export function createCodeGraphCliAdapter(opts: {
         };
       }
 
-      const executionEnv = codegraphExecutionEnv(repoRoot, env, allowRepoLocalBin);
-      const bin = codegraphBin(repoRoot, executionEnv, allowRepoLocalBin);
+      const executionEnv = codegraphExecutionEnv(repoRoot, env);
+      const bin = codegraphBin(repoRoot, executionEnv);
       const result = spawnSync(bin, ['sync', repoRoot], {
         cwd: repoRoot,
         env: executionEnv,
@@ -293,7 +295,7 @@ export function createCodeGraphCliAdapter(opts: {
         };
       }
 
-      const snapshot = discoverCodeGraphRepo(repoRoot, env, timeoutMs, allowRepoLocalBin);
+      const snapshot = discoverCodeGraphRepo(repoRoot, env, timeoutMs);
       return {
         available: snapshot.available,
         refreshed: snapshot.available,

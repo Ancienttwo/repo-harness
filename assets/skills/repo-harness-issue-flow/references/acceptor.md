@@ -7,6 +7,10 @@ the board are in `board.md`. The round record is in `orchestrator.md`
 
 ## 1. Who accepts
 
+A Low PR that meets the Low accept-seat skip takes no round and no
+acceptance record (`docs/reference-configs/agentic-development-flow.md`,
+Review by risk).
+
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. It has no network, so the session that
 runs the round publishes the result.
@@ -72,7 +76,8 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread (D6).
+The merge executor refuses a PR with an unresolved review thread that a
+person started (D6). A review bot thread is advisory and does not block.
 
 ## 5. Result schema
 

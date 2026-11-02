@@ -1,0 +1,211 @@
+import { consumePrePromptInbox, recordPrePromptInboxAccepted } from './task-pre-prompt-inbox-consumer';
+import { isReviewRuntimeId } from '../../core/review/review-runtimes';
+import { claudeRuntime, codexRuntime, createPiRuntime, createRuntimeRegistry, type Runtime, type Session, type SessionOptions } from '@botiverse/oar';
+import { scriptedRuntime } from '@botiverse/oar/testing';
+import { existsSync, readFileSync, realpathSync, writeFileSync } from 'node:fs';
+import { fileURLToPath } from 'node:url';
+import { spawnSync } from 'node:child_process';
+import { join } from 'node:path';
+import { createHash, randomUUID } from 'node:crypto';
+import { processIdentity, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
+import type { HostRoundObservation, ProcessProof, ReviewHostSpec, ReviewIsolationAdmission, TaskRequest } from '../../core/review/runner-port';
+import { dirname } from 'node:path';
+import { reviewHostTemporaryDirectory, reviewIsolationPolicy, prepareReviewLauncher, assertReviewIsolation } from '../review/review-isolation';
+import { promptWithOarObservation, oarActualModel, oarObservationFile, type OarObservationSink } from '../terminal/task-runtime-observation';
+
+/** OAR owns RPC arguments and its explicit extension. Disable all ambient Pi resources. */
+export function piReviewRuntime(command: string): Runtime {
+  return createPiRuntime({ execution: 'subprocess', command,
+    args: ['--no-extensions', '--no-skills', '--no-context-files', '--no-prompt-templates'],
+    projectTrusted: false, allowProjectPackageInstall: false });
+}
+
+export function assertOarHostNode(version = process.versions.node): void {
+  if (!/^\d+\./.test(version) || Number(version.split('.')[0]) < 24) throw new Error('OAR_HOST_NODE_24_REQUIRED');
+}
+export function reviewRuntime(kind: string, command?: string) {
+  if (!isReviewRuntimeId(kind)) throw new Error('OAR_REVIEW_RUNTIME_UNSUPPORTED');
+  if (kind === 'pi') {
+    if (!command) throw new Error('OAR_REVIEW_PI_EXECUTABLE_REQUIRED');
+    return createRuntimeRegistry([piReviewRuntime(command)]).require(kind);
+  }
+  return createRuntimeRegistry([codexRuntime, claudeRuntime]).require(kind);
+}
+
+/** Domain lifecycle over OAR's public API; no vendor argv or native-output parser. */
+export class OarReviewHost {
+  private round = 0;
+  private disposed = false;
+  private readonly unsubscribe: () => void;
+  constructor(private readonly session: Session, print: (view: unknown) => void) {
+    this.unsubscribe = session.events(print, { cursor: { sessionId: session.id, afterSeq: -1 } });
+  }
+  /** `kind` is the runtime kind; it selects the shared actual-model rule. */
+  async prompt(kind: string, input: string, request: Pick<TaskRequest, 'request_id' | 'round'> & { host: ProcessProof }, save: OarObservationSink, timeoutMs = 30_000) {
+    if (this.disposed) throw new Error('OAR_REVIEW_HOST_DISPOSED');
+    if (this.round >= 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
+    this.round++;
+    // Reviewer authors the Result file. This returned text is observation,
+    // never a TaskResult, Receipt, or an application-extracted JSON payload.
+    return promptWithOarObservation(this.session, kind, request, request.host, input, { timeoutMs }, save);
+  }
+  async dispose(): Promise<void> {
+    if (this.disposed) return;
+    await this.session.dispose();
+    this.unsubscribe(); this.disposed = true;
+  }
+  get sessionId(): string { return this.session.id; }
+  model(kind: string): string | null {
+    return oarActualModel(kind, this.session);
+  }
+}
+
+/** Zero-model seam uses OAR's scriptedRuntime, not a hand-built adapter. */
+export async function openScriptedReviewHost(options: SessionOptions, print: (view: unknown) => void,
+  turn: Parameters<typeof scriptedRuntime>[0]['turn'], admission: ReviewIsolationAdmission): Promise<OarReviewHost> {
+  assertOarHostNode();
+  assertReviewIsolation(admission);
+  // Configuration only; Seatbelt is the protection authority.
+  delete process.env.OAR_CODEX_SANDBOX;
+  const runtime: Runtime = scriptedRuntime({ id: 'fixture', model: 'fixture-oar', turn });
+  const session = await runtime.session({ kind: 'available', via: 'bundled' }, options);
+  return new OarReviewHost(session, print);
+}
+
+interface FixtureSpec { mode: 'scripted'; cwd: string; inputs: string[]; closeRequest: string; readyFile: string; disposedFile: string; isolation: ReviewIsolationAdmission }
+
+/** File request is application data, never text extracted from a harness. */
+export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSpec, request: TaskRequest): Promise<HostRoundObservation> {
+  if (request.protocol !== 2 || request.round < 1 || request.round > 3
+    || request.context_ref !== join(spec.output, `context-${request.round}.txt`)
+    || request.result_ref !== join(spec.output, `result-${request.round}.json`)) throw new Error('OAR_HOST_REQUEST_INVALID');
+  const content = readFileSync(request.context_ref, 'utf8');
+  if (`sha256:${createHash('sha256').update(content).digest('hex')}` !== request.context_sha256) throw new Error('OAR_HOST_CONTEXT_MISMATCH');
+  const started = readSessionArtifact<{ request_id: string; provider: ProcessProof }>(join(spec.requestDirectory, `started-${request.round}.json`));
+  if (started.request_id !== request.request_id || started.provider?.pid !== process.pid || !started.provider.identity) throw new Error('OAR_HOST_REQUEST_IDENTITY_MISMATCH');
+  const consumed_at = Date.now();
+  const inbox = consumePrePromptInbox({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId, host: spec.kind, now: consumed_at });
+  writeSessionArtifact(join(spec.controlDirectory, `ack-${request.round}.json`), { request_id: request.request_id });
+  // Fleet's RECOMMENDATION-first message is retained. Only the reviewer tool
+  // writes result_ref; the host never interprets/publishes root-turn text.
+  const run = await host.prompt(spec.kind, `TASK REQUEST: ${JSON.stringify(request)}\n\n${content}\n\n${inbox}`, { ...request, host: started.provider },
+    snapshot => {
+      writeSessionArtifact(join(spec.requestDirectory, oarObservationFile(request.round)), snapshot, false);
+      recordPrePromptInboxAccepted({ request, requestDirectory: spec.requestDirectory, native_session_id: host.sessionId,
+        host: spec.kind, consumed_at, observation: snapshot });
+    }, spec.timeoutMs);
+  if (run.kind !== 'rejected' && run.outcome.kind === 'failed' && run.outcome.failure === 'auth') throw new Error('OAR_REVIEW_AUTH_STOP');
+  const observation = { request_id: request.request_id, kind: run.kind,
+    outcome: run.kind === 'rejected' ? null : run.outcome.kind, actual_model: host.model(spec.kind) };
+  writeSessionArtifact(join(spec.controlDirectory, `observed-${request.round}.json`), observation);
+  return observation;
+}
+
+/** Serves file requests until close. A close request also reaches a pending
+ * turn: disposal aborts it, and the aborted turn is not a turn failure. */
+export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHostSpec, close: () => Promise<void>, closing: () => boolean): Promise<void> {
+  const closeRequest = join(spec.controlDirectory, 'close.request');
+  const watch = setInterval(() => { if (existsSync(closeRequest)) void close(); }, 25);
+  try {
+    for (let round = 1; !closing() && !existsSync(closeRequest);) {
+      const path = join(spec.requestDirectory, `request-${round}.json`);
+      // started is the existing publication fence: request and context are
+      // durable before task-session publishes it. A request alone is partial.
+      if (!existsSync(path) || !existsSync(join(spec.requestDirectory, `started-${round}.json`))) {
+        await new Promise(resolve => setTimeout(resolve, 25)); continue;
+      }
+      if (round > 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
+      const observation = await runHostFileRequest(host, spec, readSessionArtifact<TaskRequest>(path));
+      if (closing()) return;
+      if (observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('OAR_REVIEW_TURN_FAILED');
+      round++;
+    }
+  } finally { clearInterval(watch); }
+}
+
+export async function openReviewHost(spec: ReviewHostSpec, print: (event: unknown) => void): Promise<OarReviewHost> {
+  assertOarHostNode();
+  if (spec.controlDirectory !== spec.isolation.paths.journal || spec.output !== spec.isolation.paths.output
+    || readFileSync(spec.isolation.policyFile, 'utf8') !== reviewIsolationPolicy(spec.isolation.paths)
+    || (spec.kind === 'pi'
+      ? spec.installation.via !== 'bundled' || spec.options.env?.PI_CODING_AGENT_DIR !== spec.isolation.paths.piAgentDirectory
+        || spec.options.env?.OAR_PI_AGENT_DIR !== spec.isolation.paths.piAgentDirectory || !spec.isolation.paths.piAgentDirectory
+      : spec.installation.via !== 'executable' || spec.installation.command !== spec.launcher)
+    || prepareReviewLauncher(spec.controlDirectory, spec.isolation.policyFile, spec.vendorExecutable) !== spec.launcher) {
+    throw new Error('OAR_REVIEW_PROFILE_NOT_ADMITTED');
+  }
+  // Prove the child boundary before OAR can open a vendor Session. The host
+  // deliberately retains owner write authority; its vendor descendants do not.
+  const probe = spawnSync('/usr/bin/sandbox-exec', ['-f', spec.isolation.policyFile, process.execPath, '-e',
+    `const fs=require('node:fs');try{fs.closeSync(fs.openSync(process.argv[1],fs.constants.O_WRONLY|fs.constants.O_NOFOLLOW));process.exit(1)}catch(e){process.exit(e.code==='EPERM'?0:1)}`,
+    spec.isolation.policyFile], { stdio: 'ignore', timeout: 5000 });
+  if (probe.status !== 0) throw new Error('OAR_REVIEW_SEATBELT_UNPROVEN');
+  if (spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_OUTPUT_CWD_REQUIRED');
+  process.env.TMPDIR = reviewHostTemporaryDirectory(spec.output);
+  delete process.env.OAR_CODEX_SANDBOX; // Never inherit: stock OAR default under the admitted child profile.
+  // From here a native reviewer child can exist until disposal. Cleanup of an
+  // unbound host that exits without disposed.json must stay pending.
+  writeSessionArtifact(join(spec.controlDirectory, 'session-opening.json'), { pid: process.pid });
+  return new OarReviewHost(await reviewRuntime(spec.kind, spec.launcher).session(spec.installation, spec.options), print);
+}
+
+async function main(): Promise<void> {
+  assertOarHostNode();
+  if (process.argv[2] === '--installation') {
+    const runtime = reviewRuntime(process.argv[3]!, process.argv[4]);
+    if (!runtime.installation) throw new Error('OAR_REVIEW_INSTALLATION_UNVERIFIED');
+    console.log(JSON.stringify(await runtime.installation()));
+    return;
+  }
+  const spec = readSessionArtifact<FixtureSpec | ReviewHostSpec>(process.argv[2]!);
+  const temporary = reviewHostTemporaryDirectory(spec.mode === 'scripted' ? dirname(spec.readyFile) : spec.output);
+  process.env.TMPDIR = temporary;
+  let host: OarReviewHost;
+  if (spec.mode === 'scripted') {
+    if (process.env.REPO_HARNESS_OAR_SCRIPTED_FIXTURE !== '1' || spec.inputs.length > 3) throw new Error('OAR_HOST_FIXTURE_SPEC_INVALID');
+    host = new OarReviewHost(await scriptedRuntime({ id: 'fixture', model: 'fixture-oar',
+      turn: async ({ input, say }) => { say(`RECOMMENDATION: fixture observation for ${input} — confidence: HIGH`); } }).session(
+      { kind: 'available', via: 'bundled' }, { cwd: spec.cwd }), view => console.log(JSON.stringify({ fixture: true, view })));
+  } else {
+    if (process.platform !== 'darwin' || spec.options.cwd !== spec.output) throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED');
+    // An operator terminal can repeat the launch command. Only the first host
+    // claims the control directory; a later one exits before any Session or
+    // ready/disposed artifact.
+    writeSessionArtifact(join(spec.controlDirectory, 'host-claim.json'), { pid: process.pid, identity: processIdentity(process.pid) });
+    // OAR launches the reviewer through the proved child Seatbelt executable.
+    delete process.env.OAR_CODEX_SANDBOX;
+    host = await openReviewHost(spec, view => console.log(JSON.stringify({ oar: view })));
+  }
+  const readyFile = spec.mode === 'scripted' ? spec.readyFile : join(spec.controlDirectory, 'ready.json');
+  const closeRequest = spec.mode === 'scripted' ? spec.closeRequest : join(spec.controlDirectory, 'close.request');
+  const disposedFile = spec.mode === 'scripted' ? spec.disposedFile : join(spec.controlDirectory, 'disposed.json');
+  let closing: Promise<void> | undefined;
+  const close = () => closing ??= host.dispose();
+  // Disposal ack is written by finally, not inferred from a signal/idle.
+  const signal = () => { void close(); };
+  // A closed terminal tab sends SIGHUP and removes the tty. Dispose anyway;
+  // console output is observation only, so a lost tty must not stop disposal.
+  process.stdout.on('error', () => {});
+  process.once('SIGTERM', signal); process.once('SIGINT', signal); process.once('SIGHUP', signal);
+  try {
+    writeSessionArtifact(readyFile, { pid: process.pid, session_id: host.sessionId, fixture: spec.mode === 'scripted' });
+    console.log('OAR_HOST_READY');
+    if (spec.mode === 'scripted') {
+      for (const [index, input] of spec.inputs.entries()) await host.prompt('fixture', input, { request_id: randomUUID(), round: index + 1, host: { pid: process.pid, identity: processIdentity(process.pid) } },
+        snapshot => writeSessionArtifact(join(dirname(spec.readyFile), oarObservationFile(index + 1)), snapshot, false));
+      console.log('OAR_HOST_ROUNDS_DONE_FIXTURE');
+      while (!existsSync(closeRequest) && !closing) await new Promise(resolve => setTimeout(resolve, 25));
+    } else await serveHostFileRequests(host, spec, close, () => closing !== undefined);
+  } catch (error) {
+    if (spec.mode === 'review') writeSessionArtifact(join(spec.controlDirectory, 'error.json'), { error: String(error) });
+    throw error;
+  } finally {
+    await close();
+    writeSessionArtifact(disposedFile, { disposed: true, fixture: spec.mode === 'scripted' });
+    console.log('OAR_HOST_DISPOSED');
+    process.removeListener('SIGTERM', signal); process.removeListener('SIGINT', signal); process.removeListener('SIGHUP', signal);
+  }
+}
+if (process.argv[1] && realpathSync(process.argv[1]) === fileURLToPath(import.meta.url)) {
+  await main();
+}

@@ -30,16 +30,16 @@ the mutation executes only when the selected registered repo has
 ## Repo Administration
 
 Adopted repos are registered in `~/.repo-harness/registered-repos.json` by
-`repo-harness init` or user-scope ChatGPT MCP setup.
-Use `discover_harness_repos` from the Connector to discover the registered
+`repo-harness init`.
+Use `discover_harness_repos` from the MCP client to discover the registered
 `repo_id` before calling general repo tools. `list_allowed_roots` is only for
 the separate session-local workspace capability.
 
-The ChatGPT Connector registers one endpoint URL, not one repository per URL.
+One stdio server serves every registered repository.
 Stale registry entries are ignored unless the live repo still carries
 repo-harness adoption markers. External non-repo local roots are outside the
-adopted-repo boundary and require explicit `--allow-root` authorization at setup
-time.
+adopted-repo boundary and require explicit `--allow-root` authorization when
+the server starts.
 
 Read/write access is an operator decision in the registry. Do not grant
 `read_write` for routine planning. Mutation calls retain revision preconditions
@@ -216,8 +216,7 @@ server logs, metrics labels, trace rows, audit records, or error stacks.
 Audit and observability records may include tool name, actor/profile, repo id,
 operation, relative-path counts, path digest, hash summaries, status, error
 code, duration, correlation id, mutation id, and index event id. They must not
-include file bodies, patch text, local absolute roots, bearer tokens, OAuth
-passphrases, or Connector secrets.
+include file bodies, patch text, local absolute roots, tokens or other secrets.
 
 ## Migration Guide
 
@@ -277,13 +276,13 @@ Use the affected MCP reader tests for current behavior checks.
 ## Server Profiles
 
 `repo-harness mcp serve --profile <profile>` selects the tool surface. The
-default `planner` profile is read-and-plan only: ChatGPT reads workflow and repo
-state, writes PRD/Sprint/Goal handoff artifacts, and holds no source-code write
-access, arbitrary shell execution, or agent runner. Codex remains the executor.
+default `planner` profile is read-and-plan only: the client reads workflow and
+repo state, writes PRD artifacts, and holds no default source-code write
+access, arbitrary shell execution, or agent runner. The `executor` profile
+also reads `.ai/harness/**`. It has the same write tools as `planner`.
 
 MCP does not start agents. The task owner directs an explicitly addressed
-agent through the herdr skill. The direct-coding `coding` profile is a separate
-opt-in surface documented in [`chatgpt-coding-mcp.md`](chatgpt-coding-mcp.md).
+agent through the herdr skill.
 
 ## Known Limits
 

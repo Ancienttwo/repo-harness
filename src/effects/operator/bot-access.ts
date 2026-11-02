@@ -1,19 +1,18 @@
 // Background Bot access collector (PRD G29). It runs only in the `operator
 // serve` process on a timer, never on a request path; a GET reads `read()`.
 //
-// Sources: `repo-harness mcp doctor --json` (never `--live`, which registers
-// and saves an OAuth client), the Bot registry, the MCP OAuth token store, the repository
+// Sources: `repo-harness mcp doctor --json`, the Bot registry, the repository
 // registry, the newest MCP audit row of each registered repository, the Herdr
 // notify install record (the session), `herdr status --json` and the
 // `session.snapshot` socket method, and the notify
 // collector's cache (that collector owns the notify probes). Every source
 // passes through a projection in `core/operator/bot-access`, so the cache
-// holds no secret, absolute path, stderr or environment value. Nothing here writes: the OAuth store and the
-// segmented audit log are read directly, without their writers' load or lock.
+// holds no secret, absolute path, stderr or environment value. Nothing here writes: the
+// segmented audit log is read directly, without its writer's lock.
 
 import { execFile } from 'node:child_process';
 import { constants } from 'node:fs';
-import { lstat, open, readdir, readFile, realpath } from 'node:fs/promises';
+import { lstat, open, readdir, realpath } from 'node:fs/promises';
 import { isAbsolute, join, parse } from 'node:path';
 import { homedir } from 'node:os';
 import { fileURLToPath } from 'node:url';
@@ -25,7 +24,6 @@ import {
   projectHerdrStatus,
   projectMcpAuditEntry,
   projectMcpDoctor,
-  projectOAuthClients,
   projectRegistryRepo,
   type BotAccessSnapshotV1,
   type BotDirectory,
@@ -34,7 +32,6 @@ import {
 } from '../../core/operator/bot-access';
 import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
-import { repoHarnessHome } from '../repo-harness-home';
 import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
 import { herdrVersionCheck, requestHerdrObservation, type HerdrJson } from '../terminal/herdr-observation';
 import type { NotifyCacheV1 } from './notify-collector';
@@ -44,7 +41,6 @@ const runFile = promisify(execFile);
 export const BOT_ACCESS_INTERVAL_MS = 5 * 60_000;
 export const BOT_ACCESS_TIMEOUT_MS = 30_000;
 const STDOUT_LIMIT = 4 * 1024 * 1024;
-const OAUTH_STORE_LIMIT = 4 * 1024 * 1024;
 const AUDIT_TAIL_BYTES = 64 * 1024;
 const SNAPSHOT_DEADLINE_MS = 5_000;
 
@@ -55,12 +51,11 @@ const SNAPSHOT_DEADLINE_MS = 5_000;
  */
 export const BOT_ACCESS_CWD = parse(homedir()).root;
 
-/** The store `McpOAuthTokenStore` persists and the log `writeMcpAuditEntry` appends; tests pin both against their writers. */
-export const MCP_OAUTH_TOKEN_STORE_FILE = 'mcp.oauth-tokens.json';
+/** The log `writeMcpAuditEntry` appends; tests pin it against its writer. */
 export const MCP_AUDIT_LOG_SEGMENTS = ['.ai', 'harness', 'mcp', 'audit.log'] as const;
 const AUDIT_SEGMENT_NAME = /^\d{13}-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}\.jsonl$/;
 
-/** The doctor argv is a code constant. It never carries `--live`. */
+/** The doctor argv is a code constant. */
 export const MCP_DOCTOR_ARGV = Object.freeze([fileURLToPath(new URL('../../cli/index.ts', import.meta.url)), 'mcp', 'doctor', '--json'] as const);
 
 export type BotAccessCommandResult = { readonly ok: true; readonly stdout: string } | { readonly ok: false; readonly code: 'timeout' | 'failed' };
@@ -99,7 +94,6 @@ function withoutHerdr(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 async function mcpSection(input: SectionInput): Promise<BotAccessSnapshotV1['mcp']> {
   const env: NodeJS.ProcessEnv = { ...input.env, NO_COLOR: '1' };
-  delete env.REPO_HARNESS_MCP_OAUTH_PASSPHRASE;
   const result = await input.run_command(process.execPath, MCP_DOCTOR_ARGV, { cwd: input.cwd, env, timeout_ms: input.timeout_ms });
   if (!result.ok) return { state: 'unavailable', reason: result.code === 'timeout' ? 'mcp_doctor_timeout' : 'mcp_doctor_failed' };
   try { return { state: 'ok', doctor: projectMcpDoctor(JSON.parse(result.stdout)) }; }
@@ -110,24 +104,6 @@ async function mcpSection(input: SectionInput): Promise<BotAccessSnapshotV1['mcp
 function botDirectory(env: NodeJS.ProcessEnv): BotDirectory {
   try { return { state: 'ok', bots: readBotRegistry(env) }; }
   catch { return { state: 'unavailable' }; }
-}
-
-async function oauthSection(env: NodeJS.ProcessEnv, now: Date, directory: BotDirectory): Promise<BotAccessSnapshotV1['oauth']> {
-  const path = join(repoHarnessHome(env), MCP_OAUTH_TOKEN_STORE_FILE);
-  try {
-    const stat = await lstat(path);
-    if (!stat.isFile() || stat.size > OAUTH_STORE_LIMIT) return { state: 'unavailable', reason: 'oauth_unreadable' };
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { state: 'missing' } : { state: 'unavailable', reason: 'oauth_unreadable' };
-  }
-  try {
-    const handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW);
-    let raw: string;
-    try { raw = await handle.readFile('utf8'); } finally { await handle.close(); }
-    return { state: 'ok', ...projectOAuthClients(JSON.parse(raw), Math.floor(now.getTime() / 1000), directory) };
-  } catch {
-    return { state: 'unavailable', reason: 'oauth_unreadable' };
-  }
 }
 
 /** The newest projectable row in the last `AUDIT_TAIL_BYTES` of one file; `undefined` when the file does not exist. */
@@ -241,14 +217,13 @@ export async function collectBotAccess(input: BotAccessReadInput): Promise<BotAc
   // One registry read per cycle, so every attribution in a snapshot agrees.
   const directory = botDirectory(env);
   const bots: BotAccessSnapshotV1['bots'] = directory.state === 'ok' ? { state: 'ok', bots: projectBots(directory) } : { state: 'unavailable', reason: 'bot_registry_invalid' };
-  const [mcp, oauth, registry, herdr] = await Promise.all([
+  const [mcp, registry, herdr] = await Promise.all([
     mcpSection(base),
-    oauthSection(env, now, directory),
     registrySection(env, directory),
     herdrSection({ ...base, directory }),
   ]);
   const notify = notifySection(input.read_notify());
-  return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, oauth, registry, herdr, notify };
+  return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, registry, herdr, notify };
 }
 
 /**

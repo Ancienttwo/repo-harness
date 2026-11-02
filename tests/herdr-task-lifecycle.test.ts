@@ -7,7 +7,9 @@ import { join } from 'path';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
-import { processIdentity, processProofAlive, type HerdrTaskBinding } from '../src/effects/terminal/task-session';
+import { processProofAlive } from '../src/effects/terminal/task-session';
+import { processIdentity } from '../src/effects/terminal/task-session-io';
+import type { HerdrTaskBinding } from '../src/effects/terminal/task-session-record';
 
 // This file owns the feasibility boundary, not model judgment. Fixture peers
 // expose explicit deterministic protocol/session IDs under recognizable names.
@@ -196,7 +198,8 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
   const herdr = Bun.which('herdr')!;
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   const modulePath = new URL('../src/effects/terminal/task-session.ts', import.meta.url).pathname;
-  const api = await import('../src/effects/terminal/task-session');
+  const ioModulePath = new URL('../src/effects/terminal/task-session-io.ts', import.meta.url).pathname;
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
   const execute = (args: string[]) => {
     requireFixtureSession(session); return run(herdr, ['--session', session, ...args], fixture, env);
@@ -220,7 +223,7 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
     const peer = join(fixture, 'peer.ts');
     writeFileSync(peer, `
 import {readFileSync,writeFileSync} from 'fs'; import {join} from 'path'; import {spawn} from 'child_process';
-import {writeSessionArtifact} from ${JSON.stringify(modulePath)};
+import {writeSessionArtifact} from ${JSON.stringify(ioModulePath)};
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 if(process.argv[2].includes('stubborn'))process.on('SIGTERM',()=>writeFileSync(process.argv[2]+'.term','observed'));
 // A child in the leader's process group before ready: Herdr lists both at bind time.
@@ -434,13 +437,6 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     if (attachedOwner.child.exitCode !== 0) throw new Error(attachedOwner.errors());
     await api.closeTaskAgent(fixture, spec.task, attachedSpec.role);
     expect(await api.cleanupTaskWorktree(fixture, attachedCheckout)).toEqual({ status: 'cleanup_pending', pids: [], reason: 'workspace_attached' });
-    const mcp = await import('../src/cli/mcp/coding-workspaces');
-    const mcpEnv = {...env,REPO_HARNESS_HOME:join(home,'mcp-registry')};mkdirSync(mcpEnv.REPO_HARNESS_HOME);
-    const mcpState = mcp.codingWorkspaceStatePath(mcpEnv);
-    writeFileSync(mcpState,JSON.stringify({version:1,workspaces:[{id:'attached',repoId:'fixture',displayName:'attached',root:attachedCheckout,sourceRoot:fixture,mode:'worktree',branch:'codex/attached',baseRef:'main',baseSha:run('git',['rev-parse','HEAD'],fixture,env),integrationTargetRef:'refs/heads/main',dirtySource:false,openedAt:new Date().toISOString(),managed:true}]}));
-    await expect(Promise.resolve().then(()=>mcp.cleanupManagedCodingWorkspace('attached',mcpEnv))).rejects.toThrow('runtime cleanup incomplete');
-    expect(existsSync(attachedCheckout)).toBe(true);
-    expect(mcp.listManagedCodingWorkspaces(mcpEnv)).toHaveLength(1);
 
     expect(call(['workspace', 'get', attachedView.workspace.workspace_id]).workspace.workspace_id).toBe(attachedView.workspace.workspace_id);
     // Test owns this simulated user workspace; production never closes attached.
@@ -633,7 +629,7 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
   const endpoint = {session, home, configPath}; const env = herdrEnvironment(endpoint);
   const herdr = Bun.which('herdr')!;
   const call = (args: string[]) => { requireFixtureSession(session); return JSON.parse(run(herdr, ['--session',session,...args],fixture,env)).result; };
-  const api = await import('../src/effects/terminal/task-session');
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const server = spawn(herdr,['--session',session,'server'],{env,stdio:'ignore'});
   const savedPath = process.env.PATH;
   try {
@@ -694,16 +690,6 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
     expect((await api.cleanupTaskWorktree(fixture,target)).status).toBe('closed');
     expect(call(['workspace','list']).workspaces.length).toBe(baseline);
     expect(call(['pane','list','--workspace',root.workspace.workspace_id]).panes).toHaveLength(1);
-    const mcp = await import('../src/cli/mcp/coding-workspaces');
-    const mcpCheckout=join(fixture,'mcp-checkout');run('git',['worktree','add','-qb','codex/mcp-proof',mcpCheckout],fixture,env);
-    const mcpBinding=await api.registerTaskWorktree(mcpCheckout,endpoint,parent);
-    const mcpEnv={...env,REPO_HARNESS_HOME:join(home,'mcp-registry')};mkdirSync(mcpEnv.REPO_HARNESS_HOME);
-    writeFileSync(mcp.codingWorkspaceStatePath(mcpEnv),JSON.stringify({version:1,workspaces:[{id:'created',repoId:'fixture',displayName:'created',root:mcpCheckout,sourceRoot:fixture,mode:'worktree',branch:'codex/mcp-proof',baseRef:'main',baseSha:run('git',['rev-parse','HEAD'],fixture,env),integrationTargetRef:'refs/heads/main',dirtySource:false,openedAt:new Date().toISOString(),managed:true}]}));
-    expect(await mcp.cleanupManagedCodingWorkspace('created',mcpEnv)).toMatchObject({workspace_id:'created',removed:true});
-    expect(existsSync(mcpCheckout)).toBe(false);
-    expect(call(['workspace','list']).workspaces.some((item:any)=>item.workspace_id===mcpBinding.workspace_id)).toBe(false);
-    expect(call(['workspace','list']).workspaces.length).toBe(baseline);
-    expect(mcp.listManagedCodingWorkspaces(mcpEnv)).toHaveLength(0);
 
   } finally {
     process.env.PATH=savedPath;
@@ -713,7 +699,7 @@ test('workspace registration recovers vanished, closed and failed-open incarnati
 },60000);
 
 darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes before owned pane cleanup', async () => {
-  const api = await import('../src/effects/terminal/task-session');
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/oh-'));
   const home = join(fixture, 'h'), repo = join(fixture, 'p'), output = join(fixture, 'out');
@@ -765,7 +751,7 @@ darwinTest('OAR fixed host runs visibly in a private Herdr pane and disposes bef
 }, 60000);
 
 for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host binds by exact command and process identity without Herdr (${admitted ? 'approved task' : 'generic runtime'})`, async () => {
-  const api = await import('../src/effects/terminal/task-session');
+  const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   const { reviewIsolationPolicy, reviewHostCommand } = await import('../src/effects/review/review-isolation');
   const fixture = realpathSync(mkdtempSync('/tmp/ot-'));
   const repo = join(fixture, 'p'), output = join(fixture, 'out');
@@ -808,7 +794,7 @@ for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host bin
       // application delivery supplies only result bytes, never bindings or requests.
       writeFileSync(join(repo, 'context.txt'), 'offline admitted context\n');
       const delivered: number[] = [];
-      const deliver = async (request: import('../src/effects/terminal/task-session').TaskRequest) => {
+      const deliver = async (request: import('../src/core/review/runner-port').TaskRequest) => {
         expect(readFileSync(request.context_ref, 'utf8')).toBe('offline admitted context\n');
         delivered.push(request.round);
         api.writeSessionArtifact(request.result_ref, { request_id: request.request_id,

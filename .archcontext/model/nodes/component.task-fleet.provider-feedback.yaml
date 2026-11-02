@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.task-fleet.provider-feedback
+kind: component
+name: Provider Feedback
+status: active
+parent: capability.organization.task-fleet
+layer: effects
+summary: Owns admitted provider feedback orchestration and read-only repair projections; it stores feedback facts and delivery receipts through the Publication feedback store.
+responsibilities:
+  - Observe explicit provider PR identity against the exact current admitted claim before recording immutable manual feedback events.
+  - Keep feedback delivery separate from provider issue and admission authority; project repair and no-progress observations without dispatching repairs.
+  - Read exact current admitted inbox context and provider readiness through their shared implementations; historical receipts never substitute for current admission.
+source:
+  include:
+    - src/effects/fleet/provider-feedback.ts

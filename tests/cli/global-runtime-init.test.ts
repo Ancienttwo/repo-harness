@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
-import { resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
+import { CLI_PORTS, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
@@ -244,6 +244,7 @@ describe('registry-bound CLI update (#701)', () => {
     channel?: 'latest' | 'next';
     version?: string;
     installExit?: number;
+    noGlobalRoot?: boolean;
   } = {}) {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-registry-update-'));
     const home = join(root, 'home');
@@ -268,21 +269,29 @@ describe('registry-bound CLI update (#701)', () => {
         '#!/bin/bash',
         `printf '%s\\n' "$*" >> "${logPath}"`,
         'if [[ "${1:-}" == "--version" ]]; then echo 1.4.3; exit 0; fi',
+        // Bun 1.4.3 rejects `pm view` in a directory without package.json; the caller cwd (root) has none.
+        `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" && ! -f "$PWD/package.json" ]]; then echo "error: No package.json was found for directory \\"$PWD\\"" >&2; exit 1; fi`,
         `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then cat "${join(root, 'registry.json')}"; exit ${options.registryExit ?? 0}; fi`,
         `if [[ "\${1:-}" == "add" && "\${2:-}" == "-g" ]]; then cp "${join(root, 'installed.json')}" "${join(harness, 'package.json')}"; exit ${options.installExit ?? 0}; fi`,
         `if [[ "\${1:-}" == "${join(harness, 'src', 'cli', 'index.ts')}" && "\${2:-}" == "--version" ]]; then echo '${options.cliVersion ?? installed}'; exit ${options.cliExit ?? 0}; fi`,
         'exit 97',
         '',
       ].join('\n'));
-      const result = runGlobalRuntimeSetup({
+      const env: NodeJS.ProcessEnv = {
+        ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
+      };
+      if (options.noGlobalRoot) {
+        delete env.HOME;
+        delete env.BUN_INSTALL;
+        delete env.USERPROFILE;
+      }
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source, cwd: root, profile: 'minimal', target: 'codex',
         installSpec: `repo-harness@${options.version ?? options.channel ?? 'latest'}`, updateMode: true,
         syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
-        env: {
-          ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
-          PATH: `${bin}:${process.env.PATH ?? ''}`,
-          REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
-        },
+        env,
       });
       return { result, commands: readFileSync(logPath, 'utf-8').trim().split('\n') };
     } finally {
@@ -327,6 +336,13 @@ describe('registry-bound CLI update (#701)', () => {
     expect(commands).toContain('pm view repo-harness@next version --json --no-cache');
     expect(commands).toContain('add -g repo-harness@0.23.0-rc.1 --no-cache');
     expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.23.0-rc.1; 0.21.2 -> 0.23.0-rc.1');
+  });
+
+  test('fails before the registry lookup when the Bun global package root is unresolved', () => {
+    const { result, commands } = runUpdateFixture({ noGlobalRoot: true });
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.at(-1)).toMatchObject({ step: 'install repo-harness CLI', status: 'failed', detail: 'unable to resolve Bun global package root' });
+    expect(commands.some(command => command.startsWith('pm view '))).toBe(false);
   });
 
   test('stops before installing when the registry lookup fails', () => {
@@ -401,7 +417,7 @@ describe('install command global runtime bootstrap', () => {
         ].join('\n'),
       );
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         cwd: repo,
         profile: 'minimal',
         installCli: false,
@@ -455,7 +471,7 @@ describe('install command global runtime bootstrap', () => {
         ].join('\n'),
       );
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         cwd: repo,
         installCli: false,
         syncSkill: false,
@@ -549,7 +565,7 @@ describe('install command global runtime bootstrap', () => {
       writeExecutable(join(fakeBin, 'herdr'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "---" "name: herdr" "---" "Check HERDR_ENV before control." "" "## Learn the current CLI"; else printf "herdr 0.9.5\\n"; fi\n');
       writeReadyOfficialCodexPluginCli(fakeBin, home);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -612,7 +628,7 @@ describe('install command global runtime bootstrap', () => {
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; else names='mermaid'; fi; for skill in $names; do mkdir -p "$HOME/.agents/skills/$skill"; printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -699,7 +715,7 @@ exit 0
         REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
       };
 
-      const installed = runGlobalRuntimeSetup({
+      const installed = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'both',
@@ -750,7 +766,7 @@ exit 0
       }, null, 2)}\n`);
 
       rmSync(join(home, '.codex', 'skills', 'obsidian-cli'));
-      const verifiedUpdate = runGlobalRuntimeSetup({
+      const verifiedUpdate = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'both',
@@ -819,7 +835,7 @@ done
 if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else printf '# refreshed rule\\n'; fi
 `);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -878,7 +894,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
         '',
       ].join('\n'));
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         profile: 'minimal',
@@ -940,7 +956,7 @@ printf '# premature host projection\n' > "$HOME/.codex/skills/reverse-skill-rout
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -992,7 +1008,7 @@ exit 0
       writeFileSync(join(outside, 'SKILL.md'), '# reverse-skill-router\n');
       symlinkSync(outside, join(home, '.agents', 'skills', 'reverse-skill-router'), 'dir');
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -1031,7 +1047,7 @@ exit 0
       writeFileSync(join(outside, 'reverse-skill-router', 'SKILL.md'), '# reverse-skill-router\n');
       symlinkSync(outside, join(home, '.agents', 'skills'), 'dir');
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
@@ -1077,7 +1093,7 @@ exit 0
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1120,7 +1136,7 @@ exit 0
       setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       symlinkSync(outside, join(home, '.codex', 'skills'), 'dir');
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1167,7 +1183,7 @@ printf '# reverse-skill-router\\n' > "$HOME/.agents/skills/reverse-skill-router/
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1208,7 +1224,7 @@ exit 0
       );
       writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1246,7 +1262,7 @@ exit 0
       setupFakeSource(source);
       setReverseSkillIntegrity(source, null);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
@@ -1333,7 +1349,7 @@ exit 0
         ].join('\n'),
       );
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1368,7 +1384,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
@@ -1425,7 +1441,7 @@ fi
 exit 0
 `);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
@@ -1470,7 +1486,7 @@ exit 0
       writeFileSync(join(home, '.codex', 'skills', 'think', 'SKILL.md'), '# think\n');
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'both',
@@ -1508,7 +1524,7 @@ exit 0
       setupManagedRuntimeReadback(home, fakeBin, '9.9.8');
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         profile: 'minimal',
@@ -1592,7 +1608,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         installCli: false,
         hostAdapters: false,
@@ -1631,7 +1647,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1675,7 +1691,7 @@ exit 0
       symlinkSync(source, globalPackage, 'dir');
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1715,7 +1731,7 @@ exit 0
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
-      const result = runGlobalRuntimeSetup({
+      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1779,7 +1795,7 @@ exit 0
       };
       const expectedDetail = 'already installed from Bun global package source; version=9.9.9';
 
-      const unsetStep = runGlobalRuntimeSetup({ ...runOpts, env: baseEnv }).steps.find(
+      const unsetStep = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...runOpts, env: baseEnv }).steps.find(
         (step) => step.step === 'install repo-harness CLI',
       );
       expect(unsetStep?.status).toBe('skipped');
@@ -1787,7 +1803,7 @@ exit 0
 
       // Explicit update checks can still use a caller-provided registry result
       // without spawning the registry client.
-      const equalStep = runGlobalRuntimeSetup({
+      const equalStep = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         ...runOpts,
         env: {
           ...baseEnv,
@@ -2408,7 +2424,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
       setupManagedRuntimeReadback(home, fakeBin, '9.9.9');
       const body = join(fakeBin, 'node.fixture-body');
       writeFileSync(body, readFileSync(body, 'utf8').replace('"data":{"running":false}', `"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"${ARCHCTX_PIN}","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}`));
-      return runGlobalRuntimeSetup(transactionOptions);
+      return runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, transactionOptions);
     });
     expect(result.exitCode).toBe(0);
     expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')?.status).toBe('ok');
@@ -2476,7 +2492,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
 `);
       const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), WAZA_FIXTURE_UPSTREAM: upstream,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') };
-      body({ home, upstream, fakeBin, env, paths, run: (refresh = true, target = 'both') => runGlobalRuntimeSetup({
+      body({ home, upstream, fakeBin, env, paths, run: (refresh = true, target = 'both') => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT, cwd: tmp, env, target, profile: 'minimal',
         installCli: false, syncSkill: false, hostAdapters: false, codegraph: false,
         externalSkills: true, updateMode: refresh,
@@ -2818,7 +2834,7 @@ describe('Codex Waza projection', () => {
         writeExecutable(join(bin, 'bun'), '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 9\n');
         writeExecutable(join(bin, 'bunx'), '#!/bin/bash\nexit 9\n');
         const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${bin}:${process.env.PATH ?? ''}` };
-        const result = runGlobalRuntimeSetup({ sourceRoot: ROOT, cwd: tmp, target: 'codex', profile: 'minimal',
+        const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { sourceRoot: ROOT, cwd: tmp, target: 'codex', profile: 'minimal',
           installCli: false, syncSkill: false, hostAdapters: false, externalSkills: true, codegraph: false, env });
         const waza = result.steps.find(step => step.step === 'configure Waza skills');
         expect(waza?.status).toBe(mode === 'unknown-directory' ? 'failed' : 'ok');
@@ -2888,7 +2904,7 @@ describe('Global Working Rules refresh during install and update', () => {
       body({
         home,
         path: join(home, '.codex', 'AGENTS.md'),
-        run: (reportLanguage, updateMode = true, target = 'codex') => runGlobalRuntimeSetup({
+        run: (reportLanguage, updateMode = true, target = 'codex') => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
           sourceRoot: source,
           cwd: repo,
           target,

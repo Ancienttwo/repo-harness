@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5999535efcbb06b75890c12953ebc000f8e631bb48e35d8444f84e1af2507b9c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0ba107b7c91c7797daf8619958ee46aa0087f494b1ba29bd0d2ac9a2c21ff4ef" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -59,15 +59,10 @@ flowchart LR
 - `depends-on` → `capability.verification.acceptance-review` — Test Acceptance Review behavior through its source modules.
 - `depends-on` → `capability.public-surface.action-commands` — Test Action Commands behavior through its source modules.
 - `depends-on` → `capability.public-surface.adoption` — Test Adoption behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.agent-runtime-effects` — Test Agent Runtime Effects behavior through its source modules.
 - `depends-on` → `capability.runtime-mcp.chatgpt-browser` — Test ChatGPT Browser Consult behavior through its source modules.
 - `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.engineer-bindings` — Test Engineer Bindings behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.engineer-scheduling` — Test Engineer Scheduling behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.engineering-overlay` — Test Engineering Overlay behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.external-source-intake` — Test External Source Intake behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Test Global Runtime Reconciliation behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.integration-acceptance` — Test Integration Product Acceptance behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Test MCP Sidecar behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.operator` — Test Operator Board behavior through its source modules; the CI report builds and finds repair issues, and the test projection script names its schema, with the operator tests contract.
 - `depends-on` → `capability.organization.publication` — Test PR Publication behavior through its source modules.
@@ -141,7 +136,7 @@ sequenceDiagram
 ## 3. P3：设计决策与不变量
 ### 3.1 必须保持的不变量
 
-1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:154`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。平台任务分别按 `home_isolation` 和 `native_oar` 触发。HOME 读取测试 import 与 bunfig preload；原生 OAR 读取 host bundle 输入、原生测试的完整本地 import 闭包、preload 和 shell 脚本。CI 实现变更触发两项。只有标志为 `false` 时 Required / CI 才接受对应 job 的 skip。daily 仍然覆盖这两项。
+1. **PR 只跑 typecheck 和受影响测试，main 每天跑全量。** `ci.yml` 的 `affected` 模式运行 `bash scripts/check-ci.sh affected`（`.github/workflows/ci.yml:154`）。`schedule` 每天触发一次（`ci.yml:8`）。来源：PR #483、PR #625。文档路径只选 `scripts/ci-documentation-consumers.ts` 扫出的测试。平台任务分别按 `home_isolation` 和 `native_oar` 触发。HOME 读取测试 import 与 bunfig preload；原生 OAR 读取 host bundle 输入、原生测试的完整本地 import 闭包、preload、闭包源码启动的 shell 脚本和 `.ai/harness/policy.json`。闭包外的 shell 脚本不触发原生 OAR（#1393）。被启动脚本 source 或运行的文件（例如 `scripts/contract-worktree.sh` 的 `scripts/worktree-merge-lib.sh` 和 `scripts/contract-worktree-runtime.ts`）不在原生输入内，只由 daily 覆盖。CI 实现变更触发两项。只有标志为 `false` 时 Required / CI 才接受对应 job 的 skip。daily 仍然覆盖这两项。
 2. **覆盖选择不确定时失败。** `selectCoverage` 是纯函数（`scripts/select-ci-coverage.ts`）。缺少端点、diff 不可用和 checkout 不匹配时，selection 失败。没有消费者的未知路径也失败（`selectAffectedTests`）。selection 不用全量覆盖代替未知覆盖。
 3. **一个测试清单和一个调度。** `scripts/select-test-suite.ts` 拥有本地和 CI 的测试清单与调度（PR #504）。调度输入是实测时长 `scripts/test-file-durations.json`（`select-test-suite.ts:61`）。PR 的 `verify` 是三个 matrix shard：`shardTestFiles` 按实测时长把受影响文件分成互不重叠的三份，shard 0 另跑 typecheck（`CI_SHARD`，`scripts/check-ci.sh`）。
 4. **每个测试文件都在隔离的 HOME 和 TMPDIR 里运行。** `bunfig.toml` 预加载 `tests/preload-home-isolation.ts`。HOME 或 TMPDIR 不在临时目录时，预加载拒绝运行（`preload-home-isolation.ts:37`）。来源：PR #518。
@@ -353,8 +348,9 @@ native OAR. See the next section.
 The workflow separates `home-isolation` (three OSes) from `native-oar` (macOS).
 `scripts/select-ci-coverage.ts` reads the test lists from those workflow steps.
 HOME selection follows test imports and the preloads configured in bunfig.toml.
-Native selection follows the full local import closure of the native tests, configured preloads, all shell
-scripts, and the inputs in the two OAR host build metafiles. The build scripts
+Native selection follows the full local import closure of the native tests, configured preloads, the shell
+scripts that closure sources launch, `.ai/harness/policy.json`, and the inputs in the two OAR host build
+metafiles. A shell script outside that closure does not trigger native OAR (#1393). The build scripts
 in package.json own the host build arguments. CI implementation files trigger
 both jobs. Missing inventory or a failed build stops selection.
 

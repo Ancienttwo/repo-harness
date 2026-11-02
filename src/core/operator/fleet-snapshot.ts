@@ -2,7 +2,7 @@ import { SESSION_SELECTOR_KEYS } from '../sessions/session-selector';
 import type { AdmittedTaskSession } from '../sessions/task-sessions';
 import { isOperatorServiceEpoch } from './observation-identity';
 import {
-  FLEET_BOARD_PROTOCOL,
+  decodeFleetBoardSnapshot,
   fleetBoardErrorMessage,
   type FleetBoardCardV2,
   type FleetBoardColumn,
@@ -157,9 +157,7 @@ export function projectOperatorFleetSnapshot(
   snapshot: FleetBoardSnapshotV2, serviceEpoch: string, displayName: (repoRoot: string) => string,
 ): OperatorFleetSnapshotV1 {
   if (!isOperatorServiceEpoch(serviceEpoch)) throw new Error('invalid operator service epoch');
-  if (snapshot.protocol !== FLEET_BOARD_PROTOCOL) {
-    throw new Error(`unsupported Fleet snapshot protocol: ${String(snapshot.protocol)}`);
-  }
+  decodeFleetBoardSnapshot(snapshot);
 
   const repositories = Object.freeze(snapshot.repositories.map((repository) => projectRepository(repository, displayName)));
   const sourceSnapshotSha256 = snapshot.snapshot_sha256;

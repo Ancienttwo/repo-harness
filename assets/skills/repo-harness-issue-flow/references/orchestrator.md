@@ -54,9 +54,11 @@ Make one child issue for each pair of module and observable outcome.
   issue says so. It then stacks on the producer's PR branch and stays
   draft until the producer merges (see `board.md`). Early start is what
   lets three workers run at once on a chain of dependent modules.
-- **Reviewable size.** One PR, about 10 implementation files or fewer. A
-  larger issue becomes a parent issue with its own children, or one issue
-  with numbered PRs (PR-1a, PR-1b) that the issue names in advance.
+- **Reviewable size.** One PR, about 10 implementation files or fewer,
+  with one concern and one module when possible. A larger issue becomes a
+  parent issue with its own children, or one issue with numbered PRs
+  (PR-1a, PR-1b) that the issue names in advance. Split before
+  acceptance, not after.
 - **Order.** Contract and types → core logic → effects and adapters →
   CLI or server → UI → docs and map. Deletion of the old path goes with
   the change that replaces it, never as "cleanup later".
@@ -166,6 +168,11 @@ module is in the title so that a list view shows the write scopes.
   dependency is merged, or its contract is stable and the issue allows
   early start.
 - Each parallel worker gets its own worktree from a clean base.
+- Keep at most 8 active writer seats under one coordinator. A seat is
+  active until its PR is merged or its claim status is `done` or
+  `released` (`board.md` Seats). Hold further
+  dispatches until a seat ends. Each active worker adds notices to your
+  queue (§8.1), and more than 8 makes the owner wait.
 - Default model preference (D3): no role is bound to one vendor. The old
   fixed split, Claude for frontend and Codex for backend, is retired. At
   dispatch, prefer the deepest available model for architecture and
@@ -179,22 +186,43 @@ module is in the title so that a list view shows the write scopes.
   a third round. One reviewer takes each artifact.
 - Use the host's dispatch mechanism (a Herdr pane, a top-level host
   session, a hosted subagent). A dispatch does not grant publication,
-  deletion or credential authority.
+  deletion or credential authority. For the Herdr pane topology, follow
+  [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
 ## 8. Follow up
 
 Follow the PR and the issue comments. Do not poll CI with sleeps. Use the
 host's PR events or check when the worker reports.
 
+- **Draft PR.** A writer keeps its PR draft until its verification
+  evidence exists. Do not follow CI on a draft push by push. Act on the
+  worker's `ready for review` notice (§8.1).
+- **Frontier.** Work on the lowest unmerged PR in the parent's merge order
+  first. Do not spend fix or review rounds on a PR above a red PR in the
+  same chain.
+- **Low and docs-only PR.** Read the status and report it. Do not push fix
+  rounds of your own. The Low accept-seat skip
+  (`docs/reference-configs/agentic-development-flow.md`, Review by risk)
+  sets its review.
 - **CI red.** The worker owns the fix. Send the failing job name and the
   log excerpt to that worker, because it has the context. Allow one rerun
-  for a known flake.
+  for a known flake. A second identical failure is not a flake. Classify
+  it once, as the diff, the infrastructure or a stale base, and act on
+  that class: the worker fixes the diff, the owner gets the infrastructure
+  failure, and a stale base gets a sync with main. Do not rerun the job
+  again.
+- **Uncovered path.** A CI selection failure `Affected coverage is unknown
+  for: <paths>` is a map bug. The worker fixes the consumer edge
+  (`scripts/ci-path-consumers.ts`) or the test import. Never widen to the
+  full suite unless a real full-suite input changed.
 - **Boundary question.** Decide fast. Either amend the issue (edit the body
   and post a `scope change` comment that says what changed and why), or
   open a new issue for the extra work and keep the PR narrow. Never let the
   worker widen the PR without an issue change.
-- **Review.** Select the review depth by the diff's risk tier. Each
-  reviewer posts an `acceptance claim` for its round and subject SHA before
+- **Review.** Select the review depth by the diff's risk tier. A Low PR
+  that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
+  seat (`docs/reference-configs/agentic-development-flow.md`, Review by
+  risk). Each reviewer posts an `acceptance claim` for its round and subject SHA before
   it reads, so that two reviewers do not take the same round. Classify
   findings:
   - P1 — wrong behavior or broken boundary: fix in this PR.
@@ -210,6 +238,55 @@ host's PR events or check when the worker reports.
 - **Stalled worker.** Read its last status comment and branch before you
   reassign. A handoff needs a claim comment that cites the prior claim.
 
+### 8.1 Triage queue
+
+Owner messages and worker notices arrive in the same session. Without a
+rule, the newest message takes the turn and the owner loses the thread.
+Keep the notices in the host's task list tool (on Claude: `TaskCreate`,
+`TaskUpdate`, `TaskList`, `TaskGet`; on Codex: its plan tool). A queue item points to
+the board. It holds no state of its own, so it cannot drift from the board.
+
+- **Classify the source.** A message whose first line starts with
+  `[rh-notice]`, or a `repo-harness.bot-event/v1` event, is a notice. Any
+  other message is from the owner.
+- **Queue each notice.** A notice does not take over an open owner
+  request. When no owner request is open, work the queue in the same
+  turn (Work the queue). Keep one item for each issue or PR. The subject is
+  `[P<n>] #<number> <kind>`. The description is the comment or event URL,
+  or the message text of a simple notice (`worker.md` §7). When the issue
+  or PR has an open item, update that item and keep the higher priority.
+- **Priority.**
+
+  | Priority | Notice |
+  |---|---|
+  | P0 | `merge_outcome_unknown`, `agent.blocked`, a failed board read or post |
+  | P1 | `boundary question`, `question`, an `issue claim status` with `Status: blocked`, a stalled worker |
+  | P2 | CI red, review findings, an `integration status` with a conflict |
+  | P3 | ready for review, `agent.done`, `done`, `info`, other status |
+
+- **Owner first.** Answer the owner message before you take a queue item.
+  End the answer with one line: `Queue: P0 <n> · P1 <n> · P2 <n> · P3 <n>`.
+  A P0 notice is the only interrupt: tell the owner in one line when it
+  arrives, then continue the owner's request unless the owner stops it.
+- **Work the queue.** When no owner message waits, take the item with the
+  highest priority, oldest first. Read its URL and its thread again, act,
+  then mark the item completed. Take one item at a time. Answer a simple
+  `question` in a host message. When the answer changes scope or decides
+  an open point, post it as a `scope change` or `decision` comment and
+  send the URL.
+- **Rebuild.** At session start, and when the queue is empty after a
+  context compaction, rebuild the queue from the board: `To: coordinator`
+  comments without a `Re:` answer, open PRs with a red required check,
+  claims with `Status: blocked` or `Status: ready for review`, acceptance
+  records with open findings, and `integration status` comments with a
+  conflict.
+- **Changes without a notice.** A claim release, an owner comment, an
+  acceptance record or a CI result can change the board without a
+  worker notice. The `repo-harness.bot-event/v1` GitHub events
+  (`events.md`) catch these changes and enter the queue as notices.
+  Without the event Worker, read the parent and every open child before
+  each dispatch or merge decision.
+
 ## 9. Merge and integrate
 
 You are the integrator. Do the risk-tier review (§8) before you call the
@@ -224,8 +301,7 @@ Merge only with:
 repo-harness publication merge --repository <owner/name> --repository-id <id> --pr <n> --head <sha> --base <sha> --json
 ```
 
-`--head` and `--base` are the SHAs you reviewed. The MCP tool
-`merge_pull_request` (profile `orchestrator`) calls the same executor.
+`--head` and `--base` are the SHAs you reviewed.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
 decides whether the executor merges. The default branch needs strict
 required checks and enforce_admins, and no merge queue (classic protection
@@ -260,11 +336,14 @@ A PR is eligible when all of these are true:
 
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
-- Its tier review passed on a subject SHA. Low needs no review.
+- Its tier review passed on a subject SHA. A Low PR needs no review, but
+  its PR body must hold the author verification evidence
+  (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
   prints nothing.
-- It has no unresolved review thread.
+- It has no unresolved review thread that a person started. A review bot
+  thread is advisory input and does not block.
 - Its closing references are correct.
 
 ```bash
@@ -323,8 +402,9 @@ merge it by any path other than `repo-harness publication merge`.
    nothing else.
 5. **Review.** Every member merged without conflict, and the batch adds no
    commit of its own. The batch reuses the member acceptance records and
-   needs no new review round
-   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
+   needs no new review round. A Low member has no acceptance record to
+   reuse (`docs/reference-configs/agentic-development-flow.md`, Review by
+   risk).
 6. **Red CI.** Do not fix it in the batch branch. Classify the failure
    first; a known flake gets one rerun (§8). Drop the member that changes
    the failing test or the source it covers, and post the batch-drop

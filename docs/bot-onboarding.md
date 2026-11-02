@@ -94,6 +94,11 @@ Every coding / Herdr seat brief must include:
 Incomplete brief = do not seat. The brief's `product=` overrides paths for
 that seat. Other products get their paths from the brief only.
 
+For a PR that meets the Low accept-seat skip in
+[Review by risk](reference-configs/agentic-development-flow.md#review-by-risk),
+tinkabot and Worker-Herdr seat no Codex, Herdr or OAR accept pane and expect
+no acceptance record.
+
 ## Cursor Worker model lanes
 
 Cursor bills internal and external model pools separately. When routing to
@@ -109,7 +114,7 @@ Formal production coding stays with Worker-Herdr (Herdr), not cloud.
 
 | Mode | Dispatch | Acceptance | Merge |
 | --- | --- | --- | --- |
-| Local Herdr | MCP `orchestrator` profile Herdr tools, or a Herdr pane | The worker produces check results locally; acceptance panes review them | MCP `merge_pull_request` |
+| Local Herdr | A Herdr pane | The worker produces check results locally; acceptance panes review them | `repo-harness publication merge` in the Bot's shell |
 | Cloud only | GitHub issues and comments | CI and the `acceptance record` on the PR | Cloud sandbox with repo-harness, working `gh auth` (token with Administration read permission) and a checkout runs `repo-harness publication merge` |
 
 A Bot record does not grant merge permission. The executor merges only when
@@ -124,8 +129,8 @@ executor refuses with `base_protection_insufficient`. See
 
 Use [Control Bot integration boundary](control-bot-boundary.md) for lean
 load/exclude rules. Exclude `repo-harness-cross-review`,
-`repo-harness-herdr-portal`, `repo-harness-chatgpt`, and `review admit` /
-`review revoke` by default. Only Worker-Herdr loads the `herdr` skill.
+`repo-harness-herdr-portal`, and `review admit` / `review revoke` by
+default. Only Worker-Herdr loads the `herdr` skill.
 Bots drive Herdr via Shell on the coding machine → local Herdr socket.
 Management bots do not sit inside TUI panes watching each other.
 

@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a2b171ef726d958edb39f01ed5ec47494db04d2fe4d2ef34afba410dff58c059" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1790e79f1a4f03ac6e613338234033111808e778b554ec705f0b36df93034280" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -79,7 +79,6 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.action-commands` — Read the workflow contract during skill version checks.
-- `depends-on` ← `capability.runtime-harness.engineer-bindings` — Resolve capability contracts for Engineer profiles.
 - `calls` ← `component.evals-checks.primary` — Consume trusted PR checks for a base ref through the merge gate without rerunning commands
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the init and capability-context commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Sync the cross-review skills through the init command
@@ -147,7 +146,7 @@ flowchart LR
 | `component.contract-assets.planning-helpers` | Operations Helpers | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-cli` | Planning Helpers (cli) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-effects` | Planning Helpers (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.contract-assets.primary` | Workflow Contract And Policy | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.contract-assets.primary` | Workflow Contract And Policy | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.contract-assets.primary-assets` | Workflow Contract And Policy (assets) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.template-projection` | Template Projection | `50–100` 個文件 / `5000–10000` 行 | 未宣告 |
 | `component.contract-assets.template-projection-cli` | Template Projection (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
@@ -257,7 +256,7 @@ regressions verify these separate boundaries.
 | --- | ---: | --- | --- |
 | `component.contract-assets.primary`（Workflow Contract And Policy） | 12 / 4,410 | 契约主体、opt-in marker、harness policy、context map、契约加载器与 context 门禁 | capability-registry（`check-context-map.ts` 读注册表） |
 | `component.contract-assets.capability-registry` | 148 / 6,981 | `.archcontext/**` 模型文件、纯注册表、resolver 与 config CLI、capability context 命令 | 无组件外调用；workflow-state 的 resolver 调用它 |
-| `component.contract-assets.template-projection`（可扩展） | 180 / 35,687 | standalone resolver 与 reference config 投影、`repo-harness init` | primary、planning-helpers、workflow-state、execution-primitives、adoption、hook-adapters、global-runtime-reconciliation、codegraph-readiness |
+| `component.contract-assets.template-projection`（可扩展） | 180 / 35,687 | standalone resolver 与 reference config 投影、`repo-harness init` | primary、planning-helpers、workflow-state、execution-primitives、adoption、hook-adapters、global-runtime-reconciliation |
 | `component.contract-assets.contract-worktree-lifecycle` | 8 / 6,505 | worktree 生命周期、publication、merge gate、contract brief runner、归档 | workflow-state（worktree 拓扑锁）、execution-primitives（Git binary） |
 | `component.contract-assets.planning-helpers` | 21 / 4,034 | 计划、spec、sprint、triage 与 factor-lab helper，`run` 与 `brain` 命令，受保护 helper runner | execution-primitives（有界子进程） |
 
@@ -619,9 +618,9 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 ## Optimization Backlog
 
 - **template-projection 是可扩展组件。** 先把 `src/cli/commands/init.ts` 拆成独立的 init 组件，再看 `assets/templates/helpers/**` 是否需要单独的投影组件。
-- **`init.ts` 组合根。** 它导入 adoption、hook-adapters、global-runtime-reconciliation、codegraph-readiness、workflow-state 与 execution-primitives，还导入当前无 owner 的 `src/cli/commands/{architecture-configuration,install,herdr-skill}.ts`、`src/core/skill-surface/catalog.ts` 与 `src/effects/skill-tree-integrity.ts`。
+- **`init.ts` 组合根。** 它导入 adoption、hook-adapters、global-runtime-reconciliation、workflow-state 与 execution-primitives。CodeGraph 步骤由 `src/cli/index.ts` 作为 `InitPorts` 传入（#1398）。它还导入当前无 owner 的 `src/cli/commands/{architecture-configuration,install,herdr-skill}.ts`、`src/core/skill-surface/catalog.ts` 与 `src/effects/skill-tree-integrity.ts`。
 - **投影脚本知道源码布局。** `scripts/sync-helper-sources.ts:48-120` 用字符串改写 registry、checkpoint snapshot、readonly-observation 与 worktree-location 的 import 行。被投影文件移动时，这里要同步修改。
-- **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 动态导入 `src/effects/terminal/task-session.ts` 与 `herdr.ts`；`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。集成步骤声明了 contract-worktree-lifecycle → task-agent-host 与 → acceptance-review。到 publication 的关系没有声明：`relation.publication.contract-assets` 已经声明反向。本方向有 3 条边，反向有 2 条。是否翻转方向是开放问题。
+- **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 以进程方式运行 task-agent-host 的 `src/effects/terminal/task-worktree-runtime.ts`，没有导入边（#1402）；`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。集成步骤声明了 contract-worktree-lifecycle → task-agent-host 与 → acceptance-review。到 publication 的关系没有声明：`relation.publication.contract-assets` 已经声明反向。本方向有 3 条边，反向有 2 条。是否翻转方向是开放问题。
 - **planning-helpers 的平台依赖。** `src/effects/runtime/helper-runner.ts` 导入 `node-candidates.ts` 与 `protected-helper-platform.ts`。它们现在归 global-runtime-reconciliation。集成步骤没有声明 planning-helpers → global-runtime-reconciliation：global-runtime-reconciliation 的 cli-root 与 primary 已经声明到本 capability 的关系，新增一条会加深双向依赖。
 - **reference configs 由专门的 capability 持有。** `external-tooling.md` 的镜像对与 `install-profiles.md` 归 global-runtime-reconciliation，`chatgpt-coding-mcp.md` 归 mcp-sidecar。本 capability 与 template-projection 用 `source.exclude` 排除这 4 个文件，所以它们只有一个 owner。
 - **组件 footprint 用文件名 glob。** `planning-helpers` 用 `scripts/new-*.sh` 与 `scripts/factor-*.sh`，`template-projection` 用 `assets/initializer-*`。新增同名模式的文件自动进入组件。capability 的 include 不用文件名 glob：它的字面 anchor 会扩大到整个目录，例如 `scripts`。

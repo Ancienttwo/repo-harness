@@ -4,7 +4,7 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { decodeAdmittedTaskSessions, isTaskSessionsRequest, TASK_SESSIONS_MAX_BYTES, TASK_SESSIONS_MAX_ENTRIES, type AdmittedTaskSession, type AdmittedTaskSessions, type AdmittedTaskSessionsRequest } from '../../core/sessions/task-sessions';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
-import { readTaskBinding, taskSessionDirectory } from '../terminal/task-session';
+import { readTaskBinding, taskSessionDirectory } from '../terminal/task-session-record';
 import { taskRepository } from '../git/task-repository';
 import { readCurrentReviewAdmissionSource } from '../admission/admission-source';
 import { observeAdmittedSessionSource, SessionObservationError } from './admitted-source';

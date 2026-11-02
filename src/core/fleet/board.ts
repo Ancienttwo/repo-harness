@@ -40,6 +40,14 @@ export type FleetBlockerV1 = Readonly<{
 export const FLEET_BOARD_PROTOCOL = 6 as const;
 export const FLEET_BOARD_KIND = 'fleet_board_snapshot' as const;
 
+/** Refuse a Fleet snapshot of another protocol or kind at a process boundary (Surface contract, docs/adr/ADR-0002). */
+export function decodeFleetBoardSnapshot(value: unknown): FleetBoardSnapshotV2 {
+  const snapshot = value as Partial<FleetBoardSnapshotV2> | null;
+  if (snapshot?.protocol !== FLEET_BOARD_PROTOCOL) throw new Error(`unsupported Fleet snapshot protocol: ${String(snapshot?.protocol)}`);
+  if (snapshot.kind !== FLEET_BOARD_KIND) throw new Error(`unsupported Fleet snapshot kind: ${String(snapshot.kind)}`);
+  return snapshot as FleetBoardSnapshotV2;
+}
+
 export type FleetBoardColumn = 'available' | 'working' | 'in_review' | 'ready_to_merge' | 'done';
 export type FleetBoardPlacement =
   | Readonly<{ kind: 'column'; column: FleetBoardColumn }>
