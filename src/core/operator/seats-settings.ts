@@ -30,6 +30,21 @@ export interface SeatConfigV1 {
 
 export type SeatsConfigV1 = { readonly [seat in SeatId]: SeatConfigV1 };
 
+/**
+ * The section an absent `seats` key reads as: the canvas defaults, with the
+ * orchestrator on Opus high (G36). `repo-harness seats argv` launches from the
+ * same value. The configuration effect checks these lists against the fleet
+ * role profiles.
+ */
+export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
+  orchestrator: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'high', tools: Object.freeze(['gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const), fleet: Object.freeze([]) }),
+  advisor: Object.freeze({ runtime: 'claude', model: 'opus', effort: 'max', tools: Object.freeze(['mcp', 'net', 'read', 'shell'] as const), fleet: Object.freeze(['deep-reasoner', 'explorer']) }),
+  worker: Object.freeze({
+    runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: Object.freeze(['edit', 'gh', 'mcp', 'net', 'read', 'shell', 'tasks'] as const),
+    fleet: Object.freeze(['deep-reasoner', 'deep-worker', 'explorer', 'fast-worker', 'gatekeeper', 'harness-evaluator', 'root-cause-prover']),
+  }),
+});
+
 /** One pane runtime as the seat form may offer it. `models` is empty when the host picks the model. */
 export interface SeatRuntimeRangeV1 {
   readonly id: SeatRuntime;
@@ -63,6 +78,8 @@ export interface SeatsSettingsV1 {
   readonly protocol: 1;
   readonly kind: 'operator_seats_settings';
   readonly config: SeatsConfigV1 & { readonly revision: string };
+  /** The section an absent `seats` key reads as; the form shows it as the recommendation. */
+  readonly defaults: SeatsConfigV1;
   readonly ranges: SeatsRangesV1;
 }
 
@@ -128,9 +145,9 @@ function decodeSeats(value: unknown, code: string): SeatsConfigV1 {
   return { orchestrator: decodeSeat(record.orchestrator, code), advisor: decodeSeat(record.advisor, code), worker: decodeSeat(record.worker, code) };
 }
 
-/** The shape of the stored `seats` section. */
+/** The shape of the stored `seats` section. An absent section (`undefined`) reads as the defaults. */
 export function decodeSeatsConfig(value: unknown): SeatsConfigV1 {
-  return decodeSeats(value, 'seats_config_invalid');
+  return value === undefined ? DEFAULT_SEATS_CONFIG : decodeSeats(value, 'seats_config_invalid');
 }
 
 function decodeRanges(value: unknown, code: string): SeatsRangesV1 {
@@ -165,13 +182,16 @@ function decodeRanges(value: unknown, code: string): SeatsRangesV1 {
 
 export function decodeSeatsSettings(value: unknown): SeatsSettingsV1 {
   const code = 'seats_settings_invalid';
-  const record = object(value, ['protocol', 'kind', 'config', 'ranges'], code);
+  const record = object(value, ['protocol', 'kind', 'config', 'defaults', 'ranges'], code);
   if (record.protocol !== 1 || record.kind !== 'operator_seats_settings') invalid(code);
   const config = object(record.config, ['revision', ...SEAT_IDS], code);
   const revision = text(config.revision, code);
   if (!REVISION.test(revision)) invalid(code);
   const { revision: _revision, ...section } = config;
-  return { protocol: 1, kind: 'operator_seats_settings', config: { revision, ...decodeSeats(section, code) }, ranges: decodeRanges(record.ranges, code) };
+  return {
+    protocol: 1, kind: 'operator_seats_settings', config: { revision, ...decodeSeats(section, code) },
+    defaults: decodeSeats(record.defaults, code), ranges: decodeRanges(record.ranges, code),
+  };
 }
 
 /** The closed POST body without `request_id`. */

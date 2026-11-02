@@ -1,5 +1,6 @@
 import type { JsonValue } from '../../core/evidence/types';
 import {
+  DEFAULT_SEATS_CONFIG,
   decodeSeatsSettings,
   decodeSeatsSettingsRequest,
   decodeSeatsSettingsResult,
@@ -32,10 +33,11 @@ export const SEATS_CONFIGURATION_FAILURES: Readonly<Record<SeatsConfigurationErr
   seat_fleet_not_allowed: { status: 422, next_action: CHOOSE_FROM_RANGES },
 });
 
-/** GET: the stored section, or the defaults, with its revision and the ranges the form may offer. */
+/** GET: the stored section, or the defaults, with its revision, the defaults and the ranges the form may offer. */
 export function readSeatsSettings(env?: NodeJS.ProcessEnv): SeatsSettingsV1 {
   const { revision, seats, enabled_runtimes } = readSeatsConfiguration(env);
-  return decodeSeatsSettings({ protocol: 1, kind: 'operator_seats_settings', config: { revision, ...seats }, ranges: seatsRanges(enabled_runtimes) });
+  return decodeSeatsSettings({ protocol: 1, kind: 'operator_seats_settings', config: { revision, ...seats },
+    defaults: DEFAULT_SEATS_CONFIG, ranges: seatsRanges(enabled_runtimes) });
 }
 
 /** POST: replaces the `seats` section of the host config. It starts, stops and changes no pane. */

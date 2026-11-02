@@ -62,15 +62,6 @@ const RUNTIME_RANGES: Readonly<Record<SeatRuntime, Omit<SeatRuntimeRangeV1, 'id'
   pi: { models: [], effort: false, fleet: false },
 };
 
-const sorted = <T extends string>(items: readonly T[]): T[] => [...items].sort();
-
-/** The section an absent `seats` key reads as (canvas defaults; G36: orchestrator Opus high). */
-export const DEFAULT_SEATS_CONFIG: SeatsConfigV1 = Object.freeze({
-  orchestrator: { runtime: 'claude', model: 'opus', effort: 'high', tools: sorted(SEAT_RANGES.orchestrator.tools), fleet: [] },
-  advisor: { runtime: 'claude', model: 'opus', effort: 'max', tools: ['mcp', 'net', 'read', 'shell'], fleet: ['deep-reasoner', 'explorer'] },
-  worker: { runtime: 'codex', model: 'gpt-6.1-sol', effort: 'high', tools: sorted(SEAT_TOOLS), fleet: sorted(SUB_AGENTS) },
-});
-
 export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
   return {
     runtimes: SEAT_RUNTIMES.map(id => ({ id, enabled: enabledRuntimes.includes(id), ...RUNTIME_RANGES[id] })),
@@ -96,7 +87,6 @@ function enabledRuntimesOf(config: Record<string, unknown>): readonly string[] {
 
 /** The stored section is checked for shape only, so a range that changes later never locks the page; the next save checks it. */
 function sectionOf(config: Record<string, unknown>): SeatsConfigV1 {
-  if (config.seats === undefined) return DEFAULT_SEATS_CONFIG;
   try { return decodeSeatsConfig(config.seats); } catch { throw configInvalid('seats'); }
 }
 

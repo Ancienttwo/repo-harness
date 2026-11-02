@@ -310,6 +310,8 @@ describe('seat settings routes', () => {
     expect(value.config.advisor.fleet).toEqual(['deep-reasoner', 'explorer']);
     expect(value.ranges.seats.advisor.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper']);
     expect(value.ranges.seats.worker.fleet).not.toContain('orchestrator');
+    // The core defaults stay inside the ranges that the fleet role profiles give.
+    expect(value.defaults.worker.fleet).toEqual([...value.ranges.seats.worker.fleet].sort());
     expect(value.ranges.runtimes.map(runtime => [runtime.id, runtime.enabled, runtime.fleet])).toEqual([['claude', true, true], ['codex', true, true], ['pi', true, false]]);
   });
 
