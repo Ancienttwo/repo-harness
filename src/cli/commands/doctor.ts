@@ -492,7 +492,8 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       const state = skillProjectionState(projection, contract);
       const records = installed?.ownership_manifest.filter(surface => surface.path === projection.destination) ?? [];
       // The ledger has no install target, so a single-target install leaves the other hosts' paths absent and unowned.
-      if (state === 'missing' && records.length === 0) {
+      // Without a ledger no install sets the hosts, so every projection is judged.
+      if (installed && state === 'missing' && records.length === 0) {
         details.push(`${projection.destination}: na; not in the install ledger`);
         continue;
       }

@@ -618,22 +618,10 @@ describe('doctor skill projection', () => {
     return { source: path.join(source, 'assets/skills/repo-harness-cross-review'), destination,
       env: { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') } };
   }
-  /** A protocol 2 ledger that owns each link as a transaction symlink. */
-  function writeLinkLedger(home: string, links: readonly Pick<SkillProjection, 'destination' | 'source'>[]) {
-    const ledger = path.join(home, '.repo-harness/install-state.json');
-    fs.mkdirSync(path.dirname(ledger), { recursive: true });
-    fs.writeFileSync(ledger, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
-      transaction_id: 'link-ledger-test', applied_at: new Date(0).toISOString(), previous: null,
-      ownership_manifest: links.map(link => ({ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
-        path: link.destination, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: link.source })) }));
-  }
-  const na = (destination: string) => `${destination}: na; not in the install ledger`;
 
   for (const state of ['ok link', 'stale copy', 'missing', 'dangling link', 'wrong link', 'ok copy'] as const) {
     test(`reports ${state} with the affected path and repair command`, () => withTempHome(home => {
       const f = seed(home);
-      // Only a ledger-owned destination that does not exist reports missing.
-      if (state === 'missing') writeLinkLedger(home, [f]);
       if (state === 'ok link') fs.symlinkSync(f.source, f.destination);
       if (state === 'dangling link') fs.symlinkSync(path.join(home, 'missing'), f.destination);
       if (state === 'wrong link') fs.symlinkSync(root, f.destination);
@@ -644,9 +632,9 @@ describe('doctor skill projection', () => {
       const result = checkSkillProjection('both', f.env);
       expect(result.id).toBe('skill-projection');
       expect(result.detail).toContain(`${f.destination}: ${state}`);
-      if (!state.startsWith('ok ')) expect(result.detail).toContain('repo-harness install --profile full --target codex');
-      expect(result.detail).toContain(na(path.join(home, '.claude/skills/repo-harness-cross-review')));
-      expect(result.detail).toContain(na(path.join(home, '.codex/skills/think')));
+      expect(result.detail).toContain('repo-harness install --profile full --target codex');
+      expect(result.detail).toContain(path.join(home, '.claude/skills/repo-harness-cross-review') + ': missing');
+      expect(result.detail).toContain(path.join(home, '.codex/skills/think') + ': missing');
       if (state === 'stale copy') expect(fs.readFileSync(path.join(f.destination, 'SKILL.md'), 'utf8')).toBe('user change\n');
       if (state === 'dangling link') expect(fs.readlinkSync(f.destination)).toBe(path.join(home, 'missing'));
     }));
@@ -709,8 +697,8 @@ describe('doctor skill projection', () => {
         const result = checkSkillProjection(target, f.env);
         const rows = result.skills!;
         const projections = allProjections.filter(projection => target === 'both' || projection.host === target);
-        // No case's ledger owns an absent destination, so only the existing destinations get rows.
-        const judged = projections.filter(projection => fs.lstatSync(projection.destination, { throwIfNoEntry: false }) !== undefined);
+        // With a ledger, only its one owned destination is judged; the other absent destinations give na lines.
+        const judged = ledger ? projections.filter(p => p.destination === driftedDestination) : projections;
         expect(rows.map(row => `${row.host}:${row.name}`)).toEqual(judged.map(p => `${p.host}:${p.name}`));
         expect(rows.find(row => row.host === 'codex' && row.name === name)?.state ?? state).toBe(state as never);
         rows.forEach((row, index) => {
@@ -719,7 +707,9 @@ describe('doctor skill projection', () => {
         });
         const skillLines = projections.map(projection => {
           const index = judged.indexOf(projection);
-          return index < 0 ? na(projection.destination) : frozenLine(projection, rows[index]!.state, projection.destination === driftedDestination);
+          return index < 0
+            ? `${projection.destination}: na; not in the install ledger`
+            : frozenLine(projection, rows[index]!.state, projection.destination === driftedDestination);
         });
         const detailLines = result.detail.split('\n');
         expect(detailLines.slice(0, projections.length)).toEqual(skillLines);
@@ -752,13 +742,19 @@ describe('doctor skill projection', () => {
       fs.mkdirSync(path.dirname(projection.destination), { recursive: true });
       fs.symlinkSync(projection.source, projection.destination);
     }
-    writeLinkLedger(home, claude);
+    // A protocol 2 ledger that owns only the claude links.
+    const ledger = path.join(home, '.repo-harness/install-state.json');
+    fs.mkdirSync(path.dirname(ledger), { recursive: true });
+    fs.writeFileSync(ledger, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+      transaction_id: 'claude-only-test', applied_at: new Date(0).toISOString(), previous: null,
+      ownership_manifest: claude.map(projection => ({ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+        path: projection.destination, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: projection.source })) }));
 
     const result = checkSkillProjection('both', f.env);
     expect(result.skills!.map(row => `${row.host}:${row.name}:${row.state}:${row.ok}`))
       .toEqual(claude.map(projection => `claude:${projection.name}:ok link:true`));
     expect(new Set(untouched.map(projection => projection.host))).toEqual(new Set(['codex', 'pi']));
-    for (const projection of untouched) expect(result.detail).toContain(na(projection.destination));
+    for (const projection of untouched) expect(result.detail).toContain(`${projection.destination}: na; not in the install ledger`);
     expect(result.detail).toContain('"surface_drift":[]');
 
     const [deleted] = claude;
