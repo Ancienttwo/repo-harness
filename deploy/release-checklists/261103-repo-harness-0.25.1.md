@@ -2,15 +2,16 @@
 
 ## Scope and authority
 
-- Release-prep base: `origin/main` `14b3ae92b4b6d5fe0054db70351d3a22a4498162`
-  (#1457, archctx 0.11.1 pin).
+- Release-prep base: `origin/main` `f95d816d7bdb3aedb517d66f0f74d72fabc23aae`
+  (#1463, the #1452 fix round). The release-prep branch merges this base
+  with a merge commit and no rebase. This is the final 0.25.1 scope.
 - Source commit: the head of the release-prep PR. The publish candidate is
   the merge commit of that PR on `origin/main`. The owner records it below
   before publish.
 - Previous release: 0.25.0 on npm and in Git. Tag `v0.25.0`, annotated tag
   object `1a188c7e3998af0409e06352019259d05a41be40`, target
   `aa01147103647326e70829046d244b4b111a33b2`.
-- Merged range: `v0.25.0..14b3ae92b`; 53 first-parent commits and 127
+- Merged range: `v0.25.0..f95d816d7`; 54 first-parent commits and 128
   commits in total (`git rev-list --count`). Batch merges keep the member
   commits. Each first-parent subject ends with a PR number.
 - The npm package goes from 0.25.0 to 0.25.1. `package.json`,
@@ -37,8 +38,8 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
   (#1442).
 - Publication and CI report: batch merge with a merge commit (#1329), the
   batch rollback boundary (#1373), the batch proof output size (#1383),
-  batch member PRs in the daily report (#1360), provider 5xx as an external
-  error (#1452), bot review threads advisory (#1396).
+  batch member PRs in the daily report (#1360), no false repair issue on a
+  provider 5xx (#1452, #1463), bot review threads advisory (#1396).
 - Upgrade and init fixes: #1304, #1305, #1307, #1308, #1335, #1410.
 - Architecture boundary gate in `check:state-boundaries` (#1357) and the
   archctx 0.11.0 and 0.11.1 pins (#1339, #1430).
@@ -70,9 +71,9 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
   freshness, Daily full tests and package, both Daily MCP path matrices,
   Daily governance and the four Native OAR acceptance (macOS) legs. 3
   PR-only jobs were skipped by design.
-- The Daily run did not run on `14b3ae92b`. Push CI run 41491211995 on
-  `14b3ae92b` passed, and CI report run 41491309565 passed. The three commits
-  after `a5595b15d` are #1454, #1455 and #1457.
+- The Daily run did not run on `f95d816d7`. The four commits after
+  `a5595b15d` are #1454, #1455, #1457 and #1463. Push CI run 41491211995 on
+  `14b3ae92b` passed. Push CI run 41497719707 on `f95d816d7` passed.
 - The release-prep PR needs green `Required / CI` on its head before merge.
 
 ## Acceptance environment
@@ -80,14 +81,20 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
 - macOS 26.5 arm64, Bun 1.4.3, Node 24.18.0.
 - `bun install --frozen-lockfile` in a fresh release worktree on
   `chore/release-0.25.1`.
-- Subject: base `14b3ae92b` with the version, changelog and filing edits of
-  the release-prep PR.
+- Subject: base `f95d816d7` merged into the release-prep branch, with the
+  version, changelog and filing edits of the release-prep PR.
 - `bun run check:release`: exit 0. `[helpers] projection OK`; expensive
   release lane `tests/harness-benchmark-matrix.test.ts` 31 pass, 0 fail;
   `[tarball-smoke] OK: repo-harness-0.25.1.tgz installs, serves the packaged
   Operator, and packaged CLI bins start`; `[release] OK: npm package gate
   passed.` 0.25.1 is unpublished.
 - `bun run check:type`: exit 0.
+- `check:release` and `check:type` ran again after the merge of
+  `f95d816d7`, with the same results. `bun run test:files
+  tests/ci-report.test.ts --timeout 60000 --max-concurrency 1` (the test
+  that #1463 changes): 78 pass, 0 fail. The other results below are from the
+  first subject on base `14b3ae92b`. #1463 changes only
+  `scripts/report-ci.ts` and its test, so they still apply.
 - Version-surface tests: `bun run test:files tests/skill-version.test.ts
   tests/installed-copy-sync.test.ts
   tests/operator-web/operator-architecture.test.tsx --timeout 60000

@@ -94,8 +94,10 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
   ref form. The `@` form let the provider ignore the pin. (#1445)
 - External skills stage through the `codex` provider agent for every target.
   Before, `--target claude` did not write the staging copy. (#1425)
-- The daily CI report records a provider 5xx as an external error and opens
-  no repair issue. (#1452)
+- The daily CI report opens no false repair issue for a provider 5xx. A 5xx
+  in the merge section makes that section unavailable for the run, with one
+  external error and no rollback boundary. A 5xx on another read is recorded
+  with `attention_owner: external`. (#1452, #1463)
 - The daily CI report lists batch member PRs under their batch boundary and
   opens no repair issue for each member. (#1360)
 - `publication merge` and `publication readiness` accept a batch merge
