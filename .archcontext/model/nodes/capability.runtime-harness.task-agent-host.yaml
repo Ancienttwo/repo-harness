@@ -20,6 +20,7 @@ responsibilities:
 source:
   include:
     - src/effects/terminal/herdr.ts
+    - src/effects/terminal/herdr-core.ts
     - src/effects/terminal/task-session.ts
     - src/effects/terminal/task-runtime-observation.ts
     - assets/herdr/**

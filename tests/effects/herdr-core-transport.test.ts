@@ -2,19 +2,23 @@ import { afterEach, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
-import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcList, hcListAsync, hcRm, hcRun, herdrAppDo, type HcLabels, type HcStreamItem }
-  from '../../src/effects/terminal/herdr-core';
+import {
+  HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcLabel, hcList, hcListAsync, hcRead, hcRm, hcRun,
+  hcSend, hcWait, herdrAppDo, type HcLabels, type HcStreamItem,
+} from '../../src/effects/terminal/herdr-core';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2,
+const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'repo-harness.role': 'notify-relay' },
+  status: { state: 'idle', app: 'repo-harness', kind: null }, turn: 2,
   pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null, holder: 3 };
-// One script stands in for both programs; FAKE_MODE picks the outcome and argv is logged per line.
+// One script stands in for both programs. FAKE_MODE picks the outcome; FAKE_OUT_<subcommand> overrides the
+// reply for one subcommand; argv is logged one argument per line.
 const FAKE = `#!/bin/sh
 for arg in "$@"; do printf '%s\\n' "$arg" >> "$FAKE_LOG"; done
 case "$FAKE_MODE" in
-  ok) printf '%s' "$FAKE_STDOUT" ;;
+  ok) eval "out=\\\${FAKE_OUT_$1:-}"; printf '%s' "\${out:-$FAKE_STDOUT}" ;;
   hang) exec sleep 5 ;;
   hc-error) printf '%s' '{"error":{"kind":"not_found","message":"no terminal \\"t9\\"","hint":"see hc ls --all"}}' >&2; exit 3 ;;
   app-error) printf '%s' '{ "error": "unknown argument \\"place\\"" }'; exit 1 ;;
@@ -23,13 +27,14 @@ case "$FAKE_MODE" in
 esac
 `;
 
-function fake(mode: string, stdout: unknown = {}) {
+function fake(mode: string, stdout: unknown = {}, replies: Readonly<Record<string, unknown>> = {}) {
   const root = tmpWorkspace('hc-transport'); roots.push(root);
   const bin = join(root, 'bin'), log = join(root, 'argv.log');
   mkdirSync(bin); writeFileSync(log, '');
   for (const name of ['hc', 'herdr-app']) { writeFileSync(join(bin, name), FAKE); chmodSync(join(bin, name), 0o755); }
   const env: NodeJS.ProcessEnv = { PATH: `${bin}:/bin:/usr/bin`, FAKE_MODE: mode, FAKE_LOG: log,
     FAKE_STDOUT: typeof stdout === 'string' ? stdout : JSON.stringify(stdout) };
+  for (const [subcommand, reply] of Object.entries(replies)) env[`FAKE_OUT_${subcommand}`] = JSON.stringify(reply);
   return { env, root, argv: () => readFileSync(log, 'utf8').split('\n').filter(Boolean) };
 }
 
@@ -42,6 +47,8 @@ async function asyncFailure(call: () => Promise<unknown>): Promise<HerdrCoreErro
   return call().then(() => { throw new Error('expected a HerdrCoreError'); },
     (error: unknown) => { expect(error).toBeInstanceOf(HerdrCoreError); return error as HerdrCoreError; });
 }
+
+const GET = ['get', '--json', '--', 't4'];
 
 test('success: labels go in on run and list, and come back out of get', async () => {
   const run = fake('ok', { address: 't4', agent: 'claude', cwd: '/w', name: 'rh-worker', state: 'live', turn: 0 });
@@ -58,9 +65,33 @@ test('success: labels go in on run and list, and come back out of get', async ()
 
   const get = fake('ok', TERMINAL);
   expect(hcGet('t4', { env: get.env })).toEqual({ address: 't4', name: 'rh-worker', state: 'live',
-    labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2,
+    labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness', kind: null }, turn: 2,
     pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null });
-  expect(get.argv()).toEqual(['get', '--json', '--', 't4']);
+  expect(get.argv()).toEqual(GET);
+
+  const label = fake('ok', TERMINAL);
+  expect(hcLabel('t4', { [RH_LABEL.task]: '1475' }, { env: label.env }).labels).toEqual({ 'repo-harness.role': 'notify-relay' });
+  expect(label.argv()).toEqual(['label', '--json', '--', 't4', 'repo-harness.task=1475']);
+});
+
+test('acting on one terminal: send, read, wait, kill and rm check it with get first', () => {
+  const { foreground: _, ...finished } = TERMINAL;
+  const act = fake('ok', TERMINAL, {
+    send: { started: true, status: 'idle', turn: 3 },
+    read: { complete: true, how: 'screen', text: 'ready' },
+    wait: { children: [], ended: false, exit_code: null, reason: 'timeout', signal: null, status: null, terminal: 't4', turn: 3 },
+    // hc omits foreground once the program has finished.
+    kill: { ...finished, state: 'finished', reason: 'killed' },
+    rm: { removed: 't4' },
+  });
+  const options = { env: act.env };
+  expect(hcSend('t4', 'hello', options)).toEqual({ started: true, turn: 3 });
+  expect(hcRead('t4', 5, options)).toBe('ready');
+  expect(hcWait('t4', 1, options)).toEqual({ ended: false, reason: 'timeout', turn: 3, status: null });
+  expect(hcKill('t4', options)).toMatchObject({ state: 'finished', pid: 9, foreground: null, reason: 'killed' });
+  expect(hcRm('t4', options)).toBe('t4');
+  expect(act.argv()).toEqual([...GET, 'send', '--json', '--', 't4', 'hello', ...GET, 'read', '--json', '--lines', '5', '--', 't4',
+    ...GET, 'wait', '--json', '--timeout', '1', '--', 't4', ...GET, 'kill', '--json', '--', 't4', ...GET, 'rm', '--json', '--', 't4']);
 });
 
 test('timeout: a hung hc is killed at the transport timeout', async () => {
@@ -71,16 +102,18 @@ test('timeout: a hung hc is killed at the transport timeout', async () => {
   expect(Date.now() - started).toBeLessThan(4_000);
 });
 
-test('hc error: the exit code and hc error kind are kept', async () => {
+test('hc error: the exit code and hc error kind are kept; malformed replies fail closed', async () => {
   const error = failure(() => hcGet('t9', { env: fake('hc-error').env }));
   expect([error.program, error.reason, error.exitCode, error.kind]).toEqual(['hc', 'failed', 3, 'not_found']);
   expect(error.message).toContain('no terminal "t9"');
   const listError = await asyncFailure(() => hcListAsync(RH_NOTIFY_LABELS, { env: fake('hc-error').env }));
   expect([listError.reason, listError.exitCode, listError.kind]).toEqual(['failed', 3, 'not_found']);
   expect(failure(() => hcGet('t4', { env: fake('text').env })).reason).toBe('invalid_response');
-  for (const invalid of [{ labels: { n: 1 } }, { pid: 0 }, { foreground: { pid: 9, name: 'claude', argv: ['claude'] } }, { reason: 1 }]) {
+  for (const invalid of [{ labels: { n: 1 } }, { pid: 0 }, { foreground: { pid: 9, name: 'claude', argv: ['claude'] } }, { reason: 1 },
+    { status: { state: 'idle', app: 23 } }, { status: { state: 'idle', kind: [] } }, { status: { state: 'idle', msg: {} } }]) {
     expect(failure(() => hcGet('t4', { env: fake('ok', { ...TERMINAL, ...invalid }).env })).reason).toBe('invalid_response');
   }
+  expect(failure(() => hcRm('t4', { env: fake('ok', TERMINAL, { rm: { gone: 't4' } }).env })).reason).toBe('invalid_response');
 });
 
 test('hc missing: the error names the missing program', () => {
@@ -90,15 +123,27 @@ test('hc missing: the error names the missing program', () => {
   expect(failure(() => herdrAppDo('pane.close', { pane: 'p1' }, { env: { PATH: empty } })).program).toBe('herdr-app');
 });
 
-test('refusals happen before any spawn: nested runtimes and labels outside the repo-harness set', () => {
+test('scope: nested runtimes, labels outside the repo-harness set and addresses other than t<n> are refused before any spawn', () => {
   const run = fake('ok', TERMINAL);
   expect(failure(() => hcGet('t4', { env: { ...run.env, HC_TERMINAL_ID: 't1', HERDR_ENV: '1' } })).reason).toBe('nested');
   const refused: HcLabels[] = [{}, { 'herdr.space': 's1' }, { 'Bad Key': 'x', ...RH_NOTIFY_LABELS }, { 'repo-harness.owner': 'x' },
     { [RH_LABEL.role]: 'worker' }, { [RH_LABEL.notify]: 'off' }];
-  for (const labels of refused) {
-    expect(failure(() => hcList(labels, { env: run.env })).reason).toBe('invalid_labels');
+  for (const labels of refused) expect(failure(() => hcList(labels, { env: run.env })).reason).toBe('invalid_labels');
+  for (const target of ['rh-worker', 'vps/t3', 't0', '-t4']) {
+    for (const call of [() => hcGet(target, { env: run.env }), () => hcKill(target, { env: run.env }), () => hcRm(target, { env: run.env })]) {
+      expect(failure(call).reason).toBe('invalid_address');
+    }
   }
   expect(run.argv()).toEqual([]);
+});
+
+test('scope: a terminal without a repo-harness label is refused, and kill and rm never reach it', () => {
+  const personal = fake('ok', { ...TERMINAL, labels: { 'herdr.space': 's1' } });
+  for (const call of [() => hcGet('t4', { env: personal.env }), () => hcKill('t4', { env: personal.env }), () => hcRm('t4', { env: personal.env }),
+    () => hcSend('t4', 'hello', { env: personal.env })]) {
+    expect(failure(call).reason).toBe('unowned');
+  }
+  expect(personal.argv()).toEqual([...GET, ...GET, ...GET, ...GET]);
 });
 
 test('herdr-app do sends one JSON object and reads its stdout error', () => {
@@ -109,7 +154,7 @@ test('herdr-app do sends one JSON object and reads its stdout error', () => {
   expect([error.program, error.reason, error.exitCode, error.message]).toEqual(['herdr-app', 'failed', 1, 'herdr-app_failed (exit 1): unknown argument "place"']);
 });
 
-test('events: a labeled snapshot then events; close resolves and a bad line rejects', async () => {
+test('events: a labeled snapshot then events; close resolves, and a bad line or a throwing onItem stops the stream', async () => {
   const lines = [JSON.stringify({ channel: null, seq: 3, terminals: [TERMINAL] }),
     JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 't4', type: 'turn', data: { state: 'idle', turn: 3 } } })].join('\n');
   const stream = fake('stream', lines);
@@ -126,4 +171,7 @@ test('events: a labeled snapshot then events; close resolves and a bad line reje
 
   const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', 'not json').env });
   expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');
+  const consumerError = new Error('consumer failed');
+  const throwing = hcEvents(RH_NOTIFY_LABELS, () => { throw consumerError; }, { env: fake('stream', lines).env });
+  expect(await throwing.done.then(() => null, (error: unknown) => error)).toBe(consumerError);
 });
