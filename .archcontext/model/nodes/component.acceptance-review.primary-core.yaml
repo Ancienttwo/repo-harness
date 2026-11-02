@@ -11,3 +11,5 @@ responsibilities:
 source:
   include:
     - src/core/review/**
+  exclude:
+    - src/core/review/module-review-prompt.ts
