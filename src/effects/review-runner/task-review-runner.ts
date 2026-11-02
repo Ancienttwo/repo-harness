@@ -14,12 +14,11 @@ import type { TaskSessionAuthority } from '../admission/admission-source';
 import { taskRepository } from '../git/task-repository';
 import { piExecutable } from '../pi-executable';
 import { reviewHostCommand } from '../review/review-isolation';
-import { validateHerdrEndpoint } from '../terminal/herdr';
-import { readTaskAgent, taskSessionDirectory, type HerdrEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
+import { readTaskAgent, taskSessionDirectory, type HerdrCoreEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { assertTaskBinding, assertTerminalHostCommand, bindTerminalApplicationHost, cancelTaskAgent, closeTaskAgent, collectTaskResult,
-  processProofAlive, sendTaskRequest, startTaskApplicationHost, taskAgentStatus } from '../terminal/task-session';
+  processProofAlive, sendTaskRequest, startTaskApplicationHost, taskAgentStatus, validateHerdrCoreEndpoint } from '../terminal/task-session';
 import { taskBindingSha256 } from '../terminal/task-session-admission';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import { commitPrePromptInbox, preparePrePromptInbox } from './task-pre-prompt-inbox';
@@ -28,15 +27,15 @@ import { oarObservationFile, readOarObservation } from '../terminal/task-runtime
 /** A cancel without a claim writes this tombstone, so a later launch fails at its claim. */
 type HostClaim = ProcessProof | { pid: null; closed: true };
 
-/** Task bindings whose own Herdr pane is the review caller's pane. */
-function paneBindings(repo: string, endpoint: HerdrEndpoint, pane: string): { dir: string; binding: TaskPaneBinding }[] {
+/** Task bindings whose own hc terminal is the review caller's terminal. */
+function paneBindings(repo: string, endpoint: HerdrCoreEndpoint, terminal: string): { dir: string; binding: TaskPaneBinding }[] {
   const base = join(taskRepository(repo).primary_root, '.ai/harness/runs/task-agents');
   if (!existsSync(base)) return [];
   const bound: { dir: string; binding: TaskPaneBinding }[] = [];
   for (const entry of readdirSync(base, { withFileTypes: true })) {
     if (!entry.isDirectory() || !existsSync(join(base, entry.name, 'binding.json'))) continue;
     const saved = readSessionArtifact<TaskPaneBinding>(join(base, entry.name, 'binding.json'));
-    if (saved.runtime !== 'herdr' || saved.pane_id !== pane || canonicalize(JSON.parse(JSON.stringify(saved.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
+    if (saved.runtime !== 'herdr-core' || saved.terminal_id !== terminal || canonicalize(JSON.parse(JSON.stringify(saved.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
       || !isReviewRuntimeId(saved.harness_kind)) continue;
     bound.push(readTaskAgent(repo, saved.task, saved.role));
   }
@@ -44,7 +43,7 @@ function paneBindings(repo: string, endpoint: HerdrEndpoint, pane: string): { di
 }
 // Owner inference consumes existing typed task bindings only. Interactive
 // parents without a binding require an explicit --harness; never guess from TUI.
-function boundOwner(repo: string, endpoint: HerdrEndpoint, pane: string): ReviewRuntimeId | null {
+function boundOwner(repo: string, endpoint: HerdrCoreEndpoint, pane: string): ReviewRuntimeId | null {
   const kinds = new Set<ReviewRuntimeId>();
   for (const { binding } of paneBindings(repo, endpoint, pane)) { assertTaskBinding(binding); kinds.add(binding.harness_kind as ReviewRuntimeId); }
   return kinds.size === 1 ? [...kinds][0]! : null;
@@ -60,7 +59,7 @@ function authorTurn(path: string, request: TaskRequest, provider: ProcessProof) 
 /** The single author task session bound to the caller pane for this campaign
  * and reviewed root, and the models its OAR host observed at turn end. Every
  * ended turn counts; a missing, running or model-less turn makes the set unknown. */
-function boundAuthor(repo: string, session: ReviewAuthorQuery<HerdrEndpoint>): AcceptanceAuthor | null {
+function boundAuthor(repo: string, session: ReviewAuthorQuery<HerdrCoreEndpoint>): AcceptanceAuthor | null {
   if (session.endpoint === null || session.parent_pane === null) return null;
   const bound = paneBindings(repo, session.endpoint, session.parent_pane);
   if (bound.length !== 1) return null;
@@ -132,8 +131,8 @@ export function reviewSessionOptions(kind: ReviewRuntimeId, output: string, runt
 }
 
 /** The one reviewer runner. A Herdr or app-terminal launch is an option of each session, not a second implementation. */
-export const taskReviewRunner: ReviewerRunner<TaskPaneBinding, HerdrEndpoint, TaskSessionAuthority> = {
-  validateEndpoint: validateHerdrEndpoint,
+export const taskReviewRunner: ReviewerRunner<TaskPaneBinding, HerdrCoreEndpoint, TaskSessionAuthority> = {
+  validateEndpoint: validateHerdrCoreEndpoint,
   endpointHome: endpoint => endpoint?.home,
   hostCommand(specFile, terminal) {
     const { node, entry } = hostExecutable();
@@ -155,7 +154,7 @@ export const taskReviewRunner: ReviewerRunner<TaskPaneBinding, HerdrEndpoint, Ta
   status: taskAgentStatus,
   assertBinding: assertTaskBinding,
   assertNotOwnerPane(binding, ownerPane) {
-    if (binding.runtime === 'herdr' && binding.pane_id === ownerPane) throw new Error('review_must_not_reuse_owner_pane');
+    if (binding.runtime === 'herdr-core' && binding.terminal_id === ownerPane) throw new Error('review_must_not_reuse_owner_pane');
   },
   bindNative: bindNativeTaskSession,
   send: (repoRoot, task, role, contextRef, contextPolicy, delivery, publicationBoundary, guard, authority) =>

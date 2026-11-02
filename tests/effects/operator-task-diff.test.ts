@@ -66,10 +66,10 @@ function fixture(linkedOwner = false, task = 'review-diff') {
   const claim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) };
   const spec = { task, role: 'deep-reasoner', harness_kind: 'codex' };
   // Read-only transport fixture, not a live process or operator approval proof.
-  const binding: HerdrTaskBinding = { protocol: 2, ...spec, runtime: 'herdr', repository_id: taskRepository(root).repository_id,
-    execution_root: worktree, max_requests: 3, endpoint: { session: 'fixture' }, pane_id: 'pane', terminal_id: 'terminal', workspace_id: 'workspace',
-    agent_name: 'fixture', ownership: { disposition: 'attached' }, provider: { pid: 123, identity: 'fixture', ownership: { disposition: 'attached' } },
-    shell: { pid: 122, identity: 'fixture-shell' }, task_admission: observeTaskSessionAdmission(worktree, spec, 'herdr', { source: approved.source, claim }) };
+  const binding: HerdrTaskBinding = { protocol: 2, ...spec, runtime: 'herdr-core', repository_id: taskRepository(root).repository_id,
+    execution_root: worktree, max_requests: 3, endpoint: { socket: '/tmp/fixture-hc/hc.sock' }, terminal_id: 't1', terminal_name: 'task-fixture',
+    ownership: { disposition: 'attached' }, provider: { pid: 123, identity: 'fixture', ownership: { disposition: 'attached' } },
+    task_admission: observeTaskSessionAdmission(worktree, spec, 'herdr-core', { source: approved.source, claim }) };
   const dir = taskSessionDirectory(root, spec.task, spec.role); ensureSessionDirectory(root, dir);
   writeSessionArtifact(join(dir, 'binding.json'), binding);
   const selector = { repository_id: repositoryId, provider_repository_id: approved.admission.repository_id, issue_id: approved.admission.issue_id,
