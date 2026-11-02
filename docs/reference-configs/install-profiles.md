@@ -144,7 +144,9 @@ under the normal adoption transaction and Git rollback boundaries; secrets and
 provider state are never included.
 
 The host-runtime transaction snapshots both the profile state and the external
-Skills registry (`.agents/.skill-lock.json`) before mutation. A failed component
+Skills registry before mutation. The registry path follows the Skills CLI rule:
+`$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set, else
+`~/.agents/.skill-lock.json`. A failed component
 probe, route projection, or state commit compensates every touched managed path
 and restores both metadata files. Staging discovery and host discovery are
 separate: a Skill present only under `.agents/skills` does not satisfy a Codex or

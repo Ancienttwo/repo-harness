@@ -1032,6 +1032,7 @@ function installExternalSkillGroup(
       USERPROFILE: isolatedHome,
       XDG_CONFIG_HOME: join(isolatedHome, ".config"),
       XDG_CACHE_HOME: join(isolatedHome, ".cache"),
+      XDG_STATE_HOME: join(isolatedHome, ".local", "state"),
       BUN_INSTALL: join(isolatedHome, ".bun"),
       BUN_INSTALL_CACHE_DIR: join(isolatedHome, ".bun", "install", "cache"),
       NPM_CONFIG_CACHE: join(isolatedHome, ".npm"),

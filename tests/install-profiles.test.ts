@@ -51,7 +51,9 @@ const PLANNING_CAPABILITY_PATHS = (() => {
 
 function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-profile-'));
-  try { run({ ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') }); } finally { rmSync(home, { recursive: true, force: true }); }
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
+  delete env.XDG_STATE_HOME;
+  try { run(env); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
 function writePath(path: string, content = ''): void {
@@ -965,6 +967,32 @@ describe('install profiles', () => {
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
     expect(readInstalledProfile(env)).toBeNull();
   }), 30_000);
+
+  test('failed install restores the provider lock under XDG_STATE_HOME', () => withHome((env) => {
+    const bin = join(env.HOME!, 'fake-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; exit 0; fi\nexit 0\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nprintf "{\\"skills\\":{\\"think\\":{}}}\\n" > "$XDG_STATE_HOME/skills/.skill-lock.json"\nexit 19\n', { mode: 0o755 });
+    const stateHome = join(env.HOME!, '.local', 'state');
+    const lock = join(stateHome, 'skills', '.skill-lock.json');
+    const before = '{"skills":{"user-skill":{}}}\n';
+    writePath(lock, before);
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--json'], {
+      cwd: ROOT,
+      env: { ...env, PATH: `${bin}:/bin:/usr/bin`, XDG_STATE_HOME: stateHome, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') },
+      encoding: 'utf-8',
+    });
+    expect(failed.status).not.toBe(0);
+    expect(readFileSync(lock, 'utf-8')).toBe(before);
+    expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
+  }), 30_000);
+
+  test('a relative XDG_STATE_HOME fails before the install takes its runtime lock', () => withHome((env) => {
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'minimal', '--json'], { cwd: ROOT, env: { ...env, XDG_STATE_HOME: 'state' }, encoding: 'utf-8' });
+    expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain('XDG_STATE_HOME must be an absolute path: state');
+    expect(existsSync(join(env.HOME!, '.repo-harness'))).toBe(false);
+  }));
 
   test('committing a host transaction only discards its backups', () => withHome((env) => {
     const path = join(env.HOME!, 'surface');

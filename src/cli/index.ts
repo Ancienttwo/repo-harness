@@ -81,6 +81,7 @@ import {
 } from './commands/candidate-reconciliation';
 import { windowsProtectedHelperConfigPath } from '../effects/runtime/protected-helper-platform';
 import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
+import { providerSkillLock } from '../effects/host-skill-roots';
 import {
   applyInstallProfile,
   beginInstallHostTransaction,
@@ -247,6 +248,8 @@ function runTransactionalProfileProjection(
   },
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
+  // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
+  providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let migrationSource: LegacyInstalledProfileState | null;
