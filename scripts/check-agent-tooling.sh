@@ -145,6 +145,7 @@ const ARCHCTX_NODES_DIR = ".archcontext/model/nodes";
 const ARCHCTX_CAPABILITY_SOURCE_KEY = ".ai/harness/policy.json#context.capability_source";
 const ARCHCTX_STATUS_COMMAND = "repo-harness architecture-projection status --json";
 const HERDR_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr";
+const HERDR_CORE_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr_core";
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
 const WAZA_STAGING_RULES_DIR = path.join(WAZA_STAGING_ROOT, "rules");
@@ -798,14 +799,14 @@ function detectWaza() {
 }
 
 /**
- * Reads the single herdr runtime pin. The version floor, the release URL, and
- * the release checksum are one datum owned by
- * `.ai/harness/policy.json#external_tooling.herdr`; CI installs from the same
- * key. A missing or malformed pin fails closed instead of assuming a floor.
+ * Reads one runtime pin at `.ai/harness/policy.json#external_tooling.<key>`.
+ * Classic Herdr (`herdr`) and herdr-core (`herdr_core`) each own one pin; the
+ * herdr pin also owns the release URL and checksum that CI installs from. A
+ * missing or malformed pin fails closed instead of assuming a floor.
  */
-function herdrMinVersion() {
+function pinnedMinVersion(key) {
   const policy = readJson(path.join(REPO_ROOT, ".ai/harness/policy.json"));
-  const pinned = policy?.external_tooling?.herdr?.min_version;
+  const pinned = policy?.external_tooling?.[key]?.min_version;
   return typeof pinned === "string" && /^\d+\.\d+\.\d+$/.test(pinned) ? pinned : null;
 }
 
@@ -820,24 +821,37 @@ function versionAtLeast(actual, minimum) {
   return true;
 }
 
-function detectRuntimeCapabilities(waza) {
-  const herdr = commandCapability("herdr", "persistent agent terminals, peer collaboration and task-scoped Claude acceptance review", "platform-runtime", true);
-  const minVersion = herdrMinVersion();
-  herdr.min_version = minVersion;
-  herdr.min_version_source = HERDR_PIN_KEY;
-  if (herdr.path) {
+function pinnedRuntimeCapability(capability, key, pinKey, versionPattern) {
+  const minVersion = pinnedMinVersion(key);
+  capability.min_version = minVersion;
+  capability.min_version_source = pinKey;
+  if (capability.path) {
     try {
-      herdr.version = execFileSync(herdr.path, ["--version"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }).trim();
-      const reported = /^herdr (\d+\.\d+\.\d+)$/.exec(herdr.version)?.[1] ?? null;
-      if (!reported || (minVersion && !versionAtLeast(reported, minVersion))) herdr.status = "unavailable";
-    } catch (_) { herdr.status = "unavailable"; }
+      capability.version = execFileSync(capability.path, ["--version"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }).trim();
+      const reported = versionPattern.exec(capability.version)?.[1] ?? null;
+      if (!reported || (minVersion && !versionAtLeast(reported, minVersion))) capability.status = "unavailable";
+    } catch (_) { capability.status = "unavailable"; }
   }
   if (!minVersion) {
-    herdr.status = "configuration-error";
-    herdr.reason = `${HERDR_PIN_KEY}.min_version is missing or malformed; run repo-harness init --repo . to merge repository policy defaults, then verify the declared version requirement`;
+    capability.status = "configuration-error";
+    capability.reason = `${pinKey}.min_version is missing or malformed; run repo-harness init --repo . to merge repository policy defaults, then verify the declared version requirement`;
   }
+  return capability;
+}
+
+function detectRuntimeCapabilities(waza) {
+  // Two separate runtimes: hc never satisfies runtime.herdr, because the classic surfaces gated on it do not run on herdr-core.
+  const herdr = pinnedRuntimeCapability(
+    commandCapability("herdr", "persistent agent terminals, peer collaboration and task-scoped Claude acceptance review", "platform-runtime", true),
+    "herdr", HERDR_PIN_KEY, /^herdr (\d+\.\d+\.\d+)$/
+  );
+  const herdrCore = pinnedRuntimeCapability(
+    commandCapability("hc", "persistent terminals and agent messaging through herdr-core", "platform-runtime", false),
+    "herdr_core", HERDR_CORE_PIN_KEY, /^hc (\d+\.\d+\.\d+)$/
+  );
   return {
     herdr,
+    herdr_core: herdrCore,
     bun: commandCapability(
       "bun",
       "repo-harness-owned global installs, local package dependency install, and test/runtime execution",

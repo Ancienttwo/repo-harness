@@ -1433,6 +1433,9 @@ pi_write_harness_policy() {
           "sha256": "5fb0a908ec7f6745e3e245738b06bfad56c46391c391ab3c0955fbead01f1369"
         }
       }
+    },
+    "herdr_core": {
+      "min_version": "0.1.16"
     }
   },
   "agentic_development": {
