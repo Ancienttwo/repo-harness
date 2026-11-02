@@ -431,16 +431,16 @@ function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
   );
 }
 
-const HERDR_PIN = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf8")).external_tooling.herdr;
+const { herdr: HERDR_PIN, herdr_core: HERDR_CORE_PIN } = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf8")).external_tooling;
 
 /**
- * Strict readiness reads the herdr floor from
- * `.ai/harness/policy.json#external_tooling.herdr`, so a fixture repo that stands
- * in for a ready repo must carry the same pin this repo publishes.
+ * Readiness reads the runtime floors from
+ * `.ai/harness/policy.json#external_tooling.{herdr,herdr_core}`, so a fixture repo
+ * that stands in for a ready repo must carry the same pins this repo publishes.
  */
 function writeFixturePolicy(repoRoot: string, policy: Record<string, unknown> = {}) {
   mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
-  const externalTooling = { ...((policy.external_tooling as Record<string, unknown>) ?? {}), herdr: HERDR_PIN };
+  const externalTooling = { ...((policy.external_tooling as Record<string, unknown>) ?? {}), herdr: HERDR_PIN, herdr_core: HERDR_CORE_PIN };
   writeFileSync(
     join(repoRoot, ".ai/harness/policy.json"),
     `${JSON.stringify({ ...policy, external_tooling: externalTooling }, null, 2)}\n`
@@ -1906,6 +1906,44 @@ test.each([undefined, "invalid"])("Herdr missing or malformed version policy is 
     expect(result.stderr).toContain("repo-harness init --repo .");
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 }, 20000);
+
+test.each([
+  ["present", "hc 0.1.16"],
+  ["unavailable", "hc 0.1.15"],
+  ["missing", null],
+  ["configuration-error", "hc 0.1.16"],
+])("herdr-core is a separate optional runtime capability: %s", (status, hcVersion) => {
+  const fixture = setupFakeEnvironment("herdr-core-runtime");
+  try {
+    rmSync(join(fixture.fakeBin, "herdr"));
+    if (hcVersion) writeExecutable(join(fixture.fakeBin, "hc"), `#!/bin/sh\nprintf '${hcVersion}\\n'\n`);
+    // An explicit utility PATH keeps the developer's herdr and hc installations out of the report.
+    for (const utility of ["dirname", "basename", "node", "bun", "git", "bash", "sh", "which", "uname"]) {
+      const actual = Bun.which(utility);
+      if (actual && !existsSync(join(fixture.fakeBin, utility))) symlinkSync(actual, join(fixture.fakeBin, utility));
+    }
+    writeFixturePolicy(fixture.root);
+    if (status === "configuration-error") {
+      const policyPath = join(fixture.root, ".ai/harness/policy.json");
+      const policy = JSON.parse(readFileSync(policyPath, "utf8"));
+      delete policy.external_tooling.herdr_core;
+      writeFileSync(policyPath, JSON.stringify(policy));
+    }
+    const result = spawnSync("/bin/bash", [SCRIPT, "--json", "--strict-readiness", "--host", "claude"], {
+      cwd: fixture.root, encoding: "utf8", env: { ...process.env, HOME: fixture.home, PATH: fixture.fakeBin }, timeout: 15_000,
+    });
+    const { herdr, herdr_core: herdrCore } = JSON.parse(result.stdout).runtime_capabilities;
+    expect(herdrCore.name).toBe("hc");
+    expect(herdrCore.required).toBe(false);
+    expect(herdrCore.status).toBe(status);
+    expect(herdrCore.min_version).toBe(status === "configuration-error" ? null : HERDR_CORE_PIN.min_version);
+    if (hcVersion) expect(herdrCore.version).toBe(hcVersion);
+    // hc never satisfies the classic runtime: strict readiness still fails on a missing herdr.
+    expect(herdr.status).toBe("missing");
+    expect(result.status).not.toBe(0);
+    expect(result.stderr).toContain("herdr runtime is missing");
+  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
+}, 20_000);
 
 test("does not borrow a parent CodeGraph index for a nested checkout", () => {
   const fixture = setupFakeEnvironment("codegraph-nested-checkout");

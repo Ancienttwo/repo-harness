@@ -7,7 +7,38 @@
 - A cross-model review means Receipt `model_relation: different-family`. The OAR host records the reviewer model and the model of each ended turn of the one author task session bound to the caller pane, campaign and reviewed root. One closed family table in `src/core/review/acceptance-receipt.ts` compares vendor families, not routing providers. Harness kind does not prove a model difference. A shared family is `same-family`. A missing author binding, an unobserved or running turn, a Claude turn (its model is not observed) or a model outside the table is `unknown`. Interactive authors are not OAR-observed, so they give `unknown` and a High-tier cross-model review stays a manual Herdr peer review. The review runtime records identity; it adds no cross-model gate.
 - Exception: in the Claude desktop app, operator-attended acceptance review can use `repo-harness review round --launch app-terminal`. The CLI prints the fixed OAR host command. Claude runs that exact command once in an app Terminal tab, then repeats the same round. The same OAR host, Seatbelt profile and Receipt apply.
 - Send the root tests-and-implementation review to the other model through Herdr when it is available. Otherwise, run that read-only review in a separate same-model pane.
+
+### Issue-flow topology
+
+This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-core (`hc` with Herdr.app) and on classic Herdr.
+
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
+- Tab 1 holds two panes: the orchestrator on the left and its advisor on the right. Tab 1 may take one worker as its third pane.
+- The orchestrator holds the issue-flow coordinator and integrator seats. It only dispatches, accepts and merges. It does not implement a child issue.
+- The advisor serves only the orchestrator. It does research and writes proposals. It does not edit code, commit or write to GitHub. It may use read-only probe sub-agents, for example `explorer`, for research.
+- One PR has one pane and one worker agent. Each further worker gets its own pane, as the right split of a tab that is not full or in a new tab. The worker may use the agent-fleet sub-agents (`agents/fleet/`) inside its own pane.
+- Recommended models for a Claude-only setup: the orchestrator runs Opus at high effort, and the advisor runs Opus at max effort. This is a recommendation, not a requirement. No seat requires a specific model (issue-flow D7).
+- Cleanup: after a PR is accepted and merged, the orchestrator closes the worker's pane, which ends the worker process. It then removes the worker's worktree with `git worktree remove <path>` and deletes the merged branch. A pane or worktree with unmerged or dirty work stays, and the orchestrator reports it.
+
+### Runtime commands
+
+Select the runtime from the caller environment:
+
+- `HC_TERMINAL_ID` set: herdr-core. Use `hc` for terminals and `herdr-app do` for tabs and panes.
+- `HERDR_ENV=1` set: classic Herdr. Use the `herdr` commands of the herdr skill (`herdr agent start|prompt|wait|read`, `herdr pane close`).
+- Both set: the multiplexers are nested. Refuse and report.
+- Do not fall back from one runtime to the other.
+
+herdr-core commands for the topology steps:
+
+| Step | Command |
+|---|---|
+| New worker tab | `herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv '[...]' --task <packet>` |
+| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane>` |
+| Message a worker | `hc send <t> <comment URL>` |
+| Read a worker | `hc read <t>` |
+| Wait for a worker | `hc wait <t>` |
+| Close a worker pane | `herdr-app do pane.close --pane <pane>` |
 
 ### Test and Review Rules
 

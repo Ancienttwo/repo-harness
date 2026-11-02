@@ -388,6 +388,7 @@ boundary explicit:
 | Capability | Owner | Required for |
 |---|---|---|
 | `herdr` | user install (herdr.dev) | required at the version pinned in `.ai/harness/policy.json#external_tooling.herdr`; peer terminals and persistent task reviewer hosting |
+| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | optional, at least the version pinned in `.ai/harness/policy.json#external_tooling.herdr_core`; persistent terminals and agent messaging; no repo-harness automation uses it yet |
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
@@ -421,6 +422,19 @@ WSL. Native Windows review lifecycle support is not implied by Herdr support.
 Admitted task sessions start only in a Herdr pane, so they and their Task Inbox and operator diff consumers are POSIX-only; on Windows, session start fails closed with `herdr_endpoint_platform_unsupported`.
 Drain old tmux reviewers with the previous repo-harness version before upgrading.
 No runtime or collaboration path automatically falls back to tmux.
+
+herdr-core (`hc`) is a separate product with its own pin. It has persistent
+terminals and a JSON-RPC API, and it has built-in remote host access
+(`hc machine`, `hc run --on <machine>`). It has no sessions, panes,
+workspaces or plugins. `check-agent-tooling.sh` reports it as the optional
+`runtime_capabilities.herdr_core`; `setup check` projects `runtime.herdr_core`.
+`hc --version` must report at least the `min_version` at
+`.ai/harness/policy.json#external_tooling.herdr_core`. CI does not install hc.
+The two checks are independent: `hc` never satisfies `runtime.herdr`, the
+`herdr` skill or strict readiness. The transport, task sessions,
+`review --launch herdr`, operator collectors, the `herdr notify` plugin, the
+`herdr` skill, doctor and CI stay classic-only. No runtime falls back to the
+other.
 The native protected-helper tool contract below remains a separate boundary.
 
 The policy is Bun-first, not Bun-only. Repo-harness-owned install/repair commands
