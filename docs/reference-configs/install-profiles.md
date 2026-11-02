@@ -82,7 +82,7 @@ repo-harness update --with-obsidian-skills
 ```
 
 The catalog pins both subtrees from
-`kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202`
+`kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202`
 and verifies a separate full-tree SHA-256 before projecting either Skill. A
 successful install records the staging directories and host links in the
 existing install transaction; subsequent drift is reported as managed drift,

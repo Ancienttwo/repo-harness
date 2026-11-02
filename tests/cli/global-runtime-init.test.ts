@@ -23,9 +23,9 @@ const ARCHCTX_PIN = dependencies.archctx;
 const ARCHCTX_CONTRACTS_PIN = dependencies['archctx-contracts'];
 const CODEGRAPH_PIN = devDependencies['@colbymchenry/codegraph'];
 const CLI = join(ROOT, 'src/cli/index.ts');
-const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55';
+const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55';
 const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb064ffae2f4c99d357977d3719baae';
-const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202';
+const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 
 function singleFileSkillIntegrity(content: string): string {
   const hash = createHash('sha256');
@@ -626,7 +626,7 @@ describe('install command global runtime bootstrap', () => {
       // resolves the `skills` binary from PATH instead of going through bunx, so
       // that one is stubbed separately below.
       writeFakeSkillsCli(fakeBin);
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; else names='mermaid'; fi; if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi; for skill in $names; do mkdir -p "$root/$skill"; printf '# %s\\n' "$skill" > "$root/$skill/SKILL.md"; done; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" ${REVERSE_PROVIDER} "* ]]; then names='reverse-skill-router'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; drift=' upstream head'; else names='mermaid'; fi; if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi; for skill in $names; do mkdir -p "$root/$skill"; printf '# %s%s\\n' "$skill" "\${drift:-}" > "$root/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
@@ -1432,7 +1432,7 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
     names='think hunt check health'
     mkdir -p "$HOME/.agents/rules"
     for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
-	  elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then
+	  elif [[ " $* " == *" zhaoxuya520/reverse-skill#"* ]]; then
     names='reverse-skill-router'
   else
     names='mermaid'
@@ -2246,7 +2246,7 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
     names='think hunt check health'
     mkdir -p "$HOME/.agents/rules"
     for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
-  elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then
+  elif [[ " $* " == *" zhaoxuya520/reverse-skill#"* ]]; then
     names='reverse-skill-router'
   else
     names='mermaid'
