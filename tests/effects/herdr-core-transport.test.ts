@@ -8,7 +8,8 @@ import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2, pid: 9 };
+const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2,
+  pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null, holder: 3 };
 // One script stands in for both programs; FAKE_MODE picks the outcome and argv is logged per line.
 const FAKE = `#!/bin/sh
 for arg in "$@"; do printf '%s\\n' "$arg" >> "$FAKE_LOG"; done
@@ -50,7 +51,8 @@ test('success: labels go in on run and list, and come back out of get', () => {
 
   const get = fake('ok', TERMINAL);
   expect(hcGet('t4', { env: get.env })).toEqual({ address: 't4', name: 'rh-worker', state: 'live',
-    labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2 });
+    labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2,
+    pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null });
   expect(get.argv()).toEqual(['get', '--json', '--', 't4']);
 });
 
@@ -66,7 +68,9 @@ test('hc error: the exit code and hc error kind are kept', () => {
   expect([error.program, error.reason, error.exitCode, error.kind]).toEqual(['hc', 'failed', 3, 'not_found']);
   expect(error.message).toContain('no terminal "t9"');
   expect(failure(() => hcGet('t4', { env: fake('text').env })).reason).toBe('invalid_response');
-  expect(failure(() => hcGet('t4', { env: fake('ok', { ...TERMINAL, labels: { n: 1 } }).env })).reason).toBe('invalid_response');
+  for (const invalid of [{ labels: { n: 1 } }, { pid: 0 }, { foreground: { pid: 9, name: 'claude', argv: ['claude'] } }, { reason: 1 }]) {
+    expect(failure(() => hcGet('t4', { env: fake('ok', { ...TERMINAL, ...invalid }).env })).reason).toBe('invalid_response');
+  }
 });
 
 test('hc missing: the error names the missing program', () => {

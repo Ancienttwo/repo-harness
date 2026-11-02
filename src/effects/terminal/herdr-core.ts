@@ -32,10 +32,17 @@ export interface HerdrCoreOptions {
 export type HcLabels = Readonly<Record<string, string>>;
 export interface HcStatus { readonly state: string; readonly app?: string; readonly kind?: string; readonly msg?: string }
 export interface HcTerminalSummary { readonly address: string; readonly name: string | null; readonly state: 'live' | 'finished' }
+export interface HcForeground { readonly pid: number; readonly name: string; readonly argv: readonly string[]; readonly cwd: string }
 export interface HcTerminal extends HcTerminalSummary {
   readonly labels: HcLabels;
   readonly status: HcStatus | null;
   readonly turn: number;
+  /** The program's pid (it leads its own process group), not the holder's. */
+  readonly pid: number | null;
+  /** What runs in the terminal now; null once it has finished. */
+  readonly foreground: HcForeground | null;
+  /** Why the program ended (`exited`, `killed`, ...) or is pending. */
+  readonly reason: string | null;
 }
 export type HcStreamItem =
   | { readonly type: 'snapshot'; readonly seq: number; readonly terminals: readonly HcTerminal[] }
@@ -145,16 +152,29 @@ function terminalSummary(value: unknown): HcTerminalSummary {
   return { address: value.address, name: value.name, state: value.state };
 }
 
+const isPid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
+
+function foreground(value: unknown): value is HcForeground {
+  return isRecord(value) && isPid(value.pid) && typeof value.name === 'string' && typeof value.cwd === 'string'
+    && Array.isArray(value.argv) && value.argv.every(arg => typeof arg === 'string');
+}
+
 function terminal(value: unknown): HcTerminal {
   const summary = terminalSummary(value);
   const record = value as Record<string, unknown>;
-  const labels = record.labels, status = record.status;
+  // The hc schema does not require pid, foreground or reason; it omits or nulls them when unknown.
+  const { labels, status, pid = null, foreground: current = null, reason = null } = record;
   if (!isRecord(labels) || Object.values(labels).some(label => typeof label !== 'string')
     || !(status === null || (isRecord(status) && typeof status.state === 'string'))
-    || !Number.isSafeInteger(record.turn)) {
-    throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, `terminal ${summary.address} has invalid labels, status or turn`);
+    || !Number.isSafeInteger(record.turn) || !(pid === null || isPid(pid))
+    || !(current === null || foreground(current)) || !(reason === null || typeof reason === 'string')) {
+    throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined,
+      `terminal ${summary.address} has invalid labels, status, turn, pid, foreground or reason`);
   }
-  return { ...summary, labels: labels as HcLabels, status: status as HcStatus | null, turn: record.turn as number };
+  return {
+    ...summary, labels: labels as HcLabels, status: status as HcStatus | null, turn: record.turn as number,
+    pid, foreground: current === null ? null : { pid: current.pid, name: current.name, argv: [...current.argv], cwd: current.cwd }, reason,
+  };
 }
 
 /**
