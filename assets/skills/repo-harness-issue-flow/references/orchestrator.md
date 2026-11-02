@@ -166,6 +166,11 @@ module is in the title so that a list view shows the write scopes.
   dependency is merged, or its contract is stable and the issue allows
   early start.
 - Each parallel worker gets its own worktree from a clean base.
+- Keep at most 8 active writer seats under one coordinator. A seat is
+  active until its PR is merged or its claim status is `done` or
+  `released` (`board.md` Seats). Hold further
+  dispatches until a seat ends. Each active worker adds notices to your
+  queue (§8.1), and more than 8 makes the owner wait.
 - Default model preference (D3): no role is bound to one vendor. The old
   fixed split, Claude for frontend and Codex for backend, is retired. At
   dispatch, prefer the deepest available model for architecture and
@@ -212,6 +217,55 @@ host's PR events or check when the worker reports.
   PR back.
 - **Stalled worker.** Read its last status comment and branch before you
   reassign. A handoff needs a claim comment that cites the prior claim.
+
+### 8.1 Triage queue
+
+Owner messages and worker notices arrive in the same session. Without a
+rule, the newest message takes the turn and the owner loses the thread.
+Keep the notices in the host's task list tool (on Claude: `TaskCreate`,
+`TaskUpdate`, `TaskList`, `TaskGet`; on Codex: its plan tool). A queue item points to
+the board. It holds no state of its own, so it cannot drift from the board.
+
+- **Classify the source.** A message whose first line starts with
+  `[rh-notice]`, or a `repo-harness.bot-event/v1` event, is a notice. Any
+  other message is from the owner.
+- **Queue each notice.** A notice does not take over an open owner
+  request. When no owner request is open, work the queue in the same
+  turn (Work the queue). Keep one item for each issue or PR. The subject is
+  `[P<n>] #<number> <kind>`. The description is the comment or event URL,
+  or the message text of a simple notice (`worker.md` §7). When the issue
+  or PR has an open item, update that item and keep the higher priority.
+- **Priority.**
+
+  | Priority | Notice |
+  |---|---|
+  | P0 | `merge_outcome_unknown`, `agent.blocked`, a failed board read or post |
+  | P1 | `boundary question`, `question`, an `issue claim status` with `Status: blocked`, a stalled worker |
+  | P2 | CI red, review findings, an `integration status` with a conflict |
+  | P3 | ready for review, `agent.done`, `done`, `info`, other status |
+
+- **Owner first.** Answer the owner message before you take a queue item.
+  End the answer with one line: `Queue: P0 <n> · P1 <n> · P2 <n> · P3 <n>`.
+  A P0 notice is the only interrupt: tell the owner in one line when it
+  arrives, then continue the owner's request unless the owner stops it.
+- **Work the queue.** When no owner message waits, take the item with the
+  highest priority, oldest first. Read its URL and its thread again, act,
+  then mark the item completed. Take one item at a time. Answer a simple
+  `question` in a host message. When the answer changes scope or decides
+  an open point, post it as a `scope change` or `decision` comment and
+  send the URL.
+- **Rebuild.** At session start, and when the queue is empty after a
+  context compaction, rebuild the queue from the board: `To: coordinator`
+  comments without a `Re:` answer, open PRs with a red required check,
+  claims with `Status: blocked` or `Status: ready for review`, acceptance
+  records with open findings, and `integration status` comments with a
+  conflict.
+- **Changes without a notice.** A claim release, an owner comment, an
+  acceptance record or a CI result can change the board without a
+  worker notice. The `repo-harness.bot-event/v1` GitHub events
+  (`events.md`) catch these changes and enter the queue as notices.
+  Without the event Worker, read the parent and every open child before
+  each dispatch or merge decision.
 
 ## 9. Merge and integrate
 

@@ -203,6 +203,21 @@ You are the head owner. Only you push to this branch.
 - **Someone else must push.** When a repair or integration must come from
   another agent, post a `handoff` that names the next head owner and the
   exact head SHA. Then stop pushing.
+- **Report to the coordinator.** Every host message to the coordinator
+  starts with `[rh-notice] <kind> #<issue>`. Select the form by content:
+  - **Simple:** a fact or a question that changes no board state and
+    needs no decision. Examples: dispatch received, a factual question
+    about the code. Send it as a message only, at most 3 lines, with no
+    log text. `<kind>` is `info` or `question`.
+  - **Complex:** a `boundary question`, an `issue claim status`, a
+    `handoff` or an `integration status`. Post the comment first. Then
+    send `[rh-notice] <kind> #<issue> <comment URL>` and a one-line
+    summary. The comment holds the content. A report with evidence goes
+    in an `issue claim status` (its `PR` and `CI` fields) or in the PR
+    body.
+  - When you are not sure, use the complex form. When the coordinator's
+    answer to a simple question changes scope or decides an open point,
+    it posts that answer as a `scope change` or `decision` comment.
 
 ## 8. Finish
 
