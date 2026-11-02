@@ -5,7 +5,7 @@ import { createInterface } from 'readline';
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
  * placement. Every call is scoped to repo-harness terminals: lists and streams need a repo-harness label
  * filter, and calls on one terminal need its `t<n>` address and a repo-harness label on it.
- * hc 0.1.16 reports no API generation in its CLI output; the shape validation below is the only guard.
+ * hc (floor 0.1.17) reports no API generation in its CLI output; the shape validation below is the only guard.
  */
 export const HERDR_CORE_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
@@ -51,6 +51,8 @@ export interface HcTerminal extends HcTerminalSummary {
   readonly reason: string | null;
 }
 export interface HcSendResult { readonly started: boolean | null; readonly turn: number }
+/** `complete` is false when part of the asked text may be missing; `why` names the reason (`working`, `blocked`, `error`). */
+export interface HcReadResult { readonly text: string; readonly complete: boolean; readonly why: string | null }
 export interface HcWaitResult { readonly ended: boolean; readonly reason: string; readonly turn: number; readonly status: HcStatus | null }
 export type HcStreamItem =
   | { readonly type: 'snapshot'; readonly seq: number; readonly terminals: readonly HcTerminal[] }
@@ -84,7 +86,7 @@ const RH_ROLES: ReadonlySet<string> = new Set(Object.values(RH_ROLE));
 const LABEL_KEY = /^[a-z][a-z0-9._-]{0,63}$/;
 const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
 /**
- * hc's own address for a terminal on this core (hc 0.1.16 terminals.rs `id_shaped`): `t`, then 1-9, then base-30
+ * hc's own address for a terminal on this core (hc terminals.rs `id_shaped`, floor 0.1.17): `t`, then 1-9, then base-30
  * symbols, for example `t7` or `t1b`. A name can name a later terminal; this address never does, and no name has
  * this shape. hc ids are u32, so an address has at most seven symbols.
  */
@@ -302,13 +304,13 @@ export function hcSend(terminalAddress: string, text: string, options: HerdrCore
   return { started: result.started, turn: result.turn as number };
 }
 
-/** `hc read`: the screen plus `lines` of history of a repo-harness terminal, as text. */
-export function hcRead(terminalAddress: string, lines = 0, options: HerdrCoreOptions = {}): string {
+/** `hc read`: the screen plus `lines` of history of a repo-harness terminal, and whether the text is complete. */
+export function hcRead(terminalAddress: string, lines = 0, options: HerdrCoreOptions = {}): HcReadResult {
   if (!Number.isSafeInteger(lines) || lines < 0) throw new RangeError('herdr_core_invalid_lines');
   const target = hcGet(terminalAddress, options).address;
   const result = hc('read', ['--lines', String(lines), '--', target], options);
-  if (!isString(result.text)) throw invalidResponse('read has no text');
-  return result.text;
+  if (!isString(result.text) || typeof result.complete !== 'boolean') throw invalidResponse('read has an invalid text or complete');
+  return { text: result.text, complete: result.complete, why: optional(result, 'why', orNull(isString), `read ${target}`) ?? null };
 }
 
 /**
