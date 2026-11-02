@@ -160,6 +160,19 @@ describe('settings seats page', () => {
     expect(allow('Edit files').disabled).toBe(true);
   });
 
+  test('a stored advisor role outside the range can be switched off and saved, and cannot be switched back on', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    const read = await seatsSettingsStore('busy').read();
+    if (read.state !== 'ok') throw new Error('fixture read failed');
+    const stored = { ...read.settings, config: { ...read.settings.config, advisor: { ...read.settings.config.advisor, fleet: ['explorer', 'fast-worker'] } } };
+    await mount({ ...seatsProps(posts), readSeatsSettings: async () => ({ state: 'ok', settings: stored }) }, '#settings/seats');
+    expect([allow('fast-worker').disabled, allow('fast-worker').getAttribute('aria-checked')]).toEqual([false, 'true']);
+    await click(allow('fast-worker'));
+    expect(allow('fast-worker').disabled).toBe(true);
+    await click(saveButton());
+    expect(posts[0]!.seats.advisor.fleet).toEqual(['explorer']);
+  });
+
   test('moving a seat to Pi clears its fleet and model, and locks its effort and fleet', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
     await mount(seatsProps(posts), '#settings/seats');
