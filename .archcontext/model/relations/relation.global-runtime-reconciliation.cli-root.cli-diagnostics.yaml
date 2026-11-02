@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.cli-diagnostics
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: component.global-runtime-reconciliation.cli-diagnostics
+intent: "Register the doctor and init-hook commands and validate the shared CLI options"

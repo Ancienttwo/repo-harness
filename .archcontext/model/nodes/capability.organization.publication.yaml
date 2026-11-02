@@ -26,6 +26,7 @@ source:
               path: "src/effects/publication/merge-readiness.ts"
               symbol: "collectPullRequestMergeReadiness"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

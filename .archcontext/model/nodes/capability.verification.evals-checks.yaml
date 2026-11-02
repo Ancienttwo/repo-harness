@@ -57,6 +57,7 @@ source:
               path: "src/effects/evidence/verification-execution.ts"
               symbol: "executeCheck"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

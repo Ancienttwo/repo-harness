@@ -63,6 +63,7 @@ source:
               path: "src/core/review/runner-port.ts"
               symbol: "settleCompanion"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

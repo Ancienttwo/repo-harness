@@ -22,6 +22,8 @@ source:
               path: "src/cli/tools/codegraph.ts"
               symbol: "checkCodegraph"
 extensions:
+  harnessTier: "plugin"
+  harnessContract: "Check"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

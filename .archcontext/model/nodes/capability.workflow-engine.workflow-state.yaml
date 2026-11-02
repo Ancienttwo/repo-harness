@@ -68,6 +68,7 @@ source:
               path: "src/core/state/provider-board.ts"
               symbol: "projectProviderBoard"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

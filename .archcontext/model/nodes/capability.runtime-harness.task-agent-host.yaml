@@ -100,6 +100,8 @@ source:
               path: "src/effects/fleet/task-inbox.ts"
               symbol: "deliverTaskInbox"
 extensions:
+  harnessTier: "plugin"
+  harnessContract: "Review"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

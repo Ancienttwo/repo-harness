@@ -37,6 +37,7 @@ source:
               path: "src/cli/commands/adoption-plan.ts"
               symbol: "createPlan"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

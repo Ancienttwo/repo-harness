@@ -42,6 +42,7 @@ source:
               path: "src/core/evidence/fold.ts"
               symbol: "findCorruptTail"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
