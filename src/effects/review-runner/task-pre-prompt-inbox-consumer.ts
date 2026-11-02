@@ -6,7 +6,7 @@ import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../../core/fleet/admitted-task-message';
 import { readActiveReviewAdmission } from '../admission/admission-store';
-import { readTaskAgent } from '../terminal/task-session-reader';
+import { readTaskAgent } from '../sessions/task-session-record';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import type { TaskRequest } from '../../core/review/runner-port';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';

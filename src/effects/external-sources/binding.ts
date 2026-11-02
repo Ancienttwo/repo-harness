@@ -6,8 +6,8 @@ import { renderExternalSourceUntrustedContext } from '../../core/external-source
 import { buildAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readReviewAdmissionSource } from '../admission/admission-source';
-import { observeTaskInboxContext } from '../fleet/task-inbox';
-import { readTaskAgent } from '../terminal/task-session';
+import { observeCurrentTaskSession } from '../sessions/task-session-admission';
+import { readTaskAgent } from '../sessions/task-session-record';
 import { listExternalSourceBindingReceipts,
   listExternalSourceRefreshReceipts, listProviderIssueObservations, writeExternalSourceBindingReceipt } from './store';
 
@@ -31,6 +31,7 @@ function dependencies(overrides: Partial<ExternalSourceBindingDependencies> = {}
     refreshReceipts: listExternalSourceRefreshReceipts, receipts: listExternalSourceBindingReceipts,
     admissionSource: readReviewAdmissionSource, write: writeExternalSourceBindingReceipt, ...overrides };
 }
+function refuseSession(_code: string, message: string): never { throw new Error(message); }
 function observeSession(root: string, session: AdmittedSessionSelector, deps: ExternalSourceBindingDependencies) {
   if (!isAdmittedSessionSelector(session)) throw new Error('explicit admitted session selector is invalid');
   const { binding } = readTaskAgent(root, session.task, session.role);
@@ -40,9 +41,9 @@ function observeSession(root: string, session: AdmittedSessionSelector, deps: Ex
     'repository-id': session.provider_repository_id, 'issue-id': session.issue_id, 'campaign-id': session.campaign_id,
     'grant-sha256': session.grant_sha256, 'policy-sha256': session.policy_sha256, actor: session.actor_id,
   });
-  return observeTaskInboxContext({ repo_root: root, task_id: session.task, source: {
+  return observeCurrentTaskSession({ repo_root: root, source: {
     session: { task: session.task, role: session.role }, authority: { source,
-      claim: { reference: session.claim_ref, revision: session.claim_revision } } } });
+      claim: { reference: session.claim_ref, revision: session.claim_revision } } } }, refuseSession).admission;
 }
 function authority(input: BindExternalSourceInput, deps: ExternalSourceBindingDependencies) {
   const registry = deps.registry(input.env), repo = registry.repos.find(r => r.id === input.registered_repository_id);

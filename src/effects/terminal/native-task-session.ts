@@ -2,7 +2,8 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { readTaskAgent, readSessionArtifact, writeSessionArtifact, type TaskPaneBinding } from './task-session';
+import { readTaskAgent, type TaskPaneBinding } from '../sessions/task-session-record';
+import { readSessionArtifact, writeSessionArtifact } from './task-session-io';
 
 /** Native host attribution only. This record never grants current task authority. */
 export interface NativeTaskSessionBinding {

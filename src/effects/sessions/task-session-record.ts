@@ -1,11 +1,58 @@
-/** Node-safe immutable session reader. Admission observation remains in the owner. */
-import { lstatSync } from 'node:fs';
+/** Persisted task session records and their Node-safe reads. Pane control and admission observation stay with their owners. */
+import { existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { taskSessionKey } from '../git/repository-identity';
-import { taskRepository } from '../git/task-repository';
-import { readSessionArtifact } from './task-session-io';
-import type { ObjectOwnership, TaskPaneBinding, TerminalStartIntent, TerminalTaskBinding, StartIntent, CreatedPane } from './task-session';
+import type { ProcessProof, TaskAgentSpec, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
+import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
+import { taskRepository, type TaskRepository } from '../git/task-repository';
+import { readSessionArtifact } from '../terminal/task-session-io';
+
+export interface HerdrEndpoint { readonly session: string; readonly configPath?: string; readonly home?: string }
+export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
+export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
+
+interface TaskBindingCommon {
+  protocol: 2;
+  repository_id: string;
+  execution_root: string;
+  task: string;
+  role: string;
+  harness_kind: string;
+  ownership: ObjectOwnership;
+  provider: OwnedProcess;
+  max_requests: number;
+  task_admission?: TaskSessionAdmission;
+}
+export interface HerdrTaskBinding extends TaskBindingCommon {
+  runtime: 'herdr';
+  endpoint: HerdrEndpoint;
+  pane_id: string;
+  terminal_id: string;
+  workspace_id: string;
+  shell: ProcessProof;
+  agent_name: string;
+}
+/** An application host that an operator terminal (the Claude app) started
+ * from the exact owner command. The terminal stays with the operator: no pane
+ * identity, history or signal authority exists for it. */
+export interface TerminalTaskBinding extends TaskBindingCommon {
+  runtime: 'terminal';
+  command: string[];
+}
+export type TaskPaneBinding = HerdrTaskBinding | TerminalTaskBinding;
+export type HerdrTaskAgentSpec = TaskAgentSpec<HerdrEndpoint>;
+export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: HerdrTaskAgentSpec; runtime?: never }
+export interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
+export interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
+export interface TaskWorkspaceBinding {
+  protocol: 1;
+  repository: TaskRepository;
+  endpoint: HerdrEndpoint;
+  root_workspace_id: string;
+  workspace_id: string;
+  ownership: ObjectOwnership;
+  root_pane: { pane_id: string; terminal_id: string; shell: ProcessProof; ownership: ObjectOwnership };
+}
 
 export function assertSessionDirectory(root: string, path: string): void {
   const segments = relative(root, path).split('/');
@@ -69,4 +116,18 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
     if (provider.pid !== binding.provider.pid || provider.identity !== binding.provider.identity) throw new Error('task_agent_process_identity_lost');
   }
   return { dir, binding };
+}
+
+export function workspaceDirectory(repository: TaskRepository): string {
+  return join(repository.primary_root, '.ai/harness/runs/task-workspaces', taskWorkspaceKey(repository.repository_id, repository.execution_root));
+}
+/** The session sweep cannot close an open runtime or contact Herdr. */
+export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
+  const dir = workspaceDirectory(repository);
+  try { lstatSync(dir); }
+  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true; throw error; }
+  assertSessionDirectory(repository.primary_root, dir);
+  if (!existsSync(join(dir, 'closed.json'))) return false;
+  const closed = readSessionArtifact<{ repository_id: string; checkout: string }>(join(dir, 'closed.json'));
+  return closed.repository_id === repository.repository_id && closed.checkout === repository.execution_root;
 }

@@ -17,7 +17,7 @@ import {
   removeExactWorktree,
   type ExactWorktreeCleanup,
 } from '../state/coordination-worktree-topology';
-import { taskWorktreeRuntimeClosed } from '../terminal/task-session';
+import { taskWorktreeRuntimeClosed } from '../sessions/task-session-record';
 
 /**
  * `remove`, `deferred` and `keep` are preview verdicts; `removed` and `failed`
