@@ -86,8 +86,9 @@ export async function fetchBotReviews(signal: AbortSignal): Promise<BotReviewsRe
     if (signal.aborted) throw error;
     return { state: 'unavailable', reason: 'unreachable' };
   }
-  if (!response.ok) return { state: 'unavailable', reason: 'unreachable' };
   const body: unknown = await response.json().catch(() => null);
+  // The route refuses only a snapshot that failed its own decode.
+  if (!response.ok) return { state: 'unavailable', reason: asApiError(body).code === 'bot_reviews_invalid' ? 'bot_reviews_invalid' : 'unreachable' };
   try { return { state: 'ok', snapshot: decodeSlackReviews(body) }; } catch { return { state: 'unavailable', reason: 'bot_reviews_invalid' }; }
 }
 

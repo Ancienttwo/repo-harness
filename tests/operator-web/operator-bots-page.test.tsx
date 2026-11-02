@@ -366,6 +366,7 @@ describe('Dot review reader', () => {
       () => Response.json(slackReviewsUnavailable('slack_auth_failed')),
       () => Response.json(withText({ state: 'shown', truncated: false, value: 'token xoxb-1234567890-abcdefghijkl' })),
       () => Response.json({ ...busyBotReviews(NOW), channel_id: 'C0SECRET' }),
+      () => Response.json({ error: { code: 'bot_reviews_invalid', message: 'refused', next_action: 'retry' } }, { status: 503 }),
       () => Response.json({ error: { code: 'invalid_request', message: 'refused', next_action: 'retry' } }, { status: 400 }),
       () => { throw new TypeError('connection refused'); },
     ];
@@ -379,7 +380,7 @@ describe('Dot review reader', () => {
       const results: BotReviewsRead[] = [];
       for (const _ of answers) results.push(await fetchBotReviews(new AbortController().signal));
       expect(results.map(result => result.state === 'ok' ? result.snapshot.reason ?? 'current' : result.reason)).toEqual([
-        'current', 'slack_auth_failed', 'bot_reviews_invalid', 'bot_reviews_invalid', 'unreachable', 'unreachable',
+        'current', 'slack_auth_failed', 'bot_reviews_invalid', 'bot_reviews_invalid', 'bot_reviews_invalid', 'unreachable', 'unreachable',
       ]);
       expect(new Set(requests)).toEqual(new Set(['GET /api/v1/bot-reviews']));
     } finally { globalThis.fetch = original; }
