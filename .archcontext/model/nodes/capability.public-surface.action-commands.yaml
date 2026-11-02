@@ -29,6 +29,7 @@ source:
               path: "src/cli/commands/init.ts"
               symbol: "loadSkillSurfaceCatalog"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

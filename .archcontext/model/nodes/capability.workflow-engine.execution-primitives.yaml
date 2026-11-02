@@ -62,6 +62,7 @@ source:
               path: "src/effects/locking/exclusive-directory-lock.ts"
               symbol: "acquireExclusiveDirectoryLock"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

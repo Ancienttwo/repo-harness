@@ -32,6 +32,46 @@ function sourceHash(root: string): string {
     .digest('hex');
 }
 
+function capabilityNode(name: string, include: readonly string[], extensions: readonly string[]): string {
+  return [
+    'schemaVersion: archcontext.node/v2',
+    `id: capability.fixture.${name}`,
+    'kind: capability',
+    `name: ${name}`,
+    'status: active',
+    'layer: core',
+    `summary: ${name} fixture capability`,
+    'responsibilities:',
+    `  - Own the ${name} fixture files`,
+    'source:',
+    '  include:',
+    ...include.map((path) => `    - "${path}"`),
+    'extensions:',
+    '  contractFiles:',
+    '    agents: AGENTS.md',
+    '    claude: CLAUDE.md',
+    '  lspProfile: typescript-lsp',
+    '  verification: []',
+    ...extensions.map((line) => `  ${line}`),
+    '',
+  ].join('\n');
+}
+
+function writeNode(root: string, id: string, content: string): void {
+  write(root, `.archcontext/model/nodes/${id}.yaml`, content);
+}
+
+/** One core capability owns the layer roots; tests add plugin and composition nodes. */
+function writeTierModel(root: string): void {
+  write(root, '.archcontext/manifest.yaml', readFileSync(join(ROOT, '.archcontext/manifest.yaml'), 'utf8'));
+  write(root, 'AGENTS.md', '# fixture\n');
+  write(root, 'CLAUDE.md', '# fixture\n');
+  writeNode(root, 'capability.fixture.core', capabilityNode('core', ['src/core/**', 'src/cli/**', 'src/effects/**', 'scripts/**'], ['harnessTier: core']));
+  // The native model export reads a Git worktree.
+  spawnSync('git', ['init', '-q'], { cwd: root });
+  spawnSync('git', ['-c', 'user.name=Fixture', '-c', 'user.email=fixture@example.com', 'commit', '-q', '--allow-empty', '-m', 'fixture'], { cwd: root });
+}
+
 function createFixture(): string {
   const root = mkdtempSync(join(tmpdir(), 'repo-harness-state-boundaries-'));
   FIXTURES.add(root);
@@ -70,6 +110,7 @@ function createFixture(): string {
   const projectionPath = join(root, 'assets/templates/helpers/capability-resolver.ts');
   mkdirSync(dirname(projectionPath), { recursive: true });
   cpSync(join(ROOT, 'assets/templates/helpers/capability-resolver.ts'), projectionPath);
+  writeTierModel(root);
   return root;
 }
 
@@ -491,6 +532,73 @@ describe('state architecture boundary checker', () => {
     });
     expect(safe.result.ok).toBe(true);
     expect(() => readFileSync(marker, 'utf8')).toThrow();
+  });
+
+  test('rejects core imports of plugin and composition files and names the plugin contract', async () => {
+    const { result } = await checkWith((root) => {
+      writeNode(root, 'capability.fixture.console', capabilityNode('console', ['src/console/**'], ['harnessTier: plugin', 'harnessContract: Surface']));
+      writeNode(root, 'component.fixture.root', [
+        'schemaVersion: archcontext.node/v2',
+        'id: component.fixture.root',
+        'kind: component',
+        'name: Composition Root',
+        'status: active',
+        'parent: capability.fixture.core',
+        'layer: cli',
+        'summary: Registers every command module.',
+        'responsibilities:',
+        '  - Register every command module.',
+        'source:',
+        '  include:',
+        '    - "src/app/root.ts"',
+        'extensions:',
+        '  harnessTier: composition',
+        '',
+      ].join('\n'));
+      write(root, 'src/core/state/tier-base.ts', 'export const base = 1;\n');
+      write(root, 'src/console/view.ts', "import { base } from '../core/state/tier-base';\nexport const view = base;\n");
+      write(root, 'src/app/root.ts', "import { view } from '../console/view';\nimport { base } from '../core/state/tier-base';\nexport const registered = [view, base];\n");
+      write(root, 'src/core/state/uses-plugin.ts', "import { view } from '../../console/view';\nexport const used = view;\n");
+      write(root, 'src/core/state/uses-root.ts', "import { registered } from '../../app/root';\nexport const used = registered;\n");
+    });
+    expect(result.violations.map((item) => `${item.code} ${item.file}:${item.line}`)).toEqual([
+      'CORE_IMPORTS_PLUGIN src/core/state/uses-plugin.ts:1',
+      'CORE_IMPORTS_COMPOSITION src/core/state/uses-root.ts:1',
+    ]);
+    expect(messages(result, 'CORE_IMPORTS_PLUGIN')).toEqual([
+      'core imports src/console/view.ts (plugin capability.fixture.console) through ../../console/view; '
+        + 'depend on the core Surface contract, or move or re-own the code',
+    ]);
+  });
+
+  test('fails closed on an unowned or ambiguous endpoint, a missing or unknown tier, a plugin without a contract and an unreadable model', async () => {
+    const { result } = await checkWith((root) => {
+      writeNode(root, 'capability.fixture.untiered', capabilityNode('untiered', ['src/untiered/**'], []));
+      writeNode(root, 'capability.fixture.unknown', capabilityNode('unknown', ['src/unknown/**', 'src/shared/pair.ts'], ['harnessTier: plugins']));
+      writeNode(root, 'capability.fixture.uncontracted', capabilityNode('uncontracted', ['src/uncontracted/**', 'src/shared/pair.ts'], ['harnessTier: plugin']));
+      write(root, 'src/orphan/helper.ts', 'export const helper = 1;\n');
+      write(root, 'src/shared/pair.ts', 'export const pair = 1;\n');
+      write(root, 'src/untiered/a.ts', 'export const a = 1;\n');
+      write(root, 'src/core/state/uses-unknown.ts', [
+        "import { helper } from '../../orphan/helper';",
+        "import { pair } from '../../shared/pair';",
+        "import { a } from '../../untiered/a';",
+        'export const used = [helper, pair, a];',
+        '',
+      ].join('\n'));
+    });
+    expect(result.violations.map((item) => `${item.code} ${item.file}`)).toEqual([
+      'HARNESS_CONTRACT_INVALID .archcontext/model/nodes/capability.fixture.uncontracted.yaml',
+      'HARNESS_TIER_INVALID .archcontext/model/nodes/capability.fixture.unknown.yaml',
+      'HARNESS_TIER_MISSING .archcontext/model/nodes/capability.fixture.untiered.yaml',
+      'HARNESS_TIER_OWNER_MISSING src/orphan/helper.ts',
+      'HARNESS_TIER_OWNER_AMBIGUOUS src/shared/pair.ts',
+    ]);
+
+    const unreadable = await checkWith((root) => {
+      writeNode(root, 'capability.fixture.broken', 'schemaVersion: archcontext.node/v2\nid: capability.fixture.broken\n');
+    });
+    expect(codes(unreadable.result)).toEqual(['HARNESS_TIER_AUTHORITY_UNAVAILABLE']);
   });
 
   test('fails closed on TypeScript syntax errors and missing architecture roots', async () => {

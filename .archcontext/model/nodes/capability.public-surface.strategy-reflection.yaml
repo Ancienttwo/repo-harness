@@ -29,6 +29,8 @@ source:
               path: src/effects/strategy/context.ts
               symbol: validateStrategyRequest
 extensions:
+  harnessTier: "plugin"
+  harnessContract: "Surface"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"

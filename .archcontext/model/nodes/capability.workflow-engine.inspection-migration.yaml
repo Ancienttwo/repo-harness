@@ -33,6 +33,7 @@ source:
               path: "scripts/inspect-project-state.ts"
               symbol: "hasCustomClaudeHooks"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "scripts/AGENTS.md"
     claude: "scripts/CLAUDE.md"

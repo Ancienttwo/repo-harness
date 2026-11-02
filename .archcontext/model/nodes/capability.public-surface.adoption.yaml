@@ -20,6 +20,7 @@ source:
               path: "src/effects/fs-transaction.ts"
               symbol: "applyAdoptionPlan"
 extensions:
+  harnessTier: "core"
   contractFiles:
     agents: "AGENTS.md"
     claude: "CLAUDE.md"
