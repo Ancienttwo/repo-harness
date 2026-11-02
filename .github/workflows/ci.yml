@@ -113,6 +113,8 @@ jobs:
           bun-version: 1.4.3
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
+      - name: Install pinned herdr-core runtime
+        uses: ./.github/actions/install-pinned-herdr-core
       - name: Run native OAR acceptance tests
         shell: bash
         env:
@@ -172,6 +174,8 @@ jobs:
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
+      - name: Install pinned herdr-core runtime
+        uses: ./.github/actions/install-pinned-herdr-core
       - run: bash scripts/check-ci.sh affected
         env:
           CI_SHARD: ${{ matrix.shard }}/3
@@ -324,6 +328,8 @@ jobs:
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
       - name: Install pinned Herdr runtime
         uses: ./.github/actions/install-pinned-herdr
+      - name: Install pinned herdr-core runtime
+        uses: ./.github/actions/install-pinned-herdr-core
       - run: bash scripts/check-ci.sh functional
       - uses: actions/upload-artifact@v4
         if: ${{ !cancelled() }}
