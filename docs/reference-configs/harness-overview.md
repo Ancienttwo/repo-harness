@@ -64,7 +64,8 @@ context is valid and records `model_relation` in the receipt.
 - Review: an acceptor returns one `AcceptanceReviewResult`. The session
   that runs the round publishes it with
   `repo-harness review publish --pr <n> --receipt <path>`. The merge
-  executor refuses an unresolved review thread.
+  executor refuses an unresolved review thread that a person started. A
+  thread that a review bot (a GitHub App account) started is advisory.
 - Merge: `repo-harness publication merge` runs only when
   `publication.acceptance_merge` is `on` on the PR base. Otherwise the
   owner merges.
@@ -78,7 +79,8 @@ context is valid and records `model_relation` in the receipt.
 ## Boundaries
 
 - Main merge requires current-task authorization, passing checks on the
-  exact head, no unresolved review threads and a current base.
+  exact head, no unresolved review threads that a person started and a
+  current base. Review bot threads are advisory.
 - Delete automatically only merged, clean, unowned worktrees and branches.
   Ask the user for every other deletion.
 - Credentials, permissions, sandbox grants and confirmation bypass need

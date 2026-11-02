@@ -1051,7 +1051,7 @@ test('review publish turns a P1 receipt into one unresolved thread that merge re
           number: PR_NUMBER, headRefOid: PUBLISH_HEAD, baseRefOid: PUBLISH_BASE, reviewDecision: null,
           latestOpinionatedReviews: { pageInfo: { hasNextPage: false }, nodes: [] },
           reviewThreads: { pageInfo: { hasNextPage: false },
-            nodes: Array.from({ length: result.threads }, () => ({ isResolved: false })) },
+            nodes: Array.from({ length: result.threads }, () => ({ isResolved: false, comments: { nodes: [] } })) },
         } } } }) };
       }
       return { status: 1, stdout: '', stderr: 'unexpected readiness api call: ' + args.join(' ') };
