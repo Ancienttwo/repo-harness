@@ -1,0 +1,34 @@
+name: Install pinned herdr-core
+description: Install the checksum-verified hc CI runtime from the repository policy.
+runs:
+  using: composite
+  steps:
+    - shell: bash
+      run: |
+        set -euo pipefail
+        pin='.ai/harness/policy.json'
+        version="$(jq -er '.external_tooling.herdr_core.min_version' "$pin")"
+        case "$(uname -s)-$(uname -m)" in
+          Linux-x86_64) asset='linux-x86_64' ;;
+          Darwin-arm64) asset='macos-aarch64' ;;
+          Darwin-x86_64) asset='macos-x86_64' ;;
+          *) echo 'Unsupported herdr-core CI platform' >&2; exit 1 ;;
+        esac
+        url="$(jq -er --arg asset "$asset" '.external_tooling.herdr_core.release_assets[$asset].url' "$pin")"
+        sha256="$(jq -er --arg asset "$asset" '.external_tooling.herdr_core.release_assets[$asset].sha256' "$pin")"
+        download="$RUNNER_TEMP/herdr-core-download.tar.gz"
+        curl --fail --location --retry 3 "$url" --output "$download"
+        if [[ "$asset" == linux-* ]]; then
+          echo "$sha256  $download" | sha256sum --check
+        else
+          echo "$sha256  $download" | shasum -a 256 --check
+        fi
+        extract="$RUNNER_TEMP/herdr-core-extract"
+        mkdir -p "$extract"
+        tar -xzf "$download" -C "$extract" herdr-core
+        bin="$RUNNER_TEMP/herdr-core-bin"
+        mkdir -p "$bin"
+        install -m 755 "$extract/herdr-core" "$bin/hc"
+        "$bin/hc" --version
+        test "$("$bin/hc" --version)" = "hc $version"
+        echo "$bin" >> "$GITHUB_PATH"

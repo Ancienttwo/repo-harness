@@ -725,7 +725,8 @@ describe('single affected verification and daily fallback', () => {
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([
-      'actions/checkout@v4', 'actions/setup-node@v4', 'oven-sh/setup-bun@v2', 'Install pinned Herdr runtime', 'Run native OAR acceptance tests',
+      'actions/checkout@v4', 'actions/setup-node@v4', 'oven-sh/setup-bun@v2', 'Install pinned Herdr runtime',
+      'Install pinned herdr-core runtime', 'Run native OAR acceptance tests',
     ]);
   });
 
