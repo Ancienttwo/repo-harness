@@ -13,7 +13,7 @@ export interface LeftoverItem {
   readonly path: string;
   readonly retiredBy: string;
   readonly ownership: 'owned-clean' | 'owned-modified' | 'unowned';
-  readonly proof: 'manifest' | 'owner-marker' | 'historical-fingerprint' | 'managed-hook' | null;
+  readonly proof: 'manifest' | 'owner-marker' | 'historical-fingerprint' | 'managed-hook' | 'state-root-retired-path' | null;
   readonly action: 'remove' | 'strip-entry' | 'refresh' | 'report';
   readonly sourcePath?: string;
   readonly expectedSourceHash?: string;
@@ -443,22 +443,27 @@ function scanStateArtifacts(options: LegacyInventoryOptions, manifest: readonly 
   const packagePath = join(options.packageRoot, 'package.json');
   const pkg = isLegacyPathSafe(options.packageRoot, packagePath, false) ? readJson(packagePath) : undefined;
   const currentVersion = record(pkg) && typeof pkg.version === 'string' ? pkg.version : '';
-  const report = (path: string, removableByVersion: boolean, reason: string): void => {
+  // Only repo-harness writes a retired path, and the path predates the install manifest, so its location proves ownership.
+  const report = (path: string, removableByVersion: boolean, reason: string, retiredPath = false): void => {
     if (!isLegacyPathSafe(options.home, path)) return;
     const snapshot = legacyPathSnapshot(path);
     if (!snapshot) return;
-    const ownership = classify(path, snapshot, { id: 'legacy-state-artifacts' }, '', manifest);
+    const ownership: Pick<LeftoverItem, 'ownership' | 'proof' | 'reason'> = !retiredPath
+      ? classify(path, snapshot, { id: 'legacy-state-artifacts' }, '', manifest)
+      : snapshot.kind === 'file'
+        ? { ownership: 'owned-clean', proof: 'state-root-retired-path' }
+        : { ownership: 'unowned', proof: null, reason: 'Retired state path is not a regular file. Preserve it.' };
     const remove = options.includeStateArtifacts === true && removableByVersion && ownership.ownership === 'owned-clean';
     add({ location: 'global', surface: snapshot.kind, path, retiredBy: 'legacy-state-artifacts', ...ownership,
       action: remove ? 'remove' : 'report', stateArtifact: true,
       expectedContentHash: snapshot.contentHash, expectedSymlinkTarget: snapshot.symlinkTarget,
-      reason: remove ? undefined : ownership.ownership === 'owned-clean' && removableByVersion ? 'State artifact cleanup needs --include-state-artifacts.' : reason });
+      reason: remove ? undefined : ownership.ownership === 'owned-clean' && removableByVersion ? 'State artifact cleanup needs --include-state-artifacts.' : retiredPath ? ownership.reason ?? reason : reason });
   };
   const directories = (path: string): readonly string[] => isLegacyPathSafe(options.home, path, false) && stat(path)?.isDirectory() ? readdirSync(path).sort() : [];
   const gates = join(stateRoot, 'gates');
-  for (const name of directories(gates)) report(join(gates, name, 'merge-gate.latest.json'), true, 'Retired merge-gate state. No current ownership proof grants removal.');
+  for (const name of directories(gates)) report(join(gates, name, 'merge-gate.latest.json'), true, 'Retired merge-gate state.', true);
   const packages = join(stateRoot, 'packages');
-  for (const name of directories(packages)) if (/^repo-harness-0\.10\.0-.+\.tgz$/.test(name)) report(join(packages, name), versionBefore('0.10.0', currentVersion), 'Old package archive. Preserve it without verified ownership.');
+  for (const name of directories(packages)) if (/^repo-harness-0\.10\.0-.+\.tgz$/.test(name)) report(join(packages, name), versionBefore('0.10.0', currentVersion), 'Old package archive. The current package version is not after 0.10.0.', true);
   const backups = join(stateRoot, 'backups');
   for (const name of directories(backups)) {
     const path = join(backups, name);
