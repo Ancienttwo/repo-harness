@@ -106,6 +106,15 @@ test('owned symlink removal never follows the skill source',()=>fixture((home,en
  profile(home,[{...ownedFile(path,''),type:'symlink',content_hash:null,managed_marker:null,symlink_target:join(home,'source')}]);
  expect(runUserUninstall({target:'both',env}).status).toBe('complete');expect(existsSync(path)).toBe(false);expect(readFileSync(join(home,'source/SKILL.md'),'utf8')).toBe('keep');
 }));
+test('staging skill removal edits the provider lock under XDG_STATE_HOME',()=>fixture((home,env)=>{
+ put(home,'source/SKILL.md','keep');mkdirSync(join(home,'.agents/skills'),{recursive:true});const path=join(home,'.agents/skills/think');symlinkSync(join(home,'source'),path);
+ profile(home,[{...ownedFile(path,''),type:'symlink',content_hash:null,managed_marker:null,symlink_target:join(home,'source')}]);
+ const lock=JSON.stringify({version:3,skills:{think:{source:'tw93/Waza'},'user-skill':{source:'user/repo'}}});
+ put(home,'.local/state/skills/.skill-lock.json',lock);put(home,'.agents/.skill-lock.json',lock);
+ expect(runUserUninstall({target:'both',env:{...env,XDG_STATE_HOME:join(home,'.local/state')}}).status).toBe('complete');
+ expect(JSON.parse(readFileSync(join(home,'.local/state/skills/.skill-lock.json'),'utf8')).skills).toEqual({'user-skill':{source:'user/repo'}});
+ expect(readFileSync(join(home,'.agents/.skill-lock.json'),'utf8')).toBe(lock);
+}));
 test('managed context block cleanup keeps user prose',()=>fixture((home,env)=>{
  put(home,'.codex/AGENTS.md','user-before\n<!-- BEGIN: repo-harness global-working-rules -->\nmanaged\n<!-- END: repo-harness global-working-rules -->\nuser-after\n');
  expect(runUserUninstall({target:'codex',env}).status).toBe('complete');expect(readFileSync(join(home,'.codex/AGENTS.md'),'utf8')).toBe('user-before\n\nuser-after\n');

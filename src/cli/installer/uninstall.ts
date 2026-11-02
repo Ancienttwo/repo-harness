@@ -4,7 +4,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync,
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { stagedSkillRoot, hostSkillRoot } from '../../effects/host-skill-roots';
+import { stagedSkillRoot, hostSkillRoot, providerSkillLockPath } from '../../effects/host-skill-roots';
 import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { deepEqual } from './shared';
@@ -236,7 +236,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
 
   // Only remove lock entries for staging skills actually removed in this operation.
   const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === stagedSkillRoot(home)).map((surface) => surface.path.split('/').at(-1)!);
-  const lockPath = join(home, '.agents/.skill-lock.json');
+  const lockPath = providerSkillLockPath(home, env);
   if (staging.length && existsSync(lockPath)) {
     try {
       assertConfigurationPath(lockPath, home);

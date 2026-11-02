@@ -20,6 +20,16 @@ export function stagedSkillRoot(home: string): string {
   return join(home, '.agents', 'skills');
 }
 
+/**
+ * The Skills CLI global lock, by the provider's own rule (skills 1.7.4
+ * getSkillLockPath): a non-empty XDG_STATE_HOME moves the lock out of
+ * ~/.agents. Install snapshot, rollback, profile switch and uninstall use
+ * this one path.
+ */
+export function providerSkillLockPath(home: string, env: Readonly<Record<string, string | undefined>>): string {
+  return env.XDG_STATE_HOME ? join(env.XDG_STATE_HOME, 'skills', '.skill-lock.json') : join(home, '.agents', '.skill-lock.json');
+}
+
 export interface SyncSkillRoots {
   readonly pi: string | null;
   readonly codex: string;
