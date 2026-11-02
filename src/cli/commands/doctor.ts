@@ -486,16 +486,24 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
     if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
     const judgments: SkillProjectionJudgment[] = [];
+    const details: string[] = [];
     for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile, env)) {
       if (target !== 'both' && target !== projection.host) continue;
       const state = skillProjectionState(projection, contract);
       const records = installed?.ownership_manifest.filter(surface => surface.path === projection.destination) ?? [];
+      // The ledger has no install target, so a single-target install leaves the other hosts' paths absent and unowned.
+      if (state === 'missing' && records.length === 0) {
+        details.push(`${projection.destination}: na; not in the install ledger`);
+        continue;
+      }
       const ledgerDrift = records.some(surface => !managedInstallSurfaceIsCurrent(surface, env));
-      judgments.push({
+      const judgment: SkillProjectionJudgment = {
         row: { host: projection.host, name: projection.name, state, ok: state.startsWith('ok ') && !ledgerDrift },
         projection,
         ledgerDrift,
-      });
+      };
+      judgments.push(judgment);
+      details.push(formatSkillProjectionJudgment(judgment, profile));
     }
     const dshRows: SkillProjectionRow[] = [];
     const dshHome = env.DSH_HOME?.trim() || path.join(home, '.dsh');
@@ -506,7 +514,6 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       }
     }
     let warning = judgments.some(judgment => !judgment.row.ok) || dshRows.some(row => !row.ok);
-    const details = judgments.map(judgment => formatSkillProjectionJudgment(judgment, profile));
     if (installed) {
       const drift = installedProfileStatus(installed, env).drift;
       if (drift.status === 'drift') warning = true;
