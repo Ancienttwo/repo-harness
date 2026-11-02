@@ -2,12 +2,13 @@ import { afterEach, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
-import { HerdrCoreError, hcEvents, hcGet, hcList, hcRun, herdrAppDo, type HcStreamItem } from '../../src/effects/terminal/herdr-core';
+import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcList, hcRm, hcRun, herdrAppDo, type HcLabels, type HcStreamItem }
+  from '../../src/effects/terminal/herdr-core';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
-const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'rh.role': 'worker' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2, pid: 9 };
+const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2, pid: 9 };
 // One script stands in for both programs; FAKE_MODE picks the outcome and argv is logged per line.
 const FAKE = `#!/bin/sh
 for arg in "$@"; do printf '%s\\n' "$arg" >> "$FAKE_LOG"; done
@@ -38,18 +39,18 @@ function failure(call: () => unknown): HerdrCoreError {
 
 test('success: labels go in on run and list, and come back out of get', () => {
   const run = fake('ok', { address: 't4', agent: 'claude', cwd: '/w', name: 'rh-worker', state: 'live', turn: 0 });
-  expect(hcRun({ argv: ['claude', '--resume'], labels: { 'rh.role': 'worker', 'rh.task': '1475' }, name: 'rh-worker', cwd: '/w' }, { env: run.env }))
+  expect(hcRun({ argv: ['claude', '--resume'], labels: { ...RH_NOTIFY_RELAY.labels, [RH_LABEL.task]: '1475' }, name: RH_NOTIFY_RELAY.name, cwd: '/w', noParent: true }, { env: run.env }))
     .toEqual({ address: 't4', name: 'rh-worker', state: 'live' });
-  expect(run.argv()).toEqual(['run', '--json', '--bg', '--label', 'rh.role=worker', '--label', 'rh.task=1475',
-    '--name', 'rh-worker', '--cwd', '/w', '--', 'claude', '--resume']);
+  expect(run.argv()).toEqual(['run', '--json', '--bg', '--label', 'repo-harness.role=notify-relay', '--label', 'repo-harness.task=1475',
+    '--name', 'rh-notify-relay', '--cwd', '/w', '--no-parent', '--', 'claude', '--resume']);
 
   const list = fake('ok', { hidden_finished: 0, terminals: [{ address: 't4', agent: 'claude', name: null, state: 'live', turn: 0 }] });
-  expect(hcList({ 'rh.role': 'worker' }, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
-  expect(list.argv()).toEqual(['ls', '--json', '--label', 'rh.role=worker']);
+  expect(hcList(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
+  expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on']);
 
   const get = fake('ok', TERMINAL);
   expect(hcGet('t4', { env: get.env })).toEqual({ address: 't4', name: 'rh-worker', state: 'live',
-    labels: { 'rh.role': 'worker' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2 });
+    labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness' }, turn: 2 });
   expect(get.argv()).toEqual(['get', '--json', '--', 't4']);
 });
 
@@ -75,11 +76,14 @@ test('hc missing: the error names the missing program', () => {
   expect(failure(() => herdrAppDo('pane.close', { pane: 'p1' }, { env: { PATH: empty } })).program).toBe('herdr-app');
 });
 
-test('refusals happen before any spawn: nested runtimes and empty or malformed labels', () => {
+test('refusals happen before any spawn: nested runtimes and labels outside the repo-harness set', () => {
   const run = fake('ok', TERMINAL);
   expect(failure(() => hcGet('t4', { env: { ...run.env, HC_TERMINAL_ID: 't1', HERDR_ENV: '1' } })).reason).toBe('nested');
-  expect(failure(() => hcList({}, { env: run.env })).reason).toBe('invalid_labels');
-  expect(failure(() => hcList({ 'Bad Key': 'x' }, { env: run.env })).reason).toBe('invalid_labels');
+  const refused: HcLabels[] = [{}, { 'herdr.space': 's1' }, { 'Bad Key': 'x', ...RH_NOTIFY_LABELS }, { 'repo-harness.owner': 'x' },
+    { [RH_LABEL.role]: 'worker' }, { [RH_LABEL.notify]: 'off' }];
+  for (const labels of refused) {
+    expect(failure(() => hcList(labels, { env: run.env })).reason).toBe('invalid_labels');
+  }
   expect(run.argv()).toEqual([]);
 });
 
@@ -98,13 +102,14 @@ test('events: a labeled snapshot then events; close resolves and a bad line reje
   const items: HcStreamItem[] = [];
   let ready!: () => void;
   const received = new Promise<void>(resolve => { ready = resolve; });
-  const events = hcEvents({ 'rh.role': 'worker' }, item => { items.push(item); if (items.length === 2) ready(); }, { env: stream.env });
+  const events = hcEvents(RH_NOTIFY_LABELS, item => { items.push(item); if (items.length === 2) ready(); }, { env: stream.env });
   await received;
   events.close();
   await events.done;
-  expect(items.map(item => item.type === 'snapshot' ? item.terminals[0]!.labels : [item.event, item.data])).toEqual([{ 'rh.role': 'worker' }, ['turn', { state: 'idle', turn: 3 }]]);
-  expect(stream.argv()).toEqual(['events', '--json', '--label', 'rh.role=worker']);
+  expect(items.map(item => item.type === 'snapshot' ? item.terminals[0]!.labels : [item.event, item.data]))
+    .toEqual([{ 'repo-harness.role': 'notify-relay' }, ['turn', { state: 'idle', turn: 3 }]]);
+  expect(stream.argv()).toEqual(['events', '--json', '--label', 'repo-harness.notify=on']);
 
-  const bad = hcEvents({ 'rh.role': 'worker' }, () => {}, { env: fake('stream', 'not json').env });
+  const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', 'not json').env });
   expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');
 });

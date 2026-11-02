@@ -45,6 +45,24 @@ export interface HcEventStream { close(): void; readonly done: Promise<void> }
 /** The Herdr.app commands that place panes; every other path goes through hc. */
 export type HerdrAppPlacement = 'tab.new' | 'pane.split' | 'pane.close';
 
+/** The repo-harness label keys; the only source for every surface that writes or filters hc labels. */
+export const RH_LABEL = {
+  role: 'repo-harness.role',
+  task: 'repo-harness.task',
+  request: 'repo-harness.request',
+  repository: 'repo-harness.repository',
+  harness: 'repo-harness.harness',
+  notify: 'repo-harness.notify',
+} as const;
+/** `repo-harness.role` values. A surface that needs a new role adds it here. */
+export const RH_ROLE = { notifyRelay: 'notify-relay' } as const;
+/** Terminals that carry this pair send blocked and done notices through the relay. */
+export const RH_NOTIFY_LABELS: HcLabels = { [RH_LABEL.notify]: 'on' };
+export const RH_NOTIFY_RELAY = { name: 'rh-notify-relay', labels: { [RH_LABEL.role]: RH_ROLE.notifyRelay } } as const;
+
+const RH_PREFIX = 'repo-harness.';
+const RH_KEYS: ReadonlySet<string> = new Set(Object.values(RH_LABEL));
+const RH_ROLES: ReadonlySet<string> = new Set(Object.values(RH_ROLE));
 const LABEL_KEY = /^[a-z][a-z0-9._-]{0,63}$/;
 const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
 
@@ -55,13 +73,16 @@ function environment(program: HerdrCoreProgram, options: HerdrCoreOptions): Node
   return env;
 }
 
+/** Every labeled write and filter carries a repo-harness key, so repo-harness never touches unlabeled terminals. */
 function labelArgs(labels: HcLabels): string[] {
   const entries = Object.entries(labels);
-  if (!entries.length) throw new HerdrCoreError('hc', 'invalid_labels', undefined, undefined, 'at least one label is required');
+  const invalid = (detail: string) => new HerdrCoreError('hc', 'invalid_labels', undefined, undefined, detail);
+  if (!entries.some(([key]) => key.startsWith(RH_PREFIX))) throw invalid('at least one repo-harness label is required');
   for (const [key, value] of entries) {
-    if (!LABEL_KEY.test(key) || typeof value !== 'string' || !LABEL_VALUE.test(value)) {
-      throw new HerdrCoreError('hc', 'invalid_labels', undefined, undefined, `invalid label ${JSON.stringify(key)}`);
-    }
+    if (!LABEL_KEY.test(key) || typeof value !== 'string' || !LABEL_VALUE.test(value)) throw invalid(`invalid label ${JSON.stringify(key)}`);
+    if (key.startsWith(RH_PREFIX) && !RH_KEYS.has(key)) throw invalid(`unknown repo-harness label ${JSON.stringify(key)}`);
+    if (key === RH_LABEL.role && !RH_ROLES.has(value)) throw invalid(`unknown repo-harness role ${JSON.stringify(value)}`);
+    if (key === RH_LABEL.notify && value !== 'on') throw invalid(`${RH_LABEL.notify} must be on`);
   }
   return entries.flatMap(([key, value]) => ['--label', `${key}=${value}`]);
 }
@@ -136,12 +157,17 @@ function terminal(value: unknown): HcTerminal {
   return { ...summary, labels: labels as HcLabels, status: status as HcStatus | null, turn: record.turn as number };
 }
 
-/** `hc run --bg`: start argv in a new terminal that carries `labels`. */
-export function hcRun(input: { readonly argv: readonly [string, ...string[]]; readonly labels: HcLabels; readonly name?: string; readonly cwd?: string },
-  options: HerdrCoreOptions = {}): HcTerminalSummary {
+/**
+ * `hc run --bg`: start argv in a new terminal that carries `labels`. By default the caller's terminal is its
+ * parent and the child ends with it; `noParent` starts it without a parent, so it outlives the caller.
+ */
+export function hcRun(input: {
+  readonly argv: readonly [string, ...string[]]; readonly labels: HcLabels; readonly name?: string; readonly cwd?: string; readonly noParent?: boolean;
+}, options: HerdrCoreOptions = {}): HcTerminalSummary {
   const args = ['--bg', ...labelArgs(input.labels)];
   if (input.name !== undefined) args.push('--name', input.name);
   if (input.cwd !== undefined) args.push('--cwd', input.cwd);
+  if (input.noParent) args.push('--no-parent');
   return terminalSummary(hcJson(['run', ...args, '--', ...input.argv], options));
 }
 
@@ -160,6 +186,18 @@ export function hcGet(address: string, options: HerdrCoreOptions = {}): HcTermin
 export function hcLabel(address: string, labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminal {
   const pairs = labelArgs(labels).filter((_, index) => index % 2 === 1);
   return terminal(hcJson(['label', '--', address, ...pairs], options));
+}
+
+/** `hc kill`: end the terminal's program (hangup, then escalate). Returns the terminal as hc observed it. */
+export function hcKill(address: string, options: HerdrCoreOptions = {}): HcTerminal {
+  return terminal(hcJson(['kill', '--', address], options));
+}
+
+/** `hc rm`: remove a finished terminal. hc refuses a live one (kind `live`). Returns the removed address. */
+export function hcRm(address: string, options: HerdrCoreOptions = {}): string {
+  const result = hcJson(['rm', '--', address], options);
+  if (typeof result.removed !== 'string') throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, 'rm has no removed address');
+  return result.removed;
 }
 
 function streamItem(line: string): HcStreamItem {
