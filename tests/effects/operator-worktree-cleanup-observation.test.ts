@@ -104,7 +104,8 @@ test('identity mismatch, nested repositories and bounded scans fail closed', () 
 });
 
 // POSIX path bytes need not be UTF-8. A replacement character must never alias an unread file.
-test.skipIf(process.platform === 'win32')('invalid filename bytes are refused even beside their UTF-8 replacement spelling', () => {
+// Skipped on darwin: APFS refuses a non-UTF-8 file name with EILSEQ, so this input cannot exist there.
+test.skipIf(process.platform === 'win32' || process.platform === 'darwin')('invalid filename bytes are refused even beside their UTF-8 replacement spelling', () => {
   const f = fixture();
   try {
     writeFileSync(join(f.tree, '\ufffd'), 'valid spelling');

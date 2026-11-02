@@ -22,7 +22,8 @@ let library: Native | undefined;
 function native(): Native {
   if (library) return library;
   if (!['linux', 'darwin'].includes(process.platform) || !['x64', 'arm64'].includes(process.arch)) throw new Error('cleanup file access unsupported');
-  const readdir = process.platform === 'darwin' ? 'readdir$INODE64' : 'readdir';
+  // Only darwin x64 exports the 64-bit-inode variant under a suffix; darwin arm64 `readdir` is already that layout.
+  const readdir = process.platform === 'darwin' && process.arch === 'x64' ? 'readdir$INODE64' : 'readdir';
   const errno = process.platform === 'darwin' ? '__error' : '__errno_location';
   const loaded = dlopen(process.platform === 'darwin' ? '/usr/lib/libSystem.B.dylib' : 'libc.so.6', {
     openat: { args: ['i32', 'ptr', 'i32', 'u32'], returns: 'i32' },
