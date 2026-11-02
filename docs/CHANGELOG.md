@@ -14,8 +14,9 @@ All notable changes to this skill are documented here.
   copy of each changed file first. (#1462)
 - `repo-harness install` and `uninstall` refuse a relative `XDG_STATE_HOME`
   with `XDG_STATE_HOME must be an absolute path: <value>`, before any write.
-  Set `XDG_STATE_HOME` to an absolute path or unset it, then run the command
-  again. (#1465)
+  `repo-harness update` also refuses it, after it takes the runtime lock
+  (#1502). Set `XDG_STATE_HOME` to an absolute path or unset it, then run
+  the command again. (#1465)
 
 ### Added
 
@@ -32,8 +33,9 @@ All notable changes to this skill are documented here.
   the codex and pi skill paths that the install ledger does not own. (#1464)
 - Operator worktree cleanup observation works on Apple arm64. Before, each
   observation failed with `cleanup_observation_unavailable`. (#1468)
-- The CI report labels a provider 5xx on the initial run read with
-  `attention_owner: external`, so no repair issue opens. (#1495)
+- For a provider 5xx on the initial run read, the CI report records
+  `attention_owner: external` in `pending.json`. The run opens no repair
+  issue. (#1495)
 - Install and uninstall snapshot and edit the Skills CLI lock at
   `$XDG_STATE_HOME/skills/.skill-lock.json` when `XDG_STATE_HOME` is set.
   Before, a failed install left lock entries for removed skills. (#1465)
