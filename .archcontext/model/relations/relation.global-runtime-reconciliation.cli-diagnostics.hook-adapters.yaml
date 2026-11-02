@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.hook-adapters
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: capability.runtime-harness.hook-adapters
+intent: "Read the install profile, skill projections, host targets, Pi host probes, hook routes and status for the doctor and init-hook reports"

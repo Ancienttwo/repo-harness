@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.primary-cli
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: component.global-runtime-reconciliation.primary-cli
+intent: "Plan the upgrade for the init-hook checklist"

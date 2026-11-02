@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.skill-surface-catalog
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: component.action-commands.skill-surface-catalog
+intent: "Parse the skill surface catalog to check the projected host skills"
