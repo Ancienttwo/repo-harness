@@ -7,6 +7,10 @@ the board are in `board.md`. The round record is in `orchestrator.md`
 
 ## 1. Who accepts
 
+A Low PR that meets the Low accept-seat skip takes no round and no
+acceptance record (`docs/reference-configs/agentic-development-flow.md`,
+Review by risk).
+
 The gatekeeper is the default acceptor (D6). It reviews the diff and
 returns a verdict and findings. It has no network, so the session that
 runs the round publishes the result.

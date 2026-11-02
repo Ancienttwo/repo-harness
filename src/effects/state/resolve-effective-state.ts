@@ -19,7 +19,7 @@ import {
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
 import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../architecture/archcontext-owners';
 import { archcontextResolveFileCache } from '../architecture/archcontext-resolve-cache';
-import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
+import { ArchctxClientError, type ArchctxProviderOptions } from '../architecture/archctx-provider';
 import type {
   CapabilityOwnership,
   EffectiveState,
@@ -353,14 +353,25 @@ function resolveArchcontextPaths(
     return resolution;
   } catch (error) {
     // A process failure is not memoized: the next resolve tries archctx again.
-    return {
-      status: 'unavailable',
-      capabilityIds: [],
-      matches: [],
-      unmappedPaths: [],
-      diagnostics: [{ code: 'ARCHCONTEXT_RESOLVE_FAILED', path: CAPABILITY_NODES_DIR, message: (error as Error).message }],
-    };
+    return { status: 'unavailable', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [archcontextResolveFailure(error)] };
   }
+}
+
+/**
+ * A model rejection never reaches this mapping: archctx answers it with an
+ * error envelope, which the resolve returns as ARCHCONTEXT_MODEL_REJECTED.
+ */
+function archcontextResolveFailure(error: unknown): CapabilityRegistryDiagnostic {
+  const archctxErrorCode = error instanceof ArchctxClientError ? error.code : undefined;
+  if (archctxErrorCode === 'RH_ARCHCTX_TIMEOUT') {
+    return { code: 'ARCHCONTEXT_RESOLVE_TIMEOUT', path: CAPABILITY_NODES_DIR, message: 'archctx resolve timed out; the architecture notice is skipped for this turn' };
+  }
+  return {
+    code: 'ARCHCONTEXT_RESOLVE_FAILED',
+    path: CAPABILITY_NODES_DIR,
+    message: (error as Error).message,
+    ...(archctxErrorCode ? { archctxErrorCode } : {}),
+  };
 }
 
 /** Resolve one union, then keep each subject's owners and path errors separate. */

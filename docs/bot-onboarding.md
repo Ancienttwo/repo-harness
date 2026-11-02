@@ -94,6 +94,11 @@ Every coding / Herdr seat brief must include:
 Incomplete brief = do not seat. The brief's `product=` overrides paths for
 that seat. Other products get their paths from the brief only.
 
+For a PR that meets the Low accept-seat skip in
+[Review by risk](reference-configs/agentic-development-flow.md#review-by-risk),
+tinkabot and Worker-Herdr seat no Codex, Herdr or OAR accept pane and expect
+no acceptance record.
+
 ## Cursor Worker model lanes
 
 Cursor bills internal and external model pools separately. When routing to
