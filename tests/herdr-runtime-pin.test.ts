@@ -77,30 +77,35 @@ describe("herdr runtime pin has one source of truth", () => {
   test("check-agent-tooling.sh carries no hand-coded herdr version floor", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
     expect(script).toContain('".ai/harness/policy.json#external_tooling.herdr"');
-    expect(script).toContain("external_tooling?.herdr?.min_version");
+    expect(script).toContain('".ai/harness/policy.json#external_tooling.herdr_core"');
+    expect(script).toContain("external_tooling?.[key]?.min_version");
+    expect(script).toContain('"herdr", HERDR_PIN_KEY,');
+    expect(script).toContain('"herdr_core", HERDR_CORE_PIN_KEY,');
     const herdrLines = script.split("\n").filter((line) => /herdr/i.test(line));
     expect(herdrLines.length).toBeGreaterThan(0);
+    // The shared pin reader and floor check carry no "herdr" text, so scan their whole bodies.
+    for (const name of ["pinnedMinVersion", "pinnedRuntimeCapability"]) {
+      const start = script.indexOf(`\nfunction ${name}(`);
+      expect(start, name).toBeGreaterThanOrEqual(0);
+      herdrLines.push(...script.slice(start, script.indexOf("\n}\n", start)).split("\n"));
+    }
     for (const line of herdrLines) {
       expect(line).not.toMatch(/\d+\.\d+\.\d+/);
       expect(line).not.toMatch(/minor\s*[<>]=?\s*\d|\[2\]\)\s*[<>]/);
     }
   });
 
-  test("the downstream policy seed projects the same pin", () => {
-    const herdr = readPolicy().external_tooling.herdr;
-    expect((defaultPolicy("minimal-agentic", "en").external_tooling as Record<string, unknown>).herdr).toEqual(herdr);
-    const expected = JSON.stringify(herdr, null, 2)
-      .split("\n")
-      .map((line) => line.trim());
+  test.each(["herdr", "herdr_core"])("the downstream policy seed projects the same %s pin", key => {
+    const pin = readPolicy().external_tooling[key];
+    expect(pin).toBeDefined();
+    expect((defaultPolicy("minimal-agentic", "en").external_tooling as Record<string, unknown>)[key]).toEqual(pin);
     for (const seedPath of SEED_PATHS) {
       const seed = readFileSync(seedPath, "utf8");
-      const start = seed.indexOf('    "herdr": {');
+      const start = seed.indexOf(`    "${key}": {`);
       expect(start, seedPath).toBeGreaterThanOrEqual(0);
-      const block = seed
-        .slice(start, seed.indexOf("\n    }\n", start) + "\n    }".length)
-        .split("\n")
-        .map((line) => line.trim());
-      expect(block.slice(1), seedPath).toEqual(expected.slice(1));
+      // The block ends at the first closing brace at its own indent, with or without a trailing comma.
+      const block = seed.slice(start, start + seed.slice(start).search(/\n    }/) + "\n    }".length);
+      expect(JSON.parse(`{${block}}`), seedPath).toEqual({ [key]: pin });
     }
   });
 

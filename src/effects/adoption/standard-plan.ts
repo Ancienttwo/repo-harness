@@ -293,6 +293,9 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
           }
         }
       },
+      herdr_core: {
+        "min_version": "0.1.16",
+      },
       routing: {
         simple: "waza",
       },
