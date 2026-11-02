@@ -7,7 +7,7 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { Board } from './Board';
-import { fetchBotAccess, useBotAccess, type BotAccessReader } from './bots';
+import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotAccessReader, type BotReviewsReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
 import { SettingsFreshness, SettingsPage } from './SettingsPage';
@@ -121,6 +121,8 @@ export interface OperatorAppProps {
   readonly readArchitectureMap?: ArchitectureMapReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
   readonly readBotAccess?: BotAccessReader;
+  /** The Slack review collector's cached Dot review threads, the Bots page's second read. */
+  readonly readBotReviews?: BotReviewsReader;
   /** The agents section and runtime probe behind the Settings page, and its one write. */
   readonly readAgentsSettings?: AgentsSettingsReader;
   readonly writeAgentsSettings?: AgentsSettingsWriter;
@@ -259,6 +261,7 @@ export function OperatorApp({
   readExecution = fetchExecution,
   readArchitectureMap,
   readBotAccess = fetchBotAccess,
+  readBotReviews = fetchBotReviews,
   readAgentsSettings = fetchAgentsSettings,
   writeAgentsSettings = postAgentsSettings,
   readTests = fetchTestsSnapshot,
@@ -302,6 +305,7 @@ export function OperatorApp({
     if (typeof document !== 'undefined') document.title = documentTitle(attention);
   }, [attention]);
   const botAccess = useBotAccess(readBotAccess, refreshGeneration, workspace === 'bots');
+  const botReviews = useBotReviews(readBotReviews, refreshGeneration, workspace === 'bots');
   const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, workspace === 'settings');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
@@ -504,7 +508,7 @@ export function OperatorApp({
                   onModule={module => openPlace({ workspace: 'architecture', module, item: null })} t={t} />
               </Suspense>}
           </>}
-          {workspace === 'bots' && <BotsPage view={botAccess} now={now} t={t} />}
+          {workspace === 'bots' && <BotsPage view={botAccess} reviews={botReviews} now={now} t={t} />}
           {workspace === 'settings' && <SettingsPage form={agentsSettings} now={now} t={t} />}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>
