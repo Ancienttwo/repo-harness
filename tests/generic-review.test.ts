@@ -16,8 +16,8 @@ import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
-import { taskSessionDirectory, type HerdrEndpoint, type HerdrTaskAgentSpec, type TaskPaneBinding } from '../src/effects/sessions/task-session-record';
-import { observeTaskSessionAdmission } from '../src/effects/sessions/task-session-admission';
+import { taskSessionDirectory, type HerdrEndpoint, type HerdrTaskAgentSpec, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
+import { observeTaskSessionAdmission } from '../src/effects/terminal/task-session-admission';
 import { readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session-io';
 import { ensureSessionDirectory, nextSessionRound } from '../src/effects/terminal/task-session-io';
 import type { ReviewHostSpec, TaskRequest } from '../src/core/review/runner-port';
@@ -783,7 +783,7 @@ for (const example of [
   // A model outside the closed family table cannot prove a difference.
   { author: 'pi' as const, models: ['fixture/unlisted-model'], reviewer: 'magpie/anthropic/claude-opus-5-5', relation: 'unknown' as const },
 ]) darwinTest(`bound author turn models ${example.models.join(', ')} against reviewer ${example.reviewer} give ${example.relation}`, async () => {
-  const { taskBindingSha256 } = await import('../src/effects/sessions/task-session-admission');
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session-admission');
   const f = packetRoundFixture();
   const author = await authorSession(f, example.author, example.models);
   const result = await seamReview(f, 'pi', example.reviewer, AUTHOR_PANE);
@@ -836,7 +836,7 @@ darwinTest('author identity is unknown when the only binding belongs to another 
 }, 90_000);
 
 darwinTest('author models are unknown when one Claude turn has no observed model', async () => {
-  const { taskBindingSha256 } = await import('../src/effects/sessions/task-session-admission');
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session-admission');
   const f = packetRoundFixture();
   const author = await authorSession(f, 'claude', ['anthropic/claude-opus-5-5']);
   // The shared rule: the Claude host writes null for any init model.
@@ -845,7 +845,7 @@ darwinTest('author models are unknown when one Claude turn has no observed model
 }, 90_000);
 
 darwinTest('author models are unknown when one author turn has a protocol-2 observation', async () => {
-  const { taskBindingSha256 } = await import('../src/effects/sessions/task-session-admission');
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session-admission');
   const f = packetRoundFixture();
   const author = await authorSession(f, 'codex', ['gpt-6.1-sol', 'gpt-6.1-sol']);
   // An observation written before the v3 upgrade has no actual_model field.
@@ -856,7 +856,7 @@ darwinTest('author models are unknown when one author turn has a protocol-2 obse
 }, 90_000);
 
 darwinTest('author models are unknown while one author turn is running', async () => {
-  const { taskBindingSha256 } = await import('../src/effects/sessions/task-session-admission');
+  const { taskBindingSha256 } = await import('../src/effects/terminal/task-session-admission');
   const f = packetRoundFixture();
   const author = await authorSession(f, 'codex', ['gpt-6.1-sol']);
   let release!: () => void;

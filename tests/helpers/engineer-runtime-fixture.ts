@@ -5,7 +5,7 @@ import * as herdr from '../../src/effects/terminal/herdr';
 import { seedReviewAdmissionFixture } from './review-admission-fixture';
 import { startTaskAgent } from '../../src/effects/terminal/task-session';
 import { readSessionArtifact } from '../../src/effects/terminal/task-session-io';
-import { taskSessionDirectory, type HerdrTaskAgentSpec, type HerdrTaskBinding } from '../../src/effects/sessions/task-session-record';
+import { taskSessionDirectory, type HerdrTaskAgentSpec, type HerdrTaskBinding } from '../../src/effects/terminal/task-session-record';
 import type { TaskClaimReference } from '../../src/core/review/runner-port';
 import type { TaskSessionAuthority } from '../../src/effects/admission/admission-source';
 import { taskRepository } from '../../src/effects/git/task-repository';

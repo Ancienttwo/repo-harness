@@ -91,7 +91,7 @@ source:
         - name: "commitPrePromptInbox"
           sinks:
             - id: "sink.task-agent-host.inbox-session"
-              path: "src/effects/sessions/task-session-record.ts"
+              path: "src/effects/terminal/task-session-record.ts"
               symbol: "readTaskAgent"
             - id: "sink.task-agent-host.inbox-oar-proof"
               path: "src/effects/terminal/task-runtime-observation.ts"

@@ -23,4 +23,4 @@ source:
     - src/effects/state/canonical-target.ts
     - src/effects/sessions/task-sessions.ts
     - src/effects/sessions/admitted-source.ts
-    - src/effects/sessions/task-session-admission.ts
+    - src/effects/terminal/task-session-admission.ts

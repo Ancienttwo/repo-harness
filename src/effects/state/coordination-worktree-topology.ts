@@ -11,7 +11,7 @@ import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-appe
 import { readPrunedWorktreeIntents, writePrunedWorktreeIntents, prunedIntentKey, type PrunedWorktreeIntent } from './pruned-worktree-intents';
 import { configuredGitBinary, resolveGitCommonDirectory, resolveGitCommonDirectoryAsync } from '../git/common-directory';
 import { acquireExclusiveDirectoryLock, withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
-import { taskWorktreeRuntimeClosed } from '../sessions/task-session-record';
+import { taskWorktreeRuntimeClosed } from '../terminal/task-session-record';
 import { parseWorktreeTopology } from '../git/worktree-topology';
 import { observeProviderBranchMergeCommit } from './coordination-provider-merge';
 import { resolveTrustedGhExecutable } from '../runtime/protected-helper-platform';

@@ -12,4 +12,4 @@ responsibilities:
   - Report whether the recorded runtime of a task worktree is closed.
 source:
   include:
-    - src/effects/sessions/task-session-record.ts
+    - src/effects/terminal/task-session-record.ts

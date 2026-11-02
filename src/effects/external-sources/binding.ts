@@ -6,8 +6,8 @@ import { renderExternalSourceUntrustedContext } from '../../core/external-source
 import { buildAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readReviewAdmissionSource } from '../admission/admission-source';
-import { observeCurrentTaskSession } from '../sessions/task-session-admission';
-import { readTaskAgent } from '../sessions/task-session-record';
+import { observeCurrentTaskSession } from '../terminal/task-session-admission';
+import { readTaskAgent } from '../terminal/task-session-record';
 import { listExternalSourceBindingReceipts,
   listExternalSourceRefreshReceipts, listProviderIssueObservations, writeExternalSourceBindingReceipt } from './store';
 

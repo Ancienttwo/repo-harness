@@ -1,6 +1,6 @@
 import { admittedInboxFixture } from '../helpers/admitted-inbox-fixture';
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { taskSessionDirectory } from '../../src/effects/sessions/task-session-record';
+import { taskSessionDirectory } from '../../src/effects/terminal/task-session-record';
 import { describe, expect, test } from 'bun:test';
 import { execFileSync } from 'child_process';
 import { mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, unlinkSync, writeFileSync } from 'fs';

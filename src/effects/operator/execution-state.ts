@@ -8,7 +8,7 @@ import { taskRepository } from '../git/task-repository';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
 import { processProofAlive } from '../terminal/task-session';
 import { readSessionArtifact } from '../terminal/task-session-io';
-import { readTaskAgent, taskSessionDirectory, type TaskPaneBinding } from '../sessions/task-session-record';
+import { readTaskAgent, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session-record';
 
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
 // Admission records the full ref; Dev Activity names a branch without this prefix.

@@ -1,7 +1,7 @@
 #!/usr/bin/env bun
 // Task-agent-host process entry for the worktree actions that need Herdr pane state.
 // contract-worktree-runtime.ts runs it as a process; the argv, the JSON on stdout and the exit code are the port.
-import type { HerdrEndpoint } from '../src/effects/sessions/task-session-record';
+import type { HerdrEndpoint } from '../src/effects/terminal/task-session-record';
 import { cleanupTaskWorktree, notifyTaskWorktreeMerged, registerTaskWorktree } from '../src/effects/terminal/task-session';
 import { readSessionArtifact } from '../src/effects/terminal/task-session-io';
 

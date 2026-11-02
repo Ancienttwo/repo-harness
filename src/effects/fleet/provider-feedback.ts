@@ -11,7 +11,7 @@ import { publicationSha256, stablePublicationJson } from '../../core/publication
 import { MergeReadinessError, observeProviderReadinessIdentity, validatePullRequestSelection } from '../publication/merge-readiness';
 import type { PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { observeTaskInboxContext, type TaskInboxSessionSource } from './task-inbox';
-import { readTaskAgent } from '../sessions/task-session-record';
+import { readTaskAgent } from '../terminal/task-session-record';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { readActiveReviewAdmission } from '../admission/admission-store';
 

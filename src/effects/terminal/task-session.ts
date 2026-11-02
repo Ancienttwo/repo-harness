@@ -1,7 +1,7 @@
 import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent, readTaskBinding, workspaceDirectory,
   type CreatedPane, type HerdrEndpoint, type HerdrTaskAgentSpec, type HerdrTaskBinding, type ObjectOwnership, type OwnedProcess, type StartIntent,
-  type TaskPaneBinding, type TaskWorkspaceBinding, type TerminalStartIntent, type TerminalTaskBinding } from '../sessions/task-session-record';
-import { observeTaskSessionAdmission, taskBindingSha256 } from '../sessions/task-session-admission';
+  type TaskPaneBinding, type TaskWorkspaceBinding, type TerminalStartIntent, type TerminalTaskBinding } from './task-session-record';
+import { observeTaskSessionAdmission, taskBindingSha256 } from './task-session-admission';
 import { ensureSessionDirectory, nextSessionRound, processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
 import { execFileSync } from 'child_process';

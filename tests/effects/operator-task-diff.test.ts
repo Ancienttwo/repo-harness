@@ -16,8 +16,8 @@ import { SESSION_OBSERVATION_MAX_BYTES } from '../../src/core/sessions/session-s
 import { readOperatorTaskDiff } from '../../src/effects/operator/task-diff';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { taskRepository } from '../../src/effects/git/task-repository';
-import { observeTaskSessionAdmission } from '../../src/effects/sessions/task-session-admission';
-import { taskSessionDirectory, type HerdrTaskBinding } from '../../src/effects/sessions/task-session-record';
+import { observeTaskSessionAdmission } from '../../src/effects/terminal/task-session-admission';
+import { taskSessionDirectory, type HerdrTaskBinding } from '../../src/effects/terminal/task-session-record';
 import { writeSessionArtifact } from '../../src/effects/terminal/task-session-io';
 import { ensureSessionDirectory } from '../../src/effects/terminal/task-session-io';
 import { readReviewAdmissionSource } from '../../src/effects/admission/admission-source';

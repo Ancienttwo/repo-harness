@@ -1,7 +1,7 @@
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import { dirname, isAbsolute, join } from 'path';
 import { userInfo } from 'os';
-import type { HerdrEndpoint } from '../sessions/task-session-record';
+import type { HerdrEndpoint } from './task-session-record';
 
 export const HERDR_COMMAND_TIMEOUT_MS = 10_000;
 export type HerdrSpawn = (command: string, args: readonly string[], options: {
