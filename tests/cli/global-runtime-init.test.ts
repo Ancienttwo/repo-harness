@@ -2447,6 +2447,42 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test('a fleet failure after the CLI install restores the predecessor hoisted archctx packages', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-update-archctx-rollback-'));
+  try {
+    const home = join(tmp, 'home');
+    const fakeBin = join(tmp, 'bin');
+    const predecessor = join(tmp, 'predecessor');
+    mkdirSync(fakeBin, { recursive: true });
+    mkdirSync(predecessor);
+    writeFileSync(join(predecessor, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '1.0.0' }));
+    setupManagedRuntimeReadback(home, fakeBin, '1.0.0');
+    const globalModules = join(home, '.bun/install/global/node_modules');
+    const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+      PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath };
+    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', profile: 'minimal', env }, () => {
+      writeFileSync(join(globalModules, 'repo-harness/package.json'), JSON.stringify({
+        name: 'repo-harness', version: '9.9.9', dependencies: { archctx: '9.9.9', 'archctx-contracts': '9.9.9' },
+      }));
+      for (const packageName of ['archctx', 'archctx-contracts']) {
+        writeFileSync(join(globalModules, packageName, 'package.json'), JSON.stringify({ name: packageName, version: '9.9.9' }));
+      }
+      return {
+        exitCode: 1,
+        steps: [
+          { step: 'install repo-harness CLI', status: 'ok', detail: 'spec=repo-harness@9.9.9' },
+          { step: 'install agent fleet', status: 'failed', detail: 'user-edited fleet file' },
+        ],
+        lines: [], stdout: '', stderr: '',
+      };
+    });
+    expect(result.exitCode).toBe(1);
+    expect(JSON.parse(readFileSync(join(globalModules, 'archctx/package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
+    expect(JSON.parse(readFileSync(join(globalModules, 'archctx-contracts/package.json'), 'utf8')).version).toBe(ARCHCTX_CONTRACTS_PIN);
+    expect(verifyInstalledManagedRuntime({ sourceRoot: predecessor, cwd: tmp, env }).status).toBe('ok');
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+
 describe('Waza shared rule refresh', () => {
   function withRules(body: (fixture: {
     home: string; upstream: string; fakeBin: string; env: NodeJS.ProcessEnv;

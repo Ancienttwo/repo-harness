@@ -3,7 +3,7 @@ import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from
 import { installPiPackage } from '../installer/pi-package';
 import { realPathOrResolved } from '../../effects/path-identity';
 import type { SkillHost } from '../../effects/host-skill-roots';
-import type { ManagedInstallSurface } from '../installer/install-profile';
+import { ARCHCTX_PACKAGES, type ManagedInstallSurface } from '../installer/install-profile';
 import { ensureGlobalArchitectureProjection } from './architecture-configuration';
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir, userInfo } from "os";
@@ -103,7 +103,6 @@ const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 export const MIN_BUN_VERSION = "1.4.0";
 const CODEGRAPH_VERSION = productVersionManifest().runtime.codeGraph.requiredVersion;
 const CODEGRAPH_PACKAGE = `@colbymchenry/codegraph@${CODEGRAPH_VERSION}`;
-const ARCHCTX_PACKAGES = ["archctx", "archctx-contracts"] as const;
 const PACKED_RELEASE_TARBALL = /^repo-harness-\d+\.\d+\.\d+\.tgz$/;
 
 export function bunVersionIsSupported(version: string | undefined): boolean {
