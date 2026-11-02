@@ -201,4 +201,4 @@ sequenceDiagram
 
 - **After arch-context#296：决定 `src/effects/terminal/` 的目录归属。** 现在目录中的新文件会成为 unowned。
 - **`task-session.ts` 过大。** 候选拆分：身份证明、request 轮次、清理。可展开，现在不拆。
-- **入向调用者。** #1402 后，只有 operator 与 CLI 组合根导入本 capability 的文件。`scripts/contract-worktree-runtime.ts` 以进程方式运行 `scripts/task-worktree-runtime.ts`，执行 register、notify-merged 与 cleanup；argv、stdout 上的 JSON 与退出码是该端口的合同。Generic review 经过 runner port（#1352）。task session 记录与 reader 在 `src/effects/terminal/task-session-record.ts`（execution-primitives），admission 读取在 `src/effects/terminal/task-session-admission.ts`（workflow-state），role profiles 归 contract-assets。
+- **入向调用者。** #1402 后，只有 operator 与 CLI 组合根导入本 capability 的文件。`scripts/contract-worktree-runtime.ts` 以进程方式运行 `src/effects/terminal/task-worktree-runtime.ts`，执行 register、notify-merged 与 cleanup；argv、stdout 上的 JSON 与退出码是该端口的合同。Generic review 经过 runner port（#1352）。task session 记录与 reader 在 `src/effects/terminal/task-session-record.ts`（execution-primitives），admission 读取在 `src/effects/terminal/task-session-admission.ts`（workflow-state），role profiles 归 contract-assets。

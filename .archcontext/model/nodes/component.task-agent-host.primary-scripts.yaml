@@ -11,4 +11,3 @@ responsibilities:
 source:
   include:
     - scripts/install-agent-fleet.sh
-    - scripts/task-worktree-runtime.ts

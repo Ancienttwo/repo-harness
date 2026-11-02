@@ -1,9 +1,9 @@
 #!/usr/bin/env bun
 // Task-agent-host process entry for the worktree actions that need Herdr pane state.
 // contract-worktree-runtime.ts runs it as a process; the argv, the JSON on stdout and the exit code are the port.
-import type { HerdrEndpoint } from '../src/effects/terminal/task-session-record';
-import { cleanupTaskWorktree, notifyTaskWorktreeMerged, registerTaskWorktree } from '../src/effects/terminal/task-session';
-import { readSessionArtifact } from '../src/effects/terminal/task-session-io';
+import type { HerdrEndpoint } from './task-session-record';
+import { cleanupTaskWorktree, notifyTaskWorktreeMerged, registerTaskWorktree } from './task-session';
+import { readSessionArtifact } from './task-session-io';
 
 const [action, ...args] = process.argv.slice(2);
 const value = (key: string) => { const at = args.indexOf(key); if (at < 0 || !args[at + 1]) throw new Error(`runtime requires ${key}`); return args[at + 1]!; };

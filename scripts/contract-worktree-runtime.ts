@@ -114,7 +114,7 @@ try {
     })));
   } else if (action === 'register' || action === 'notify-merged' || action === 'cleanup') {
     // These actions need Herdr pane state, which the task-agent host owns. Its process entry keeps the argv, JSON and exit code.
-    const child = spawnSync(process.execPath, [join(packageRoot, 'scripts/task-worktree-runtime.ts'), action, ...args], { stdio: 'inherit' });
+    const child = spawnSync(process.execPath, [join(packageRoot, 'src/effects/terminal/task-worktree-runtime.ts'), action, ...args], { stdio: 'inherit' });
     if (child.error) throw child.error;
     process.exitCode = child.status ?? 1;
   } else if (action === 'remove-exact') {
