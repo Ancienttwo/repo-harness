@@ -16,7 +16,7 @@ import { taskSessionKey } from '../git/repository-identity';
 import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
-import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_ROLE, hcGet, hcKill, hcList, hcRm, hcRun, hcSend,
+import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_ROLE, hcGet, hcKill, hcList, hcRm, hcRun, hcSend, isHcAddress,
   type HcLabels, type HcTerminal, type HerdrCoreOptions } from './herdr-core';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
@@ -504,8 +504,8 @@ export interface WorktreeMergeNotification {
 /** The caller owns merge readback. A notice carries no publication or deletion grant. */
 export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
   notice: WorktreeMergeNotice): Promise<WorktreeMergeNotification> {
-  // The owner is an hc terminal address (t7, t1b): the grammar of herdr-core.ts. A classic pane id is refused here.
-  if (!/^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/.test(owner) || !Number.isSafeInteger(notice.pr) || notice.pr < 1
+  // The owner is an hc terminal address (t7, t1b). A classic pane id is refused here.
+  if (!isHcAddress(owner) || !Number.isSafeInteger(notice.pr) || notice.pr < 1
     || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(notice.merge_sha)) {
     throw new Error('worktree_merge_notice_invalid');
   }
