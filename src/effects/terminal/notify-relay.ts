@@ -161,12 +161,18 @@ export function createNotifyRelay(deps: NotifyRelayDeps): { readonly handle: (it
     catch { log('Cannot write the delivery record.'); }
   };
 
+  // Events at or below the newest snapshot seq are already in that snapshot.
+  let snapshotSeq = -1;
   const step = async (item: HcStreamItem) => {
-    if (item.type === 'snapshot') {
+    // `missed`: hc dropped events for this subscriber, so the held state is stale and is replaced whole.
+    if (item.type === 'snapshot' || item.type === 'missed') {
       terminals.clear();
+      snapshotSeq = item.seq;
       for (const terminal of item.terminals) remember(terminal.address, terminal);
       return;
     }
+    // `data` is null only for a foreground change, which the relay does not use.
+    if (item.seq <= snapshotSeq || item.data === null) return;
     const { terminal: address, event, data } = item;
     if (event === 'created') remember(address, data);
     else if (event === 'removed') terminals.delete(address);

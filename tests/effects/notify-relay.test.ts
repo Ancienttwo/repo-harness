@@ -139,6 +139,18 @@ describe('notify relay', () => {
     } finally { f.cleanup(); }
   });
 
+  test('a missed snapshot replaces all terminal state, and events at or below its seq are ignored', async () => {
+    const f = relayFixture();
+    try {
+      await f.feed(snapshot(terminal('t7', labels), terminal('t9', labels)),
+        { type: 'missed', seq: 10, terminals: [{ ...terminal('t9', labels), name: 'renamed' }] },
+        { ...turn('t9', 'blocked'), seq: 10 }, { type: 'event', seq: 11, terminal: 't9', event: 'foreground', data: null },
+        { ...turn('t9', 'blocked'), seq: 11 }, { ...turn('t7', 'blocked'), seq: 12 });
+      expect(f.calls.filter(call => call.url.includes('bot.example')).map(call => call.body.data))
+        .toMatchObject([{ terminal: 't9', name: 'renamed' }, { terminal: 't7', name: null }]);
+    } finally { f.cleanup(); }
+  });
+
   test('a missing config or Bot webhook sends nothing, and no payload, log line or record holds a config value', async () => {
     const f = relayFixture(`SLACK_WEBHOOK_URL='${SLACK}'\n`);
     try {
