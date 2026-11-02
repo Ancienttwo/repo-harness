@@ -103,8 +103,12 @@ function codegraphExecutionEnv(repoRoot: string, env: NodeJS.ProcessEnv): NodeJS
 
 function codegraphBin(repoRoot: string, env: NodeJS.ProcessEnv): string {
   const explicit = env.REPO_HARNESS_CODEGRAPH_BIN;
-  if (explicit && (!isAbsolute(explicit) || !isPathInside(canonicalIfPresent(repoRoot), canonicalIfPresent(explicit)))) return explicit;
-  return 'codegraph';
+  if (!explicit) return 'codegraph';
+  // A bare name resolves through the filtered PATH. A path with a separator is resolved against
+  // repoRoot, because the child runs with cwd=repoRoot and would reach a repo-local binary.
+  if (!/[\\/]/.test(explicit)) return explicit;
+  const resolved = resolve(repoRoot, explicit);
+  return isPathInside(canonicalIfPresent(repoRoot), canonicalIfPresent(resolved)) ? 'codegraph' : resolved;
 }
 
 function normalizeIndexedFile(value: unknown): CodeGraphIndexedFile | null {

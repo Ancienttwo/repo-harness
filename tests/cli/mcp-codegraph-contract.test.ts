@@ -525,6 +525,10 @@ describe('general repo CodeGraph contract', () => {
 
       expect(existsSync(marker)).toBe(false);
       expect(snapshot.available).toBe(false);
+
+      // The child runs with cwd=repoRoot, so a relative path with a separator would reach the planted binary.
+      createCodeGraphCliAdapter({ env: { PATH: emptyBin, REPO_HARNESS_CODEGRAPH_BIN: 'node_modules/.bin/codegraph' } }).discoverRepo(repoRoot);
+      expect(existsSync(marker)).toBe(false);
     } finally {
       rmSync(repoRoot, { recursive: true, force: true });
       rmSync(emptyBin, { recursive: true, force: true });
