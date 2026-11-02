@@ -244,6 +244,7 @@ describe('registry-bound CLI update (#701)', () => {
     channel?: 'latest' | 'next';
     version?: string;
     installExit?: number;
+    noGlobalRoot?: boolean;
   } = {}) {
     const root = mkdtempSync(join(tmpdir(), 'repo-harness-registry-update-'));
     const home = join(root, 'home');
@@ -268,21 +269,29 @@ describe('registry-bound CLI update (#701)', () => {
         '#!/bin/bash',
         `printf '%s\\n' "$*" >> "${logPath}"`,
         'if [[ "${1:-}" == "--version" ]]; then echo 1.4.3; exit 0; fi',
+        // Bun 1.4.3 rejects `pm view` in a directory without package.json; the caller cwd (root) has none.
+        `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" && ! -f "$PWD/package.json" ]]; then echo "error: No package.json was found for directory \\"$PWD\\"" >&2; exit 1; fi`,
         `if [[ "\${1:-}" == "pm" && "\${2:-}" == "view" ]]; then cat "${join(root, 'registry.json')}"; exit ${options.registryExit ?? 0}; fi`,
         `if [[ "\${1:-}" == "add" && "\${2:-}" == "-g" ]]; then cp "${join(root, 'installed.json')}" "${join(harness, 'package.json')}"; exit ${options.installExit ?? 0}; fi`,
         `if [[ "\${1:-}" == "${join(harness, 'src', 'cli', 'index.ts')}" && "\${2:-}" == "--version" ]]; then echo '${options.cliVersion ?? installed}'; exit ${options.cliExit ?? 0}; fi`,
         'exit 97',
         '',
       ].join('\n'));
+      const env: NodeJS.ProcessEnv = {
+        ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
+        PATH: `${bin}:${process.env.PATH ?? ''}`,
+        REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
+      };
+      if (options.noGlobalRoot) {
+        delete env.HOME;
+        delete env.BUN_INSTALL;
+        delete env.USERPROFILE;
+      }
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source, cwd: root, profile: 'minimal', target: 'codex',
         installSpec: `repo-harness@${options.version ?? options.channel ?? 'latest'}`, updateMode: true,
         syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
-        env: {
-          ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
-          PATH: `${bin}:${process.env.PATH ?? ''}`,
-          REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
-        },
+        env,
       });
       return { result, commands: readFileSync(logPath, 'utf-8').trim().split('\n') };
     } finally {
@@ -327,6 +336,13 @@ describe('registry-bound CLI update (#701)', () => {
     expect(commands).toContain('pm view repo-harness@next version --json --no-cache');
     expect(commands).toContain('add -g repo-harness@0.23.0-rc.1 --no-cache');
     expect(result.lines).toContain('[runtime] ok: install repo-harness CLI - spec=repo-harness@0.23.0-rc.1; 0.21.2 -> 0.23.0-rc.1');
+  });
+
+  test('fails before the registry lookup when the Bun global package root is unresolved', () => {
+    const { result, commands } = runUpdateFixture({ noGlobalRoot: true });
+    expect(result.exitCode).toBe(1);
+    expect(result.steps.at(-1)).toMatchObject({ step: 'install repo-harness CLI', status: 'failed', detail: 'unable to resolve Bun global package root' });
+    expect(commands.some(command => command.startsWith('pm view '))).toBe(false);
   });
 
   test('stops before installing when the registry lookup fails', () => {

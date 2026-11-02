@@ -616,7 +616,11 @@ function installCliFromRegistry(
   installSpec: string,
 ): GlobalRuntimeStep {
   const name = "install repo-harness CLI";
-  const lookup = runProcess(bunExecutable, ["pm", "view", installSpec, "version", "--json", "--no-cache"], cwd, env);
+  const globalRoot = bunGlobalPackageRoot(env);
+  if (globalRoot === null) return { step: name, status: "failed", detail: "unable to resolve Bun global package root" };
+  // `bun pm view` exits non-zero in a directory without package.json, so the
+  // lookup runs in the global package root that the install and readback use.
+  const lookup = runProcess(bunExecutable, ["pm", "view", installSpec, "version", "--json", "--no-cache"], globalRoot, env);
   if (lookup.status !== "ok") return withStepName(lookup, name, `unable to resolve ${installSpec} from registry`);
   let expected: unknown;
   try {
@@ -628,8 +632,6 @@ function installCliFromRegistry(
   if (typeof expected !== "string" || !/^(0|[1-9]\d*)\.(0|[1-9]\d*)\.(0|[1-9]\d*)(?:-(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*)(?:\.(?:0|[1-9]\d*|\d*[A-Za-z-][0-9A-Za-z-]*))*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/.test(expected)) {
     return withStepName({ ...lookup, status: "failed" }, name, `invalid registry version for ${installSpec}: expected an exact version`);
   }
-  const globalRoot = bunGlobalPackageRoot(env);
-  if (globalRoot === null) return { step: name, status: "failed", detail: "unable to resolve Bun global package root" };
   const previous = packageVersion(globalRoot);
   const spec = `repo-harness@${expected}`;
   const install = runProcess(bunExecutable, ["add", "-g", spec, "--no-cache"], cwd, env);
