@@ -436,6 +436,8 @@ darwinTest('OAR fixed host runs visibly in a private hc terminal and disposes be
     const screen = () => hc(['read', binding!.terminal_id, '--lines', '200']);
     expect(screen()).toContain('fixture-oar');
     await until(() => screen().includes('OAR_HOST_ROUNDS_DONE_FIXTURE'));
+    // The host reports its own OSC 7501 status: idle at ready, working during each of the three turns.
+    expect(JSON.parse(hc(['get', '--json', binding.terminal_id]))).toMatchObject({ status: { state: 'idle', app: 'repo-harness' }, turn: 3 });
     writeFileSync(closeRequest, 'close');
     await until(() => existsSync(disposedFile));
     await until(() => !live(binding!.provider.pid));

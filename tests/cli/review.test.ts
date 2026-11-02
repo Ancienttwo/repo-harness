@@ -311,6 +311,19 @@ test('review round registers one admission repository id and parses the optional
   expect(round.opts()).toMatchObject({ repositoryId: '1001', repository: 'example/repo-harness', pr: '42', base: 'b'.repeat(40) });
 });
 
+test('review round refuses the classic --launch herdr value before it reads the admission', async () => {
+  const home = publishHome();
+  const required = ['--repository-id', '1001', '--issue-id', 'I_1', '--campaign-id', 'review', '--grant-sha256', hash('grant'),
+    '--policy-sha256', hash('policy'), '--actor', 'U_owner', '--reviewer-repo', home, '--claim-ref', 'claim', '--claim-revision', hash('claim'),
+    '--verification', 'report.json', '--repo', home];
+  const classic = await runReview(home, ['round', ...required, '--launch', 'herdr', '--herdr-endpoint', join(home, 'endpoint.json')]);
+  expect(classic.status).toBe(1);
+  expect(classic.stderr).toContain('review: review_launch_unsupported');
+  const unaddressed = await runReview(home, ['round', ...required]);
+  expect(unaddressed.status).toBe(1);
+  expect(unaddressed.stderr).toContain('review_launch_addressing_invalid; --herdr-endpoint is required for herdr-app');
+});
+
 test('the optional PR selection is all-or-none and admission identity alone is not a selection', () => {
   const admission = { repositoryId: '1001' };
   expect(pullRequestSelectionFromOptions(admission)).toBeUndefined();

@@ -101,9 +101,18 @@ export async function runHostFileRequest(host: OarReviewHost, spec: ReviewHostSp
   return observation;
 }
 
+export type HostStatus = 'idle' | 'working';
+/** hc shows a terminal without an OSC 7501 report as unknown, never idle, so
+ * the host reports its own state (decision 3, #1474). Only an hc terminal
+ * reads the report; piped output and other terminals get nothing. */
+function reportHostStatus(state: HostStatus): void {
+  if (process.env.HC_TERMINAL_ID && process.stdout.isTTY) process.stdout.write(`\x1b]7501;state=${state}:app=repo-harness\x1b\\`);
+}
+
 /** Serves file requests until close. A close request also reaches a pending
  * turn: disposal aborts it, and the aborted turn is not a turn failure. */
-export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHostSpec, close: () => Promise<void>, closing: () => boolean): Promise<void> {
+export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHostSpec, close: () => Promise<void>, closing: () => boolean,
+  status: (state: HostStatus) => void): Promise<void> {
   const closeRequest = join(spec.controlDirectory, 'close.request');
   const watch = setInterval(() => { if (existsSync(closeRequest)) void close(); }, 25);
   try {
@@ -115,7 +124,9 @@ export async function serveHostFileRequests(host: OarReviewHost, spec: ReviewHos
         await new Promise(resolve => setTimeout(resolve, 25)); continue;
       }
       if (round > 3) throw new Error('OAR_REVIEW_ROUND_BUDGET_EXHAUSTED');
+      status('working');
       const observation = await runHostFileRequest(host, spec, readSessionArtifact<TaskRequest>(path));
+      status('idle');
       if (closing()) return;
       if (observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('OAR_REVIEW_TURN_FAILED');
       round++;
@@ -190,12 +201,17 @@ async function main(): Promise<void> {
   try {
     writeSessionArtifact(readyFile, { pid: process.pid, session_id: host.sessionId, fixture: spec.mode === 'scripted' });
     console.log('OAR_HOST_READY');
+    reportHostStatus('idle');
     if (spec.mode === 'scripted') {
-      for (const [index, input] of spec.inputs.entries()) await host.prompt('fixture', input, { request_id: randomUUID(), round: index + 1, host: { pid: process.pid, identity: processIdentity(process.pid) } },
-        snapshot => writeSessionArtifact(join(dirname(spec.readyFile), oarObservationFile(index + 1)), snapshot, false));
+      for (const [index, input] of spec.inputs.entries()) {
+        reportHostStatus('working');
+        await host.prompt('fixture', input, { request_id: randomUUID(), round: index + 1, host: { pid: process.pid, identity: processIdentity(process.pid) } },
+          snapshot => writeSessionArtifact(join(dirname(spec.readyFile), oarObservationFile(index + 1)), snapshot, false));
+        reportHostStatus('idle');
+      }
       console.log('OAR_HOST_ROUNDS_DONE_FIXTURE');
       while (!existsSync(closeRequest) && !closing) await new Promise(resolve => setTimeout(resolve, 25));
-    } else await serveHostFileRequests(host, spec, close, () => closing !== undefined);
+    } else await serveHostFileRequests(host, spec, close, () => closing !== undefined, reportHostStatus);
   } catch (error) {
     if (spec.mode === 'review') writeSessionArtifact(join(spec.controlDirectory, 'error.json'), { error: String(error) });
     throw error;
