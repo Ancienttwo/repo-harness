@@ -1,12 +1,18 @@
-import { spawn, spawnSync, type SpawnSyncReturns } from 'child_process';
+import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
 
-/** herdr-core transport: the `hc` CLI with `--json`, its event stream, and `herdr-app do` for pane placement. */
+/**
+ * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
+ * placement. Every call is scoped to repo-harness terminals: lists and streams need a repo-harness label
+ * filter, and calls on one terminal need its `t<n>` address and a repo-harness label on it.
+ * hc 0.1.16 reports no API generation in its CLI output; the shape validation below is the only guard.
+ */
 export const HERDR_CORE_TIMEOUT_MS = 10_000;
 const MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 
 export type HerdrCoreProgram = 'hc' | 'herdr-app';
-export type HerdrCoreErrorReason = 'missing' | 'timeout' | 'failed' | 'invalid_response' | 'nested' | 'invalid_labels';
+export type HerdrCoreErrorReason =
+  | 'missing' | 'timeout' | 'failed' | 'invalid_response' | 'nested' | 'invalid_labels' | 'invalid_address' | 'unowned';
 
 export class HerdrCoreError extends Error {
   constructor(
@@ -30,7 +36,7 @@ export interface HerdrCoreOptions {
 }
 
 export type HcLabels = Readonly<Record<string, string>>;
-export interface HcStatus { readonly state: string; readonly app?: string; readonly kind?: string; readonly msg?: string }
+export interface HcStatus { readonly state: string; readonly app?: string; readonly kind?: string | null; readonly msg?: string }
 export interface HcTerminalSummary { readonly address: string; readonly name: string | null; readonly state: 'live' | 'finished' }
 export interface HcForeground { readonly pid: number; readonly name: string; readonly argv: readonly string[]; readonly cwd: string }
 export interface HcTerminal extends HcTerminalSummary {
@@ -44,6 +50,8 @@ export interface HcTerminal extends HcTerminalSummary {
   /** Why the program ended (`exited`, `killed`, ...) or is pending. */
   readonly reason: string | null;
 }
+export interface HcSendResult { readonly started: boolean | null; readonly turn: number }
+export interface HcWaitResult { readonly ended: boolean; readonly reason: string; readonly turn: number; readonly status: HcStatus | null }
 export type HcStreamItem =
   | { readonly type: 'snapshot'; readonly seq: number; readonly terminals: readonly HcTerminal[] }
   | { readonly type: 'event'; readonly seq: number; readonly terminal: string; readonly event: string; readonly data: Readonly<Record<string, unknown>> };
@@ -72,6 +80,10 @@ const RH_KEYS: ReadonlySet<string> = new Set(Object.values(RH_LABEL));
 const RH_ROLES: ReadonlySet<string> = new Set(Object.values(RH_ROLE));
 const LABEL_KEY = /^[a-z][a-z0-9._-]{0,63}$/;
 const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
+/** hc's own address for a terminal on this core. A name can name a later terminal; `t<n>` never does. */
+const ADDRESS = /^t[1-9][0-9]{0,9}$/;
+
+const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
 
 function environment(program: HerdrCoreProgram, options: HerdrCoreOptions): NodeJS.ProcessEnv {
   const env = options.env ?? process.env;
@@ -92,6 +104,11 @@ function labelArgs(labels: HcLabels): string[] {
     if (key === RH_LABEL.notify && value !== 'on') throw invalid(`${RH_LABEL.notify} must be on`);
   }
   return entries.flatMap(([key, value]) => ['--label', `${key}=${value}`]);
+}
+
+function address(value: string): string {
+  if (!ADDRESS.test(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
+  return value;
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -124,57 +141,109 @@ function spawnError(program: HerdrCoreProgram, error: NodeJS.ErrnoException): He
   return new HerdrCoreError(program, 'failed', undefined, undefined, error.code ?? error.message);
 }
 
-function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
-  const env = environment(program, options);
+function timeoutOf(options: HerdrCoreOptions): number {
   const timeout = options.timeoutMs ?? HERDR_CORE_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeout) || timeout < 1) throw new RangeError('herdr_core_invalid_timeout');
-  const result: SpawnSyncReturns<Buffer> = spawnSync(program, [...args], {
-    env, timeout, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.error) throw spawnError(program, result.error);
-  if (result.signal) throw new HerdrCoreError(program, 'failed', undefined, undefined, `ended by ${result.signal}`);
-  const stdout = result.stdout.toString('utf8');
+  return timeout;
+}
+
+/** One exit mapping for the sync and async calls, after a spawn error or timeout is ruled out. */
+function settle(program: HerdrCoreProgram, status: number | null, signal: string | null, stdout: string, stderr: string): Record<string, unknown> {
+  if (signal) throw new HerdrCoreError(program, 'failed', undefined, undefined, `ended by ${signal}`);
   // Without an error or a signal, Node always reports a numeric exit status.
-  if (result.status !== 0) throw failure(program, result.status as number, program === 'hc' ? result.stderr.toString('utf8') : stdout);
+  if (status !== 0) throw failure(program, status as number, program === 'hc' ? stderr : stdout);
   return parseObject(program, stdout);
 }
 
-/** Run one hc subcommand with `--json`; `args[0]` is the subcommand. Returns hc's JSON object. */
-export function hcJson(args: readonly [string, ...string[]], options: HerdrCoreOptions = {}): Record<string, unknown> {
-  return invoke('hc', [args[0], '--json', ...args.slice(1)], options);
+function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+  const env = environment(program, options);
+  const result: SpawnSyncReturns<Buffer> = spawnSync(program, [...args], {
+    env, timeout: timeoutOf(options), killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  if (result.error) throw spawnError(program, result.error);
+  return settle(program, result.status, result.signal, result.stdout.toString('utf8'), result.stderr.toString('utf8'));
+}
+
+async function invokeAsync(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Promise<Record<string, unknown>> {
+  const env = environment(program, options);
+  const timeout = timeoutOf(options);
+  const { error, stdout, stderr } = await new Promise<{ error: ExecFileException | null; stdout: string; stderr: string }>(resolve => {
+    execFile(program, [...args], { env, timeout, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' },
+      (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+  });
+  if (!error) return settle(program, 0, null, stdout, stderr);
+  // A string code is a spawn or buffer error; `killed` without one is the timeout's SIGKILL.
+  if (typeof error.code === 'string') throw spawnError(program, error as NodeJS.ErrnoException);
+  if (error.killed) throw new HerdrCoreError(program, 'timeout');
+  return settle(program, error.code ?? null, error.signal ?? null, stdout, stderr);
+}
+
+/** The one hc executor; it stays private so that every exported call keeps the repo-harness scope. */
+function hc(subcommand: string, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+  return invoke('hc', [subcommand, '--json', ...args], options);
+}
+
+const isString = (value: unknown): value is string => typeof value === 'string';
+const isPid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
+const orNull = <T>(valid: (value: unknown) => value is T) => (value: unknown): value is T | null => value === null || valid(value);
+
+/** The one rule for a field that the hc schema does not require: absent is undefined, present must be valid. */
+function optional<T>(record: Readonly<Record<string, unknown>>, key: string, valid: (value: unknown) => value is T, where: string): T | undefined {
+  const value = record[key];
+  if (value === undefined) return undefined;
+  if (!valid(value)) throw invalidResponse(`${where} has an invalid ${key}`);
+  return value;
+}
+
+function isForeground(value: unknown): value is HcForeground {
+  return isRecord(value) && isPid(value.pid) && isString(value.name) && isString(value.cwd)
+    && Array.isArray(value.argv) && value.argv.every(isString);
+}
+
+function status(value: unknown, where: string): HcStatus | null {
+  if (value === null) return null;
+  if (!isRecord(value) || !isString(value.state)) throw invalidResponse(`${where} has an invalid status`);
+  const app = optional(value, 'app', isString, `${where} status`);
+  const kind = optional(value, 'kind', orNull(isString), `${where} status`);
+  const msg = optional(value, 'msg', isString, `${where} status`);
+  return { state: value.state, ...(app === undefined ? {} : { app }), ...(kind === undefined ? {} : { kind }), ...(msg === undefined ? {} : { msg }) };
 }
 
 function terminalSummary(value: unknown): HcTerminalSummary {
-  if (!isRecord(value) || typeof value.address !== 'string' || !(value.name === null || typeof value.name === 'string')
+  if (!isRecord(value) || !isString(value.address) || !(value.name === null || isString(value.name))
     || (value.state !== 'live' && value.state !== 'finished')) {
-    throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, 'terminal is missing address, name or state');
+    throw invalidResponse('terminal is missing address, name or state');
   }
   return { address: value.address, name: value.name, state: value.state };
-}
-
-const isPid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
-
-function foreground(value: unknown): value is HcForeground {
-  return isRecord(value) && isPid(value.pid) && typeof value.name === 'string' && typeof value.cwd === 'string'
-    && Array.isArray(value.argv) && value.argv.every(arg => typeof arg === 'string');
 }
 
 function terminal(value: unknown): HcTerminal {
   const summary = terminalSummary(value);
   const record = value as Record<string, unknown>;
-  // The hc schema does not require pid, foreground or reason; it omits or nulls them when unknown.
-  const { labels, status, pid = null, foreground: current = null, reason = null } = record;
-  if (!isRecord(labels) || Object.values(labels).some(label => typeof label !== 'string')
-    || !(status === null || (isRecord(status) && typeof status.state === 'string'))
-    || !Number.isSafeInteger(record.turn) || !(pid === null || isPid(pid))
-    || !(current === null || foreground(current)) || !(reason === null || typeof reason === 'string')) {
-    throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined,
-      `terminal ${summary.address} has invalid labels, status, turn, pid, foreground or reason`);
-  }
+  const where = `terminal ${summary.address}`;
+  const { labels } = record;
+  if (!isRecord(labels) || !Object.values(labels).every(isString)) throw invalidResponse(`${where} has invalid labels`);
+  if (!Number.isSafeInteger(record.turn)) throw invalidResponse(`${where} has an invalid turn`);
+  const current = optional(record, 'foreground', orNull(isForeground), where) ?? null;
   return {
-    ...summary, labels: labels as HcLabels, status: status as HcStatus | null, turn: record.turn as number,
-    pid, foreground: current === null ? null : { pid: current.pid, name: current.name, argv: [...current.argv], cwd: current.cwd }, reason,
+    ...summary, labels: labels as HcLabels, status: status(record.status ?? null, where), turn: record.turn as number,
+    pid: optional(record, 'pid', orNull(isPid), where) ?? null,
+    foreground: current === null ? null : { pid: current.pid, name: current.name, argv: [...current.argv], cwd: current.cwd },
+    reason: optional(record, 'reason', orNull(isString), where) ?? null,
   };
+}
+
+function ownedTerminal(value: unknown): HcTerminal {
+  const result = terminal(value);
+  if (!Object.keys(result.labels).some(key => RH_KEYS.has(key))) {
+    throw new HerdrCoreError('hc', 'unowned', undefined, undefined, `terminal ${result.address} has no repo-harness label`);
+  }
+  return result;
+}
+
+/** `hc get`: one terminal by its `t<n>` address. A terminal without a repo-harness label is refused (`unowned`). */
+export function hcGet(terminalAddress: string, options: HerdrCoreOptions = {}): HcTerminal {
+  return ownedTerminal(hc('get', ['--', address(terminalAddress)], options));
 }
 
 /**
@@ -188,35 +257,78 @@ export function hcRun(input: {
   if (input.name !== undefined) args.push('--name', input.name);
   if (input.cwd !== undefined) args.push('--cwd', input.cwd);
   if (input.noParent) args.push('--no-parent');
-  return terminalSummary(hcJson(['run', ...args, '--', ...input.argv], options));
+  return terminalSummary(hc('run', [...args, '--', ...input.argv], options));
 }
 
-/** `hc ls --label`: live terminals that carry every label. An empty filter is refused. */
+/** `hc ls --label`: live terminals that carry every label. The filter must hold a repo-harness label. */
 export function hcList(labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminalSummary[] {
-  const result = hcJson(['ls', ...labelArgs(labels)], options);
-  if (!Array.isArray(result.terminals)) throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, 'ls has no terminals array');
+  return listResult(hc('ls', labelArgs(labels), options));
+}
+
+/** `hcList` without blocking the event loop, for long-running readers such as `operator serve`. */
+export async function hcListAsync(labels: HcLabels, options: HerdrCoreOptions = {}): Promise<HcTerminalSummary[]> {
+  return listResult(await invokeAsync('hc', ['ls', '--json', ...labelArgs(labels)], options));
+}
+
+function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
+  if (!Array.isArray(result.terminals)) throw invalidResponse('ls has no terminals array');
   return result.terminals.map(terminalSummary);
 }
 
-export function hcGet(address: string, options: HerdrCoreOptions = {}): HcTerminal {
-  return terminal(hcJson(['get', '--', address], options));
-}
-
-/** `hc label`: set labels on an existing terminal, for example one that `herdr-app do tab.new` created. */
-export function hcLabel(address: string, labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminal {
+/**
+ * `hc label`: set repo-harness labels on a terminal that `herdrAppDo('tab.new' | 'pane.split')` just created.
+ * That terminal has no labels yet, so this is the one call that does not first require a repo-harness label;
+ * use it only with the `t<n>` address that the placement returned.
+ */
+export function hcLabel(terminalAddress: string, labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminal {
   const pairs = labelArgs(labels).filter((_, index) => index % 2 === 1);
-  return terminal(hcJson(['label', '--', address, ...pairs], options));
+  return ownedTerminal(hc('label', ['--', address(terminalAddress), ...pairs], options));
 }
 
-/** `hc kill`: end the terminal's program (hangup, then escalate). Returns the terminal as hc observed it. */
-export function hcKill(address: string, options: HerdrCoreOptions = {}): HcTerminal {
-  return terminal(hcJson(['kill', '--', address], options));
+/** `hc send`: paste text into a repo-harness terminal and press Enter. hc refuses a blocked program (exit 9). */
+export function hcSend(terminalAddress: string, text: string, options: HerdrCoreOptions = {}): HcSendResult {
+  const target = hcGet(terminalAddress, options).address;
+  const result = hc('send', ['--', target, text], options);
+  if (!(result.started === null || typeof result.started === 'boolean') || !Number.isSafeInteger(result.turn)) {
+    throw invalidResponse('send has an invalid started or turn');
+  }
+  return { started: result.started, turn: result.turn as number };
 }
 
-/** `hc rm`: remove a finished terminal. hc refuses a live one (kind `live`). Returns the removed address. */
-export function hcRm(address: string, options: HerdrCoreOptions = {}): string {
-  const result = hcJson(['rm', '--', address], options);
-  if (typeof result.removed !== 'string') throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, 'rm has no removed address');
+/** `hc read`: the screen plus `lines` of history of a repo-harness terminal, as text. */
+export function hcRead(terminalAddress: string, lines = 0, options: HerdrCoreOptions = {}): string {
+  if (!Number.isSafeInteger(lines) || lines < 0) throw new RangeError('herdr_core_invalid_lines');
+  const target = hcGet(terminalAddress, options).address;
+  const result = hc('read', ['--lines', String(lines), '--', target], options);
+  if (!isString(result.text)) throw invalidResponse('read has no text');
+  return result.text;
+}
+
+/**
+ * `hc wait`: wait until a repo-harness terminal stops working, at most `seconds`. hc ends the wait itself
+ * (`ended: false`, reason `timeout`); the process timeout is that wait plus the transport timeout.
+ */
+export function hcWait(terminalAddress: string, seconds: number, options: HerdrCoreOptions = {}): HcWaitResult {
+  if (!Number.isSafeInteger(seconds) || seconds < 1) throw new RangeError('herdr_core_invalid_wait');
+  const target = hcGet(terminalAddress, options).address;
+  const result = hc('wait', ['--timeout', String(seconds), '--', target], { ...options, timeoutMs: seconds * 1000 + timeoutOf(options) });
+  if (typeof result.ended !== 'boolean' || !isString(result.reason) || !Number.isSafeInteger(result.turn)) {
+    throw invalidResponse('wait has an invalid ended, reason or turn');
+  }
+  return { ended: result.ended, reason: result.reason, turn: result.turn as number, status: status(result.status ?? null, `wait ${target}`) };
+}
+
+/** `hc kill`: end a repo-harness terminal's program (hangup, then escalate). Returns the terminal as hc observed it. */
+export function hcKill(terminalAddress: string, options: HerdrCoreOptions = {}): HcTerminal {
+  const target = hcGet(terminalAddress, options).address;
+  return terminal(hc('kill', ['--', target], options));
+}
+
+/** `hc rm`: remove a finished repo-harness terminal. hc refuses a live one (kind `live`). Returns the removed address. */
+export function hcRm(terminalAddress: string, options: HerdrCoreOptions = {}): string {
+  const target = hcGet(terminalAddress, options).address;
+  const result = hc('rm', ['--', target], options);
+  if (!isString(result.removed)) throw invalidResponse('rm has no removed address');
   return result.removed;
 }
 
@@ -226,33 +338,32 @@ function streamItem(line: string): HcStreamItem {
     return { type: 'snapshot', seq: value.seq as number, terminals: value.terminals.map(terminal) };
   }
   const params = value.params;
-  if (value.method === 'event' && isRecord(params) && Number.isSafeInteger(params.seq) && typeof params.terminal === 'string'
-    && typeof params.type === 'string' && isRecord(params.data)) {
+  if (value.method === 'event' && isRecord(params) && Number.isSafeInteger(params.seq) && isString(params.terminal)
+    && isString(params.type) && isRecord(params.data)) {
     return { type: 'event', seq: params.seq as number, terminal: params.terminal, event: params.type, data: params.data };
   }
-  throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, 'event line is neither a snapshot nor an event');
+  throw invalidResponse('event line is neither a snapshot nor an event');
 }
 
 /**
- * `hc events --json --label`: a snapshot of the labeled terminals, then each change. The stream has no
- * command timeout. `done` resolves after `close()` or a clean exit and rejects with a HerdrCoreError.
+ * `hc events --json --label`: a snapshot of the labeled terminals, then each change. The filter must hold a
+ * repo-harness label. The stream has no command timeout. `done` resolves after `close()` or a clean exit. It
+ * rejects with a HerdrCoreError, or with the error that `onItem` threw; either stops the hc child.
  */
 export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void, options: HerdrCoreOptions = {}): HcEventStream {
   const env = environment('hc', options);
   const child = spawn('hc', ['events', '--json', ...labelArgs(labels)], { env, shell: false, stdio: ['ignore', 'pipe', 'pipe'] });
-  let closed = false, failed: HerdrCoreError | undefined, stderr = '';
-  const stop = (error?: HerdrCoreError) => { failed ??= error; if (!closed) { closed = true; child.kill('SIGTERM'); } };
+  let closed = false, failed: unknown, stderr = '';
+  const stop = (error?: unknown) => { failed ??= error; if (!closed) { closed = true; child.kill('SIGTERM'); } };
   child.stderr.setEncoding('utf8').on('data', (chunk: string) => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk; });
   createInterface({ input: child.stdout }).on('line', line => {
     if (closed) return;
-    let item: HcStreamItem;
-    try { item = streamItem(line); } catch (error) { stop(error as HerdrCoreError); return; }
-    onItem(item);
+    try { onItem(streamItem(line)); } catch (error) { stop(error); }
   });
   const done = new Promise<void>((resolve, reject) => {
     child.once('error', error => { closed = true; reject(spawnError('hc', error)); });
     child.once('close', (code, signal) => {
-      if (failed) reject(failed);
+      if (failed !== undefined) reject(failed);
       else if (closed || code === 0) resolve();
       else reject(code === null ? new HerdrCoreError('hc', 'failed', undefined, undefined, `ended by ${signal}`) : failure('hc', code, stderr));
     });
