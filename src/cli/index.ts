@@ -36,7 +36,6 @@ import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
 import { buildDocsCommand } from './commands/docs';
 import { buildMcpCommand } from './commands/mcp';
-import { buildChatgptCommand } from './commands/chatgpt';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
@@ -127,7 +126,6 @@ export const SUBCOMMANDS = [
   'capability-context',
   'docs',
   'mcp',
-  'chatgpt',
   'state',
   'publication',
   'fleet',
@@ -890,7 +888,6 @@ export function buildProgram(): Command {
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
   program.addCommand(buildMcpCommand());
-  program.addCommand(buildChatgptCommand());
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());

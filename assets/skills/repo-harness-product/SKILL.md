@@ -26,6 +26,6 @@ contracts, offers or leases.
 
 Use a short worker brief or PR description for ordinary tasks.
 Do not mark artifacts Approved on the user's behalf. Preserve existing approval.
-Deferred work stays in GitHub issues. Product planning does not install
-ChatGPT or execute backlog work. Delegate execution only within the existing
+Deferred work stays in GitHub issues. Product planning does not execute
+backlog work. Delegate execution only within the existing
 authorization and named scope.

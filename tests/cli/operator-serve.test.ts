@@ -391,7 +391,6 @@ describe('operator serve command and HTTP boundary', () => {
       protocol: 1, kind: 'operator_bot_access', observed_at: '2026-10-27T00:00:00.000Z',
       bots: { state: 'unavailable', reason: 'bot_registry_invalid' },
       mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
-      oauth: { state: 'missing' },
       registry: { state: 'unavailable', reason: 'registry_unavailable' },
       herdr: { state: 'unavailable', reason: 'notify_session_missing' },
       notify: { state: 'unavailable', reason: 'notify_session_missing' },

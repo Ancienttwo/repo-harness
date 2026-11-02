@@ -3,4 +3,4 @@ id: relation.mcp-sidecar.host-setup.transport-auth
 kind: calls
 source: component.mcp-sidecar.host-setup
 target: component.mcp-sidecar.transport-auth
-intent: "Start the stdio or HTTP transport for mcp serve"
+intent: "Start the stdio transport for mcp serve"
