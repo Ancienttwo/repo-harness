@@ -216,14 +216,22 @@ describe('publication batch build', () => {
       .toEqual([`integration/${PARENT}-batch-2`, `integration/${PARENT}-batch-3`]);
   }));
 
-  test('a batch ref that another build creates after the number is chosen is not moved', () => withFixture((f) => {
-    const base = f.heads[14]!;
-    const stub = ghStub(f, { onProbe: (branch) => git(f.remote, 'update-ref', `refs/heads/${branch}`, base) });
-    const failure = refused(buildBatch(f, [11], stub).result);
-    expect(failure).toMatchObject({ exit_code: 4, error: 'batch_ref_collision', branch: BATCH_1, observed_head_sha: base });
-    expect(integrationRefs(f)).toBe(`refs/heads/${BATCH_1} ${base}`);
-    expect(stub.created).toHaveLength(0);
-  }));
+  // Fixed dates make two builds of the same members on the same base produce the same head.
+  const sameDates = { GIT_AUTHOR_DATE: '1700000000 +0000', GIT_COMMITTER_DATE: '1700000000 +0000' };
+  test.each(['an ancestor of the batch head', 'the same batch head'] as const)(
+    'a batch ref that another build creates at %s after the number is chosen is a collision', (other) => withFixture((f) => {
+      let otherHead = '';
+      const stub = ghStub(f, { onProbe: (branch) => {
+        if (otherHead) return;
+        otherHead = other === 'the same batch head' ? built(buildBatch(f, [11], ghStub(f), sameDates).result).head_sha : f.heads[14]!;
+        git(f.remote, 'update-ref', `refs/heads/${branch}`, otherHead);
+      } });
+      const failure = refused(buildBatch(f, [11], stub, sameDates).result);
+      expect(failure).toMatchObject({ exit_code: 4, error: 'batch_ref_collision', branch: BATCH_1, observed_head_sha: otherHead });
+      if (other === 'the same batch head') expect(failure.head_sha).toBe(otherHead);
+      expect(integrationRefs(f)).toBe(`refs/heads/${BATCH_1} ${otherHead}`);
+      expect(stub.created).toHaveLength(0);
+    }));
 
   test('a failed PR create with no PR on the pushed head exits 5 with the branch, head, title and body', () => withFixture((f) => {
     const failure = refused(buildBatch(f, [11, 12], ghStub(f, { createFails: true })).result);

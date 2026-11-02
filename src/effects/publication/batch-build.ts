@@ -275,13 +275,17 @@ function mergeMember(worktree: string, member: BatchMember, branch: string): Bat
 /**
  * Create-only push: the lease expects the ref to be absent, so the push never
  * moves a batch ref that another build created after the number was chosen.
+ * Only the porcelain new-ref status `*` proves the create. Git skips the lease
+ * when the ref already has the pushed head and exits 0 with `=`, so `=` is a
+ * collision like a rejected lease.
  */
 function pushNewBranch(worktree: string, branch: string, head: string): void {
   const ref = `refs/heads/${branch}`;
   const push = git(worktree, ['push', '--porcelain', `--force-with-lease=${ref}:`, REMOTE, `${head}:${ref}`]);
-  if (push.status === 0) return;
-  const failure = push.stderr.trim() || `exit ${push.status}`;
-  const rejected = push.stdout.split('\n').some((line) => line.startsWith('!') && line.split('\t')[1]?.endsWith(`:${ref}`) && line.includes('[rejected]'));
+  const status = push.stdout.split('\n').find((line) => line.split('\t')[1]?.endsWith(`:${ref}`));
+  if (push.status === 0 && status?.startsWith('*')) return;
+  const failure = push.status === 0 ? `exit 0 without a new-ref status (${status ?? 'no status line'})` : (push.stderr.trim() || `exit ${push.status}`);
+  const rejected = status !== undefined && (status.startsWith('=') || (status.startsWith('!') && status.includes('[rejected]')));
   let observed: string | null;
   try {
     observed = remoteRef(worktree, ref);
