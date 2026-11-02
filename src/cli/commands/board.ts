@@ -13,10 +13,6 @@ function parentNumber(options: BoardOptions): number {
   return Number(options.parent);
 }
 
-function collect(options: BoardOptions) {
-  return collectBoard({ repo_root: process.cwd(), parent: parentNumber(options) });
-}
-
 /** A collect or source failure is the whole result; the board has no partial form. */
 function guarded(action: (options: BoardOptions) => void): (options: BoardOptions) => void {
   return (options) => {
@@ -51,12 +47,12 @@ export function buildBoardCommand(): Command {
     .option('--json', 'Output JSON: the repo-harness.board document, or with attention the repo-harness.board-attention document')
     .action(guarded((options: BoardOptions) => {
       if (options.json !== true) throw new BoardCollectError('board prints JSON only; pass --json');
-      process.stdout.write(`${JSON.stringify(collect(options))}\n`);
+      process.stdout.write(`${JSON.stringify(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options) }))}\n`);
     }));
   board.command('attention')
     .description('Run the attention rules on the board of one parent issue (takes the board options --parent and --json)')
     .action((_options: BoardOptions, command: Command) => guarded((options: BoardOptions) => {
-      const attention = evaluateBoardAttention(collect(options));
+      const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options) }));
       process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
     })(command.optsWithGlobals<BoardOptions>()));
   return board;
