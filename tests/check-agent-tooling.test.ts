@@ -820,10 +820,8 @@ describe("check-agent-tooling", () => {
       expect(log).not.toContain("codegraph install");
       expect(report.tools.waza.stage_command).toContain("skills add tw93/Waza");
       expect(report.tools.waza.stage_command).not.toContain("skills update");
-      expect(report.tools.waza.sync_command).toContain("~/.claude/rules");
-      expect(report.tools.waza.sync_command).toContain("~/.codex/rules");
-      expect(report.tools.waza.upgrade_command).toContain("~/.claude/rules");
-      expect(report.tools.waza.upgrade_command).toContain("~/.codex/rules");
+      expect(report.tools.waza.sync_command).toBe("repo-harness install --target both");
+      expect(report.tools.waza.upgrade_command).toBe(`${report.tools.waza.stage_command} && repo-harness install --target both`);
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

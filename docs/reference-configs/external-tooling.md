@@ -317,17 +317,9 @@ bunx skills add tw93/Waza -g -a codex -s think hunt check health -y
 
 Then `repo-harness install` links the host skill roots to the staging copy.
 
-After installing or updating through the skills CLI, verify Codex has its own
-runtime copy:
+Verify that the Codex skills and shared rules match the staging copy:
 
 ```bash
-for d in think hunt check health; do
-  rsync -a --delete ~/.agents/skills/$d/ ~/.codex/skills/$d/
-done
-mkdir -p ~/.codex/rules
-for f in anti-patterns.md chinese.md durable-context.md english.md; do
-  cp ~/.agents/rules/$f ~/.codex/rules/$f
-done
 for d in think hunt check health; do
   diff -qr ~/.agents/skills/$d ~/.codex/skills/$d
 done
@@ -388,7 +380,7 @@ boundary explicit:
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
 | `npx` / `skills_cli` | external Skills CLI | Waza and Mermaid skill bootstrap/update commands |
-| `rsync` | platform filesystem | Waza staging-to-Codex sync and installed-copy runtime mirroring |
+| `rsync` | platform filesystem | installed-copy runtime mirroring |
 | `symlink` | platform filesystem | link-mode aliases; copy mode is the fallback |
 
 `.ai/harness/policy.json#external_tooling.herdr` is the single herdr pin: it owns
@@ -683,13 +675,7 @@ boundary for untrusted repositories.
 
 ```bash
 bunx skills update
-for d in think hunt check health; do
-  rsync -a --delete ~/.agents/skills/$d/ ~/.codex/skills/$d/
-done
-mkdir -p ~/.codex/rules
-for f in anti-patterns.md chinese.md durable-context.md english.md; do
-  cp ~/.agents/rules/$f ~/.codex/rules/$f
-done
+repo-harness install
 for d in think hunt check health; do
   diff -qr ~/.agents/skills/$d ~/.codex/skills/$d
 done
