@@ -60,6 +60,7 @@ import {
   MIN_BUN_VERSION,
   agentFleetVerified,
   bunVersionIsSupported,
+  ownFreshWazaSharedRules,
   runGlobalRuntimeSetup,
   type GlobalRuntimePorts,
   updateLeftoverSummary,
@@ -81,6 +82,7 @@ import {
 } from './commands/candidate-reconciliation';
 import { windowsProtectedHelperConfigPath } from '../effects/runtime/protected-helper-platform';
 import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
+import { providerSkillLock } from '../effects/host-skill-roots';
 import {
   applyInstallProfile,
   beginInstallHostTransaction,
@@ -247,6 +249,8 @@ function runTransactionalProfileProjection(
   },
 ): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
+  // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
+  providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let migrationSource: LegacyInstalledProfileState | null;
@@ -263,13 +267,27 @@ function runTransactionalProfileProjection(
         new Error(`install profile ${profile} failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return { result, state: null };
     }
+    let owned: GlobalRuntimeResult;
     try {
-      const state = commitState(transaction, migrationSource, result);
-      captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
-      commitInstallHostTransaction(transaction);
-      return { result, state };
+      const priorReceipts = (migrationSource ?? readInstalledProfile(transactionEnv))?.ownership_manifest ?? [];
+      commitState(transaction, migrationSource, result);
+      owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv, priorReceipts);
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
+      throw error;
+    }
+    if (owned.exitCode !== 0) {
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`install profile ${profile} failed: ${owned.stderr || owned.lines.join('; ')}`), owned);
+      return { result: owned, state: null };
+    }
+    try {
+      const state = readInstalledProfile(transactionEnv)!;
+      captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
+      commitInstallHostTransaction(transaction);
+      return { result: owned, state };
+    } catch (error) {
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, owned);
       throw error;
     }
   });

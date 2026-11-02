@@ -1,4 +1,4 @@
-import { join } from 'path';
+import { isAbsolute, join } from 'path';
 import { piAgentDir } from './pi-agent-dir';
 
 /**
@@ -18,6 +18,26 @@ export function hostSkillRoot(home: string, host: SkillHost, env: Readonly<Recor
 /** The Skills CLI staging root. Host roots link staged skills from here. */
 export function stagedSkillRoot(home: string): string {
   return join(home, '.agents', 'skills');
+}
+
+export interface ProviderSkillLock {
+  /** The write scope for path checks: XDG_STATE_HOME when set, else HOME. */
+  readonly root: string;
+  readonly path: string;
+}
+
+/**
+ * The Skills CLI global lock, by the provider's own rule (skills 1.7.4
+ * getSkillLockPath): a non-empty XDG_STATE_HOME moves the lock out of
+ * ~/.agents. Install snapshot, rollback, profile switch and uninstall use
+ * this one path. A relative XDG_STATE_HOME is invalid under the XDG spec, and
+ * the provider resolves it from another working directory, so it fails closed.
+ */
+export function providerSkillLock(home: string, env: Readonly<Record<string, string | undefined>>): ProviderSkillLock {
+  const state = env.XDG_STATE_HOME;
+  if (!state) return { root: home, path: join(home, '.agents', '.skill-lock.json') };
+  if (!isAbsolute(state)) throw new Error(`XDG_STATE_HOME must be an absolute path: ${state}`);
+  return { root: state, path: join(state, 'skills', '.skill-lock.json') };
 }
 
 export interface SyncSkillRoots {
