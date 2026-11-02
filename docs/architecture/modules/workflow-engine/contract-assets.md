@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1790e79f1a4f03ac6e613338234033111808e778b554ec705f0b36df93034280" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:69d8096c0eb5be9dab961f6e2905da14f4a74c32d0b7fd2e91c858843864ae00" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -23,6 +23,7 @@ flowchart LR
   p1_component_contract_assets_cli_layer_90bb6fa4["Contract Assets (cli)"]:::component
   p1_component_contract_assets_contract_worktree_lifecycle_5cb413df["Worktree Safety and Branch Delivery"]:::component
   p1_component_contract_assets_effects_layer_03f9e65c["Contract Assets (effects)"]:::component
+  p1_component_contract_assets_fleet_role_profiles_27f88d3d["Fleet Role Profiles"]:::component
   p1_component_contract_assets_planning_helpers_7600c3e5["Operations Helpers"]:::component
   p1_component_contract_assets_planning_helpers_cli_8bc2bdf7["Planning Helpers (cli)"]:::component
   p1_component_contract_assets_planning_helpers_effects_57f98a5d["Planning Helpers (effects)"]:::component
@@ -32,6 +33,7 @@ flowchart LR
   p1_component_contract_assets_template_projection_cli_568c10ed["Template Projection (cli)"]:::component
   p1_component_contract_assets_template_projection_effects_b7613afa["Template Projection (effects)"]:::component
   p1_component_contract_assets_template_projection_scripts_e75fee1f["Template Projection (scripts)"]:::component
+  p1_component_contract_assets_tool_catalog_e1042e03["Tool Catalog"]:::component
   p1_component_contract_assets_contract_worktree_lifecycle_5cb413df -->|"Resolve the configured Git binary for worktree lifecycle commands"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_capability_workflow_engine_contract_assets_c7ab122d -->|"Run a contract-listed helper through repo-harness run"| p1_component_contract_assets_planning_helpers_7600c3e5
   p1_component_contract_assets_planning_helpers_7600c3e5 -->|"Run each helper as a bounded child process"| p1_capability_workflow_engine_execution_primitives_b3033934
@@ -45,8 +47,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:bfbbdd579c7561d0e43217bf273e5f4aacad479b9f6293c0e5fceac0cb8d5247`).
-- Semantic nodes: `18`; declared relations: `7`.
+- Proof: `proven` (`sha256:23865c7b462c0a3334244c7734e5110e6e9e9445a98306775a33b3efdd59b7df`).
+- Semantic nodes: `20`; declared relations: `7`.
 
 ### 1.2 模組職責表
 
@@ -79,12 +81,17 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.action-commands` — Read the workflow contract during skill version checks.
+- `depends-on` ← `capability.verification.codegraph-readiness` — Type the CodeGraph init step with the core init port type
 - `calls` ← `component.evals-checks.primary` — Consume trusted PR checks for a base ref through the merge gate without rerunning commands
+- `calls` ← `component.global-runtime-reconciliation.cli-diagnostics` — Read the ArchContext capability authority for the doctor report
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the init and capability-context commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Sync the cross-review skills through the init command
+- `reads` ← `component.hook-adapters.host-installer` — Resolve the managed and Claude-only fleet role lists during host installation
 - `reads` ← `component.inspection-migration.primary` — Read directory and legacy path inventory from the package workflow contract
 - `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Run declared helpers from MCP tools.
+- `reads` ← `component.operator.architecture-reader` — Plugin → core: decode the capability registry from the native context and resolve changed paths to capability owners
 - `calls` ← `capability.organization.publication` — Read integration proof through the packaged worktree merge helper
+- `reads` ← `component.task-agent-host.review-runner` — Plugin → core: read the fleet role profile frontmatter rules and target overrides for the review host
 - `calls` ← `component.workflow-state.primary` — Match changed paths to capability ids through the pure capability registry
 
 組件出向關係:
@@ -103,9 +110,11 @@ flowchart LR
   - `calls` → `capability.verification.acceptance-review` — Locate the acceptance receipt and the protected Git runtime
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Stop the architecture daemons of a checkout before closeout removes it
   - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the configured Git binary for worktree lifecycle commands
-  - `calls` → `capability.runtime-harness.task-agent-host` — Register and clean up task worktrees and read session artifacts
+  - `calls` → `capability.runtime-harness.task-agent-host` — Run the task worktree register, merge notice and cleanup actions as the task-agent-host process entry src/effects/terminal/task-worktree-runtime.ts
   - `calls` → `capability.workflow-engine.workflow-state` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `component.contract-assets.effects-layer`:
+  - 無。
+- `component.contract-assets.fleet-role-profiles`:
   - 無。
 - `component.contract-assets.planning-helpers`:
   - `calls` → `capability.verification.acceptance-review` — Read the acceptance policy for planning helpers
@@ -120,7 +129,6 @@ flowchart LR
   - 無。
 - `component.contract-assets.template-projection`:
   - `calls` → `capability.public-surface.adoption` — Plan and apply the transactional adoption for repository init
-  - `calls` → `capability.verification.codegraph-readiness` — Ensure CodeGraph readiness during init
   - `calls` → `capability.workflow-engine.execution-primitives` — Run init steps as bounded child processes
   - `calls` → `capability.runtime-harness.hook-adapters` — Read the install profile and project skills during init
   - `depends-on` → `capability.runtime-harness.operator` — Read the tool catalog to project the reference tooling table
@@ -130,6 +138,8 @@ flowchart LR
 - `component.contract-assets.template-projection-effects`:
   - 無。
 - `component.contract-assets.template-projection-scripts`:
+  - 無。
+- `component.contract-assets.tool-catalog`:
   - 無。
 
 ### 1.5 組件結構
@@ -143,6 +153,7 @@ flowchart LR
 | `component.contract-assets.cli-layer` | Contract Assets (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.contract-assets.contract-worktree-lifecycle` | Worktree Safety and Branch Delivery | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.contract-assets.effects-layer` | Contract Assets (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.contract-assets.fleet-role-profiles` | Fleet Role Profiles | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers` | Operations Helpers | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-cli` | Planning Helpers (cli) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.contract-assets.planning-helpers-effects` | Planning Helpers (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
@@ -152,10 +163,11 @@ flowchart LR
 | `component.contract-assets.template-projection-cli` | Template Projection (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.template-projection-effects` | Template Projection (effects) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.contract-assets.template-projection-scripts` | Template Projection (scripts) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
+| `component.contract-assets.tool-catalog` | Tool Catalog | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:bfbbdd579c7561d0e43217bf273e5f4aacad479b9f6293c0e5fceac0cb8d5247`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:23865c7b462c0a3334244c7734e5110e6e9e9445a98306775a33b3efdd59b7df`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

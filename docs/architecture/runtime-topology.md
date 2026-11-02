@@ -20,7 +20,7 @@ The architecture model declares this topology. No code facts verify it: archctx 
 | `process.hook` Hook process | `namespace.host.developer` | `process.process-supervisor` | `capability.runtime-harness.hook-adapters` |
 | `process.mcp-coding-shell` MCP coding shell | `namespace.host.developer` | none | none |
 | `process.mcp-server` MCP server | `namespace.host.developer` | `process.mcp-coding-shell`, `process.process-supervisor` | `capability.runtime-harness.mcp-sidecar` |
-| `process.oar-review-host` OAR review host | `namespace.host.developer` | `process.vendor-cli` | `capability.verification.acceptance-review` |
+| `process.oar-review-host` OAR review host | `namespace.host.developer` | `process.vendor-cli` | `capability.runtime-harness.task-agent-host`, `capability.verification.acceptance-review` |
 | `process.operator-collector` Operator collector | `namespace.host.developer` | none | none |
 | `process.operator-server` Operator server | `namespace.host.developer` | `process.operator-collector` | `capability.runtime-harness.operator` |
 | `process.process-group-launcher` Process group launcher | `namespace.host.developer` | none | none |

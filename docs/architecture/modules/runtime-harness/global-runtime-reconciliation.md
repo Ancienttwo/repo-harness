@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b3a8339cac93875b09b949a5c3e05ede76545be65e6c8ab5f39762c7fe90621e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5a1748018908856a39fdfec9beba4d1719372448654f83cf81ce01e805605e7d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -21,8 +21,9 @@ flowchart LR
   p1_component_global_runtime_reconciliation_archctx_closure_cli_a2249d79["ArchContext Closure (cli)"]:::component
   p1_component_global_runtime_reconciliation_archctx_closure_core_8aa566c4["ArchContext Closure (core)"]:::component
   p1_component_global_runtime_reconciliation_archctx_closure_scripts_f4032cbc["ArchContext Closure (scripts)"]:::component
+  p1_component_global_runtime_reconciliation_cli_diagnostics_95dbb784["CLI Diagnostics and Shared Options"]:::component
   p1_component_global_runtime_reconciliation_cli_layer_c602aa84["Global Runtime Reconciliation (cli)"]:::component
-  p1_component_global_runtime_reconciliation_cli_root_389856ab["CLI Root and Diagnostics"]:::component
+  p1_component_global_runtime_reconciliation_cli_root_389856ab["CLI Composition Root"]:::component
   p1_component_global_runtime_reconciliation_primary_d41cdd38["Global Runtime Reconciler"]:::component
   p1_component_global_runtime_reconciliation_primary_cli_6acfbdac["Global Runtime Reconciler (cli)"]:::component
   p1_component_global_runtime_reconciliation_primary_scripts_d78bfd83["Global Runtime Reconciler (scripts)"]:::component
@@ -32,7 +33,11 @@ flowchart LR
   p1_component_global_runtime_reconciliation_release_packaging_effects_c2f69754["Release Packaging (effects)"]:::component
   p1_component_global_runtime_reconciliation_tests_layer_04289ccd["Global Runtime Reconciliation (tests)"]:::component
   p1_component_global_runtime_reconciliation_archctx_closure_1b9b31b7 -->|"Write the private global configuration through the installer ownership writer"| p1_capability_runtime_harness_hook_adapters_75a11743
+  p1_component_global_runtime_reconciliation_cli_diagnostics_95dbb784 -->|"Read the install profile#44; skill projections#44; host targets#44; Pi host probes#44; hook routes and status for the doctor and init-hook reports"| p1_capability_runtime_harness_hook_adapters_75a11743
+  p1_component_global_runtime_reconciliation_cli_diagnostics_95dbb784 -->|"Read the staged host skill roots and the upgrade operator decisions"| p1_component_global_runtime_reconciliation_primary_d41cdd38
+  p1_component_global_runtime_reconciliation_cli_diagnostics_95dbb784 -->|"Plan the upgrade for the init-hook checklist"| p1_component_global_runtime_reconciliation_primary_cli_6acfbdac
   p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the architecture-projection command"| p1_component_global_runtime_reconciliation_archctx_closure_1b9b31b7
+  p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the doctor and init-hook commands and validate the shared CLI options"| p1_component_global_runtime_reconciliation_cli_diagnostics_95dbb784
   p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the install and status and security and hook commands and run host transactions with the install profile"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_component_global_runtime_reconciliation_cli_root_389856ab -->|"Register the update and upgrade commands and run the setup inside the candidate runtime"| p1_component_global_runtime_reconciliation_primary_d41cdd38
   p1_capability_runtime_harness_global_runtime_reconciliation_401730e8 -->|"Reconcile and verify the selected global runtime closure"| p1_component_global_runtime_reconciliation_primary_d41cdd38
@@ -45,8 +50,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:2b3ce7485209e1ffcb49c037801c43714e5a2320915cfa4adf13dd3cc353fac3`).
-- Semantic nodes: `16`; declared relations: `8`.
+- Proof: `proven` (`sha256:c7abfbc4b82500fe9b1bcfaa89ad5a7b1b1e4425b557a0837b69af949f7a9501`).
+- Semantic nodes: `17`; declared relations: `12`.
 
 ### 1.2 模組職責表
 
@@ -65,9 +70,9 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `10k–20k` 行
+- 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
-- 排除前綴:`src/effects/architecture/archcontext-owners.ts`、`src/effects/architecture/archcontext-resolve-cache.ts`、`src/effects/architecture/capability-resolver.ts`
+- 排除前綴:`src/effects/architecture/archcontext-owners.ts`、`src/effects/architecture/archcontext-resolve-cache.ts`、`src/effects/architecture/capability-resolver.ts`、`src/effects/architecture/model-reader.ts`、`src/effects/configuration/agents-configuration.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -82,29 +87,39 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.adoption` — Use the legacy inventory during adoption planning.
+- `depends-on` ← `capability.verification.codegraph-readiness` — Type the CodeGraph doctor checks and global runtime MCP step with the core doctor and global runtime port types
 - `depends-on` ← `capability.verification.evals-checks` — Test Global Runtime Reconciliation behavior through its source modules.
 - `calls` ← `component.hook-adapters.host-installer` — Read the shared host skill roots for install projections and report architecture projection readiness in status
 - `calls` ← `component.hook-adapters.primary` — Write host output through the shared blocking writer
-- `reads` ← `component.operator.architecture-view` — List modules and export review prompts through the shared ArchitectureModelReader
-- `reads` ← `component.operator.primary` — Read the committed architecture model through the shared ArchitectureModelReader
+- `reads` ← `component.mcp-sidecar.host-setup` — Resolve host skill roots to name leftover ChatGPT skill links for mcp doctor
+- `calls` ← `component.operator.agents-configuration` — Plugin → core: change the agents section through the shared global configuration transaction
+- `calls` ← `component.operator.architecture-reader` — Plugin → core: read the native architecture context and the generated-summary freshness type through the shared archctx provider
+- `depends-on` ← `component.operator.architecture-view-core` — Plugin → core: use the generated-summary freshness type that the projection decoder returns
+- `reads` ← `component.operator.architecture-view` — Plugin → core: decode the docs anchors report and the saved projection check freshness
+- `calls` ← `component.operator.primary` — Plugin → core: read the architecture history, the hand edits and the history timeout through the shared archctx provider
 - `calls` ← `component.refactor-program.archctx-provider` — Run the pinned package-local archctx CLI through the shared architecture provider
 - `depends-on` ← `capability.workflow-engine.workflow-state` — Resolve the helper platform for coordination worktrees.
 
 組件出向關係:
 
 - `component.global-runtime-reconciliation.archctx-closure`:
-  - `calls` → `capability.verification.acceptance-review` — Build the module review prompt from the committed architecture model
-  - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize architecture closure records
   - `calls` → `capability.workflow-engine.execution-primitives` — Run the archctx binary through the process runner
   - `calls` → `capability.runtime-harness.hook-adapters` — Write the private global configuration through the installer ownership writer
-  - `calls` → `component.execution-primitives.repository-registry` — Resolve registered repositories for the model reader
-  - `reads` → `capability.workflow-engine.workflow-state` — Parse Markdown headers of plans and contracts
+  - `reads` → `capability.workflow-engine.workflow-state` — Read the capability ownership type for archctx resolve results
 - `component.global-runtime-reconciliation.archctx-closure-cli`:
   - 無。
 - `component.global-runtime-reconciliation.archctx-closure-core`:
   - 無。
 - `component.global-runtime-reconciliation.archctx-closure-scripts`:
   - 無。
+- `component.global-runtime-reconciliation.cli-diagnostics`:
+  - `calls` → `capability.public-surface.adoption` — Inspect the workflow marker, strip managed hooks and plan the adoption for the doctor and init-hook reports
+  - `calls` → `capability.workflow-engine.contract-assets` — Read the ArchContext capability authority for the doctor report
+  - `calls` → `capability.runtime-harness.hook-adapters` — Read the install profile, skill projections, host targets, Pi host probes, hook routes and status for the doctor and init-hook reports
+  - `calls` → `component.global-runtime-reconciliation.primary` — Read the staged host skill roots and the upgrade operator decisions
+  - `calls` → `component.global-runtime-reconciliation.primary-cli` — Plan the upgrade for the init-hook checklist
+  - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog to check the projected host skills
+  - `calls` → `capability.workflow-engine.workflow-state` — Read the workflow policy and the capability registry authority for the doctor report
 - `component.global-runtime-reconciliation.cli-layer`:
   - 無。
 - `component.global-runtime-reconciliation.cli-root`:
@@ -112,12 +127,13 @@ flowchart LR
   - `calls` → `capability.verification.acceptance-review` — Register the review command
   - `calls` → `capability.public-surface.adoption` — Register the adoption-plan command and run the adoption plan for the setup check
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Register the architecture-projection command
-  - `calls` → `capability.runtime-mcp.chatgpt-browser` — Register the chatgpt command
-  - `calls` → `capability.verification.codegraph-readiness` — Probe CodeGraph readiness for doctor
+  - `calls` → `component.global-runtime-reconciliation.cli-diagnostics` — Register the doctor and init-hook commands and validate the shared CLI options
+  - `calls` → `capability.verification.codegraph-readiness` — Register the tools command and pass the CodeGraph doctor checks and setup steps to core commands
   - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands
   - `calls` → `capability.runtime-harness.external-source-intake` — Register the external-source command
+  - `calls` → `capability.runtime-mcp.general-repo-access` — Pass the MCP index, metrics and trace log roots to retention
   - `calls` → `capability.runtime-harness.hook-adapters` — Register the install and status and security and hook commands and run host transactions with the install profile
-  - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp command
+  - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp and bots commands and pass the MCP audit log root to retention
   - `calls` → `capability.runtime-harness.operator` — Register the operator command
   - `calls` → `component.global-runtime-reconciliation.primary` — Register the update and upgrade commands and run the setup inside the candidate runtime
   - `calls` → `capability.organization.publication` — Register the publication command
@@ -125,18 +141,16 @@ flowchart LR
   - `calls` → `capability.public-surface.root-router` — Register the docs command
   - `calls` → `component.action-commands.skill-surface-catalog` — Parse the skill surface catalog for CLI commands
   - `calls` → `capability.public-surface.strategy-reflection` — Register the strategy command
-  - `calls` → `capability.runtime-harness.task-agent-host` — Register the herdr commands
-  - `calls` → `capability.organization.task-fleet` — Register the fleet command
+  - `calls` → `capability.runtime-harness.task-agent-host` — Register the herdr and events commands and pass the Herdr skill setup step to the global runtime
+  - `calls` → `capability.organization.task-fleet` — Register the fleet command and pass the task inbox root to retention
   - `calls` → `capability.workflow-engine.workflow-state` — Register the state command
 - `component.global-runtime-reconciliation.primary`:
   - `calls` → `capability.public-surface.adoption` — Classify retired surfaces with the adoption fingerprints and back up removals in an FsTransaction manifest under the target lock
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Configure the global architecture projection and verify the archctx daemon handshake
-  - `calls` → `capability.verification.codegraph-readiness` — Configure the exact CodeGraph CLI and MCP registration
   - `calls` → `capability.workflow-engine.contract-assets` — Sync the cross-review skills through the init command
   - `calls` → `capability.workflow-engine.execution-primitives` — Run processes and read lock owners during runtime reconciliation
   - `calls` → `capability.runtime-harness.hook-adapters` — Install host adapters, project owned host skills, and register the Pi package from the installed candidate after mandatory setup succeeds
   - `calls` → `component.action-commands.skill-surface-catalog` — Read external skill install groups from the skill surface catalog
-  - `calls` → `capability.runtime-harness.task-agent-host` — Configure the required Herdr skill during global runtime setup
 - `component.global-runtime-reconciliation.primary-cli`:
   - 無。
 - `component.global-runtime-reconciliation.primary-scripts`:
@@ -157,12 +171,13 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.global-runtime-reconciliation.archctx-closure` | ArchContext Closure | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.archctx-closure` | ArchContext Closure | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.archctx-closure-cli` | ArchContext Closure (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.archctx-closure-core` | ArchContext Closure (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.archctx-closure-scripts` | ArchContext Closure (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.global-runtime-reconciliation.cli-diagnostics` | CLI Diagnostics and Shared Options | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.cli-layer` | Global Runtime Reconciliation (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
-| `component.global-runtime-reconciliation.cli-root` | CLI Root and Diagnostics | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
+| `component.global-runtime-reconciliation.cli-root` | CLI Composition Root | `1–2` 個文件 / `500–1000` 行 | `entrypoint.global-runtime-reconciliation.cli-root` |
 | `component.global-runtime-reconciliation.primary` | Global Runtime Reconciler | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.primary-cli` | Global Runtime Reconciler (cli) | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.global-runtime-reconciliation.primary-scripts` | Global Runtime Reconciler (scripts) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
@@ -174,13 +189,13 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:2b3ce7485209e1ffcb49c037801c43714e5a2320915cfa4adf13dd3cc353fac3`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:c7abfbc4b82500fe9b1bcfaa89ad5a7b1b1e4425b557a0837b69af949f7a9501`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
-  participant p2_cli_root_24d546ae as CLI Root and Diagnostics
+  participant p2_cli_root_24d546ae as CLI Composition Root
   participant p2_update_command_da52852b as Global Runtime Reconciliation
   participant p2_reconciler_93a3ce0f as Global Runtime Reconciler
   participant p2_archctx_closure_c0374f9d as ArchContext Closure

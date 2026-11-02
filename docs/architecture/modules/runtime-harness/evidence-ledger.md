@@ -1,6 +1,6 @@
 # runtime-harness/evidence-ledger 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:954d6ce08a27f56e4956115a5084a8972310bb36807fb2aca4ca1fb99bdbb16c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-evidence-ledger" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3c8b0e9bc562dc31ecbf6238bcbbbc3519391cae5d38b3bc83ef2e32a906f083" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.evidence-ledger`(kind `capability`)
 > **Matched Prefixes**:`src/core/evidence/**`、`src/effects/evidence/**`
@@ -61,8 +61,10 @@ flowchart LR
 
 - `calls` ← `component.acceptance-review.primary` — Canonicalize review records and load verification execution results
 - `calls` ← `component.evals-checks.primary` — Validate and execute verification plans through the evidence verification modules
-- `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Canonicalize architecture closure records
+- `depends-on` ← `component.execution-primitives.task-message-claim` — Canonicalize task message claim digests with the shared canonical JSON
 - `calls` ← `component.hook-adapters.session-lifecycle` — Publish the evidence checkpoint and render handoff and resume from it
+- `depends-on` ← `component.operator.architecture-reader` — Plugin → core: canonicalize the dirty worktree digest and the stale citations of a review prompt
+- `depends-on` ← `component.operator.architecture-view-core` — Plugin → core: canonicalize module review prompt digests
 - `calls` ← `component.refactor-program.archctx-provider` — Canonicalize refactor provider records
 - `calls` ← `capability.runtime-harness.task-agent-host` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` ← `capability.organization.task-fleet` — Reuse canonical JSON and durable atomic append for task message records

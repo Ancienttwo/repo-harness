@@ -1,6 +1,6 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a244d4494c312d5c867e6d3a9409fb75f43d7d7fa975436a2dc115f4e416b993" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f16f5cab977024c5edd005adc4fa2358a7baaa5311d61d3c1ccbf6f5aad0108c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
@@ -79,16 +79,18 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `depends-on` ← `capability.verification.evals-checks` — Test Workflow State behavior through its source modules.
 - `depends-on` ← `capability.runtime-harness.evidence-ledger` — Read state artifacts and read-only observations for evidence.
-- `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Parse Markdown headers of plans and contracts
+- `depends-on` ← `capability.runtime-harness.external-source-intake` — Validate source bindings with the shared closed admitted-session selector
+- `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Read the capability ownership type for archctx resolve results
+- `calls` ← `component.global-runtime-reconciliation.cli-diagnostics` — Read the workflow policy and the capability registry authority for the doctor report
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the state command
 - `calls` ← `component.hook-adapters.edit-guards` — Canonicalize edit paths and resolve the owners of edited paths
 - `calls` ← `component.hook-adapters.primary` — Resolve effective state read-only at most once per hook event
 - `calls` ← `component.hook-adapters.session-lifecycle` — Read Effective State snapshots, capability ownership and stored provider board slices for session context
-- `calls` ← `component.mcp-sidecar.coding-profile` — Clean up exact worktrees under the system worktree root
 - `reads` ← `component.mcp-sidecar.primary` — Resolve effective state read-only for the state MCP tools
 - `depends-on` ← `component.operator.console-collectors` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
 - `depends-on` ← `capability.runtime-harness.operator` — Read state types and artifacts for Operator projections.
 - `reads` ← `component.strategy-reflection.primary` — Resolve effective state read-only for strategy context
+- `depends-on` ← `capability.runtime-harness.task-agent-host` — Read admitted sessions and task session lists through the shared core selector and session types
 - `reads` ← `component.task-fleet.primary` — Read provider issue and admitted session board observations without Sprint or lease authority
 
 組件出向關係:
@@ -103,7 +105,6 @@ flowchart LR
   - `calls` → `capability.workflow-engine.execution-primitives` — Take task and backlog locks, read the worktree topology, and write coordination records durably
   - `calls` → `capability.runtime-harness.external-source-intake` — Read immutable provider issue observations and complete refresh receipts
   - `calls` → `component.workflow-state.primary` — Read artifacts and owner Effective State through the shared resolver
-  - `reads` → `capability.runtime-harness.task-agent-host` — Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune
 - `component.workflow-state.coordination-plane-core`:
   - 無。
 - `component.workflow-state.primary`:
@@ -122,8 +123,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.continuation-ledger-effects` | Continuation Ledger (effects) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `50–100` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `100–200` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |

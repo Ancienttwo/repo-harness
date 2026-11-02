@@ -6,7 +6,7 @@
   "layoutVersion": "archcontext.docs-layout/v1",
   "generatedFrom": {"codeGraphPackage":"@colbymchenry/codegraph","codeGraphVersion":"1.6.2"},
   "semanticBaseline": {
-    "modelDigest": "sha256:f02a46556db9d520e82ad5b799ca7b0a6a645b977795942e723492aa0cf863fe",
+    "modelDigest": "sha256:4b84403c43c9185581f608575298fdc8c72e8c46683c1b275d095412c83d29e9",
     "capabilities": [
       {
         "capabilityId": "capability.organization.publication",
@@ -15,27 +15,26 @@
           "component.publication.primary",
           "component.publication.primary-cli",
           "component.publication.primary-effects",
-          "component.publication.provider-feedback",
           "component.publication.provider-feedback-core",
           "component.publication.pstack-watch-pr-experiment"
         ],
-        "semanticFingerprint": "sha256:60f73b5b99919ed3d42bf731602a378e54853bc0a2b7a1ccf1ef3382ed12cc28",
-        "flowProofFingerprint": "sha256:1ea52d3ad5895de58ed5695664c43e668b46972c8b4055c2d6667a8f11d68a0d",
+        "semanticFingerprint": "sha256:e39abfe67af048e06acc80879dc01dbd466ea7314ce907aa6e3dac22fda99a87",
+        "flowProofFingerprint": "sha256:d42088e16298a1f1f98910103cc084bb4da4c0aa01af63985507bd220a24c5c5",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:d01f2b7696f8a314691e3ac92d1532a7257113db55bd8eccb0ac06b6c35a84f1",
-          "entrypoints": "sha256:7d703ddf3f15e00c0c31f820537cfa35610388760528ce710f7a86e3c5fd89bf",
-          "interfaces": "sha256:275b74644ddb1c74e2f9c5c0f09ee6c5a93f0c13a2638b2bf0b713bd211fa28f",
-          "lifecycle": "sha256:83fbd03885373bd55b46de31d74d393f86ee54f5c94ef7c61be3fc4862bfbef2",
-          "names": "sha256:4f184cd78b07ed859c6b5e701df3efa0335c0c51ccb029e17e8b5966d8456fce",
-          "ownership": "sha256:846bdbe16853419cf5ba76dd482fc762f24c5096f710a25f175c98f3f5a4c730",
-          "placement": "sha256:c177e6264266f381e4f5fee6aacd80d2b647a1a0e1e8e35395a5966b8e206713",
-          "relations": "sha256:2830eabc40786f4976762acfd3a03e84051029efd15ce801bb3f1e47c77d9e99",
-          "responsibilities": "sha256:192472d341ac2255ce9197b732682362665e08465163ab8da6f4f186880566e6",
-          "riskBoundaries": "sha256:96f8fedf376564858e6d15b134b0349b93a5bab076bd935258c68e8e476ae0fb"
+          "constraints": "sha256:ca4a89bc7bf2fbb137028886989a28d115ac1c9ab3ac4370cbf8820791369bb8",
+          "entrypoints": "sha256:85c710a82a3830d82a13340d33656196eaba08baeca545849d6edc2861c4d3a4",
+          "interfaces": "sha256:c7c4bfad9c12078cbac37e0a4fd9a09d4368d98f33520f7e2a596b1fdf6c311f",
+          "lifecycle": "sha256:71375c45e1ba95f2fb10a1e3fdef0667b4350ac16962aba479de1ed3279b7a3c",
+          "names": "sha256:02d56a2487a434b61cbf0892ae93ea02f48221339992f36cb646f49f978b20c4",
+          "ownership": "sha256:6744af5653b3838795605b98147fb8bd77e34668540592ff94306be19063c649",
+          "placement": "sha256:98723e573c8810f8bb93fb2701c57ec93e5f66f873944efd8741e05071192a7a",
+          "relations": "sha256:a4c0061d1b3fb967684b1791af983b98dad0ec681e117e590858fda7f92976eb",
+          "responsibilities": "sha256:ce69fbd6bdeb0af3c518c46926be6bc8f99d191e0d7a8089012aaeee8aee61c7",
+          "riskBoundaries": "sha256:e8c4baf8b819f9c77fdc399650e0a77121f64d5b225a87d7948cf3155897b008"
         },
         "selectorEvidenceDigest": "sha256:dca44ac9d0337123e5914792793003e05f05865d49927a71c9653e2d43be29d9"
       },
@@ -46,26 +45,27 @@
           "component.task-fleet.primary",
           "component.task-fleet.primary-core",
           "component.task-fleet.primary-effects",
+          "component.task-fleet.provider-feedback",
           "component.task-fleet.task-inbox",
           "component.task-fleet.task-inbox-effects"
         ],
-        "semanticFingerprint": "sha256:496b923143251b1ce68f90949ae0900cd2c767db444a04ce43e29a0439f0166c",
-        "flowProofFingerprint": "sha256:19b542361545fdf58a4710e40483d8b07dd00e7cd8d4b001fb2435b6dc6914cd",
+        "semanticFingerprint": "sha256:0873a2343f5761edd62a06cc1dad06563b590ce1c222628fe49b730e29a55283",
+        "flowProofFingerprint": "sha256:251bb431ae9f671b91849446739fb3965800794646fc07656567e0e158c45e09",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:ac23cd5259389aca1616322fbbf2904d69c552512b9525f79192295cf0143196",
-          "entrypoints": "sha256:da7035016b86fba7cdf8f997e745c06ecefa55efc59989e22c5e33c87dd0942c",
-          "interfaces": "sha256:8d076b09ec9ab69e71d9cf81f18a87cec4f8f7a7e6aedd4ef18e72e43200de12",
-          "lifecycle": "sha256:6752d860702b2580c276186787feb7010c2b0c1f0d8640c8f3dabe0b7c629aa5",
-          "names": "sha256:ee8ccd00c0323b897ce1389fd7acd82e3dd019874f5b0d6a0f58f476f760d3e9",
-          "ownership": "sha256:b19baa19f27910c8edb22061c980b0bd030b2f568853143ccb94feb9301f2e7b",
-          "placement": "sha256:0d1ad68260ba27e7dbc489d4bd7a812a0f4b1483053af38b0d3f01bf5b15f594",
-          "relations": "sha256:41860acec2404a44075269e64ee8b4b04a51c4590be0b33180239efe9d0c1714",
-          "responsibilities": "sha256:389b4daeebcb442adbe8e757a5ff67f906867eef05d9ad6334b52703c4713bc8",
-          "riskBoundaries": "sha256:5d8ec6453ee27fa6b4976eb7f79801542bd936d1fab5229d2aaaad74e59be169"
+          "constraints": "sha256:f7ed5cc60b4939104444d284b38c716b2374d02b094ef11c20e63dd7b547ad43",
+          "entrypoints": "sha256:3fe494aec1f759eb38af3fd9033906f80d67786d2db95b258d4a06add9be02a8",
+          "interfaces": "sha256:d83cab3eecf567fab7b9a4011c62bc1f203451b4be647ab3eb4f51162ab94106",
+          "lifecycle": "sha256:ce63aa959f540d9627e4be8e3c7df9602f641accdce2d0493a8dc3c206886f8f",
+          "names": "sha256:342820bf3a2d44b261dcd2c4a88df570b11691287240e508c0a9c4935220d9d3",
+          "ownership": "sha256:d22c8d300392be2addf99cbd74f9fdf9800e9dd8e5622958d1a4046e775cb46b",
+          "placement": "sha256:ada1de1d98a42f743f37e6135b5405cf93522af734f948524aed52df8522e867",
+          "relations": "sha256:e0c94218d3027019932895aa6239e424cc9cc2cfd91904fa46a211d7d14a7e2d",
+          "responsibilities": "sha256:986287de9f2bf17b54d8fc655f1e83d4a6ea0ee2e1e326c5e31d4ab9ba831600",
+          "riskBoundaries": "sha256:0fe5e6d4cf0a662682a257b00fecbb682b86cfa5951e16785b777824278cdaeb"
         },
         "selectorEvidenceDigest": "sha256:31b2ed26dc28284151693991305ef5287d6d5de3692655b1ae99d887de6ac9b9"
       },
@@ -78,7 +78,7 @@
           "component.action-commands.skill-surface-catalog",
           "component.action-commands.skill-surface-catalog-core"
         ],
-        "semanticFingerprint": "sha256:3a24d5497dbb460c3049cab397e558879b4415ccb6dc1a5fa6ffbc4115355c11",
+        "semanticFingerprint": "sha256:72877d3e372aa33b67a6f87a6a1d3a4bfbece84e966be6023bc5e2ae953301d1",
         "flowProofFingerprint": "sha256:bfee7f05b87ce9dbe90a785912c30e576db3f3573e240e9bdec7a2900e03f378",
         "proofStatus": {
           "p1": "proven",
@@ -92,7 +92,7 @@
           "names": "sha256:5cf6731bd2e4bf8aef76a40116f38fcbf1f4cefe3cfb4a125e58777a38be192a",
           "ownership": "sha256:b98bdea7604f4247166afbcdeff4a2ff002ab9c654cc6d28936f9d0d2a68805a",
           "placement": "sha256:f8d93ba06aaaceb1a67129cbba95a468d32690aa0c16609da78a40a9dca42dd8",
-          "relations": "sha256:237cdc8a4ea0eceb119233e93613f838d38789d36089a5f1f326be83e18d5c95",
+          "relations": "sha256:9f95628aff847be9f7bc6462d6bcad03dbc144690003a87b85e9a26fefd87876",
           "responsibilities": "sha256:e905830faf62c4f379f0ee405ed6062aa861de7b81bc069ccfdb88f05783f104",
           "riskBoundaries": "sha256:dc48669d50e7c3c0444523c175c92f4895ab50a13bf289b84390f0bf079bf51a"
         },
@@ -107,7 +107,7 @@
           "component.adoption.primary",
           "component.adoption.tests-layer"
         ],
-        "semanticFingerprint": "sha256:6fa232a09f185c3791f4424121a896213b27f74d3c24a433f3765b3db090258c",
+        "semanticFingerprint": "sha256:29c24820372041bab118dc78d0c46b65399044876ee37e8f4653034843da71e5",
         "flowProofFingerprint": "sha256:39a9c6708f3193579815d14c870a3ab113fd9b22ef347fc26c18d2d522520aaf",
         "proofStatus": {
           "p1": "proven",
@@ -121,7 +121,7 @@
           "names": "sha256:bb4685760ef1fa6088d67e0d70c8890d154286a5ca90dd86e833d95f56861bd1",
           "ownership": "sha256:9d7c49d5519c9b989e6eb2a2b9581f55c77349643010fc5119f5faae970eca10",
           "placement": "sha256:6856923e7fbc0fa4028d03b452c8f734fb4e85280553cee70f698b895bcb274d",
-          "relations": "sha256:7c87f024422580e9935b3212f0b289635bbe749922137fcf8c5ff70339610ba5",
+          "relations": "sha256:10a11853787f6dc054ccb9e8d9d34e99e16aa3c005ac0da23e4b03ad10dc0291",
           "responsibilities": "sha256:8609b5f278441e4bec4cb9d9c4f8b93adb48cb65ff40bf9de35927096c3eec7e",
           "riskBoundaries": "sha256:0b3a3271fcf0fbbd9af4048c360ed26817167843c4b39b3e3cd3bd9d4bb129d9"
         },
@@ -182,6 +182,32 @@
         "selectorEvidenceDigest": "sha256:ab3cfdb24876a5a74c561994203b82d80576d7b00c0e6f15b1ff540e75446696"
       },
       {
+        "capabilityId": "capability.runtime-harness.dsh-host",
+        "memberNodeIds": [
+          "capability.runtime-harness.dsh-host",
+          "component.dsh-host.primary"
+        ],
+        "semanticFingerprint": "sha256:b73443023f22868e009ca8fb75cbd3640fba1c98876c9b94e77f07d926c5d104",
+        "flowProofFingerprint": "sha256:84a95cec59b5ea40ba92064ce91f1ee0af49ed13ac8f239ec635328aabb31c65",
+        "proofStatus": {
+          "p1": "proven",
+          "p2": "proven"
+        },
+        "facets": {
+          "constraints": "sha256:d354b58a2af79bb47924a405a52e6a9d4241e5678ff240c63fa40a8d7ea95882",
+          "entrypoints": "sha256:cf287967653b65a6285d314743db5303aa7aae35d06f8ef31cabd5d052687a3d",
+          "interfaces": "sha256:b8dfef36c95a6d07bc053cbbfe0c7a652aa5a80f70bf489633493ddc71dedc24",
+          "lifecycle": "sha256:fdd7ec0c5822bd6c6cbd9f9245bde2d311fe690faff2cb145077150092f537be",
+          "names": "sha256:ce7b829e72e3b3cc0263648512db36cf12ba66b112dd1c684e7ec94f1c82156e",
+          "ownership": "sha256:9cebe6980f473f17bc74027b3fe434226a88b66b43d02ae8eb450eea974c253b",
+          "placement": "sha256:83005fb3848601a3e14c061b547765ebfcd5f31e97196888d29e978e34a875f2",
+          "relations": "sha256:bef7feaa5bbeb3e0400af200c5bb2bc834bb62ea36d0ad9a56fbf9d12b58dff1",
+          "responsibilities": "sha256:64852fe12c47d836d9766991df096213c3845e18f572d166dd1976aa35b9f737",
+          "riskBoundaries": "sha256:d443f3836652b83f2700b789b6891130aada82215e3e538966c5b5465d877d1f"
+        },
+        "selectorEvidenceDigest": "sha256:45ec1b3eb6740744847d880bd31ef727bc824c754aa078c9d9abbc714c44c9c4"
+      },
+      {
         "capabilityId": "capability.runtime-harness.evidence-ledger",
         "memberNodeIds": [
           "capability.runtime-harness.evidence-ledger",
@@ -190,7 +216,7 @@
           "component.evidence-ledger.primary-scripts",
           "component.evidence-ledger.scripts-layer"
         ],
-        "semanticFingerprint": "sha256:576aef88cb1d9bc3d756b6fba148ae3dfea6bdc8e0c1cd92859010b98301be14",
+        "semanticFingerprint": "sha256:b8af2d0cbd8467a3a823f7fe7d371648868e957131ae55e5c9f8dc88ce77424b",
         "flowProofFingerprint": "sha256:69af2ee25a8ae146ad0958aba2576d506376984f0ae5d2e211f2839b1181ee6a",
         "proofStatus": {
           "p1": "proven",
@@ -204,7 +230,7 @@
           "names": "sha256:5a7c55240189afc4157054ea1be3683fb9a8aa9a63bd226ad4b09af6572d1da6",
           "ownership": "sha256:894c801178b89214a7fad110f17c0ab15e0534553f95ffc9f6ae1f19221ee691",
           "placement": "sha256:1ec1d5e0405c26776fb7b927fe97d5b8ce64a5c4581006195ab17e828d322cb9",
-          "relations": "sha256:fda76ae743b497f7622681b3d57c7ee990b26be7eaafb59e8ca08ba53ad3d323",
+          "relations": "sha256:6e6ab652143e341b5f61a5513a41de6a140f4bd3d9a3d17052e9d5b5e404684c",
           "responsibilities": "sha256:0699ea822b257073382044d2edbca1be336cb9c556dbe2d0606fbe33d39edcaf",
           "riskBoundaries": "sha256:a2797c1776705819f9d636ee225d601a23f11c9fbb2d1d90fed8da6801c8e492"
         },
@@ -218,7 +244,7 @@
           "component.external-source-intake.core-layer",
           "component.external-source-intake.immutable-evidence"
         ],
-        "semanticFingerprint": "sha256:454ecc4e70fab2af5f2380177d8abdec6ef910c51bffd9d8db2c7aba72600084",
+        "semanticFingerprint": "sha256:6ed784d9efdd6839e323d8436c66c709713ad593b86c156e6db6acf6c74b932a",
         "flowProofFingerprint": "sha256:cda1e2a91e9a052a27e58e57ecfb7cdacf039f7134469ec119f401aae36a7a68",
         "proofStatus": {
           "p1": "proven",
@@ -232,7 +258,7 @@
           "names": "sha256:bb1bc5a598a930e429f87bd03fc1ad81102fd84ad120644b7533a871cd630eea",
           "ownership": "sha256:321d5bcc78f9edf9fe6b95dc056fd57a84143a69abfacab38c7501166f89fb40",
           "placement": "sha256:d63aa79af69f9eac5b16854a568b7afac1e8beef8b5f75d9ecf29b5c09c85f59",
-          "relations": "sha256:14ddb52eceff6569db6baff2c4b9334127502dcbb57e531d6476d716236f6e13",
+          "relations": "sha256:0675ca8e78abefc2ee04e30aa848e029b26e0c7aeffa4d8f8fb286f417f508cc",
           "responsibilities": "sha256:a36a66f0b7e53fe143d9d98074705e260ecbdf19364e396db2b58e1b50d1b1e3",
           "riskBoundaries": "sha256:8a387ec2dd495676c215d442f3eda1304cd93e8a8b313a3528467d42352def0c"
         },
@@ -246,6 +272,7 @@
           "component.global-runtime-reconciliation.archctx-closure-cli",
           "component.global-runtime-reconciliation.archctx-closure-core",
           "component.global-runtime-reconciliation.archctx-closure-scripts",
+          "component.global-runtime-reconciliation.cli-diagnostics",
           "component.global-runtime-reconciliation.cli-layer",
           "component.global-runtime-reconciliation.cli-root",
           "component.global-runtime-reconciliation.primary",
@@ -257,23 +284,23 @@
           "component.global-runtime-reconciliation.release-packaging-effects",
           "component.global-runtime-reconciliation.tests-layer"
         ],
-        "semanticFingerprint": "sha256:124fd72328c7b75638afcee0e8090cb730a755cb45af84eb7a1199a9f3d67d15",
-        "flowProofFingerprint": "sha256:cd3db5492c40b75d8ea35dcdba48e1edeee33bc7ae114003ba5830a718875861",
+        "semanticFingerprint": "sha256:5b6ab251fc56ac76e5b77ad99aec42db861fa3b228e2f07787fb12d30f6a23f9",
+        "flowProofFingerprint": "sha256:dc546bc7cbc1ddb405ae5586194ec9c2e63306c1dd207231d93d9869ce47d6dc",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:101a74c873da7df968c30837b048edb0231b49a8ba408c1505b8b9af966ef007",
-          "entrypoints": "sha256:fe5f2bdf68b10a9df0d0ac60b1db040833aea97b062dce2b5b1c7b1e4335830b",
-          "interfaces": "sha256:b30fb480d77864ba6409a4fd069e36cb5c33ee7fb80c89eb556521a227725c75",
-          "lifecycle": "sha256:5727a66f8ef0e26bae784c26bd0ceae3142b0999ddeb9b3012a2a4570b8e687e",
-          "names": "sha256:6dfac83341a104f80c29e263228d3a58fd3b43357ae6ab2e4ef68c80a3914a38",
-          "ownership": "sha256:0d4a393a69b9015126a4f18bcd6a55b7c1a88d9c4033e3b1676482e34bde1525",
-          "placement": "sha256:768cfc71bc10d42781e1c871ce4b55bc8dc9608f1b79ff5b6172522c03bda129",
-          "relations": "sha256:5db014ee879aa3dcd466a743f15d88fb592c95b3df7f2c023581749c384ead00",
-          "responsibilities": "sha256:fd361a574715d3c4ef2e2417905c259660fb886b52f2560035138a539930b2f0",
-          "riskBoundaries": "sha256:09be70bc8485ae9c3f0b87a28cdb1f087558db4db230a3e5300ff6afd78dbd2f"
+          "constraints": "sha256:db3edb89fe409bf276b932808ff2663b40e95bcc82e11f5784ddfcd19c683e46",
+          "entrypoints": "sha256:a9e5b798e10ec1aa79bca7076972144a8a03f2e165f5cd8962689af9140fabb8",
+          "interfaces": "sha256:8df123553f5a83149dd2dba0c4862d77c7689a888cf502510295be1fbc70f745",
+          "lifecycle": "sha256:82c0932bf88b3e4513e341117503855fc08a2abb7b918a240672fdb2d373cd77",
+          "names": "sha256:01517e8f0f26f0633a051db3492a3d4e737faa39e57597111b0fe9d81ba74ec3",
+          "ownership": "sha256:480db5c1c404e17d543c8c66bad0b2a9e6d4afdca720b8c51a706b10f41f1f87",
+          "placement": "sha256:5187e905295292674d797711700a234f37b4b3e963906d94b1ac44c2abbe7fc1",
+          "relations": "sha256:eda83ffb720c3685d06c25805acbee8da4208f786f2cdc6246a747f5da657fd6",
+          "responsibilities": "sha256:8d8073831dc0123a54dfcc4c8276eeda4a4c46d44fdb108a31e7985c5d1b7a6b",
+          "riskBoundaries": "sha256:0eff9cb9a44d4e9b4ba6908f45feb9b88d62843df838392fbadcf68799ebe0d3"
         },
         "selectorEvidenceDigest": "sha256:a81fbf3d1ed02a4ea5fd49be7d608233a05b69d5dca3bacf347a7c227d3f19bd"
       },
@@ -289,7 +316,7 @@
           "component.hook-adapters.session-lifecycle",
           "component.hook-adapters.session-lifecycle-effects"
         ],
-        "semanticFingerprint": "sha256:b34bbf8a146291bff7d12d397f53cabafde21a08a9ce3427c6d05a98f4cb34e9",
+        "semanticFingerprint": "sha256:ca20200a95621b49427250e6935c2d5705fd2be2837049312a97b87a23db02e4",
         "flowProofFingerprint": "sha256:94e4554fa509c43d540d2489ff4b46b43bd2016d8d16deb122f2843f96914af0",
         "proofStatus": {
           "p1": "proven",
@@ -301,9 +328,9 @@
           "interfaces": "sha256:43358d0060d8f72a63f48720dd907ca7427c904b9cbf8334f55d0f2b8d53e2d8",
           "lifecycle": "sha256:850f82ee46e24c08bc90a51edf574b2e9530e9b05a642ea225bc2225fc4b48c7",
           "names": "sha256:acf03cf6295688adaddc2a55c0b686b6ae75112a4637e4f2438abb3a63708253",
-          "ownership": "sha256:3ce8e6af3f323128e14aaedf7704b9f6de5bb571e967df27b55b4e7929df8951",
+          "ownership": "sha256:e7e2336bc4c4d5f87dfe41537b7209607ee21f1757744c22d492b7548c3df58c",
           "placement": "sha256:97ec4f5bae7ae263b836b33a4c9a48c7fd678ec563047188b5f4a4252187c4c9",
-          "relations": "sha256:61236553b850073d7c0d1c9b0ca5da89e80feda5ef54ac8b5f9923672f7c0495",
+          "relations": "sha256:1ead6e72d1f5cdf1c02848e26d3a0d983c19610944ee9cd4741dc23a856a31d4",
           "responsibilities": "sha256:35e5939672690faf69d1f6229a716f99e285046dee897ca1d526b84782b592f3",
           "riskBoundaries": "sha256:34f0fd56cf39970f8baa185f61194fc5dca6932c389eb0c72c2fe24a403b452c"
         },
@@ -313,32 +340,31 @@
         "capabilityId": "capability.runtime-harness.mcp-sidecar",
         "memberNodeIds": [
           "capability.runtime-harness.mcp-sidecar",
-          "component.mcp-sidecar.coding-profile",
           "component.mcp-sidecar.host-setup",
           "component.mcp-sidecar.primary",
           "component.mcp-sidecar.repo-policy-registry",
           "component.mcp-sidecar.repo-policy-registry-effects",
           "component.mcp-sidecar.transport-auth"
         ],
-        "semanticFingerprint": "sha256:bb705f574fe4cfc9b312d797bd98cdd7c1bdccf3eb5d9c056eeb95a2c4d8cd81",
-        "flowProofFingerprint": "sha256:aa84e144ad4cdb644d3d1cb63e6352744f2617c698a1ff90dff4fd59e27fd235",
+        "semanticFingerprint": "sha256:438495ac6b678799162478f264c9d4a9120c51dfba6c9dc16a83785c97a45be1",
+        "flowProofFingerprint": "sha256:2d794f9f3dd524c89fe2305a1f86e929383e5119c0702ab318a126260e4490dd",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:bbd08b682471fa9de86238fbbd7df9f2e3f251d0d48c28999b71342aed22ae42",
-          "entrypoints": "sha256:d23069309ea9eaaa2a4e9c3f3e87ca202e3f30e9774dea8d63ac0f862291ea77",
-          "interfaces": "sha256:283e4be413eee6093332329aadef1fc4e561274d080f76101ee26f5fc36126cf",
-          "lifecycle": "sha256:fa1354630756ea093c635e978be93714180deefa2d8663088a8e709d2243578e",
-          "names": "sha256:ce4665b409bea79335a53adcfa31733632776ecdafe1a2afc4538a9e6e88a50c",
-          "ownership": "sha256:2f742ca8d2103a841aea18d8360db07a92d456a4ea7b7b73e84613a9ab3df709",
-          "placement": "sha256:0f5f5cb7c3f3e7b7a5851c05aa042e6894c8def82a3aafae41f455222220c008",
-          "relations": "sha256:51499356462aa6634228c48fca563ec57a83b3fba6e0b861c93028d3d9be5dac",
-          "responsibilities": "sha256:5759d5e577e17d106a8718496fd42b2fb6c18c8612c5bb7d3a3d3e3068481b44",
-          "riskBoundaries": "sha256:b729068bc26700eb67fc38c5220be38c6e2855315dd0a3b659cfea869f9a317c"
+          "constraints": "sha256:e2adfe92fbd888c989b982e3f9d2e54a4ac8d26871cdc1bb60f7e93b39943be5",
+          "entrypoints": "sha256:29f40bbe3b1d8242402cad0935d0539aca770cabd5bec07740e2c05c957884f4",
+          "interfaces": "sha256:0f8088fda6a1c9e46bbe7ca5ddb08983bbf0b3af1a0cf9e648fbd2a4316552d0",
+          "lifecycle": "sha256:dad742f54344230984ac7c0f61fd5dc46a3014b15afa188c4d68703c5e9429c0",
+          "names": "sha256:d8a06d79e7a99c4ba2b899da47e42a77bc8d74150c34b12c6afc5719c22405f5",
+          "ownership": "sha256:2859f50e25857c78b8908431675588c4d9767de86d1094083ecc84afe727eb77",
+          "placement": "sha256:6b599aca0946b3e689adf88ac9d8d616b06dfb13a03a5c0922099f0dfe815540",
+          "relations": "sha256:17928fc9dbcb1a07556b49169d7161f745a34ee5ec3aaa2b18df5ab62349779f",
+          "responsibilities": "sha256:be7f6a55c5408b8edcbec9f57e40d5bb13f6581ae6b6e3923b60346436b55eb9",
+          "riskBoundaries": "sha256:6338ffb4e50eb00940f96031ea669ce8b10d0066a64fb4694dd32c70521c7ddf"
         },
-        "selectorEvidenceDigest": "sha256:cce55a3e834db7a2c6f411d35947e1362a1176ee4c8702e3bcdc2ebba83791cc"
+        "selectorEvidenceDigest": "sha256:f6604bc92c0059ea4b9154448790dfec66c66f5b491ab5f28b2a815a98a947c8"
       },
       {
         "capabilityId": "capability.runtime-harness.operator",
@@ -347,34 +373,38 @@
           "component.operator.activity-feeds",
           "component.operator.activity-feeds-cli",
           "component.operator.activity-feeds-effects",
+          "component.operator.agents-configuration",
+          "component.operator.architecture-reader",
           "component.operator.architecture-view",
           "component.operator.architecture-view-core",
           "component.operator.assets-layer",
           "component.operator.cli-layer",
           "component.operator.console-collectors",
           "component.operator.core-layer",
+          "component.operator.doc-sessions-cli",
+          "component.operator.docs-host-isolation",
           "component.operator.primary",
           "component.operator.primary-cli",
           "component.operator.view-projections",
           "component.operator.web-console"
         ],
-        "semanticFingerprint": "sha256:c1b41527007c96cf56e71dbdb62da28972b6163e0ae8db649a12def480b958ac",
-        "flowProofFingerprint": "sha256:f6d7081a01e10b0c9a632f9114f078a00dae4e28d2dc7565e0a74cf3951b9ad4",
+        "semanticFingerprint": "sha256:560ce2de582f502881b154e48b32b68655e9fa7bd18765602e0ee38f7503a3d2",
+        "flowProofFingerprint": "sha256:a52edc887fcb1c965b94905de7859f5a1138ef8d0a84ade7daef557586a6acc8",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:4d96d5e687451fd0306c927b9a0e195ef360fa89515aacdc45d322f8fdce1713",
-          "entrypoints": "sha256:5acdb943eeb6bed004b82cd7e856543832dd6e639186f4c6f96203092015a4ce",
-          "interfaces": "sha256:64b02a301234480519da377502e715c0cf4201ff9302af72b9f8d915afad82bb",
-          "lifecycle": "sha256:5afe513d2756c0e3201d731072739e258df689eb2f6e4b77e5f26ffb64f68774",
-          "names": "sha256:9af753268e2ee5e65f4005ad922b40a6ab4db098a7d5b7bf0b38227ae9c7b8c6",
-          "ownership": "sha256:6f117e57e91658aa0bb177df30ad6dcfdae0852a527267b0d553cbfc26c997ea",
-          "placement": "sha256:87b23b58709f66b58d1cf00ee7dcdce74fce7fc9c07bb2215495e5d8fea0a4ed",
-          "relations": "sha256:711d915fa0d59ffa38754f774f19525538c378a7147e5d55a92735dde1a4a9e3",
-          "responsibilities": "sha256:b1b7bb71af8823e57df61d67078c56ad7360566277708e00febb2a16a5a25827",
-          "riskBoundaries": "sha256:92f55e84df4da91cb020c8fd4ac31bab4e5d351e10456218f352c9b7564e8079"
+          "constraints": "sha256:5d12ad80311013350bf1802a5f6a58de88cdc952496275760bc3890d8a6f351e",
+          "entrypoints": "sha256:f8b6c2cae80c9d637d361207b3ede68aa7f772f44be68edf8bb64fa0f6e682ce",
+          "interfaces": "sha256:c1762cf010e5e75e04ee7e799e9e58522303016087435391e77b406822b70dff",
+          "lifecycle": "sha256:71b4f326bfb745f3c499539a1a00408b03983a16b5be7bacade4eb3c637ca78c",
+          "names": "sha256:ab4b5792f629e2fc5e2a5ab618aa0629b131dd11de4aebe0006720cf2bbc8f14",
+          "ownership": "sha256:9294c270f19337819f7545ed641402ba639af5da556f85a99d7479635a857b13",
+          "placement": "sha256:65939f28ba4b61cc5da29f5e9f7dab4898aec0c1867be6e86b7c5a9a8564622a",
+          "relations": "sha256:730e4a32dee4d630727d1ae2beb8b202f6fe975c787d8d2b0aae7fbab58aafe9",
+          "responsibilities": "sha256:a329b52862b2827fb91304857b2841d20c8d6e331a6777cb8209edf9ca02dd3c",
+          "riskBoundaries": "sha256:2e17ea7ccea0a6e056e21400f7580a826e647c18e04865d59a81e823b7e8a23f"
         },
         "selectorEvidenceDigest": "sha256:ae05c347ac33396cf86e2ef9a1074b81706d2b0313c3b00af91f715a5db39c0b"
       },
@@ -412,57 +442,33 @@
           "capability.runtime-harness.task-agent-host",
           "component.task-agent-host.cli-layer",
           "component.task-agent-host.core-layer",
+          "component.task-agent-host.events-cli",
           "component.task-agent-host.primary",
           "component.task-agent-host.primary-assets",
           "component.task-agent-host.primary-cli",
           "component.task-agent-host.primary-core",
-          "component.task-agent-host.primary-scripts"
+          "component.task-agent-host.primary-scripts",
+          "component.task-agent-host.review-runner"
         ],
-        "semanticFingerprint": "sha256:e3da6bc32ea6f56a7aa1eff95f2a083afa4b79052320fb7442fecb4e88b95c90",
-        "flowProofFingerprint": "sha256:313120fbc086bf6ec0c3eb923ea3e769132b987e18d60cd1bbcbc7abc00d3fe9",
+        "semanticFingerprint": "sha256:2316f5cc668665e90971edfd618f59dfeb0b3dfb9ffc516d4919f74edb2ef34d",
+        "flowProofFingerprint": "sha256:64fe3dfa38632a02ed96bcb6fb36b4c02a722f4eb54888f826f27fb8b57a407e",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:49be64c4b6cff180ddc246e364695a7c66dfbe45c0310a94082b689ada533a0a",
-          "entrypoints": "sha256:af1f5ecca4be4f59026d585814361acbc36be0599ac4ca50e7a2dd6ed692c68d",
-          "interfaces": "sha256:e964a7c6bd0cccbeb4f1b8de7f1afa85956b5e67796b7a024363533fcd6a25fa",
-          "lifecycle": "sha256:df3dc95acea8331b8e97b1d6df5bf4affdbf445abc2b7ae995281fd4f4f9b131",
-          "names": "sha256:ba87722c4243f111a881b35f31624e3960e2b6c9eee9d4e251c8fa4f41376c7b",
-          "ownership": "sha256:1dc3a0504e3bcccfceeb74b2a77aa7be9fefbd1fa3f4fb38ebfc5d846443737c",
-          "placement": "sha256:238e83b7304fe936577e889887b6f680c59292dce9e0ce49de867d2d0fec0317",
-          "relations": "sha256:bb2444d369d9695d5db7d6079de381bd1d48e040e5790123b545b8b15985168f",
-          "responsibilities": "sha256:48c7f373992bc198218dfd5c4afd97bf537316eafca31d4c2c12fff1f9509827",
-          "riskBoundaries": "sha256:ce1d8312c1870ecf9c440d709ce8a7363550cb76bfa4150085998779fb158a21"
+          "constraints": "sha256:36eeaea054732ffff079df142cfbb6f310b3c734ed630c0299929459d5041ef0",
+          "entrypoints": "sha256:db7e3b600cc0db11bd7ee6e4e8ae6c37e736a36a51b0895d71089d622d66de2e",
+          "interfaces": "sha256:c2be8f5d99947a7d5f8613e9c0c9c08aaea8d2eb0d22b8ce02b487b2de8b9be6",
+          "lifecycle": "sha256:457eb34c4c5dcb0af9d9c992ebd69a258edfbf1dd2aa200a50eee81265bb4aa8",
+          "names": "sha256:55f3dd4bea34e2319c86b0dbfa5151f54e11dd99f93bdf5ba291e30b1767ec2a",
+          "ownership": "sha256:1dec28963d922ce46aad2558b2a1a455f3d01b92eae171a9527da61d7d286e5d",
+          "placement": "sha256:0f41d1777cbc931d318d6815e9cf78d332fa77b48e52fdd7c6c026d34d22f776",
+          "relations": "sha256:3b76befffc65e6aaff7a95580ff97b9a3d65463913c32efa574d04eaf4baba5f",
+          "responsibilities": "sha256:d30d039ac16b17a68cfff7df419604cf0ead8b21b1b3b10f2d4287461d6980d3",
+          "riskBoundaries": "sha256:1bc058b08ef41981b39eb9b71b3c42f10ede3d8acd6559b7c2dc90d521a934f3"
         },
         "selectorEvidenceDigest": "sha256:e2a830d2b6007b7bde3dbb6f5e8c8ca805f03d3b972d0d68a780ee8d348b3fe0"
-      },
-      {
-        "capabilityId": "capability.runtime-mcp.chatgpt-browser",
-        "memberNodeIds": [
-          "capability.runtime-mcp.chatgpt-browser",
-          "component.chatgpt-browser.primary"
-        ],
-        "semanticFingerprint": "sha256:f73c71ee574dfb053f13cd708807c52cb9191ab854faac9738614bc29565a612",
-        "flowProofFingerprint": "sha256:554467de4c965960b081dc72376c002c9ee3fab397ce0d24694747ed1bc7f5ba",
-        "proofStatus": {
-          "p1": "proven",
-          "p2": "proven"
-        },
-        "facets": {
-          "constraints": "sha256:a2c4f8b996753ec295a42bd97f3dd8862d371a40e325cc48fdaea5b12b8cdaf6",
-          "entrypoints": "sha256:3f7358a914053dbc1ccffaa54418017b87246f40d73d16dc1955ca2d4f97a7a8",
-          "interfaces": "sha256:cb5d70f84eebc8bfdc30b25a74f46c88f38047f24fb38dbcbfc65fb5f1723a50",
-          "lifecycle": "sha256:b8a065fdc7d5f4d7015030eb01ef7b4e933f9d6fafea1c5bca0b456006f4589a",
-          "names": "sha256:5361c4857e7805d64824f4963c359e61a43fff22e92aa0991c75b86d539f0310",
-          "ownership": "sha256:62f0a08e9c0b233c891ab574d4a9dfd0f3462f67bb71e8fc6a5cd5442a7d7a7b",
-          "placement": "sha256:ecd0764d3d9a26f833884f80e32ba7e883582a387755e0dd3ca5ac3b8e2c059f",
-          "relations": "sha256:920cee667cec11e6910fb51929ab564dd32016a47ec5540d900b876f999c9bb2",
-          "responsibilities": "sha256:5a82f34f5e9fe9fb1d7baf999425f12360389ecd77783fa224dc4854d1cc8c83",
-          "riskBoundaries": "sha256:218006a8dc204d973789a0e48661639f2517f66f414d40fa8bca3a36be5de916"
-        },
-        "selectorEvidenceDigest": "sha256:94fef6848bc61af72998dae1558468dda2b66fef54a01fa5e11bc9b1e6e20147"
       },
       {
         "capabilityId": "capability.runtime-mcp.general-repo-access",
@@ -471,7 +477,7 @@
           "component.general-repo-access.primary",
           "component.general-repo-access.tests-layer"
         ],
-        "semanticFingerprint": "sha256:6408fa29c4cf1713035843bffa00f90144bcdeddd4250fd8961025e1966fc1a5",
+        "semanticFingerprint": "sha256:d39261d0c0f89fc99152ffa7e12b59ffe6b3e4f353a258382df1c521ca6ea71d",
         "flowProofFingerprint": "sha256:b79445e407ee96b0ef6587bc662d97de2b4f02b8e695dc6aecaa6d4e42c732c5",
         "proofStatus": {
           "p1": "proven",
@@ -485,7 +491,7 @@
           "names": "sha256:33fa7408d8a19b0e3f57877bbdd3db70bba06d5634e4dee2aa6fb17e145771a8",
           "ownership": "sha256:fb4ce53526894bbb02969ce6c04d83a8bb58793934b35664ec36677ba0b6540e",
           "placement": "sha256:cd9147c86742cf27ab4ad5b4a5384f44b10d160e07630b6476e8c9a21a95df5b",
-          "relations": "sha256:bd16816e1e660ddd8444e6439a2a57e8ce3af217cb6dba6d2881223bc2ec0a5d",
+          "relations": "sha256:8fbf40e0de371b553ba3516d97408bdc99be35fdddec3ff4f4f8f59a3d9767c8",
           "responsibilities": "sha256:d7d20969961af1a86fc18399f7e49ab90de46c3e60b3ef46c71f291aca0bcd23",
           "riskBoundaries": "sha256:bf210c07128b5496fdb37ab199f5af6d60833b3158237bc645ad7bbd26339d37"
         },
@@ -500,25 +506,25 @@
           "component.acceptance-review.primary-core",
           "component.acceptance-review.primary-scripts"
         ],
-        "semanticFingerprint": "sha256:521e6ff74de8edb613593b873d354b5a9b4349a50fbb7adcdb74ca9008851b03",
-        "flowProofFingerprint": "sha256:0340c4c342a6698242cc6d5d863f140e9d0c15a29fa952d491b8d5a1b13c01b5",
+        "semanticFingerprint": "sha256:bfb5264f7fc812eaf9582a723294be90052f35fc8ab6e2f312c7208081bebd65",
+        "flowProofFingerprint": "sha256:9a65114bf6a99d8df0822f603b809eadc267d0dd05ffc90b2f64a3c0317be26b",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
           "constraints": "sha256:a2258a7d02dd39bbaac88c1bf858fee80df6992381d8f29628756b9459f05b1f",
-          "entrypoints": "sha256:282eb2ed9e9a79139e2d66732dee7663b263e7ac1bb41a1cc2d7c7579b9075d5",
+          "entrypoints": "sha256:4bc0e363a782d0e65ddfbbd4897734608650e6f18ff524daf2670178c55fbfd9",
           "interfaces": "sha256:41b9cc32a599fecbbf9f658218aed4e6d9d161d694a01437ee43387c8da1865b",
           "lifecycle": "sha256:66f9272607739a9208ec234e748b0466a25786331030b3d6d5602584d30d5cd9",
           "names": "sha256:ce1b810b7bc0d317b5e771e2942450ed788a5eb7453825f54425856d4a835055",
-          "ownership": "sha256:d325a872f0785ece1e02668b76977ba19bb2ed66e22ebbfbd371b0191319f576",
+          "ownership": "sha256:f93096d2d5345d4fe93f7babc053367141977da17fe9dbc6db2dacfd90ee17e9",
           "placement": "sha256:03783881164151d1ca313e07847cd3ac2b5fb07afadb4d99e16c2c9608e3f612",
-          "relations": "sha256:af2b3885d18ff308dd766212cb4c7d9bf1770a6bfaf3cb84ef0f7cb5cb3ca6db",
-          "responsibilities": "sha256:d1d2ec4960e9b156030a7b9b00405082bafd1237967e6c85f89f3c5e11f3a3ac",
+          "relations": "sha256:0603dd96672540109778a3dfb96e83942a97f652cad287e639d4704dedf21f92",
+          "responsibilities": "sha256:c23bb9f8be8e9a4dcd95f9740f96d0f4a65cd66bba8b0bb6ef11ff042b394b97",
           "riskBoundaries": "sha256:7d68b29f212ff0da8e10a97092d487bf5f22db6a4d519381d13c364946f05e4c"
         },
-        "selectorEvidenceDigest": "sha256:4f96b65f75af021b7ef3c20c64107cc6c66bcb21dfed0418b91246daa8eea9b8"
+        "selectorEvidenceDigest": "sha256:923507b3241a8c1ea83092d6beeef3a2679b4ab2b086cc61f118d4dcd1738562"
       },
       {
         "capabilityId": "capability.verification.codegraph-readiness",
@@ -528,7 +534,7 @@
           "component.codegraph-readiness.scripts-layer",
           "component.codegraph-readiness.tests-layer"
         ],
-        "semanticFingerprint": "sha256:fd5a76dc227c52aa006d761ca46daa0c1556980332dcc5ea051e0cd3d0efc13e",
+        "semanticFingerprint": "sha256:ccfd6133d82f1dc0664c045df61443e98e61d93156928a7f1d647e38bcf7a631",
         "flowProofFingerprint": "sha256:e94aa5db4627c1501215b1bfd669d70839c91aff8104d7d95a26ffb833f5ea44",
         "proofStatus": {
           "p1": "proven",
@@ -542,7 +548,7 @@
           "names": "sha256:f04e6af99507f61cae281e0f56f1908a362e5b4c000b389eeda746e814390f2d",
           "ownership": "sha256:72aff32dd1821ffc0bb216e57af6a76c4837612bdbe1435c2ed19bebca8c64cd",
           "placement": "sha256:00e5d69b3ccabd4c48e553375c3343b7b2f23ce5f45cfa7d9f25e984b67b0dd6",
-          "relations": "sha256:212ad75c775b5420693b22dd35d63b5ed5b509912049545c3a4fc7ad9de92e51",
+          "relations": "sha256:97bb543ff52ee12b85ad610f2c910dd9bfcb503956bece53a18b262b6eecce1b",
           "responsibilities": "sha256:a64a6309551a9a645cf20a67be3fa4bb06b9ca8c8d49a9f14e12db564a1d1835",
           "riskBoundaries": "sha256:289899b5cdafec95e8794555f2131345ecfadd60fef40563d739fee4aac3f30b"
         },
@@ -552,6 +558,7 @@
         "capabilityId": "capability.verification.evals-checks",
         "memberNodeIds": [
           "capability.verification.evals-checks",
+          "component.evals-checks.ci-report-core",
           "component.evals-checks.ci-selection",
           "component.evals-checks.evals-and-benchmarks",
           "component.evals-checks.evals-and-benchmarks-tests",
@@ -559,23 +566,23 @@
           "component.evals-checks.test-suite",
           "component.evals-checks.workflow-gates"
         ],
-        "semanticFingerprint": "sha256:6c96d18caaddcf4a0c85b684cc88bba3e7de92c06d95631a575de51b796e1707",
-        "flowProofFingerprint": "sha256:4ef4eafdc274843c45193e610558fcc7c991dfdce31f9c7e5a882fd1cf717a83",
+        "semanticFingerprint": "sha256:19199a5cf14cd287bcd226aeb8fdc2d4ba2838a72aacc364b9ee5a7d9a48aba2",
+        "flowProofFingerprint": "sha256:2f7e4e5f8021387632abbfcfbc003190c6ac9c0498824e07e70dc48d8e64bc27",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:ad558b9b60f78ab4f392171874aae4b85a6e1e833ab47f3f1e00500e5947937e",
-          "entrypoints": "sha256:9aeb741a3ca02eb8a599ec4d491f3fd69ac2e937a3aea6d962f4d2f2f286ce7e",
-          "interfaces": "sha256:303af6d8b766ceafc89f2ae55866410b69507a454ff2ef4a6ec2db721758aa0a",
-          "lifecycle": "sha256:e6be8ec588ea56c2d3ba7f55ed1bf97aa5e62df65230a48316543ecc81dcd29f",
-          "names": "sha256:2ff71fa70bb6b5a9007dc8d3574a4a084bcd08ad8b9ff1c8682098062d8f8717",
-          "ownership": "sha256:c3e8f238a442a14f685869af0ee99a2489257c83b9f1275533fdc8b9ff765e6e",
-          "placement": "sha256:051659f595d46b1d79f92dbef4224514f41fa9462ee703dfd6af4917b9cb4f70",
-          "relations": "sha256:8d5b8a23592acd01b56c4f624986d6fefe160314ab12633674c353ebc097499b",
-          "responsibilities": "sha256:3e62d7213bc8aab6c910f5091d348cc46546923e9e39a3c00bfca914449e47b8",
-          "riskBoundaries": "sha256:a14c1837aa5ed68c373d7589ce64c34d2a1d8f12f375f315bdbdde0316ac5b71"
+          "constraints": "sha256:2b35346f6a4af8c2ce34984327dd03da046589157692e58da9d1ef54d3eb415c",
+          "entrypoints": "sha256:37629bcf741d72b9e02a09895fc8114d908d1da47f408ba97b5e8c5f93375f77",
+          "interfaces": "sha256:72393437131193a897254ff2c6f9d01d7abdf9c61c051a8291ef93d1a7570c20",
+          "lifecycle": "sha256:3be1c20d2488cbfaf9849c44edcf1357d3a4d346db29695defdb2af98774d50b",
+          "names": "sha256:fa1a8891f6d49ee176d1f838413f2e87476858e59f7382374577409469da7d2d",
+          "ownership": "sha256:7fcda91fdb3b9641bddd80328e4e5ca286214caf97d912ba9df2d1acdfe21984",
+          "placement": "sha256:fab8aef194c512c38af09b25fdc628e26ba6cdb94753d6198c0a5869abddc5c6",
+          "relations": "sha256:7c7a2c4adf10f1326d33400ea4897d5065591364fd63a8a7b3224fb32d209280",
+          "responsibilities": "sha256:5a0c75f1b82885071360d5d3d6d36b06736620d87e2e1564d4a7fe2bfe7fae0c",
+          "riskBoundaries": "sha256:bba600835fb99fded69d24b32babb1d9703873dfb25a0cfb65a575e91be608c9"
         },
         "selectorEvidenceDigest": "sha256:b7d7b32d40568edf3ce18d54750c2710f621c80377de6c8a411fd89af036d9b6"
       },
@@ -590,6 +597,7 @@
           "component.contract-assets.cli-layer",
           "component.contract-assets.contract-worktree-lifecycle",
           "component.contract-assets.effects-layer",
+          "component.contract-assets.fleet-role-profiles",
           "component.contract-assets.planning-helpers",
           "component.contract-assets.planning-helpers-cli",
           "component.contract-assets.planning-helpers-effects",
@@ -598,25 +606,26 @@
           "component.contract-assets.template-projection",
           "component.contract-assets.template-projection-cli",
           "component.contract-assets.template-projection-effects",
-          "component.contract-assets.template-projection-scripts"
+          "component.contract-assets.template-projection-scripts",
+          "component.contract-assets.tool-catalog"
         ],
-        "semanticFingerprint": "sha256:ed6a056296c52699b822208102671e817c24ca54ea109d4659b8b70ed7650453",
-        "flowProofFingerprint": "sha256:e776b581d09814b0d5db983661b09c6b4fd221f84b07825321e2683ab81ad000",
+        "semanticFingerprint": "sha256:f406baa02424bba92674e1be5f78616f1d1efb074a08e9a451e64f78411bf688",
+        "flowProofFingerprint": "sha256:04cf30806ae88adb68ecf7f2d8ea4072fdf1def6c0fa4c9e27b4fc0fbee6e7e7",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:e6d31ec0b8c0848346efc576c2bf26f7e0937d5ba0f1052c7034c3c7ddae1807",
-          "entrypoints": "sha256:abb01e12ad350792c58d447047e0820c5c69a0f97280384569486eab71057697",
-          "interfaces": "sha256:c05a5be18b69bf25c35492440ec90ffa9ad61d050870b4221f2708e802115c91",
-          "lifecycle": "sha256:4c54acd4fb398d415c4d5bfdd9f2d103fbd177e098a6fd47d5f7c32d59baf63b",
-          "names": "sha256:81246aa5ae8bde0424bfaa116ccb2cf101ebd8a273d39712b37f16c653dfdfb2",
-          "ownership": "sha256:ce2b027563193fc478a67220787bb1148320a368a5e2ea88c742bf84436ade7c",
-          "placement": "sha256:a15db31f4ab3c75ee7acff91c6b9d27abc71acb1376b247ead147a893f422268",
-          "relations": "sha256:f6ba840a5f4719fabb82e5ec6aa36115ee95618eec67e81b2364e7b2bca29dd7",
-          "responsibilities": "sha256:aaa05af778ebbec163b86b08edff8ff32385f5632f9ef11b6c1e031618244deb",
-          "riskBoundaries": "sha256:0be6ff894d50ac5117ed5ec975fe41685e06c84ec8885b41e55ae3fe25824cec"
+          "constraints": "sha256:c26f2a9b1e55b91c8fb361ed0f2df49c7d5655090a4547056143e40f01631d47",
+          "entrypoints": "sha256:31858dd5d1d2354850a4abc75b99466cb8a6bcf81640c2d7619c548c9a3fdc62",
+          "interfaces": "sha256:74af6983e3e2e6b043f9ea75ce16f84a8147993ff35760ac3b55bc94d892e595",
+          "lifecycle": "sha256:6296f7fa73c7a92b50bb3ec4556c5f288b393654fd9ce2c2a53a7074d39d52fa",
+          "names": "sha256:3993bf9e35d8611fde2c31dbc2db9d13af71cf84c57e3280bdf5ed02b47447f9",
+          "ownership": "sha256:b10c82e6eabd078e02a4b9b4dba10e6010dc5baa296efba88274f0075fa48914",
+          "placement": "sha256:dc532b390d9b57ab31b5689c8ce02c5d901611931d7280ffef35364d6ebdbdf7",
+          "relations": "sha256:e7715b640290b5379f21f8de8af1d4ec4d388bf4e277b56d4bd1fb14d9bb8d4b",
+          "responsibilities": "sha256:939a783082e99ca3235d6d63a184caa0023b21e12f2a5c492a3708ae0b43a08a",
+          "riskBoundaries": "sha256:828bbd2f51b04d9c707dcc7fc0457f5f2355ca367f6b69b72a8af1828ece8a3a"
         },
         "selectorEvidenceDigest": "sha256:16459b878b2ef6171edc1e8454a15d1ad7291a4679157c44cac419f6de5743b9"
       },
@@ -625,26 +634,30 @@
         "memberNodeIds": [
           "capability.workflow-engine.execution-primitives",
           "component.execution-primitives.primary",
+          "component.execution-primitives.public-projections",
           "component.execution-primitives.repository-registry",
-          "component.execution-primitives.secret-patterns"
+          "component.execution-primitives.secret-patterns",
+          "component.execution-primitives.session-artifact-io",
+          "component.execution-primitives.task-message-claim",
+          "component.execution-primitives.task-session-record"
         ],
-        "semanticFingerprint": "sha256:99492c2f5439c32e95abb0771231be6173ddd8ed18eb81a10571b6ce14f7c276",
-        "flowProofFingerprint": "sha256:d042dfc0a1070acb0fbab775a50b37eb0be11cf4843bb6498b0d155aa862163e",
+        "semanticFingerprint": "sha256:a57e49e87b85999ef13997b773991e02dac3d6a7f03bead037472ecffc636460",
+        "flowProofFingerprint": "sha256:3e727914bdd4fc03024ec53a43d276eb255bda9c4940c9c41c7e073dfacddf32",
         "proofStatus": {
           "p1": "proven",
           "p2": "proven"
         },
         "facets": {
-          "constraints": "sha256:c4b7ea87ba0e4cae33f0c4af127ae1f8d896b96765c44179948050efb4d53013",
-          "entrypoints": "sha256:015d959f3b7cb799e09917947f295ee6de87e932ce34c11397fe38ca2135c49e",
-          "interfaces": "sha256:e250384ef151cb87437d4024fc6d0dda2bc04061b6092f306227920317dbbc79",
-          "lifecycle": "sha256:9793ba2993208abb34840caeaa59d9809df95e4cda4753892d08ed6fa452d263",
-          "names": "sha256:0af55c486bcc41b3b58e12c76d00abd729146f65ec23c24303c8bcfdd2b3ed67",
-          "ownership": "sha256:93b501767c134bd2102f258aa479fb862a139185c6954d05e764efaaf01497e7",
-          "placement": "sha256:d9b5e5a7bb4945e862467de666d7893443ee36d5166424e746cb2d40a6f50f1d",
-          "relations": "sha256:5a4c16b3ba40cb0c56f0e4132f07ba7be708e78010baed731a1e2d5e51e13206",
-          "responsibilities": "sha256:1938e9970a80268afb5507a9b87a0821048e74903c6cd458e364d27b819f840a",
-          "riskBoundaries": "sha256:96fda1738175f20b6e328fdabcb571802e054e2c3e2b071d5dbc0ab1398721d0"
+          "constraints": "sha256:1b3b583ff2313bdad1cd784e9c805ced861cc4994c64c18d8fd8c2f5cc6adac1",
+          "entrypoints": "sha256:030637931d3d3af368d2c5933ef0b86dce79a16eacf2184940cdaf781497b635",
+          "interfaces": "sha256:2c263458baf0bef66218ef866cee253eec2a7de47b68888963ada091b40f1cd0",
+          "lifecycle": "sha256:f5da35aa095b52da41b35720da61d8d510c4269609781eb6279e868ce6d65ef2",
+          "names": "sha256:f61ea7ab4112268a0d750656453bb0b697cf64072c70b712382481740b509c04",
+          "ownership": "sha256:326425677c51d31412f404438afc58a8c4f9d88a098d5228d83b69e15adfbe25",
+          "placement": "sha256:ee82c4de2676f282726acce8ca2453609bb7321f3cb45a471a44dc7f5f8102e5",
+          "relations": "sha256:18d9227a66d4f6e2e9d837b099a7cc9c968dbc8e87ed3ab92c82378617893010",
+          "responsibilities": "sha256:e43518a5a689252d6c35c148b8d0cdeffa31664954a1b59a5b4da1d49e9ce934",
+          "riskBoundaries": "sha256:bcade6e3466a0150df8581685329447580f5c5e2ab643b075b4be9e77501d157"
         },
         "selectorEvidenceDigest": "sha256:47e624dc47a5fc9806073a05b3c9f8c2930c8ad1bea8bc05c91989ea0399914a"
       },
@@ -687,7 +700,7 @@
           "component.workflow-state.primary-effects",
           "component.workflow-state.primary-scripts"
         ],
-        "semanticFingerprint": "sha256:182ad2e0244469a53b575de44d818f4146f2195e9c8c61f60ccb5b2c6f6dc29f",
+        "semanticFingerprint": "sha256:80c8511e56ee2b93c6ceed295d146c8ef069f7eb0a2cbbd7f02629542fca0245",
         "flowProofFingerprint": "sha256:35ca3cf9c3d8670a744377bb5fb7ce148037d748bd1fbbcae7c377a764b4db04",
         "proofStatus": {
           "p1": "proven",
@@ -699,10 +712,10 @@
           "interfaces": "sha256:8061101082403c378a62bc85a1f661aff709e46078b6b7f3c8b856f307d8f72e",
           "lifecycle": "sha256:6a29e011ad08ba83469134ef5ffe431bea6968bc6dcf4fdae79fdc3dd4b35d15",
           "names": "sha256:5e5fa917d9043ac688bf5dd7d0687ef31bb6b9a7880763e7ef74829b4b5e4a4d",
-          "ownership": "sha256:e24f5c9cb36776bce9dfe66b80093893e19ebdc0afb733e4a597336faa1e2830",
+          "ownership": "sha256:954acc0a9b77cff1eba497594e73ff543dd19e9b2a1ca3dafbee4a867c43508f",
           "placement": "sha256:1591a7ddcc1ba97ee1d1325bce67b52060b32bab471988bdc5bec7a1c31a7af2",
-          "relations": "sha256:bfe3068939ca8f02aa0b0891dbfb44568e7c73deb3399be2695c1fde340089e9",
-          "responsibilities": "sha256:d3ca31c924473c50ebc9c56d953f0a2e5d77226aa5f5e51adce8a6b1880b39d6",
+          "relations": "sha256:ed0a330c6e215a0b3efa1fc93c4d9bf85f2b209f600e92eff0e70e2fb90c7ece",
+          "responsibilities": "sha256:cab4d114c0a11a7a78d5a75b01fc50f053b63ccfea0823d931f75fa56e8eb4b8",
           "riskBoundaries": "sha256:57b02749219fdd72f613346247ef8a0f30003fccf99926d4724f684430863a91"
         },
         "selectorEvidenceDigest": "sha256:e62fbb9a3a8d463acde17461e51937e26e7bfe2d189efe520ec9cbdf5a51a8b8"
@@ -711,54 +724,54 @@
   },
   "targets": {
     "projection_target.diagram.runtime-topology":
-      {"type":"diagram-runtime-topology","scope":{"kind":"diagram","id":"runtime-topology"},"path":"docs/architecture/diagrams/runtime-topology.mmd","ownership":"generated","format":"mermaid","outputDigest":"sha256:d12eddf0df92c691e5c9f1db5284532be00d26578b8cd112f861461b9cdeed7c"},
+      {"type":"diagram-runtime-topology","scope":{"kind":"diagram","id":"runtime-topology"},"path":"docs/architecture/diagrams/runtime-topology.mmd","ownership":"generated","format":"mermaid","outputDigest":"sha256:7bb4b98923b174c618101d9ab744f4495861e7809126ec243b088dec3af49a9b"},
     "projection_target.entity.capability-organization-publication":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.organization.publication","entityKind":"capability"},"path":"docs/architecture/modules/organization/publication.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:12aa5e3bbc63f317f7c1c406045c2b521cc6986d88b2d7f37dcf0c288d0a0120","sourceStamps":{"capability.organization.publication":"sha256:b126dd3cd2148408729e1713f0c80ce17401970701918d56f97538fa59e340f3","component.publication.primary":"sha256:0c2be1473351e75ba46b7614a4bbc7f13845e97c4ade5f1bd14214c154d980d6","component.publication.primary-cli":"sha256:253f8d2b1c879cd14096cf5012714e66c2224b7593a64aa3a34dee52c8614edf","component.publication.primary-effects":"sha256:33f54cbdfacd7b1c5879812b8097446bd8837c3022e281c1770c507825128021","component.publication.provider-feedback":"sha256:aed23b0e5fec35debb49096e9efffaeaedd685ef019dc809232cf38403c8f286","component.publication.provider-feedback-core":"sha256:28f32918b79615260cc8b2be90e16e675583a39cf0e94f68ba006e92bd4a0431","component.publication.pstack-watch-pr-experiment":"sha256:5e6aecb09ebbead7bd0c2441a99b1774d13940be3fd834fc0a0880342bba9852"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":5000,"upper":10000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.organization.publication","entityKind":"capability"},"path":"docs/architecture/modules/organization/publication.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:efcc348723784b4498e66aec3504538f19ec8b9ded6cbc36e03a647758901cb5","sourceStamps":{"capability.organization.publication":"sha256:8265f7117f9a14719c626471f57fb8bf36c4f68a49ce40d101018f2999552fc1","component.publication.primary":"sha256:bcfae7d5f4dd2f651e7084b59c8691969dfa9e8e092c59236c4589dc9ec14072","component.publication.primary-cli":"sha256:253f8d2b1c879cd14096cf5012714e66c2224b7593a64aa3a34dee52c8614edf","component.publication.primary-effects":"sha256:917c15dfd40c33ee7d13c244a5af7ca2313f3f9287354c0b85770bebd31451e9","component.publication.provider-feedback-core":"sha256:28f32918b79615260cc8b2be90e16e675583a39cf0e94f68ba006e92bd4a0431","component.publication.pstack-watch-pr-experiment":"sha256:5e6aecb09ebbead7bd0c2441a99b1774d13940be3fd834fc0a0880342bba9852"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.entity.capability-organization-task-fleet":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.organization.task-fleet","entityKind":"capability"},"path":"docs/architecture/modules/organization/task-fleet.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:3abfdef07e45cda156a1869df5a39b2423f93eabc344632646a9137a2816a290","sourceStamps":{"capability.organization.task-fleet":"sha256:6fafa4d665dab506f87991a37ed577500d070602690eb0c25a0dc39b960961f5","component.task-fleet.primary":"sha256:fcbd00e27a2548266935423b3e8a1fa77c602749f1c4a3494ffc1651b90dd9cf","component.task-fleet.primary-core":"sha256:6ca6fc18d960ac56a3db74d92bbcbb8536d7c94d3de66dec0deccc3652babb25","component.task-fleet.primary-effects":"sha256:369b0a42e0e9cc80fd038655a9b895889f7f28e542f57802957a1cd9d10910ed","component.task-fleet.task-inbox":"sha256:7d3daf67d92c67c3b1b04588f2ae6f4c28d7795177dda81769f6ba50d5edba8b","component.task-fleet.task-inbox-effects":"sha256:e1c895d9d995f3a041e3a2a7b25eabca3b37266c1f3e14924f3e9c6044eafaae"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":2000,"upper":5000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.organization.task-fleet","entityKind":"capability"},"path":"docs/architecture/modules/organization/task-fleet.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:e0a41884ef949583de1894d583de100ea6ed659c035f452f779441bad822e7e2","sourceStamps":{"capability.organization.task-fleet":"sha256:80beb9805602c263b56003e872df410d2f759d7f11fa8fdadb04f2d669b3419c","component.task-fleet.primary":"sha256:fcbd00e27a2548266935423b3e8a1fa77c602749f1c4a3494ffc1651b90dd9cf","component.task-fleet.primary-core":"sha256:70004fd335d084a27aa501d4917fe7846eb565e589baa0078b9933864d17f3fa","component.task-fleet.primary-effects":"sha256:369b0a42e0e9cc80fd038655a9b895889f7f28e542f57802957a1cd9d10910ed","component.task-fleet.provider-feedback":"sha256:993b1c1c4bfc6fb063df25704ff9595d832bbd5f7b9f49a0bf7ae3c62316cb8a","component.task-fleet.task-inbox":"sha256:067d63b8ff1f63713a7c685458792479cdee263b774c2bd89d42691aac251cb9","component.task-fleet.task-inbox-effects":"sha256:75ad47fbaa5e227dbcb12881ec4f835ac8e7790a2e52081259a1c592c1a44a87"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":2000,"upper":5000}}},
     "projection_target.entity.capability-public-surface-action-commands":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.action-commands","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/action-commands.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:a4290b96405099cbabcd5fbd72ef77d7beee1aec0c121fdae8355c1262c63bbc","sourceStamps":{"capability.public-surface.action-commands":"sha256:c748bc163c58345cdeb618a4f38c18bba5feb54ea3640e19d16d3001c4f8d895","component.action-commands.bundled-skills":"sha256:65f17e787770098ff7ed2efc968425ddfd13ca86ea4eeb6c7664586f21d67f03","component.action-commands.primary":"sha256:762fd71ca99db0452f139a078d2f6fac7069efc07ec00aadd43170f0fd6147e8","component.action-commands.skill-surface-catalog":"sha256:6e764e817e2731f56788ce735357e7f701600c8fb4d38b19e1b7d85b987c7c1b","component.action-commands.skill-surface-catalog-core":"sha256:4020672b8437ec2fc2a57b40c3123323b5357111607201ae76583b5ad2080339"},"scale":{"fileCountBucket":{"lower":50,"upper":100},"lineCountBucket":{"lower":10000,"upper":20000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.action-commands","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/action-commands.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:c4f8c4e0ebcd933c410801e81fce3ed1109d6e20526651676f6dfa9bbdba395a","sourceStamps":{"capability.public-surface.action-commands":"sha256:aee78368b234db1c12c2d408f7764367d4798954934810cbe4a45e729023f579","component.action-commands.bundled-skills":"sha256:489dd0c3c6f7dbf1dc8b0cca2282818086fc267dc5c59434c85760db1c39ab51","component.action-commands.primary":"sha256:4d41dc42b38108134392346d2ab896c564fa57d40c149d117e31bea88a5bb133","component.action-commands.skill-surface-catalog":"sha256:99da71f3bc5972e3f26c9366ae46249a7079989dcfb148589dc160e8a4678e1b","component.action-commands.skill-surface-catalog-core":"sha256:1791d3e269357616878fab147e08b7d7ed38d342c304fa71275e83adbed349aa"},"scale":{"fileCountBucket":{"lower":50,"upper":100},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.entity.capability-public-surface-adoption":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.adoption","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/adoption.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:5b512665f2b66dedb13476eff19395e68deb68bc4ff7a5c64905531e586db7e2","sourceStamps":{"capability.public-surface.adoption":"sha256:0871b1dd9484a590ca3e4b18078e4a0dc9b9d4f7798c1db5616ca94d5f1d6de9","component.adoption.cli-layer":"sha256:8ad8e34063321634c6d8c640055f7afabf49c8a294d15a33c5104c62aba1117a","component.adoption.effects-layer":"sha256:eaab2c66823fb33f390713da9caa4815d233fbb0f85476a3dc25d24cbce2b53f","component.adoption.tests-layer":"sha256:f14887395eb9f19dae67d5cef5e16f5dea1424406c70990414e6a91da858a2c3"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":500,"upper":1000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.adoption","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/adoption.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:8d20e469635ee5181a692e97e478663708538d8e48f0902a0068314fc8e7c806","sourceStamps":{"capability.public-surface.adoption":"sha256:0871b1dd9484a590ca3e4b18078e4a0dc9b9d4f7798c1db5616ca94d5f1d6de9","component.adoption.cli-layer":"sha256:8ad8e34063321634c6d8c640055f7afabf49c8a294d15a33c5104c62aba1117a","component.adoption.effects-layer":"sha256:5818ba3a55e6f3d04bdf11154ea00c5609edbcd5e9dd2995480d644f6fdef794","component.adoption.tests-layer":"sha256:f14887395eb9f19dae67d5cef5e16f5dea1424406c70990414e6a91da858a2c3"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":500,"upper":1000}}},
     "projection_target.entity.capability-public-surface-root-router":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.root-router","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/root-router.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:561a31c73cbcd24c94afeec4cfe8b6a47a8095a7c522ecfb40769b978a497b2e","sourceStamps":{"capability.public-surface.root-router":"sha256:a01b413efa4ac02567635b3f38c310dc04c2a59480a1c50d30fed5258b585695"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":20000,"upper":50000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.root-router","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/root-router.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:561a31c73cbcd24c94afeec4cfe8b6a47a8095a7c522ecfb40769b978a497b2e","sourceStamps":{"capability.public-surface.root-router":"sha256:2cab11c58ac83ca884c044c056370a769026586fb960a419307fa5ab6a5d830d"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":20000,"upper":50000}}},
     "projection_target.entity.capability-public-surface-strategy-reflection":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.public-surface.strategy-reflection","entityKind":"capability"},"path":"docs/architecture/modules/public-surface/strategy-reflection.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:839024b41edffe43b500b84e78aefc011e1bca0172c16bee3ef3c5d28dd4cd96","sourceStamps":{"capability.public-surface.strategy-reflection":"sha256:57a891c7397bde4fb7f9a97679df7886380bb77f4771eca9c1fb7a25fbaadcc8","component.strategy-reflection.primary":"sha256:a9c808a93851bad2ac28eeef6f2f536b814d0873d1e6bd1bb7d625227839d366","component.strategy-reflection.primary-cli":"sha256:9f6158520106c73cf86d8b527a194121011acc6782a6faccf57076ff4427854b","component.strategy-reflection.primary-core":"sha256:f3ec55cdc0a6cba735dd356717cc7722baf53dd49afab6e46708aca441082e07"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":500,"upper":1000}}},
+    "projection_target.entity.capability-runtime-harness-dsh-host":
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.dsh-host","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/dsh-host.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:a967e2bead523995cc0467e7a5f444ea39680cf72b8055e124acfc86400c3f03","sourceStamps":{"capability.runtime-harness.dsh-host":"sha256:452aa22515f018650b0b2d771ef4a0ce9b4b6f35118823f579a72debb8341fab"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":500,"upper":1000}}},
     "projection_target.entity.capability-runtime-harness-evidence-ledger":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.evidence-ledger","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/evidence-ledger.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:954d6ce08a27f56e4956115a5084a8972310bb36807fb2aca4ca1fb99bdbb16c","sourceStamps":{"capability.runtime-harness.evidence-ledger":"sha256:9cc641dc67f3730733ada55d043b2c96ee0931324e7cf4abfa8cd41ba836cf08","component.evidence-ledger.primary":"sha256:ee768721e32aadf318c011a9a8bedb8c189a07bcd002376ef51b92a4f6616697","component.evidence-ledger.primary-core":"sha256:1716735642b8d3e65754f914e8e41e774a37c8845ab632977b90b0a41710780b","component.evidence-ledger.primary-scripts":"sha256:99f2110b592166458c7f98233a811c13b5f90e9b60e0f4e0515dd2932e9ca89e","component.evidence-ledger.scripts-layer":"sha256:3d94085f49eead8d7503fcffe3bf52d2430b4e1512074a397a7ece6d664c5d3d"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.evidence-ledger","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/evidence-ledger.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:3c8b0e9bc562dc31ecbf6238bcbbbc3519391cae5d38b3bc83ef2e32a906f083","sourceStamps":{"capability.runtime-harness.evidence-ledger":"sha256:9cc641dc67f3730733ada55d043b2c96ee0931324e7cf4abfa8cd41ba836cf08","component.evidence-ledger.primary":"sha256:ee768721e32aadf318c011a9a8bedb8c189a07bcd002376ef51b92a4f6616697","component.evidence-ledger.primary-core":"sha256:1716735642b8d3e65754f914e8e41e774a37c8845ab632977b90b0a41710780b","component.evidence-ledger.primary-scripts":"sha256:99f2110b592166458c7f98233a811c13b5f90e9b60e0f4e0515dd2932e9ca89e","component.evidence-ledger.scripts-layer":"sha256:3d94085f49eead8d7503fcffe3bf52d2430b4e1512074a397a7ece6d664c5d3d"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.entity.capability-runtime-harness-external-source-intake":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.external-source-intake","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/external-source-intake.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:fd0775ac4bf8c2ec5a5ec07243fb8d7ab62d67f5ff8c2f1b8cc98c9a150808c6","sourceStamps":{"capability.runtime-harness.external-source-intake":"sha256:f892b52faf735c6c46a67b7bdf935a37b225a6be15e95630f79ab71df9349762","component.external-source-intake.cli-layer":"sha256:802f1f2183f39dbf33425bdfcbe709742a3777e928dda00229703c379573e41a","component.external-source-intake.core-layer":"sha256:f372d67be9900ce34c030aa07236e22e8d1c1706a66e7640295459fd2303a6fc","component.external-source-intake.immutable-evidence":"sha256:5faec9c61aed6278ff124f677bbc195a52c2cb5e8b1d54b6780f29b5eb4f08bd"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":1000,"upper":2000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.external-source-intake","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/external-source-intake.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:b89229f5d64c43f4a50f0153640f6655404f5ac40e344ad372dd05ffb2cc6180","sourceStamps":{"capability.runtime-harness.external-source-intake":"sha256:ed2ff447971faf82d9d3908e42dfcd60aa0d95a857088964c1acc6c219cb486a","component.external-source-intake.cli-layer":"sha256:802f1f2183f39dbf33425bdfcbe709742a3777e928dda00229703c379573e41a","component.external-source-intake.core-layer":"sha256:f372d67be9900ce34c030aa07236e22e8d1c1706a66e7640295459fd2303a6fc","component.external-source-intake.immutable-evidence":"sha256:5faec9c61aed6278ff124f677bbc195a52c2cb5e8b1d54b6780f29b5eb4f08bd"},"scale":{"fileCountBucket":{"lower":5,"upper":10},"lineCountBucket":{"lower":1000,"upper":2000}}},
     "projection_target.entity.capability-runtime-harness-global-runtime-reconciliation":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.global-runtime-reconciliation","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:b3a8339cac93875b09b949a5c3e05ede76545be65e6c8ab5f39762c7fe90621e","sourceStamps":{"capability.runtime-harness.global-runtime-reconciliation":"sha256:afa154b27297442539d38dae970560a49eb66265605f6e16afb538740cc6f18e","component.global-runtime-reconciliation.archctx-closure":"sha256:714ac7b70dbaacd27e69fcb3d05d405c3383df00994342e2ac20f4b6dfff2f0b","component.global-runtime-reconciliation.archctx-closure-cli":"sha256:7685a5cc0138861fa4b96db059f62a8c4054033ecbcde164d2f88669c7d53dbc","component.global-runtime-reconciliation.archctx-closure-core":"sha256:9a9d1f3528ae23f04e0f233753a60feeefdf86a9dfc2323969465ec099da1654","component.global-runtime-reconciliation.archctx-closure-scripts":"sha256:3ef713b99132d73d13d6612c9fe15eeff36518272e43e3bd724b651c64a679e6","component.global-runtime-reconciliation.cli-layer":"sha256:768b6400a9051ae410f471d3f7267a99ec9cae7b1f32adb7ad9f4be2d6e412ef","component.global-runtime-reconciliation.cli-root":"sha256:4ba9973ae75a846dd1479ae38be891d41368167bd024e14a74369c6b9cecafaa","component.global-runtime-reconciliation.primary":"sha256:c049ca79ddb25b0a83054d940a9bb5a0ece89133ef4a2576eb1ce613800024de","component.global-runtime-reconciliation.primary-cli":"sha256:e307d2b477120c5aa0a9c84f1f0ec90fbeab2523ac4eccb46d6395cad5554656","component.global-runtime-reconciliation.primary-scripts":"sha256:b59d287e13f0f0b75363854923d0b1a6e1eb174ad1b8e0eb2e8dcb5128c84ab4","component.global-runtime-reconciliation.release-packaging":"sha256:83603b09f1b8cc11eef3c63ec345275993360cd29d414f0bb13e736147cb1f24","component.global-runtime-reconciliation.release-packaging-assets":"sha256:74acecb5ff14f9d716e329fb8879d83a54bc38ae2f734d355847a71f262dfda8","component.global-runtime-reconciliation.release-packaging-core":"sha256:fe52bf91fac0cedca9e4f611eab100720418cb1d355ae153a2a928eb0f57c686","component.global-runtime-reconciliation.release-packaging-effects":"sha256:f56402e6351560878f465e49ca3f86c8ca8f26ee1fbbc1f4a0f520d00d03ed63","component.global-runtime-reconciliation.tests-layer":"sha256:3e657fc2d0b23fee7b7bcbcf6f46de4c7c0bccd57cdb3c42f6ec9a835c298517"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":10000,"upper":20000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.global-runtime-reconciliation","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/global-runtime-reconciliation.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:5a1748018908856a39fdfec9beba4d1719372448654f83cf81ce01e805605e7d","sourceStamps":{"capability.runtime-harness.global-runtime-reconciliation":"sha256:aaa434fb95cbedd5b973c7a634f620bcd8c956273b40855460e833c5492ce4ab","component.global-runtime-reconciliation.archctx-closure":"sha256:a9d881d04bb407a58befb2f87d6dac4272873ce27f6e0b30bdf00b1c9288c244","component.global-runtime-reconciliation.archctx-closure-cli":"sha256:7685a5cc0138861fa4b96db059f62a8c4054033ecbcde164d2f88669c7d53dbc","component.global-runtime-reconciliation.archctx-closure-core":"sha256:01700c25c70e804f977efdf1112a65105bcc25ccc63d7447d4ac97e3bec6b91f","component.global-runtime-reconciliation.archctx-closure-scripts":"sha256:3ef713b99132d73d13d6612c9fe15eeff36518272e43e3bd724b651c64a679e6","component.global-runtime-reconciliation.cli-diagnostics":"sha256:442e4fc440b64c31a4fdec036d3b81b0b240e42b7ec3970f625319e7325d0fd5","component.global-runtime-reconciliation.cli-layer":"sha256:768b6400a9051ae410f471d3f7267a99ec9cae7b1f32adb7ad9f4be2d6e412ef","component.global-runtime-reconciliation.cli-root":"sha256:728bdd3398e8707b92c7831eb729f26a0b254090f49f221349ee0a302c0261c4","component.global-runtime-reconciliation.primary":"sha256:0992b297abf1f8c616b6906f02d8c14f0cb3681ff4fe30264cacf98ffec35a6d","component.global-runtime-reconciliation.primary-cli":"sha256:61e32f59fd002263c4039986e5d7a2b9335f9f80386defdc7ba4b2db192517a0","component.global-runtime-reconciliation.primary-scripts":"sha256:27e47626b5a537ecb4be99827beba6d7b8eb2fe6eee21e45098d7d7780de134b","component.global-runtime-reconciliation.release-packaging":"sha256:b52fde9bb25974f59caabfd3c3302e1c798191216406811d8fe03718c2b1683b","component.global-runtime-reconciliation.release-packaging-assets":"sha256:0ef282b68cbf4c5762f195a7e1854e036f98583f16332347a50953b7f8d4f6ee","component.global-runtime-reconciliation.release-packaging-core":"sha256:fe52bf91fac0cedca9e4f611eab100720418cb1d355ae153a2a928eb0f57c686","component.global-runtime-reconciliation.release-packaging-effects":"sha256:f56402e6351560878f465e49ca3f86c8ca8f26ee1fbbc1f4a0f520d00d03ed63","component.global-runtime-reconciliation.tests-layer":"sha256:601752eafcb347da7503a0d6a66f4c5dafe1582c8d2b2d3916d91b5ca9592183"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.entity.capability-runtime-harness-hook-adapters":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.hook-adapters","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/hook-adapters.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:978da2913309ac448bbfb1dc5afde7f62285ca460e0c4d58b005942eda0a830e","sourceStamps":{"capability.runtime-harness.hook-adapters":"sha256:765e3a92c9ffb61b1a9d3a6ff985197e78bb141f5b27eec1e0e46833d3a6c5b2","component.hook-adapters.edit-guards":"sha256:fce13d8182456f1c38fdc489ab38667764b26f0feeb43a60d47bfce512841bbf","component.hook-adapters.host-installer":"sha256:a60d4db018391366471ee01dde490ed9b312df38f1d296eea6a0dd508564602e","component.hook-adapters.host-installer-effects":"sha256:f5f602063385055e34c8badc3d3e12de3b1a6399b98808e9be8041f677f74fb4","component.hook-adapters.primary":"sha256:5b2e6f884bc4c5513fda5022b7bd2d19c3f4b82050e0caf0a204b9e25ad7f520","component.hook-adapters.primary-effects":"sha256:70cf967af9fc419e1e0f21f57005e3402610389d492e0abf5c2504846bff4989","component.hook-adapters.session-lifecycle":"sha256:15f4574b577d515aef85eb82e7cade02819ab68efdf4a7c18be51680dbff16ed","component.hook-adapters.session-lifecycle-effects":"sha256:efe91febb6f14bcb8c564a716ed7319bc16b705880e41688e3945b7eb6689fca"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.hook-adapters","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/hook-adapters.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:7e3324a51f355c057acf9df8b852137ddd29ecb28c153240b14997ca51ced68c","sourceStamps":{"capability.runtime-harness.hook-adapters":"sha256:a3631e945829fbaba217b6bbfda8546a5266e0dbc05cb466954e2ea282fd4cb3","component.hook-adapters.edit-guards":"sha256:fce13d8182456f1c38fdc489ab38667764b26f0feeb43a60d47bfce512841bbf","component.hook-adapters.host-installer":"sha256:fa414ac531921df39838b393fdee4a56ce7d6997fd979bed521aef2f91546229","component.hook-adapters.host-installer-effects":"sha256:1a28be9a8cf8fea5a6d2f250e90bda82ac2638c30eba1b72abb103a1b2bdff65","component.hook-adapters.primary":"sha256:5b2e6f884bc4c5513fda5022b7bd2d19c3f4b82050e0caf0a204b9e25ad7f520","component.hook-adapters.primary-effects":"sha256:70cf967af9fc419e1e0f21f57005e3402610389d492e0abf5c2504846bff4989","component.hook-adapters.session-lifecycle":"sha256:15f4574b577d515aef85eb82e7cade02819ab68efdf4a7c18be51680dbff16ed","component.hook-adapters.session-lifecycle-effects":"sha256:efe91febb6f14bcb8c564a716ed7319bc16b705880e41688e3945b7eb6689fca"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.entity.capability-runtime-harness-mcp-sidecar":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.mcp-sidecar","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/mcp-sidecar.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:6fea5fcd565ec7886cf9020fcb259e1732ddfd6521f25747e3d3473d79f57983","sourceStamps":{"capability.runtime-harness.mcp-sidecar":"sha256:d9ea71608ae34e9fda0b72daff7f3d094b4007f137babed0e20d4fc2d36ff098","component.mcp-sidecar.coding-profile":"sha256:70592092f66ce4038442d009fff52d236521ce393f023b55017695c3c74427f6","component.mcp-sidecar.host-setup":"sha256:86eb8e5669c421b7c60652c41ec483292284ac24e627037c117f5d30d6da4201","component.mcp-sidecar.primary":"sha256:b278f1a95262f80617fbb701239419b2a0dc44ba5546fdc40681583dbb1ae9f0","component.mcp-sidecar.repo-policy-registry":"sha256:1ea1af666ec1c1acb34745d582742d7e0a331ee08358b458387c9a18c443f705","component.mcp-sidecar.repo-policy-registry-effects":"sha256:0a238f8fb93a9f30992a8634dbe8765119b3c271efcce92a217927d540e2e0d0","component.mcp-sidecar.transport-auth":"sha256:eb131740dfd5e352024a07a2308979509380d6b5046c6080c58d8b642603eaaa"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":10000,"upper":20000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.mcp-sidecar","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/mcp-sidecar.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:821c8e93a392615afd88488df611af725844c0e66c90b31b531ebe5590a5c657","sourceStamps":{"capability.runtime-harness.mcp-sidecar":"sha256:7c2d3ef39c030eee7abe702cb86e9c16ba027236afdaa332ee0008c19d829abb","component.mcp-sidecar.host-setup":"sha256:3751a21fb1d7848f09d872fb7f9c41e1c4e2c59dc837eea188cd5e6a431166f4","component.mcp-sidecar.primary":"sha256:6e169c1995c61a39940394411d393bf8ecbc71cdb2e748291c40ea978558c456","component.mcp-sidecar.repo-policy-registry":"sha256:d29a73c10ba2770cf5ce5165996ef9da9425c001a513718f92e7cf111422af79","component.mcp-sidecar.repo-policy-registry-effects":"sha256:2e8f006b5133567f6ee1911e1a1ef5ab304efb670c9f53db0fd50ea4af3b42f6","component.mcp-sidecar.transport-auth":"sha256:71017eff646353cf59276bc18d91fefcdb631e4b261ea54f86621a54ccfff686"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":2000,"upper":5000}}},
     "projection_target.entity.capability-runtime-harness-operator":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.operator","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/operator.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:0e1e84f6abcabb1d9cfc26bacf6ea734055808da5a1d482cb6fe9ccdc82e3555","sourceStamps":{"capability.runtime-harness.operator":"sha256:08db7e970f7e56a3310a8dee1bc0894d2ce0c2a4aeb06d1ee5826aa5229acdcc","component.operator.activity-feeds":"sha256:d13cd914c65d5a1825d11e1ae431ffc346e3abe9ce5df6b0fe5bbe042c142d04","component.operator.activity-feeds-cli":"sha256:ad0fd74aff790a01f1dfe0d837f55ba6091fd6ff6846e1870f2c6fd9b8690041","component.operator.activity-feeds-effects":"sha256:f9f9804220e0d2bdb6d0ad2a521d25f6d96e5507dce6e8e5e0521b540575d192","component.operator.architecture-view":"sha256:2c87db01e25a15f4b82a793098cec53c7987aa260bb433eeba1d6ca3525e61ba","component.operator.architecture-view-core":"sha256:195790976b6488e87d5956aed1565b747e8917b448f50e32bd2451659ee273ea","component.operator.assets-layer":"sha256:7602bdb950d1fff6da55e14062c5242ad82794d6d27d3b3c2906440b43150554","component.operator.cli-layer":"sha256:b1cd260af739c1050a83f77c7f4705f35747bdb54326fa6cb26ddb3a2b9d078d","component.operator.console-collectors":"sha256:c678937604f92d5795d6b63d58fae2628ad0744386d2e2fd1d9472f7bda98ff4","component.operator.core-layer":"sha256:657cc5a27872531d6df319e3e9be8e01ad55711fc2efd09291bc077f1dc356d7","component.operator.primary":"sha256:7f59769b4204fabb3398ce4849e81bff7efdb2037d48022c6e3463c0e3800f13","component.operator.primary-cli":"sha256:6aebcc3970a11b91bf4b2c4edf173012f4730e358ded5b4408ee45c95d096180","component.operator.view-projections":"sha256:3a726332f07706812ac92a625ae9fee61c34557d3ccfa5d6ca6152b9e3f04feb","component.operator.web-console":"sha256:4a47ad492cc3e9952a27943edae75e86dc3301654daf2aa95d6138809337a89a"},"scale":{"fileCountBucket":{"lower":100,"upper":200},"lineCountBucket":{"lower":20000,"upper":50000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.operator","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/operator.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:7fc9ca45ec1de43c3182638bf2ca369b38307e22720499173bd4375059b94364","sourceStamps":{"capability.runtime-harness.operator":"sha256:9c19d953ce484b7ed84b31941866a771f3c05765d19d8b38df6fa57b10e09c72","component.operator.activity-feeds":"sha256:1c5928d1edf7b233359f852d55ab637b8de5ed6fc3f40acd21eda06a25eb55f4","component.operator.activity-feeds-cli":"sha256:2a080e781ed57c2b1f464cc8e73274ecf4f8fd6fb1a0a35380b836d7b7635f16","component.operator.activity-feeds-effects":"sha256:6f89575176e5be96276d209d1d57a2df7f525c67447b33d64bdc71246747b66c","component.operator.agents-configuration":"sha256:a0e044caf5b97e6d2f2562728b1fc4f66da026bd6063b40c840aea8eb732fdd4","component.operator.architecture-reader":"sha256:cde53b6c529e619597682056aab8abe9e2524b852f700ccd46bed4467c9f8890","component.operator.architecture-view":"sha256:2c87db01e25a15f4b82a793098cec53c7987aa260bb433eeba1d6ca3525e61ba","component.operator.architecture-view-core":"sha256:5d06297d2140b8cf4817744e79b6a1f5c0d2d114347e0c11d7fcef705e74f6ee","component.operator.assets-layer":"sha256:7602bdb950d1fff6da55e14062c5242ad82794d6d27d3b3c2906440b43150554","component.operator.cli-layer":"sha256:b1cd260af739c1050a83f77c7f4705f35747bdb54326fa6cb26ddb3a2b9d078d","component.operator.console-collectors":"sha256:cd4b7d78746d920d4f14c054e80a303c8590913d598659b0c2be82971e3d9ae1","component.operator.core-layer":"sha256:b4363f5b883547e4456803fda39aa2fe0a6a8b689684e45292142704c7c9dc04","component.operator.doc-sessions-cli":"sha256:51d493811c73d598ffd4aef8041c96a0ef4735bdc598248a9aa7de6c9ba4ab4a","component.operator.docs-host-isolation":"sha256:5493df8ba5afc77326ebe4ee5f3f430ea81ed1d76ab323e342abb07708a7e8f9","component.operator.primary":"sha256:1b62e57c5c054fa906fb11d1129da2f5a02e08ef84ec49fdd5f4554b2d77bf92","component.operator.primary-cli":"sha256:6aebcc3970a11b91bf4b2c4edf173012f4730e358ded5b4408ee45c95d096180","component.operator.view-projections":"sha256:45c69f82164b23ecf41c6a5c8fdfabff90daeee6dc51a80c1bf89a052bc6177d","component.operator.web-console":"sha256:ee6d0ab11e6bbaca9d365ba750c9cd83025226f87e646238e6b62822b57538ad"},"scale":{"fileCountBucket":{"lower":100,"upper":200},"lineCountBucket":{"lower":20000,"upper":50000}}},
     "projection_target.entity.capability-runtime-harness-refactor-program":
       {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.refactor-program","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/refactor-program.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:7665bbeea514490e48cd5b317e008d5399ba6b4a0a926a05af98f455d44289f5","sourceStamps":{"capability.runtime-harness.refactor-program":"sha256:7d5f5c95b7b370cb380782b1296ff33e96da0cbfbf4c34203dfee3aee603c7a4","component.refactor-program.archctx-provider":"sha256:3ea7bb7a717e8be5484a8dac8c72309f4dc817e544215ff38c641c70fd488341","component.refactor-program.cli-layer":"sha256:e524926a421c75628bc4a7eff44c5c5b4a33c5acd56a62dbf962060dd49a8f66","component.refactor-program.core-layer":"sha256:d28916055b0fd7303ff6e97ff49238d1b69660a3f2fa06a20a6d53fe42cd7e8d"},"scale":{"fileCountBucket":{"lower":2,"upper":5},"lineCountBucket":{"lower":100,"upper":200}}},
     "projection_target.entity.capability-runtime-harness-task-agent-host":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.task-agent-host","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/task-agent-host.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:1afef5188219c14833807d8a838ded7aba2fe1877cf06938ed5a9bd96f6a3f91","sourceStamps":{"capability.runtime-harness.task-agent-host":"sha256:37676a2f470b206ad735faa19360e2d566632d362d6e9f9870abe68ec6619dd0","component.task-agent-host.cli-layer":"sha256:00852c8dd30bc0843546f9ff8790ff79dd96ebe7e14eb5e9819c2551f4c60ff0","component.task-agent-host.core-layer":"sha256:adc0f0166e9a8b631e9359ce87ef9a5142c41b5aea5c6c82eaed41b74d1efb34","component.task-agent-host.primary":"sha256:189bfe4fdc3ab12dc6bc279656b725038a4b9590cd8ef0c033ecb5f4998b67af","component.task-agent-host.primary-assets":"sha256:2572c229ca742b85b1ff05ca80f857f9bd02faa8221a22a22de8e8d3a13c2c14","component.task-agent-host.primary-cli":"sha256:c4c17baf2c43aa32ff09b345978cf2819c7524505dfd0f87b74174d524d3310f","component.task-agent-host.primary-core":"sha256:5577046f570a89cf7cd7d3abf5809cf128f6d7a8d308bdf55b31b7eafad5e49d","component.task-agent-host.primary-scripts":"sha256:df61323a59f9aa6acc04ce3ba84ca8d9e38d65273c4ab58d0a3dd57c7cba5a1c"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":2000,"upper":5000}}},
-    "projection_target.entity.capability-runtime-mcp-chatgpt-browser":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-mcp.chatgpt-browser","entityKind":"capability"},"path":"docs/architecture/modules/runtime-mcp/chatgpt-browser.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:5345a238ecf2fd02194fb3323e617355bf78f6a7bcd8ed328e5feaa1346add25","sourceStamps":{"capability.runtime-mcp.chatgpt-browser":"sha256:26e83b344060b7360d281f6ed3bdd8b4fdecd17fd3817f8835c34341f258e65a","component.chatgpt-browser.primary":"sha256:77fd2d678b2278046966e7a3e12bf7dae8829d92ac979e993bd7b37c902c4b11"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":2000,"upper":5000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-harness.task-agent-host","entityKind":"capability"},"path":"docs/architecture/modules/runtime-harness/task-agent-host.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:25d3822ace65ad67ec02e93c98a2d23daed822ffd806162c15698135082442aa","sourceStamps":{"capability.runtime-harness.task-agent-host":"sha256:37c6ac3df91002b49ab483c85c63f5bfe6030f6fefe1cb3900c0e920bbbedf68","component.task-agent-host.cli-layer":"sha256:00852c8dd30bc0843546f9ff8790ff79dd96ebe7e14eb5e9819c2551f4c60ff0","component.task-agent-host.core-layer":"sha256:6c50ad67f88d6f57b749e3cb8781acb47121b2db643cf7f80b399c2fa0f78883","component.task-agent-host.events-cli":"sha256:9b5c6980fcce65967908ab39c2102443b1ed8da2cb24830211cb229f804436f3","component.task-agent-host.primary":"sha256:60008e976e3d35a4e06eaa0fd27834e07901d94dfe43aa41732baab900a65671","component.task-agent-host.primary-assets":"sha256:ad0d6e77e5b97f46232919778137c719a1769dca6427916269b63615ca503cf6","component.task-agent-host.primary-cli":"sha256:c4c17baf2c43aa32ff09b345978cf2819c7524505dfd0f87b74174d524d3310f","component.task-agent-host.primary-core":"sha256:5577046f570a89cf7cd7d3abf5809cf128f6d7a8d308bdf55b31b7eafad5e49d","component.task-agent-host.primary-scripts":"sha256:df61323a59f9aa6acc04ce3ba84ca8d9e38d65273c4ab58d0a3dd57c7cba5a1c","component.task-agent-host.review-runner":"sha256:f400f356d29ceb46394a17030bed8cc9b5131e313bff13fec1148c676e0f4bd5"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":2000,"upper":5000}}},
     "projection_target.entity.capability-runtime-mcp-general-repo-access":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-mcp.general-repo-access","entityKind":"capability"},"path":"docs/architecture/modules/runtime-mcp/general-repo-access.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:29a24474475e8d09ad044e0534dbd75eb349abda11c0d8f272c720bd74e3e09f","sourceStamps":{"capability.runtime-mcp.general-repo-access":"sha256:242e2c2424b495134a3a5232cb4c991f0c40755fcf4ba56303d945320a340068","component.general-repo-access.tests-layer":"sha256:5acf0de16dcae05b014940cbc1ff11d61b606bb3adf4e24720d657303015cee2"},"scale":{"fileCountBucket":{"lower":2,"upper":5},"lineCountBucket":{"lower":2000,"upper":5000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.runtime-mcp.general-repo-access","entityKind":"capability"},"path":"docs/architecture/modules/runtime-mcp/general-repo-access.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:37628cfc02d1e1b291f278d12add54dee3fc4875c2290793ff8240c1c017876f","sourceStamps":{"capability.runtime-mcp.general-repo-access":"sha256:242e2c2424b495134a3a5232cb4c991f0c40755fcf4ba56303d945320a340068","component.general-repo-access.tests-layer":"sha256:5d2c204ddc305074940b8fbef0b21f90acd431de21822068fc249fc8353342c4"},"scale":{"fileCountBucket":{"lower":2,"upper":5},"lineCountBucket":{"lower":2000,"upper":5000}}},
     "projection_target.entity.capability-verification-acceptance-review":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.acceptance-review","entityKind":"capability"},"path":"docs/architecture/modules/verification/acceptance-review.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:eb937c376bf1239226578713c9c6c5d9a45938602b1072526ba309b5b47c9904","sourceStamps":{"capability.verification.acceptance-review":"sha256:d8ff13679287803772612430af85a78ea7a7939303b680ce01236311f662f3e0","component.acceptance-review.primary":"sha256:2e333b33c1152db029f1fa33d179eda6c8be2d93c83a11e8fa724189c3ae7e96","component.acceptance-review.primary-cli":"sha256:583cb8c3839bba299ad33519ee9c408b48a6db86e78f7111e17f2669416111fd","component.acceptance-review.primary-core":"sha256:15429ee104fb480dca5b15e89f76078d9a70212a69125bd681b41a3b5c0f83a8","component.acceptance-review.primary-scripts":"sha256:bc312c5b24f9608b6a718e01122db0d9c7b24af3ba01e89db3cbae704cc8bcf1"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.acceptance-review","entityKind":"capability"},"path":"docs/architecture/modules/verification/acceptance-review.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:eab29e0c3b7800a33befac5dc5e0029f281549460133be148a39908390762a40","sourceStamps":{"capability.verification.acceptance-review":"sha256:79fafb1d30111f8984545f6584224ae328f2e8af2035b1353d57984cebb622aa","component.acceptance-review.primary":"sha256:83210c770109298473e6f6960a6cc4ff41295498a4015f28cb799a9ce9f851ff","component.acceptance-review.primary-cli":"sha256:ec259eef99abf7e3132c8769d9b9c1a4cd34af72e23a0e9d77806157d7a74df6","component.acceptance-review.primary-core":"sha256:bcb917dc5c17e9f777dc1adcb97db98883399530acc299ad210852109b028077","component.acceptance-review.primary-scripts":"sha256:bc312c5b24f9608b6a718e01122db0d9c7b24af3ba01e89db3cbae704cc8bcf1"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.entity.capability-verification-codegraph-readiness":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.codegraph-readiness","entityKind":"capability"},"path":"docs/architecture/modules/verification/codegraph-readiness.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:2fc9003a1a02bd46e834ed7030ff938a68e71b4e3ab616343462870188f57551","sourceStamps":{"capability.verification.codegraph-readiness":"sha256:5d3d7b7d40df548bb1615f22af16da28019c6729d5eaef83af863a82cc4447dc","component.codegraph-readiness.scripts-layer":"sha256:2766078bd1d2b03512b0c401fca75e83ad1a50b5fd4398834058239658a2bf39","component.codegraph-readiness.tests-layer":"sha256:2c8b822ebb3499cf916170b11b15f2f977c4c602770d9e9210c601de6d8d3734"},"scale":{"fileCountBucket":{"lower":2,"upper":5},"lineCountBucket":{"lower":1000,"upper":2000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.codegraph-readiness","entityKind":"capability"},"path":"docs/architecture/modules/verification/codegraph-readiness.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:637dd7c2f0f62668e1163709076d1bf1faa153c27eb240618836d3ff2705faf7","sourceStamps":{"capability.verification.codegraph-readiness":"sha256:2a1ce95a307398911d33f10384295ac4c519454de40e889090a1a77a830eb426","component.codegraph-readiness.scripts-layer":"sha256:2766078bd1d2b03512b0c401fca75e83ad1a50b5fd4398834058239658a2bf39","component.codegraph-readiness.tests-layer":"sha256:2c8b822ebb3499cf916170b11b15f2f977c4c602770d9e9210c601de6d8d3734"},"scale":{"fileCountBucket":{"lower":2,"upper":5},"lineCountBucket":{"lower":1000,"upper":2000}}},
     "projection_target.entity.capability-verification-evals-checks":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.evals-checks","entityKind":"capability"},"path":"docs/architecture/modules/verification/evals-checks.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:0ba107b7c91c7797daf8619958ee46aa0087f494b1ba29bd0d2ac9a2c21ff4ef","sourceStamps":{"capability.verification.evals-checks":"sha256:a091912f101d518b824578cdfffe45326819e39a2bccd4c5338c8d02e0af36e7","component.evals-checks.ci-selection":"sha256:2ee04ae04e09360ca6ad6e4d73f7e0d96679a1518927ed7c2fc6f8bbf05a0fb3","component.evals-checks.evals-and-benchmarks":"sha256:947eaff4cf7be5fd55b60d54d90bc86eac8005671f7082faad12240fc80b6735","component.evals-checks.evals-and-benchmarks-tests":"sha256:8c5afe5dfff7ab0ac1b62a5f17cbf6ab621d20c97a31cd830f4940cd1c0faaef","component.evals-checks.primary":"sha256:d923dd4a0559d6754e8e3b7ed7e501de50bfd4581354fc625397d028bbd0a091","component.evals-checks.test-suite":"sha256:6cac87f6a5be4991a3deec5ec670c0f4e238d37523994f085fc661b11ffa3956","component.evals-checks.workflow-gates":"sha256:8bb7f5fcab72286b41fb169e39b15417d42e621cbaf00f51e9293c9b4b5bb406"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":100000,"upper":200000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.verification.evals-checks","entityKind":"capability"},"path":"docs/architecture/modules/verification/evals-checks.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:e05fea8631182acb81574c4e449b12847296761c66c344b83d7633d1fabe0af8","sourceStamps":{"capability.verification.evals-checks":"sha256:39db662f77814572b1b24f4c098f8ca792664367209dca96ea85b46b0568d676","component.evals-checks.ci-report-core":"sha256:d2840016d1f0ac3887cd7b8b01304bc9367e193be05957fc09e3c99c01363551","component.evals-checks.ci-selection":"sha256:00cad8659e43e40f1893f3033212e6de9c095869149d26c58115c0fec0833527","component.evals-checks.evals-and-benchmarks":"sha256:947eaff4cf7be5fd55b60d54d90bc86eac8005671f7082faad12240fc80b6735","component.evals-checks.evals-and-benchmarks-tests":"sha256:c60691bc4c81f1fdbbac46a83e371ef109dabb6464d54775690f6cca405e50ac","component.evals-checks.primary":"sha256:d923dd4a0559d6754e8e3b7ed7e501de50bfd4581354fc625397d028bbd0a091","component.evals-checks.test-suite":"sha256:005b7829a779ca75a3456b3d0e82dc2a5c01e54032f230af1692a327523d5e1b","component.evals-checks.workflow-gates":"sha256:28e69cfd3aa3955c3da6d3211cf98adec80ba7a70c4ba107b34366b2382cfb44"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":100000,"upper":200000}}},
     "projection_target.entity.capability-workflow-engine-contract-assets":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/contract-assets.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:1790e79f1a4f03ac6e613338234033111808e778b554ec705f0b36df93034280","sourceStamps":{"capability.workflow-engine.contract-assets":"sha256:579b9634aad5f623a769c3c4eb85077f4862e641ee199f5dbec0807f569c3358","component.contract-assets.capability-registry":"sha256:1789153ae3734bf9e9ff86b8c167324a1198b7156ea6e7b194c1decb13c72682","component.contract-assets.capability-registry-cli":"sha256:2b431daff1045734f6233c9fb0e85d11beee2687fcccdbef80a07c7f545a4725","component.contract-assets.capability-registry-core":"sha256:4bc1d718ffa2d3be305fbddc555c1cc98f8e7716717eb8025b6374986174d2fb","component.contract-assets.capability-registry-effects":"sha256:484160c21db45ff4f0d6b59d88aea552a508117b2c8fa42f4255730af3451af4","component.contract-assets.cli-layer":"sha256:317ebafa1e6c29c03441226607715db491a6c8dd9689d639fcb79c1751a830b6","component.contract-assets.contract-worktree-lifecycle":"sha256:f0a5b6639da3fd2dacc6a54f40d92b1a7f00ecc844232023d813bd1cc9eaae58","component.contract-assets.effects-layer":"sha256:e19dd472964c93415935c3ab311ceb3ed252a0d666f95f4475856bdc78bf9cbf","component.contract-assets.planning-helpers":"sha256:bfc1dca4873d47ce6d095d685d9ba663081c31bd7e7d102c6247eeabc2c90568","component.contract-assets.planning-helpers-cli":"sha256:dee33ccd0e8d20c0ab23f67b1094e727aa903941719ad8d1c032558f3ede2c85","component.contract-assets.planning-helpers-effects":"sha256:07783682c2d4277ba24ca46c35f31da58f9c3606e39cc6a6183b76c42476a67b","component.contract-assets.primary":"sha256:ae851a2b9076667230f16eee66bcbc74b713fcd267ee99499cf12ac4089b157a","component.contract-assets.primary-assets":"sha256:7529d4f2b0c523f66a4c55b95adad02c908c458be6dc65f29da306309050885c","component.contract-assets.template-projection":"sha256:d2dd6cc748a83e19e2218701efa479fd2e8ecab65af092c1c801c60909d2ae44","component.contract-assets.template-projection-cli":"sha256:79a7133a2b5e2134aa513cfec2f8d9e9522e374708f3d4890c530b9a15584e2e","component.contract-assets.template-projection-effects":"sha256:44565c18664338bdceb43d744937ebdf1606f306c44df6f25cb054c5ec68aebd","component.contract-assets.template-projection-scripts":"sha256:e042522efb50cb0e0dd2659461347cb0bff65a63b0ffe8a6d701a517c106fbff"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":20000,"upper":50000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.contract-assets","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/contract-assets.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:69d8096c0eb5be9dab961f6e2905da14f4a74c32d0b7fd2e91c858843864ae00","sourceStamps":{"capability.workflow-engine.contract-assets":"sha256:c724d9f5bd9ee5d23f040e1b3444265d94f4fddc69aaf88d0e0ccff67e3943bc","component.contract-assets.capability-registry":"sha256:095ac915c83605a9d019e35d6f1728a0c0e9dc9784cc6e337f8abfb3132a810c","component.contract-assets.capability-registry-cli":"sha256:2b431daff1045734f6233c9fb0e85d11beee2687fcccdbef80a07c7f545a4725","component.contract-assets.capability-registry-core":"sha256:bda9adc9fdb5ebd9caa2ea49a7d2012757470b6bfb1ccabbbcb21bf7e9818adb","component.contract-assets.capability-registry-effects":"sha256:484160c21db45ff4f0d6b59d88aea552a508117b2c8fa42f4255730af3451af4","component.contract-assets.cli-layer":"sha256:501982a95688a7a6c1d72e52aebe8ed087c58a0929d717fcf2548286ed3b5ac6","component.contract-assets.contract-worktree-lifecycle":"sha256:3dd1d1aa51ce13b92fee128ca191f1efc44de5a8b4dc494ce7d33dcef015919b","component.contract-assets.effects-layer":"sha256:e19dd472964c93415935c3ab311ceb3ed252a0d666f95f4475856bdc78bf9cbf","component.contract-assets.fleet-role-profiles":"sha256:cad7ca6f6330549dc2d454b59337de5254e5aa4c895f4e9438c933731ea5a321","component.contract-assets.planning-helpers":"sha256:bfc1dca4873d47ce6d095d685d9ba663081c31bd7e7d102c6247eeabc2c90568","component.contract-assets.planning-helpers-cli":"sha256:dee33ccd0e8d20c0ab23f67b1094e727aa903941719ad8d1c032558f3ede2c85","component.contract-assets.planning-helpers-effects":"sha256:07783682c2d4277ba24ca46c35f31da58f9c3606e39cc6a6183b76c42476a67b","component.contract-assets.primary":"sha256:ae851a2b9076667230f16eee66bcbc74b713fcd267ee99499cf12ac4089b157a","component.contract-assets.primary-assets":"sha256:28211597107fa14ab51ef8250521f665cfa8eb195f153495b9d4e0ec4f34a2e6","component.contract-assets.template-projection":"sha256:0992bf26dae75386e82c6208c2b10c8cc0a6a4d99716d98aa53c6b996f40afee","component.contract-assets.template-projection-cli":"sha256:4fe4f43c36253874e01c8b5a83cad52f7d27cf53b539e08af9877cf04ba12518","component.contract-assets.template-projection-effects":"sha256:44565c18664338bdceb43d744937ebdf1606f306c44df6f25cb054c5ec68aebd","component.contract-assets.template-projection-scripts":"sha256:e042522efb50cb0e0dd2659461347cb0bff65a63b0ffe8a6d701a517c106fbff","component.contract-assets.tool-catalog":"sha256:17a3822848366cd867b2e5f62a681526b32a2ac095e3e90f12f3293175b71564"},"scale":{"fileCountBucket":{"lower":500,"upper":1000},"lineCountBucket":{"lower":20000,"upper":50000}}},
     "projection_target.entity.capability-workflow-engine-execution-primitives":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.execution-primitives","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/execution-primitives.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:a03b0261b1890eeb28433e9441fccfe064242bc520d862d2323d485ebaaf151c","sourceStamps":{"capability.workflow-engine.execution-primitives":"sha256:4b66bc32ef379b45ae8747991e20d7cada1210d48521d398e18a56954cabed2d","component.execution-primitives.primary":"sha256:3f25b4a30870e379f94f3ad8771fdb41b0151f85d3dbf139f097d6487e6391f1","component.execution-primitives.repository-registry":"sha256:09c09dbfdb843934bf5e51d52251846609aebf606fee7a96163c8241fcef8d6c","component.execution-primitives.secret-patterns":"sha256:ae763b9afcf4a9c45f4f0bde0f50d3cb32d81e53d9ed7a552b514b7913f326c4"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":2000,"upper":5000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.execution-primitives","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/execution-primitives.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:e8b74ca81aafd99ca2b6f3edeaad3710d396450f130c142c4d3c2515b67269cd","sourceStamps":{"capability.workflow-engine.execution-primitives":"sha256:1a74830f30b8dbdc5a3492627801160f8fdd84d1f09018664fce4ca0cf090919","component.execution-primitives.primary":"sha256:8ef0065828b36f203bd8eb166b61b10eab1ade7c03fc98d81e0d4df1caa03266","component.execution-primitives.public-projections":"sha256:e97764213255b4f47af2311387cd4affe5630873a94cffeb2758a7b0d8be5cd6","component.execution-primitives.repository-registry":"sha256:09c09dbfdb843934bf5e51d52251846609aebf606fee7a96163c8241fcef8d6c","component.execution-primitives.secret-patterns":"sha256:ae763b9afcf4a9c45f4f0bde0f50d3cb32d81e53d9ed7a552b514b7913f326c4","component.execution-primitives.session-artifact-io":"sha256:383fb8a9e429594d78c287331000514a34ef465f0d076fc2e81f6bc5ee1ac86b","component.execution-primitives.task-message-claim":"sha256:02f2a25e85a02ee2f0eb43ccd8ad475114d1f083e4f088a80924147b8842f96c","component.execution-primitives.task-session-record":"sha256:b6c64c688842df927ea011e15785b5b549be5bab536b6e3bad35e65ddfe7c18b"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":2000,"upper":5000}}},
     "projection_target.entity.capability-workflow-engine-inspection-migration":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.inspection-migration","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/inspection-migration.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:f3ba20cbf3c1ea790008335fc5469f52ebcb9900f61f5159f03025a58217c0d0","sourceStamps":{"capability.workflow-engine.inspection-migration":"sha256:4893b68bd6d6cb035af8ff70a46be94b23b29a12321daefbfde21d3c14e79af5","component.inspection-migration.primary":"sha256:17a7b6328c047021d10b61c86716019fc5b42b2933dc79e7fea7aee1db28739d"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":2000,"upper":5000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.inspection-migration","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/inspection-migration.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:f3ba20cbf3c1ea790008335fc5469f52ebcb9900f61f5159f03025a58217c0d0","sourceStamps":{"capability.workflow-engine.inspection-migration":"sha256:1ca15f7d350e688f57a5e1d90487e88d9580587f75f98f8e49104d08fedf45a3","component.inspection-migration.primary":"sha256:aa93860bdb2286e850fd842bc4a2f571bc315b8f4d8d4d57d2a71d231741ba37"},"scale":{"fileCountBucket":{"lower":10,"upper":20},"lineCountBucket":{"lower":2000,"upper":5000}}},
     "projection_target.entity.capability-workflow-engine-workflow-state":
-      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.workflow-state","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/workflow-state.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:a244d4494c312d5c867e6d3a9409fb75f43d7d7fa975436a2dc115f4e416b993","sourceStamps":{"capability.workflow-engine.workflow-state":"sha256:f3da9e3b5d68472fad7ea2824e4d7319f67fb64f3b915b27d3eafb283c2c9c5a","component.workflow-state.continuation-ledger":"sha256:e6c8ea360af8a056770eabe3c594edb1dc4411cad862fc0cb756fd0fdb74bda9","component.workflow-state.continuation-ledger-effects":"sha256:23b1d27de981a276b2ca9c390cb06084b7a3df998c46a840b6b69bbc1c7b18a7","component.workflow-state.coordination-plane":"sha256:c80acd96e060097e73c385fbde9199ce0bded7f062bb45ec23a7e280699d2556","component.workflow-state.coordination-plane-core":"sha256:a385370c1c3b6c0c33bbfde6e41a1ba108017f062f84484033e1a168e21ce50e","component.workflow-state.primary":"sha256:49b789b3f158f8e93d71c3daa0420db922a25f9157fe19017c3ebcf9d4745a3a","component.workflow-state.primary-cli":"sha256:4ebd4737a17d5d8f22a1d71cedc1f8a090f0d1f7321842faa79b76f00f6ab5da","component.workflow-state.primary-effects":"sha256:1d412df6a63cf23cdac7cc55badb15d6e3154ff6662fdd86b4c2bc87524d728f","component.workflow-state.primary-scripts":"sha256:722e36a1bf4a6546ed81cb92a2f4d43170f2d58ebdbc46711aa026515a8d169a"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
+      {"type":"entity-summary","scope":{"kind":"entity","id":"capability.workflow-engine.workflow-state","entityKind":"capability"},"path":"docs/architecture/modules/workflow-engine/workflow-state.md","ownership":"mixed","format":"markdown","outputDigest":"sha256:f16f5cab977024c5edd005adc4fa2358a7baaa5311d61d3c1ccbf6f5aad0108c","sourceStamps":{"capability.workflow-engine.workflow-state":"sha256:e8db740e9965f7ecb146613da442f366d86c3807fc227a8460a822296f9a4973","component.workflow-state.continuation-ledger":"sha256:e6c8ea360af8a056770eabe3c594edb1dc4411cad862fc0cb756fd0fdb74bda9","component.workflow-state.continuation-ledger-effects":"sha256:23b1d27de981a276b2ca9c390cb06084b7a3df998c46a840b6b69bbc1c7b18a7","component.workflow-state.coordination-plane":"sha256:e0491d9ad6812de80c140b58919fa9e6bcc5c5ad8929b81e1213b07429637755","component.workflow-state.coordination-plane-core":"sha256:1bba30a7ff573c44729baeb827246e0abe86f3412e61a8dbad36b55f5f36849d","component.workflow-state.primary":"sha256:49b789b3f158f8e93d71c3daa0420db922a25f9157fe19017c3ebcf9d4745a3a","component.workflow-state.primary-cli":"sha256:4ebd4737a17d5d8f22a1d71cedc1f8a090f0d1f7321842faa79b76f00f6ab5da","component.workflow-state.primary-effects":"sha256:bd9df8de3dc01f664459b9aa846efa7b4d1ecd39f900fb071f84c8108b3690c4","component.workflow-state.primary-scripts":"sha256:d44eb746bd244cdea8acadac6a95c2cbea232c72207d7800891cfa546fdf9b6a"},"scale":{"fileCountBucket":{"lower":20,"upper":50},"lineCountBucket":{"lower":5000,"upper":10000}}},
     "projection_target.runtime-topology.summary":
-      {"type":"runtime-topology-summary","scope":{"kind":"diagram","id":"runtime-topology"},"path":"docs/architecture/runtime-topology.md","ownership":"generated","format":"markdown","outputDigest":"sha256:1e5a26f5539f781eef1c75ddf7417c03da0785a28a56d98ff559f73373e80def"}
+      {"type":"runtime-topology-summary","scope":{"kind":"diagram","id":"runtime-topology"},"path":"docs/architecture/runtime-topology.md","ownership":"generated","format":"markdown","outputDigest":"sha256:22a5328e14bd9d8986e4b8c05cc584d12f5d0e985f03e9ac2dee52216bdd2c91"}
   }
 }

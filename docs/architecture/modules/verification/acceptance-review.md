@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:eb937c376bf1239226578713c9c6c5d9a45938602b1072526ba309b5b47c9904" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:eab29e0c3b7800a33befac5dc5e0029f281549460133be148a39908390762a40" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
@@ -19,35 +19,42 @@ flowchart LR
   p1_capability_runtime_harness_hook_adapters_75a11743["Hook Adapters"]:::component
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
   p1_capability_verification_acceptance_review_f80a24d6["Acceptance Review"]:::component
+  p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_component_acceptance_review_primary_b86fb286["Generic Review Round"]:::component
   p1_component_acceptance_review_primary_cli_16f323d1["Generic Review Round (cli)"]:::component
   p1_component_acceptance_review_primary_core_dad45fa1["Generic Review Round (core)"]:::component
   p1_component_acceptance_review_primary_scripts_fb66eb00["Generic Review Round (scripts)"]:::component
+  p1_component_task_agent_host_primary_d8453f09["Herdr Task Session Host"]:::component
+  p1_component_task_agent_host_review_runner_c2379e1e["Reviewer Runner"]:::component
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Admit at most one persistent semantic review session per work package through the circuit breaker"| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_capability_verification_acceptance_review_f80a24d6 -->|"Run one generic acceptance review round for an admitted review campaign"| p1_component_acceptance_review_primary_b86fb286
-  p1_component_acceptance_review_primary_b86fb286 -->|"Run the persistent review session#44; bind exact native attribution#44; read immutable session/request and OAR observations#44; and persist the accepted-input proof through protected session artifacts"| p1_capability_runtime_harness_task_agent_host_d81dadb6
-  p1_component_acceptance_review_primary_b86fb286 -->|"Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof#59; unknown acceptance leaves delivery pending"| p1_capability_organization_task_fleet_134b5125
+  p1_component_acceptance_review_primary_b86fb286 -->|"Hold an exclusive directory lock around one generic review run#44; and read and write immutable session artifacts and the reviewer process identity"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_component_acceptance_review_primary_b86fb286 -->|"Drive the persistent reviewer session through the runner port that task-agent-host implements#59; the CLI root injects the implementation#44; so review imports no task-agent-host module"| p1_capability_runtime_harness_task_agent_host_d81dadb6
   p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Read the diff fingerprint for mutation guards."| p1_capability_verification_acceptance_review_f80a24d6
-  p1_capability_runtime_harness_hook_adapters_75a11743 -->|"Resolve task role profiles during host installation."| p1_capability_runtime_harness_task_agent_host_d81dadb6
+  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Plugin → core: bind task sessions to the active review admission and its source#44; resolve the policy review base of the diff fingerprint#44; implement the reviewer runner port#44; and apply the review isolation policy in the OAR review host"| p1_capability_verification_acceptance_review_f80a24d6
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Use host installation commands for Herdr skill setup."| p1_capability_runtime_harness_hook_adapters_75a11743
+  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
+  p1_component_task_agent_host_primary_d8453f09 -->|"Run Git through the process runner#44; hold task session locks#44; and read and write immutable session artifacts"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Run the reviewer session#44; its OAR review host and its pre-prompt inbox companion for acceptance review"| p1_component_task_agent_host_review_runner_c2379e1e
+  p1_component_task_agent_host_review_runner_c2379e1e -->|"Read and write immutable session artifacts#44; including the accepted-input proof#44; and read the host process identity"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_component_task_agent_host_review_runner_c2379e1e -->|"Start#44; send to#44; collect from and close the reviewer task session#44; and read its binding and OAR observations"| p1_component_task_agent_host_primary_d8453f09
+  p1_component_task_agent_host_review_runner_c2379e1e -->|"Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof#59; unknown acceptance leaves delivery pending"| p1_capability_organization_task_fleet_134b5125
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a092a9e918c17dbf2802a57aa9ce98dc1624c68ebe89983d9af7092fa7fb54bb`).
-- Semantic nodes: `8`; declared relations: `7`.
+- Proof: `proven` (`sha256:1cadb882926d2611093de99e35dcacfc9c9afdf8594367388d15c75f00b8f990`).
+- Semantic nodes: `11`; declared relations: `13`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.acceptance-review.primary` | `src/cli/commands/review.ts#buildReviewCommand` | `sink.acceptance-review.primary` → `src/effects/review/generic-review.ts#runReviewRound`、`sink.acceptance-review.circuit-admission` → `src/cli/hook/circuit-breaker.ts#recordCircuitAttempt` |
-| `entrypoint.acceptance-review.round` | `src/effects/review/generic-review.ts#runReviewRound` | `sink.acceptance-review.observe-admission` → `src/effects/review/acceptance-receipt.ts#acceptanceContext`、`sink.acceptance-review.packet` → `src/core/review/review-packet.ts#composeReviewPacket`、`sink.acceptance-review.validate-output` → `src/core/review/generic-review.ts#validateReviewOutput`、`sink.acceptance-review.record-receipt` → `src/effects/review/acceptance-receipt.ts#recordAcceptance`、`sink.acceptance-review.reserve-inbox` → `src/effects/review/pre-prompt-inbox.ts#preparePrePromptInbox`、`sink.acceptance-review.commit-inbox` → `src/effects/review/pre-prompt-inbox.ts#commitPrePromptInbox` |
-| `entrypoint.acceptance-review.inbox-host` | `src/effects/review/oar-review-host.ts#runHostFileRequest` | `sink.acceptance-review.consume-inbox` → `src/effects/review/pre-prompt-inbox-consumer.ts#consumePrePromptInbox`、`sink.acceptance-review.accepted-inbox` → `src/effects/review/pre-prompt-inbox-consumer.ts#recordPrePromptInboxAccepted` |
-| `entrypoint.acceptance-review.inbox-proof` | `src/effects/review/pre-prompt-inbox-consumer.ts#recordPrePromptInboxAccepted` | `sink.acceptance-review.persist-inbox-proof` → `src/effects/terminal/task-session-io.ts#writeSessionArtifact` |
-| `entrypoint.acceptance-review.inbox-commit` | `src/effects/review/pre-prompt-inbox.ts#commitPrePromptInbox` | `sink.acceptance-review.inbox-session` → `src/effects/terminal/task-session-reader.ts#readTaskAgent`、`sink.acceptance-review.inbox-oar-proof` → `src/effects/terminal/task-runtime-observation.ts#readOarObservation`、`sink.acceptance-review.deliver-inbox` → `src/effects/fleet/task-inbox.ts#deliverTaskInbox` |
+| `entrypoint.acceptance-review.round` | `src/effects/review/generic-review.ts#runReviewRound` | `sink.acceptance-review.observe-admission` → `src/effects/review/acceptance-receipt.ts#acceptanceContext`、`sink.acceptance-review.packet` → `src/core/review/review-packet.ts#composeReviewPacket`、`sink.acceptance-review.validate-output` → `src/core/review/generic-review.ts#validateReviewOutput`、`sink.acceptance-review.record-receipt` → `src/effects/review/acceptance-receipt.ts#recordAcceptance`、`sink.acceptance-review.recover-companions` → `src/core/review/runner-port.ts#recoverCompanions` |
+| `entrypoint.acceptance-review.round` | `src/effects/review/generic-review.ts#commitInbox` | `sink.acceptance-review.settle-companion` → `src/core/review/runner-port.ts#settleCompanion` |
 
 組件入口:
 
@@ -57,6 +64,7 @@ flowchart LR
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
 - 匹配前綴:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
+- 排除前綴:`src/core/review/module-review-prompt.ts`、`src/effects/review/docs-host-isolation.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -68,7 +76,6 @@ flowchart LR
 - `deployed-on` → `process.oar-review-host` — Acceptance review runs review sessions in the OAR review host.
 - `calls` → `capability.runtime-harness.hook-adapters` — Admit at most one persistent semantic review session per work package through the circuit breaker
 - `depends-on` → `capability.runtime-harness.operator` — Use the architecture module view in review prompts.
-- `depends-on` → `component.execution-primitives.secret-patterns` — Apply secret patterns to module review context.
 - `calls` → `component.acceptance-review.primary` — Run one generic acceptance review round for an admitted review campaign
 
 入向關係:
@@ -76,22 +83,24 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Locate the acceptance receipt and the protected Git runtime
 - `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
 - `depends-on` ← `capability.verification.evals-checks` — Test Acceptance Review behavior through its source modules.
+- `reads` ← `component.execution-primitives.task-session-record` — Type the task session record fields with the review runner port types: process proof, task agent spec and task session admission
 - `depends-on` ← `capability.runtime-harness.external-source-intake` — Read protected review admission sources for current source-binding validation
-- `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Build the module review prompt from the committed architecture model
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Read the diff fingerprint for mutation guards.
 - `depends-on` ← `capability.runtime-harness.operator` — Read and reobserve protected current review admission for exact session discovery and current goal context
-- `depends-on` ← `component.operator.view-projections` — Decode the module review prompt shape that the review prompt builder declares
+- `reads` ← `component.operator.agents-configuration` — Plugin → core: validate review runtime ids against the declared review runtimes
+- `depends-on` ← `component.operator.architecture-view-core` — Plugin → core: apply the shared review finding rules in module review prompts
 - `depends-on` ← `capability.organization.publication` — Read the acceptance receipt for publication evidence.
+- `calls` ← `capability.runtime-harness.task-agent-host` — Plugin → core: bind task sessions to the active review admission and its source, resolve the policy review base of the diff fingerprint, implement the reviewer runner port, and apply the review isolation policy in the OAR review host
+- `calls` ← `component.task-fleet.provider-feedback` — Plugin → core: observe the active review admission before admitted feedback intake
 - `depends-on` ← `capability.workflow-engine.workflow-state` — Read the diff fingerprint for Effective State.
 
 組件出向關係:
 
 - `component.acceptance-review.primary`:
   - `calls` → `capability.runtime-harness.evidence-ledger` — Canonicalize review records and load verification execution results
-  - `calls` → `capability.workflow-engine.execution-primitives` — Hold an exclusive directory lock around one generic review run
-  - `calls` → `capability.runtime-harness.task-agent-host` — Run the persistent review session, bind exact native attribution, read immutable session/request and OAR observations, and persist the accepted-input proof through protected session artifacts
-  - `calls` → `capability.organization.task-fleet` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold an exclusive directory lock around one generic review run, and read and write immutable session artifacts and the reviewer process identity
+  - `calls` → `capability.runtime-harness.task-agent-host` — Drive the persistent reviewer session through the runner port that task-agent-host implements; the CLI root injects the implementation, so review imports no task-agent-host module
   - `reads` → `capability.workflow-engine.workflow-state` — Observe Git and files read-only and resolve the workflow profile for the review subject
 - `component.acceptance-review.primary-cli`:
   - 無。
@@ -111,27 +120,31 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a092a9e918c17dbf2802a57aa9ce98dc1624c68ebe89983d9af7092fa7fb54bb`); selectors `14/14`.
+> **Proof**: `proven` (`sha256:1cadb882926d2611093de99e35dcacfc9c9afdf8594367388d15c75f00b8f990`); selectors `16/16`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
 sequenceDiagram
   autonumber
-  participant p2_review_fe82cb22 as Acceptance Review
   participant p2_round_ef1b7069 as Generic Review Round
-  participant p2_session_d4cd9053 as Task Agent Host
+  participant p2_host_e62c1c09 as Task Agent Host
+  participant p2_runner_4c5ce8b1 as Reviewer Runner
+  participant p2_session_d4cd9053 as Herdr Task Session Host
+  participant p2_artifacts_6f1976ed as Execution Primitives
   participant p2_inbox_44cb8de0 as Task Fleet
-  p2_review_fe82cb22->>p2_round_ef1b7069: Reserve exact bounded request and native-session context without writing a delivery receipt
-  p2_review_fe82cb22->>p2_round_ef1b7069: Read and validate the reserved companion before prompting#59; consumption does not deliver messages
-  p2_review_fe82cb22->>p2_round_ef1b7069: Pass input-scoped OAR snapshots to the accepted-proof recorder#59; ACK alone is not proof
+  p2_host_e62c1c09->>p2_runner_4c5ce8b1: When review sends a request through the runner port#44; reserve exact bounded request and native-session context without writing a delivery receipt
+  p2_host_e62c1c09->>p2_runner_4c5ce8b1: Read and validate the reserved companion before prompting#59; consumption does not deliver messages
+  p2_host_e62c1c09->>p2_runner_4c5ce8b1: Pass input-scoped OAR snapshots to the accepted-proof recorder#59; ACK alone is not proof
   alt The exact native host accepted this request and companion under current admission
-  p2_round_ef1b7069->>p2_session_d4cd9053: Persist the immutable accepted-input proof only after exact request#44; native identity and OAR control checks
-  p2_review_fe82cb22->>p2_round_ef1b7069: The owner resumes the bounded commit or recovers it later without resending the prompt
-  p2_round_ef1b7069->>p2_session_d4cd9053: Read the exact OAR observation and compare accepted input#44; native provider#44; request and proof sequence before delivery
-  p2_round_ef1b7069->>p2_inbox_44cb8de0: Commit the existing inbox delivery receipt with the exact controlled-request reference and reobserve its result
+  p2_runner_4c5ce8b1->>p2_artifacts_6f1976ed: Persist the immutable accepted-input proof only after exact request#44; native identity and OAR control checks
+  p2_round_ef1b7069->>p2_host_e62c1c09: The owner asks the runner to settle the request's companion during and after the round
+  p2_round_ef1b7069->>p2_host_e62c1c09: A later round recovers accepted companions of earlier rounds without resending the prompt
+  p2_host_e62c1c09->>p2_runner_4c5ce8b1: The runner resumes the bounded commit for the settled request
+  p2_runner_4c5ce8b1->>p2_session_d4cd9053: Read the exact OAR observation and compare accepted input#44; native provider#44; request and proof sequence before delivery
+  p2_runner_4c5ce8b1->>p2_inbox_44cb8de0: Commit the existing inbox delivery receipt with the exact controlled-request reference and reobserve its result
     Note over p2_inbox_44cb8de0: Return committed delivery receipts#59; provider claim and issue authority remain unchanged
   else Positive acceptance proof is absent or the send outcome remains unknown
-  p2_round_ef1b7069->>p2_session_d4cd9053: Resolve the exact bound session#59; without an accepted proof return pending before any delivery write
+  p2_runner_4c5ce8b1->>p2_session_d4cd9053: Resolve the exact bound session#59; without an accepted proof return pending before any delivery write
     Note over p2_round_ef1b7069: Leave messages pending#59; do not replay the prompt or infer delivery from ACK#44; timeout or a missing result
   end
 ```

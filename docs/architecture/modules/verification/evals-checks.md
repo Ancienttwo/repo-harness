@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0ba107b7c91c7797daf8619958ee46aa0087f494b1ba29bd0d2ac9a2c21ff4ef" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e05fea8631182acb81574c4e449b12847296761c66c344b83d7633d1fabe0af8" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -15,6 +15,7 @@ Runs repository verification, contract gates, benchmarks, and evaluation suites.
 ```mermaid
 flowchart LR
   p1_capability_verification_evals_checks_82b2358d["Evals And Checks"]:::component
+  p1_component_evals_checks_ci_report_core_bad5afc5["CI Report Core"]:::component
   p1_component_evals_checks_ci_selection_1676883f["CI Selection And Report"]:::component
   p1_component_evals_checks_evals_and_benchmarks_d3fc3d88["Evals And Benchmarks"]:::component
   p1_component_evals_checks_evals_and_benchmarks_tests_35f650fc["Evals And Benchmarks (tests)"]:::component
@@ -30,8 +31,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:f3941dfd33bc420e37020f265fe060c1983f534085615450317fdaa174342289`).
-- Semantic nodes: `7`; declared relations: `3`.
+- Proof: `proven` (`sha256:95c6256e16d01ed065119fc1dcd50d9a67f053940a0b26fde091a313c115c969`).
+- Semantic nodes: `8`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
@@ -59,8 +60,8 @@ flowchart LR
 - `depends-on` → `capability.verification.acceptance-review` — Test Acceptance Review behavior through its source modules.
 - `depends-on` → `capability.public-surface.action-commands` — Test Action Commands behavior through its source modules.
 - `depends-on` → `capability.public-surface.adoption` — Test Adoption behavior through its source modules.
-- `depends-on` → `capability.runtime-mcp.chatgpt-browser` — Test ChatGPT Browser Consult behavior through its source modules.
 - `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
+- `depends-on` → `capability.runtime-harness.dsh-host` — Test DSH Host Plugin behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.external-source-intake` — Test External Source Intake behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Test Global Runtime Reconciliation behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Test MCP Sidecar behavior through its source modules.
@@ -82,6 +83,8 @@ flowchart LR
 
 組件出向關係:
 
+- `component.evals-checks.ci-report-core`:
+  - 無。
 - `component.evals-checks.ci-selection`:
   - `calls` → `capability.workflow-engine.inspection-migration` — Run test files through the shared runner in scripts/lib/ci-run-tests.sh
   - `calls` → `component.evals-checks.test-suite` — Select affected test files and run them in isolated file jobs
@@ -103,6 +106,7 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
+| `component.evals-checks.ci-report-core` | CI Report Core | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.evals-checks.ci-selection` | CI Selection And Report | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evals-checks.evals-and-benchmarks` | Evals And Benchmarks | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.evals-checks.evals-and-benchmarks-tests` | Evals And Benchmarks (tests) | `50–100` 個文件 / `10k–20k` 行 | 未宣告 |
@@ -112,7 +116,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:f3941dfd33bc420e37020f265fe060c1983f534085615450317fdaa174342289`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:95c6256e16d01ed065119fc1dcd50d9a67f053940a0b26fde091a313c115c969`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

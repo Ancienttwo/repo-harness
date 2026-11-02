@@ -1,6 +1,6 @@
 # runtime-harness/external-source-intake 架构文档
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:fd0775ac4bf8c2ec5a5ec07243fb8d7ab62d67f5ff8c2f1b8cc98c9a150808c6" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-external-source-intake" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b89229f5d64c43f4a50f0153640f6655404f5ac40e344ad372dd05ffb2cc6180" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.external-source-intake`(kind `capability`)
 > **Matched Prefixes**:`src/effects/external-sources/**`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
@@ -56,8 +56,8 @@ flowchart LR
 - `reads` → `external.github` — Read GitHub issues and comments as immutable intake evidence through gh.
 - `calls` → `component.external-source-intake.immutable-evidence` — Persist provider-neutral immutable observations and typed refresh receipts before deriving a read-only projection
 - `calls` → `component.execution-primitives.repository-registry` — Read the strict repo registry snapshot for repository identity and authorization
-- `calls` → `capability.runtime-harness.task-agent-host` — Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding
 - `calls` → `capability.organization.task-fleet` — Reobserve exact admitted inbox context to bind source evidence to the same current provider issue
+- `depends-on` → `capability.workflow-engine.workflow-state` — Validate source bindings with the shared closed admitted-session selector
 
 入向關係:
 

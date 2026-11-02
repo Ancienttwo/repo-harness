@@ -1,13 +1,13 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a03b0261b1890eeb28433e9441fccfe064242bc520d862d2323d485ebaaf151c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e8b74ca81aafd99ca2b6f3edeaad3710d396450f130c142c4d3c2515b67269cd" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It also holds the shared repository registry, the account home root and the secret patterns that core and plugins read. It holds no workflow policy.
+Runs bounded child processes and provides the canonical directory lock and Git common-dir and worktree topology reads. It also holds the shared repository registry, the account home root, the secret patterns, the task message claim primitives and the immutable session artifact I/O that core and plugins read. It holds no workflow policy.
 
 ## 1. P1:能力架構地圖
 
@@ -17,8 +17,12 @@ Runs bounded child processes and provides the canonical directory lock and Git c
 flowchart LR
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
   p1_component_execution_primitives_primary_800678c8["Bounded Process And Lock Primitives"]:::component
+  p1_component_execution_primitives_public_projections_1287b1f9["Public Text and Worktree Views"]:::component
   p1_component_execution_primitives_repository_registry_49e2fbe9["Repository Registry and Account Home"]:::component
   p1_component_execution_primitives_secret_patterns_075f309a["Secret Patterns"]:::component
+  p1_component_execution_primitives_session_artifact_io_f1f01a74["Immutable Session Artifact I/O"]:::component
+  p1_component_execution_primitives_task_message_claim_dbe6af55["Task Message Claim Primitives"]:::component
+  p1_component_execution_primitives_task_session_record_e7a96008["Task Session Record"]:::component
   p1_capability_workflow_engine_execution_primitives_b3033934 -->|"Run a bounded child process"| p1_component_execution_primitives_primary_800678c8
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -26,8 +30,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ce4cc2fa11c15105955c9bf86d78836847338383cc19c7963b3027c4e27a0143`).
-- Semantic nodes: `4`; declared relations: `1`.
+- Proof: `proven` (`sha256:ca60808174d4373193b2b24752a89fed54b6e7fe234c5946be4305d1c5717e38`).
+- Semantic nodes: `8`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -58,7 +62,7 @@ flowchart LR
 
 入向關係:
 
-- `calls` ← `component.acceptance-review.primary` — Hold an exclusive directory lock around one generic review run
+- `calls` ← `component.acceptance-review.primary` — Hold an exclusive directory lock around one generic review run, and read and write immutable session artifacts and the reviewer process identity
 - `depends-on` ← `capability.public-surface.adoption` — Run bounded processes for adoption and file transactions.
 - `depends-on` ← `capability.verification.codegraph-readiness` — Run bounded CodeGraph processes.
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Resolve the configured Git binary for worktree lifecycle commands
@@ -74,15 +78,15 @@ flowchart LR
 - `calls` ← `component.hook-adapters.host-installer` — Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner
 - `calls` ← `component.hook-adapters.primary` — Run the process supervisor and group launcher entries
 - `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
-- `calls` ← `component.mcp-sidecar.coding-profile` — Use the configured Git binary for coding workspaces
-- `calls` ← `component.mcp-sidecar.host-setup` — Hold the MCP setup ownership lock
 - `calls` ← `component.mcp-sidecar.primary` — Read the worktree topology for the PM server scope
 - `calls` ← `component.mcp-sidecar.repo-policy-registry` — Run Git for repository roots and lock guarded writes
 - `depends-on` ← `capability.runtime-harness.operator` — Read Git topology for task diffs and development activity.
+- `depends-on` ← `capability.organization.publication` — Resolve the Git common directory for the feedback store, and validate the shared task message claim in feedback records
 - `calls` ← `component.publication.primary` — Read the worktree topology and the Git common directory
-- `calls` ← `component.publication.provider-feedback` — Resolve the Git common directory for feedback records
-- `calls` ← `component.task-agent-host.primary` — Run Git through the process runner and hold task session locks
-- `calls` ← `component.task-fleet.task-inbox` — Hold exclusive directory locks under the Git common directory for the task inbox
+- `calls` ← `component.task-agent-host.primary` — Run Git through the process runner, hold task session locks, and read and write immutable session artifacts
+- `calls` ← `component.task-agent-host.review-runner` — Read and write immutable session artifacts, including the accepted-input proof, and read the host process identity
+- `calls` ← `component.task-fleet.provider-feedback` — Hold the shared task lock while feedback events and delivery receipts are recorded
+- `calls` ← `component.task-fleet.task-inbox` — Hold exclusive directory locks under the Git common directory for the task inbox, and validate the shared task message claim and message fields
 - `calls` ← `component.workflow-state.continuation-ledger` — Serialize attempt ledger appends under a directory lock and write them durably
 - `calls` ← `component.workflow-state.coordination-plane` — Take task and backlog locks, read the worktree topology, and write coordination records durably
 - `calls` ← `component.workflow-state.primary` — Take the state lock and commit the version owner under the Git common dir
@@ -91,22 +95,34 @@ flowchart LR
 
 - `component.execution-primitives.primary`:
   - 無。
+- `component.execution-primitives.public-projections`:
+  - 無。
 - `component.execution-primitives.repository-registry`:
   - 無。
 - `component.execution-primitives.secret-patterns`:
   - 無。
+- `component.execution-primitives.session-artifact-io`:
+  - 無。
+- `component.execution-primitives.task-message-claim`:
+  - `depends-on` → `capability.runtime-harness.evidence-ledger` — Canonicalize task message claim digests with the shared canonical JSON
+- `component.execution-primitives.task-session-record`:
+  - `reads` → `capability.verification.acceptance-review` — Type the task session record fields with the review runner port types: process proof, task agent spec and task session admission
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.execution-primitives.public-projections` | Public Text and Worktree Views | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.execution-primitives.repository-registry` | Repository Registry and Account Home | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.execution-primitives.secret-patterns` | Secret Patterns | `1–2` 個文件 / `20–50` 行 | 未宣告 |
+| `component.execution-primitives.session-artifact-io` | Immutable Session Artifact I/O | `1–2` 個文件 / `50–100` 行 | 未宣告 |
+| `component.execution-primitives.task-message-claim` | Task Message Claim Primitives | `2–5` 個文件 / `100–200` 行 | 未宣告 |
+| `component.execution-primitives.task-session-record` | Task Session Record | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ce4cc2fa11c15105955c9bf86d78836847338383cc19c7963b3027c4e27a0143`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:ca60808174d4373193b2b24752a89fed54b6e7fe234c5946be4305d1c5717e38`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
