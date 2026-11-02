@@ -264,16 +264,26 @@ function runTransactionalProfileProjection(
         new Error(`install profile ${profile} failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return { result, state: null };
     }
+    let owned: GlobalRuntimeResult;
     try {
       commitState(transaction, migrationSource, result);
-      const owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv);
-      if (owned.exitCode !== 0) throw new Error(`install profile ${profile} failed: ${owned.lines.join('; ')}`);
+      owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv);
+    } catch (error) {
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
+      throw error;
+    }
+    if (owned.exitCode !== 0) {
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`install profile ${profile} failed: ${owned.stderr || owned.lines.join('; ')}`), owned);
+      return { result: owned, state: null };
+    }
+    try {
       const state = readInstalledProfile(transactionEnv)!;
       captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
       commitInstallHostTransaction(transaction);
       return { result: owned, state };
     } catch (error) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, owned);
       throw error;
     }
   });

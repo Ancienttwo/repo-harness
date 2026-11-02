@@ -987,6 +987,25 @@ describe('install profiles', () => {
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
   }), 30_000);
 
+  test('a failed fresh Waza rule fetch rolls the install back and reports the step', () => withHome((env) => {
+    writeManagedHostSurfaces(env, 'full');
+    for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid', 'repo-harness-cross-review']) rmSync(join(env.HOME!, '.codex', 'skills', skill), { recursive: true });
+    const bin = join(env.HOME!, 'fake-bin');
+    mkdirSync(bin, { recursive: true });
+    writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'curl'), '#!/bin/sh\necho "fixture HTTP 503" >&2\nexit 22\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'herdr'), '#!/bin/sh\nprintf "%s\\n" "---" "name: herdr" "---" "Check HERDR_ENV before control." "" "## Learn the current CLI"\n', { mode: 0o755 });
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
+      cwd: ROOT, env: { ...env, PATH: `${bin}:/bin:/usr/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') }, encoding: 'utf-8',
+    });
+    expect(failed.status).not.toBe(0);
+    expect(JSON.parse(failed.stdout).steps.find(({ step }: { step: string }) => step === 'sync Waza shared rules'))
+      .toMatchObject({ status: 'failed', detail: expect.stringContaining('fixture HTTP 503') });
+    expect(readInstalledProfile(env)).toBeNull();
+    for (const root of ['.agents', '.codex']) expect(existsSync(join(env.HOME!, root, 'rules'))).toBe(false);
+  }), 30_000);
+
   test('a relative XDG_STATE_HOME fails before the host transaction', () => withHome((env) => {
     expect(() => installProfileHostMutationPaths({ ...env, XDG_STATE_HOME: 'state' })).toThrow('XDG_STATE_HOME must be an absolute path: state');
   }));
