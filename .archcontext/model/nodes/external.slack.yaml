@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.slack"
+kind: "external-system"
+name: "Slack"
+status: "active"
+layer: "external"
+summary: "Workspace chat whose #bot-worker channel carries the Dot review threads; the operator reads it through the Web API with a read-only bot token."
