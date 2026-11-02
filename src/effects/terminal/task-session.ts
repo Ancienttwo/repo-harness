@@ -677,9 +677,11 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
         if (!entry.isDirectory() || entry.isSymbolicLink()) throw new Error('task_agent_unsafe_directory');
         const roleDir = join(rolesRoot, entry.name);
         if (!existsSync(join(roleDir, 'intent.json'))) continue;
-        const intent = readStartIntent(join(roleDir, 'intent.json'));
-        if (intent.repository.repository_id !== repository.repository_id || intent.repository.execution_root !== checkoutPath) continue;
+        // Only this checkout's roles are validated, so a retired record elsewhere does not block it.
+        const owner = readSessionArtifact<{ repository?: Partial<TaskRepository> }>(join(roleDir, 'intent.json')).repository;
+        if (owner?.repository_id !== repository.repository_id || owner?.execution_root !== checkoutPath) continue;
         if (existsSync(join(roleDir, 'closed.json'))) continue;
+        const intent = readStartIntent(join(roleDir, 'intent.json'));
         if (dryRun) return { status: 'cleanup_pending', reason: 'active_roles', pids: existsSync(join(roleDir, 'binding.json')) ? [readTaskBinding(join(roleDir, 'binding.json')).provider.pid] : [] };
         const result = await closeTaskAgent(repository.primary_root, intent.spec.task, intent.spec.role);
         if (result.status !== 'closed') return { ...result, reason: result.reason ?? 'foreground_unproven' };
