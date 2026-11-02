@@ -8,7 +8,9 @@ const validSha = (value: unknown): value is string => typeof value === 'string' 
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
 export class CIReportError extends Error {
-  constructor(readonly status: number, message: string) { super(message); }
+  /** A provider 5xx is a GitHub availability fault, not a defect that a repair issue can fix. */
+  readonly providerUnavailable: boolean;
+  constructor(readonly status: number, message: string) { super(message); this.providerUnavailable = status >= 500; }
 }
 export type GitHubAPI = (path: string, method?: 'GET' | 'POST' | 'PATCH', body?: unknown) => Promise<unknown>;
 export interface CIReport {
@@ -324,6 +326,12 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     } catch (error) { report.errors.push(`Failure observation incomplete: ${message(error)}`); await repair(`run-${run.id}`, 'Failed run/check observation was incomplete.'); }
   }
 
+  // A merge boundary read that the provider could not serve proves no defect: the run records it for an external owner and opens no repair issue.
+  const providerUnavailable = (label: string, error: unknown): boolean => {
+    if (!(error instanceof CIReportError && error.providerUnavailable)) return false;
+    report.errors.push(`Provider unavailable (attention_owner: external): ${label}: ${message(error)}`);
+    return true;
+  };
   try {
     const createdAt = Date.parse(run.created_at);
     if (!Number.isFinite(createdAt)) throw new Error('Daily reporting interval unavailable');
@@ -331,6 +339,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     // Closed PR readback is also recovery: a missed push report is repaired by the next daily report.
     const prs = await githubPages(api, `${root}/pulls?state=closed&sort=updated&direction=desc`);
     const pending = async (prNumber: number, error: unknown): Promise<void> => {
+      if (providerUnavailable(`Rollback boundary pending for PR #${prNumber}`, error)) return;
       report.errors.push(`Rollback boundary pending for PR #${prNumber}: ${message(error)}`);
       await repair(`merge-pr-${prNumber}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
     };
@@ -387,7 +396,11 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     for (const { boundary, batch } of boundaries) {
       report.merges.push(batch === null ? boundary : { ...boundary, members: batch.members.sort((left, right) => left - right) });
     }
-  } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.'); }
+  } catch (error) {
+    if (!providerUnavailable('Merge reporting incomplete', error)) {
+      report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.');
+    }
+  }
   try {
     const open = await githubPages(api, `${root}/issues?state=open`);
     report.unresolved_repairs = open.filter(issue => !issue.pull_request && issue.state === 'open' && typeof issue.body === 'string'
