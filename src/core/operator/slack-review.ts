@@ -5,7 +5,6 @@
 // is withheld, never echoed.
 
 import { containsSecret } from '../security/secret-patterns';
-import { GITHUB_REPO } from '../setup/cli-inventory';
 
 export const SLACK_REVIEW_REASONS = [
   'slack_pending',
@@ -80,6 +79,8 @@ const SLACK_TS = /^\d{1,12}\.\d{6}$/u;
 const SLACK_USER_ID = /^[UW][A-Z0-9]{2,31}$/u;
 const SHA = /^[0-9a-f]{40}$/u;
 const REQUEST_LINE = /^<@([UW][A-Z0-9]{2,31})(?:\|[^>]*)?> repo-harness review request$/u;
+/** GitHub `owner/repo`. */
+const GITHUB_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/u;
 const PR_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/([1-9]\d{0,9})$/u;
 const SLACK_LINK = /^<([^|>]+)(?:\|[^>]*)?>$/u;
 const ACK_LINE = /^ack ([0-9a-f]{40})$/u;
