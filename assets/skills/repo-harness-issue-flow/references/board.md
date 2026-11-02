@@ -232,9 +232,12 @@ Board rules:
 6. **Nudge with a link.** To wake an agent, send it the comment URL
    through the host channel (a Herdr prompt, a session message). The
    comment is the instruction. A message that differs from the board loses.
-   A message to the coordinator is one line, `[rh-notice] <kind> <comment
-   URL>`, so that the coordinator can tell it from an owner message
-   (`orchestrator.md` §8.1).
+   A message from a worker to the coordinator starts with
+   `[rh-notice] <kind> #<issue>`, so that the coordinator can tell it from
+   an owner message. A simple fact or question goes in the message only. A
+   state change, a decision request or evidence goes in a comment first,
+   and the message carries its URL (`worker.md` §7, `orchestrator.md`
+   §8.1).
 7. **Decisions live on the board.** A decision that changes scope goes into
    the issue body through a `scope change`. Any other one-time decision goes
    into a `decision` comment on the issue. Do not keep decision notes in local

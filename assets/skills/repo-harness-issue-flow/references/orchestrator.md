@@ -228,17 +228,17 @@ the board. It holds no state of its own, so it cannot drift from the board.
   other message is from the owner.
 - **Queue each notice.** Do not act on it in the turn that it arrives.
   Keep one item for each issue or PR. The subject is
-  `[P<n>] #<number> <kind>`. The description is the comment or event URL.
-  When the issue or PR has an open item, update that item and keep the
-  higher priority.
+  `[P<n>] #<number> <kind>`. The description is the comment or event URL,
+  or the message text of a simple notice (`worker.md` §7). When the issue
+  or PR has an open item, update that item and keep the higher priority.
 - **Priority.**
 
   | Priority | Notice |
   |---|---|
   | P0 | `merge_outcome_unknown`, `agent.blocked`, a failed board read or post |
-  | P1 | `boundary question`, a stalled worker |
+  | P1 | `boundary question`, `question`, a stalled worker |
   | P2 | CI red, review findings, an `integration status` with a conflict |
-  | P3 | ready for review, `agent.done`, `done`, other status |
+  | P3 | ready for review, `agent.done`, `done`, `info`, other status |
 
 - **Owner first.** Answer the owner message before you take a queue item.
   End the answer with one line: `Queue: P0 <n> · P1 <n> · P2 <n> · P3 <n>`.
@@ -246,7 +246,10 @@ the board. It holds no state of its own, so it cannot drift from the board.
   arrives, then continue the owner's request unless the owner stops it.
 - **Work the queue.** When no owner message waits, take the item with the
   highest priority, oldest first. Read its URL and its thread again, act,
-  then mark the item completed. Take one item at a time.
+  then mark the item completed. Take one item at a time. Answer a simple
+  `question` in a host message. When the answer changes scope or decides
+  an open point, post it as a `scope change` or `decision` comment and
+  send the URL.
 - **Rebuild.** At session start, and when the queue is empty after a
   context compaction, rebuild the queue from the board: `To: coordinator`
   comments without a `Re:` answer, open PRs with a red required check,
