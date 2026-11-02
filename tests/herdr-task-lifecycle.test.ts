@@ -141,7 +141,7 @@ const binding=await startTaskAgent(process.argv[4],spec,{
 });
 writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
 `);
-  const spec = { task: 'owned-task', role: 'advisor', harness_kind: 'codex', endpoint, parent_terminal: parent, args: [], max_requests: 1 };
+  const spec = { task: 'owned-task', role: 'advisor', harness_kind: 'codex', endpoint, args: [], max_requests: 1 };
   const specPath = join(fixture, 'spec.json'); writeFileSync(specPath, JSON.stringify(spec));
   const owners: ChildProcess[] = [];
   const owner = (mode: string, path = specPath, executionRoot = fixture) => {
@@ -176,7 +176,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     // Review never reuses the owner's terminal as its reviewer.
     expect(() => taskReviewRunner.assertNotOwnerPane(binding, binding.terminal_id)).toThrow('review_must_not_reuse_owner_pane');
     taskReviewRunner.assertNotOwnerPane(binding, parent);
-    const reordered = { max_requests: spec.max_requests, args: spec.args, parent_terminal: spec.parent_terminal,
+    const reordered = { max_requests: spec.max_requests, args: spec.args,
       endpoint: { socket: endpoint.socket }, harness_kind: spec.harness_kind, role: spec.role, task: spec.task };
     expect(await api.startTaskAgent(fixture, reordered, refuseLaunch)).toEqual(binding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
@@ -337,21 +337,19 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
   }
 }), 60_000);
 
-test('workspace registration records the hc endpoint through the Bash consumer and refuses classic records', () => withCore('tr', async ({ fixture, env, endpoint, parent: parentTerminal }) => {
+test('workspace registration records the hc endpoint through the Bash consumer and refuses classic records', () => withCore('tr', async ({ fixture, env, endpoint }) => {
   const api = { ...await import('../src/effects/terminal/task-session'), ...await import('../src/effects/terminal/task-session-record'), ...await import('../src/effects/terminal/task-session-io') };
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   run('git', ['-c', 'user.name=fixture', '-c', 'user.email=fixture@localhost', 'commit', '--allow-empty', '-qm', 'base'], fixture, env);
-  const parent = await parentTerminal(fixture);
   const checkout = join(fixture, 'recover'); run('git', ['worktree', 'add', '-qb', 'codex/recover', checkout], fixture, env);
-  await expect(api.registerTaskWorktree(checkout, endpoint, 't99')).rejects.toThrow('no terminal');
   expect(await api.cleanupTaskWorktree(fixture, checkout)).toEqual({ status: 'not_registered', pids: [] });
-  const first = await api.registerTaskWorktree(checkout, endpoint, parent);
+  const first = await api.registerTaskWorktree(checkout, endpoint);
   expect(first).toEqual({ protocol: 2, repository: taskRepository(checkout), endpoint });
-  expect(await api.registerTaskWorktree(checkout, endpoint, parent)).toEqual(first);
-  await expect(api.registerTaskWorktree(checkout, { socket: join(fixture, 'other.sock') }, parent)).rejects.toThrow('task_agent_workspace_endpoint_changed');
+  expect(await api.registerTaskWorktree(checkout, endpoint)).toEqual(first);
+  await expect(api.registerTaskWorktree(checkout, { socket: join(fixture, 'other.sock') })).rejects.toThrow('task_agent_workspace_endpoint_changed');
   expect((await api.cleanupTaskWorktree(fixture, checkout)).status).toBe('closed');
   // A closed incarnation moves to history; the next registration writes a new one.
-  expect(await api.registerTaskWorktree(checkout, endpoint, parent)).toEqual(first);
+  expect(await api.registerTaskWorktree(checkout, endpoint)).toEqual(first);
   expect(readdirSync(join(api.workspaceDirectory(taskRepository(checkout)), 'history'))).toHaveLength(1);
   expect((await api.cleanupTaskWorktree(fixture, checkout)).status).toBe('closed');
 
@@ -359,15 +357,18 @@ test('workspace registration records the hc endpoint through the Bash consumer a
   const shim = join(fixture, 'shim'); mkdirSync(shim);
   writeFileSync(join(shim, 'gh'), `#!/bin/sh\nprintf '%s\\n' '${JSON.stringify({ number: 123, title: 'Recover fixture', state: 'OPEN', url: 'https://github.com/example/repo/issues/123' })}'\n`); chmodSync(join(shim, 'gh'), 0o755);
   const endpointFile = join(fixture, 'endpoint.json'), target = join(fixture, 'bash-checkout');
-  const start = (terminal: string) => {
-    writeFileSync(endpointFile, JSON.stringify({ endpoint, parent_terminal: terminal }));
+  const start = (address: object) => {
+    writeFileSync(endpointFile, JSON.stringify(address));
     return spawnSync('bash', [join(fixture, 'scripts/contract-worktree.sh'), 'start', '--issue', '123', '--path', target, '--herdr-endpoint', endpointFile],
       { cwd: fixture, env: { ...env, PATH: shim + ':' + env.PATH, REPO_HARNESS_TARGET_REPO_ROOT: fixture }, encoding: 'utf8', timeout: 20000 });
   };
   // A failed registration preserves the checkout; the same start then registers it.
-  const failed = start('t99');
+  // An address file that still names a parent terminal is a retired classic shape.
+  const failed = start({ endpoint, parent_terminal: 't99' });
   expect(failed.status).toBe(1); expect(existsSync(target)).toBe(true);
-  const retried = start(parent);
+  expect(failed.stderr + failed.stdout).toContain('task_agent_classic_herdr_record_retired');
+  expect(existsSync(join(api.workspaceDirectory(taskRepository(target)), 'binding.json'))).toBe(false);
+  const retried = start({ endpoint });
   if (retried.status !== 0) throw new Error(retried.stderr + retried.stdout);
   expect(api.readSessionArtifact(join(api.workspaceDirectory(taskRepository(target)), 'binding.json'))).toEqual({ protocol: 2, repository: taskRepository(target), endpoint });
   expect(existsSync(join(fixture, '.ai/harness/worktrees/123-recover-fixture.json'))).toBe(true);
@@ -378,8 +379,8 @@ test('workspace registration records the hc endpoint through the Bash consumer a
   const classicCheckout = join(fixture, 'classic'); run('git', ['worktree', 'add', '-qb', 'codex/classic', classicCheckout], fixture, env);
   const classicWorkspace = api.workspaceDirectory(taskRepository(classicCheckout)); mkdirSync(classicWorkspace, { recursive: true });
   writeFileSync(join(classicWorkspace, 'binding.json'), JSON.stringify({ protocol: 1, workspace_id: 'w1', endpoint: { session: 'task-proof-0000000000000000' } }));
-  await expect(api.registerTaskWorktree(classicCheckout, endpoint, parent)).rejects.toThrow(retired);
-  const classicSpec = { task: 'classic-task', role: 'advisor', harness_kind: 'codex', endpoint, parent_terminal: parent, args: [], max_requests: 1 };
+  await expect(api.registerTaskWorktree(classicCheckout, endpoint)).rejects.toThrow(retired);
+  const classicSpec = { task: 'classic-task', role: 'advisor', harness_kind: 'codex', endpoint, args: [], max_requests: 1 };
   const sessionDir = api.taskSessionDirectory(fixture, classicSpec.task, classicSpec.role); mkdirSync(sessionDir, { recursive: true });
   writeFileSync(join(sessionDir, 'intent.json'), JSON.stringify({ protocol: 2, runtime: 'herdr', intent_id: randomUUID(), spec: classicSpec }));
   writeFileSync(join(sessionDir, 'binding.json'), JSON.stringify({ protocol: 2, runtime: 'herdr', repository_id: taskRepository(fixture).repository_id, execution_root: fixture,
@@ -408,7 +409,7 @@ darwinTest('OAR fixed host runs visibly in a private hc terminal and disposes be
     const parent = await parentTerminal(repo);
     const command = reviewHostCommand(realpathSync('/opt/homebrew/opt/node@24/bin/node'), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
     binding = await api.startTaskApplicationHost(repo, { task:'oar-fixture', role:'deep-reasoner', harness_kind:'codex', endpoint,
-      parent_terminal: parent, args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
+      args:[], max_requests:3 }, command, async () => { await until(() => existsSync(readyFile)); });
     expect(binding.provider.pid).toBe(JSON.parse(readFileSync(readyFile,'utf8')).pid);
     const screen = () => hc(['read', binding!.terminal_id, '--lines', '200']);
     expect(screen()).toContain('fixture-oar');

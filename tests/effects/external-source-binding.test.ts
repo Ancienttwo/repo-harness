@@ -125,7 +125,7 @@ describe('external source binding effect', () => {
   test('refuses an admitted session whose task is not a task id, as main did', async () => {
     const item = await harness(), source = observation(), { session } = item.fixture;
     const binding = await startOfflineTaskAgent(item.fixture.root, { task: 'named-task', role: session.role, harness_kind: 'codex',
-      endpoint: { socket: '/tmp/fixture-hc/hc.sock', home: '/tmp' }, parent_terminal: `fixture-parent-${session.role}`, args: [], max_requests: 3 }, item.fixture.source.authority);
+      endpoint: { socket: '/tmp/fixture-hc/hc.sock', home: '/tmp' }, args: [], max_requests: 3 }, item.fixture.source.authority);
     const digest = `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}`;
     expect(() => bindExternalSource({ registered_repository_id: REPO_ID, source_revision: source.source_revision,
       session: { ...session, task: 'named-task', session_binding_sha256: digest } }, item.deps)).toThrow('task id is invalid: "named-task"');

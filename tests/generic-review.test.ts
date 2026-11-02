@@ -693,7 +693,7 @@ const AUTHOR_PANE = `t-${AUTHOR_ROLE}`;
 async function authorSession(f: ReturnType<typeof packetRoundFixture>, kind: SeamHarness, models: (string | null)[],
   options: { root?: string; task?: string; authority?: ReviewRoundAuthority } = {}) {
   const spec = { task: options.task ?? 'fixture-author', role: AUTHOR_ROLE, harness_kind: kind, endpoint: f.options.endpoint,
-    parent_terminal: 'fixture-coordinator', args: [], max_requests: 3 };
+    args: [], max_requests: 3 };
   const repo = options.root ?? f.root;
   const binding = await startOfflineTaskAgent(repo, spec, { source: options.authority ?? f.authority, claim: f.options.taskClaim });
   const dir = taskSessionDirectory(repo, spec.task, spec.role);

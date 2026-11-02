@@ -22,7 +22,7 @@ export async function admittedInboxFixture(task = '1'.repeat(64), options: Param
     const authority = { source: source.authority.source, claim };
     const binding = await startOfflineTaskAgent(root, { ...spec, role,
       endpoint: { socket: '/tmp/fixture-hc/hc.sock', home: '/tmp' },
-      parent_terminal: `fixture-parent-${role}`, args: [], max_requests: 3 }, authority);
+      args: [], max_requests: 3 }, authority);
     source.authority = authority;
     source.session = { task, role };
     return binding;

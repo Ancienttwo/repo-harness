@@ -33,7 +33,7 @@ async function fixture(branch = 'codex/owner') {
   expect(run('git', ['merge', '--ff-only', branch], root).status).toBe(0);
   const merge = run('git', ['rev-parse', 'HEAD'], root).stdout.trim();
   const spec = { task: 'owner-task', role: 'worker', harness_kind: 'codex',
-    endpoint: { socket: join(base, 'hc.sock'), home }, parent_terminal: 'fixture-parent-worker', args: [], max_requests: 1 };
+    endpoint: { socket: join(base, 'hc.sock'), home }, args: [], max_requests: 1 };
   const provider = spawn(process.execPath, ['-e', 'process.stdout.write("ready"); setInterval(() => {}, 1000)'], {
     detached: true, env: { ...process.env, HOME: home }, stdio: ['ignore', 'pipe', 'ignore'],
   });
@@ -54,16 +54,17 @@ async function fixture(branch = 'codex/owner') {
   const getTerminal = offline.spies.hcGet.getMockImplementation()!;
   offline.spies.hcGet.mockImplementation((address, options) => {
     if (mode === 'unreachable') throw new Error('fixture_endpoint_unreachable');
+    if (mode === 'unowned') throw new HerdrCoreError('hc', 'unowned', undefined, undefined, 'terminal t9 has no repo-harness label');
     if (address === offline.address && mode === 'gone') throw new HerdrCoreError('hc', 'failed', 3, 'not_found');
     const terminal = getTerminal(address, options);
     return address === offline.address && mode === 'foreign-cwd' ? { ...terminal, foreground: { ...terminal.foreground!, cwd: root } } : terminal;
   });
-  offline.spies.hcJson.mockImplementation((args, options) => {
-    expect(args.slice(0, 3)).toEqual(['send', '--', offline.address]);
+  offline.spies.hcSend.mockImplementation((address, text, options) => {
+    expect(address).toBe(offline.address);
     expect(options?.env?.HC_SOCKET).toBe(spec.endpoint.socket);
-    prompts.push([...args]);
+    prompts.push(['send', '--', address, text]);
     if (mode === 'lost-ack') throw new Error('fixture_ack_lost_after_delivery');
-    return {};
+    return { started: null, turn: 0 };
   });
   // hc kill ends the program group; the terminal stays listed as finished until hc rm.
   offline.spies.hcKill.mockImplementation(() => { provider.kill('SIGTERM'); return { ...offline.terminal()!, state: 'finished', foreground: null, reason: 'killed' }; });
@@ -157,6 +158,8 @@ test('unreachable owner or an owner outside the checkout retains state without s
     f.setMode(mode);
     expect((await f.notify()).status).toBe('retained');
   }
+  f.setMode('unowned');
+  expect(await f.notify()).toEqual({ status: 'retained', reason: 'owner_unowned' });
   expect(f.prompts).toHaveLength(0);
   expect(existsSync(f.checkout)).toBe(true);
 });

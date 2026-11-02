@@ -105,7 +105,7 @@ test('task launch rejects an invalid claim before runtime effects and collection
   const f = fixture();
   try {
     let launched = false;
-    await expect(startTaskAgent(f.execution, { ...spec, endpoint: { socket: '/tmp/fixture-hc/hc.sock' }, parent_terminal: 't0', args: [], max_requests: 3 },
+    await expect(startTaskAgent(f.execution, { ...spec, endpoint: { socket: '/tmp/fixture-hc/hc.sock' }, args: [], max_requests: 3 },
       { taskAuthority: { ...f.authority, claim: { ...claim, revision: 'not-a-revision' } }, argv: [process.execPath], ready: async () => { launched = true; } })).rejects.toThrow('claim_invalid');
     expect(launched).toBe(false);
     storedRuntime(f);

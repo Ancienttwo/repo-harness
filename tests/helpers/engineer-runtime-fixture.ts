@@ -34,7 +34,6 @@ export function mockOfflineHerdr(root: string, spec: HerdrTaskAgentSpec, pid = p
   const spies = {
     hcRun: spyOn(herdrCore, 'hcRun').mockImplementation(input => ({ address, name: input.name ?? null, state: 'live' })),
     hcGet: spyOn(herdrCore, 'hcGet').mockImplementation(target => {
-      if (target === spec.parent_terminal) return { ...live, address: target, name: null, pid: process.pid, labels: {} };
       const terminal = agent();
       if (target !== address || !terminal) throw new herdrCore.HerdrCoreError('hc', 'failed', 3, 'not_found');
       return terminal;
@@ -42,7 +41,7 @@ export function mockOfflineHerdr(root: string, spec: HerdrTaskAgentSpec, pid = p
     hcList: spyOn(herdrCore, 'hcList').mockImplementation(unexpected('ls')),
     hcKill: spyOn(herdrCore, 'hcKill').mockImplementation(unexpected('kill')),
     hcRm: spyOn(herdrCore, 'hcRm').mockImplementation(unexpected('rm')),
-    hcJson: spyOn(herdrCore, 'hcJson').mockImplementation(unexpected('json')),
+    hcSend: spyOn(herdrCore, 'hcSend').mockImplementation(unexpected('send')),
   };
   return { spies, address, terminal: agent,
     transport: { mockRestore: () => { for (const spy of Object.values(spies)) spy.mockRestore(); } } };
@@ -70,7 +69,7 @@ export async function bindTaskRuntimeFixture(root: string, options: TaskRuntimeF
   const claim = options.claim ?? { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-runtime', revision: `sha256:${'c'.repeat(64)}` };
   async function bind(role = spec.role) {
     return startOfflineTaskAgent(root, { ...spec, role, endpoint: { socket: '/tmp/fixture-hc/hc.sock', home: '/tmp' },
-      parent_terminal: `fixture-parent-${role}`, args: [], max_requests: 3 },
+      args: [], max_requests: 3 },
     { source: approved.source, claim });
   }
   const binding = await bind();
