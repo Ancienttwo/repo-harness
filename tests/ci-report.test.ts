@@ -394,10 +394,25 @@ test.each([
 }));
 
 test.each([
+  { name: 'unresolved repair list 503', conclusion: 'success', read: (path: string) => path.includes('/issues?state=open'), error: 'Unresolved repair readback unavailable', repairs: [] },
+  { name: 'failed run jobs 503 keeps the run repair', conclusion: 'failure', read: (path: string) => path.includes('/jobs?'), error: 'Failure observation incomplete', repairs: ['ci-repair:12:1:run-12'] },
+])('a provider 5xx on a non-merge read is an external error: $name', scenario => fixture(async f => {
+  f.setConclusion(scenario.conclusion);
+  const report = await reportCI('test/repo', 12, async (path, method, body) => {
+    if (scenario.read(path)) throw new CIReportError(503, `GitHub GET ${path}: HTTP 503`);
+    return f.api(path, method, body);
+  });
+  expect(report.repairs.map(repair => repair.key)).toEqual([...scenario.repairs]);
+  expect(report.errors).toEqual([expect.stringMatching(new RegExp(`^Provider unavailable \\(attention_owner: external\\): ${scenario.error}: GitHub GET .*: HTTP 503$`))]);
+}));
+
+test.each([
   { name: 'members at their member merges join the batch entry', wrongHead: false, nested: false },
   { name: 'a member merge whose second parent is not the PR head keeps its repair', wrongHead: true, nested: false },
   { name: 'a member that decodes as a batch of its own joins the outer batch entry', wrongHead: false, nested: true },
-])('a publication merge --batch commit reports its first parent and a mainline revert that restores it: $name', ({ wrongHead, nested }) => fixture(async f => {
+  { name: 'a 503 on the batch chain read defers the batch and its members as external errors', wrongHead: false, nested: false, outage: [8, 9, 7] },
+  { name: 'a 503 on the outer batch chain read publishes no inner batch boundary', wrongHead: false, nested: true, outage: [8, 7, 9] },
+])('a publication merge --batch commit reports its first parent and a mainline revert that restores it: $name', ({ wrongHead, nested, outage }) => fixture(async f => {
   // Member 8 is the candidate commit; member 9 adds one file on the base. The integration head is two member merges.
   // A nested member 9 is itself a batch head: one member merge of member 9 on merge 8.
   f.git('checkout', '-q', '--detach', f.before); writeFileSync(join(f.root, 'member.txt'), 'member\n'); f.git('add', '.'); f.git('commit', '-qm', 'member 9');
@@ -427,6 +442,7 @@ test.each([
     if (commit) return commitOf(commit[1]!);
     const chain = /\/compare\/([0-9a-f]{40})\.\.\.([0-9a-f]{40})\?per_page=100$/.exec(path);
     if (chain) {
+      if (outage && chain[1] === f.before) throw new CIReportError(503, `GitHub GET ${path}: HTTP 503`);
       const commits = f.git('rev-list', `${chain[1]}..${chain[2]}`).split('\n').map(commitOf);
       return { total_commits: commits.length, commits };
     }
@@ -434,6 +450,11 @@ test.each([
     return f.api(path, method, body);
   });
   const entry = { pr: 7, before: f.before, after: batch, rollback: `git revert --no-edit -m 1 ${batch}` };
+  if (outage) {
+    expect(report.merges).toEqual([]); expect(report.repairs).toEqual([]); expect(f.issues).toEqual([]);
+    expect(report.errors).toEqual(outage.map(pr => expect.stringMatching(new RegExp(`^Provider unavailable \\(attention_owner: external\\): Rollback boundary pending for PR #${pr}\\b.*: GitHub GET .*: HTTP 503$`))));
+    return;
+  }
   if (wrongHead) {
     expect(report.merges).toEqual([{ ...entry, members: [8] }]);
     expect(report.errors).toEqual([expect.stringContaining('Rollback boundary pending for PR #9')]);
