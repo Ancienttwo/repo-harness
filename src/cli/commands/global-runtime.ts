@@ -116,7 +116,7 @@ export function bunVersionIsSupported(version: string | undefined): boolean {
  * Reads and parses sourceRoot's skill-surface manifest. Parameterized by
  * sourceRoot (mirrors init.ts's identically-purposed helper; duplicated
  * rather than shared, matching this file's existing pattern of keeping its
- * own small local copies of init.ts-shaped helpers like hostAgents/hostIds/
+ * own small local copies of init.ts-shaped helpers like hostIds/
  * homeDir/withProcessEnv). Does not pass an `exists` callback (pre-catalog
  * behavior here never checked package source paths on disk either).
  */
@@ -315,11 +315,14 @@ function withProcessEnv<T>(env: NodeJS.ProcessEnv | undefined, fn: () => T): T {
   }
 }
 
-function hostAgents(target: InstallTargetSpec): string[] {
-  if (target === "codex") return ["codex"];
-  if (target === "claude") return ["claude-code"];
-  return ["claude-code", "codex"];
-}
+/**
+ * The Skills CLI agent for every `skills add`. `codex` is a universal agent:
+ * its global skills root is `stagedSkillRoot()`, so the provider writes the
+ * staging copy in copy and symlink mode alike. `claude-code` alone selects
+ * copy mode into `~/.claude/skills` and writes no staging copy.
+ * `projectStagedSkills` links the host roots from staging.
+ */
+const STAGING_PROVIDER_AGENT = "codex";
 
 function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   if (target === "codex") return ["codex"];
@@ -998,7 +1001,6 @@ function installExternalSkillGroup(
   const selected = refresh ? skills : missing;
   const ordinaryMissing = selected.filter((skill) => integrityBySkill[skill] == null);
   if (ordinaryMissing.length > 0) {
-    const agents = hostAgents(target);
     const step = runProcess(
       "bunx",
       [
@@ -1007,7 +1009,7 @@ function installExternalSkillGroup(
         provider,
         "-g",
         "-a",
-        ...agents,
+        STAGING_PROVIDER_AGENT,
         "-s",
         ...ordinaryMissing,
         "-y",
@@ -1048,7 +1050,7 @@ function installExternalSkillGroup(
           provider,
           "-g",
           "-a",
-          ...hostAgents(target),
+          STAGING_PROVIDER_AGENT,
           "-s",
           ...integrityMissing,
           "-y",
@@ -1160,7 +1162,6 @@ function installExternalSkillGroup(
 }
 
 function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
-  const agents = hostAgents(target);
   const wazaSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("tw93/Waza") ?? [];
   const skillsRoot = stagedSkillRoot(homeDir(env));
   const selected = refresh ? wazaSkills : wazaSkills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
@@ -1175,7 +1176,7 @@ function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: 
         "tw93/Waza",
         "-g",
         "-a",
-        ...agents,
+        STAGING_PROVIDER_AGENT,
         "-s",
         ...selected,
         "-y",
@@ -1309,7 +1310,6 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
   const preflight = preflightStagedSkillProjection(mermaidSkills, target, env, 'configure Mermaid skill');
   if (preflight) return preflight;
   if (refresh || !existsSync(installed)) {
-    const agents = hostAgents(target);
     const step = runProcess(
       "bunx",
       [
@@ -1318,7 +1318,7 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
         "BfdCampos/dotfiles",
         "-g",
         "-a",
-        ...agents,
+        STAGING_PROVIDER_AGENT,
         "-s",
         ...mermaidSkills,
         "-y",
