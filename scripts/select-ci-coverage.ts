@@ -186,7 +186,7 @@ export function selectPlatformCoverage(paths: readonly string[], inputs: Platfor
     || path.startsWith('scripts/lib/') || /^scripts\/select-[^/]+\.ts$/.test(path));
   return {
     // The native job installs the Herdr version pinned in this policy file (install-pinned-herdr action).
-    native_oar: shared || paths.some(path => path.endsWith('.sh') || path === '.ai/harness/policy.json' || inputs.native.has(path)),
+    native_oar: shared || paths.some(path => path === '.ai/harness/policy.json' || inputs.native.has(path)),
     home_isolation: shared || paths.some(path => inputs.home.has(path)),
   };
 }
@@ -223,7 +223,7 @@ export function bundleInputPaths(metafile: unknown): string[] {
 }
 
 /** Workflow test commands and package build scripts own the native inventory. No second file list. */
-export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, root = process.cwd()): PlatformInputs {
+export async function discoverPlatformInputs(sources: ReadonlyMap<string, string>, root = process.cwd()): Promise<PlatformInputs> {
   const workflow = Bun.YAML.parse(sources.get('.github/workflows/ci.yml') ?? '') as any;
   const testsFor = (job: string, name: string): string[] => {
     const steps = workflow?.jobs?.[job]?.steps?.filter((step: any) => step.name === name);
@@ -239,6 +239,12 @@ export function discoverPlatformInputs(sources: ReadonlyMap<string, string>, roo
   if (!preloads.length) throw new Error('Platform coverage requires test preloads');
   const native = platformImportClosure([...testsFor('native-oar', 'Run native OAR acceptance tests'), ...preloads], sources);
   const home = platformImportClosure([...testsFor('home-isolation', 'Run the isolation tests'), ...preloads], sources);
+  // A native leg runs the shell scripts that its sources launch, so they are native inputs.
+  const launchers = [...native].filter(path => /\.[cm]?[jt]sx?$/.test(path)).map(path => [path, sources.get(path)!] as const);
+  const references = await discoverPathReferences(launchers);
+  for (const [file, source] of launchers) for (const entry of references.get(sourceKey(file, source)) ?? []) {
+    if (entry.operation === 'execute' && entry.path.endsWith('.sh') && sources.has(entry.path)) native.add(entry.path);
+  }
   const directory = mkdtempSync(join(tmpdir(), 'rh-ci-platform-'));
   try {
     const name = 'build:oar-review-host', metafile = join(directory, 'build-oar-review-host.json');
@@ -288,7 +294,7 @@ if (import.meta.main) {
     }
     const documentationConsumers = selection.paths.some(isDocumentationPath)
       ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
-    platforms = selectPlatformCoverage(selection.paths, discoverPlatformInputs(sources));
+    platforms = selectPlatformCoverage(selection.paths, await discoverPlatformInputs(sources));
     const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
     if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
     for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);

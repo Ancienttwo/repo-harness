@@ -24,7 +24,14 @@ const MESSAGE_LIMIT = 240;
 
 const UNAVAILABLE_CODES: ReadonlySet<string> = new Set([
   'ARCHCONTEXT_RESOLVE_FAILED',
+  'ARCHCONTEXT_RESOLVE_TIMEOUT',
   'ARCHCONTEXT_RESOLVE_UNAVAILABLE',
+]);
+
+// Only a package-local archctx that is missing or has the wrong version is repaired by an update.
+const PACKAGE_ERROR_CODES: ReadonlySet<string> = new Set([
+  'RH_ARCHCTX_PACKAGE_MISMATCH',
+  'RH_ARCHCTX_PACKAGE_MISSING',
 ]);
 
 function oneLine(message: string): string {
@@ -35,7 +42,8 @@ function oneLine(message: string): string {
 function fixFor(diagnostic: CapabilityRegistryDiagnostic, mode: CapabilitySourceMode): string {
   switch (diagnostic.code) {
     case 'ARCHCONTEXT_RESOLVE_FAILED':
-      return 'repo-harness update';
+      return PACKAGE_ERROR_CODES.has(diagnostic.archctxErrorCode ?? '') ? 'repo-harness update' : 'repo-harness doctor --json';
+    case 'ARCHCONTEXT_RESOLVE_TIMEOUT':
     case 'ARCHCONTEXT_RESOLVE_UNAVAILABLE':
       return 'repo-harness state resolve --json';
     case 'ARCHCONTEXT_MODEL_REJECTED':
