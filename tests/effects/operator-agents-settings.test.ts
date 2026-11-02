@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { createHash, randomUUID } from 'node:crypto';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { defaultRuntimes } from '@botiverse/oar';
@@ -11,6 +11,7 @@ import {
   type AgentRuntimeProbeV1,
   type AgentRuntimesCacheV1,
 } from '../../src/core/operator/agents-settings';
+import { decodeSeatsSettings } from '../../src/core/operator/seats-settings';
 import { probeAgentRuntimes, registryRuntimes } from '../../src/effects/setup/agent-runtime-probe';
 import { startOperatorServer, type OperatorServerHandle } from '../../src/effects/operator/server';
 import { acquireRuntimeTransactionLock, globalRuntimeScope } from '../../src/effects/locking/runtime-transaction-lock';
@@ -70,8 +71,8 @@ async function startHarness(config?: unknown): Promise<Harness> {
   });
 }
 
-function post(harness: Harness, body: Record<string, unknown>): Promise<Response> {
-  return fetch(`${harness.server.url}/api/v1/settings/agents`, {
+function post(harness: Harness, body: Record<string, unknown>, section: 'agents' | 'seats' = 'agents'): Promise<Response> {
+  return fetch(`${harness.server.url}/api/v1/settings/${section}`, {
     method: 'POST',
     headers: { Origin: harness.server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: harness.cookie },
     body: JSON.stringify({ request_id: randomUUID(), ...body }),
@@ -288,6 +289,84 @@ describe('agent settings routes', () => {
     expect(disable.status).toBe(200);
     expect((await disable.json()).changed_keys).toEqual(['agents.enabled', 'agents.uses.docs', 'agents.default_docs']);
     expect(JSON.parse(readFileSync(harness.configPath, 'utf8')).agents).toEqual({ enabled: ['codex'], uses: { docs: [], review: [] }, default_docs: null });
+  });
+});
+
+const PANE_AGENTS = { enabled: ['claude', 'codex', 'pi'], uses: { docs: [], review: [] }, default_docs: null };
+
+async function seats(harness: Harness): Promise<ReturnType<typeof decodeSeatsSettings>> {
+  const response = await fetch(`${harness.server.url}/api/v1/settings/seats`);
+  expect(response.status).toBe(200);
+  return decodeSeatsSettings(await response.json());
+}
+
+const filesUnder = (root: string): string[] => readdirSync(root, { recursive: true, encoding: 'utf8' }).sort();
+
+describe('seat settings routes', () => {
+  test('GET reads the defaults and the ranges from the fleet role profiles', async () => {
+    const harness = await startHarness({ agents: PANE_AGENTS });
+    const value = await seats(harness);
+    expect(value.config.orchestrator).toEqual({ runtime: 'claude', model: 'opus', effort: 'high', tools: ['gh', 'mcp', 'net', 'read', 'shell', 'tasks'], fleet: [] });
+    expect(value.config.advisor.fleet).toEqual(['deep-reasoner', 'explorer']);
+    expect(value.ranges.seats.advisor.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper']);
+    expect(value.ranges.seats.worker.fleet).not.toContain('orchestrator');
+    expect(value.ranges.runtimes.map(runtime => [runtime.id, runtime.enabled, runtime.fleet])).toEqual([['claude', true, true], ['codex', true, true], ['pi', true, false]]);
+  });
+
+  test('POST replaces only the seats section and touches nothing outside config.json', async () => {
+    const harness = await startHarness({ security: { mode: 'strict' }, agents: PANE_AGENTS });
+    const before = await seats(harness);
+    const { revision, ...section } = before.config;
+    const homeFiles = filesUnder(harness.home);
+    const response = await post(harness, { expected_revision: revision, seats: { ...section, worker: { ...section.worker, runtime: 'claude', model: 'sonnet' } } }, 'seats');
+    expect(response.status).toBe(200);
+    const result = await response.json();
+    expect(result).toEqual({ config_revision: sha256(harness.configPath), changed_keys: ['seats.worker.runtime', 'seats.worker.model'] });
+    const stored = JSON.parse(readFileSync(harness.configPath, 'utf8'));
+    expect(stored).toEqual({ security: { mode: 'strict' }, agents: PANE_AGENTS, seats: { ...section, worker: { ...section.worker, runtime: 'claude', model: 'sonnet' } } });
+    // Running panes are not touched: besides config.json, the write leaves only the shared transaction lock under HOME.
+    expect(filesUnder(harness.home).filter(path => !path.startsWith('.repo-harness/transactions'))).toEqual(homeFiles);
+  });
+
+  test('refuses each seat rule with a typed 422 and writes nothing', async () => {
+    const harness = await startHarness({ agents: { ...PANE_AGENTS, enabled: ['claude', 'pi'] } });
+    const { revision, ...section } = (await seats(harness)).config;
+    const claudeWorker = { ...section.worker, runtime: 'claude', model: 'opus' };
+    const original = readFileSync(harness.configPath, 'utf8');
+    for (const [seat, patch, code] of [
+      ['advisor', { fleet: ['explorer', 'fast-worker'] }, 'seat_fleet_not_allowed'],
+      ['advisor', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
+      ['advisor', { tools: ['gh', 'read'] }, 'seat_tool_not_allowed'],
+      ['orchestrator', { fleet: ['explorer'] }, 'seat_fleet_not_allowed'],
+      ['orchestrator', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
+      ['advisor', { runtime: 'pi', model: null, effort: null }, 'seat_fleet_not_allowed'],
+      ['worker', { runtime: 'codex' }, 'seat_runtime_not_enabled'],
+      ['advisor', { model: 'gpt-6-astra' }, 'seat_model_invalid'],
+      ['advisor', { effort: 'extreme' }, 'seat_effort_invalid'],
+    ] as const) {
+      const seats = { ...section, worker: claudeWorker, [seat]: { ...(seat === 'worker' ? claudeWorker : section[seat]), ...patch } };
+      const response = await post(harness, { expected_revision: revision, seats }, 'seats');
+      expect([seat, response.status, (await response.json()).error.code]).toEqual([seat, 422, code]);
+    }
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
+  });
+
+  test('a stale revision and a reused request_id with another body get 409', async () => {
+    const harness = await startHarness({ agents: PANE_AGENTS });
+    const { revision, ...section } = (await seats(harness)).config;
+    const send = (requestId: string, effort: string) => fetch(`${harness.server.url}/api/v1/settings/seats`, {
+      method: 'POST',
+      headers: { Origin: harness.server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: harness.cookie },
+      body: JSON.stringify({ request_id: requestId, expected_revision: revision, seats: { ...section, orchestrator: { ...section.orchestrator, effort } } }),
+    });
+    const requestId = randomUUID();
+    expect((await send(requestId, 'xhigh')).status).toBe(200);
+    const saved = readFileSync(harness.configPath, 'utf8');
+    const mismatch = await send(requestId, 'low');
+    expect([mismatch.status, (await mismatch.json()).error.code]).toEqual([409, 'request_mismatch']);
+    const stale = await send(randomUUID(), 'low');
+    expect([stale.status, (await stale.json()).error.code]).toEqual([409, 'revision_conflict']);
+    expect(readFileSync(harness.configPath, 'utf8')).toBe(saved);
   });
 });
 
