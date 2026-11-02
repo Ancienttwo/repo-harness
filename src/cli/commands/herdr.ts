@@ -1,4 +1,4 @@
-import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun, type HerdrCoreOptions } from '../../effects/terminal/herdr-core.ts';
+import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun } from '../../effects/terminal/herdr-core.ts';
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, readNotifyInstallRecord, relayIsLive, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
 import type { DoctorCheckResult } from './doctor.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
@@ -49,26 +49,19 @@ export function askMasked(question: string, input: NodeJS.ReadStream = process.s
   });
 }
 
-/** The environment for hc calls and the relay terminal: no notify secret from the caller's shell. */
-function hcOptions(): HerdrCoreOptions {
-  const env = { ...process.env };
-  for (const name of NOTIFY_SECRET_KEYS) delete env[name];
-  return { env };
-}
-
 /** The relay terminals, live or also finished. hc's own failure text stays out of the message: it can name private paths. */
-function relays(options: HerdrCoreOptions, all = false) {
-  try { return hcList(RH_NOTIFY_RELAY.labels, { ...options, all }).filter(terminal => all || terminal.state === 'live'); }
+function relays(all = false) {
+  try { return hcList(RH_NOTIFY_RELAY.labels, { all }).filter(terminal => all || terminal.state === 'live'); }
   catch { throw new Error('hc did not list its terminals. Check that the hc core runs.'); }
 }
 
 /** Start the relay terminal unless one is live, then write the install record. The config must already exist. */
-function startRelay(hc: HerdrCoreOptions, running: readonly unknown[]): void {
+function startRelay(running: readonly unknown[]): void {
   if (!running.length) {
     try {
       // An hc terminal starts with the core's environment, not the caller's, so the home travels in argv.
       hcRun({ argv: [process.execPath, CLI_ENTRY, 'herdr', 'notify', 'relay', '--home', repoHarnessHome()],
-        labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true }, hc);
+        labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true });
     } catch { throw new Error(`hc did not start the relay terminal. The config is written. Run: ${NOTIFY_START_COMMAND}`); }
   }
   // Last step: the operator reads the relay identity only from this record.
@@ -104,30 +97,27 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
     }
   }
   const config = decodeNotifyConfig(values);
-  const hc = hcOptions();
-  const running = relays(hc);
+  const running = relays();
   // The relay reads the config on each event, so a live relay takes the new config without a restart.
   writePrivateFile(notifyConfigPath(), renderNotifyConfig(config));
-  startRelay(hc, running);
+  startRelay(running);
   process.stdout.write(`Herdr notify is installed. Relay terminal: ${RH_NOTIFY_RELAY.name}. Default events: blocked.\n`);
 }
 
 /** The one manual restart: the relay never restarts itself (no launchd or systemd unit). */
 export function startNotify(): void {
   if (!existsSync(notifyConfigPath())) throw new Error(`No notify config. Run: ${NOTIFY_INSTALL_COMMAND}`);
-  const hc = hcOptions();
-  const running = relays(hc);
-  startRelay(hc, running);
+  const running = relays();
+  startRelay(running);
   process.stdout.write(running.length ? `Relay terminal ${RH_NOTIFY_RELAY.name} already runs.\n` : `Relay terminal ${RH_NOTIFY_RELAY.name} started.\n`);
 }
 
 /** Stop every live relay terminal and remove every relay terminal, also finished ones, then the notify files. A failed hc call keeps the files. */
 export function uninstallNotify(): void {
-  const hc = hcOptions();
-  for (const relay of relays(hc, true)) {
+  for (const relay of relays(true)) {
     try {
-      if (relay.state === 'live') hcKill(relay.address, hc);
-      hcRm(relay.address, hc);
+      if (relay.state === 'live') hcKill(relay.address);
+      hcRm(relay.address);
     }
     catch { throw new Error(`hc did not stop relay terminal ${relay.address}. The notify files were kept.`); }
   }
@@ -143,7 +133,7 @@ export function notifyRelayDoctorCheck(): DoctorCheckResult {
   if (record.state === 'missing') return { id, describe, status: 'na', detail: 'Herdr notify is not installed.' };
   if (record.state === 'invalid') return { id, describe, status: 'warn', detail: `The notify install record is invalid (notify_session_invalid). Run: ${NOTIFY_INSTALL_COMMAND}` };
   let relays;
-  try { relays = hcList(record.relay.labels, hcOptions()); }
+  try { relays = hcList(record.relay.labels); }
   catch { return { id, describe, status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' }; }
   if (!relayIsLive(relays, record.relay)) {
     return { id, describe, status: 'warn', detail: `Relay terminal ${record.relay.name} is not live (relay_stopped). Notifications are paused. Run: ${NOTIFY_START_COMMAND}` };
