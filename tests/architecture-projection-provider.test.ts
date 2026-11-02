@@ -1526,6 +1526,7 @@ describe('package-local ArchContext projection provider', () => {
     expect(Object.keys(readback.packages.archctx).sort()).toEqual(['file', 'name', 'version']);
     expect(readback.consumer.authoritativeNodeSchema).toBe('archcontext.node/v2');
     expect(readback.consumer.authoritativeNodeSchemaDigest).toMatch(/^sha256:[a-f0-9]{64}$/);
+    expect(readback.consumer.projection.codeGraph.codeGraphStatus).toBe('ready');
     expect(readback.source.dirtySourceUsed).toBe(false);
   });
 
