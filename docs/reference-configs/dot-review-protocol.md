@@ -12,7 +12,7 @@ The dot's owner gives the dot this file once and tells it to follow the file. Th
 
 ## Request
 
-A request is a top-level message that mentions the dot. Its first line is `repo-harness review request`. The other lines are fields:
+A request is a top-level message. Its first line is the dot mention, one space, then `repo-harness review request`, with no other text. In the Slack message text the mention is the dot's user ID token `<@U…>`, not the display name. A parser checks that the token is the dot's user ID, removes it and the space, and then matches the marker exactly. The other lines are fields:
 
 ```text
 @aimpactagent-dot repo-harness review request
