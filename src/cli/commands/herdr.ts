@@ -143,7 +143,7 @@ export function notifyRelayDoctorCheck(): DoctorCheckResult {
   if (record.state === 'missing') return { id, describe, status: 'na', detail: 'Herdr notify is not installed.' };
   if (record.state === 'invalid') return { id, describe, status: 'warn', detail: `The notify install record is invalid (notify_session_invalid). Run: ${NOTIFY_INSTALL_COMMAND}` };
   let relays;
-  try { relays = hcList(record.relay.labels); }
+  try { relays = hcList(record.relay.labels, hcOptions()); }
   catch { return { id, describe, status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' }; }
   if (!relayIsLive(relays, record.relay)) {
     return { id, describe, status: 'warn', detail: `Relay terminal ${record.relay.name} is not live (relay_stopped). Notifications are paused. Run: ${NOTIFY_START_COMMAND}` };

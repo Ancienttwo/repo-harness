@@ -158,6 +158,7 @@ describe('doctor command (Phase 1C)', () => {
       fs.mkdirSync(bin);
       writeExecutable(path.join(bin, 'hc'), [
         '#!/bin/sh',
+        `env | grep -E '^(WEBHOOK|SLACK|DISCORD|TELEGRAM)_' >> '${path.join(home, 'hc-env')}'`,
         'case "$FIXTURE_HC" in',
         `  live) echo '{"terminals":[{"address":"t5","name":"rh-notify-relay","state":"live"}]}' ;;`,
         `  stopped) echo '{"terminals":[]}' ;;`,
@@ -165,11 +166,15 @@ describe('doctor command (Phase 1C)', () => {
         'esac',
         '',
       ].join('\n'));
-      const relay = (mode: string) => { let result; withEnv({ PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOME: rhHome, FIXTURE_HC: mode }, () => { result = notifyRelayDoctorCheck(); }); return result; };
+      // Notify values exported in the caller's shell never reach the hc child: hc can keep them in a core it starts.
+      const exported = { WEBHOOK_URL: 'https://bot.example/x', WEBHOOK_KEY: 'k', SLACK_WEBHOOK_URL: 'https://slack.example/x',
+        DISCORD_WEBHOOK_URL: 'https://discord.example/x', TELEGRAM_BOT_TOKEN: '1:t', TELEGRAM_CHAT_ID: '-1' };
+      const relay = (mode: string) => { let result; withEnv({ ...exported, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOME: rhHome, FIXTURE_HC: mode }, () => { result = notifyRelayDoctorCheck(); }); return result; };
       expect(relay('live')).toMatchObject({ status: 'ok', detail: 'Relay terminal rh-notify-relay is live.' });
       expect(relay('stopped')).toMatchObject({ status: 'warn',
         detail: 'Relay terminal rh-notify-relay is not live (relay_stopped). Notifications are paused. Run: repo-harness herdr notify start' });
       expect(relay('fail')).toMatchObject({ status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' });
+      expect(fs.readFileSync(path.join(home, 'hc-env'), 'utf8')).toBe('');
       expect(ids).toContain('cli-on-path');
       expect(ids).toContain('cli-version');
       expect(ids).toContain('codex-cli-version');
