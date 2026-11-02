@@ -58,7 +58,9 @@ export function createPathEvaluator(source: SourceFile, repoRoot: string, file: 
         const functionName = isFunctionDeclaration(fn) ? fn.name?.text : isVariableDeclaration(fn.parent) && isIdentifier(fn.parent.name) ? fn.parent.name.text : undefined;
         if (index >= 0 && ancestor(fn, node)) {
           const fallback = fn.parameters[index]!.initializer;
-          const supplied = functionName ? calls.filter(call => nameOf(call.expression) === functionName).flatMap(call => recur(call.arguments[index])) : ['*'];
+          // A function without a call site in this file gets its arguments from callers outside it.
+          const callSites = functionName ? calls.filter(call => nameOf(call.expression) === functionName) : [];
+          const supplied = callSites.length ? callSites.flatMap(call => recur(call.arguments[index])) : ['*'];
           return [...new Set([...supplied, ...(fallback ? recur(fallback) : [])])];
         }
       }
