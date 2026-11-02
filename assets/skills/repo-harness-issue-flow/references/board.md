@@ -232,6 +232,9 @@ Board rules:
 6. **Nudge with a link.** To wake an agent, send it the comment URL
    through the host channel (a Herdr prompt, a session message). The
    comment is the instruction. A message that differs from the board loses.
+   A message to the coordinator is one line, `[rh-notice] <kind> <comment
+   URL>`, so that the coordinator can tell it from an owner message
+   (`orchestrator.md` §8.1).
 7. **Decisions live on the board.** A decision that changes scope goes into
    the issue body through a `scope change`. Any other one-time decision goes
    into a `decision` comment on the issue. Do not keep decision notes in local
@@ -247,7 +250,8 @@ Board rules:
 
 Agents do not watch the board continuously. A seat holder reads its threads
 at these points: at the start of a turn, before a push, before posting a
-status, after CI finishes, and after any nudge. The coordinator also reads
-the parent and every open child after each worker report. Use host PR
-event notifications when the host provides them. Do not poll in a sleep
-loop.
+status, after CI finishes, and after any nudge. The coordinator reads the
+thread that a queue item names when it takes that item, and reads the
+parent and every open child at session start (`orchestrator.md` §8.1).
+Use host PR event notifications when the host provides them. Do not poll
+in a sleep loop.

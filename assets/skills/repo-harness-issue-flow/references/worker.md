@@ -203,6 +203,10 @@ You are the head owner. Only you push to this branch.
 - **Someone else must push.** When a repair or integration must come from
   another agent, post a `handoff` that names the next head owner and the
   exact head SHA. Then stop pushing.
+- **Notify the coordinator.** Send a host message to the coordinator only
+  after you post a `To: coordinator` comment or an `issue claim status`.
+  The message is one line: `[rh-notice] <kind> <comment URL>`. Do not send
+  progress, summaries or log text. The comment holds the content.
 
 ## 8. Finish
 
