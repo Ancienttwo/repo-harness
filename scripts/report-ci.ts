@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/operator/tests';
-import { rollbackParent } from '../src/core/publication/merge-readiness';
+import { batchMemberMerges, rollbackParent, type BatchMemberMergeV1 } from '../src/core/publication/merge-readiness';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -14,7 +14,8 @@ export type GitHubAPI = (path: string, method?: 'GET' | 'POST' | 'PATCH', body?:
 export interface CIReport {
   run_id: number; run_attempt: number; sha: string; conclusion: string; run_url: string;
   repairs: { key: string; issue_url: string | null; delivery: 'created' | 'reused' | 'pending'; error?: string }[];
-  merges: { pr: number; before: string; after: string; rollback: string }[];
+  /** `members` exists only on a batch boundary: the member PRs that its revert also reverts. */
+  merges: { pr: number; before: string; after: string; rollback: string; members?: number[] }[];
   unresolved_repairs: { issue_number: number; url: string; title: string }[] | null;
   errors: string[];
 }
@@ -71,6 +72,24 @@ async function githubPages(api: GitHubAPI, path: string, field?: string): Promis
     if (entries.length < 100) return all;
   }
   throw new Error(`Provider pagination limit reached: ${path}`);
+}
+/** One compare page, the executor's batch limit; a longer batch fails closed instead of a partial chain. */
+const BATCH_COMPARE_LIMIT = 100;
+async function batchMembers(api: GitHubAPI, root: string, before: string, head: string): Promise<readonly BatchMemberMergeV1[]> {
+  const compare = record(await api(`${root}/compare/${before}...${head}?per_page=${BATCH_COMPARE_LIMIT}`), 'Batch compare');
+  if (!Array.isArray(compare.commits) || !Number.isSafeInteger(compare.total_commits) || compare.commits.length !== compare.total_commits) {
+    throw new Error(`Batch compare did not list every commit in base..head (at most ${BATCH_COMPARE_LIMIT} are read)`);
+  }
+  const graph = new Map<string, readonly string[]>();
+  for (const entry of compare.commits) {
+    const commit = record(entry, 'Batch compare commit');
+    const parents = Array.isArray(commit.parents) ? commit.parents.map(parent => isRecord(parent) ? parent.sha : undefined) : [];
+    if (!validSha(commit.sha) || parents.length === 0 || !parents.every(sha => validSha(sha))) throw new Error('Batch compare commit is incomplete');
+    graph.set(commit.sha, parents);
+  }
+  const chain = batchMemberMerges(before, head, graph);
+  if (chain.status !== 'complete') throw new Error(`Batch first-parent chain is not a member merge chain: ${chain.status}`);
+  return chain.members;
 }
 async function ensureRepairIssue(api: GitHubAPI, root: string, key: string, title: string, body: string, requireOpen = false, evidenceMarker?: string): Promise<{ issue_url: string; delivery: 'created' | 'reused' }> {
   const marker = ciRepairIssueMarker(key);
@@ -311,6 +330,13 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     const since = createdAt - 24 * 60 * 60 * 1000;
     // Closed PR readback is also recovery: a missed push report is repaired by the next daily report.
     const prs = await githubPages(api, `${root}/pulls?state=closed&sort=updated&direction=desc`);
+    const pending = async (prNumber: number, error: unknown): Promise<void> => {
+      report.errors.push(`Rollback boundary pending for PR #${prNumber}: ${message(error)}`);
+      await repair(`merge-pr-${prNumber}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
+    };
+    // GitHub marks each batch member merged at its member merge on the integration branch; only its batch revert can roll it back.
+    const batches: { members: number[]; merges: readonly BatchMemberMergeV1[] }[] = [];
+    const undecoded: { pr: number; after: string; head: unknown }[] = [];
     for (const pr of prs) {
       if (pr.merged_at === null) continue;
       const base = record(pr.base, 'PR base');
@@ -329,7 +355,7 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         if (detail.number !== pr.number || detail.merged !== true || detail.merge_commit_sha !== after
           || record(detail.base, 'Merged PR detail base').ref !== 'main') throw new Error('Merged PR detail does not match the rollback boundary');
         const parent = rollbackParent(after, commit.parents, detail.head);
-        if (!parent) throw new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary');
+        if (!parent) { undecoded.push({ pr: pr.number, after, head: detail.head }); continue; }
         const parentAssociations = await api(`${root}/commits/${parent.before_sha}/pulls?per_page=100`);
         if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) throw new Error('Rollback parent PR associations incomplete');
         const parentPRs = parentAssociations.map(entry => {
@@ -339,12 +365,22 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         });
         if (parentPRs.includes(pr.number)) throw new Error(`Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${pr.number}`);
         const mainline = parent.mainline === null ? '' : ` -m ${parent.mainline}`;
-        report.merges.push({ pr: pr.number, before: parent.before_sha, after, rollback: `git revert --no-edit${mainline} ${after}` });
-      } catch (error) {
-        report.errors.push(`Rollback boundary pending for PR #${pr.number}: ${message(error)}`);
-        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
-      }
+        const boundary = { pr: pr.number, before: parent.before_sha, after, rollback: `git revert --no-edit${mainline} ${after}` };
+        if (parent.mainline === null) { report.merges.push(boundary); continue; }
+        // rollbackParent proved that the PR head is the second parent of the batch commit.
+        const merges = await batchMembers(api, root, parent.before_sha, record(detail.head, 'Merged PR detail head').sha as string);
+        const members: number[] = [];
+        report.merges.push({ ...boundary, members });
+        batches.push({ members, merges });
+      } catch (error) { await pending(pr.number, error); }
     }
+    for (const { pr, after, head } of undecoded) {
+      const headSha = isRecord(head) ? head.sha : undefined;
+      const batch = batches.find(({ merges }) => merges.some(merge => merge.merge_sha === after && merge.member_head_sha === headSha));
+      if (batch) batch.members.push(pr);
+      else await pending(pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
+    }
+    for (const { members } of batches) members.sort((left, right) => left - right);
   } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.'); }
   try {
     const open = await githubPages(api, `${root}/issues?state=open`);
@@ -390,7 +426,7 @@ export async function watchDailyCI(repo: string, now: Date, api: GitHubAPI, sche
 
 export function renderReport(report: CIReport): string {
   return `# Main CI daily report\n\nSHA: \`${report.sha}\`\nRun: ${report.run_url}\nResult: ${report.conclusion}\n\n`
-    + report.merges.map(merge => `- PR #${merge.pr}: \`${merge.before}\` → \`${merge.after}\`; rollback: \`${merge.rollback}\``).join('\n')
+    + report.merges.map(merge => `- PR #${merge.pr}: \`${merge.before}\` → \`${merge.after}\`; rollback: \`${merge.rollback}\`${merge.members?.length ? `; members: ${merge.members.map(pr => `#${pr}`).join(', ')}` : ''}`).join('\n')
     + `\n\nRepair tasks:\n${report.repairs.map(repair => `- ${repair.key}: ${repair.delivery}${repair.issue_url ? ` (${repair.issue_url})` : ''}${repair.error ? `: ${safeText(repair.error)}` : ''}`).join('\n')}`
     + `\n\nUnresolved repair backlog: ${report.unresolved_repairs === null ? 'unknown' : report.unresolved_repairs.map(issue => `#${issue.issue_number} ${issue.url}`).join(', ') || 'none'}\n`
     + `\n\nPending H02/H03/H04 approvals are not observed by CI; their operation owner retains user approval.\n`

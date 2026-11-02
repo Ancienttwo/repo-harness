@@ -84,6 +84,37 @@ export function rollbackParent(afterSha: string, parents: readonly unknown[], pr
     : null;
 }
 
+export interface BatchMemberMergeV1 {
+  readonly merge_sha: string;
+  /** The second parent of the member merge: the merged member PR head. */
+  readonly member_head_sha: string;
+}
+
+export type BatchMemberChainV1 =
+  | { readonly status: 'complete'; readonly members: readonly BatchMemberMergeV1[] }
+  | { readonly status: 'leaves_range'; readonly sha: string }
+  | { readonly status: 'not_member_merge'; readonly sha: string; readonly parent_count: number }
+  | { readonly status: 'cycle' };
+
+/**
+ * The one decoder of a batch commit chain. The first-parent chain from the batch head must reach the base through
+ * two-parent member merges only. A member head is the second parent of such a merge, never the first, so every
+ * non-merge commit in base..head is then reachable from a member head. `commitParents` holds every commit in
+ * base..head. This proves the commit graph only; the merge trees stay the integrator's check.
+ */
+export function batchMemberMerges(baseSha: string, headSha: string, commitParents: ReadonlyMap<string, readonly string[]>): BatchMemberChainV1 {
+  const members: BatchMemberMergeV1[] = [];
+  let sha = headSha;
+  for (let step = 0; step <= commitParents.size && sha !== baseSha; step++) {
+    const parents = commitParents.get(sha);
+    if (parents === undefined) return Object.freeze({ status: 'leaves_range', sha });
+    if (parents.length !== 2) return Object.freeze({ status: 'not_member_merge', sha, parent_count: parents.length });
+    members.push(Object.freeze({ merge_sha: sha, member_head_sha: parents[1]! }));
+    sha = parents[0]!;
+  }
+  return sha === baseSha ? Object.freeze({ status: 'complete', members: Object.freeze(members) }) : Object.freeze({ status: 'cycle' });
+}
+
 /**
  * The closed stack-chain vocabulary. A member is an open PR whose base is not
  * the repository default branch. The effect follows the baseRefName chain and

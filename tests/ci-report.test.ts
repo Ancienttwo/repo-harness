@@ -380,17 +380,50 @@ test.each([
   expect(report.repairs[0]).toMatchObject({ key: 'ci-repair:merge-pr-7', delivery: 'created' });
 }));
 
-test('a publication merge --batch commit reports its first parent and a mainline revert that restores it', () => fixture(async f => {
-  const batch = f.git('commit-tree', `${f.after}^{tree}`, '-p', f.before, '-p', f.after, '-m', 'batch merge');
-  f.git('merge', '-q', '--ff-only', batch);
+test.each([
+  { name: 'members at their member merges join the batch entry', wrongHead: false },
+  { name: 'a member merge whose second parent is not the PR head keeps its repair', wrongHead: true },
+])('a publication merge --batch commit reports its first parent and a mainline revert that restores it: $name', ({ wrongHead }) => fixture(async f => {
+  // Member 8 is the candidate commit; member 9 adds one file on the base. The integration head is two member merges.
+  f.git('checkout', '-q', '--detach', f.before); writeFileSync(join(f.root, 'member.txt'), 'member\n'); f.git('add', '.'); f.git('commit', '-qm', 'member 9');
+  const member9 = f.git('rev-parse', 'HEAD'); f.git('checkout', '-q', 'main');
+  const member8 = f.git('rev-parse', 'candidate');
+  const merge8 = f.git('commit-tree', `${member8}^{tree}`, '-p', f.before, '-p', member8, '-m', 'merge member 8');
+  const merge9 = f.git('commit-tree', f.git('merge-tree', '--write-tree', merge8, member9), '-p', merge8, '-p', member9, '-m', 'merge member 9');
+  const batch = f.git('commit-tree', `${merge9}^{tree}`, '-p', f.before, '-p', merge9, '-m', 'batch merge');
+  f.git('reset', '-q', '--hard', batch);
+  const prs = [{ number: 7, merge: batch, head: { ref: 'integration/1287-batch-3', sha: merge9 } },
+    { number: 8, merge: merge8, head: { ref: 'feat/8', sha: member8 } },
+    { number: 9, merge: merge9, head: { ref: 'feat/9', sha: wrongHead ? member8 : member9 } }];
+  const commitOf = (sha: string) => {
+    const [own, ...parents] = f.git('rev-list', '--parents', '-n', '1', sha).split(' ');
+    return { sha: own, parents: parents.map(parent => ({ sha: parent })) };
+  };
   const report = await reportCI('test/repo', 12, async (path, method, body) => {
-    if (path.startsWith('/repos/test/repo/pulls?')) return (await f.api(path) as Record<string, unknown>[]).map(pr => ({ ...pr, merge_commit_sha: batch }));
-    if (path.endsWith('/pulls/7')) return { number: 7, merged: true, merge_commit_sha: batch, base: { ref: 'main' }, head: { ref: 'integration/1287-batch-3', sha: f.after } };
-    if (path.endsWith(`/git/commits/${batch}`)) return { sha: batch, parents: [{ sha: f.before }, { sha: f.after }] };
+    if (path.startsWith('/repos/test/repo/pulls?')) {
+      const [{ merged_at }] = await f.api(path) as Record<string, unknown>[];
+      return prs.map(pr => ({ number: pr.number, merged_at, merge_commit_sha: pr.merge, base: { ref: 'main' } }));
+    }
+    const detail = prs.find(pr => path.endsWith(`/pulls/${pr.number}`));
+    if (detail) return { number: detail.number, merged: true, merge_commit_sha: detail.merge, base: { ref: 'main' }, head: detail.head };
+    const commit = /\/git\/commits\/([0-9a-f]{40})$/.exec(path);
+    if (commit) return commitOf(commit[1]!);
+    if (path === `/repos/test/repo/compare/${f.before}...${merge9}?per_page=100`) {
+      const commits = f.git('rev-list', `${f.before}..${merge9}`).split('\n').map(commitOf);
+      return { total_commits: commits.length, commits };
+    }
     return f.api(path, method, body);
   });
-  expect(report.errors).toEqual([]);
-  expect(report.merges).toEqual([{ pr: 7, before: f.before, after: batch, rollback: `git revert --no-edit -m 1 ${batch}` }]);
+  const entry = { pr: 7, before: f.before, after: batch, rollback: `git revert --no-edit -m 1 ${batch}` };
+  if (wrongHead) {
+    expect(report.merges).toEqual([{ ...entry, members: [8] }]);
+    expect(report.errors).toEqual([expect.stringContaining('Rollback boundary pending for PR #9')]);
+    expect(report.repairs).toEqual([expect.objectContaining({ key: 'ci-repair:merge-pr-9', delivery: 'created' })]);
+    return;
+  }
+  expect(report.errors).toEqual([]); expect(report.repairs).toEqual([]);
+  expect(report.merges).toEqual([{ ...entry, members: [8, 9] }]);
+  expect(renderReport(report)).toContain(`rollback: \`git revert --no-edit -m 1 ${batch}\`; members: #8, #9`);
   f.git(...report.merges[0]!.rollback.split(' ').slice(1));
   expect(f.git('rev-parse', 'HEAD^{tree}')).toBe(f.git('rev-parse', `${f.before}^{tree}`));
 }));
