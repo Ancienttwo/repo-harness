@@ -697,25 +697,72 @@ describe('doctor skill projection', () => {
         const result = checkSkillProjection(target, f.env);
         const rows = result.skills!;
         const projections = allProjections.filter(projection => target === 'both' || projection.host === target);
-        expect(rows.map(row => `${row.host}:${row.name}`)).toEqual(projections.map(p => `${p.host}:${p.name}`));
+        // With a ledger, only its one owned destination is judged; the other absent destinations give na lines.
+        const judged = ledger ? projections.filter(p => p.destination === driftedDestination) : projections;
+        expect(rows.map(row => `${row.host}:${row.name}`)).toEqual(judged.map(p => `${p.host}:${p.name}`));
         expect(rows.find(row => row.host === 'codex' && row.name === name)?.state ?? state).toBe(state as never);
         rows.forEach((row, index) => {
-          const drifted = projections[index]!.destination === driftedDestination;
+          const drifted = judged[index]!.destination === driftedDestination;
           expect(row.ok).toBe(row.state.startsWith('ok ') && !drifted);
         });
-        const skillLines = rows.map((row, index) => frozenLine(projections[index]!, row.state, projections[index]!.destination === driftedDestination));
+        const skillLines = projections.map(projection => {
+          const index = judged.indexOf(projection);
+          return index < 0
+            ? `${projection.destination}: na; not in the install ledger`
+            : frozenLine(projection, rows[index]!.state, projection.destination === driftedDestination);
+        });
         const detailLines = result.detail.split('\n');
-        expect(detailLines.slice(0, rows.length)).toEqual(skillLines);
-        expect(detailLines).toHaveLength(rows.length + 1);
+        expect(detailLines.slice(0, projections.length)).toEqual(skillLines);
+        expect(detailLines).toHaveLength(projections.length + 1);
         if (ledger) {
-          expect(detailLines[rows.length]).toContain('"surface_drift":["' + driftedDestination + '"]');
+          expect(detailLines[projections.length]).toContain('"surface_drift":["' + driftedDestination + '"]');
         } else {
-          expect(detailLines[rows.length]).toBe('install ledger: missing; run: repo-harness install --profile full');
+          expect(detailLines[projections.length]).toBe('install ledger: missing; run: repo-harness install --profile full');
         }
         expect(result.status).toBe('warn');
         expect(JSON.stringify(rows)).not.toContain(home);
       }
     }
+  }));
+
+  test('a claude-only ledger judges the claude rows and gives na for the hosts it never touched', () => withTempHome(home => {
+    const f = seed(home);
+    const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
+    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
+      { declared: true, profileComponents: PROFILE_COMPONENTS });
+    if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
+    const projections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full');
+    const claude = projections.filter(projection => projection.host === 'claude');
+    const untouched = projections.filter(projection => projection.host !== 'claude');
+    for (const projection of claude) {
+      if (!fs.existsSync(path.join(projection.source, 'SKILL.md'))) {
+        fs.mkdirSync(projection.source, { recursive: true });
+        fs.writeFileSync(path.join(projection.source, 'SKILL.md'), `# ${projection.name}\n`);
+      }
+      fs.mkdirSync(path.dirname(projection.destination), { recursive: true });
+      fs.symlinkSync(projection.source, projection.destination);
+    }
+    // A protocol 2 ledger that owns only the claude links.
+    const ledger = path.join(home, '.repo-harness/install-state.json');
+    fs.mkdirSync(path.dirname(ledger), { recursive: true });
+    fs.writeFileSync(ledger, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+      transaction_id: 'claude-only-test', applied_at: new Date(0).toISOString(), previous: null,
+      ownership_manifest: claude.map(projection => ({ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+        path: projection.destination, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: projection.source })) }));
+
+    const result = checkSkillProjection('both', f.env);
+    expect(result.skills!.map(row => `${row.host}:${row.name}:${row.state}:${row.ok}`))
+      .toEqual(claude.map(projection => `claude:${projection.name}:ok link:true`));
+    expect(new Set(untouched.map(projection => projection.host))).toEqual(new Set(['codex', 'pi']));
+    for (const projection of untouched) expect(result.detail).toContain(`${projection.destination}: na; not in the install ledger`);
+    expect(result.detail).toContain('"surface_drift":[]');
+
+    const [deleted] = claude;
+    fs.rmSync(deleted!.destination);
+    const afterDelete = checkSkillProjection('both', f.env);
+    expect(afterDelete.skills!.find(row => row.name === deleted!.name)).toMatchObject({ host: 'claude', state: 'missing', ok: false });
+    expect(afterDelete.detail).toContain(`${deleted!.destination}: missing; expected ${deleted!.source}`);
+    expect(afterDelete.status).toBe('warn');
   }));
 
   test('review regression: old global contract is an actionable warning', () => withTempHome(home => {

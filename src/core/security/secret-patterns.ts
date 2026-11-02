@@ -11,6 +11,7 @@ export const SECRET_TOKEN_PATTERNS = [
   { type: 'credential_url', pattern: /[a-z][a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi, replacement: '[CREDENTIAL URL REDACTED]' },
   { type: 'url_token', pattern: /https?:\/\/[^\s<>"']*[?&](?:token|key|secret|auth|signature|sig|code)=[^\s<>"']+/gi, replacement: '[ENDPOINT REDACTED]' },
   { type: 'telegram_token', pattern: /\b\d{5,16}:[A-Za-z0-9_-]{30,}\b/g, replacement: '[TELEGRAM TOKEN REDACTED]' },
+  { type: 'slack_token', pattern: /xox[abposr]-[A-Za-z0-9-]{10,}/g, replacement: 'xox[REDACTED]' },
 ] as const;
 
 /** Assignment detection is case-sensitive. Empty and explicit absent values are safe. */
