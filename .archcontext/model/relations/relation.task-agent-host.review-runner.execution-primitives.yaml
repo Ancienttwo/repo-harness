@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.review-runner.execution-primitives"
+kind: "calls"
+source: "component.task-agent-host.review-runner"
+target: "capability.workflow-engine.execution-primitives"
+intent: "Read and write immutable session artifacts, including the accepted-input proof, and read the host process identity"
