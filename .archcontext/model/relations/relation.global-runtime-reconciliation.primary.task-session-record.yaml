@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.primary.task-session-record
+kind: reads
+source: component.global-runtime-reconciliation.primary
+target: component.execution-primitives.task-session-record
+intent: "Check that the task worktree runtime is closed before legacy worktree cleanup"

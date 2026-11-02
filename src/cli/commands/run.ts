@@ -12,6 +12,7 @@ export const RUN_HELP_GROUPS = [
       'cutover-closure',
       'contract-worktree',
       'contract-worktree-runtime',
+      'task-worktree-runtime',
     ],
   },
   {

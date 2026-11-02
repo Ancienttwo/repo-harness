@@ -170,6 +170,14 @@ sequenceDiagram
 | `component.execution-primitives.task-message-claim`（Task Message Claim Primitives） | core | `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts`（3 个文件，106 行） | task inbox 与 feedback 记录共用的 claim 校验、消息错误类型与封闭字段检查 |
 | `component.execution-primitives.session-artifact-io`（Immutable Session Artifact I/O） | effects | `src/effects/terminal/task-session-io.ts`（29 行） | 持久写入与读取 session JSON 产物，读取进程身份 |
 
+#1402 再增加一个组件：
+
+| 组件 | 层 | footprint | 职责 |
+| --- | --- | --- | --- |
+| `component.execution-primitives.task-session-record`（Task Session Records） | effects | `src/effects/terminal/task-session-record.ts`（132 行） | 读取并校验 task session binding 与 start intent；拥有 task session、task workspace 与 `HerdrEndpoint` 记录类型；不联系 Herdr 即可判断 task worktree runtime 是否已关闭 |
+
+`task-session-record.ts` 导入 acceptance-review 的 `core/review/runner-port`（只有类型）与 evidence-ledger 的 `core/evidence/canonical-json`。两条新出向边是 `relation.execution-primitives.task-session-record.acceptance-review` 与 `relation.execution-primitives.task-session-record.evidence-ledger`，都是 core → core。
+
 `mechanics.ts` 导入 evidence-ledger 的 `core/evidence/canonical-json` 与 `core/evidence/types`。这是本 capability 唯一的新出向边（`relation.execution-primitives.task-message-claim.evidence-ledger`）。evidence-ledger 也调用本 capability 的锁，所以两个 capability 之间有双向关系；文件级没有环。`task-session-io.ts` 只导入 Node 内置模块。
 
 ### 3.4 10x 规模下先垮的点
@@ -201,6 +209,12 @@ sequenceDiagram
 
 - `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts` 从 task-fleet 移到 `component.execution-primitives.task-message-claim`。`src/effects/terminal/task-session-io.ts` 从 task-agent-host 移到 `component.execution-primitives.session-artifact-io`。只改模型，源码与 import 不变。
 - 原因：publication 与 acceptance-review 导入这些文件。#1352 要求它们不经过 task-fleet 或 task-agent-host。
+
+### 2026-11-02 Task session records moved in (#1402)
+
+- 新建 `src/effects/terminal/task-session-record.ts`，归 `component.execution-primitives.task-session-record`。`task-session-reader.ts` 的读取函数、`task-session.ts` 的 binding、intent 与 workspace 记录类型、`taskWorktreeRuntimeClosed` 和 `herdr.ts` 的 `HerdrEndpoint` 移入。`task-session-reader.ts` 已删除。`task-session.ts` 不再 re-export 这些名字。
+- 原因：workflow-state、global-runtime-reconciliation 与 external-source-intake 读 session 记录。#1402 要求它们不导入 task-agent-host。
+- 本文件在 effects 层，因为它读文件与 Git。`constraint.architecture.layer-direction` 不允许 `src/core` 文件导入 effects。它和 `task-session-io.ts` 同在 `src/effects/terminal/`。Herdr 代码导入它，它导入 `task-session-io.ts`。放在 `src/effects/sessions/` 会造成 sessions ↔ terminal 目录环，`check:state-boundaries` 拒绝这个环。`component.task-agent-host.primary` 的 `task-*.ts` glob 因此加了 exclude。
 
 ## Optimization Backlog
 

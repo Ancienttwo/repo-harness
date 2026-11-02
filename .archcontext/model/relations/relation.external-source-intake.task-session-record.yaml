@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.external-source-intake.task-session-record
+kind: reads
+source: capability.runtime-harness.external-source-intake
+target: component.execution-primitives.task-session-record
+intent: "Read the exact immutable session binding for source provenance binding"

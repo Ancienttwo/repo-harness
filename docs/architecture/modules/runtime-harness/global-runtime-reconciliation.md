@@ -255,7 +255,7 @@ sequenceDiagram
 | primary | `hook-adapters` | `installHostAdapters` 调用 `runInstall`（`global-runtime.ts:672`）；install-profile、skill-projection、runtime-host-lock |
 | primary | `public-surface.adoption` | `upgrade.ts` 使用 FsTransaction manifest 与 `withTargetLock`；`legacy-inventory.ts` 使用 adoption 指纹 |
 | primary | `workflow-engine.contract-assets` | `syncCrossReviewSkills`（`src/cli/commands/init.ts#syncCrossReviewSkills`） |
-| primary | `task-agent-host` | `legacy-worktree-cleanup.ts` 读取 task session 记录（#1357 S6 的边） |
+| primary | `workflow-engine.execution-primitives` | `legacy-worktree-cleanup.ts` 从 `src/effects/terminal/task-session-record.ts` 读取 `taskWorktreeRuntimeClosed`（#1402 移走了到 task-agent-host 的边） |
 | archctx-closure | `hook-adapters` | `writePrivateConfiguration`（`architecture-configuration.ts:15`） |
 | cli-root | 已有 capability | `buildProgram` 注册各命令（`src/cli/index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、delegated-runs、external-source-intake |
 

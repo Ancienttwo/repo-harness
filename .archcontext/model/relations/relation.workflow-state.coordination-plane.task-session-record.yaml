@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.workflow-state.coordination-plane.task-session-record
+kind: reads
+source: component.workflow-state.coordination-plane
+target: component.execution-primitives.task-session-record
+intent: "Read immutable task session bindings for session admission and provider boards; check that the task worktree runtime is closed before exact worktree prune"

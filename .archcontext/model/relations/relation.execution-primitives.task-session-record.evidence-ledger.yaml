@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.task-session-record.evidence-ledger
+kind: depends-on
+source: component.execution-primitives.task-session-record
+target: capability.runtime-harness.evidence-ledger
+intent: "Compare task session records by canonical JSON"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.task-inbox-effects.coordination-plane
+kind: calls
+source: component.task-fleet.task-inbox-effects
+target: component.workflow-state.coordination-plane
+intent: "Plugin → core: recheck that the admitted source session is current before and during each inbox operation"

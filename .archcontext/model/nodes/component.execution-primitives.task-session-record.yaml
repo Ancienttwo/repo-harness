@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.task-session-record
+kind: component
+name: Task Session Records
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: effects
+summary: Reads task session and task workspace records and owns their types, including the Herdr endpoint record. It does no Herdr pane control.
+responsibilities:
+  - Read and validate a task session binding and its start intent for Node-safe consumers.
+  - Own the task session, task workspace and Herdr endpoint record types.
+  - Report whether a task worktree runtime is closed without contacting Herdr.
+source:
+  include:
+    - src/effects/terminal/task-session-record.ts

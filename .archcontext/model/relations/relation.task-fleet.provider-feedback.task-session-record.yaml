@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.provider-feedback.task-session-record
+kind: reads
+source: component.task-fleet.provider-feedback
+target: component.execution-primitives.task-session-record
+intent: "Plugin → core: read the exact selected immutable task session for current feedback attribution"

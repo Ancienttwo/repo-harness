@@ -213,6 +213,8 @@ Effective State 的决定、冻结不变量与 P2 解析轨迹已并入本章。
 | `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | worktree 安全、provider board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
+#1402 把 `src/effects/terminal/task-session-admission.ts` 与 `src/effects/sessions/{task-sessions,admitted-source}.ts` 加入 coordination-plane。本组件因此拥有 task session admission：`observeTaskSessionAdmission` 观察已有 approval，`observeCurrentTaskSession(input, refuse)` 复查一个已 admit 的 session 仍是当前 session。调用方传入自己的 refusal 函数，所以错误不经翻译：task inbox 传 `fail`（`TaskInboxError`），external source binding 传一个抛出普通 `Error` 的函数。
+
 coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/state/coordination-*.ts`）。新的 `coordination-*` 文件自动归入该组件。其他新文件只归入 capability，直到有人把它加入某个组件。
 
 ### 3.4 10x 规模下先垮的点
@@ -231,13 +233,20 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - 共享协调面作为组件进入本 capability。早期协调面文档中“不 mint capability node”的记录已同步更新。
 - `src/effects/review/diff-fingerprint.ts` 不归本 capability。并行的 acceptance-review 分组整体认领了 `src/effects/review/**`。
 
+### 2026-11-02 Task session admission moved in (#1402)
+
+- 新建 `src/effects/terminal/task-session-admission.ts`，归 `component.workflow-state.coordination-plane`。`observeTaskSessionAdmission` 与 `taskBindingSha256` 从 `src/effects/terminal/task-session.ts` 移入。`observeCurrentTaskSession` 承接 `src/effects/fleet/task-inbox.ts` 中 `observeInboxAdmission` 的 4 项检查，检查与消息不变。task-id 检查留在 `task-inbox.ts`。
+- `src/effects/sessions/{task-sessions,admitted-source}.ts` 从 task-agent-host 归入本组件。
+- `src/effects/external-sources/binding.ts` 改为调用 `observeCurrentTaskSession`，不再导入 task-fleet 的 `observeTaskInboxContext`。它保留同样的 task-id 检查与消息，所以 `external-source bind` 的输出不变。
+- `relation.workflow-state.coordination-plane.task-agent-host` 删除，改为 `relation.workflow-state.coordination-plane.task-session-record`。新增 `relation.task-fleet.task-inbox-effects.coordination-plane`。
+
 ## Optimization Backlog
 
 以下是回边与边界缺口。它们是重构证据，不是声明的关系。
 
 - **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
-- **coordination-plane → task-agent-host。** `src/effects/state/coordination-worktree-topology.ts:12` 导入 `src/effects/terminal/task-session.ts`，在 prune 前确认 task runtime 已关闭。集成时没有发现 task-agent-host → workflow-state 的边。模型因此声明 coordination-plane → task-agent-host（`reads`）。
+- **coordination-plane → task-agent-host（#1402 已解决）。** `coordination-worktree-topology.ts` 现在从 `src/effects/terminal/task-session-record.ts`（execution-primitives）导入 `taskWorktreeRuntimeClosed`。本 capability 不再导入 task-agent-host。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** 早期设计把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。

@@ -7,7 +7,9 @@ import { join } from 'path';
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { herdrEnvironment } from '../src/effects/terminal/herdr';
-import { processIdentity, processProofAlive, type HerdrTaskBinding } from '../src/effects/terminal/task-session';
+import { processProofAlive } from '../src/effects/terminal/task-session';
+import { processIdentity, readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session-io';
+import { readTaskAgent, taskSessionDirectory, type HerdrTaskBinding } from '../src/effects/terminal/task-session-record';
 
 // This file owns the feasibility boundary, not model judgment. Fixture peers
 // expose explicit deterministic protocol/session IDs under recognizable names.
@@ -196,6 +198,7 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
   const herdr = Bun.which('herdr')!;
   run('git', ['init', '-q', '-b', 'main'], fixture, env);
   const modulePath = new URL('../src/effects/terminal/task-session.ts', import.meta.url).pathname;
+  const ioModulePath = new URL('../src/effects/terminal/task-session-io.ts', import.meta.url).pathname;
   const api = await import('../src/effects/terminal/task-session');
   writeFileSync(configPath, 'onboarding = false\n[terminal]\ndefault_shell = "/bin/sh"\nshell_mode = "non_login"\n[update]\nversion_check = false\nmanifest_check = false\n[session]\nresume_agents_on_restore = false\n');
   const execute = (args: string[]) => {
@@ -206,7 +209,7 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
   // The fixture owns delivery: it types the request pointer into the peer pane.
   const send = (task: string, role: string, context: string, policy: 'repeatable' | 'changed_only' = 'repeatable') =>
     api.sendTaskRequest(fixture, task, role, context, policy, async request => {
-      const { dir, binding } = api.readTaskAgent(fixture, task, role);
+      const { dir, binding } = readTaskAgent(fixture, task, role);
       execute(['agent', 'prompt', (binding as HerdrTaskBinding).agent_name, `Read task request ${join(dir, `request-${request.round}.json`)}; write its result only to ${request.result_ref}.`]);
     });
   const call = (args: string[]) => JSON.parse(execute(args)).result;
@@ -220,7 +223,7 @@ test('shared task sessions serialize real concurrent starts, reconcile a launche
     const peer = join(fixture, 'peer.ts');
     writeFileSync(peer, `
 import {readFileSync,writeFileSync} from 'fs'; import {join} from 'path'; import {spawn} from 'child_process';
-import {writeSessionArtifact} from ${JSON.stringify(modulePath)};
+import {writeSessionArtifact} from ${JSON.stringify(ioModulePath)};
 process.stdin.setRawMode(true); process.stdout.write('\\x1b[?2004h');
 if(process.argv[2].includes('stubborn'))process.on('SIGTERM',()=>writeFileSync(process.argv[2]+'.term','observed'));
 // A child in the leader's process group before ready: Herdr lists both at bind time.
@@ -296,22 +299,22 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const secondBinding = JSON.parse(readFileSync(join(fixture, 'advisor-second.binding'), 'utf8'));
     expect(secondBinding).toEqual(firstBinding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
-    const binding = api.readTaskAgent(fixture, spec.task, spec.role).binding as HerdrTaskBinding;
+    const binding = readTaskAgent(fixture, spec.task, spec.role).binding as HerdrTaskBinding;
     api.assertTaskBinding(binding);
     const reordered = { max_requests: spec.max_requests, args: spec.args, parent_pane: spec.parent_pane,
       endpoint: { home, configPath, session }, harness_kind: spec.harness_kind, role: spec.role, task: spec.task };
     expect(await api.startTaskAgent(fixture, reordered, refuseLaunch)).toEqual(binding);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\n');
 
-    const { dir } = api.readTaskAgent(fixture, spec.task, spec.role);
+    const { dir } = readTaskAgent(fixture, spec.task, spec.role);
     writeFileSync(join(fixture, 'context.md'), 'owned context');
     const request = await send(spec.task, spec.role, 'context.md');
     await until(() => existsSync(request.result_ref));
     expect(api.readTaskRequestResult(fixture, dir, request)?.value).toBe('artifact-result');
-    const result = api.readSessionArtifact<Record<string, unknown>>(request.result_ref);
-    api.writeSessionArtifact(request.result_ref, { ...result, request_id: 'another-request' }, false);
+    const result = readSessionArtifact<Record<string, unknown>>(request.result_ref);
+    writeSessionArtifact(request.result_ref, { ...result, request_id: 'another-request' }, false);
     expect(() => api.readTaskRequestResult(fixture, dir, request)).toThrow('result_identity_mismatch');
-    api.writeSessionArtifact(request.result_ref, result, false);
+    writeSessionArtifact(request.result_ref, result, false);
     writeFileSync(join(fixture, 'context.md'), 'changed context');
     await expect(send(spec.task, spec.role, 'context.md')).rejects.toThrow('round_budget_exhausted');
     const bindingPath = join(dir, 'binding.json');
@@ -319,16 +322,16 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
       { ...binding, ownership: { disposition: 'attached' } },
       { ...binding, provider: { ...binding.provider, ownership: { disposition: 'attached' } } },
     ]) {
-      api.writeSessionArtifact(bindingPath, attached, false);
+      writeSessionArtifact(bindingPath, attached, false);
       await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow('attached_object_not_closeable');
       expect(live(binding.provider.pid)).toBe(true);
     }
-    api.writeSessionArtifact(bindingPath, { ...binding, provider: { ...binding.provider, identity: binding.provider.identity + ' replaced' } }, false);
+    writeSessionArtifact(bindingPath, { ...binding, provider: { ...binding.provider, identity: binding.provider.identity + ' replaced' } }, false);
     await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow('process_identity_lost');
     expect(live(binding.provider.pid)).toBe(true);
-    api.writeSessionArtifact(bindingPath, { ...binding, terminal_id: 'reused-pane-id' }, false);
+    writeSessionArtifact(bindingPath, { ...binding, terminal_id: 'reused-pane-id' }, false);
     await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow('pane_identity_lost');
-    api.writeSessionArtifact(bindingPath, binding, false);
+    writeSessionArtifact(bindingPath, binding, false);
     execute(['agent', 'rename', binding.agent_name, 'replacement']);
     await expect(api.closeTaskAgent(fixture, spec.task, spec.role)).rejects.toThrow();
     expect(live(binding.provider.pid)).toBe(true);
@@ -338,12 +341,12 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const crashPath = join(fixture, 'crash-spec.json'); writeFileSync(crashPath, JSON.stringify(crashSpec));
     const crashed = owner('crash', crashPath); await exited(crashed.child);
     expect(crashed.child.exitCode).toBe(77);
-    const crashDir = api.taskSessionDirectory(fixture, crashSpec.task, crashSpec.role);
+    const crashDir = taskSessionDirectory(fixture, crashSpec.task, crashSpec.role);
     expect(existsSync(join(crashDir, 'binding.json'))).toBe(false);
     const providerPid = JSON.parse(readFileSync(join(fixture, 'crash-role.ready'), 'utf8')).pid;
     const resumed = owner('resume', crashPath); await exited(resumed.child);
     if (resumed.child.exitCode !== 0) throw new Error(resumed.errors());
-    expect(api.readTaskAgent(fixture, crashSpec.task, crashSpec.role).binding.provider.pid).toBe(providerPid);
+    expect(readTaskAgent(fixture, crashSpec.task, crashSpec.role).binding.provider.pid).toBe(providerPid);
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\n');
     writeFileSync(join(fixture, 'context.md'), 'hold-result');
     const pendingRequest = await send(crashSpec.task, crashSpec.role, 'context.md');
@@ -376,12 +379,12 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     try {
       process.env.PATH = shim + ':' + savedPath;
       await expect(api.startTaskAgent(checkout, linkedSpec, refuseLaunch)).rejects.toThrow('injected-register-failure');
-      expect(existsSync(join(api.taskSessionDirectory(checkout, spec.task, linkedSpec.role), 'intent.json'))).toBe(false);
+      expect(existsSync(join(taskSessionDirectory(checkout, spec.task, linkedSpec.role), 'intent.json'))).toBe(false);
     } finally { process.env.PATH = savedPath; }
     const linkedOwner = owner('linked', linkedPath, checkout); await exited(linkedOwner.child);
     if (linkedOwner.child.exitCode !== 0) throw new Error(linkedOwner.errors());
-    const fromPrimary = api.readTaskAgent(fixture, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
-    const fromLinked = api.readTaskAgent(checkout, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
+    const fromPrimary = readTaskAgent(fixture, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
+    const fromLinked = readTaskAgent(checkout, spec.task, linkedSpec.role) as { dir: string; binding: HerdrTaskBinding };
     expect(fromLinked.dir).toBe(fromPrimary.dir);
     expect(fromLinked.binding).toEqual(fromPrimary.binding);
     expect(fromPrimary.binding.execution_root).toBe(checkout);
@@ -400,15 +403,15 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(api.readTaskRequestResult(fixture, fromPrimary.dir, linkedRequest)).toBeNull();
     const resultValue = {request_id:linkedRequest.request_id,context_sha256:linkedRequest.context_sha256,value:'artifact-result'};
     // The provider writes the result in its own checkout; the owner only collects it.
-    api.writeSessionArtifact(linkedRequest.result_ref, resultValue, false);
+    writeSessionArtifact(linkedRequest.result_ref, resultValue, false);
     expect(existsSync(join(fromPrimary.dir,'result-1.json'))).toBe(false);
     expect(existsSync(join(fromPrimary.dir,'collected-1.json'))).toBe(false);
     expect(await api.collectTaskResult(fixture, spec.task, linkedSpec.role, 1)).toEqual(resultValue);
-    expect(api.readSessionArtifact<typeof resultValue>(join(fromPrimary.dir,'collected-1.json'))).toEqual(resultValue);
+    expect(readSessionArtifact<typeof resultValue>(join(fromPrimary.dir,'collected-1.json'))).toEqual(resultValue);
     expect(api.readTaskRequestResult(checkout, fromLinked.dir, linkedRequest)?.value).toBe('artifact-result');
     await expect(send(spec.task, linkedSpec.role,'context.md','changed_only')).rejects.toThrow('duplicate_subject');
     const repeated=await send(spec.task, linkedSpec.role,'context.md');
-    api.writeSessionArtifact(repeated.result_ref,{request_id:repeated.request_id,context_sha256:repeated.context_sha256,value:'artifact-result'},false);
+    writeSessionArtifact(repeated.result_ref,{request_id:repeated.request_id,context_sha256:repeated.context_sha256,value:'artifact-result'},false);
     writeFileSync(join(fixture, 'context.md'), 'hold-result');
     await send(spec.task, linkedSpec.role, 'context.md');
     copyHelpers(fixture);
@@ -465,7 +468,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const stubbornPath = join(fixture, 'stubborn.json'); writeFileSync(stubbornPath, JSON.stringify(stubbornSpec));
     const stubbornOwner = owner('normal', stubbornPath); await exited(stubbornOwner.child);
     if (stubbornOwner.child.exitCode !== 0) throw new Error(stubbornOwner.errors());
-    const stubbornBinding = api.readTaskAgent(fixture, spec.task, stubbornSpec.role).binding;
+    const stubbornBinding = readTaskAgent(fixture, spec.task, stubbornSpec.role).binding;
     expect(await api.closeTaskAgent(fixture, spec.task, stubbornSpec.role)).toEqual({ status: 'closed', pids: [] });
     expect(existsSync(join(fixture, 'stubborn.ready.term'))).toBe(true);
     expect(live(stubbornBinding.provider.pid)).toBe(false); // Ignored TERM; identity-proven KILL finished.
@@ -494,7 +497,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     if (bindGroupOwner.child.exitCode !== 0) throw new Error(bindGroupOwner.errors());
     const bindGroupLeader = JSON.parse(readFileSync(join(fixture, 'bind-group-child.ready'), 'utf8')).pid;
     const bindGroupChild = Number(readFileSync(join(fixture, 'bind-group-child.ready.child'), 'utf8'));
-    const bindGroupBinding = api.readTaskAgent(fixture, spec.task, bindGroupSpec.role).binding as HerdrTaskBinding;
+    const bindGroupBinding = readTaskAgent(fixture, spec.task, bindGroupSpec.role).binding as HerdrTaskBinding;
     expect(bindGroupBinding.provider.pid).toBe(bindGroupLeader);
     const bindGroupInfo = call(['pane', 'process-info', '--pane', bindGroupBinding.pane_id]).process_info;
     expect(bindGroupInfo.foreground_process_group_id).toBe(bindGroupLeader);
@@ -510,7 +513,7 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     const shellLeaderOwner = owner('exec-shell', shellLeaderPath); await exited(shellLeaderOwner.child);
     expect(shellLeaderOwner.child.exitCode).not.toBe(0);
     expect(shellLeaderOwner.errors()).toContain('task_agent_provider_identity_unknown');
-    const shellLeaderDir = api.taskSessionDirectory(fixture, spec.task, shellLeaderSpec.role);
+    const shellLeaderDir = taskSessionDirectory(fixture, spec.task, shellLeaderSpec.role);
     expect(existsSync(join(shellLeaderDir, 'provider-created.json'))).toBe(false);
     const shellLeaderPid = JSON.parse(readFileSync(join(fixture, 'shell-leader.ready'), 'utf8')).pid;
     expect(await api.closeTaskAgent(fixture, spec.task, shellLeaderSpec.role)).toEqual({ status: 'closed', pids: [] });
@@ -525,8 +528,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
       const exitPath = join(fixture, `${role}.json`); writeFileSync(exitPath, JSON.stringify(exitSpec));
       const exitOwner = owner('normal', exitPath); await exited(exitOwner.child);
       if (exitOwner.child.exitCode !== 0) throw new Error(exitOwner.errors());
-      const exitBinding = api.readTaskAgent(fixture, spec.task, role).binding as HerdrTaskBinding;
-      const exitDir = api.taskSessionDirectory(fixture, spec.task, role);
+      const exitBinding = readTaskAgent(fixture, spec.task, role).binding as HerdrTaskBinding;
+      const exitDir = taskSessionDirectory(fixture, spec.task, role);
       const exitShim = join(fixture, `${role}-shim`); mkdirSync(exitShim);
       const exitMark = join(fixture, `${role}.mark`);
       const pid = String(exitBinding.provider.pid);
@@ -560,7 +563,7 @@ exec ${quote(real)} "$@"
     const splitOwner = owner('split-crash', splitPath); await exited(splitOwner.child);
     expect(splitOwner.child.exitCode).toBe(80);
     expect(await api.cancelTaskAgent(fixture, spec.task, splitSpec.role)).toEqual({ status: 'cleanup_pending', pids: [], reason: 'split_outcome_unrecorded' });
-    expect(existsSync(join(api.taskSessionDirectory(fixture,spec.task,splitSpec.role),'closed.json'))).toBe(false);
+    expect(existsSync(join(taskSessionDirectory(fixture,spec.task,splitSpec.role),'closed.json'))).toBe(false);
     // Fixture owns every pane; production deliberately cannot guess this one.
     const gapPane = call(['pane', 'list', '--workspace', root.workspace.workspace_id]).panes.find((item: any) => item.pane_id !== parent);
     execute(['pane','close',gapPane.pane_id]);
@@ -569,8 +572,8 @@ exec ${quote(real)} "$@"
     const lostPath = join(fixture, 'pane-gone.json'); writeFileSync(lostPath, JSON.stringify(lostSpec));
     const lostOwner = owner('ambiguous', lostPath); await exited(lostOwner.child);
     expect(lostOwner.child.exitCode).toBe(79);
-    const lostDir = api.taskSessionDirectory(fixture,spec.task,lostSpec.role);
-    const lostPane = api.readSessionArtifact<{pane_id:string}>(join(lostDir,'pane-created.json'));
+    const lostDir = taskSessionDirectory(fixture,spec.task,lostSpec.role);
+    const lostPane = readSessionArtifact<{pane_id:string}>(join(lostDir,'pane-created.json'));
     execute(['pane','close',lostPane.pane_id]);
     expect(await api.cancelTaskAgent(fixture,spec.task,lostSpec.role)).toEqual({ status:'cleanup_pending',pids:[],reason:'pane_absent_pid_unobserved' });
     expect(existsSync(join(lostDir,'closed.json'))).toBe(false);
@@ -583,11 +586,11 @@ exec ${quote(real)} "$@"
       const lingeringPath = join(fixture, 'lingering.json'); writeFileSync(lingeringPath, JSON.stringify(lingeringSpec));
       const ownerWithNoReceipt = owner('ambiguous', lingeringPath); await exited(ownerWithNoReceipt.child);
       expect(ownerWithNoReceipt.child.exitCode).toBe(79);
-      const lingeringDir = api.taskSessionDirectory(fixture, spec.task, lingeringSpec.role);
-      const intent = api.readSessionArtifact<{ intent_id: string }>(join(lingeringDir, 'intent.json'));
-      const pane = api.readSessionArtifact<{ pane_id: string; terminal_id: string }>(join(lingeringDir, 'pane-created.json'));
+      const lingeringDir = taskSessionDirectory(fixture, spec.task, lingeringSpec.role);
+      const intent = readSessionArtifact<{ intent_id: string }>(join(lingeringDir, 'intent.json'));
+      const pane = readSessionArtifact<{ pane_id: string; terminal_id: string }>(join(lingeringDir, 'pane-created.json'));
       const actualPid = JSON.parse(readFileSync(join(fixture, 'cleanup-pending.ready'), 'utf8')).pid;
-      api.writeSessionArtifact(join(lingeringDir, 'unbound-cleanup.json'), { intent_id: intent.intent_id, ...pane, pids: [actualPid, survivor.pid] });
+      writeSessionArtifact(join(lingeringDir, 'unbound-cleanup.json'), { intent_id: intent.intent_id, ...pane, pids: [actualPid, survivor.pid] });
       expect(await api.closeTaskAgent(fixture, spec.task, lingeringSpec.role)).toEqual({ status: 'cleanup_pending', pids: [survivor.pid!] });
       expect(live(survivor.pid!)).toBe(true);
       expect(api.taskAgentStatus(fixture, spec.task, lingeringSpec.role).status).toBe('cleanup_pending');
@@ -767,7 +770,7 @@ for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host bin
   writeFileSync(specFile, JSON.stringify({ mode: 'scripted', cwd: repo, inputs: [], closeRequest, readyFile, disposedFile, isolation: { paths, policyFile: profile } }));
   const command = reviewHostCommand(realpathSync(Bun.which('node')!), realpathSync(join(import.meta.dir,'../dist/oar-review-host.js')), specFile);
   const spec = { task: 'oar-terminal', role: 'deep-reasoner', harness_kind: 'codex', max_requests: 3 };
-  const proof = (pid: number) => ({ pid, identity: api.processIdentity(pid) });
+  const proof = (pid: number) => ({ pid, identity: processIdentity(pid) });
   const readyPid = async () => { await until(() => existsSync(readyFile)); return proof(JSON.parse(readFileSync(readyFile, 'utf8')).pid); };
   let host: ChildProcess | undefined;
   try {
@@ -784,7 +787,7 @@ for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host bin
     expect(binding.provider.pid).toBe(host.pid!);
     expect(binding.command).toEqual([...command]);
     expect(await api.bindTerminalApplicationHost(repo, spec, command, async () => { throw new Error('must not observe again'); }, taskAuthority)).toEqual(binding);
-    expect(api.readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
+    expect(readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
     expect(api.taskAgentStatus(repo, spec.task, spec.role).status).toBe('idle');
     if (taskAuthority) {
       // The native host supplies real argv/process ownership. Deterministic
@@ -794,7 +797,7 @@ for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host bin
       const deliver = async (request: import('../src/core/review/runner-port').TaskRequest) => {
         expect(readFileSync(request.context_ref, 'utf8')).toBe('offline admitted context\n');
         delivered.push(request.round);
-        api.writeSessionArtifact(request.result_ref, { request_id: request.request_id,
+        writeSessionArtifact(request.result_ref, { request_id: request.request_id,
           context_sha256: request.context_sha256, value: { fixture: 'offline-application-delivery', round: request.round } });
       };
       const send = () => api.sendTaskRequest(repo, spec.task, spec.role, 'context.txt', 'repeatable', deliver, undefined, undefined, taskAuthority);
@@ -821,7 +824,7 @@ for (const admitted of [false, true]) darwinTest(`operator-terminal OAR host bin
         .toEqual({ fixture: 'offline-application-delivery', round: 3 });
       await expect(send()).rejects.toThrow('round_budget_exhausted');
       expect(delivered).toEqual([1, 2, 3]);
-      expect(api.readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
+      expect(readTaskAgent(repo, spec.task, spec.role).binding).toEqual(binding);
     }
     // Cleanup never signals the operator's process; it waits for the host's own disposal and exit.
     expect(await api.cancelTaskAgent(repo, spec.task, spec.role)).toEqual({ status: 'cleanup_pending', pids: [host.pid!], reason: 'terminal_host_alive' });

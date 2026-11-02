@@ -127,7 +127,7 @@ test('historical review label explicitly refuses automatic inbox without renamin
 });
 
 import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture';
-import { observeTaskSessionAdmission } from '../../src/effects/terminal/task-session';
+import { observeTaskSessionAdmission } from '../../src/effects/terminal/task-session-admission';
 import { nextSessionRound } from '../../src/effects/terminal/task-session-io';
 function publishAccepted(f: Awaited<ReturnType<typeof fixture>>, request: TaskRequest, nativeSessionId: string) {
   writeFileSync(join(f.bound.dir,`request-${request.round}.json`),JSON.stringify(request));

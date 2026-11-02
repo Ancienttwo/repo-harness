@@ -117,6 +117,7 @@
       "cutover-closure.ts",
       "contract-worktree.sh",
       "contract-worktree-runtime.ts",
+      "task-worktree-runtime.ts",
       "acceptance-receipt.ts",
       "change-assessment.ts",
       "runtime-evidence-receipt.ts",
@@ -182,7 +183,8 @@
       "capability-resolver": "List, match, validate, or export capability registry entries",
       "capability-config": "Register a new capability prefix and sync its contract files",
       "decision-trail": "Record decisions in the evidence ledger and render their TSV or Markdown view",
-      "contract-worktree-runtime": "Bind Git-owned task worktrees to Herdr and close recorded runtime before checkout cleanup"
+      "contract-worktree-runtime": "Bind Git-owned task worktrees to Herdr and close recorded runtime before checkout cleanup",
+      "task-worktree-runtime": "Register, notify and clean up the Herdr runtime of a task worktree"
     },
     "dir": "package:scripts",
     "runtimeSource": "package"

@@ -6,8 +6,8 @@ import { renderExternalSourceUntrustedContext } from '../../core/external-source
 import { buildAdmittedSourceBindingReceipt, type ExternalSourceBindingReceiptV2 } from '../../core/external-sources/admitted-binding';
 import { readRepoHarnessRegistryStrictSnapshot, type RepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { readReviewAdmissionSource } from '../admission/admission-source';
-import { observeTaskInboxContext } from '../fleet/task-inbox';
-import { readTaskAgent } from '../terminal/task-session';
+import { readTaskAgent } from '../terminal/task-session-record';
+import { observeCurrentTaskSession } from '../terminal/task-session-admission';
 import { listExternalSourceBindingReceipts,
   listExternalSourceRefreshReceipts, listProviderIssueObservations, writeExternalSourceBindingReceipt } from './store';
 
@@ -40,9 +40,12 @@ function observeSession(root: string, session: AdmittedSessionSelector, deps: Ex
     'repository-id': session.provider_repository_id, 'issue-id': session.issue_id, 'campaign-id': session.campaign_id,
     'grant-sha256': session.grant_sha256, 'policy-sha256': session.policy_sha256, actor: session.actor_id,
   });
-  return observeTaskInboxContext({ repo_root: root, task_id: session.task, source: {
-    session: { task: session.task, role: session.role }, authority: { source,
-      claim: { reference: session.claim_ref, revision: session.claim_revision } } } });
+  if (!/^[0-9a-f]{64}$/.test(session.task)) throw new Error(`task id is invalid: ${JSON.stringify(session.task)}`);
+  return observeCurrentTaskSession({ repo_root: root, session: { task: session.task, role: session.role },
+    authority: { source, claim: { reference: session.claim_ref, revision: session.claim_revision } } }, refuse).admission;
+}
+function refuse(_code: string, message: string): never {
+  throw new Error(message);
 }
 function authority(input: BindExternalSourceInput, deps: ExternalSourceBindingDependencies) {
   const registry = deps.registry(input.env), repo = registry.repos.find(r => r.id === input.registered_repository_id);

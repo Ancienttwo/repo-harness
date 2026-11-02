@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.task-session-record
+kind: reads
+source: component.operator.console-collectors
+target: component.execution-primitives.task-session-record
+intent: "Plugin → core: read immutable task session bindings for the execution state view"

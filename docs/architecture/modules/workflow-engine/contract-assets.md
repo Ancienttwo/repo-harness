@@ -259,6 +259,7 @@ regressions verify these separate boundaries.
 | `component.contract-assets.template-projection`（可扩展） | 180 / 35,687 | standalone resolver 与 reference config 投影、`repo-harness init` | primary、planning-helpers、workflow-state、execution-primitives、adoption、hook-adapters、global-runtime-reconciliation |
 | `component.contract-assets.contract-worktree-lifecycle` | 8 / 6,505 | worktree 生命周期、publication、merge gate、contract brief runner、归档 | workflow-state（worktree 拓扑锁）、execution-primitives（Git binary） |
 | `component.contract-assets.planning-helpers` | 21 / 4,034 | 计划、spec、sprint、triage 与 factor-lab helper，`run` 与 `brain` 命令，受保护 helper runner | execution-primitives（有界子进程） |
+| `component.contract-assets.fleet-role-profiles`（#1402） | 1 / 104 | fleet 角色名、role profile frontmatter 解析与校验、agent model 与 effort 目标 | 无（文件没有 import） |
 
 template-projection 标记为可扩展。`assets/templates/helpers/` 现在只有 `capability-resolver.ts`，它是投影副本。`src/cli/commands/init.ts` 是一个组合根。按本次提案的归属，它导入 8 个其他 capability 的代码。现在不拆。
 
@@ -607,6 +608,13 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 
 ---
 
+### 2026-11-02 Fleet role profiles and the task worktree runtime split (#1402)
+
+- `src/effects/terminal/task-role-profiles.ts` 从 task-agent-host 归入新的 `component.contract-assets.fleet-role-profiles`。文件没有 import。`component.task-agent-host.primary` 的 `task-*.ts` glob 匹配它，所以该组件加了 exclude。消费方是 hook-adapters 的安装器、operator 的 setup snapshot 与 task-agent-host 的 reviewer runner，都是 core → core 或 plugin → core。
+- `scripts/contract-worktree-runtime.ts` 不再导入 `src/effects/terminal/task-session.ts`。`register`、`notify-merged` 与 `cleanup` 用子进程运行 `scripts/task-worktree-runtime.ts`（task-agent-host），argv、stdout、stderr 与退出码不变。`scripts/contract-worktree.sh` 不变。
+- `task-worktree-runtime.ts` 加入 `helpers.scripts` 与 `helpers.descriptions`，因此它和 `contract-worktree-runtime.ts` 一起安装到同一个 helper 目录。
+- `relation.contract-assets.contract-worktree-lifecycle.task-agent-host` 删除。子进程调用不是 import 边，模型不声明它。
+
 ## Workstream Ledger
 
 - `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
@@ -620,7 +628,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 - **template-projection 是可扩展组件。** 先把 `src/cli/commands/init.ts` 拆成独立的 init 组件，再看 `assets/templates/helpers/**` 是否需要单独的投影组件。
 - **`init.ts` 组合根。** 它导入 adoption、hook-adapters、global-runtime-reconciliation、workflow-state 与 execution-primitives。CodeGraph 步骤由 `src/cli/index.ts` 作为 `InitPorts` 传入（#1398）。它还导入当前无 owner 的 `src/cli/commands/{architecture-configuration,install,herdr-skill}.ts`、`src/core/skill-surface/catalog.ts` 与 `src/effects/skill-tree-integrity.ts`。
 - **投影脚本知道源码布局。** `scripts/sync-helper-sources.ts:48-120` 用字符串改写 registry、checkpoint snapshot、readonly-observation 与 worktree-location 的 import 行。被投影文件移动时，这里要同步修改。
-- **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 动态导入 `src/effects/terminal/task-session.ts` 与 `herdr.ts`；`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。集成步骤声明了 contract-worktree-lifecycle → task-agent-host 与 → acceptance-review。到 publication 的关系没有声明：`relation.publication.contract-assets` 已经声明反向。本方向有 3 条边，反向有 2 条。是否翻转方向是开放问题。
+- **contract-worktree-lifecycle 的外部依赖。** `scripts/contract-worktree-runtime.ts` 不再导入 task-agent-host；它用子进程运行 `scripts/task-worktree-runtime.ts`（#1402）。`scripts/merge-gate.ts` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/publication/merge-readiness.ts`。集成步骤声明了 contract-worktree-lifecycle → acceptance-review。到 publication 的关系没有声明：`relation.publication.contract-assets` 已经声明反向。本方向有 3 条边，反向有 2 条。是否翻转方向是开放问题。
 - **planning-helpers 的平台依赖。** `src/effects/runtime/helper-runner.ts` 导入 `node-candidates.ts` 与 `protected-helper-platform.ts`。它们现在归 global-runtime-reconciliation。集成步骤没有声明 planning-helpers → global-runtime-reconciliation：global-runtime-reconciliation 的 cli-root 与 primary 已经声明到本 capability 的关系，新增一条会加深双向依赖。
 - **reference configs 由专门的 capability 持有。** `external-tooling.md` 的镜像对与 `install-profiles.md` 归 global-runtime-reconciliation，`chatgpt-coding-mcp.md` 归 mcp-sidecar。本 capability 与 template-projection 用 `source.exclude` 排除这 4 个文件，所以它们只有一个 owner。
 - **组件 footprint 用文件名 glob。** `planning-helpers` 用 `scripts/new-*.sh` 与 `scripts/factor-*.sh`，`template-projection` 用 `assets/initializer-*`。新增同名模式的文件自动进入组件。capability 的 include 不用文件名 glob：它的字面 anchor 会扩大到整个目录，例如 `scripts`。

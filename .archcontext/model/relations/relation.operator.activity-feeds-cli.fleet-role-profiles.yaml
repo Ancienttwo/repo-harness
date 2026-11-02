@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.activity-feeds-cli.fleet-role-profiles
+kind: depends-on
+source: component.operator.activity-feeds-cli
+target: component.contract-assets.fleet-role-profiles
+intent: "Plugin → core: report the managed fleet roles and their profile checks in the setup snapshot"

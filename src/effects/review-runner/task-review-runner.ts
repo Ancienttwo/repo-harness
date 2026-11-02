@@ -14,12 +14,13 @@ import type { TaskSessionAuthority } from '../admission/admission-source';
 import { taskRepository } from '../git/task-repository';
 import { piExecutable } from '../pi-executable';
 import { reviewHostCommand } from '../review/review-isolation';
-import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
+import { validateHerdrEndpoint } from '../terminal/herdr';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { assertTaskBinding, assertTerminalHostCommand, bindTerminalApplicationHost, cancelTaskAgent, closeTaskAgent, collectTaskResult,
-  processProofAlive, readTaskAgent, sendTaskRequest, startTaskApplicationHost, taskAgentStatus, taskBindingSha256, taskSessionDirectory,
-  type TaskPaneBinding } from '../terminal/task-session';
+  processProofAlive, sendTaskRequest, startTaskApplicationHost, taskAgentStatus } from '../terminal/task-session';
+import { readTaskAgent, taskSessionDirectory, type HerdrEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
+import { taskBindingSha256 } from '../terminal/task-session-admission';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import { commitPrePromptInbox, preparePrePromptInbox } from './task-pre-prompt-inbox';
 import { oarObservationFile, readOarObservation } from '../terminal/task-runtime-observation';

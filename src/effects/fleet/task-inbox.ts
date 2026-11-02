@@ -47,11 +47,9 @@ import {
   type TaskMessageRecipient,
 } from '../../core/fleet/admitted-task-message';
 import { resolveGitCommonDirectory } from '../git/common-directory';
-import { readTaskAgent, observeTaskSessionAdmission } from '../terminal/task-session';
+import { observeCurrentTaskSession } from '../terminal/task-session-admission';
 import type { TaskSessionAuthority } from '../admission/admission-source';
 import type { TaskSessionAdmission } from '../../core/review/runner-port';
-import { observeActiveReviewAdmission } from '../admission/issue-goal';
-import { readActiveReviewAdmission } from '../admission/admission-store';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import * as historicalMessage from '../../core/fleet/task-message';
@@ -433,22 +431,7 @@ interface InboxAdmission { admission: TaskSessionAdmission; assertLocalCurrent: 
 function observeInboxAdmission(input: { repo_root: string; source: TaskInboxSessionSource; task_id: string }): InboxAdmission {
   assertTaskId(input.task_id);
   if (!input.source || input.source.session.task !== input.task_id) fail('claim_mismatch', 'explicit session task does not match inbox');
-  const { binding, dir } = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
-  if (!binding.task_admission || existsSync(join(dir, 'closed.json'))) fail('recipient_unavailable', 'admitted session is unavailable');
-  const admission = observeTaskSessionAdmission(binding.execution_root, binding, binding.runtime, input.source.authority);
-  if (!sameData(binding.task_admission.identity, admission.identity)) fail('claim_mismatch', 'session admission identity changed');
-  const source = input.source.authority.source;
-  const active = observeActiveReviewAdmission(source);
-  if (active.grant_sha256 !== admission.approval.grant_sha256 || active.admission.admission_sha256 !== admission.approval.admission_sha256) fail('canonical_source_stale', 'admission changed during inbox observation');
-  const expectedGoal = active.admission.goal;
-  const assertLocalCurrent = () => {
-    const current = readActiveReviewAdmission({ ...source, expectedGoal });
-    if (current.grant_sha256 !== admission.approval.grant_sha256 || current.admission.admission_sha256 !== admission.approval.admission_sha256) fail('canonical_source_stale', 'admission changed during inbox operation');
-    const latest = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
-    if (!sameData(latest.binding, binding) || existsSync(join(latest.dir, 'closed.json'))) fail('recipient_unavailable', 'session changed during inbox operation');
-  };
-  assertLocalCurrent();
-  return { admission, assertLocalCurrent };
+  return observeCurrentTaskSession({ repo_root: input.repo_root, session: input.source.session, authority: input.source.authority }, fail);
 }
 /** Read-only request preparation for trusted control clients. */
 export function observeTaskInboxContext(input: { repo_root: string; source: TaskInboxSessionSource; task_id: string }): TaskSessionAdmission {

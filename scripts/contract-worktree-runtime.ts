@@ -1,6 +1,6 @@
 #!/usr/bin/env bun
 import { tmpdir } from 'os';
-import { execFileSync } from 'child_process';
+import { execFileSync, spawnSync } from 'child_process';
 import { lstatSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmdirSync, writeFileSync } from 'fs';
 import { basename, dirname, join, resolve } from 'path';
 import { fileURLToPath, pathToFileURL } from 'url';
@@ -12,9 +12,6 @@ if (action === 'default-template' || action === 'resolve-template') {
   console.log(action === 'default-template' ? defaultWorktreeTemplate(process.platform, tmpdir()) : resolveWorktreeTemplate(args[args.indexOf('--template') + 1], process.platform, tmpdir()));
   process.exit(0);
 }
-const { readSessionArtifact, cleanupTaskWorktree, registerTaskWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
-import type { HerdrEndpoint } from '../src/effects/terminal/herdr';
-
 const { configuredGitBinary } = await import(pathToFileURL(join(packageRoot, 'src/effects/git/common-directory.ts')).href) as typeof import('../src/effects/git/common-directory');
 const value = (key: string) => { const at = args.indexOf(key); if (at < 0 || !args[at + 1]) throw new Error(`runtime requires ${key}`); return args[at + 1]!; };
 function markActiveWorktree(worktree: string): void {
@@ -115,20 +112,11 @@ try {
       task_id: args.includes('--task') ? value('--task') : null,
       pull_request: args.includes('--pr') ? Number(value('--pr')) : null,
     })));
-  } else if (action === 'register') {
-    const input = readSessionArtifact<{ endpoint: HerdrEndpoint; parent_pane: string }>(value('--endpoint'));
-    console.log(JSON.stringify(await registerTaskWorktree(value('--worktree'), input.endpoint, input.parent_pane)));
-  } else if (action === 'notify-merged') {
-    const { notifyTaskWorktreeMerged } = await import(pathToFileURL(join(packageRoot, 'src/effects/terminal/task-session.ts')).href) as typeof import('../src/effects/terminal/task-session');
-    const result = await notifyTaskWorktreeMerged(value('--repo'), value('--owner'), {
-      pr: Number(value('--pr')), merge_sha: value('--merge'), worktree: value('--worktree'), branch: value('--branch'),
-    });
-    console.log(JSON.stringify(result));
-    if (result.status === 'retained') process.exitCode = 1;
-  } else if (action === 'cleanup') {
-    const result = await cleanupTaskWorktree(value('--repo'), value('--worktree'), args.includes('--dry-run'));
-    console.log(JSON.stringify(result));
-    if (result.status === 'cleanup_pending') process.exitCode = 1;
+  } else if (action === 'register' || action === 'notify-merged' || action === 'cleanup') {
+    // The task agent host owns the Herdr worktree actions. Its entry writes the output and sets the exit code.
+    const child = spawnSync(process.execPath, [join(scriptDir, 'task-worktree-runtime.ts'), action, ...args], { stdio: 'inherit' });
+    if (child.error) throw child.error;
+    process.exitCode = child.status ?? 1;
   } else if (action === 'remove-exact') {
     const { removeExactWorktree } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
     removeExactWorktree(value('--repo'), {

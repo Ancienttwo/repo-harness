@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.review-runner.fleet-role-profiles
+kind: depends-on
+source: component.task-agent-host.review-runner
+target: component.contract-assets.fleet-role-profiles
+intent: "Plugin → core: read the reviewer role profile and its agent target before a review session starts"

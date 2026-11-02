@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.fleet-role-profiles
+kind: depends-on
+source: component.hook-adapters.host-installer
+target: component.contract-assets.fleet-role-profiles
+intent: "Resolve fleet role profiles during host installation"

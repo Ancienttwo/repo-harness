@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.task-session-record
+kind: depends-on
+source: capability.runtime-harness.task-agent-host
+target: component.execution-primitives.task-session-record
+intent: "Plugin → core: read task session bindings and use the task session, task workspace and Herdr endpoint record types"

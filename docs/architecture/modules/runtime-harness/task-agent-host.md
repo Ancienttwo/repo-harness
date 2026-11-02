@@ -142,7 +142,7 @@ sequenceDiagram
 6. **OAR 观察不是 ACK。** `readOarObservation` 的输出只用于状态展示（`taskAgentStatus`）。它不是 task ACK，也不是 acceptance receipt。
 7. **已有的启动 intent 只做对账。** `reconcile(dir, intent)` 在 intent 已存在时只读取 `pane-created.json`、`launch-intent.json` 与 `provider-created.json`，并校验身份。它从不重复 split 或 launch。工件缺失时写入 `reconciliation.json` 并以 `task_agent_start_reconciliation_required` 失败。
 8. **关闭工作区不删 Git checkout。** `cleanupTaskWorktree` 只关闭 Herdr workspace，不执行 `worktree remove`。Git 的发布、脏状态与合并检查归调用方。
-9. **OAR 的 disposal 先于清理。** Reviewer runner 在调用 `closeTaskAgent` 或 `cancelTaskAgent` 之前写 `close.request`，并等待 `disposed.json` 回执（`src/effects/review-runner/task-review-runner.ts` 中 `taskReviewRunner` 的 `dispose`）。没有回执时 review 报告 cleanup pending，不调用 task-agent 清理。`close` 在仍有未收集 result 的 request 时拒绝，`cancel` 才能跳过这个检查。会话清扫（`taskWorktreeRuntimeClosed`）不关闭打开的 runtime，也不联系 Herdr。
+9. **OAR 的 disposal 先于清理。** Reviewer runner 在调用 `closeTaskAgent` 或 `cancelTaskAgent` 之前写 `close.request`，并等待 `disposed.json` 回执（`src/effects/review-runner/task-review-runner.ts` 中 `taskReviewRunner` 的 `dispose`）。没有回执时 review 报告 cleanup pending，不调用 task-agent 清理。`close` 在仍有未收集 result 的 request 时拒绝，`cancel` 才能跳过这个检查。会话清扫（`taskWorktreeRuntimeClosed`，在 `src/effects/terminal/task-session-record.ts`，归 execution-primitives）不关闭打开的 runtime，也不联系 Herdr。
 10. **进程身份证明从不放松。** 退出状态在身份确认之后读取（`processProofAlive`）。有歧义的 foreground 进程列表被拒绝，不按名称或位置猜测（`bindStartedAgent`）。
 11. **Lock 与 intent 先于副作用。** 启动、发送与清理都在 `withCallerLock` 目录锁内运行（`src/effects/locking/exclusive-directory-lock.ts`）。启动与清理先写 intent 工件（`intent.json`、`close-intent.json`），再产生副作用，所以崩溃后可以对账。
 12. **安装只替换自己拥有的副本。** Herdr skill 安装拒绝用户修改过的副本、无 owner 的副本与 symlink，失败时恢复旧副本（#582）。Notify 插件配置用 mode 600 原子替换，拒绝 symlink（#500）。
@@ -165,16 +165,16 @@ sequenceDiagram
 | 删除 `task-agent` 命令、provider 提交、history 读取与 request 回读（#771） | 只剩一条内部 OAR 路径，没有第二套 result 权威。代价：跨模型 peer 的结果不再进入 task session，由 herdr skill 路径和各自的 reader 处理 |
 | Notify 默认只发 blocked 事件，Slack、Discord 与 Telegram 可选（#500） | Bot webhook 是必需通道。完成事件要按通道单独打开 |
 | Reviewer runner 与 OAR host 放在叶子目录 `src/effects/review-runner/`（#1352） | 只有 CLI 根导入这 4 个文件，所以 effects 目录图没有环。放在 `src/effects/terminal/` 时，`check:state-boundaries` 报告 fleet ↔ terminal 与 review ↔ terminal 两个目录环。代价：本能力的源码分在两个目录 |
-| Claude 与 Codex 共用 persona 定义，Codex 有显式的模型映射（`src/effects/terminal/task-role-profiles.ts:1-2`、`AGENT_TARGET_OVERRIDES`） | 两个宿主行为一致。代价：模型变更时要更新映射表 |
+| Claude 与 Codex 共用 persona 定义，Codex 有显式的模型映射（`src/effects/terminal/task-role-profiles.ts` 的 `AGENT_TARGET_OVERRIDES`，归 `component.contract-assets.fleet-role-profiles`） | 两个宿主行为一致。代价：模型变更时要更新映射表 |
 
 ### 3.3 组件
 
 | 组件 | 规模 | 职责 |
 | --- | --- | --- |
-| `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | Herdr 传输、OAR task session（启动、发送、收集、关闭）、task worktree、role profile、herdr 命令与安装的 persona 和插件资产 |
+| `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | Herdr 传输、OAR task session（启动、发送、收集、关闭）、task worktree、herdr 命令与安装的 persona 和插件资产 |
 | `component.task-agent-host.review-runner` | 4 个文件 / 约 600 行 | Acceptance review 的 reviewer runner、OAR review host 与 pre-prompt inbox companion |
 
-`src/effects/terminal/` 是共享目录。本能力拥有 task session。PM dispatch 已删除。OAR coding host 在 PM 删除后没有生产调用方，已随 #911 删除。
+`src/effects/terminal/` 是共享目录。本能力拥有 task session。Session 记录的读取与类型归 execution-primitives（`src/effects/terminal/task-session-record.ts`）。Session admission 归 workflow-state（`src/effects/terminal/task-session-admission.ts`）。Role profile 归 contract-assets。本能力导入这三个 core 文件。PM dispatch 已删除。OAR coding host 在 PM 删除后没有生产调用方，已随 #911 删除。
 
 ### 3.4 未决问题
 
@@ -197,8 +197,15 @@ sequenceDiagram
 - 新增 relation：`relation.task-agent-host.review-runner`、`relation.task-agent-host.review-runner.primary`、`relation.task-agent-host.review-runner.execution-primitives`、`relation.task-agent-host.review-runner.task-fleet` 与 `relation.task-agent-host.deployed-on.oar-review-host`。
 - `nextSessionRound` 与 `ensureSessionDirectory` 移到 `task-session-io.ts`。`locked` 移到锁模块，名为 `withCallerLock`。
 
+### Session record、admission 与 role profile 移出 (2026-11-02，#1402)
+
+- Session 记录读取、记录类型与 `HerdrEndpoint` 移到 `src/effects/terminal/task-session-record.ts`（execution-primitives）。`task-session-reader.ts` 已删除。`observeTaskSessionAdmission`、`taskBindingSha256` 与新的 `observeCurrentTaskSession(input, refuse)` 在 `src/effects/terminal/task-session-admission.ts`（workflow-state）。`task-role-profiles.ts` 归 `component.contract-assets.fleet-role-profiles`。`src/effects/sessions/{task-sessions,admitted-source}.ts` 归 workflow-state。
+- 新增 `scripts/task-worktree-runtime.ts`，归 `component.task-agent-host.primary-scripts`。它执行 `register`、`notify-merged` 与 `cleanup`。`scripts/contract-worktree-runtime.ts` 用子进程运行它，argv、stdout、stderr 与退出码不变。`registerTaskWorktree`、`notifyTaskWorktreeMerged` 与 `cleanupTaskWorktree` 留在 `task-session.ts`。
+- 原因：#1402 列出的 10 条 core → task-agent-host 与 core → task-fleet import 边不再存在。本能力现在只有 plugin → core 边。
+- 删除的 relation：`relation.contract-assets.contract-worktree-lifecycle.task-agent-host`、`relation.external-source-intake.task-agent-host`、`relation.global-runtime-reconciliation.primary.task-agent-host`、`relation.hook-adapters.imports.task-agent-host`、`relation.task-fleet.provider-feedback.task-agent-host`、`relation.workflow-state.coordination-plane.task-agent-host`。新增 `relation.task-agent-host.task-session-record` 与 `relation.task-agent-host.review-runner.fleet-role-profiles`。
+
 ## Optimization Backlog
 
 - **After arch-context#296：决定 `src/effects/terminal/` 的目录归属。** 现在目录中的新文件会成为 unowned。
 - **`task-session.ts` 过大。** 候选拆分：身份证明、request 轮次、清理。可展开，现在不拆。
-- **入向调用者分散。** `scripts/contract-worktree-runtime.ts` 与 `src/cli/mcp/tools.ts` 直接调用 task-session 或 herdr。Generic review 已改为经过 runner port（#1352）。
+- **入向调用者分散。** `src/cli/mcp/tools.ts` 直接调用 task-session 或 herdr。Generic review 已改为经过 runner port（#1352）。`scripts/contract-worktree-runtime.ts` 已改为用子进程运行 `scripts/task-worktree-runtime.ts`（#1402）。
