@@ -337,24 +337,30 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
     }
   }
 
+  // A provider 5xx on any merge read makes the merge section unavailable for this run: a partial read proves neither a boundary
+  // nor a defect. Defects wait until every read is done. Each merge is in the window of several runs, so a run without a 5xx reports it.
+  const defects: { pr: number; error: unknown }[] = [];
+  const dispatchDefects = async (): Promise<void> => {
+    for (const { pr, error } of defects.splice(0)) {
+      report.errors.push(`Rollback boundary pending for PR #${pr}: ${message(error)}`);
+      await repair(`merge-pr-${pr}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
+    }
+  };
   try {
     const createdAt = Date.parse(run.created_at);
     if (!Number.isFinite(createdAt)) throw new Error('Daily reporting interval unavailable');
     const since = createdAt - 24 * 60 * 60 * 1000;
     // Closed PR readback is also recovery: a missed push report is repaired by the next daily report.
     const prs = await githubPages(api, `${root}/pulls?state=closed&sort=updated&direction=desc`);
-    const pending = async (prNumber: number, error: unknown): Promise<void> => {
-      if (providerUnavailable(`Rollback boundary pending for PR #${prNumber}`, error)) return;
-      report.errors.push(`Rollback boundary pending for PR #${prNumber}: ${message(error)}`);
-      await repair(`merge-pr-${prNumber}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
+    const pending = (prNumber: number, error: unknown): void => {
+      if (providerOutage(error)) throw error;
+      defects.push({ pr: prNumber, error });
     };
     // GitHub marks each batch member merged at its member merge on the integration branch; only its batch revert can roll it back.
     type Candidate = { pr: number; after: string; headSha: unknown };
     type Decoded = Candidate & { boundary: CIReport['merges'][number]; batch: { members: number[]; merges: readonly BatchMemberMergeV1[] } | null };
     const decoded: Decoded[] = [];
     const undecoded: Candidate[] = [];
-    // A batch whose chain the provider could not serve: it can still join an outer batch, but it proves no members.
-    const unread: (Candidate & { error: CIReportError })[] = [];
     for (const pr of prs) {
       if (pr.merged_at === null) continue;
       const base = record(pr.base, 'PR base');
@@ -386,37 +392,28 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
         const mainline = parent.mainline === null ? '' : ` -m ${parent.mainline}`;
         const boundary = { pr: pr.number, before: parent.before_sha, after, rollback: `git revert --no-edit${mainline} ${after}` };
         // rollbackParent proved that a batch PR head is the second parent of the batch commit.
-        let batch: Decoded['batch'] = null;
-        if (parent.mainline !== null) {
-          try { batch = { members: [], merges: await batchMembers(api, root, parent.before_sha, headSha as string) }; } catch (error) {
-            if (!providerOutage(error)) throw error;
-            unread.push({ pr: pr.number, after, headSha, error }); continue;
-          }
-        }
+        const batch = parent.mainline === null ? null : { members: [], merges: await batchMembers(api, root, parent.before_sha, headSha as string) };
         decoded.push({ pr: pr.number, after, headSha, boundary, batch });
-      } catch (error) { await pending(pr.number, error); }
+      } catch (error) { pending(pr.number, error); }
     }
     const holds = ({ after, headSha }: Candidate) => (entry: Decoded): entry is Decoded & { batch: NonNullable<Decoded['batch']> } =>
       entry.batch !== null && entry.batch.merges.some(merge => merge.merge_sha === after && merge.member_head_sha === headSha);
     // Publication never nests batches. A batch on the chain of another batch is a member, and its own chain proves no member.
     const nested = decoded.filter(candidate => candidate.batch !== null && decoded.some(holds(candidate)));
     const boundaries = decoded.filter(candidate => !nested.includes(candidate));
-    // An unread batch chain that no read batch holds may enclose any candidate, so no-enclosing-batch and top-level batch claims stay unproved.
-    const unreadOuter = unread.filter(candidate => !boundaries.some(holds(candidate)));
-    const awaiting = unreadOuter.length ? ` while the batch chain of PR ${unreadOuter.map(candidate => `#${candidate.pr}`).join(', ')} is unread` : '';
-    for (const candidate of [...nested, ...undecoded, ...unread]) {
+    for (const candidate of [...nested, ...undecoded]) {
       const outer = boundaries.find(holds(candidate));
       if (outer) outer.batch.members.push(candidate.pr);
-      else if ('error' in candidate) providerUnavailable(`Rollback boundary pending for PR #${candidate.pr}`, candidate.error);
-      else if (unreadOuter.length) providerUnavailable(`Rollback boundary pending for PR #${candidate.pr}: no enclosing batch is proved${awaiting}`, unreadOuter[0]!.error);
-      else await pending(candidate.pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
+      else pending(candidate.pr, new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary, or a member merge of a batch boundary in the report window'));
     }
-    for (const { pr, boundary, batch } of boundaries) {
-      if (batch !== null && unreadOuter.length) providerUnavailable(`Rollback boundary pending for PR #${pr}: the batch is not proved top-level${awaiting}`, unreadOuter[0]!.error);
-      else report.merges.push(batch === null ? boundary : { ...boundary, members: batch.members.sort((left, right) => left - right) });
+    for (const { boundary, batch } of boundaries) {
+      report.merges.push(batch === null ? boundary : { ...boundary, members: batch.members.sort((left, right) => left - right) });
     }
+    await dispatchDefects();
   } catch (error) {
-    if (!providerUnavailable('Merge reporting incomplete', error)) {
+    if (providerOutage(error)) report.errors.push(`Merge reporting unavailable (attention_owner: external): ${message(error)}`);
+    else {
+      await dispatchDefects();
       report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.');
     }
   }
