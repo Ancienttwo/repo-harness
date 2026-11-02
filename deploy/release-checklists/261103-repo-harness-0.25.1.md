@@ -2,16 +2,18 @@
 
 ## Scope and authority
 
-- Release-prep base: `origin/main` `f95d816d7bdb3aedb517d66f0f74d72fabc23aae`
-  (#1463, the #1452 fix round). The release-prep branch merges this base
-  with a merge commit and no rebase. This is the final 0.25.1 scope.
+- Release-prep base: `origin/main` `5ecd0e392fb9b997a7429bbd025c868e1902ea8e`
+  (#1456, projection refresh for main `f95d816d7`). The release-prep branch
+  merges this base with a merge commit and no rebase. This is the final
+  release base. The last product change in the range is #1463, the #1452
+  fix round.
 - Source commit: the head of the release-prep PR. The publish candidate is
   the merge commit of that PR on `origin/main`. The owner records it below
   before publish.
 - Previous release: 0.25.0 on npm and in Git. Tag `v0.25.0`, annotated tag
   object `1a188c7e3998af0409e06352019259d05a41be40`, target
   `aa01147103647326e70829046d244b4b111a33b2`.
-- Merged range: `v0.25.0..f95d816d7`; 54 first-parent commits and 128
+- Merged range: `v0.25.0..5ecd0e392`; 55 first-parent commits and 129
   commits in total (`git rev-list --count`). Batch merges keep the member
   commits. Each first-parent subject ends with a PR number.
 - The npm package goes from 0.25.0 to 0.25.1. `package.json`,
@@ -75,9 +77,11 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
   freshness, Daily full tests and package, both Daily MCP path matrices,
   Daily governance and the four Native OAR acceptance (macOS) legs. 3
   PR-only jobs were skipped by design.
-- The Daily run did not run on `f95d816d7`. The four commits after
-  `a5595b15d` are #1454, #1455, #1457 and #1463. Push CI run 41491211995 on
-  `14b3ae92b` passed. Push CI run 41497719707 on `f95d816d7` passed.
+- The Daily run did not run on `5ecd0e392`. The five commits after
+  `a5595b15d` are #1454, #1455, #1457, #1463 and #1456 (generated
+  architecture docs only). Push CI run 41491211995 on `14b3ae92b` passed.
+  Push CI run 41497719707 on `f95d816d7` passed. Push CI run 41502127828
+  on `5ecd0e392` passed.
 - The release-prep PR needs green `Required / CI` on its head before merge.
 
 ## Acceptance environment
@@ -85,7 +89,7 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
 - macOS 26.5 arm64, Bun 1.4.3, Node 24.18.0.
 - `bun install --frozen-lockfile` in a fresh release worktree on
   `chore/release-0.25.1`.
-- Subject: base `f95d816d7` merged into the release-prep branch, with the
+- Subject: base `5ecd0e392` merged into the release-prep branch, with the
   version, changelog and filing edits of the release-prep PR.
 - `bun run check:release`: exit 0. `[helpers] projection OK`; expensive
   release lane `tests/harness-benchmark-matrix.test.ts` 31 pass, 0 fail;
@@ -99,6 +103,10 @@ The owner approved the 0.25.1 release after the gate (#1309). The owner runs
   that #1463 changes): 78 pass, 0 fail. The other results below are from the
   first subject on base `14b3ae92b`. #1463 changes only
   `scripts/report-ci.ts` and its test, so they still apply.
+- `check:release` ran again after the merge of `5ecd0e392`: exit 0,
+  `[release] OK`; expensive lane 31 pass, 0 fail; tarball smoke OK.
+  #1456 changes only `docs/architecture/.projection-manifest.json` and one
+  generated region of `global-runtime-reconciliation.md`.
 - Version-surface tests: `bun run test:files tests/skill-version.test.ts
   tests/installed-copy-sync.test.ts
   tests/operator-web/operator-architecture.test.tsx --timeout 60000
