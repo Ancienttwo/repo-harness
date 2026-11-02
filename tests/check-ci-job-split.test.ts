@@ -619,7 +619,7 @@ describe('single affected verification and daily fallback', () => {
     }
   });
 
-  test('platform triggers use bundle inputs, full test import closures and configured preloads', () => {
+  test('platform triggers use bundle inputs, full test import closures and configured preloads', async () => {
     const sources = new Map([
       ['tests/native.test.ts', "import './helpers/native'; import '../src/other';"],
       ['tests/helpers/native.ts', "import './nested';"], ['tests/helpers/nested.ts', 'export {};'],
@@ -635,7 +635,7 @@ describe('single affected verification and daily fallback', () => {
     for (const path of ['.github/actions/install/action.yml', 'package.json', 'bun.lock', 'bunfig.toml', 'tsconfig.json', 'scripts/check-ci.sh', 'scripts/lib/test-home-isolation.mjs', 'scripts/select-ci-coverage.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: true });
     }
-    for (const path of ['src/host.ts', 'src/host-dependency.ts', 'scripts/contract-worktree.sh', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
+    for (const path of ['src/host.ts', 'src/host-dependency.ts', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
     expect(selectPlatformCoverage(['.ai/harness/policy.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
@@ -645,17 +645,29 @@ describe('single affected verification and daily fallback', () => {
     }
     expect(selectPlatformCoverage(['src/nested.ts'], inputs)).toEqual({ native_oar: false, home_isolation: true });
     expect(selectPlatformCoverage(['tests/preload.ts'], inputs)).toEqual({ native_oar: true, home_isolation: true });
-    expect(selectPlatformCoverage(['docs/guide.md', 'plans/plan.md', 'src/unrelated.ts'], inputs)).toEqual({ native_oar: false, home_isolation: false });
+    expect(selectPlatformCoverage(['docs/guide.md', 'plans/plan.md', 'src/unrelated.ts', 'scripts/unrelated.sh'], inputs)).toEqual({ native_oar: false, home_isolation: false });
     expect(() => bundleInputPaths({ inputs: {} })).toThrow('missing');
     expect(() => bundleInputPaths({ inputs: { '../outside.ts': {} } })).toThrow('Invalid');
     expect(() => platformImportClosure(['tests/missing.ts'], sources)).toThrow('requires source');
     expect(() => platformImportClosure(['tests/broken.ts'], new Map([['tests/broken.ts', "import './missing';"]]))).toThrow('Unresolved');
-    expect(() => discoverPlatformInputs(new Map())).toThrow('Platform coverage requires');
-    expect(() => discoverPlatformInputs(new Map([
+    await expect(discoverPlatformInputs(new Map())).rejects.toThrow('Platform coverage requires');
+    await expect(discoverPlatformInputs(new Map([
       ['bunfig.toml', '[test]\npreload = ["./tests/preload.ts"]\n'],
       ['.github/workflows/ci.yml', 'jobs:\n  native-oar:\n    strategy:\n      matrix:\n        test: [tests/native.test.ts, scripts/native.ts]\n    steps:\n      - name: Run native OAR acceptance tests\n        run: bun run test:files "$TEST_FILE"\n'],
-    ]))).toThrow('Platform tests are missing');
+    ]))).rejects.toThrow('Platform tests are missing');
   });
+
+  test('every repository shell script that a native leg names is a native input', async () => {
+    const files = spawnSync('git', ['ls-files', '-z'], { cwd: ROOT, encoding: 'utf8' }).stdout.split('\0').filter(Boolean);
+    const sources = new Map(files.filter(file => existsSync(join(ROOT, file))).map(file => [file, readFileSync(join(ROOT, file), 'utf8')]));
+    const inputs = await discoverPlatformInputs(sources, ROOT);
+    const job = workflow.jobs['native-oar'];
+    const named = [job.steps.find((step: any) => step.name === 'Run native OAR acceptance tests').run, ...job.strategy.matrix.test.map((leg: string) => sources.get(leg)!)]
+      .flatMap(text => text.match(/[\w./-]+\.sh\b/g) ?? []).filter(path => sources.has(path));
+    expect(named).toContain('scripts/contract-worktree.sh');
+    for (const path of named) expect([path, inputs.native.has(path)]).toEqual([path, true]);
+    expect(selectPlatformCoverage(['scripts/contract-worktree.sh'], inputs).native_oar).toBe(true);
+  }, 120000);
 
   test('separate platform jobs run on their trigger flags and keep exact candidate checks', () => {
     const home = workflow.jobs['home-isolation'];
