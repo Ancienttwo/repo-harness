@@ -24,6 +24,7 @@ source:
     - "src/effects/admission/control-admission.ts"
   exclude:
     - "src/core/review/module-review-prompt.ts"
+    - "src/effects/review/docs-host-isolation.ts"
   entrypoints:
     - id: "entrypoint.acceptance-review.primary"
       path: "src/cli/commands/review.ts"
