@@ -8,13 +8,12 @@ import type {
   McpAuditProjection,
   RegistryRepoProjection,
 } from '../core/operator/bot-access';
-import { NOTIFY_CHANNELS, type NotifyDeliveryState, type NotifyDeliveryV1 } from '../core/operator/notify-status';
+import { NOTIFY_CHANNELS, NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyDeliveryState, type NotifyDeliveryV1 } from '../core/operator/notify-status';
 import type { SlackReviewReason, SlackReviewState, SlackReviewThreadV1 } from '../core/operator/slack-review';
 import {
   botLabel,
   MCP_ACCESS_COMMAND,
   MCP_DOCTOR_COMMAND,
-  notifyInstallCommand,
   type BotAccessReason,
   type BotAccessView,
   type BotLabel,
@@ -152,7 +151,7 @@ function McpSection({ snapshot, now, t }: { readonly snapshot: Snapshot; readonl
 
 // --- Notify ---
 
-const DELIVERY_TONE: Readonly<Record<NotifyDeliveryState, DotTone>> = { succeeded: 'ok', failed: 'danger', unsupported: 'warn', unavailable: 'unknown', missing: 'neutral' };
+const DELIVERY_TONE: Readonly<Record<NotifyDeliveryState, DotTone>> = { succeeded: 'ok', failed: 'danger', unavailable: 'unknown', missing: 'neutral' };
 
 function Delivery({ delivery, now, t }: { readonly delivery: NotifyDeliveryV1; readonly now: number; readonly t: OperatorTranslate }) {
   return (
@@ -166,19 +165,16 @@ function Delivery({ delivery, now, t }: { readonly delivery: NotifyDeliveryV1; r
 
 function NotifySection({ snapshot, now, t }: { readonly snapshot: Snapshot; readonly now: number; readonly t: OperatorTranslate }) {
   const { notify } = snapshot;
-  const session = snapshot.herdr.state === 'ok' ? snapshot.herdr.session : null;
-  const enabled = notify.state === 'ok' && notify.status.linked === 'linked' && notify.status.enabled === 'enabled';
-  const install = notify.state === 'ok' ? !enabled : notify.reason === 'notify_session_missing' || notify.reason === 'notify_session_invalid';
+  const reason = notify.state === 'unavailable' ? notify.reason : null;
+  const command = reason === 'relay_stopped' ? NOTIFY_START_COMMAND
+    : reason === 'notify_session_missing' || reason === 'notify_session_invalid' ? NOTIFY_INSTALL_COMMAND : null;
   return (
     <Card section="notify">
       <SectionTitle id="bots-notify-heading"><BellIcon size={16} aria-hidden="true" />{t('bots.notify.title')}</SectionTitle>
       {notify.state === 'unavailable'
-        ? <Line tone={notify.reason === 'notify_status_pending' ? 'unknown' : 'danger'} data-notify={notify.reason}>{t(`bots.notify.reason.${notify.reason}`)}</Line>
+        ? <Line tone={notify.reason === 'notify_status_pending' ? 'unknown' : notify.reason === 'relay_stopped' ? 'warn' : 'danger'} data-notify={notify.reason}>{t(`bots.notify.reason.${notify.reason}`)}</Line>
         : <>
-          <Line tone={enabled ? 'ok' : 'warn'} data-notify={enabled ? 'enabled' : 'off'}>
-            {enabled ? t('bots.notify.enabled')
-              : t('bots.notify.off', { link: t(`notify.link.${notify.status.linked}`), state: t(`notify.enable.${notify.status.enabled}`) })}
-          </Line>
+          <Line tone="ok" data-notify="live">{t('bots.notify.relay')}</Line>
           <ul className={ROWS}>
             {NOTIFY_CHANNELS.map(channel => {
               const configured = notify.channels[channel] === 'configured';
@@ -195,7 +191,7 @@ function NotifySection({ snapshot, now, t }: { readonly snapshot: Snapshot; read
             })}
           </ul>
         </>}
-      {install && <CommandLine command={notifyInstallCommand(session)} t={t} className="max-w-full md:max-w-3xl" />}
+      {command && <CommandLine command={command} t={t} className="max-w-full md:max-w-3xl" />}
     </Card>
   );
 }
@@ -272,7 +268,7 @@ function HerdrSection({ snapshot, t }: { readonly snapshot: Snapshot; readonly t
       <SectionTitle id="bots-herdr-heading"><SquaresFourIcon size={16} aria-hidden="true" />{t('bots.herdr.title')}</SectionTitle>
       {herdr.state === 'unavailable' ? <>
         <Line tone="warn" data-herdr-server={herdr.reason}>{t(`bots.herdr.reason.${herdr.reason}`)}</Line>
-        <CommandLine command={notifyInstallCommand(null)} t={t} className="max-w-full md:max-w-3xl" />
+        <CommandLine command={NOTIFY_INSTALL_COMMAND} t={t} className="max-w-full md:max-w-3xl" />
       </> : <>
         <HerdrServer session={herdr.session} status={herdr.status} t={t} />
         <HerdrPanes snapshot={snapshot} panes={herdr.snapshot} t={t} />

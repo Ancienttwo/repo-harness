@@ -2,8 +2,9 @@ import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun, type HerdrCoreOptions } f
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
 import { NOTIFY_SECRET_KEYS, renderNotifyConfig, runNotifyRelay, type NotifyConfig } from '../../effects/terminal/notify-relay.ts';
+import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/operator/notify-status.ts';
 import { Command } from 'commander';
-import { rmSync } from 'node:fs';
+import { existsSync, rmSync } from 'node:fs';
 import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -76,6 +77,20 @@ function liveRelays(options: HerdrCoreOptions) {
   catch { throw new Error('hc did not list its terminals. Check that the hc core runs.'); }
 }
 
+/** Start the relay terminal unless one is live, then write the install record. The config must already exist. */
+function startRelay(hc: HerdrCoreOptions, running: readonly unknown[]): void {
+  if (!running.length) {
+    try {
+      // An hc terminal starts with the core's environment, not the caller's, so the home travels in argv.
+      hcRun({ argv: [process.execPath, CLI_ENTRY, 'herdr', 'notify', 'relay', '--home', repoHarnessHome()],
+        labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true }, hc);
+    } catch { throw new Error(`hc did not start the relay terminal. The config is written. Run: ${NOTIFY_START_COMMAND}`); }
+  }
+  // Last step: the operator reads the relay identity only from this record.
+  try { writeNotifyInstallRecord(); }
+  catch { throw new Error(`The relay runs, but the install record was not written. Run: ${NOTIFY_START_COMMAND}`); }
+}
+
 export async function installNotify(options: NotifyOptions): Promise<void> {
   if (process.platform === 'win32') throw new Error('Herdr notify needs POSIX file permissions.');
   const values: Record<string, string> = {
@@ -109,17 +124,17 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   const running = liveRelays(hc);
   // The relay reads the config on each event, so a live relay takes the new config without a restart.
   writePrivateFile(notifyConfigPath(), renderNotifyConfig(config));
-  if (!running.length) {
-    try {
-      // An hc terminal starts with the core's environment, not the caller's, so the home travels in argv.
-      hcRun({ argv: [process.execPath, CLI_ENTRY, 'herdr', 'notify', 'relay', '--home', repoHarnessHome()],
-        labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true }, hc);
-    } catch { throw new Error('hc did not start the relay terminal. The config is written. Run install again.'); }
-  }
-  // Last step: the operator reads the relay identity only from this record.
-  try { writeNotifyInstallRecord(); }
-  catch { throw new Error('The relay runs, but the install record was not written. Run: repo-harness herdr notify install'); }
+  startRelay(hc, running);
   process.stdout.write(`Herdr notify is installed. Relay terminal: ${RH_NOTIFY_RELAY.name}. Default events: blocked.\n`);
+}
+
+/** The one manual restart: the relay never restarts itself (no launchd or systemd unit). */
+export function startNotify(): void {
+  if (!existsSync(notifyConfigPath())) throw new Error(`No notify config. Run: ${NOTIFY_INSTALL_COMMAND}`);
+  const hc = hcOptions();
+  const running = liveRelays(hc);
+  startRelay(hc, running);
+  process.stdout.write(running.length ? `Relay terminal ${RH_NOTIFY_RELAY.name} already runs.\n` : `Relay terminal ${RH_NOTIFY_RELAY.name} started.\n`);
 }
 
 /** Stop and remove every relay terminal, then remove the notify files. A failed hc call keeps the files. */
@@ -156,6 +171,14 @@ export function buildHerdrCommand(): Command {
         process.stderr.write(`Herdr notify: ${message}\n`); process.exitCode = 1;
       }
     });
+  notify.command('start').description('Start the relay terminal again with the written config')
+    .action(() => {
+      try { startNotify(); }
+      catch (error) {
+        const message = error instanceof Error && !('code' in error) ? error.message : 'Cannot read the notify config.';
+        process.stderr.write(`Herdr notify: ${message}\n`); process.exitCode = 1;
+      }
+    });
   notify.command('uninstall').description('Stop the relay terminal and remove the notify config')
     .action(() => {
       try { uninstallNotify(); }
@@ -169,7 +192,7 @@ export function buildHerdrCommand(): Command {
     .action(async (options: { home: string }) => {
       if (!isAbsolute(options.home)) { process.stderr.write('[notify-relay] --home must be an absolute path.\n'); process.exitCode = 1; return; }
       try { await runNotifyRelay({ env: { ...process.env, REPO_HARNESS_HOME: options.home } }); }
-      catch { process.stderr.write('[notify-relay] The hc event stream ended. Run: repo-harness herdr notify install\n'); process.exitCode = 1; }
+      catch { process.stderr.write(`[notify-relay] The hc event stream ended. Run: ${NOTIFY_START_COMMAND}\n`); process.exitCode = 1; }
     });
   return command;
 }

@@ -2,7 +2,7 @@
 // projection, none holds a token, passphrase, webhook URL or local path.
 import type { BotAccessSnapshotV1 } from '../../core/operator/bot-access';
 import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from '../../core/operator/herdr-pin';
-import { NOTIFY_PLUGIN_ID, type NotifyDeliveryV1, type NotifyStatusV1 } from '../../core/operator/notify-status';
+import type { NotifyDeliveryV1, NotifyStatusV1 } from '../../core/operator/notify-status';
 import { slackTsToIso, type SlackReviewsSnapshotV1, type SlackReviewThreadV1 } from '../../core/operator/slack-review';
 import { HARNESS_ID } from './dev-activity';
 
@@ -18,9 +18,9 @@ const at = (time: number) => new Date(time).toISOString();
 const EXPECTED = { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION };
 const REGISTRY_REVISION = `sha256:${'4c'.repeat(32)}`;
 
-function notifyStatus(now: number, enabled: NotifyStatusV1['enabled'], last: NotifyDeliveryV1): NotifyStatusV1 {
+function notifyStatus(now: number, last: NotifyDeliveryV1): NotifyStatusV1 {
   return {
-    protocol: 1, kind: 'operator_notify_status', plugin_id: NOTIFY_PLUGIN_ID, linked: 'linked', enabled,
+    protocol: 2, kind: 'operator_notify_status', relay: 'live',
     config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' },
     last_delivery: last, observed_at: at(now - 30_000),
   };
@@ -60,7 +60,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
       ] } },
     },
     notify: {
-      state: 'ok', status: notifyStatus(now, 'enabled', { at: sent, result: 'failed' }),
+      state: 'ok', status: notifyStatus(now, { at: sent, result: 'failed' }),
       channels: { webhook: 'configured', slack: 'configured', discord: 'missing', telegram: 'missing' },
       deliveries: { webhook: { at: sent, result: 'succeeded' }, slack: { at: sent, result: 'failed' }, discord: { at: null, result: 'missing' }, telegram: { at: null, result: 'missing' } },
     },
@@ -89,11 +89,8 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
       } },
       snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' },
     },
-    notify: {
-      state: 'ok', status: notifyStatus(now, 'disabled', { at: at(now - 2 * DAY), result: 'failed' }),
-      channels: { webhook: 'configured', slack: 'configured', discord: 'missing', telegram: 'missing' },
-      deliveries: { webhook: { at: at(now - 2 * DAY), result: 'failed' }, slack: { at: at(now - 3 * DAY), result: 'unsupported' }, discord: { at: null, result: 'missing' }, telegram: { at: null, result: 'missing' } },
-    },
+    // The relay terminal has ended: notices are paused until the manual restart command runs.
+    notify: { state: 'unavailable', reason: 'relay_stopped' },
   };
 }
 

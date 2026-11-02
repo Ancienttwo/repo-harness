@@ -155,7 +155,7 @@ describe('Bots page', () => {
   test('1-BOTS-P1 notify lists every channel with its newest delivery; herdr lists each agent pane with its Bot', async () => {
     await mount('#bots', props(serve(ok(busyBotAccess(NOW)))));
     const notify = section('notify');
-    expect(notify.querySelector('[data-notify]')?.getAttribute('data-notify')).toBe('enabled');
+    expect(notify.querySelector('[data-notify]')?.getAttribute('data-notify')).toBe('live');
     expect(all('[data-notify-channel]', notify).map(row => [row.getAttribute('data-notify-channel'), row.getAttribute('data-configured'), row.getAttribute('data-delivery')])).toEqual([
       ['webhook', 'true', 'succeeded'], ['slack', 'true', 'failed'], ['discord', 'false', 'missing'], ['telegram', 'false', 'missing'],
     ]);
@@ -236,7 +236,7 @@ describe('Bots page', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('degraded sections each say what failed: a failed mcp doctor gives its command, Bot unknown is not unregistered, and a disabled plugin gives the install command for its session', async () => {
+  test('degraded sections each say what failed: a failed mcp doctor gives its command, Bot unknown is not unregistered, and a stopped relay gives the one restart command', async () => {
     await mount('#bots', props(serve(ok(degradedBotAccess(NOW)))));
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.textContent).toBe('mcp doctor timed out.');
@@ -247,14 +247,16 @@ describe('Bots page', () => {
     expect(all('[data-last-call]', mcp).map(call => call.getAttribute('data-last-call'))).toEqual(['audit_unreadable', 'failed']);
     expect(all('[data-last-call="failed"] [data-bot]', mcp).map(name => name.textContent)).toEqual(['Bot unknown']);
     const notify = section('notify');
-    expect(notify.querySelector('[data-notify]')?.textContent).toBe('Notify plugin is off (install link: linked, plugin: disabled)');
-    expect(commands(notify)).toEqual(['repo-harness herdr notify install --session main']);
+    expect(notify.querySelector('[data-notify]')?.getAttribute('data-notify')).toBe('relay_stopped');
+    expect(notify.querySelector('[data-notify]')?.textContent).toBe('Notifications are paused. Start the relay again in a terminal:');
+    expect(commands(notify)).toEqual(['repo-harness herdr notify start']);
+    expect(all('[data-notify-channel]', notify)).toEqual([]);
 
-    // Without an install record the session is unknown, so the command keeps its placeholder.
+    // Without an install record the relay is not installed, so the command is install.
     const fresh = busyBotAccess(NOW);
     await remount('#bots', props(serve(ok({ ...fresh, herdr: { state: 'unavailable', reason: 'notify_session_missing' }, notify: { state: 'unavailable', reason: 'notify_session_missing' } }))));
-    expect(commands(section('notify'))).toEqual(['repo-harness herdr notify install --session <session>']);
-    expect(commands(section('herdr'))).toEqual(['repo-harness herdr notify install --session <session>']);
+    expect(commands(section('notify'))).toEqual(['repo-harness herdr notify install']);
+    expect(commands(section('herdr'))).toEqual(['repo-harness herdr notify install']);
     expect(section('herdr').querySelector('[data-herdr-server]')?.getAttribute('data-herdr-server')).toBe('notify_session_missing');
   });
 

@@ -7,6 +7,7 @@ import { parseEnv } from 'node:util';
 import { NAME_PATTERN, botEvent } from '../../../assets/herdr/github-events/bot-event.mjs';
 import {
   EMPTY_RELAY_DELIVERIES,
+  NOTIFY_INSTALL_COMMAND,
   NOTIFY_CHANNELS,
   decodeRelayDeliveries,
   type NotifyChannel,
@@ -112,8 +113,8 @@ export function createNotifyRelay(deps: NotifyRelayDeps): { readonly handle: (it
     let config;
     try { config = await readNotifyConfig(deps.env); }
     catch { log('Cannot read the notify config.'); return; }
-    if (config === null) { log('No notify config. Run repo-harness herdr notify install.'); return; }
-    if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) { log('The notify config has no Bot webhook. Run repo-harness herdr notify install.'); return; }
+    if (config === null) { log(`No notify config. Run: ${NOTIFY_INSTALL_COMMAND}`); return; }
+    if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) { log(`The notify config has no Bot webhook. Run: ${NOTIFY_INSTALL_COMMAND}`); return; }
     const facts = terminals.get(address) ?? { name: null, labels: {}, app: null, kind: null };
     const at = now();
     const task = label(facts.labels, RH_LABEL.task, ID_PATTERN);

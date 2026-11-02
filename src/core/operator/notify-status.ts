@@ -1,3 +1,8 @@
+/** Writes the config and starts the relay; the operator shows it when no install record exists. */
+export const NOTIFY_INSTALL_COMMAND = 'repo-harness herdr notify install';
+/** The one manual command that starts the relay terminal again; the relay never restarts itself. */
+export const NOTIFY_START_COMMAND = 'repo-harness herdr notify start';
+
 export const NOTIFY_STATUS_KEYS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL'] as const;
 
 export type NotifyConfigKey = typeof NOTIFY_STATUS_KEYS[number];

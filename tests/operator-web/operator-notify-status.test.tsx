@@ -28,7 +28,7 @@ beforeEach(() => {
 describe('notify plugin status panel', () => {
   test('renders presence and the last delivery', () => {
     const markup = renderToStaticMarkup(<NotifyStatusPanel initialStatus={status} t={t} />);
-    expect(markup).toContain('Notify plugin');
+    expect(markup).toContain('Notify relay');
     expect(markup).toContain('WEBHOOK_URL');
     expect(markup).toContain('configured');
     expect(markup).toContain('SLACK_WEBHOOK_URL');

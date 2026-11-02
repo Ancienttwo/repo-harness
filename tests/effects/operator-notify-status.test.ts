@@ -197,7 +197,7 @@ describe('notify relay status', () => {
         for (const channel of ['webhook', 'slack', 'discord', 'telegram'] as const) expect(unreadable.deliveries[channel]).toEqual({ at: null, result: 'unavailable' });
       }
       expect(renderToStaticMarkup(createElement(NotifyStatusPanel, { initialStatus: (await readNotifyChannelStatus({ env: f.env })).status, t: key => translate('en', key) })))
-        .toContain('delivery log unavailable');
+        .toContain('delivery record unavailable');
     } finally { f.cleanup(); }
   });
 

@@ -110,5 +110,3 @@ export function botLabel(snapshot: BotAccessSnapshotV1, bot: BotAttribution): Bo
 export const MCP_DOCTOR_COMMAND = 'repo-harness mcp doctor';
 /** `--repo` takes the repository's local path, which the page never shows, so the path stays a placeholder. */
 export const MCP_ACCESS_COMMAND = 'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write';
-/** `herdr notify install` needs the session; without an install record the session is unknown. */
-export const notifyInstallCommand = (session: string | null): string => `repo-harness herdr notify install --session ${session ?? '<session>'}`;

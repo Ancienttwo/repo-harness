@@ -192,11 +192,11 @@ import { appendFileSync } from 'node:fs';
 const argv = process.argv.slice(2);
 appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ argv, secret: process.env.WEBHOOK_KEY ?? null }) + '\\n');
 const mode = process.env.FIXTURE_HC ?? 'none';
-const relay = { address: 't5', name: 'rh-notify-relay', state: 'live' };
+const relay = { address: 't5', name: 'rh-notify-relay', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: null, turn: 0 };
 if (mode === 'fail') { process.stderr.write(JSON.stringify({ error: { kind: 'unavailable', message: 'private ' + process.env.FIXTURE_PRIVATE } })); process.exit(1); }
 if (argv[0] === 'ls') console.log(JSON.stringify({ terminals: mode === 'live' ? [relay] : [] }));
-else if (argv[0] === 'run') console.log(JSON.stringify(relay));
-else if (argv[0] === 'kill') console.log(JSON.stringify({ ...relay, state: 'finished', labels: {}, status: null, turn: 0 }));
+else if (argv[0] === 'run' || argv[0] === 'get') console.log(JSON.stringify(relay));
+else if (argv[0] === 'kill') console.log(JSON.stringify({ ...relay, state: 'finished' }));
 else if (argv[0] === 'rm') console.log(JSON.stringify({ removed: 't5' }));
 else process.exit(2);
 `);
@@ -258,6 +258,26 @@ describe('herdr notify install and uninstall', () => {
     } finally { f.cleanup(); }
   });
 
+  test('start needs a written config and starts a relay only when none is live', () => {
+    const f = cliFixture();
+    try {
+      const missing = f.cli(['start']);
+      expect(missing.status).toBe(1);
+      expect(missing.stderr).toBe('Herdr notify: No notify config. Run: repo-harness herdr notify install\n');
+      expect(f.calls()).toEqual([]);
+      expect(f.cli(['install', ...botFlags]).status).toBe(0);
+      rmSync(notifyInstallRecordPath(f.env));
+      const started = f.cli(['start']);
+      expect(started.status, started.stderr).toBe(0);
+      expect(started.stdout).toBe('Relay terminal rh-notify-relay started.\n');
+      expect(f.calls().slice(2).map(call => call.argv[0])).toEqual(['ls', 'run']);
+      expect(existsSync(notifyInstallRecordPath(f.env))).toBe(true);
+      const live = f.cli(['start'], { FIXTURE_HC: 'live' });
+      expect(live.stdout).toBe('Relay terminal rh-notify-relay already runs.\n');
+      expect(f.calls().slice(4).map(call => call.argv[0])).toEqual(['ls']);
+    } finally { f.cleanup(); }
+  });
+
   test('uninstall stops and removes the relay terminal, then the notify files; an hc failure keeps them', () => {
     const f = cliFixture();
     try {
@@ -268,8 +288,9 @@ describe('herdr notify install and uninstall', () => {
       expect(existsSync(notifyConfigPath(f.env))).toBe(true);
       const removed = f.cli(['uninstall'], { FIXTURE_HC: 'live' });
       expect(removed.status, removed.stderr).toBe(0);
-      expect(f.calls().slice(-3).map(call => call.argv)).toEqual([
-        ['ls', '--json', '--label', 'repo-harness.role=notify-relay'], ['kill', '--json', '--', 't5'], ['rm', '--json', '--', 't5']]);
+      expect(f.calls().slice(-5).map(call => call.argv)).toEqual([
+        ['ls', '--json', '--label', 'repo-harness.role=notify-relay'], ['get', '--json', '--', 't5'], ['kill', '--json', '--', 't5'],
+        ['get', '--json', '--', 't5'], ['rm', '--json', '--', 't5']]);
       for (const path of [notifyConfigPath(f.env), notifyInstallRecordPath(f.env), notifyDeliveriesPath(f.env)]) expect(existsSync(path)).toBe(false);
     } finally { f.cleanup(); }
   });
