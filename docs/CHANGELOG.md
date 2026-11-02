@@ -4,6 +4,18 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- Task sessions run in herdr-core terminals, not in classic Herdr panes.
+  `hc run --no-parent` starts each session with the `repo-harness.role=task-session`
+  labels. hc `get`, `send`, `kill` and `rm` observe, message and end it. An
+  endpoint is now `{"socket":"<hc core socket>","home":"<HOME>"}` with a
+  `parent_terminal`, for `contract-worktree start --herdr-endpoint` and
+  `review round --herdr-endpoint`. A classic task binding, start intent or
+  workspace record fails with `task_agent_classic_herdr_record_retired`.
+  Archive the record and start the session again. No migration command
+  exists. (#1476)
+
 ### Fixed
 
 - `repo-harness update` prints the leftover summary line that the installed
