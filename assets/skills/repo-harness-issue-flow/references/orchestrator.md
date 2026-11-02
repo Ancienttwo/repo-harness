@@ -54,9 +54,11 @@ Make one child issue for each pair of module and observable outcome.
   issue says so. It then stacks on the producer's PR branch and stays
   draft until the producer merges (see `board.md`). Early start is what
   lets three workers run at once on a chain of dependent modules.
-- **Reviewable size.** One PR, about 10 implementation files or fewer. A
-  larger issue becomes a parent issue with its own children, or one issue
-  with numbered PRs (PR-1a, PR-1b) that the issue names in advance.
+- **Reviewable size.** One PR, about 10 implementation files or fewer,
+  with one concern and one module when possible. A larger issue becomes a
+  parent issue with its own children, or one issue with numbered PRs
+  (PR-1a, PR-1b) that the issue names in advance. Split before
+  acceptance, not after.
 - **Order.** Contract and types → core logic → effects and adapters →
   CLI or server → UI → docs and map. Deletion of the old path goes with
   the change that replaces it, never as "cleanup later".
@@ -192,9 +194,27 @@ module is in the title so that a list view shows the write scopes.
 Follow the PR and the issue comments. Do not poll CI with sleeps. Use the
 host's PR events or check when the worker reports.
 
+- **Draft PR.** A writer keeps its PR draft until its verification
+  evidence exists. Do not follow CI on a draft push by push. Act on the
+  worker's `ready for review` notice (§8.1).
+- **Frontier.** Work on the lowest unmerged PR in the parent's merge order
+  first. Do not spend fix or review rounds on a PR above a red PR in the
+  same chain.
+- **Low and docs-only PR.** Read the status and report it. Do not push fix
+  rounds of your own. The Low accept-seat skip
+  (`docs/reference-configs/agentic-development-flow.md`, Review by risk)
+  sets its review.
 - **CI red.** The worker owns the fix. Send the failing job name and the
   log excerpt to that worker, because it has the context. Allow one rerun
-  for a known flake.
+  for a known flake. A second identical failure is not a flake. Classify
+  it once, as the diff, the infrastructure or a stale base, and act on
+  that class: the worker fixes the diff, the owner gets the infrastructure
+  failure, and a stale base gets a sync with main. Do not rerun the job
+  again.
+- **Uncovered path.** A CI selection failure `Affected coverage is unknown
+  for: <paths>` is a map bug. The worker fixes the consumer edge
+  (`scripts/ci-path-consumers.ts`) or the test import. Never widen to the
+  full suite unless a real full-suite input changed.
 - **Boundary question.** Decide fast. Either amend the issue (edit the body
   and post a `scope change` comment that says what changed and why), or
   open a new issue for the extra work and keep the PR narrow. Never let the
