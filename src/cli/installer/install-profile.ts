@@ -879,6 +879,8 @@ export function rollbackInstallHostTransaction(
           restoreGlobalConfiguration(snapshot.path, snapshot.existed && snapshot.backup_path !== null ? readFileSync(snapshot.backup_path) : null, context);
           continue;
         }
+        // A path under a regular file cannot exist, so an absent snapshot there is already restored.
+        if (!snapshot.existed && lstatSync(dirname(snapshot.path), { throwIfNoEntry: false })?.isFile()) continue;
         rmSync(snapshot.path, { recursive: true, force: true });
         if (snapshot.existed && snapshot.backup_path !== null) {
           mkdirSync(dirname(snapshot.path), { recursive: true });

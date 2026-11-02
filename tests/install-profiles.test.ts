@@ -1013,6 +1013,17 @@ describe('install profiles', () => {
     for (const root of ['.agents', '.codex']) expect(existsSync(join(env.HOME!, root, 'rules'))).toBe(false);
   }), 30_000);
 
+  test('a regular file at the staging rules path gives the JSON failure and restores HOME', () => withHome((env) => {
+    const staging = join(env.HOME!, '.agents', 'rules');
+    writePath(staging, 'not a directory\n');
+    const failed = installWithFreshRules(env);
+    expect(failed.status).not.toBe(0);
+    expect(failed.rules).toMatchObject({ status: 'failed', detail: expect.stringContaining('ENOTDIR') });
+    expect(readFileSync(staging, 'utf-8')).toBe('not a directory\n');
+    expect(readInstalledProfile(env)).toBeNull();
+    expect(existsSync(join(env.HOME!, '.codex', 'rules'))).toBe(false);
+  }), 30_000);
+
   test('a fresh rule refresh keeps a locally edited owned host rule', () => withHome((env) => {
     expect(installWithFreshRules(env).status).toBe(0);
     const english = join(env.HOME!, '.codex', 'rules', 'english.md');
