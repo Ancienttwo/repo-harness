@@ -546,8 +546,8 @@ describe("install-agent-fleet", () => {
     try {
       cpSync(FLEET_SOURCE_DIR, badSourceDir, { recursive: true });
       const source = readFileSync(join(badSourceDir, "orchestrator.md"), "utf-8");
-      expect(source).toContain("Opus at xhigh effort");
-      writeFileSync(join(badSourceDir, "orchestrator.md"), source.replace("Opus at xhigh effort", "Opus at high effort"));
+      expect(source).toContain("Opus at high effort");
+      writeFileSync(join(badSourceDir, "orchestrator.md"), source.replace("Opus at high effort", "Opus at xhigh effort"));
 
       const res = runInstaller(home, badSourceDir);
       expect(res.status).not.toBe(0);

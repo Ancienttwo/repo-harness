@@ -67,7 +67,7 @@ const FLEET: readonly (Omit<SetupFleetRole, 'hosts'>)[] = [
   { name: 'fast-worker', model: 'sonnet', effort: 'high', description: 'Fast execution worker on Sonnet at high effort.' },
   { name: 'gatekeeper', model: 'opus', effort: 'high', description: 'Read-only acceptance reviewer on Opus at high effort.' },
   { name: 'harness-evaluator', model: 'opus', effort: 'high', description: 'Disposable-state harness behavior evaluator on Opus at high effort.' },
-  { name: 'orchestrator', model: 'opus', effort: 'xhigh', description: 'Dispatch-only issue-flow coordinator on Opus at xhigh effort, run as a Claude long-lived session.' },
+  { name: 'orchestrator', model: 'opus', effort: 'high', description: 'Dispatch-only issue-flow coordinator on Opus at high effort, run as a Claude long-lived session.' },
   { name: 'root-cause-prover', model: 'opus', effort: 'xhigh', description: 'Bugfix diagnosis specialist on Opus at xhigh effort.' },
 ];
 
