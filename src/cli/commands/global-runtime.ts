@@ -936,6 +936,26 @@ function installAgentFleet(sourceRoot: string, bunExecutable: string, env: NodeJ
   );
 }
 
+const WAZA_RULES_STEP = "sync Waza shared rules";
+
+/**
+ * The Skills CLI never writes ~/.agents/rules, so the setup step skips the
+ * rules on a fresh install. The refresh path needs an installed profile to own
+ * new rules. An install therefore runs it once after its profile state write.
+ */
+export function ownFreshWazaSharedRules(
+  result: GlobalRuntimeResult,
+  target: InstallTargetSpec,
+  env: NodeJS.ProcessEnv,
+): GlobalRuntimeResult {
+  const index = result.steps.findIndex((step) => step.step === WAZA_RULES_STEP);
+  const wazaInstalled = result.steps.some((step) => step.step === externalSkillStepName("tw93/Waza") && step.status === "ok");
+  const home = homeDir(env);
+  if (index < 0 || !wazaInstalled || existsSync(join(home, ".agents", "rules"))) return result;
+  const owned: GlobalRuntimeStep = { step: WAZA_RULES_STEP, ...syncWazaSharedRules(home, hostIds(target), env, true) };
+  return finalizeRuntimeResult(result.steps.map((step, i) => (i === index ? owned : step)));
+}
+
 /** True only when this run's fleet helper verified every agent target (see applyInstallProfile). */
 export function agentFleetVerified(result: Pick<GlobalRuntimeResult, 'steps'>): boolean {
   return result.steps.some((step) => step.step === AGENT_FLEET_STEP && step.status === 'ok');
@@ -1549,8 +1569,8 @@ export function runGlobalRuntimeSetup(
     steps.push(waza);
     if (waza.status === "failed") return finalizeRuntimeResult(steps);
     steps.push(waza.status === "ok"
-      ? { step: "sync Waza shared rules", ...syncWazaSharedRules(homeDir(env), hostIds(target), env, updateMode) }
-      : { step: "sync Waza shared rules", status: "skipped", detail: "Waza install failed" });
+      ? { step: WAZA_RULES_STEP, ...syncWazaSharedRules(homeDir(env), hostIds(target), env, updateMode) }
+      : { step: WAZA_RULES_STEP, status: "skipped", detail: "Waza install failed" });
     if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
     const mermaid = installMermaidSkill(sourceRoot, target, env, updateMode);
     steps.push(mermaid);

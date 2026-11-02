@@ -60,6 +60,7 @@ import {
   MIN_BUN_VERSION,
   agentFleetVerified,
   bunVersionIsSupported,
+  ownFreshWazaSharedRules,
   runGlobalRuntimeSetup,
   type GlobalRuntimePorts,
   updateLeftoverSummary,
@@ -264,10 +265,13 @@ function runTransactionalProfileProjection(
       return { result, state: null };
     }
     try {
-      const state = commitState(transaction, migrationSource, result);
+      commitState(transaction, migrationSource, result);
+      const owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv);
+      if (owned.exitCode !== 0) throw new Error(`install profile ${profile} failed: ${owned.lines.join('; ')}`);
+      const state = readInstalledProfile(transactionEnv)!;
       captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
       commitInstallHostTransaction(transaction);
-      return { result, state };
+      return { result: owned, state };
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
       throw error;
