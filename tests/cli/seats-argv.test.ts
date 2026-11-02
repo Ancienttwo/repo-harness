@@ -62,6 +62,7 @@ describe("repo-harness seats argv", () => {
       expect(worker.argv).toEqual(["pi", "--append-system-prompt", worker.brief]);
       expect(worker.brief).toContain("You have no sub-agents.");
       expect(worker.limits).toContainEqual({ subject: "gh", level: "instructions_only" });
+      expect(worker.brief).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the network. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
     });
   });
 
@@ -84,7 +85,7 @@ describe("repo-harness seats argv", () => {
       const instructions = args.at(-1)!;
       expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "-c"]);
       expect(instructions).toStartWith('developer_instructions="You are a worker seat.');
-      expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain("Keep them yourself. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
+      expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
       expect(result.stderr).toContain("limit fleet: instructions_only (written into the launch instructions only)");
       expect(result.stderr).toContain("limit mcp: instructions_only (written into the launch instructions only)");
     });

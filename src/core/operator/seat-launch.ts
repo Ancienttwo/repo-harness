@@ -103,9 +103,14 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
   ];
 }
 
+const KEEP_YOURSELF = {
+  common_commands: 'The host refuses only common commands for these limits. Keep them yourself.',
+  instructions_only: 'These limits are instructions only; the host does not enforce them. Keep them yourself.',
+} as const;
+
 /** `fleet` is the list that the brief names: Pi has no sub-agents, whatever the stored list holds. */
-function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], selfKept: readonly string[]): string {
-  const limits = selfKept.length === 0 ? [] : [`The host enforces these limits only in part or not at all. Keep them yourself. ${selfKept.join(' ')}`];
+function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], selfKept: readonly string[], level: keyof typeof KEEP_YOURSELF): string {
+  const limits = selfKept.length === 0 ? [] : [`${KEEP_YOURSELF[level]} ${selfKept.join(' ')}`];
   return [...roleParagraphs(seat, config, fleet), ...limits].join('\n\n');
 }
 
@@ -118,7 +123,7 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
   // A plain session has no Glob, Grep or task tools; naming one of each in --allowedTools turns its set on.
   const allowed = ['Glob', 'Grep', ...(config.tools.includes('tasks') ? CLAUDE_TASK_TOOLS : [])];
   const softGroups = off.filter(group => CLAUDE_DENIED_TOOLS[group].level === 'common_commands').map(group => GROUP_TEXT[group]);
-  const text = brief(seat, config, config.fleet, softGroups);
+  const text = brief(seat, config, config.fleet, softGroups, 'common_commands');
   return {
     argv: [
       ...(seat === 'orchestrator' && config.tools.includes('tasks') ? ['env', `CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
@@ -142,7 +147,7 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
   const writable = config.tools.includes('edit');
   // The sandbox mode enforces `edit`; `network_access=false` or the read-only sandbox enforces `net`.
   const instructed: readonly SeatGroup[] = off.filter(group => group !== 'edit' && group !== 'net');
-  const text = brief(seat, config, config.fleet, instructed.map(group => GROUP_TEXT[group]));
+  const text = brief(seat, config, config.fleet, instructed.map(group => GROUP_TEXT[group]), 'instructions_only');
   const limits: SeatLimitV1[] = off.map(group => ({ subject: group, level: instructed.includes(group) ? 'instructions_only' : 'enforced' }));
   // The read-only sandbox has no network access, whatever the seat's net group says (codex sandbox probe, #1473).
   if (!writable && config.tools.includes('net')) limits.push({ subject: 'net', level: 'unavailable' });
@@ -164,7 +169,7 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
 
 function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const off = OFF_GROUPS(config);
-  const text = brief(seat, config, [], off.map(group => GROUP_TEXT[group]));
+  const text = brief(seat, config, [], off.map(group => GROUP_TEXT[group]), 'instructions_only');
   return {
     argv: ['pi', '--append-system-prompt', text],
     brief: text,
