@@ -86,9 +86,9 @@ const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
 /**
  * hc's own address for a terminal on this core (hc 0.1.16 terminals.rs `id_shaped`): `t`, then 1-9, then base-30
  * symbols, for example `t7` or `t1b`. A name can name a later terminal; this address never does, and no name has
- * this shape. Eight symbols cover hc's u32 id.
+ * this shape. hc ids are u32, so an address has at most seven symbols.
  */
-const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,7}$/;
+const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/;
 
 const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
 
@@ -350,7 +350,8 @@ function streamItem(line: string): HcStreamItem | null {
   const seq = params.seq as number;
   if (value.method === 'heartbeat') return null;
   if (value.method === 'missed' && Array.isArray(params.terminals)) return { type: 'missed', seq, terminals: params.terminals.map(terminal) };
-  if (value.method === 'event' && isString(params.terminal) && isString(params.type) && (params.data === null || isRecord(params.data))) {
+  if (value.method === 'event' && isString(params.terminal) && isString(params.type)
+    && (isRecord(params.data) || (params.data === null && params.type === 'foreground'))) {
     return { type: 'event', seq, terminal: params.terminal, event: params.type, data: params.data };
   }
   throw invalidResponse('event line is not a snapshot, heartbeat, missed or event');
