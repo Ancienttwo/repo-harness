@@ -14,8 +14,9 @@ describe("required herdr peer-harness guidance", () => {
   test("renders one explicit-session herdr path with no tmux fallback or template markers", () => {
     const rendered = renderedManagedBlock();
     expect(rendered).toContain(PEER_HARNESS_HEADING);
-    expect(rendered).toContain("`herdr --help` is the syntax authority");
-    expect(rendered).toContain("Never target the UI-focused session by default");
+    expect(rendered).toContain("`hc --help` and `herdr-app commands` are the syntax authority");
+    expect(rendered).not.toContain("`herdr --help`");
+    expect(rendered).toContain("Never target the UI-focused terminal by default");
     expect(rendered).toContain("Do not fall back to tmux");
     expect(rendered).toContain("Submission and lifecycle status are not task ACK");
     expect(rendered).not.toContain("`man tmux`");

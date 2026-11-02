@@ -625,6 +625,27 @@ test.each([
   } finally { server.stop(true); }
 }));
 
+test('real CLI labels a provider 5xx on the initial run read external and stays pending', async () => {
+  const root = mkdtempSync(join(tmpdir(), 'ci-report-initial-run-'));
+  const requests: string[] = [];
+  const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
+    requests.push(`${request.method} ${new URL(request.url).pathname}`);
+    return Response.json({ message: 'Service Unavailable' }, { status: 503 });
+  } });
+  try {
+    const eventPath = join(root, 'event.json');
+    writeFileSync(eventPath, JSON.stringify({ workflow_run: { id: 12 } }));
+    const child = Bun.spawn([process.execPath, join(import.meta.dir, '../scripts/report-ci.ts')], {
+      cwd: root, env: { ...process.env, HOME: root, GH_TOKEN: 'fixture-token', GITHUB_REPOSITORY: 'test/repo', GITHUB_API_URL: server.url.origin, GITHUB_EVENT_PATH: eventPath },
+      stdout: 'pipe', stderr: 'pipe',
+    });
+    expect(await child.exited).not.toBe(0);
+    expect(JSON.parse(readFileSync(join(root, '.ci-report/pending.json'), 'utf8'))).toEqual({ run_id: 12, delivery: 'pending',
+      error: 'Provider unavailable (attention_owner: external): GitHub GET /repos/test/repo/actions/runs/12: HTTP 503: Service Unavailable' });
+    expect(requests).toEqual(['GET /repos/test/repo/actions/runs/12']);
+  } finally { server.stop(true); rmSync(root, { recursive: true, force: true }); }
+});
+
 test('report and watchdog uploads include the real hidden report directory', () => {
   const workflow = Bun.YAML.parse(readFileSync(join(import.meta.dir, '../.github/workflows/ci-report.yml'), 'utf8')) as any;
   for (const name of ['report', 'watchdog']) {
