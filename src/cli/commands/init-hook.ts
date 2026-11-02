@@ -13,7 +13,7 @@ import * as os from 'os';
 import { dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import { Command } from 'commander';
-import { runDoctor, type CheckStatus, type DoctorReport, type DoctorTarget } from './doctor';
+import { runDoctor, type CheckStatus, type DoctorPorts, type DoctorReport, type DoctorTarget } from './doctor';
 import {
   formatManagedHookProjectionMismatch,
   runStatus,
@@ -795,7 +795,7 @@ export interface SetupCheckBuild {
 }
 
 /** The one `setup check` builder. `runInitHook` returns its report. */
-export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
+export function buildSetupCheck(ports: DoctorPorts, opts: InitHookOptions = {}): SetupCheckBuild {
   const cwd = resolve(opts.cwd ?? process.cwd());
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
   const target = opts.target ?? 'both';
@@ -804,7 +804,7 @@ export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
 
   const statusReport = opts.statusReport ?? withProcessEnv(opts.env, () => runStatus(cwd));
   const doctorEnv = { ...(opts.env ?? {}), [UPDATE_CHECK_ENV]: checkUpdates ? '1' : undefined };
-  const doctorReport = opts.doctorReport ?? withProcessEnv(doctorEnv, () => runDoctor(cwd, target as DoctorTarget));
+  const doctorReport = opts.doctorReport ?? withProcessEnv(doctorEnv, () => runDoctor(ports, cwd, target as DoctorTarget));
   const toolingProbe = opts.toolingReport
     ? { report: opts.toolingReport, error: undefined }
     : collectToolingReport(sourceRoot, cwd, target, checkUpdates, opts.env);
@@ -848,8 +848,8 @@ export function buildSetupCheck(opts: InitHookOptions = {}): SetupCheckBuild {
   return { report, status: statusReport, doctor: doctorReport, tooling: toolingProbe.report, check_actions: checkActions };
 }
 
-export function runInitHook(opts: InitHookOptions = {}): InitHookReport {
-  return buildSetupCheck(opts).report;
+export function runInitHook(ports: DoctorPorts, opts: InitHookOptions = {}): InitHookReport {
+  return buildSetupCheck(ports, opts).report;
 }
 
 export function formatInitHook(report: InitHookReport, asJson = false): string {
@@ -884,7 +884,7 @@ export function formatInitHook(report: InitHookReport, asJson = false): string {
   return lines.join('\n');
 }
 
-export function buildInitHookCommand(): Command {
+export function buildInitHookCommand(ports: DoctorPorts): Command {
   const command = new Command('init-hook');
   command
     .description('Run a read-only Agent bootstrap checklist for user-level repo-harness readiness')
@@ -898,7 +898,7 @@ export function buildInitHookCommand(): Command {
         );
         process.exit(2);
       }
-      const report = runInitHook({
+      const report = runInitHook(ports, {
         target: rawOpts.target as InitHookTarget,
         checkUpdates: rawOpts.checkUpdates === true,
       });
@@ -908,7 +908,7 @@ export function buildInitHookCommand(): Command {
   return command;
 }
 
-export function buildSetupCommand(): Command {
+export function buildSetupCommand(ports: DoctorPorts): Command {
   const command = new Command('setup');
   command.description('User-level repo-harness setup utilities');
 
@@ -925,7 +925,7 @@ export function buildSetupCommand(): Command {
         );
         process.exit(2);
       }
-      const report = runInitHook({
+      const report = runInitHook(ports, {
         target: rawOpts.target as InitHookTarget,
         checkUpdates: rawOpts.checkUpdates === true,
       });

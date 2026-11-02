@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.general-repo-access
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: capability.runtime-mcp.general-repo-access
+intent: "Pass the MCP index, metrics and trace log roots to retention"

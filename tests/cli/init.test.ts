@@ -26,6 +26,7 @@ import { globalRuntimeScope, withRuntimeTransactionLock } from "../../src/effect
 import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
+import { CLI_PORTS } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -193,10 +194,10 @@ describe("init command", () => {
         env: { ...process.env, HOME: accountHome, REPO_HARNESS_HOME: join(accountHome, ".repo-harness") },
       };
       const initial = readFileSync(configPath, "utf8");
-      expect(runInit({ ...options, apply: false }).exitCode).toBe(0);
+      expect(runInit(CLI_PORTS.init, { ...options, apply: false }).exitCode).toBe(0);
       expect(readFileSync(configPath, "utf8")).toBe(initial);
 
-      const applied = runInit(options);
+      const applied = runInit(CLI_PORTS.init, options);
       expect(applied.exitCode).toBe(0);
       expect(readFileSync(configPath, "utf8")).toBe(initial);
       expect(applied.steps.find((step) => step.step === "global architecture projection")).toBeUndefined();
@@ -209,7 +210,7 @@ describe("init command", () => {
         refactor_recommendations: { enabled: false },
       });
       writeFileSync(configPath, disabled);
-      expect(runInit(options).exitCode).toBe(0);
+      expect(runInit(CLI_PORTS.init, options).exitCode).toBe(0);
       expect(readFileSync(configPath, "utf8")).toBe(disabled);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -236,7 +237,7 @@ describe("init command", () => {
       withRuntimeTransactionLock(globalRuntimeScope(env), (runtimeLock) => {
         const transaction = beginInstallHostTransaction([configPath], env, { runtimeLock });
         try {
-          const result = runInit(options);
+          const result = runInit(CLI_PORTS.init, options);
           expect(result.exitCode).toBe(0);
           expect(result.steps.find((step) => step.step === "global automation defaults")).toBeUndefined();
           expect(readFileSync(configPath, "utf8")).toBe(original);
@@ -276,7 +277,7 @@ describe("init command", () => {
 
       // Verify runs bun child processes; their transpiler cache is Bun's, not a
       // repo-harness host surface, so it lives beside HOME instead of under it.
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo, sourceRoot: source, codegraph: false,
         env: {
           ...process.env,
@@ -313,7 +314,7 @@ describe("init command", () => {
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       process.chdir(repo);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         sourceRoot: source,
         env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
         codegraph: false,
@@ -340,7 +341,7 @@ describe("init command", () => {
       mkdirSync(home, { recursive: true });
       setupFakeSource(source);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -380,7 +381,7 @@ describe("init command", () => {
         expect(git.status, git.stderr).toBe(0);
       }
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo: linked,
         sourceRoot: source,
         verify: false,
@@ -410,7 +411,7 @@ describe("init command", () => {
       expect(spawnSync("git", ["init", "-q"], { cwd: repo }).status).toBe(0);
       process.chdir(repo);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         sourceRoot: source,
         env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
         codegraph: false,
@@ -440,7 +441,7 @@ describe("init command", () => {
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         apply: false,
@@ -492,7 +493,7 @@ describe("init command", () => {
       process.env.REPO_HARNESS_HOME = harnessHome;
       delete process.env.AGENTIC_DEV_LINK_INSTALLED_COPIES;
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -667,7 +668,7 @@ describe("init command", () => {
       mkdirSync(home, { recursive: true });
       setupFakeSource(source);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -707,7 +708,7 @@ describe("init command", () => {
       setupFakeSource(source);
       writeFakeCodegraph(fakeBin, logFile);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -747,7 +748,7 @@ describe("init command", () => {
       setupFakeSource(source);
       writeFakeCodegraph(fakeBin, logFile);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -786,7 +787,7 @@ describe("init command", () => {
       setupFakeSource(source);
       writeFakeCodegraph(fakeBin, logFile);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -823,7 +824,7 @@ describe("init command", () => {
       setupFakeSource(source);
       makeExecutable(join(fakeBin, "node"), "#!/bin/bash\necho 'not json'\nexit 0\n");
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo,
         sourceRoot: source,
         verify: false,
@@ -902,7 +903,7 @@ describe("init without the retired coordination cutover", () => {
     try {
       const { source, repo } = liveContractWorktreeRepo(tmp);
 
-      const result = runInit({
+      const result = runInit(CLI_PORTS.init, {
         repo, sourceRoot: source, ...initOptions,
         env: { ...process.env, HOME: join(tmp, "home"), REPO_HARNESS_HOME: join(tmp, "home", ".repo-harness") },
       });
