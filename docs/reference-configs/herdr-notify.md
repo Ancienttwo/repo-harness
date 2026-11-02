@@ -216,4 +216,10 @@ Slack, Discord, and Telegram messages end with the same repository name, task, a
 HTTP success shows that the endpoint accepted a request.
 Check the Bot routine or human channel to confirm receipt.
 
-The relay does not restart itself. When the hc core stops or the relay terminal ends, the operator console shows `relay_stopped`. Run install again to start a new relay.
+The relay does not restart itself. When the hc core stops or the relay terminal ends, the operator console shows `relay_stopped`. Start a new relay with the written config:
+
+```bash
+repo-harness herdr notify start
+```
+
+`start` starts nothing when a relay is live. Without a config it stops and names the install command.

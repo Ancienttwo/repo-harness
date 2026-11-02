@@ -87,7 +87,8 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
   `~/.repo-harness/herdr/notify.env` and starts the relay in an hc terminal
   named `rh-notify-relay`. The relay follows `hc events --json --label
   repo-harness.notify=on` and sends the same `repo-harness.bot-event/v1`
-  envelope on each blocked or done turn. `repo-harness herdr notify
+  envelope on each blocked or done turn. The relay does not restart itself;
+  `repo-harness herdr notify start` starts it again. `repo-harness herdr notify
   uninstall` stops the relay and removes its files. A classic notify install
   record fails closed as `notify_session_invalid`: run install again. Remove
   the old plugin with `herdr plugin unlink aimpact.webhook-notify` before
