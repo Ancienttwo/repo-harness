@@ -3,4 +3,4 @@ id: relation.acceptance-review.primary.execution-primitives
 kind: calls
 source: component.acceptance-review.primary
 target: capability.workflow-engine.execution-primitives
-intent: "Hold an exclusive directory lock around one generic review run"
+intent: "Hold an exclusive directory lock around one generic review run, and read and write immutable session artifacts and the reviewer process identity"

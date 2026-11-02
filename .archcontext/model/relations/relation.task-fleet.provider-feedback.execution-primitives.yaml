@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.provider-feedback.execution-primitives
+kind: calls
+source: component.task-fleet.provider-feedback
+target: capability.workflow-engine.execution-primitives
+intent: "Hold the shared task lock while feedback events and delivery receipts are recorded"

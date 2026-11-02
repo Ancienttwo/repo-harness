@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.session-artifact-io
+kind: component
+name: Immutable Session Artifact I/O
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: effects
+summary: Reads and writes immutable session JSON artifacts and reads the process identity that session records use.
+responsibilities:
+  - Write a session JSON artifact durably, as a write-once link or an atomic replace, and read it without following a symbolic link.
+  - Read the process identity that task session and review host records bind.
+source:
+  include:
+    - src/effects/terminal/task-session-io.ts

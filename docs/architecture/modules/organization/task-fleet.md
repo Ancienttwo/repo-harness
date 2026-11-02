@@ -125,7 +125,7 @@ sequenceDiagram
 - Admitted messages name the admission digest and the exact claim reference and revision. The manual inbox path checks that recipient before delivery or acknowledgement.
 - Message bodies remain untrusted data. The UserPromptSubmit inbox adapter is a no-op and prints no message context.
 - Inbox layout migration retains canonical recipient keys and checks record bytes. It refuses retired reply records and deletes nothing. The operator reader performs no migration.
-- Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Publication feedback and per-repository board reads remain for slice C.
+- Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Provider feedback and per-repository board reads remain for slice C.
 - A provider issue or PR owns current task identity, claim, status and dependency. A local board, Sprint row or lease record is a bounded observation. It cannot grant admission, transfer a claim or complete an issue.
 - Protected admission binds an approved goal and scope to an exact execution session and claim. A matching actor name grants no admission.
 - `fleet board` compares complete projected provider and session revisions, with at most three observations. A continued change returns `changed_during_read`. A discovery failure is a typed unavailable observation, not an empty session list.
@@ -134,7 +134,10 @@ sequenceDiagram
 - Admitted inbox delivery binds the admission SHA and the exact claim reference and revision. Owner preparation reserves a bounded pre-prompt companion without marking messages delivered. The host consumer checks native/request attribution, local approval and expiry before it reads the companion. Only exact input-scoped accepted OAR proof lets the owner commit delivery receipts. Missing or unknown acceptance leaves delivery pending; recovery repeats the ledger commit without resending the prompt. Native host attribution grants no admission.
 - The task mutex stays at `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock`. Moving its implementation out of the retired lease reader created no new lock namespace.
 - Worktree safety keeps exact worktree identity and merge-proof checks. Dirty, locked, marked or unknown worktrees stay protected. `ship-worktrees` journals operation progress, not task authority. PR readiness reobserves canonical provider identity, expected head/base, checks, reviews and threads before it reports readiness. Historical Sprint documents, owner bytes and message codecs remain for explicit history reads; they cannot replace current approval or provider evidence.
-- Shared neutral source directories reuse implementations. They do not create another task state store. Provider feedback remains a Publication responsibility and joins the same admitted inbox context to explicit provider PR evidence.
+- Shared neutral source directories reuse implementations. They do not create another task state store.
+- Task Fleet owns provider feedback intake (`component.task-fleet.provider-feedback`, `src/effects/fleet/provider-feedback.ts`, #1352). It joins the same admitted inbox context to explicit provider PR evidence. The Publication feedback store keeps the feedback facts and the delivery receipts.
+- Each Task Fleet import of Publication is a plugin → core edge (`relation.task-fleet.publication`): PR readiness, the publication digest helpers and the feedback store. Publication imports no Task Fleet file.
+- The task message claim, the message error and the message field checks (`src/core/messages/**`) belong to `component.execution-primitives.task-message-claim` (#1352). The task inbox and the Publication feedback records both import them. The files did not move.
 
 ## 4. 歷史決策記錄(append-only)
 
@@ -143,6 +146,12 @@ sequenceDiagram
 - P1：本能力的文件此前没有 capability owner。`capability-resolver match` 对当时的 fleet acquire 模块返回 `root`（该模块已由 #959 删除）。
 - P2：功能来自 PRD `fleet-acquire-publication-readiness`（2026-08-22 Approved）。主要提交：`1978de69`（fleet acquisition）、`38b91a39`（cross-repo board）、#265（消息与并发加固）、`4c466996`（Inbox 可移植存储路径）。
 - P3：用户决定新建 `organization` 域，只放 task-fleet 与 publication。现有 engineer-* 能力留在 runtime-harness。现有 capability id 不改名，因为 id 是数据中的持久键。
+
+### Provider feedback 归 task-fleet，消息原语归 execution-primitives (2026-11-02, #1352 slice A)
+
+- P1：`src/effects/fleet/provider-feedback.ts`（1,001 行）原归 `component.publication.provider-feedback`，只有 `fleet.ts` 与 `effects/fleet/board.ts` 导入它。它导入 `effects/fleet/task-inbox.ts`，所以 publication 经过它导入 task-fleet，再经过 `observeTaskInboxContext` 到 task-agent-host。`src/core/publication/feedback.ts` 导入 task-fleet 的 `core/messages/task-message-claim.ts`。
+- P2：只改模型，源码与 import 不变。`provider-feedback.ts` 归新的 `component.task-fleet.provider-feedback`。三个 `core/messages` 文件（106 行）归新的 `component.execution-primitives.task-message-claim`。`component.publication.provider-feedback` 与它的四条关系删除，没有 alias。
+- P3：publication 不再导入 task-fleet 的文件。task-fleet → publication 只剩 plugin → core 边。看板仍在 task-fleet；移到 Operator 插件不在 #1352。
 
 ## Optimization Backlog
 
