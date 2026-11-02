@@ -71,7 +71,7 @@ describe("obsidian-memory: manifest registration", () => {
       const entry = catalog.packages.find((pkg) => pkg.name === name);
       expect(entry).toBeDefined();
       expect(entry?.kind).toBe("external");
-      expect(entry?.provider).toBe("kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202");
+      expect(entry?.provider).toBe("kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202");
       expect(entry?.profiles).toEqual([]);
       expect(entry?.hosts).toEqual(["claude", "codex", "pi"]);
       expect(entry?.integrity).toMatch(/^sha256:[0-9a-f]{64}$/);

@@ -425,7 +425,7 @@
       "name": "reverse-skill-router",
       "kind": "external",
       "source": null,
-      "provider": "zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55",
+      "provider": "zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55",
       "integrity": "sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda",
       "hosts": [
         "claude",
@@ -445,7 +445,7 @@
       "name": "obsidian-markdown",
       "kind": "external",
       "source": null,
-      "provider": "kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202",
+      "provider": "kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202",
       "integrity": "sha256:ac9b702f9697f0bbf5f0fdc0c6896d94efef01438a59a4b508e5d7346da050e6",
       "hosts": [
         "claude",
@@ -465,7 +465,7 @@
       "name": "obsidian-cli",
       "kind": "external",
       "source": null,
-      "provider": "kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202",
+      "provider": "kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202",
       "integrity": "sha256:58b3eaf9ccaadfcbe3b8d0eddb0d1fe872ef42c4cf289393a72d4e9a6d896f6f",
       "hosts": [
         "claude",

@@ -507,7 +507,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     expect(requiredExplicitExternalSkillInstallGroup(catalog, "reverse-skill-router", ["codex"])).toEqual({
       status: "selected",
       group: {
-      provider: "zhaoxuya520/reverse-skill@539899ddc7608d63dc66e08e794d572e080f1a55",
+      provider: "zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55",
       hosts: ["codex"],
       skills: ["reverse-skill-router"],
       integrityBySkill: {
@@ -546,7 +546,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     )).toEqual({
       status: "selected",
       groups: [{
-        provider: "kepano/obsidian-skills@a1dc48e68138490d522c04cbf5822214c6eb1202",
+        provider: "kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202",
         hosts: ["claude", "codex"],
         skills: ["obsidian-markdown", "obsidian-cli"],
         integrityBySkill: {

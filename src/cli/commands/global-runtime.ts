@@ -954,8 +954,8 @@ function recordAgentFleetOwnership(profile: InstallProfile, env: NodeJS.ProcessE
 function externalSkillStepName(provider: string): string {
   if (provider === "tw93/Waza") return "configure Waza skills";
   if (provider === "BfdCampos/dotfiles") return "configure Mermaid skill";
-  if (provider.startsWith("zhaoxuya520/reverse-skill@")) return "configure Reverse Skill";
-  if (provider.startsWith("kepano/obsidian-skills@")) return "configure Obsidian companion Skills";
+  if (provider.startsWith("zhaoxuya520/reverse-skill#")) return "configure Reverse Skill";
+  if (provider.startsWith("kepano/obsidian-skills#")) return "configure Obsidian companion Skills";
   return `configure external skills ${provider}`;
 }
 
