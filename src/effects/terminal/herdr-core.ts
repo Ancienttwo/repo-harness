@@ -1,4 +1,4 @@
-import { spawn, spawnSync, type SpawnSyncReturns } from 'child_process';
+import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
 
 /** herdr-core transport: the `hc` CLI with `--json`, its event stream, and `herdr-app do` for pane placement. */
@@ -124,19 +124,41 @@ function spawnError(program: HerdrCoreProgram, error: NodeJS.ErrnoException): He
   return new HerdrCoreError(program, 'failed', undefined, undefined, error.code ?? error.message);
 }
 
-function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
-  const env = environment(program, options);
+function timeoutOf(options: HerdrCoreOptions): number {
   const timeout = options.timeoutMs ?? HERDR_CORE_TIMEOUT_MS;
   if (!Number.isSafeInteger(timeout) || timeout < 1) throw new RangeError('herdr_core_invalid_timeout');
+  return timeout;
+}
+
+/** One exit mapping for the sync and async calls, after a spawn error or timeout is ruled out. */
+function settle(program: HerdrCoreProgram, status: number | null, signal: string | null, stdout: string, stderr: string): Record<string, unknown> {
+  if (signal) throw new HerdrCoreError(program, 'failed', undefined, undefined, `ended by ${signal}`);
+  // Without an error or a signal, Node always reports a numeric exit status.
+  if (status !== 0) throw failure(program, status as number, program === 'hc' ? stderr : stdout);
+  return parseObject(program, stdout);
+}
+
+function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+  const env = environment(program, options);
   const result: SpawnSyncReturns<Buffer> = spawnSync(program, [...args], {
-    env, timeout, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
+    env, timeout: timeoutOf(options), killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.error) throw spawnError(program, result.error);
-  if (result.signal) throw new HerdrCoreError(program, 'failed', undefined, undefined, `ended by ${result.signal}`);
-  const stdout = result.stdout.toString('utf8');
-  // Without an error or a signal, Node always reports a numeric exit status.
-  if (result.status !== 0) throw failure(program, result.status as number, program === 'hc' ? result.stderr.toString('utf8') : stdout);
-  return parseObject(program, stdout);
+  return settle(program, result.status, result.signal, result.stdout.toString('utf8'), result.stderr.toString('utf8'));
+}
+
+async function invokeAsync(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Promise<Record<string, unknown>> {
+  const env = environment(program, options);
+  const timeout = timeoutOf(options);
+  const { error, stdout, stderr } = await new Promise<{ error: ExecFileException | null; stdout: string; stderr: string }>(resolve => {
+    execFile(program, [...args], { env, timeout, killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, encoding: 'utf8' },
+      (error, stdout, stderr) => resolve({ error, stdout, stderr }));
+  });
+  if (!error) return settle(program, 0, null, stdout, stderr);
+  // A string code is a spawn or buffer error; `killed` without one is the timeout's SIGKILL.
+  if (typeof error.code === 'string') throw spawnError(program, error as NodeJS.ErrnoException);
+  if (error.killed) throw new HerdrCoreError(program, 'timeout');
+  return settle(program, error.code ?? null, error.signal ?? null, stdout, stderr);
 }
 
 /** Run one hc subcommand with `--json`; `args[0]` is the subcommand. Returns hc's JSON object. */
@@ -193,7 +215,15 @@ export function hcRun(input: {
 
 /** `hc ls --label`: live terminals that carry every label. An empty filter is refused. */
 export function hcList(labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminalSummary[] {
-  const result = hcJson(['ls', ...labelArgs(labels)], options);
+  return listResult(hcJson(['ls', ...labelArgs(labels)], options));
+}
+
+/** `hcList` without blocking the event loop, for long-running readers such as `operator serve`. */
+export async function hcListAsync(labels: HcLabels, options: HerdrCoreOptions = {}): Promise<HcTerminalSummary[]> {
+  return listResult(await invokeAsync('hc', ['ls', '--json', ...labelArgs(labels)], options));
+}
+
+function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
   if (!Array.isArray(result.terminals)) throw new HerdrCoreError('hc', 'invalid_response', undefined, undefined, 'ls has no terminals array');
   return result.terminals.map(terminalSummary);
 }

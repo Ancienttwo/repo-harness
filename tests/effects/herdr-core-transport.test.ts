@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
-import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcList, hcRm, hcRun, herdrAppDo, type HcLabels, type HcStreamItem }
+import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcList, hcListAsync, hcRm, hcRun, herdrAppDo, type HcLabels, type HcStreamItem }
   from '../../src/effects/terminal/herdr-core';
 
 const roots: string[] = [];
@@ -38,7 +38,12 @@ function failure(call: () => unknown): HerdrCoreError {
   throw new Error('expected a HerdrCoreError');
 }
 
-test('success: labels go in on run and list, and come back out of get', () => {
+async function asyncFailure(call: () => Promise<unknown>): Promise<HerdrCoreError> {
+  return call().then(() => { throw new Error('expected a HerdrCoreError'); },
+    (error: unknown) => { expect(error).toBeInstanceOf(HerdrCoreError); return error as HerdrCoreError; });
+}
+
+test('success: labels go in on run and list, and come back out of get', async () => {
   const run = fake('ok', { address: 't4', agent: 'claude', cwd: '/w', name: 'rh-worker', state: 'live', turn: 0 });
   expect(hcRun({ argv: ['claude', '--resume'], labels: { ...RH_NOTIFY_RELAY.labels, [RH_LABEL.task]: '1475' }, name: RH_NOTIFY_RELAY.name, cwd: '/w', noParent: true }, { env: run.env }))
     .toEqual({ address: 't4', name: 'rh-worker', state: 'live' });
@@ -48,6 +53,8 @@ test('success: labels go in on run and list, and come back out of get', () => {
   const list = fake('ok', { hidden_finished: 0, terminals: [{ address: 't4', agent: 'claude', name: null, state: 'live', turn: 0 }] });
   expect(hcList(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
   expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on']);
+  expect(await hcListAsync(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
+  expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on', 'ls', '--json', '--label', 'repo-harness.notify=on']);
 
   const get = fake('ok', TERMINAL);
   expect(hcGet('t4', { env: get.env })).toEqual({ address: 't4', name: 'rh-worker', state: 'live',
@@ -56,17 +63,20 @@ test('success: labels go in on run and list, and come back out of get', () => {
   expect(get.argv()).toEqual(['get', '--json', '--', 't4']);
 });
 
-test('timeout: a hung hc is killed at the transport timeout', () => {
+test('timeout: a hung hc is killed at the transport timeout', async () => {
   const hang = fake('hang');
   const started = Date.now();
   expect(failure(() => hcGet('t4', { env: hang.env, timeoutMs: 200 })).reason).toBe('timeout');
+  expect((await asyncFailure(() => hcListAsync(RH_NOTIFY_LABELS, { env: hang.env, timeoutMs: 200 }))).reason).toBe('timeout');
   expect(Date.now() - started).toBeLessThan(4_000);
 });
 
-test('hc error: the exit code and hc error kind are kept', () => {
+test('hc error: the exit code and hc error kind are kept', async () => {
   const error = failure(() => hcGet('t9', { env: fake('hc-error').env }));
   expect([error.program, error.reason, error.exitCode, error.kind]).toEqual(['hc', 'failed', 3, 'not_found']);
   expect(error.message).toContain('no terminal "t9"');
+  const listError = await asyncFailure(() => hcListAsync(RH_NOTIFY_LABELS, { env: fake('hc-error').env }));
+  expect([listError.reason, listError.exitCode, listError.kind]).toEqual(['failed', 3, 'not_found']);
   expect(failure(() => hcGet('t4', { env: fake('text').env })).reason).toBe('invalid_response');
   for (const invalid of [{ labels: { n: 1 } }, { pid: 0 }, { foreground: { pid: 9, name: 'claude', argv: ['claude'] } }, { reason: 1 }]) {
     expect(failure(() => hcGet('t4', { env: fake('ok', { ...TERMINAL, ...invalid }).env })).reason).toBe('invalid_response');
