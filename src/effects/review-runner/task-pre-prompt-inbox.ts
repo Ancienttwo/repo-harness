@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { renderTaskMessageUntrustedContext, type TaskMessageEventV2 } from '../../core/fleet/admitted-task-message';
 import { deliverTaskInbox, listTaskInbox, readTaskMessageDelivery, readAdmittedTaskActivity, type TaskInboxSessionSource } from '../fleet/task-inbox';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
-import { readTaskAgent } from '../terminal/task-session-reader';
+import { readTaskAgent } from '../terminal/task-session-record';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import type { TaskRequest, TaskPrePromptInbox } from '../../core/review/runner-port';
 import type { NativeTaskSessionBinding } from '../terminal/native-task-session';

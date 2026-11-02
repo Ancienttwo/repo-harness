@@ -4,9 +4,9 @@ import { observeActiveReviewAdmission } from '../src/effects/admission/issue-goa
 import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { parseAcceptancePolicy, acceptanceBenchmarkRequirement, modelFamily, modelRelation } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
-import { readSessionArtifact, writeSessionArtifact, taskSessionDirectory as importedTaskDir, type TaskPaneBinding } from '../src/effects/terminal/task-session';
+import { readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session-io';
+import { taskSessionDirectory as importedTaskDir, type HerdrEndpoint, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
 import type { TaskRequest } from '../src/core/review/runner-port';
-import type { HerdrEndpoint } from '../src/effects/terminal/herdr';
 import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
 import { afterEach, describe, expect, test } from 'bun:test';

@@ -1,7 +1,8 @@
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { readTaskAgent, observeTaskSessionAdmission } from '../terminal/task-session';
+import { readTaskAgent } from '../terminal/task-session-record';
+import { observeTaskSessionAdmission } from '../terminal/task-session-admission';
 import { readReviewAdmissionSource } from '../admission/admission-source';
 import { resolvePolicyReviewBase } from '../review/diff-fingerprint';
 import { existsSync, readFileSync, realpathSync, statSync } from 'node:fs';

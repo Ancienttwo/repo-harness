@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.task-session-record.acceptance-review
+kind: reads
+source: component.execution-primitives.task-session-record
+target: capability.verification.acceptance-review
+intent: "Type the task session record fields with the review runner port types: process proof, task agent spec and task session admission"

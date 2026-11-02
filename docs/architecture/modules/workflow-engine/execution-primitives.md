@@ -169,8 +169,9 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `component.execution-primitives.task-message-claim`（Task Message Claim Primitives） | core | `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts`（3 个文件，106 行） | task inbox 与 feedback 记录共用的 claim 校验、消息错误类型与封闭字段检查 |
 | `component.execution-primitives.session-artifact-io`（Immutable Session Artifact I/O） | effects | `src/effects/terminal/task-session-io.ts`（29 行） | 持久写入与读取 session JSON 产物，读取进程身份 |
+| `component.execution-primitives.task-session-record`（Task Session Record） | effects | `src/effects/terminal/task-session-record.ts`（133 行） | task session 与 task workspace 的记录类型、`HerdrEndpoint` 记录字段、不连接 Herdr 的 binding reader，以及 `taskWorktreeRuntimeClosed` |
 
-`mechanics.ts` 导入 evidence-ledger 的 `core/evidence/canonical-json` 与 `core/evidence/types`。这是本 capability 唯一的新出向边（`relation.execution-primitives.task-message-claim.evidence-ledger`）。evidence-ledger 也调用本 capability 的锁，所以两个 capability 之间有双向关系；文件级没有环。`task-session-io.ts` 只导入 Node 内置模块。
+`mechanics.ts` 导入 evidence-ledger 的 `core/evidence/canonical-json` 与 `core/evidence/types`。这是本 capability 唯一的新出向边（`relation.execution-primitives.task-message-claim.evidence-ledger`）。evidence-ledger 也调用本 capability 的锁，所以两个 capability 之间有双向关系；文件级没有环。`task-session-io.ts` 只导入 Node 内置模块。`task-session-record.ts` 导入 acceptance-review 的 runner port 类型（`relation.execution-primitives.task-session-record.acceptance-review`），只有类型导入。
 
 ### 3.4 10x 规模下先垮的点
 

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.host-installer.contract-assets
+kind: reads
+source: component.hook-adapters.host-installer
+target: capability.workflow-engine.contract-assets
+intent: "Resolve the managed and Claude-only fleet role lists during host installation"

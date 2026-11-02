@@ -5,6 +5,9 @@ import { rmSync } from 'node:fs';
 import { externalSourceBindingFixture } from '../helpers/external-source-binding-fixture';
 import { revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import { bindExternalSource, listExternalSourceBindings, type ExternalSourceBindingDependencies } from '../../src/effects/external-sources/binding';
+import { startOfflineTaskAgent } from '../helpers/engineer-runtime-fixture';
+import { createHash } from 'node:crypto';
+import { canonicalize } from '../../src/core/evidence/canonical-json';
 
 
 const roots: string[] = [];
@@ -116,6 +119,16 @@ describe('external source binding effect', () => {
     const item = await harness(), source = observation();
     expect(() => bindExternalSource({ registered_repository_id: REPO_ID, source_revision: source.source_revision,
       session: { ...item.fixture.session, session_binding_sha256: `sha256:${'0'.repeat(64)}` } }, item.deps)).toThrow('session binding changed');
+    expect(item.written).toHaveLength(0);
+  });
+
+  test('refuses an admitted session whose task is not a task id, as main did', async () => {
+    const item = await harness(), source = observation(), { session } = item.fixture;
+    const binding = await startOfflineTaskAgent(item.fixture.root, { task: 'named-task', role: session.role, harness_kind: 'codex',
+      endpoint: { session: 'fixture', home: '/tmp' }, parent_pane: `fixture-parent-${session.role}`, args: [], max_requests: 3 }, item.fixture.source.authority);
+    const digest = `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(binding)))).digest('hex')}`;
+    expect(() => bindExternalSource({ registered_repository_id: REPO_ID, source_revision: source.source_revision,
+      session: { ...session, task: 'named-task', session_binding_sha256: digest } }, item.deps)).toThrow('task id is invalid: "named-task"');
     expect(item.written).toHaveLength(0);
   });
 
