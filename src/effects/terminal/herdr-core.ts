@@ -54,7 +54,10 @@ export interface HcSendResult { readonly started: boolean | null; readonly turn:
 export interface HcWaitResult { readonly ended: boolean; readonly reason: string; readonly turn: number; readonly status: HcStatus | null }
 export type HcStreamItem =
   | { readonly type: 'snapshot'; readonly seq: number; readonly terminals: readonly HcTerminal[] }
-  | { readonly type: 'event'; readonly seq: number; readonly terminal: string; readonly event: string; readonly data: Readonly<Record<string, unknown>> };
+  /** The subscriber fell behind: hc dropped events. Replace all state with these terminals; ignore later events whose seq is not above it. */
+  | { readonly type: 'missed'; readonly seq: number; readonly terminals: readonly HcTerminal[] }
+  /** A fact change. `data` is null for a `foreground` change when no process is in the foreground. */
+  | { readonly type: 'event'; readonly seq: number; readonly terminal: string; readonly event: string; readonly data: Readonly<Record<string, unknown>> | null };
 export interface HcEventStream { close(): void; readonly done: Promise<void> }
 
 /** The Herdr.app commands that place panes; every other path goes through hc. */
@@ -80,8 +83,12 @@ const RH_KEYS: ReadonlySet<string> = new Set(Object.values(RH_LABEL));
 const RH_ROLES: ReadonlySet<string> = new Set(Object.values(RH_ROLE));
 const LABEL_KEY = /^[a-z][a-z0-9._-]{0,63}$/;
 const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
-/** hc's own address for a terminal on this core. A name can name a later terminal; `t<n>` never does. */
-const ADDRESS = /^t[1-9][0-9]{0,9}$/;
+/**
+ * hc's own address for a terminal on this core (hc 0.1.16 terminals.rs `id_shaped`): `t`, then 1-9, then base-30
+ * symbols, for example `t7` or `t1b`. A name can name a later terminal; this address never does, and no name has
+ * this shape. Eight symbols cover hc's u32 id.
+ */
+const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,7}$/;
 
 const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
 
@@ -210,11 +217,11 @@ function status(value: unknown, where: string): HcStatus | null {
 }
 
 function terminalSummary(value: unknown): HcTerminalSummary {
-  if (!isRecord(value) || !isString(value.address) || !(value.name === null || isString(value.name))
-    || (value.state !== 'live' && value.state !== 'finished')) {
-    throw invalidResponse('terminal is missing address, name or state');
+  if (!isRecord(value) || !isString(value.address) || (value.state !== 'live' && value.state !== 'finished')) {
+    throw invalidResponse('terminal is missing address or state');
   }
-  return { address: value.address, name: value.name, state: value.state };
+  // `run` and `ls` rows omit the name of an unnamed terminal; `get` reports it as null.
+  return { address: value.address, name: optional(value, 'name', orNull(isString), `terminal ${value.address}`) ?? null, state: value.state };
 }
 
 function terminal(value: unknown): HcTerminal {
@@ -332,21 +339,26 @@ export function hcRm(terminalAddress: string, options: HerdrCoreOptions = {}): s
   return result.removed;
 }
 
-function streamItem(line: string): HcStreamItem {
+/** One `hc events --json` line. A heartbeat (every 15 s by default) only proves the stream is alive: null. */
+function streamItem(line: string): HcStreamItem | null {
   const value = parseObject('hc', line);
   if (Array.isArray(value.terminals) && Number.isSafeInteger(value.seq)) {
     return { type: 'snapshot', seq: value.seq as number, terminals: value.terminals.map(terminal) };
   }
   const params = value.params;
-  if (value.method === 'event' && isRecord(params) && Number.isSafeInteger(params.seq) && isString(params.terminal)
-    && isString(params.type) && isRecord(params.data)) {
-    return { type: 'event', seq: params.seq as number, terminal: params.terminal, event: params.type, data: params.data };
+  if (!isRecord(params) || !Number.isSafeInteger(params.seq)) throw invalidResponse('event line has no params.seq');
+  const seq = params.seq as number;
+  if (value.method === 'heartbeat') return null;
+  if (value.method === 'missed' && Array.isArray(params.terminals)) return { type: 'missed', seq, terminals: params.terminals.map(terminal) };
+  if (value.method === 'event' && isString(params.terminal) && isString(params.type) && (params.data === null || isRecord(params.data))) {
+    return { type: 'event', seq, terminal: params.terminal, event: params.type, data: params.data };
   }
-  throw invalidResponse('event line is neither a snapshot nor an event');
+  throw invalidResponse('event line is not a snapshot, heartbeat, missed or event');
 }
 
 /**
- * `hc events --json --label`: a snapshot of the labeled terminals, then each change. The filter must hold a
+ * `hc events --json --label`: a snapshot of the labeled terminals, then each change, and a `missed` snapshot
+ * when the subscriber fell behind. Heartbeats are consumed here and never reach `onItem`. The filter must hold a
  * repo-harness label. The stream has no command timeout. `done` resolves after `close()` or a clean exit. It
  * rejects with a HerdrCoreError, or with the error that `onItem` threw; either stops the hc child.
  */
@@ -358,7 +370,10 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
   child.stderr.setEncoding('utf8').on('data', (chunk: string) => { if (stderr.length < MAX_OUTPUT_BYTES) stderr += chunk; });
   createInterface({ input: child.stdout }).on('line', line => {
     if (closed) return;
-    try { onItem(streamItem(line)); } catch (error) { stop(error); }
+    try {
+      const item = streamItem(line);
+      if (item) onItem(item);
+    } catch (error) { stop(error); }
   });
   const done = new Promise<void>((resolve, reject) => {
     child.once('error', error => { closed = true; reject(spawnError('hc', error)); });
