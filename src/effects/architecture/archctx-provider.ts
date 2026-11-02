@@ -745,7 +745,7 @@ function runProjectionCommand(command: 'run' | 'readback', request: ProjectionRe
 function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | 'nowMs'>, maximumMs: number, phase: string): number {
   if (options.deadlineMs === undefined) return maximumMs;
   const remaining = Math.floor(options.deadlineMs - (options.nowMs ?? Date.now)());
-  if (remaining <= 0) throw new Error(`architecture projection timeout before ${phase}`);
+  if (remaining <= 0) throw new ArchctxClientError({ code: 'RH_ARCHCTX_TIMEOUT', action: 'retry', message: `architecture projection timeout before ${phase}` });
   return Math.min(maximumMs, remaining);
 }
 
