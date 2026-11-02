@@ -6,8 +6,8 @@ Use the [GrokBot init auto-exec guide](bot-onboarding.md) on connect.
 
 A minimal Bot host loads `repo-harness-check` and lite working rules: brief,
 edit, targeted verification, and review by risk. Exclude by default
-`repo-harness-cross-review`, `repo-harness-herdr-portal`,
-`repo-harness-chatgpt`, and control `review admit` / `review revoke`.
+`repo-harness-cross-review`, `repo-harness-herdr-portal`, and control
+`review admit` / `review revoke`.
 Skip the root router's required `herdr` skill load (`SKILL.md`) unless the
 host actually drives Herdr.
 
@@ -55,7 +55,7 @@ A Bot works in one of two modes. Both modes merge through the same executor,
 
 | Mode | Dispatch | Acceptance | Merge |
 |---|---|---|---|
-| Local Herdr | MCP `orchestrator` profile Herdr tools, or a Herdr pane | The worker produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | MCP `merge_pull_request` (same executor; the audit line carries the OAuth-derived attribution) |
+| Local Herdr | A Herdr pane | The worker produces check results locally. Acceptance panes (gatekeeper, cross-review) review those results | `repo-harness publication merge` in the Bot's shell |
 | Cloud only | GitHub issues and comments | CI, and the `acceptance record` on the PR | The cloud sandbox has repo-harness installed, a working `gh auth` (the token needs Administration read permission) and a checkout of the repository. It runs `repo-harness publication merge` |
 
 - A Bot record does not grant merge permission. This covers `review admit`

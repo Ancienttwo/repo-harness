@@ -60,15 +60,14 @@ Worked example: PR #423 (collaboration delegation fixture).
 `runCliInProcess(args, cwd, env)` (`tests/helpers/cli-in-process.ts:57`) drives
 `buildProgram()` and captures `status`/`stdout`/`stderr`. It temporarily replaces
 process-global environment, cwd, output and exit handlers, then restores them.
-Its completion barrier is specific to the tested `chatgpt` actions: their first
-stdout write or recorded exit is terminal (helper lines 49-54, 80, 117).
+Its completion barrier fits only commands whose first stdout write or
+recorded exit is terminal (helper lines 49-54, 80, 117).
 A command with intermediate stdout could finish too early; a successful command
 with only stderr or no output can wait for the 170-second settle deadline.
 Before reusing it elsewhere, prove that command's completion semantics.
 
-PR #424 converted 77 spawned calls in `tests/chatgpt-browser.test.ts` and kept
-one real child for `Bun.which`: it resolves the process-start PATH, so a runtime
-`process.env.PATH` write cannot represent that case. Signals, stdin, and exits
+Keep a real child for `Bun.which`: it resolves the process-start PATH, so a
+runtime `process.env.PATH` write cannot represent that case. Signals, stdin, and exits
 observed by a parent also need their actual process boundary.
 
 ## Gate real installs and real external programs

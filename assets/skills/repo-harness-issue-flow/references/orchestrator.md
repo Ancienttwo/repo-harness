@@ -224,8 +224,7 @@ Merge only with:
 repo-harness publication merge --repository <owner/name> --repository-id <id> --pr <n> --head <sha> --base <sha> --json
 ```
 
-`--head` and `--base` are the SHAs you reviewed. The MCP tool
-`merge_pull_request` (profile `orchestrator`) calls the same executor.
+`--head` and `--base` are the SHAs you reviewed.
 `publication.acceptance_merge` in `.ai/harness/policy.json` on the PR base
 decides whether the executor merges. The default branch needs strict
 required checks and enforce_admins, and no merge queue (classic protection

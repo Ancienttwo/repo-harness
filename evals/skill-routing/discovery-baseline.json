@@ -277,8 +277,7 @@
       "repo-harness-ship",
       "repo-harness-architecture",
       "repo-harness-cross-review",
-      "merge-gate",
-      "repo-harness-chatgpt"
+      "merge-gate"
     ],
     "matrix": {
       "minimal": [
@@ -303,16 +302,12 @@
         "repo-harness-cross-review",
         "merge-gate"
       ],
-      "explicit_chatgpt_setup": [
-        "repo-harness-chatgpt"
-      ],
       "architecture": [
         "repo-harness-architecture"
       ]
     },
     "notes": {
       "strict": "repo-harness-cross-review is host-aware (its Claude and Codex provider modes each activate for the opposite provider); merge-gate is projected only on its gatekeeper host, not on every strict host.",
-      "explicit_chatgpt_setup": "Never implied by product-planning or any other profile; repo-harness-chatgpt is additive only after an explicit ChatGPT setup action.",
       "architecture": "Never implied by a profile; available only through the root router's progressive load or an explicit operator install."
     },
     "source": "Current routing targets after planning merged into repo-harness-check. Historical source_inventory and recorded evidence remain unchanged."
@@ -324,5 +319,5 @@
     "reason": "The line records neither the six file names nor a pinned subject SHA, so the result cannot be bound to a reproducible subject.",
     "disposition": "SSD relies on fresh deterministic gates (this slice's own tests plus the required-checks list) rather than reusing this cached number."
   },
-  "corpus_sha256": "757d37703b6d2929eeb797356f07378a260411711929faa0113676b91b827b04"
+  "corpus_sha256": "1f0caa8a4f142742f334e070bcb10d38190ba0b612ab4598b27c3dc8d0737233"
 }
