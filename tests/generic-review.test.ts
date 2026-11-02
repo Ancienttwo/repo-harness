@@ -1054,7 +1054,7 @@ let closing;const close=()=>closing??=host.dispose();
 try{const content='pending turn';writeFileSync(join(output,'context-1.txt'),content);
 const request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:'11111111-1111-4111-8111-111111111111',context_ref:join(output,'context-1.txt'),source_ref:'fixture',result_ref:join(output,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename'}};
 writeFileSync(join(output,'request-1.json'),JSON.stringify(request));writeFileSync(join(output,'started-1.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));
-const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined);
+const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined,()=>{});
 while(!existsSync(join(output,'turn-started')))await new Promise(resolve=>setTimeout(resolve,10));
 writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));
 await served;await close();
@@ -1071,7 +1071,7 @@ const host=await openScriptedReviewHost(spec.options,()=>{},async({say})=>{calls
 let closing,thrown;const close=()=>closing??=host.dispose();const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 try{
 const ack=join(output,'ack-1.json'),started=join(output,'started-1.json'),observed=join(output,'observed-1.json');
-const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined).catch(error=>{thrown=error});
+const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined,()=>{}).catch(error=>{thrown=error});
 writeFileSync(join(output,'serving'),'1');
 let partialChecks=0;
 for(const end=Date.now()+8000;!existsSync(observed)&&thrown===undefined&&Date.now()<end;await sleep(10)){
