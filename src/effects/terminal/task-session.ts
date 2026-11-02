@@ -1,62 +1,24 @@
-import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent, readTaskBinding } from './task-session-reader';
-export { assertCreated, taskSessionDirectory, readTaskAgent, readTaskBinding } from './task-session-reader';
+import { assertSessionDirectory, assertCreated, taskSessionDirectory, sameSessionData, readTaskAgent, readTaskBinding, workspaceDirectory,
+  type CreatedPane, type HerdrEndpoint, type HerdrTaskAgentSpec, type HerdrTaskBinding, type ObjectOwnership, type OwnedProcess, type StartIntent,
+  type TaskPaneBinding, type TaskWorkspaceBinding, type TerminalStartIntent, type TerminalTaskBinding } from './task-session-record';
+import { observeTaskSessionAdmission, taskBindingSha256 } from './task-session-admission';
 import { ensureSessionDirectory, nextSessionRound, processIdentity, readSessionArtifact, writeSessionArtifact, writeSessionBytes } from './task-session-io';
-export { processIdentity, readSessionArtifact, writeSessionArtifact } from './task-session-io';
 import { constants, closeSync, existsSync, fsyncSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, renameSync } from 'fs';
 import { execFileSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 import { isAbsolute, join, relative } from 'path';
-import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import type { TaskSessionAuthority } from '../admission/admission-source';
 import { validateTaskClaimReference } from '../../core/review/authority-context';
-import type { ProcessProof, TaskAgentSpec, TaskCleanupResult, TaskPrePromptInbox, TaskRequest, TaskResult, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
+import type { ProcessProof, TaskCleanupResult, TaskPrePromptInbox, TaskRequest, TaskResult, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
 import { gitExecFileSync } from '../git/runner';
-import { readWorktreeTopology } from '../git/worktree-topology';
 import { configuredGitBinary } from '../git/common-directory';
-import { taskWorkspaceKey } from '../git/repository-identity';
 import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
-import { canonicalize } from '../../core/evidence/canonical-json';
 import { ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
 import { terminateProcessGroup } from '../process-group-termination';
-import { herdrCommand, herdrMutation, herdrResult, validateHerdrEndpoint, type HerdrEndpoint } from './herdr';
+import { herdrCommand, herdrMutation, herdrResult, validateHerdrEndpoint } from './herdr';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
-export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
-export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
-
-/** Observe the existing approval; do not create a second claim or task state. */
-export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<HerdrTaskAgentSpec, 'task' | 'role' | 'harness_kind'>,
-  runtime: 'herdr' | 'terminal', authority: TaskSessionAuthority): TaskSessionAdmission {
-  const claim = validateTaskClaimReference(authority.claim);
-  const execution = taskRepository(repoRoot), owner = taskRepository(authority.source.repoRoot);
-  if (execution.repository_id !== owner.repository_id) throw new Error('task_agent_admission_repository_mismatch');
-  const topology = readWorktreeTopology(execution.execution_root).worktrees;
-  for (const root of [owner.execution_root, execution.execution_root]) {
-    if (!topology.some(entry => { try { return !entry.prunable && realpathSync(entry.path) === root; } catch { return false; } })) {
-      throw new Error('task_agent_admission_repository_mismatch');
-    }
-  }
-  const active = observeActiveReviewAdmission(authority.source), admitted = active.admission;
-  let branch: string | null = null;
-  try { branch = gitExecFileSync(['symbolic-ref', '--quiet', 'HEAD'], { cwd: execution.execution_root, encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] }).trim(); }
-  catch (error) { if ((error as { status?: number }).status !== 1) throw error; }
-  const head = gitExecFileSync(['rev-parse', 'HEAD'], { cwd: execution.execution_root, encoding: 'utf8' }).trim();
-  return {
-    identity: { repository_id: admitted.repository_id, issue_id: admitted.issue_id,
-      campaign_id: admitted.campaign_id, campaign_sha256: admitted.campaign_sha256, execution_actor: admitted.actor_id,
-      claim, source_root: owner.execution_root, execution_root: execution.execution_root, branch, task: spec.task, role: spec.role,
-      harness_kind: spec.harness_kind, runtime },
-    approval: { admission_sha256: admitted.admission_sha256, grant_sha256: active.grant_sha256, revision: active.revision,
-      goal_revision: admitted.goal.revision, scope_sha256: sessionDigest(admitted.allowed_paths) },
-    head_revision: head,
-  };
-}
-function sessionDigest(value: unknown): string {
-  return `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
-}
-/** The request and native-session `session_binding_sha256` of a task binding. */
-export function taskBindingSha256(binding: TaskPaneBinding): string { return sessionDigest(binding); }
 function recheckTaskAdmission(repoRoot: string, binding: Pick<TaskPaneBinding, 'task' | 'role' | 'harness_kind' | 'runtime' | 'task_admission'>,
   authority?: TaskSessionAuthority): TaskSessionAdmission | undefined {
   if (!binding.task_admission && !authority) return undefined; // Generic runtime use has no task admission.
@@ -65,40 +27,6 @@ function recheckTaskAdmission(repoRoot: string, binding: Pick<TaskPaneBinding, '
   if (!sameSessionData(current.identity, binding.task_admission.identity)) throw new Error('task_agent_admission_changed');
   return current;
 }
-
-interface TaskBindingCommon {
-  protocol: 2;
-  repository_id: string;
-  execution_root: string;
-  task: string;
-  role: string;
-  harness_kind: string;
-  ownership: ObjectOwnership;
-  provider: OwnedProcess;
-  max_requests: number;
-  task_admission?: TaskSessionAdmission;
-}
-export interface HerdrTaskBinding extends TaskBindingCommon {
-  runtime: 'herdr';
-  endpoint: HerdrEndpoint;
-  pane_id: string;
-  terminal_id: string;
-  workspace_id: string;
-  shell: ProcessProof;
-  agent_name: string;
-}
-/** An application host that an operator terminal (the Claude app) started
- * from the exact owner command. The terminal stays with the operator: no pane
- * identity, history or signal authority exists for it. */
-export interface TerminalTaskBinding extends TaskBindingCommon {
-  runtime: 'terminal';
-  command: string[];
-}
-export type TaskPaneBinding = HerdrTaskBinding | TerminalTaskBinding;
-export type HerdrTaskAgentSpec = TaskAgentSpec<HerdrEndpoint>;
-export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: HerdrTaskAgentSpec; runtime?: never }
-export interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
-export interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
 
 export function assertProcessProof(proof: ProcessProof): void {
   if (processIdentity(proof.pid) !== proof.identity) throw new Error('task_agent_process_identity_lost');
@@ -222,28 +150,6 @@ export function assertTaskBinding(binding: TaskPaneBinding, allowExitedProvider 
     const foreground = info(binding.endpoint, ['pane', 'process-info', '--pane', binding.pane_id]).process_info?.foreground_processes;
     if (!Array.isArray(foreground) || foreground.some(item => item.pid !== binding.shell.pid)) throw new Error('task_agent_pane_identity_lost');
   }
-}
-interface TaskWorkspaceBinding {
-  protocol: 1;
-  repository: TaskRepository;
-  endpoint: HerdrEndpoint;
-  root_workspace_id: string;
-  workspace_id: string;
-  ownership: ObjectOwnership;
-  root_pane: { pane_id: string; terminal_id: string; shell: ProcessProof; ownership: ObjectOwnership };
-}
-function workspaceDirectory(repository: TaskRepository): string {
-  return join(repository.primary_root, '.ai/harness/runs/task-workspaces', taskWorkspaceKey(repository.repository_id, repository.execution_root));
-}
-/** The session sweep cannot close an open runtime or contact Herdr. */
-export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
-  const dir = workspaceDirectory(repository);
-  try { lstatSync(dir); }
-  catch (error) { if ((error as NodeJS.ErrnoException).code === 'ENOENT') return true; throw error; }
-  assertSessionDirectory(repository.primary_root, dir);
-  if (!existsSync(join(dir, 'closed.json'))) return false;
-  const closed = readSessionArtifact<{ repository_id: string; checkout: string }>(join(dir, 'closed.json'));
-  return closed.repository_id === repository.repository_id && closed.checkout === repository.execution_root;
 }
 function assertWorkspace(binding: TaskWorkspaceBinding): void {
   const value = info(binding.endpoint, ['workspace', 'get', binding.workspace_id]).workspace;
@@ -566,7 +472,7 @@ function assertTaskRequest(root: string, dir: string, request: TaskRequest): { b
     || request.result_ref !== join(outbox, `result-${request.round}.json`)
     || request.context_ref !== join(outbox, `context-${request.round}.txt`)) throw new Error('task_agent_result_ref_mismatch');
   if (binding.task_admission) {
-    if (request.session_binding_sha256 !== sessionDigest(binding) || !request.task_admission
+    if (request.session_binding_sha256 !== taskBindingSha256(binding) || !request.task_admission
       || !sameSessionData(request.task_admission.identity, binding.task_admission.identity)) throw new Error('task_agent_request_admission_mismatch');
   } else if (request.task_admission || request.session_binding_sha256) throw new Error('task_agent_request_admission_mismatch');
   assertSessionDirectory(binding.execution_root, outbox);
@@ -642,7 +548,7 @@ export async function sendTaskRequest(repoRoot: string, task: string, role: stri
     }, 'started');
     const outbox = requestOutbox(binding, dir);
     ensureSessionDirectory(binding.execution_root, outbox);
-    const request: TaskRequest = { ...(current ? { task_admission: current, session_binding_sha256: sessionDigest(binding) } : {}), protocol: 2, task, role, round, request_id: randomUUID(),
+    const request: TaskRequest = { ...(current ? { task_admission: current, session_binding_sha256: taskBindingSha256(binding) } : {}), protocol: 2, task, role, round, request_id: randomUUID(),
       context_ref: join(outbox, `context-${round}.txt`), source_ref: contextPath,
       context_sha256: digest, result_ref: join(outbox, `result-${round}.json`),
       result_contract: { required_fields: ['request_id', 'context_sha256', 'value'], atomic_write: 'temp_rename' } };

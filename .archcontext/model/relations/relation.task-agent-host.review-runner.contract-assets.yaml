@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-agent-host.review-runner.contract-assets
+kind: reads
+source: component.task-agent-host.review-runner
+target: capability.workflow-engine.contract-assets
+intent: "Plugin → core: read the fleet role profile frontmatter rules and target overrides for the review host"

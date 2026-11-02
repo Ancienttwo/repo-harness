@@ -10,12 +10,11 @@ responsibilities:
   - "Save each request before delivery and treat a lost response as unknown delivery that is never replayed."
   - "Collect only a request-bound TaskResult validated by the owner and keep history as observation only."
   - "Fold OAR records in the owned hosts with the SDK reducer and expose bounded request-bound snapshots without task acceptance."
-  - "Close Herdr workspaces and panes without removing Git checkouts."
+  - "Close Herdr workspaces and panes without removing Git checkouts. Run the task worktree register, merge notice and cleanup actions as a process entry for the contract worktree runtime."
   - "Install the shipped Herdr notify plugin, the release-matched Herdr skill and the fleet persona definitions."
   - "Record bounded, redacted Clef shadow decisions after Herdr notification delivery and store blind Bot labels without changing notification routing or agent status."
   - "Treat pane and request state as runtime evidence; it never determines canonical GitHub issue status or task acceptance."
-  - "Own the shared closed admitted-session selector, bounded readAdmittedTaskSessions discovery and observeAdmittedSessionSource revalidation; HTTP is an operator consumer, not the session contract owner."
-  - "Bind native host session attribution to the exact immutable task binding; native attribution never grants admission. Keep immutable session reads usable by Node-safe consumers without loading owner preparation."
+  - "Bind native host session attribution to the exact immutable task binding; native attribution never grants admission."
   - "Provide the one reviewer runner for acceptance review and its OAR review host. Apply the review isolation policy that review passes as data, and refuse a session that the host cannot isolate."
   - "Reserve bounded pre-prompt inbox companions without delivery. The Node-safe host consumer validates and reads context; only exact accepted OAR proof permits the owner to commit existing inbox delivery receipts."
 source:
@@ -23,16 +22,12 @@ source:
     - src/effects/terminal/herdr.ts
     - src/effects/terminal/task-session.ts
     - src/effects/terminal/task-runtime-observation.ts
-    - src/effects/terminal/task-role-profiles.ts
     - assets/herdr/**
     - agents/fleet/**
     - .codex/agents/**
     - scripts/install-agent-fleet.sh
     - src/effects/terminal/herdr-decision.ts
-    - src/effects/sessions/admitted-source.ts
-    - src/effects/sessions/task-sessions.ts
     - src/effects/terminal/native-task-session.ts
-    - src/effects/terminal/task-session-reader.ts
     - src/effects/review-runner/**
   entrypoints:
     - id: "entrypoint.task-agent-host.session"
@@ -96,7 +91,7 @@ source:
         - name: "commitPrePromptInbox"
           sinks:
             - id: "sink.task-agent-host.inbox-session"
-              path: "src/effects/terminal/task-session-reader.ts"
+              path: "src/effects/terminal/task-session-record.ts"
               symbol: "readTaskAgent"
             - id: "sink.task-agent-host.inbox-oar-proof"
               path: "src/effects/terminal/task-runtime-observation.ts"

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.fleet-role-profiles
+kind: component
+name: Fleet Role Profiles
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: effects
+summary: Holds the agent fleet role list and the role profile frontmatter rules that the installer, setup snapshot and review runner read.
+responsibilities:
+  - Own the managed and Claude-only agent lists of agents/fleet and the role profile frontmatter parse and validation.
+source:
+  include:
+    - src/effects/terminal/task-role-profiles.ts
