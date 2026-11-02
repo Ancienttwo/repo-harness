@@ -1906,10 +1906,10 @@ test.each([undefined, "invalid"])("Herdr missing or malformed version policy is 
 }, 20000);
 
 test.each([
-  ["present", "hc 0.1.16"],
+  ["present", "hc 0.1.17"],
   ["unavailable", "hc 0.1.15"],
   ["missing", null],
-  ["configuration-error", "hc 0.1.16"],
+  ["configuration-error", "hc 0.1.17"],
 ])("herdr-core is a separate optional runtime capability: %s", (status, hcVersion) => {
   const fixture = setupFakeEnvironment("herdr-core-runtime");
   try {
