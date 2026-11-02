@@ -51,7 +51,9 @@ const PLANNING_CAPABILITY_PATHS = (() => {
 
 function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-profile-'));
-  try { run({ ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') }); } finally { rmSync(home, { recursive: true, force: true }); }
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
+  delete env.XDG_STATE_HOME;
+  try { run(env); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
 function writePath(path: string, content = ''): void {
@@ -984,6 +986,10 @@ describe('install profiles', () => {
     expect(readFileSync(lock, 'utf-8')).toBe(before);
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
   }), 30_000);
+
+  test('a relative XDG_STATE_HOME fails before the host transaction', () => withHome((env) => {
+    expect(() => installProfileHostMutationPaths({ ...env, XDG_STATE_HOME: 'state' })).toThrow('XDG_STATE_HOME must be an absolute path: state');
+  }));
 
   test('committing a host transaction only discards its backups', () => withHome((env) => {
     const path = join(env.HOME!, 'surface');
