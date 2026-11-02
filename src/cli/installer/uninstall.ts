@@ -4,7 +4,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync,
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { stagedSkillRoot, hostSkillRoot } from '../../effects/host-skill-roots';
+import { stagedSkillRoot, hostSkillRoot, providerSkillLock, type ProviderSkillLock } from '../../effects/host-skill-roots';
 import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { deepEqual } from './shared';
@@ -53,10 +53,11 @@ function readUninstallState(opts: UninstallOptions) {
   const env = opts.env ?? process.env;
   const home = hostConfigurationRoot(env);
   assertConfigurationPath(installProfileStatePath(env), home);
+  const lock = providerSkillLock(home, env);
   const state = readInstalledProfile(env);
   const receipt = readConfigurationReceipt(home);
   if (receipt.pending && !opts.recoverInterrupted) throw new Error('interrupted configuration transaction; preview recovery with uninstall --recover-interrupted --dry-run, then apply --recover-interrupted to restore recorded fragments');
-  return { state, receipt };
+  return { state, receipt, lock };
 }
 
 function uninstallResult(items: UninstallItem[], dryRun: boolean): UninstallResult {
@@ -74,7 +75,8 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   const surfaceRemovals: ManagedInstallSurface[] = [];
   const piRemovals: string[] = [];
   const piSkills = hostSkillRoot(home, 'pi', env);
-  const surfaceRoot = (path: string) => path.startsWith(piSkills + '/') ? dirname(piSkills) : home;
+  let lock: ProviderSkillLock;
+  const surfaceRoot = (path: string) => path === lock.path ? lock.root : path.startsWith(piSkills + '/') ? dirname(piSkills) : home;
   const removedSurfaces = new Set<ManagedInstallSurface>();
   const remember = (path: string): void => { if (!originals.has(path)) originals.set(path, fingerprint(path)); };
   const read = (path: string): string => writes.has(path) ? writes.get(path) ?? '' : existsSync(path) ? readFileSync(path, 'utf8') : '';
@@ -85,7 +87,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   let state: ReturnType<typeof readInstalledProfile> = null;
   let receipt: ReturnType<typeof readConfigurationReceipt>;
   try {
-    ({ state, receipt } = readUninstallState(opts));
+    ({ state, receipt, lock } = readUninstallState(opts));
   } catch (error) { unresolved(configurationReceiptPath(home), String((error as Error).message)); return result(); }
   let recovered = false;
   if (receipt.pending) {
@@ -235,16 +237,23 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   }
 
   // Only remove lock entries for staging skills actually removed in this operation.
-  const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === stagedSkillRoot(home)).map((surface) => surface.path.split('/').at(-1)!);
-  const lockPath = join(home, '.agents/.skill-lock.json');
-  if (staging.length && existsSync(lockPath)) {
+  const staging = surfaceRemovals.filter((surface) => dirname(surface.path) === stagedSkillRoot(home));
+  if (staging.length && existsSync(lock.path)) {
     try {
-      assertConfigurationPath(lockPath, home);
-      const data = object(read(lockPath));
+      assertConfigurationPath(lock.path, lock.root);
+      const data = object(read(lock.path));
       if (!data.skills || typeof data.skills !== 'object' || Array.isArray(data.skills)) throw new Error('invalid skills lock; preserved');
-      for (const name of staging) delete data.skills[name];
-      change(lockPath, `${JSON.stringify(data, null, 2)}\n`, 'removed staging skill registrations');
-    } catch (error) { unresolved(lockPath, String((error as Error).message)); }
+      for (const surface of staging) delete data.skills[surface.path.split('/').at(-1)!];
+      change(lock.path, `${JSON.stringify(data, null, 2)}\n`, 'removed staging skill registrations');
+    } catch (error) {
+      unresolved(lock.path, String((error as Error).message));
+      // A retry selects lock entries from staging ownership, so keep both.
+      for (const surface of staging) {
+        surfaceRemovals.splice(surfaceRemovals.indexOf(surface), 1);
+        removedSurfaces.delete(surface);
+        Object.assign(items.find((item) => item.path === surface.path && item.action === 'remove')!, { action: 'preserve', reason: 'staging skill retained until its lock entry can be removed' });
+      }
+    }
   }
 
   const statePath = installProfileStatePath(env);
@@ -266,17 +275,21 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
         assertConfigurationPath(dirname(path), surfaceRoot(path));
         if (fingerprint(path) !== expected) throw new Error(`configuration changed after preview: ${path}`);
       }
+      // A retry selects lock entries from staging ownership, so the lock
+      // cleanup lands before the staging removal and the ledger write.
+      const lockCleanup = writes.get(lock.path);
+      if (typeof lockCleanup === 'string') { writePrivateConfiguration(lock.path, lockCleanup, lock.root); writes.delete(lock.path); }
       // A failed Pi readback stops before the ownership ledger is written.
       for (const source of piRemovals) removePiPackage(source, env);
       for (const surface of surfaceRemovals) {
         rmSync(surface.path, { recursive: true, force: true });
       }
       for (const [path, content] of writes) {
-        assertConfigurationPath(path, home);
+        assertConfigurationPath(path, surfaceRoot(path));
         if (path === globalConfigurationPath(env)) {
           mutateGlobalConfiguration(env, () => ({ config: content === null ? null : object(content), value: undefined }), { runtimeLock: opts.runtimeLock });
         } else if (content === null) { if (existsSync(path)) unlinkSync(path); }
-        else writePrivateConfiguration(path, content, home);
+        else writePrivateConfiguration(path, content, surfaceRoot(path));
       }
       for (const path of [...originals.keys()]) {
         const parent = dirname(path);

@@ -5,7 +5,7 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
-import { runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
+import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
 import { CLI_PORTS, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
@@ -947,7 +947,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
 printf '%s\n' "$HOME" > "${isolatedHomeLog}"
-printf '%s\n%s\n%s\n' "$BUN_INSTALL" "$BUN_INSTALL_CACHE_DIR" "$XDG_CACHE_HOME" > "${isolatedRuntimeLog}"
+printf '%s\n%s\n%s\n%s\n' "$BUN_INSTALL" "$BUN_INSTALL_CACHE_DIR" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" > "${isolatedRuntimeLog}"
 mkdir -p "$BUN_INSTALL"
 printf 'isolated\n' > "$BUN_INSTALL/probe"
 mkdir -p "$HOME/.agents/skills/reverse-skill-router" "$HOME/.codex/skills/reverse-skill-router"
@@ -972,6 +972,7 @@ exit 0
           ...sanitizedChildEnv(),
           HOME: home,
           BUN_INSTALL: hostileBunInstall,
+          XDG_STATE_HOME: join(home, '.local', 'state'),
           PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
         },
       });
@@ -984,10 +985,11 @@ exit 0
         'isolated staging integrity mismatch',
       );
       expect(readFileSync(isolatedHomeLog, 'utf-8').trim()).not.toBe(home);
-      const [isolatedBunInstall, isolatedBunCache, isolatedXdgCache] = readFileSync(isolatedRuntimeLog, 'utf-8').trim().split('\n');
+      const [isolatedBunInstall, isolatedBunCache, isolatedXdgCache, isolatedXdgState] = readFileSync(isolatedRuntimeLog, 'utf-8').trim().split('\n');
       expect(isolatedBunInstall).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.bun'));
       expect(isolatedBunCache).toBe(join(isolatedBunInstall, 'install', 'cache'));
       expect(isolatedXdgCache).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.cache'));
+      expect(isolatedXdgState).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.local', 'state'));
       expect(existsSync(join(hostileBunInstall, 'probe'))).toBe(false);
       expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
       expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
@@ -2561,6 +2563,30 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       expect(readFileSync(join(home, '.agents', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
       expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
+    });
+  });
+
+  test('a fresh install owns the rules once after its profile state write', () => {
+    withRules(({ home, env, paths, run }) => {
+      for (const root of ['.agents', '.claude', '.codex']) rmSync(join(home, root, 'rules'), { recursive: true });
+      const setup = run(false);
+      expect(setup.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'skipped' });
+      recordInstallOwnership([], env);
+      const owned = ownFreshWazaSharedRules(setup, 'both', env, []);
+      expect(owned.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'ok' });
+      expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
+      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      expect(ownFreshWazaSharedRules(owned, 'both', env, [])).toBe(owned);
+    });
+  });
+
+  test('a non-directory staging rules path fails the rule step', () => {
+    withRules(({ home, run }) => {
+      rmSync(join(home, '.agents', 'rules'), { recursive: true });
+      writeFileSync(join(home, '.agents', 'rules'), 'not a directory\n');
+      const setup = run(false);
+      expect(setup.exitCode).toBe(1);
+      expect(setup.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'failed', detail: expect.stringContaining('ENOTDIR') });
     });
   });
 
