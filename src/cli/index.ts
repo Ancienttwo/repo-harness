@@ -266,8 +266,9 @@ function runTransactionalProfileProjection(
     }
     let owned: GlobalRuntimeResult;
     try {
+      const priorReceipts = (migrationSource ?? readInstalledProfile(transactionEnv))?.ownership_manifest ?? [];
       commitState(transaction, migrationSource, result);
-      owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv);
+      owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv, priorReceipts);
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
       throw error;

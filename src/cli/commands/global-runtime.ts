@@ -10,7 +10,7 @@ import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
 import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
-import { syncWazaSharedRules } from "../installer/waza-rules";
+import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
 import {
@@ -942,17 +942,20 @@ const WAZA_RULES_STEP = "sync Waza shared rules";
  * The Skills CLI never writes ~/.agents/rules, so the setup step skips the
  * rules on a fresh install. The refresh path needs an installed profile to own
  * new rules. An install therefore runs it once after its profile state write.
+ * That write renews existing receipts, so `priorReceipts` (the receipts from
+ * before the transaction) judge whether a host rule may be overwritten.
  */
 export function ownFreshWazaSharedRules(
   result: GlobalRuntimeResult,
   target: InstallTargetSpec,
   env: NodeJS.ProcessEnv,
+  priorReceipts: readonly ManagedInstallSurface[],
 ): GlobalRuntimeResult {
   const index = result.steps.findIndex((step) => step.step === WAZA_RULES_STEP);
   const wazaInstalled = result.steps.some((step) => step.step === externalSkillStepName("tw93/Waza") && step.status === "ok");
   const home = homeDir(env);
-  if (index < 0 || !wazaInstalled || existsSync(join(home, ".agents", "rules"))) return result;
-  const owned: GlobalRuntimeStep = { step: WAZA_RULES_STEP, ...syncWazaSharedRules(home, hostIds(target), env, true) };
+  if (index < 0 || !wazaInstalled || !wazaStagingRulesAbsent(home)) return result;
+  const owned: GlobalRuntimeStep = { step: WAZA_RULES_STEP, ...syncWazaSharedRules(home, hostIds(target), env, true, priorReceipts) };
   return finalizeRuntimeResult(result.steps.map((step, i) => (i === index ? owned : step)));
 }
 

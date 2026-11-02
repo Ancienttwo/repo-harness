@@ -2572,11 +2572,11 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       const setup = run(false);
       expect(setup.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'skipped' });
       recordInstallOwnership([], env);
-      const owned = ownFreshWazaSharedRules(setup, 'both', env);
+      const owned = ownFreshWazaSharedRules(setup, 'both', env, []);
       expect(owned.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'ok' });
       expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
       for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
-      expect(ownFreshWazaSharedRules(owned, 'both', env)).toBe(owned);
+      expect(ownFreshWazaSharedRules(owned, 'both', env, [])).toBe(owned);
     });
   });
 

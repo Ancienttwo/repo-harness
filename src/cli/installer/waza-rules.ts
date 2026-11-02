@@ -3,7 +3,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import wazaRules from '../../core/skill-surface/waza-shared-rules.json';
 import { runProcess } from '../../effects/process-runner';
-import { managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership } from './install-profile';
+import { managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, type ManagedInstallSurface } from './install-profile';
 import { atomicWriteFileSync } from './shared';
 
 interface RulesResult {
@@ -42,16 +42,26 @@ function fetchRules(env: NodeJS.ProcessEnv): Map<string, string> {
   }
 }
 
-/** One preflight covers staging and all hosts before the first rule write. */
+/** True when no shared rule is staged. A rolled-back install can leave the empty directory. */
+export function wazaStagingRulesAbsent(home: string): boolean {
+  return wazaRules.files.every((rule) => lstatSync(join(home, '.agents', 'rules', rule), { throwIfNoEntry: false }) === undefined);
+}
+
+/**
+ * One preflight covers staging and all hosts before the first rule write.
+ * `hostReceipts` judges host-rule ownership when a caller's own profile write
+ * has already renewed the current receipts.
+ */
 export function syncWazaSharedRules(
   home: string | null,
   hosts: readonly ('claude' | 'codex')[],
   env: NodeJS.ProcessEnv,
   refresh = false,
+  hostReceipts?: readonly ManagedInstallSurface[],
 ): RulesResult {
   if (!home) return { status: 'failed', detail: 'HOME is required' };
   const sourceDir = join(home, '.agents', 'rules');
-  if (!refresh && !existsSync(sourceDir)) {
+  if (!refresh && wazaStagingRulesAbsent(home)) {
     return { status: 'skipped', detail: `staging rules not found: ${sourceDir}` };
   }
   try {
@@ -106,7 +116,7 @@ export function syncWazaSharedRules(
         const current = readRule(destination);
         const value = next.get(rule)!;
         if (current !== undefined && current !== value && current !== previous.get(rule)) {
-          const receipt = state?.ownership_manifest.find((surface) => surface.path === destination);
+          const receipt = (hostReceipts ?? state?.ownership_manifest)?.find((surface) => surface.path === destination);
           if (!receipt || !managedInstallSurfaceIsCurrent(receipt)) {
             return { status: 'failed', detail: `refusing to overwrite unowned rule ${destination}` };
           }
