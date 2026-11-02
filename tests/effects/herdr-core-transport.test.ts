@@ -82,7 +82,8 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
   const { foreground: _, ...finished } = TERMINAL;
   const act = fake('ok', TERMINAL, {
     send: { started: true, status: 'idle', turn: 3 },
-    read: { complete: true, how: 'screen', text: 'ready' },
+    // A partial read: hc reads only the screen of a full-screen app while it works.
+    read: { complete: false, how: 'screen', text: 'ready', why: 'working' },
     wait: { children: [], ended: false, exit_code: null, reason: 'timeout', signal: null, status: null, terminal: 't4', turn: 3 },
     // hc omits foreground once the program has finished.
     kill: { ...finished, state: 'finished', reason: 'killed' },
@@ -90,7 +91,7 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
   });
   const options = { env: act.env };
   expect(hcSend('t4', 'hello', options)).toEqual({ started: true, turn: 3 });
-  expect(hcRead('t4', 5, options)).toBe('ready');
+  expect(hcRead('t4', 5, options)).toEqual({ text: 'ready', complete: false, why: 'working' });
   expect(hcWait('t4', 1, options)).toEqual({ ended: false, reason: 'timeout', turn: 3, status: null });
   expect(hcKill('t4', options)).toMatchObject({ state: 'finished', pid: 9, foreground: null, reason: 'killed' });
   expect(hcRm('t4', options)).toBe('t4');
@@ -133,7 +134,7 @@ test('scope: nested runtimes, labels outside the repo-harness set and addresses 
   const refused: HcLabels[] = [{}, { 'herdr.space': 's1' }, { 'Bad Key': 'x', ...RH_NOTIFY_LABELS }, { 'repo-harness.owner': 'x' },
     { [RH_LABEL.role]: 'worker' }, { [RH_LABEL.notify]: 'off' }];
   for (const labels of refused) expect(failure(() => hcList(labels, { env: run.env })).reason).toBe('invalid_labels');
-  for (const target of ['rh-worker', 'vps/t3', 't0', 't1a', '-t4']) {
+  for (const target of ['rh-worker', 'vps/t3', 't0', 't1a', 't10000000', '-t4']) {
     for (const call of [() => hcGet(target, { env: run.env }), () => hcKill(target, { env: run.env }), () => hcRm(target, { env: run.env })]) {
       expect(failure(call).reason).toBe('invalid_address');
     }
@@ -178,7 +179,8 @@ test('events: snapshot, heartbeat, missed and event; close resolves, and a bad l
       ['event', 10, 'turn', { state: 'idle', turn: 3 }], ['event', 11, 'foreground', null]]);
   expect(stream.argv()).toEqual(['events', '--json', '--label', 'repo-harness.notify=on']);
 
-  for (const line of ['not json', JSON.stringify({ jsonrpc: '2.0', method: 'other', params: { seq: 4 } })]) {
+  for (const line of ['not json', JSON.stringify({ jsonrpc: '2.0', method: 'other', params: { seq: 4 } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 't4', type: 'turn', data: null } })]) {
     const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', line).env });
     expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');
   }
