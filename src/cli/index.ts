@@ -41,6 +41,7 @@ import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
 import { buildBoardCommand } from './commands/board';
+import { boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
 import { buildRefactorCommand } from './commands/refactor';
@@ -936,7 +937,7 @@ export function buildProgram(): Command {
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());
-  program.addCommand(buildBoardCommand());
+  program.addCommand(buildBoardCommand(boardHostPorts()));
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
   program.addCommand(buildOperatorCommand());

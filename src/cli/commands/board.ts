@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/attention';
+import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard } from '../../effects/board/collect';
 
@@ -40,19 +41,19 @@ function attentionText(attention: BoardAttentionV1): string {
  * mandatory options, because Commander would then check them for the
  * subcommand's ancestors too; `parentNumber` checks `--parent`.
  */
-export function buildBoardCommand(): Command {
+export function buildBoardCommand(host: BoardHostPortsV1): Command {
   const board = new Command('board')
     .description('Read the board of one parent issue: sub-issues, pull requests, plan block and hc seat terminals')
     .option('--parent <number>', 'Parent issue number')
     .option('--json', 'Output JSON: the repo-harness.board document, or with attention the repo-harness.board-attention document')
     .action(guarded((options: BoardOptions) => {
       if (options.json !== true) throw new BoardCollectError('board prints JSON only; pass --json');
-      process.stdout.write(`${JSON.stringify(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options) }))}\n`);
+      process.stdout.write(`${JSON.stringify(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options), host }))}\n`);
     }));
   board.command('attention')
     .description('Run the attention rules on the board of one parent issue (takes the board options --parent and --json)')
     .action((_options: BoardOptions, command: Command) => guarded((options: BoardOptions) => {
-      const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options) }));
+      const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options), host }));
       process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
     })(command.optsWithGlobals<BoardOptions>()));
   return board;

@@ -1,11 +1,13 @@
 import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardTerminalV1, type BoardToolingV1, type BoardV1 } from '../../core/board/board';
+import {
+  linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardSeatTerminalReadV1,
+  type BoardTerminalV1, type BoardToolingV1, type BoardV1,
+} from '../../core/board/board';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
-import { HerdrCoreError, RH_LABEL, hcGet, hcList, hcVersion, type HcTerminal } from '../terminal/herdr-core';
 
 const GH_TIMEOUT_MS = 30_000;
 const POLICY_PATH = '.ai/harness/policy.json';
@@ -60,8 +62,7 @@ export interface BoardCollectInput {
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
   /** Effect seam for tests: the single-PR readiness projection. */
   readonly readiness?: (selection: PullRequestSelectionV2) => PullRequestReadinessV2;
-  /** The environment for hc; `HC_SESSION` / `HC_SOCKET` select the core. */
-  readonly hc_env?: NodeJS.ProcessEnv;
+  readonly host: BoardHostPortsV1;
   readonly now?: () => Date;
 }
 
@@ -123,25 +124,16 @@ function tooling(input: BoardCollectInput): BoardToolingV1 {
   const herdrApp = { status: 'not_pinned' } as const;
   const pin = hcPin(input.repo_root);
   if (pin === null) return { hc: { status: 'unavailable', reason: 'pin_unavailable' }, herdr_app: herdrApp };
-  try {
-    return { hc: { status: 'observed', version: hcVersion({ env: input.hc_env }), min_version: pin }, herdr_app: herdrApp };
-  } catch (error) {
-    if (error instanceof HerdrCoreError) return { hc: { status: 'unavailable', reason: `hc_${error.reason}` }, herdr_app: herdrApp };
-    throw error;
-  }
+  const version = input.host.hcVersion();
+  return { hc: version.status === 'unavailable' ? version : { status: 'observed', version: version.version, min_version: pin }, herdr_app: herdrApp };
 }
 
 const POSITIVE = /^[1-9][0-9]*$/u;
 
-function seatTerminal(terminal: HcTerminal): BoardTerminalV1 {
-  const base = {
-    address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
-    status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
-  };
-  const seat = terminal.labels[RH_LABEL.seat];
+function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
+  const { labels, ...base } = terminal;
+  const { seat, issue, pr } = labels;
   if (seat === undefined) return { ...base, seat_status: 'unavailable', reason: 'seat_label_missing' };
-  const issue = terminal.labels[RH_LABEL.issue];
-  const pr = terminal.labels[RH_LABEL.pr];
   if (seat === '' || [issue, pr].some(value => value !== undefined && !POSITIVE.test(value))) {
     return { ...base, seat_status: 'unavailable', reason: 'seat_label_invalid' };
   }
@@ -150,14 +142,8 @@ function seatTerminal(terminal: HcTerminal): BoardTerminalV1 {
 
 /** The seat terminals of this parent. A terminal without the parent label is never read. */
 function execution(input: BoardCollectInput): BoardExecutionV1 {
-  try {
-    const options = { env: input.hc_env };
-    const terminals = hcList({ [RH_LABEL.parent]: String(input.parent) }, options).map(summary => seatTerminal(hcGet(summary.address, options)));
-    return { status: 'observed', terminals: Object.freeze(terminals) };
-  } catch (error) {
-    if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` };
-    throw error;
-  }
+  const read = input.host.seatTerminals(input.parent);
+  return read.status === 'unavailable' ? read : { status: 'observed', terminals: Object.freeze(read.terminals.map(seatTerminal)) };
 }
 
 export function collectBoard(input: BoardCollectInput): BoardV1 {

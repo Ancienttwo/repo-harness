@@ -1,5 +1,6 @@
 import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
+import type { BoardHostPortsV1 } from '../../core/board/board';
 
 /**
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
@@ -423,4 +424,37 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
 /** `herdr-app do <command> <json>`: place a tab or pane in the person's window. Returns the created IDs. */
 export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<string, unknown>>, options: HerdrCoreOptions = {}): Record<string, unknown> {
   return invoke('herdr-app', ['do', command, JSON.stringify(args)], options);
+}
+
+/** The board host port (#1505): seat terminals of one parent issue by its parent label, and the hc version. */
+export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
+  const unavailable = (error: unknown) => {
+    if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
+    throw error;
+  };
+  return {
+    seatTerminals: (parent) => {
+      try {
+        const terminals = hcList({ [RH_LABEL.parent]: String(parent) }, options).map(({ address }) => {
+          const terminal = hcGet(address, options);
+          const label = (key: string) => terminal.labels[key];
+          return {
+            address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
+            status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
+            labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr) },
+          };
+        });
+        return { status: 'observed', terminals };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+    hcVersion: () => {
+      try {
+        return { status: 'observed', version: hcVersion(options) };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+  };
 }

@@ -7,6 +7,7 @@ import { decodeBoard, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard } from '../src/effects/board/collect';
+import { boardHostPorts } from '../src/effects/terminal/herdr-core';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
 // scheduled ci.yml run, and `hc ls --json` / `hc get --json` of four seat terminals on an isolated hc 0.1.17 core.
@@ -55,7 +56,7 @@ function replay(options: Replay = {}): BoardV1 {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
-    hc_env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES },
+    host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);

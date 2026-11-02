@@ -100,6 +100,32 @@ export type BoardTerminalV1 = {
   | { readonly seat_status: 'unavailable'; readonly reason: 'seat_label_missing' | 'seat_label_invalid' }
 );
 
+/** One terminal as the host reads it: the seat labels are raw label values, checked by the board collector. */
+export interface BoardSeatTerminalReadV1 {
+  readonly address: string;
+  readonly name: string | null;
+  readonly state: 'live' | 'finished';
+  readonly status: string | null;
+  readonly status_kind: string | null;
+  readonly status_ms: number | null;
+  readonly turn: number;
+  readonly labels: { readonly seat?: string; readonly issue?: string; readonly pr?: string };
+}
+
+/**
+ * The host reads that the board needs, as a core contract. The terminal host
+ * is a plugin, so only the composition root (`src/cli/index.ts`) passes its
+ * implementation in.
+ */
+export interface BoardHostPortsV1 {
+  /** Terminals that carry the parent label of this parent issue. */
+  readonly seatTerminals: (parent: number) =>
+    | { readonly status: 'observed'; readonly terminals: readonly BoardSeatTerminalReadV1[] }
+    | { readonly status: 'unavailable'; readonly reason: string };
+  /** The installed hc client version, `x.y.z`. */
+  readonly hcVersion: () => { readonly status: 'observed'; readonly version: string } | { readonly status: 'unavailable'; readonly reason: string };
+}
+
 export type BoardExecutionV1 =
   | { readonly status: 'observed'; readonly terminals: readonly BoardTerminalV1[] }
   | { readonly status: 'unavailable'; readonly reason: string };
