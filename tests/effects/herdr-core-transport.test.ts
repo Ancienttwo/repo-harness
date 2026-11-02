@@ -57,7 +57,8 @@ test('success: labels go in on run and list, and come back out of get', async ()
   expect(run.argv()).toEqual(['run', '--json', '--bg', '--label', 'repo-harness.role=notify-relay', '--label', 'repo-harness.task=1475',
     '--name', 'rh-notify-relay', '--cwd', '/w', '--no-parent', '--', 'claude', '--resume']);
 
-  const list = fake('ok', { hidden_finished: 0, terminals: [{ address: 't4', agent: 'claude', name: null, state: 'live', turn: 0 }] });
+  // hc omits the name of an unnamed terminal in ls rows.
+  const list = fake('ok', { hidden_finished: 0, terminals: [{ address: 't4', agent: 'claude', state: 'live', turn: 0 }] });
   expect(hcList(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
   expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on']);
   expect(await hcListAsync(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
@@ -68,6 +69,9 @@ test('success: labels go in on run and list, and come back out of get', async ()
     labels: { 'repo-harness.role': 'notify-relay' }, status: { state: 'idle', app: 'repo-harness', kind: null }, turn: 2,
     pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null });
   expect(get.argv()).toEqual(GET);
+  // hc counts addresses in base 30 after t1-t9: t1b is a valid address.
+  expect(hcGet('t1b', { env: get.env }).address).toBe('t4');
+  expect(get.argv()).toEqual([...GET, 'get', '--json', '--', 't1b']);
 
   const label = fake('ok', TERMINAL);
   expect(hcLabel('t4', { [RH_LABEL.task]: '1475' }, { env: label.env }).labels).toEqual({ 'repo-harness.role': 'notify-relay' });
@@ -78,7 +82,8 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
   const { foreground: _, ...finished } = TERMINAL;
   const act = fake('ok', TERMINAL, {
     send: { started: true, status: 'idle', turn: 3 },
-    read: { complete: true, how: 'screen', text: 'ready' },
+    // A partial read: hc reads only the screen of a full-screen app while it works.
+    read: { complete: false, how: 'screen', text: 'ready', why: 'working' },
     wait: { children: [], ended: false, exit_code: null, reason: 'timeout', signal: null, status: null, terminal: 't4', turn: 3 },
     // hc omits foreground once the program has finished.
     kill: { ...finished, state: 'finished', reason: 'killed' },
@@ -86,7 +91,7 @@ test('acting on one terminal: send, read, wait, kill and rm check it with get fi
   });
   const options = { env: act.env };
   expect(hcSend('t4', 'hello', options)).toEqual({ started: true, turn: 3 });
-  expect(hcRead('t4', 5, options)).toBe('ready');
+  expect(hcRead('t4', 5, options)).toEqual({ text: 'ready', complete: false, why: 'working' });
   expect(hcWait('t4', 1, options)).toEqual({ ended: false, reason: 'timeout', turn: 3, status: null });
   expect(hcKill('t4', options)).toMatchObject({ state: 'finished', pid: 9, foreground: null, reason: 'killed' });
   expect(hcRm('t4', options)).toBe('t4');
@@ -129,7 +134,7 @@ test('scope: nested runtimes, labels outside the repo-harness set and addresses 
   const refused: HcLabels[] = [{}, { 'herdr.space': 's1' }, { 'Bad Key': 'x', ...RH_NOTIFY_LABELS }, { 'repo-harness.owner': 'x' },
     { [RH_LABEL.role]: 'worker' }, { [RH_LABEL.notify]: 'off' }];
   for (const labels of refused) expect(failure(() => hcList(labels, { env: run.env })).reason).toBe('invalid_labels');
-  for (const target of ['rh-worker', 'vps/t3', 't0', '-t4']) {
+  for (const target of ['rh-worker', 'vps/t3', 't0', 't1a', 't10000000', '-t4']) {
     for (const call of [() => hcGet(target, { env: run.env }), () => hcKill(target, { env: run.env }), () => hcRm(target, { env: run.env })]) {
       expect(failure(call).reason).toBe('invalid_address');
     }
@@ -154,23 +159,31 @@ test('herdr-app do sends one JSON object and reads its stdout error', () => {
   expect([error.program, error.reason, error.exitCode, error.message]).toEqual(['herdr-app', 'failed', 1, 'herdr-app_failed (exit 1): unknown argument "place"']);
 });
 
-test('events: a labeled snapshot then events; close resolves, and a bad line or a throwing onItem stops the stream', async () => {
+test('events: snapshot, heartbeat, missed and event; close resolves, and a bad line or a throwing onItem stops the stream', async () => {
   const lines = [JSON.stringify({ channel: null, seq: 3, terminals: [TERMINAL] }),
-    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 't4', type: 'turn', data: { state: 'idle', turn: 3 } } })].join('\n');
+    JSON.stringify({ jsonrpc: '2.0', method: 'heartbeat', params: { seq: 3 } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'missed', params: { seq: 9, terminals: [TERMINAL] } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 10, terminal: 't4', type: 'turn', data: { state: 'idle', turn: 3 } } }),
+    // hc sends foreground data null when no process is in the foreground.
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 11, terminal: 't4', type: 'foreground', data: null } })].join('\n');
   const stream = fake('stream', lines);
   const items: HcStreamItem[] = [];
   let ready!: () => void;
   const received = new Promise<void>(resolve => { ready = resolve; });
-  const events = hcEvents(RH_NOTIFY_LABELS, item => { items.push(item); if (items.length === 2) ready(); }, { env: stream.env });
+  const events = hcEvents(RH_NOTIFY_LABELS, item => { items.push(item); if (items.length === 4) ready(); }, { env: stream.env });
   await received;
   events.close();
   await events.done;
-  expect(items.map(item => item.type === 'snapshot' ? item.terminals[0]!.labels : [item.event, item.data]))
-    .toEqual([{ 'repo-harness.role': 'notify-relay' }, ['turn', { state: 'idle', turn: 3 }]]);
+  expect(items.map(item => item.type === 'event' ? [item.type, item.seq, item.event, item.data] : [item.type, item.seq, item.terminals[0]!.labels]))
+    .toEqual([['snapshot', 3, { 'repo-harness.role': 'notify-relay' }], ['missed', 9, { 'repo-harness.role': 'notify-relay' }],
+      ['event', 10, 'turn', { state: 'idle', turn: 3 }], ['event', 11, 'foreground', null]]);
   expect(stream.argv()).toEqual(['events', '--json', '--label', 'repo-harness.notify=on']);
 
-  const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', 'not json').env });
-  expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');
+  for (const line of ['not json', JSON.stringify({ jsonrpc: '2.0', method: 'other', params: { seq: 4 } }),
+    JSON.stringify({ jsonrpc: '2.0', method: 'event', params: { seq: 4, terminal: 't4', type: 'turn', data: null } })]) {
+    const bad = hcEvents(RH_NOTIFY_LABELS, () => {}, { env: fake('stream', line).env });
+    expect(await bad.done.then(() => null, (error: HerdrCoreError) => error.reason)).toBe('invalid_response');
+  }
   const consumerError = new Error('consumer failed');
   const throwing = hcEvents(RH_NOTIFY_LABELS, () => { throw consumerError; }, { env: fake('stream', lines).env });
   expect(await throwing.done.then(() => null, (error: unknown) => error)).toBe(consumerError);

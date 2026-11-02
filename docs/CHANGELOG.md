@@ -2,7 +2,83 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.25.1] - 2026-11-03
+
+This release has breaking changes. #1354 deletes the ChatGPT, HTTP, OAuth,
+coding and orchestrator MCP surface. #1345 deletes the engineer, integration
+and agent-runtime clusters. #1292 retires the manual handoff helpers.
+`archctx` and `archctx-contracts` go to exact 0.11.1.
+
+### Upgrade
+
+- Run `repo-harness doctor`. It lists each retired ChatGPT file, host skill
+  link and `[mcp_servers.repo_harness]` block as `retired_chatgpt_state`,
+  with a removal command. It deletes nothing. (#1354)
+- `mcp.local.json` with `server`, `auth`, `chatgpt`, `coding`,
+  `authorizationRevision`, a retired capability or the `orchestrator` or
+  `coding` profile fails with `MCP_CONFIG_RETIRED_FIELD`. Remove the listed
+  keys. (#1354)
+- A bot record with `mcp_client_id` fails with `BOT_RECORD_RETIRED_FIELD`.
+  Remove the key from the named file. (#1354)
+- A task `binding.json` with `engineer_profile`, or an inbox receipt with
+  the `agent_runtime_effect` channel, fails with a message that names the
+  path. Remove or archive the record by hand. (#1345)
+- `repo-harness upgrade --apply --include-state-artifacts` removes retired
+  `~/.repo-harness/gates/*/merge-gate.latest.json` files and 0.10.0 package
+  archives. (#1410)
+- If `repo-harness install` reports "refusing to refresh unowned host
+  skill" for a Waza skill, move the named directory out of the host skill
+  root. Then run `repo-harness install --profile full --target <host>`.
+  (#1442)
+
+### Breaking
+
+- `repo-harness mcp serve` keeps only stdio and the planner and executor
+  profiles. The ChatGPT browser, HTTP transport, OAuth, coding runtime, task
+  dispatch and merge tools are removed, and the Bots page has no OAuth
+  clients. (#1354)
+- Remove `repo-harness integration`, `repo-harness operator planning`, and
+  the `review --engineer-id` and `--engineer-contract-revision` options. The
+  Operator web app has two observation tabs, Attention and Delivery. Adoption
+  removes the `agent_runtime` policy key. (#1345)
+- Remove the `prepare-handoff`, `prepare-codex-handoff`,
+  `codex-handoff-resume` and `recovery-view-cli` helpers and the MCP
+  `latest_handoff` tool. The issue, its claims and the PR are the only
+  session handoff. (#1292)
+
+### Added
+
+- The Operator Architecture workspace has a History tab with each
+  `archctx history` milestone. (#1300)
+- A Cloudflare Worker receives the webhooks of one GitHub App, filters them
+  and sends a bot event to the Bot routine webhook. (#1283)
+- Herdr notify sends one versioned `repo-harness.bot-event/v1` envelope.
+  (#1310)
+- A new Pi review in a Herdr pane fails with `review_pi_launch_not_ready`
+  when the installed Pi is below `MIN_PI_VERSION`. (#1100)
+- A DSH sidebar tab lists the guard denials of the session. (#1299)
+- Readiness reports herdr-core (`hc`, minimum 0.1.16) as an optional runtime
+  capability. (#1413)
+- Before a refresh changes `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`,
+  repo-harness keeps a copy in `~/.repo-harness/global-context-backups/` and
+  prints the restore command. Init prints the backup of each replaced project
+  file. (#1302)
+- `publication merge --batch` merges a batch integration PR with a merge
+  commit, so each member PR shows Merged and can be reverted alone. (#1329)
+
+### Changed
+
+- `archctx` and `archctx-contracts` are exact 0.11.1. This version fixes the
+  `AC_UNCLASSIFIED_FAILURE` crash on a workspace `exports` condition object.
+  (#1339, #1430)
+- `check:state-boundaries` rejects a core file that imports a plugin file or
+  the composition root. The ArchContext model gives the tier of each file.
+  (#1357)
+- The merge gate treats unresolved review threads that a GitHub App bot
+  started as advisory. Human threads still block. (#1396)
+- The Waza sync and upgrade commands run `repo-harness install --target
+  <host>` to project the host links. The rsync and cp loops are removed.
+  (#1442)
 
 ### Breaking
 
@@ -30,6 +106,52 @@ All notable changes to this skill are documented here.
   `doctor` reported `ok` for an installed release candidate after the release
   was published. A Bun canary of the minimum version (`1.4.0-canary.*`) is now
   below `MIN_BUN_VERSION=1.4.0`. (#1322)
+- `repo-harness update` resolves `repo-harness@latest` from any working
+  directory. Before, a directory without `package.json` stopped the update.
+  (#1409)
+- External skills with an integrity pin install with the `owner/repo#<sha>`
+  ref form. The `@` form let the provider ignore the pin. (#1445)
+- External skills stage through the `codex` provider agent for every target.
+  Before, `--target claude` did not write the staging copy. (#1425)
+- The daily CI report opens no false repair issue for a provider 5xx. A 5xx
+  in the merge section makes that section unavailable for the run, with one
+  external error and no rollback boundary. A 5xx on another read is recorded
+  with `attention_owner: external`. (#1452, #1463)
+- The daily CI report lists batch member PRs under their batch boundary and
+  opens no repair issue for each member. (#1360)
+- `publication merge` and `publication readiness` accept a batch merge
+  commit as the rollback boundary. (#1373)
+- `publication merge --batch` reads only commits and parents for the batch
+  proof, so a large member diff no longer overflows the output buffer.
+  (#1383)
+- MCP reader tools never run a CodeGraph binary from the inspected
+  repository. (#1380)
+- A failed archctx resolve gives a fix for its cause: a timeout, a package
+  fault (`repo-harness update`) or another error (`repo-harness doctor`).
+  (#1429)
+- The Bash guard allows writes below the system temp roots and the managed
+  worktree root, as Edit and Write do. (#1303)
+- Init keeps a retired runtime ignore rule while a file that it matches
+  exists. The scan does not follow a symlinked ancestor, and the handoff
+  marker matches only `codex-handoff-resume`. (#1307, #1335)
+- `upgrade decide` records each valid path of a batch, and `decide --remove`
+  accepts a retired generated handoff packet. (#1308)
+- Upgrade reports `package.json` scripts that call a retired helper or a
+  missing script key. Init keeps the `package.json` format. (#1305)
+- `upgrade --registered` previews the managed worktree sweep, and `--apply`
+  does only the previewed steps. (#1304)
+- The tarball smoke checks the current Fleet inbox fields, not the retired
+  `delivery_evidence`. (#1381)
+
+### Documentation
+
+- The issue-flow skill adds batch integration, the replan reference, the
+  land-path norms, the orchestrator triage queue, the Low-tier accept rule
+  and the Herdr orchestrator topology. (#1327, #1391, #1394, #1418, #1431, #1437)
+- The Dot Slack review protocol is added. (#1440, #1446)
+- Generated architecture outputs, the archimap and the ownership of moved
+  files are refreshed. Native OAR CI runs one leg per test file. (#1296,
+  #1352, #1393, #1441)
 
 ## [0.25.0] - 2026-10-31
 
