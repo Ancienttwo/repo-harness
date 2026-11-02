@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.task-message-claim.evidence-ledger
+kind: depends-on
+source: component.execution-primitives.task-message-claim
+target: capability.runtime-harness.evidence-ledger
+intent: "Canonicalize task message claim digests with the shared canonical JSON"

@@ -257,7 +257,6 @@ sequenceDiagram
 | primary | `workflow-engine.contract-assets` | `syncCrossReviewSkills`（`src/cli/commands/init.ts#syncCrossReviewSkills`） |
 | primary | `verification.codegraph-readiness` | `configureCodegraph`（`global-runtime.ts:1432`） |
 | archctx-closure | `hook-adapters` | `writePrivateConfiguration`（`architecture-configuration.ts:15`） |
-| archctx-closure | `execution-primitives`（`component.execution-primitives.repository-registry`，#1343） | `model-reader.ts` 引用 `effects/repo-registry.ts` |
 | cli-root | 已有 capability | `buildProgram` 注册各命令（`src/cli/index.ts:804-869`）：hook-adapters、adoption、contract-assets、codegraph-readiness、pm-dispatch、mcp-sidecar、refactor-program、operator、delegated-runs、external-source-intake |
 
 CLI 根的扇出是真实的组合根结构，所以如实建模。`index.ts` 另外注册约 13 个命令文件（state、sprint、fleet、publication、task-agent、herdr、review、chatgpt、strategy、docs、brain、run、migrate、tools）。集成步骤补上了这些命令的关系：workflow-state（state、sprint）、task-fleet、publication、task-agent-host（task-agent、herdr）、acceptance-review（review）、chatgpt-browser、strategy-reflection 与 root-router（docs）。brain 与 run 归 contract-assets，migrate 归 adoption，tools 归 codegraph-readiness。
@@ -325,6 +324,12 @@ the old Pi package sync script remain absent.
 - capability include 增加了此前无归属的 runtime、upgrade、release、配置、诊断和架构命令文件（归属提议 §1b、§1c、§1d、§1e）。现有 include 条目一条未删。
 - `flow.global-runtime-reconciliation.primary` 增加 cli-root → primary 的候选交接步骤，成功分支增加 primary → archctx-closure 和 primary → hook-adapters。全部 selector 都是 CodeGraph 直接调用。
 
+### 架构读取器与 agents 配置归 operator（2026-11-02，#1365）
+
+- `src/effects/architecture/model-reader.ts` 归 `component.operator.architecture-reader`，`src/effects/configuration/agents-configuration.ts` 归 `component.operator.agents-configuration`。本 capability 与 archctx-closure 组件用 `source.exclude` 去掉这两个文件。文件路径不变。
+- 两个符号移到本 capability：`GeneratedSummaryFreshness` 类型移到 `src/core/architecture/projection.ts`，`ARCHITECTURE_HISTORY_TIMEOUT_MS` 移到 `src/effects/architecture/archctx-provider.ts`。`projection.ts` 与 `archctx-provider.ts` 因此不再导入 operator 文件。owner 解析（`archcontext-owners.ts`）不动。
+- 删除没有源码边的关系：archctx-closure → acceptance-review、evidence-ledger、repository-registry。
+
 ## Optimization Backlog
 
 - **CLI 根是单一 SCC 的原因之一。** `src/cli/index.ts` 引用约 26 个 capability 的命令模块，而多个 capability 又通过 `src/cli/runtime/write-all-sync.ts`、`src/core/architecture/projection.ts` 等文件回到本 capability。组合根本身合理。可以做的是让被别人依赖的叶子文件离开组合根所在的 capability：`write-all-sync.ts` 移到 `execution-primitives`，`core/architecture/projection.ts` 的策略类型与 archctx 版本 pin 移到被依赖方。
@@ -332,5 +337,5 @@ the old Pi package sync script remain absent.
 - **`global-runtime.ts` 有 1,631 行。** setup 步骤、外部 skill 安装、Waza 规则同步、CodeGraph 配置都在一个文件里。按步骤族拆分前需要改动频率证据。
 - **反向边：** primary → cli-root（`doctor.ts` 的版本比较函数）。把 `compareVersions`、`readLatestPackageVersion` 移到 primary 或一个版本工具模块即可去掉。archctx-closure → primary 只有类型引用（`GlobalRuntimeStep`），可以把类型移到 `src/cli/runtime/`。
 - **多归属文件。** 3 个测试文件和 3 个 reference config 仍在本 capability 的 include 里，与 evals-checks、contract-assets 重叠。按用户决定，等 arch-context#296 和 resolver 改动后再收窄。
-- **集成没有声明的方向。** archctx-closure → contract-assets（`model-reader.ts` 读 capability registry，7 条边）与 archctx-closure → operator（4 条边）没有声明。contract-assets → 本 capability（25 条边）与 operator → 本 capability（12 条边）已经声明，且边更多。cli-root → execution-primitives 只有类型导入（`src/cli/index.ts:102-104`），没有声明。
+- **集成没有声明的方向。** #1365 把 `model-reader.ts` 与 `agents-configuration.ts` 移到 operator 以后，archctx-closure → operator 没有边。archctx-closure → contract-assets 还剩 1 条边（`archctx-provider.ts:10` 读 capability registry），没有声明。contract-assets → 本 capability（25 条边）与 operator → 本 capability（12 条边）已经声明，且边更多。cli-root → execution-primitives 只有类型导入（`src/cli/index.ts:102-104`），没有声明。
 - **与 contract-assets 的已声明双向关系。** cli-root 与 primary → contract-assets（21 条边）和 contract-assets template-projection → 本 capability（25 条边）都已声明。按边数，本 capability 的方向是回边。集成不删除分组已声明的关系。是否删除是开放问题。

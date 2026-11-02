@@ -5,9 +5,11 @@ name: Architecture View (core)
 status: active
 parent: capability.runtime-harness.operator
 layer: core
-summary: The core-layer files of Architecture View. Responsibilities stay with the parent node.
+summary: The core-layer files of Architecture View, including the module review prompt builder.
 responsibilities:
   - Hold the core-layer source files of Architecture View so layer direction is checked per directory.
+  - Build bounded module review prompts for the module CLI and the operator architecture view.
 source:
   include:
     - src/core/architecture/module-view.ts
+    - src/core/review/module-review-prompt.ts

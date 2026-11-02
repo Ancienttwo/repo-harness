@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.dsh-host.primary
+capabilityId: capability.runtime-harness.dsh-host
+name: "Guard a DSH tool call"
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-harness.dsh-host
+  - id: component
+    nodeId: component.dsh-host.primary
+steps:
+  - id: dispatch
+    from: capability
+    to: component
+    label: "Dispatch DSH Guard Plugin"
+    evidence:
+      entrypointId: entrypoint.dsh-host.plugin
+      sourceSymbol: "createDshPlugin"
+      sinkId: sink.dsh-host.hook-bridge
+outcomes:
+  - id: success
+    kind: success
+    label: "The hook bridge is resolved for the session"
+    steps:
+      - id: invoke-success
+        from: capability
+        to: component
+        label: "Resolve the packaged hook entry"
+        evidence:
+          entrypointId: entrypoint.dsh-host.plugin
+          sourceSymbol: "createDshPlugin"
+          sinkId: sink.dsh-host.hook-bridge
+    terminal:
+      participant: capability
+      label: Return the plugin with a ready bridge
+  - id: error
+    kind: error
+    label: "The hook entry is missing"
+    steps:
+      - id: invoke-error
+        from: capability
+        to: component
+        label: "Report DSH_HOOK_ENTRY_MISSING"
+        evidence:
+          entrypointId: entrypoint.dsh-host.plugin
+          sourceSymbol: "createDshPlugin"
+          sinkId: sink.dsh-host.hook-bridge
+    terminal:
+      participant: capability
+      label: Return the plugin with the bridge marked unavailable

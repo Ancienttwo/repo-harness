@@ -15,5 +15,3 @@ source:
     - src/core/fleet/task-message.ts
     - src/core/fleet/task-inbox-layout.ts
     - src/core/fleet/admitted-task-message.ts
-    - src/core/messages/task-message-claim.ts
-    - src/core/messages/task-message-error.ts

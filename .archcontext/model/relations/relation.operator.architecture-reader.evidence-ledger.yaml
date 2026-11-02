@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-reader.evidence-ledger
+kind: depends-on
+source: component.operator.architecture-reader
+target: capability.runtime-harness.evidence-ledger
+intent: "Plugin → core: canonicalize the dirty worktree digest and the stale citations of a review prompt"

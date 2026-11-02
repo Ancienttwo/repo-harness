@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.architecture-reader
+kind: component
+name: Architecture Model Reader
+status: active
+parent: capability.runtime-harness.operator
+layer: effects
+summary: Reads the committed architecture model through the shared archctx provider for module views and review prompts.
+responsibilities:
+  - Read the committed architecture model for module views and review prompts.
+source:
+  include:
+    - src/effects/architecture/model-reader.ts
