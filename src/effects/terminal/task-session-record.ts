@@ -57,7 +57,7 @@ export function classicRecordRetired(path: string): never {
 }
 export function readStartIntent(path: string): StartIntent | TerminalStartIntent {
   const intent = readSessionArtifact<StartIntent | TerminalStartIntent>(path);
-  if (intent.runtime !== 'herdr-core' && intent.runtime !== 'terminal') classicRecordRetired(path);
+  if ((intent.runtime !== 'herdr-core' && intent.runtime !== 'terminal') || Object.hasOwn(intent.spec, 'parent_terminal')) classicRecordRetired(path);
   return intent;
 }
 export function readWorkspaceBinding(path: string): TaskWorkspaceBinding {

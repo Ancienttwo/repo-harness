@@ -94,7 +94,7 @@ export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Sess
     if (operation === 'round') child.requiredOption('--reviewer-repo <path>', 'Dedicated linked reviewer checkout')
       .requiredOption('--claim-ref <reference>', 'Upstream immutable GitHub claim reference; coordination provenance, not authorization')
       .requiredOption('--claim-revision <sha256>', 'Upstream claim content revision')
-      .option('--herdr-endpoint <file>', 'JSON {endpoint:{socket,home?},parent_terminal}: the hc core socket, the HOME its programs see, and the asking hc terminal; required for --launch herdr')
+      .option('--herdr-endpoint <file>', 'JSON {endpoint:{socket,home?},parent_pane}: the hc core socket, the HOME its programs see, and the owner\'s hc terminal; required for --launch herdr')
       .option('--launch <mode>', 'herdr, or app-terminal: the Claude app operator runs the printed host command', 'herdr')
       .option('--harness <kind>', 'Explicit claude, codex or pi; no fallback for an explicit override')
       .requiredOption('--verification <path>', 'Native verification report under .ai/harness/runs/')
@@ -117,7 +117,7 @@ export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Sess
           const pullRequest = pullRequestSelectionFromOptions(opts);
           result = await runReviewRound({ repoRoot: opts.repo, authority, taskClaim: { reference: opts.claimRef, revision: opts.claimRevision }, verification: opts.verification,
             ...(pullRequest === undefined ? {} : { pullRequest }),
-            reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_terminal, launch: opts.launch,
+            reviewerRepo: opts.reviewerRepo, endpoint: addressing.endpoint, parentPane: addressing.parent_pane, launch: opts.launch,
             harness: opts.harness, timeoutMs: opts.timeoutMs === undefined ? undefined : Number(opts.timeoutMs),
             admitSession: () => {
               const location = reviewLocation(opts.repo, authority);

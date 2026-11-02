@@ -61,7 +61,7 @@ Usage:
   repo-harness run contract-worktree sweep
   repo-harness run contract-worktree status
 
-  --herdr-endpoint JSON: {"endpoint":{"socket":"<hc core socket>"},"parent_terminal":"<hc terminal>"}
+  --herdr-endpoint JSON: {"endpoint":{"socket":"<hc core socket>"}}
 USAGE_EOF
 }
 

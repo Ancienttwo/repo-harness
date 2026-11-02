@@ -16,7 +16,7 @@ import { taskSessionKey } from '../git/repository-identity';
 import { recordWorktree, readWorktreeRecord, endWorktreeRecord } from '../git/worktree-record';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
-import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_ROLE, hcGet, hcJson, hcKill, hcList, hcRm, hcRun,
+import { HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_ROLE, hcGet, hcKill, hcList, hcRm, hcRun, hcSend,
   type HcLabels, type HcTerminal, type HerdrCoreOptions } from './herdr-core';
 import { oarObservationFile, readOarObservation } from './task-runtime-observation';
 
@@ -139,14 +139,8 @@ function archiveWorkspaceIncarnation(dir: string, reason: string): void {
     try { fsyncSync(fd); } finally { closeSync(fd); }
   }
 }
-/** The parent is a live terminal on the endpoint's core that works in this repository. */
-function assertParentTerminal(endpoint: HerdrCoreEndpoint, parent: string, repository: TaskRepository): void {
-  const terminal = hcGet(parent, coreOptions(endpoint));
-  if (terminal.state !== 'live' || !terminal.foreground) throw new Error('task_agent_parent_unavailable');
-  if (taskRepository(terminal.foreground.cwd).repository_id !== repository.repository_id) throw new Error('task_agent_parent_repo_mismatch');
-}
 /** Records the hc addressing of a checkout. hc has no workspace, so registration creates nothing in the core. */
-export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrCoreEndpoint, parentTerminal: string, guard?: () => void): Promise<TaskWorkspaceBinding> {
+export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrCoreEndpoint, guard?: () => void): Promise<TaskWorkspaceBinding> {
   guard?.();
   validateHerdrCoreEndpoint(endpoint);
   const repository = taskRepository(repoRoot); const dir = workspaceDirectory(repository);
@@ -164,7 +158,6 @@ export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrCore
       }
     }
     if (closed) archiveWorkspaceIncarnation(dir, 'closed_incarnation');
-    assertParentTerminal(endpoint, parentTerminal, repository);
     const binding: TaskWorkspaceBinding = { protocol: 2, repository, endpoint };
     writeSessionArtifact(path, binding); return binding;
   });
@@ -172,7 +165,7 @@ export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrCore
 function validateSpec(spec: HerdrTaskAgentSpec): void {
   validateHerdrCoreEndpoint(spec.endpoint); // Before directory, intent, terminal or lock creation.
   if (!spec.task?.trim() || !/^[a-z][a-z0-9_-]{0,31}$/.test(spec.role)
-    || !spec.harness_kind?.trim() || !spec.parent_terminal?.trim() || !Array.isArray(spec.args)
+    || !spec.harness_kind?.trim() || !Array.isArray(spec.args)
     || spec.args.some(arg => typeof arg !== 'string') || !Number.isSafeInteger(spec.max_requests) || spec.max_requests < 1 || spec.max_requests > 100) {
     throw new Error('task_agent_spec_invalid');
   }
@@ -254,7 +247,7 @@ export async function startTaskAgent(repoRoot: string, spec: HerdrTaskAgentSpec,
     if (repository.execution_root !== repository.primary_root) {
       recordWorktree(repository.primary_root, repository.execution_root, { creator: 'task', purpose: 'task agent', task_id: spec.task });
     }
-    await registerTaskWorktree(repository.execution_root, spec.endpoint, spec.parent_terminal, recheck);
+    await registerTaskWorktree(repository.execution_root, spec.endpoint, recheck);
     recheck();
     const intent: StartIntent = { protocol: 2, runtime: 'herdr-core', repository, intent_id: randomUUID(),
       terminal_name: `task-${randomUUID().replaceAll('-', '').slice(0, 20)}`, spec, ...(taskAdmission ? { task_admission: taskAdmission } : {}) };
@@ -531,7 +524,12 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
     try {
       let terminal: HcTerminal;
       try { terminal = hcGet(owner, options); }
-      catch (error) { if (notFound(error)) return { status: 'owner_gone', reason: 'agent_exited' }; throw error; }
+      catch (error) {
+        if (notFound(error)) return { status: 'owner_gone', reason: 'agent_exited' };
+        // Only repo-harness terminals are addressable; an unlabeled owner gets the notice by hand.
+        if (error instanceof HerdrCoreError && error.reason === 'unowned') return { status: 'retained', reason: 'owner_unowned' };
+        throw error;
+      }
       if (terminal.state !== 'live' || !terminal.foreground) return { status: 'owner_gone', reason: 'agent_exited' };
       if (realpathSync(terminal.foreground.cwd) !== execution.execution_root) throw new Error('task_agent_terminal_identity_lost');
     } catch (error) { return { status: 'retained', reason: String(error) }; }
@@ -546,7 +544,7 @@ export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
     ].join('\n');
     // A timeout can follow accepted input. Record the attempt before transport and never replay it.
     writeSessionArtifact(receipt, { notice, owner, state: 'submitting' });
-    try { hcJson(['send', '--', owner, message], options); }
+    try { hcSend(owner, message, options); }
     catch (error) { return { status: 'retained', reason: `delivery_unknown; inspect the same terminal; never replay: ${String(error)}` }; }
     writeSessionArtifact(receipt, { notice, owner, state: 'accepted' }, false);
     return { status: 'notified' };

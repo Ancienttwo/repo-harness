@@ -2,8 +2,8 @@
 
 Acceptance uses the existing fleet `deep-reasoner` role and task-agent runtime.
 Prepare verification, provide a dedicated linked reviewer checkout and a JSON
-address file `{endpoint:{socket,home?},parent_terminal}` (the hc core socket and the
-asking hc terminal). Trust the exact
+address file `{endpoint:{socket,home?},parent_pane}` (the hc core socket and the
+owner's hc terminal). Trust the exact
 checkout through the normal operator workflow before starting; never respond to
 trust/update/approval prompts automatically.
 

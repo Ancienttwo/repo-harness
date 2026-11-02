@@ -48,8 +48,6 @@ export interface TaskAgentSpec<Endpoint> {
   role: string;
   harness_kind: string;
   endpoint: Endpoint;
-  /** The hc terminal that asks for the session; it must work in the same repository. */
-  parent_terminal: string;
   args: string[];
   max_requests: number;
 }
