@@ -62,11 +62,11 @@ export function buildPublicationCommand(): Command {
     .requiredOption('--repository-id <id>', 'Canonical GitHub REST repository id')
     .requiredOption('--parent <number>', 'Parent issue number of the batch')
     .requiredOption('--pr <number>', 'Member PR number, in merge order; repeat for each member',
-      (value: string, previous: readonly number[] = []) => [...previous, Number(value)])
+      (value: string, previous: readonly string[] = []) => [...previous, value])
     .requiredOption('--json', 'Output the batch build result document')
-    .action((options: { readonly repositoryId: string; readonly parent: string; readonly pr: readonly number[] }) => {
+    .action((options: { readonly repositoryId: string; readonly parent: string; readonly pr: readonly string[] }) => {
       const result = buildIntegrationBatch({ repo_root: process.cwd(), provider_repository_id: options.repositoryId,
-        parent: Number(options.parent), prs: options.pr, gh_bin: process.env.REPO_HARNESS_GH_BIN });
+        parent: options.parent, prs: options.pr, gh_bin: process.env.REPO_HARNESS_GH_BIN });
       process.stdout.write(`${JSON.stringify(result.document)}\n`);
       process.exitCode = result.exit_code;
     });
