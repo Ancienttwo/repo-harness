@@ -57,7 +57,7 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
 - A new Pi review in a Herdr pane fails with `review_pi_launch_not_ready`
   when the installed Pi is below `MIN_PI_VERSION`. (#1100)
 - A DSH sidebar tab lists the guard denials of the session. (#1299)
-- Readiness reports herdr-core (`hc`, minimum 0.1.16) as an optional runtime
+- Readiness reports herdr-core (`hc`, minimum 0.1.17) as an optional runtime
   capability. (#1413)
 - Before a refresh changes `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`,
   repo-harness keeps a copy in `~/.repo-harness/global-context-backups/` and
