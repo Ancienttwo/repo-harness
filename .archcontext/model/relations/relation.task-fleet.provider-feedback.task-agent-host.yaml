@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.task-fleet.provider-feedback.task-agent-host
+kind: calls
+source: component.task-fleet.provider-feedback
+target: capability.runtime-harness.task-agent-host
+intent: "Read the exact selected immutable task session for current feedback attribution"
