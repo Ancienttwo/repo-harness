@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7fc9ca45ec1de43c3182638bf2ca369b38307e22720499173bd4375059b94364" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:b033eeeb273d2347650b9715b9b43340502d532eacc8266bb37d72afbc7a5c86" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
@@ -66,7 +66,7 @@ flowchart LR
 
 | 組件 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- | --- |
-| `component.operator.primary` | `entrypoint.operator.http-server` | `src/effects/operator/server.ts#startOperatorServer` | `sink.operator.dev-activity-collector` → `src/effects/dev-activity/collector.ts#startDevActivityCollector`、`sink.operator.notify-collector` → `src/effects/operator/notify-collector.ts#startNotifyCollector`、`sink.operator.bot-access-collector` → `src/effects/operator/bot-access.ts#startBotAccessCollector`、`sink.operator.docs-collector` → `src/effects/operator/docs-collector.ts#startDocsCollector`、`sink.operator.tests-collector` → `src/effects/operator/tests-collector.ts#startTestsCollector`、`sink.operator.execution-collector` → `src/effects/operator/execution-collector.ts#startExecutionCollector`、`sink.operator.architecture-map-collector` → `src/effects/operator/architecture-map-collector.ts#startArchitectureMapCollector`、`sink.operator.cli-inventory-collector` → `src/effects/setup/cli-inventory.ts#startCliInventoryCollector` |
+| `component.operator.primary` | `entrypoint.operator.http-server` | `src/effects/operator/server.ts#startOperatorServer` | `sink.operator.dev-activity-collector` → `src/effects/dev-activity/collector.ts#startDevActivityCollector`、`sink.operator.notify-collector` → `src/effects/operator/notify-collector.ts#startNotifyCollector`、`sink.operator.bot-access-collector` → `src/effects/operator/bot-access.ts#startBotAccessCollector`、`sink.operator.slack-review-collector` → `src/effects/operator/slack-review-collector.ts#startSlackReviewCollector`、`sink.operator.docs-collector` → `src/effects/operator/docs-collector.ts#startDocsCollector`、`sink.operator.tests-collector` → `src/effects/operator/tests-collector.ts#startTestsCollector`、`sink.operator.execution-collector` → `src/effects/operator/execution-collector.ts#startExecutionCollector`、`sink.operator.architecture-map-collector` → `src/effects/operator/architecture-map-collector.ts#startArchitectureMapCollector`、`sink.operator.cli-inventory-collector` → `src/effects/setup/cli-inventory.ts#startCliInventoryCollector` |
 | `component.operator.primary` | `entrypoint.operator.http-server` | `src/effects/operator/server.ts#handleRequest` | `sink.operator.dev-activity-decode` → `src/core/dev-activity/decode.ts#decodeDevActivitySnapshot`、`sink.operator.dev-activity-unavailable` → `src/core/dev-activity/decode.ts#unavailableDevActivitySnapshot`、`sink.operator.architecture-request` → `src/core/operator/architecture.ts#parseArchitectureRequest` |
 | `component.operator.web-console` | `entrypoint.operator.web-dev-activity` | `src/operator-web/dev-activity.ts#fetchDevActivity` | `sink.operator.web-dev-activity-decode` → `src/core/dev-activity/decode.ts#decodeDevActivitySnapshot` |
 
@@ -139,6 +139,7 @@ flowchart LR
   - `calls` → `component.operator.primary` — Check the herdr status version and request session.snapshot through the Herdr observation transport.
   - `reads` → `capability.runtime-harness.mcp-sidecar` — Run mcp doctor and read the Bot registry and the newest audit rows for Bot access.
   - `reads` → `component.execution-primitives.repository-registry` — Read the strict repository registry snapshot and the account home for Bot access, docs and tests.
+  - `reads` → `external.slack` — Read the Dot review threads of #bot-worker with bots.info, conversations.history and conversations.replies; post nothing.
   - `reads` → `component.task-agent-host.primary` — Read the Herdr session from the notify install record at the start of each notify, Bot access and execution cycle, and read the task agent binding, native session and closed records.
   - `calls` → `component.operator.view-projections` — Build cache values with the strict Bot access, notify, docs and tests decoders and the JUnit and projection parsers.
   - `depends-on` → `capability.workflow-engine.workflow-state` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
