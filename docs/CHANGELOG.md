@@ -19,6 +19,12 @@ All notable changes to this skill are documented here.
   Archive the record and start the session again. No migration command
   exists. (#1476)
 
+### Fixed
+
+- `repo-harness update` refuses a relative `XDG_STATE_HOME` before it takes
+  the runtime lock. Before, the refused update created `~/.repo-harness`.
+  (#1502)
+
 ## [0.25.2] - 2026-11-03
 
 ### Upgrade

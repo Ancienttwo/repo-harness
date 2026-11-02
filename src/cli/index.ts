@@ -482,6 +482,8 @@ export function runTransactionalRuntimeRefresh(
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
+  // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
+  providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
     const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
