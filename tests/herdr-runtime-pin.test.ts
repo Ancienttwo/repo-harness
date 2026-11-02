@@ -83,6 +83,12 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(script).toContain('"herdr_core", HERDR_CORE_PIN_KEY,');
     const herdrLines = script.split("\n").filter((line) => /herdr/i.test(line));
     expect(herdrLines.length).toBeGreaterThan(0);
+    // The shared pin reader and floor check carry no "herdr" text, so scan their whole bodies.
+    for (const name of ["pinnedMinVersion", "pinnedRuntimeCapability"]) {
+      const start = script.indexOf(`\nfunction ${name}(`);
+      expect(start, name).toBeGreaterThanOrEqual(0);
+      herdrLines.push(...script.slice(start, script.indexOf("\n}\n", start)).split("\n"));
+    }
     for (const line of herdrLines) {
       expect(line).not.toMatch(/\d+\.\d+\.\d+/);
       expect(line).not.toMatch(/minor\s*[<>]=?\s*\d|\[2\]\)\s*[<>]/);
