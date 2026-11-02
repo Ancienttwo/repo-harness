@@ -102,6 +102,8 @@ test('wrong checkout, branch or malformed merge readback cannot notify another o
     { ...f.notice, worktree: f.root }, { ...f.notice, branch: 'another-branch' },
     { ...f.notice, merge_sha: '' }, { ...f.notice, pr: 0 },
   ]) await expect(notifyTaskWorktreeMerged(f.root, f.binding.terminal_id, notice)).rejects.toThrow();
+  // The owner is an hc terminal address; a classic pane id is refused before any read.
+  await expect(notifyTaskWorktreeMerged(f.root, 'w1:p2', f.notice)).rejects.toThrow('worktree_merge_notice_invalid');
   expect(f.prompts).toHaveLength(0);
 });
 

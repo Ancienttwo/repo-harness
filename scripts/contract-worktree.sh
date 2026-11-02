@@ -57,7 +57,7 @@ usage() {
 Usage:
   repo-harness run contract-worktree start --issue <number> [--type <branch-type>] [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
-  repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <hc-terminal> --pr <number> --merge <sha>
+  repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <hc terminal t<n>> --pr <number> --merge <sha>
   repo-harness run contract-worktree sweep
   repo-harness run contract-worktree status
 

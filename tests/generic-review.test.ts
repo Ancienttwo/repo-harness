@@ -24,7 +24,7 @@ import type { ReviewHostSpec, TaskRequest } from '../src/core/review/runner-port
 import type { TaskSessionAuthority } from '../src/effects/admission/admission-source';
 import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 import { randomUUID } from 'crypto';
-import { mockOfflineHerdr, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
+import { mockOfflineHerdr, offlineTerminalAddress, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
 import { readTaskMessageDelivery, sendTaskMessage } from '../src/effects/fleet/task-inbox';
 import { recordPrePromptInboxAccepted } from '../src/effects/review-runner/task-pre-prompt-inbox-consumer';
@@ -688,7 +688,7 @@ async function scriptedSeamHost(kind: SeamHarness, model: string | null, cwd: st
 }
 
 const AUTHOR_ROLE = 'implementer';
-const AUTHOR_PANE = `t-${AUTHOR_ROLE}`;
+const AUTHOR_PANE = offlineTerminalAddress(AUTHOR_ROLE);
 /** A bound author task session. Every turn runs through the host seam, which writes its observation file. */
 async function authorSession(f: ReturnType<typeof packetRoundFixture>, kind: SeamHarness, models: (string | null)[],
   options: { root?: string; task?: string; authority?: ReviewRoundAuthority } = {}) {

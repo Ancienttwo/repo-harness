@@ -7,8 +7,8 @@ import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { readSessionArtifact } from './task-session-io';
 
-/** One herdr-core core, addressed by its socket (`HC_SOCKET`). `home` is the HOME that the
- * programs of that core see; review reads provider credentials from it. */
+/** One herdr-core core, addressed by its socket (`HC_SOCKET`). `home` is the directory that review
+ * reads provider credentials from; repo-harness sets it as HOME for no program. */
 export interface HerdrCoreEndpoint { readonly socket: string; readonly home?: string }
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
 export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }

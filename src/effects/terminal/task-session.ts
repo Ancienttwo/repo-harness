@@ -79,6 +79,11 @@ function coreOptions(endpoint: HerdrCoreEndpoint): HerdrCoreOptions {
   return { env };
 }
 function notFound(error: unknown): boolean { return error instanceof HerdrCoreError && error.kind === 'not_found'; }
+const OWN_LABEL_KEYS: ReadonlySet<string> = new Set(Object.values(RH_LABEL));
+/** Herdr.app adds its own keys (herdr.space, herdr.tab) to a terminal it shows, so identity reads only the repo-harness keys. */
+function ownLabels(labels: HcLabels): HcLabels {
+  return Object.fromEntries(Object.entries(labels).filter(([key]) => OWN_LABEL_KEYS.has(key)));
+}
 /** The labels that `hc run` sets; they are the only identity a task-session terminal has besides its address and name. */
 function sessionLabels(session: { repository_id: string; task: string; role: string; harness_kind: string }, intentId: string): HcLabels {
   return { [RH_LABEL.role]: RH_ROLE.taskSession, [RH_LABEL.task]: taskSessionKey(session.repository_id, session.task, session.role),
@@ -94,7 +99,7 @@ function readBoundTerminal(binding: HerdrTaskBinding): HcTerminal | null {
   try { terminal = hcGet(binding.terminal_id, coreOptions(binding.endpoint)); }
   catch (error) { if (notFound(error)) return null; throw error; }
   if (terminal.address !== binding.terminal_id || terminal.name !== binding.terminal_name || terminal.pid !== binding.provider.pid
-    || !sameSessionData(terminal.labels, sessionLabels(binding, binding.ownership.intent_id))) throw new Error('task_agent_terminal_identity_lost');
+    || !sameSessionData(ownLabels(terminal.labels), sessionLabels(binding, binding.ownership.intent_id))) throw new Error('task_agent_terminal_identity_lost');
   return terminal;
 }
 function assertTerminalProcess(provider: ProcessProof, command: readonly string[]): void {
@@ -164,6 +169,8 @@ export async function registerTaskWorktree(repoRoot: string, endpoint: HerdrCore
 }
 function validateSpec(spec: HerdrTaskAgentSpec): void {
   validateHerdrCoreEndpoint(spec.endpoint); // Before directory, intent, terminal or lock creation.
+  // A parent field is the retired request shape (#1474 decision 4); its saved intent would refuse its own cleanup.
+  if (Object.hasOwn(spec, 'parent_terminal') || Object.hasOwn(spec, 'parent_pane')) classicRecordRetired('start request');
   if (!spec.task?.trim() || !/^[a-z][a-z0-9_-]{0,31}$/.test(spec.role)
     || !spec.harness_kind?.trim() || !Array.isArray(spec.args)
     || spec.args.some(arg => typeof arg !== 'string') || !Number.isSafeInteger(spec.max_requests) || spec.max_requests < 1 || spec.max_requests > 100) {
@@ -173,7 +180,7 @@ function validateSpec(spec: HerdrTaskAgentSpec): void {
 function bindStartedAgent(intent: StartIntent, created: CreatedTerminal): HerdrTaskBinding {
   const terminal = hcGet(created.terminal_id, coreOptions(intent.spec.endpoint));
   if (terminal.address !== created.terminal_id || terminal.name !== intent.terminal_name
-    || !sameSessionData(terminal.labels, intentLabels(intent))) throw new Error('task_agent_start_identity_unknown');
+    || !sameSessionData(ownLabels(terminal.labels), intentLabels(intent))) throw new Error('task_agent_start_identity_unknown');
   // The terminal's program is the provider and leads its own process group.
   if (terminal.state !== 'live' || terminal.pid === null) throw new Error('task_agent_provider_identity_unknown');
   const ownership: ObjectOwnership = { disposition: 'created', intent_id: intent.intent_id };
@@ -497,7 +504,8 @@ export interface WorktreeMergeNotification {
 /** The caller owns merge readback. A notice carries no publication or deletion grant. */
 export async function notifyTaskWorktreeMerged(repoRoot: string, owner: string,
   notice: WorktreeMergeNotice): Promise<WorktreeMergeNotification> {
-  if (!/^[A-Za-z0-9][A-Za-z0-9:_-]{0,63}$/.test(owner) || !Number.isSafeInteger(notice.pr) || notice.pr < 1
+  // The owner is an hc terminal address (t7, t1b): the grammar of herdr-core.ts. A classic pane id is refused here.
+  if (!/^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/.test(owner) || !Number.isSafeInteger(notice.pr) || notice.pr < 1
     || !/^[a-f0-9]{40}(?:[a-f0-9]{24})?$/.test(notice.merge_sha)) {
     throw new Error('worktree_merge_notice_invalid');
   }
@@ -583,8 +591,14 @@ async function closeUnboundTaskStart(dir: string, task: string, role: string, mo
   if (live.length) {
     if (!await endTerminal(intent.spec.endpoint, live[0]!.address, provider)) return { status: 'cleanup_pending', pids: provider ? [provider.pid] : [] };
   } else if (recorded) {
-    // A finished terminal stays listed until it is removed.
-    try { hcRm(recorded.terminal_id, options); } catch (error) { if (!notFound(error)) throw error; }
+    // A finished terminal stays until it is removed. Remove it only while it still has this start's identity.
+    let terminal: HcTerminal | null = null;
+    try { terminal = hcGet(recorded.terminal_id, options); } catch (error) { if (!notFound(error)) throw error; }
+    if (terminal) {
+      if (terminal.name !== intent.terminal_name || !sameSessionData(ownLabels(terminal.labels), intentLabels(intent))
+        || (provider && terminal.pid !== provider.pid)) throw new Error('task_agent_terminal_identity_lost');
+      hcRm(recorded.terminal_id, options);
+    }
   }
   if (provider && processProofAlive(provider)) return { status: 'cleanup_pending', pids: [provider.pid], reason: 'terminal_absent' };
   return finish();

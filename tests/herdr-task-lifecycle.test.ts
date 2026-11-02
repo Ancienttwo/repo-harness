@@ -222,6 +222,8 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
       for (const [path, text] of records) writeFileSync(path, text);
     }
     hc(['label', '--json', '--', binding.terminal_id, `repo-harness.request=${intentId}`]);
+    // Herdr.app labels a terminal that it shows; identity reads only the repo-harness keys, so the close below succeeds.
+    hc(['label', '--json', '--', binding.terminal_id, 'herdr.space=s1']);
 
     const crashSpec = { ...spec, role: 'crash-role' };
     const crashPath = join(fixture, 'crash-spec.json'); writeFileSync(crashPath, JSON.stringify(crashSpec));
@@ -298,6 +300,10 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(existsSync(checkout)).toBe(false);
     expect(gone(fromPrimary.binding.terminal_id)).toBe(true);
 
+    // A fresh start request in the retired shape is refused before any directory, intent or terminal exists.
+    const parentRequest = { ...spec, role: 'parent-request', parent_terminal: parent };
+    await expect(api.startTaskAgent(fixture, parentRequest, refuseLaunch)).rejects.toThrow('task_agent_classic_herdr_record_retired');
+    expect(existsSync(api.taskSessionDirectory(fixture, spec.task, 'parent-request'))).toBe(false);
     // A crash after intent created no terminal; the start reconciles and never launches.
     expect(await started('intent-only', 'intent-crash')).toBe(78);
     await expect(api.startTaskAgent(fixture, { ...spec, role: 'intent-only' }, refuseLaunch)).rejects.toThrow('start_reconciliation_required');
@@ -311,6 +317,12 @@ writeFileSync(spec.role+'-'+mode+'.binding',JSON.stringify(binding));
     expect(readFileSync(join(fixture, 'launches'), 'utf8')).toBe('advisor\ncrash-role\nlinked-role\nambiguous-role\n');
     const unboundPid = JSON.parse(readFileSync(join(fixture, 'ambiguous-role.ready'), 'utf8')).pid;
     const unbound = api.readSessionArtifact<{ terminal_id: string }>(join(api.taskSessionDirectory(fixture, spec.task, 'ambiguous-role'), 'terminal-created.json'));
+    // A recorded terminal that no longer has this start's labels is not removed.
+    hc(['label', '--json', '--', unbound.terminal_id, 'repo-harness.request=another-start']);
+    await expect(api.closeTaskAgent(fixture, spec.task, 'ambiguous-role')).rejects.toThrow('terminal_identity_lost');
+    expect([gone(unbound.terminal_id), live(unboundPid)]).toEqual([false, true]);
+    const unboundIntent = api.readSessionArtifact<{ intent_id: string }>(join(api.taskSessionDirectory(fixture, spec.task, 'ambiguous-role'), 'intent.json'));
+    hc(['label', '--json', '--', unbound.terminal_id, `repo-harness.request=${unboundIntent.intent_id}`]);
     expect(await api.closeTaskAgent(fixture, spec.task, 'ambiguous-role')).toEqual({ status: 'closed', pids: [] });
     expect(live(unboundPid)).toBe(false);
     expect(gone(unbound.terminal_id)).toBe(true);

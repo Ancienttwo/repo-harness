@@ -85,7 +85,7 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
 - Task sessions run in herdr-core terminals, not in classic Herdr panes.
   `hc run --no-parent` starts each session with the `repo-harness.role=task-session`
   labels. hc `get`, `send`, `kill` and `rm` observe, message and end it. An
-  endpoint is now `{"socket":"<hc core socket>","home":"<HOME>"}`.
+  endpoint is now `{"socket":"<hc core socket>","home":"<review credential home>"}`.
   `contract-worktree start --herdr-endpoint` takes `{"endpoint":...}` only, and
   `review round --herdr-endpoint` takes `{"endpoint":...,"parent_pane":"<owner hc terminal>"}`.
   `contract-worktree notify-merged` reaches only an owner terminal with a

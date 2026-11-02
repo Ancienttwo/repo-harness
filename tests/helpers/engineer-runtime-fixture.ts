@@ -14,11 +14,16 @@ import { taskRepository } from '../../src/effects/git/task-repository';
 import { readActiveReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import type { ExecutionHost } from '../../src/core/operator/execution-state';
 
+/** A stable hc `t<n>` address for the offline terminal of one role. */
+export function offlineTerminalAddress(role: string): string {
+  return `t${1 + [...role].reduce((sum, char) => (sum * 31 + char.charCodeAt(0)) % 9_000, 7)}`;
+}
+
 /** In-process herdr-core transport double for one task agent. The provider is the test process unless
  * `pid` names another; the parent terminal works in the execution root. The caller restores the spies. */
 export function mockOfflineHerdr(root: string, spec: HerdrTaskAgentSpec, pid = process.pid) {
   const repository = taskRepository(root);
-  const address = `t-${spec.role}`;
+  const address = offlineTerminalAddress(spec.role);
   const intentPath = join(taskSessionDirectory(root, spec.task, spec.role), 'intent.json');
   const foreground = { pid, name: 'bun', argv: [process.execPath], cwd: repository.execution_root };
   const live = { state: 'live' as const, status: null, turn: 0, reason: null, foreground };
