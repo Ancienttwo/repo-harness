@@ -1,4 +1,5 @@
 import type { Json } from 'archctx-contracts';
+import type { GeneratedSummaryFreshness } from './projection';
 
 export class ModuleReadError extends Error {
   constructor(public readonly code: string, public readonly path?: string) { super(path ? `${code}: ${path}` : code); }
@@ -60,16 +61,6 @@ export interface ModuleIndexV1 {
   schema_version: 'repo-harness.architecture-modules.v1';
   commit: string;
   modules: { id: string; domain: string; name: string; status: string; components: number; state: ModuleState }[];
-}
-
-/**
- * Generated-summary freshness from one `architecture-projection check` result.
- * `complete` is false when the check failed for a reason that is not per node.
- */
-export interface GeneratedSummaryFreshness {
-  readonly commit: string;
-  readonly staleNodeIds: ReadonlySet<string>;
-  readonly complete: boolean;
 }
 
 /** Without a check result the state stays unknown. A listed node is stale. */
