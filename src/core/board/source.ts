@@ -301,7 +301,8 @@ export interface AcceptanceRowV1 {
   readonly verdict: 'PASS' | 'FAIL';
 }
 
-const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|[^|]*\|\s*`([0-9a-f]{40})`\s*\|\s*(PASS|FAIL)\b/u;
+// The subject cell holds the SHA bare or in paired backticks (the receipt tool and the round-4 records differ).
+const RECORD_TABLE_ROW = /^\|\s*([1-9][0-9]*)\b[^|]*\|[^|]*\|\s*(`?)([0-9a-f]{40})\2\s*\|\s*(PASS|FAIL)\b/u;
 // Rounds above 3 have no receipt; the coordinator writes one `Subject: <sha>. Round <n> (...): PASS|FAIL` line.
 const RECORD_SUBJECT_LINE = /^Subject: ([0-9a-f]{40})\. Round ([1-9][0-9]*) .*?: (PASS|FAIL)\b/u;
 
@@ -315,7 +316,7 @@ export function parseAcceptanceRecord(comment: BoardCommentV1): readonly Accepta
   const rows: AcceptanceRowV1[] = [];
   for (const line of comment.body.replace(/\r\n/gu, '\n').split('\n')) {
     const table = RECORD_TABLE_ROW.exec(line);
-    if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[2]!, verdict: table[3] as 'PASS' | 'FAIL' }));
+    if (table) rows.push(Object.freeze({ round: Number(table[1]), subject_sha: table[3]!, verdict: table[4] as 'PASS' | 'FAIL' }));
     const subject = RECORD_SUBJECT_LINE.exec(line);
     if (subject) rows.push(Object.freeze({ round: Number(subject[2]), subject_sha: subject[1]!, verdict: subject[3] as 'PASS' | 'FAIL' }));
   }

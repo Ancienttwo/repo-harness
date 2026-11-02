@@ -118,8 +118,12 @@ export interface BoardSeatTerminalReadV1 {
  * implementation in.
  */
 export interface BoardHostPortsV1 {
-  /** Terminals that carry the parent label of this parent issue. */
-  readonly seatTerminals: (parent: number) =>
+  /**
+   * Terminals that carry both the repository label (the GitHub numeric
+   * repository id, decimal) and the parent label. One hc core can host seats
+   * of several repositories that share a parent number.
+   */
+  readonly seatTerminals: (repositoryId: string, parent: number) =>
     | { readonly status: 'observed'; readonly terminals: readonly BoardSeatTerminalReadV1[] }
     | { readonly status: 'unavailable'; readonly reason: string };
   /** The installed hc client version, `x.y.z`. */
@@ -240,7 +244,6 @@ export function linkedPullRequests(parent: BoardParentReadV1, reads: readonly Bo
 
 export function projectBoard(input: BoardInputV1): BoardV1 {
   const repository = input.parent.repository.name_with_owner;
-  const itemNumbers = new Set(input.parent.sub_issues.map(issue => issue.number));
   const tiers = new Map(input.parent.sub_issues.map(issue => [issue.number, tierOf(issue.labels)] as const));
   const pullRequests = linkedPullRequests(input.parent, input.pull_requests).map((read): BoardPullRequestV1 => {
     const { closes, refs } = bodyLinks(repository, read.body);
@@ -262,7 +265,8 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       refs: Object.freeze(refs),
       files: read.files,
       required_check: check,
-      acceptance: acceptance(read, check, closes.filter(number => itemNumbers.has(number)).map(number => tiers.get(number) ?? null)),
+      // A closed issue outside this board has no observed tier, so it withholds the Low path.
+      acceptance: acceptance(read, check, closes.map(number => tiers.get(number) ?? null)),
       merge_readiness: readiness ?? null,
     });
   }).sort((left, right) => left.number - right.number);

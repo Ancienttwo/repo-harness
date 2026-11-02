@@ -96,9 +96,16 @@ function openPullRequests(board: BoardV1): BoardPullRequestV1[] {
   return board.pull_requests.filter(pr => pr.state === 'open');
 }
 
-/** Open pull requests with a known acceptance. An unknown one is listed for each rule that needs it. */
+/** A pull request with an item that the plan block holds. The hold is a decision, so the merge rules skip it. */
+function held(board: BoardV1, pr: BoardPullRequestV1): boolean {
+  if (board.plan.status !== 'observed') return false;
+  const holds = new Set(board.plan.block.holds.map(hold => hold.issue));
+  return itemsOf(board, pr).some(number => holds.has(number));
+}
+
+/** Open, not held pull requests with a known acceptance. An unknown one is listed for each rule that needs it. */
 function accepted(context: Context, rule: BoardRuleId): (BoardPullRequestV1 & { readonly acceptance: { readonly status: 'accepted'; readonly accepted_at: string } })[] {
-  return openPullRequests(context.board).flatMap((pr) => {
+  return openPullRequests(context.board).filter(pr => !held(context.board, pr)).flatMap((pr) => {
     if (pr.acceptance.status === 'unknown') {
       skip(context, rule, pr.acceptance.reason, `#${pr.number}`);
       return [];
@@ -117,21 +124,27 @@ function a1(context: Context): void {
   }
 }
 
+/**
+ * A2 fires when any two candidates can batch. The scan seeds the batch with
+ * the first such pair, so an earlier pull request that overlaps both cannot
+ * hide it, then adds each later candidate that fits.
+ */
 function a2(context: Context): void {
-  const members: BoardPullRequestV1[] = [];
-  for (const pr of accepted(context, 'A2').filter(entry => !entry.is_draft)) {
-    if (pr.files === null) {
-      skip(context, 'A2', 'files_incomplete', `#${pr.number}`);
-      continue;
-    }
-    const files = new Set(pr.files);
-    const fits = members.every(member => !hasEdge(context.board, member, pr) && !member.files!.some(path => files.has(path)));
-    if (fits && members.length < A2_BATCH_MAX) members.push(pr);
+  const candidates = accepted(context, 'A2').filter(pr => !pr.is_draft).filter((pr) => {
+    if (pr.files === null) skip(context, 'A2', 'files_incomplete', `#${pr.number}`);
+    return pr.files !== null;
+  });
+  const fits = (left: BoardPullRequestV1, right: BoardPullRequestV1): boolean =>
+    !hasEdge(context.board, left, right) && !left.files!.some(path => right.files!.includes(path));
+  const seed = candidates.flatMap((left, index) => candidates.slice(index + 1).filter(right => fits(left, right)).map(right => [left, right])).at(0);
+  if (seed === undefined) return;
+  const members = [...seed];
+  for (const pr of candidates) {
+    if (members.length < A2_BATCH_MAX && !members.includes(pr) && members.every(member => fits(member, pr))) members.push(pr);
   }
-  if (members.length >= 2) {
-    find(context, 'A2', { issues: members.flatMap(pr => itemsOf(context.board, pr)), pull_requests: members.map(pr => pr.number) },
-      `${members.length} accepted PRs change disjoint files and have no dependency edge: batch ${members.map(pr => `#${pr.number}`).join(' ')}`);
-  }
+  members.sort((left, right) => left.number - right.number);
+  find(context, 'A2', { issues: members.flatMap(pr => itemsOf(context.board, pr)), pull_requests: members.map(pr => pr.number) },
+    `${members.length} accepted PRs change disjoint files and have no dependency edge: batch ${members.map(pr => `#${pr.number}`).join(' ')}`);
 }
 
 type SeatTerminal = BoardTerminalV1 & { readonly seat_status: 'observed' };
@@ -153,7 +166,10 @@ function workerTerminals(context: Context, rule: BoardRuleId): SeatTerminal[] {
 
 function a3(context: Context): void {
   for (const terminal of workerTerminals(context, 'A3')) {
-    if ((terminal.status === 'blocked' || terminal.status === 'error') && terminal.status_ms !== null && context.now - terminal.status_ms > A3_STUCK_MS) {
+    if (terminal.status !== 'blocked' && terminal.status !== 'error') continue;
+    if (terminal.status_ms === null) {
+      skip(context, 'A3', 'status_time_missing', terminal.address);
+    } else if (context.now - terminal.status_ms > A3_STUCK_MS) {
       find(context, 'A3', { issues: terminal.issue === null ? [] : [terminal.issue], terminals: [terminal.address] },
         `worker ${terminal.address} is ${terminal.status} for ${minutes(context.now - terminal.status_ms)} min`);
     }
@@ -163,8 +179,15 @@ function a3(context: Context): void {
 function a4(context: Context): void {
   for (const terminal of workerTerminals(context, 'A4')) {
     if (terminal.status !== 'done' && terminal.status !== 'idle') continue;
+    if (terminal.issue === null) {
+      skip(context, 'A4', 'issue_label_missing', terminal.address);
+      continue;
+    }
     const item = context.board.items.find(entry => entry.number === terminal.issue);
-    if (item === undefined) continue;
+    if (item === undefined) {
+      skip(context, 'A4', 'issue_off_board', terminal.address);
+      continue;
+    }
     const prs = context.board.pull_requests.filter(pr => pr.state === 'open' && (terminal.pr === null ? item.pull_requests.includes(pr.number) : pr.number === terminal.pr));
     if (prs.length === 0) continue;
     const lastCommit = prs.map(pr => pr.head_committed_at).sort().at(-1)!;
@@ -182,7 +205,9 @@ function a5(context: Context): void {
     const status = item.claim_status;
     if (status.status_kind !== 'observed' || status.pr === null || !/^done\b/u.test(status.status)) continue;
     const pr = context.board.pull_requests.find(entry => entry.number === status.pr);
-    if (pr !== undefined && pr.state !== 'merged') {
+    if (pr === undefined) {
+      skip(context, 'A5', 'claim_pr_off_board', `#${item.number}`);
+    } else if (pr.state !== 'merged') {
       find(context, 'A5', { issues: [item.number], pull_requests: [pr.number] },
         `#${item.number} claim status says done, but #${pr.number} is ${pr.state} (${status.url})`);
     }

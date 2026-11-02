@@ -177,12 +177,16 @@ function settle(program: HerdrCoreProgram, status: number | null, signal: string
   return parseObject(program, stdout);
 }
 
-function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+function run(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): SpawnSyncReturns<Buffer> {
   const env = environment(program, options);
   const result: SpawnSyncReturns<Buffer> = spawnSync(program, [...args], {
     env, timeout: timeoutOf(options), killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.error) throw spawnError(program, result.error);
+  return result;
+}
+function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+  const result = run(program, args, options);
   return settle(program, result.status, result.signal, result.stdout.toString('utf8'), result.stderr.toString('utf8'));
 }
 
@@ -268,10 +272,7 @@ function ownedTerminal(value: unknown): HcTerminal {
 
 /** `hc --version`: the installed client version (`hc 0.1.17`). It reads no core and no terminal. */
 export function hcVersion(options: HerdrCoreOptions = {}): string {
-  const result = spawnSync('hc', ['--version'], {
-    env: environment('hc', options), timeout: timeoutOf(options), killSignal: 'SIGKILL', shell: false, stdio: ['ignore', 'pipe', 'pipe'],
-  });
-  if (result.error) throw spawnError('hc', result.error);
+  const result = run('hc', ['--version'], options);
   if (result.signal || result.status !== 0) throw new HerdrCoreError('hc', 'failed', result.status ?? undefined);
   const match = /^hc ([0-9]+\.[0-9]+\.[0-9]+)\s*$/u.exec(result.stdout.toString('utf8'));
   if (!match) throw invalidResponse('version output is not "hc x.y.z"');
@@ -438,9 +439,9 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
     throw error;
   };
   return {
-    seatTerminals: (parent) => {
+    seatTerminals: (repositoryId, parent) => {
       try {
-        const terminals = hcList({ [RH_LABEL.parent]: String(parent) }, options).map(({ address }) => {
+        const terminals = hcList({ [RH_LABEL.repository]: repositoryId, [RH_LABEL.parent]: String(parent) }, options).map(({ address }) => {
           const terminal = hcGet(address, options);
           const label = (key: string) => terminal.labels[key];
           return {

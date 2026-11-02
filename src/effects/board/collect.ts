@@ -140,10 +140,16 @@ function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
   return { ...base, seat_status: 'observed', seat, issue: issue === undefined ? null : Number(issue), pr: pr === undefined ? null : Number(pr) };
 }
 
-/** The seat terminals of this parent. A terminal without the parent label is never read. */
-function execution(input: BoardCollectInput): BoardExecutionV1 {
-  const read = input.host.seatTerminals(input.parent);
-  return read.status === 'unavailable' ? read : { status: 'observed', terminals: Object.freeze(read.terminals.map(seatTerminal)) };
+/**
+ * The seat terminals of this repository and parent. A terminal without both
+ * labels is never read. No such terminal means the seat labels are not
+ * written, which the board does not read as "no stuck seats".
+ */
+function execution(input: BoardCollectInput, repositoryId: number): BoardExecutionV1 {
+  const read = input.host.seatTerminals(String(repositoryId), input.parent);
+  if (read.status === 'unavailable') return read;
+  if (read.terminals.length === 0) return { status: 'unavailable', reason: 'no_seat_terminals' };
+  return { status: 'observed', terminals: Object.freeze(read.terminals.map(seatTerminal)) };
 }
 
 export function collectBoard(input: BoardCollectInput): BoardV1 {
@@ -168,7 +174,7 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
     parent,
     pull_requests: reads,
     readiness,
-    execution: execution(input),
+    execution: execution(input, parent.repository.database_id),
     daily_run: dailyRun(input, repository, parent.repository.default_branch),
     tooling: tooling(input),
   });
