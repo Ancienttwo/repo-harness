@@ -742,9 +742,8 @@ function detectWaza() {
         : "Local Waza SKILL.md and shared rule files match upstream GitHub raw content.";
 
   const status = summarizeWazaStatus(hostStatuses);
-  const installCommand = `bunx skills add tw93/Waza -g -a ${
-    hostMode === "both" ? "claude-code codex" : hostMode === "claude" ? "claude-code" : "codex"
-  } -s think hunt check health -y`;
+  // codex is the universal Skills CLI agent; it writes the staging copy for every host mode.
+  const installCommand = "bunx skills add tw93/Waza -g -a codex -s think hunt check health -y";
   const syncCommand = SELECTED_HOSTS.map((host) => buildWazaHostSyncCommand(host)).join(" && ");
   const verifyCommand = SELECTED_HOSTS.map((host) => buildWazaHostVerifyCommand(host)).join(" && ");
 
