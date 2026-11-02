@@ -17,10 +17,10 @@ import {
   SETUP_PROJECTION,
   SETUP_REASONS,
   SETUP_SNAPSHOT_STATUSES,
-  SKILL_PROJECTION_STATES,
   type SetupReason,
   type SetupSnapshotV2,
 } from './types';
+import { SKILL_PROJECTION_STATES } from '../skill-surface/projection-state';
 
 export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV2 {
   return {

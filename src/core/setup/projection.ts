@@ -22,8 +22,8 @@ import {
   type SetupSkill,
   type SetupSnapshotV2,
   type SetupSummary,
-  type SkillProjectionState,
 } from './types';
+import type { SkillProjectionState } from '../skill-surface/projection-state';
 
 export interface SetupRawCheck {
   readonly id: string;

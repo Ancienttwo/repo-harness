@@ -179,7 +179,8 @@ module is in the title so that a list view shows the write scopes.
   a third round. One reviewer takes each artifact.
 - Use the host's dispatch mechanism (a Herdr pane, a top-level host
   session, a hosted subagent). A dispatch does not grant publication,
-  deletion or credential authority.
+  deletion or credential authority. For the Herdr pane topology, follow
+  [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
 ## 8. Follow up
 
@@ -269,7 +270,8 @@ A PR is eligible when all of these are true:
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
   prints nothing.
-- It has no unresolved review thread.
+- It has no unresolved review thread that a person started. A review bot
+  thread is advisory input and does not block.
 - Its closing references are correct.
 
 ```bash

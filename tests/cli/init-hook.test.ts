@@ -15,6 +15,7 @@ import { planAdoption } from '../../src/effects/adoption/plan';
 import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
+import { CLI_PORTS } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -127,7 +128,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       const original = readUpgradeFixture('upgrade-v0.10-home', '.repo-harness/hook-shim.sh').toString('utf8');
       writeFileSync(target, original);
-      const report = runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
+      const report = runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       expect(formatInitHook(report)).toContain('1 leftovers (1 removable). Run: repo-harness upgrade');
       expect(formatInitHook(report)).not.toContain(target);
@@ -141,7 +142,7 @@ describe('init-hook command', () => {
       mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
       mkdirSync(join(repo, '.ai/harness'), { recursive: true });
       writeFileSync(join(repo, library), readUpgradeFixture('upgrade-v0.10-project', library));
-      const run = () => runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
+      const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       expect(run().leftovers).toEqual({ total: 1, removable: 0 });
 
@@ -159,7 +160,7 @@ describe('init-hook command', () => {
   });
   test('flags a project host config only when it holds a repo-harness command', () => {
     withTempHome((home, repo) => {
-      const run = () => runInitHook({ cwd: repo, env: { ...process.env, HOME: home },
+      const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       const claude = join(repo, '.claude/settings.json');
       const codex = join(repo, '.codex/hooks.json');
@@ -187,7 +188,7 @@ describe('init-hook command', () => {
 
   test('reports missing Global Working Rules as Agent action without creating files', () => {
     withTempHome((home, repo) => {
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -210,7 +211,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(filePath, '# Global Working Rules\n\n- Existing user rule.\n');
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -231,7 +232,7 @@ describe('init-hook command', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), `notes\r\n\r\n${currentRulesBlock().replace(/\n/g, '\r\n')}`);
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -249,7 +250,7 @@ describe('init-hook command', () => {
       writeFileSync(target, currentRulesBlock());
       mkdirSync(join(home, '.codex'), { recursive: true });
       symlinkSync(target, join(home, '.codex', 'AGENTS.md'));
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -291,7 +292,7 @@ describe('init-hook command', () => {
       withTempHome((home, repo) => {
         mkdirSync(join(home, '.codex'), { recursive: true });
         writeFileSync(join(home, '.codex', 'AGENTS.md'), entry.content);
-        const report = runInitHook({
+        const report = runInitHook(CLI_PORTS.doctor, {
           cwd: repo,
           target: 'codex',
           env: { ...process.env, HOME: home },
@@ -313,7 +314,7 @@ describe('init-hook command', () => {
       // A directory at the expected file path makes readFileSync throw EISDIR.
       mkdirSync(join(home, '.codex', 'AGENTS.md'), { recursive: true });
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -334,7 +335,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -355,7 +356,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -380,7 +381,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -423,7 +424,7 @@ describe('init-hook command', () => {
         path: join(home, '.repo-harness', 'install-state.json'),
       };
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -456,7 +457,7 @@ describe('init-hook command', () => {
         path: join(home, '.repo-harness', 'install-state.json'),
       };
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -479,7 +480,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -505,7 +506,7 @@ describe('init-hook command', () => {
   test('setup projects Pi integration diagnostics without an install action', () => {
     withTempHome((home, repo) => {
       const detail = 'PI_HERDR_INTEGRATION_MISSING: pi: not installed (/fixture/pi); explicit user step: herdr integration install pi';
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo, target: 'both', env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), toolingReport: baseToolingReport(),
         doctorReport: baseDoctorReport([{ id: 'pi-herdr-integration', describe: 'Herdr native Pi integration', status: 'fail', detail }]),
@@ -532,7 +533,7 @@ describe('init-hook command', () => {
       ]);
 
       for (const target of ['claude', 'codex', 'both'] as const) {
-        const report = runInitHook({
+        const report = runInitHook(CLI_PORTS.doctor, {
           cwd: repo,
           target,
           env: { ...process.env, HOME: home },
@@ -563,9 +564,9 @@ describe('init-hook command', () => {
       mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
       writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), `${JSON.stringify({ minimum_harness_version: '999.0.0' })}\n`);
       // The real doctor check, projected through the update check.
-      const registry = runDoctor(repo, 'codex').checks.find((entry) => entry.id === 'capability-registry')!;
+      const registry = runDoctor(CLI_PORTS.doctor, repo, 'codex').checks.find((entry) => entry.id === 'capability-registry')!;
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -587,7 +588,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -610,7 +611,7 @@ describe('init-hook command', () => {
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       writeFileSync(join(repo, '.ai', 'harness', 'workflow-contract.json'), '{}\n');
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -637,7 +638,7 @@ describe('init-hook command', () => {
       const apply = applyAdoptionPlan(planAdoption({ repoRoot: repo, mode: 'standard', apply: false }));
       expect(apply.ok).toBe(true);
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -659,7 +660,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: ROOT,
         sourceRoot: join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness'),
         target: 'codex',
@@ -682,7 +683,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -704,7 +705,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -741,7 +742,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         checkUpdates: true,
@@ -774,7 +775,7 @@ describe('init-hook command', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
 
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -823,7 +824,7 @@ describe('init-hook command', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
-      const report = runInitHook({
+      const report = runInitHook(CLI_PORTS.doctor, {
         cwd: repo,
         target: 'codex',
         env: { ...process.env, HOME: home },
@@ -875,8 +876,8 @@ describe('setup check builder', () => {
           agent_fleet: { name: 'agent_fleet', status: 'missing', reason: 'none', install_command: 'repo-harness run install-agent-fleet' },
         }),
       };
-      const build = buildSetupCheck(options);
-      expect(JSON.stringify(build.report)).toBe(JSON.stringify(runInitHook(options)));
+      const build = buildSetupCheck(CLI_PORTS.doctor, options);
+      expect(JSON.stringify(build.report)).toBe(JSON.stringify(runInitHook(CLI_PORTS.doctor, options)));
       const commandFor = (checkId: string) => build.check_actions.get(checkId)?.command;
       expect(build.check_actions.get('status.adapter.codex')?.id).toBe('adapter.codex.install');
       expect(commandFor('status.adapter.codex')).toBe('repo-harness install --target codex --location global');

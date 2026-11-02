@@ -228,9 +228,8 @@ if (payload?.protocol !== OPERATOR_FLEET_PAYLOAD_PROTOCOL || payload?.kind !== '
 const { stableSnapshot } = await import(`${process.cwd()}/node_modules/repo-harness/src/operator-web/fixture.ts`);
 decodeOperatorFleetSnapshot(payload);
 const fixture = decodeOperatorFleetSnapshot(stableSnapshot);
-const evidence = fixture.repositories.flatMap((repo) => repo.cards).find((card) => card.inbox.delivery_evidence?.candidate_count === 1)?.inbox.delivery_evidence;
-if (!evidence?.latest || !/^sha256:[0-9a-f]{64}$/.test(evidence.latest.observation_sha256)) {
-  fail('installed operator payload consumer did not preserve nonempty notification evidence');
+if (!fixture.repositories.flatMap((repo) => repo.cards).some((card) => card.inbox.unread_count > 0 && card.inbox.addressed_to_current_claim === true)) {
+  fail('installed operator payload consumer did not preserve nonempty inbox state');
 }
 const serialized = JSON.stringify(payload);
 for (const forbidden of ['repo_root', 'cause', 'stderr', 'stack', isolatedHome]) {

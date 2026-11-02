@@ -35,7 +35,6 @@ import {
 import { hostSkillRoot, SKILL_HOSTS, type SkillHost } from "../../effects/host-skill-roots";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
-import { ensureCodegraph } from "../tools/codegraph";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
 import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
@@ -119,6 +118,15 @@ export interface InitCommandResult {
   repoRoot: string;
   steps: InitStep[];
   lines: string[];
+}
+
+/** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
+export interface InitPorts {
+  /** The CodeGraph index step. `step` names the skipped step when CodeGraph is disabled or the run is a dry run. */
+  readonly codegraphStep: {
+    readonly step: string;
+    readonly run: (ctx: { repoRoot: string; sync: boolean; env: NodeJS.ProcessEnv | undefined; target: InstallTargetSpec }) => InitStep[];
+  };
 }
 
 /** Internal dependency seam for filesystem-isolated tests. CLI callers use the OS account resolver. */
@@ -295,6 +303,7 @@ export function syncCrossReviewSkills(
 }
 
 export function runInit(
+  ports: InitPorts,
   opts: InitCommandOptions = {},
   dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
 ): InitCommandResult {
@@ -350,58 +359,10 @@ export function runInit(
   }
 
   if (codegraph && apply) {
-    try {
-      const cg = ensureCodegraph({ repoRoot, init: true, sync: syncCodegraph, env: commandEnv, host: target });
-      const failedActions = cg.actions.filter((entry) => entry.status === "failed");
-      const indexReady = cg.projectIndexStatus === "up-to-date";
-      const cgFailed = failedActions.length > 0 || !indexReady;
-      const actionDetail = cg.actions.map((entry) => `${entry.action}:${entry.status}`).join(", ");
-      const indexDetail = `index ${cg.projectIndexStatus}`;
-      const indexRemediation = cg.projectIndexStatus === "unavailable" && cg.resolution.source === "missing"
-        ? `install with: ${cg.remediation.installCommand}; then run: ${cg.remediation.initCommand} && ${cg.remediation.syncCommand}`
-        : cg.projectIndexStatus === "unavailable" || cg.projectIndexStatus === "unknown"
-          ? `inspect with: ${cg.remediation.projectIndexCommand}`
-          : cg.projectIndexStatus === "stale"
-            ? `run: ${cg.remediation.syncCommand}`
-            : `run: ${cg.remediation.initCommand} && ${cg.remediation.syncCommand}`;
-      const failureDetail = [
-        ...failedActions.map((entry) => entry.stderr || `${entry.action} failed`),
-        ...(!indexReady
-          ? [`CodeGraph is enabled, but the project index is ${cg.projectIndexStatus}; ${indexRemediation}`]
-          : []),
-      ].filter(Boolean).join("\n");
-      steps.push({
-        step: "ensure codegraph index",
-        status: cgFailed ? "failed" : cg.actions.length === 0 ? "skipped" : "ok",
-        detail: actionDetail ? `${actionDetail}; ${indexDetail}` : indexDetail,
-        stderr: failureDetail || undefined,
-      });
-
-      const mcpHosts =
-        (cg.raw as { mcp_hosts?: Record<string, { status?: string }> }).mcp_hosts ?? {};
-      const mcpConfigured =
-        cg.resolution.source !== "missing" &&
-        ["codex", "claude"].every((host) => mcpHosts[host]?.status === "configured");
-
-      if (cg.resolution.source !== "missing" && !mcpConfigured) {
-        steps.push({
-          step: "codegraph mcp",
-          status: "skipped",
-          detail:
-            "not registered; run: repo-harness tools configure codegraph --target both --location global",
-        });
-      }
-    } catch (error) {
-      steps.push({
-        step: "ensure codegraph index",
-        status: "failed",
-        detail: "CodeGraph readiness check failed",
-        stderr: error instanceof Error ? error.message : String(error),
-      });
-    }
+    steps.push(...ports.codegraphStep.run({ repoRoot, sync: syncCodegraph, env: commandEnv, target }));
   } else {
     steps.push({
-      step: "ensure codegraph index",
+      step: ports.codegraphStep.step,
       status: "skipped",
       detail: codegraph ? "dry-run" : "disabled",
     });

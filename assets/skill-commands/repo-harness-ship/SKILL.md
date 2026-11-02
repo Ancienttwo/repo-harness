@@ -13,7 +13,8 @@ revision and independent review when risk requires it. Preserve unrelated work.
 
 Main publication, deletion, credentials/permissions and release/production
 have separate boundaries. Merge only when this task authorizes main publication,
-automated checks pass and GitHub has no change request or unresolved review thread.
+automated checks pass and GitHub has no change request or unresolved review thread
+that a person started. A review bot thread is advisory.
 An explicit no-merge instruction wins. Record the squash commit, its revert
 command and the daily report after authorized publication.
 

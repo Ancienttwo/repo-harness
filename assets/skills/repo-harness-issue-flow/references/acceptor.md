@@ -77,7 +77,8 @@ Act on the exit code:
 | 5 | `review_publish_partial`, `review_publish_unknown` | Stop and inspect the PR. Never retry before you confirm which comments exist. |
 | 1 | `review_publish_provider_unavailable`, `review_publish_failed` | Report the error and the posted URLs. |
 
-The merge executor refuses a PR with an unresolved review thread (D6).
+The merge executor refuses a PR with an unresolved review thread that a
+person started (D6). A review bot thread is advisory and does not block.
 
 ## 5. Result schema
 

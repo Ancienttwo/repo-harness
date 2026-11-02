@@ -10,7 +10,7 @@ import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type 
 import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
-import type { SkillProjectionState } from '../../core/setup/types';
+import type { SkillProjectionState } from '../../core/skill-surface/projection-state';
 import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
@@ -24,7 +24,6 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
-import { checkCodegraph, type CodegraphCheckResult } from '../tools/codegraph';
 import { CLI_VERSION, expectedManagedProfile, formatManagedHookProjectionMismatch, inspectManagedProjection, readInstalledProfileForStatus } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
@@ -69,6 +68,12 @@ export interface DoctorCheck {
   id: string;
   describe: string;
   run(): Omit<DoctorCheckResult, 'id' | 'describe'>;
+}
+
+/** Plugin checks that the composition root (src/cli/index.ts) passes in. */
+export interface DoctorPorts {
+  /** The CodeGraph readiness, MCP host and index checks, in report order. */
+  readonly codegraphChecks: (cwd: string) => DoctorCheckResult[];
 }
 
 export interface DoctorReport {
@@ -350,142 +355,6 @@ function checkCodexTrustState(): DoctorCheckResult {
   }
 }
 
-function doctorStatusForCodegraph(status: CodegraphCheckResult['status']): CheckStatus {
-  if (status === 'present') return 'ok';
-  if (status === 'missing') return 'fail';
-  return 'warn';
-}
-
-function formatCodegraphDetail(result: CodegraphCheckResult): string {
-  const raw = result.raw as Record<string, any>;
-  const indexStatus = raw.project_index?.status ?? 'unknown';
-  const codexMcpStatus = raw.mcp_hosts?.codex?.status ?? 'unknown';
-  const claudeMcpStatus = raw.mcp_hosts?.claude?.status ?? 'unknown';
-  const bits = [
-    result.reason,
-    `source=${result.resolution.source}`,
-    `version=${result.resolution.version ?? 'unknown'}`,
-    `codex-mcp=${codexMcpStatus}`,
-    `claude-mcp=${claudeMcpStatus}`,
-    `index=${indexStatus}`,
-  ];
-  if (result.resolution.globalFallbackUsed) bits.push('global-fallback=true');
-  const remediation = codegraphRemediation(result);
-  if (remediation) bits.push(`remediation=${remediation}`);
-  return bits.join('; ');
-}
-
-function codegraphRemediation(result: CodegraphCheckResult): string | null {
-  if (result.status === 'present') return null;
-
-  const raw = result.raw as Record<string, any>;
-  if (result.resolution.source === 'missing') {
-    return String(raw.install_command ?? 'bash scripts/ensure-codegraph.sh');
-  }
-  if (result.resolution.globalFallbackUsed) {
-    return String(raw.install_command ?? 'bun install');
-  }
-  if (raw.mcp_hosts?.codex?.status !== 'configured' || raw.mcp_hosts?.claude?.status !== 'configured') {
-    return String(raw.mcp_install_command ?? 'repo-harness tools configure codegraph --target both --location global');
-  }
-  if (raw.project_index?.status === 'not-initialized') {
-    return String(raw.init_command ?? 'bash scripts/ensure-codegraph.sh --init');
-  }
-  if (raw.project_index?.status === 'stale') {
-    return String(raw.sync_command ?? 'bash scripts/ensure-codegraph.sh --sync');
-  }
-  return String(raw.ensure_command ?? raw.sync_command ?? 'bash scripts/ensure-codegraph.sh --check');
-}
-
-interface CodegraphProbe {
-  result?: CodegraphCheckResult;
-  error?: Error;
-}
-
-function probeCodegraph(cwd: string): CodegraphProbe {
-  try {
-    return { result: checkCodegraph({ repoRoot: cwd, host: 'both' }) };
-  } catch (err) {
-    return { error: err as Error };
-  }
-}
-
-function checkCodegraphReadiness(probe: CodegraphProbe): DoctorCheckResult {
-  const id = 'codegraph-readiness';
-  const describe = 'CodeGraph CLI, MCP, and project index readiness';
-  if (probe.result) {
-    return {
-      id,
-      describe,
-      status: doctorStatusForCodegraph(probe.result.status),
-      detail: formatCodegraphDetail(probe.result),
-    };
-  }
-  return {
-    id,
-    describe,
-    status: 'fail',
-    detail: `error checking CodeGraph readiness: ${probe.error?.message ?? 'unknown error'}`,
-  };
-}
-
-function checkCodegraphMcpHost(probe: CodegraphProbe, host: 'codex' | 'claude'): DoctorCheckResult {
-  const id = `${host}-codegraph-mcp`;
-  const describe = `${host === 'codex' ? 'Codex' : 'Claude Code'} CodeGraph MCP config`;
-  if (!probe.result) {
-    return {
-      id,
-      describe,
-      status: 'fail',
-      detail: `error checking CodeGraph MCP config: ${probe.error?.message ?? 'unknown error'}`,
-    };
-  }
-
-  const raw = probe.result.raw as Record<string, any>;
-  const entry = raw.mcp_hosts?.[host];
-  if (entry?.status === 'configured') {
-    return { id, describe, status: 'ok', detail: entry.reason ?? 'configured' };
-  }
-  return {
-    id,
-    describe,
-    status: 'warn',
-    detail: `${entry?.reason ?? 'missing'}; remediation=repo-harness tools configure codegraph --target ${host} --location global`,
-  };
-}
-
-function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
-  const id = 'codegraph-index';
-  const describe = 'CodeGraph project index';
-  if (!probe.result) {
-    return {
-      id,
-      describe,
-      status: 'fail',
-      detail: `error checking CodeGraph index: ${probe.error?.message ?? 'unknown error'}`,
-    };
-  }
-
-  const raw = probe.result.raw as Record<string, any>;
-  const indexStatus = raw.project_index?.status ?? 'unknown';
-  const status: CheckStatus = indexStatus === 'up-to-date'
-    ? 'ok'
-    : indexStatus === 'stale' || indexStatus === 'unknown'
-      ? 'warn'
-      : 'fail';
-  const remediation = indexStatus === 'not-initialized'
-    ? raw.init_command
-    : indexStatus === 'stale'
-      ? raw.sync_command
-      : raw.ensure_command;
-  return {
-    id,
-    describe,
-    status,
-    detail: `index=${indexStatus}${raw.project_index?.detail ? `; ${raw.project_index.detail}` : ''}${remediation ? `; remediation=${remediation}` : ''}`,
-  };
-}
-
 function checkSecurityConfig(report: SecurityScanReport): DoctorCheckResult {
   const id = 'security-config';
   const describe = 'Local hook and VS Code automatic task security scan';
@@ -748,9 +617,9 @@ function checkDshPlugin(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult
   return { id, describe, status: 'ok', detail: `repo-harness bundle declared in profile ${declared.join(', ')}` };
 }
 
-export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
+export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
-  const codegraphProbe = probeCodegraph(cwd);
+  const codegraphChecks = ports.codegraphChecks(cwd);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
@@ -765,10 +634,7 @@ export function runDoctor(cwd: string = process.cwd(), target: DoctorTarget = 'b
     }
   }
   checks.push(checkCodexTrustState());
-  checks.push(checkCodegraphReadiness(codegraphProbe));
-  checks.push(checkCodegraphMcpHost(codegraphProbe, 'codex'));
-  checks.push(checkCodegraphMcpHost(codegraphProbe, 'claude'));
-  checks.push(checkCodegraphIndex(codegraphProbe));
+  checks.push(...codegraphChecks);
   checks.push(checkSecurityConfig(securityReport));
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));
