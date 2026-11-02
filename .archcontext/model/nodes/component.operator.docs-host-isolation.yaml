@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.docs-host-isolation
+kind: component
+name: Docs Host Isolation
+status: active
+parent: capability.runtime-harness.operator
+layer: effects
+summary: Builds the Seatbelt isolation for the docs host that operator doc sessions start, and checks its platform and writable paths.
+responsibilities:
+  - Expose the docs host lexical writable-path predicate from the same file and directory deny patterns used in its Seatbelt profile; callers still apply generated-target and hand-edit authorities.
+source:
+  include:
+    - src/effects/review/docs-host-isolation.ts
