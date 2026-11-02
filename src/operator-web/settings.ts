@@ -7,7 +7,6 @@ import {
   type AgentsConfigV1,
   type AgentsSettingsChangeV1,
   type AgentsSettingsRequestV1,
-  type AgentsSettingsResultV1,
   type AgentsSettingsV1,
 } from '../core/operator/agents-settings';
 import { asApiError } from './fleet-api';
@@ -15,29 +14,39 @@ import type { OperatorApiErrorV1 } from './types';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**
- * Browser side of `GET` and `POST /api/v1/settings/agents`. The page edits a
- * local draft of the `agents` section; Save sends every difference from the
+ * Browser side of `GET` and `POST /api/v1/settings/<section>`. A page edits a
+ * local draft of one config section; Save sends every difference from the
  * section it read as one request, bound to that read's revision.
  */
 const AGENTS_SETTINGS_PATH = '/api/v1/settings/agents';
 
-export type AgentsSettingsReason = 'config_invalid' | 'settings_invalid' | 'unreachable';
-export type AgentsSettingsRead =
-  | { readonly state: 'ok'; readonly settings: AgentsSettingsV1 }
-  | { readonly state: 'unavailable'; readonly reason: AgentsSettingsReason };
-export type AgentsSettingsReader = (signal: AbortSignal) => Promise<AgentsSettingsRead>;
+export type SettingsReason = 'config_invalid' | 'settings_invalid' | 'unreachable';
+export type SettingsRead<S> =
+  | { readonly state: 'ok'; readonly settings: S }
+  | { readonly state: 'unavailable'; readonly reason: SettingsReason };
+export type SettingsReader<S> = (signal: AbortSignal) => Promise<SettingsRead<S>>;
+export type AgentsSettingsRead = SettingsRead<AgentsSettingsV1>;
+export type AgentsSettingsReader = SettingsReader<AgentsSettingsV1>;
 
-export async function fetchAgentsSettings(signal: AbortSignal): Promise<AgentsSettingsRead> {
+export async function fetchSettings<S>(path: string, decode: (value: unknown) => S, signal: AbortSignal): Promise<SettingsRead<S>> {
   let response: Response;
   try {
-    response = await fetch(AGENTS_SETTINGS_PATH, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
+    response = await fetch(path, { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
   } catch (error) {
     if (signal.aborted) throw error;
     return { state: 'unavailable', reason: 'unreachable' };
   }
   const body: unknown = await response.json().catch(() => null);
   if (!response.ok) return { state: 'unavailable', reason: asApiError(body).code === 'config_invalid' ? 'config_invalid' : 'unreachable' };
-  try { return { state: 'ok', settings: decodeAgentsSettings(body) }; } catch { return { state: 'unavailable', reason: 'settings_invalid' }; }
+  try { return { state: 'ok', settings: decode(body) }; } catch { return { state: 'unavailable', reason: 'settings_invalid' }; }
+}
+
+export const fetchAgentsSettings: AgentsSettingsReader = signal => fetchSettings(AGENTS_SETTINGS_PATH, decodeAgentsSettings, signal);
+
+/** Both sections answer a save with the new revision and the config keys whose value changed. */
+export interface SettingsResult {
+  readonly config_revision: string;
+  readonly changed_keys: readonly string[];
 }
 
 export type AgentsSettingsPost = AgentsSettingsRequestV1 & { readonly request_id: string };
@@ -47,20 +56,22 @@ export type AgentsSettingsPost = AgentsSettingsRequestV1 & { readonly request_id
  * run; resending the same request_id replays its recorded result.
  * `unreadable`: a 200 whose body failed the decoder; the write ran.
  */
-export type AgentsSettingsWrite =
-  | { readonly state: 'saved'; readonly result: AgentsSettingsResultV1 }
+export type SettingsWrite =
+  | { readonly state: 'saved'; readonly result: SettingsResult }
   | { readonly state: 'refused'; readonly status: number; readonly error: OperatorApiErrorV1 }
   | { readonly state: 'unreachable' }
   | { readonly state: 'unreadable' };
-export type AgentsSettingsWriter = (body: AgentsSettingsPost) => Promise<AgentsSettingsWrite>;
+export type SettingsWriter<R> = (body: R & { readonly request_id: string }) => Promise<SettingsWrite>;
+export type AgentsSettingsWrite = SettingsWrite;
+export type AgentsSettingsWriter = SettingsWriter<AgentsSettingsRequestV1>;
 
 const UNTYPED: OperatorApiErrorV1 = Object.freeze({ code: '', message: '', next_action: '' });
 
 /** The write token travels in the HttpOnly cookie the page response set; the browser adds Origin and Sec-Fetch-Site. */
-export async function postAgentsSettings(body: AgentsSettingsPost): Promise<AgentsSettingsWrite> {
+export async function postSettings(path: string, decodeResult: (value: unknown) => SettingsResult, body: unknown): Promise<SettingsWrite> {
   let response: Response;
   try {
-    response = await fetch(AGENTS_SETTINGS_PATH, {
+    response = await fetch(path, {
       method: 'POST', cache: 'no-store', credentials: 'same-origin',
       headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
       body: JSON.stringify(body),
@@ -70,11 +81,13 @@ export async function postAgentsSettings(body: AgentsSettingsPost): Promise<Agen
   }
   const payload: unknown = await response.json().catch(() => null);
   if (response.ok) {
-    try { return { state: 'saved', result: decodeAgentsSettingsResult(payload) }; } catch { return { state: 'unreadable' }; }
+    try { return { state: 'saved', result: decodeResult(payload) }; } catch { return { state: 'unreadable' }; }
   }
   const error = asApiError(payload, UNTYPED);
   return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
 }
+
+export const postAgentsSettings: AgentsSettingsWriter = body => postSettings(AGENTS_SETTINGS_PATH, decodeAgentsSettingsResult, body);
 
 /** The editable copy of the `agents` section. Lists stay sorted, as the stored section is. */
 export interface AgentsDraft {
@@ -143,7 +156,7 @@ const RETRY_SAME_REQUEST = new Set(['busy', 'audit_unavailable', 'body_timeout']
 /** Codes after which the form must re-read the settings before another save. */
 const RELOAD_REQUIRED = new Set(['revision_conflict', 'reconcile_required']);
 
-export type AgentsSaveState =
+export type SettingsSaveState =
   | { readonly kind: 'idle' }
   | { readonly kind: 'saving' }
   | { readonly kind: 'saved'; readonly changed: number }
@@ -152,49 +165,62 @@ export type AgentsSaveState =
   | { readonly kind: 'unreadable' };
 
 /** A save outcome that leaves the draft unusable until the settings are read again. */
-export function saveNeedsReload(save: AgentsSaveState): boolean {
+export function saveNeedsReload(save: SettingsSaveState): boolean {
   return save.kind === 'unreadable' || (save.kind === 'refused' && RELOAD_REQUIRED.has(save.error.code));
 }
 
-export type AgentsSettingsView =
+export type SettingsView<S> =
   | { readonly kind: 'loading' }
-  | { readonly kind: 'unavailable'; readonly reason: AgentsSettingsReason }
-  | { readonly kind: 'ready'; readonly settings: AgentsSettingsV1; readonly refreshFailed: boolean };
+  | { readonly kind: 'unavailable'; readonly reason: SettingsReason }
+  | { readonly kind: 'ready'; readonly settings: S; readonly refreshFailed: boolean };
+export type AgentsSettingsView = SettingsView<AgentsSettingsV1>;
 
-export interface AgentsSettingsForm {
-  readonly view: AgentsSettingsView;
+export interface SettingsForm<S, C, D, R> {
+  readonly view: SettingsView<S>;
   /** The section the draft was made from; a newer read replaces it only while the draft is unchanged. */
-  readonly base: AgentsSettingsV1['config'] | null;
-  readonly draft: AgentsDraft | null;
-  readonly request: AgentsSettingsRequestV1 | null;
-  readonly save: AgentsSaveState;
-  readonly edit: (change: (draft: AgentsDraft) => AgentsDraft) => void;
+  readonly base: C | null;
+  readonly draft: D | null;
+  readonly request: R | null;
+  readonly save: SettingsSaveState;
+  readonly edit: (change: (draft: D) => D) => void;
   readonly discard: () => void;
   readonly submit: () => void;
   /** Reads again and starts the draft from that read. */
   readonly reload: () => void;
 }
+export type AgentsSettingsForm = SettingsForm<AgentsSettingsV1, AgentsSettingsV1['config'], AgentsDraft, AgentsSettingsRequestV1>;
 
-const sameDraft = (left: AgentsDraft, right: AgentsDraft): boolean =>
-  left.default_docs === right.default_docs && left.enabled.join() === right.enabled.join()
-  && left.docs.join() === right.docs.join() && left.review.join() === right.review.join();
-
-interface FormState {
-  readonly view: AgentsSettingsView;
-  readonly base: AgentsSettingsV1['config'] | null;
-  readonly draft: AgentsDraft | null;
-  readonly save: AgentsSaveState;
+/** How one section maps between its read, its draft and its request. */
+export interface SettingsSection<S, C extends { readonly revision: string }, D, R> {
+  /** Names the observation refresh key. */
+  readonly id: string;
+  readonly config: (settings: S) => C;
+  readonly draftOf: (config: C) => D;
+  readonly request: (base: C, draft: D) => R | null;
+  readonly sameDraft: (left: D, right: D) => boolean;
+  /** The section after the server applied exactly this draft. */
+  readonly applied: (revision: string, draft: D) => C;
 }
 
-/** Reads only while the Settings page shows. */
-export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsSettingsWriter, generation: number, enabled: boolean): AgentsSettingsForm {
-  const [state, setState] = useState<FormState>({ view: { kind: 'loading' }, base: null, draft: null, save: { kind: 'idle' } });
+interface FormState<S, C, D> {
+  readonly view: SettingsView<S>;
+  readonly base: C | null;
+  readonly draft: D | null;
+  readonly save: SettingsSaveState;
+}
+
+/** Reads only while the page shows. */
+export function useSettingsForm<S, C extends { readonly revision: string }, D, R>(
+  section: SettingsSection<S, C, D, R>, read: SettingsReader<S>, write: SettingsWriter<R>, generation: number, enabled: boolean,
+): SettingsForm<S, C, D, R> {
+  const [state, setState] = useState<FormState<S, C, D>>({ view: { kind: 'loading' }, base: null, draft: null, save: { kind: 'idle' } });
   const adoptNextRead = useRef(false);
   // A read that started before a save succeeded can carry the section from before the write.
   const readsStarted = useRef(0);
   const staleReadsThrough = useRef(0);
   // The request_id of the last unanswered or retryable send, bound to its exact body.
   const pending = useRef<{ readonly body: string; readonly id: string } | null>(null);
+  const { config, draftOf, request: requestOf, sameDraft, applied } = section;
 
   const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
     const started = ++readsStarted.current;
@@ -208,20 +234,20 @@ export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsS
     const forced = adoptNextRead.current;
     adoptNextRead.current = false;
     setState((current) => {
-      const view: AgentsSettingsView = { kind: 'ready', settings: result.settings, refreshFailed: false };
-      const latest = result.settings.config;
+      const view: SettingsView<S> = { kind: 'ready', settings: result.settings, refreshFailed: false };
+      const latest = config(result.settings);
       const adopt = forced || current.base === null || current.draft === null
         || (!saveNeedsReload(current.save) && current.save.kind !== 'saving' && sameDraft(current.draft, draftOf(current.base)));
       if (!adopt) return { ...current, view };
       return { view, base: latest, draft: draftOf(latest), save: forced ? { kind: 'idle' } : current.save };
     });
     return true;
-  }, [read]);
-  const readNow = useObservationRefresh(observe, JSON.stringify(['settings-agents', generation]), { enabled });
+  }, [read, config, draftOf, sameDraft]);
+  const readNow = useObservationRefresh(observe, JSON.stringify([`settings-${section.id}`, generation]), { enabled });
 
-  const request = state.base && state.draft ? draftRequest(state.base, state.draft) : null;
+  const request = state.base && state.draft ? requestOf(state.base, state.draft) : null;
 
-  const edit = useCallback((change: (draft: AgentsDraft) => AgentsDraft) => {
+  const edit = useCallback((change: (draft: D) => D) => {
     // A changed draft is a new request, so an earlier result no longer describes it.
     setState(current => current.draft === null || saveNeedsReload(current.save) || current.save.kind === 'saving'
       ? current : { ...current, draft: change(current.draft), save: { kind: 'idle' } });
@@ -229,7 +255,7 @@ export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsS
 
   const discard = useCallback(() => {
     setState(current => current.base === null ? current : { ...current, draft: draftOf(current.base), save: { kind: 'idle' } });
-  }, []);
+  }, [draftOf]);
 
   const reload = useCallback(() => {
     adoptNextRead.current = true;
@@ -248,13 +274,7 @@ export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsS
       if (outcome.state === 'saved') {
         pending.current = null;
         staleReadsThrough.current = readsStarted.current;
-        // The server applied exactly this draft to the read it was made from.
-        setState(current => ({
-          ...current,
-          base: { revision: outcome.result.config_revision, enabled: draft.enabled, uses: { docs: draft.docs, review: draft.review }, default_docs: draft.default_docs },
-          draft,
-          save: { kind: 'saved', changed: outcome.result.changed_keys.length },
-        }));
+        setState(current => ({ ...current, base: applied(outcome.result.config_revision, draft), draft, save: { kind: 'saved', changed: outcome.result.changed_keys.length } }));
         readNow();
         return;
       }
@@ -264,7 +284,24 @@ export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsS
         save: outcome.state === 'refused' ? { kind: 'refused', status: outcome.status, error: outcome.error } : { kind: outcome.state },
       }));
     });
-  }, [request, state.save, state.draft, write, readNow]);
+  }, [request, state.save, state.draft, write, readNow, applied]);
 
   return { view: state.view, base: state.base, draft: state.draft, request, save: state.save, edit, discard, submit, reload };
+}
+
+const sameAgentsDraft = (left: AgentsDraft, right: AgentsDraft): boolean =>
+  left.default_docs === right.default_docs && left.enabled.join() === right.enabled.join()
+  && left.docs.join() === right.docs.join() && left.review.join() === right.review.join();
+
+const AGENTS_SECTION: SettingsSection<AgentsSettingsV1, AgentsSettingsV1['config'], AgentsDraft, AgentsSettingsRequestV1> = {
+  id: 'agents',
+  config: settings => settings.config,
+  draftOf,
+  request: draftRequest,
+  sameDraft: sameAgentsDraft,
+  applied: (revision, draft) => ({ revision, enabled: draft.enabled, uses: { docs: draft.docs, review: draft.review }, default_docs: draft.default_docs }),
+};
+
+export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsSettingsWriter, generation: number, enabled: boolean): AgentsSettingsForm {
+  return useSettingsForm(AGENTS_SECTION, read, write, generation, enabled);
 }

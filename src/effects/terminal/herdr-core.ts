@@ -100,6 +100,11 @@ const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
  */
 const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/;
 
+/** True when `value` has hc's terminal address shape (see ADDRESS). */
+export function isHcAddress(value: string): boolean {
+  return ADDRESS.test(value);
+}
+
 const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
 
 function environment(program: HerdrCoreProgram, options: HerdrCoreOptions): NodeJS.ProcessEnv {
@@ -124,7 +129,7 @@ function labelArgs(labels: HcLabels): string[] {
 }
 
 function address(value: string): string {
-  if (!ADDRESS.test(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
+  if (!isHcAddress(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
   return value;
 }
 
