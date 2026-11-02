@@ -10,7 +10,7 @@ import { installEvents } from '../src/cli/commands/events';
 const ROOT = join(import.meta.dir, '..');
 const { default: worker } = await import(join(ROOT, 'assets/herdr/github-events/worker.mjs'));
 const { PROTOCOL_HEADERS } = await import(join(ROOT, 'assets/herdr/github-events/filter.mjs'));
-const { assertBotEvent } = await import(join(ROOT, 'assets/herdr/webhook-notify/bot-event.mjs'));
+const { assertBotEvent } = await import(join(ROOT, 'assets/herdr/github-events/bot-event.mjs'));
 const SECRET = 'fixture-webhook-secret';
 const repository = { id: 7, name: 'repo-harness', default_branch: 'main' };
 const realFetch = globalThis.fetch;
@@ -189,7 +189,7 @@ function installFixture(appEvents = APP_EVENTS, patchStatus = 200) {
 import { appendFileSync, existsSync, readFileSync, readdirSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 const args = process.argv.slice(2);
-const files = Object.fromEntries([...readdirSync('.'), '../webhook-notify/bot-event.mjs'].map((name) => [name, createHash('sha256').update(readFileSync(name)).digest('hex')]));
+const files = Object.fromEntries(readdirSync('.').map((name) => [name, createHash('sha256').update(readFileSync(name)).digest('hex')]));
 appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ args, cwd: process.cwd(), files, bot_key_in_env: 'WEBHOOK_KEY' in process.env,
   secrets: args[0] === 'deploy' ? JSON.parse(readFileSync('secrets.json', 'utf8')) : null }) + '\\n');
 if (args[1] === 'info') process.exit(existsSync(process.env.FIXTURE_QUEUE) ? 0 : 1);
@@ -255,7 +255,7 @@ describe('repo-harness events install', () => {
       for (const deploy of deploys) {
         expect(deploy.args).toEqual(['deploy', '--config', 'wrangler.json', '--secrets-file', 'secrets.json', '--var', 'ORCHESTRATOR_LOGIN:coord-bot']);
         expect(deploy.files).toMatchObject({ 'worker.mjs': hash('assets/herdr/github-events/worker.mjs'), 'filter.mjs': hash('assets/herdr/github-events/filter.mjs'),
-          'wrangler.json': hash('assets/herdr/github-events/wrangler.json'), '../webhook-notify/bot-event.mjs': hash('assets/herdr/webhook-notify/bot-event.mjs') });
+          'wrangler.json': hash('assets/herdr/github-events/wrangler.json'), 'bot-event.mjs': hash('assets/herdr/github-events/bot-event.mjs') });
         expect(deploy.secrets).toMatchObject({ BOT_WEBHOOK_URL: 'https://bot.example/routine', BOT_WEBHOOK_KEY: 'bot-key' });
         expect(deploy.secrets.GITHUB_WEBHOOK_SECRET).toMatch(/^[0-9a-f]{64}$/);
         expect(deploy.bot_key_in_env).toBe(false);

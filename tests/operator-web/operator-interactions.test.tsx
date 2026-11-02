@@ -173,11 +173,9 @@ afterEach(async () => {
 });
 
 const notifyStatus: import('../../src/core/operator/notify-status').NotifyStatusV1 = {
-  protocol: 1,
+  protocol: 2,
   kind: 'operator_notify_status',
-  plugin_id: 'aimpact.webhook-notify',
-  linked: 'linked',
-  enabled: 'enabled',
+  relay: 'live',
   config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'missing' },
   last_delivery: { at: null, result: 'missing' },
   observed_at: '2026-09-22T00:00:00.000Z',

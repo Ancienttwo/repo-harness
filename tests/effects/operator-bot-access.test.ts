@@ -1,6 +1,5 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
 import { tmpdir } from 'node:os';
 import { join, parse } from 'node:path';
 import {
@@ -26,7 +25,7 @@ const LEAKS = [SLACK_URL, 'webhook-secret', 'https://', 'stderr-secret'];
 
 const notifyStatus: NotifyChannelDeliveryStatus = {
   status: {
-    protocol: 1, kind: 'operator_notify_status', plugin_id: 'aimpact.webhook-notify', linked: 'linked', enabled: 'enabled',
+    protocol: 2, kind: 'operator_notify_status', relay: 'live',
     config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' },
     last_delivery: { at: '2026-10-26T00:00:00.000Z', result: 'succeeded' }, observed_at: NOW.toISOString(),
   },
@@ -52,15 +51,10 @@ function fixture() {
     { timestamp: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', actor: 'mcp:executor', botId: 'hermes', targetPath: join(repo, 'plans/x.md'), error: 'stderr-secret' },
   ].map(row => JSON.stringify(row)).join('\n') + '\n{"torn":');
   registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B012ABC', herdr_agent: 'hermes', now: NOW }, { REPO_HARNESS_HOME: home });
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: join(root, 'home'), REPO_HARNESS_HOME: home, HERDR_SESSION: 'pane-session', HERDR_SOCKET_PATH: join(root, 'pane.sock') };
-  // The session comes from the install record; the server's HERDR_SESSION names another one.
-  writeNotifyInstallRecord('bots', env);
+  const env: NodeJS.ProcessEnv = { ...process.env, HOME: join(root, 'home'), REPO_HARNESS_HOME: home };
+  // The relay install record names no Herdr session, so the herdr section asks nothing.
+  writeNotifyInstallRecord(env);
   return { root, home, repo, env, cleanup: () => rmSync(root, { recursive: true, force: true }) };
-}
-
-function herdrOk(snapshot: BotAccessSnapshotV1): Extract<BotAccessSnapshotV1['herdr'], { state: 'ok' }> {
-  if (snapshot.herdr.state !== 'ok') throw new Error(`herdr section ${snapshot.herdr.reason}`);
-  return snapshot.herdr;
 }
 
 function doctorReport(root: string) {
@@ -71,14 +65,6 @@ function doctorReport(root: string) {
       permissions: { fullDiskRead: false, allowedRootCount: 1, allowedRoots: [{ path: join(root, 'repos'), exists: true, readable: true }], unsafeAllowedRoots: [root], registeredRepoCount: 1, legacyFullDiskReadDetected: false },
       capabilities: { workspaceReader: true, workflowPlanner: true, workflowExecutor: false },
     },
-  };
-}
-
-function herdrStatus(root: string, server: { status: string; version: string | null; protocol: number | null; socket: string }) {
-  return {
-    client: { version: '0.9.3', protocol: 23, binary: join(root, 'bin', 'herdr'), session: 'bots' },
-    server: { ...server, running: server.status === 'running', compatible: true, session: 'bots', restart_needed: false },
-    update: { restart_needed: false },
   };
 }
 
@@ -96,13 +82,10 @@ function expectNoLeak(snapshot: unknown, root: string) {
 }
 
 describe('Bot access collector', () => {
-  test('projects MCP, registry, audit, Herdr and notify without secrets or absolute paths', async () => {
+  test('projects MCP, registry, audit and notify without secrets or absolute paths', async () => {
     const f = fixture();
     try {
-      const socket = join(f.root, 'herdr.sock');
-      const { calls, run } = recorder(async (file, args) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.3', protocol: 23, socket })) }
-        : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
+      const { calls, run } = recorder(async () => ({ ok: true, stdout: JSON.stringify(doctorReport(f.root)) }));
       const notifyCalls: unknown[] = [];
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run,
         read_notify: () => { notifyCalls.push('read'); return notifyOk(); } });
@@ -115,14 +98,7 @@ describe('Bot access collector', () => {
         repo_id: repoHarnessRepoIdFor(f.repo), label: 'demo-repo', access_mode: 'read_write',
         last_audit: { state: 'ok', entry: { at: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', bot: { state: 'registered', bot_id: 'hermes' } } },
       }] });
-      expect(snapshot.herdr).toEqual({
-        state: 'ok',
-        session: 'bots',
-        status: { state: 'ok', value: { client: { version: '0.9.3', protocol: 23 }, server: { status: 'running', restart_needed: false, version: {
-          state: 'mismatch', expected: { version: '0.9.5', protocol: 22, revision: '2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01' }, actual: { version: '0.9.3', protocol: 23 },
-        } } } },
-        snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' },
-      });
+      expect(snapshot.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
       expect(snapshot.notify).toEqual({ state: 'ok', ...notifyStatus });
       // One cache read per cycle; the notify probes belong to the notify collector.
       expect(notifyCalls).toEqual(['read']);
@@ -130,9 +106,7 @@ describe('Bot access collector', () => {
       expectNoLeak(snapshot, f.root);
       expect(decodeBotAccessSnapshot(snapshot)).toEqual(snapshot);
 
-      const herdr = calls.find(call => call.file === 'herdr')!;
-      expect(herdr.args).toEqual(['--session', 'bots', 'status', '--json']);
-      expect(Object.keys(herdr.env).filter(name => name.startsWith('HERDR_'))).toEqual([]);
+      expect(calls.map(call => call.file)).toEqual([process.execPath]);
       const doctor = calls.find(call => call.file === process.execPath)!;
       expect(doctor.args).toEqual([...MCP_DOCTOR_ARGV]);
     } finally { f.cleanup(); }
@@ -159,45 +133,6 @@ describe('Bot access collector', () => {
     } finally { f.cleanup(); }
   }, 90_000);
 
-  test('an aligned server snapshot keeps counts and agent states, never cwd, titles or labels', async () => {
-    const f = fixture();
-    const socket = join(f.root, 'h.sock');
-    const server = createServer(connection => {
-      connection.on('data', chunk => {
-        const request = JSON.parse(chunk.toString().trim());
-        connection.write(JSON.stringify({ id: request.id, result: { type: 'session_snapshot', snapshot: {
-          version: '0.9.5', protocol: 22, layouts: [],
-          workspaces: [{ workspace_id: 'w1', label: 'private-workspace-label' }],
-          tabs: [{ tab_id: 't1', label: 'private-tab-label' }, { tab_id: 't2', label: 'x' }],
-          panes: [{ pane_id: 'w1:p1', cwd: join(f.root, 'cwd') }, { pane_id: 'w1:p2', cwd: join(f.root, 'cwd') }],
-          agents: [
-            { pane_id: 'w1:p2', agent: 'codex', name: 'hermes', agent_status: 'working', cwd: join(f.root, 'cwd'), terminal_title: 'private-terminal-title', agent_session: { value: 'session-secret' } },
-            { pane_id: 'w1:p1', agent: 'claude', agent_status: 'blocked', foreground_cwd: join(f.root, 'fg') },
-          ],
-        } } }) + '\n');
-      });
-    });
-    await new Promise<void>(resolve => server.listen(socket, resolve));
-    try {
-      const { run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.5', protocol: 22, socket })) }
-        : { ok: false, code: 'timeout' });
-      const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: () => ({ state: 'unavailable', reason: 'herdr_unavailable' }) });
-      expect(herdrOk(snapshot).snapshot).toEqual({ state: 'ok', value: { workspaces: 1, tabs: 2, panes: 2, agents: [
-        { pane_id: 'w1:p1', agent: 'claude', name: null, agent_status: 'blocked', bot: { state: 'unregistered' } },
-        { pane_id: 'w1:p2', agent: 'codex', name: 'hermes', agent_status: 'working', bot: { state: 'registered', bot_id: 'hermes' } },
-      ] } });
-      expect(snapshot.mcp).toEqual({ state: 'unavailable', reason: 'mcp_doctor_timeout' });
-      expect(snapshot.notify).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
-      const text = JSON.stringify(snapshot);
-      for (const hidden of ['private-workspace-label', 'private-tab-label', 'private-terminal-title', 'session-secret']) expect(text).not.toContain(hidden);
-      expectNoLeak(snapshot, f.root);
-    } finally {
-      await new Promise<void>(resolve => server.close(() => resolve()));
-      f.cleanup();
-    }
-  });
-
   test('missing, unreadable and symlinked sources stay explicit and are never followed', async () => {
     const f = fixture();
     try {
@@ -206,14 +141,10 @@ describe('Bot access collector', () => {
       writeFileSync(join(f.root, 'elsewhere', 'mcp', 'audit.log'), JSON.stringify({ timestamp: '2026-10-26T00:00:00.000Z', tool: 'outside_tool', status: 'ok' }) + '\n');
       mkdirSync(join(f.repo, '.ai'));
       (await import('node:fs')).symlinkSync(join(f.root, 'elsewhere'), join(f.repo, '.ai', 'harness'));
-      const { run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'not_running', version: null, protocol: null, socket: join(f.root, 'x.sock') })) }
-        : { ok: true, stdout: 'not json stderr-secret' });
+      const { run } = recorder(async () => ({ ok: true, stdout: 'not json stderr-secret' }));
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
       expect(snapshot.mcp).toEqual({ state: 'unavailable', reason: 'mcp_doctor_invalid' });
       expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toEqual({ state: 'unavailable', reason: 'audit_unreadable' });
-      expect(herdrOk(snapshot).status).toMatchObject({ state: 'ok', value: { server: { status: 'not_running', version: null } } });
-      expect(herdrOk(snapshot).snapshot).toEqual({ state: 'unavailable', reason: 'herdr_not_running' });
       expect(JSON.stringify(snapshot)).not.toContain('outside_tool');
       expectNoLeak(snapshot, f.root);
 
@@ -235,7 +166,6 @@ describe('Bot access collector', () => {
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
       // A Bot id that is no longer registered shows as unregistered.
       expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toEqual({ state: 'ok', entry: { at: '2026-10-02T00:00:00.000Z', tool: 'new_tool', status: 'blocked', bot: { state: 'unregistered' } } });
-      expect(herdrOk(snapshot).status).toEqual({ state: 'unavailable', reason: 'herdr_status_failed' });
     } finally { f.cleanup(); }
   });
 
@@ -276,11 +206,11 @@ describe('Bot access collector', () => {
       let failedNotify: NotifyCacheV1 = { state: 'pending' };
       const failing = startBotAccessCollector({ env: f.env, now: () => NOW, interval_ms: 60_000, first_cycle_after: failedFirstCycle,
         run_command: async () => ({ ok: false, code: 'failed' }), read_notify: () => failedNotify });
-      failedNotify = { state: 'unavailable', reason: 'herdr_unavailable' };
+      failedNotify = { state: 'unavailable', reason: 'hc_unavailable' };
       failedRelease();
       await failing.settled();
       const failed = failing.read();
-      expect(failed.state === 'ok' && failed.snapshot.notify).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
+      expect(failed.state === 'ok' && failed.snapshot.notify).toEqual({ state: 'unavailable', reason: 'hc_unavailable' });
       await failing.close();
     } finally { f.cleanup(); }
   });
@@ -296,19 +226,17 @@ describe('Bot access collector', () => {
       const first = handle.read();
       expect(first.state === 'ok' && first.snapshot.kind).toBe('operator_bot_access');
       handle.read(); handle.read();
-      expect(runs).toBe(2);
+      expect(runs).toBe(1);
       await handle.close();
     } finally { f.cleanup(); }
   });
 
-  test('without an install record only the herdr section is unavailable, and no Herdr call runs', async () => {
+  test('with or without a relay install record only the herdr section is unavailable, and no Herdr call runs', async () => {
     const f = fixture();
     try {
       const record = notifyInstallRecordPath(f.env);
       rmSync(record);
-      const { calls, run } = recorder(async (file) => file === 'herdr'
-        ? { ok: false, code: 'failed' }
-        : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
+      const { calls, run } = recorder(async () => ({ ok: true, stdout: JSON.stringify(doctorReport(f.root)) }));
       const missing = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
       expect(missing.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
       expect(missing.bots.state).toBe('ok');
@@ -317,10 +245,11 @@ describe('Bot access collector', () => {
       expect(missing.notify).toEqual({ state: 'ok', ...notifyStatus });
       expect(decodeBotAccessSnapshot(missing)).toEqual(missing);
 
-      writeFileSync(record, JSON.stringify({ protocol: 1, kind: 'herdr_notify_install', session: 'bots', extra: true }), { mode: 0o600 });
-      const invalid = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
-      expect(invalid.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_invalid' });
-      expect(decodeBotAccessSnapshot(invalid)).toEqual(invalid);
+      // A classic record that names a session selects no session either.
+      writeFileSync(record, JSON.stringify({ protocol: 1, kind: 'herdr_notify_install', session: 'bots' }), { mode: 0o600 });
+      const classic = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
+      expect(classic.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
+      expect(decodeBotAccessSnapshot(classic)).toEqual(classic);
       expect(calls.some(call => call.file === 'herdr')).toBe(false);
 
       // The collector still publishes a snapshot; its first state is pending, not failed.
@@ -328,39 +257,19 @@ describe('Bot access collector', () => {
       expect(handle.read()).toEqual({ state: 'pending' });
       await handle.settled();
       const cache = handle.read();
-      expect(cache.state === 'ok' && cache.snapshot.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_invalid' });
+      expect(cache.state === 'ok' && cache.snapshot.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
       await handle.close();
     } finally { f.cleanup(); }
   });
 
-  test('a record written while the collector runs selects its session on the next cycle', async () => {
-    const f = fixture();
-    try {
-      rmSync(notifyInstallRecordPath(f.env));
-      const { calls, run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'not_running', version: null, protocol: null, socket: join(f.root, 'x.sock') })) }
-        : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
-      const handle = startBotAccessCollector({ env: f.env, now: () => NOW, interval_ms: 20, run_command: run, read_notify: notifyOk });
-      await handle.settled();
-      const first = handle.read();
-      expect(first.state === 'ok' && first.snapshot.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
-      writeNotifyInstallRecord('installed-later', f.env);
-      const session = () => { const cache = handle.read(); return cache.state === 'ok' && cache.snapshot.herdr.state === 'ok' ? cache.snapshot.herdr.session : null; };
-      for (let attempt = 0; attempt < 250 && session() === null; attempt++) { await Bun.sleep(20); await handle.settled(); }
-      expect(session()).toBe('installed-later');
-      expect(calls.find(call => call.file === 'herdr')!.args).toEqual(['--session', 'installed-later', 'status', '--json']);
-      await handle.close();
-    } finally { f.cleanup(); }
-  });
-
-  test('the doctor and Herdr run in the file system root, never the server working directory', async () => {
+  test('the doctor runs in the file system root, never the server working directory', async () => {
     const f = fixture();
     const previous = process.cwd();
     try {
       process.chdir(f.repo);
       const { calls, run } = recorder(async () => ({ ok: false, code: 'failed' }));
       await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
-      expect(calls.map(call => call.file).sort()).toEqual(['herdr', process.execPath].sort());
+      expect(calls.map(call => call.file)).toEqual([process.execPath]);
       for (const call of calls) expect(call.cwd).toBe(BOT_ACCESS_CWD);
       expect(BOT_ACCESS_CWD).toBe(parse(process.cwd()).root);
     } finally {
@@ -380,7 +289,7 @@ describe('Bot access collector', () => {
       expect(pending.notify).toEqual({ state: 'unavailable', reason: 'notify_status_pending' });
       expect(decodeBotAccessSnapshot(pending)).toEqual(pending);
       const ok = await collectBotAccess({ env: f.env, now: () => NOW,
-        run_command: async (file) => file === 'herdr' ? { ok: false, code: 'failed' } : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) },
+        run_command: async () => ({ ok: true, stdout: JSON.stringify(doctorReport(f.root)) }),
         read_notify: notifyOk });
       expect(ok.notify.state).toBe('ok');
       expect(decodeBotAccessSnapshot(ok)).toEqual(ok);

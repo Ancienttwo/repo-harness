@@ -1,43 +1,45 @@
-// The Herdr notify install record: the one source of the Herdr session that
-// `repo-harness herdr notify install` set up. Install writes it as its last
-// step; the operator notify and Bot access collectors read it on every cycle.
+// The notify relay files under the repo-harness home. `herdr notify install` writes the
+// config and, as its last step, the install record. The relay writes the delivery record.
+// The operator notify collector reads all three on every cycle.
 
 import { randomUUID } from 'node:crypto';
 import { chmodSync, closeSync, constants, fchmodSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
 import { open } from 'node:fs/promises';
 import { dirname, join } from 'node:path';
 import { repoHarnessHome } from '../repo-harness-home.ts';
+import { RH_NOTIFY_RELAY, type HcLabels } from './herdr-core.ts';
 
-/** A Herdr session name. Install validates `--session` with it, and the reader validates the record with it. */
-export const HERDR_SESSION_NAME = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/;
+const RECORD_KIND = 'notify_relay_install';
+const RECORD_KEYS = ['kind', 'labels', 'name', 'protocol'] as const;
 
-const RECORD_KIND = 'herdr_notify_install';
-const RECORD_KEYS = ['protocol', 'kind', 'session'] as const;
+/** The relay terminal that install started: its hc name and the labels that find it. */
+export interface NotifyRelayTerminal {
+  readonly name: string;
+  readonly labels: HcLabels;
+}
 const RECORD_MAX_BYTES = 1024;
 
-export function notifyInstallRecordPath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(repoHarnessHome(env), 'herdr', 'notify-install.json');
-}
+export const notifyInstallRecordPath = (env: NodeJS.ProcessEnv = process.env): string => join(repoHarnessHome(env), 'herdr', 'notify-install.json');
+export const notifyConfigPath = (env: NodeJS.ProcessEnv = process.env): string => join(repoHarnessHome(env), 'herdr', 'notify.env');
+export const notifyDeliveriesPath = (env: NodeJS.ProcessEnv = process.env): string => join(repoHarnessHome(env), 'herdr', 'notify-deliveries.json');
 
-/** Atomic write, mode 0600 in a 0700 directory. A symlink at the directory or the record is refused. */
-export function writeNotifyInstallRecord(session: string, env: NodeJS.ProcessEnv = process.env): void {
-  if (!HERDR_SESSION_NAME.test(session)) throw new Error('Session name is invalid.');
-  const target = notifyInstallRecordPath(env);
+/** Atomic write, mode 0600 in a 0700 directory. A symlink at the directory or the target is refused. */
+export function writePrivateFile(target: string, text: string): void {
   const dir = dirname(target);
   mkdirSync(dir, { recursive: true, mode: 0o700 });
   const stat = lstatSync(dir);
-  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('The install record directory must be a directory.');
+  if (stat.isSymbolicLink() || !stat.isDirectory()) throw new Error('The notify directory must be a directory.');
   chmodSync(dir, 0o700);
   try {
     const existing = lstatSync(target);
-    if (!existing.isFile() || existing.isSymbolicLink()) throw new Error('The install record must be a regular file.');
+    if (!existing.isFile() || existing.isSymbolicLink()) throw new Error('A notify file must be a regular file.');
   } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  const temporary = join(dir, `.notify-install-${randomUUID()}`);
+  const temporary = join(dir, `.notify-${randomUUID()}`);
   try {
     const fd = openSync(temporary, 'wx', 0o600);
     try {
       fchmodSync(fd, 0o600);
-      writeFileSync(fd, `${JSON.stringify({ protocol: 1, kind: RECORD_KIND, session })}\n`);
+      writeFileSync(fd, text);
       fsyncSync(fd);
     } finally { closeSync(fd); }
     renameSync(temporary, target);
@@ -47,42 +49,57 @@ export function writeNotifyInstallRecord(session: string, env: NodeJS.ProcessEnv
   }
 }
 
-export type NotifyInstallSession =
-  | { readonly state: 'ok'; readonly session: string }
+/** The text of a regular private file, or `null` when it does not exist. A symlink, FIFO or oversized file throws. */
+export async function readPrivateFile(path: string, limit: number): Promise<string | null> {
+  let handle;
+  try {
+    // O_NONBLOCK: a FIFO planted at the path must not hold the collector cycle open.
+    handle = await open(path, constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+    throw error;
+  }
+  try {
+    const stat = await handle.stat();
+    if (!stat.isFile() || stat.size > limit) throw new Error('notify_file_invalid');
+    const buffer = Buffer.alloc(limit + 1);
+    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
+    if (bytesRead > limit) throw new Error('notify_file_invalid');
+    return buffer.subarray(0, bytesRead).toString('utf8');
+  } finally {
+    await handle.close();
+  }
+}
+
+export function writeNotifyInstallRecord(env: NodeJS.ProcessEnv = process.env): void {
+  writePrivateFile(notifyInstallRecordPath(env), `${JSON.stringify({ protocol: 2, kind: RECORD_KIND, name: RH_NOTIFY_RELAY.name, labels: RH_NOTIFY_RELAY.labels })}\n`);
+}
+
+export type NotifyInstallRecord =
+  | { readonly state: 'ok'; readonly relay: NotifyRelayTerminal }
   | { readonly state: 'missing' }
   | { readonly state: 'invalid' };
 
-function decode(text: string): string | null {
+function decode(text: string): NotifyRelayTerminal | null {
   let value: unknown;
   try { value = JSON.parse(text); } catch { return null; }
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return null;
   const record = value as Record<string, unknown>;
-  const keys = Object.keys(record).sort();
-  if (keys.length !== RECORD_KEYS.length || [...RECORD_KEYS].sort().some((key, index) => keys[index] !== key)) return null;
-  if (record.protocol !== 1 || record.kind !== RECORD_KIND) return null;
-  return typeof record.session === 'string' && HERDR_SESSION_NAME.test(record.session) ? record.session : null;
+  // A record names the relay this version starts. Any other name or label set fails closed: install again.
+  if (Object.keys(record).sort().join() !== RECORD_KEYS.join() || record.protocol !== 2 || record.kind !== RECORD_KIND
+    || record.name !== RH_NOTIFY_RELAY.name || JSON.stringify(record.labels) !== JSON.stringify(RH_NOTIFY_RELAY.labels)) return null;
+  return RH_NOTIFY_RELAY;
 }
 
-/** The recorded session. No file is `missing`; a symlink, a non-regular file, an oversized or undecodable record is `invalid`. */
-export async function readNotifyInstallSession(env: NodeJS.ProcessEnv = process.env): Promise<NotifyInstallSession> {
-  let handle;
-  try {
-    // O_NONBLOCK: a FIFO planted at the path must not hold the collector cycle open.
-    handle = await open(notifyInstallRecordPath(env), constants.O_RDONLY | constants.O_NOFOLLOW | constants.O_NONBLOCK);
-  } catch (error) {
-    return (error as NodeJS.ErrnoException).code === 'ENOENT' ? { state: 'missing' } : { state: 'invalid' };
-  }
-  try {
-    const stat = await handle.stat();
-    if (!stat.isFile() || stat.size > RECORD_MAX_BYTES) return { state: 'invalid' };
-    const buffer = Buffer.alloc(RECORD_MAX_BYTES + 1);
-    const { bytesRead } = await handle.read(buffer, 0, buffer.length, 0);
-    if (bytesRead > RECORD_MAX_BYTES) return { state: 'invalid' };
-    const session = decode(buffer.subarray(0, bytesRead).toString('utf8'));
-    return session === null ? { state: 'invalid' } : { state: 'ok', session };
-  } catch {
-    return { state: 'invalid' };
-  } finally {
-    await handle.close();
-  }
+/**
+ * No file is `missing`. A symlink, a non-regular file, an oversized record, or any other
+ * shape is `invalid`, including a classic Herdr record that named a session: install again.
+ */
+export async function readNotifyInstallRecord(env: NodeJS.ProcessEnv = process.env): Promise<NotifyInstallRecord> {
+  let text;
+  try { text = await readPrivateFile(notifyInstallRecordPath(env), RECORD_MAX_BYTES); }
+  catch { return { state: 'invalid' }; }
+  if (text === null) return { state: 'missing' };
+  const relay = decode(text);
+  return relay === null ? { state: 'invalid' } : { state: 'ok', relay };
 }

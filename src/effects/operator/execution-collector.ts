@@ -18,7 +18,6 @@ import {
 import { withoutRepositorySelectingGitEnv } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../setup/collector';
-import { readNotifyInstallSession } from '../terminal/herdr-notify-install';
 import type { ExecutionStateWorkerResult } from './execution-state-worker';
 
 export const EXECUTION_COLLECT_INTERVAL_MS = 30_000;
@@ -69,8 +68,6 @@ export function startExecutionCollector(options: ExecutionCollectorOptions = {})
   let inflight: Promise<void> | null = null;
 
   const collect = async (repos: readonly { readonly id: string }[]): Promise<Map<string, ExecutionRepositoryCache>> => {
-    const record = await readNotifyInstallSession(env);
-    const herdrSession = record.state === 'ok' ? record.session : null;
     const result = await run(EXECUTION_CHILD_ARGV, {
       cwd: process.cwd(), env: executionChildEnvironment(env), service: 'execution-collector',
       timeout_ms: options.timeout_ms ?? EXECUTION_WORKER_TIMEOUT_MS, signal: abort.signal,
@@ -81,7 +78,7 @@ export function startExecutionCollector(options: ExecutionCollectorOptions = {})
       const entry = results.get(repo.id);
       let cache = UNAVAILABLE;
       if (entry?.ok) {
-        try { cache = { state: 'ready', view: projectTaskExecutionView(entry.snapshot, repo.id, herdrSession) }; }
+        try { cache = { state: 'ready', view: projectTaskExecutionView(entry.snapshot, repo.id, null) }; }
         catch { /* a malformed child result stays unavailable */ }
       }
       next.set(repo.id, cache);

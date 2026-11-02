@@ -162,14 +162,14 @@ test('follow-up gives each host its own resume command and refuses an id that is
 });
 
 /** A repo-harness home that registers the fixture repository, so the collector reads it. */
-function collectorHome(root: string, session: string | null = 'fixture') {
+function collectorHome(root: string, installed = true) {
   const home = tmpWorkspace('operator-execution-collector-home'); roots.push(home);
   const at = new Date().toISOString();
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
     id: repoHarnessRepoIdFor(root), path: root, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
   const env = { ...process.env, REPO_HARNESS_HOME: home };
-  if (session !== null) writeNotifyInstallRecord(session, env);
+  if (installed) writeNotifyInstallRecord(env);
   return { id: repoHarnessRepoIdFor(root), env };
 }
 
@@ -195,8 +195,7 @@ test('the route shows the agent of a verified session with its follow-up, and no
   const view = decodeTaskExecutionView(JSON.parse(text));
   expect(view).toMatchObject({ protocol: 1, kind: 'operator_task_execution', repository_id: c.id, unlisted_tasks: 0 });
   expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main', agent: 'codex', runtime: 'herdr',
-    follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
-      herdr_pane: { session: 'fixture', workspace_id: 'fixture-primary-workspace', pane_id: 'fixture-deep-reasoner', agent_name: f.bound.binding.runtime === 'herdr' ? f.bound.binding.agent_name : '' } } }]);
+    follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' }, herdr_pane: null } }]);
   for (const hidden of [f.root, f.home, '/tmp', '/private']) expect(text).not.toContain(hidden);
 });
 
@@ -221,10 +220,10 @@ test('through the route, a forged binding, a dead process or closed.json is "no 
   }
 });
 
-test('a Herdr pane location needs the session that the notify install record names', async () => {
+test('no notify record names a Herdr session, so no pane location is shown with or without the relay record', async () => {
   const f = await fixture();
-  for (const session of [null, 'other-session']) {
-    const c = collectorHome(f.root, session);
+  for (const installed of [false, true]) {
+    const c = collectorHome(f.root, installed);
     const collector = startExecutionCollector({ env: { ...c.env, HERDR_SESSION: 'fixture' }, interval_ms: 60_000 });
     try {
       await collector.settled();

@@ -4,6 +4,26 @@ All notable changes to this skill are documented here.
 
 ## [Unreleased]
 
+### Breaking
+
+- Herdr notify runs on herdr-core. `repo-harness herdr notify install` takes
+  no `--session` and installs no classic Herdr plugin. It writes the config to
+  `~/.repo-harness/herdr/notify.env` and starts the relay in an hc terminal
+  named `rh-notify-relay`. The relay follows `hc events --json --label
+  repo-harness.notify=on` and sends the same `repo-harness.bot-event/v1`
+  envelope on each blocked or done turn. `repo-harness herdr notify
+  uninstall` stops the relay and removes its files. A classic notify install
+  record fails closed as `notify_session_invalid`: run install again. Remove
+  the old plugin with `herdr plugin unlink aimpact.webhook-notify` before
+  classic Herdr is removed. (#1479)
+- The operator notify status is protocol 2: `relay: 'live'` replaces
+  `plugin_id`, `linked` and `enabled`. A relay that is not live is
+  `relay_stopped`, and an hc that does not answer is `hc_unavailable`. The
+  delivery state `unsupported` is removed. (#1479)
+- The Clef shadow decision is removed: `repo-harness herdr decision label`,
+  the `CLEF_MODE` and Cloudflare install options, and the shadow records. It
+  read the pane tail through classic Herdr and had no recorded use. (#1479)
+
 ### Fixed
 
 - `repo-harness update` prints the leftover summary line that the installed

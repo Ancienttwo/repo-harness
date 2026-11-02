@@ -1,6 +1,6 @@
 // Background notify status collector. It runs only in the `operator serve`
-// process on a timer. It is the one owner of the Herdr notify probes
-// (`plugin list`, `plugin config-dir`, `plugin log list`): GET notify_status
+// process on a timer. It is the one owner of the notify relay probe
+// (`hc ls --label repo-harness.role=notify-relay`): GET notify_status
 // and the Bot access collector read its cache and run no probe of their own.
 
 import type { NotifyUnavailableReason } from '../../core/operator/notify-status';
@@ -39,7 +39,7 @@ export function startNotifyCollector(options: NotifyCollectorOptions = {}): Noti
   const cycle = (): Promise<void> => {
     inflight = (options.read ?? readNotifyChannelStatus)({ env: options.env })
       .then(value => { if (!closed) cache = { state: 'ok', value }; }, (error: unknown) => {
-        if (!closed) cache = { state: 'unavailable', reason: error instanceof NotifyStatusUnavailableError ? error.code : 'herdr_unavailable' };
+        if (!closed) cache = { state: 'unavailable', reason: error instanceof NotifyStatusUnavailableError ? error.code : 'hc_unavailable' };
       })
       .finally(() => {
         inflight = null;

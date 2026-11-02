@@ -3,7 +3,7 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_SESSION_REASONS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifySessionReason, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
+import { NOTIFY_CHANNELS, NOTIFY_STATUS_KEYS, NOTIFY_SESSION_REASONS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifySessionReason, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -214,7 +214,7 @@ const SLACK_BOT_ID_TEXT = /^[A-Z][A-Z0-9]{2,31}$/u;
 const BOT_HOST_TEXT = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/u;
 const REPO_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const REVISION_DIGEST = /^sha256:[0-9a-f]{64}$/u;
-const DELIVERY_STATES: readonly NotifyDeliveryState[] = ['succeeded', 'failed', 'unsupported', 'unavailable', 'missing'];
+const DELIVERY_STATES: readonly NotifyDeliveryState[] = ['succeeded', 'failed', 'unavailable', 'missing'];
 
 /**
  * The one strict decoder of `BotAccessSnapshotV1`, for the server before it
@@ -341,12 +341,10 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
   const notify = section(v.notify, 'notify', ['status', 'channels', 'deliveries'], ['notify_status_pending', ...NOTIFY_UNAVAILABLE_REASONS]);
   if (notify.status !== undefined) {
     // Checked in place, like every other section: the decoder returns `value`, so a key it does not name must fail here.
-    const status = obj(notify.status, ['protocol', 'kind', 'plugin_id', 'linked', 'enabled', 'config', 'last_delivery', 'observed_at'], 'notify status');
-    if (status.protocol !== 1) fail('notify status protocol');
+    const status = obj(notify.status, ['protocol', 'kind', 'relay', 'config', 'last_delivery', 'observed_at'], 'notify status');
+    if (status.protocol !== 2) fail('notify status protocol');
     oneOf(status.kind, ['operator_notify_status'] as const, 'notify status kind');
-    oneOf(status.plugin_id, [NOTIFY_PLUGIN_ID] as const, 'notify plugin_id');
-    oneOf(status.linked, ['linked', 'missing'] as const, 'notify linked');
-    oneOf(status.enabled, ['enabled', 'disabled', 'missing'] as const, 'notify enabled');
+    oneOf(status.relay, ['live'] as const, 'notify relay');
     for (const presence of Object.values(obj(status.config, NOTIFY_STATUS_KEYS, 'notify config'))) oneOf(presence, ['configured', 'missing'] as const, 'notify config presence');
     const last = obj(status.last_delivery, ['at', 'result'], 'notify last_delivery');
     nullable(last.at, x => match(x, ISO_TIME, 'notify last_delivery at'));

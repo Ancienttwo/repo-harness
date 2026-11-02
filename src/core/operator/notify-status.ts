@@ -1,21 +1,19 @@
-export const NOTIFY_PLUGIN_ID = 'aimpact.webhook-notify' as const;
 export const NOTIFY_STATUS_KEYS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL'] as const;
 
 export type NotifyConfigKey = typeof NOTIFY_STATUS_KEYS[number];
 export type NotifyPresence = 'configured' | 'missing';
-export type NotifyLinkState = 'linked' | 'missing';
-export type NotifyEnableState = 'enabled' | 'disabled' | 'missing';
 export const NOTIFY_CHANNELS = ['webhook', 'slack', 'discord', 'telegram'] as const;
 
 export type NotifyChannel = typeof NOTIFY_CHANNELS[number];
 
 /** Why the notify status is unknown. A probe that fails is never read as "not configured". */
 export const NOTIFY_SESSION_REASONS = ['notify_session_missing', 'notify_session_invalid'] as const;
-/** The install record that names the Herdr session is absent or unreadable. */
+/** The relay install record is absent or unreadable. */
 export type NotifySessionReason = typeof NOTIFY_SESSION_REASONS[number];
-export const NOTIFY_UNAVAILABLE_REASONS = [...NOTIFY_SESSION_REASONS, 'herdr_unavailable', 'notify_config_unavailable'] as const;
+/** `relay_stopped`: hc answered, and no live terminal carries the relay labels. */
+export const NOTIFY_UNAVAILABLE_REASONS = [...NOTIFY_SESSION_REASONS, 'hc_unavailable', 'relay_stopped', 'notify_config_unavailable'] as const;
 export type NotifyUnavailableReason = typeof NOTIFY_UNAVAILABLE_REASONS[number];
-export type NotifyDeliveryState = 'succeeded' | 'failed' | 'unsupported' | 'unavailable' | 'missing';
+export type NotifyDeliveryState = 'succeeded' | 'failed' | 'unavailable' | 'missing';
 
 export interface NotifyDeliveryV1 {
   readonly at: string | null;
@@ -26,39 +24,33 @@ export interface NotifyDeliveryV1 {
 export type NotifyChannelDeliveriesV1 = Readonly<Record<NotifyChannel, NotifyDeliveryV1>>;
 
 export interface NotifyStatusV1 {
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly kind: 'operator_notify_status';
-  readonly plugin_id: typeof NOTIFY_PLUGIN_ID;
-  readonly linked: NotifyLinkState;
-  readonly enabled: NotifyEnableState;
+  /** A status exists only while the relay terminal is live; a stopped relay is `relay_stopped`. */
+  readonly relay: 'live';
   readonly config: Readonly<Record<NotifyConfigKey, NotifyPresence>>;
   readonly last_delivery: NotifyDeliveryV1;
   readonly observed_at: string;
 }
 
 const PRESENCE = new Set<NotifyPresence>(['configured', 'missing']);
-const LINK = new Set<NotifyLinkState>(['linked', 'missing']);
-const ENABLE = new Set<NotifyEnableState>(['enabled', 'disabled', 'missing']);
-const DELIVERY = new Set<NotifyDeliveryState>(['succeeded', 'failed', 'unsupported', 'unavailable', 'missing']);
+const DELIVERY = new Set<NotifyDeliveryState>(['succeeded', 'failed', 'unavailable', 'missing']);
 
 export function decodeNotifyStatus(value: unknown): NotifyStatusV1 {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) throw new Error('notify_status_invalid');
   const record = value as Partial<NotifyStatusV1>;
   const config = record.config as Partial<Record<NotifyConfigKey, NotifyPresence>> | undefined;
   const delivery = record.last_delivery;
-  if (record.protocol !== 1 || record.kind !== 'operator_notify_status' || record.plugin_id !== NOTIFY_PLUGIN_ID
-    || !LINK.has(record.linked as NotifyLinkState) || !ENABLE.has(record.enabled as NotifyEnableState)
+  if (record.protocol !== 2 || record.kind !== 'operator_notify_status' || record.relay !== 'live'
     || typeof record.observed_at !== 'string'
     || !config || NOTIFY_STATUS_KEYS.some(key => !PRESENCE.has(config[key] as NotifyPresence))
     || !delivery || (delivery.at !== null && typeof delivery.at !== 'string') || !DELIVERY.has(delivery.result)) {
     throw new Error('notify_status_invalid');
   }
   return {
-    protocol: 1,
+    protocol: 2,
     kind: 'operator_notify_status',
-    plugin_id: NOTIFY_PLUGIN_ID,
-    linked: record.linked as NotifyLinkState,
-    enabled: record.enabled as NotifyEnableState,
+    relay: 'live',
     config: {
       WEBHOOK_URL: config.WEBHOOK_URL as NotifyPresence,
       WEBHOOK_KEY: config.WEBHOOK_KEY as NotifyPresence,
@@ -69,117 +61,65 @@ export function decodeNotifyStatus(value: unknown): NotifyStatusV1 {
   };
 }
 
-export interface NotifyLogEntry {
-  readonly finished_unix_ms?: unknown;
-  readonly stderr?: unknown;
+/** One recorded attempt result. The relay writes it; the status reads it back. */
+export interface RelayAttemptV1 {
+  readonly at: string;
+  readonly result: 'succeeded' | 'failed';
 }
-
-type AttemptResult = 'succeeded' | 'failed';
-
-interface LogEntryReading {
-  /** A result for every channel the entry names. */
-  readonly attempts: Partial<Record<NotifyChannel, AttemptResult>>;
-  /** Results of 0.1.0 lines. They name no channel, so they only count toward the combined record. */
-  readonly legacy: readonly AttemptResult[];
-  /** True when a line is in no format the reader knows. It could belong to any channel. */
-  readonly unknown: boolean;
-}
-
-const is2xx = (code: string) => Number(code) >= 200 && Number(code) < 300;
-const CHANNEL_NAMES: Readonly<Record<string, NotifyChannel>> = {
-  WEBHOOK: 'webhook', SLACK: 'slack', DISCORD: 'discord', TELEGRAM: 'telegram',
-};
-
-type LineReading = { readonly channel: NotifyChannel | null; readonly result: AttemptResult } | 'ignored' | null;
 
 /**
- * Every stderr line format the reader knows. The current plugin writes
- * `<CHANNEL>: HTTP <status>[ app-failed]` or `<CHANNEL>: delivery failed.`. The 0.1.0
- * plugin, still installed on some machines, writes `POST|SLACK <identity> -> <status>`
- * or `POST|SLACK failed: <reason>`; those lines carry no proven channel (`channel: null`).
- * Lines that record no attempt are `ignored`; a line in no known format is `null`.
+ * The relay's delivery record: the newest attempt of each channel, and the newest event
+ * (`last`), which succeeded only when every attempt it made succeeded. The relay is its one writer.
  */
-function readLine(line: string): LineReading {
-  let match = line.match(/^\[webhook-notify\] ([A-Z]+): HTTP (\d{3})( app-failed)?$/u);
-  if (match) {
-    const channel = CHANNEL_NAMES[match[1]!];
-    return channel ? { channel, result: is2xx(match[2]!) && match[3] === undefined ? 'succeeded' : 'failed' } : null;
-  }
-  match = line.match(/^\[webhook-notify\] ([A-Z]+): delivery failed\.$/u);
-  if (match) {
-    const channel = CHANNEL_NAMES[match[1]!];
-    return channel ? { channel, result: 'failed' } : null;
-  }
-  match = line.match(/^\[webhook-notify\] (POST|SLACK) \S+ -> (\d{3})$/u);
-  if (match) return { channel: null, result: is2xx(match[2]!) ? 'succeeded' : 'failed' };
-  match = line.match(/^\[webhook-notify\] (POST|SLACK) failed: /u);
-  if (match) return { channel: null, result: 'failed' };
-  if (/^\[webhook-notify\] (?:Invalid config, event, or state\.|Cannot read debounce state\. Using empty state\.)$/u.test(line)
-    || /^\[webhook-notify\] (?:invalid \S+: |skip test workspace |no target configured |debounced |state write failed: |error: )/u.test(line)) return 'ignored';
-  return null;
+export interface RelayDeliveriesV1 {
+  readonly protocol: 1;
+  readonly kind: 'notify_relay_deliveries';
+  readonly last: RelayAttemptV1 | null;
+  readonly channels: Readonly<Record<NotifyChannel, RelayAttemptV1 | null>>;
 }
 
-function readEntry(stderr: string): LogEntryReading {
-  const attempts: Partial<Record<NotifyChannel, AttemptResult>> = {};
-  const legacy: AttemptResult[] = [];
-  let unknown = false;
-  for (const line of stderr.split('\n').map(item => item.trimEnd()).filter(Boolean)) {
-    const reading = readLine(line);
-    if (reading === null) unknown = true;
-    else if (reading === 'ignored') continue;
-    else if (reading.channel === null) legacy.push(reading.result);
-    else if (attempts[reading.channel] !== 'failed') attempts[reading.channel] = reading.result;
-  }
-  return { attempts, legacy, unknown };
+export const EMPTY_RELAY_DELIVERIES: RelayDeliveriesV1 = {
+  protocol: 1, kind: 'notify_relay_deliveries', last: null,
+  channels: { webhook: null, slack: null, discord: null, telegram: null },
+};
+
+const ISO = (value: unknown): value is string =>
+  typeof value === 'string' && !Number.isNaN(Date.parse(value)) && new Date(value).toISOString() === value;
+
+function attempt(value: unknown): RelayAttemptV1 | null {
+  if (value === null) return null;
+  const record = value as Partial<RelayAttemptV1> | undefined;
+  if (typeof record !== 'object' || Array.isArray(record) || Object.keys(record).length !== 2 || !ISO(record.at)
+    || (record.result !== 'succeeded' && record.result !== 'failed')) throw new Error('relay_deliveries_invalid');
+  return { at: record.at, result: record.result };
 }
 
-function finishedAt(entry: NotifyLogEntry | null | undefined): number | null {
-  const finished = entry?.finished_unix_ms;
-  return typeof finished === 'number' && Number.isSafeInteger(finished) && finished >= 0 ? finished : null;
+export function decodeRelayDeliveries(value: unknown): RelayDeliveriesV1 {
+  const record = value as Partial<RelayDeliveriesV1> | null;
+  const channels = record?.channels as Record<string, unknown> | undefined;
+  if (typeof record !== 'object' || record === null || Array.isArray(record) || record.protocol !== 1 || record.kind !== 'notify_relay_deliveries'
+    || typeof channels !== 'object' || channels === null || Array.isArray(channels)
+    || Object.keys(channels).sort().join() !== [...NOTIFY_CHANNELS].sort().join()) throw new Error('relay_deliveries_invalid');
+  return {
+    protocol: 1, kind: 'notify_relay_deliveries', last: attempt(record.last),
+    channels: { webhook: attempt(channels.webhook), slack: attempt(channels.slack), discord: attempt(channels.discord), telegram: attempt(channels.telegram) },
+  };
 }
 
 const unavailable = (): NotifyDeliveryV1 => ({ at: null, result: 'unavailable' });
+const shown = (value: RelayAttemptV1 | null): NotifyDeliveryV1 => value ?? { at: null, result: 'missing' };
 
-/**
- * Herdr does not promise log order, so the newest finish time selects the entry. An entry
- * without a valid finish time cannot be placed in time and is skipped. A channel's newest
- * entry is the newest one that names the channel, or that holds a line the reader cannot
- * attribute to a channel: an unknown line or a 0.1.0 line (`unsupported`, never `missing`).
- * The combined record is the newest entry with any attempt, 0.1.0 attempts included; it
- * succeeded only when every attempt in it succeeded.
- */
-export function readDeliveries(logs: readonly NotifyLogEntry[] | null): {
+/** `null` is an unreadable record: every channel is `unavailable`, never `missing`. */
+export function readDeliveries(record: RelayDeliveriesV1 | null): {
   readonly last_delivery: NotifyDeliveryV1;
   readonly deliveries: NotifyChannelDeliveriesV1;
 } {
-  if (logs === null) {
+  if (record === null) {
     return { last_delivery: unavailable(), deliveries: { webhook: unavailable(), slack: unavailable(), discord: unavailable(), telegram: unavailable() } };
   }
-  const newest = new Map<NotifyChannel | 'any', { readonly finished: number; readonly result: NotifyDeliveryState }>();
-  const keep = (key: NotifyChannel | 'any', finished: number, result: NotifyDeliveryState) => {
-    const current = newest.get(key);
-    if (current === undefined || finished > current.finished) newest.set(key, { finished, result });
-  };
-  for (const entry of logs) {
-    const finished = finishedAt(entry);
-    if (finished === null) continue;
-    const { attempts, legacy, unknown } = readEntry(typeof entry?.stderr === 'string' ? entry.stderr : '');
-    const results = [...Object.values(attempts), ...legacy];
-    const unattributed = unknown || legacy.length > 0;
-    for (const channel of NOTIFY_CHANNELS) {
-      const result = attempts[channel];
-      if (result !== undefined) keep(channel, finished, result);
-      else if (unattributed) keep(channel, finished, 'unsupported');
-    }
-    if (unknown) keep('any', finished, 'unsupported');
-    else if (results.length > 0) keep('any', finished, results.every(result => result === 'succeeded') ? 'succeeded' : 'failed');
-  }
-  const delivery = (key: NotifyChannel | 'any'): NotifyDeliveryV1 => {
-    const found = newest.get(key);
-    return found === undefined ? { at: null, result: 'missing' } : { at: new Date(found.finished).toISOString(), result: found.result };
-  };
+  const { channels } = record;
   return {
-    last_delivery: delivery('any'),
-    deliveries: { webhook: delivery('webhook'), slack: delivery('slack'), discord: delivery('discord'), telegram: delivery('telegram') },
+    last_delivery: shown(record.last),
+    deliveries: { webhook: shown(channels.webhook), slack: shown(channels.slack), discord: shown(channels.discord), telegram: shown(channels.telegram) },
   };
 }
