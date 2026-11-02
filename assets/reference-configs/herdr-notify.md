@@ -85,6 +85,7 @@ The relay terminal has no parent, so it stays when the install terminal ends.
 An hc terminal starts with the core's environment, so install passes the repo-harness home to the relay as `--home <absolute path>`.
 When a live relay terminal already exists, install starts no second one.
 The relay reads the config again on each event, so a new config takes effect without a restart.
+Each read applies the install rules: HTTPS URLs without user information, a Bot URL and key, a complete Telegram target and done flags of `0` or `1`. An invalid config sends nothing, and the relay screen names the broken rule without its value.
 Last, the command writes `~/.repo-harness/herdr/notify-install.json` with file mode `600`. It names the relay terminal and its label.
 The operator console finds the relay only through that record and reads it on each collection.
 Without the record, the console shows `notify_session_missing`. A record from classic Herdr notify names a session and is refused as `notify_session_invalid`. Run install once to write a new record.
@@ -205,8 +206,9 @@ Missing Bot config stops delivery for the event.
 
 Each request has a five-second timeout. Redirects stop delivery.
 Channels are independent: a failure or an exception in one channel does not stop or hide another channel.
-A successful channel suppresses the same terminal and state for two minutes.
-A failed channel can retry on the next matching event.
+A turn is sent at most once per channel: a successful channel does not send the same terminal, hc turn and state again.
+The next hc turn is a new notice and is sent at once.
+A failed channel can retry on the next event of the same turn.
 There is no background retry queue.
 
 The relay writes the newest result of each channel, and the result of the newest event, to `~/.repo-harness/herdr/notify-deliveries.json` with file mode `600`.
@@ -216,10 +218,13 @@ Slack, Discord, and Telegram messages end with the same repository name, task, a
 HTTP success shows that the endpoint accepted a request.
 Check the Bot routine or human channel to confirm receipt.
 
-The relay does not restart itself. When the hc core stops or the relay terminal ends, the operator console shows `relay_stopped`. Start a new relay with the written config:
+The relay does not restart itself. When the relay terminal ends, the operator console and `repo-harness doctor` show `relay_stopped`.
+Each hc call starts a stopped hc core, and the console status read is an hc call. After the hc core stops, the next status read starts a new core without the relay, so the console shows `relay_stopped`, not `hc_unavailable`.
+`hc_unavailable` means that hc did not answer in time. Start a new relay with the written config:
 
 ```bash
 repo-harness herdr notify start
 ```
 
 `start` starts nothing when a relay is live. Without a config it stops and names the install command.
+`repo-harness herdr notify uninstall` stops a live relay and removes every relay terminal, also finished ones, then the notify files.

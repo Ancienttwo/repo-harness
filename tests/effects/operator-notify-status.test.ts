@@ -141,11 +141,14 @@ describe('notify relay status', () => {
   test('each channel is configured only when the relay would send to it, and no value leaves the reader', async () => {
     const f = fixture();
     try {
-      writeFileSync(notifyConfigPath(f.env), `WEBHOOK_URL='https://bot.example/routine'\nSLACK_WEBHOOK_URL='${SLACK}'\nDISCORD_WEBHOOK_URL='https://discord.example/discord-secret'\nTELEGRAM_BOT_TOKEN='123:telegram-secret'\n`, { mode: 0o600 });
+      writeFileSync(notifyConfigPath(f.env), `WEBHOOK_URL='https://bot.example/routine'\nWEBHOOK_KEY='${SECRET}'\nSLACK_WEBHOOK_URL='${SLACK}'\nDISCORD_WEBHOOK_URL='https://discord.example/discord-secret'\n`, { mode: 0o600 });
       const read = await readNotifyChannelStatus({ env: f.env, now: new Date('2026-10-04T00:00:00.000Z') });
-      expect(read.channels).toEqual({ webhook: 'missing', slack: 'configured', discord: 'configured', telegram: 'missing' });
-      expect(read.status.config).toEqual({ WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'missing', SLACK_WEBHOOK_URL: 'configured' });
-      for (const value of [SLACK, 'discord-secret', 'telegram-secret', 'bot.example']) expect(JSON.stringify(read)).not.toContain(value);
+      expect(read.channels).toEqual({ webhook: 'configured', slack: 'configured', discord: 'configured', telegram: 'missing' });
+      expect(read.status.config).toEqual({ WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' });
+      for (const value of [SECRET, SLACK, 'discord-secret', 'bot.example']) expect(JSON.stringify(read)).not.toContain(value);
+      // A config that the relay would refuse (no Bot key, half a Telegram target) is not shown as partly configured.
+      writeFileSync(notifyConfigPath(f.env), `WEBHOOK_URL='https://bot.example/routine'\nTELEGRAM_BOT_TOKEN='123:telegram-secret'\n`, { mode: 0o600 });
+      expect(await unavailableCode(readNotifyChannelStatus({ env: f.env }))).toBe('notify_config_unavailable');
     } finally { f.cleanup(); }
   });
 

@@ -31,7 +31,7 @@ import { buildReviewCommand } from './commands/review';
 import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand, CODEGRAPH_INIT_STEP, codegraphDoctorChecks, configureCodegraphMcpStep } from './commands/tools';
-import { buildHerdrCommand } from './commands/herdr';
+import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
 import { buildCapabilityContextCommand } from './commands/capability-context';
@@ -125,7 +125,7 @@ export const CLI_PORTS: {
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { codegraphChecks: codegraphDoctorChecks },
+  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
   retention: {

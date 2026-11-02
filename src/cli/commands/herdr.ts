@@ -1,7 +1,8 @@
 import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun, type HerdrCoreOptions } from '../../effects/terminal/herdr-core.ts';
-import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
+import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, readNotifyInstallRecord, relayIsLive, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
+import type { DoctorCheckResult } from './doctor.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
-import { NOTIFY_SECRET_KEYS, renderNotifyConfig, runNotifyRelay, type NotifyConfig } from '../../effects/terminal/notify-relay.ts';
+import { NOTIFY_SECRET_KEYS, decodeNotifyConfig, renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
 import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/operator/notify-status.ts';
 import { Command } from 'commander';
 import { existsSync, rmSync } from 'node:fs';
@@ -48,22 +49,6 @@ export function askMasked(question: string, input: NodeJS.ReadStream = process.s
   });
 }
 
-function validateConfig(config: NotifyConfig): void {
-  for (const [key, value] of Object.entries(config)) {
-    if (/[\x00-\x1f\x7f'"\\]/.test(value)) throw new Error(`${key} contains an unsupported character.`);
-  }
-  if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) throw new Error('WEBHOOK_URL and WEBHOOK_KEY are required.');
-  if (Boolean(config.TELEGRAM_BOT_TOKEN) !== Boolean(config.TELEGRAM_CHAT_ID)) throw new Error('Telegram needs a bot token and a chat id.');
-  for (const key of ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL'] as const) {
-    if (!config[key]) continue;
-    let url: URL;
-    try { url = new URL(config[key]); } catch { throw new Error(`${key} must be an HTTPS URL.`); }
-    if (url.protocol !== 'https:' || url.username || url.password) throw new Error(`${key} must be an HTTPS URL without user information.`);
-  }
-  if (config.TELEGRAM_BOT_TOKEN && !/^\d+:[A-Za-z0-9_-]+$/.test(config.TELEGRAM_BOT_TOKEN)) throw new Error('TELEGRAM_BOT_TOKEN is invalid.');
-  if (config.TELEGRAM_CHAT_ID && !/^(?:-?\d+|@[A-Za-z0-9_]+)$/.test(config.TELEGRAM_CHAT_ID)) throw new Error('TELEGRAM_CHAT_ID is invalid.');
-}
-
 /** The environment for hc calls and the relay terminal: no notify secret from the caller's shell. */
 function hcOptions(): HerdrCoreOptions {
   const env = { ...process.env };
@@ -71,9 +56,9 @@ function hcOptions(): HerdrCoreOptions {
   return { env };
 }
 
-/** The live relay terminals. hc's own failure text stays out of the message: it can name private paths. */
-function liveRelays(options: HerdrCoreOptions) {
-  try { return hcList(RH_NOTIFY_RELAY.labels, options).filter(terminal => terminal.state === 'live'); }
+/** The relay terminals, live or also finished. hc's own failure text stays out of the message: it can name private paths. */
+function relays(options: HerdrCoreOptions, all = false) {
+  try { return hcList(RH_NOTIFY_RELAY.labels, { ...options, all }).filter(terminal => all || terminal.state === 'live'); }
   catch { throw new Error('hc did not list its terminals. Check that the hc core runs.'); }
 }
 
@@ -118,10 +103,9 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
       }
     }
   }
-  const config = values as NotifyConfig;
-  validateConfig(config);
+  const config = decodeNotifyConfig(values);
   const hc = hcOptions();
-  const running = liveRelays(hc);
+  const running = relays(hc);
   // The relay reads the config on each event, so a live relay takes the new config without a restart.
   writePrivateFile(notifyConfigPath(), renderNotifyConfig(config));
   startRelay(hc, running);
@@ -132,20 +116,39 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
 export function startNotify(): void {
   if (!existsSync(notifyConfigPath())) throw new Error(`No notify config. Run: ${NOTIFY_INSTALL_COMMAND}`);
   const hc = hcOptions();
-  const running = liveRelays(hc);
+  const running = relays(hc);
   startRelay(hc, running);
   process.stdout.write(running.length ? `Relay terminal ${RH_NOTIFY_RELAY.name} already runs.\n` : `Relay terminal ${RH_NOTIFY_RELAY.name} started.\n`);
 }
 
-/** Stop and remove every relay terminal, then remove the notify files. A failed hc call keeps the files. */
+/** Stop every live relay terminal and remove every relay terminal, also finished ones, then the notify files. A failed hc call keeps the files. */
 export function uninstallNotify(): void {
   const hc = hcOptions();
-  for (const relay of liveRelays(hc)) {
-    try { hcKill(relay.address, hc); hcRm(relay.address, hc); }
+  for (const relay of relays(hc, true)) {
+    try {
+      if (relay.state === 'live') hcKill(relay.address, hc);
+      hcRm(relay.address, hc);
+    }
     catch { throw new Error(`hc did not stop relay terminal ${relay.address}. The notify files were kept.`); }
   }
   for (const path of [notifyInstallRecordPath(), notifyConfigPath(), notifyDeliveriesPath()]) rmSync(path, { force: true });
   process.stdout.write('Herdr notify is removed.\n');
+}
+
+/** Read-only: one `hc ls` call. Like every hc call, it starts a stopped hc core. */
+export function notifyRelayDoctorCheck(): DoctorCheckResult {
+  const id = 'herdr-notify-relay';
+  const describe = 'Herdr notify relay';
+  const record = readNotifyInstallRecord();
+  if (record.state === 'missing') return { id, describe, status: 'na', detail: 'Herdr notify is not installed.' };
+  if (record.state === 'invalid') return { id, describe, status: 'warn', detail: `The notify install record is invalid (notify_session_invalid). Run: ${NOTIFY_INSTALL_COMMAND}` };
+  let relays;
+  try { relays = hcList(record.relay.labels); }
+  catch { return { id, describe, status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' }; }
+  if (!relayIsLive(relays, record.relay)) {
+    return { id, describe, status: 'warn', detail: `Relay terminal ${record.relay.name} is not live (relay_stopped). Notifications are paused. Run: ${NOTIFY_START_COMMAND}` };
+  }
+  return { id, describe, status: 'ok', detail: `Relay terminal ${record.relay.name} is live.` };
 }
 
 export function buildHerdrCommand(): Command {

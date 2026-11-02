@@ -9,8 +9,8 @@ import {
   type RelayDeliveriesV1,
 } from '../../core/operator/notify-status';
 import { hcListAsync } from '../terminal/herdr-core';
-import { readNotifyInstallRecord } from '../terminal/herdr-notify-install';
-import { readNotifyConfig, readRelayDeliveries } from '../terminal/notify-relay';
+import { readNotifyInstallRecord, relayIsLive } from '../terminal/herdr-notify-install';
+import { readNotifyConfig, readRelayDeliveries, type NotifyConfig } from '../terminal/notify-relay';
 
 /** A probe failed, so the status is unknown. The code is public; the cause stays here. */
 export class NotifyStatusUnavailableError extends Error {
@@ -29,7 +29,7 @@ export interface NotifyStatusReadInput {
   readonly timeout_ms?: number;
 }
 
-function presence(config: Record<string, string | undefined>, ...keys: readonly string[]): NotifyPresence {
+function presence(config: Partial<NotifyConfig>, ...keys: readonly (keyof NotifyConfig)[]): NotifyPresence {
   return keys.every(key => config[key]) ? 'configured' : 'missing';
 }
 
@@ -39,7 +39,7 @@ interface ConfigPresence {
   readonly channels: Record<NotifyChannel, NotifyPresence>;
 }
 
-function presences(config: Record<string, string | undefined>): ConfigPresence {
+function presences(config: Partial<NotifyConfig>): ConfigPresence {
   return {
     config: {
       WEBHOOK_URL: presence(config, 'WEBHOOK_URL'),
@@ -68,23 +68,23 @@ export interface NotifyChannelDeliveryStatus extends NotifyChannelStatus {
 /**
  * The status, whether each channel is configured, and each channel's newest delivery,
  * from one read. Values stay out. A missing or invalid install record, an hc that does
- * not answer, no live relay terminal, or an unreadable config throws NotifyStatusUnavailableError.
+ * not answer, no live relay terminal, or an unreadable or invalid config throws NotifyStatusUnavailableError.
  * An unreadable delivery record shows each channel as `unavailable`.
  */
 export async function readNotifyChannelStatus(input: NotifyStatusReadInput = {}): Promise<NotifyChannelDeliveryStatus> {
   const env = { ...process.env, ...input.env };
-  const record = await readNotifyInstallRecord(env);
+  const record = readNotifyInstallRecord(env);
   if (record.state === 'missing') throw new NotifyStatusUnavailableError('notify_session_missing');
   if (record.state === 'invalid') throw new NotifyStatusUnavailableError('notify_session_invalid');
   let relays;
   try { relays = await hcListAsync(record.relay.labels, { env, timeoutMs: input.timeout_ms ?? HC_TIMEOUT_MS }); }
   catch { throw new NotifyStatusUnavailableError('hc_unavailable'); }
-  if (!relays.some(relay => relay.name === record.relay.name && relay.state === 'live')) throw new NotifyStatusUnavailableError('relay_stopped');
+  if (!relayIsLive(relays, record.relay)) throw new NotifyStatusUnavailableError('relay_stopped');
   let config;
-  try { config = presences(await readNotifyConfig(env) ?? {}); }
+  try { config = presences(readNotifyConfig(env) ?? {}); }
   catch { throw new NotifyStatusUnavailableError('notify_config_unavailable'); }
   let saved: RelayDeliveriesV1 | null;
-  try { saved = await readRelayDeliveries(env); } catch { saved = null; }
+  try { saved = readRelayDeliveries(env); } catch { saved = null; }
   const { last_delivery, deliveries } = readDeliveries(saved);
   return { channels: config.channels, deliveries, status: {
     protocol: 2,

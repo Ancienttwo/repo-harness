@@ -69,7 +69,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
 
 /**
  * The Bot registry and `mcp doctor` fail, one audit log is unreadable, the
- * notify plugin is disabled, and Herdr runs an older 0.9.3 server (1-BOTS-F1).
+ * notify relay is stopped, and Herdr runs an older 0.9.3 server (1-BOTS-F1).
  */
 export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
   return {

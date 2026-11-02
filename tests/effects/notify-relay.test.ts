@@ -23,7 +23,7 @@ function terminal(address: string, labels: Record<string, string>, status: HcTer
   return { address, name: `agent-${address}`, state: 'live', labels, status, turn: 0, pid: null, foreground: null, reason: null };
 }
 const event = (terminal: string, type: string, data: Record<string, unknown>, seq = 1): HcStreamItem => ({ type: 'event', seq, terminal, event: type, data });
-const turn = (terminal: string, state: string) => event(terminal, 'turn', { state, turn: 1 });
+const turn = (terminal: string, state: string, n = 1) => event(terminal, 'turn', { state, turn: n });
 
 interface Call { readonly url: string; readonly init: RequestInit; readonly body: Record<string, unknown> }
 
@@ -66,11 +66,13 @@ describe('notify relay', () => {
       expect(f.record()).toEqual({ protocol: 1, kind: 'notify_relay_deliveries', last: { at, result: 'succeeded' },
         channels: { webhook: { at, result: 'succeeded' }, slack: { at, result: 'succeeded' }, discord: { at, result: 'succeeded' }, telegram: { at, result: 'succeeded' } } });
       expect(statSync(notifyDeliveriesPath(f.env)).mode & 0o777).toBe(0o600);
-      // The same terminal and state within two minutes is not sent again; after that it is.
-      await f.feed(turn('t7', 'blocked'));
-      expect(f.calls).toHaveLength(4);
+      // The next hc turn is sent at once; a turn is sent once per channel, however late it repeats.
+      f.tick(1_000);
+      await f.feed(turn('t7', 'working', 2), turn('t7', 'blocked', 2));
+      expect(f.calls).toHaveLength(8);
+      expect(f.calls.filter(call => call.url.includes('bot.example')).map(call => call.body.kind)).toEqual(['agent.blocked', 'agent.blocked']);
       f.tick(120_000);
-      await f.feed(turn('t7', 'blocked'));
+      await f.feed(turn('t7', 'blocked'), turn('t7', 'blocked', 2));
       expect(f.calls).toHaveLength(8);
     } finally { f.cleanup(); }
   });
@@ -160,6 +162,11 @@ describe('notify relay', () => {
       await f.feed(turn('t7', 'blocked'));
       expect(f.calls).toHaveLength(0);
       expect(existsSync(notifyDeliveriesPath(f.env))).toBe(false);
+      // Each reload passes the install rules: a plain-HTTP Bot webhook sends nothing and names the rule.
+      writeFileSync(notifyConfigPath(f.env), FULL_CONFIG.replace('https://bot.example', 'http://bot.example'), { mode: 0o600 });
+      await f.feed(turn('t7', 'blocked'));
+      expect(f.calls).toHaveLength(0);
+      expect(f.log.at(-1)).toBe('The notify config is invalid: WEBHOOK_URL must be an HTTPS URL without user information. Run: repo-harness herdr notify install');
       writeFileSync(notifyConfigPath(f.env), FULL_CONFIG, { mode: 0o600 });
       await f.feed(turn('t7', 'blocked'));
       const everything = JSON.stringify(f.calls.map(call => call.body)) + f.log.join('\n') + readFileSync(notifyDeliveriesPath(f.env), 'utf8');
@@ -206,10 +213,13 @@ appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ argv, secret: process
 const mode = process.env.FIXTURE_HC ?? 'none';
 const relay = { address: 't5', name: 'rh-notify-relay', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: null, turn: 0 };
 if (mode === 'fail') { process.stderr.write(JSON.stringify({ error: { kind: 'unavailable', message: 'private ' + process.env.FIXTURE_PRIVATE } })); process.exit(1); }
-if (argv[0] === 'ls') console.log(JSON.stringify({ terminals: mode === 'live' ? [relay] : [] }));
-else if (argv[0] === 'run' || argv[0] === 'get') console.log(JSON.stringify(relay));
+const finished = { ...relay, address: 't6', state: 'finished' };
+const target = argv[argv.length - 1];
+if (argv[0] === 'ls') console.log(JSON.stringify({ terminals: mode !== 'live' ? [] : argv.includes('--all') ? [relay, finished] : [relay] }));
+else if (argv[0] === 'run') console.log(JSON.stringify(relay));
+else if (argv[0] === 'get') console.log(JSON.stringify(target === 't6' ? finished : relay));
 else if (argv[0] === 'kill') console.log(JSON.stringify({ ...relay, state: 'finished' }));
-else if (argv[0] === 'rm') console.log(JSON.stringify({ removed: 't5' }));
+else if (argv[0] === 'rm') console.log(JSON.stringify({ removed: target }));
 else process.exit(2);
 `);
   chmodSync(join(bin, 'hc'), 0o755);
@@ -300,9 +310,10 @@ describe('herdr notify install and uninstall', () => {
       expect(existsSync(notifyConfigPath(f.env))).toBe(true);
       const removed = f.cli(['uninstall'], { FIXTURE_HC: 'live' });
       expect(removed.status, removed.stderr).toBe(0);
-      expect(f.calls().slice(-5).map(call => call.argv)).toEqual([
-        ['ls', '--json', '--label', 'repo-harness.role=notify-relay'], ['get', '--json', '--', 't5'], ['kill', '--json', '--', 't5'],
-        ['get', '--json', '--', 't5'], ['rm', '--json', '--', 't5']]);
+      // A finished relay terminal (after hc kill and notify start) is removed too; only a live one is killed.
+      expect(f.calls().slice(-7).map(call => call.argv)).toEqual([
+        ['ls', '--json', '--label', 'repo-harness.role=notify-relay', '--all'], ['get', '--json', '--', 't5'], ['kill', '--json', '--', 't5'],
+        ['get', '--json', '--', 't5'], ['rm', '--json', '--', 't5'], ['get', '--json', '--', 't6'], ['rm', '--json', '--', 't6']]);
       for (const path of [notifyConfigPath(f.env), notifyInstallRecordPath(f.env), notifyDeliveriesPath(f.env)]) expect(existsSync(path)).toBe(false);
     } finally { f.cleanup(); }
   });

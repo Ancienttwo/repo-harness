@@ -6,7 +6,7 @@ import { useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET /api/v1/bot-access`. The server collects MCP, the
- * notify plugin and Herdr in the background and caches one snapshot. Its notify
+ * notify relay and Herdr in the background and caches one snapshot. Its notify
  * section is the notify collector's own cache, so the Bots page reads this one
  * route. Nothing here runs a command or writes.
  */
