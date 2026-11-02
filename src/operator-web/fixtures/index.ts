@@ -17,8 +17,9 @@ import {
 import { decodeSetupSnapshot } from '../../core/setup/decode';
 import { decodeWorktrees } from '../../core/operator/worktrees';
 import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
-import type { BotAccessRead } from '../bots';
-import { busyBotAccess, degradedBotAccess } from './bots';
+import { decodeSlackReviews, slackReviewsUnavailable } from '../../core/operator/slack-review';
+import type { BotAccessRead, BotReviewsRead } from '../bots';
+import { busyBotAccess, busyBotReviews, degradedBotAccess, degradedBotReviews } from './bots';
 import { decodeTestsSnapshot } from '../../core/operator/tests';
 import { docsAnswer, type CiRepairsRead, type ExecutionRead, type TestsRead } from '../repository-reads';
 import { decodeDocsFile, decodeDocsTree } from '../../core/operator/docs';
@@ -102,6 +103,9 @@ export function fixtureProps(name: string): OperatorAppProps {
   // empty: the first Bot access collection has not finished.
   const botAccess: BotAccessRead = fixture === 'empty' ? { state: 'unavailable', reason: 'bot_access_pending' }
     : { state: 'ok', snapshot: decodeBotAccessSnapshot(fixture === 'busy' ? busyBotAccess(now) : degradedBotAccess(now)) };
+  // busy: one thread per state; empty: the first Slack read has not finished; degraded: rate-limited, stale threads.
+  const botReviews: BotReviewsRead = { state: 'ok', snapshot: decodeSlackReviews(fixture === 'busy' ? busyBotReviews(now)
+    : fixture === 'empty' ? slackReviewsUnavailable('slack_pending') : degradedBotReviews(now)) };
   // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
   const agentsSettings = agentsSettingsStore(now, fixture);
   // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
@@ -128,6 +132,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
     readBotAccess: () => Promise.resolve(botAccess),
+    readBotReviews: () => Promise.resolve(botReviews),
     readAgentsSettings: agentsSettings.read,
     writeAgentsSettings: agentsSettings.write,
     readTests: repositoryId => Promise.resolve(tests(repositoryId)),

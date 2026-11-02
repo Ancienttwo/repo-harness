@@ -21,7 +21,8 @@
   operator bot fixture show 0.25.1.
 - `archctx` and `archctx-contracts` stay at the locked exact 0.11.1 (#1430).
   The release-prep PR changes no dependency version.
-- Publish status: pending owner publish.
+- Publish status: published 2026-11-03 by the owner (`npm publish`, dist-tag
+  `latest`). `bun run check:release-published` passed.
 - Hold reason: none.
 
 ### Owner decision
@@ -188,7 +189,9 @@ owner accepts or repairs each flag before publish.
   the published tarball digest here, then runs
   `bun run check:release-published`.
 
-  - Publish candidate: pending.
-  - npm version: pending.
-  - Git tag: pending.
-  - Published tarball digest: pending.
+  - Publish candidate: `0765762aa0ec3f494fe77ac10468c09735f55477` (main after #1466).
+  - npm version: `repo-harness@0.25.1`, gitHead `0765762aa0ec`.
+  - Git tag: annotated `v0.25.1` on `0765762aa0ec`; GitHub Release
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.25.1.
+  - Published tarball digest: shasum `cba20ab3e50f5e4185f7976ba5c91cff189be104`,
+    integrity `sha512-I6lA1fthQfyeSlnXe6sRaCU5uDCVU5zrTmdXC6se7tV3Q4tc8bO+vF5ynZcjQCcfDXtMJAE5JZRvQQzn91uLFg==`.

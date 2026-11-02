@@ -11,7 +11,7 @@ responsibilities:
   - Route each path through the frozen OPERATOR_ROUTES list; production declares three write routes, settings_agents_write, which changes only the agents section of ~/.repo-harness/config.json, sessions_create, and worktrees_cleanup, which removes green worktrees; the server refuses to start unless each write handler and each inventory entry with method POST and write true match.
   - Own the green worktree cleanup effect shared by POST /api/v1/worktrees/cleanup and repo-harness worktrees clean: refuse the whole selection when a row is unknown, in use, not green or its selection digest changed; then remove each row through the sweep's green path, which checks the row again inside the topology barrier. HTTP runs the effect in a supervised child process; the CLI runs it in its own process; both go through the shared write run. Remote branches are never touched.
   - Run slow reads in supervised worker processes and start background collectors once per server.
-  - Serve the Bot access, CLI inventory, notify status, docs, tests and task execution GET routes only from collector caches; a docs file GET sends one object request, under a concurrency cap and a deadline, to the resident cat-file worker of the docs collector and never starts or restarts it.
+  - Serve the Bot access, Dot review, CLI inventory, notify status, docs, tests and task execution GET routes only from collector caches; a docs file GET sends one object request, under a concurrency cap and a deadline, to the resident cat-file worker of the docs collector and never starts or restarts it.
   - Own the operator serve and runtime capture CLI entry and the Herdr observation transport.
   - Own the doc session creation operation: refuse a runtime without verified docs isolation or without the docs use, verify each citation against one commit of the served docs view, then create the session's docs/<slug> branch and worktree under the managed worktree root and its session record; the production sessions_create route runs it after the local config write (#1017) opened, and it starts no agent.
   - Own the doc session event log: append redacted, schema-checked events to the session's events.jsonl under a per-session lock, each one moving the epoch.seq cursor forward, and serve the production cursor read through the bounded task-read process.
@@ -25,6 +25,7 @@ source:
   exclude:
     - src/effects/operator/bot-access.ts
     - src/effects/operator/notify-collector.ts
+    - src/effects/operator/slack-review-collector.ts
     - src/effects/operator/notify-status.ts
     - src/effects/operator/docs-collector.ts
     - src/effects/operator/docs-reader.ts
@@ -52,6 +53,9 @@ source:
             - id: sink.operator.bot-access-collector
               path: src/effects/operator/bot-access.ts
               symbol: startBotAccessCollector
+            - id: sink.operator.slack-review-collector
+              path: src/effects/operator/slack-review-collector.ts
+              symbol: startSlackReviewCollector
             - id: sink.operator.docs-collector
               path: src/effects/operator/docs-collector.ts
               symbol: startDocsCollector
