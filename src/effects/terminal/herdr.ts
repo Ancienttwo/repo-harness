@@ -1,8 +1,9 @@
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
 import { dirname, isAbsolute, join } from 'path';
 import { userInfo } from 'os';
-import type { HerdrEndpoint } from './task-session-record';
 
+/** A classic Herdr named session. Only the classic consumers that #1477-#1479 migrate still use it. */
+export interface HerdrEndpoint { readonly session: string; readonly configPath?: string; readonly home?: string }
 export const HERDR_COMMAND_TIMEOUT_MS = 10_000;
 export type HerdrSpawn = (command: string, args: readonly string[], options: {
   readonly timeout: number; readonly env: NodeJS.ProcessEnv;

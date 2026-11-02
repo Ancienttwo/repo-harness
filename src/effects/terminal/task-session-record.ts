@@ -1,4 +1,4 @@
-/** Persisted task session records and their Node-safe reads. Pane control and admission observation stay with their owners. */
+/** Persisted task session records and their Node-safe reads. Terminal control and admission observation stay with their owners. */
 import { existsSync, lstatSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
@@ -7,7 +7,9 @@ import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
 import { readSessionArtifact } from './task-session-io';
 
-export interface HerdrEndpoint { readonly session: string; readonly configPath?: string; readonly home?: string }
+/** One herdr-core core, addressed by its socket (`HC_SOCKET`). `home` is the directory that review
+ * reads provider credentials from; repo-harness sets it as HOME for no program. */
+export interface HerdrCoreEndpoint { readonly socket: string; readonly home?: string }
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
 export interface OwnedProcess extends ProcessProof { ownership: ObjectOwnership }
 
@@ -23,35 +25,45 @@ interface TaskBindingCommon {
   max_requests: number;
   task_admission?: TaskSessionAdmission;
 }
+/** A task session in its own herdr-core terminal. The provider is the terminal's program. */
 export interface HerdrTaskBinding extends TaskBindingCommon {
-  runtime: 'herdr';
-  endpoint: HerdrEndpoint;
-  pane_id: string;
+  runtime: 'herdr-core';
+  endpoint: HerdrCoreEndpoint;
   terminal_id: string;
-  workspace_id: string;
-  shell: ProcessProof;
-  agent_name: string;
+  terminal_name: string;
 }
 /** An application host that an operator terminal (the Claude app) started
- * from the exact owner command. The terminal stays with the operator: no pane
+ * from the exact owner command. The terminal stays with the operator: no terminal
  * identity, history or signal authority exists for it. */
 export interface TerminalTaskBinding extends TaskBindingCommon {
   runtime: 'terminal';
   command: string[];
 }
 export type TaskPaneBinding = HerdrTaskBinding | TerminalTaskBinding;
-export type HerdrTaskAgentSpec = TaskAgentSpec<HerdrEndpoint>;
-export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; repository: TaskRepository; intent_id: string; agent_name: string; spec: HerdrTaskAgentSpec; runtime?: never }
+export type HerdrTaskAgentSpec = TaskAgentSpec<HerdrCoreEndpoint>;
+export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'herdr-core'; repository: TaskRepository; intent_id: string; terminal_name: string; spec: HerdrTaskAgentSpec }
 export interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
-export interface CreatedPane { pane_id: string; terminal_id: string; intent_id: string }
+export interface CreatedTerminal { intent_id: string; terminal_id: string; terminal_name: string }
+/** The hc addressing of one checkout. hc has no workspace, so nothing is opened or closed for it. */
 export interface TaskWorkspaceBinding {
-  protocol: 1;
+  protocol: 2;
   repository: TaskRepository;
-  endpoint: HerdrEndpoint;
-  root_workspace_id: string;
-  workspace_id: string;
-  ownership: ObjectOwnership;
-  root_pane: { pane_id: string; terminal_id: string; shell: ProcessProof; ownership: ObjectOwnership };
+  endpoint: HerdrCoreEndpoint;
+}
+
+/** #1476: classic Herdr records are not migrated (decision on #1474). */
+export function classicRecordRetired(path: string): never {
+  throw new Error(`task_agent_classic_herdr_record_retired: ${path}. Classic Herdr sessions are not migrated; archive this record and start the session again.`);
+}
+export function readStartIntent(path: string): StartIntent | TerminalStartIntent {
+  const intent = readSessionArtifact<StartIntent | TerminalStartIntent>(path);
+  if ((intent.runtime !== 'herdr-core' && intent.runtime !== 'terminal') || Object.hasOwn(intent.spec, 'parent_terminal')) classicRecordRetired(path);
+  return intent;
+}
+export function readWorkspaceBinding(path: string): TaskWorkspaceBinding {
+  const binding = readSessionArtifact<TaskWorkspaceBinding>(path);
+  if (binding.protocol !== 2) classicRecordRetired(path);
+  return binding;
 }
 
 export function assertSessionDirectory(root: string, path: string): void {
@@ -84,6 +96,7 @@ export function sameSessionData(left: unknown, right: unknown): boolean {
 /** #1345 removed engineer identity. An old binding stops its reader until the operator removes or archives it. */
 export function readTaskBinding(path: string): TaskPaneBinding {
   const binding = readSessionArtifact<TaskPaneBinding>(path);
+  if ((binding.runtime as string) === 'herdr') classicRecordRetired(path);
   if (binding.task_admission && Object.hasOwn(binding.task_admission.identity, 'engineer_profile')) {
     throw new Error(`task_agent_engineer_profile_retired: ${path}. The operator removes or archives this record by hand.`);
   }
@@ -95,22 +108,22 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
   assertSessionDirectory(root, dir);
   const binding = readTaskBinding(join(dir, 'binding.json'));
   if (binding.task !== task || binding.role !== role || binding.protocol !== 2 || binding.repository_id !== repository.repository_id
-    || !['herdr', 'terminal'].includes(binding.runtime)) throw new Error('task_agent_binding_invalid');
+    || !['herdr-core', 'terminal'].includes(binding.runtime)) throw new Error('task_agent_binding_invalid');
   if (!Number.isSafeInteger(binding.max_requests) || binding.max_requests < 1 || binding.max_requests > 100) throw new Error('task_agent_binding_invalid');
   if (binding.runtime === 'terminal') {
     assertCreated(binding.ownership);
-    const intent = readSessionArtifact<TerminalStartIntent>(join(dir, 'intent.json'));
+    const intent = readStartIntent(join(dir, 'intent.json'));
     const created = readSessionArtifact<TerminalTaskBinding>(join(dir, 'provider-created.json'));
     if (!sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || intent.runtime !== 'terminal' || intent.intent_id !== binding.ownership.intent_id || !sameSessionData(intent.command, binding.command)
       || intent.spec.task !== binding.task || intent.spec.role !== binding.role || intent.spec.harness_kind !== binding.harness_kind
       || intent.spec.max_requests !== binding.max_requests || !sameSessionData(created, binding)) throw new Error('task_agent_binding_invalid');
   } else if (binding.ownership.disposition === 'created') {
-    const intent = readSessionArtifact<StartIntent>(join(dir, 'intent.json'));
-    const pane = readSessionArtifact<CreatedPane>(join(dir, 'pane-created.json'));
-    if (!sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || !sameSessionData(intent.spec.endpoint, binding.endpoint) || intent.spec.task !== binding.task
+    const intent = readStartIntent(join(dir, 'intent.json'));
+    const created = readSessionArtifact<CreatedTerminal>(join(dir, 'terminal-created.json'));
+    if (intent.runtime !== 'herdr-core' || !sameSessionData(intent.task_admission ?? null, binding.task_admission ?? null) || !sameSessionData(intent.spec.endpoint, binding.endpoint) || intent.spec.task !== binding.task
       || intent.spec.role !== binding.role || intent.spec.harness_kind !== binding.harness_kind || intent.spec.max_requests !== binding.max_requests) throw new Error('task_agent_binding_invalid');
-    if (intent.intent_id !== binding.ownership.intent_id || pane.intent_id !== intent.intent_id
-      || pane.pane_id !== binding.pane_id || pane.terminal_id !== binding.terminal_id) throw new Error('task_agent_pane_identity_lost');
+    if (intent.intent_id !== binding.ownership.intent_id || created.intent_id !== intent.intent_id
+      || created.terminal_id !== binding.terminal_id || created.terminal_name !== binding.terminal_name) throw new Error('task_agent_terminal_identity_lost');
     if (binding.provider.ownership.disposition === 'created' && binding.provider.ownership.intent_id !== intent.intent_id) throw new Error('task_agent_binding_invalid');
     const provider = readSessionArtifact<TaskPaneBinding>(join(dir, 'provider-created.json')).provider;
     if (provider.pid !== binding.provider.pid || provider.identity !== binding.provider.identity) throw new Error('task_agent_process_identity_lost');
@@ -121,7 +134,7 @@ export function readTaskAgent(repoRoot: string, task: string, role: string): { d
 export function workspaceDirectory(repository: TaskRepository): string {
   return join(repository.primary_root, '.ai/harness/runs/task-workspaces', taskWorkspaceKey(repository.repository_id, repository.execution_root));
 }
-/** The session sweep cannot close an open runtime or contact Herdr. */
+/** The session sweep cannot close an open runtime or contact herdr-core. */
 export function taskWorktreeRuntimeClosed(repository: TaskRepository): boolean {
   const dir = workspaceDirectory(repository);
   try { lstatSync(dir); }

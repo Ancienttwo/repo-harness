@@ -5,7 +5,7 @@ import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { parseAcceptancePolicy, acceptanceBenchmarkRequirement, modelFamily, modelRelation } from '../src/core/review/acceptance-receipt';
 import { runReviewRound, closeReview, reviewLocation, type ReviewEffects } from '../src/effects/review/generic-review';
 import { readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session-io';
-import { taskSessionDirectory as importedTaskDir, type HerdrEndpoint, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
+import { taskSessionDirectory as importedTaskDir, type HerdrCoreEndpoint, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
 import type { TaskRequest } from '../src/core/review/runner-port';
 import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
 import { recordFixtureAcceptance, fixtureReviewResult } from './helpers/repo-fixture';
@@ -656,13 +656,13 @@ function reviewFixture() {
     cancel: async () => { calls.push('cancel'); return { status: 'closed', pids: [] }; },
   };
   const options = { repoRoot: fixture.root, authority: authorityFor(fixture.root), verification: '.ai/harness/runs/acceptance.report.json', reviewerRepo,
-    endpoint: { session: 'private-fixture', home: endpointHome }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
+    endpoint: { socket: join(endpointHome, 'hc.sock'), home: endpointHome }, parentPane: 'fixture-owner-pane', authorityHome: fixture.home,
     taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } };
   return { ...fixture, reviewerRepo, calls, effects, options, sent: () => sent,
     verdict: (next: 'PASS' | 'FAIL') => { verdict = next; prior = true; } };
 }
 
-type TaskReviewEffects = ReviewEffects<TaskPaneBinding, HerdrEndpoint>;
+type TaskReviewEffects = ReviewEffects<TaskPaneBinding, HerdrCoreEndpoint>;
 /** Effects for a delivered request whose host has not observed a finished turn. */
 function pendingTurnEffects(f: ReturnType<typeof reviewFixture>, collect: TaskReviewEffects['collect']): TaskReviewEffects {
   return { ...f.effects, collect, send: async (...args) => {
@@ -690,7 +690,7 @@ darwinTest('generic orchestration collects domain Results, keeps one reviewer fo
     writeFileSync(join(f.root, 'feature.txt'), `candidate repair ${number}\n`);
     writePassingChecks(f.root);
     f.verdict(number === 3 ? 'PASS' : 'FAIL');
-    const result = await runReviewRound({ ...f.options, endpoint: { home: f.options.endpoint.home, session: 'private-fixture' } }, f.effects);
+    const result = await runReviewRound({ ...f.options, endpoint: { home: f.options.endpoint.home, socket: f.options.endpoint.socket } }, f.effects);
     expect(result.round).toBe(number);
   }
   expect(f.sent()).toBe(3);
