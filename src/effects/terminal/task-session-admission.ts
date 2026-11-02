@@ -3,7 +3,6 @@ import { existsSync, realpathSync } from 'node:fs';
 import { createHash } from 'node:crypto';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import type { JsonValue } from '../../core/evidence/types';
 import { validateTaskClaimReference } from '../../core/review/authority-context';
 import type { TaskSessionAdmission } from '../../core/review/runner-port';
 import type { TaskSessionAuthority } from '../admission/admission-source';
@@ -12,7 +11,7 @@ import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import { gitExecFileSync } from '../git/runner';
 import { taskRepository } from '../git/task-repository';
 import { readWorktreeTopology } from '../git/worktree-topology';
-import { readTaskAgent, type HerdrTaskAgentSpec, type TaskPaneBinding } from './task-session-record';
+import { readTaskAgent, sameSessionData, type HerdrTaskAgentSpec, type TaskPaneBinding } from './task-session-record';
 
 /** Observe the existing approval; do not create a second claim or task state. */
 export function observeTaskSessionAdmission(repoRoot: string, spec: Pick<HerdrTaskAgentSpec, 'task' | 'role' | 'harness_kind'>,
@@ -47,9 +46,6 @@ function sessionDigest(value: unknown): string {
 /** The request and native-session `session_binding_sha256` of a task binding. */
 export function taskBindingSha256(binding: TaskPaneBinding): string { return sessionDigest(binding); }
 
-function sameData(left: unknown, right: unknown): boolean {
-  return canonicalize(left as JsonValue) === canonicalize(right as JsonValue);
-}
 export type CurrentTaskSessionRefusal = 'claim_mismatch' | 'recipient_unavailable' | 'canonical_source_stale';
 export interface CurrentTaskSession { admission: TaskSessionAdmission; assertLocalCurrent: () => void }
 /** Provider observation happens outside the caller's mutex. Inside it, only the
@@ -60,7 +56,7 @@ export function observeCurrentTaskSession(input: { repo_root: string; source: { 
   const { binding, dir } = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
   if (!binding.task_admission || existsSync(join(dir, 'closed.json'))) refuse('recipient_unavailable', 'admitted session is unavailable');
   const admission = observeTaskSessionAdmission(binding.execution_root, binding, binding.runtime, input.source.authority);
-  if (!sameData(binding.task_admission.identity, admission.identity)) refuse('claim_mismatch', 'session admission identity changed');
+  if (!sameSessionData(binding.task_admission.identity, admission.identity)) refuse('claim_mismatch', 'session admission identity changed');
   const source = input.source.authority.source;
   const active = observeActiveReviewAdmission(source);
   if (active.grant_sha256 !== admission.approval.grant_sha256 || active.admission.admission_sha256 !== admission.approval.admission_sha256) refuse('canonical_source_stale', 'admission changed during inbox observation');
@@ -69,7 +65,7 @@ export function observeCurrentTaskSession(input: { repo_root: string; source: { 
     const current = readActiveReviewAdmission({ ...source, expectedGoal });
     if (current.grant_sha256 !== admission.approval.grant_sha256 || current.admission.admission_sha256 !== admission.approval.admission_sha256) refuse('canonical_source_stale', 'admission changed during inbox operation');
     const latest = readTaskAgent(input.repo_root, input.source.session.task, input.source.session.role);
-    if (!sameData(latest.binding, binding) || existsSync(join(latest.dir, 'closed.json'))) refuse('recipient_unavailable', 'session changed during inbox operation');
+    if (!sameSessionData(latest.binding, binding) || existsSync(join(latest.dir, 'closed.json'))) refuse('recipient_unavailable', 'session changed during inbox operation');
   };
   assertLocalCurrent();
   return { admission, assertLocalCurrent };

@@ -41,6 +41,8 @@ function observeSession(root: string, session: AdmittedSessionSelector, deps: Ex
     'repository-id': session.provider_repository_id, 'issue-id': session.issue_id, 'campaign-id': session.campaign_id,
     'grant-sha256': session.grant_sha256, 'policy-sha256': session.policy_sha256, actor: session.actor_id,
   });
+  // Like the task inbox, a binding accepts only a task id; the message is part of the CLI output.
+  if (!/^[0-9a-f]{64}$/.test(session.task)) refuseSession('task_message_invalid', `task id is invalid: ${JSON.stringify(session.task)}`);
   return observeCurrentTaskSession({ repo_root: root, source: {
     session: { task: session.task, role: session.role }, authority: { source,
       claim: { reference: session.claim_ref, revision: session.claim_revision } } } }, refuseSession).admission;

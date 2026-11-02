@@ -5,7 +5,7 @@ import { canonicalize } from '../../core/evidence/canonical-json';
 import type { ProcessProof, TaskAgentSpec, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
 import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
-import { readSessionArtifact } from '../terminal/task-session-io';
+import { readSessionArtifact } from './task-session-io';
 
 export interface HerdrEndpoint { readonly session: string; readonly configPath?: string; readonly home?: string }
 export type ObjectOwnership = { disposition: 'created'; intent_id: string } | { disposition: 'attached' };
