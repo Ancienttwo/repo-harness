@@ -60,6 +60,7 @@ import {
   MIN_BUN_VERSION,
   agentFleetVerified,
   bunVersionIsSupported,
+  ownFreshWazaSharedRules,
   runGlobalRuntimeSetup,
   type GlobalRuntimePorts,
   updateLeftoverSummary,
@@ -266,13 +267,27 @@ function runTransactionalProfileProjection(
         new Error(`install profile ${profile} failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return { result, state: null };
     }
+    let owned: GlobalRuntimeResult;
     try {
-      const state = commitState(transaction, migrationSource, result);
-      captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
-      commitInstallHostTransaction(transaction);
-      return { result, state };
+      const priorReceipts = (migrationSource ?? readInstalledProfile(transactionEnv))?.ownership_manifest ?? [];
+      commitState(transaction, migrationSource, result);
+      owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv, priorReceipts);
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
+      throw error;
+    }
+    if (owned.exitCode !== 0) {
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
+        new Error(`install profile ${profile} failed: ${owned.stderr || owned.lines.join('; ')}`), owned);
+      return { result: owned, state: null };
+    }
+    try {
+      const state = readInstalledProfile(transactionEnv)!;
+      captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
+      commitInstallHostTransaction(transaction);
+      return { result: owned, state };
+    } catch (error) {
+      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, owned);
       throw error;
     }
   });
