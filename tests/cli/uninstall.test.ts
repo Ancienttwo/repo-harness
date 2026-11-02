@@ -1,7 +1,7 @@
 import { createHash } from 'crypto';
 import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
 import { test, expect } from 'bun:test';
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync } from 'fs';
+import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -121,6 +121,17 @@ test('staging skill removal edits the provider lock under an XDG_STATE_HOME outs
   expect(JSON.parse(readFileSync(lockPath,'utf8')).skills).toEqual({'user-skill':{source:'user/repo'}});
   expect(readFileSync(join(home,'.agents/.skill-lock.json'),'utf8')).toBe('{"skills":{"think":{}}}');
  } finally { rmSync(state,{recursive:true,force:true}); }
+}));
+test.skipIf(process.platform==='win32'||process.getuid?.()===0)('a failed provider lock write keeps the staging skill for a retry',()=>fixture((home,env)=>{
+ const lockDir=join(home,'.local/state/skills');const xdg={...env,XDG_STATE_HOME:join(home,'.local/state')};
+ put(home,'source/SKILL.md','keep');mkdirSync(join(home,'.agents/skills'),{recursive:true});const path=join(home,'.agents/skills/think');symlinkSync(join(home,'source'),path);
+ profile(home,[{...ownedFile(path,''),type:'symlink',content_hash:null,managed_marker:null,symlink_target:join(home,'source')}]);
+ put(home,'.local/state/skills/.skill-lock.json',JSON.stringify({skills:{think:{},'user-skill':{}}}));chmodSync(lockDir,0o500);
+ expect(runUserUninstall({target:'both',env:xdg}).status).toBe('partial');
+ expect(existsSync(path)).toBe(true);expect(readFileSync(join(home,'.repo-harness/install-state.json'),'utf8')).toContain(path);
+ chmodSync(lockDir,0o700);
+ expect(runUserUninstall({target:'both',env:xdg}).status).toBe('complete');expect(existsSync(path)).toBe(false);
+ expect(JSON.parse(readFileSync(join(lockDir,'.skill-lock.json'),'utf8')).skills).toEqual({'user-skill':{}});
 }));
 test('managed context block cleanup keeps user prose',()=>fixture((home,env)=>{
  put(home,'.codex/AGENTS.md','user-before\n<!-- BEGIN: repo-harness global-working-rules -->\nmanaged\n<!-- END: repo-harness global-working-rules -->\nuser-after\n');

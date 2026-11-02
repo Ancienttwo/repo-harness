@@ -4,7 +4,7 @@ import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync,
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
 import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
-import { stagedSkillRoot, hostSkillRoot, providerSkillLock } from '../../effects/host-skill-roots';
+import { stagedSkillRoot, hostSkillRoot, providerSkillLock, type ProviderSkillLock } from '../../effects/host-skill-roots';
 import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { deepEqual } from './shared';
@@ -53,10 +53,11 @@ function readUninstallState(opts: UninstallOptions) {
   const env = opts.env ?? process.env;
   const home = hostConfigurationRoot(env);
   assertConfigurationPath(installProfileStatePath(env), home);
+  const lock = providerSkillLock(home, env);
   const state = readInstalledProfile(env);
   const receipt = readConfigurationReceipt(home);
   if (receipt.pending && !opts.recoverInterrupted) throw new Error('interrupted configuration transaction; preview recovery with uninstall --recover-interrupted --dry-run, then apply --recover-interrupted to restore recorded fragments');
-  return { state, receipt };
+  return { state, receipt, lock };
 }
 
 function uninstallResult(items: UninstallItem[], dryRun: boolean): UninstallResult {
@@ -74,7 +75,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   const surfaceRemovals: ManagedInstallSurface[] = [];
   const piRemovals: string[] = [];
   const piSkills = hostSkillRoot(home, 'pi', env);
-  const lock = providerSkillLock(home, env);
+  let lock: ProviderSkillLock;
   const surfaceRoot = (path: string) => path === lock.path ? lock.root : path.startsWith(piSkills + '/') ? dirname(piSkills) : home;
   const removedSurfaces = new Set<ManagedInstallSurface>();
   const remember = (path: string): void => { if (!originals.has(path)) originals.set(path, fingerprint(path)); };
@@ -86,7 +87,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   let state: ReturnType<typeof readInstalledProfile> = null;
   let receipt: ReturnType<typeof readConfigurationReceipt>;
   try {
-    ({ state, receipt } = readUninstallState(opts));
+    ({ state, receipt, lock } = readUninstallState(opts));
   } catch (error) { unresolved(configurationReceiptPath(home), String((error as Error).message)); return result(); }
   let recovered = false;
   if (receipt.pending) {
@@ -274,6 +275,10 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
         assertConfigurationPath(dirname(path), surfaceRoot(path));
         if (fingerprint(path) !== expected) throw new Error(`configuration changed after preview: ${path}`);
       }
+      // A retry selects lock entries from staging ownership, so the lock
+      // cleanup lands before the staging removal and the ledger write.
+      const lockCleanup = writes.get(lock.path);
+      if (typeof lockCleanup === 'string') { writePrivateConfiguration(lock.path, lockCleanup, lock.root); writes.delete(lock.path); }
       // A failed Pi readback stops before the ownership ledger is written.
       for (const source of piRemovals) removePiPackage(source, env);
       for (const surface of surfaceRemovals) {

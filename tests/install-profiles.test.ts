@@ -987,8 +987,11 @@ describe('install profiles', () => {
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
   }), 30_000);
 
-  test('a relative XDG_STATE_HOME fails before the host transaction', () => withHome((env) => {
-    expect(() => installProfileHostMutationPaths({ ...env, XDG_STATE_HOME: 'state' })).toThrow('XDG_STATE_HOME must be an absolute path: state');
+  test('a relative XDG_STATE_HOME fails before the install takes its runtime lock', () => withHome((env) => {
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'minimal', '--json'], { cwd: ROOT, env: { ...env, XDG_STATE_HOME: 'state' }, encoding: 'utf-8' });
+    expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain('XDG_STATE_HOME must be an absolute path: state');
+    expect(existsSync(join(env.HOME!, '.repo-harness'))).toBe(false);
   }));
 
   test('committing a host transaction only discards its backups', () => withHome((env) => {
