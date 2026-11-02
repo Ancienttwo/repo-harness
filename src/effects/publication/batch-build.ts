@@ -13,6 +13,7 @@ import { spawnSync } from 'child_process';
 import { mkdtempSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
+import { gitSpawnSync } from '../git/runner';
 
 const BATCH_MEMBER_LIMIT = 6;
 
@@ -127,7 +128,7 @@ function gh(input: BatchBuildInput, args: readonly string[]): unknown {
 }
 
 function git(cwd: string, args: readonly string[]): { readonly status: number | null; readonly stdout: string; readonly stderr: string } {
-  const result = spawnSync('git', [...args], { cwd, encoding: 'utf-8' });
+  const result = gitSpawnSync(args, { cwd, encoding: 'utf-8' });
   return { status: result.status, stdout: result.stdout ?? '', stderr: result.stderr ?? '' };
 }
 
