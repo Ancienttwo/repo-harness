@@ -15,9 +15,9 @@ const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'r
   status: { state: 'idle', app: 'repo-harness', kind: null }, turn: 2,
   pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null, holder: 3 };
 // One script stands in for both programs. FAKE_MODE picks the outcome; FAKE_OUT_<subcommand> overrides the
-// reply for one subcommand; argv is logged one argument per line, and the environment goes to FAKE_ENV_LOG.
+// reply for one subcommand; argv is logged one argument per line, and the env key names go to FAKE_ENV_LOG.
 const FAKE = `#!/bin/sh
-env >> "$FAKE_ENV_LOG"
+env | cut -d= -f1 >> "$FAKE_ENV_LOG"
 for arg in "$@"; do printf '%s\\n' "$arg" >> "$FAKE_LOG"; done
 case "$FAKE_MODE" in
   ok) eval "out=\\\${FAKE_OUT_$1:-}"; printf '%s' "\${out:-$FAKE_STDOUT}" ;;
@@ -38,7 +38,7 @@ function fake(mode: string, stdout: unknown = {}, replies: Readonly<Record<strin
     FAKE_STDOUT: typeof stdout === 'string' ? stdout : JSON.stringify(stdout) };
   for (const [subcommand, reply] of Object.entries(replies)) env[`FAKE_OUT_${subcommand}`] = JSON.stringify(reply);
   return { env, root, argv: () => readFileSync(log, 'utf8').split('\n').filter(Boolean),
-    envKeys: () => readFileSync(envLog, 'utf8').split('\n').map(line => line.split('=')[0]!).filter(Boolean) };
+    envKeys: () => readFileSync(envLog, 'utf8').split('\n').filter(Boolean) };
 }
 
 function failure(call: () => unknown): HerdrCoreError {
