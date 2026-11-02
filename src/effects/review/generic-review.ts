@@ -1,37 +1,28 @@
-import { preparePrePromptInbox, commitPrePromptInbox } from './pre-prompt-inbox';
-import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { osAccountHome } from '../runtime/os-account-home';
-import { reviewCampaignKey } from '../../core/review/authority-context';
-import type { ReviewAdmissionSource } from '../admission/admission-source';
-import { existsSync, lstatSync, readFileSync, realpathSync, readdirSync, writeFileSync } from 'fs';
-import { execFileSync } from 'child_process';
+import { reviewCampaignKey, validateTaskClaimReference } from '../../core/review/authority-context';
+import type { ReviewAdmissionSource, TaskSessionAuthority } from '../admission/admission-source';
+import { existsSync, lstatSync, readFileSync, realpathSync, writeFileSync } from 'fs';
 import { join, relative, resolve } from 'path';
 import { userInfo } from 'os';
-import { fileURLToPath } from 'url';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { REVIEW_MAX_ROUNDS, REVIEW_TIMEOUT_MS, validateReviewOutput, type ReviewOutput } from '../../core/review/generic-review';
 import { composeReviewPacket } from '../../core/review/review-packet';
-import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
-import { validateHerdrEndpoint, type HerdrEndpoint } from '../terminal/herdr';
-import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
+import type { ReviewHostSpec, HostRoundObservation } from '../../core/review/runner-port';
+import type { ReviewerRunner, TaskClaimReference, TaskCleanupResult, TaskRequest } from '../../core/review/runner-port';
+import { acquireExclusiveDirectoryLock, ExclusiveLockContentionError, withCallerLock } from '../locking/exclusive-directory-lock';
 import { taskRepository } from '../git/task-repository';
-import { locked, startTaskApplicationHost, bindTerminalApplicationHost, assertTerminalHostCommand, readTaskAgent, processProofAlive, sendTaskRequest, collectTaskResult, closeTaskAgent, cancelTaskAgent, taskAgentStatus,
-  taskSessionDirectory, assertTaskBinding, nextSessionRound, ensureSessionDirectory,
-  readSessionArtifact, writeSessionArtifact, validateTaskClaimReference, taskBindingSha256, type TaskClaimReference, type ProcessProof, type TaskCleanupResult, type TaskPaneBinding, type TaskRequest } from '../terminal/task-session';
-import { reviewIsolationPolicy, reviewHostCommand, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory, removePiCredentialReferences } from './review-isolation';
-import type { ReviewHostSpec, HostRoundObservation } from './oar-review-host';
-import type { SessionOptions, InstallationSnapshot } from '@botiverse/oar';
+import { ensureSessionDirectory, nextSessionRound, readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
+import { reviewIsolationPolicy, prepareReviewLauncher, prepareCodexHome, removeCopiedAuth, preparePiAgentDirectory, removePiCredentialReferences } from './review-isolation';
 import { acceptanceContext, acceptanceReviewContextDigest, authorityFingerprint, GENERIC_REVIEW_ROLE,
-  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptanceAuthor, type AcceptancePullRequestSelection,
+  projectAcceptance, recordAcceptance, verifyAcceptance, type AcceptancePullRequestSelection,
   type AcceptanceReceipt } from './acceptance-receipt';
-import { oarObservationFile, readOarObservation } from '../terminal/task-runtime-observation';
 import { gitExecFileSync } from '../git/runner';
 import { isReviewRuntimeId, type ReviewRuntimeId } from '../../core/review/review-runtimes';
 import { piExecutable } from '../pi-executable';
 import { piReviewLaunchBlocker } from '../setup/pi-host-probe';
 
 type Harness = ReviewRuntimeId;
-interface ReviewSession {
+interface ReviewSession<Endpoint> {
   protocol: 1;
   owner_root: string;
   campaign_sha256: string;
@@ -40,7 +31,7 @@ interface ReviewSession {
   task: string;
   reviewer_repo: string;
   /** Null for an app-terminal session: the Claude app operator launches the host. */
-  endpoint: HerdrEndpoint | null;
+  endpoint: Endpoint | null;
   parent_pane: string | null;
   requested_harness: Harness;
   actual_harness: Harness;
@@ -50,14 +41,14 @@ interface ReviewSession {
   started_at: number;
 }
 interface RoundRecord { subject_sha256: string; context_sha256: string; task_request: TaskRequest }
-export interface ReviewOptions {
+export interface ReviewOptions<Endpoint> {
   repoRoot: string;
   authority: ReviewAdmissionSource;
   taskClaim: TaskClaimReference;
   verification?: string;
   reviewerRepo: string;
-  /** Herdr launch addressing. An app-terminal launch has neither field. */
-  endpoint?: HerdrEndpoint;
+  /** Launch addressing that the runner validates. An app-terminal launch has neither field. */
+  endpoint?: Endpoint;
   parentPane?: string;
   launch?: 'herdr' | 'app-terminal';
   harness?: Harness;
@@ -72,144 +63,17 @@ function fingerprint(root: string): string {
   return authorityFingerprint(gitExecFileSync(['status', '--porcelain=v1', '--untracked-files=all'], { cwd: root, encoding: 'utf8' })
     + gitExecFileSync(['diff', 'HEAD', '--no-ext-diff', '--no-textconv', '--binary'], { cwd: root, encoding: 'utf8', maxBuffer: 12 * 1024 * 1024 }));
 }
-/** Task bindings whose own Herdr pane is the review caller's pane. */
-function paneBindings(repo: string, endpoint: HerdrEndpoint, pane: string): { dir: string; binding: TaskPaneBinding }[] {
-  const base = join(taskRepository(repo).primary_root, '.ai/harness/runs/task-agents');
-  if (!existsSync(base)) return [];
-  const bound: { dir: string; binding: TaskPaneBinding }[] = [];
-  for (const entry of readdirSync(base, { withFileTypes: true })) {
-    if (!entry.isDirectory() || !existsSync(join(base, entry.name, 'binding.json'))) continue;
-    const saved = readSessionArtifact<TaskPaneBinding>(join(base, entry.name, 'binding.json'));
-    if (saved.runtime !== 'herdr' || saved.pane_id !== pane || canonicalize(JSON.parse(JSON.stringify(saved.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
-      || !isReviewRuntimeId(saved.harness_kind)) continue;
-    bound.push(readTaskAgent(repo, saved.task, saved.role));
-  }
-  return bound;
-}
-// Owner inference consumes existing typed task bindings only. Interactive
-// parents without a binding require an explicit --harness; never guess from TUI.
-function boundOwner(repo: string, endpoint: HerdrEndpoint, pane: string): Harness | null {
-  const kinds = new Set<Harness>();
-  for (const { binding } of paneBindings(repo, endpoint, pane)) { assertTaskBinding(binding); kinds.add(binding.harness_kind as Harness); }
-  return kinds.size === 1 ? [...kinds][0]! : null;
-}
-/** An author turn without valid v3 evidence for its request is unknown; it never blocks the verdict. */
-function authorTurn(path: string, request: TaskRequest, provider: ProcessProof) {
-  try { return readOarObservation(path, request, provider); }
-  catch (error) {
-    if (/^OAR_OBSERVATION_(?:INVALID|LIMIT|IDENTITY_MISMATCH)$/.test((error as Error).message)) return null;
-    throw error;
-  }
-}
-/** The single author task session bound to the caller pane for this campaign
- * and reviewed root, and the models its OAR host observed at turn end. Every
- * ended turn counts; a missing, running or model-less turn makes the set unknown. */
-function boundAuthor(repo: string, session: ReviewSession): AcceptanceAuthor | null {
-  if (session.endpoint === null || session.parent_pane === null) return null;
-  const bound = paneBindings(repo, session.endpoint, session.parent_pane);
-  if (bound.length !== 1) return null;
-  const { dir, binding } = bound[0]!;
-  const identity = binding.task_admission?.identity;
-  if (!identity || identity.campaign_sha256 !== session.campaign_sha256 || identity.execution_root !== session.owner_root) return null;
-  const models = new Set<string>();
-  let known = true;
-  for (let round = 1; round <= binding.max_requests && existsSync(join(dir, `request-${round}.json`)); round++) {
-    const request = readSessionArtifact<TaskRequest>(join(dir, `request-${round}.json`));
-    const turn = authorTurn(join(dir, oarObservationFile(round)), request, binding.provider);
-    if (turn?.control === 'rejected') continue;
-    if (turn?.status !== 'idle' || turn.outcome === null || turn.actual_model === null) { known = false; break; }
-    models.add(turn.actual_model);
-  }
-  return { binding_sha256: taskBindingSha256(binding), models: known && models.size ? [...models].sort() : null };
-}
-async function waitHostFile(path: string, timeout = 60_000): Promise<void> {
-  const deadline = Date.now() + timeout;
-  while (!existsSync(path)) {
-    if (Date.now() >= deadline) throw new Error('review_host_deadline; inspect same launch/request');
-    await Bun.sleep(25);
-  }
-}
 /** Null is an unobserved reviewer model; it grants no cross-model claim. */
-function completedModel(session: ReviewSession, request: TaskRequest): string | null {
+function completedModel(session: Pick<ReviewSession<unknown>, 'control_directory'>, request: TaskRequest): string | null {
   const observation = readSessionArtifact<HostRoundObservation>(join(session.control_directory, `observed-${request.round}.json`));
   if (observation.request_id !== request.request_id || observation.kind !== 'ended' || observation.outcome !== 'completed') throw new Error('review_host_turn_unverified');
   return observation.actual_model;
 }
 const shellQuote = (value: string) => "'" + value.replaceAll("'", "'\\''") + "'";
-/** A cancel without a claim writes this tombstone, so a later launch fails at its claim. */
-type HostClaim = ProcessProof | { pid: null; closed: true };
-/** A reused pid is not the claimed host. */
-function claimedHostAlive(proof: ProcessProof): boolean {
-  try { return processProofAlive(proof); }
-  catch (error) { if (String(error).includes('task_agent_process_identity_lost')) return false; throw error; }
-}
-/** The host that claimed this control directory, after it is ready; null when
- * no host claimed it yet. Never launches or relaunches a host. */
-async function terminalHostLaunched(dir: string, timeout = 60_000): Promise<ProcessProof | null> {
-  const path = join(dir, 'host-claim.json');
-  if (!existsSync(path)) return null;
-  const claim = readSessionArtifact<HostClaim>(path);
-  if (claim.pid === null) throw new Error('review_session_closing; finish the same cancel or close');
-  const deadline = Date.now() + timeout;
-  while (!existsSync(join(dir, 'ready.json'))) {
-    if (!claimedHostAlive(claim)) throw new Error('review_host_start_failed; read the app terminal output, then run review cancel; do not launch again');
-    if (Date.now() >= deadline) throw new Error('review_host_ready_timeout; run review cancel; do not launch again');
-    await Bun.sleep(100);
-  }
-  if (readSessionArtifact<{ pid: number }>(join(dir, 'ready.json')).pid !== claim.pid) throw new Error('review_host_identity_mismatch');
-  return { pid: claim.pid, identity: claim.identity };
-}
-function hostExecutable(): { node: string; entry: string } {
-  return { node: realpathSync(process.env.REPO_HARNESS_NODE_BIN ?? Bun.which('node') ?? ''),
-    entry: realpathSync(fileURLToPath(new URL('../../../dist/oar-review-host.js', import.meta.url))) };
-}
-/** Only the fixed Node>=24 host executes the OAR installation API. */
-export async function probeReviewInstallation(kind: Harness, executable?: string): Promise<InstallationSnapshot> {
-  const pi = kind === 'pi' ? executable ?? piExecutable() : undefined;
-  if (kind === 'pi' && !pi) return { kind: 'not_found' };
-  const { node, entry } = hostExecutable();
-  return JSON.parse(execFileSync(node, [entry, '--installation', kind, ...(pi ? [pi] : [])], { encoding: 'utf8', timeout: 60_000, maxBuffer: 1024 * 1024,
-    env: executable && kind !== 'pi' ? { ...process.env, [kind === 'codex' ? 'OAR_CODEX_BIN' : 'OAR_CLAUDE_BIN']: executable } : process.env })) as InstallationSnapshot;
-}
-const runtime = { start: startTaskApplicationHost, bindTerminal: bindTerminalApplicationHost, launched: terminalHostLaunched, send: sendTaskRequest, collect: collectTaskResult, close: closeTaskAgent,
-  cancel: cancelTaskAgent, status: taskAgentStatus, assertBinding: assertTaskBinding,
-  owner: boundOwner, author: boundAuthor, model: completedModel, bindNative: bindNativeTaskSession,
-  installation: probeReviewInstallation,
-  piExecutable,
-  piReviewLaunchBlocker,
-  ready: waitHostFile,
-  dispose: async (repo: string, task: string, output: string, terminal = false): Promise<void> => {
-    const request = join(output, 'close.request');
-    if (terminal && !existsSync(join(taskSessionDirectory(repo, task, GENERIC_REVIEW_ROLE), 'binding.json'))) {
-      // Unbound app-terminal host: a claimed host disposes on close.request and
-      // exits. Without a claim, the tombstone makes any later launch fail first.
-      // A host that began a Session and exits without disposal proof stays pending.
-      if (!existsSync(request)) writeSessionArtifact(request, { close: true });
-      const path = join(output, 'host-claim.json');
-      try { writeSessionArtifact(path, { pid: null, closed: true }); return; }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error; }
-      const claim = readSessionArtifact<HostClaim>(path);
-      if (claim.pid === null) return;
-      const deadline = Date.now() + 60_000;
-      while (claimedHostAlive(claim)) {
-        if (Date.now() >= deadline) throw new Error('review_host_cleanup_pending; the app terminal host is still running');
-        await Bun.sleep(25);
-      }
-      if (existsSync(join(output, 'session-opening.json')) && !existsSync(join(output, 'disposed.json'))) {
-        throw new Error('review_host_cleanup_pending; the host exited after it began a Session without a disposal receipt; check for a leftover reviewer process');
-      }
-      return;
-    }
-    const { binding } = readTaskAgent(repo, task, GENERIC_REVIEW_ROLE);
-    if (!existsSync(request)) writeSessionArtifact(request, { close: true });
-    await waitHostFile(join(output, 'disposed.json'));
-    const deadline = Date.now() + 60_000;
-    while (processProofAlive(binding.provider)) {
-      if (Date.now() >= deadline) throw new Error('review_host_cleanup_pending; do not close pane before SDK disposal');
-      await Bun.sleep(25);
-    }
-  } };
-export type ReviewEffects = Partial<typeof runtime>;
+/** Review-owned effects. A fixture may replace each one. */
+const reviewEffects = { model: completedModel, piExecutable, piReviewLaunchBlocker };
+/** The reviewer runner and optional replacements of the review-owned effects. */
+export type ReviewEffects<Session, Endpoint> = ReviewerRunner<Session, Endpoint, TaskSessionAuthority> & Partial<typeof reviewEffects>;
 
 export function reviewLocation(repoRoot: string, authority: ReviewAdmissionSource) {
   const repository = taskRepository(authority.repoRoot), root = repository.execution_root;
@@ -240,19 +104,6 @@ function sourcePacket(root: string, paths: readonly string[], target: string): s
   return pieces.join('\n');
 }
 
-/** Fleet owns review instructions. Pi owns its native provider/model selection. */
-export function reviewSessionOptions(kind: Harness, output: string, runtimeHome?: string): SessionOptions {
-  const fleet = parseFrontmatter(readFileSync(fileURLToPath(new URL('../../../agents/fleet/deep-reasoner.md', import.meta.url)), 'utf8'));
-  if (!fleet || !validateFrontmatter(fleet, GENERIC_REVIEW_ROLE).ok) throw new Error('review_fleet_invalid');
-  const target = AGENT_TARGET_OVERRIDES[GENERIC_REVIEW_ROLE]!;
-  if (kind === 'pi' && !runtimeHome) throw new Error('review_pi_agent_directory_required');
-  return { cwd: output,
-    ...(kind === 'pi' ? { env: { PI_CODING_AGENT_DIR: runtimeHome!, OAR_PI_AGENT_DIR: runtimeHome! } }
-      : { model: kind === 'codex' ? target.model : fleet.model!, effort: kind === 'codex' ? target.effort : fleet.effort!,
-        ...(kind === 'codex' && runtimeHome ? { env: { CODEX_HOME: runtimeHome } } : {}) }),
-    appendSystemPrompt: `${fleet.body}\nReview communication exception: writing the final JSON once to this request's exact result_ref is the only authorized mutation. No temporary file, rename, other edits or permission workarounds. This is communication, not production editing.` };
-}
-
 export interface ReviewLaunchRequired {
   status: 'launch_required'; round: number; requested_harness: Harness; actual_harness: Harness; fallback_reason: string | null;
   cwd: string; argv: string[]; command: string;
@@ -262,16 +113,16 @@ export interface ReviewRoundResult {
   requested_harness: Harness; actual_harness: Harness; fallback_reason: string | null;
 }
 /** Only an app-terminal launch can end a call before delivery, with the host command to run. */
-export function runReviewRound(options: ReviewOptions & { launch?: 'herdr' }, effects?: ReviewEffects): Promise<ReviewRoundResult>;
-export function runReviewRound(options: ReviewOptions, effects?: ReviewEffects): Promise<ReviewRoundResult | ReviewLaunchRequired>;
-export async function runReviewRound(options: ReviewOptions, effects: ReviewEffects = {}): Promise<ReviewRoundResult | ReviewLaunchRequired> {
+export function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint> & { launch?: 'herdr' }, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult>;
+export function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint>, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult | ReviewLaunchRequired>;
+export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint>, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult | ReviewLaunchRequired> {
   const taskClaim = validateTaskClaimReference(options.taskClaim);
-  const taskAuthority = { source: options.authority, claim: taskClaim };
+  const taskAuthority: TaskSessionAuthority = { source: options.authority, claim: taskClaim };
   const terminal = options.launch === 'app-terminal';
   if (terminal ? options.endpoint || options.parentPane : !options.endpoint || !options.parentPane) throw new Error('review_launch_addressing_invalid');
-  if (!terminal) validateHerdrEndpoint(options.endpoint!);
+  const client = { ...reviewEffects, ...effects };
+  if (!terminal) client.validateEndpoint(options.endpoint!);
   const endpoint = options.endpoint ?? null, parentPane = options.parentPane ?? null;
-  const client = { ...runtime, ...effects };
   const { root, primary, campaign, key, dir } = reviewLocation(options.repoRoot, options.authority);
   const lock = acquireExclusiveDirectoryLock(primary, relative(primary, join(dir, 'caller.lock')), { waitTimeoutMs: 1, reclaimStaleOwner: true });
   let authOutput: string | undefined;
@@ -280,7 +131,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (existsSync(join(dir, 'closed.json'))) throw new Error('review_session_closed');
     if (existsSync(join(dir, 'close.request'))) throw new Error('review_session_closing; finish the same cancel or close');
     // Refuse an unusable terminal command before any session admission.
-    if (terminal) { const host = hostExecutable(); assertTerminalHostCommand(reviewHostCommand(host.node, host.entry, join(dir, 'host.json'))); }
+    if (terminal) client.hostCommand(join(dir, 'host.json'), true);
     const reviewerRepo = realpathSync(options.reviewerRepo);
     if (reviewerRepo === root || reviewerRepo === primary || taskRepository(reviewerRepo).repository_id !== taskRepository(root).repository_id) throw new Error('review_requires_dedicated_linked_checkout');
     const timeout = options.timeoutMs ?? REVIEW_TIMEOUT_MS;
@@ -288,9 +139,9 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     if (!options.verification) throw new Error('review_requires_explicit_verification_report');
     const context = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     const identity = contextIdentity(context);
-    let session: ReviewSession;
+    let session: ReviewSession<Endpoint>;
     if (existsSync(join(dir, 'session.json'))) {
-      session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+      session = readSessionArtifact<ReviewSession<Endpoint>>(join(dir, 'session.json'));
       if (session.protocol !== 1 || session.owner_root !== root || session.campaign_sha256 !== campaign
         || JSON.stringify(session.task_claim) !== JSON.stringify(taskClaim)
         || session.reviewer_repo !== reviewerRepo || canonicalize(JSON.parse(JSON.stringify(session.endpoint))) !== canonicalize(JSON.parse(JSON.stringify(endpoint)))
@@ -323,12 +174,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       writeSessionArtifact(join(dir, 'session.json'), session);
     }
     // Reconcile only existing positive receipts; never resend an uncertain request.
-    const previousTaskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
-    for (let priorRound = 1; priorRound <= REVIEW_MAX_ROUNDS; priorRound++) {
-      if (!existsSync(join(previousTaskDir, `inbox-accepted-${priorRound}.json`))) continue;
-      const prior = readSessionArtifact<TaskRequest>(join(previousTaskDir, `request-${priorRound}.json`));
-      commitPrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request: prior });
-    }
+    client.recoverCompanions(taskAuthority, primary, session.task, GENERIC_REVIEW_ROLE, REVIEW_MAX_ROUNDS);
     const contextDigest = acceptanceReviewContextDigest(context);
     const round = nextSessionRound<RoundRecord>(dir, REVIEW_MAX_ROUNDS, contextDigest, previous => previous.context_sha256);
     const previous = round > 1 ? readSessionArtifact<{ output: ReviewOutput }>(join(dir, `accepted-${round - 1}.json`)).output.findings : [];
@@ -345,20 +191,19 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       // the launch outcome is unknown; do not replace it or start another pane.
       throw new Error(`review_packet_changed_before_send; packet for round ${round} is preserved. Inspect with repo-harness review status --repo ${shellQuote(root)} --campaign-id ${shellQuote(options.authority.campaign_id)} --json; restore the original subject and verification before retrying the same review round.`);
     }
-    const taskDir = taskSessionDirectory(primary, session.task, GENERIC_REVIEW_ROLE);
-    const outbox = join(reviewerRepo, '.ai/harness/runs/task-agent-outbox', taskDir.split('/').pop()!);
+    const outbox = client.outputDirectory(reviewerRepo, primary, session.task, GENERIC_REVIEW_ROLE);
     ensureSessionDirectory(reviewerRepo, outbox);
     let runtimeHome: string | undefined;
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
-      const prepared = prepareCodexHome(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir, timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
+      const prepared = prepareCodexHome(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir, timeout * REVIEW_MAX_ROUNDS + 120_000, existsSync(marker));
       runtimeHome = prepared.home;
       if (!existsSync(marker)) writeSessionArtifact(marker, { auth_copied: true, mode: prepared.mode });
     }
     if (session.actual_harness === 'pi') {
       piOutput = outbox;
-      runtimeHome = preparePiAgentDirectory(outbox, options.endpoint?.home ?? process.env.HOME ?? userInfo().homedir);
+      runtimeHome = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir);
     }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
@@ -384,12 +229,12 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
       }
       const spec: ReviewHostSpec = { mode: 'review', isolation: { paths: isolationPaths, policyFile: profilePath }, kind: session.actual_harness,
         installation: isolatedInstallation, launcher, vendorExecutable: realpathSync(vendorExecutable),
-        options: reviewSessionOptions(session.actual_harness, outbox, runtimeHome), requestDirectory: taskDir, output: outbox, controlDirectory: dir, timeoutMs: timeout };
+        options: client.sessionOptions(session.actual_harness, outbox, runtimeHome),
+        requestDirectory: client.requestDirectory(primary, session.task, GENERIC_REVIEW_ROLE), output: outbox, controlDirectory: dir, timeoutMs: timeout };
       writeSessionArtifact(specPath, spec);
     }
-    const { node, entry: hostEntry } = hostExecutable();
-    const command = reviewHostCommand(node, hostEntry, specPath);
-    let binding: TaskPaneBinding;
+    const command = client.hostCommand(specPath, false);
+    let binding: Session;
     if (session.endpoint === null) {
       const bound = await client.bindTerminal(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
         max_requests: REVIEW_MAX_ROUNDS }, command, () => client.launched(dir), taskAuthority);
@@ -407,7 +252,7 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     }
     client.assertBinding(binding);
     client.bindNative({ repo_root: reviewerRepo, binding, ready_path: join(dir, 'ready.json') });
-    if (binding.runtime === 'herdr' && binding.pane_id === session.parent_pane) throw new Error('review_must_not_reuse_owner_pane');
+    client.assertNotOwnerPane(binding, session.parent_pane);
     const recheck = await acceptanceContext({ root, authority: options.authority, verification: options.verification! });
     if (acceptanceReviewContextDigest(recheck) !== contextDigest) throw new Error('review_context_changed_before_submit');
     const before = [fingerprint(root), fingerprint(reviewerRepo)];
@@ -416,14 +261,13 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
     // Write intent before send; an unknown delivery must never allocate another round.
     writeSessionArtifact(join(dir, `request-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: null });
     const request = await client.send(reviewerRepo, session.task, GENERIC_REVIEW_ROLE, relative(reviewerRepo, packetPath), 'repeatable',
-      request => client.ready(join(dir, `ack-${request.round}.json`)), undefined, undefined, taskAuthority,
-      request => preparePrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request }));
+      request => client.ready(join(dir, `ack-${request.round}.json`)), undefined, undefined, taskAuthority);
     writeSessionArtifact(join(dir, `delivery-${round}.json`), { ...identity, context_sha256: contextDigest, task_request: request });
     const deadline = Date.now() + timeout;
     let collected;
     let bindingCheckedAt = 0;
     let inboxSettled = false;
-    const commitInbox = () => commitPrePromptInbox({ source: { authority: taskAuthority, session: { task: session.task, role: GENERIC_REVIEW_ROLE } }, request }).status !== 'pending';
+    const commitInbox = () => client.settleCompanion(taskAuthority, session.task, GENERIC_REVIEW_ROLE, request) !== 'pending';
     for (;;) {
       if (!inboxSettled) inboxSettled = commitInbox();
       // A cancel request wins over a pending Result; the final decision is the
@@ -476,11 +320,11 @@ export async function runReviewRound(options: ReviewOptions, effects: ReviewEffe
   } finally { lock.release(); }
 }
 
-export function reviewStatus(repoRoot: string, authority: ReviewAdmissionSource, effects: ReviewEffects = {}) {
+export function reviewStatus<Session, Endpoint>(repoRoot: string, authority: ReviewAdmissionSource, effects: ReviewEffects<Session, Endpoint>) {
   const { dir } = reviewLocation(repoRoot, authority);
   if (!existsSync(join(dir, 'session.json'))) return { status: 'absent' };
-  const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
-  return { ...session, lifecycle: ({ ...runtime, ...effects }).status(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE),
+  const session = readSessionArtifact<ReviewSession<Endpoint>>(join(dir, 'session.json'));
+  return { ...session, lifecycle: effects.status(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE),
     status: existsSync(join(dir, 'closed.json')) ? 'closed' : 'open',
     rounds: Array.from({ length: REVIEW_MAX_ROUNDS }, (_, index) => index + 1).filter(round => existsSync(join(dir, `request-${round}.json`)))
       .map(round => ({ round, receipt_saved: existsSync(join(dir, `accepted-${round}.json`)) })) };
@@ -494,8 +338,8 @@ function acceptedRounds(dir: string): number[] {
  * cancel. Round-1 admission and host start can hold the lock longer
  * than this bound; a timed-out cancel must be run again. */
 const REVIEW_CANCEL_LOCK_WAIT_MS = 90_000;
-export async function closeReview(repoRoot: string, authority: ReviewAdmissionSource, cancel = false, authorityHome = osAccountHome(),
-  effects: ReviewEffects = {}) {
+export async function closeReview<Session, Endpoint>(repoRoot: string, authority: ReviewAdmissionSource, cancel: boolean, authorityHome: string,
+  effects: ReviewEffects<Session, Endpoint>) {
   const { dir, primary, root } = reviewLocation(repoRoot, authority);
   // An active round holds caller.lock until it ends. Cancel first publishes the
   // durable close request, which the round and the OAR host both observe, and
@@ -507,17 +351,17 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
   let authOutput: string | undefined;
   let piOutput: string | undefined;
   try {
-    return await locked(primary, dir, async () => {
+    return await withCallerLock(primary, dir, async () => {
       if (existsSync(join(dir, 'session.json'))) {
-        const owned = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+        const owned = readSessionArtifact<ReviewSession<Endpoint>>(join(dir, 'session.json'));
         if (owned.actual_harness === 'codex' || owned.actual_harness === 'pi') {
-          const output = join(owned.reviewer_repo, '.ai/harness/runs/task-agent-outbox', taskSessionDirectory(primary, owned.task, GENERIC_REVIEW_ROLE).split('/').pop()!);
+          const output = effects.outputDirectory(owned.reviewer_repo, primary, owned.task, GENERIC_REVIEW_ROLE);
           if (owned.actual_harness === 'codex') authOutput = output;
           else piOutput = output;
         }
       }
       if (existsSync(join(dir, 'closed.json'))) return readSessionArtifact<{ cleanup: TaskCleanupResult }>(join(dir, 'closed.json')).cleanup;
-      const session = readSessionArtifact<ReviewSession>(join(dir, 'session.json'));
+      const session = readSessionArtifact<ReviewSession<Endpoint>>(join(dir, 'session.json'));
       if (!cancel) {
         const receipt = await verifyAcceptance({ root, authorityHome, authority });
         const completed = acceptedRounds(dir);
@@ -525,11 +369,10 @@ export async function closeReview(repoRoot: string, authority: ReviewAdmissionSo
         const last = readSessionArtifact<{ output: ReviewOutput; receipt: AcceptanceReceipt }>(join(dir, `accepted-${completed.at(-1)}.json`));
         if (last.output.verdict !== 'PASS' || JSON.stringify(last.receipt) !== JSON.stringify(receipt)) throw new Error('review_acceptance_mismatch');
       }
-      const client = { ...runtime, ...effects };
       // An ambiguous launch without a disposal acknowledgement remains pending;
       // never kill a host whose OAR children may still be alive.
-      await client.dispose(session.reviewer_repo, session.task, session.control_directory, session.endpoint === null);
-      const cleanup = await (cancel ? client.cancel : client.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
+      await effects.dispose(session.reviewer_repo, session.task, session.control_directory, session.endpoint === null);
+      const cleanup = await (cancel ? effects.cancel : effects.close)(session.reviewer_repo, session.task, GENERIC_REVIEW_ROLE);
       // The round's final close.request read is not atomic with the acceptance
       // write. A cancel that lands in that window still closes the session,
       // and the durable receipt is reported here rather than discarded.

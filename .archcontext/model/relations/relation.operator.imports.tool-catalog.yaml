@@ -1,0 +1,8 @@
+{
+  "schemaVersion": "archcontext.relation/v1",
+  "id": "relation.operator.imports.tool-catalog",
+  "kind": "depends-on",
+  "source": "capability.runtime-harness.operator",
+  "target": "component.contract-assets.tool-catalog",
+  "intent": "Read the tool catalog for the tools page and the workspace location."
+}

@@ -409,6 +409,12 @@ describe('publication merge --batch', () => {
     expect(graphqlVariable(run.mutations[0]!, 'commitHeadline')).toBe(`Ship the executor (#${PR})`);
   }, 120_000);
 
+  test('the CLI proves a batch whose compare response carries more patch text than the default spawn buffer', () => {
+    const run = mergeCli(batchScenario({ comparePatchBytes: 2 * 1024 * 1024 }), ['--batch']);
+    expect(run.document).toMatchObject({ merge_commit_sha: MERGE_COMMIT, parent_shas: [BASE, HEAD] });
+    expect(run.mutations).toHaveLength(1);
+  }, 120_000);
+
   test('the CLI refuses --batch on a head ref outside integration/ without a request', () => {
     const run = mergeCli(batchScenario({ headRef: 'feat/executor' }), ['--batch']);
     expect(run.status).toBe(4);
