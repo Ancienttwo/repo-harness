@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:11990efb29898f873535c33dbfa26aa28c39dde600e44e8b3a6a57b15a9df724
+// @generated-from src/core/capabilities/registry.ts sha256:642efad7cb22be05cf6bacc12a27ef0ea00f4edd38f0c641b31a44eb83ecb6c4
 // Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -64,6 +64,7 @@ export type CapabilityRegistryDiagnosticCode =
   | "ARCHCONTEXT_NODE_ID_INVALID"
   | "ARCHCONTEXT_OWNER_UNKNOWN"
   | "ARCHCONTEXT_RESOLVE_FAILED"
+  | "ARCHCONTEXT_RESOLVE_TIMEOUT"
   | "ARCHCONTEXT_MODEL_REJECTED"
   | "ARCHCONTEXT_RESOLVE_UNAVAILABLE"
   | "ARCHCONTEXT_LSP_PROFILE_REQUIRED"
@@ -73,6 +74,8 @@ export interface CapabilityRegistryDiagnostic {
   readonly code: CapabilityRegistryDiagnosticCode;
   readonly path: string;
   readonly message: string;
+  /** The typed archctx client error code behind an ARCHCONTEXT_RESOLVE_FAILED diagnostic. */
+  readonly archctxErrorCode?: string;
 }
 
 export type CapabilityRegistryResolution =

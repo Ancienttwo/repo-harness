@@ -61,6 +61,7 @@ export type CapabilityRegistryDiagnosticCode =
   | "ARCHCONTEXT_NODE_ID_INVALID"
   | "ARCHCONTEXT_OWNER_UNKNOWN"
   | "ARCHCONTEXT_RESOLVE_FAILED"
+  | "ARCHCONTEXT_RESOLVE_TIMEOUT"
   | "ARCHCONTEXT_MODEL_REJECTED"
   | "ARCHCONTEXT_RESOLVE_UNAVAILABLE"
   | "ARCHCONTEXT_LSP_PROFILE_REQUIRED"
@@ -70,6 +71,8 @@ export interface CapabilityRegistryDiagnostic {
   readonly code: CapabilityRegistryDiagnosticCode;
   readonly path: string;
   readonly message: string;
+  /** The typed archctx client error code behind an ARCHCONTEXT_RESOLVE_FAILED diagnostic. */
+  readonly archctxErrorCode?: string;
 }
 
 export type CapabilityRegistryResolution =

@@ -1007,7 +1007,7 @@ describe('package-local ArchContext projection provider', () => {
     const result = spawnSync(process.execPath, [script], { cwd: f.repoRoot, encoding: 'utf8', timeout: 4_000, killSignal: 'SIGKILL' });
     expect((result.error as NodeJS.ErrnoException | undefined)?.code).not.toBe('ETIMEDOUT');
     expect(result.status).toBe(0);
-    expect(result.stdout).toContain('architecture projection timeout before Node runtime selection');
+    expect(result.stdout).toContain('RH_ARCHCTX_TIMEOUT: architecture projection timeout before Node runtime selection');
   });
 
   test('exposes projection commands without a separate acceptance authority', () => {

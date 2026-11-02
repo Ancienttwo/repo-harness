@@ -466,16 +466,25 @@ describe('AgentNotice', () => {
     const options = { env: noticeEnv(root), run: timedOut };
     const ownership = (scoped: ArchctxProviderOptions) => resolveCapabilityOwnership(root, undefined, scoped);
     const failed = collectAgentNotice(root, ownership, options);
-    expect(failed.content).toStartWith('[Architecture] notice unavailable (');
+    // #1429: a resolve timeout asks for a retry, not an update.
+    expect(failed.content).toStartWith('[Architecture] notice unavailable (error): capability_ownership:unavailable ARCHCONTEXT_RESOLVE_TIMEOUT: archctx resolve timed out; the architecture notice is skipped for this turn; fix: repo-harness state resolve --json\n');
     expect(failed.content).toEndWith([ARCHIMAP_HEADER, '- .archcontext/model/nodes/extra.yaml', ARCHIMAP_FOOTER].join('\n'));
     expect(failed.systemMessage).toEndWith(`\n${ARCHIMAP_MESSAGE}`);
     expect(failed.diagnostics!.trim().split('\n')).toHaveLength(1);
-    expect(failed.diagnostics).toContain('ARCHCONTEXT_RESOLVE_FAILED');
+    expect(failed.diagnostics).toContain('ARCHCONTEXT_RESOLVE_TIMEOUT');
     expect(existsSync(join(root, ARCHIMAP_MARKER))).toBe(true);
     // The map line has its own marker, so the repeated failure prints neither line again.
     const repeated = collectAgentNotice(root, ownership, options);
     expect(repeated.content).toBeUndefined();
-    expect(repeated.diagnostics).toContain('ARCHCONTEXT_RESOLVE_FAILED');
+    expect(repeated.diagnostics).toContain('ARCHCONTEXT_RESOLVE_TIMEOUT');
+  });
+
+  test('#1429: only a package-local archctx mismatch tells the ownership reader to update', () => {
+    const root = fixture();
+    fixtureWrite(root, 'home/consumer/node_modules/archctx/package.json', JSON.stringify({ name: 'archctx', version: '0.0.0' }));
+    const options = { env: noticeEnv(root), consumerRoot: join(root, 'home/consumer') };
+    expect(() => resolveCapabilityOwnership(root, undefined, options))
+      .toThrow(/^capability_ownership:unavailable ARCHCONTEXT_RESOLVE_FAILED: RH_ARCHCTX_PACKAGE_MISMATCH: .*; fix: repo-harness update$/);
   });
 
   test('archimap: a failed shared diff is one diagnostic and keeps the setup line; no review base prints nothing', () => {

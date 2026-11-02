@@ -823,7 +823,7 @@ describe('effective state resolver', () => {
         });
       }, 60_000);
 
-      test('an archctx runtime failure uses the unavailable key and names the update command', () => {
+      test('an archctx runtime failure that is not a package fault uses the unavailable key and names the doctor command', () => {
         withRepo((cwd) => {
           seedArchcontextCapability(cwd);
           const previous = process.env.REPO_HARNESS_NODE_BIN;
@@ -835,7 +835,7 @@ describe('effective state resolver', () => {
               reason: 'capability:ownership:unavailable',
               code: 'ARCHCONTEXT_RESOLVE_FAILED',
               message: 'REPO_HARNESS_NODE_BIN',
-              fix: 'repo-harness update',
+              fix: 'repo-harness doctor --json',
             });
           } finally {
             if (previous === undefined) delete process.env.REPO_HARNESS_NODE_BIN;
