@@ -557,9 +557,10 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     expect(git('rev-list', '--count', `${base}..${squashed}`)).toBe('1');
     const commitData = (sha: string) => ({ sha, parents: git('rev-list', '--parents', '-n', '1', sha).split(' ').slice(1).map(sha => ({ sha })) });
     const mergedPR = { number: 17, merged_at: '2026-10-03T00:00:00Z', merge_commit_sha: base, base: { ref: 'main' } };
-    const scenarios = ['ready', '404', 'forbidden', 'activation-malformed', 'activation-error', 'false-404', 'failed-file', 'missing-pr', 'wrong-main', 'wrong-merge-sha', 'unmerged-pr', 'ambiguous-pr', 'bad-number', 'unsafe-number', 'incomplete-pagination', 'malformed-associations', 'malformed-association', 'bad-merged-at', 'association-error', 'root', 'multiple-parents', 'zero-parent', 'same-parent', 'mismatched-commit', 'zero-base', 'commit-error', 'multi-commit-rebase', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'parent-malformed', 'parent-malformed-entry', 'parent-missing-number', 'parent-unsafe-number', 'parent-full-page', 'parent-error', 'detail-error', 'wrong-detail-pr', 'wrong-detail-sha', 'unmerged-detail', 'wrong-detail-base', 'malformed-detail'];
+    const scenarios = ['ready', '404', 'forbidden', 'activation-malformed', 'activation-error', 'false-404', 'failed-file', 'missing-pr', 'wrong-main', 'wrong-merge-sha', 'unmerged-pr', 'ambiguous-pr', 'bad-number', 'unsafe-number', 'incomplete-pagination', 'malformed-associations', 'malformed-association', 'bad-merged-at', 'association-error', 'root', 'multiple-parents', 'batch-merge', 'batch-head-mismatch', 'zero-parent', 'same-parent', 'mismatched-commit', 'zero-base', 'commit-error', 'multi-commit-rebase', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'parent-malformed', 'parent-malformed-entry', 'parent-missing-number', 'parent-unsafe-number', 'parent-full-page', 'parent-error', 'detail-error', 'wrong-detail-pr', 'wrong-detail-sha', 'unmerged-detail', 'wrong-detail-base', 'malformed-detail'];
     for (const scenario of scenarios) {
-      const observedBase = scenario === 'zero-base' ? '0'.repeat(40) : scenario === 'root' ? before : scenario === 'multiple-parents' ? merge : scenario === 'multi-commit-rebase' ? rebased : scenario === 'multi-commit-squash' ? squashed : base;
+      const batch = scenario.startsWith('batch-');
+      const observedBase = scenario === 'zero-base' ? '0'.repeat(40) : scenario === 'root' ? before : scenario === 'multiple-parents' || batch ? merge : scenario === 'multi-commit-rebase' ? rebased : scenario === 'multi-commit-squash' ? squashed : base;
       const observedParent = scenario === 'multi-commit-rebase' ? git('rev-parse', `${rebased}^`) : scenario === 'multi-commit-squash' ? base : before;
       const identity = { ...providerIdentity, base_sha: observedBase, changed_files: 0 };
       const requests: string[] = [];
@@ -604,7 +605,9 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         if (path === 'repos/example/repo-harness/pulls/17') {
           if (scenario === 'detail-error') return error();
           if (scenario === 'malformed-detail') return json(null);
+          // The batch PR head is the merge commit's second parent; `multiple-parents` is an ordinary feature PR.
           return json({ ...mergedPR, merged: true, merge_commit_sha: observedBase,
+            head: { ref: batch ? 'integration/1287-batch-3' : 'feat/boundary', sha: scenario === 'batch-head-mismatch' ? before : base },
             commits: ['multi-commit-rebase', 'multi-commit-squash'].includes(scenario) ? rebaseCount : Number(git('rev-list', '--count', `${before}..${base}`)),
             ...(scenario === 'wrong-detail-pr' ? { number: 18 } : {}),
             ...(scenario === 'wrong-detail-sha' ? { merge_commit_sha: before } : {}),
@@ -634,7 +637,7 @@ test('rollback boundary binds the current base to one merged main PR and one rea
       };
       const syncRead = () => observeProviderReadinessFacts(identity, receipt, { ...input, repo_root: root, gh_runner });
       const asyncRead = () => observeProviderReadinessFactsAbortable(identity, receipt, { ...input, repo_root: root, gh_runner_async: async args => gh_runner(args) });
-      if (['ready', '404', 'multi-commit-squash', 'parent-other-pr', 'parent-empty'].includes(scenario)) {
+      if (['ready', '404', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'batch-merge'].includes(scenario)) {
         const expected = scenario === '404' ? { status: 'not_active' as const } : { status: 'ready' as const, pr_number: 17, before_sha: observedParent, after_sha: observedBase };
         const syncFacts = syncRead(); const asyncFacts = await asyncRead();
         expect(syncFacts.rollback_boundary).toEqual(expected);
@@ -658,6 +661,8 @@ test('rollback boundary binds the current base to one merged main PR and one rea
     }
     git('checkout', '-qb', 'squash-rollback', squashed); git('revert', '--no-edit', squashed);
     expect(git('rev-parse', 'HEAD^{tree}')).toBe(git('rev-parse', `${base}^{tree}`));
+    git('checkout', '-qb', 'batch-rollback', merge); git('revert', '--no-edit', '-m', '1', merge);
+    expect(git('rev-parse', 'HEAD^{tree}')).toBe(git('rev-parse', `${before}^{tree}`));
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
