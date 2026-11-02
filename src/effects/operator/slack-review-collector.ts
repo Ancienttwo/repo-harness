@@ -25,6 +25,10 @@ export const SLACK_REVIEW_INTERVAL_MS = 60_000;
 export const SLACK_REQUEST_TIMEOUT_MS = 20_000;
 export const SLACK_HISTORY_WINDOW_MS = 7 * 24 * 60 * 60_000;
 export const SLACK_HISTORY_LIMIT = 200;
+/** Replies read per thread. A longer thread is left out and the snapshot is marked truncated. */
+export const SLACK_REPLY_LIMIT = 200;
+/** Bounds the cursor walk of one thread, so a cursor that never ends cannot hold a cycle. */
+const SLACK_REPLY_PAGES = 10;
 export const SLACK_CONFIG_FILE = 'slack.local.json';
 const SLACK_API = 'https://slack.com/api/';
 const CONFIG_MAX_BYTES = 4 * 1024;
@@ -85,12 +89,20 @@ function readDotBotId(env: NodeJS.ProcessEnv | undefined): string {
 
 type SlackFetch = (url: string, init: { readonly headers: Record<string, string>; readonly signal: AbortSignal }) => Promise<Response>;
 
-async function callSlack(fetchSlack: SlackFetch, token: string, method: string, params: Record<string, string>): Promise<Record<string, unknown>> {
+interface SlackSession {
+  readonly fetch: SlackFetch;
+  readonly token: string;
+  /** Aborted when the collector closes; no request starts after that. */
+  readonly signal: AbortSignal;
+}
+
+async function callSlack(session: SlackSession, method: string, params: Record<string, string>): Promise<Record<string, unknown>> {
   let response: Response;
   try {
-    response = await fetchSlack(`${SLACK_API}${method}?${new URLSearchParams(params)}`, {
-      headers: { Authorization: `Bearer ${token}` },
-      signal: AbortSignal.timeout(SLACK_REQUEST_TIMEOUT_MS),
+    session.signal.throwIfAborted();
+    response = await session.fetch(`${SLACK_API}${method}?${new URLSearchParams(params)}`, {
+      headers: { Authorization: `Bearer ${session.token}` },
+      signal: AbortSignal.any([session.signal, AbortSignal.timeout(SLACK_REQUEST_TIMEOUT_MS)]),
     });
   } catch {
     throw new SlackReviewError('slack_unavailable');
@@ -126,37 +138,66 @@ function decodeMessages(body: Record<string, unknown>): SlackMessage[] {
   return messages;
 }
 
+const nextCursor = (body: Record<string, unknown>): string => {
+  const cursor = (body.response_metadata as Record<string, unknown> | undefined)?.next_cursor;
+  return typeof cursor === 'string' ? cursor : '';
+};
+
+/** Every reply of one thread, or null when it has more than SLACK_REPLY_LIMIT replies. */
+async function readReplies(session: SlackSession, channel: string, ts: string): Promise<SlackMessage[] | null> {
+  const replies: SlackMessage[] = [];
+  let cursor = '';
+  for (let page = 0; page < SLACK_REPLY_PAGES; page += 1) {
+    const body = await callSlack(session, 'conversations.replies', {
+      channel, ts, limit: String(SLACK_REPLY_LIMIT), ...(cursor === '' ? {} : { cursor }),
+    });
+    // Each page repeats the parent message first.
+    replies.push(...decodeMessages(body).filter(message => message.ts !== ts));
+    if (replies.length > SLACK_REPLY_LIMIT) return null;
+    cursor = nextCursor(body);
+    if (cursor === '') return replies;
+  }
+  return null;
+}
+
 export interface SlackReviewReadInput {
   readonly env?: NodeJS.ProcessEnv;
   readonly fetch?: SlackFetch;
   readonly now?: () => Date;
+  readonly signal?: AbortSignal;
 }
 
-/** One collection: config, dot identity, `bots.info`, `conversations.history`, then `conversations.replies` for each request thread. */
-export async function readSlackReviewThreads(input: SlackReviewReadInput = {}): Promise<readonly SlackReviewThreadV1[]> {
+export interface SlackReviewCollection {
+  readonly threads: readonly SlackReviewThreadV1[];
+  readonly truncated: boolean;
+}
+
+/**
+ * One collection: config, dot identity, `bots.info`, one `conversations.history`
+ * page, then every `conversations.replies` page of each request thread.
+ */
+export async function readSlackReviewThreads(input: SlackReviewReadInput = {}): Promise<SlackReviewCollection> {
   const config = await readSlackConfig(input.env);
   const dotBotId = readDotBotId(input.env);
-  const fetchSlack: SlackFetch = input.fetch ?? fetch;
-  const info = await callSlack(fetchSlack, config.token, 'bots.info', { bot: dotBotId });
+  const session: SlackSession = { fetch: input.fetch ?? fetch, token: config.token, signal: input.signal ?? new AbortController().signal };
+  const info = await callSlack(session, 'bots.info', { bot: dotBotId });
   const bot = info.bot as Record<string, unknown> | undefined;
   if (typeof bot?.user_id !== 'string' || !isSlackUserId(bot.user_id)) throw new SlackReviewError('slack_unavailable');
   const dotUserId = bot.user_id;
   const oldest = ((input.now?.() ?? new Date()).getTime() - SLACK_HISTORY_WINDOW_MS) / 1000;
-  const history = await callSlack(fetchSlack, config.token, 'conversations.history', {
+  const history = await callSlack(session, 'conversations.history', {
     channel: config.channel_id, oldest: oldest.toFixed(6), limit: String(SLACK_HISTORY_LIMIT),
   });
+  let truncated = history.has_more === true;
   const requests = decodeMessages(history).filter(message => isTopLevel(message) && parseReviewRequest(message.text, dotUserId) !== null);
   const threads: SlackReviewThreadV1[] = [];
   for (const request of requests) {
-    const replies = request.reply_count > 0
-      ? decodeMessages(await callSlack(fetchSlack, config.token, 'conversations.replies', {
-        channel: config.channel_id, ts: request.ts, limit: String(SLACK_HISTORY_LIMIT),
-      }))
-      : [];
+    const replies = request.reply_count > 0 ? await readReplies(session, config.channel_id, request.ts) : [];
+    if (replies === null) { truncated = true; continue; }
     const thread = projectReviewThread(request, replies, dotUserId);
     if (thread !== null) threads.push(thread);
   }
-  return threads.sort((a, b) => Number(b.thread_ts) - Number(a.thread_ts));
+  return { threads: threads.sort((a, b) => Number(b.thread_ts) - Number(a.thread_ts)), truncated };
 }
 
 export interface SlackReviewCollectorOptions extends SlackReviewReadInput {
@@ -179,10 +220,11 @@ export function startSlackReviewCollector(options: SlackReviewCollectorOptions =
   let closed = false;
   let timer: ReturnType<typeof setTimeout> | undefined;
   let inflight: Promise<void> | null = null;
+  const abort = new AbortController();
   const cycle = (): Promise<void> => {
-    inflight = readSlackReviewThreads(options)
-      .then((threads) => {
-        if (!closed) cache = { protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, collected_at: (options.now?.() ?? new Date()).toISOString(), threads };
+    inflight = readSlackReviewThreads({ ...options, signal: abort.signal })
+      .then(({ threads, truncated }) => {
+        if (!closed) cache = { protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, truncated, collected_at: (options.now?.() ?? new Date()).toISOString(), threads };
       }, (error: unknown) => {
         if (closed) return;
         const reason = error instanceof SlackReviewError ? error.reason : 'slack_unavailable';
@@ -205,6 +247,7 @@ export function startSlackReviewCollector(options: SlackReviewCollectorOptions =
     close: async () => {
       closed = true;
       clearTimeout(timer);
+      abort.abort();
       await inflight;
     },
   });
