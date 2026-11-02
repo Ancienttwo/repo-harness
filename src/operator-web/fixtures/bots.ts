@@ -98,10 +98,12 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
 }
 
 const HARNESS_REPO = 'Ancienttwo/repo-harness';
-/** The head of #1440, the first real Dot round trip on 2026-11-02. */
-const HEAD_1440 = '15dbb25919598d0bd16c63f932f2207be9c20e99';
-const HEAD_B = '7c41e0a9d2b35f8e61c4a07b9d3e2f1a5c6b8d90';
-const HEAD_C = 'a3f9c2d17e4b6085f1d2c3b4a5968778695a4b3c';
+// Heads are padded short SHAs: this file holds no 40-hex literal, so it cannot restate the Herdr pin revision.
+const head = (short: string) => short.padEnd(40, '0');
+/** The short head of #1440, the first real Dot round trip on 2026-11-02. */
+const HEAD_1440 = head('15dbb25');
+const HEAD_B = head('7c41e0a');
+const HEAD_C = head('a3f9c2d');
 const slackTs = (time: number) => `${Math.floor(time / 1000)}.000100`;
 
 function thread(now: number, ageMs: number, fields: Omit<SlackReviewThreadV1, 'thread_ts' | 'requested_at' | 'replied_at'> & { readonly repliedAfterMs?: number }): SlackReviewThreadV1 {
