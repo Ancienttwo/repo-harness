@@ -72,6 +72,7 @@ is current.
 
 - Orchestrator work (split a goal, write or fix issues, dispatch, follow PRs,
   accept, merge order, close out): read `references/orchestrator.md`.
+- Replan (re-plan the board with the advisor): read `references/replan.md`.
 - Worker work (deliver one claimed issue): read `references/worker.md`.
 - Acceptance work (take a review round, publish its result, resolve its
   threads): read `references/acceptor.md`.
