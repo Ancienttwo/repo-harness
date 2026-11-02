@@ -228,9 +228,18 @@ if (payload?.protocol !== OPERATOR_FLEET_PAYLOAD_PROTOCOL || payload?.kind !== '
 const { stableSnapshot } = await import(`${process.cwd()}/node_modules/repo-harness/src/operator-web/fixture.ts`);
 decodeOperatorFleetSnapshot(payload);
 const fixture = decodeOperatorFleetSnapshot(stableSnapshot);
-const evidence = fixture.repositories.flatMap((repo) => repo.cards).find((card) => card.inbox.delivery_evidence?.candidate_count === 1)?.inbox.delivery_evidence;
-if (!evidence?.latest || !/^sha256:[0-9a-f]{64}$/.test(evidence.latest.observation_sha256)) {
-  fail('installed operator payload consumer did not preserve nonempty notification evidence');
+// Runtime delivery evidence was retired. Verify the current inbox projection
+// on a nonempty, claim-addressed fixture through the installed decoder instead.
+const expected = stableSnapshot.repositories.flatMap((repo) => repo.cards)
+  .find((card) => card.inbox.observation_status === 'observed' && card.inbox.unread_count > 0 && card.inbox.addressed_to_current_claim);
+if (!expected) fail('installed operator fixture has no observed unread inbox addressed to a claim');
+const actual = fixture.repositories.flatMap((repo) => repo.cards)
+  .find((card) => card.repository_id === expected.repository_id && card.provider_issue_id === expected.provider_issue_id);
+if (actual?.inbox.observation_status !== expected.inbox.observation_status
+  || actual.inbox.unread_count !== expected.inbox.unread_count
+  || actual.inbox.addressed_to_current_claim !== expected.inbox.addressed_to_current_claim
+  || fixture.source_snapshot_sha256 !== stableSnapshot.source_snapshot_sha256) {
+  fail('installed operator payload consumer did not preserve the nonempty inbox projection and source digest');
 }
 const serialized = JSON.stringify(payload);
 for (const forbidden of ['repo_root', 'cause', 'stderr', 'stack', isolatedHome]) {
