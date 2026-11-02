@@ -63,6 +63,12 @@ test('success: labels go in on run and list, and come back out of get', async ()
   expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on']);
   expect(await hcListAsync(RH_NOTIFY_LABELS, { env: list.env })).toEqual([{ address: 't4', name: null, state: 'live' }]);
   expect(list.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on', 'ls', '--json', '--label', 'repo-harness.notify=on']);
+  // --all adds finished terminals; the repo-harness label filter stays.
+  const all = fake('ok', { hidden_finished: 0, terminals: [{ address: 't1q', agent: 'sh', exit_code: 0, reason: 'exited', state: 'finished', turn: 0 }] });
+  expect(hcList(RH_NOTIFY_LABELS, { env: all.env, all: true })).toEqual([{ address: 't1q', name: null, state: 'finished' }]);
+  expect(await hcListAsync(RH_NOTIFY_LABELS, { env: all.env, all: true })).toEqual([{ address: 't1q', name: null, state: 'finished' }]);
+  expect(all.argv()).toEqual(['ls', '--json', '--label', 'repo-harness.notify=on', '--all', 'ls', '--json', '--label', 'repo-harness.notify=on', '--all']);
+  expect(failure(() => hcList({}, { env: all.env, all: true })).reason).toBe('invalid_labels');
 
   const get = fake('ok', TERMINAL);
   expect(hcGet('t4', { env: get.env })).toEqual({ address: 't4', name: 'rh-worker', state: 'live',
