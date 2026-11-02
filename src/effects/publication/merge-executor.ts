@@ -22,7 +22,7 @@ import {
   type PublicationPolicy,
 } from '../../core/publication/acceptance-merge-policy';
 import { checkClosingReferences, type ClosingIssueReference } from '../../core/publication/closing-references';
-import type { MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
+import { BATCH_REF, type MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
 import {
   MergeReadinessError,
   collectPullRequestMergeReadiness,
@@ -262,7 +262,6 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
   if (target.auto_merge_enabled) throw new Refusal('auto_merge_enabled', 'the PR has an auto-merge request');
 }
 
-const BATCH_REF = /^integration\/[1-9][0-9]*-batch-[1-9][0-9]*$/u;
 /** One compare page; a batch with more commits fails closed instead of a partial proof. */
 const BATCH_COMPARE_LIMIT = 100;
 

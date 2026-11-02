@@ -128,8 +128,14 @@ change claim ownership.
   stay in place. Integration evidence keeps its exact schema and digest checks.
 - Provider readiness remains bound to the observed head, base, checks and reviews.
 - Provider merge proof remains available to guarded worktree cleanup.
-- Manual feedback intake and acknowledgement remain available. Historical repair
+- Manual feedback intake and acknowledgement remain available in Task Fleet
+  (`src/effects/fleet/provider-feedback.ts`, #1352). Publication keeps the
+  feedback facts and receipt types (`src/core/publication/feedback.ts`) and the
+  feedback store (`src/effects/publication/feedback-store.ts`). Historical repair
   records can explain no progress. They cannot dispatch a new repair.
+- Publication imports no Task Fleet file. The feedback records validate the task
+  message claim through `component.execution-primitives.task-message-claim`.
+  Task Fleet reads Publication as a plugin → core edge.
 - Removed commands have no alias or automatic migration. Old records remain
   historical inputs. GitHub carries new task authority.
 
@@ -158,6 +164,11 @@ The lifecycle behavior below is historical. Slice C retired its writers.
 ### 集成分类使用打包 helper (2026-10-06, #565)
 
 - P3：候选仓库是不可信内容。可执行的判定只来自包内 helper。
+
+### Feedback intake 移到 task-fleet (2026-11-02, #1352 slice A)
+
+- P2：`component.publication.provider-feedback` 删除。`src/effects/fleet/provider-feedback.ts` 归 task-fleet。`src/effects/publication/feedback-store.ts` 留在本 capability，由 capability include 拥有。`component.publication.provider-feedback-core` 改名为 Feedback Records (core)，id 不变。
+- P3：本 capability 不再导入 task-fleet 或 task-agent-host 的文件。新的 `relation.publication.imports.execution-primitives` 覆盖 feedback store 的 Git common dir 读取与 feedback 记录的 claim 校验。
 
 ## Remaining boundary
 

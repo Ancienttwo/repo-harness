@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.imports.workflow-state"
+kind: "depends-on"
+source: "capability.runtime-harness.task-agent-host"
+target: "capability.workflow-engine.workflow-state"
+intent: "Read admitted sessions and task session lists through the shared core selector and session types"

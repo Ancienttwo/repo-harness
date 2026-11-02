@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.architecture-reader.repository-registry
+kind: reads
+source: component.operator.architecture-reader
+target: component.execution-primitives.repository-registry
+intent: "Plugin → core: resolve the registered repository id of the read checkout"

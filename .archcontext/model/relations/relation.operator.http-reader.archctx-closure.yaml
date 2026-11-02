@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.http-reader.archctx-closure
+kind: calls
+source: component.operator.primary
+target: capability.runtime-harness.global-runtime-reconciliation
+intent: "Plugin → core: read the architecture history, the hand edits and the history timeout through the shared archctx provider"

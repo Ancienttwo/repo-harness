@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.dsh-host.imports.hook-adapters
+kind: depends-on
+source: capability.runtime-harness.dsh-host
+target: capability.runtime-harness.hook-adapters
+intent: "Run DSH tool calls through the shared hook bridge, route registry and hook protocol."

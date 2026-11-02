@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { CI_DAILY_MISSING_KEY_PREFIX, CI_REPAIR_KEY_PREFIX, ciRepairIssueMarker, isCiRepairIssueBody, parseJUnitReport, type TestFileResultV1 } from '../src/core/operator/tests';
+import { rollbackParent } from '../src/core/publication/merge-readiness';
 const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 
 /** CI completion effect: GitHub is the authority for runs, repair issues and rollback boundaries. */
@@ -320,16 +321,16 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
       const after = pr.merge_commit_sha;
       try {
         const commit = record(await api(`${root}/git/commits/${after}`), 'Merge commit');
-        if (commit.sha !== after || !Array.isArray(commit.parents) || commit.parents.length !== 1) throw new Error('Automatic rollback requires a single-parent commit boundary');
-        const parent = record(commit.parents[0], 'Commit parent');
-        if (!validSha(parent.sha) || parent.sha === after) throw new Error('Commit parent identity unavailable');
+        if (commit.sha !== after || !Array.isArray(commit.parents)) throw new Error('Merge commit identity unavailable');
         const membership = record(await api(`${root}/compare/${after}...${run.head_sha}`), 'Snapshot membership');
         if (membership.status === 'behind' || membership.status === 'diverged') continue;
         if (membership.status !== 'ahead' && membership.status !== 'identical') throw new Error('Snapshot membership unavailable');
         const detail = record(await api(`${root}/pulls/${pr.number}`), 'Merged PR detail');
         if (detail.number !== pr.number || detail.merged !== true || detail.merge_commit_sha !== after
           || record(detail.base, 'Merged PR detail base').ref !== 'main') throw new Error('Merged PR detail does not match the rollback boundary');
-        const parentAssociations = await api(`${root}/commits/${parent.sha}/pulls?per_page=100`);
+        const parent = rollbackParent(after, commit.parents, detail.head);
+        if (!parent) throw new Error('Automatic rollback requires a single-parent or publication merge --batch commit boundary');
+        const parentAssociations = await api(`${root}/commits/${parent.before_sha}/pulls?per_page=100`);
         if (!Array.isArray(parentAssociations) || parentAssociations.length >= 100) throw new Error('Rollback parent PR associations incomplete');
         const parentPRs = parentAssociations.map(entry => {
           const pr = record(entry, 'Rollback parent PR association');
@@ -337,11 +338,11 @@ export async function reportCI(repo: string, runId: number, api: GitHubAPI, arch
           return pr.number;
         });
         if (parentPRs.includes(pr.number)) throw new Error(`Automatic rollback cannot revert only the last commit of multi-commit rebase PR #${pr.number}`);
-        const before = parent.sha;
-        report.merges.push({ pr: pr.number, before, after, rollback: `git revert --no-edit ${after}` });
+        const mainline = parent.mainline === null ? '' : ` -m ${parent.mainline}`;
+        report.merges.push({ pr: pr.number, before: parent.before_sha, after, rollback: `git revert --no-edit${mainline} ${after}` });
       } catch (error) {
         report.errors.push(`Rollback boundary pending for PR #${pr.number}: ${message(error)}`);
-        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit, its single parent and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
+        await repair(`merge-pr-${pr.number}`, 'Recover the exact GitHub merge commit, its rollback parent (the single parent, or the first parent of a publication merge --batch commit) and the parent PR associations in the fixed main snapshot. Automatic rollback cannot revert only the last commit of a multi-commit rebase PR. Never repeat the completed merge.', true);
       }
     }
   } catch (error) { report.errors.push(`Merge reporting incomplete: ${message(error)}`); await repair(`report-${run.id}`, 'Recover provider merge boundary report.'); }
