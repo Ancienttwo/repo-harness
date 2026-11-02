@@ -5,6 +5,7 @@
 // is withheld, never echoed.
 
 import { containsSecret } from '../security/secret-patterns';
+import { isPublicDevActivityText, publicDevActivityText } from './public-text';
 
 export const SLACK_REVIEW_REASONS = [
   'slack_pending',
@@ -52,12 +53,16 @@ export interface SlackReviewThreadV1 {
  * `reason: null` is a current collection. `stale: true` occurs only with
  * `slack_rate_limited`: the threads of the previous collection stay, marked stale.
  * Every other reason replaces older threads, so no old state shows as current.
+ * `truncated: true` means the collection is incomplete: the 7-day history had
+ * more than one page of messages, or a thread had more replies than the cap and
+ * is left out, because a partial thread cannot show a current state.
  */
 export interface SlackReviewsSnapshotV1 {
   readonly protocol: 1;
   readonly kind: 'operator_bot_reviews';
   readonly reason: SlackReviewReason | null;
   readonly stale: boolean;
+  readonly truncated: boolean;
   readonly collected_at: string | null;
   readonly threads: readonly SlackReviewThreadV1[];
 }
@@ -72,7 +77,7 @@ export interface SlackMessage {
 }
 
 export function slackReviewsUnavailable(reason: SlackReviewReason): SlackReviewsSnapshotV1 {
-  return { protocol: 1, kind: 'operator_bot_reviews', reason, stale: false, collected_at: null, threads: [] };
+  return { protocol: 1, kind: 'operator_bot_reviews', reason, stale: false, truncated: false, collected_at: null, threads: [] };
 }
 
 const SLACK_TS = /^\d{1,12}\.\d{6}$/u;
@@ -84,7 +89,7 @@ const GITHUB_REPO = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}\/[A-Za-z0-9._-]{1,100}$/u;
 const PR_URL = /^https:\/\/github\.com\/([^/\s]+\/[^/\s]+)\/pull\/([1-9]\d{0,9})$/u;
 const SLACK_LINK = /^<([^|>]+)(?:\|[^>]*)?>$/u;
 const ACK_LINE = /^ack ([0-9a-f]{40})$/u;
-const RESULT_LINE = /^repo-harness review result PR #[1-9]\d{0,9} @ ([0-9a-f]{40}): (0|[1-9]\d{0,5}) findings$/u;
+const RESULT_LINE = /^repo-harness review result PR #([1-9]\d{0,9}) @ ([0-9a-f]{40}): (0|[1-9]\d{0,5}) findings$/u;
 const REJECTED_LINE = /^repo-harness review rejected: \S/u;
 
 export function isSlackUserId(value: string): boolean {
@@ -104,7 +109,10 @@ interface ParsedRequest {
   readonly head: string | null;
 }
 
-/** Null when the message is not a request to this dot. Fields stay null when absent, repeated or malformed. */
+/**
+ * Null when the message is not a request to this dot. Fields stay null when
+ * absent, repeated, malformed or secret-bearing; a secret value is never echoed.
+ */
 export function parseReviewRequest(text: string, dotUserId: string): ParsedRequest | null {
   const [first, ...rest] = text.split('\n');
   const mention = REQUEST_LINE.exec(first!);
@@ -122,7 +130,7 @@ export function parseReviewRequest(text: string, dotUserId: string): ParsedReque
   // Slack clients send a URL as link markup: `<https://…|label>`.
   const url = prValue === null ? null : SLACK_LINK.exec(prValue)?.[1] ?? prValue;
   const pr = url === null ? null : PR_URL.exec(url);
-  const repo = pr !== null && GITHUB_REPO.test(pr[1]!) ? pr[1]! : null;
+  const repo = pr !== null && GITHUB_REPO.test(pr[1]!) && !containsSecret(pr[1]!) ? pr[1]! : null;
   const head = single('head');
   return {
     repo,
@@ -133,14 +141,14 @@ export function parseReviewRequest(text: string, dotUserId: string): ParsedReque
 
 type DotReply =
   | { readonly kind: 'ack' }
-  | { readonly kind: 'result'; readonly head: string; readonly finding_count: number }
+  | { readonly kind: 'result'; readonly pr: number; readonly head: string; readonly finding_count: number }
   | { readonly kind: 'rejected' };
 
 function readDotReply(text: string): DotReply | null {
   const line = firstLine(text);
   if (ACK_LINE.test(line)) return { kind: 'ack' };
   const result = RESULT_LINE.exec(line);
-  if (result !== null) return { kind: 'result', head: result[1]!, finding_count: Number(result[2]) };
+  if (result !== null) return { kind: 'result', pr: Number(result[1]), head: result[2]!, finding_count: Number(result[3]) };
   if (REJECTED_LINE.test(line)) return { kind: 'rejected' };
   return null;
 }
@@ -152,19 +160,27 @@ function utf8Length(text: string): number {
   return new TextEncoder().encode(text).length;
 }
 
-/** The whole text is checked before the cap, so a secret cut at the cap cannot leak a prefix. */
+/**
+ * A secret anywhere withholds the whole text; it is checked before the cap, so a
+ * secret cut at the cap cannot leak a prefix. Local paths and URL tails become
+ * `[private path]`, so no local path leaves the host. The cut value is checked
+ * again: a cut can turn a safe text into a match (`API_KEY: null` → `API_KEY: nu`),
+ * which the decoder would refuse.
+ */
 export function projectReviewText(raw: string): SlackReviewTextV1 {
-  const text = unescapeSlack(raw);
-  if (containsSecret(text)) return { state: 'text_withheld' };
+  const unescaped = unescapeSlack(raw);
+  if (containsSecret(unescaped)) return { state: 'text_withheld' };
+  const text = publicDevActivityText(unescaped);
   const bytes = new TextEncoder().encode(text);
-  if (bytes.length <= SLACK_REVIEW_TEXT_MAX_BYTES) return { state: 'shown', value: text, truncated: false };
-  const value = new TextDecoder().decode(bytes.slice(0, SLACK_REVIEW_TEXT_MAX_BYTES)).replace(/�+$/u, '');
-  return { state: 'shown', value, truncated: true };
+  const truncated = bytes.length > SLACK_REVIEW_TEXT_MAX_BYTES;
+  const value = truncated ? new TextDecoder().decode(bytes.slice(0, SLACK_REVIEW_TEXT_MAX_BYTES)).replace(/\uFFFD+$/u, '') : text;
+  // The value passes the snapshot decoder's text rule, or it is not shown.
+  return containsSecret(value) || !isPublicDevActivityText(value) ? { state: 'text_withheld' } : { state: 'shown', value, truncated };
 }
 
 /**
  * One thread. The newest recognized dot reply sets the state; replies from
- * anyone else and dot replies without a marker are ignored.
+ * anyone else, dot replies without a marker and results for another PR are ignored.
  */
 export function projectReviewThread(request: SlackMessage, replies: readonly SlackMessage[], dotUserId: string): SlackReviewThreadV1 | null {
   const parsed = parseReviewRequest(request.text, dotUserId);
@@ -179,7 +195,7 @@ export function projectReviewThread(request: SlackMessage, replies: readonly Sla
     .sort((a, b) => Number(a.ts) - Number(b.ts));
   for (const reply of dotReplies) {
     const read = readDotReply(reply.text);
-    if (read === null) continue;
+    if (read === null || (read.kind === 'result' && read.pr !== parsed.pr)) continue;
     if (read.kind !== 'ack') text = projectReviewText(reply.text);
     if (!valid) continue;
     repliedAt = slackTsToIso(reply.ts);
@@ -216,21 +232,23 @@ export function decodeSlackReviews(value: unknown): SlackReviewsSnapshotV1 {
   const time = (v: unknown, what: string): string => (typeof v === 'string' && Number.isFinite(Date.parse(v)) && new Date(v).toISOString() === v ? v : fail(what));
   const oneOf = <T extends string>(v: unknown, values: readonly T[], what: string): T =>
     (typeof v === 'string' && (values as readonly string[]).includes(v) ? v as T : fail(what));
-  const root = obj(value, ['protocol', 'kind', 'reason', 'stale', 'collected_at', 'threads'], 'snapshot');
+  const root = obj(value, ['protocol', 'kind', 'reason', 'stale', 'truncated', 'collected_at', 'threads'], 'snapshot');
   if (root.protocol !== 1 || root.kind !== 'operator_bot_reviews') fail('protocol');
   const reason = root.reason === null ? null : oneOf(root.reason, SLACK_REVIEW_REASONS, 'reason');
   if (typeof root.stale !== 'boolean') fail('stale');
   const stale = root.stale as boolean;
+  if (typeof root.truncated !== 'boolean') fail('truncated');
+  const truncated = root.truncated as boolean;
   const collectedAt = root.collected_at === null ? null : time(root.collected_at, 'collected_at');
   if (!Array.isArray(root.threads) || root.threads.length > SLACK_REVIEW_MAX_THREADS) fail('threads');
   if (stale && (reason !== 'slack_rate_limited' || collectedAt === null)) fail('stale without rate limit');
   if (reason === null && collectedAt === null) fail('current snapshot without collected_at');
-  if (reason !== null && !stale && (collectedAt !== null || (root.threads as unknown[]).length > 0)) fail('unavailable snapshot with threads');
+  if (reason !== null && !stale && (collectedAt !== null || truncated || (root.threads as unknown[]).length > 0)) fail('unavailable snapshot with threads');
   const threads = (root.threads as unknown[]).map((item): SlackReviewThreadV1 => {
     const t = obj(item, ['thread_ts', 'requested_at', 'repo', 'pr', 'head', 'state', 'finding_count', 'replied_at', 'text'], 'thread');
     if (typeof t.thread_ts !== 'string' || !SLACK_TS.test(t.thread_ts)) fail('thread_ts');
     const state = oneOf(t.state, SLACK_REVIEW_STATES, 'state');
-    const repo = t.repo === null ? null : typeof t.repo === 'string' && GITHUB_REPO.test(t.repo) ? t.repo : fail('repo');
+    const repo = t.repo === null ? null : typeof t.repo === 'string' && GITHUB_REPO.test(t.repo) && !containsSecret(t.repo) ? t.repo : fail('repo');
     const pr = t.pr === null ? null : Number.isSafeInteger(t.pr) && (t.pr as number) > 0 ? t.pr as number : fail('pr');
     const head = t.head === null ? null : typeof t.head === 'string' && SHA.test(t.head) ? t.head : fail('head');
     if ((repo === null) !== (pr === null)) fail('repo and pr');
@@ -243,7 +261,7 @@ export function decodeSlackReviews(value: unknown): SlackReviewsSnapshotV1 {
     const text = decodeText(t.text, fail);
     return { thread_ts: t.thread_ts as string, requested_at: time(t.requested_at, 'requested_at'), repo, pr, head, state, finding_count: findingCount, replied_at: repliedAt, text };
   });
-  return { protocol: 1, kind: 'operator_bot_reviews', reason, stale, collected_at: collectedAt, threads };
+  return { protocol: 1, kind: 'operator_bot_reviews', reason, stale, truncated, collected_at: collectedAt, threads };
 }
 
 function decodeText(value: unknown, fail: (what: string) => never): SlackReviewTextV1 {
@@ -253,7 +271,7 @@ function decodeText(value: unknown, fail: (what: string) => never): SlackReviewT
   if (text.state === 'none' && keys === 'state') return { state: 'none' };
   if (text.state === 'text_withheld' && keys === 'state') return { state: 'text_withheld' };
   if (text.state === 'shown' && keys === 'state,truncated,value' && typeof text.value === 'string' && typeof text.truncated === 'boolean'
-    && utf8Length(text.value) <= SLACK_REVIEW_TEXT_MAX_BYTES && !containsSecret(text.value)) {
+    && utf8Length(text.value) <= SLACK_REVIEW_TEXT_MAX_BYTES && !containsSecret(text.value) && isPublicDevActivityText(text.value)) {
     return { state: 'shown', value: text.value, truncated: text.truncated };
   }
   return fail('text');

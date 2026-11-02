@@ -3,7 +3,7 @@ import { chmodSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { registerBot } from '../../src/effects/bot-registry';
-import { readSlackReviewThreads, startSlackReviewCollector } from '../../src/effects/operator/slack-review-collector';
+import { readSlackReviewThreads, SLACK_REPLY_LIMIT, startSlackReviewCollector } from '../../src/effects/operator/slack-review-collector';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import type { SlackReviewThreadV1 } from '../../src/core/operator/slack-review';
 
@@ -22,7 +22,11 @@ const fields = (pr: number, head = HEAD) => ['repo: Ancienttwo/repo-harness', `p
 const RESULT_1440 = `repo-harness review result PR #1440 @ ${HEAD}: 1 findings\n\nP3 docs/reference-configs/dot-review-protocol.md:15 — mention order\nFailure: example -&gt; no match\nadvisory: no merge authority`;
 
 type Message = { ts: string; user: string; text: string; thread_ts?: string; reply_count?: number };
-type Reply = (url: URL) => Response | Promise<Response>;
+const TOKEN_REPO = 'owner/xoxb-111111111111-222222222222-fixturetokenvalue';
+const RESULT_HEADER = `repo-harness review result PR #1450 @ ${HEAD}: 0 findings\n`;
+// 8194 bytes: the safe `API_KEY: null` becomes the secret-shaped `API_KEY: nu` at the 8 KiB cut.
+const RESULT_CUT = `${RESULT_HEADER}${'x'.repeat(8192 - RESULT_HEADER.length - '\nAPI_KEY: nu'.length)}\nAPI_KEY: null`;
+type Reply = (url: URL, signal?: AbortSignal) => Response | Promise<Response>;
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -45,10 +49,10 @@ const json = (body: unknown, status = 200) => new Response(JSON.stringify(body),
 /** A Slack Web API double: GET `https://slack.com/api/<method>?…` with a bearer token. */
 function slack(history: readonly Message[], threads: Readonly<Record<string, readonly Message[]>>, override?: Reply) {
   const calls: { method: string; params: Record<string, string>; authorization: string | null }[] = [];
-  const fetch = async (url: string, init: { readonly headers: Record<string, string> }) => {
+  const fetch = async (url: string, init: { readonly headers: Record<string, string>; readonly signal?: AbortSignal }) => {
     const parsed = new URL(url);
     calls.push({ method: parsed.pathname.replace('/api/', ''), params: Object.fromEntries(parsed.searchParams), authorization: init.headers.Authorization ?? null });
-    if (override) return override(parsed);
+    if (override) return override(parsed, init.signal);
     switch (parsed.pathname) {
       case '/api/bots.info': return json({ ok: true, bot: { id: DOT_BOT, user_id: DOT_USER, name: 'aimpactagent-dot' } });
       case '/api/conversations.history': return json({ ok: true, messages: history, has_more: false });
@@ -82,6 +86,9 @@ describe('Dot review collector', () => {
       { ts: '1793615100.000007', user: OWNER, text: request(fields(1447), 'U0C6B9Y1XR9') },
       { ts: '1793615100.000008', user: OWNER, text: `<@${DOT_USER}> please review\n${fields(1448).join('\n')}` },
       { ts: '1793615100.000009', user: OWNER, text: request(fields(1449)), thread_ts: '1793615100.000001' },
+      { ts: '1793615100.000010', user: OWNER, text: request([`pr: https://github.com/${TOKEN_REPO}/pull/1`, `head: ${HEAD}`]) },
+      { ts: '1793615100.000011', user: OWNER, text: request(fields(1450)), reply_count: 1 },
+      { ts: '1793615100.000012', user: OWNER, text: request(fields(1451)), reply_count: 1 },
     ];
     const replies: Record<string, readonly Message[]> = {
       '1793615218.236779': thread('1793615218.236779', [
@@ -91,18 +98,26 @@ describe('Dot review collector', () => {
       '1793615100.000002': thread('1793615100.000002', [
         { ts: '1793615200.000001', user: DOT_USER, text: `ack ${HEAD}` },
         { ts: '1793615200.000002', user: OWNER, text: `repo-harness review result PR #1442 @ ${HEAD}: 0 findings` },
+        // A result for another PR with the request head does not count.
+        { ts: '1793615200.000007', user: DOT_USER, text: `repo-harness review result PR #999 @ ${HEAD}: 0 findings` },
       ]),
       '1793615100.000003': thread('1793615100.000003', [{ ts: '1793615200.000003', user: DOT_USER, text: 'repo-harness review rejected: the GitHub plugin cannot read the repository' }]),
       '1793615100.000004': thread('1793615100.000004', [{ ts: '1793615200.000004', user: DOT_USER, text: `repo-harness review result PR #1444 @ ${OTHER_HEAD}: 2 findings` }]),
       '1793615100.000005': thread('1793615100.000005', [{ ts: '1793615200.000005', user: DOT_USER, text: 'repo-harness review rejected: head is missing' }]),
+      '1793615100.000012': thread('1793615100.000012', [{ ts: '1793615200.000012', user: DOT_USER, text: `repo-harness review result PR #1451 @ ${HEAD}: 1 findings\nP2 src/a.ts:1 — reads /Users/alice/private/customer/repo/src/a.ts:1, see <https://github.com/o/r/blob/x/src/a.ts#L1|L1>` }]),
+      '1793615100.000011': thread('1793615100.000011', [{ ts: '1793615200.000011', user: DOT_USER, text: RESULT_CUT }]),
       '1793615100.000006': thread('1793615100.000006', [{ ts: '1793615200.000006', user: DOT_USER, text: `repo-harness review result PR #1446 @ ${HEAD}: 1 findings\nP1 a.ts:1 — token ${TOKEN} in a log` }]),
     };
     const { fetch, calls } = slack(history, replies);
-    const threads = await readSlackReviewThreads({ env: home(), fetch, now: () => NOW });
+    const { threads, truncated } = await readSlackReviewThreads({ env: home(), fetch, now: () => NOW });
+    expect(truncated).toBe(false);
 
-    const row = (pr: number, state: string) => threads.find(item => item.state === state && item.pr === pr);
+    const row = (pr: number | null, state: string) => threads.find(item => item.state === state && item.pr === pr);
     expect(threads.map(item => [item.pr, item.state, item.finding_count])).toEqual([
       [1440, 'result', 1],
+      [1451, 'result', 1],
+      [1450, 'result', 0],
+      [null, 'request_invalid', null],
       [1446, 'result', 1],
       [1445, 'request_invalid', null],
       [1444, 'head_mismatch', 2],
@@ -118,6 +133,11 @@ describe('Dot review collector', () => {
     expect(row(1446, 'result')!.text).toEqual({ state: 'text_withheld' });
     expect(row(1445, 'request_invalid')!.text).toEqual({ state: 'shown', value: 'repo-harness review rejected: head is missing', truncated: false });
     expect(row(1441, 'waiting')!.replied_at).toBeNull();
+    expect(row(1450, 'result')!.text).toEqual({ state: 'text_withheld' });
+    // Local paths and URL tails are masked; repository-relative paths stay.
+    expect(row(1451, 'result')!.text).toEqual({ state: 'shown', truncated: false, value: `repo-harness review result PR #1451 @ ${HEAD}: 1 findings\nP2 src/a.ts:1 — reads [private path] see <https:[private path]>` });
+    expect(row(null, 'request_invalid')).toMatchObject({ repo: null, pr: null, head: HEAD });
+    expect(JSON.stringify(threads)).not.toContain('fixturetokenvalue');
     expect(JSON.stringify(threads)).not.toContain(TOKEN);
     expect(JSON.stringify(threads)).not.toContain(CHANNEL);
 
@@ -167,5 +187,51 @@ describe('Dot review collector', () => {
       await collector.close();
       await server.close();
     }
+  });
+
+  test('reads every reply page, and marks the snapshot truncated for more history or a thread past the reply cap', async () => {
+    const page = (messages: readonly Message[], cursor?: string) => json({ ok: true, messages, has_more: cursor !== undefined, ...(cursor ? { response_metadata: { next_cursor: cursor } } : {}) });
+    const parent = (ts: string): Message => ({ ts, user: OWNER, text: 'request', thread_ts: ts });
+    const reply = (thread: string, index: number, text: string): Message => ({ ts: `1793615300.${String(index).padStart(6, '0')}`, user: DOT_USER, text, thread_ts: thread });
+    const acks = Array.from({ length: SLACK_REPLY_LIMIT }, (_, index) => reply('1793615100.000002', index + 1, `ack ${HEAD}`));
+    const { fetch, calls } = slack([], {}, (url) => {
+      const ts = url.searchParams.get('ts')!;
+      const cursor = url.searchParams.get('cursor');
+      if (url.pathname === '/api/bots.info') return json({ ok: true, bot: { id: DOT_BOT, user_id: DOT_USER } });
+      if (url.pathname === '/api/conversations.history') {
+        return json({ ok: true, has_more: true, messages: [
+          { ts: '1793615100.000001', user: OWNER, text: request(fields(1441)), reply_count: 2 },
+          { ts: '1793615100.000002', user: OWNER, text: request(fields(1442)), reply_count: SLACK_REPLY_LIMIT + 1 },
+        ] });
+      }
+      // Slack returns replies oldest first; the result is on the second page.
+      if (ts === '1793615100.000001') return cursor === null ? page([parent(ts), reply(ts, 900, `ack ${HEAD}`)], 'p2') : page([parent(ts), reply(ts, 901, RESULT_1440.replace('#1440', '#1441'))]);
+      return cursor === null ? page([parent(ts), ...acks], 'p2') : page([parent(ts), reply(ts, 902, `ack ${HEAD}`)]);
+    });
+    const collection = await readSlackReviewThreads({ env: home(), fetch, now: () => NOW });
+    expect(collection.truncated).toBe(true);
+    expect(collection.threads.map(item => [item.pr, item.state, item.finding_count])).toEqual([[1441, 'result', 1]]);
+    expect(calls.filter(call => call.method === 'conversations.replies').map(call => [call.params.ts, call.params.cursor ?? 'first'])).toEqual([
+      ['1793615100.000001', 'first'], ['1793615100.000001', 'p2'], ['1793615100.000002', 'first'], ['1793615100.000002', 'p2'],
+    ]);
+  });
+
+  test('close aborts the request in flight and starts no further Slack request', async () => {
+    let started!: () => void;
+    const firstReplies = new Promise<void>(resolve => { started = resolve; });
+    const ok = slack([
+      { ts: '1793615100.000001', user: OWNER, text: request(fields(1441)), reply_count: 1 },
+      { ts: '1793615100.000002', user: OWNER, text: request(fields(1442)), reply_count: 1 },
+    ], {});
+    const { fetch, calls } = slack([], {}, (url, signal) => {
+      if (url.pathname !== '/api/conversations.replies') return ok.fetch(url.toString(), { headers: {} });
+      started();
+      return new Promise<Response>((_, reject) => signal!.addEventListener('abort', () => reject(signal!.reason), { once: true }));
+    });
+    const collector = startSlackReviewCollector({ env: home(), fetch, now: () => NOW });
+    await firstReplies;
+    await collector.close();
+    expect(calls.map(call => call.method)).toEqual(['bots.info', 'conversations.history', 'conversations.replies']);
+    expect(collector.read().reason).toBe('slack_pending');
   });
 });
