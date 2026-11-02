@@ -416,11 +416,12 @@ terminals and a JSON-RPC API, and it has built-in remote host access
 workspaces or plugins. `check-agent-tooling.sh` reports it as the optional
 `runtime_capabilities.herdr_core`; `setup check` projects `runtime.herdr_core`.
 `hc --version` must report at least the `min_version` at
-`.ai/harness/policy.json#external_tooling.herdr_core`. CI does not install hc.
+`.ai/harness/policy.json#external_tooling.herdr_core`. CI installs hc from the
+checksum-verified `release_assets` entry of the same key, beside classic herdr.
 The two checks are independent: `hc` never satisfies `runtime.herdr`, the
 `herdr` skill or strict readiness. The transport, task sessions,
 `review --launch herdr`, operator collectors, the `herdr notify` plugin, the
-`herdr` skill, doctor and CI stay classic-only. No runtime falls back to the
+`herdr` skill, doctor and the CI tests stay classic-only. No runtime falls back to the
 other.
 The native protected-helper tool contract below remains a separate boundary.
 
