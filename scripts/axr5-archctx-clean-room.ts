@@ -7,7 +7,7 @@ import { basename, dirname, join, resolve } from 'node:path';
 import { PROJECTION_REQUEST_SCHEMA_VERSION, type ProjectionRequestV1 } from 'archctx-contracts';
 import { cleanRoomEnvironment, CleanRoomDaemon, finishCleanRoom } from './lib/axr5-clean-room-runtime';
 import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
-import { archctxCapabilities, readArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
+import { archctxCapabilities, indexPackageLocalCodeGraph, readArchitectureProjectionSnapshot, runArchitectureProjection } from '../src/effects/architecture/archctx-provider';
 
 const VERSION = ARCHCTX_REQUIRED_VERSION;
 const repoRoot = resolve(import.meta.dir, '..');
@@ -78,7 +78,16 @@ try {
     context: { capability_source: 'archcontext' },
   }, null, 2)}\n`);
   mkdirSync(join(fixtureRepo, 'src', 'projection-fixture'), { recursive: true });
-  writeFileSync(join(fixtureRepo, 'src', 'projection-fixture', 'index.ts'), 'export const projectionFixture = true;\n');
+  // An import of a workspace package with condition-object `exports` crashed the debt read of an
+  // indexed projection before archctx 0.11.1 (Ancienttwo/arch-context#445).
+  writeFileSync(join(fixtureRepo, 'src', 'projection-fixture', 'index.ts'), "import { conditionExports } from '@fixture/condition-exports';\nexport const projectionFixture = conditionExports;\n");
+  mkdirSync(join(fixtureRepo, 'packages', 'condition-exports', 'src'), { recursive: true });
+  writeFileSync(join(fixtureRepo, 'package.json'), `${JSON.stringify({ private: true, workspaces: ['packages/*'] }, null, 2)}\n`);
+  writeFileSync(join(fixtureRepo, 'packages', 'condition-exports', 'package.json'), `${JSON.stringify({
+    name: '@fixture/condition-exports',
+    exports: { '.': { types: './src/index.ts', default: './src/index.ts' } },
+  }, null, 2)}\n`);
+  writeFileSync(join(fixtureRepo, 'packages', 'condition-exports', 'src', 'index.ts'), 'export const conditionExports = true;\n');
   writeFileSync(join(fixtureRepo, 'AGENTS.md'), '# Fixture agent context\n');
   writeFileSync(join(fixtureRepo, 'CLAUDE.md'), '# Fixture agent context\n');
   writeFileSync(join(fixtureRepo, '.archcontext', 'model', 'nodes', 'capability.fixture.projection.yaml'), `schemaVersion: archcontext.node/v2
@@ -118,6 +127,7 @@ extensions:
   const conflictingPathIgnored = packageLocalBinary && handshake.capabilities.package.version === VERSION && !realpathSync(handshake.resolved.binaryPath).startsWith(`${conflictDir}/`);
   if (!packageLocalBinary || !conflictingPathIgnored) throw new Error('package-local provider authority was not proven');
   const runtimeEnv = { ...offlineEnv, PATH: `${conflictDir}:${process.env.PATH ?? ''}` };
+  indexPackageLocalCodeGraph(fixtureRepo, { consumerRoot: consumer, env: runtimeEnv });
   daemon.arm(installedBinary, fixtureRepo, runtimeEnv);
   const expected = readArchitectureProjectionSnapshot(fixtureRepo, {
     consumerRoot: consumer,
@@ -137,6 +147,8 @@ extensions:
     consumerRoot: consumer,
     env: runtimeEnv,
   });
+  // Without a ready index archctx reads no import edge, and the condition-object exports case does not run.
+  if (projection.outputSnapshot.generatedFrom.codeGraphStatus !== 'ready') throw new Error('clean-room projection did not read a ready CodeGraph index');
 
   const readback = {
     schemaVersion: 'repo-harness.axr5-clean-room/v1',
