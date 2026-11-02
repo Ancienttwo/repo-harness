@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, lstatSync, rmSync, symlinkSync, writeFileSync } from 'fs';
+import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, lstatSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
@@ -626,7 +626,7 @@ describe('install command global runtime bootstrap', () => {
       // resolves the `skills` binary from PATH instead of going through bunx, so
       // that one is stubbed separately below.
       writeFakeSkillsCli(fakeBin);
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; else names='mermaid'; fi; for skill in $names; do mkdir -p "$HOME/.agents/skills/$skill"; printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"; done; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; else names='mermaid'; fi; if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi; for skill in $names; do mkdir -p "$root/$skill"; printf '# %s\\n' "$skill" > "$root/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
@@ -730,7 +730,7 @@ exit 0
       });
       expect(installed.exitCode).toBe(0);
       expect(readFileSync(bunxLog, 'utf-8')).toContain(
-        `skills add ${OBSIDIAN_PROVIDER} -g -a claude-code codex -s obsidian-markdown obsidian-cli -y`,
+        `skills add ${OBSIDIAN_PROVIDER} -g -a codex -s obsidian-markdown obsidian-cli -y`,
       );
       for (const skill of ['obsidian-markdown', 'obsidian-cli']) {
         expect(existsSync(join(home, '.agents', 'skills', skill, 'SKILL.md'))).toBe(true);
@@ -1416,13 +1416,17 @@ exit 0
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
+    const bunxLog = join(tmp, 'bunx.log');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
       writeFakeSkillsCli(fakeBin);
+      // Provider rule (skills CLI): one distinct agent skillsDir selects copy
+      // mode, which writes only that agent's root; claude-code alone skips staging.
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
+printf '%s\\n' "$*" >> "${bunxLog}"
 if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
   if [[ " $* " == *" tw93/Waza "* ]]; then
     names='think hunt check health'
@@ -1433,9 +1437,10 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
   else
     names='mermaid'
   fi
+  if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi
   for skill in $names; do
-    mkdir -p "$HOME/.agents/skills/$skill"
-    printf '# %s\\n' "$skill" > "$HOME/.agents/skills/$skill/SKILL.md"
+    mkdir -p "$root/$skill"
+    printf '# %s\\n' "$skill" > "$root/$skill/SKILL.md"
   done
 fi
 exit 0
@@ -1460,7 +1465,9 @@ exit 0
         status: 'skipped',
         detail: 'disabled by install profile',
       });
-      expect(existsSync(join(home, '.claude', 'skills', 'think', 'SKILL.md'))).toBe(true);
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
+      expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
+      expect(realpathSync(join(home, '.claude', 'skills', 'think'))).toBe(realpathSync(join(home, '.agents', 'skills', 'think')));
       expect(existsSync(join(home, '.claude', 'skills', 'mermaid', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(false);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review'))).toBe(false);

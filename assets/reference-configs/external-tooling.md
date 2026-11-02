@@ -308,19 +308,14 @@ updates skills.
 
 ### Waza
 
-Both hosts:
+Every host uses one command. The `codex` agent writes the staging copy in
+`~/.agents/skills`:
 
 ```bash
-bunx skills add tw93/Waza -g -a claude-code codex -s think hunt check health -y
+bunx skills add tw93/Waza -g -a codex -s think hunt check health -y
 ```
 
-Single host:
-
-```bash
-bunx skills add tw93/Waza -g -a claude-code -s think hunt check health -y
-```
-
-Replace `claude-code` with `codex` when installing for Codex only.
+Then `repo-harness install` links the host skill roots to the staging copy.
 
 After installing or updating through the skills CLI, verify Codex has its own
 runtime copy:
