@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.imports.evals-checks
+kind: depends-on
+source: capability.organization.board
+target: capability.verification.evals-checks
+intent: "Match open CI repair issues by the marker that the CI report writes"

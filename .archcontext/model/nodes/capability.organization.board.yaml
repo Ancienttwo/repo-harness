@@ -1,0 +1,39 @@
+schemaVersion: "archcontext.node/v2"
+id: "capability.organization.board"
+kind: "capability"
+name: "Board"
+status: "active"
+layer: "core"
+summary: "Projects the board of one parent issue from GitHub plan data, linked pull requests and hc seat terminals, and runs the attention rules on it."
+responsibilities:
+  - "Read one parent issue with its sub-issues, blocked-by edges, labels, milestone and protocol comments, and the pull requests whose body closes or refs a sub-issue."
+  - "Decode the plan block of the newest coordinator plan comment; refuse an unknown protocol or kind."
+  - "Read the seat labels of the hc terminals that carry the parent label; a terminal without a seat label stays unavailable."
+  - "Reuse the single-PR merge readiness projection for open pull requests; never decide merge readiness again."
+  - "Run the attention rules with constant thresholds; list a rule whose input is unavailable as unevaluated."
+source:
+  include:
+    - "src/core/board/**"
+    - "src/effects/board/**"
+    - "src/cli/commands/board.ts"
+  entrypoints:
+    - id: "entrypoint.board.command"
+      path: "src/cli/commands/board.ts"
+      symbols:
+        - name: "buildBoardCommand"
+          sinks:
+            - id: "sink.board.collect"
+              path: "src/effects/board/collect.ts"
+              symbol: "collectBoard"
+            - id: "sink.board.attention"
+              path: "src/core/board/attention.ts"
+              symbol: "evaluateBoardAttention"
+extensions:
+  harnessTier: "core"
+  contractFiles:
+    agents: "AGENTS.md"
+    claude: "CLAUDE.md"
+  lspProfile: "typescript-lsp"
+  verification:
+    - "bun run test:files tests/board.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run check:type"

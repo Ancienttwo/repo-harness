@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.cli
+kind: calls
+source: capability.organization.board
+target: component.board.cli
+intent: "Expose the board and board attention commands"

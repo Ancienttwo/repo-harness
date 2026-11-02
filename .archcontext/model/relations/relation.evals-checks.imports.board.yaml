@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.evals-checks.imports.board
+kind: depends-on
+source: capability.verification.evals-checks
+target: capability.organization.board
+intent: "Test Board behavior through its source modules"
