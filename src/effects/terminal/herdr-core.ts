@@ -106,7 +106,8 @@ function invoke(program: HerdrCoreProgram, args: readonly string[], options: Her
   if (result.error) throw spawnError(program, result.error);
   if (result.signal) throw new HerdrCoreError(program, 'failed', undefined, undefined, `ended by ${result.signal}`);
   const stdout = result.stdout.toString('utf8');
-  if (result.status !== 0) throw failure(program, result.status ?? -1, program === 'hc' ? result.stderr.toString('utf8') : stdout);
+  // Without an error or a signal, Node always reports a numeric exit status.
+  if (result.status !== 0) throw failure(program, result.status as number, program === 'hc' ? result.stderr.toString('utf8') : stdout);
   return parseObject(program, stdout);
 }
 
