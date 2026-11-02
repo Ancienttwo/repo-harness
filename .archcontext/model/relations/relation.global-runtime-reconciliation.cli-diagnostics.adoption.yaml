@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.adoption
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: capability.public-surface.adoption
+intent: "Inspect the workflow marker, strip managed hooks and plan the adoption for the doctor and init-hook reports"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.contract-assets
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: capability.workflow-engine.contract-assets
+intent: "Read the ArchContext capability authority for the doctor report"

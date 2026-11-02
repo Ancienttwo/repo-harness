@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.primary
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: component.global-runtime-reconciliation.primary
+intent: "Read the staged host skill roots and the upgrade operator decisions"
