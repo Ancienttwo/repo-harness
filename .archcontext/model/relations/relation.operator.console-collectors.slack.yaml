@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.slack
+kind: reads
+source: component.operator.console-collectors
+target: external.slack
+intent: "Read the Dot review threads of #bot-worker with bots.info, conversations.history and conversations.replies; post nothing."

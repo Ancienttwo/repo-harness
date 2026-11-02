@@ -16,6 +16,8 @@ import { decodeSetupSnapshot, unavailableSetupSnapshot } from '../../core/setup/
 import type { SetupSnapshotV2 } from '../../core/setup/types';
 import { startBotAccessCollector, type BotAccessCacheV1 } from './bot-access';
 import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
+import { startSlackReviewCollector } from './slack-review-collector';
+import { decodeSlackReviews, slackReviewsUnavailable, type SlackReviewsSnapshotV1 } from '../../core/operator/slack-review';
 import { startCliInventoryCollector, type CliUsageSource } from '../setup/cli-inventory';
 import { decodeCliInventory, unavailableCliInventory, type CliInventorySnapshotV1 } from '../../core/setup/cli-inventory';
 import { startDocsCollector, type DocsRepositoryCache } from './docs-collector';
@@ -108,6 +110,7 @@ export const OPERATOR_DEV_ACTIVITY_PATH = '/api/v1/dev-activity' as const;
 export const OPERATOR_WORKTREES_PATH = '/api/v1/worktrees' as const;
 export const OPERATOR_SETUP_PATH = '/api/v1/setup' as const;
 export const OPERATOR_BOT_ACCESS_PATH = '/api/v1/bot-access' as const;
+export const OPERATOR_BOT_REVIEWS_PATH = '/api/v1/bot-reviews' as const;
 export const OPERATOR_CLI_INVENTORY_PATH = '/api/v1/cli-inventory' as const;
 const DEFAULT_STATIC_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
@@ -141,6 +144,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
+  Object.freeze({ id: 'bot_reviews', method: 'GET', pattern: OPERATOR_BOT_REVIEWS_PATH, write: false }),
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
@@ -201,8 +205,14 @@ export interface OperatorServerOptions {
   readonly setup_collector?: boolean;
   /** Bot access cache reader. GET serves only this cache; it never runs the doctor or Herdr. */
   readonly read_bot_access?: () => BotAccessCacheV1;
-  /** Start the in-process Bot access collector (operator serve). Ignored when a cache reader is injected. */
+  /**
+   * Start the in-process Bot access collector (operator serve). The Dot review
+   * collector starts with it, because the Bots page reads both. Each one is
+   * ignored when its cache reader is injected.
+   */
   readonly bot_access_collector?: boolean;
+  /** Dot review cache reader. GET serves only this cache; it never calls Slack. */
+  readonly read_bot_reviews?: () => SlackReviewsSnapshotV1;
   /** CLI inventory cache reader. GET serves only this cache; it never probes a package manager. */
   readonly read_cli_inventory?: () => CliInventorySnapshotV1;
   /**
@@ -1553,6 +1563,21 @@ export async function startOperatorServer(
       return;
     }
 
+    if (pathname === OPERATOR_BOT_REVIEWS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Bot reviews accept no query selectors.'), headOnly);
+        return;
+      }
+      let reviews: SlackReviewsSnapshotV1;
+      try { reviews = decodeSlackReviews((options.read_bot_reviews ?? botReviews?.read ?? (() => slackReviewsUnavailable('slack_pending')))()); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('bot_reviews_invalid', 'The Dot review snapshot failed validation.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, reviews, headOnly);
+      return;
+    }
+
     if (pathname === OPERATOR_CLI_INVENTORY_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'CLI inventory accepts no query selectors.'), headOnly);
@@ -1791,6 +1816,7 @@ export async function startOperatorServer(
   const botAccess = botAccessCollects
     ? startBotAccessCollector({ env: options.env, read_notify: options.read_notify ?? notify!.read, first_cycle_after: notify?.settled() })
     : null;
+  const botReviews = options.bot_access_collector === true && !options.read_bot_reviews ? startSlackReviewCollector({ env: options.env }) : null;
   const docs = options.docs_collector && !options.read_docs
     ? startDocsCollector({ env: options.env, read_dev_activity: options.read_dev_activity ?? devActivity?.read ?? unavailableDevActivitySnapshot })
     : null;
@@ -1827,6 +1853,7 @@ export async function startOperatorServer(
       void devActivity?.close();
       void setup?.close();
       void botAccess?.close();
+      void botReviews?.close();
       void notify?.close();
       void cliInventory?.close();
       void docs?.close();
@@ -1860,7 +1887,7 @@ export async function startOperatorServer(
     runtimeService?.close();
     fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
-      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close(), architectureMap?.close()]);
+      await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), botReviews?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close(), architectureMap?.close()]);
       // Close admission and cancel every owner before waiting for any one of
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);

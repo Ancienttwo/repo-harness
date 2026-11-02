@@ -15,6 +15,7 @@ import {
   OPERATOR_DEV_ACTIVITY_PATH,
   OPERATOR_SETUP_PATH,
   OPERATOR_BOT_ACCESS_PATH,
+  OPERATOR_BOT_REVIEWS_PATH,
   OPERATOR_CLI_INVENTORY_PATH,
   OPERATOR_DOCS_TREE_ROUTE,
   OPERATOR_DOCS_FILE_ROUTE,
@@ -83,6 +84,7 @@ describe('operator structural write boundary', () => {
       'worktrees_cleanup',
       'setup',
       'bot_access',
+      'bot_reviews',
       'cli_inventory',
       'tests',
       'execution_state',
@@ -118,6 +120,8 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'setup')).toEqual({ id: 'setup', method: 'GET', pattern: '/api/v1/setup', write: false });
     expect(patterns.get('bot_access')).toBe(OPERATOR_BOT_ACCESS_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'bot_access')).toEqual({ id: 'bot_access', method: 'GET', pattern: '/api/v1/bot-access', write: false });
+    expect(patterns.get('bot_reviews')).toBe(OPERATOR_BOT_REVIEWS_PATH);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'bot_reviews')).toEqual({ id: 'bot_reviews', method: 'GET', pattern: '/api/v1/bot-reviews', write: false });
     expect(patterns.get('cli_inventory')).toBe(OPERATOR_CLI_INVENTORY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'cli_inventory')).toEqual({ id: 'cli_inventory', method: 'GET', pattern: '/api/v1/cli-inventory', write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'tests')).toEqual({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false });
