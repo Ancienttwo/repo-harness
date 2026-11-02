@@ -45,6 +45,7 @@ import { buildBotsCommand } from './commands/bots';
 import { buildRefactorCommand } from './commands/refactor';
 import { buildOperatorCommand } from './commands/operator';
 import { buildWorktreesCommand } from './commands/worktrees';
+import { buildSeatsCommand } from './commands/seats';
 import { buildCatchUpCommand } from './commands/catch-up';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
@@ -161,6 +162,7 @@ export const SUBCOMMANDS = [
   'architecture-debt',
   'external-source',
   'refactor',
+  'seats',
 ] as const;
 export type Subcommand = (typeof SUBCOMMANDS)[number];
 
@@ -946,6 +948,7 @@ export function buildProgram(): Command {
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildExternalSourceCommand());
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
+  program.addCommand(buildSeatsCommand());
   program
     .command('__reconcile-installed-runtime', { hidden: true })
     .description('Internal candidate-owned managed runtime reconciliation')
