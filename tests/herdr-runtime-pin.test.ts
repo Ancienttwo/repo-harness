@@ -3,6 +3,7 @@ import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { describe, expect, test, spyOn } from "bun:test";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
+import { run, withTempRepo } from "./helpers/repo-fixture";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from "../src/core/operator/herdr-pin";
 
@@ -24,8 +25,8 @@ function readPolicy() {
   return JSON.parse(readFileSync(POLICY_PATH, "utf8"));
 }
 
-function herdrInstallStep() {
-  const action = Bun.YAML.parse(readFileSync(join(ROOT, '.github/actions/install-pinned-herdr/action.yml'), 'utf8')) as {
+function herdrInstallStep(actionName = 'install-pinned-herdr') {
+  const action = Bun.YAML.parse(readFileSync(join(ROOT, `.github/actions/${actionName}/action.yml`), 'utf8')) as {
     runs: { using: string; steps: Array<{ shell: string; run: string }> };
   };
   expect(action.runs.using).toBe('composite');
@@ -73,6 +74,59 @@ describe("herdr runtime pin has one source of truth", () => {
     expect(step).not.toMatch(/v?\d+\.\d+\.\d+/);
     expect(step).not.toMatch(/[0-9a-f]{64}/);
   });
+
+  test("the herdr-core pin names an official release asset for each CI runner platform", () => {
+    const core = readPolicy().external_tooling?.herdr_core;
+    expect(core.min_version).toBe("0.1.16");
+    for (const platform of ['linux-x86_64', 'macos-aarch64', 'macos-x86_64']) {
+      const asset = core.release_assets?.[platform];
+      expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
+      expect(asset?.url).toBe(`https://releases.herdr.dev/core/${core.min_version}/herdr-core-${platform}.tar.gz`);
+    }
+  });
+
+  test("each job that installs classic herdr also installs the pinned hc before its tests", () => {
+    const workflow = Bun.YAML.parse(readFileSync(CI_PATH, 'utf8')) as {
+      jobs: Record<string, { steps: Array<{ name?: string; uses?: string; if?: string; run?: string }> }>;
+    };
+    for (const job of ['native-oar', 'verify', 'test']) {
+      const steps = workflow.jobs[job]!.steps;
+      const classic = steps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
+      const core = steps.findIndex(step => step.name === 'Install pinned herdr-core runtime'
+        && step.uses === './.github/actions/install-pinned-herdr-core');
+      expect(classic, job).toBeGreaterThan(-1);
+      expect(core, job).toBe(classic + 1);
+      expect(steps[core]!.if, job).toBeUndefined();
+    }
+    const step = herdrInstallStep('install-pinned-herdr-core');
+    expect(step).toContain(".external_tooling.herdr_core.min_version");
+    expect(step).toContain(".external_tooling.herdr_core.release_assets[$asset]");
+    expect(step).not.toMatch(/v?\d+\.\d+\.\d+/);
+    expect(step).not.toMatch(/[0-9a-f]{64}/);
+  });
+
+  test.each([
+    ["the pinned digest", true],
+    ["a wrong digest", false],
+  ])("the herdr-core install with %s", (_label, digestMatches) => withTempRepo('hc-install', root => {
+    const version = readPolicy().external_tooling.herdr_core.min_version;
+    mkdirSync(join(root, 'pkg'));
+    writeFileSync(join(root, 'pkg/herdr-core'), `#!/bin/sh\necho "hc ${version}"\n`, { mode: 0o755 });
+    expect(run('tar', ['-czf', 'asset.tar.gz', '-C', 'pkg', 'herdr-core'], root).status).toBe(0);
+    const digest = new Bun.CryptoHasher('sha256').update(readFileSync(join(root, 'asset.tar.gz'))).digest('hex');
+    const asset = { url: `file://${join(root, 'asset.tar.gz')}`, sha256: digestMatches ? digest : '0'.repeat(64) };
+    const release_assets = Object.fromEntries(['linux-x86_64', 'macos-aarch64', 'macos-x86_64'].map(platform => [platform, asset]));
+    mkdirSync(join(root, '.ai/harness'), { recursive: true });
+    writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: version, release_assets } } }));
+    mkdirSync(join(root, 'runner'));
+    const result = run('bash', ['-c', herdrInstallStep('install-pinned-herdr-core')], root, {
+      RUNNER_TEMP: join(root, 'runner'), GITHUB_PATH: join(root, 'github-path'),
+    });
+    expect(result.status, result.stderr).toBe(digestMatches ? 0 : 1);
+    expect(existsSync(join(root, 'runner/herdr-core-bin/hc'))).toBe(digestMatches);
+    expect(existsSync(join(root, 'github-path'))).toBe(digestMatches);
+    if (digestMatches) expect(result.stdout).toContain(`hc ${version}`);
+  }));
 
   test("check-agent-tooling.sh carries no hand-coded herdr version floor", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");

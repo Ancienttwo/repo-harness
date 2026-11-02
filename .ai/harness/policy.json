@@ -352,7 +352,21 @@
       }
     },
     "herdr_core": {
-      "min_version": "0.1.16"
+      "min_version": "0.1.16",
+      "release_assets": {
+        "linux-x86_64": {
+          "url": "https://releases.herdr.dev/core/0.1.16/herdr-core-linux-x86_64.tar.gz",
+          "sha256": "58d6861176dc6fe905b58880d5bff07a9959be613a98e5d66b4583b04b6cfa45"
+        },
+        "macos-aarch64": {
+          "url": "https://releases.herdr.dev/core/0.1.16/herdr-core-macos-aarch64.tar.gz",
+          "sha256": "698d8f0c44f4e4b15fec174d52a39d57a014cfd71added44b53a0753b469d0fd"
+        },
+        "macos-x86_64": {
+          "url": "https://releases.herdr.dev/core/0.1.16/herdr-core-macos-x86_64.tar.gz",
+          "sha256": "6af081cdb35c8612c5752d3f64c6a378e6a0313968b6d4fbc4c03c95691b2872"
+        }
+      }
     }
   },
   "agentic_development": {
