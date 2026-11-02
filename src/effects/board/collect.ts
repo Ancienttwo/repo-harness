@@ -123,9 +123,7 @@ function tooling(input: BoardCollectInput): BoardToolingV1 {
   const pin = hcPin(input.repo_root);
   if (pin === null) return { hc: { status: 'unavailable', reason: 'pin_missing' }, herdr_app: herdrApp };
   try {
-    const version = hcVersion({ env: input.hc_env });
-    if (!SEMVER.test(version)) return { hc: { status: 'unavailable', reason: 'hc_version_invalid' }, herdr_app: herdrApp };
-    return { hc: { status: 'observed', version, min_version: pin }, herdr_app: herdrApp };
+    return { hc: { status: 'observed', version: hcVersion({ env: input.hc_env }), min_version: pin }, herdr_app: herdrApp };
   } catch (error) {
     if (error instanceof HerdrCoreError) return { hc: { status: 'unavailable', reason: `hc_${error.reason}` }, herdr_app: herdrApp };
     throw error;
@@ -137,7 +135,7 @@ const POSITIVE = /^[1-9][0-9]*$/u;
 function seatTerminal(terminal: HcTerminal): BoardTerminalV1 {
   const base = {
     address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
-    status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms, turn: terminal.turn,
+    status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
   };
   const seat = terminal.labels[RH_LABEL.seat];
   if (seat === undefined) return { ...base, seat_status: 'unavailable', reason: 'seat_label_missing' };

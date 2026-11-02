@@ -38,25 +38,26 @@ function attentionText(attention: BoardAttentionV1): string {
 }
 
 /**
- * Commander checks the mandatory options of every ancestor, so `--parent` on
- * `board` would also bind `board attention`; both commands check it themselves.
+ * `--parent` and `--json` belong to `board`. The root program does not use
+ * positional options, so Commander binds them to `board` wherever they
+ * appear; `board attention` reads them with `optsWithGlobals()`. They are not
+ * mandatory options, because Commander would then check them for the
+ * subcommand's ancestors too; `parentNumber` checks `--parent`.
  */
 export function buildBoardCommand(): Command {
   const board = new Command('board')
     .description('Read the board of one parent issue: sub-issues, pull requests, plan block and hc seat terminals')
     .option('--parent <number>', 'Parent issue number')
-    .option('--json', 'Output the repo-harness.board document (the only format)')
+    .option('--json', 'Output JSON: the repo-harness.board document, or with attention the repo-harness.board-attention document')
     .action(guarded((options: BoardOptions) => {
       if (options.json !== true) throw new BoardCollectError('board prints JSON only; pass --json');
       process.stdout.write(`${JSON.stringify(collect(options))}\n`);
     }));
   board.command('attention')
-    .description('Run the attention rules on the board of one parent issue')
-    .option('--parent <number>', 'Parent issue number')
-    .option('--json', 'Output the repo-harness.board-attention document')
-    .action(guarded((options: BoardOptions) => {
+    .description('Run the attention rules on the board of one parent issue (takes the board options --parent and --json)')
+    .action((_options: BoardOptions, command: Command) => guarded((options: BoardOptions) => {
       const attention = evaluateBoardAttention(collect(options));
       process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
-    }));
+    })(command.optsWithGlobals<BoardOptions>()));
   return board;
 }
