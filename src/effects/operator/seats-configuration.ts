@@ -21,7 +21,7 @@ import {
   MODEL_FAMILY_LABELS,
   WRITABLE_AGENTS,
 } from '../terminal/task-role-profiles';
-import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfiguration } from './global-configuration';
+import { GlobalConfigurationError, mutateGlobalConfiguration, readGlobalConfiguration } from '../configuration/global-configuration';
 
 export type SeatsConfigurationErrorCode =
   | 'busy'

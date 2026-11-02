@@ -12,7 +12,7 @@ import {
   readSeatsConfiguration,
   seatsRanges,
   type SeatsConfigurationErrorCode,
-} from '../configuration/seats-configuration';
+} from './seats-configuration';
 import type { OperatorWriteRoute } from './write-channel';
 import { OperatorWriteRefusal } from './write-run';
 
