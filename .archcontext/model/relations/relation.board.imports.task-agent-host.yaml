@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.board.imports.task-agent-host
-kind: depends-on
-source: capability.organization.board
-target: capability.runtime-harness.task-agent-host
-intent: "Read seat terminals and the hc version through the herdr-core transport"
