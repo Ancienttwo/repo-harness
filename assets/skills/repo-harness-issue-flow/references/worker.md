@@ -210,9 +210,11 @@ You are the head owner. Only you push to this branch.
     about the code. Send it as a message only, at most 3 lines, with no
     log text. `<kind>` is `info` or `question`.
   - **Complex:** a `boundary question`, an `issue claim status`, a
-    `handoff`, an `integration status`, or a report with evidence. Post
-    the comment first. Then send `[rh-notice] <kind> #<issue> <comment
-    URL>` and a one-line summary. The comment holds the content.
+    `handoff` or an `integration status`. Post the comment first. Then
+    send `[rh-notice] <kind> #<issue> <comment URL>` and a one-line
+    summary. The comment holds the content. A report with evidence goes
+    in an `issue claim status` (its `PR` and `CI` fields) or in the PR
+    body.
   - When you are not sure, use the complex form. When the coordinator's
     answer to a simple question changes scope or decides an open point,
     it posts that answer as a `scope change` or `decision` comment.
