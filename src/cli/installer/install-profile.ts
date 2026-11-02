@@ -38,7 +38,7 @@ import {
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
-import { hostSkillRoot, providerSkillLockPath, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
+import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { CLAUDE_ONLY_AGENTS, MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
@@ -734,7 +734,7 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
     join(home, '.repo-harness', 'config.json'),
     installProfileStatePath(env),
     configurationReceiptPath(home),
-    providerSkillLockPath(home, env),
+    providerSkillLock(home, env).path,
   ];
   for (const root of hostSkillRoots(home, env)) {
     for (const skill of [...skills, ...externalSkills]) paths.push(join(root, skill));
@@ -1000,7 +1000,7 @@ function transactionOwnedSurfaces(
 
 function removeOwnedSkillLockEntries(env: NodeJS.ProcessEnv, skillNames: ReadonlySet<string>): void {
   if (skillNames.size === 0) return;
-  const lockPath = providerSkillLockPath(env.HOME ?? homedir(), env);
+  const lockPath = providerSkillLock(env.HOME ?? homedir(), env).path;
   if (!existsSync(lockPath)) return;
   const parsed = JSON.parse(readFileSync(lockPath, 'utf-8')) as { skills?: Record<string, unknown> };
   if (!parsed || typeof parsed !== 'object' || !parsed.skills || typeof parsed.skills !== 'object') {
