@@ -1,5 +1,5 @@
 # runtime-mcp/general-repo-access 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:29a24474475e8d09ad044e0534dbd75eb349abda11c0d8f272c720bd74e3e09f" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-mcp-general-repo-access" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:37628cfc02d1e1b291f278d12add54dee3fc4875c2290793ff8240c1c017876f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-mcp.general-repo-access`(kind `capability`)
 > **Matched Prefixes**:`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`、`assets/mcp/**`
@@ -51,6 +51,7 @@ flowchart LR
 
 入向關係:
 
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Pass the MCP index, metrics and trace log roots to retention
 - `calls` ← `component.mcp-sidecar.primary` — Dispatch the general repository reader and writer tools
 
 組件出向關係:

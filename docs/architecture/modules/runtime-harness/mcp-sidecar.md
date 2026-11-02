@@ -1,8 +1,8 @@
 # runtime-harness/mcp-sidecar 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6fea5fcd565ec7886cf9020fcb259e1732ddfd6521f25747e3d3473d79f57983" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:821c8e93a392615afd88488df611af725844c0e66c90b31b531ebe5590a5c657" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.mcp-sidecar`(kind `capability`)
-> **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/reference-configs/herdr-orchestrator-mcp.md`
+> **Matched Prefixes**:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -15,30 +15,25 @@ Provides the local MCP sidecar and its repository access policy boundary.
 ```mermaid
 flowchart LR
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3["MCP Sidecar"]:::component
-  p1_component_mcp_sidecar_coding_profile_c04b21a1["Coding Profile Runtime"]:::component
-  p1_component_mcp_sidecar_host_setup_a05a1958["CLI and Host Setup"]:::component
+  p1_component_mcp_sidecar_host_setup_a05a1958["CLI and Doctor"]:::component
   p1_component_mcp_sidecar_primary_8f9b418c["Server and Tool Dispatch"]:::component
   p1_component_mcp_sidecar_repo_policy_registry_40f1ea26["Config Policy and Repository Registry"]:::component
   p1_component_mcp_sidecar_repo_policy_registry_effects_6c93657b["Bot Registry (effects)"]:::component
-  p1_component_mcp_sidecar_transport_auth_2511e63e["Transport and Authorization"]:::component
-  p1_component_mcp_sidecar_coding_profile_c04b21a1 -->|"Contain workspace paths against registered roots then redact and audit coding results"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
-  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"List and clean up managed coding workspaces"| p1_component_mcp_sidecar_coding_profile_c04b21a1
-  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher"| p1_component_mcp_sidecar_primary_8f9b418c
-  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Write the user-level config and credentials and set repository access grants"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
-  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Start the stdio or HTTP transport for mcp serve"| p1_component_mcp_sidecar_transport_auth_2511e63e
+  p1_component_mcp_sidecar_transport_auth_2511e63e["Stdio Transport"]:::component
+  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Read the package version for the mcp doctor report"| p1_component_mcp_sidecar_primary_8f9b418c
+  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Read the user-level config#44; the allowed-root policy and the repository root for mcp doctor"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
+  p1_component_mcp_sidecar_host_setup_a05a1958 -->|"Start the stdio transport for mcp serve"| p1_component_mcp_sidecar_transport_auth_2511e63e
   p1_capability_runtime_harness_mcp_sidecar_4e12aaf3 -->|"Dispatch an MCP tool call"| p1_component_mcp_sidecar_primary_8f9b418c
-  p1_component_mcp_sidecar_primary_8f9b418c -->|"Build and dispatch the coding tool block and its process runtime"| p1_component_mcp_sidecar_coding_profile_c04b21a1
   p1_component_mcp_sidecar_primary_8f9b418c -->|"Resolve repositories and paths under the profile policy then redact and audit each result"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
-  p1_component_mcp_sidecar_transport_auth_2511e63e -->|"Create one MCP server per authorized session and dispatch its tool calls"| p1_component_mcp_sidecar_primary_8f9b418c
-  p1_component_mcp_sidecar_transport_auth_2511e63e -->|"Load the local config and credentials at startup and recheck the profile on each new session"| p1_component_mcp_sidecar_repo_policy_registry_40f1ea26
+  p1_component_mcp_sidecar_transport_auth_2511e63e -->|"Create the MCP server for the stdio session and dispatch its tool calls"| p1_component_mcp_sidecar_primary_8f9b418c
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:b436dffa4000f325342813cae0411c26528dbefa2a4ffb3612bf61f53fae55d6`).
-- Semantic nodes: `7`; declared relations: `10`.
+- Proof: `proven` (`sha256:e7e088159139f5bae695e06147b7836ef2badac8ba850aaa40f8d133a2a5ecd8`).
+- Semantic nodes: `6`; declared relations: `6`.
 
 ### 1.2 模組職責表
 
@@ -50,15 +45,15 @@ flowchart LR
 
 | 組件 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- | --- |
-| `component.mcp-sidecar.host-setup` | `entrypoint.mcp-sidecar.cli` | `src/cli/commands/mcp.ts#buildMcpCommand` | `sink.mcp-sidecar.http-start` → `src/cli/mcp/transports/http.ts#startMcpHttp` |
+| `component.mcp-sidecar.host-setup` | `entrypoint.mcp-sidecar.cli` | `src/cli/commands/mcp.ts#buildMcpCommand` | `sink.mcp-sidecar.stdio-start` → `src/cli/mcp/transports/stdio.ts#startMcpStdio` |
 | `component.mcp-sidecar.primary` | `entrypoint.mcp-sidecar.tool-dispatch` | `src/cli/mcp/tools.ts#callMcpTool` | `sink.mcp-sidecar.path-policy` → `src/cli/mcp/paths.ts#resolveMcpPath` |
-| `component.mcp-sidecar.transport-auth` | `entrypoint.mcp-sidecar.http-transport` | `src/cli/mcp/transports/http.ts#startMcpHttp` | `sink.mcp-sidecar.startup-config` → `src/cli/mcp/auth.ts#loadMcpLocalConfig` |
-| `component.mcp-sidecar.transport-auth` | `entrypoint.mcp-sidecar.http-transport` | `src/cli/mcp/transports/http.ts#handleMcpPost` | `sink.mcp-sidecar.session-server` → `src/cli/mcp/server.ts#createRepoHarnessMcpServer`、`sink.mcp-sidecar.request-config` → `src/cli/mcp/auth.ts#loadMcpLocalConfig` |
+| `component.mcp-sidecar.primary` | `entrypoint.mcp-sidecar.tool-context` | `src/cli/mcp/server.ts#createMcpToolContext` | `sink.mcp-sidecar.startup-config` → `src/cli/mcp/auth.ts#loadMcpLocalConfig`、`sink.mcp-sidecar.legacy-refusal` → `src/cli/mcp/auth.ts#assertNoLegacyRepoScopeMcpConfig` |
+| `component.mcp-sidecar.transport-auth` | `entrypoint.mcp-sidecar.stdio-transport` | `src/cli/mcp/transports/stdio.ts#startMcpStdio` | `sink.mcp-sidecar.session-server` → `src/cli/mcp/server.ts#createRepoHarnessMcpServer` |
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `10k–20k` 行
-- 匹配前綴:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`、`src/cli/chatgpt-browser/file-policy.ts`、`docs/repo-harness-chatgpt-mcp-setup.md`、`docs/reference-configs/chatgpt-coding-mcp.md`、`docs/reference-configs/herdr-orchestrator-mcp.md`
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
+- 匹配前綴:`src/cli/mcp/**`、`src/cli/commands/mcp.ts`
 - 排除前綴:`src/cli/mcp/codegraph-adapter.ts`、`src/cli/mcp/general-repo-access.ts`、`src/cli/mcp/general-repo-access/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -67,85 +62,51 @@ flowchart LR
 出向關係:
 
 - `deployed-on` → `process.mcp-server` — The MCP sidecar runs in the MCP server process.
+- `depends-on` → `capability.verification.codegraph-readiness` — Type the reader tool context with the CodeGraph adapter interface
 - `depends-on` → `capability.workflow-engine.contract-assets` — Run declared helpers from MCP tools.
 - `calls` → `component.mcp-sidecar.primary` — Dispatch an MCP tool call
 
 入向關係:
 
-- `depends-on` ← `capability.runtime-mcp.chatgpt-browser` — Apply shared file policy to browser prompts and sessions.
 - `depends-on` ← `capability.verification.evals-checks` — Test MCP Sidecar behavior through its source modules.
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the mcp command
-- `reads` ← `component.operator.console-collectors` — Run mcp doctor without live registration and read the Bot registry, the OAuth token store and the newest audit rows for Bot access.
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the mcp and bots commands and pass the MCP audit log root to retention
+- `reads` ← `component.operator.console-collectors` — Run mcp doctor and read the Bot registry and the newest audit rows for Bot access.
 
 組件出向關係:
 
-- `component.mcp-sidecar.coding-profile`:
-  - `calls` → `capability.verification.codegraph-readiness` — Refresh the CodeGraph index after coding mutations
-  - `calls` → `capability.workflow-engine.execution-primitives` — Use the configured Git binary for coding workspaces
-  - `calls` → `component.mcp-sidecar.repo-policy-registry` — Contain workspace paths against registered roots then redact and audit coding results
-  - `calls` → `capability.runtime-harness.task-agent-host` — Clean up task worktrees for coding workspaces
-  - `calls` → `capability.workflow-engine.workflow-state` — Clean up exact worktrees under the system worktree root
 - `component.mcp-sidecar.host-setup`:
-  - `calls` → `capability.runtime-mcp.chatgpt-browser` — Read the canonical ChatGPT bridge reference from the packaged skill source
-  - `calls` → `component.mcp-sidecar.coding-profile` — List and clean up managed coding workspaces
-  - `calls` → `capability.workflow-engine.execution-primitives` — Hold the MCP setup ownership lock
-  - `calls` → `capability.runtime-harness.hook-adapters` — Reuse installer configuration ownership receipts and the runtime host lock
-  - `calls` → `component.mcp-sidecar.primary` — Build the expected tool inventory for the live doctor and run prepare-goal through the tool dispatcher
-  - `writes` → `component.mcp-sidecar.repo-policy-registry` — Write the user-level config and credentials and set repository access grants
-  - `calls` → `component.mcp-sidecar.transport-auth` — Start the stdio or HTTP transport for mcp serve
+  - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Resolve host skill roots to name leftover ChatGPT skill links for mcp doctor
+  - `reads` → `component.mcp-sidecar.primary` — Read the package version for the mcp doctor report
+  - `reads` → `component.mcp-sidecar.repo-policy-registry` — Read the user-level config, the allowed-root policy and the repository root for mcp doctor
+  - `calls` → `component.mcp-sidecar.transport-auth` — Start the stdio transport for mcp serve
 - `component.mcp-sidecar.primary`:
-  - `calls` → `capability.runtime-mcp.chatgpt-browser` — Run the opt-in browser consult tools through the ChatGPT browser engine
-  - `calls` → `capability.verification.codegraph-readiness` — Construct the CodeGraph index adapter with repo-local binaries refused
-  - `calls` → `component.mcp-sidecar.coding-profile` — Build and dispatch the coding tool block and its process runtime
   - `calls` → `capability.workflow-engine.execution-primitives` — Read the worktree topology for the PM server scope
   - `calls` → `capability.runtime-mcp.general-repo-access` — Dispatch the general repository reader and writer tools
   - `calls` → `capability.organization.publication` — Reopen and take over publications and read merge readiness
   - `calls` → `component.mcp-sidecar.repo-policy-registry` — Resolve repositories and paths under the profile policy then redact and audit each result
-  - `calls` → `capability.runtime-harness.task-agent-host` — Start task agents, send task requests, and list, prompt and read in-scope agent panes through Herdr
   - `calls` → `capability.organization.task-fleet` — Acquire fleet tasks and handle task steers from the MCP tools
   - `reads` → `capability.workflow-engine.workflow-state` — Resolve effective state read-only for the state MCP tools
 - `component.mcp-sidecar.repo-policy-registry`:
   - `calls` → `capability.workflow-engine.execution-primitives` — Run Git for repository roots and lock guarded writes
+  - `calls` → `capability.runtime-harness.hook-adapters` — Append the MCP audit log through the shared segmented log writer
 - `component.mcp-sidecar.repo-policy-registry-effects`:
   - 無。
 - `component.mcp-sidecar.transport-auth`:
-  - `calls` → `component.mcp-sidecar.primary` — Create one MCP server per authorized session and dispatch its tool calls
-  - `reads` → `component.mcp-sidecar.repo-policy-registry` — Load the local config and credentials at startup and recheck the profile on each new session
+  - `calls` → `component.mcp-sidecar.primary` — Create the MCP server for the stdio session and dispatch its tool calls
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.mcp-sidecar.coding-profile` | Coding Profile Runtime | `2–5` 個文件 / `2000–5000` 行 | 未宣告 |
-| `component.mcp-sidecar.host-setup` | CLI and Host Setup | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.mcp-sidecar.cli` |
-| `component.mcp-sidecar.primary` | Server and Tool Dispatch | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.mcp-sidecar.tool-dispatch` |
+| `component.mcp-sidecar.host-setup` | CLI and Doctor | `2–5` 個文件 / `200–500` 行 | `entrypoint.mcp-sidecar.cli` |
+| `component.mcp-sidecar.primary` | Server and Tool Dispatch | `5–10` 個文件 / `1000–2000` 行 | `entrypoint.mcp-sidecar.tool-dispatch`、`entrypoint.mcp-sidecar.tool-context` |
 | `component.mcp-sidecar.repo-policy-registry` | Config Policy and Repository Registry | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.mcp-sidecar.repo-policy-registry-effects` | Bot Registry (effects) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
-| `component.mcp-sidecar.transport-auth` | Transport and Authorization | `2–5` 個文件 / `1000–2000` 行 | `entrypoint.mcp-sidecar.http-transport` |
+| `component.mcp-sidecar.transport-auth` | Stdio Transport | `1–2` 個文件 / `5–10` 行 | `entrypoint.mcp-sidecar.stdio-transport` |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:b436dffa4000f325342813cae0411c26528dbefa2a4ffb3612bf61f53fae55d6`); selectors `6/6`.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
-sequenceDiagram
-  autonumber
-  participant p2_cli_a1122746 as CLI and Host Setup
-  participant p2_transport_b44b7535 as Transport and Authorization
-  participant p2_dispatch_8a0cbd63 as Server and Tool Dispatch
-  participant p2_policy_17ad92e6 as Config Policy and Repository Registry
-  p2_cli_a1122746->>p2_transport_b44b7535: mcp serve starts the HTTP transport
-  p2_transport_b44b7535->>p2_policy_17ad92e6: Load the user-level config and credentials and fix the startup profile
-  p2_transport_b44b7535->>p2_dispatch_8a0cbd63: Create one MCP server for the new authorized session
-  alt Tool call runs under the profile path policy
-  p2_dispatch_8a0cbd63->>p2_policy_17ad92e6: Resolve each tool path under the profile policy before any read or write
-    Note over p2_dispatch_8a0cbd63: Return the redacted tool result
-  else Local profile changed after startup
-  p2_transport_b44b7535->>p2_policy_17ad92e6: Reload the config for a new session and refuse a profile that differs from the startup profile
-    Note over p2_transport_b44b7535: Return 503 PROFILE_CHANGED without creating a session
-  end
-```
+> **Proof**: `proven` (`sha256:e7e088159139f5bae695e06147b7836ef2badac8ba850aaa40f8d133a2a5ecd8`); selectors `6/6`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -160,6 +121,26 @@ sequenceDiagram
   else Dispatch an MCP tool call is rejected or fails
   p2_capability_4262990f->>p2_component_7b8d80ff: Propagate MCP Tool Dispatcher failure
     Note over p2_capability_4262990f: Return typed failure
+  end
+```
+
+```mermaid
+%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
+sequenceDiagram
+  autonumber
+  participant p2_cli_a1122746 as CLI and Doctor
+  participant p2_transport_b44b7535 as Stdio Transport
+  participant p2_dispatch_8a0cbd63 as Server and Tool Dispatch
+  participant p2_policy_17ad92e6 as Config Policy and Repository Registry
+  p2_cli_a1122746->>p2_transport_b44b7535: mcp serve starts the stdio transport
+  p2_transport_b44b7535->>p2_dispatch_8a0cbd63: Create one MCP server for the startup profile
+  p2_dispatch_8a0cbd63->>p2_policy_17ad92e6: Load the user-level config and refuse a retired key
+  alt Tool call runs under the profile path policy
+  p2_dispatch_8a0cbd63->>p2_policy_17ad92e6: Resolve each tool path under the profile policy before any read or write
+    Note over p2_dispatch_8a0cbd63: Return the redacted tool result
+  else Repository keeps a legacy repo-scope MCP config
+  p2_dispatch_8a0cbd63->>p2_policy_17ad92e6: Refuse the legacy repo-scope config before the server starts
+    Note over p2_dispatch_8a0cbd63: Exit with the legacy config error and serve no tool
   end
 ```
 <!-- END ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-mcp-sidecar" -->

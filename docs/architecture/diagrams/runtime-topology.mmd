@@ -17,9 +17,10 @@ flowchart TB
   capability_runtime_harness_hook_adapters["Hook Adapters"]
   capability_runtime_harness_mcp_sidecar["MCP Sidecar"]
   capability_runtime_harness_operator["Operator Board"]
+  capability_runtime_harness_task_agent_host["Task Agent Host"]
   capability_verification_acceptance_review["Acceptance Review"]
   capability_workflow_engine_execution_primitives["Execution Primitives"]
-  component_global_runtime_reconciliation_cli_root["CLI Root and Diagnostics"]
+  component_global_runtime_reconciliation_cli_root["CLI Composition Root"]
   capability_verification_acceptance_review -->|"deployed-on"| process_oar_review_host
   process_agent_host -->|"spawns"| process_hook
   process_agent_host -->|"spawns"| process_mcp_server
@@ -36,3 +37,4 @@ flowchart TB
   process_operator_server -->|"spawns"| process_operator_collector
   capability_runtime_harness_operator -->|"deployed-on"| process_operator_server
   process_process_supervisor -->|"spawns"| process_process_group_launcher
+  capability_runtime_harness_task_agent_host -->|"deployed-on"| process_oar_review_host

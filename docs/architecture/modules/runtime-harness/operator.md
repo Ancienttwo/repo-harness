@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:0e1e84f6abcabb1d9cfc26bacf6ea734055808da5a1d482cb6fe9ccdc82e3555" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7fc9ca45ec1de43c3182638bf2ca369b38307e22720499173bd4375059b94364" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
@@ -15,29 +15,32 @@ Provides bounded read-only HTTP views of registered provider issues, admitted se
 
 ```mermaid
 flowchart LR
-  p1_capability_runtime_harness_global_runtime_reconciliation_401730e8["Global Runtime Reconciliation"]:::component
   p1_capability_runtime_harness_operator_00133dd3["Operator Board"]:::component
   p1_component_operator_activity_feeds_00325b96["Setup and Activity Feeds"]:::component
   p1_component_operator_activity_feeds_cli_322d3e7b["Setup and Activity Feeds (cli)"]:::component
   p1_component_operator_activity_feeds_effects_f3a498fb["Setup and Activity Feeds (effects)"]:::component
+  p1_component_operator_agents_configuration_14959e57["Agents Configuration"]:::component
+  p1_component_operator_architecture_reader_98209841["Architecture Model Reader"]:::component
   p1_component_operator_architecture_view_0bdc3e1c["Architecture View"]:::component
   p1_component_operator_architecture_view_core_a4f42b6d["Architecture View (core)"]:::component
   p1_component_operator_assets_layer_7dafa4e8["Operator Board (assets)"]:::component
   p1_component_operator_cli_layer_6969b5f0["Operator Board (cli)"]:::component
   p1_component_operator_console_collectors_1f8d9a20["Console Collectors"]:::component
   p1_component_operator_core_layer_995d28e9["Operator Board (core)"]:::component
+  p1_component_operator_doc_sessions_cli_9153de51["Doc Sessions Command (cli)"]:::component
+  p1_component_operator_docs_host_isolation_b887c810["Docs Host Isolation"]:::component
   p1_component_operator_primary_d8da79ba["Operator HTTP Reader"]:::component
   p1_component_operator_primary_cli_7531f69e["Operator HTTP Reader (cli)"]:::component
   p1_component_operator_view_projections_ca31e3bc["Operator View Projections"]:::component
   p1_component_operator_web_console_452bb61f["Operator Web Console"]:::component
   p1_component_operator_activity_feeds_00325b96 -->|"Reuse public agent-config text filtering and runtime source freshness rules"| p1_component_operator_view_projections_ca31e3bc
-  p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
+  p1_component_operator_architecture_view_0bdc3e1c -->|"List modules and export review prompts through the shared ArchitectureModelReader"| p1_component_operator_architecture_reader_98209841
   p1_component_operator_console_collectors_1f8d9a20 -->|"Read the GitHub name and default branch of each repository from the Dev Activity cache for the docs ref and the daily CI run#44; read the open pull requests' heads and changed files for the architecture map's PR impact layer#44; and run the execution-state child through the setup collector's supervised process runner."| p1_component_operator_activity_feeds_00325b96
   p1_component_operator_console_collectors_1f8d9a20 -->|"Check the herdr status version and request session.snapshot through the Herdr observation transport."| p1_component_operator_primary_d8da79ba
   p1_component_operator_console_collectors_1f8d9a20 -->|"Build cache values with the strict Bot access#44; notify#44; docs and tests decoders and the JUnit and projection parsers."| p1_component_operator_view_projections_ca31e3bc
   p1_component_operator_primary_d8da79ba -->|"Start the bounded background collectors once and serve only their cached#44; re-decoded snapshots"| p1_component_operator_activity_feeds_00325b96
+  p1_component_operator_primary_d8da79ba -->|"Read the committed architecture model through the shared ArchitectureModelReader"| p1_component_operator_architecture_reader_98209841
   p1_component_operator_primary_d8da79ba -->|"Start the notify#44; Bot access#44; docs and tests collectors once#44; serve only their re-decoded caches#44; and send a docs file GET as one object request to the resident cat-file worker."| p1_component_operator_console_collectors_1f8d9a20
-  p1_component_operator_primary_d8da79ba -->|"Read the committed architecture model through the shared ArchitectureModelReader"| p1_capability_runtime_harness_global_runtime_reconciliation_401730e8
   p1_component_operator_primary_d8da79ba -->|"Parse closed route requests and project or re-decode each observation before it leaves the server"| p1_component_operator_view_projections_ca31e3bc
   p1_capability_runtime_harness_operator_00133dd3 -->|"Return a read-only HTTP observation."| p1_component_operator_primary_d8da79ba
   p1_component_operator_view_projections_ca31e3bc -->|"Decode the module index and module detail shapes that the architecture view declares"| p1_component_operator_architecture_view_0bdc3e1c
@@ -50,8 +53,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ec50ced070af3ec09e12f0bc66cd5ce4cc3cb6c01e15a688e3937df2cc8b00b1`).
-- Semantic nodes: `15`; declared relations: `14`.
+- Proof: `proven` (`sha256:dcaae8abb3bb5317a1cdac64db26d71b07206bffc24b82a959d13aba19c9f186`).
+- Semantic nodes: `18`; declared relations: `14`.
 
 ### 1.2 模組職責表
 
@@ -71,6 +74,7 @@ flowchart LR
 
 - 規模量級:`100–200` 個文件 / `20k–50k` 行
 - 匹配前綴:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
+- 排除前綴:`src/effects/setup/pi-host-probe.ts`、`src/effects/setup/pi-herdr-integration.ts`、`src/effects/setup/pi-capability-child.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -81,9 +85,11 @@ flowchart LR
 - `deployed-on` → `process.operator-server` — The operator board runs in the operator server process.
 - `reads` → `external.github` — Collect pull request and CI activity, the newest daily CI run with its JUnit and test projection artifacts, the open CI repair issues, and the CLI inventory repository lookups through gh in background collectors.
 - `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
+- `depends-on` → `component.evals-checks.ci-report-core` — Read the tests snapshot decoder, the test projection types and the CI repair keys for the tests board.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity.
 - `depends-on` → `capability.organization.publication` — Use publication readiness types in the Operator fixture.
 - `depends-on` → `capability.runtime-harness.task-agent-host` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
+- `depends-on` → `component.contract-assets.tool-catalog` — Read the tool catalog for the tools page and the workspace location.
 - `depends-on` → `capability.workflow-engine.workflow-state` — Read state types and artifacts for Operator projections.
 - `calls` → `component.operator.primary` — Return a read-only HTTP observation.
 
@@ -104,10 +110,22 @@ flowchart LR
   - 無。
 - `component.operator.activity-feeds-effects`:
   - 無。
+- `component.operator.agents-configuration`:
+  - `reads` → `capability.verification.acceptance-review` — Plugin → core: validate review runtime ids against the declared review runtimes
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Plugin → core: change the agents section through the shared global configuration transaction
+- `component.operator.architecture-reader`:
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Plugin → core: read the native architecture context and the generated-summary freshness type through the shared archctx provider
+  - `reads` → `capability.workflow-engine.contract-assets` — Plugin → core: decode the capability registry from the native context and resolve changed paths to capability owners
+  - `depends-on` → `capability.runtime-harness.evidence-ledger` — Plugin → core: canonicalize the dirty worktree digest and the stale citations of a review prompt
+  - `reads` → `component.execution-primitives.repository-registry` — Plugin → core: resolve the registered repository id of the read checkout
 - `component.operator.architecture-view`:
-  - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — List modules and export review prompts through the shared ArchitectureModelReader
+  - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Plugin → core: decode the docs anchors report and the saved projection check freshness
+  - `calls` → `component.operator.architecture-reader` — List modules and export review prompts through the shared ArchitectureModelReader
 - `component.operator.architecture-view-core`:
-  - 無。
+  - `depends-on` → `capability.verification.acceptance-review` — Plugin → core: apply the shared review finding rules in module review prompts
+  - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Plugin → core: use the generated-summary freshness type that the projection decoder returns
+  - `depends-on` → `capability.runtime-harness.evidence-ledger` — Plugin → core: canonicalize module review prompt digests
+  - `depends-on` → `component.execution-primitives.secret-patterns` — Plugin → core: refuse module review context that contains a secret
 - `component.operator.assets-layer`:
   - 無。
 - `component.operator.cli-layer`:
@@ -119,17 +137,22 @@ flowchart LR
   - `reads` → `external.github` — Read the newest daily CI run, download its JUnit and test projection artifacts, and list open CI repair issues with gh.
   - `reads` → `external.herdr` — Run herdr status, the session snapshot and the notify plugin list, config-dir and log list probes on collector cycles.
   - `calls` → `component.operator.primary` — Check the herdr status version and request session.snapshot through the Herdr observation transport.
-  - `reads` → `capability.runtime-harness.mcp-sidecar` — Run mcp doctor without live registration and read the Bot registry, the OAuth token store and the newest audit rows for Bot access.
+  - `reads` → `capability.runtime-harness.mcp-sidecar` — Run mcp doctor and read the Bot registry and the newest audit rows for Bot access.
   - `reads` → `component.execution-primitives.repository-registry` — Read the strict repository registry snapshot and the account home for Bot access, docs and tests.
   - `reads` → `component.task-agent-host.primary` — Read the Herdr session from the notify install record at the start of each notify, Bot access and execution cycle, and read the task agent binding, native session and closed records.
   - `calls` → `component.operator.view-projections` — Build cache values with the strict Bot access, notify, docs and tests decoders and the JUnit and projection parsers.
   - `depends-on` → `capability.workflow-engine.workflow-state` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
 - `component.operator.core-layer`:
   - 無。
+- `component.operator.doc-sessions-cli`:
+  - 無。
+- `component.operator.docs-host-isolation`:
+  - 無。
 - `component.operator.primary`:
   - `calls` → `component.operator.activity-feeds` — Start the bounded background collectors once and serve only their cached, re-decoded snapshots
+  - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Plugin → core: read the architecture history, the hand edits and the history timeout through the shared archctx provider
+  - `calls` → `component.operator.architecture-reader` — Read the committed architecture model through the shared ArchitectureModelReader
   - `calls` → `component.operator.console-collectors` — Start the notify, Bot access, docs and tests collectors once, serve only their re-decoded caches, and send a docs file GET as one object request to the resident cat-file worker.
-  - `reads` → `capability.runtime-harness.global-runtime-reconciliation` — Read the committed architecture model through the shared ArchitectureModelReader
   - `reads` → `component.execution-primitives.repository-registry` — Resolve a registered repository root from the strict repo-harness registry snapshot
   - `calls` → `component.operator.view-projections` — Parse closed route requests and project or re-decode each observation before it leaves the server
   - `reads` → `component.acceptance-review.primary` — Read the docs host platform and runtimes that a doc session may use.
@@ -139,7 +162,6 @@ flowchart LR
 - `component.operator.primary-cli`:
   - 無。
 - `component.operator.view-projections`:
-  - `depends-on` → `capability.verification.acceptance-review` — Decode the module review prompt shape that the review prompt builder declares
   - `depends-on` → `component.operator.architecture-view` — Decode the module index and module detail shapes that the architecture view declares
   - `reads` → `component.execution-primitives.secret-patterns` — Read the shared secret token rules that redact doc session events.
   - `reads` → `capability.organization.task-fleet` — Render fleet board errors and task message shapes
@@ -155,12 +177,16 @@ flowchart LR
 | `component.operator.activity-feeds` | Setup and Activity Feeds | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.operator.activity-feeds-cli` | Setup and Activity Feeds (cli) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.operator.activity-feeds-effects` | Setup and Activity Feeds (effects) | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.operator.agents-configuration` | Agents Configuration | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.operator.architecture-reader` | Architecture Model Reader | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.architecture-view` | Architecture View | `1–2` 個文件 / `20–50` 行 | 未宣告 |
-| `component.operator.architecture-view-core` | Architecture View (core) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.operator.architecture-view-core` | Architecture View (core) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.assets-layer` | Operator Board (assets) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.operator.cli-layer` | Operator Board (cli) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
 | `component.operator.console-collectors` | Console Collectors | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.operator.core-layer` | Operator Board (core) | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.operator.doc-sessions-cli` | Doc Sessions Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.operator.docs-host-isolation` | Docs Host Isolation | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.primary` | Operator HTTP Reader | `20–50` 個文件 / `5000–10000` 行 | `entrypoint.operator.http-server` |
 | `component.operator.primary-cli` | Operator HTTP Reader (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.operator.view-projections` | Operator View Projections | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
@@ -168,7 +194,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ec50ced070af3ec09e12f0bc66cd5ce4cc3cb6c01e15a688e3937df2cc8b00b1`); selectors `7/7`.
+> **Proof**: `proven` (`sha256:dcaae8abb3bb5317a1cdac64db26d71b07206bffc24b82a959d13aba19c9f186`); selectors `7/7`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -194,7 +220,7 @@ sequenceDiagram
   autonumber
   participant p2_http_reader_b98e0942 as Operator HTTP Reader
   participant p2_view_projections_b9b4ee4d as Operator View Projections
-  participant p2_model_reader_8b0ba6e4 as Global Runtime Reconciliation
+  participant p2_model_reader_8b0ba6e4 as Architecture Model Reader
   p2_http_reader_b98e0942->>p2_view_projections_b9b4ee4d: Parse the closed architecture route request before any process starts
   p2_http_reader_b98e0942->>p2_model_reader_8b0ba6e4: List modules from the committed model through the shared reader
   alt Read completes

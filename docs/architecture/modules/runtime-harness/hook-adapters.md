@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:978da2913309ac448bbfb1dc5afde7f62285ca460e0c4d58b005942eda0a830e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7e3324a51f355c057acf9df8b852137ddd29ecb28c153240b14997ca51ced68c" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/pi/**`、`src/effects/managed-tree.ts`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/segmented-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
@@ -73,7 +73,6 @@ flowchart LR
 
 - `deployed-on` → `process.hook` — Hook adapters run in the per-event hook process.
 - `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for mutation guards.
-- `depends-on` → `capability.runtime-harness.task-agent-host` — Resolve task role profiles during host installation.
 - `calls` → `component.hook-adapters.primary` — Dispatch a host hook route to its typed handler
 
 入向關係:
@@ -84,12 +83,14 @@ flowchart LR
 - `depends-on` ← `capability.verification.codegraph-readiness` — Use host locks and configuration ownership for CodeGraph setup.
 - `calls` ← `external.codex` — Codex runs the installed repo-harness hook command for each hook event.
 - `calls` ← `component.contract-assets.template-projection` — Read the install profile and project skills during init
+- `depends-on` ← `capability.runtime-harness.dsh-host` — Run DSH tool calls through the shared hook bridge, route registry and hook protocol.
 - `reads` ← `component.evals-checks.evals-and-benchmarks` — Read hook event telemetry records to measure hook cost in profile benchmarks
 - `depends-on` ← `capability.runtime-harness.evidence-ledger` — Collect loop state inputs for recovery evidence.
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Write the private global configuration through the installer ownership writer
+- `calls` ← `component.global-runtime-reconciliation.cli-diagnostics` — Read the install profile, skill projections, host targets, Pi host probes, hook routes and status for the doctor and init-hook reports
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the install and status and security and hook commands and run host transactions with the install profile
 - `calls` ← `component.global-runtime-reconciliation.primary` — Install host adapters, project owned host skills, and register the Pi package from the installed candidate after mandatory setup succeeds
-- `calls` ← `component.mcp-sidecar.host-setup` — Reuse installer configuration ownership receipts and the runtime host lock
+- `calls` ← `component.mcp-sidecar.repo-policy-registry` — Append the MCP audit log through the shared segmented log writer
 - `reads` ← `component.operator.activity-feeds` — Read the hook route registry and install profile components for the Hooks and Agents pages
 - `calls` ← `external.pi` — Pi loads the native extension, which sends mapped session, prompt and tool events to the same-package Bun hook process.
 - `depends-on` ← `capability.runtime-harness.task-agent-host` — Use host installation commands for Herdr skill setup.
@@ -102,6 +103,7 @@ flowchart LR
   - `calls` → `capability.workflow-engine.workflow-state` — Canonicalize edit paths and resolve the owners of edited paths
 - `component.hook-adapters.host-installer`:
   - `calls` → `capability.public-surface.adoption` — Share the managed hook command fingerprints with the adoption migration
+  - `reads` → `capability.workflow-engine.contract-assets` — Resolve the managed and Claude-only fleet role lists during host installation
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Read the shared host skill roots for install projections and report architecture projection readiness in status
   - `calls` → `external.pi` — Use Pi list, install and remove for the exact package source, without writing Pi settings or bypassing trust.
@@ -133,7 +135,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.hook-adapters.edit-guards` | Edit Guard Handlers | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.hook-adapters.host-installer` | Host Adapter Installer | `10–20` 個文件 / `2000–5000` 行 | `entrypoint.hook-adapters.managed-entries`、`entrypoint.hook-adapters.pi-extension`、`entrypoint.hook-adapters.skill-projection` |
-| `component.hook-adapters.host-installer-effects` | Host Adapter Installer (effects) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
+| `component.hook-adapters.host-installer-effects` | Host Adapter Installer (effects) | `5–10` 個文件 / `200–500` 行 | 未宣告 |
 | `component.hook-adapters.primary` | Hook Route Runtime | `5–10` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.handler-bindings` |
 | `component.hook-adapters.primary-effects` | Hook Route Runtime (effects) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.hook-adapters.session-lifecycle` | Session Lifecycle Handlers | `5–10` 個文件 / `1000–2000` 行 | `entrypoint.hook-adapters.stop` |

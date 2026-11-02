@@ -1,13 +1,13 @@
 # organization/task-fleet 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3abfdef07e45cda156a1869df5a39b2423f93eabc344632646a9137a2816a290" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-task-fleet" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e0a41884ef949583de1894d583de100ea6ed659c035f452f779441bad822e7e2" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.task-fleet`(kind `capability`)
-> **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
+> **Matched Prefixes**:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Projects registry-scoped provider issue and admitted session fleet boards and owns admitted task message storage.
+Projects registry-scoped provider issue and admitted session fleet boards, owns admitted task message storage and records admitted manual provider feedback.
 
 ## 1. P1:能力架構地圖
 
@@ -19,6 +19,7 @@ flowchart LR
   p1_component_task_fleet_primary_77e10674["Fleet Task Observations and Board"]:::component
   p1_component_task_fleet_primary_core_c17386da["Fleet Task Observations and Board (core)"]:::component
   p1_component_task_fleet_primary_effects_7eda8367["Fleet Task Observations and Board (effects)"]:::component
+  p1_component_task_fleet_provider_feedback_76c5dd59["Provider Feedback"]:::component
   p1_component_task_fleet_task_inbox_b42db72f["Task Inbox"]:::component
   p1_component_task_fleet_task_inbox_effects_52f45cf0["Task Inbox (effects)"]:::component
   p1_capability_organization_task_fleet_134b5125 -->|"Project per-repository task observations and fleet board cards from the owning readers"| p1_component_task_fleet_primary_77e10674
@@ -29,8 +30,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a67cb6c015234f27ee4a3a83ab00c3bd90fa7d490598604aed41ae518089b741`).
-- Semantic nodes: `6`; declared relations: `2`.
+- Proof: `proven` (`sha256:b88f02db249aa6ef43c027f88f9a9a47ca08263903c0309053b7412696fccb99`).
+- Semantic nodes: `7`; declared relations: `2`.
 
 ### 1.2 模組職責表
 
@@ -45,8 +46,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`、`src/core/messages/mechanics.ts`、`src/core/messages/task-message-claim.ts`、`src/core/messages/task-message-error.ts`
-- 排除前綴:`src/effects/fleet/provider-feedback.ts`
+- 匹配前綴:`src/core/fleet/**`、`src/effects/fleet/**`、`src/cli/commands/fleet.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -56,20 +56,19 @@ flowchart LR
 - `reads` → `component.mcp-sidecar.repo-policy-registry-effects` — Read the Bot registry to name the sender of a fleet task message
 - `calls` → `capability.runtime-harness.evidence-ledger` — Reuse canonical JSON and durable atomic append for task message records
 - `calls` → `component.task-fleet.primary` — Project per-repository task observations and fleet board cards from the owning readers
-- `calls` → `capability.organization.publication` — Read publication receipts readiness and provider feedback for fleet commands and board cards
+- `calls` → `capability.organization.publication` — Plugin → core: read explicit PR readiness and the publication digest helpers, and store provider feedback facts and delivery receipts through the Publication feedback store, for fleet commands, board cards and provider feedback
 - `reads` → `component.execution-primitives.repository-registry` — Read the strict repository registry snapshot for offer and board authorization
 
 入向關係:
 
-- `calls` ← `component.acceptance-review.primary` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Fleet behavior through its source modules.
 - `calls` ← `capability.runtime-harness.external-source-intake` — Reobserve exact admitted inbox context to bind source evidence to the same current provider issue
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the fleet command and pass the task inbox root to retention
 - `calls` ← `component.hook-adapters.session-lifecycle` — Render task inbox messages as untrusted session context
 - `calls` ← `component.mcp-sidecar.primary` — Acquire fleet tasks and handle task steers from the MCP tools
 - `reads` ← `component.operator.primary` — Read retained per-repository task observations and the fleet board for the console
 - `reads` ← `component.operator.view-projections` — Render fleet board errors and task message shapes
-- `calls` ← `component.publication.provider-feedback` — Reobserve exact admitted inbox context and shared message claim identity before provider feedback writes
+- `calls` ← `component.task-agent-host.review-runner` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
 
 組件出向關係:
 
@@ -80,9 +79,11 @@ flowchart LR
   - 無。
 - `component.task-fleet.primary-effects`:
   - 無。
+- `component.task-fleet.provider-feedback`:
+  - `calls` → `capability.verification.acceptance-review` — Plugin → core: observe the active review admission before admitted feedback intake
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold the shared task lock while feedback events and delivery receipts are recorded
 - `component.task-fleet.task-inbox`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory for the task inbox
-  - `calls` → `capability.runtime-harness.task-agent-host` — Reobserve the exact task session and live admission before current inbox operations
+  - `calls` → `capability.workflow-engine.execution-primitives` — Hold exclusive directory locks under the Git common directory for the task inbox, and validate the shared task message claim and message fields
 - `component.task-fleet.task-inbox-effects`:
   - 無。
 
@@ -93,12 +94,13 @@ flowchart LR
 | `component.task-fleet.primary` | Fleet Task Observations and Board | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.task-fleet.primary-core` | Fleet Task Observations and Board (core) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-fleet.primary-effects` | Fleet Task Observations and Board (effects) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
-| `component.task-fleet.task-inbox` | Task Inbox | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.task-fleet.provider-feedback` | Provider Feedback | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.task-fleet.task-inbox` | Task Inbox | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.task-fleet.task-inbox-effects` | Task Inbox (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a67cb6c015234f27ee4a3a83ab00c3bd90fa7d490598604aed41ae518089b741`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:b88f02db249aa6ef43c027f88f9a9a47ca08263903c0309053b7412696fccb99`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

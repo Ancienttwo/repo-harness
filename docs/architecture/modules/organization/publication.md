@@ -1,13 +1,13 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:12aa5e3bbc63f317f7c1c406045c2b521cc6986d88b2d7f37dcf0c288d0a0120" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:efcc348723784b4498e66aec3504538f19ec8b9ded6cbc36e03a647758901cb5" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
-> **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
+> **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and records admitted manual feedback.
+Observes explicit canonical provider PR readiness and integration evidence, shares canonical publication digest helpers and stores provider feedback facts and delivery receipts.
 
 ## 1. P1:能力架構地圖
 
@@ -19,19 +19,17 @@ flowchart LR
   p1_component_publication_primary_d7ca6a90["PR Readiness and Integration Evidence"]:::component
   p1_component_publication_primary_cli_a7b5a61d["PR Readiness and Integration Evidence (cli)"]:::component
   p1_component_publication_primary_effects_bd69bb4d["PR Readiness and Integration Evidence (effects)"]:::component
-  p1_component_publication_provider_feedback_f0705608["Provider Feedback"]:::component
-  p1_component_publication_provider_feedback_core_c57734cf["Provider Feedback (core)"]:::component
+  p1_component_publication_provider_feedback_core_c57734cf["Feedback Records (core)"]:::component
   p1_component_publication_pstack_watch_pr_experiment_194e9efb["Private pstack watcher experiment"]:::component
   p1_capability_organization_publication_44355620 -->|"Derive fenced PR readiness#44; collect provider integration evidence and share the digest helpers without task ownership mutation"| p1_component_publication_primary_d7ca6a90
-  p1_component_publication_provider_feedback_f0705608 -->|"Observe explicit provider PR identity and exact head/base through the shared readiness implementation before admitted feedback intake"| p1_component_publication_primary_d7ca6a90
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:95169681a5dd2e0a37c6d68fb527ae11736927d08a32ff6dd53010755651867c`).
-- Semantic nodes: `7`; declared relations: `2`.
+- Proof: `proven` (`sha256:55812de7bb978c7417336a8c4ecee43f7cec7e20262760b0b31d160d0eb9b257`).
+- Semantic nodes: `6`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -46,7 +44,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`10–20` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`、`src/effects/fleet/provider-feedback.ts`
+- 匹配前綴:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -56,6 +54,7 @@ flowchart LR
 - `calls` → `capability.workflow-engine.contract-assets` — Read integration proof through the packaged worktree merge helper
 - `calls` → `external.github` — Read pull request readiness and post provider feedback through gh.
 - `depends-on` → `capability.verification.acceptance-review` — Read the acceptance receipt for publication evidence.
+- `depends-on` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for the feedback store, and validate the shared task message claim in feedback records
 - `calls` → `component.publication.primary` — Derive fenced PR readiness, collect provider integration evidence and share the digest helpers without task ownership mutation
 
 入向關係:
@@ -65,7 +64,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
 - `calls` ← `component.mcp-sidecar.primary` — Reopen and take over publications and read merge readiness
 - `depends-on` ← `capability.runtime-harness.operator` — Use publication readiness types in the Operator fixture.
-- `calls` ← `capability.organization.task-fleet` — Read publication receipts readiness and provider feedback for fleet commands and board cards
+- `calls` ← `capability.organization.task-fleet` — Plugin → core: read explicit PR readiness and the publication digest helpers, and store provider feedback facts and delivery receipts through the Publication feedback store, for fleet commands, board cards and provider feedback
 
 組件出向關係:
 
@@ -75,11 +74,6 @@ flowchart LR
   - 無。
 - `component.publication.primary-effects`:
   - 無。
-- `component.publication.provider-feedback`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Resolve the Git common directory for feedback records
-  - `calls` → `component.publication.primary` — Observe explicit provider PR identity and exact head/base through the shared readiness implementation before admitted feedback intake
-  - `calls` → `capability.runtime-harness.task-agent-host` — Read the exact selected immutable task session for current feedback attribution
-  - `calls` → `capability.organization.task-fleet` — Reobserve exact admitted inbox context and shared message claim identity before provider feedback writes
 - `component.publication.provider-feedback-core`:
   - 無。
 - `component.publication.pstack-watch-pr-experiment`:
@@ -92,13 +86,12 @@ flowchart LR
 | `component.publication.primary` | PR Readiness and Integration Evidence | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.publication.primary-cli` | PR Readiness and Integration Evidence (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.publication.primary-effects` | PR Readiness and Integration Evidence (effects) | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.publication.provider-feedback` | Provider Feedback | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.publication.provider-feedback-core` | Provider Feedback (core) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.publication.provider-feedback-core` | Feedback Records (core) | `1–2` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.publication.pstack-watch-pr-experiment` | Private pstack watcher experiment | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:95169681a5dd2e0a37c6d68fb527ae11736927d08a32ff6dd53010755651867c`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:55812de7bb978c7417336a8c4ecee43f7cec7e20262760b0b31d160d0eb9b257`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

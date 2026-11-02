@@ -1,9 +1,9 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:1afef5188219c14833807d8a838ded7aba2fe1877cf06938ed5a9bd96f6a3f91" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:25d3822ace65ad67ec02e93c98a2d23daed822ffd806162c15698135082442aa" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -18,28 +18,38 @@ flowchart LR
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
   p1_component_task_agent_host_cli_layer_209be438["Task Agent Host (cli)"]:::component
   p1_component_task_agent_host_core_layer_b57e2a37["Task Agent Host (core)"]:::component
+  p1_component_task_agent_host_events_cli_05ad084f["Bot Events Command (cli)"]:::component
   p1_component_task_agent_host_primary_d8453f09["Herdr Task Session Host"]:::component
   p1_component_task_agent_host_primary_assets_5212098e["Herdr Task Session Host (assets)"]:::component
   p1_component_task_agent_host_primary_cli_1076e150["Herdr Task Session Host (cli)"]:::component
   p1_component_task_agent_host_primary_core_a2a0dfb5["Herdr Task Session Host (core)"]:::component
   p1_component_task_agent_host_primary_scripts_e0855c5f["Herdr Task Session Host (scripts)"]:::component
+  p1_component_task_agent_host_review_runner_c2379e1e["Reviewer Runner"]:::component
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
+  p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Run the reviewer session#44; its OAR review host and its pre-prompt inbox companion for acceptance review"| p1_component_task_agent_host_review_runner_c2379e1e
+  p1_component_task_agent_host_review_runner_c2379e1e -->|"Start#44; send to#44; collect from and close the reviewer task session#44; and read its binding and OAR observations"| p1_component_task_agent_host_primary_d8453f09
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
   classDef datastore fill:#3f6212,color:#ffffff,stroke:#d9f99d,stroke-width:2px
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:635aa10e476fd3f44ed0a87ccb7aa577f51592eb9deda3c25963a89003adcc51`).
-- Semantic nodes: `8`; declared relations: `1`.
+- Proof: `proven` (`sha256:a5d296a5b60a70bf641001e6f5324c16508c2ef2528a43a6af79c89771185f94`).
+- Semantic nodes: `10`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#startTaskApplicationHost` | `sink.task-agent-host.start` → `src/effects/terminal/task-session.ts#startTaskAgent` |
-| `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#sendTaskRequest` | `sink.task-agent-host.send` → `src/effects/terminal/task-session.ts#nextSessionRound` |
+| `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#sendTaskRequest` | `sink.task-agent-host.send` → `src/effects/terminal/task-session-io.ts#nextSessionRound` |
 | `entrypoint.task-agent-host.session` | `src/effects/terminal/task-session.ts#collectTaskResult` | `sink.task-agent-host.collect` → `src/effects/terminal/task-session.ts#readTaskRequestResult` |
+| `entrypoint.task-agent-host.review-runner` | `src/effects/review-runner/task-review-runner.ts#send` | `sink.task-agent-host.reserve-inbox` → `src/effects/review-runner/task-pre-prompt-inbox.ts#preparePrePromptInbox` |
+| `entrypoint.task-agent-host.review-runner` | `src/effects/review-runner/task-review-runner.ts#settleCompanion` | `sink.task-agent-host.commit-inbox` → `src/effects/review-runner/task-pre-prompt-inbox.ts#commitPrePromptInbox` |
+| `entrypoint.task-agent-host.review-runner` | `src/effects/review-runner/task-review-runner.ts#recoverCompanions` | `sink.task-agent-host.recover-inbox` → `src/effects/review-runner/task-pre-prompt-inbox.ts#commitPrePromptInbox` |
+| `entrypoint.task-agent-host.inbox-host` | `src/effects/review-runner/task-oar-host.ts#runHostFileRequest` | `sink.task-agent-host.consume-inbox` → `src/effects/review-runner/task-pre-prompt-inbox-consumer.ts#consumePrePromptInbox`、`sink.task-agent-host.accepted-inbox` → `src/effects/review-runner/task-pre-prompt-inbox-consumer.ts#recordPrePromptInboxAccepted` |
+| `entrypoint.task-agent-host.inbox-proof` | `src/effects/review-runner/task-pre-prompt-inbox-consumer.ts#recordPrePromptInboxAccepted` | `sink.task-agent-host.persist-inbox-proof` → `src/effects/terminal/task-session-io.ts#writeSessionArtifact` |
+| `entrypoint.task-agent-host.inbox-commit` | `src/effects/review-runner/task-pre-prompt-inbox.ts#commitPrePromptInbox` | `sink.task-agent-host.inbox-session` → `src/effects/terminal/task-session-record.ts#readTaskAgent`、`sink.task-agent-host.inbox-oar-proof` → `src/effects/terminal/task-runtime-observation.ts#readOarObservation`、`sink.task-agent-host.deliver-inbox` → `src/effects/fleet/task-inbox.ts#deliverTaskInbox` |
 
 組件入口:
 
@@ -48,33 +58,29 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`src/effects/terminal/task-role-profiles.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/sessions/admitted-source.ts`、`src/effects/sessions/task-sessions.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/terminal/task-session-reader.ts`、`src/effects/terminal/task-session-io.ts`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
 
 出向關係:
 
+- `calls` → `capability.verification.acceptance-review` — Plugin → core: bind task sessions to the active review admission and its source, resolve the policy review base of the diff fingerprint, implement the reviewer runner port, and apply the review isolation policy in the OAR review host
+- `deployed-on` → `process.oar-review-host` — The reviewer runner builds and runs the OAR review host bundle.
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` → `external.herdr` — Split and run Herdr panes for task agents and review hosts.
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host installation commands for Herdr skill setup.
+- `depends-on` → `capability.workflow-engine.workflow-state` — Read admitted sessions and task session lists through the shared core selector and session types
 - `calls` → `component.task-agent-host.primary` — Start send and collect persistent Herdr task agents
+- `calls` → `component.task-agent-host.review-runner` — Run the reviewer session, its OAR review host and its pre-prompt inbox companion for acceptance review
 
 入向關係:
 
-- `calls` ← `component.acceptance-review.primary` — Run the persistent review session, bind exact native attribution, read immutable session/request and OAR observations, and persist the accepted-input proof through protected session artifacts
-- `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Register and clean up task worktrees and read session artifacts
+- `calls` ← `component.acceptance-review.primary` — Drive the persistent reviewer session through the runner port that task-agent-host implements; the CLI root injects the implementation, so review imports no task-agent-host module
+- `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Run the task worktree register, merge notice and cleanup actions as the task-agent-host process entry src/effects/terminal/task-worktree-runtime.ts
 - `depends-on` ← `capability.verification.evals-checks` — Test Task Agent Host behavior through its source modules.
-- `calls` ← `capability.runtime-harness.external-source-intake` — Read exact immutable session bindings and reuse the shared closed admitted-session selector for source provenance binding
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr commands
-- `calls` ← `component.global-runtime-reconciliation.primary` — Configure the required Herdr skill during global runtime setup
-- `depends-on` ← `capability.runtime-harness.hook-adapters` — Resolve task role profiles during host installation.
-- `calls` ← `component.mcp-sidecar.coding-profile` — Clean up task worktrees for coding workspaces
-- `calls` ← `component.mcp-sidecar.primary` — Start task agents, send task requests, and list, prompt and read in-scope agent panes through Herdr
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the herdr and events commands and pass the Herdr skill setup step to the global runtime
 - `depends-on` ← `capability.runtime-harness.operator` — Read exact source-root-bound task sessions and role profiles for bounded discovery and selected current observations
-- `calls` ← `component.publication.provider-feedback` — Read the exact selected immutable task session for current feedback attribution
-- `calls` ← `component.task-fleet.task-inbox` — Reobserve the exact task session and live admission before current inbox operations
-- `reads` ← `component.workflow-state.coordination-plane` — Reuse bounded neutral admitted session discovery and shared session contracts for provider boards; retain runtime-closed checks before exact worktree prune
 
 組件出向關係:
 
@@ -82,8 +88,10 @@ flowchart LR
   - 無。
 - `component.task-agent-host.core-layer`:
   - 無。
+- `component.task-agent-host.events-cli`:
+  - 無。
 - `component.task-agent-host.primary`:
-  - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner and hold task session locks
+  - `calls` → `capability.workflow-engine.execution-primitives` — Run Git through the process runner, hold task session locks, and read and write immutable session artifacts
   - `reads` → `component.execution-primitives.repository-registry` — Root the Herdr notify install record in the account-level repo-harness home.
 - `component.task-agent-host.primary-assets`:
   - 無。
@@ -93,22 +101,29 @@ flowchart LR
   - 無。
 - `component.task-agent-host.primary-scripts`:
   - 無。
+- `component.task-agent-host.review-runner`:
+  - `reads` → `capability.workflow-engine.contract-assets` — Plugin → core: read the fleet role profile frontmatter rules and target overrides for the review host
+  - `calls` → `capability.workflow-engine.execution-primitives` — Read and write immutable session artifacts, including the accepted-input proof, and read the host process identity
+  - `calls` → `component.task-agent-host.primary` — Start, send to, collect from and close the reviewer task session, and read its binding and OAR observations
+  - `calls` → `capability.organization.task-fleet` — Reserve admitted inbox context through read-only listing and commit exact delivery receipts only after positive accepted OAR input proof; unknown acceptance leaves delivery pending
 
 ### 1.5 組件結構
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.task-agent-host.cli-layer` | Task Agent Host (cli) | `2–5` 個文件 / `10–20` 行 | 未宣告 |
-| `component.task-agent-host.core-layer` | Task Agent Host (core) | `2–5` 個文件 / `50–100` 行 | 未宣告 |
+| `component.task-agent-host.core-layer` | Task Agent Host (core) | `0` 個文件 / `0` 行 | 未宣告 |
+| `component.task-agent-host.events-cli` | Bot Events Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.task-agent-host.primary-cli` | Herdr Task Session Host (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.primary-core` | Herdr Task Session Host (core) | `2–5` 個文件 / `50–100` 行 | 未宣告 |
 | `component.task-agent-host.primary-scripts` | Herdr Task Session Host (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.task-agent-host.review-runner` | Reviewer Runner | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:635aa10e476fd3f44ed0a87ccb7aa577f51592eb9deda3c25963a89003adcc51`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:a5d296a5b60a70bf641001e6f5324c16508c2ef2528a43a6af79c89771185f94`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

@@ -1,5 +1,5 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2fc9003a1a02bd46e834ed7030ff938a68e71b4e3ab616343462870188f57551" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:637dd7c2f0f62668e1163709076d1bf1faa153c27eb240618836d3ff2705faf7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`src/cli/commands/tools.ts`
@@ -49,20 +49,19 @@ flowchart LR
 出向關係:
 
 - `calls` → `external.codegraph` — Run codegraph to check index readiness and read code facts.
+- `depends-on` → `capability.workflow-engine.contract-assets` — Type the CodeGraph init step with the core init port type
 - `depends-on` → `capability.verification.evals-checks` — Use shared repository fixtures for CodeGraph resolver tests.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded CodeGraph processes.
+- `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Type the CodeGraph doctor checks and global runtime MCP step with the core doctor and global runtime port types
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host locks and configuration ownership for CodeGraph setup.
 - `calls` → `component.codegraph-readiness.primary` — Verify CodeGraph readiness
 
 入向關係:
 
-- `calls` ← `component.contract-assets.template-projection` — Ensure CodeGraph readiness during init
 - `depends-on` ← `capability.verification.evals-checks` — Test CodeGraph Readiness behavior through its source modules.
 - `calls` ← `component.general-repo-access.primary` — Read CodeGraph index metadata through the adapter after path authorization
-- `calls` ← `component.global-runtime-reconciliation.cli-root` — Probe CodeGraph readiness for doctor
-- `calls` ← `component.global-runtime-reconciliation.primary` — Configure the exact CodeGraph CLI and MCP registration
-- `calls` ← `component.mcp-sidecar.coding-profile` — Refresh the CodeGraph index after coding mutations
-- `calls` ← `component.mcp-sidecar.primary` — Construct the CodeGraph index adapter with repo-local binaries refused
+- `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the tools command and pass the CodeGraph doctor checks and setup steps to core commands
+- `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Type the reader tool context with the CodeGraph adapter interface
 
 組件出向關係:
 
