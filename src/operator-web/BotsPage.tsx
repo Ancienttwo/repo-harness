@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react';
 import { Badge, Banner, Empty, Loader, cn } from '@cloudflare/kumo';
-import { BellIcon, PlugIcon, SquaresFourIcon, WarningCircleIcon, WarningIcon } from '@phosphor-icons/react';
+import { BellIcon, ChatsIcon, PlugIcon, SquaresFourIcon, WarningCircleIcon, WarningIcon } from '@phosphor-icons/react';
 import type {
   BotAccessSnapshotV1,
   HerdrAgentStatus,
@@ -9,6 +9,7 @@ import type {
   RegistryRepoProjection,
 } from '../core/operator/bot-access';
 import { NOTIFY_CHANNELS, type NotifyDeliveryState, type NotifyDeliveryV1 } from '../core/operator/notify-status';
+import type { SlackReviewReason, SlackReviewState, SlackReviewThreadV1 } from '../core/operator/slack-review';
 import {
   botLabel,
   MCP_ACCESS_COMMAND,
@@ -17,15 +18,16 @@ import {
   type BotAccessReason,
   type BotAccessView,
   type BotLabel,
+  type BotReviewsView,
 } from './bots';
 import type { OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
-import { CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
+import { CommandLine, ExternalLink, SectionTitle, StatusDot, type DotTone } from './ui';
 
 type Snapshot = BotAccessSnapshotV1;
 type HerdrReady = Extract<Snapshot['herdr'], { readonly state: 'ok' }>;
 
-function Card({ section, children }: { readonly section: 'mcp' | 'notify' | 'herdr'; readonly children: ReactNode }) {
+function Card({ section, children }: { readonly section: 'mcp' | 'notify' | 'herdr' | 'reviews'; readonly children: ReactNode }) {
   return (
     <section aria-labelledby={`bots-${section}-heading`} data-bots-section={section}
       className="flex min-w-0 flex-col gap-4 rounded-xl border border-kumo-line bg-kumo-base p-4 sm:p-5">{children}</section>
@@ -279,6 +281,84 @@ function HerdrSection({ snapshot, t }: { readonly snapshot: Snapshot; readonly t
   );
 }
 
+// --- Dot reviews ---
+
+const REVIEW_TONE: Readonly<Record<SlackReviewState, DotTone>> = {
+  waiting: 'neutral', acknowledged: 'active', result: 'ok', rejected: 'warn', head_mismatch: 'warn', request_invalid: 'danger',
+};
+const reviewReasonTone = (reason: SlackReviewReason): DotTone => reason === 'slack_pending' ? 'unknown' : reason === 'slack_rate_limited' ? 'warn' : 'danger';
+
+function ReviewState({ thread, t }: { readonly thread: SlackReviewThreadV1; readonly t: OperatorTranslate }) {
+  const count = thread.finding_count;
+  return (
+    <span className="inline-flex items-center gap-1.5 whitespace-nowrap md:w-56 md:shrink-0">
+      <StatusDot tone={REVIEW_TONE[thread.state]} pulse={thread.state === 'acknowledged'} />
+      {t(`bots.reviews.state.${thread.state}`)}
+      {count !== null && <span data-review-findings={count}>· {t(count === 1 ? 'bots.reviews.findingsOne' : 'bots.reviews.findings', { count })}</span>}
+    </span>
+  );
+}
+
+function ReviewText({ text, t }: { readonly text: SlackReviewThreadV1['text']; readonly t: OperatorTranslate }) {
+  if (text.state === 'none') return <p className="text-xs text-kumo-subtle" data-review-text="none">{t('bots.reviews.text.none')}</p>;
+  if (text.state === 'text_withheld') return <p className="text-xs text-kumo-warning" data-review-text="text_withheld">{t('bots.reviews.text.withheld')}</p>;
+  return (
+    <div className="flex min-w-0 flex-col gap-1" data-review-text="shown">
+      <pre className="max-h-96 overflow-auto rounded-md bg-kumo-recessed p-3 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]" tabIndex={0}>{text.value}</pre>
+      {text.truncated && <p className="text-xs text-kumo-subtle" data-review-truncated="">{t('bots.reviews.text.truncated')}</p>}
+    </div>
+  );
+}
+
+/** One thread per row; the row opens the dot's result text. */
+function ReviewRow({ thread, now, t }: { readonly thread: SlackReviewThreadV1; readonly now: number; readonly t: OperatorTranslate }) {
+  return (
+    <li className="min-w-0" data-review-thread={thread.thread_ts} data-review-state={thread.state}>
+      <details className="group min-w-0">
+        <summary className="cursor-pointer px-3 py-2.5 text-sm">
+          <span className="[&>*]:me-3 [&>*]:align-middle">
+          <ReviewState thread={thread} t={t} />
+          {thread.repo !== null && thread.pr !== null
+            ? <ExternalLink href={`https://github.com/${thread.repo}/pull/${thread.pr}`} className="font-medium">{`${thread.repo}#${thread.pr}`}</ExternalLink>
+            : <span className="text-kumo-subtle">{t('bots.reviews.noPr')}</span>}
+          {thread.head !== null && <code className="font-mono text-xs text-kumo-subtle" title={thread.head}>{thread.head.slice(0, 7)}</code>}
+          <span className="text-xs text-kumo-subtle"><When at={thread.requested_at} now={now} t={t} /></span>
+          </span>
+        </summary>
+        <div className="px-3 pb-3"><ReviewText text={thread.text} t={t} /></div>
+      </details>
+    </li>
+  );
+}
+
+function ReviewsSection({ view, now, t }: { readonly view: BotReviewsView; readonly now: number; readonly t: OperatorTranslate }) {
+  const title = <SectionTitle id="bots-reviews-heading" count={view.kind === 'ready' ? view.snapshot.threads.length : undefined}><ChatsIcon size={16} aria-hidden="true" />{t('bots.reviews.title')}</SectionTitle>;
+  if (view.kind !== 'ready') {
+    return (
+      <Card section="reviews">
+        {title}
+        {view.kind === 'loading'
+          ? <Line tone="unknown" data-reviews="loading">{t('bots.reviews.loading')}</Line>
+          : <Line tone="danger" data-reviews={view.reason}>{t(`bots.reviews.read.${view.reason}`)}</Line>}
+      </Card>
+    );
+  }
+  const { snapshot } = view;
+  const age = snapshot.collected_at === null ? null : ageWords(snapshot.collected_at, now, t);
+  return (
+    <Card section="reviews">
+      {title}
+      {snapshot.reason !== null && <Line tone={reviewReasonTone(snapshot.reason)} data-reviews={snapshot.reason}>{t(`bots.reviews.reason.${snapshot.reason}`)}</Line>}
+      {snapshot.stale && age !== null && <Line tone="warn" data-reviews-stale="">{t('bots.reviews.stale', { age })}</Line>}
+      {view.refreshFailed && <Line tone="warn" data-reviews-refresh="failed">{t('bots.reviews.refreshFailed')}</Line>}
+      {snapshot.truncated && <Line tone="warn" data-reviews-truncated="">{t('bots.reviews.truncated')}</Line>}
+      {(snapshot.reason === null || snapshot.stale) && (snapshot.threads.length === 0
+        ? <p className="text-sm text-kumo-subtle" data-reviews="empty">{t('bots.reviews.empty')}</p>
+        : <ul className={ROWS}>{snapshot.threads.map(thread => <ReviewRow key={thread.thread_ts} thread={thread} now={now} t={t} />)}</ul>)}
+    </Card>
+  );
+}
+
 // --- Page ---
 
 type PageState =
@@ -299,7 +379,7 @@ const stateName = (state: PageState) => state.kind === 'ready' && state.refreshF
  * Read-only: every control copies a command. Access changes, client revocation
  * and the notify install are credential and permission operations the user runs.
  */
-export function BotsPage({ view, now, t }: { readonly view: BotAccessView; readonly now: number; readonly t: OperatorTranslate }) {
+export function BotsPage({ view, reviews, now, t }: { readonly view: BotAccessView; readonly reviews: BotReviewsView; readonly now: number; readonly t: OperatorTranslate }) {
   const state = pageState(view);
   return (
     <div className="flex min-w-0 flex-col gap-5" data-bots-page={stateName(state)} data-bots-reason={state.kind === 'failed' ? state.reason : undefined}>
@@ -317,6 +397,7 @@ export function BotsPage({ view, now, t }: { readonly view: BotAccessView; reado
         <NotifySection snapshot={state.snapshot} now={now} t={t} />
         <HerdrSection snapshot={state.snapshot} t={t} />
       </>}
+      <ReviewsSection view={reviews} now={now} t={t} />
     </div>
   );
 }
