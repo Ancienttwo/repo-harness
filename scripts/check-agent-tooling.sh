@@ -530,13 +530,6 @@ function wazaHostRuntimeRoot(host) {
   return host === "claude" ? "~/.claude" : "~/.codex";
 }
 
-function buildWazaHostSyncCommand(host) {
-  const root = wazaHostRuntimeRoot(host);
-  const skillsList = WAZA_MANAGED_SKILLS.join(" ");
-  const rulesList = WAZA_SHARED_RULES.join(" ");
-  return `mkdir -p ${root}/skills ${root}/rules; for d in ${skillsList}; do if [ ! -L ${root}/skills/$d ]; then rsync -a --delete ~/.agents/skills/$d/ ${root}/skills/$d/; fi; done; for f in ${rulesList}; do cp ~/.agents/rules/$f ${root}/rules/$f; done`;
-}
-
 function buildWazaHostVerifyCommand(host) {
   const root = wazaHostRuntimeRoot(host);
   const skillsList = WAZA_MANAGED_SKILLS.join(" ");
@@ -744,7 +737,8 @@ function detectWaza() {
   const status = summarizeWazaStatus(hostStatuses);
   // codex is the universal Skills CLI agent; it writes the staging copy for every host mode.
   const installCommand = "bunx skills add tw93/Waza -g -a codex -s think hunt check health -y";
-  const syncCommand = SELECTED_HOSTS.map((host) => buildWazaHostSyncCommand(host)).join(" && ");
+  // `repo-harness install` re-projects the host skill links and shared rules from staging.
+  const syncCommand = `repo-harness install --target ${hostMode}`;
   const verifyCommand = SELECTED_HOSTS.map((host) => buildWazaHostVerifyCommand(host)).join(" && ");
 
   return {
@@ -764,7 +758,6 @@ function detectWaza() {
     codex_primary_path: path.join(HOME, ".codex", "skills"),
     staging_cache_path: WAZA_STAGING_DIR,
     staging_rules_path: WAZA_STAGING_RULES_DIR,
-    sync_mode: "codex-first-copy-from-staging",
     host_drift_policy: "report-per-host-directory-rule-staging-and-upstream-drift",
     skills_cli_path: skillsCliPath,
     skills_cli_status: !skillsCliPath
@@ -886,7 +879,7 @@ function detectRuntimeCapabilities(waza) {
     ),
     rsync: commandCapability(
       "rsync",
-      "Waza staging-to-Codex sync and installed-copy runtime mirroring",
+      "installed-copy runtime mirroring",
       "platform-filesystem",
       false
     ),
