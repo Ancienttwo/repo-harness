@@ -468,7 +468,7 @@ test('ordinary PR consumer uses trusted CI head/base once and needs no local art
   expect(moved.blockers.map(blocker => blocker.code)).toContain('base_moved_since_verification');
 });
 
-test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('ordinary and abortable consumers enforce provider review state: %s', async scenario => {
+test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'thread-comments-malformed', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('ordinary and abortable consumers enforce provider review state: %s', async scenario => {
   const source = fakeGh();
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
     const observed = source(args);
@@ -483,6 +483,10 @@ test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'dismi
     if (scenario === 'threads' || scenario === 'outdated-unresolved') pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [{ author: { __typename: 'User' } }] } }];
     if (scenario === 'bot-threads') pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [{ author: { __typename: 'Bot' } }] } }];
     if (scenario === 'deleted-author-threads') pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [{ author: null }] } }];
+    if (scenario === 'thread-comments-malformed') {
+      pr.reviewThreads.nodes = [{ isResolved: false, comments: { nodes: [] } }];
+      Object.assign(pr.reviewThreads.nodes[0]!, { comments: {} });
+    }
     if (scenario === 'outdated-unresolved') Object.assign(pr.reviewThreads.nodes[0]!, { isOutdated: true });
     if (scenario === 'review-truncated') pr.latestOpinionatedReviews.pageInfo.hasNextPage = true;
     if (scenario === 'threads-truncated') pr.reviewThreads.pageInfo.hasNextPage = true;
