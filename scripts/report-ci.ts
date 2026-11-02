@@ -515,7 +515,9 @@ if (import.meta.main) {
       if (report.errors.length) process.exitCode = 1;
     }
   } catch (error) {
-    writeFileSync('.ci-report/pending.json', JSON.stringify({ run_id: selectedRunId, delivery: 'pending', error: message(error) }, null, 2));
+    // A 5xx that escapes reportCI (the initial run read) still names the external owner.
+    const pendingError = providerOutage(error) ? `Provider unavailable (attention_owner: external): ${message(error)}` : message(error);
+    writeFileSync('.ci-report/pending.json', JSON.stringify({ run_id: selectedRunId, delivery: 'pending', error: pendingError }, null, 2));
     throw error;
   }
 }
