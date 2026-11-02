@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-diagnostics.workflow-state
+kind: calls
+source: component.global-runtime-reconciliation.cli-diagnostics
+target: capability.workflow-engine.workflow-state
+intent: "Read the workflow policy and the capability registry authority for the doctor report"
