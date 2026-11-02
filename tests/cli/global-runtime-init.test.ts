@@ -2580,6 +2580,16 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   });
 
+  test('a non-directory staging rules path fails the rule step', () => {
+    withRules(({ home, run }) => {
+      rmSync(join(home, '.agents', 'rules'), { recursive: true });
+      writeFileSync(join(home, '.agents', 'rules'), 'not a directory\n');
+      const setup = run(false);
+      expect(setup.exitCode).toBe(1);
+      expect(setup.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'failed', detail: expect.stringContaining('ENOTDIR') });
+    });
+  });
+
   test('requires an installed profile before it creates new staging rules', () => {
     withRules(({ home, paths, run }) => {
       for (const path of paths) rmSync(path);

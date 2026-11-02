@@ -61,10 +61,10 @@ export function syncWazaSharedRules(
 ): RulesResult {
   if (!home) return { status: 'failed', detail: 'HOME is required' };
   const sourceDir = join(home, '.agents', 'rules');
-  if (!refresh && wazaStagingRulesAbsent(home)) {
-    return { status: 'skipped', detail: `staging rules not found: ${sourceDir}` };
-  }
   try {
+    if (!refresh && wazaStagingRulesAbsent(home)) {
+      return { status: 'skipped', detail: `staging rules not found: ${sourceDir}` };
+    }
     const previous = new Map(wazaRules.files.map((rule) => [rule, readRule(join(sourceDir, rule))]));
     const next = refresh ? fetchRules(env) : previous;
     const missing = wazaRules.files.filter((rule) => next.get(rule) === undefined);
