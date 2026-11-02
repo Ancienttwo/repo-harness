@@ -7,10 +7,11 @@ import { decodeBotAccessSnapshot, type BotAccessSnapshotV1 } from '../../src/cor
 import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
-import { fetchBotAccess, type BotAccessRead, type BotAccessReader } from '../../src/operator-web/bots';
+import { decodeSlackReviews, SLACK_REVIEW_REASONS, slackReviewsUnavailable, type SlackReviewsSnapshotV1 } from '../../src/core/operator/slack-review';
+import { fetchBotAccess, fetchBotReviews, type BotAccessRead, type BotAccessReader, type BotReviewsRead, type BotReviewsReader } from '../../src/operator-web/bots';
 import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
-import { busyBotAccess, degradedBotAccess } from '../../src/operator-web/fixtures/bots';
+import { busyBotAccess, busyBotReviews, degradedBotAccess, degradedBotReviews } from '../../src/operator-web/fixtures/bots';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
@@ -35,6 +36,7 @@ const NOW = Date.now();
 const activity = decodeDevActivitySnapshot(busyDevActivity(NOW));
 const ok = (snapshot: BotAccessSnapshotV1): BotAccessRead => ({ state: 'ok', snapshot: decodeBotAccessSnapshot(snapshot) });
 const serve = (read: BotAccessRead): BotAccessReader => async () => read;
+const reviews = (snapshot: SlackReviewsSnapshotV1): BotReviewsReader => async () => ({ state: 'ok', snapshot: decodeSlackReviews(snapshot) });
 
 /** A copy of a fixture with one change, typed loosely so a change can also break the contract. */
 function edited(snapshot: BotAccessSnapshotV1, change: (raw: Record<string, any>) => void): BotAccessSnapshotV1 {
@@ -43,13 +45,13 @@ function edited(snapshot: BotAccessSnapshotV1, change: (raw: Record<string, any>
   return raw as unknown as BotAccessSnapshotV1;
 }
 
-function props(readBotAccess: BotAccessReader, locale: OperatorLocale = 'en'): OperatorAppProps {
+function props(readBotAccess: BotAccessReader, locale: OperatorLocale = 'en', readBotReviews: BotReviewsReader = reviews(busyBotReviews(NOW))): OperatorAppProps {
   return {
     initialLocale: locale, initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
-    readBotAccess,
+    readBotAccess, readBotReviews,
   };
 }
 
@@ -95,6 +97,8 @@ describe('bots fixtures', () => {
       return herdr.state !== 'ok' ? herdr.reason : herdr.snapshot.state === 'ok' ? 'ok' : herdr.snapshot.reason;
     };
     expect(reads.map(panes)).toEqual(['ok', 'bot_access_pending', 'herdr_version_mismatch']);
+    const reviewReads = await Promise.all(FIXTURE_NAMES.map(name => fixtureProps(name).readBotReviews!(new AbortController().signal)));
+    expect(reviewReads.map(read => read.state === 'ok' ? [read.snapshot.reason, read.snapshot.threads.length] : read.reason)).toEqual([[null, 6], ['slack_pending', 0], ['slack_rate_limited', 6]]);
   });
 });
 
@@ -132,7 +136,7 @@ describe('navigation', () => {
 describe('Bots page', () => {
   test('1-BOTS-P1 one section per path; each repository names its mode and last call', async () => {
     await mount('#bots', props(serve(ok(busyBotAccess(NOW)))));
-    expect(all('[data-bots-section]').map(element => element.getAttribute('data-bots-section'))).toEqual(['mcp', 'notify', 'herdr']);
+    expect(all('[data-bots-section]').map(element => element.getAttribute('data-bots-section'))).toEqual(['mcp', 'notify', 'herdr', 'reviews']);
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.getAttribute('data-mcp-status')).toBe('ready_user');
     expect(commands(mcp)).toEqual([
@@ -192,11 +196,15 @@ describe('Bots page', () => {
     const attributes = (scope: Element) => [scope, ...scope.querySelectorAll('*')]
       .filter(element => element.namespaceURI === 'http://www.w3.org/1999/xhtml')
       .flatMap(element => Array.from(element.attributes).filter(attribute => attribute.name !== 'class').map(attribute => attribute.value));
-    for (const fixture of [busyBotAccess, degradedBotAccess]) {
+    for (const [fixture, reviewFixture] of [[busyBotAccess, busyBotReviews], [degradedBotAccess, degradedBotReviews]] as const) {
       for (const locale of ['en', 'zh'] as const) {
-        await remount('#bots', props(serve(ok(fixture(NOW))), locale));
+        await remount('#bots', props(serve(ok(fixture(NOW))), locale, reviews(reviewFixture(NOW))));
         const scope = document.querySelector('main')!;
-        const shown = [scope.textContent ?? '', freshness()?.textContent ?? '', ...attributes(scope)].join('\n');
+        // The one URL the page shows is a Dot review row's GitHub PR link.
+        const prLinks = all('[data-review-thread] a[href]', scope).map(link => link.getAttribute('href'));
+        expect(prLinks.length).toBeGreaterThan(0);
+        expect(prLinks.every(href => /^https:\/\/github\.com\/[\w.-]+\/[\w.-]+\/pull\/\d+$/u.test(href ?? ''))).toBe(true);
+        const shown = [scope.textContent ?? '', freshness()?.textContent ?? '', ...attributes(scope).filter(value => !prLinks.includes(value))].join('\n');
         expect(shown).not.toMatch(/[a-z][a-z0-9+.-]*:\/\//iu);
         expect(shown).not.toMatch(/(?:^|[\s"'(=])(?:~?\/[\w.-]|[A-Za-z]:\\)/u);
         expect(shown).not.toMatch(/passphrase|口令|token\s*[=:]|bearer\s+\S{8}/iu);
@@ -267,9 +275,58 @@ describe('Bots page', () => {
     await act(async () => all('.operator-header button').find(button => button.textContent === 'Refresh')!.click());
     await settle();
     expect(page().getAttribute('data-bots-page')).toBe('refresh-failed');
-    expect(all('[data-bots-section]')).toHaveLength(3);
+    expect(all('[data-bots-section]')).toHaveLength(4);
     expect(page().textContent).toContain('Refresh failed');
     expect(freshness()?.getAttribute('data-freshness')).toBe('refresh-failed');
+  });
+});
+
+describe('Dot reviews', () => {
+  test('one row per thread with PR link, short head, state, finding count and age; a row opens the result text', async () => {
+    await mount('#bots', props(serve(ok(busyBotAccess(NOW)))));
+    const rows = all('[data-review-thread]', section('reviews'));
+    expect(rows.map(row => [row.getAttribute('data-review-state'), row.querySelector('a')?.textContent ?? null, row.querySelector('code')?.textContent ?? null,
+      row.querySelector('[data-review-findings]')?.getAttribute('data-review-findings') ?? null])).toEqual([
+      ['waiting', 'Ancienttwo/repo-harness#1450', '7c41e0a', null],
+      ['acknowledged', 'Ancienttwo/repo-harness#1449', 'a3f9c2d', null],
+      ['result', 'Ancienttwo/repo-harness#1440', '15dbb25', '1'],
+      ['head_mismatch', 'Ancienttwo/repo-harness#1438', 'a3f9c2d', '0'],
+      ['rejected', 'Ancienttwo/repo-harness#1436', '7c41e0a', null],
+      ['request_invalid', null, null, null],
+    ]);
+    const result = rows[2]!;
+    expect(result.querySelector('a')?.getAttribute('href')).toBe('https://github.com/Ancienttwo/repo-harness/pull/1440');
+    expect(result.querySelector('summary')?.textContent).toMatch(/^result· 1 findingAncienttwo\/repo-harness#1440 *15dbb253h ago$/u);
+    const details = result.querySelector('details')!;
+    expect(details.open).toBe(false);
+    await act(async () => result.querySelector<HTMLElement>('summary')!.click());
+    expect(details.open).toBe(true);
+    expect(result.querySelector('[data-review-text="shown"] pre')?.textContent).toContain('P2 docs/reference-configs/dot-review-protocol.md:41');
+    expect(rows[4]!.querySelector('[data-review-text]')?.getAttribute('data-review-text')).toBe('text_withheld');
+    expect(rows[5]!.querySelector('summary')?.textContent).toContain('No valid PR or head');
+    expect(section('reviews').querySelector('[data-reviews-truncated]')).toBeNull();
+  });
+
+  test('each unavailable reason shows by name; a rate limit keeps the last threads marked stale', async () => {
+    for (const reason of SLACK_REVIEW_REASONS.filter(reason => reason !== 'slack_rate_limited')) {
+      await remount('#bots', props(serve(ok(busyBotAccess(NOW))), 'en', reviews(slackReviewsUnavailable(reason))));
+      const reviewsSection = section('reviews');
+      expect([reviewsSection.querySelector('[data-reviews]')?.getAttribute('data-reviews'), all('[data-review-thread]', reviewsSection).length]).toEqual([reason, 0]);
+    }
+    await remount('#bots', props(serve(ok(busyBotAccess(NOW))), 'zh', reviews(slackReviewsUnavailable('slack_bot_invalid'))));
+    expect(section('reviews').textContent).toContain('有多个 Bot 带 Slack bot ID');
+    await remount('#bots', props(serve(ok(busyBotAccess(NOW))), 'en', reviews(degradedBotReviews(NOW))));
+    const stale = section('reviews');
+    expect(stale.querySelector('[data-reviews]')?.getAttribute('data-reviews')).toBe('slack_rate_limited');
+    expect(stale.querySelector('[data-reviews-stale]')?.textContent).toBe('Showing threads collected 7m ago.');
+    expect(stale.querySelector('[data-reviews-truncated]')?.textContent).toContain('Incomplete list');
+    expect(all('[data-review-thread]', stale)).toHaveLength(6);
+    // A failed read of the route names its own reason and never hides the Bot access sections.
+    for (const reason of ['bot_reviews_invalid', 'unreachable'] as const) {
+      await remount('#bots', props(serve(ok(busyBotAccess(NOW))), 'en', async () => ({ state: 'unavailable', reason })));
+      expect(section('reviews').querySelector('[data-reviews]')?.getAttribute('data-reviews')).toBe(reason);
+      expect(all('[data-bots-section]')).toHaveLength(4);
+    }
   });
 });
 
@@ -299,6 +356,35 @@ describe('Bot access reader', () => {
         'operator_bot_access', 'bot_access_pending', 'bot_access_unavailable', 'bot_access_invalid', 'unreachable', 'unreachable', 'unreachable', 'unreachable',
       ]);
       expect(new Set(requests)).toEqual(new Set(['GET /api/v1/bot-access']));
+    } finally { globalThis.fetch = original; }
+  });
+});
+
+describe('Dot review reader', () => {
+  test('decodes the snapshot strictly and maps any other answer to a read reason', async () => {
+    const withText = (text: unknown) => { const raw = structuredClone(busyBotReviews(NOW)) as unknown as Record<string, any>; raw.threads[2].text = text; return raw; };
+    const answers: (() => Response)[] = [
+      () => Response.json(busyBotReviews(NOW)),
+      () => Response.json(slackReviewsUnavailable('slack_auth_failed')),
+      () => Response.json(withText({ state: 'shown', truncated: false, value: 'token xoxb-1234567890-abcdefghijkl' })),
+      () => Response.json({ ...busyBotReviews(NOW), channel_id: 'C0SECRET' }),
+      () => Response.json({ error: { code: 'bot_reviews_invalid', message: 'refused', next_action: 'retry' } }, { status: 503 }),
+      () => Response.json({ error: { code: 'invalid_request', message: 'refused', next_action: 'retry' } }, { status: 400 }),
+      () => { throw new TypeError('connection refused'); },
+    ];
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
+      requests.push(`${options?.method ?? 'GET'} ${String(url)}`);
+      return answers[requests.length - 1]!();
+    }) as unknown as typeof fetch;
+    try {
+      const results: BotReviewsRead[] = [];
+      for (const _ of answers) results.push(await fetchBotReviews(new AbortController().signal));
+      expect(results.map(result => result.state === 'ok' ? result.snapshot.reason ?? 'current' : result.reason)).toEqual([
+        'current', 'slack_auth_failed', 'bot_reviews_invalid', 'bot_reviews_invalid', 'bot_reviews_invalid', 'unreachable', 'unreachable',
+      ]);
+      expect(new Set(requests)).toEqual(new Set(['GET /api/v1/bot-reviews']));
     } finally { globalThis.fetch = original; }
   });
 });
