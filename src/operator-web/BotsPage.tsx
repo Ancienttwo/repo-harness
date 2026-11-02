@@ -351,6 +351,7 @@ function ReviewsSection({ view, now, t }: { readonly view: BotReviewsView; reado
       {snapshot.reason !== null && <Line tone={reviewReasonTone(snapshot.reason)} data-reviews={snapshot.reason}>{t(`bots.reviews.reason.${snapshot.reason}`)}</Line>}
       {snapshot.stale && age !== null && <Line tone="warn" data-reviews-stale="">{t('bots.reviews.stale', { age })}</Line>}
       {view.refreshFailed && <Line tone="warn" data-reviews-refresh="failed">{t('bots.reviews.refreshFailed')}</Line>}
+      {snapshot.truncated && <Line tone="warn" data-reviews-truncated="">{t('bots.reviews.truncated')}</Line>}
       {(snapshot.reason === null || snapshot.stale) && (snapshot.threads.length === 0
         ? <p className="text-sm text-kumo-subtle" data-reviews="empty">{t('bots.reviews.empty')}</p>
         : <ul className={ROWS}>{snapshot.threads.map(thread => <ReviewRow key={thread.thread_ts} thread={thread} now={now} t={t} />)}</ul>)}

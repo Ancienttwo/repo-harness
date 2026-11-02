@@ -115,7 +115,7 @@ function thread(now: number, ageMs: number, fields: Omit<SlackReviewThreadV1, 't
 /** One thread per state, newest first, as the collector lists them. Result text never holds a URL or a path. */
 export function busyBotReviews(now: number): SlackReviewsSnapshotV1 {
   return {
-    protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, collected_at: at(now - 25_000),
+    protocol: 1, kind: 'operator_bot_reviews', reason: null, stale: false, truncated: false, collected_at: at(now - 25_000),
     threads: [
       thread(now, 4 * MINUTE, { repo: HARNESS_REPO, pr: 1450, head: HEAD_B, state: 'waiting', finding_count: null, text: { state: 'none' } }),
       thread(now, 9 * MINUTE, { repo: HARNESS_REPO, pr: 1449, head: HEAD_C, state: 'acknowledged', finding_count: null, text: { state: 'none' }, repliedAfterMs: 2 * MINUTE }),
@@ -129,7 +129,7 @@ export function busyBotReviews(now: number): SlackReviewsSnapshotV1 {
   };
 }
 
-/** Slack rate-limited the newest cycle: the previous threads stay, marked stale. */
+/** Slack rate-limited the newest cycle: the previous threads stay, marked stale, from a history longer than one page. */
 export function degradedBotReviews(now: number): SlackReviewsSnapshotV1 {
-  return { ...busyBotReviews(now - 7 * MINUTE), reason: 'slack_rate_limited', stale: true };
+  return { ...busyBotReviews(now - 7 * MINUTE), reason: 'slack_rate_limited', stale: true, truncated: true };
 }

@@ -304,6 +304,7 @@ describe('Dot reviews', () => {
     expect(result.querySelector('[data-review-text="shown"] pre')?.textContent).toContain('P2 docs/reference-configs/dot-review-protocol.md:41');
     expect(rows[4]!.querySelector('[data-review-text]')?.getAttribute('data-review-text')).toBe('text_withheld');
     expect(rows[5]!.querySelector('summary')?.textContent).toContain('No valid PR or head');
+    expect(section('reviews').querySelector('[data-reviews-truncated]')).toBeNull();
   });
 
   test('each unavailable reason shows by name; a rate limit keeps the last threads marked stale', async () => {
@@ -318,6 +319,7 @@ describe('Dot reviews', () => {
     const stale = section('reviews');
     expect(stale.querySelector('[data-reviews]')?.getAttribute('data-reviews')).toBe('slack_rate_limited');
     expect(stale.querySelector('[data-reviews-stale]')?.textContent).toBe('Showing threads collected 7m ago.');
+    expect(stale.querySelector('[data-reviews-truncated]')?.textContent).toContain('Incomplete list');
     expect(all('[data-review-thread]', stale)).toHaveLength(6);
     // A failed read of the route names its own reason and never hides the Bot access sections.
     for (const reason of ['bot_reviews_invalid', 'unreachable'] as const) {
