@@ -1,16 +1,46 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 
-import {
-  externalSourceDigest,
-  validateExternalSourceFetchLimits,
-  type ExternalSourceFetchLimitsV1,
-} from '../../core/external-sources/issue-observation';
+export interface ExternalSourceFetchLimitsV1 {
+  readonly max_pages: number;
+  readonly max_issues: number;
+  readonly max_body_bytes: number;
+  readonly max_total_bytes: number;
+  readonly deadline_ms: number;
+}
+
+class ExternalSourceProtocolError extends Error {
+  constructor(readonly code: 'external_source_invalid', message: string) {
+    super(message);
+    this.name = 'ExternalSourceProtocolError';
+  }
+}
+
+function failLimits(message: string): never {
+  throw new ExternalSourceProtocolError('external_source_invalid', message);
+}
+
+function positiveInteger(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 1) failLimits(`${label} must be a positive integer`);
+  return value as number;
+}
+
+export function validateExternalSourceFetchLimits(value: unknown): ExternalSourceFetchLimitsV1 {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) failLimits('limits must be an object');
+  const limits = value as Record<string, unknown>;
+  if (JSON.stringify(Object.keys(limits).sort()) !== JSON.stringify(['deadline_ms', 'max_body_bytes', 'max_issues', 'max_pages', 'max_total_bytes'])) failLimits('limits fields are invalid');
+  return Object.freeze({
+    max_pages: positiveInteger(limits.max_pages, 'limits.max_pages'),
+    max_issues: positiveInteger(limits.max_issues, 'limits.max_issues'),
+    max_body_bytes: positiveInteger(limits.max_body_bytes, 'limits.max_body_bytes'),
+    max_total_bytes: positiveInteger(limits.max_total_bytes, 'limits.max_total_bytes'),
+    deadline_ms: positiveInteger(limits.deadline_ms, 'limits.deadline_ms'),
+  });
+}
 
 export interface ExternalSourcesOffPolicyV1 {
   readonly version: 1;
   readonly mode: 'off';
-  readonly policy_revision: string;
 }
 
 export interface ExternalSourcesManualGithubPolicyV1 {
@@ -24,7 +54,6 @@ export interface ExternalSourcesManualGithubPolicyV1 {
       | { readonly kind: 'issue_numbers'; readonly issue_numbers: readonly number[] };
     readonly limits: ExternalSourceFetchLimitsV1;
   };
-  readonly policy_revision: string;
 }
 
 export type ExternalSourcesPolicyV1 = ExternalSourcesOffPolicyV1 | ExternalSourcesManualGithubPolicyV1;
@@ -94,12 +123,12 @@ function repository(value: unknown): string {
 }
 
 export function parseExternalSourcesPolicy(value: unknown): ExternalSourcesPolicyV1 {
-  if (value === undefined) return Object.freeze({ version: 1, mode: 'off', policy_revision: externalSourceDigest({ version: 1, mode: 'off' }) });
+  if (value === undefined) return Object.freeze({ version: 1, mode: 'off' });
   const policy = object(value, 'external_sources');
   if (policy.version !== 1) fail('external_sources.version must be 1');
   if (policy.mode === 'off') {
     exact(policy, ['mode', 'version'], 'external_sources');
-    return Object.freeze({ version: 1, mode: 'off', policy_revision: externalSourceDigest({ version: 1, mode: 'off' }) });
+    return Object.freeze({ version: 1, mode: 'off' });
   }
   if (policy.mode !== 'manual') fail('external_sources.mode must be off or manual');
   exact(policy, ['github', 'mode', 'version'], 'external_sources');
@@ -111,7 +140,7 @@ export function parseExternalSourcesPolicy(value: unknown): ExternalSourcesPolic
   if (selected.kind === 'issue_numbers' && selected.issue_numbers.length > limits.max_issues) {
     fail('external_sources.github.selection.issue_numbers exceeds limits.max_issues');
   }
-  const normalized = Object.freeze({
+  return Object.freeze({
     version: 1 as const,
     mode: 'manual' as const,
     github: Object.freeze({
@@ -121,7 +150,6 @@ export function parseExternalSourcesPolicy(value: unknown): ExternalSourcesPolic
       limits,
     }),
   });
-  return Object.freeze({ ...normalized, policy_revision: externalSourceDigest(normalized) });
 }
 
 export function readExternalSourcesPolicy(repoRoot: string): ExternalSourcesPolicyV1 {

@@ -53,7 +53,6 @@ import { buildSeatsCommand } from './commands/seats';
 import { buildCatchUpCommand } from './commands/catch-up';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
-import { buildExternalSourceCommand } from './commands/external-source';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
 import { configureRequiredHerdrSkill } from './commands/herdr-skill';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from './mcp/audit';
@@ -164,7 +163,6 @@ export const SUBCOMMANDS = [
   'fleet',
   'architecture-projection',
   'architecture-debt',
-  'external-source',
   'refactor',
   'seats',
 ] as const;
@@ -953,7 +951,6 @@ export function buildProgram(): Command {
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildArchitectureDebtCommand());
   program.addCommand(buildStrategyCommand());
-  program.addCommand(buildExternalSourceCommand());
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
   program.addCommand(buildSeatsCommand());
   program
