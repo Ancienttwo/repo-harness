@@ -88,10 +88,26 @@ function applyForFile(filePath: string): void {
 
 const CANDIDATES = ['.codex/hooks.json', '.claude/settings.json'] as const;
 
-/** The file path under the real parent directory; null when the parent does not exist, so no file is there to read or write. */
-function realFilePath(filePath: string): string | null {
+/**
+ * The real identity of a file: its full real path when it exists (a final
+ * symlink is followed), else its name under the real parent directory. Null
+ * when the parent does not exist, so no file is there to read or write.
+ * Resolution errors propagate, so a path that cannot be resolved fails closed.
+ */
+function fileIdentity(filePath: string): string | null {
+  if (fs.existsSync(filePath)) return fs.realpathSync(filePath);
   const dir = path.dirname(filePath);
   return fs.existsSync(dir) ? path.join(fs.realpathSync(dir), path.basename(filePath)) : null;
+}
+
+/**
+ * True when the file is a user-level adapter (<home>/.claude/settings.json or
+ * <home>/.codex/hooks.json) by real identity: a repository rooted at $HOME, or
+ * a dotfiles repository whose file a home adapter links to.
+ */
+export function isUserLevelAdapter(filePath: string, home: string): boolean {
+  const identity = fileIdentity(filePath);
+  return identity !== null && CANDIDATES.some((rel) => fileIdentity(path.join(home, rel)) === identity);
 }
 
 export function runMigrate(opts: MigrateOptions = {}): MigratePlan {
@@ -102,14 +118,9 @@ export function runMigrate(opts: MigrateOptions = {}): MigratePlan {
   if (repoRoot === null) {
     throw new Error(`repo-harness migrate: cwd is not in a git repository: ${cwd}`);
   }
-  // A repository whose root is $HOME has the user-level adapters as its candidates.
-  const userAdapters = new Set(
-    CANDIDATES.map((rel) => realFilePath(path.join(home, rel))).filter((real): real is string => real !== null),
-  );
   const candidates = CANDIDATES.map((rel) => path.join(repoRoot, rel));
   for (const filePath of candidates) {
-    const real = realFilePath(filePath);
-    if (real !== null && userAdapters.has(real)) {
+    if (isUserLevelAdapter(filePath, home)) {
       throw new Error(`repo-harness migrate: refusing user-level adapter: ${filePath}`);
     }
   }

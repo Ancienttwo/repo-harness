@@ -66,23 +66,41 @@ const LEGACY_WITH_SIBLING = `${JSON.stringify(
 
 describe('migrate command (Phase 1C)', () => {
   // The home path keeps its tmpdir spelling (/var on macOS), and git reports the real path (/private/var).
-  for (const [name, homeIsRepo, error] of [
-    ['cwd is a HOME that is not in a repository', false, 'cwd is not in a git repository'],
-    ['the repository root is HOME', true, 'refusing user-level adapter'],
+  // The link rows put the Claude adapter in HOME/dotfiles, a repository, behind a file or a directory symlink.
+  for (const [name, layout, error] of [
+    ['cwd is a HOME that is not in a repository', 'home', 'cwd is not in a git repository'],
+    ['the repository root is HOME', 'home-repo', 'refusing user-level adapter'],
+    ['a HOME adapter file links into a dotfiles repository', 'file-link', 'refusing user-level adapter'],
+    ['a HOME adapter directory links into a dotfiles repository', 'dir-link', 'refusing user-level adapter'],
   ] as const) {
     test(`issue 1650 migrate --apply refuses the user-level adapters when ${name}`, () => {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-migrate-home-'));
       try {
-        if (homeIsRepo) initGitRepo(home);
+        const linked = layout === 'file-link' || layout === 'dir-link';
+        const dotfiles = path.join(home, 'dotfiles');
+        if (layout === 'home-repo') initGitRepo(home);
+        if (linked) {
+          fs.mkdirSync(dotfiles);
+          initGitRepo(dotfiles);
+        }
         const adapters = { '.codex/hooks.json': LEGACY_CODEX, '.claude/settings.json': LEGACY_WITH_SIBLING };
         for (const [rel, text] of Object.entries(adapters)) {
-          fs.mkdirSync(path.join(home, path.dirname(rel)), { recursive: true });
-          fs.writeFileSync(path.join(home, rel), text);
+          const behindLink = linked && rel === '.claude/settings.json';
+          const file = path.join(behindLink ? dotfiles : home, rel);
+          fs.mkdirSync(path.dirname(file), { recursive: true });
+          fs.writeFileSync(file, text);
+          if (behindLink && layout === 'file-link') {
+            fs.mkdirSync(path.join(home, '.claude'));
+            fs.symlinkSync(file, path.join(home, rel));
+          }
+          if (behindLink && layout === 'dir-link') fs.symlinkSync(path.dirname(file), path.join(home, '.claude'));
         }
-        expect(() => runMigrate({ cwd: home, home, apply: true })).toThrow(error);
+        expect(() => runMigrate({ cwd: linked ? dotfiles : home, home, apply: true })).toThrow(error);
         for (const [rel, text] of Object.entries(adapters)) {
+          const real = fs.realpathSync(path.join(home, rel));
           expect(fs.readFileSync(path.join(home, rel), 'utf8')).toBe(text);
-          expect(fs.readdirSync(path.join(home, path.dirname(rel)))).toEqual([path.basename(rel)]);
+          expect(fs.readFileSync(real, 'utf8')).toBe(text);
+          expect(fs.readdirSync(path.dirname(real))).toEqual([path.basename(real)]);
         }
       } finally {
         fs.rmSync(home, { recursive: true, force: true });

@@ -156,7 +156,7 @@ describe('init-hook command', () => {
       mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
       mkdirSync(join(repo, '.ai/harness'), { recursive: true });
       writeFileSync(join(repo, library), readUpgradeFixture('upgrade-v0.10-project', library));
-      const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
+      const run = (homeDir = home) => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: homeDir },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       expect(run().leftovers).toEqual({ total: 1, removable: 0 });
 
@@ -175,7 +175,7 @@ describe('init-hook command', () => {
   test('flags a project host config only when it holds a repo-harness command', () => {
     withTempHome((home, repo) => {
       initGitRepo(repo);
-      const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
+      const run = (homeDir = home) => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: homeDir },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       const claude = join(repo, '.claude/settings.json');
       const codex = join(repo, '.codex/hooks.json');
@@ -205,6 +205,12 @@ describe('init-hook command', () => {
       for (const id of ['legacy.project-claude-settings', 'legacy.project-codex-hooks']) {
         expect(report.checks.find((entry) => entry.id === id)).toMatchObject({ status: 'na', detail: `cwd is not in a git repository: ${repo}` });
       }
+      expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
+
+      // A repository rooted at HOME holds the user-level adapters, which migrate refuses.
+      initGitRepo(repo);
+      report = run(repo);
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-codex-hooks')).toMatchObject({ status: 'na', detail: `user-level adapter, not a project adapter: ${codex}` });
       expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
     });
   });

@@ -27,6 +27,7 @@ import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-c
 import { planAdoption } from '../../effects/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
 import { resolveRepoRoot } from '../hook/runtime';
+import { isUserLevelAdapter } from './migrate';
 import {
   GLOBAL_RULES_UNBALANCED,
   globalContextPath,
@@ -744,7 +745,7 @@ function legacyAdapterDetail(filePath: string): { readonly legacy: boolean; read
     : { legacy: false, text: `no repo-harness hook command in ${filePath}` };
 }
 
-function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean, actions: ActionLedger): InitHookCheck[] {
+function legacyChecks(cwd: string, home: string, target: InitHookTarget, checkUpdates: boolean, actions: ActionLedger): InitHookCheck[] {
   const ids = ['legacy.project-claude-settings', 'legacy.project-codex-hooks'] as const;
   const repoRoot = resolveRepoRoot(cwd);
   // Outside a repository, <cwd>/.claude and <cwd>/.codex can be the user-level adapters (cwd = $HOME).
@@ -765,6 +766,17 @@ function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean
   const present: string[] = [];
   const presentChecks: string[] = [];
   for (const entry of files) {
+    // A repository rooted at $HOME, or a dotfiles file behind a home adapter link, is the user-level adapter.
+    if (isUserLevelAdapter(entry.filePath, home)) {
+      checks.push({
+        id: entry.id,
+        title: 'Retired repo-local host adapter config',
+        status: 'na',
+        source: 'legacy',
+        detail: `user-level adapter, not a project adapter: ${entry.filePath}`,
+      });
+      continue;
+    }
     const detail = legacyAdapterDetail(entry.filePath);
     checks.push({
       id: entry.id,
@@ -838,7 +850,7 @@ export function buildSetupCheck(ports: DoctorPorts, opts: InitHookOptions = {}):
     ...globalRulesChecks(target, opts.env, sourceRoot, checkUpdates, actions),
     ...runtimeCapabilityChecks(toolingProbe.report, target, checkUpdates, actions),
     ...toolingChecks(toolingProbe.report, target, checkUpdates, actions, toolingProbe.error),
-    ...legacyChecks(cwd, target, checkUpdates, actions),
+    ...legacyChecks(cwd, homeDir(opts.env), target, checkUpdates, actions),
   ];
 
   // Same planner as `upgrade`: items a current operator keep decision covers are not leftovers.
