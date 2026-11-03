@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process';
+import { spawn, type ChildProcessByStdio } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
 import { constants as osConstants } from 'node:os';
 import { type Readable, type Writable } from 'node:stream';
@@ -70,8 +70,13 @@ function writeOutput(output: Writable, bytes: Uint8Array, signal?: AbortSignal):
 }
 
 async function captureCodex(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, cache: CaptureCache): Promise<number> {
+  // Listen before spawn: a signal while spawn() runs would take the default action and orphan the child.
+  const interrupt = () => stop('SIGINT'), terminate = () => stop('SIGTERM');
+  process.on('SIGINT', interrupt); process.on('SIGTERM', terminate);
+  let child: ChildProcessByStdio<Writable, Readable, null>;
   // stderr bypasses the tap. Capture cannot mistake diagnostics for JSON-RPC.
-  const child = spawn(options.argv[0], options.argv.slice(1), { cwd: options.cwd, env: options.env, stdio: ['pipe', 'pipe', 'inherit'] });
+  try { child = spawn(options.argv[0], options.argv.slice(1), { cwd: options.cwd, env: options.env, stdio: ['pipe', 'pipe', 'inherit'] }); }
+  catch (error) { process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', terminate); throw error; }
   let forceStop: ReturnType<typeof setTimeout> | undefined;
   const outputAbort = new AbortController();
   const stop = (signal: NodeJS.Signals) => {
@@ -84,8 +89,6 @@ async function captureCodex(options: RuntimeCaptureOptions, io: RuntimeCaptureIO
   }, OUTPUT_RETIREMENT_MS); };
   const abortOutput = () => { cache.transportIncomplete(); child.stdout.destroy(); };
   outputAbort.signal.addEventListener('abort', abortOutput, { once: true });
-  const interrupt = () => stop('SIGINT'), terminate = () => stop('SIGTERM');
-  process.on('SIGINT', interrupt); process.on('SIGTERM', terminate);
   const decoder = new CodexRuntimeDecoder(observations => cache.observe(observations), () => cache.unavailable());
   const exited = new Promise<number>((resolve, reject) => { child.once('error', () => reject(new Error('runtime_capture_child_unavailable'))); child.once('exit', (code, signal) => { cache.disconnected(); retireOutput(); resolve(exitCode(code, signal)); }); });
   let inputError: Error | null = null;
