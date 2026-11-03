@@ -390,23 +390,22 @@ and verify `herdr --version` reports at least that pinned `min_version`.
 `check-agent-tooling.sh --strict-readiness` reads the same key and fails if herdr is
 missing, unusable, or older than the pin; `setup check` projects `runtime.herdr`. Repo-harness does not install it or edit user Herdr config.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
-`repo-harness install` and `repo-harness update` combine the CLI reference from
-`herdr --skill` with the caller-context policy in
-`assets/reference-configs/herdr-skill-context.md`. The shared renderer replaces
-the binary's introductory environment gate and rejects an unknown section layout.
-Both hosts receive the same generated skill. When Codex is selected, an existing
+`repo-harness install` and `repo-harness update` put the caller-context policy in
+`assets/reference-configs/herdr-skill-context.md` before the hc manual from
+`hc --skill`. The shared renderer keeps the manual verbatim and rejects output
+that is not the hc manual. Both hosts receive the same generated skill. When Codex is selected, an existing
 shared copy at `~/.agents/skills/herdr` is also updated and checked because Codex
 can discover it. Claude-only operations leave that shared copy unchanged.
 Install refuses to replace a
 user-edited or unowned copy. Strict readiness compares against the same renderer.
 Missing tool environment variables do not prove that the user is outside Herdr.
-Read-only discovery lists running sessions and panes by the task's exact path.
-Reuse a suitable task reviewer or create a new pane in the matched workspace.
+Read-only discovery lists live hc terminals (`hc ls --json`) by the task's exact path.
+Reuse a suitable task reviewer or start a new terminal at the task path.
 Path matching selects a location; it does not transfer another agent's task.
-Use explicit session and pane IDs for control after discovery.
+Use explicit hc terminal addresses for control after discovery.
 The persistent reviewer still requires POSIX process groups: use macOS/Linux or
 WSL. Native Windows review lifecycle support is not implied by Herdr support.
-Admitted task sessions start only in a Herdr pane, so they and their Task Inbox and operator diff consumers are POSIX-only; on Windows, session start fails closed with `herdr_endpoint_platform_unsupported`.
+Admitted task sessions start only in an hc terminal, so they and their Task Inbox and operator diff consumers are POSIX-only.
 Drain old tmux reviewers with the previous repo-harness version before upgrading.
 No runtime or collaboration path automatically falls back to tmux.
 
@@ -720,7 +719,7 @@ network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
   `~/.codex/agents/orchestrator.toml`, and the checker does not expect one.
   Start it as a long-lived session with `claude --agent orchestrator`. It is
   the coordinator and integrator seat of `repo-harness-issue-flow`
-  (`opus/xhigh`, read-only tools plus `gh` and `herdr agent prompt`). It has no
+  (`opus/xhigh`, read-only tools plus `gh` and `hc send`). It has no
   Codex target because a Codex fleet TOML runs in a read-only sandbox without
   network access, which cannot run `gh`.
 

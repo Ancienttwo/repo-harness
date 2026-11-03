@@ -1,9 +1,11 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from "fs";
+import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
+import { seatPaneName } from "../../src/core/operator/seat-launch";
 import { DEFAULT_SEATS_CONFIG } from "../../src/core/operator/seats-settings";
+import { repoHarnessRepoIdFor } from "../../src/effects/repo-registry";
 
 const CLI = join(import.meta.dir, "..", "..", "src/cli/index.ts");
 
@@ -35,9 +37,9 @@ function withHome(seats: unknown, fn: (home: string) => void) {
   }
 }
 
-function run(env: Record<string, string>, args: string[]) {
+function run(env: Record<string, string>, args: string[], cwd?: string) {
   const { CLAUDE_CONFIG_DIR: _inherited, ...base } = process.env;
-  const result = spawnSync("bun", [CLI, "seats", "argv", ...args], { env: { ...base, ...env }, encoding: "utf8" });
+  const result = spawnSync("bun", [CLI, "seats", "argv", ...args], { env: { ...base, ...env }, encoding: "utf8", cwd });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }
 
@@ -52,6 +54,34 @@ function values(args: string[], flag: string): string[] {
   return args.slice(start + 1, end);
 }
 const tools = (args: string[]) => values(args, "--tools");
+
+const git = (cwd: string, ...args: string[]) => {
+  const result = spawnSync("git", args, { cwd, encoding: "utf8" });
+  if (result.status !== 0) throw new Error(result.stderr);
+};
+
+/** The test preload sets REPO_HARNESS_HOME, so the registry of `home` is named explicitly. */
+const registryEnv = (home: string) => ({ HOME: home, REPO_HARNESS_HOME: join(home, ".repo-harness") });
+
+/** A primary checkout with one commit, a linked worktree of it, and its registry entry with `panePrefix` when given. */
+function withRepository(home: string, panePrefix: string | undefined, fn: (repo: string, worktree: string) => void) {
+  const repo = realpathSync(mkdtempSync(join(tmpdir(), "seats-argv-repo-")));
+  const worktree = `${repo}-wt`;
+  try {
+    git(repo, "init", "-q");
+    git(repo, "-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "--allow-empty", "-m", "init");
+    git(repo, "worktree", "add", "-q", worktree);
+    const at = "2026-11-03T00:00:00.000Z";
+    const entry = { id: repoHarnessRepoIdFor(repo), path: repo, accessMode: "read_only", source: "manual", registeredAt: at, lastSeenAt: at };
+    mkdirSync(join(home, ".repo-harness"), { recursive: true });
+    writeFileSync(join(home, ".repo-harness", "registered-repos.json"),
+      JSON.stringify({ version: 1, authorizationRevision: 0, repos: [panePrefix === undefined ? entry : { ...entry, panePrefix }] }));
+    fn(repo, worktree);
+  } finally {
+    rmSync(worktree, { recursive: true, force: true });
+    rmSync(repo, { recursive: true, force: true });
+  }
+}
 const denied = (args: string[]) => values(args, "--disallowedTools");
 
 describe("repo-harness seats argv", () => {
@@ -202,12 +232,56 @@ describe("repo-harness seats argv", () => {
 
   test("the seat labels hold the GitHub repository id and the dispatch numbers, and need --repository-id", () => {
     withHome(undefined, (home) => {
-      const worker = JSON.parse(argv(home, "worker", "--repository-id", "1186405141", "--issue", "1473", "--pr", "1521", "--parent", "1000", "--json").stdout);
-      expect(worker.labels).toEqual(["repo-harness.seat=worker", "repo-harness.repository=1186405141", "repo-harness.issue=1473", "repo-harness.pr=1521", "repo-harness.parent=1000"]);
+      // With --repository-id the command also names the pane, so it runs in a registered checkout with a prefix.
+      withRepository(home, "rh", (repo) => {
+        const worker = JSON.parse(run(registryEnv(home), ["worker", "--repository-id", "1186405141", "--issue", "1473", "--pr", "1521", "--parent", "1000", "--json"], repo).stdout);
+        expect(worker.labels).toEqual(["repo-harness.seat=worker", "repo-harness.repository=1186405141", "repo-harness.issue=1473", "repo-harness.pr=1521", "repo-harness.parent=1000"]);
+      });
       const missing = argv(home, "worker", "--issue", "1473");
       expect(missing.status).toBe(1);
       expect(missing.stdout).toBe("");
       expect(JSON.parse(missing.stderr).error).toBe("repository_id_required");
+    });
+  });
+
+  test("the pane name and the tab name come from the registry prefix of the primary checkout, one per role", () => {
+    withHome(undefined, (home) => {
+      withRepository(home, "rh", (repo, worktree) => {
+        const named = (cwd: string, ...args: string[]) => JSON.parse(run(registryEnv(home), [...args, "--repository-id", "1186405141", "--json"], cwd).stdout);
+        const orchestrator = named(repo, "orchestrator");
+        expect([orchestrator.name, orchestrator.tab]).toEqual(["rh-orch", "orch"]);
+        // A Claude seat carries the same name as its session name.
+        expect(orchestrator.argv.slice(2, 5)).toEqual(["claude", "-n", "rh-orch"]);
+        const advisor = named(repo, "advisor", "--parent", "1000");
+        expect([advisor.name, advisor.tab]).toEqual(["rh-adv", "orch"]);
+        expect(advisor.argv.slice(0, 3)).toEqual(["claude", "-n", "rh-adv"]);
+        // A linked worktree resolves to its primary checkout; the default worker runs Codex, which has no session name flag.
+        const worker = named(worktree, "worker", "--parent", "1000", "--issue", "1508", "--pr", "1521", "--qualifier", "device");
+        expect([worker.name, worker.tab]).toEqual(["rh-w-1508-device", "#1000"]);
+        expect(worker.argv).not.toContain("rh-w-1508-device");
+        const release = named(repo, "worker", "--release", "0252");
+        expect([release.name, release.tab]).toEqual(["rh-w-rel0252", "other"]);
+        expect(seatPaneName({ prefix: "rh", seat: "reviewer", pr: "1536", qualifier: "codex" })).toBe("rh-rv-1536-codex");
+        expect(() => seatPaneName({ prefix: "a", seat: "reviewer", pr: "1536" })).toThrow(expect.objectContaining({ code: "pane_name_invalid" }));
+        // Without --repository-id the argv has no name, as before.
+        expect(launch(home, "orchestrator").argv).not.toContain("-n");
+      });
+    });
+  });
+
+  test("a name over 32 characters and an entry without a prefix fail closed", () => {
+    withHome(undefined, (home) => {
+      withRepository(home, "rhlong", (repo) => {
+        const result = run(registryEnv(home), ["worker", "--repository-id", "1", "--issue", "1508", "--qualifier", "averyveryverylongslice", "--json"], repo);
+        expect(result.status).toBe(1);
+        expect(result.stdout).toBe("");
+        expect(JSON.parse(result.stderr).error).toBe("pane_name_invalid");
+      });
+      withRepository(home, undefined, (repo) => {
+        const result = run(registryEnv(home), ["orchestrator", "--repository-id", "1", "--json"], repo);
+        expect(result.status).toBe(1);
+        expect(JSON.parse(result.stderr).error).toBe("pane_name_invalid");
+      });
     });
   });
 

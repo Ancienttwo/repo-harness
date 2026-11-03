@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.herdr-app"
+kind: "process"
+name: "Herdr.app"
+status: "active"
+layer: "external"
+summary: "Herdr.app process that shows the terminals of an hc core in its tabs and panes."

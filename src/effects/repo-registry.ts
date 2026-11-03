@@ -10,6 +10,7 @@ import {
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from "./git/runner";
+import { PANE_PREFIX } from "../core/operator/pane-prefix";
 import { repoHarnessHome } from "./repo-harness-home";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
@@ -22,6 +23,13 @@ export interface RepoHarnessRegisteredRepo {
   readonly source: RepoHarnessRegistrySource;
   readonly registeredAt: string;
   readonly lastSeenAt: string;
+  /** Set by the owner by hand (#1544); the seat pane names start with it. Unique on the machine. */
+  readonly panePrefix?: string;
+}
+
+/** Every registry writer carries the hand-set pane prefix of an entry unchanged. */
+function panePrefixOf(entry: { readonly panePrefix?: unknown } | undefined): { readonly panePrefix?: string } {
+  return typeof entry?.panePrefix === "string" ? { panePrefix: entry.panePrefix } : {};
 }
 
 interface RepoHarnessRegistryFile {
@@ -249,6 +257,7 @@ function readRegistryFile(path: string): RepoHarnessRegistryFile {
           source: normalizeSource(entry.source),
           registeredAt: normalizeTimestamp(entry.registeredAt, now),
           lastSeenAt: normalizeTimestamp(entry.lastSeenAt, now),
+          ...panePrefixOf(entry),
         };
       })
       .filter((entry): entry is RepoHarnessRegisteredRepo => entry !== null);
@@ -284,6 +293,7 @@ function writeRegistryFile(path: string, repos: readonly RepoHarnessRegisteredRe
     source: repo.source,
     registeredAt: repo.registeredAt,
     lastSeenAt: repo.lastSeenAt,
+    ...panePrefixOf(repo),
   }));
   writeFileSync(temporary, `${JSON.stringify({ version: 1, authorizationRevision, repos: canonicalRepos }, null, 2)}\n`, {
     encoding: "utf-8",
@@ -393,7 +403,7 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
     throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} must be an object`);
   }
   const entry = value as Record<string, unknown>;
-  const expected = ['accessMode', 'id', 'lastSeenAt', 'path', 'registeredAt', 'source'];
+  const expected = ['accessMode', 'id', 'lastSeenAt', ...('panePrefix' in entry ? ['panePrefix'] : []), 'path', 'registeredAt', 'source'];
   const keys = Object.keys(entry).sort();
   if (JSON.stringify(keys) !== JSON.stringify(expected)) {
     throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} fields are invalid`);
@@ -422,6 +432,9 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
     || typeof entry.lastSeenAt !== 'string' || entry.lastSeenAt.trim() === '') {
     throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} timestamps are invalid`);
   }
+  if ('panePrefix' in entry && (typeof entry.panePrefix !== 'string' || !PANE_PREFIX.test(entry.panePrefix))) {
+    throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry repo ${index} panePrefix must match ${PANE_PREFIX.source}`);
+  }
   return Object.freeze({
     id: entry.id,
     path: entry.path,
@@ -429,6 +442,7 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
     source: entry.source,
     registeredAt: entry.registeredAt,
     lastSeenAt: entry.lastSeenAt,
+    ...panePrefixOf(entry),
   });
 }
 
@@ -488,12 +502,17 @@ export function readRepoHarnessRegistryStrictSnapshot(opts: {
   const repos = record.repos.map(strictRegistryEntry);
   const ids = new Set<string>();
   const paths = new Set<string>();
+  const prefixes = new Set<string>();
   for (const repo of repos) {
     if (ids.has(repo.id) || paths.has(repo.path)) {
       throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', 'registry authority has duplicate repository identities');
     }
+    if (repo.panePrefix !== undefined && prefixes.has(repo.panePrefix)) {
+      throw new RepoHarnessRegistryStrictError('fleet_registry_invalid', `registry authority has duplicate pane prefix ${repo.panePrefix}`);
+    }
     ids.add(repo.id);
     paths.add(repo.path);
+    if (repo.panePrefix !== undefined) prefixes.add(repo.panePrefix);
   }
   return Object.freeze({
     registryPath,
@@ -590,6 +609,7 @@ export function applyRepoHarnessRegistryBatch(
         source: entry.source,
         registeredAt: previous?.registeredAt ?? now,
         lastSeenAt: now,
+        ...panePrefixOf(previous),
       };
       repos = previous
         ? repos.map((repo) => repo.path === entry.repoRoot ? next : repo)
@@ -658,6 +678,7 @@ export function registerRepoHarnessRepo(
       source,
       registeredAt: previous?.registeredAt ?? now,
       lastSeenAt: now,
+      ...panePrefixOf(previous),
     };
     const next = previous
       ? existing.map((repo) => repo.path === canonical ? nextEntry : repo)

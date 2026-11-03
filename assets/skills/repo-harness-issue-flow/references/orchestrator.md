@@ -152,7 +152,7 @@ different model family. Ask it to find holes only:
 - a requirement ID from the source that no issue covers.
 
 You decide what to fold in. The reviewer does not rewrite the split. Use
-the host's cross-model channel (for example a Herdr pane with Codex).
+the host's cross-model channel (for example a Codex terminal in a Herdr.app pane).
 Record the review in the parent issue as one comment that lists the
 findings and the disposition of each.
 
@@ -204,9 +204,9 @@ module is in the title so that a list view shows the write scopes.
   Keep contract-design issues for a strong model.
 - Limit each artifact to two review rounds. Ask the owner to decide before
   a third round. One reviewer takes each artifact.
-- Use the host's dispatch mechanism (a Herdr pane, a top-level host
-  session, a hosted subagent). A dispatch does not grant publication,
-  deletion or credential authority. For the Herdr pane topology, follow
+- Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
+  a top-level host session, a hosted subagent). A dispatch does not grant
+  publication, deletion or credential authority. For the Herdr pane topology, follow
   [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
 ## 8. Follow up

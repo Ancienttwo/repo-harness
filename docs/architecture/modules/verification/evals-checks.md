@@ -168,18 +168,20 @@ sequenceDiagram
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.evals-checks.primary`（Verification Check Execution） | `verification-plan.ts`、`migrate-verification-plan.ts`、`run-bounded-verifier-command.ts`、`verify-contract.sh`、`verify-sprint.sh` | 5 / 643 | Verification Plan CLI、有界命令、本地验证入口 |
+| `component.evals-checks.primary`（Verification Check Execution） | `verification-plan.ts`、`verify-sprint.sh` | 2 / 158 | Verification Plan CLI、本地验证入口 |
 | `component.evals-checks.test-suite`（expandable） | `tests/**`、`bunfig.toml` | 575 / 181610 | 全部测试文件和测试配置 |
 | `component.evals-checks.evals-and-benchmarks` | `evals/**`、skill eval 与 profile benchmark 脚本、`harness-trace-grade.sh` | 105 / 12684 | 生产 effectiveness 证据 |
 | `component.evals-checks.ci-selection` | `.github/**`、`check-ci.sh`、覆盖选择、测试调度、CI report | 10 / 1497 | 选择覆盖并运行 CI lane |
 | `component.evals-checks.workflow-gates` | `check-agent-tooling.sh` | 1 / 2,189 | 诊断类 gate |
+
+primary 行在 2026-11-03 按当前 `source.include` 用 `wc -l` 重测。2026-10-11 的另外三个脚本已删除（#914、#1182）。
 
 test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cli、effects、unit、state、operator-web、fixtures）拆分。现在不拆。
 
 ### 3.4 prose 与源码的冲突和开放问题
 
 - 本节以前的 §3 原文已移到 §4 末尾。以下历史说法与当前源码不符：
-  - `verify-contract.sh` 的旧 evidence-producer guard 和 3600 秒预算。当前文件只有 40 行，没有这两项。
+  - 旧 contract verifier 的 evidence-producer guard 和固定 600 秒预算。该脚本已随 helper 删除（#1182）。当前 Verification Plan 执行器的默认预算是 3600 秒，`--timeout-ms` 可以覆盖（`src/effects/evidence/verification-execution.ts:1258`、`scripts/verification-plan.ts:96`）。
   - `verify-sprint --prepare-acceptance`、frozen-subject criterion retry 和 `--force-expensive-rerun`。当前 `verify-sprint.sh` 拒绝 workflow-stage acceptance 参数（`verify-sprint.sh:17`）。
   - 旧的 task-sync digest 绑定已随 helper 删除（#1182）。
   - 根 `## Required Checks` 是唯一清单来源。当前根 `AGENTS.md` 和 `CLAUDE.md` 没有这一节。
@@ -207,7 +209,7 @@ test-suite 是 expandable 组件。需要独立 owner 时，按运行边界（cl
 
 ## 2026-07-14 Verifier Evidence Lifecycle Cutover
 
-- `verify-contract.sh` is a bounded evidence consumer: one fixed 600-second
+- [archived verify-contract.sh](https://github.com/Ancienttwo/repo-harness/blob/82cbfc33bb62e0bc4c81bfdff6b0e9d53af929bc/scripts/verify-contract.sh) is a bounded evidence consumer: one fixed 600-second
   deadline covers all declared tests and commands, each child runs in its own
   process group, and timeout terminates descendants while preserving duration,
   signal, exit, and timeout evidence.
@@ -328,7 +330,7 @@ Failure, cancellation, unknown modes and unintended omissions remain failures.
 Functional, matrix and documentation jobs depend only on selection. The owner
 retained independent hosted Governance/Test failure visibility from the
 2026-09-09 incident; the measured wasted Test time on governance-only failures
-and the two-week revisit trigger are recorded in `tasks/todos.md`. Local/release
+and the two-week revisit trigger are recorded in [archived todos.md](https://github.com/Ancienttwo/repo-harness/blob/b3fb9afd9dfaffce2dde5f84cedc909bb0479fd2/tasks/todos.md). Local/release
 `check-ci.sh` gates and the isolated file runner remain unchanged. PR evidence
 is not reused as acceptance for a different merge subject.
 
@@ -372,11 +374,11 @@ outside the trigger sets can be found only by the daily full run.
 
 ### Diff-bound workflow evidence
 
-`scripts/check-task-sync.sh` owns the change-identity boundary for workflow
+[archived check-task-sync.sh](https://github.com/Ancienttwo/repo-harness/blob/5ad523cdb801fcde57fcd492306e1f79a7a9bbc5/scripts/check-task-sync.sh) owns the change-identity boundary for workflow
 evidence. It classifies the final staged and working-tree diff, hashes only the
 substantive path contents, and accepts execution evidence only when a changed
 canonical plan, contract, review, notes, or workstream artifact contains that
-exact digest. `scripts/check-task-workflow.sh` and CI consume this result; they
+exact digest. [archived check-task-workflow.sh](https://github.com/Ancienttwo/repo-harness/blob/5ad523cdb801fcde57fcd492306e1f79a7a9bbc5/scripts/check-task-workflow.sh) and CI consume this result; they
 do not infer freshness from the mere presence or recency of a task artifact.
 Exact generated status projections and general documentation remain outside the
 substantive set, while architecture truth and workflow-helper changes remain
@@ -392,7 +394,7 @@ authority; missing or malformed evidence fails closed.
 
 **必须守住的不变量：**
 
-1. **历史 producer guard 已退役。** 当前 `scripts/verify-contract.sh` 保留显式 preflight，其余参数交给 `scripts/verify-sprint.sh`。检查执行由 `src/effects/evidence/verification-execution.ts` 负责。
+1. **历史 producer guard 已退役。** 检查执行由 `src/effects/evidence/verification-execution.ts` 负责。
 2. **Execution evidence 单一权威。** `verification-plan execute` 记录实际检查。Native validator 校验 event、run、contract 和 snapshot。空计划或缺失证据不能通过。旧 emitter 和 materializer 已移除。
 3. **有界执行 + 进程组回收。** 每条契约命令跑在自己的 detached 进程组里，共享一个绝对截止点；force-kill 阶段寻址原始 PGID 而非当前 leader，堵住 TERM-resistant 后代的逃逸口。
 4. **昂贵通道串行化。** 权威 benchmark 在任何 run workspace/report 变更前取 Git-common-dir expensive-run lock 并跨 provider 生命周期持有；dry-run 与 regrade-only 不占该通道。owner 异常死亡时 token 不可回收，留给人工恢复而非自动重开通道。
@@ -401,8 +403,7 @@ authority; missing or malformed evidence fails closed.
 
 **与现有 prose 的冲突（以源码为准）：**
 
-- 下方 2026-07-14 段落写 `verify-contract.sh` 是 "one fixed 600-second deadline"。当前源码 `scripts/verify-contract.sh:5` 是 `VERIFICATION_BUDGET_MS=3600000`，即 3600 秒（60 分钟）。历史段落按 append-only 原样保留，**当前事实以 3600 秒为准**。
-- 旧 P1 段把权威清单写成 `bash scripts/check-task-workflow.sh`；根 `## Required Checks` 现用 `repo-harness run check-task-workflow`（helper runtime 调用形态），且额外含 `bash scripts/check-architecture-sync.sh`。本文 §1.4 按根契约列出。
+- §4 的 2026-07-14 段落写旧 contract verifier 是 "one fixed 600-second deadline"。当前 Verification Plan 执行器的默认预算是 3600 秒（`src/effects/evidence/verification-execution.ts:1258`）。历史段落按 append-only 原样保留。
 - `assets/skill-commands/repo-harness-check/SKILL.md` 把 Codex 必需 skill 写作 `health`/`check`/`mermaid`，仓库根 `CLAUDE.md` 写的是 `health`、`check`、`diagram-design`。两处未对齐，本文不替任一方裁定。
 
 **10x 规模下先垮的点。** 不是 verifier，而是全量测试成本与证据生产延迟：183 个测试文件 / 66,345 LOC 已是 `bun test` 的主要壁钟成本，而 3×9 矩阵单次授权跑受 50 分钟绝对预算约束。当前拆分让小切片跑聚焦测试、release/pre-merge 才跑全量 gate；再放大一个量级时，先撑不住的是 benchmark 的 evidence-production latency 与 expensive lane 的串行度，而不是有界验证本身。
@@ -465,8 +466,6 @@ not runtime evidence.
   of hooks. Optimize cold hook execution and Standard/Strict promotion cost
   before claiming a performance win; do not lower deterministic risk floors.
 
-- `tasks/archive/gate-audit-20261003/workstreams/verification/evals-checks/github-issues-158-159.md`
 - 在 arch-context#296 之后拆分 evidence 目录：`src/core/evidence/verification-plan.ts` 和 `src/effects/evidence/verification-execution.ts` 归本 capability 的 primary 组件（归属提议 §5）。拆分后，P2 selector 位于本 capability 自己的 footprint 内。
 - `scripts/verification-plan.ts` 通过动态 import 调用执行器（`scripts/verification-plan.ts:16`）。改为静态 import 后，CodeGraph 能证明 CLI 到执行器的路径。改之前需要确认动态 import 的原因。
 - `scripts/check-agent-tooling.sh` 有 2098 行，是 workflow-gates 组件中最大的文件。它是 shell 外壳加内嵌 JS。拆分需要先有改动频率证据。
-- `check-task-workflow.sh` 和 `check-task-sync.sh` 的名字仍是 check，但它们只做诊断（§3.1 第 7 条）。是否改名或退役，需要 owner 决定。

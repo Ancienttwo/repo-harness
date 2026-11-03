@@ -145,8 +145,8 @@ function createReviewingProviderFixture(
   const ghBin = join(workspaceRoot, 'fake-gh.sh');
   writeFileSync(ghBin, [
     '#!/bin/sh', 'set -eu', 'counter="${FLEET_PROVIDER_COUNTER_DIR:?}"',
-    'lock() { while ! mkdir "$counter/lock" 2>/dev/null; do sleep 0.002; done; }',
-    'unlock() { rmdir "$counter/lock"; }',
+    'lock() { while ! (set -C; : > "$counter/lock") 2>/dev/null; do sleep 0.002; done; }',
+    'unlock() { rm "$counter/lock"; }',
     'lock', 'active=$(cat "$counter/active")', 'active=$((active + 1))', 'printf "%s\\n" "$active" > "$counter/active"',
     'maximum=$(cat "$counter/maximum")', 'if [ "$active" -gt "$maximum" ]; then printf "%s\\n" "$active" > "$counter/maximum"; fi', 'unlock',
     'cleanup() { lock; active=$(cat "$counter/active"); printf "%s\\n" "$((active - 1))" > "$counter/active"; unlock; }',

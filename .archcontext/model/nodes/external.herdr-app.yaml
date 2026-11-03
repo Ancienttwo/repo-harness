@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.herdr-app"
+kind: "external-system"
+name: "Herdr.app"
+status: "active"
+layer: "external"
+summary: "Desktop window that shows hc terminals in tabs and panes. herdr-app do tab.new, pane.split, pane.close and terminal.keep place them."

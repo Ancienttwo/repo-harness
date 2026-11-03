@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.herdr-app"
+kind: "depends-on"
+source: "capability.runtime-harness.task-agent-host"
+target: "external.herdr-app"
+intent: "Own the one herdr-app do argv for tab.new, pane.split, pane.close and terminal.keep. The console prints the terminal.keep command for the person to run."

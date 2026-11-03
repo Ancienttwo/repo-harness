@@ -1,5 +1,5 @@
-import { realpathSync } from 'node:fs';
-import { join } from 'path';
+import { closeSync, constants, fstatSync, openSync, readFileSync, realpathSync } from 'node:fs';
+import { isAbsolute, join, relative } from 'path';
 import { observeActiveReviewAdmission } from '../admission/issue-goal';
 import type { ReviewAdmissionSource } from '../admission/admission-source';
 
@@ -10,6 +10,7 @@ import {
   type ReviewSelectionPacket,
   validateReviewSelectionPacketAgainstAssessment,
 } from '../../core/review/change-assessment';
+import { CHANGE_ASSESSMENT_EVIDENCE_PATH, type CheckRecordRead } from '../../core/review/check-records';
 import { resolveWorkflowProfile, type StrictRiskCategory, type WorkflowProfile } from '../../core/workflow/profile';
 import { buildReviewSubject, resolvePolicyReviewBase, reviewSubjectAddedLines, type ReviewSubject } from './diff-fingerprint';
 
@@ -84,6 +85,35 @@ export function prepareChangeAssessment(args: {
   return Object.freeze({ assessment, packet });
 }
 
-export function defaultChangeAssessmentPath(): string {
-  return join('.ai', 'harness', 'checks', 'change-assessment.latest.json');
+// Windows has no O_NOFOLLOW or O_NONBLOCK. There the open follows a final
+// link, and the realpath check below keeps the record inside the repository.
+const RECORD_OPEN_FLAGS = constants.O_RDONLY
+  | (typeof constants.O_NOFOLLOW === 'number' ? constants.O_NOFOLLOW : 0)
+  | (typeof constants.O_NONBLOCK === 'number' ? constants.O_NONBLOCK : 0);
+
+/**
+ * Reads the Change Assessment record for every consumer. The open does not
+ * follow a final symlink and does not block on a FIFO; the record must
+ * resolve inside the repository, so it cannot come from another tree.
+ */
+export function readChangeAssessmentRecord(repoRoot: string, maxBytes: number): CheckRecordRead {
+  const absolute = join(repoRoot, CHANGE_ASSESSMENT_EVIDENCE_PATH);
+  let fd: number;
+  try {
+    fd = openSync(absolute, RECORD_OPEN_FLAGS);
+  } catch (error) {
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { state: 'absent' };
+    return { state: 'unreadable', message: code === 'ELOOP' ? 'is a symbolic link' : `cannot be opened (${code ?? 'unknown'})` };
+  }
+  try {
+    const stat = fstatSync(fd);
+    if (!stat.isFile()) return { state: 'unreadable', message: 'is not a regular file' };
+    const inside = relative(realpathSync(repoRoot), realpathSync(absolute));
+    if (inside.startsWith('..') || isAbsolute(inside)) return { state: 'unreadable', message: 'resolves outside the repository' };
+    if (stat.size > maxBytes) return { state: 'unreadable', message: `exceeds ${maxBytes} bytes` };
+    return { state: 'read', content: readFileSync(fd, 'utf-8') };
+  } finally {
+    closeSync(fd);
+  }
 }
