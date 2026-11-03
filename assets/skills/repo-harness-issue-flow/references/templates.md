@@ -261,7 +261,7 @@ comment and does not dispatch until the corrected claim is on the board.
 `issue claim` is seat-only. The coordinator posts it, including the
 claim of each agent it dispatches. Such a claim names the agent in
 `Agent:` and the coordinator's own claim in `Coordinator:`. Any other
-agent's claim is a request, not a seat. A claim is valid only from an
+agent's claim is a request, not a claim role. A claim is valid only from an
 account whose `author_association` is `OWNER`, `MEMBER` or
 `COLLABORATOR`; GitHub is the only source of that permission.
 
@@ -390,13 +390,14 @@ read makes the PR state unknown, not accepted.
 ```text
 repo-harness review reply
 Agent: <kind>, session <id>
-Disposition: fixed <sha> | disputed | rejected
+Disposition: fixed <sha> | disputed | rejected | deferred #<follow-up issue>
 Why: <reason; for fixed, the test that fails on the base>
 ```
 
 The head owner replies `fixed` or `disputed` and leaves the thread open.
-Only the coordinator replies `rejected`, then resolves the thread
-(`board.md` rule 5). A comment from a reviewer without a seat, such as an
+Only the coordinator replies `rejected`, or `deferred` for a rule-4
+merge (`acceptor.md` §2.2), then resolves the thread (`board.md` rule 5).
+A comment from a reviewer without a claim role, such as an
 outside contributor or an independent bot, is optional input: the head
 owner or the coordinator decides whether to adopt it, and answers with the
 same reply.

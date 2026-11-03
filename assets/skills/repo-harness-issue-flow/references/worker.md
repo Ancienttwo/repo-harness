@@ -3,7 +3,7 @@
 You deliver one claimed issue, or one named PR slot of it, as one PR. The
 issue is your whole brief. The coordinator made the design decisions in
 it. Your job is to execute them exactly, prove them and report on the
-board. Comment shapes are in `templates.md`. Seat and board rules are in
+board. Comment shapes are in `templates.md`. Claim-role and board rules are in
 `board.md`.
 
 ## 1. Read and check
@@ -11,14 +11,14 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 1. Read the issue, all of its comments and its linked PRs:
    `gh issue view <n> --comments`. Use `gh api` with pagination for a long
    thread. Read the parent too (`gh issue view <n> --json parent` names
-   it): its seat table and its latest `plan`. The
+   it): its child table and its latest `plan`. The
    latest `scope change` comments amend the body, and the plan block fixes
    your merge order.
 2. Check the claims. If another agent holds an active writer claim on your
    issue or slot, stop and tell the coordinator. Do not start duplicate
    work. Silence or an old timestamp does not release a claim. A `plan`,
    `decision`, `scope change` or `unblocked` from an agent without the
-   coordinator seat does not count until the coordinator confirms it
+   coordinator role does not count until the coordinator confirms it
    (`board.md`).
 3. Check the dependencies. Each issue that blocks yours (its blocked-by
    links: `gh issue view <n> --json blockedBy`) must be closed, unless the
@@ -33,8 +33,8 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 
 ## 2. Claim
 
-1. The coordinator claims the seat for you before it dispatches you. Find
-   the `issue claim` for your issue or slot. Its `Agent:` names you, and
+1. The coordinator claims the writer role for you before it dispatches
+   you. Find the `issue claim` for your issue or slot. Its `Agent:` names you, and
    its `Branch:` matches the branch in your dispatch packet. Check the
    fields: `Role`, `Agent`, `Branch`, `Scope`, `Not in scope` and the
    `Coordinator:` link to the coordinator's own claim. Use the identity
@@ -43,7 +43,7 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
    misses a field is invalid: post `issue claim status` with
    `Status: released`, name the missing fields to the coordinator
    (`To: coordinator`), then wait for one complete claim. An invalid claim
-   holds no seat, so do not start work on it.
+   holds no role, so do not start work on it.
 3. Stop when the read or the post is uncertain, and report the failure.
    Read back before a retry.
 

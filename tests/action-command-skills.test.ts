@@ -582,7 +582,7 @@ describe("repo-harness action command skills", () => {
 
     expect(worker).toContain("Read the parent too");
     // The worker reads the coordinator-posted claim and never posts its own.
-    expect(worker).toContain("The coordinator claims the seat for you");
+    expect(worker).toContain("The coordinator claims the writer role for you");
     expect(worker).toContain("Do not post a claim of your own");
     expect(worker).toContain("Without a claim that names you, do not start");
     expect(worker).not.toContain("Coordinator: none");
@@ -594,10 +594,25 @@ describe("repo-harness action command skills", () => {
     expect(acceptor).toContain("review_publish_unknown");
     expect(acceptor).toContain("model_relation");
     // M32: reviewers read CI and the recorded evidence. M33 rule 4: a P2-only FAIL after round 3 can merge.
-    expect(acceptor).toContain("Never rerun a passing\ntypecheck or test.");
-    expect(acceptor).toContain("Round 3** runs with no owner question");
-    expect(acceptor).toContain("Rule 4 decides whether a P2-only `FAIL` after round 3 merges.");
+    const flat = (text: string) => text.replace(/\s+/g, " ");
+    expect(flat(acceptor)).toContain("Never rerun a passing typecheck or test.");
+    expect(flat(acceptor)).toContain("Round 3** runs with no owner question");
+    expect(flat(acceptor)).toContain("Rule 4 decides whether a P2-only `FAIL` after round 3 merges.");
     expect(worker).toContain("**Fix the class.**");
+
+    // rv1608-r1-02: every rule that resolves threads or needs zero open threads allows the rule-4 merge.
+    const ruleFourThreadSites: Array<[string, string]> = [
+      ["references/acceptor.md", "resolves each remaining P2 thread with a reply that links the follow-up issue (§6)"],
+      ["references/acceptor.md", "A rule-4 merge (§2.2) passes this check only after the coordinator resolves the remaining P2 threads (§6)"],
+      ["references/acceptor.md", "or with the follow-up issue link of a rule-4 merge (§2.2)"],
+      ["references/board.md", "or with the rule-4 follow-up issue link (`acceptor.md` §2.2)"],
+      ["references/templates.md", "| deferred #<follow-up issue>"],
+      ["references/orchestrator.md", "For a rule-4 merge, you resolve the remaining P2 threads first (`acceptor.md` §6)"],
+      ["references/orchestrator.md", "or rule 4 of `acceptor.md` §2.2 applies after round 3"],
+    ];
+    for (const [path, text] of ruleFourThreadSites) {
+      expect(flat(readFileSync(join(SKILLS_ROOT, "repo-harness-issue-flow", path), "utf-8"))).toContain(text);
+    }
   });
 
   test("issue-flow guidance requires no host or model", () => {

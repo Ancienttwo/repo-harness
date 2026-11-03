@@ -1,8 +1,8 @@
 # Acceptor SOP
 
 You accept one review round of one PR. You are read-only: you do not edit
-the PR, push a branch or merge. You return one review result. Seats and
-the board are in `board.md`. The round record is in `orchestrator.md`
+the PR, push a branch or merge. You return one review result. Claim roles
+and the board are in `board.md`. The round record is in `orchestrator.md`
 §8. The schemas are in `src/core/review/acceptance-receipt.ts`.
 
 ## 1. Who accepts
@@ -28,8 +28,7 @@ return the result schema can accept.
 
 ## 2. Take one round
 
-One round has one subject SHA and one risk tier. A High round has two
-reviews of that one subject SHA, and both take the same round number.
+One round has one subject SHA and one risk tier.
 
 ### 2.1 Evidence
 
@@ -40,9 +39,9 @@ results, the revision and the environment). The packet names no command
 to run.
 
 Read the PR body, the diff, the issue and that evidence. Run a command
-only when the evidence is missing, stale or failed, or to prove one
-suspected defect. Run it in a disposable HOME. Never rerun a passing
-typecheck or test.
+only when the evidence is missing, stale or failed, to prove one
+suspected defect, or as a known-gaps named check (below). Run it in a
+disposable HOME. Never rerun a passing typecheck or test.
 
 When the repository has `agents/fleet/known-gaps.md`, read the row for the
 PR's producer and run its named checks in addition to the tier's review.
@@ -50,9 +49,10 @@ The table rules govern how the row combines with the review.
 
 ### 2.2 Rounds
 
-1. **Round 1** is the full tier review. High: the gatekeeper and one
-   cross-model reviewer (Codex by default, §1) review the same subject SHA
-   in parallel. Each is blind to the other's result.
+1. **Round 1** is the full tier review. Round 1 of a High PR has two
+   reviews of one subject SHA, and both take the same round number: the
+   gatekeeper and a reviewer from a different model family (§1). They run
+   in parallel, and each is blind to the other's result.
 2. **Round 2.** Only the reviewer or reviewers that raised a blocking
    finding take the round. Each reads the fix delta (the hunks that
    changed after round 1) and the sibling cases of each of its findings.
@@ -62,8 +62,10 @@ The table rules govern how the row combines with the review.
    in one bug family, and none concerns security, secrets, data or
    authentication, the coordinator merges on the last green SHA. The
    acceptance record states the limit, and one follow-up issue holds that
-   family. A P0 or P1 finding, or a security, secrets, data or
-   authentication finding, becomes a parked owner gate
+   family. Before the merge, the coordinator resolves each remaining P2
+   thread with a reply that links the follow-up issue (§6). A P0 or P1
+   finding, or a security, secrets, data or authentication finding,
+   becomes a parked owner gate
    (`docs/reference-configs/agentic-development-flow.md`, Park a gate).
    Other work continues.
 
@@ -120,6 +122,8 @@ Act on the exit code:
 
 The merge executor refuses a PR with an unresolved review thread that a
 person started (D6). A review bot thread is advisory and does not block.
+A rule-4 merge (§2.2) passes this check only after the coordinator
+resolves the remaining P2 threads (§6).
 
 ## 5. Result schema
 
@@ -167,7 +171,9 @@ merge (D7).
 Only the acceptor of a round resolves its threads. It resolves a thread
 after the next round confirms the fix on a new subject SHA.
 
-The coordinator may resolve a thread with a written rejection reason.
+The coordinator may resolve a thread with a written rejection reason, or
+with the follow-up issue link of a rule-4 merge (§2.2). Both are a
+`review reply` (`templates.md`).
 
 The head owner replies with the fix SHA and does not resolve. No worker
 resolves a thread.

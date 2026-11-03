@@ -43,8 +43,9 @@ request is replayed after an ambiguous outcome.
 
 At most three changed-subject repair rounds retain the same task session. The
 reviewer reads the current diff only; a defect outside the diff is a non-blocking
-note. From the second round, only hunks changed since the previous Result are in
-scope. Prior findings require stable IDs and open/resolved status. The reviewer may write
+note. From the second round, the scope follows the round rules
+(`repo-harness-issue-flow`, `references/acceptor.md` §2.2). Prior findings
+require stable IDs and open/resolved status. The reviewer may write
 only each exact Result file; terminal history/sentinel/idle are observation.
 The owner immutably collects the file, validates domain identity and findings,
 consumes OAR Session model observation and calls the existing generic-review

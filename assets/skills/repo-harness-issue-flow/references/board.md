@@ -237,7 +237,8 @@ Board rules:
    (`acceptor.md` §3). The head owner replies with the fix SHA and does
    not resolve the thread. Only the acceptor of that round resolves it
    after the next round confirms the fix. The coordinator may resolve a
-   thread with a written rejection reason. See `acceptor.md`.
+   thread with a written rejection reason, or with the rule-4 follow-up
+   issue link (`acceptor.md` §2.2). See `acceptor.md`.
 6. **Nudge with a link.** To wake an agent, send it the comment URL
    through the host channel (a Herdr prompt, a session message). The
    comment is the instruction. A message that differs from the board loses.

@@ -18,7 +18,8 @@ Ask for a replan when any one of these is true:
 - The owner asks for one.
 - At least 3 open issues or PRs are not in the parent's latest `plan`.
 - A claim shows no `issue claim status` for one working session.
-- One PR fails two fix rounds.
+- One PR still fails after its second fix round. Its review rounds
+  continue by `acceptor.md` §2.2.
 - The lowest unmerged PR in the merge order is blocked.
 - The triage queue (`orchestrator.md` §8.1) holds more P1 and P2 items
   than active writer seats.
