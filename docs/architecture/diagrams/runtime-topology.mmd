@@ -8,6 +8,7 @@ flowchart TB
     process_hook["Hook process"]
     process_mcp_coding_shell["MCP coding shell"]
     process_mcp_server["MCP server"]
+    process_notify_relay["Notify relay"]
     process_oar_review_host["OAR review host"]
     process_operator_collector["Operator collector"]
     process_operator_server["Operator server"]
@@ -28,6 +29,8 @@ flowchart TB
   component_global_runtime_reconciliation_cli_root -->|"deployed-on"| process_cli
   process_cli -->|"spawns"| process_process_supervisor
   capability_workflow_engine_execution_primitives -->|"deployed-on"| process_process_supervisor
+  process_herdr_core_server -->|"spawns"| process_agent_host
+  process_herdr_core_server -->|"spawns"| process_notify_relay
   process_herdr_core_server -->|"spawns"| process_oar_review_host
   capability_runtime_harness_hook_adapters -->|"deployed-on"| process_hook
   process_hook -->|"spawns"| process_process_supervisor
@@ -38,4 +41,5 @@ flowchart TB
   process_operator_server -->|"spawns"| process_operator_collector
   capability_runtime_harness_operator -->|"deployed-on"| process_operator_server
   process_process_supervisor -->|"spawns"| process_process_group_launcher
+  capability_runtime_harness_task_agent_host -->|"deployed-on"| process_notify_relay
   capability_runtime_harness_task_agent_host -->|"deployed-on"| process_oar_review_host

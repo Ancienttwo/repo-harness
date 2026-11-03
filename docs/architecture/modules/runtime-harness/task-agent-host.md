@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:639e6edff0de683611c9f59fa0e1928d998c0959c6a56b1e9541b8e4c859da5a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9feee209ab65ac5db7b747d6b709d951abb4211e03750e61c78a07a6283daf58" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
@@ -65,6 +65,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `capability.verification.acceptance-review` — Plugin → core: bind task sessions to the active review admission and its source, resolve the policy review base of the diff fingerprint, implement the reviewer runner port, and apply the review isolation policy in the OAR review host
+- `deployed-on` → `process.notify-relay` — The notify relay process runs the task-agent-host relay code.
 - `deployed-on` → `process.oar-review-host` — The reviewer runner builds and runs the OAR review host bundle.
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
 - `depends-on` → `external.herdr-app` — Own the one herdr-app do argv for tab.new, pane.split, pane.close and terminal.keep. The console prints the terminal.keep command for the person to run.
