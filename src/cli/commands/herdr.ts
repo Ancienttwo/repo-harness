@@ -1,19 +1,17 @@
-import { labelDecision } from '../../effects/terminal/herdr-decision.ts';
-import { HERDR_SESSION_NAME, writeNotifyInstallRecord } from '../../effects/terminal/herdr-notify-install.ts';
-import { NOTIFY_SECRET_KEYS as SECRETS } from '../../core/decision/notify-secret-keys.ts';
+import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun } from '../../effects/terminal/herdr-core.ts';
+import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, readNotifyInstallRecord, relayIsLive, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
+import type { DoctorCheckResult } from './doctor.ts';
+import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
+import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys.ts';
+import { NOTIFY_DONE_KEYS, decodeNotifyConfig, renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
+import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/operator/notify-status.ts';
 import { Command } from 'commander';
-import { spawnSync } from 'node:child_process';
-import { constants, fchmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
-import { randomUUID } from 'node:crypto';
-import { isAbsolute, join, resolve } from 'node:path';
+import { existsSync, rmSync } from 'node:fs';
+import { isAbsolute } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
-const PLUGIN_ID = 'aimpact.webhook-notify';
-const ASSETS = fileURLToPath(new URL('../../../assets/herdr/webhook-notify/', import.meta.url));
+const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
 interface NotifyOptions {
-  session: string;
-  clefMode?: string;
-  cloudflareAccountId?: string;
   nonInteractive?: boolean;
   webhookUrl?: string;
   webhookKey?: string;
@@ -52,150 +50,95 @@ export function askMasked(question: string, input: NodeJS.ReadStream = process.s
   });
 }
 
-function validateConfig(config: Record<string, string>): void {
-  for (const [key, value] of Object.entries(config)) {
-    if (/[\x00-\x1f\x7f'"\\]/.test(value)) throw new Error(`${key} contains an unsupported character.`);
-  }
-  if (!['off', 'shadow'].includes(config.CLEF_MODE!)) throw new Error('CLEF_MODE must be off or shadow.');
-  if (config.CLEF_MODE === 'shadow' && (!/^[a-f0-9]{32}$/i.test(config.CLOUDFLARE_ACCOUNT_ID ?? '') || !config.CLOUDFLARE_API_TOKEN)) throw new Error('Shadow mode needs a Cloudflare account id and API token.');
-  if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) throw new Error('WEBHOOK_URL and WEBHOOK_KEY are required.');
-  if (Boolean(config.TELEGRAM_BOT_TOKEN) !== Boolean(config.TELEGRAM_CHAT_ID)) throw new Error('Telegram needs a bot token and a chat id.');
-  for (const key of ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL']) {
-    if (!config[key]) continue;
-    let url: URL;
-    try { url = new URL(config[key]); } catch { throw new Error(`${key} must be an HTTPS URL.`); }
-    if (url.protocol !== 'https:' || url.username || url.password) throw new Error(`${key} must be an HTTPS URL without user information.`);
-  }
-  if (config.TELEGRAM_BOT_TOKEN && !/^\d+:[A-Za-z0-9_-]+$/.test(config.TELEGRAM_BOT_TOKEN)) throw new Error('TELEGRAM_BOT_TOKEN is invalid.');
-  if (config.TELEGRAM_CHAT_ID && !/^(?:-?\d+|@[A-Za-z0-9_]+)$/.test(config.TELEGRAM_CHAT_ID)) throw new Error('TELEGRAM_CHAT_ID is invalid.');
-  if (!HERDR_SESSION_NAME.test(config.NOTIFY_SESSION!)) throw new Error('Session name is invalid.');
+/** The relay terminals, live or also finished. hc's own failure text stays out of the message: it can name private paths. */
+function relays(all = false) {
+  try { return hcList(RH_NOTIFY_RELAY.labels, { all }).filter(terminal => all || terminal.state === 'live'); }
+  catch { throw new Error('hc did not list its terminals. Check that the hc core runs.'); }
 }
 
-function herdr(args: string[], env: NodeJS.ProcessEnv): string {
-  const result = spawnSync('herdr', args, { env, encoding: 'utf8', timeout: 10_000, stdio: ['ignore', 'pipe', 'pipe'] });
-  // Herdr output can contain private data. Report only the operation.
-  if (result.error || result.status !== 0 || result.signal) throw new Error(`Herdr ${args[3]} failed.`);
-  return result.stdout.trim();
-}
-
-function writeConfig(dir: string, config: Record<string, string>): void {
-  const target = join(dir, '.env');
-  try {
-    const stat = lstatSync(target);
-    if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Config must be a regular file.');
-  } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-  const temporary = join(dir, `.env-${randomUUID()}`);
-  try {
-    const fd = openSync(temporary, 'wx', 0o600);
+/** Start the relay terminal unless one is live, then write the install record. The config must already exist. */
+function startRelay(running: readonly unknown[]): void {
+  if (!running.length) {
     try {
-      fchmodSync(fd, 0o600);
-      writeFileSync(fd, Object.entries(config).map(([key, value]) => `${key}='${value}'`).join('\n') + '\n');
-      fsyncSync(fd);
-    } finally { closeSync(fd); }
-    renameSync(temporary, target);
-  } finally {
-    try { unlinkSync(temporary); }
-    catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      // An hc terminal starts with the core's environment, not the caller's, so the home travels in argv.
+      hcRun({ argv: [process.execPath, CLI_ENTRY, 'herdr', 'notify', 'relay', '--home', repoHarnessHome()],
+        labels: RH_NOTIFY_RELAY.labels, name: RH_NOTIFY_RELAY.name, noParent: true });
+    } catch { throw new Error(`hc did not start the relay terminal. The config is written. Run: ${NOTIFY_START_COMMAND}`); }
   }
+  // Last step: the operator reads the relay identity only from this record.
+  try { writeNotifyInstallRecord(); }
+  catch { throw new Error(`The relay runs, but the install record was not written. Run: ${NOTIFY_START_COMMAND}`); }
 }
 
 export async function installNotify(options: NotifyOptions): Promise<void> {
   if (process.platform === 'win32') throw new Error('Herdr notify needs POSIX file permissions.');
-  const config: Record<string, string> = {
-    WEBHOOK_URL: options.webhookUrl ?? process.env.WEBHOOK_URL ?? '',
-    WEBHOOK_KEY: options.webhookKey ?? process.env.WEBHOOK_KEY ?? '',
-    SLACK_WEBHOOK_URL: options.slackWebhookUrl ?? process.env.SLACK_WEBHOOK_URL ?? '',
-    DISCORD_WEBHOOK_URL: options.discordWebhookUrl ?? process.env.DISCORD_WEBHOOK_URL ?? '',
-    TELEGRAM_BOT_TOKEN: options.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN ?? '',
-    TELEGRAM_CHAT_ID: options.telegramChatId ?? process.env.TELEGRAM_CHAT_ID ?? '',
-    NOTIFY_SESSION: options.session,
-    CLEF_MODE: options.clefMode ?? process.env.CLEF_MODE ?? 'off',
-    CLOUDFLARE_ACCOUNT_ID: options.cloudflareAccountId ?? process.env.CLOUDFLARE_ACCOUNT_ID ?? '',
-    CLOUDFLARE_API_TOKEN: process.env.CLOUDFLARE_API_TOKEN ?? '',
-    WEBHOOK_NOTIFY_DONE: options.webhookNotifyDone ? '1' : '0',
-    SLACK_NOTIFY_DONE: options.slackNotifyDone ? '1' : '0',
-    DISCORD_NOTIFY_DONE: options.discordNotifyDone ? '1' : '0',
-    TELEGRAM_NOTIFY_DONE: options.telegramNotifyDone ? '1' : '0',
-  };
+  // Each key comes from its option (`--webhook-url` for WEBHOOK_URL) or the caller's environment.
+  const option = (key: string): unknown => (options as Record<string, unknown>)[key.toLowerCase().replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())];
+  const values: Record<string, string> = {};
+  for (const key of NOTIFY_CHANNEL_SECRET_KEYS) values[key] = (option(key) as string | undefined) ?? process.env[key] ?? '';
+  for (const key of NOTIFY_DONE_KEYS) values[key] = option(key) ? '1' : '0';
   if (!options.nonInteractive) {
-    if (options.clefMode === undefined && process.env.CLEF_MODE === undefined) {
-      config.CLEF_MODE = (await askMasked('Clef mode [off/shadow; Enter for off]')).trim() || 'off';
-    }
-    for (const key of SECRETS) {
-      if (key.startsWith('CLOUDFLARE_') && config.CLEF_MODE !== 'shadow') continue;
-      if (!config[key]) config[key] = (await askMasked(`${key}${key === 'WEBHOOK_URL' || key === 'WEBHOOK_KEY' ? ' (required)' : ' (optional; Enter to skip)'}`)).trim();
+    for (const key of NOTIFY_CHANNEL_SECRET_KEYS) {
+      if (!values[key]) values[key] = (await askMasked(`${key}${key === 'WEBHOOK_URL' || key === 'WEBHOOK_KEY' ? ' (required)' : ' (optional; Enter to skip)'}`)).trim();
     }
     for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM']) {
-      const enabled = channel === 'TELEGRAM' ? config.TELEGRAM_BOT_TOKEN : config[`${channel === 'WEBHOOK' ? 'WEBHOOK' : channel + '_WEBHOOK'}_URL`];
-      if (enabled && config[`${channel}_NOTIFY_DONE`] !== '1') {
+      const enabled = channel === 'TELEGRAM' ? values.TELEGRAM_BOT_TOKEN : values[`${channel === 'WEBHOOK' ? 'WEBHOOK' : channel + '_WEBHOOK'}_URL`];
+      if (enabled && values[`${channel}_NOTIFY_DONE`] !== '1') {
         const answer = await askMasked(`${channel}: also notify on done? [y/N]`);
         if (!['', 'n', 'no', 'y', 'yes'].includes(answer.toLowerCase())) throw new Error('Enter y or n.');
-        config[`${channel}_NOTIFY_DONE`] = ['y', 'yes'].includes(answer.toLowerCase()) ? '1' : '0';
+        values[`${channel}_NOTIFY_DONE`] = ['y', 'yes'].includes(answer.toLowerCase()) ? '1' : '0';
       }
     }
   }
-  if (config.CLEF_MODE === 'off') { config.CLOUDFLARE_ACCOUNT_ID = ''; config.CLOUDFLARE_API_TOKEN = ''; }
-  validateConfig(config);
-  const env = { ...process.env };
-  for (const name of Object.keys(env)) if (name.startsWith('HERDR_') || SECRETS.includes(name as typeof SECRETS[number])) delete env[name];
-  const prefix = ['--session', options.session, 'plugin'];
-  let plugins: unknown;
-  try {
-    const response = JSON.parse(herdr([...prefix, 'list', '--plugin', PLUGIN_ID, '--json'], env));
-    if (response?.result?.type !== 'plugin_list') throw new Error();
-    plugins = response.result.plugins;
-  } catch {
-    throw new Error('Cannot inspect the installed webhook-notify plugin. No files were changed.');
-  }
-  if (!Array.isArray(plugins) || plugins.length > 1 || plugins.some(plugin =>
-    plugin?.plugin_id !== PLUGIN_ID || typeof plugin.plugin_root !== 'string'
-    || !isAbsolute(plugin.plugin_root) || typeof plugin.version !== 'string'
-    || typeof plugin.source?.kind !== 'string')) {
-    throw new Error('Herdr returned invalid webhook-notify plugin data. No files were changed.');
-  }
-  const foreignSourceMessage = 'An existing webhook-notify plugin uses another source. Installation stopped before linking or enabling the plugin.\n'
-    + `Run: herdr --session ${options.session} plugin unlink ${PLUGIN_ID}\n`
-    + `Then run: repo-harness herdr notify install --session ${options.session}`;
-  if (plugins.some(plugin => plugin.source.kind !== 'local')) throw new Error(foreignSourceMessage);
-  const dir = herdr([...prefix, 'config-dir', PLUGIN_ID], env);
-  if (!isAbsolute(dir) || /[\r\n\x00]/.test(dir)) throw new Error('Herdr returned an invalid config directory.');
-  const source = join(dir, 'source');
-  if (plugins.some(plugin => resolve(plugin.plugin_root) !== resolve(source))) throw new Error(foreignSourceMessage);
-  mkdirSync(dir, { recursive: true, mode: 0o700 });
-  mkdirSync(source, { recursive: true, mode: 0o700 });
-  if (lstatSync(dir).isSymbolicLink() || lstatSync(source).isSymbolicLink()) throw new Error('Plugin directories must not be symbolic links.');
-  for (const name of ['pane-status.mjs', 'worktree-location.mjs', 'bot-event.mjs', 'herdr-plugin.toml', 'notify.mjs']) {
-    const target = join(source, name);
+  const config = decodeNotifyConfig(values);
+  const running = relays();
+  // The relay reads the config on each event, so a live relay takes the new config without a restart.
+  writePrivateFile(notifyConfigPath(), renderNotifyConfig(config));
+  startRelay(running);
+  process.stdout.write(`Herdr notify is installed. Relay terminal: ${RH_NOTIFY_RELAY.name}. Default events: blocked.\n`);
+}
+
+/** The one manual restart: the relay never restarts itself (no launchd or systemd unit). */
+export function startNotify(): void {
+  if (!existsSync(notifyConfigPath())) throw new Error(`No notify config. Run: ${NOTIFY_INSTALL_COMMAND}`);
+  const running = relays();
+  startRelay(running);
+  process.stdout.write(running.length ? `Relay terminal ${RH_NOTIFY_RELAY.name} already runs.\n` : `Relay terminal ${RH_NOTIFY_RELAY.name} started.\n`);
+}
+
+/** Stop every live relay terminal and remove every relay terminal, also finished ones, then the notify files. A failed hc call keeps the files. */
+export function uninstallNotify(): void {
+  for (const relay of relays(true)) {
     try {
-      const stat = lstatSync(target);
-      if (!stat.isFile() || stat.isSymbolicLink()) throw new Error('Plugin source must be a regular file.');
-    } catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
-    const temporary = join(source, `.${name}-${randomUUID()}`);
-    try {
-      copyFileSync(join(ASSETS, name), temporary, constants.COPYFILE_EXCL);
-      // Rename replaces a late target symlink without writing through it.
-      renameSync(temporary, target);
-    } finally {
-      try { unlinkSync(temporary); }
-      catch (error) { if ((error as NodeJS.ErrnoException).code !== 'ENOENT') throw error; }
+      if (relay.state === 'live') hcKill(relay.address);
+      hcRm(relay.address);
     }
+    catch { throw new Error(`hc did not stop relay terminal ${relay.address}. The notify files were kept.`); }
   }
-  herdr([...prefix, 'link', source, '--disabled'], env);
-  writeConfig(dir, config);
-  herdr([...prefix, 'enable', PLUGIN_ID], env);
-  // Last step: the operator readers take the session only from this record.
-  try { writeNotifyInstallRecord(options.session); }
-  catch { throw new Error(`The plugin is enabled, but the install record was not written. Run: repo-harness herdr notify install --session ${options.session}`); }
-  process.stdout.write('Herdr notify is installed. Default events: blocked.\n');
+  for (const path of [notifyInstallRecordPath(), notifyConfigPath(), notifyDeliveriesPath()]) rmSync(path, { force: true });
+  process.stdout.write('Herdr notify is removed.\n');
+}
+
+/** Read-only: one `hc ls` call. Like every hc call, it starts a stopped hc core. */
+export function notifyRelayDoctorCheck(): DoctorCheckResult {
+  const id = 'herdr-notify-relay';
+  const describe = 'Herdr notify relay';
+  const record = readNotifyInstallRecord();
+  if (record.state === 'missing') return { id, describe, status: 'na', detail: 'Herdr notify is not installed.' };
+  if (record.state === 'invalid') return { id, describe, status: 'warn', detail: `The notify install record is invalid (notify_session_invalid). Run: ${NOTIFY_INSTALL_COMMAND}` };
+  let relays;
+  try { relays = hcList(record.relay.labels); }
+  catch { return { id, describe, status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' }; }
+  if (!relayIsLive(relays, record.relay)) {
+    return { id, describe, status: 'warn', detail: `Relay terminal ${record.relay.name} is not live (relay_stopped). Notifications are paused. Run: ${NOTIFY_START_COMMAND}` };
+  }
+  return { id, describe, status: 'ok', detail: `Relay terminal ${record.relay.name} is live.` };
 }
 
 export function buildHerdrCommand(): Command {
   const command = new Command('herdr').description('Set up Herdr tools');
-  command.command('notify').description('Set up Bot and human notifications')
-    .command('install').description('Install and enable the shipped webhook plugin')
-    .requiredOption('--session <name>', 'Herdr session to notify')
-    .option('--clef-mode <mode>', 'Clef mode: off or shadow (default: off)')
-    .option('--cloudflare-account-id <id>', 'Cloudflare account id for shadow mode')
+  const notify = command.command('notify').description('Set up Bot and human notifications');
+  notify.command('install').description('Write the notify config and start the relay in an hc terminal')
     .option('--non-interactive', 'Use flags or environment values without prompts')
     .option('--webhook-url <url>', 'Required Bot routine webhook URL')
     .option('--webhook-key <key>', 'Required Bot routine webhook key')
@@ -211,17 +154,32 @@ export function buildHerdrCommand(): Command {
       try { await installNotify(options); }
       catch (error) {
         // Only our fixed messages can reach the terminal. Filesystem errors may contain secrets in paths.
-        const message = error instanceof Error && !('code' in error) ? error.message : 'Cannot write the plugin config.';
+        const message = error instanceof Error && !('code' in error) ? error.message : 'Cannot write the notify config.';
         process.stderr.write(`Herdr notify: ${message}\n`); process.exitCode = 1;
       }
     });
-  command.command('decision').description('Label local shadow decisions')
-    .command('label [event_id] [option]').description('Read the next blind record or write one Bot label')
-    .option('--next', 'Print one unlabeled record without model answers')
-    .option('--state-dir <path>', 'Explicit Herdr plugin state directory')
-    .action(async (eventId: string | undefined, option: string | undefined, options: { next?: boolean; stateDir?: string }) => {
-      try { process.stdout.write(JSON.stringify(await labelDecision({ eventId, option, ...options })) + '\n'); }
-      catch { process.stderr.write('Herdr decision: label failed. Check arguments, plugin state and file access.\n'); process.exitCode = 1; }
+  notify.command('start').description('Start the relay terminal again with the written config')
+    .action(() => {
+      try { startNotify(); }
+      catch (error) {
+        const message = error instanceof Error && !('code' in error) ? error.message : 'Cannot read the notify config.';
+        process.stderr.write(`Herdr notify: ${message}\n`); process.exitCode = 1;
+      }
+    });
+  notify.command('uninstall').description('Stop the relay terminal and remove the notify config')
+    .action(() => {
+      try { uninstallNotify(); }
+      catch (error) {
+        const message = error instanceof Error && !('code' in error) ? error.message : 'Cannot remove the notify files.';
+        process.stderr.write(`Herdr notify: ${message}\n`); process.exitCode = 1;
+      }
+    });
+  notify.command('relay').description('Follow hc events and send notices (install runs this in an hc terminal)')
+    .requiredOption('--home <path>', 'Absolute repo-harness home that holds the notify config')
+    .action(async (options: { home: string }) => {
+      if (!isAbsolute(options.home)) { process.stderr.write('[notify-relay] --home must be an absolute path.\n'); process.exitCode = 1; return; }
+      try { await runNotifyRelay({ env: { ...process.env, REPO_HARNESS_HOME: options.home } }); }
+      catch { process.stderr.write(`[notify-relay] The hc event stream ended. Run: ${NOTIFY_START_COMMAND}\n`); process.exitCode = 1; }
     });
   return command;
 }

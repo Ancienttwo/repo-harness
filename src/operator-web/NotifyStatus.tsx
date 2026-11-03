@@ -16,7 +16,7 @@ async function fetchNotifyStatus(signal: AbortSignal): Promise<NotifyStatusV1> {
   return decodeNotifyStatus(await response.json());
 }
 
-/** Read-only facts. No control changes plugin state. */
+/** Read-only facts. No control changes relay state. */
 export function NotifyStatusPanel({
   readStatus = fetchNotifyStatus,
   initialStatus,
@@ -62,9 +62,6 @@ export function NotifyStatusPanel({
 function NotifyFacts({ status, t }: { readonly status: NotifyStatusV1; readonly t: OperatorTranslate }) {
   return (
     <dl className="detail-list">
-      <div><dt>{t('notify.plugin')}</dt><dd>{status.plugin_id}</dd></div>
-      <div><dt>{t('notify.linked')}</dt><dd>{t(`notify.link.${status.linked}`)}</dd></div>
-      <div><dt>{t('notify.enabled')}</dt><dd>{t(`notify.enable.${status.enabled}`)}</dd></div>
       {NOTIFY_STATUS_KEYS.map(key => (
         <div key={key}><dt>{key}</dt><dd>{t(`notify.presence.${status.config[key]}`)}</dd></div>
       ))}

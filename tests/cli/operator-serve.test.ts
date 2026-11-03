@@ -478,7 +478,7 @@ describe('operator serve command and HTTP boundary', () => {
         await Bun.sleep(25);
         notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
       }
-      expect(notify.error).toEqual({ code: 'notify_session_missing', message: expect.any(String), next_action: 'Run `repo-harness herdr notify install --session <name>`.' });
+      expect(notify.error).toEqual({ code: 'notify_session_missing', message: expect.any(String), next_action: 'Run `repo-harness herdr notify install`.' });
     } finally { await collecting.close(); rmSync(home, { recursive: true, force: true }); }
   });
 
