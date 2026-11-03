@@ -135,7 +135,6 @@ describe('doctor command (Phase 1C)', () => {
       const log = path.join(f.root, 'host-probes');
       try {
         writeExecutable(path.join(f.fakeBin, 'pi'), `#!/bin/sh\necho pi >> '${log}'\nexit 99\n`);
-        writeExecutable(path.join(f.fakeBin, 'herdr'), `#!/bin/sh\necho herdr >> '${log}'\necho 'pi: not installed (/fixture/pi)'\n`);
         withEnv({ HOME: f.home, PATH: f.fakeBin }, () => {
           const report = runDoctor(CLI_PORTS.doctor, f.root, target);
           expect(report.checks.some(check => check.id.startsWith('pi-'))).toBe(false);
@@ -584,9 +583,6 @@ describe('doctor command (Phase 1C)', () => {
       );
       writeFakeCodeGraph(envRoot.fakeBin, logFile);
       writeFakeBunx(envRoot.fakeBin);
-      // Bun's PATH can include the pinned Pi CLI. Keep its new integration
-      // diagnostic ready while this case checks CodeGraph's read-only path.
-      writeExecutable(path.join(envRoot.fakeBin, 'herdr'), '#!/bin/sh\n[ "$*" = "integration status" ] || exit 99\nprintf "pi: current (v9) (/fixture/pi)\\n"\n');
 
       const root = path.join(import.meta.dir, '..', '..');
       fs.mkdirSync(path.join(envRoot.root, '.codegraph'));

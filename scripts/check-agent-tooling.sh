@@ -144,7 +144,6 @@ const ARCHCTX_MODEL_DIR = ".archcontext/model";
 const ARCHCTX_NODES_DIR = ".archcontext/model/nodes";
 const ARCHCTX_CAPABILITY_SOURCE_KEY = ".ai/harness/policy.json#context.capability_source";
 const ARCHCTX_STATUS_COMMAND = "repo-harness architecture-projection status --json";
-const HERDR_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr";
 const HERDR_CORE_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr_core";
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
@@ -792,9 +791,8 @@ function detectWaza() {
 
 /**
  * Reads one runtime pin at `.ai/harness/policy.json#external_tooling.<key>`.
- * Classic Herdr (`herdr`) and herdr-core (`herdr_core`) each own one pin; the
- * herdr pin also owns the release URL and checksum that CI installs from. A
- * missing or malformed pin fails closed instead of assuming a floor.
+ * The herdr-core pin also owns the release URL and checksum that CI installs
+ * from. A missing or malformed pin fails closed instead of assuming a floor.
  */
 function pinnedMinVersion(key) {
   const policy = readJson(path.join(REPO_ROOT, ".ai/harness/policy.json"));
@@ -832,17 +830,11 @@ function pinnedRuntimeCapability(capability, key, pinKey, versionPattern) {
 }
 
 function detectRuntimeCapabilities(waza) {
-  // Two separate runtimes: hc never satisfies runtime.herdr, because the classic surfaces gated on it do not run on herdr-core.
-  const herdr = pinnedRuntimeCapability(
-    commandCapability("herdr", "persistent agent terminals, peer collaboration and task-scoped Claude acceptance review", "platform-runtime", true),
-    "herdr", HERDR_PIN_KEY, /^herdr (\d+\.\d+\.\d+)$/
-  );
   const herdrCore = pinnedRuntimeCapability(
-    commandCapability("hc", "persistent terminals and agent messaging through herdr-core", "platform-runtime", false),
+    commandCapability("hc", "persistent agent terminals, task sessions, review hosting and notify relay through herdr-core", "platform-runtime", true),
     "herdr_core", HERDR_CORE_PIN_KEY, /^hc (\d+\.\d+\.\d+)$/
   );
   return {
-    herdr,
     herdr_core: herdrCore,
     bun: commandCapability(
       "bun",
@@ -2002,13 +1994,15 @@ const report = {
 };
 
 const strictFailures = [];
-if (strictReadiness && report.runtime_capabilities.herdr.status !== "present") {
-  const pinned = report.runtime_capabilities.herdr.min_version;
-  if (!pinned) strictFailures.push(`herdr configuration error: ${report.runtime_capabilities.herdr.reason}`);
-  else strictFailures.push(`herdr runtime is ${report.runtime_capabilities.herdr.status}; install herdr >=${pinned} and verify herdr --version`);
+if (strictReadiness && report.runtime_capabilities.herdr_core.status !== "present") {
+  const hc = report.runtime_capabilities.herdr_core;
+  if (!hc.min_version) strictFailures.push(`herdr-core configuration error: ${hc.reason}`);
+  else strictFailures.push(`herdr-core runtime is ${hc.status}; install hc >=${hc.min_version} and verify hc --version`);
 }
 if (strictReadiness && report.tools.herdr_skill.status !== "present") {
-  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; run ${report.tools.herdr_skill.install_command}`);
+  // The skill source is `hc --skill`, so the update command cannot repair it until hc is present.
+  const installHcFirst = report.runtime_capabilities.herdr_core.status === "present" ? "" : "install hc first, then ";
+  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; ${installHcFirst}run ${report.tools.herdr_skill.install_command}`);
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);

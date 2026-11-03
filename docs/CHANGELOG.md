@@ -52,6 +52,15 @@ All notable changes to this skill are documented here.
 - The MCP executor profile no longer grants writes under
   `.ai/harness/checks/**` or `.ai/harness/handoff/**`. No MCP tool writes
   those files. (#1549)
+- Readiness requires herdr-core, not classic Herdr. `check-agent-tooling.sh
+  --strict-readiness` fails when `hc` is missing, unusable or below
+  `external_tooling.herdr_core.min_version`; a missing or malformed pin is a
+  `configuration-error`. `setup check` reports `runtime.herdr_core` as
+  required. The `external_tooling.herdr` pin, `runtime.herdr` and the
+  doctor check `pi-herdr-integration` are removed, and CI no longer
+  installs classic Herdr. Pi reports its status to hc natively. An
+  `external_tooling.herdr` key in a downstream policy has no reader;
+  delete it. Herdr.app is not a readiness requirement. (#1480)
 
 ### Fixed
 
