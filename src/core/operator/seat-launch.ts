@@ -213,9 +213,6 @@ export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: Seat
   return { protocol: 1, kind: 'seat_launch', seat, runtime: config.runtime, source, ...launch };
 }
 
-/** A repository's pane prefix (#1544): one per registered repository, unique on the machine. */
-export const PANE_PREFIX = /^[a-z][a-z0-9]{1,5}$/u;
-
 const PANE_ROLE = { orchestrator: 'orch', advisor: 'adv', worker: 'w', reviewer: 'rv' } as const;
 const PANE_NAME_MAX = 32;
 const POSITIVE = /^[1-9][0-9]*$/u;
@@ -227,6 +224,7 @@ export class SeatPaneNameError extends Error {
 
 /** `reviewer` is a pane started by hand; it has no seat config. */
 export interface SeatPaneNameInput {
+  /** The `panePrefix` of the repository's registry entry (#1544); the registry checks its format. */
   readonly prefix: string;
   readonly seat: SeatId | 'reviewer';
   readonly issue?: string;
@@ -243,7 +241,7 @@ export interface SeatPaneNameInput {
 export function seatPaneName(input: SeatPaneNameInput): string {
   const fail = (why: string): never => { throw new SeatPaneNameError(`Pane name: ${why}.`); };
   const { prefix, seat, issue, pr, release, qualifier } = input;
-  if (!PANE_PREFIX.test(prefix)) fail(`prefix ${JSON.stringify(prefix)} must match ${PANE_PREFIX.source}`);
+  if (!WORD.test(prefix)) fail(`prefix ${JSON.stringify(prefix)} must match ${WORD.source}`);
   const role: string | undefined = PANE_ROLE[seat];
   if (role === undefined) fail(`unknown seat ${JSON.stringify(seat)}`);
   let item: string | undefined;
