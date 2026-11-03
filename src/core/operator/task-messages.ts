@@ -6,6 +6,7 @@ import type {
   TaskMessageRecipientKind,
   TaskMessageSenderKind,
 } from '../fleet/admitted-task-message';
+import { newestTaskMessageFirst } from '../fleet/task-message-order';
 
 /**
  * `GET /api/v1/repositories/<id>/tasks/<task_id>/messages`: the stored task
@@ -80,11 +81,6 @@ export function isTaskMessagesRequest(value: unknown): value is TaskMessagesRequ
     && typeof record.task_id === 'string' && isTaskMessagesTaskId(record.task_id);
 }
 
-/** Newest first, then by message id: the order of `messages` in every view. */
-export const newestFirst = (left: TaskMessageView, right: TaskMessageView): number =>
-  left.created_at !== right.created_at ? (left.created_at < right.created_at ? 1 : -1)
-    : left.message_id < right.message_id ? 1 : left.message_id > right.message_id ? -1 : 0;
-
 /** The public fields of the stored records: no digest, admission, claim reference or delivery reference. */
 export function projectTaskMessages(request: TaskMessagesRequest,
   entries: readonly { readonly event: TaskMessageEventV2; readonly receipts: readonly TaskMessageDeliveryReceiptV2[] }[],
@@ -98,7 +94,7 @@ export function projectTaskMessages(request: TaskMessagesRequest,
     })),
   }));
   return { protocol: TASK_MESSAGES_PROTOCOL, kind: TASK_MESSAGES_KIND, repository_id: request.repository_id, task_id: request.task_id,
-    messages: messages.sort(newestFirst), complete };
+    messages: messages.sort(newestTaskMessageFirst), complete };
 }
 
 type Json = Record<string, unknown>;
@@ -135,7 +131,7 @@ export function decodeTaskMessagesView(value: unknown, request: TaskMessagesRequ
       if (!DELIVERY_STATES.includes(receipt.delivery_state) || !nullableTime(receipt.delivered_at) || !nullableTime(receipt.acknowledged_at)) fail('delivery');
     }
     const current = message as unknown as TaskMessageView;
-    if (previous !== null && newestFirst(previous, current) >= 0) fail('order');
+    if (previous !== null && newestTaskMessageFirst(previous, current) >= 0) fail('order');
     previous = current;
   }
   return value as TaskMessagesViewV1;

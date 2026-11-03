@@ -33,25 +33,42 @@ test('admitted inbox preserves retry, delivery, acknowledgement and exact immuta
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 
-test('bounded admitted activity pages stored events and receipts without legacy fallback', async () => {
+test('bounded admitted activity pages stored events newest first and keeps the records read before a budget stop', async () => {
   const f = await admittedInboxFixture();
   try {
     sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event });
     deliverTaskInbox({ ...f.input, delivery_channel: 'manual', delivered_at: time });
     acknowledgeTaskInbox({ ...f.input, message_id: f.event.message_id, acknowledged_at: time });
-    const second = buildTaskMessageEvent({ ...f.event, message_id: '123e4567-e89b-42d3-a456-426614174001', body: 'Second note.' });
+    // Time order is opposite to id order and to text order: `…00.500Z` is later than `…00Z`, and the later event has the lower id.
+    const second = buildTaskMessageEvent({ ...f.event, message_id: '123e4567-e89b-42d3-a456-426614173fff', body: 'Second note.',
+      created_at: f.event.created_at.replace('Z', '.500Z') });
     sendTaskMessage({ repo_root: f.root, source: f.source, event: second });
+    expect(listTaskInbox(f.input).entries.map(entry => entry.event.message_id)).toEqual([f.event.message_id, second.message_id]);
     const query = { repo_root: f.root, task_id: f.task, limit: 1, after: null, message_id: null, budget };
     const activity = readAdmittedTaskActivity(query);
     expect(activity.entries).toHaveLength(1);
+    // Two event scans; the receipt of the older event is not read, because that event is not on the page.
+    expect(activity.coverage).toMatchObject({ reason: 'page', scanned: 2 });
     expect(Object.keys(activity.entries[0]!).sort()).toEqual(['event', 'receipts']);
-    expect(activity.entries[0]?.event).toEqual(f.event);
-    expect(activity.entries[0]?.receipts.map(receipt => receipt.delivery_state)).toEqual(['acknowledged']);
-    expect(activity.next_cursor).toBe(f.event.message_id);
+    expect(activity.entries[0]?.event).toEqual(second);
+    expect(activity.entries[0]?.receipts).toEqual([]);
+    expect(activity.next_cursor).toBe(second.message_id);
     const next = readAdmittedTaskActivity({ ...query, after: activity.next_cursor });
-    expect(next.entries[0]?.event).toEqual(second);
-    expect(next.entries[0]?.receipts).toEqual([]);
+    expect(next.entries[0]?.event).toEqual(f.event);
+    expect(next.entries[0]?.receipts.map(receipt => receipt.delivery_state)).toEqual(['acknowledged']);
+    expect(next.coverage.complete).toBe(true);
     expect(readAdmittedTaskActivity({ ...query, budget: { ...budget, max_scan: 0 } }).coverage.reason).toBe('scan');
+    // The walk scans both events; the budget stops at the receipt of the older event, and the newer complete record stays.
+    const stopped = readAdmittedTaskActivity({ ...query, limit: 2, budget: { ...budget, max_scan: 2 } });
+    expect(stopped.entries).toHaveLength(1);
+    expect(stopped.coverage).toMatchObject({ complete: false, reason: 'scan', scanned: 2 });
+    expect(stopped.next_cursor).toBeNull();
+    const events = join(taskInboxTaskDirectory(f.root, f.task), 'events'), largest = Math.max(...readdirSync(events).map(name => readFileSync(join(events, name)).length));
+    // A walk stop returns no records and keeps the walk's reason; with bytes, the spent scan budget would stop a receipt read too.
+    for (const [walkBudget, reason] of [[{ max_scan: 1 }, 'scan'], [{ max_scan: 2, max_bytes: largest }, 'bytes']] as const) {
+      expect(readAdmittedTaskActivity({ ...query, limit: 2, budget: { ...budget, ...walkBudget } }))
+        .toMatchObject({ entries: [], next_cursor: null, coverage: { complete: false, reason, scanned: walkBudget.max_scan } });
+    }
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 

@@ -3,6 +3,7 @@ import { Command } from 'commander';
 import { RETENTION_CLASSES, runArtifactRetention, type RetentionConfig, type RetentionReport } from '../../effects/artifact-retention';
 import { gitExecFileSync } from '../../effects/git/runner';
 import { FEEDBACK_ROOT_RELATIVE_PATH } from '../../effects/publication/feedback-store';
+import { TASK_SESSIONS_PATH } from '../../effects/terminal/task-session-record';
 import { SEGMENTED_LOG_ARCHIVE_BYTES, SEGMENTED_LOG_ARCHIVE_SEGMENTS, SEGMENTED_LOG_SEGMENT_BYTES } from '../../effects/segmented-log';
 import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
 import { UPGRADE_AUDIT_MAX_RECORDS } from './upgrade';
@@ -50,7 +51,7 @@ export function retentionRoots(config: RetentionConfig, ports: RetentionPorts): 
       .map((path): RetentionRoot => ({ path, rule: 'rotate', detail: rotation })),
     { path: '~/.repo-harness/packages', rule: 'rotate', detail: 'install keeps only the release tarball it installed' },
     { path: '~/.repo-harness/upgrade-cleanup.log.jsonl', rule: 'rotate', detail: `upgrade keeps the newest ${UPGRADE_AUDIT_MAX_RECORDS} records` },
-    { path: '.ai/harness/runs/task-agents', rule: 'keep', detail: 'kept: a closed.json tombstone blocks a session restart' },
+    { path: TASK_SESSIONS_PATH, rule: 'keep', detail: 'kept: a closed.json tombstone blocks a session restart' },
     { path: '.ai/harness/runs/task-workspaces', rule: 'keep', detail: 'kept: a closed.json tombstone blocks a workspace restart' },
     ...ports.commonProtocolRoots.map((path): RetentionRoot => ({ path: `{common}/${path}`, rule: 'keep', detail: noRule })),
     { path: `{common}/${FEEDBACK_ROOT_RELATIVE_PATH}`, rule: 'keep', detail: noRule },

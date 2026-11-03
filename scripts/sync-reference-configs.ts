@@ -10,6 +10,7 @@ import {
   type ProjectionFileRecord,
 } from "../src/effects/source-projection";
 import { TOOL_CATALOG, type ToolCatalogV1 } from "../src/core/tools/catalog";
+import { REVIEW_HAZARDS, type ReviewHazardsV1 } from "../src/core/board/hazards";
 
 type Mode = "check" | "write";
 
@@ -21,6 +22,10 @@ const TARGET_ROOT = join(REPO_ROOT, "docs", "reference-configs");
 const CATALOG_DOC = "external-tooling.md";
 const CATALOG_BEGIN = "<!-- tool-catalog:resources:begin -->";
 const CATALOG_END = "<!-- tool-catalog:resources:end -->";
+/** The canonical doc whose change hazard table assets/review-hazards.v1.json owns. */
+const HAZARDS_DOC = "agentic-development-flow.md";
+const HAZARDS_BEGIN = "<!-- review-hazards:list:begin -->";
+const HAZARDS_END = "<!-- review-hazards:list:end -->";
 
 function usage(): never {
   process.stderr.write("Usage: bun scripts/sync-reference-configs.ts [--check|--write]\n");
@@ -63,22 +68,44 @@ function resourceTable(catalog: ToolCatalogV1): string {
   return ["| Repo | Use it for | License |", "| --- | --- | --- |", ...rows].join("\n");
 }
 
+function hazardTable(list: ReviewHazardsV1): string {
+  const rows = list.hazards.map((hazard) =>
+    `| ${hazard.text} | ${hazard.path_visible ? hazard.paths.map((path) => `\`${path}\``).join(", ") : "None (`path_visible: false`)"} |`);
+  return [
+    "The board rule R3 reads only the rows with `path_visible: true`: a changed path that matches one of their patterns is a hit. Reviewers apply every row.",
+    "",
+    "| Hazard | Paths that R3 reads |",
+    "| --- | --- |",
+    ...rows,
+  ].join("\n");
+}
+
 /**
- * Returns `markdown` with the text between the catalog markers rendered from
- * `catalog`. The doc must hold exactly one marker pair; a missing pair fails
- * instead of skipping the table.
+ * Returns `markdown` with the text between `beginMarker` and `endMarker`
+ * replaced by `body`. The doc must hold exactly one marker pair; a missing
+ * pair fails instead of skipping the region.
  */
-export function renderToolCatalogRegion(markdown: string, catalog: ToolCatalogV1): string {
-  const begin = markdown.indexOf(CATALOG_BEGIN);
-  const end = markdown.indexOf(CATALOG_END);
+function renderRegion(markdown: string, doc: string, beginMarker: string, endMarker: string, body: string): string {
+  const begin = markdown.indexOf(beginMarker);
+  const end = markdown.indexOf(endMarker);
   if (
     begin < 0 || end < begin
-    || markdown.indexOf(CATALOG_BEGIN, begin + 1) >= 0
-    || markdown.indexOf(CATALOG_END, end + 1) >= 0
+    || markdown.indexOf(beginMarker, begin + 1) >= 0
+    || markdown.indexOf(endMarker, end + 1) >= 0
   ) {
-    throw new Error(`${CATALOG_DOC} must hold exactly one ${CATALOG_BEGIN} ... ${CATALOG_END} region`);
+    throw new Error(`${doc} must hold exactly one ${beginMarker} ... ${endMarker} region`);
   }
-  return `${markdown.slice(0, begin + CATALOG_BEGIN.length)}\n${resourceTable(catalog)}\n${markdown.slice(end)}`;
+  return `${markdown.slice(0, begin + beginMarker.length)}\n${body}\n${markdown.slice(end)}`;
+}
+
+/** Renders the resource table of external-tooling.md from `catalog`. */
+export function renderToolCatalogRegion(markdown: string, catalog: ToolCatalogV1): string {
+  return renderRegion(markdown, CATALOG_DOC, CATALOG_BEGIN, CATALOG_END, resourceTable(catalog));
+}
+
+/** Renders the change hazard table of agentic-development-flow.md from `list`. */
+export function renderHazardRegion(markdown: string, list: ReviewHazardsV1): string {
+  return renderRegion(markdown, HAZARDS_DOC, HAZARDS_BEGIN, HAZARDS_END, hazardTable(list));
 }
 
 function main(): void {
@@ -92,13 +119,19 @@ function main(): void {
   const drift: string[] = [];
   const blockedDrift: string[] = [];
 
-  // The catalog table is rendered into the canonical doc before projection.
-  const catalogDoc = readProjectionFile(CANONICAL_ROOT, CATALOG_DOC);
-  const renderedDoc = renderToolCatalogRegion(catalogDoc.bytes.toString("utf8"), TOOL_CATALOG);
-  if (renderedDoc !== catalogDoc.bytes.toString("utf8")) {
-    drift.push(`tool catalog drift: assets/reference-configs/${CATALOG_DOC}`);
-    if (mode === "write") {
-      writeProjectionFileAtomic(REPO_ROOT, join(CANONICAL_ROOT, CATALOG_DOC), renderedDoc, catalogDoc.mode);
+  // The generated regions are rendered into the canonical docs before projection.
+  const regions = [
+    { doc: CATALOG_DOC, label: "tool catalog", render: (markdown: string) => renderToolCatalogRegion(markdown, TOOL_CATALOG) },
+    { doc: HAZARDS_DOC, label: "review hazards", render: (markdown: string) => renderHazardRegion(markdown, REVIEW_HAZARDS) },
+  ];
+  for (const region of regions) {
+    const file = readProjectionFile(CANONICAL_ROOT, region.doc);
+    const rendered = region.render(file.bytes.toString("utf8"));
+    if (rendered !== file.bytes.toString("utf8")) {
+      drift.push(`${region.label} drift: assets/reference-configs/${region.doc}`);
+      if (mode === "write") {
+        writeProjectionFileAtomic(REPO_ROOT, join(CANONICAL_ROOT, region.doc), rendered, file.mode);
+      }
     }
   }
 
@@ -142,7 +175,7 @@ function main(): void {
   if (mode === "check" && drift.length > 0) {
     for (const item of drift) process.stderr.write(`[reference-configs] ${item}\n`);
     process.stderr.write(
-      "[reference-configs] Edit assets/reference-configs/<doc>.md or assets/tool-catalog.v1.json, then run bun run sync:reference-configs.\n",
+      "[reference-configs] Edit assets/reference-configs/<doc>.md, assets/tool-catalog.v1.json or assets/review-hazards.v1.json, then run bun run sync:reference-configs.\n",
     );
     process.exit(1);
   }

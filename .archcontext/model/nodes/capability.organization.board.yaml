@@ -11,6 +11,7 @@ responsibilities:
   - "Read the seat labels of the hc terminals that carry the parent label; a terminal without a seat label stays unavailable."
   - "Reuse the single-PR merge readiness projection for open pull requests; never decide merge readiness again."
   - "Run the attention rules with constant thresholds; list a rule whose input is unavailable as unevaluated."
+  - "Own the change hazard list in assets/review-hazards.v1.json and its decoder; rule R3 reads only the path-visible entries."
 source:
   include:
     - "src/core/board/**"

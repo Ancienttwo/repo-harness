@@ -44,7 +44,7 @@ as `Depends on #<n>` is not a dependency. Nothing reads it.
 <the user-visible end state, 1–3 sentences>
 
 ## Children
-| Order | Issue | Module | Outcome | Seat / status |
+| Order | Issue | Module | Outcome | Role / status |
 |---|---|---|---|---|
 | 1 | #<n> | <module id> | <outcome> | merged |
 | 2 | #<n> | <module id> | <outcome> | writer <agent> · PR #<p> |
@@ -59,7 +59,7 @@ as `Depends on #<n>` is not a dependency. Nothing reads it.
 <filled by `decision` comments; list their links here when the parent is edited>
 ```
 
-The seat/status column uses only these values: `unclaimed`,
+The role/status column uses only these values: `unclaimed`,
 `unclaimed · waits for #n`, `writer <agent> · active`,
 `writer <agent> · PR #p`, `merged`. A Chinese-language repository
 writes `待认领`, `待认领 · 等待 #n 合并`, `writer <agent> · active`,
@@ -261,7 +261,7 @@ comment and does not dispatch until the corrected claim is on the board.
 `issue claim` is seat-only. The coordinator posts it, including the
 claim of each agent it dispatches. Such a claim names the agent in
 `Agent:` and the coordinator's own claim in `Coordinator:`. Any other
-agent's claim is a request, not a seat. A claim is valid only from an
+agent's claim is a request, not a claim role. A claim is valid only from an
 account whose `author_association` is `OWNER`, `MEMBER` or
 `COLLABORATOR`; GitHub is the only source of that permission.
 
@@ -377,12 +377,12 @@ Findings:
 - <none when the round has no finding>
 ```
 
-Every round writes this record, one row per round. The fields are `Round`,
+Every review writes this record, one row per review. The fields are `Round`,
 `Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
-`Model relation` line. `repo-harness review publish` writes it for rounds
-1 to 3. The session that runs a round above 3 posts the same text by hand
-(`acceptor.md` §4). The board reads only this shape. A record that it cannot
+`Model relation` line. `repo-harness review publish` writes it. For a
+round that the command does not accept, the session posts the same text
+by hand (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
 ### review reply (in the PR review thread)
@@ -390,13 +390,14 @@ read makes the PR state unknown, not accepted.
 ```text
 repo-harness review reply
 Agent: <kind>, session <id>
-Disposition: fixed <sha> | disputed | rejected
+Disposition: fixed <sha> | disputed | rejected | deferred #<follow-up issue>
 Why: <reason; for fixed, the test that fails on the base>
 ```
 
 The head owner replies `fixed` or `disputed` and leaves the thread open.
-Only the coordinator replies `rejected`, then resolves the thread
-(`board.md` rule 5). A comment from a reviewer without a seat, such as an
+Only the coordinator replies `rejected`, or `deferred` for a rule-4
+merge (`acceptor.md` §2.2), then resolves the thread (`board.md` rule 5).
+A comment from a reviewer without a claim role, such as an
 outside contributor or an independent bot, is optional input: the head
 owner or the coordinator decides whether to adopt it, and answers with the
 same reply.

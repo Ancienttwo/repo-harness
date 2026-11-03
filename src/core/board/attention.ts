@@ -1,14 +1,12 @@
 import { planIssues } from './plan-block';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from './board';
+import { pathHazardHits } from './hazards';
 
 /**
  * Attention rules over one board. Each rule is a pure function of the board
  * and its observation time. A rules route to the orchestrator seat, R rules
  * to the advisor seat. A rule whose input is unavailable is listed as
  * unevaluated with the reason; it never fires on a guess.
- *
- * R3 (tier label below the hazard tier of the changed paths) waits for a
- * machine-readable hazard list (#1514).
  */
 export const BOARD_ATTENTION_PROTOCOL = 1 as const;
 export const BOARD_ATTENTION_KIND = 'repo-harness.board-attention' as const;
@@ -27,7 +25,7 @@ const A2_BATCH_MAX = 6;
 const WORKER_SEAT = 'worker';
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'R1' | 'R2' | 'R4';
+export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'R1' | 'R2' | 'R3' | 'R4';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 
 export interface BoardFindingV1 {
@@ -290,6 +288,29 @@ function r2(context: Context): void {
   }
 }
 
+/**
+ * R3: an open pull request changes a path on the change hazard list, and an
+ * item that it closes or refs has a tier label below High. One hazard hit sets
+ * High (`agentic-development-flow.md`, Review by risk).
+ */
+function r3(context: Context): void {
+  for (const pr of openPullRequests(context.board)) {
+    if (pr.files === null) {
+      skip(context, 'R3', 'files_incomplete', `#${pr.number}`);
+      continue;
+    }
+    const hits = pathHazardHits(pr.files);
+    if (hits.length === 0) continue;
+    const items = itemsOf(context.board, pr).map(number => context.board.items.find(item => item.number === number)!);
+    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R3', 'tier_label_missing', `#${pr.number} #${item.number}`);
+    const below = items.filter(item => item.tier === 'low' || item.tier === 'medium');
+    if (below.length > 0) {
+      find(context, 'R3', { issues: below.map(item => item.number), pull_requests: [pr.number] },
+        `#${pr.number} changes ${hits.slice(0, 3).map(hit => `${hit.path} (${hit.hazard})`).join(', ')}${hits.length > 3 ? ` and ${hits.length - 3} more` : ''}, a High hazard, but ${below.map(item => `#${item.number} is tier:${item.tier}`).join(', ')}`);
+    }
+  }
+}
+
 function r4(context: Context): void {
   const plan = context.board.plan;
   if (plan.status !== 'observed') return skip(context, 'R4', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
@@ -305,7 +326,7 @@ function r4(context: Context): void {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, r1, r2, r4]) rule(context);
+  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, r1, r2, r3, r4]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,

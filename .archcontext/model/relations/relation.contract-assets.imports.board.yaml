@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.contract-assets.imports.board
+kind: depends-on
+source: capability.workflow-engine.contract-assets
+target: capability.organization.board
+intent: "Render the change hazard table in agentic-development-flow.md from the board hazard list reader."

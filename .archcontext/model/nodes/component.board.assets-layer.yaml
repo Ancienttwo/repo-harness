@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.board.assets-layer
+kind: component
+name: Board (assets)
+status: active
+parent: capability.organization.board
+layer: assets
+summary: The assets-layer files of Board. Responsibilities stay with the parent node.
+responsibilities:
+  - Hold the assets-layer source files of Board so layer direction is checked per directory.
+source:
+  include:
+    - assets/review-hazards.v1.json

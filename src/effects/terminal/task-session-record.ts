@@ -95,17 +95,18 @@ export function assertCreated(ownership: ObjectOwnership): asserts ownership is 
   }
 }
 
-const TASK_SESSIONS_PATH = ['.ai', 'harness', 'runs', 'task-agents'] as const;
+/** Repo-relative root of the task session records in a primary checkout. */
+export const TASK_SESSIONS_PATH = '.ai/harness/runs/task-agents';
 const TASK_SESSIONS_MAX_ENTRIES = 200;
 
 export function taskSessionDirectory(root: string, task: string, role: string): string {
   const repository = taskRepository(root);
-  return join(repository.primary_root, ...TASK_SESSIONS_PATH, taskSessionKey(repository.repository_id, task, role));
+  return join(repository.primary_root, TASK_SESSIONS_PATH, taskSessionKey(repository.repository_id, task, role));
 }
 /** Every task session directory of a primary checkout, sorted. A missing parent directory means no session. */
 export function taskSessionDirectories(primaryRoot: string): string[] {
   let base = primaryRoot;
-  for (const component of TASK_SESSIONS_PATH) {
+  for (const component of TASK_SESSIONS_PATH.split('/')) {
     base = join(base, component);
     if (!existsSync(base)) return [];
     const stat = lstatSync(base);
