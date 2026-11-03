@@ -7,7 +7,7 @@ import { closeSync, constants, fstatSync, openSync, readSync } from 'node:fs';
 import { join } from 'node:path';
 import { parseEnv } from 'node:util';
 import { NOTIFY_CHANNEL_SECRET_KEYS, type NotifyChannelSecretKey } from '../../core/decision/notify-secret-keys';
-import { EMPTY_RELAY_DELIVERIES, decodeRelayDeliveries, type RelayDeliveriesV1 } from '../../core/operator/notify-status';
+import { EMPTY_RELAY_DELIVERIES, decodeRelayDeliveries, type RelayDeliveriesV1 } from '../../core/decision/notify-relay-record';
 import { repoHarnessHome } from '../repo-harness-home.ts';
 import { RH_NOTIFY_RELAY, type HcLabels, type HcTerminalSummary } from './herdr-core.ts';
 

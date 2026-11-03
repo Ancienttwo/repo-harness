@@ -5,14 +5,14 @@
 import { hostname } from 'node:os';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 import { NAME_PATTERN, botEvent } from '../../../assets/herdr/github-events/bot-event.mjs';
+import { NOTIFY_INSTALL_COMMAND } from '../../core/operator/notify-status';
 import {
   EMPTY_RELAY_DELIVERIES,
-  NOTIFY_INSTALL_COMMAND,
   NOTIFY_CHANNELS,
   type NotifyChannel,
   type RelayAttemptV1,
   type RelayDeliveriesV1,
-} from '../../core/operator/notify-status';
+} from '../../core/decision/notify-relay-record';
 import { RH_LABEL, RH_NOTIFY_LABELS, hcEvents, type HcEventStream, type HcLabels, type HcStreamItem } from './herdr-core';
 import { writePrivateFile } from './herdr-notify-install';
 import { NOTIFY_DONE_KEYS, NotifyConfigError, notifyDeliveriesPath, readNotifyConfig, readRelayDeliveries, type NotifyConfig } from './notify-read';

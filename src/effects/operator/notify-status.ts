@@ -1,13 +1,12 @@
 import {
   readDeliveries,
-  type NotifyChannel,
   type NotifyChannelDeliveriesV1,
   type NotifyConfigKey,
   type NotifyPresence,
   type NotifyStatusV1,
   type NotifyUnavailableReason,
-  type RelayDeliveriesV1,
 } from '../../core/operator/notify-status';
+import type { NotifyChannel, RelayDeliveriesV1 } from '../../core/decision/notify-relay-record';
 import { hcListAsync } from '../terminal/herdr-core';
 import { readNotifyConfig, readNotifyInstallRecord, readRelayDeliveries, relayIsLive, type NotifyConfig } from '../terminal/notify-read';
 
