@@ -132,7 +132,10 @@ export function configureRequiredHerdrSkill(
         if (existingContent !== content && !ownedSkillIsIntact(destination)) {
           throw new Error(`refusing to replace unowned or changed Herdr skill: ${destination}`);
         }
-        current = existingContent === content;
+        // A copy equal to the render is the managed projection. Rewrite its stale
+        // marker now; otherwise the next render change refuses to replace it.
+        current = existingContent === content && (ownedSkillIsIntact(destination)
+          || readdirSync(destination).some(name => name !== "SKILL.md" && name !== MARKER));
       }
       plans.push({ root: canonicalRoot, destination, staged: "", backup: null, changed: false, current });
     }

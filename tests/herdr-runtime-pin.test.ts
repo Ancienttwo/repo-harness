@@ -192,6 +192,12 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
     for (const host of [".claude", ".codex"]) {
       expect(readFileSync(join(home, host, "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(first));
     }
+    // A copy equal to the render keeps its ownership even when its marker is stale.
+    const classicMarker = join(classicCopy, ".repo-harness-owner.json");
+    writeFileSync(classicMarker, JSON.stringify({ owner: "repo-harness", sha256: "sha256:stale" }));
+    expect(configureRequiredHerdrSkill("both", env).status).toBe("ok");
+    expect(JSON.parse(readFileSync(classicMarker, "utf8")).sha256)
+      .toBe(`sha256:${createHash("sha256").update(renderHerdrSkill(first)).digest("hex")}`);
 
     const shared = join(home, ".agents", "skills", "herdr");
     mkdirSync(shared, { recursive: true });
