@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.herdr-core-server.spawns.oar-review-host"
+kind: "spawns"
+source: "process.herdr-core-server"
+target: "process.oar-review-host"
+intent: "Run the OAR host bundle in an hc terminal."
