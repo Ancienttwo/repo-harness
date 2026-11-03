@@ -35,7 +35,7 @@ import {
   type InstallState,
 } from '../src/cli/installer/install-profile';
 import { migrateInstallState, parseProtocol2State } from '../src/cli/installer/install-state-migration';
-import { ownerEnabled, PLUGIN_IDS, type PluginId, type PluginSelection } from '../src/core/skill-surface/plugin-manifest';
+import { ownerEnabled, PLUGIN_IDS, type PluginId, type PluginSelection, type SurfaceOwner } from '../src/core/skill-surface/plugin-manifest';
 import { runTransactionalRuntimeRefresh } from '../src/cli/index';
 import { CANDIDATE_RECONCILE_STEP, type GlobalRuntimeOptions, type GlobalRuntimeResult } from '../src/cli/commands/global-runtime';
 import { CandidateRequestProtocolRetiredError, parseCandidateRequest } from '../src/cli/commands/candidate-reconciliation';
@@ -760,29 +760,41 @@ describe('install selection', () => {
     expect(() => parseProtocol2State(raw, installProfileStatePath(env), env)).toThrow('invalid previous state');
   }));
 
-  test('discovery keeps a facade retired from the canonical package under core', () => withHome((env) => {
-    const { source } = writeManagedHostSurfaces(env, ['product']);
-    const codexSkills = join(env.HOME!, '.codex', 'skills');
+  test('discovery keeps a retired facade under core, and under pi in the Pi root', () => {
+    // A retired facade keeps its receipt until skill sync removes it. In the
+    // Pi root the receipt stays with the pi plugin, never core.
+    const rows: readonly { readonly label: string; readonly plugins: readonly PluginId[]; readonly root: (env: NodeJS.ProcessEnv) => string; readonly owner: SurfaceOwner }[] = [
+      { label: 'codex root, product', plugins: ['product'], root: env => join(env.HOME!, '.codex', 'skills'), owner: 'core' },
+      { label: 'Pi root, pi and product', plugins: ['pi', 'product'], root: env => hostSkillRoot(env.HOME!, 'pi', env), owner: 'pi' },
+    ];
+    for (const row of rows) withHome((base) => {
+      const env = row.plugins.includes('pi') ? withPi(base) : base;
+      const { source } = writeManagedHostSurfaces(env, row.plugins);
+      const codexSkills = join(env.HOME!, '.codex', 'skills');
 
-    // Canonical control: repo-harness-product is still shipped by the package
-    // (source gets it at its assets/skills/ location), so it keeps its plugin owner.
-    writePath(join(source, 'assets', 'skills', 'repo-harness-product', 'SKILL.md'), '# managed\n');
-    writeMarkedFacade(join(codexSkills, 'repo-harness-product'), '# managed\n');
+      // Canonical control: repo-harness-product is still shipped by the package
+      // (source gets it at its assets/skills/ location), so it keeps its plugin owner.
+      writePath(join(source, 'assets', 'skills', 'repo-harness-product', 'SKILL.md'), '# managed\n');
+      writeMarkedFacade(join(codexSkills, 'repo-harness-product'), '# managed\n');
 
-    // Retired: physically present on host (e.g. left over from a broader
-    // sync), but the package no longer ships its source directory at all.
-    const retiredDest = join(codexSkills, 'repo-harness-retired-demo');
-    writeMarkedFacade(retiredDest, '---\nname: repo-harness-retired-demo\n---\n');
+      // Retired: physically present on host (e.g. left over from a broader
+      // sync), but the package no longer ships its source directory at all.
+      const retiredDest = join(row.root(env), 'repo-harness-retired-demo');
+      writeMarkedFacade(retiredDest, '---\nname: repo-harness-retired-demo\n---\n');
 
-    const applied = applyInstallSelection(['product'], ['product'], env, new Date('2026-01-01T00:00:00Z'));
-    const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-product'));
-    const retiredSurface = applied.state.ownership_manifest.find(({ path }) => path === retiredDest);
-    expect(planSurface?.owner).toBe('product');
-    expect(retiredSurface).toBeDefined();
-    expect(retiredSurface?.owner).toBe('core');
-    expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
-    expect(readInstallState(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
-  }));
+      const additionalSurfaces = row.plugins.includes('pi')
+        ? [piPackageSurface(installPiPackage(bunGlobalPackageRoot(env)!, true, env).source)]
+        : [];
+      const applied = applyInstallSelection([...row.plugins], row.plugins, env, new Date('2026-01-01T00:00:00Z'), undefined, { additionalSurfaces });
+      const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-product'));
+      const retiredSurface = applied.state.ownership_manifest.find(({ path }) => path === retiredDest);
+      expect(planSurface?.owner, row.label).toBe('product');
+      expect(retiredSurface, row.label).toBeDefined();
+      expect(retiredSurface?.owner, row.label).toBe(row.owner);
+      expect(installStateStatus(applied.state, env).drift.status, row.label).toBe('consistent');
+      expect(readInstallState(env)?.ownership_manifest, row.label).toEqual(applied.state.ownership_manifest);
+    });
+  });
 
   test('state keeps a formerly managed facade receipt readable after its catalog retirement', () => withHome((env) => {
     writeManagedHostSurfaces(env);
