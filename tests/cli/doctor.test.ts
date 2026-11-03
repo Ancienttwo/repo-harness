@@ -1,5 +1,6 @@
 import { CLI_PORTS, buildProgram } from '../../src/cli/index';
-import { PROFILE_COMPONENTS, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
+import { defaultPluginSelection, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
+import { installSelectionCommand, parsePluginList, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
@@ -24,6 +25,9 @@ import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notif
 import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
+// The default selection on a host without DSH and without `pi` on PATH.
+const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
+const FULL_FIX = installSelectionCommand(FULL_PLUGINS);
 
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
@@ -652,7 +656,8 @@ describe('doctor skill projection', () => {
     const destination = path.join(home, '.codex/skills/repo-harness-cross-review');
     fs.mkdirSync(path.dirname(destination), { recursive: true });
     return { source: path.join(source, 'assets/skills/repo-harness-cross-review'), destination,
-      env: { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') } };
+      // A PATH without `pi` keeps the default selection independent of the host.
+      env: { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun'), PATH: '/usr/bin:/bin' } };
   }
 
   for (const state of ['ok link', 'stale copy', 'missing', 'dangling link', 'wrong link', 'ok copy'] as const) {
@@ -668,7 +673,7 @@ describe('doctor skill projection', () => {
       const result = checkSkillProjection('both', f.env);
       expect(result.id).toBe('skill-projection');
       expect(result.detail).toContain(`${f.destination}: ${state}`);
-      expect(result.detail).toContain('repo-harness install --profile full --target codex');
+      expect(result.detail).toContain(`${FULL_FIX} --target codex`);
       expect(result.detail).toContain(path.join(home, '.claude/skills/repo-harness-cross-review') + ': missing');
       expect(result.detail).toContain(path.join(home, '.codex/skills/think') + ': missing');
       if (state === 'stale copy') expect(fs.readFileSync(path.join(f.destination, 'SKILL.md'), 'utf8')).toBe('user change\n');
@@ -680,11 +685,11 @@ describe('doctor skill projection', () => {
     const f = seed(home);
     const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
-      { declared: true, profileComponents: PROFILE_COMPONENTS });
+      { declared: true });
     if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
     // The pre-row CLI line format, frozen: the rows must regenerate it byte for byte.
     const frozenLine = (projection: SkillProjection, state: string, ledgerDrift: boolean): string => {
-      const fix = `repo-harness install --profile full --target ${projection.host === 'pi' ? 'both' : projection.host}`;
+      const fix = `${FULL_FIX} --target ${projection.host === 'pi' ? 'both' : projection.host}`;
       const shown = state === 'ok link' ? `ok link -> ${projection.source}` : state;
       const problems: string[] = [];
       if (!shown.startsWith('ok ')) {
@@ -695,7 +700,7 @@ describe('doctor skill projection', () => {
       return `${projection.destination}: ${shown}${problems.length > 0 ? '; ' + problems.join('; ') : ''}`;
     };
     const crossReview = 'repo-harness-cross-review';
-    const allProjections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full');
+    const allProjections = expectedSkillProjections(catalog.catalog, packageRoot, home, FULL_PLUGINS, f.env);
     const codexProjection = (name: string): SkillProjection => allProjections.find(p => p.host === 'codex' && p.name === name)!;
     const ledgerPath = path.join(home, '.repo-harness/install-state.json');
     const cases: { state: string; name: string; ledger?: boolean; setup: (p: SkillProjection) => void }[] = [
@@ -716,9 +721,9 @@ describe('doctor skill projection', () => {
       { state: 'ok link', name: crossReview, ledger: true, setup: p => {
         fs.symlinkSync(p.source, p.destination);
         fs.mkdirSync(path.dirname(ledgerPath), { recursive: true });
-        fs.writeFileSync(ledgerPath, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+        fs.writeFileSync(ledgerPath, JSON.stringify({ protocol: 3, ...versions(FULL_PLUGINS), selection: 'all',
           transaction_id: 'parity-test', applied_at: new Date(0).toISOString(), previous: null,
-          ownership_manifest: [{ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+          ownership_manifest: [{ owner: 'cross-review', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
             path: p.destination, type: 'directory-copy', content_hash: hashManagedTree(p.source), managed_marker: 'transaction-created-directory', symlink_target: null }] }));
       } },
       // Last: this case deletes the fixture source for the rest of the test.
@@ -753,7 +758,7 @@ describe('doctor skill projection', () => {
         if (ledger) {
           expect(detailLines[projections.length]).toContain('"surface_drift":["' + driftedDestination + '"]');
         } else {
-          expect(detailLines[projections.length]).toBe('install ledger: missing; run: repo-harness install --profile full');
+          expect(detailLines[projections.length]).toBe('install ledger: missing; run: repo-harness install');
         }
         expect(result.status).toBe('warn');
         expect(JSON.stringify(rows)).not.toContain(home);
@@ -765,9 +770,11 @@ describe('doctor skill projection', () => {
     const f = seed(home);
     const packageRoot = path.join(home, '.bun/install/global/node_modules/repo-harness');
     const catalog = parseSkillSurfaceCatalog(fs.readFileSync(path.join(packageRoot, 'assets/skill-commands/manifest.json'), 'utf8'),
-      { declared: true, profileComponents: PROFILE_COMPONENTS });
+      { declared: true });
     if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
-    const projections = expectedSkillProjections(catalog.catalog, packageRoot, home, 'full');
+    // With `pi` recorded, the Pi host is a third host that the claude-only ledger never touched.
+    const recorded: readonly PluginId[] = [...FULL_PLUGINS, 'pi' as PluginId].sort();
+    const projections = expectedSkillProjections(catalog.catalog, packageRoot, home, recorded, f.env);
     const claude = projections.filter(projection => projection.host === 'claude');
     const untouched = projections.filter(projection => projection.host !== 'claude');
     for (const projection of claude) {
@@ -778,12 +785,12 @@ describe('doctor skill projection', () => {
       fs.mkdirSync(path.dirname(projection.destination), { recursive: true });
       fs.symlinkSync(projection.source, projection.destination);
     }
-    // A protocol 2 ledger that owns only the claude links.
+    // A protocol 3 ledger that owns only the claude links.
     const ledger = path.join(home, '.repo-harness/install-state.json');
     fs.mkdirSync(path.dirname(ledger), { recursive: true });
-    fs.writeFileSync(ledger, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+    fs.writeFileSync(ledger, JSON.stringify({ protocol: 3, ...versions(recorded), selection: 'all',
       transaction_id: 'claude-only-test', applied_at: new Date(0).toISOString(), previous: null,
-      ownership_manifest: claude.map(projection => ({ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+      ownership_manifest: claude.map(projection => ({ owner: ownerForInstallPath(projection.destination, f.env), authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
         path: projection.destination, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: projection.source })) }));
 
     const result = checkSkillProjection('both', f.env);
@@ -849,7 +856,7 @@ describe('doctor skill projection', () => {
     const result = checkSkillProjection('codex', f.env);
     expect(result.status).toBe('warn');
     expect(result.detail).toContain(`${f.destination}: source missing`);
-    expect(result.detail).toContain('run: repo-harness install --profile full --target codex');
+    expect(result.detail).toContain(`run: ${FULL_FIX} --target codex`);
     expect(hashManagedTree(f.destination)).toBe(before);
   }));
 
@@ -865,14 +872,14 @@ describe('doctor skill projection', () => {
     expect(result.detail).toContain('repo-harness install --state');
   }));
 
-  test('reports ledger type drift and installedProfileStatus drift without changing the ledger', () => withTempHome(home => {
+  test('reports ledger type drift and installStateStatus drift without changing the ledger', () => withTempHome(home => {
     const f = seed(home);
     fs.symlinkSync(f.source, f.destination);
     const ledger = path.join(home, '.repo-harness/install-state.json');
     fs.mkdirSync(path.dirname(ledger), { recursive: true });
-    fs.writeFileSync(ledger, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+    fs.writeFileSync(ledger, JSON.stringify({ protocol: 3, ...versions(FULL_PLUGINS), selection: 'all',
       transaction_id: 'projection-test', applied_at: new Date(0).toISOString(), previous: null,
-      ownership_manifest: [{ components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+      ownership_manifest: [{ owner: 'cross-review', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
         path: f.destination, type: 'directory-copy', content_hash: hashManagedTree(f.source), managed_marker: 'transaction-created-directory', symlink_target: null }] }));
     const before = fs.readFileSync(ledger, 'utf8');
     const result = checkSkillProjection('codex', f.env);
@@ -901,7 +908,7 @@ describe('doctor skill projection', () => {
     fs.cpSync(staging, dest, { recursive: true });
     const result = checkSkillProjection('codex', f.env);
     expect(result.detail).toContain(`${dest}: unowned real directory; expected ${staging}; preserve or move ${dest}`);
-    expect(result.detail).toContain('repo-harness install --profile full --target codex');
+    expect(result.detail).toContain(`${FULL_FIX} --target codex`);
     expect(fs.lstatSync(dest).isDirectory()).toBe(true);
     fs.writeFileSync(path.join(dest, 'SKILL.md'), 'private instructions\n');
     expect(checkSkillProjection('codex', f.env).detail).toContain(`${dest}: stale copy`);
@@ -920,17 +927,19 @@ describe('doctor skill projection', () => {
 
 test('skill-projection repair commands use supported install arguments', () => {
   withTempHome(home => {
-    const result = checkSkillProjection('both', { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') });
+    const env = { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') };
+    const result = checkSkillProjection('both', env);
+    const judged = defaultPluginSelection('both', env).plugins;
     const repairs = [...result.detail.matchAll(/run: repo-harness (install[^;\n]*)/g)].map(match => match[1]);
     expect(repairs.length).toBeGreaterThan(0);
     for (const repair of repairs) {
       const install = buildProgram().commands.find(command => command.name() === 'install')!;
       const args = repair.trim().split(/\s+/).slice(1);
       expect(install.parseOptions(args).unknown).toEqual([]);
-      expect(install.opts().profile).toBe('full');
-      // parseOptions validates flags. The action selects marketplace defaults
-      // from the requested profile through this exact policy function.
-      expect(profileEnablesExternalSkills(install.opts().profile)).toBe(true);
+      // Each repair restores the judged selection: a bare install selects the
+      // same default, and `--plugins` names it exactly.
+      const plugins = install.opts().plugins as string | undefined;
+      if (plugins !== undefined) expect(parsePluginList(plugins)).toEqual(judged);
     }
   });
 });

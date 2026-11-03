@@ -13,10 +13,11 @@ import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
 import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
-import { applyInstallProfile, beginInstallHostTransaction, installProfileHostMutationPaths, installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
+import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, installProfileStatePath, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
+import { MANAGED_AGENTS } from '../../src/effects/terminal/task-role-profiles';
 import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
-import { encodeCandidateRequest, parseCandidateRequest } from '../../src/cli/commands/candidate-reconciliation';
+import { CandidateRequestProtocolRetiredError, encodeCandidateRequest, parseCandidateRequest, type CandidateReconciliationRequest } from '../../src/cli/commands/candidate-reconciliation';
 
 const ROOT = join(import.meta.dir, '..', '..');
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
@@ -27,6 +28,14 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55';
 const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb064ffae2f4c99d357977d3719baae';
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
+const FULL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
+
+// An explicit list never grows, so a host `pi` or DSH on the developer PATH cannot change the recorded selection.
+function recordExplicitFullSelection(home: string): void {
+  recordInstallOwnership([], { HOME: home });
+  const path = installProfileStatePath({ HOME: home });
+  writeFileSync(path, JSON.stringify({ ...JSON.parse(readFileSync(path, 'utf-8')), selection: FULL_PLUGINS }));
+}
 
 function singleFileSkillIntegrity(content: string): string {
   const hash = createHash('sha256');
@@ -290,7 +299,7 @@ describe('registry-bound CLI update (#701)', () => {
         delete env.USERPROFILE;
       }
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
-        sourceRoot: source, cwd: root, profile: 'minimal', target: 'codex',
+        sourceRoot: source, cwd: root, plugins: [], target: 'codex',
         installSpec: `repo-harness@${options.version ?? options.channel ?? 'latest'}`, updateMode: true,
         syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
         env,
@@ -401,10 +410,13 @@ describe('install command global runtime bootstrap', () => {
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const fakeBin = join(home, '.bun', 'bin');
+    const source = join(tmp, 'source');
     const bunLog = join(tmp, 'bun.log');
     const upgradedMarker = join(tmp, 'upgraded');
     try {
       mkdirSync(home, { recursive: true });
+      // Core always runs the agent fleet helper; the stub keeps the fake Bun log to the runtime floor calls.
+      setupFakeSource(source);
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
@@ -421,8 +433,9 @@ describe('install command global runtime bootstrap', () => {
       );
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        sourceRoot: source,
         cwd: repo,
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -475,6 +488,7 @@ describe('install command global runtime bootstrap', () => {
       );
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        plugins: FULL_PLUGINS,
         cwd: repo,
         installCli: false,
         syncSkill: false,
@@ -522,6 +536,7 @@ describe('install command global runtime bootstrap', () => {
       };
       const harnessVersion = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version as string;
       setupManagedRuntimeReadback(home, fakeBin, harnessVersion);
+      recordExplicitFullSelection(home);
       delete childEnv.REPO_HARNESS_BUN_EXECUTABLE;
 
       const res = spawnSync(
@@ -573,7 +588,7 @@ describe('install command global runtime bootstrap', () => {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -637,7 +652,7 @@ describe('install command global runtime bootstrap', () => {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         externalSkills: true,
         reverseSkill: true,
         codegraph: true,
@@ -725,7 +740,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'both',
-        profile: 'minimal',
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -750,16 +765,13 @@ exit 0
       }
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-        protocol: 2,
-        profile: 'minimal',
-        components: [
-          'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-          'adaptive-workflow', 'codegraph-conditional',
-        ],
+        protocol: 3,
+        selection: ['strategy-memory'],
+        ...versions(['strategy-memory']),
         transaction_id: 'obsidian-fixture',
         applied_at: '2026-08-21T00:00:00.000Z',
         ownership_manifest: ['obsidian-markdown', 'obsidian-cli'].map((skill) => ({
-          components: ['adaptive-workflow'],
+          owner: 'strategy-memory',
           authority: 'repo-harness-install-transaction',
           removal: 'managed-surfaces-only',
           path: join(home, '.agents', 'skills', skill),
@@ -776,7 +788,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'both',
-        profile: 'minimal',
+        plugins: ['strategy-memory'],
         updateMode: true,
         installCli: false,
         syncSkill: false,
@@ -846,7 +858,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         installSpec: 'repo-harness@9.9.9',
         updateMode: true,
         externalSkills: true,
@@ -904,7 +916,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
-        profile: 'minimal',
+        plugins: [],
         installSpec: 'repo-harness@9.9.9',
         updateMode: true,
         syncSkill: false,
@@ -967,7 +979,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1021,7 +1033,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1060,7 +1072,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1106,7 +1118,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1149,7 +1161,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1196,7 +1208,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1237,7 +1249,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1275,7 +1287,7 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1360,6 +1372,7 @@ exit 0
       );
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1401,7 +1414,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1424,7 +1437,7 @@ exit 0
     }
   });
 
-  test('minimal can install explicitly requested marketplace skills without adding full-only cross-review', () => {
+  test('a core-only selection can install explicitly requested marketplace skills without adding the cross-review plugin', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-minimal-no-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1464,7 +1477,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'claude',
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1477,7 +1490,7 @@ exit 0
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'cross-review skills')).toMatchObject({
         status: 'skipped',
-        detail: 'disabled by install profile',
+        detail: 'cross-review and peer-runtime plugins not selected',
       });
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza -g -a codex -s think hunt check health -y');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
@@ -1511,7 +1524,7 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'both',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -1548,7 +1561,7 @@ exit 0
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
-        profile: 'minimal',
+        plugins: [],
         installCli: false,
         installSpec: 'repo-harness@9.9.9',
         updateMode: true,
@@ -1631,6 +1644,7 @@ exit 0
       writeExecutable(join(fakeBin, 'npx'), '#!/bin/bash\nexit 0\n');
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        plugins: FULL_PLUGINS,
         sourceRoot: source,
         installCli: false,
         hostAdapters: false,
@@ -1671,6 +1685,7 @@ exit 0
       writeExecutable(join(fakeBin, 'npm'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${npmLog}"\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1716,6 +1731,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1757,6 +1773,7 @@ exit 0
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+        plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1812,6 +1829,7 @@ exit 0
       delete baseEnv.REPO_HARNESS_LATEST_VERSION;
       delete baseEnv.REPO_HARNESS_CHECK_UPDATES;
       const runOpts = {
+        plugins: FULL_PLUGINS,
         sourceRoot: source,
         cwd: repo,
         syncSkill: false,
@@ -1880,8 +1898,7 @@ exit 0
       const res = spawnSync(process.execPath, [
         CLI,
         'install',
-        '--profile',
-        'minimal',
+        '--no-plugins',
         '--target',
         'codex',
         '--no-cli',
@@ -1930,13 +1947,9 @@ exit 0
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version as string);
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-        protocol: 2,
-        profile: 'full',
-        components: [
-          'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-          'adaptive-workflow', 'codegraph-conditional', 'planning-integrations',
-          'agent-fleet', 'verifier', 'cross-model-acceptance', 'release-deployment-gates',
-        ],
+        protocol: 3,
+        selection: FULL_PLUGINS,
+        ...versions(FULL_PLUGINS),
         transaction_id: 'existing-full-install',
         applied_at: '2026-07-14T00:00:00.000Z',
         ownership_manifest: [],
@@ -2000,7 +2013,7 @@ exit 0
       const result = runTransactionalRuntimeRefresh({
         cwd: repo,
         target: 'codex',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         reverseSkill: true,
         env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') },
       }, () => {
@@ -2042,7 +2055,7 @@ exit 0
       const result = runTransactionalRuntimeRefresh({
         cwd: repo,
         target: 'codex',
-        profile: 'full',
+        plugins: FULL_PLUGINS,
         env: { BUN_INSTALL: join(home, '.bun') },
       }, () => {
         observedExpectedLock = existsSync(join(home, '.repo-harness', 'transactions', 'global-runtime.lock'));
@@ -2092,6 +2105,8 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       writeFakeHc(fakeBin);
+      // update keeps the recorded selection, so it needs an install state.
+      recordExplicitFullSelection(home);
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, '9.9.9');
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
@@ -2133,7 +2148,7 @@ exit 0
     }
   }, 30_000);
 
-  test('CLI update rejects protocol-1 state until explicit migration', () => {
+  test('CLI update refuses retired protocol-1 state before any write', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-legacy-profile-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -2178,7 +2193,7 @@ exit 0
       });
 
       expect(res.status).not.toBe(0);
-      expect(res.stderr).toContain('--migrate-profile-state');
+      expect(res.stderr).toContain('is protocol 1, which this package no longer reads');
       expect(existsSync(join(home, '.repo-harness', 'config.json'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -2247,7 +2262,7 @@ exit 0
     expect(res.stdout).not.toContain('--interactive');
   }, 30_000);
 
-  test('CLI install defaults non-interactively to full with its selected optional ecosystems', () => {
+  test('CLI install defaults non-interactively to every runnable plugin with its selected optional ecosystems', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-non-tty-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -2312,12 +2327,15 @@ exit 0
       );
 
       expect(res.status).toBe(0);
-      expect(res.stdout).toContain('[profile] full');
+      // --target codex has no host for peer-runtime's Claude-only skill, so "all" skips it with the reason.
+      const codexPlugins = FULL_PLUGINS.filter(id => id !== 'peer-runtime');
+      expect(res.stdout).toContain(`[plugins] ${codexPlugins.join(',')}`);
+      expect(res.stdout).toContain('[plugins] skipped peer-runtime: --target codex has no host for its skills');
       expect(res.stdout).toContain('install repo-harness CLI');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
       expect(readFileSync(bunxLog, 'utf-8')).not.toContain('skills add zhaoxuya520/reverse-skill');
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install');
-      expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'install-state.json'), 'utf-8')).profile).toBe('full');
+      expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'install-state.json'), 'utf-8')).plugins.map(({ id }: { id: string }) => id)).toEqual(codexPlugins);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -2442,13 +2460,13 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     const source = join(tmp, 'source');
     mkdirSync(fakeBin, { recursive: true });
     writeFakeHc(fakeBin);
-    mkdirSync(source);
-    writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
+    // The stub agent fleet helper runs under core.
+    setupFakeSource(source);
     setupManagedRuntimeReadback(home, fakeBin, '1.0.0');
     const globalModules = join(home, '.bun/install/global/node_modules');
     const harnessManifest = join(globalModules, 'repo-harness/package.json');
     writeFileSync(harnessManifest, JSON.stringify({ name: 'repo-harness', version: '1.0.0', dependencies: { archctx: '0.2.3', 'archctx-contracts': '0.2.3' } }));
-    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, profile: 'minimal' as const,
+    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, plugins: [] as const,
       installCli: false, installSpec: 'repo-harness@9.9.9', updateMode: true,
       syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
       env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
@@ -2471,33 +2489,6 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 
-test('update runs the retired fleet file migration before it reads the install state', () => {
-  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-update-retired-fleet-'));
-  try {
-    const env = { ...sanitizedChildEnv(), HOME: join(tmp, 'home') };
-    const retired = join(env.HOME, '.claude', 'agents', 'orchestrator.md');
-    mkdirSync(dirname(retired), { recursive: true });
-    writeFileSync(retired, '---\nname: orchestrator\n---\n');
-    recordInstallOwnership([retired], env);
-    expect(() => readInstalledProfile(env)).toThrow('run repo-harness update');
-    const seededState = readFileSync(installProfileStatePath(env), 'utf-8');
-    // A failed update restores the migrated file and its ledger entry from the transaction snapshot.
-    const failed = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', updateMode: true, env }, () => {
-      expect(existsSync(retired)).toBe(false);
-      return { exitCode: 1, steps: [], lines: [], stdout: '', stderr: 'injected setup failure' };
-    });
-    expect(failed.exitCode).toBe(1);
-    expect(readFileSync(retired, 'utf-8')).toBe('---\nname: orchestrator\n---\n');
-    expect(readFileSync(installProfileStatePath(env), 'utf-8')).toBe(seededState);
-    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', updateMode: true, env }, () => {
-      expect(readInstalledProfile(env)!.ownership_manifest).toEqual([]);
-      return { exitCode: 0, steps: [], lines: [], stdout: '', stderr: '' };
-    });
-    expect(result.exitCode).toBe(0);
-    expect(existsSync(retired)).toBe(false);
-  } finally { rmSync(tmp, { recursive: true, force: true }); }
-});
-
 test('a fleet failure after the CLI install restores the predecessor hoisted archctx packages', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-update-archctx-rollback-'));
   try {
@@ -2511,7 +2502,7 @@ test('a fleet failure after the CLI install restores the predecessor hoisted arc
     const globalModules = join(home, '.bun/install/global/node_modules');
     const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath };
-    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', profile: 'minimal', env }, () => {
+    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', plugins: [], env }, () => {
       writeFileSync(join(globalModules, 'repo-harness/package.json'), JSON.stringify({
         name: 'repo-harness', version: '9.9.9', dependencies: { archctx: '9.9.9', 'archctx-contracts': '9.9.9' },
       }));
@@ -2590,7 +2581,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), WAZA_FIXTURE_UPSTREAM: upstream,
         PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun') };
       body({ home, upstream, fakeBin, env, paths, run: (refresh = true, target = 'both') => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
-        sourceRoot: ROOT, cwd: tmp, env, target, profile: 'minimal',
+        sourceRoot: ROOT, cwd: tmp, env, target, plugins: [],
         installCli: false, syncSkill: false, hostAdapters: false, codegraph: false,
         externalSkills: true, updateMode: refresh,
       }) });
@@ -2604,17 +2595,17 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       // Model an interrupted refresh: rule writes finished, receipt persistence did not.
       for (const path of paths) writeFileSync(path, readFileSync(join(upstream, path.split('/').at(-1)!)));
       const selected = paths.filter(path => target === 'both' || !path.includes('/.claude/'));
-      const unselectedBefore = readInstalledProfile(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path));
-      expect(readInstalledProfile(env)!.ownership_manifest.some(receipt => !managedInstallSurfaceIsCurrent(receipt))).toBe(true);
+      const unselectedBefore = readInstallState(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path));
+      expect(readInstallState(env)!.ownership_manifest.some(receipt => !managedInstallSurfaceIsCurrent(receipt))).toBe(true);
       expect(run(true, target).exitCode).toBe(0);
-      for (const receipt of readInstalledProfile(env)!.ownership_manifest.filter(receipt => selected.includes(receipt.path))) {
+      for (const receipt of readInstallState(env)!.ownership_manifest.filter(receipt => selected.includes(receipt.path))) {
         expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       }
-      expect(readInstalledProfile(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path))).toEqual(unselectedBefore);
+      expect(readInstallState(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path))).toEqual(unselectedBefore);
       writeFileSync(join(upstream, 'english.md'), '# next English\n');
       expect(run(true, target).exitCode).toBe(0);
       for (const path of selected.filter(path => path.endsWith('/english.md'))) expect(readFileSync(path, 'utf8')).toBe('# next English\n');
-      expect(readInstalledProfile(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path))).toEqual(unselectedBefore);
+      expect(readInstallState(env)!.ownership_manifest.filter(receipt => !selected.includes(receipt.path))).toEqual(unselectedBefore);
     });
   });
 
@@ -2624,7 +2615,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(`# new ${path.split('/').at(-1)}\npassword=example\n`);
       expect(readFileSync(join(home, 'fetch.log'), 'utf-8').trim().split('\n'))
         .toEqual(wazaRules.files.map((rule) => `${wazaRules.rawBaseUrl}/rules/${rule}`));
-      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      for (const receipt of readInstallState(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       writeFileSync(join(upstream, 'english.md'), '# next English\n');
       expect(run().exitCode).toBe(0);
       expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
@@ -2644,17 +2635,17 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       for (const path of paths) rmSync(path);
       recordInstallOwnership([], env);
       expect(run().exitCode).toBe(0);
-      expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
-      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      expect(readInstallState(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
+      for (const receipt of readInstallState(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       writeFileSync(join(upstream, 'english.md'), '# next English\n');
       expect(run().exitCode).toBe(0);
-      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      for (const receipt of readInstallState(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       expect(readFileSync(join(home, '.agents', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
       expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
     });
   });
 
-  test('a fresh install owns the rules once after its profile state write', () => {
+  test('a fresh install owns the rules once after its install state write', () => {
     withRules(({ home, env, paths, run }) => {
       for (const root of ['.agents', '.claude', '.codex']) rmSync(join(home, root, 'rules'), { recursive: true });
       const setup = run(false);
@@ -2662,8 +2653,8 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       recordInstallOwnership([], env);
       const owned = ownFreshWazaSharedRules(setup, 'both', env, []);
       expect(owned.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({ status: 'ok' });
-      expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
-      for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+      expect(readInstallState(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
+      for (const receipt of readInstallState(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       expect(ownFreshWazaSharedRules(owned, 'both', env, [])).toBe(owned);
     });
   });
@@ -2678,38 +2669,45 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     });
   });
 
-  test('requires an installed profile before it creates new staging rules', () => {
+  test('requires an install state before it creates new staging rules', () => {
     withRules(({ home, paths, run }) => {
       for (const path of paths) rmSync(path);
       rmSync(join(home, '.repo-harness', 'install-state.json'));
       const result = run();
       expect(result.exitCode).toBe(1);
       expect(result.steps.find(({ step }) => step === 'sync Waza shared rules')).toMatchObject({
-        status: 'failed', detail: expect.stringContaining('an installed profile is required'),
+        status: 'failed', detail: expect.stringContaining('an install state is required'),
       });
       expect(paths.some((path) => existsSync(path))).toBe(false);
     });
   });
 
-  test('minimal profile reconciliation keeps ownership of explicitly requested new rules', () => {
+  test('core-only selection reconciliation keeps ownership of explicitly requested new rules', () => {
     withRules(({ home, upstream, env, paths, run }) => {
       for (const path of paths) rmSync(path);
       recordInstallOwnership([], env);
       mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
       symlinkSync(ROOT, join(home, '.codex', 'skills', 'repo-harness'), 'dir');
-      writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', 'minimal') }));
+      writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex') }));
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
       symlinkSync(CLI, join(home, '.bun', 'bin', 'repo-harness'));
-      applyInstallProfile('minimal', env);
+      // Core owns its facades and the agent fleet, so a core-only state needs them present.
+      for (const pkg of loadSkillSurfaceCatalog().packages.filter(entry => entry.kind === 'facade' && entry.owner === 'core' && !entry.explicitOnly)) {
+        mkdirSync(join(home, '.codex', 'skills', pkg.name), { recursive: true });
+        writeFileSync(join(home, '.codex', 'skills', pkg.name, 'SKILL.md'), `# ${pkg.name}\n`);
+      }
+      mkdirSync(join(home, '.codex', 'agents'), { recursive: true });
+      for (const agent of MANAGED_AGENTS) writeFileSync(join(home, '.codex', 'agents', `${agent}.toml`), `name = "${agent}"\n`);
+      applyInstallSelection([], [], env);
       expect(run().exitCode).toBe(0);
-      applyInstallProfile('minimal', env);
-      expect(readInstalledProfile(env)!.ownership_manifest.filter(({ path }) => paths.includes(path))).toHaveLength(paths.length);
+      applyInstallSelection([], [], env);
+      expect(readInstallState(env)!.ownership_manifest.filter(({ path }) => paths.includes(path))).toHaveLength(paths.length);
       writeFileSync(join(upstream, 'english.md'), '# next English\n');
       expect(run().exitCode).toBe(0);
-      applyInstallProfile('minimal', env);
+      applyInstallSelection([], [], env);
       expect(readFileSync(join(home, '.agents', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
       expect(readFileSync(join(home, '.codex', 'rules', 'english.md'), 'utf-8')).toBe('# next English\n');
-      for (const receipt of readInstalledProfile(env)!.ownership_manifest.filter(({ path }) => paths.includes(path))) {
+      for (const receipt of readInstallState(env)!.ownership_manifest.filter(({ path }) => paths.includes(path))) {
         expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
       }
     });
@@ -2729,7 +2727,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
           expect(run(true, 'codex').exitCode).toBe(0);
           expect(unchangedHost(claudePaths)).toEqual(claudeBefore);
           for (const path of paths) {
-            const receipt = readInstalledProfile(env)!.ownership_manifest.find((surface) => surface.path === path);
+            const receipt = readInstallState(env)!.ownership_manifest.find((surface) => surface.path === path);
             expect(receipt).toBeDefined();
             expect(managedInstallSurfaceIsCurrent(receipt!)).toBe(true);
           }
@@ -2742,7 +2740,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
           for (const rule of wazaRules.files) writeFileSync(join(upstream, rule), `# third ${rule}\n`);
           expect(run(true, 'both').exitCode).toBe(0);
           for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(`# third ${path.split('/').at(-1)}\n`);
-          for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+          for (const receipt of readInstallState(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
         });
       });
     }
@@ -2754,7 +2752,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
         writeFileSync(edited, '# local Claude rule\n');
         expect(run(true, 'codex').exitCode).toBe(0);
         expect(readFileSync(edited, 'utf-8')).toBe('# local Claude rule\n');
-        const receipt = readInstalledProfile(env)!.ownership_manifest.find(({ path }) => path === edited);
+        const receipt = readInstallState(env)!.ownership_manifest.find(({ path }) => path === edited);
         if (ownership === 'legacy') expect(receipt).toBeUndefined();
         else expect(managedInstallSurfaceIsCurrent(receipt!)).toBe(false);
         for (const rule of wazaRules.files) writeFileSync(join(upstream, rule), `# next ${rule}\n`);
@@ -2782,7 +2780,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       expect(paths.map((path) => readFileSync(path))).toEqual(before);
       expect(readFileSync(statePath)).toEqual(beforeState);
       const destination = join(home, '.claude', 'rules', 'english.md');
-      const receipt = readInstalledProfile(env)!.ownership_manifest.find(({ path }) => path === destination);
+      const receipt = readInstallState(env)!.ownership_manifest.find(({ path }) => path === destination);
       expect(managedInstallSurfaceIsCurrent(receipt!)).toBe(true);
       writeFileSync(join(upstream, 'english.md'), '# next English\n');
       expect(run(true, 'codex').exitCode).toBe(0);
@@ -2801,8 +2799,8 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
           }
         }
         expect(run().exitCode).toBe(0);
-        expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
-        for (const receipt of readInstalledProfile(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
+        expect(readInstallState(env)!.ownership_manifest.map(({ path }) => path).sort()).toEqual([...paths].sort());
+        for (const receipt of readInstallState(env)!.ownership_manifest) expect(managedInstallSurfaceIsCurrent(receipt)).toBe(true);
         for (const path of paths) expect(readFileSync(path, 'utf-8')).toBe(readFileSync(join(upstream, path.split('/').at(-1)!), 'utf-8'));
         writeFileSync(join(upstream, 'english.md'), '# next legacy English\n');
         expect(run().exitCode).toBe(0);
@@ -2846,7 +2844,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       expect(run().exitCode).toBe(0);
       for (const rule of wazaRules.files) {
         const source = join(home, '.agents', 'rules', rule);
-        expect(readInstalledProfile(env)!.ownership_manifest.some(({ path }) => path === source)).toBe(true);
+        expect(readInstallState(env)!.ownership_manifest.some(({ path }) => path === source)).toBe(true);
         expect(readFileSync(join(home, '.claude', 'rules', rule))).toEqual(readFileSync(source));
       }
     });
@@ -2859,7 +2857,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       writeFileSync(unselected, '# unselected local host edit\n');
       expect(run(true, 'codex').exitCode).toBe(0);
       expect(readFileSync(unselected, 'utf-8')).toBe('# unselected local host edit\n');
-      expect(readInstalledProfile(env)!.ownership_manifest.map(({ path }) => path).sort())
+      expect(readInstallState(env)!.ownership_manifest.map(({ path }) => path).sort())
         .toEqual(paths.filter((path) => path !== unselected).sort());
     });
   });
@@ -2871,7 +2869,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       const before = paths.map((path) => existsSync(path) ? readFileSync(path) : null);
       expect(run(true, 'codex').exitCode).toBe(1);
       expect(paths.map((path) => existsSync(path) ? readFileSync(path) : null)).toEqual(before);
-      expect(readInstalledProfile(env)!.ownership_manifest).toHaveLength(0);
+      expect(readInstallState(env)!.ownership_manifest).toHaveLength(0);
     });
   });
 
@@ -2884,7 +2882,7 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
       const before = paths.map((path) => readFileSync(path));
       expect(run().exitCode).toBe(1);
       expect(paths.map((path) => readFileSync(path))).toEqual(before);
-      expect(readInstalledProfile(env)!.ownership_manifest).toHaveLength(0);
+      expect(readInstallState(env)!.ownership_manifest).toHaveLength(0);
     });
   });
 
@@ -2892,10 +2890,10 @@ if [[ -n "$output" ]]; then cat "$source" > "$output"; else cat "$source"; fi
     withRules(({ home, env, paths, run }) => {
       for (const root of ['.agents', '.claude', '.codex']) writeFileSync(join(home, root, 'rules', 'english.md'), '# local edit in all copies\n');
       const before = paths.map((path) => readFileSync(path));
-      const beforeState = readInstalledProfile(env);
+      const beforeState = readInstallState(env);
       expect(run().exitCode).toBe(1);
       expect(paths.map((path) => readFileSync(path))).toEqual(before);
-      expect(readInstalledProfile(env)).toEqual(beforeState);
+      expect(readInstallState(env)).toEqual(beforeState);
     });
   });
 
@@ -2953,17 +2951,18 @@ describe('Codex Waza projection', () => {
           mkdirSync(think); writeFileSync(join(think, 'SKILL.md'), 'user instructions\n');
         }
         // Only the runtime version probe is external. All skill bytes are staged.
-        writeExecutable(join(bin, 'bun'), '#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 9\n');
+        // The core agent fleet helper runs its stdin script on the real Bun.
+        writeExecutable(join(bin, 'bun'), `#!/bin/bash\nif [[ "$1" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "$1" == "-" ]]; then exec "${process.execPath}" "$@"; fi\nexit 9\n`);
         writeExecutable(join(bin, 'bunx'), '#!/bin/bash\nexit 9\n');
         const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${bin}:${process.env.PATH ?? ''}` };
-        const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { sourceRoot: ROOT, cwd: tmp, target: 'codex', profile: 'minimal',
+        const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { sourceRoot: ROOT, cwd: tmp, target: 'codex', plugins: [],
           installCli: false, syncSkill: false, hostAdapters: false, externalSkills: true, codegraph: false, env });
         const waza = result.steps.find(step => step.step === 'configure Waza skills');
         expect(waza?.status).toBe(mode === 'unknown-directory' ? 'failed' : 'ok');
         if (mode === 'unknown-directory') {
           expect(result.exitCode).toBe(1);
           expect(waza?.detail).toContain('refusing to refresh unowned host skill');
-          expect(waza?.detail).toContain('repo-harness install --profile full --target codex');
+          expect(waza?.detail).toContain('then run: repo-harness install --target codex');
           expect(lstatSync(think).isDirectory()).toBe(true);
           expect(readFileSync(join(think, 'SKILL.md'), 'utf8')).toBe('user instructions\n');
         } else {
@@ -3030,7 +3029,7 @@ describe('Global Working Rules refresh during install and update', () => {
           sourceRoot: source,
           cwd: repo,
           target,
-          profile: 'minimal',
+          plugins: [],
           updateMode,
           installCli: false,
           syncSkill: false,
@@ -3103,7 +3102,7 @@ describe('Global Working Rules refresh during install and update', () => {
       expect(installProfileHostMutationPaths(env)).not.toContain(path);
       expect(installProfileHostMutationPaths(env)).toContain(join(home, '.claude', 'CLAUDE.md'));
       const result = runTransactionalRuntimeRefresh({
-        sourceRoot: join(home, '..', 'source'), cwd: join(home, '..', 'repo'), target: 'codex', profile: 'minimal',
+        sourceRoot: join(home, '..', 'source'), cwd: join(home, '..', 'repo'), target: 'codex', plugins: [],
         updateMode: true, installCli: false, syncSkill: false, hostAdapters: false, externalSkills: false,
         codegraph: false, reportLanguage: 'en', env,
       });
@@ -3243,15 +3242,19 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(inspectGlobalContext(readFileSync(path, 'utf-8'), ROOT).state).toBe('managed-current');
   }), 60_000);
 
-  test('the candidate request carries only a valid report language', () => {
+  test('the candidate request carries only a valid report language and refuses a retired protocol 1 request', () => {
     const request = {
-      protocol: 1, transaction_id: 't', transaction_backup_root: '/tmp/b', parent_token: 'p', cwd: '/tmp',
+      protocol: 2, transaction_id: 't', transaction_backup_root: '/tmp/b', parent_token: 'p', cwd: '/tmp',
       candidate: { root: '/tmp/c', version: '9.9.9', package_digest: 'sha256:00' },
-      target: 'codex', profile: 'minimal', sync_skill: false, host_adapters: false, external_skills: false,
+      target: 'codex', sync_skill: false, host_adapters: false, external_skills: false,
       reverse_skill: false, obsidian_skills: false, codegraph: false,
     } as const;
-    expect(parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'zh-CN' })).report_language).toBe('zh-CN');
-    expect(parseCandidateRequest(encodeCandidateRequest(request)).report_language).toBeUndefined();
-    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'custom' as 'en' }))).toThrow('invalid shape');
+    expect(parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'zh-CN' }), '9.9.9').report_language).toBe('zh-CN');
+    expect(parseCandidateRequest(encodeCandidateRequest(request), '9.9.9').report_language).toBeUndefined();
+    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'custom' as 'en' }), '9.9.9')).toThrow('invalid shape');
+    // A released parent before request protocol 2 cannot run the protocol 3 cutover; the candidate names the direct bootstrap.
+    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, protocol: 1 } as unknown as CandidateReconciliationRequest), '9.9.9'))
+      .toThrow(new CandidateRequestProtocolRetiredError(1, '9.9.9'));
+    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, profile: 'full' } as unknown as CandidateReconciliationRequest), '9.9.9')).toThrow('invalid shape');
   });
 });

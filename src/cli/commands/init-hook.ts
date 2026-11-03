@@ -7,6 +7,7 @@
  * commands and risk notes.
  */
 
+import { formatInstallStateMigrationPlan, planInstallStateMigration } from '../installer/install-state-migration';
 import { spawnSync } from 'child_process';
 import { existsSync, lstatSync, readFileSync } from 'fs';
 import * as os from 'os';
@@ -21,7 +22,7 @@ import {
 } from './status';
 import type { InstallTargetSpec } from './install';
 import { readUpgradeDecisions, type UpgradeDecision } from '../../effects/upgrade/operator-decisions';
-import { planUpgrade } from './upgrade';
+import { installOwnershipReader, planUpgrade } from './upgrade';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../effects/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
@@ -185,36 +186,44 @@ function statusChecks(
   target: InitHookTarget,
   checkUpdates: boolean,
   actions: ActionLedger,
+  env: NodeJS.ProcessEnv,
 ): InitHookCheck[] {
   const checks: InitHookCheck[] = [];
-  const invalidProfile = report.installedProfile.recorded === 'invalid'
-    ? report.installedProfile
+  const invalidState = report.installState.recorded === 'invalid'
+    ? report.installState
     : null;
-  if (invalidProfile?.kind === 'legacy_protocol') {
+  let stateActionId: string | null = null;
+  if (invalidState?.code === 'install_state_migration_required') {
+    stateActionId = 'install-state.migrate';
+    let mapping: string;
+    try {
+      const plan = planInstallStateMigration(env);
+      mapping = plan === null ? '' : ` Mapping: ${formatInstallStateMigrationPlan(plan).map(line => line.trim()).join('; ')}`;
+    } catch (error) {
+      mapping = ` The protocol 2 state cannot be migrated: ${(error as Error).message}`;
+    }
     addAction(actions, {
-      id: 'install-profile.migrate',
+      id: stateActionId,
       status: 'needs_agent',
-      reason: `Installed profile state is invalid: ${invalidProfile.error}`,
+      reason: `Install state is protocol 2; repo-harness update migrates it to protocol 3.${mapping}`,
       requires_agent: true,
-      risk: 'Reprojects package-owned user-level runtime surfaces under protocol 2; unmanaged host entries are preserved and the transaction compensates on failure.',
-      command: `repo-harness install --migrate-profile-state --profile full --target ${target}`,
-      targets: [invalidProfile.path],
+      risk: 'Rewrites the user-level install state and reprojects core and the mapped plugins under the install transaction; unmanaged host entries are preserved and a failure restores the protocol 2 state.',
+      command: 'repo-harness update',
+      targets: [invalidState.path],
       verification: verificationCommand(target, checkUpdates),
     }, []);
-  } else if (invalidProfile) {
+  } else if (invalidState) {
+    stateActionId = 'install-state.repair';
     addAction(actions, {
-      id: 'install-profile.repair',
+      id: stateActionId,
       status: 'needs_agent',
-      reason: `Installed profile state is corrupt and cannot be migrated automatically: ${invalidProfile.error}`,
+      reason: `Install state cannot be read (${invalidState.code}): ${invalidState.error}`,
       requires_agent: true,
-      risk: 'Requires operator inspection of the user-level state authority; do not overwrite or delete it until the intended profile and ownership manifest are established.',
-      targets: [invalidProfile.path],
+      risk: 'Requires operator inspection of the user-level state authority; do not overwrite or delete it until the intended plugin selection and ownership manifest are established.',
+      targets: [invalidState.path],
       verification: verificationCommand(target, checkUpdates),
     }, []);
   }
-  const profileActionId = invalidProfile === null
-    ? null
-    : invalidProfile.kind === 'legacy_protocol' ? 'install-profile.migrate' : 'install-profile.repair';
   for (const id of selectedTargets(target)) {
     const entry = report.targets.find((candidate) => candidate.id === id);
     if (!entry) {
@@ -243,7 +252,7 @@ function statusChecks(
     const projectionConfigured = entry.projection === undefined
       ? countConfigured
       : entry.projection.status === 'consistent';
-    const configured = invalidProfile === null
+    const configured = invalidState === null
       && entry.alreadyConfigured
       && countConfigured
       && projectionConfigured;
@@ -257,15 +266,15 @@ function statusChecks(
       title: `${targetLabel(id)} global hook adapter`,
       status: configured ? 'ok' : 'needs_agent',
       source: 'status',
-      detail: invalidProfile
-        ? `installed profile state is invalid: ${invalidProfile.error}`
+      detail: invalidState
+        ? `install state cannot be read: ${invalidState.error}`
         : configured
         ? `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath}`
         : `${entry.managedEntryCount}/${entry.expectedEntryCount} managed entries at ${entry.configPath ?? '(unknown config path)'}${projectionDetail}`,
     });
-    if (profileActionId !== null) linkCheck(actions, `status.adapter.${id}`, profileActionId);
+    if (stateActionId !== null) linkCheck(actions, `status.adapter.${id}`, stateActionId);
 
-    if (!configured && invalidProfile === null) {
+    if (!configured && invalidState === null) {
       addAction(actions, {
         id: `adapter.${id}.install`,
         status: 'needs_agent',
@@ -810,7 +819,7 @@ export function buildSetupCheck(ports: DoctorPorts, opts: InitHookOptions = {}):
     : collectToolingReport(sourceRoot, cwd, target, checkUpdates, opts.env);
 
   const checks: InitHookCheck[] = [
-    ...statusChecks(statusReport, target, checkUpdates, actions),
+    ...statusChecks(statusReport, target, checkUpdates, actions, { ...process.env, ...opts.env }),
     adoptionRefreshCheck(statusReport, target, checkUpdates, actions),
     ...doctorChecks(doctorReport, target, checkUpdates, actions),
     ...globalRulesChecks(target, opts.env, sourceRoot, checkUpdates, actions),
@@ -830,7 +839,11 @@ export function buildSetupCheck(ports: DoctorPorts, opts: InitHookOptions = {}):
       detail: `${error instanceof Error ? error.message : String(error)}. Decisions are ignored until the file is fixed.`,
     });
   }
-  const legacyItems = planUpgrade({ scope: 'all', cwd, home: opts.env?.HOME ?? process.env.HOME ?? os.homedir(), packageRoot: REPO_ROOT }, decisions).items;
+  const home = opts.env?.HOME ?? process.env.HOME ?? os.homedir();
+  // The install-state action above already reports an unreadable ledger; leftovers need it to classify ownership.
+  const legacyItems = statusReport.installState.recorded === 'invalid'
+    ? []
+    : planUpgrade({ scope: 'all', cwd, home, packageRoot: REPO_ROOT, installOwnership: installOwnershipReader({ ...process.env, ...opts.env, HOME: home }) }, decisions).items;
   const summary = summarize(checks);
   const report: InitHookReport = {
     version: 1,

@@ -258,21 +258,6 @@ describe('install command (Phase 1B)', () => {
     });
   }, 30_000);
 
-  test('install profiles bound host route inventory', () => {
-    withTempHome((home) => {
-      runInstall({ target: 'codex', location: 'global', profile: 'minimal' });
-      let hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(4);
-      expect(hooks.UserPromptSubmit).toHaveLength(1);
-      expect(hooks.SubagentStart).toBeUndefined();
-
-      runInstall({ target: 'codex', location: 'global', profile: 'full' as never });
-      hooks = JSON.parse(fs.readFileSync(path.join(home, '.codex/hooks.json'), 'utf-8')).hooks;
-      expect(Object.values(hooks as Record<string, unknown[]>).flat()).toHaveLength(5);
-      expect(hooks.SubagentStart).toHaveLength(1);
-    });
-  });
-
   test('adapter-only install rejects protocol-1 state before mutating host config', () => {
     withTempHome((home) => {
       const statePath = path.join(home, '.repo-harness', 'install-state.json');
@@ -319,7 +304,7 @@ describe('install command (Phase 1B)', () => {
       });
 
       expect(result.status).not.toBe(0);
-      expect(`${result.stdout}\n${result.stderr}`).toContain('--migrate-profile-state');
+      expect(`${result.stdout}\n${result.stderr}`).toContain('0.25.x bridge');
       expect(fs.readFileSync(statePath)).toEqual(stateBefore);
       expect(fs.readFileSync(hooksPath)).toEqual(hooksBefore);
     });
@@ -672,7 +657,7 @@ describe('install command (Phase 1B)', () => {
     });
   }, 30_000);
 
-  test('CLI install without required profile components fails closed and compensates adapters', () => {
+  test('CLI install without required core surfaces fails closed and compensates adapters', () => {
     withTempHome((home) => {
       const claude = writeReadyOfficialCodexPluginCli(home);
       const install = spawnSync(
@@ -694,7 +679,7 @@ describe('install command (Phase 1B)', () => {
         },
       );
       expect(install.status).not.toBe(0);
-      expect(`${install.stdout}\n${install.stderr}`).toContain('install profile projection is incomplete');
+      expect(`${install.stdout}\n${install.stderr}`).toContain('install projection is incomplete');
       expect(fs.existsSync(path.join(home, '.codex/hooks.json'))).toBe(false);
       expect(fs.existsSync(path.join(home, '.repo-harness/install-state.json'))).toBe(false);
     });

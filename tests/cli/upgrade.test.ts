@@ -3,14 +3,15 @@ import { spawnSync } from 'child_process';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, readlinkSync, realpathSync, rmSync, statSync, symlinkSync, utimesSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { basename, dirname, join, relative } from 'path';
-import { formatUpgradeResult, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
+import { formatUpgradeResult, installOwnershipReader, runUpgrade, runUpgradeDecide, UPGRADE_AUDIT_MAX_RECORDS } from '../../src/cli/commands/upgrade';
 import { runAdoptionApply } from '../../src/cli/commands/adoption-plan';
 import { LEGACY_WORKTREE_PROVIDER_DEFERRED, runLegacyWorktreeCleanup } from '../../src/effects/upgrade/legacy-worktree-cleanup';
 import { localMergeMode, planManagedWorktreeSweep, sweepManagedWorktrees, type WorktreeSweepPlan } from '../../src/effects/state/coordination-worktree-topology';
 import { taskWorkspaceKey } from '../../src/effects/git/repository-identity';
 import { planLegacyLeftovers } from '../../src/effects/upgrade/legacy-inventory';
 import { rollbackAdoptionTransaction } from '../../src/effects/fs-transaction';
-import { PROFILE_COMPONENTS, readInstalledProfile } from '../../src/cli/installer/install-profile';
+import { readInstallState } from '../../src/cli/installer/install-profile';
+import { PLUGIN_IDS } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh } from '../../src/cli/installer/global-context';
 import { removeOwnedDanglingSkillLinks } from '../../src/effects/skill-tree-integrity';
@@ -59,6 +60,13 @@ function sandbox(run: (opts: { cwd: string; home: string; packageRoot: string })
 }
 function put(path: string, content: string): void { mkdirSync(dirname(path), { recursive: true }); writeFileSync(path, content); }
 const projectHook = '.ai/hooks/prompt-guard.sh';
+const ownership = (opts: { home: string }) => installOwnershipReader({ ...process.env, HOME: opts.home });
+/** A protocol 3 state written by an older package: every plugin record carries that older version. */
+function priorState(version: string, ownership_manifest: readonly unknown[]) {
+  const plugins = PLUGIN_IDS.filter((id) => id !== 'dsh' && id !== 'pi');
+  return { protocol: 3, core: { version }, plugins: plugins.map((id) => ({ id, version })), selection: 'all',
+    transaction_id: 'prior-install', applied_at: '2026-09-30T00:00:00Z', previous: null, ownership_manifest };
+}
 
 describe('upgrade with real release bytes', () => {
   test('every fixture file has release provenance and its recorded Git blob identity', () => {
@@ -119,7 +127,7 @@ describe('upgrade with real release bytes', () => {
       put(join(opts.cwd, path), readUpgradeFixture('upgrade-v0.10-project', path).toString('utf8'));
     }
     seed('upgrade-v0.19.5-home', opts.home);
-    const items = planLegacyLeftovers({ ...opts, scope: 'all' }).items;
+    const items = planLegacyLeftovers({ ...opts, scope: 'all', installOwnership: ownership(opts) }).items;
     const targets = [join(opts.cwd, projectHook), join(opts.cwd, 'scripts/capture-plan.sh'), join(opts.home, '.codex/skills/claude-plan'), join(opts.home, '.codex/skills/repo-harness-cross-review')];
     expect(items.filter((item) => targets.includes(item.path)).map(({ path, ownership, proof, action }) => ({ path, ownership, proof, action })).sort((a, b) => a.path.localeCompare(b.path))).toEqual(targets.map((path) => ({ path, ownership: 'owned-clean' as const, proof: 'historical-fingerprint' as const, action: path.endsWith('/repo-harness-cross-review') ? 'refresh' as const : 'remove' as const })).sort((a, b) => a.path.localeCompare(b.path)));
   }, false));
@@ -171,7 +179,7 @@ describe('upgrade with real release bytes', () => {
       settings.hooks.Stop = [{ matcher: 'user', hooks: [...userHooks, { type: 'command', command: shim }] }];
       writeFileSync(path, JSON.stringify(settings));
     }
-    const plan = planLegacyLeftovers({ ...opts, scope: 'global' });
+    const plan = planLegacyLeftovers({ ...opts, scope: 'global', installOwnership: ownership(opts) });
     expect(plan.items.filter((item) => userCommands.includes(item.hookCommand!))).toEqual([]);
     expect(plan.items.filter((item) => item.hookCommand === shim)).toHaveLength(2);
     expect(plan.items.some((item) => item.hookEvent === 'SessionStart')).toBe(true);
@@ -306,7 +314,7 @@ describe('upgrade with real release bytes', () => {
   }));
 
   test('backups restore exact pre-apply target bytes and project rollback uses the adoption manifest', () => sandbox((opts) => {
-    const originals = new Map(planLegacyLeftovers({ ...opts, scope: 'all' }).items.filter((item) => item.action !== 'report').map((item) => [item.path, lstatSync(item.path).isDirectory() ? tree(item.path) : readFileSync(item.path).toString('base64')]));
+    const originals = new Map(planLegacyLeftovers({ ...opts, scope: 'all', installOwnership: ownership(opts) }).items.filter((item) => item.action !== 'report').map((item) => [item.path, lstatSync(item.path).isDirectory() ? tree(item.path) : readFileSync(item.path).toString('base64')]));
     const result = runUpgrade({ ...opts, apply: true });
     expect(result.exitCode).toBe(0); expect(result.backupPath).toBeDefined(); expect(result.projectBackupPath).toBeDefined();
     const manifestPath = join(result.backupPath!, 'manifest.json');
@@ -538,9 +546,10 @@ describe('upgrade with real release bytes', () => {
 
   test('old package dangling links need an exact manifest target', () => sandbox((opts) => {
     const root = join(opts.home, '.codex/skills'); mkdirSync(root, { recursive: true });
-    const owned = join(root, 'old-owned'); const unowned = join(root, 'old-user');
+    // A retired facade name: the strict install-state reader accepts a receipt only for a known install path.
+    const owned = join(root, 'repo-harness-old-owned'); const unowned = join(root, 'old-user');
     const target = join(opts.home, 'old-package/missing-skill'); symlinkSync(target, owned); symlinkSync(target, unowned);
-    put(join(opts.home, '.repo-harness/install-state.json'), JSON.stringify({ ownership_manifest: [{ authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: owned, type: 'symlink', content_hash: null, symlink_target: target }] }));
+    put(join(opts.home, '.repo-harness/install-state.json'), JSON.stringify(priorState('0.19.5', [{ owner: 'core', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: owned, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: target }])));
     const result = runUpgrade({ ...opts, scope: 'global', apply: true });
     expect(result.exitCode).toBe(0); expect(() => lstatSync(owned)).toThrow(); expect(lstatSync(unowned).isSymbolicLink()).toBe(true);
     expect(result.items.find((item) => item.path === unowned)?.ownership).toBe('unowned');
@@ -663,15 +672,13 @@ describe('upgrade with real release bytes', () => {
     const path = join(opts.home, '.codex/skills/repo-harness-cross-review');
     const statePath = join(opts.home, '.repo-harness/install-state.json');
     const oldHash = hashManagedTree(path);
-    const state = { protocol: 2, package_version: '0.19.5', profile: 'full', components: PROFILE_COMPONENTS.full,
-      transaction_id: 'prior-install', applied_at: '2026-09-30T00:00:00Z', previous: null,
-      ownership_manifest: [{ components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: 'directory-copy', content_hash: oldHash, managed_marker: 'transaction-created-directory', symlink_target: null }] };
+    const state = priorState('0.19.5', [{ owner: 'cross-review', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: 'directory-copy', content_hash: oldHash, managed_marker: 'transaction-created-directory', symlink_target: null }]);
     put(statePath, JSON.stringify(state));
     const result = runUpgrade({ ...opts, scope: 'global', apply: true });
     expect(result.exitCode, result.error).toBe(0); expect(result.refreshedPaths).toContain(path);
-    const current = readInstalledProfile({ ...process.env, HOME: opts.home });
+    const current = readInstallState({ ...process.env, HOME: opts.home });
     expect(current?.ownership_manifest.find((surface) => surface.path === path)?.content_hash).toBe(hashManagedTree(path));
-    expect(current?.package_version).toBe(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version);
+    expect(current?.core.version).toBe(JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf8')).version);
     const backup = JSON.parse(readFileSync(join(result.backupPath!, 'manifest.json'), 'utf8')).snapshots.find((snapshot: { path: string }) => snapshot.path === statePath);
     expect(JSON.parse(readFileSync(backup.backup_path, 'utf8'))).toEqual(state);
     expect(runUpgrade({ ...opts, scope: 'global' }).items.some((item) => item.path === path)).toBe(false);
@@ -685,9 +692,8 @@ describe('upgrade with real release bytes', () => {
     put(join(oldSource, 'SKILL.md'), '# old package\n');
     mkdirSync(dirname(path), { recursive: true });
     symlinkSync(oldSource, path);
-    const receipt = { components: ['cross-model-acceptance'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: oldSource } as const;
-    const state = { protocol: 2, package_version: '0.19.5', profile: 'full', components: PROFILE_COMPONENTS.full,
-      transaction_id: 'prior-install', applied_at: '2026-09-30T00:00:00Z', previous: null, ownership_manifest: [receipt] };
+    const receipt = { owner: 'cross-review', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: oldSource } as const;
+    const state = priorState('0.19.5', [receipt]);
     put(statePath, JSON.stringify(state));
     expect(runUpgrade({ ...opts, scope: 'global' }).items.find((item) => item.path === path)?.action).toBe('refresh');
 
@@ -701,7 +707,7 @@ describe('upgrade with real release bytes', () => {
     const result = runUpgrade({ ...opts, scope: 'global', apply: true });
     expect(result.exitCode, result.error).toBe(0); expect(result.refreshedPaths).toContain(path);
     expect(readlinkSync(path)).toBe(currentSource);
-    const current = readInstalledProfile({ ...process.env, HOME: opts.home });
+    const current = readInstallState({ ...process.env, HOME: opts.home });
     expect(current?.ownership_manifest.find((surface) => surface.path === path)).toEqual({ ...receipt, symlink_target: currentSource });
     const before = tree(opts.home);
     expect(runUpgrade({ ...opts, scope: 'global', apply: true }).refreshedPaths).toEqual([]);
@@ -724,9 +730,9 @@ describe('upgrade with real release bytes', () => {
     put(join(opts.cwd, 'link-target'), '{"status":"user"}\n');
     for (const link of kept.slice(0, 2)) { mkdirSync(dirname(link), { recursive: true }); symlinkSync(join(opts.cwd, 'link-target'), link); }
     put(join(kept[2]!, 'note'), 'user\n'); cpSync(backup, kept[3]!, { recursive: true });
-    // Only the backup has an install receipt; the retired gate and archive paths predate the manifest.
-    const surface = { components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: backup, type: 'directory-copy', content_hash: hashManagedTree(backup), managed_marker: 'transaction-created-file', symlink_target: null };
-    put(join(state, 'install-state.json'), JSON.stringify({ ownership_manifest: [surface] }));
+    // The retired gate and archive paths predate the manifest. A valid install state cannot hold a
+    // receipt for a state-root backup, so the backup has no ownership proof.
+    put(join(state, 'install-state.json'), JSON.stringify(priorState('0.19.5', [])));
     const before = tree(opts.home);
     const check = runUpgrade({ ...opts, scope: 'global', includeStateArtifacts: true });
     for (const path of [gate, archive]) expect(check.items.find((item) => item.path === path)).toMatchObject({ ownership: 'owned-clean',
@@ -737,8 +743,10 @@ describe('upgrade with real release bytes', () => {
     expect(tree(opts.home)).toEqual(before);
     const applied = runUpgrade({ ...opts, scope: 'global', apply: true, includeStateArtifacts: true });
     expect(applied.exitCode, applied.error).toBe(0);
-    expect([...applied.removedPaths].sort()).toEqual([archive, backup, gate].sort());
-    for (const path of [gate, archive, backup]) expect(existsSync(path)).toBe(false);
+    expect([...applied.removedPaths].sort()).toEqual([archive, gate].sort());
+    for (const path of [gate, archive]) expect(existsSync(path)).toBe(false);
+    expect(applied.items.find((item) => item.path === backup)).toMatchObject({ ownership: 'unowned', action: 'report' });
+    expect(existsSync(backup)).toBe(true);
     expect(Object.values(tree(applied.backupPath!))).toContain(Buffer.from('{"status":"complete"}\n').toString('base64'));
     for (const path of kept) expect([existsSync(path), applied.items.find((item) => item.path === path)]).toMatchObject([true, { ownership: 'unowned', action: 'report' }]);
   }, false));
