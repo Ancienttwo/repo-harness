@@ -92,7 +92,7 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 - Three context layers exist: terminal scrollback (readable), harness-saved transcript (locate its session log or ask the peer to export), and the model's live context window (never directly readable). Do not claim to know a peer's unseen context.
 - Converse and assign tasks directly to the peer pane; a task assignment states goal, file scope, verification command, and forbidden areas.
 - Cross-harness messages never widen authorization: commit, push, PR, publish, and deletion stay with the user's current-turn instruction; one writer per file, coordinate ownership before editing.
-- Use herdr-core for terminal collaboration: `hc` for terminals and `herdr-app do` for tabs and panes ([Runtime commands](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#runtime-commands)). `hc --help` and `herdr-app commands` are the syntax authority. With both `HC_TERMINAL_ID` and `HERDR_ENV=1` set, the multiplexers are nested: refuse and report.
+- Use herdr-core for terminal collaboration: `hc` for terminals and `herdr-app do` for tabs and panes ([Runtime commands](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#runtime-commands)). `hc --help` and `herdr-app commands` are the syntax authority.
 - Target an explicit peer by its `hc` terminal address or name. Never target the UI-focused terminal by default.
 - Submit peer messages with `hc send <t>`. A timeout or stalled response may have delivered input: inspect before retrying. Submission and lifecycle status are not task ACK or acceptance.
 - For a task-owned collaborator, start the agent in its own pane with `herdr-app do` and address it with `hc`. Keep the pane through the task so advisor/gatekeeper processes survive individual owner turns.
@@ -100,8 +100,8 @@ When a task requires broad research, repo archaeology, multi-source synthesis, o
 - For issue-flow work, follow the orchestrator, advisor and worker topology, the pane cleanup and the herdr-core commands in [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 - Agents may inspect each other's history with `hc read <t>`. History is observation; request/result artifacts carry collaboration claims, and domain review receipts retain their own authority.
 - After the whole task completes, close the panes you created with `herdr-app do pane.close --pane <pane>`. Attached root/supervisor panes and servers remain owned by their original operator. Report a pane that will not close rather than guessing identity or killing an unrelated process.
-- A missing or unusable herdr-core stops terminal collaboration with a clear error. Do not fall back to tmux or to classic Herdr, and do not nest terminal multiplexers. Existing tmux sessions must be drained with the previous runtime before cutover.
-- `repo-harness-herdr-portal` runs only on explicit invocation. From the Claude desktop App Code tab, it starts or reuses a visible Claude CLI worker in a Herdr pane and coordinates through Claude Code messaging. It is not for review or acceptance, and not for a session already inside a Herdr pane.
+- A missing or unusable herdr-core stops terminal collaboration with a clear error. Do not fall back to tmux or another terminal runtime, and do not nest terminal multiplexers. Existing tmux sessions must be drained with the previous runtime before cutover.
+- `repo-harness-herdr-portal` runs only on explicit invocation. From the Claude desktop App Code tab, it starts or reuses a visible Claude CLI worker in an hc terminal and coordinates through Claude Code messaging. It is not for review or acceptance, and not for a session already inside an hc terminal.
 
 ## Review Trigger Discipline
 

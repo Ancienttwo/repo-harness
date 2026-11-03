@@ -81,10 +81,11 @@ default: process.exit(99);
   symlinkSync(join(host, 'pi'), join(bin, 'pi'));
   write(join(bin, 'herdr'), `#!${process.execPath}
 if (process.argv.slice(2).join(' ') === 'integration status') console.log('pi: current (v9) (' + process.env.PI_CODING_AGENT_DIR + '/extensions/herdr-agent-state.ts)');
-else if (process.argv[2] === '--skill') console.log('---\\nname: herdr\\n---\\nHERDR_ENV\\n\\n## Learn the current CLI\\n\\nUse herdr --help.');
 else process.exit(99);
 `);
   chmodSync(join(bin, 'herdr'), 0o755);
+  write(join(bin, 'hc'), '#!/bin/sh\n[ "$1" = --skill ] && printf \'# hc manual (herdr-core)\\n\\n`$HC_TERMINAL_ID` is your address.\\n\'\n');
+  chmodSync(join(bin, 'hc'), 0o755);
   write(join(home, '.bun/bin/repo-harness'), '#!/bin/sh\nexit 0\n');
   chmodSync(join(home, '.bun/bin/repo-harness'), 0o755);
   const argv = () => existsSync(join(root, 'argv.jsonl')) ? readFileSync(join(root, 'argv.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]) : [];

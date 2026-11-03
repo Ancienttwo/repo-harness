@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "external.herdr-core"
+kind: "external-system"
+name: "herdr-core (hc)"
+status: "active"
+layer: "external"
+summary: "Persistent terminal server and its hc CLI. hc runs, lists, sends to, kills and removes labeled terminals, reports the server status and streams terminal events as JSON. It has no session, pane, workspace or plugin."

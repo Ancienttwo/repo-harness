@@ -1,14 +1,12 @@
 import { readFileSync } from "node:fs";
 
-const CLI_SECTION = "\n## Learn the current CLI\n";
+const MANUAL_HEADING = "# hc manual (herdr-core)\n";
 
-/** Keep binary command syntax while repo-harness owns caller-context policy. */
+/** Keep the hc manual verbatim under the repo-harness caller-context policy. */
 export function renderHerdrSkill(upstream) {
-  const boundary = upstream.indexOf(CLI_SECTION);
-  if (!upstream.startsWith("---\nname: herdr\n") || boundary < 0
-    || upstream.indexOf(CLI_SECTION, boundary + 1) >= 0) {
-    throw new Error("herdr --skill has an unsupported CLI section layout");
+  if (!upstream.startsWith(MANUAL_HEADING) || !upstream.includes("$HC_TERMINAL_ID")) {
+    throw new Error("hc --skill did not return the hc manual");
   }
   const context = readFileSync(new URL("../../../assets/reference-configs/herdr-skill-context.md", import.meta.url), "utf8");
-  return context.trimEnd() + "\n\n" + upstream.slice(boundary + 1);
+  return context.trimEnd() + "\n\n" + upstream;
 }

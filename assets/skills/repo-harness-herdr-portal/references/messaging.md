@@ -1,12 +1,12 @@
 # Portal messaging
 
-One name is the authority. `portal-<slug>` is the Herdr agent name and the
-Claude session name (`--name` at start). No mapping table exists.
+One name is the authority. `portal-<slug>` is the hc terminal name (`--name`)
+and the Claude session name (`-n`). No mapping table exists.
 
 ## Caller name
 
-The worker replies to a session name. Before the bootstrap brief, confirm that
-the calling session has a stable name. If it has none, ask the operator to run
+The worker replies to a session name. Before the start, confirm that the
+calling session has a stable name. If it has none, ask the operator to run
 `/rename <name>` in the caller. Do not invent a name.
 
 ## Find the worker
@@ -16,7 +16,7 @@ the calling session has a stable name. If it has none, ask the operator to run
 3. Set `messaging.listed` in the portal record to `true` only when that row is
    present in this run.
 
-A CLI session started with `--name` in a Herdr pane is not yet verified to show
+A CLI session started with `-n` in an hc terminal is not yet verified to show
 in `ListAgents` from the App Code tab. Treat a missing row as
 `portal_not_listed`. Do not assume success.
 
@@ -25,14 +25,14 @@ in `ListAgents` from the App Code tab. Treat a missing row as
 - Use `SendMessage({to: "portal-<slug>", message: …})` or an @mention of
   `portal-<slug>`.
 - Put the task content, scope and expected reply in the message.
-- Read the reply in the caller. Herdr history (`herdr agent read`) is only an
-  observation, not a reply.
+- Read the reply in the caller. The terminal screen (`hc read portal-<slug>`)
+  is only an observation, not a reply.
 
 ## No fallback
 
-Use `herdr agent prompt` only for the one bootstrap brief. When the row is
-missing, do not send task traffic through `herdr agent prompt`, pane input or
-any other channel.
+The start argv carries the one bootstrap brief. When the row is missing, do not
+send task traffic through `hc send`, `hc keys`, pane input or any other
+channel.
 
 ## Repair `portal_not_listed`
 
@@ -42,5 +42,7 @@ any other channel.
 
 ## Worker waits at its prompt
 
-Herdr shows `blocked` or `idle`, and the notify plugin fires. The operator reads
-the pane. Do not answer a dialog in the pane for the operator.
+`hc get portal-<slug>` shows `status.state` as `blocked` or `idle`. When the
+notify relay is installed, it reports `blocked` for the
+`repo-harness.notify=on` label. The operator reads the pane. Do not answer a
+dialog in the pane for the operator.

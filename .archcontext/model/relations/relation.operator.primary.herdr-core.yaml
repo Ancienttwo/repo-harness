@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator.primary.herdr-core"
+kind: "reads"
+source: "component.operator.primary"
+target: "external.herdr-core"
+intent: "Run hc server status and read the task-session hc events snapshot for the hc runtime transport, and follow the task-session hc events stream for runtime capture."
