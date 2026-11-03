@@ -1819,7 +1819,7 @@ describe("check-agent-tooling", () => {
       const res = spawnSync("bash", [join(packageRoot, "scripts", "check-agent-tooling.sh"), "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",
-        env: { ...process.env, HOME: envRoot.home },
+        env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
       });
 
       expect(res.status).toBe(0);
@@ -1909,7 +1909,10 @@ test.each([
       expect(result.stderr).toContain(status === "configuration-error"
         ? "herdr-core configuration error: .ai/harness/policy.json#external_tooling.herdr_core.min_version is missing or malformed"
         : `herdr-core runtime is ${status}; install hc >=${HERDR_CORE_PIN.min_version}`);
-      if (status !== "configuration-error") expect(result.stderr).toContain("Herdr skill readiness is unavailable; install hc first, then run repo-harness update --target claude");
+      expect(result.stderr).toContain(status === "configuration-error"
+        ? "Herdr skill readiness is unavailable; fix the herdr-core pin first, then run repo-harness update --target claude"
+        : "Herdr skill readiness is unavailable; install hc first, then run repo-harness update --target claude");
+      if (status === "configuration-error") expect(result.stderr).not.toContain("install hc first");
     }
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 }, 20_000);
