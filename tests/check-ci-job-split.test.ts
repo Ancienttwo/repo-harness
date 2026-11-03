@@ -706,10 +706,10 @@ describe('single affected verification and daily fallback', () => {
     });
     expect(job.steps.find((step: any) => step.uses === 'actions/setup-node@v4').with['node-version']).toBe('24');
     expect(job.steps.some((step: any) => step.uses === 'actions/download-artifact@v4')).toBe(false);
-    const install = job.steps.filter((step: any) => step.name === 'Install pinned Herdr runtime');
+    const install = job.steps.filter((step: any) => step.name === 'Install pinned herdr-core runtime');
     expect(install).toHaveLength(1);
     expect(install[0].if).toBeUndefined();
-    expect(install[0].uses).toBe('./.github/actions/install-pinned-herdr');
+    expect(install[0].uses).toBe('./.github/actions/install-pinned-herdr-core');
     expect(job.steps.indexOf(install[0])).toBeLessThan(job.steps.findIndex((step: any) => step.name === 'Run native OAR acceptance tests'));
     const native = job.steps.filter((step: any) => step.name === 'Run native OAR acceptance tests');
     expect(native).toHaveLength(1);
@@ -735,7 +735,7 @@ describe('single affected verification and daily fallback', () => {
     ]);
     // A PR runs only the darwin cases; the daily run keeps every native case. The filesystem probe step is gone.
     expect(job.steps.map((step: any) => step.name ?? step.uses)).toEqual([
-      'actions/checkout@v4', 'actions/setup-node@v4', 'oven-sh/setup-bun@v2', 'Install pinned Herdr runtime',
+      'actions/checkout@v4', 'actions/setup-node@v4', 'oven-sh/setup-bun@v2',
       'Install pinned herdr-core runtime', 'Run native OAR acceptance tests',
     ]);
   });
