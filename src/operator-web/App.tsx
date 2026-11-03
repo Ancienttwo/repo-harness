@@ -6,7 +6,8 @@ import type { WorktreesSnapshot } from '../core/operator/worktrees';
 import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
-import { Board } from './Board';
+import { BoardPage } from './BoardPage';
+import { fetchBoard, useBoard, type BoardReader, type BoardView } from './board-view';
 import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotAccessReader, type BotReviewsReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
@@ -14,14 +15,12 @@ import { SettingsFreshness, SettingsLayout, SettingsPage } from './SettingsPage'
 import { SeatsPage } from './SeatsPage';
 import { fetchSeatsSettings, postSeatsSettings, useSeatsSettingsForm, type SeatsSettingsReader, type SeatsSettingsWriter } from './seats';
 import {
-  DEFAULT_BOARD_FILTERS,
   fetchDevActivity,
   repositoryById,
   repositoryLabel,
   snapshotOf,
   sourceHealth,
   useDevActivity,
-  type BoardFilters,
   type DevActivityReader,
   type DevActivityView,
 } from './dev-activity';
@@ -59,7 +58,7 @@ import {
   staleErrorForState,
   type ObservationView,
 } from './RepositoryWorkspace';
-import { fetchRuntimeOverlay, useRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
+import { fetchRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
 import { TestsPage } from './TestsPage';
 import { ToolsPage } from './ToolsPage';
@@ -78,7 +77,7 @@ import {
 } from './types';
 import { useNow } from './ui';
 import { useObservationRefresh } from './useObservationRefresh';
-import { parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
 import {
   fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
   type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
@@ -100,6 +99,8 @@ export interface OperatorAppProps {
   readonly initialDevActivity?: DevActivitySnapshotV2;
   readonly readRuntimeStatus?: RuntimeOverlayReader;
   readonly initialRuntimeOverlay?: RuntimeOverlay;
+  /** The board route of one repository and parent issue, behind the Board and its Task drawer. */
+  readonly readBoard?: BoardReader;
   readonly readTaskContext?: TaskContextReader;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
@@ -204,6 +205,19 @@ function Freshness({ view, now, t }: { readonly view: DevActivityView; readonly 
   );
 }
 
+/** The board's line: when the shown board was observed, and whether the last read failed. */
+function BoardFreshness({ view, now, t }: { readonly view: BoardView | null; readonly now: number; readonly t: OperatorTranslate }) {
+  if (view === null) return null;
+  if (view.kind === 'loading') return <span className="inline-flex items-center gap-1.5" data-freshness="pending" data-freshness-source="board"><Loader size={12} />{t('freshness.loading')}</span>;
+  if (view.kind === 'failed') return <span className="text-kumo-danger" data-freshness="failed" data-freshness-source="board">{t('freshness.board.failed')}</span>;
+  const age = ageWords(view.board.observed_at, now, t);
+  return (
+    <span className={cn('truncate', view.refreshFailed !== null && 'text-kumo-warning')} data-freshness={view.refreshFailed !== null ? 'refresh-failed' : 'ok'} data-freshness-source="board">
+      {view.refreshFailed !== null ? t('freshness.refreshFailed', { age }) : t('freshness.board.observed', { age })}
+    </span>
+  );
+}
+
 /** The same line for the Worktree page, about the collector result it shows. */
 function WorktreesFreshness({ view, now, t }: { readonly view: WorktreesView; readonly now: number; readonly t: OperatorTranslate }) {
   if (view.kind === 'loading') return <span className="inline-flex items-center gap-1.5" data-freshness="pending" data-freshness-source="worktrees"><Loader size={12} />{t('freshness.worktrees.loading')}</span>;
@@ -251,6 +265,7 @@ export function OperatorApp({
   initialDevActivity,
   readRuntimeStatus = fetchRuntimeOverlay,
   initialRuntimeOverlay,
+  readBoard = fetchBoard,
   readTaskContext,
   readNotifyStatus,
   initialNotifyStatus,
@@ -284,7 +299,6 @@ export function OperatorApp({
   const searchRef = useRef(typeof window === 'undefined' ? '' : window.location.search);
   const [selection, setSelection] = useState<Selection | null>(location.selection);
   const [refreshGeneration, setRefreshGeneration] = useState(0);
-  const [filters, setFilters] = useState<BoardFilters>(() => ({ ...DEFAULT_BOARD_FILTERS, repositoryId: readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY) }));
   const { locale, setLocale, t } = useLocale(initialLocale);
   const theme = useTheme();
   const now = useNow(15_000);
@@ -320,13 +334,20 @@ export function OperatorApp({
   // The seats page reads it too, for each fleet role's model and description.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) || seatsSection);
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
-  const runtime = useRuntimeOverlay(readRuntimeStatus, initialRuntimeOverlay, workspace === 'board', refreshGeneration);
-  // One cached collector result feeds the Worktree page, the Board cleanup signal and Home's reclaimable row.
-  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'board' || workspace === 'home');
+  // One cached collector result feeds the Worktree page and Home's reclaimable row.
+  const { view: worktrees, reload: reloadWorktrees } = useWorktrees(readWorktrees, initialWorktrees, refreshGeneration, workspace === 'worktrees' || workspace === 'home');
   const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
-  // A stored board filter for a repository that left the snapshot shows every repository.
-  const boardFilters = devSnapshot && filters.repositoryId !== null && !devSnapshot.repositories.some(row => row.repository_id === filters.repositoryId)
-    ? { ...filters, repositoryId: null } : filters;
+  const boardSubject = workspace === 'board' ? boardPlace(place.item) : null;
+  const board = useBoard(readBoard, boardSubject, refreshGeneration);
+  // The one owner of the board repository choice: the open board, the rail and the subject form set it.
+  const [boardRepository, setBoardRepository] = useState<string | null>(() => readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY));
+  const chooseBoardRepository = useCallback((id: string) => {
+    writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
+    setBoardRepository(id);
+  }, []);
+  useEffect(() => {
+    if (boardSubject !== null) chooseBoardRepository(boardSubject.repository_id);
+  }, [boardSubject?.repository_id, chooseBoardRepository]);
 
   useEffect(() => {
     const restore = () => {
@@ -413,21 +434,15 @@ export function OperatorApp({
   }, [selection, selectedCard]);
   const revisionChangedFrom = selectedCard && selection && selectedCard.issue_revision !== selection.revision ? selection.revision : null;
   const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), providerRepositoryId: card.provider_repository_id, issueId: card.provider_issue_id, sessionBinding: card.execution?.selector.session_binding_sha256 ?? null, revision: card.issue_revision, historical: false });
-  const setBoardRepository = (id: string | null) => {
-    writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
-    setFilters(current => ({ ...current, repositoryId: id }));
-  };
 
   const [railCollapsed, toggleRail] = useRailCollapsed(workspace);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
-  // The board's task drawer names its item's repository.
-  const drawerItem = workspace === 'board' && place.item !== null ? devSnapshot?.items.find(item => item.id === place.item) ?? null : null;
-  const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : drawerItem?.repository_id ?? null, refreshGeneration);
+  const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : boardSubject?.repository_id ?? null, refreshGeneration);
   const devRepositories = devSnapshot?.repositories ?? [];
   const activityOptions = devRepositories.map(row => switchOption(devSnapshot, row.repository_id, repositoryLabel(devRepositories, row.repository_id), t));
-  const board: WorkspaceLocation = { workspace: 'board', module: null, item: null };
+  const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
   const repositorySwitch: RepositorySwitchModel = singleRepository ? {
     mode: 'current',
     selected: activeRepository && snapshot ? {
@@ -437,18 +452,17 @@ export function OperatorApp({
     options: (snapshot?.repositories ?? []).map(row => switchOption(devSnapshot, row.repository_id, fleetLabel(snapshot!.repositories, row), t)),
     allowAll: false,
     onSelect: id => { if (id !== null) switchRepository(id); },
-  } : drawerItem ? {
-    mode: 'current',
-    selected: { id: drawerItem.repository_id, label: repositoryLabel(devRepositories, drawerItem.repository_id), detail: repositoryDetail(devSnapshot, drawerItem.repository_id, head) },
-    options: activityOptions,
-    allowAll: true,
-    onSelect: id => { setBoardRepository(id); openPlace(board); },
   } : workspace === 'board' ? {
-    mode: 'scope',
-    selected: boardFilters.repositoryId === null ? null : { id: boardFilters.repositoryId, label: repositoryLabel(devRepositories, boardFilters.repositoryId), detail: null },
+    // A board names one repository; another repository needs its own parent issue.
+    mode: 'current',
+    selected: boardSubject === null ? null : { id: boardSubject.repository_id, label: repositoryLabel(devRepositories, boardSubject.repository_id), detail: repositoryDetail(devSnapshot, boardSubject.repository_id, head) },
     options: activityOptions,
-    allowAll: true,
-    onSelect: setBoardRepository,
+    allowAll: false,
+    onSelect: id => {
+      if (id === null || id === boardSubject?.repository_id) return;
+      chooseBoardRepository(id);
+      openPlace(boardHome);
+    },
   } : {
     mode: 'scope',
     selected: null,
@@ -478,6 +492,7 @@ export function OperatorApp({
               : workspace === 'settings' ? <SettingsFreshness view={agentsSettings.view} now={now} t={t} />
               : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} />
               : workspace === 'worktrees' ? <WorktreesFreshness view={worktrees} now={now} t={t} />
+              : workspace === 'board' ? <BoardFreshness view={board} now={now} t={t} />
               : <Freshness view={devActivity} now={now} t={t} />}
           </span>
           <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
@@ -486,8 +501,9 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <Board view={devActivity} runtime={runtime} worktrees={worktreesOf(worktrees)} readExecution={readExecution} generation={refreshGeneration} filters={boardFilters} onFilters={setFilters} itemId={place.item}
-            onOpenItem={item => openPlace({ workspace: 'board', module: null, item })} onCloseItem={() => openPlace({ workspace: 'board', module: null, item: null })} now={now} t={t} />}
+          {workspace === 'board' && <BoardPage place={boardSubject} view={board} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+            repositories={devRepositories.map(row => ({ id: row.repository_id, label: repositoryLabel(devRepositories, row.repository_id) }))}
+            chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
           {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}

@@ -4,10 +4,9 @@ import { WarningIcon } from '@phosphor-icons/react';
 import { WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupItem, type WorktreeCleanupResult } from '../core/operator/worktree-cleanup';
 import type { WorktreeView } from '../core/operator/worktrees';
 import type { OperatorApiErrorV1 } from './types';
-import { BoardState } from './Board';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
-import { Age, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
+import { Age, BoardState, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
 import {
   cleanupCommand, formatBytes, reclaimableSpace, spaceTotal, spaceWords, useRowDigests, worktreesOf,
   type SpaceTotal, type WorktreeCleanup, type WorktreesView,

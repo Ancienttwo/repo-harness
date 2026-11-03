@@ -11,6 +11,7 @@ import {
   OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE,
   OPERATOR_ARCHITECTURE_HISTORY_ROUTE,
   OPERATOR_TESTS_ROUTE,
+  OPERATOR_BOARD_ROUTE,
   OPERATOR_EXECUTION_STATE_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
   OPERATOR_SETUP_PATH,
@@ -88,6 +89,7 @@ describe('operator structural write boundary', () => {
       'bot_reviews',
       'cli_inventory',
       'tests',
+      'board',
       'execution_state',
       'docs_tree',
       'docs_file',
@@ -128,6 +130,7 @@ describe('operator structural write boundary', () => {
     expect(patterns.get('cli_inventory')).toBe(OPERATOR_CLI_INVENTORY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'cli_inventory')).toEqual({ id: 'cli_inventory', method: 'GET', pattern: '/api/v1/cli-inventory', write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'tests')).toEqual({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'board')).toEqual({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'execution_state')).toEqual({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false });
     expect(patterns.get('docs_tree')).toBe(OPERATOR_DOCS_TREE_ROUTE.source);
     expect(patterns.get('docs_file')).toBe(OPERATOR_DOCS_FILE_ROUTE.source);
