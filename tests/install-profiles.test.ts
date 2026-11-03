@@ -6,27 +6,35 @@ import { createHash } from 'crypto';
 import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import {
+  agentFleetUserManagedReceiptPath,
   applyInstallProfile,
   assertInstallProfile,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
   INSTALL_PROFILES,
   installProfileHostMutationPaths,
+  installProfileStatePath,
   installProfileTransactionPaths,
   effectiveSkillRoots,
   installedProfileStatus,
+  migrateRetiredAgentFleetFile,
   planInstallProfile,
   PROFILE_COMPONENTS,
   profileEnablesCodegraph,
   prepareLegacyInstallProfileMigration,
   prepareInstallProfileSwitch,
   readLegacyInstalledProfileForMigration,
+  readAgentFleetUserManagedReceipt,
   readInstalledProfile,
   recordVerifiedAgentFleetOwnership,
   recordRefreshedInstallOwnership,
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
+  RetiredAgentFleetPathError,
+  InstallStateOwnershipError,
 } from '../src/cli/installer/install-profile';
+import { checkRetiredFleetFile } from '../src/cli/commands/doctor';
+import { recordInstallOwnership } from './helpers/install-ownership';
 import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
@@ -1158,6 +1166,53 @@ describe('install profiles', () => {
     expect(installedProfileStatus(refreshed.state, env).drift.status).toBe('consistent');
   }));
 
+  test('the update migration deletes an owned unchanged orchestrator file and its state and receipt entries', () => withHome((env) => {
+    const retired = join(env.HOME!, '.claude', 'agents', 'orchestrator.md');
+    const statePath = installProfileStatePath(env);
+    const receiptPath = agentFleetUserManagedReceiptPath(env);
+    writePath(retired, '---\nname: orchestrator\n---\n');
+    recordInstallOwnership([retired], env);
+    const { previous: _previous, ...state } = JSON.parse(readFileSync(statePath, 'utf-8'));
+    // An entry without the install-transaction authority does not own the file: the ledger is refused and nothing changes.
+    const { authority: _authority, removal: _removal, ...unowned } = state.ownership_manifest[0];
+    const invalidLedger = JSON.stringify({ ...state, ownership_manifest: [unowned], previous: null });
+    writeFileSync(statePath, invalidLedger);
+    expect(() => migrateRetiredAgentFleetFile(env)).toThrow(InstallStateOwnershipError);
+    expect(existsSync(retired)).toBe(true);
+    expect(readFileSync(statePath, 'utf-8')).toBe(invalidLedger);
+    writeFileSync(statePath, JSON.stringify({ ...state, previous: state }));
+    writePath(receiptPath, JSON.stringify({ protocol: 1, authority: 'user-managed-agent-fleet', accepted_at: new Date(0).toISOString(),
+      files: [{ path: retired, sha256: `sha256:${'0'.repeat(64)}` }] }));
+    expect(() => readInstalledProfile(env)).toThrow(RetiredAgentFleetPathError);
+    expect(() => readAgentFleetUserManagedReceipt(env)).toThrow('run repo-harness update');
+
+    expect(migrateRetiredAgentFleetFile(env)).toEqual([
+      `removed ${retired}`, `removed ${retired} from ${statePath}`, `removed ${retired} from ${receiptPath}`,
+    ]);
+    expect(existsSync(retired)).toBe(false);
+    const migrated = readInstalledProfile(env)!;
+    expect(migrated.ownership_manifest).toEqual([]);
+    expect(migrated.previous?.ownership_manifest).toEqual([]);
+    expect(readAgentFleetUserManagedReceipt(env)).toEqual({ ok: true, hashes: new Map() });
+    expect(migrateRetiredAgentFleetFile(env)).toEqual([]);
+    expect(checkRetiredFleetFile(env).status).toBe('ok');
+  }));
+
+  test('the update migration keeps a changed orchestrator file, and doctor reports it', () => withHome((env) => {
+    const retired = join(env.HOME!, '.claude', 'agents', 'orchestrator.md');
+    writePath(retired, '---\nname: orchestrator\n---\n');
+    recordInstallOwnership([retired], env);
+    writeFileSync(retired, '# owner edit\n');
+
+    const lines = migrateRetiredAgentFleetFile(env);
+    expect(lines[0]).toBe(`removed ${retired} from ${installProfileStatePath(env)}`);
+    expect(lines[1]).toStartWith(`kept ${retired}`);
+    expect(lines).toHaveLength(2);
+    expect(readFileSync(retired, 'utf-8')).toBe('# owner edit\n');
+    expect(readInstalledProfile(env)!.ownership_manifest).toEqual([]);
+    expect(checkRetiredFleetFile(env)).toMatchObject({ status: 'warn', detail: expect.stringContaining('repo-harness seats argv orchestrator') });
+  }));
+
   test('a verified fleet run adopts pristine agents so a fleet projection change upgrades past a user-managed agent', () => withHome((env) => {
     const home = env.HOME!;
     writeManagedHostSurfaces(env, 'full');
@@ -1186,10 +1241,6 @@ describe('install profiles', () => {
     const recordedPaths = recorded.ownership_manifest.map(({ path }) => path);
     expect(recordedPaths).toContain(pristine);
     expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'explorer.md'));
-    // The Claude-only orchestrator is owned on the Claude side and has no Codex projection.
-    expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'orchestrator.md'));
-    expect(recordedPaths).not.toContain(join(home, '.codex', 'agents', 'orchestrator.toml'));
-    expect(existsSync(join(home, '.codex', 'agents', 'orchestrator.toml'))).toBe(false);
     expect(recordedPaths).not.toContain(custom);
     expect(installedProfileStatus(recorded, env).drift.status).toBe('consistent');
 

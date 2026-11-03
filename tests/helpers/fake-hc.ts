@@ -6,7 +6,7 @@
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync, appendFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
-import { tmpWorkspace } from './repo-fixture';
+import { tmpWorkspace, writeShellExecutableFixture } from './repo-fixture';
 
 const SCRIPT = `#!/bin/sh
 printf '%s\\n' "$*" >> "$FAKE_HC/argv.log"
@@ -24,6 +24,14 @@ case "$1" in
 esac
 exit 2
 `;
+
+/**
+ * A fake `hc` for install and readiness paths: `hc --skill` prints a manual, every other call prints `hc 0.1.17`.
+ * A fixture puts it first on PATH, so no test runs the developer's hc.
+ */
+export function writeFakeHc(bin: string): void {
+  writeShellExecutableFixture(join(bin, 'hc'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."; else printf "hc 0.1.17\\n"; fi\n');
+}
 
 export interface FakeTerminal { readonly address: string; readonly name?: string | null; readonly status?: Record<string, unknown> | null; readonly state?: 'live' | 'finished' }
 

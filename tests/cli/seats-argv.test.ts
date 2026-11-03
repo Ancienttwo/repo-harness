@@ -98,7 +98,7 @@ describe("repo-harness seats argv", () => {
       expect(advisor.argv).not.toContain("--strict-mcp-config");
       // `--tools` cannot name agent types, so every agent type outside the fleet is refused by name: managed roles,
       // built-in types, fork, nested user types and plugin types by the host identity rule.
-      expect(denied(advisor.argv)).toEqual(expect.arrayContaining(["Agent(fast-worker)", "Agent(orchestrator)", "Agent(general-purpose)", "Agent(fork)",
+      expect(denied(advisor.argv)).toEqual(expect.arrayContaining(["Agent(fast-worker)", "Agent(general-purpose)", "Agent(fork)",
         "Agent(nested-auditor)", "Agent(demo:helper)", "Agent(demo:review:security)", "Bash(gh pr create *)"]));
       expect(denied(advisor.argv)).not.toContain("Agent(explorer)");
       expect(advisor.limits).toContainEqual({ subject: "fleet", level: "named_types_only" });

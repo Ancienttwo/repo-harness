@@ -550,7 +550,10 @@ export function attentionHostPorts(options: HerdrCoreOptions = {}): AttentionHos
       try { hcSend(terminal, text, options); return { status: 'sent' }; } catch (error) { return failed(error); }
     },
     state: (terminal) => {
-      try { return { status: 'observed', state: hcGet(terminal, options).status?.state ?? null }; } catch (error) { return failed(error); }
+      try {
+        const current = hcGet(terminal, options);
+        return { status: 'observed', ended: current.state !== 'live', state: current.status?.state ?? null };
+      } catch (error) { return failed(error); }
     },
     wait: (terminal, seconds) => {
       try {

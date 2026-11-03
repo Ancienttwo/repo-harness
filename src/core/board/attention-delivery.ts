@@ -115,8 +115,8 @@ export interface AttentionHostPortsV1 {
   readonly startWatcher: (scope: { readonly repository: number; readonly parent: number }, cwd: string, argv: readonly [string, ...string[]]) =>
     { readonly status: 'started'; readonly address: string } | AttentionHostFailureV1;
   readonly send: (terminal: string, text: string) => { readonly status: 'sent' } | AttentionHostFailureV1;
-  /** The status word of a seat terminal now; null when it never reported one. */
-  readonly state: (terminal: string) => { readonly status: 'observed'; readonly state: string | null } | AttentionHostFailureV1;
+  /** A seat terminal now. `ended`: its program ended. `state`: its status word; null when it never reported one. */
+  readonly state: (terminal: string) => { readonly status: 'observed'; readonly ended: boolean; readonly state: string | null } | AttentionHostFailureV1;
   /** Wait at most `seconds` until the terminal stops working. `ended`: its program ended. `state`: its status word when the wait ended. */
   readonly wait: (terminal: string, seconds: number) =>
     { readonly status: 'observed'; readonly ended: boolean; readonly reason: string; readonly state: string | null } | AttentionHostFailureV1;

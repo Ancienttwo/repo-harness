@@ -111,6 +111,7 @@ export async function runAttentionWindow(input: AttentionWindowInput): Promise<v
   for (const delivery of stillBlocked) {
     const current = input.host.state(delivery.terminal);
     if (current.status === 'failed') record(delivery, 'send_failed', current.detail);
+    else if (current.ended) record(delivery, 'terminal_ended', 'ended before the window end');
     else if (current.state === 'blocked') record(delivery, 'skipped_blocked', 'blocked at the window end');
     else send(delivery);
   }
@@ -146,11 +147,12 @@ export function startAttentionWatch(input: {
 /**
  * Read-only: the watcher terminals of the current repository by their service
  * label, finished ones too. Doctor runs in one repository, so the check reads
- * its repository id, and only when a watcher terminal exists. A parent whose
+ * its repository id, and only when a watcher terminal exists. A checkout
+ * without a GitHub remote has no repository id and no watcher. A parent whose
  * watcher terminals all finished is stopped. After `hc rm` removes them, the
  * parent has no watcher terminal and the result is `na`.
  */
-export function attentionWatchDoctorCheck(host: AttentionHostPortsV1, repositoryId: () => number): { id: string; describe: string; status: 'ok' | 'warn' | 'na'; detail: string } {
+export function attentionWatchDoctorCheck(host: AttentionHostPortsV1, repositoryId: () => number | null): { id: string; describe: string; status: 'ok' | 'warn' | 'na'; detail: string } {
   const id = 'board-attention-watcher';
   const describe = 'Board attention watcher';
   const read = host.watchers();
@@ -159,11 +161,13 @@ export function attentionWatchDoctorCheck(host: AttentionHostPortsV1, repository
     return { id, describe, status: 'warn', detail: 'hc did not answer, so the watcher state is unknown (hc_unavailable).' };
   }
   if (read.watchers.length === 0) return { id, describe, status: 'na', detail: 'No attention watcher was started.' };
-  let repository: string;
-  try { repository = String(repositoryId()); } catch (error) {
+  let local: number | null;
+  try { local = repositoryId(); } catch (error) {
     if (!(error instanceof BoardCollectError)) throw error;
     return { id, describe, status: 'warn', detail: `The GitHub repository id of this checkout is unknown, so its watcher state is unknown (repository_unknown): ${error.message}` };
   }
+  if (local === null) return { id, describe, status: 'na', detail: 'This checkout has no GitHub remote, so it has no attention watcher.' };
+  const repository = String(local);
   const parents = new Map<string, boolean>();
   for (const watcher of read.watchers.filter(entry => entry.repository === repository)) {
     const parent = watcher.parent ?? `(no parent label on ${watcher.address})`;

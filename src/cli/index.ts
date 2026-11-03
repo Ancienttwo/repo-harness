@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
-import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
+import { migrateRetiredAgentFleetFile, newPiPackagesSinceTransaction, retiredAgentFleetMigrationPaths, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit, type InitPorts } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -42,7 +42,8 @@ import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
 import { buildBoardCommand } from './commands/board';
 import { attentionWatchDoctorCheck } from '../effects/board/attention-watch';
-import { readRepositoryId } from '../effects/board/collect';
+import { readLocalRepositoryId } from '../effects/board/collect';
+import { githubRemoteRepository } from '../core/operator/docs';
 import { attentionHostPorts, boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
@@ -131,7 +132,7 @@ export const CLI_PORTS: {
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readRepositoryId({ repo_root: cwd })) },
+  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
   retention: {
@@ -379,6 +380,8 @@ export function runCandidateRuntimeReconciliation(
   ) {
     throw new Error('candidate reconciliation package authority mismatch');
   }
+  // An older parent has no migration step, so the candidate runs it inside the parent transaction.
+  reportRetiredAgentFleetMigration(env);
 
   const runtime = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
     runtimeLock,
@@ -481,6 +484,11 @@ function candidateHandoffContext(
   return context;
 }
 
+/** Update's one-shot step before its first install-state read (#1510). Stdout stays free for `--json` and the candidate receipt. */
+function reportRetiredAgentFleetMigration(env: NodeJS.ProcessEnv): void {
+  for (const line of migrateRetiredAgentFleetFile(env)) console.error(`[runtime] retired fleet file: ${line}`);
+}
+
 export function runTransactionalRuntimeRefresh(
   options: GlobalRuntimeOptions,
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
@@ -489,8 +497,25 @@ export function runTransactionalRuntimeRefresh(
   // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
   providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
-    const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
-    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
+    const updateMode = options.updateMode === true;
+    // The update migration deletes or rewrites files that the current fleet no longer lists, so the snapshot names them
+    // and a failed update restores them.
+    const transaction = beginInstallHostTransaction(
+      [...runtimeHostMutationPaths(transactionEnv), ...(updateMode ? retiredAgentFleetMigrationPaths(transactionEnv) : [])],
+      transactionEnv,
+      { runtimeLock: lock },
+    );
+    let profile: InstallProfile;
+    try {
+      if (updateMode) reportRetiredAgentFleetMigration(transactionEnv);
+      profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
+    } catch (error) {
+      // Nothing outside the snapshot ran yet, so a restore is enough. A failed restore keeps both errors.
+      try { rollbackInstallHostTransaction(transaction); } catch (restoreError) {
+        throw new AggregateError([error, restoreError], `runtime transaction failed and its restore failed: ${[error, restoreError].map(item => (item instanceof Error ? item.message : String(item))).join('; ')}`);
+      }
+      throw error;
+    }
     let result: GlobalRuntimeResult;
     try {
       result = setup({ ...options, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });

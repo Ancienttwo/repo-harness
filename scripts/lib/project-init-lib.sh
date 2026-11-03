@@ -1363,7 +1363,7 @@ pi_write_harness_policy() {
     },
     "agent_fleet": {
       "source": "package:agents/fleet",
-      "managed_agents": ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator", "orchestrator"],
+      "managed_agents": ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"],
       "claude_target": "~/.claude/agents",
       "codex_target": "~/.codex/agents",
       "codex_generation": "derive-toml-from-md",

@@ -122,10 +122,7 @@ const { renderHerdrSkill } = require(path.join(PACKAGE_ROOT, "src/cli/commands/h
 const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "src", "core", "skill-surface", "waza-shared-rules.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
-const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator", "orchestrator"];
-// Mirrors CLAUDE_ONLY_AGENTS in src/effects/terminal/task-role-profiles.ts: these roles
-// have no Codex projection, so the Codex host never expects their TOML.
-const AGENT_FLEET_CLAUDE_ONLY = ["orchestrator"];
+const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const AGENT_FLEET_INSTALL_COMMAND = "repo-harness run install-agent-fleet";
 const AGENT_FLEET_USER_MANAGED_RECEIPT_PATH = path.join(HOME, ".repo-harness", "agent-fleet-user-managed.json");
 const CODEGRAPH_PACKAGE = "@colbymchenry/codegraph";
@@ -1156,10 +1153,7 @@ function loadAgentFleetUserManagedReceipt() {
 
 function detectAgentFleetHost(host, managedAgents) {
   const meta = HOSTS[host];
-  const hostAgents = host === "codex"
-    ? managedAgents.filter((agent) => !AGENT_FLEET_CLAUDE_ONLY.includes(agent))
-    : managedAgents;
-  const files = hostAgents.map((agent) => inspectAgentFleetFile(host, agent));
+  const files = managedAgents.map((agent) => inspectAgentFleetFile(host, agent));
   const installedAgents = files.filter((entry) => entry.present).map((entry) => entry.name);
   const missingAgents = files.filter((entry) => !entry.present).map((entry) => entry.name);
   const status = missingAgents.length === 0 ? "present" : installedAgents.length > 0 ? "partial" : "missing";

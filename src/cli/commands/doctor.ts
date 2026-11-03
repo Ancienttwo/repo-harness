@@ -7,7 +7,7 @@
  */
 
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
-import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from '../installer/install-profile';
+import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, retiredAgentFleetFile, PROFILE_COMPONENTS } from '../installer/install-profile';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/skill-surface/projection-state';
@@ -585,6 +585,18 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   };
 }
 
+/** A Claude orchestrator file that `repo-harness update` kept (#1510). Delete with install-state protocol 3 (#1287). */
+export function checkRetiredFleetFile(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult {
+  const id = 'retired-fleet-file';
+  const describe = 'No retired fleet role file remains';
+  const file = retiredAgentFleetFile(env);
+  if (!fs.existsSync(file)) return { id, describe, status: 'ok', detail: 'no orchestrator fleet file' };
+  return {
+    id, describe, status: 'warn',
+    detail: `${file} is left from the retired orchestrator fleet role. Start the orchestrator seat with repo-harness seats argv orchestrator. Review the file and delete it by hand; update deletes it only when the install state owns it unchanged.`,
+  };
+}
+
 /**
  * Read-only DSH profile check. DSH owns its plugin installation, so this check
  * reports whether a profile declares the repo-harness bundle. It never writes
@@ -647,6 +659,7 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
+  checks.push(checkRetiredFleetFile());
   checks.push(ports.notifyRelayCheck());
   checks.push(ports.attentionWatchCheck(cwd));
   for (const plugin of REGISTERED_CHECKS) {

@@ -7,7 +7,7 @@ layers hold every workflow fact, and each fact has one source. Root
 | Layer | Question | Source |
 | --- | --- | --- |
 | Flow | Who acts, when, and in what order | `repo-harness-issue-flow` skill |
-| Roles | Which seat and model fill a role | `agents/fleet/` |
+| Roles | Which seat and model fill a role | The `seats` section of `~/.repo-harness/config.json`; sub-agent roles in `agents/fleet/` |
 | Tools | How an action runs | Herdr, the review and publication commands, `contract-worktree` |
 
 ## Flow
@@ -47,9 +47,10 @@ host can fill a seat.
 | Acceptor | Fresh context, read-only; a different model family for High when available | Review threads and the acceptance record |
 | Gap reviewer | Different family from the orchestrator | Comments on drafts; no scope decision |
 
-`agents/fleet/` holds the role files. Claude projects them through
-`claude --agent <name>`. Other hosts load the same role from the issue-flow
-skill. The High tier prefers a different model family; a fresh same-family
+`repo-harness seats argv <seat>` prints the launch argv of the
+orchestrator, advisor and worker seats. `agents/fleet/` holds the sub-agent
+roles that a seat may call; the installer projects each role to Claude and
+Codex. The High tier prefers a different model family; a fresh same-family
 context is valid and records `model_relation` in the receipt.
 
 ## Tools
