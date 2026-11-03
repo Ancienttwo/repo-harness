@@ -2,8 +2,10 @@
 // is a group that holds them on a grid; dagre then places the groups and every
 // other top-level node, with each relation counted on its top-level ends. With
 // the model's layer order, each top-level node sits in its own layer's band,
-// the first layer at the top. Box width follows the node's line count from the
-// collector. This module computes positions only and adds no fact to the map.
+// the first layer at the top. Without it, the top-level nodes that no relation
+// links to another top-level node sit on the same grid below the dagre rows, so
+// they do not all fall into one rank. Box width follows the node's line count
+// from the collector. This module computes positions only and adds no fact to the map.
 // A history milestone has no sizes, layer order or imports, so those inputs are optional.
 
 import * as dagre from '@dagrejs/dagre';
@@ -16,6 +18,9 @@ export const MAP_NODE_MAX_WIDTH = 280;
 export const MAP_GROUP_HEADER = 36;
 const MAP_GROUP_PADDING = 12;
 const MAP_GROUP_GAP = 12;
+const MAP_NODE_SEP = 24;
+const MAP_RANK_SEP = 64;
+const MAP_MARGIN = 24;
 
 /** Relations between processes, hosts and data. The canvas draws them dashed; code relations stay solid. */
 export const DASHED_KINDS: ReadonlySet<string> = new Set(['spawns', 'runs-in', 'deployed-on', 'mounts', 'reads', 'writes', 'publishes', 'subscribes']);
@@ -64,6 +69,7 @@ export interface MapLayoutBand {
 export interface MapLayout {
   /** Every model node once; a group comes before its components. */
   readonly nodes: readonly MapLayoutNode[];
+  /** The relations that the canvas draws: every relation except one between a group and a node inside it, which would cross the group box. */
   readonly edges: readonly MapLayoutEdge[];
   /** Top to bottom in the layer order; empty when the map has no layer order. */
   readonly bands: readonly MapLayoutBand[];
@@ -72,6 +78,24 @@ export interface MapLayout {
 }
 
 interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
+interface Size { readonly width: number; readonly height: number }
+
+/**
+ * A near-square grid of boxes in input order, with its top-left corner at 0,0.
+ * Each column is as wide as its widest box and each row as tall as its tallest.
+ */
+function grid(own: readonly Size[], gap: number): { readonly cells: readonly { x: number; y: number }[]; readonly width: number; readonly height: number } {
+  const columns = Math.ceil(Math.sqrt(own.length));
+  const rows = Math.ceil(own.length / columns);
+  const columnWidth = Array.from({ length: columns }, (_, column) => Math.max(0, ...own.filter((_, index) => index % columns === column).map(size => size.width)));
+  const rowHeight = Array.from({ length: rows }, (_, row) => Math.max(0, ...own.slice(row * columns, (row + 1) * columns).map(size => size.height)));
+  const offset = (sizes: readonly number[], index: number) => sizes.slice(0, index).reduce((sum, value) => sum + value + gap, 0);
+  return {
+    cells: own.map((_, index) => ({ x: offset(columnWidth, index % columns), y: offset(rowHeight, Math.floor(index / columns)) })),
+    width: columnWidth.reduce((sum, value) => sum + value, 0) + (columns - 1) * gap,
+    height: rowHeight.reduce((sum, value) => sum + value, 0) + (rows - 1) * gap,
+  };
+}
 
 export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
   const sizes = new Map(map.sizes?.state === 'ok' ? map.sizes.nodes.map(size => [size.id, { files: size.files, lines: size.lines }]) : []);
@@ -83,27 +107,23 @@ export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
   const width = (id: string): number => MAP_NODE_MIN_WIDTH
     + Math.round((MAP_NODE_MAX_WIDTH - MAP_NODE_MIN_WIDTH) * Math.sqrt((sizes.get(id)?.lines ?? 0) / maxLines));
 
-  // Members sit on a near-square grid inside their group, in model order, at their own size, so a group may hold groups.
-  // Each column is as wide as its widest member and each row as tall as its tallest. Sizes resolve from the leaves up.
+  // Members sit on a grid inside their group, in model order, at their own size, so a group may hold groups.
+  // Sizes resolve from the leaves up.
   const inner = new Map<string, Box>();
-  const sizeCache = new Map<string, { width: number; height: number }>();
-  const sizeOf = (id: string): { width: number; height: number } => {
+  const sizeCache = new Map<string, Size>();
+  const sizeOf = (id: string): Size => {
     const cached = sizeCache.get(id);
     if (cached) return cached;
     const nodes = members.get(id);
     if (!nodes) return { width: width(id), height: MAP_NODE_HEIGHT };
-    const columns = Math.ceil(Math.sqrt(nodes.length));
-    const rows = Math.ceil(nodes.length / columns);
     const own = nodes.map(node => sizeOf(node.id));
-    const columnWidth = Array.from({ length: columns }, (_, column) => Math.max(0, ...own.filter((_, index) => index % columns === column).map(size => size.width)));
-    const rowHeight = Array.from({ length: rows }, (_, row) => Math.max(0, ...own.slice(row * columns, (row + 1) * columns).map(size => size.height)));
-    const offset = (sizes: readonly number[], index: number) => sizes.slice(0, index).reduce((sum, value) => sum + value + MAP_GROUP_GAP, 0);
+    const cells = grid(own, MAP_GROUP_GAP);
     nodes.forEach((node, index) => {
-      inner.set(node.id, { x: MAP_GROUP_PADDING + offset(columnWidth, index % columns), y: MAP_GROUP_HEADER + offset(rowHeight, Math.floor(index / columns)), ...own[index]! });
+      inner.set(node.id, { x: MAP_GROUP_PADDING + cells.cells[index]!.x, y: MAP_GROUP_HEADER + cells.cells[index]!.y, ...own[index]! });
     });
     const size = {
-      width: Math.max(MAP_NODE_MIN_WIDTH, columnWidth.reduce((sum, value) => sum + value, 0) + (columns - 1) * MAP_GROUP_GAP) + 2 * MAP_GROUP_PADDING,
-      height: MAP_GROUP_HEADER + rowHeight.reduce((sum, value) => sum + value, 0) + (rows - 1) * MAP_GROUP_GAP + MAP_GROUP_PADDING,
+      width: Math.max(MAP_NODE_MIN_WIDTH, cells.width) + 2 * MAP_GROUP_PADDING,
+      height: MAP_GROUP_HEADER + cells.height + MAP_GROUP_PADDING,
     };
     sizeCache.set(id, size);
     return size;
@@ -114,13 +134,22 @@ export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
   // The decoder refuses parent cycles, so every chain ends at a top-level node.
   const rootOf = (id: string): string => { let cursor = id; while (parents.get(cursor)) cursor = parents.get(cursor)!; return cursor; };
   const owner = new Map(map.nodes.map(node => [node.id, rootOf(node.id)]));
+  const order = map.layer_order?.state === 'ok' ? map.layer_order.layers : null;
+  const linked = new Set<string>();
+  for (const relation of map.relations) {
+    const source = owner.get(relation.source)!;
+    const target = owner.get(relation.target)!;
+    if (source !== target) { linked.add(source); linked.add(target); }
+  }
+  // Without bands, dagre gives every unlinked top-level node the same rank; the grid below the dagre rows places them instead.
+  const loose = order === null ? top.filter(node => !linked.has(node.id)) : [];
+  const ranked = order === null ? top.filter(node => linked.has(node.id)) : top;
   const graph = new dagre.graphlib.Graph();
   // A long relation adds one dummy node per rank it crosses; a small edge spacing keeps those from widening the map.
-  graph.setGraph({ rankdir: 'TB', ranker: 'tight-tree', nodesep: 24, ranksep: 64, edgesep: 4, marginx: 24, marginy: 24 });
+  graph.setGraph({ rankdir: 'TB', ranker: 'tight-tree', nodesep: MAP_NODE_SEP, ranksep: MAP_RANK_SEP, edgesep: 4, marginx: MAP_MARGIN, marginy: MAP_MARGIN });
   graph.setDefaultEdgeLabel(() => ({}));
-  for (const node of top) graph.setNode(node.id, sizeOf(node.id));
+  for (const node of ranked) graph.setNode(node.id, sizeOf(node.id));
   // Band of each top-level node: its layer's position in the order; the model's unlayered nodes go below the last layer.
-  const order = map.layer_order?.state === 'ok' ? map.layer_order.layers : null;
   const band = new Map(order === null ? [] : top.map(node => [node.id, node.layer === null ? order.length : order.indexOf(node.layer)]));
   const used = [...new Set(band.values())].sort((a, b) => a - b);
   // A zero-size anchor above each band and one below the last: every node of a band ranks below its anchor and above the next.
@@ -147,10 +176,15 @@ export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
   dagre.layout(graph);
 
   const placed = new Map<string, Box>();
-  for (const node of top) {
+  for (const node of ranked) {
     const center = graph.node(node.id) as { x: number; y: number; width: number; height: number };
     placed.set(node.id, { x: center.x - center.width / 2, y: center.y - center.height / 2, width: center.width, height: center.height });
   }
+  const looseTop = ranked.length === 0 ? MAP_MARGIN : Math.max(...[...placed.values()].map(box => box.y + box.height)) + MAP_RANK_SEP;
+  const looseSizes = loose.map(node => sizeOf(node.id));
+  grid(looseSizes, MAP_NODE_SEP).cells.forEach((cell, index) => {
+    placed.set(loose[index]!.id, { x: MAP_MARGIN + cell.x, y: looseTop + cell.y, ...looseSizes[index]! });
+  });
   // Parents before members at every depth: React Flow places a member relative to a parent it has already seen.
   const nodes: MapLayoutNode[] = [];
   const visit = (node: MapLayoutInputNode, parent: Box | null) => {
@@ -163,7 +197,11 @@ export function layoutArchitectureMap(map: MapLayoutInput): MapLayout {
 
   const imports = new Map(map.dependencies?.state === 'ok' ? map.dependencies.edges.map(edge => [`${edge.source}\n${edge.target}`, edge.imports]) : []);
   const maxImports = Math.max(1, ...imports.values());
-  const edges = map.relations.map(relation => {
+  const contains = (outer: string, id: string): boolean => {
+    for (let cursor = parents.get(id); cursor; cursor = parents.get(cursor)) if (cursor === outer) return true;
+    return false;
+  };
+  const edges = map.relations.filter(relation => !contains(relation.source, relation.target) && !contains(relation.target, relation.source)).map(relation => {
     const count = imports.get(`${relation.source}\n${relation.target}`) ?? null;
     return {
       relation,
