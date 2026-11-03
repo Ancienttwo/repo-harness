@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:eab29e0c3b7800a33befac5dc5e0029f281549460133be148a39908390762a40" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4c3855ba35c2509f6530104cbc8a6615f4c88c5e5d15b8e97b1c7e6c22dbeee4" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
@@ -115,7 +115,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.acceptance-review.primary` | Generic Review Round | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.acceptance-review.primary-cli` | Generic Review Round (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
-| `component.acceptance-review.primary-core` | Generic Review Round (core) | `5–10` 個文件 / `2000–5000` 行 | 未宣告 |
+| `component.acceptance-review.primary-core` | Generic Review Round (core) | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.acceptance-review.primary-scripts` | Generic Review Round (scripts) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
