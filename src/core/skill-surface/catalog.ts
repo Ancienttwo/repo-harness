@@ -1,17 +1,15 @@
-// Pure skill-surface catalog module. Zero imports (mirrors the
-// src/core/capabilities/registry.ts house pattern exactly): entrypoints never
-// throw on data problems, parse takes an already-read string|null, and every
-// result is a closed status union carrying a closed diagnostic-code union.
-// This module never touches fs/process; callers own reading manifest.json and
-// (optionally) proving a package's source path exists on disk.
+// Pure skill-surface catalog module. It imports only the pure plugin
+// manifest: entrypoints never throw on data problems, parse takes an
+// already-read string|null, and every result is a closed status union carrying
+// a closed diagnostic-code union. This module never touches fs/process;
+// callers own reading manifest.json and (optionally) proving a package's
+// source path exists on disk.
+import { isSurfaceOwner, ownerEnabled, SURFACE_OWNERS, type PluginId, type SurfaceOwner } from "./plugin-manifest";
 
-export const SKILL_SURFACE_CATALOG_VERSION = 3 as const;
+export const SKILL_SURFACE_CATALOG_VERSION = 4 as const;
 
 export const SKILL_SURFACE_HOSTS = ["claude", "codex", "pi", "dsh"] as const;
 export type SkillSurfaceHost = (typeof SKILL_SURFACE_HOSTS)[number];
-
-export const SKILL_SURFACE_PROFILES = ["minimal", "full"] as const;
-export type SkillSurfaceProfile = (typeof SKILL_SURFACE_PROFILES)[number];
 
 export const SKILL_SURFACE_KINDS = ["router", "facade", "provider-skill", "integration", "external", "judge"] as const;
 export type SkillSurfaceKind = (typeof SKILL_SURFACE_KINDS)[number];
@@ -64,9 +62,11 @@ export interface SkillSurfacePackage {
   /** Optional immutable full-tree digest required before host projection. */
   readonly integrity: string | null;
   readonly hosts: readonly SkillSurfaceHost[];
-  readonly profiles: readonly SkillSurfaceProfile[];
+  /** `core` or the plugin whose selection projects this package. */
+  readonly owner: SurfaceOwner;
+  /** True when no selection projects the package; an explicit command or flag installs it. */
+  readonly explicitOnly: boolean;
   readonly discoverability: SkillSurfaceDiscoverability;
-  readonly component: string;
   readonly requires: readonly string[];
   readonly mutatesRepoByDefault: boolean;
   readonly summary: string;
@@ -80,19 +80,12 @@ export interface SkillSurfaceHostPlacements {
   readonly dsh: readonly string[];
 }
 
-export interface SkillSurfaceExpectedProjections {
-  readonly facadesByProfile: Readonly<Record<SkillSurfaceProfile, readonly string[]>>;
-  readonly externalSkillsByProfile: Readonly<Record<SkillSurfaceProfile, readonly string[]>>;
-  readonly hostSkillPlacementsByProfile: Readonly<Record<SkillSurfaceProfile, SkillSurfaceHostPlacements>>;
-}
-
 export interface SkillSurfaceCatalog {
   readonly version: typeof SKILL_SURFACE_CATALOG_VERSION;
   readonly surface: string;
   readonly source: string;
   readonly router: string;
   readonly packages: readonly SkillSurfacePackage[];
-  readonly expectedProjections: SkillSurfaceExpectedProjections;
   readonly nonPublicInternalSteps: readonly string[];
   readonly retiredPackages: readonly SkillSurfaceRetiredPackage[];
 }
@@ -131,7 +124,7 @@ export type SkillSurfaceCatalogDiagnosticCode =
   | "INVALID_KIND"
   | "INVALID_DISCOVERABILITY"
   | "INVALID_HOST"
-  | "INVALID_PROFILE"
+  | "INVALID_OWNER"
   | "INVALID_INTEGRITY_SCOPE"
   | "DUPLICATE_NAME"
   | "DUPLICATE_SOURCE"
@@ -140,13 +133,10 @@ export type SkillSurfaceCatalogDiagnosticCode =
   | "DUPLICATE_REQUIREMENT"
   | "CYCLIC_REQUIREMENT"
   | "HOST_INCOMPATIBLE_REQUIREMENT"
-  | "COMPONENT_NOT_IN_PROFILE"
   | "RETIREMENT_CANDIDATE_NOT_OBJECT"
   | "RETIREMENT_REPLACEMENT_UNKNOWN"
   | "RETIREMENT_REPLACEMENT_RETIRING"
   | "SOURCE_MISSING"
-  | "EXPECTED_PROJECTIONS_REQUIRED"
-  | "PROJECTION_MISMATCH"
   | "RETIRED_PACKAGES_NOT_ARRAY"
   | "RETIRED_PACKAGE_NOT_OBJECT";
 
@@ -176,8 +166,6 @@ export type SkillSurfaceCatalogResolution =
 export interface SkillSurfaceCatalogOptions {
   /** When source is null: true means "a manifest was expected" (invalid), false/omitted means "absent" is acceptable. */
   readonly declared?: boolean;
-  /** profile -> allowed InstallComponent names, e.g. install-profile.ts's exported PROFILE_COMPONENTS. Omit to skip the crossref check. */
-  readonly profileComponents?: Readonly<Record<string, readonly string[]>>;
   /** Caller-supplied fs existence probe for package.source. Omit to skip missing-source detection (pure core never touches fs itself). */
   readonly exists?: (path: string) => boolean;
 }
@@ -200,10 +188,6 @@ function isStringArray(value: unknown): value is string[] {
   return Array.isArray(value) && value.every((entry) => typeof entry === "string");
 }
 
-function arraysEqual(left: readonly string[], right: readonly string[]): boolean {
-  return left.length === right.length && left.every((value, index) => value === right[index]);
-}
-
 function sameStringSet(left: readonly string[], right: readonly string[]): boolean {
   if (left.length !== right.length) return false;
   const sorted = (values: readonly string[]) => [...values].sort();
@@ -212,44 +196,14 @@ function sameStringSet(left: readonly string[], right: readonly string[]): boole
   return a.every((value, index) => value === b[index]);
 }
 
-// --- selector core (shared by the exported selectors and the internal
-// self-consistency check, so there is exactly one implementation of each
-// projection rule) ---------------------------------------------------------
-
-function computeFacadesForProfile(
-  packages: readonly SkillSurfacePackage[],
-  profile: SkillSurfaceProfile,
-): readonly string[] {
-  return packages
-    .filter((pkg) => pkg.kind === "facade" && pkg.profiles.includes(profile))
-    .map((pkg) => pkg.name);
-}
-
-function computeHostSkillPlacements(
-  packages: readonly SkillSurfacePackage[],
-  profile: SkillSurfaceProfile | undefined,
-): SkillSurfaceHostPlacements {
-  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [], pi: [], dsh: [] };
-  for (const pkg of packages) {
-    if (pkg.kind !== "provider-skill") continue;
-    if (profile !== undefined && !pkg.profiles.includes(profile)) continue;
-    for (const host of pkg.hosts) placements[host].push(pkg.name);
-  }
-  return placements;
-}
-
-function computeExternalSkillsForProfile(
-  packages: readonly SkillSurfacePackage[],
-  profile: SkillSurfaceProfile | undefined,
-): readonly string[] {
-  return packages
-    .filter((pkg) => pkg.kind === "external" && (profile === undefined || pkg.profiles.includes(profile)))
-    .map((pkg) => pkg.name);
+/** A package that a plugin selection projects: not explicit-only, and its owner is enabled. */
+function selected(pkg: SkillSurfacePackage, plugins: readonly PluginId[]): boolean {
+  return !pkg.explicitOnly && ownerEnabled(pkg.owner, plugins);
 }
 
 // --- validation --------------------------------------------------------
 
-const REQUIRED_STRING_FIELDS = ["name", "kind", "discoverability", "component", "summary"] as const;
+const REQUIRED_STRING_FIELDS = ["name", "kind", "discoverability", "summary"] as const;
 
 function validatePackage(
   raw: unknown,
@@ -320,18 +274,11 @@ function validatePackage(
     }
   }
 
-  if (!isStringArray(raw.profiles)) {
-    diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.profiles`, `${name}: profiles must be a string array`));
-  } else {
-    for (const [profileIndex, profile] of raw.profiles.entries()) {
-      if (!(SKILL_SURFACE_PROFILES as readonly string[]).includes(profile)) {
-        diagnostics.push(diagnostic(
-          "INVALID_PROFILE",
-          `${basePath}.profiles[${profileIndex}]`,
-          `${name}: profile must be one of ${SKILL_SURFACE_PROFILES.join(", ")}`,
-        ));
-      }
-    }
+  if (!isSurfaceOwner(raw.owner)) {
+    diagnostics.push(diagnostic("INVALID_OWNER", `${basePath}.owner`, `${name}: owner must be one of ${SURFACE_OWNERS.join(", ")}`));
+  }
+  if (typeof raw.explicitOnly !== "boolean") {
+    diagnostics.push(diagnostic("FIELD_REQUIRED", `${basePath}.explicitOnly`, `${name}: explicitOnly must be a boolean`));
   }
 
   if (!isStringArray(raw.requires)) {
@@ -389,101 +336,13 @@ function validatePackage(
     provider: typeof raw.provider === "string" ? raw.provider : null,
     integrity: typeof raw.integrity === "string" ? raw.integrity : null,
     hosts: isStringArray(raw.hosts) ? (raw.hosts as SkillSurfaceHost[]) : [],
-    profiles: isStringArray(raw.profiles) ? (raw.profiles as SkillSurfaceProfile[]) : [],
+    owner: raw.owner as SurfaceOwner,
+    explicitOnly: raw.explicitOnly === true,
     discoverability: (raw.discoverability as SkillSurfaceDiscoverability) ?? "cli-reference",
-    component: typeof raw.component === "string" ? raw.component : "",
     requires: isStringArray(raw.requires) ? raw.requires : [],
     mutatesRepoByDefault: raw.mutatesRepoByDefault === true,
     summary: typeof raw.summary === "string" ? raw.summary : "",
     retirementCandidate,
-  };
-}
-
-function validateExpectedProjections(
-  raw: unknown,
-  packages: readonly SkillSurfacePackage[],
-  diagnostics: SkillSurfaceCatalogDiagnostic[],
-): SkillSurfaceExpectedProjections | null {
-  if (!isRecord(raw)) {
-    diagnostics.push(diagnostic(
-      "EXPECTED_PROJECTIONS_REQUIRED",
-      "expectedProjections",
-      "expectedProjections is required and must be an object",
-    ));
-    return null;
-  }
-
-  const facadesByProfile: Record<string, readonly string[]> = {};
-  const externalSkillsByProfile: Record<string, readonly string[]> = {};
-  const hostSkillPlacementsByProfile: Record<string, SkillSurfaceHostPlacements> = {};
-  let shapeOk = true;
-
-  const facadesRaw = raw.facadesByProfile;
-  const externalRaw = raw.externalSkillsByProfile;
-  const hostsRaw = raw.hostSkillPlacementsByProfile;
-  if (!isRecord(facadesRaw) || !isRecord(externalRaw) || !isRecord(hostsRaw)) {
-    diagnostics.push(diagnostic(
-      "EXPECTED_PROJECTIONS_REQUIRED",
-      "expectedProjections",
-      "expectedProjections.facadesByProfile, .externalSkillsByProfile, and .hostSkillPlacementsByProfile are required",
-    ));
-    return null;
-  }
-
-  for (const profile of SKILL_SURFACE_PROFILES) {
-    const facades = facadesRaw[profile];
-    if (!isStringArray(facades)) {
-      diagnostics.push(diagnostic(
-        "EXPECTED_PROJECTIONS_REQUIRED",
-        `expectedProjections.facadesByProfile.${profile}`,
-        `expectedProjections.facadesByProfile.${profile} must be a string array`,
-      ));
-      shapeOk = false;
-    } else {
-      facadesByProfile[profile] = facades;
-    }
-
-    const external = externalRaw[profile];
-    if (!isStringArray(external)) {
-      diagnostics.push(diagnostic(
-        "EXPECTED_PROJECTIONS_REQUIRED",
-        `expectedProjections.externalSkillsByProfile.${profile}`,
-        `expectedProjections.externalSkillsByProfile.${profile} must be a string array`,
-      ));
-      shapeOk = false;
-    } else {
-      externalSkillsByProfile[profile] = external;
-    }
-
-    const hostPlacement = hostsRaw[profile];
-    if (
-      !isRecord(hostPlacement) ||
-      !isStringArray(hostPlacement.claude) ||
-      !isStringArray(hostPlacement.codex) ||
-      !isStringArray(hostPlacement.pi)
-    ) {
-      diagnostics.push(diagnostic(
-        "EXPECTED_PROJECTIONS_REQUIRED",
-        `expectedProjections.hostSkillPlacementsByProfile.${profile}`,
-        `expectedProjections.hostSkillPlacementsByProfile.${profile} must have claude, codex, pi and dsh string arrays`,
-      ));
-      shapeOk = false;
-    } else {
-      hostSkillPlacementsByProfile[profile] = {
-        claude: hostPlacement.claude as string[],
-        codex: hostPlacement.codex as string[],
-        pi: hostPlacement.pi as string[],
-        dsh: hostPlacement.dsh as string[],
-      };
-    }
-  }
-
-  if (!shapeOk) return null;
-  return {
-    facadesByProfile: facadesByProfile as Readonly<Record<SkillSurfaceProfile, readonly string[]>>,
-    externalSkillsByProfile: externalSkillsByProfile as Readonly<Record<SkillSurfaceProfile, readonly string[]>>,
-    hostSkillPlacementsByProfile:
-      hostSkillPlacementsByProfile as Readonly<Record<SkillSurfaceProfile, SkillSurfaceHostPlacements>>,
   };
 }
 
@@ -571,7 +430,7 @@ export function validateSkillSurfaceCatalogValue(
     return {
       status: "invalid",
       catalog: null,
-      diagnostics: [diagnostic("UNSUPPORTED_VERSION", "version", "version must be 3")],
+      diagnostics: [diagnostic("UNSUPPORTED_VERSION", "version", `version must be ${SKILL_SURFACE_CATALOG_VERSION}`)],
     };
   }
   if (!Array.isArray(value.packages)) {
@@ -623,22 +482,6 @@ export function validateSkillSurfaceCatalogValue(
     }
   }
 
-  if (options.profileComponents) {
-    for (const [position, pkg] of packages.entries()) {
-      const index = sourceIndexes[position];
-      for (const profile of pkg.profiles) {
-        const allowed = options.profileComponents[profile];
-        if (allowed && !allowed.includes(pkg.component)) {
-          diagnostics.push(diagnostic(
-            "COMPONENT_NOT_IN_PROFILE",
-            `packages[${index}].component`,
-            `${pkg.name}: component "${pkg.component}" is not in profile "${profile}"'s component set`,
-          ));
-        }
-      }
-    }
-  }
-
   for (const [position, pkg] of packages.entries()) {
     const index = sourceIndexes[position];
     const seenRequirements = new Set<string>();
@@ -680,7 +523,7 @@ export function validateSkillSurfaceCatalogValue(
         ));
       }
     }
-    if (pkg.integrity !== null && (pkg.kind !== "external" || pkg.profiles.length > 0)) {
+    if (pkg.integrity !== null && (pkg.kind !== "external" || !pkg.explicitOnly)) {
       diagnostics.push(diagnostic(
         "INVALID_INTEGRITY_SCOPE",
         `packages[${index}].integrity`,
@@ -753,44 +596,6 @@ export function validateSkillSurfaceCatalogValue(
 
   const retiredPackages = validateRetiredPackages(value.retiredPackages, new Set(names.keys()), diagnostics);
 
-  const expectedProjections = validateExpectedProjections(value.expectedProjections, packages, diagnostics);
-
-  if (expectedProjections) {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      const declaredFacades = expectedProjections.facadesByProfile[profile];
-      const computedFacades = computeFacadesForProfile(packages, profile);
-      if (!arraysEqual(declaredFacades, computedFacades)) {
-        diagnostics.push(diagnostic(
-          "PROJECTION_MISMATCH",
-          `expectedProjections.facadesByProfile.${profile}`,
-          `facadesByProfile.${profile} declared [${declaredFacades.join(", ")}] but packages compute [${computedFacades.join(", ")}]`,
-        ));
-      }
-
-      const declaredExternal = expectedProjections.externalSkillsByProfile[profile];
-      const computedExternal = computeExternalSkillsForProfile(packages, profile);
-      if (!arraysEqual(declaredExternal, computedExternal)) {
-        diagnostics.push(diagnostic(
-          "PROJECTION_MISMATCH",
-          `expectedProjections.externalSkillsByProfile.${profile}`,
-          `externalSkillsByProfile.${profile} declared [${declaredExternal.join(", ")}] but packages compute [${computedExternal.join(", ")}]`,
-        ));
-      }
-
-      const declaredHosts = expectedProjections.hostSkillPlacementsByProfile[profile];
-      const computedHosts = computeHostSkillPlacements(packages, profile);
-      if (
-        SKILL_SURFACE_HOSTS.some(host => !arraysEqual(declaredHosts[host], computedHosts[host]))
-      ) {
-        diagnostics.push(diagnostic(
-          "PROJECTION_MISMATCH",
-          `expectedProjections.hostSkillPlacementsByProfile.${profile}`,
-          `hostSkillPlacementsByProfile.${profile} declared ${JSON.stringify(declaredHosts)} but packages compute ${JSON.stringify(computedHosts)}`,
-        ));
-      }
-    }
-  }
-
   if (diagnostics.length > 0) {
     return { status: "invalid", catalog: null, diagnostics };
   }
@@ -808,7 +613,6 @@ export function validateSkillSurfaceCatalogValue(
       source,
       router,
       packages,
-      expectedProjections: expectedProjections as SkillSurfaceExpectedProjections,
       nonPublicInternalSteps,
       retiredPackages,
     }),
@@ -846,34 +650,37 @@ export function parseSkillSurfaceCatalog(
 
 // --- selectors (deterministic, over a valid catalog only) ------------------
 
-/** Ordered facade names selected for a profile (profile_facades()/discoverManagedSurfaces parity). */
-export function facadesForProfile(catalog: SkillSurfaceCatalog, profile: SkillSurfaceProfile): readonly string[] {
-  return computeFacadesForProfile(catalog.packages, profile);
+/** Ordered facade names that a plugin selection projects. */
+export function facadesForSelection(catalog: SkillSurfaceCatalog, plugins: readonly PluginId[]): readonly string[] {
+  return catalog.packages.filter((pkg) => pkg.kind === "facade" && selected(pkg, plugins)).map((pkg) => pkg.name);
 }
 
 /**
- * Cross-review provider-skill host placement. Pass `profile` to get the
- * profile-gated projection (global-runtime.ts's `profile === 'full'` gate);
- * omit it to get the unconditional bundle (init.ts's `repo-harness init`
- * flow, which has no installed-profile concept and always syncs the same
- * three packages when externalSkills stays enabled).
+ * Provider-skill host placement. Pass `plugins` for the placements that a
+ * selection projects; omit it for the unconditional bundle (init.ts's
+ * `repo-harness init` flow, which has no install-state concept).
  */
 export function hostSkillPlacements(
   catalog: SkillSurfaceCatalog,
-  profile?: SkillSurfaceProfile,
+  plugins?: readonly PluginId[],
 ): SkillSurfaceHostPlacements {
-  return computeHostSkillPlacements(catalog.packages, profile);
+  const placements: Record<SkillSurfaceHost, string[]> = { claude: [], codex: [], pi: [], dsh: [] };
+  for (const pkg of catalog.packages) {
+    if (pkg.kind !== "provider-skill") continue;
+    if (plugins !== undefined && !selected(pkg, plugins)) continue;
+    for (const host of pkg.hosts) placements[host].push(pkg.name);
+  }
+  return placements;
 }
 
-/**
- * External marketplace skill names. Pass `profile` for the profile-gated
- * projection; omit it for the unconditional bundle.
- */
-export function externalSkillsForProfile(
+/** External marketplace skill names. Pass `plugins` for a selection; omit it for every external package. */
+export function externalSkillsForSelection(
   catalog: SkillSurfaceCatalog,
-  profile?: SkillSurfaceProfile,
+  plugins?: readonly PluginId[],
 ): readonly string[] {
-  return computeExternalSkillsForProfile(catalog.packages, profile);
+  return catalog.packages
+    .filter((pkg) => pkg.kind === "external" && (plugins === undefined || selected(pkg, plugins)))
+    .map((pkg) => pkg.name);
 }
 
 /** Select one named explicit-only external package, or fail closed. */
@@ -886,7 +693,7 @@ export function requiredExplicitExternalSkillInstallGroup(
   if (named === undefined || named.kind !== "external" || named.provider === null) {
     return { status: "missing", name };
   }
-  if (named.profiles.length !== 0) return { status: "not_explicit_only", name };
+  if (!named.explicitOnly) return { status: "not_explicit_only", name };
   if (named.integrity === null) return { status: "missing_integrity", name };
   const selectedHosts = hosts.filter((host) => named.hosts.includes(host));
   if (selectedHosts.length === 0) return { status: "missing", name };
@@ -926,7 +733,7 @@ export function dependencyClosureNames(
 /**
  * Resolve all transitive external dependencies of one catalog package and
  * group them by immutable provider/host projection. The root package itself
- * is not selected; ordinary profile installation therefore remains unable to
+ * is not selected; an ordinary plugin selection therefore remains unable to
  * trigger explicit-only downloads through a facade dependency edge.
  */
 export function requiredExplicitExternalDependencyInstallGroups(
@@ -949,7 +756,7 @@ export function requiredExplicitExternalDependencyInstallGroups(
   }>();
   for (const pkg of ordered) {
     if (pkg.provider === null) return { status: "missing", name: pkg.name };
-    if (pkg.profiles.length !== 0) return { status: "not_explicit_only", name: pkg.name };
+    if (!pkg.explicitOnly) return { status: "not_explicit_only", name: pkg.name };
     if (pkg.integrity === null) return { status: "missing_integrity", name: pkg.name };
     const selectedHosts = hosts.filter((host) => pkg.hosts.includes(host));
     if (selectedHosts.length === 0) return { status: "missing", name: pkg.name };
@@ -973,55 +780,30 @@ export function requiredExplicitExternalDependencyInstallGroups(
 /**
  * The union installProfileHostMutationPaths() snapshots/allowlists. Explicit
  * packages are included so a failed combined CLI operation can compensate
- * their writes, even though their lifecycle stays outside profile ownership.
+ * their writes, even though their lifecycle stays outside selection ownership.
  */
 export function mutationPathSkillNames(catalog: SkillSurfaceCatalog): {
   readonly repoHarnessSkills: readonly string[];
   readonly externalSkills: readonly string[];
 } {
   const repoHarnessSkills = catalog.packages
-    .filter((pkg) => pkg.kind === "router" || (pkg.kind === "facade" && pkg.profiles.length > 0))
+    .filter((pkg) => pkg.kind === "router" || (pkg.kind === "facade" && !pkg.explicitOnly))
     .map((pkg) => pkg.name);
   const externalSkills = catalog.packages
-    .filter((pkg) => (
-      pkg.kind === "external" ||
-      (pkg.kind === "provider-skill" && pkg.component === "cross-model-acceptance")
-    ))
+    .filter((pkg) => pkg.kind === "external" || pkg.kind === "provider-skill")
     .map((pkg) => pkg.name);
   return { repoHarnessSkills, externalSkills };
 }
 
 /**
- * PROFILE_OWNED_SKILLS parity: profile-selected external packages plus the
- * narrow cross-model-acceptance provider-skills. Explicit-only packages stay
- * out so profile switches neither adopt nor retire a separately authorized
- * install.
+ * Selection-projected external packages plus the provider-skills. Explicit-only
+ * packages stay out so a selection switch neither adopts nor retires a
+ * separately authorized install.
  */
-export function profileOwnedSkillNames(catalog: SkillSurfaceCatalog): readonly string[] {
+export function selectionOwnedSkillNames(catalog: SkillSurfaceCatalog): readonly string[] {
   return catalog.packages
-    .filter((pkg) => (
-      (pkg.kind === "external" && pkg.profiles.length > 0) ||
-      (pkg.kind === "provider-skill" && pkg.component === "cross-model-acceptance")
-    ))
+    .filter((pkg) => (pkg.kind === "external" && !pkg.explicitOnly) || pkg.kind === "provider-skill")
     .map((pkg) => pkg.name);
-}
-
-/** probeInstalledComponents()'s planningSkillNames / planningCapabilityPaths / crossModel name lists. */
-export function probeExpectations(catalog: SkillSurfaceCatalog): {
-  readonly planningSkillNames: readonly string[];
-  readonly planningCapabilityPaths: readonly string[];
-  readonly crossModel: readonly string[];
-} {
-  const planningSkillNames = catalog.packages
-    .filter((pkg) => pkg.kind === "external" && pkg.profiles.length > 0)
-    .map((pkg) => pkg.name);
-  const planningCapabilityPaths = catalog.packages
-    .filter((pkg) => pkg.kind === "facade" && pkg.component === "planning-integrations" && pkg.source !== null)
-    .map((pkg) => `${pkg.source}/SKILL.md`);
-  const crossModel = catalog.packages
-    .filter((pkg) => pkg.kind === "provider-skill" && pkg.component === "cross-model-acceptance")
-    .map((pkg) => pkg.name);
-  return { planningSkillNames, planningCapabilityPaths, crossModel };
 }
 
 export { sameStringSet as skillSurfaceSameNameSet };

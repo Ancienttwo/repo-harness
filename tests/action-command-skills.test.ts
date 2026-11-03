@@ -40,7 +40,7 @@ const TARGET_FACADE_KIND_PACKAGES = [
   "repo-harness-architecture",
   "repo-harness-archimap",
   // Post-cutover addition: a repo-owned facade sourced from
-  // assets/skills/obsidian-memory, projected to both hosts by every profile.
+  // assets/skills/obsidian-memory, projected to both hosts by the strategy-memory plugin.
   "obsidian-memory",
   "windows-python-first",
   // Post-cutover addition: the testing router, sourced from
@@ -97,7 +97,7 @@ describe("repo-harness action command skills", () => {
     const mergeGate = manifest.packages.find((entry: { name: string }) => entry.name === "merge-gate");
     expect(mergeGate.kind).toBe("judge");
     expect(mergeGate.hosts).toEqual([]);
-    expect(mergeGate.profiles).toEqual([]);
+    expect(mergeGate.explicitOnly).toBe(true);
   });
 
   test("each surviving skill-commands facade is a thin standalone skill facade", () => {

@@ -3,9 +3,9 @@ import { readFileSync } from "fs";
 import { join } from "path";
 
 import catalogJson from "../assets/tool-catalog.v1.json";
-import { PROFILE_COMPONENTS } from "../src/core/skill-surface/profile-components";
 import { parseSkillSurfaceCatalog } from "../src/core/skill-surface/catalog";
-import { decodeToolCatalog, TOOL_CATALOG, TOOL_INSTALL_PROFILES, toolStatus, type ToolCatalogEntry, type ToolInstallProfile } from "../src/core/tools/catalog";
+import type { SurfaceOwner } from "../src/core/skill-surface/plugin-manifest";
+import { decodeToolCatalog, TOOL_CATALOG, toolStatus, type ToolCatalogEntry } from "../src/core/tools/catalog";
 import { renderToolCatalogRegion } from "../scripts/sync-reference-configs";
 
 const ROOT = join(import.meta.dir, "..");
@@ -71,15 +71,14 @@ describe("tool catalog decode", () => {
     expect(() => decodeToolCatalog(withTool(1, (tool) => { tool.id = catalogJson.tools[0]!.id; }))).toThrow("duplicate tool id");
   });
 
-  test("malformed tags or install profiles fail", () => {
+  test("malformed tags or install owners fail", () => {
     expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.tags = ["Review"]; }))).toThrow("tags");
     expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.tags = ["review", "review"]; }))).toThrow("tags");
     expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.tags = "review"; }))).toThrow("tags");
     expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.tags = ["a", "b", "c", "d", "e", "f", "g"]; }))).toThrow("tags");
-    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.install_profiles = ["standard"]; }))).toThrow("install_profiles");
-    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.install_profiles = ["full", "minimal"]; }))).toThrow("install_profiles");
-    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.install_profiles = ["full", "full"]; }))).toThrow("install_profiles");
-    expect(() => decodeToolCatalog(withTool(RESOURCE, (tool) => { tool.install_profiles = ["full"]; }))).toThrow("install_profiles");
+    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.owner = "full"; }))).toThrow("owner");
+    expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.owner = ["core"]; }))).toThrow("owner");
+    expect(() => decodeToolCatalog(withTool(RESOURCE, (tool) => { tool.owner = "core"; }))).toThrow("owner");
     expect(() => decodeToolCatalog(withTool(0, (tool) => { tool.author = "tw93 | x"; }))).toThrow("author");
   });
 
@@ -89,29 +88,29 @@ describe("tool catalog decode", () => {
   });
 });
 
-describe("tool install profiles", () => {
-  const skills = parseSkillSurfaceCatalog(readFileSync(join(ROOT, "assets/skill-commands/manifest.json"), "utf8"), { declared: true, profileComponents: PROFILE_COMPONENTS });
+describe("tool install owners", () => {
+  const skills = parseSkillSurfaceCatalog(readFileSync(join(ROOT, "assets/skill-commands/manifest.json"), "utf8"), { declared: true });
   if (skills.status !== "valid" || skills.catalog === null) throw new Error("skill-surface manifest invalid");
   const packages = skills.catalog.packages;
-  // CodeGraph ships as a profile component, not as a skill package.
-  const COMPONENT_OWNED: Record<string, string> = { codegraph: "codegraph-conditional" };
+  // CodeGraph ships as the architecture plugin's surface, not as a skill package.
+  const SURFACE_OWNED: Record<string, SurfaceOwner> = { codegraph: "architecture" };
 
-  /** The profiles the owning authority installs this entry with. */
-  function expectedProfiles(tool: ToolCatalogEntry): ToolInstallProfile[] {
-    const component = COMPONENT_OWNED[tool.id];
-    if (component !== undefined) return TOOL_INSTALL_PROFILES.filter((profile) => (PROFILE_COMPONENTS[profile] as readonly string[]).includes(component));
+  /** The owner whose selection installs this entry; null when no selection does. */
+  function expectedOwner(tool: ToolCatalogEntry): SurfaceOwner | null {
+    const surfaceOwner = SURFACE_OWNED[tool.id];
+    if (surfaceOwner !== undefined) return surfaceOwner;
     const repo = new URL(tool.url).pathname.slice(1);
-    const owned = packages.filter((pkg) => pkg.provider !== null && pkg.provider.split("@")[0] === repo);
-    return TOOL_INSTALL_PROFILES.filter((profile) => owned.some((pkg) => pkg.profiles.includes(profile)));
+    const owners = new Set(packages
+      .filter((pkg) => pkg.provider !== null && pkg.provider.split("@")[0] === repo && !pkg.explicitOnly)
+      .map((pkg) => pkg.owner));
+    if (owners.size > 1) throw new Error(`${tool.id} maps to more than one owner`);
+    return [...owners][0] ?? null;
   }
 
-  test("every entry matches the skill-surface manifest and the profile components", () => {
-    for (const tool of TOOL_CATALOG.tools) expect([tool.id, ...tool.install_profiles]).toEqual([tool.id, ...expectedProfiles(tool)]);
-    expect(TOOL_CATALOG.tools.find((tool) => tool.id === "waza")?.install_profiles).toEqual(["full"]);
-  });
-
-  test("the tool profile vocabulary is the install profile vocabulary", () => {
-    expect(Object.keys(PROFILE_COMPONENTS)).toEqual([...TOOL_INSTALL_PROFILES]);
+  test("every entry matches the skill-surface manifest and the plugin surface owners", () => {
+    for (const tool of TOOL_CATALOG.tools) expect([tool.id, tool.owner]).toEqual([tool.id, expectedOwner(tool)]);
+    expect(TOOL_CATALOG.tools.find((tool) => tool.id === "waza")?.owner).toBe("core");
+    expect(TOOL_CATALOG.tools.find((tool) => tool.id === "codegraph")?.owner).toBe("architecture");
   });
 });
 

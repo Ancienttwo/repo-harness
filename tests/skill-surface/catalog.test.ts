@@ -3,21 +3,18 @@ import { spawnSync } from "node:child_process";
 import { existsSync, readFileSync } from "fs";
 import { join } from "path";
 import {
-  externalSkillsForProfile,
-  facadesForProfile,
+  externalSkillsForSelection,
+  facadesForSelection,
   hostSkillPlacements,
   mutationPathSkillNames,
   parseSkillSurfaceCatalog,
-  probeExpectations,
-  profileOwnedSkillNames,
   requiredExplicitExternalDependencyInstallGroups,
   requiredExplicitExternalSkillInstallGroup,
-  SKILL_SURFACE_PROFILES,
+  selectionOwnedSkillNames,
   validateSkillSurfaceCatalogValue,
   type SkillSurfaceCatalog,
-  type SkillSurfaceProfile,
 } from "../../src/core/skill-surface/catalog";
-import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
+import { PLUGIN_IDS } from "../../src/core/skill-surface/plugin-manifest";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const MANIFEST_PATH = join(ROOT, "assets", "skill-commands", "manifest.json");
@@ -26,7 +23,7 @@ function codes(value: ReturnType<typeof validateSkillSurfaceCatalogValue>): stri
   return value.diagnostics.map((d) => d.code);
 }
 
-/** A router + one profile-gated facade, valid on its own (used as the "happy path" base every bad-fixture test mutates one thing away from). */
+/** A router + one core-owned facade, valid on its own (used as the "happy path" base every bad-fixture test mutates one thing away from). */
 const ROUTER = {
   name: "repo-harness",
   kind: "router",
@@ -34,9 +31,9 @@ const ROUTER = {
   source: ".",
   provider: null,
   hosts: ["claude", "codex"],
-  profiles: ["minimal", "full"],
+  owner: "core",
+  explicitOnly: false,
   discoverability: "always",
-  component: "cli",
   requires: [],
   mutatesRepoByDefault: false,
   summary: "root router",
@@ -50,42 +47,22 @@ const FACADE = {
   source: "assets/skill-commands/repo-harness-plan",
   provider: null,
   hosts: ["claude", "codex"],
-  profiles: ["minimal"],
+  owner: "core",
+  explicitOnly: false,
   discoverability: "profile-facade",
-  component: "adaptive-workflow",
   requires: [],
   mutatesRepoByDefault: false,
   summary: "plan facade",
   retirementCandidate: null,
 };
 
-/** Computes the expectedProjections block that makes a given packages[] array self-consistent, using the library's own selectors (so fixtures can't hand-compute the wrong answer). */
-function computeExpectedProjections(packages: unknown[]): unknown {
-  // Test-fixture-only tolerance: a bad-fixture test may pass a malformed
-  // entry (e.g. null) to prove the core module's own PACKAGE_NOT_OBJECT
-  // diagnostic; this helper only needs a best-effort expectedProjections
-  // block for the surrounding fixture; it is not the module under test.
-  const wellFormed = packages.filter((p) => p !== null && typeof p === "object");
-  const provisional = { packages: wellFormed } as unknown as SkillSurfaceCatalog;
-  const facadesByProfile: Record<string, readonly string[]> = {};
-  const externalSkillsByProfile: Record<string, readonly string[]> = {};
-  const hostSkillPlacementsByProfile: Record<string, { claude: readonly string[]; codex: readonly string[] }> = {};
-  for (const profile of SKILL_SURFACE_PROFILES) {
-    facadesByProfile[profile] = facadesForProfile(provisional, profile);
-    externalSkillsByProfile[profile] = externalSkillsForProfile(provisional, profile);
-    hostSkillPlacementsByProfile[profile] = hostSkillPlacements(provisional, profile);
-  }
-  return { facadesByProfile, externalSkillsByProfile, hostSkillPlacementsByProfile };
-}
-
 function catalogValue(packages: unknown[], overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    version: 3,
+    version: 4,
     surface: "test-surface",
     source: "assets/skill-commands",
     router: "repo-harness",
     packages,
-    expectedProjections: computeExpectedProjections(packages),
     nonPublicInternalSteps: [],
     ...overrides,
   };
@@ -115,10 +92,6 @@ test("retired package cleanup preserves exact proof records and rejects invalid 
 });
 
 describe("skill-surface catalog: absence vs. declared-missing", () => {
-  test("steady-state catalog exposes only minimal and full profiles", () => {
-    expect(SKILL_SURFACE_PROFILES).toEqual(["minimal", "full"]);
-  });
-
   test("distinguishes an undeclared absence from a declared missing manifest", () => {
     expect(parseSkillSurfaceCatalog(null)).toEqual({ status: "absent", catalog: null, diagnostics: [] });
     const declared = parseSkillSurfaceCatalog(null, { declared: true });
@@ -137,8 +110,8 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue([]))).toEqual(["CATALOG_NOT_OBJECT"]);
   });
 
-  test("UNSUPPORTED_VERSION: version is not 3", () => {
-    expect(codes(validateSkillSurfaceCatalogValue({ ...VALID_BASE, version: 1 }))).toEqual(["UNSUPPORTED_VERSION"]);
+  test("UNSUPPORTED_VERSION: version is not 4", () => {
+    expect(codes(validateSkillSurfaceCatalogValue({ ...VALID_BASE, version: 3 }))).toEqual(["UNSUPPORTED_VERSION"]);
   });
 
   test("PACKAGES_NOT_ARRAY: packages is not an array", () => {
@@ -174,7 +147,7 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
   });
 
   test("FIELD_REQUIRED: a required string field is missing or blank", () => {
-    for (const field of ["name", "kind", "discoverability", "component", "summary"]) {
+    for (const field of ["name", "kind", "discoverability", "summary"]) {
       const broken = { ...FACADE, [field]: "" };
       const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]));
       expect(codes(result)).toContain("FIELD_REQUIRED");
@@ -198,10 +171,10 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     }
   });
 
-  test("FIELD_REQUIRED: hosts/profiles/requires must be string arrays; mutatesRepoByDefault must be boolean", () => {
+  test("FIELD_REQUIRED: hosts/requires must be string arrays; explicitOnly/mutatesRepoByDefault must be boolean", () => {
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, hosts: "claude" }]))))
       .toContain("FIELD_REQUIRED");
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, profiles: "minimal" }]))))
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, explicitOnly: "false" }]))))
       .toContain("FIELD_REQUIRED");
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, { ...FACADE, requires: "none" }]))))
       .toContain("FIELD_REQUIRED");
@@ -224,26 +197,25 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_HOST");
   });
 
-  test("INVALID_PROFILE: a profile outside the two known profiles", () => {
-    const broken = { ...FACADE, profiles: ["minimal", "bogus"] };
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_PROFILE");
+  test("INVALID_OWNER: an owner outside core and the plugin ids", () => {
+    const broken = { ...FACADE, owner: "bogus" };
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("INVALID_OWNER");
   });
 
   test("INVALID_INTEGRITY_SCOPE: integrity-bound packages must stay explicit-only external packages", () => {
     const digest = `sha256:${"a".repeat(64)}`;
-    const profileSelected = {
+    const selectionProjected = {
       ...FACADE,
-      name: "profile-integrity-bypass",
+      name: "selection-integrity-bypass",
       kind: "external",
       source: null,
       provider: "example/provider@pinned",
       integrity: digest,
-      profiles: ["minimal"],
+      explicitOnly: false,
       discoverability: "external-marketplace",
-      component: "adaptive-workflow",
     };
     const nonExternal = { ...FACADE, integrity: digest };
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, profileSelected]))))
+    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, selectionProjected]))))
       .toContain("INVALID_INTEGRITY_SCOPE");
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, nonExternal]))))
       .toContain("INVALID_INTEGRITY_SCOPE");
@@ -297,16 +269,6 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
       .toContain("HOST_INCOMPATIBLE_REQUIREMENT");
   });
 
-  test("COMPONENT_NOT_IN_PROFILE: a profile-discovered package whose component is absent from that profile's component set", () => {
-    const broken = { ...FACADE, component: "cross-model-acceptance" }; // minimal's set doesn't include this
-    const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken]), {
-      profileComponents: PROFILE_COMPONENTS,
-    });
-    expect(codes(result)).toContain("COMPONENT_NOT_IN_PROFILE");
-    // Omitting profileComponents skips the crossref check entirely (opt-in, mirrors registry.ts's options.repoRoot pattern).
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).not.toContain("COMPONENT_NOT_IN_PROFILE");
-  });
-
   test("RETIREMENT_CANDIDATE_NOT_OBJECT: retirementCandidate is neither an object nor null", () => {
     const broken = { ...FACADE, retirementCandidate: "retired" };
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, broken])))).toContain("RETIREMENT_CANDIDATE_NOT_OBJECT");
@@ -331,25 +293,8 @@ describe("skill-surface catalog: every validation rejection, proven on a bad fix
     expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE])))).not.toContain("SOURCE_MISSING");
   });
 
-  test("EXPECTED_PROJECTIONS_REQUIRED: expectedProjections is missing or malformed", () => {
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE], { expectedProjections: null }))))
-      .toContain("EXPECTED_PROJECTIONS_REQUIRED");
-    expect(codes(validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE], { expectedProjections: { facadesByProfile: {} } }))))
-      .toContain("EXPECTED_PROJECTIONS_REQUIRED");
-  });
-
-  test("PROJECTION_MISMATCH: a declared expected projection disagrees with what packages[] compute", () => {
-    const projections = computeExpectedProjections([ROUTER, FACADE]) as { facadesByProfile: Record<string, string[]> };
-    const wrong = {
-      ...projections,
-      facadesByProfile: { ...projections.facadesByProfile, minimal: ["repo-harness-not-actually-selected"] },
-    };
-    const result = validateSkillSurfaceCatalogValue(catalogValue([ROUTER, FACADE], { expectedProjections: wrong }));
-    expect(codes(result)).toContain("PROJECTION_MISMATCH");
-  });
-
   test("a fixture with none of the above problems is valid with zero diagnostics", () => {
-    const result = validateSkillSurfaceCatalogValue(VALID_BASE, { profileComponents: PROFILE_COMPONENTS });
+    const result = validateSkillSurfaceCatalogValue(VALID_BASE);
     expect(result.status).toBe("valid");
     expect(result.diagnostics).toEqual([]);
   });
@@ -359,7 +304,6 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   const source = readFileSync(MANIFEST_PATH, "utf-8");
   const resolution = parseSkillSurfaceCatalog(source, {
     declared: true,
-    profileComponents: PROFILE_COMPONENTS,
     exists: (p) => existsSync(join(ROOT, p)),
   });
 
@@ -390,13 +334,13 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
     expect(mergeGate).toBeDefined();
     expect(mergeGate?.kind).toBe("judge");
     expect(mergeGate?.hosts).toEqual([]);
-    expect(mergeGate?.profiles).toEqual([]);
+    expect(mergeGate?.explicitOnly).toBe(true);
     expect(mergeGate?.source).toBeNull();
     // Non-selectable: a judge-kind package never matches any selector's kind filter.
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(resolution.catalog, profile)).not.toContain("merge-gate");
-      expect(externalSkillsForProfile(resolution.catalog, profile)).not.toContain("merge-gate");
-      const placements = hostSkillPlacements(resolution.catalog, profile);
+    for (const plugins of [[], PLUGIN_IDS]) {
+      expect(facadesForSelection(resolution.catalog, plugins)).not.toContain("merge-gate");
+      expect(externalSkillsForSelection(resolution.catalog, plugins)).not.toContain("merge-gate");
+      const placements = hostSkillPlacements(resolution.catalog, plugins);
       expect(placements.claude).not.toContain("merge-gate");
       expect(placements.codex).not.toContain("merge-gate");
     }
@@ -417,20 +361,6 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
     expect(catalog.retiredPackages.find((e) => e.name === "claude-review")?.replacement).toBe("repo-harness-cross-review");
     expect(catalog.retiredPackages.find((e) => e.name === "repo-harness-handoff")?.replacement).toBe("repo-harness");
   });
-
-  test("declared expectedProjections are self-consistent with packages[] (independent recomputation)", () => {
-    if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    const catalog = resolution.catalog;
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(catalog.expectedProjections.facadesByProfile[profile]).toEqual([...facadesForProfile(catalog, profile)]);
-      expect(catalog.expectedProjections.externalSkillsByProfile[profile])
-        .toEqual([...externalSkillsForProfile(catalog, profile)]);
-      const declaredHosts = catalog.expectedProjections.hostSkillPlacementsByProfile[profile];
-      const computedHosts = hostSkillPlacements(catalog, profile);
-      expect(declaredHosts.claude).toEqual([...computedHosts.claude]);
-      expect(declaredHosts.codex).toEqual([...computedHosts.codex]);
-    }
-  });
 });
 
 // SSD-06 migration note (per plan Ruling R5): evals/skill-routing/discovery-baseline.json
@@ -448,38 +378,44 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
 // not the live filesystem).
 describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   const catalogSource = readFileSync(MANIFEST_PATH, "utf-8");
-  const resolution = parseSkillSurfaceCatalog(catalogSource, { declared: true, profileComponents: PROFILE_COMPONENTS });
+  const resolution = parseSkillSurfaceCatalog(catalogSource, { declared: true });
   if (resolution.status !== "valid") throw new Error("expected the real manifest to be a valid catalog");
   const catalog = resolution.catalog;
 
-  test("facadesForProfile matches the target discovery matrix for every profile", () => {
-    expect(facadesForProfile(catalog, "minimal")).toEqual([
-      "repo-harness-check", "obsidian-memory", "windows-python-first",
+  test("facadesForSelection matches the target discovery matrix for core only and every plugin", () => {
+    expect(facadesForSelection(catalog, [])).toEqual([
+      "repo-harness-check", "repo-harness-test", "repo-harness-issue-flow", "repo-harness-ship",
     ]);
-    expect(facadesForProfile(catalog, "full")).toEqual([
+    expect(facadesForSelection(catalog, PLUGIN_IDS)).toEqual([
       "repo-harness-check", "repo-harness-test", "repo-harness-product", "repo-harness-issue-flow", "repo-harness-ship",
       "repo-harness-architecture", "repo-harness-archimap", "obsidian-memory", "windows-python-first",
     ]);
   });
 
-  test("full is the explicit union while minimal excludes product and ship", () => {
-    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-product");
-    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-ship");
-    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-product");
-    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-ship");
+  test("a plugin-owned facade projects only when its owner plugin is selected", () => {
+    const core = facadesForSelection(catalog, []);
+    expect(facadesForSelection(catalog, ["product"])).toEqual([...core.slice(0, 2), "repo-harness-product", ...core.slice(2)]);
+    expect(facadesForSelection(catalog, ["architecture"])).toEqual([...core, "repo-harness-architecture", "repo-harness-archimap"]);
+    expect(facadesForSelection(catalog, ["strategy-memory"])).toEqual([...core, "obsidian-memory"]);
+    expect(facadesForSelection(catalog, ["platform"])).toEqual([...core, "windows-python-first"]);
   });
 
-  test("repo-harness-setup is router-only progressive load and full installs repo-harness-architecture", () => {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-setup");
+  test("repo-harness-setup is router-only progressive load in every selection", () => {
+    for (const plugins of [[], PLUGIN_IDS]) {
+      expect(facadesForSelection(catalog, plugins)).not.toContain("repo-harness-setup");
     }
-    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-architecture");
-    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-architecture");
   });
 
-  test("hostSkillPlacements: full places repo-harness-cross-review on both hosts and repo-harness-herdr-portal on claude only", () => {
-    expect(hostSkillPlacements(catalog, "minimal")).toEqual({ claude: [], codex: [], pi: [], dsh: [] });
-    expect(hostSkillPlacements(catalog, "full")).toEqual({
+  test("hostSkillPlacements: cross-review places repo-harness-cross-review on every host and peer-runtime places repo-harness-herdr-portal on claude only", () => {
+    expect(hostSkillPlacements(catalog, [])).toEqual({ claude: [], codex: [], pi: [], dsh: [] });
+    expect(hostSkillPlacements(catalog, ["cross-review"])).toEqual({
+      claude: ["repo-harness-cross-review"],
+      codex: ["repo-harness-cross-review"],
+      pi: ["repo-harness-cross-review"],
+      dsh: [],
+    });
+    expect(hostSkillPlacements(catalog, ["peer-runtime"])).toEqual({ claude: ["repo-harness-herdr-portal"], codex: [], pi: [], dsh: [] });
+    expect(hostSkillPlacements(catalog, PLUGIN_IDS)).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
@@ -487,7 +423,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     });
   });
 
-  test("hostSkillPlacements without a profile (init.ts's init flow) is the unconditional full-tier bundle", () => {
+  test("hostSkillPlacements without a selection (init.ts's init flow) is the unconditional bundle", () => {
     const unconditional = hostSkillPlacements(catalog);
     expect(unconditional).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
@@ -497,10 +433,10 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     });
   });
 
-  test("externalSkillsForProfile: full gets Waza and Mermaid while Reverse Skill stays explicit-only", () => {
-    expect(externalSkillsForProfile(catalog, "minimal")).toEqual([]);
-    expect(externalSkillsForProfile(catalog, "full")).toEqual(["think", "hunt", "check", "health", "mermaid"]);
-    expect(externalSkillsForProfile(catalog, undefined)).toContain("reverse-skill-router");
+  test("externalSkillsForSelection: core gets Waza and Mermaid while Reverse Skill and the Obsidian companions stay explicit-only", () => {
+    expect(externalSkillsForSelection(catalog, [])).toEqual(["think", "hunt", "check", "health", "mermaid"]);
+    expect(externalSkillsForSelection(catalog, PLUGIN_IDS)).toEqual(["think", "hunt", "check", "health", "mermaid"]);
+    expect(externalSkillsForSelection(catalog, undefined)).toContain("reverse-skill-router");
   });
 
   test("requiredExplicitExternalSkillInstallGroup selects the pinned explicit-only package", () => {
@@ -517,7 +453,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     });
   });
 
-  test("requiredExplicitExternalSkillInstallGroup rejects a profile-selected package", () => {
+  test("requiredExplicitExternalSkillInstallGroup rejects a selection-projected package", () => {
     const fullPackage = catalog.packages.find((pkg) => pkg.name === "mermaid")!;
     expect(requiredExplicitExternalSkillInstallGroup(catalog, fullPackage.name, ["codex"])).toEqual({
       status: "not_explicit_only",
@@ -570,20 +506,10 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     ]);
   });
 
-  test("profileOwnedSkillNames matches the post-cutover cross-model-acceptance + external set", () => {
-    expect([...profileOwnedSkillNames(catalog)].sort()).toEqual(
+  test("selectionOwnedSkillNames matches the provider-skill + selection-projected external set", () => {
+    expect([...selectionOwnedSkillNames(catalog)].sort()).toEqual(
       ["think", "hunt", "check", "health", "mermaid", "repo-harness-cross-review", "repo-harness-herdr-portal"].sort(),
     );
-  });
-
-  test("probeExpectations matches the post-cutover planningSkillNames/planningCapabilityPaths/crossModel sets", () => {
-    const expectations = probeExpectations(catalog);
-    expect(expectations.planningSkillNames).toEqual(["think", "hunt", "check", "health", "mermaid"]);
-    expect(expectations.planningCapabilityPaths).toEqual([
-      "assets/skills/repo-harness-product/SKILL.md",
-      "assets/skills/repo-harness-issue-flow/SKILL.md",
-    ]);
-    expect(expectations.crossModel).toEqual(["repo-harness-cross-review", "repo-harness-herdr-portal"]);
   });
 });
 
@@ -592,7 +518,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
 // (Claude SKILL.md `disable-model-invocation`, Codex agents/openai.yaml
 // `allow_implicit_invocation`) are projections that must never drift from it.
 describe("skill-surface catalog: explicit-only projection onto host-native switches", () => {
-  const resolution = parseSkillSurfaceCatalog(readFileSync(MANIFEST_PATH, "utf-8"), { declared: true, profileComponents: PROFILE_COMPONENTS });
+  const resolution = parseSkillSurfaceCatalog(readFileSync(MANIFEST_PATH, "utf-8"), { declared: true });
   if (resolution.status !== "valid") throw new Error("expected the real manifest to be a valid catalog");
   const catalog = resolution.catalog;
   const facades = catalog.packages.filter((pkg) => pkg.kind === "facade" && pkg.source !== null);
@@ -621,9 +547,10 @@ describe("skill-surface catalog: explicit-only projection onto host-native switc
     }
   });
 
-  test("explicit-only facades stay installed: facade selection filters kind and profile, never discoverability", () => {
-    expect(facadesForProfile(catalog, "minimal")).toContain("obsidian-memory");
-    for (const name of ["repo-harness-ship", "repo-harness-architecture", "obsidian-memory"]) expect(facadesForProfile(catalog, "full")).toContain(name);
+  test("explicit-only facades stay installed: facade selection filters kind and owner, never discoverability", () => {
+    expect(facadesForSelection(catalog, [])).toContain("repo-harness-ship");
+    expect(facadesForSelection(catalog, ["strategy-memory"])).toContain("obsidian-memory");
+    for (const name of ["repo-harness-ship", "repo-harness-architecture", "obsidian-memory"]) expect(facadesForSelection(catalog, PLUGIN_IDS)).toContain(name);
   });
 });
 

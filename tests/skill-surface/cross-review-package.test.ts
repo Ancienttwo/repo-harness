@@ -2,16 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import {
-  externalSkillsForProfile,
-  facadesForProfile,
+  externalSkillsForSelection,
+  facadesForSelection,
   hostSkillPlacements,
   mutationPathSkillNames,
   parseSkillSurfaceCatalog,
-  probeExpectations,
-  profileOwnedSkillNames,
-  SKILL_SURFACE_PROFILES,
+  selectionOwnedSkillNames,
 } from "../../src/core/skill-surface/catalog";
-import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
+import { PLUGIN_IDS } from "../../src/core/skill-surface/plugin-manifest";
 
 // SSD-04 staged this package as pure content (inactive; no manifest edits in
 // that slice). SSD-06 has now performed the atomic public cutover: the
@@ -162,7 +160,6 @@ describe("repo-harness-cross-review package: activation proof -- live in manifes
   const source = readFileSync(MANIFEST_PATH, "utf-8");
   const resolution = parseSkillSurfaceCatalog(source, {
     declared: true,
-    profileComponents: PROFILE_COMPONENTS,
     exists: (p) => existsSync(join(ROOT, p)),
   });
   if (resolution.status !== "valid") {
@@ -175,25 +172,24 @@ describe("repo-harness-cross-review package: activation proof -- live in manifes
     expect(entry).toBeDefined();
     expect(entry?.kind).toBe("provider-skill");
     expect(entry?.source).toBe(`assets/skills/${PACKAGE_DIR}`);
-    expect(entry?.component).toBe("cross-model-acceptance");
+    expect(entry?.owner).toBe("cross-review");
     expect([...(entry?.hosts ?? [])].sort()).toEqual(["claude", "codex", "pi"]);
-    expect(entry?.profiles).toEqual(["full"]);
+    expect(entry?.explicitOnly).toBe(false);
   });
 
-  test("hostSkillPlacements installs this package on both hosts for full only", () => {
-    const minimal = hostSkillPlacements(catalog, "minimal");
-    expect(minimal.claude).not.toContain(PACKAGE_DIR);
-    expect(minimal.codex).not.toContain(PACKAGE_DIR);
-    const full = hostSkillPlacements(catalog, "full");
-    expect(full.claude).toContain(PACKAGE_DIR);
-    expect(full.codex).toContain(PACKAGE_DIR);
+  test("hostSkillPlacements installs this package on both hosts only when cross-review is selected", () => {
+    const coreOnly = hostSkillPlacements(catalog, []);
+    expect(coreOnly.claude).not.toContain(PACKAGE_DIR);
+    expect(coreOnly.codex).not.toContain(PACKAGE_DIR);
+    const selected = hostSkillPlacements(catalog, ["cross-review"]);
+    expect(selected.claude).toContain(PACKAGE_DIR);
+    expect(selected.codex).toContain(PACKAGE_DIR);
   });
 
-  test("this package is included in the transaction mutation-path and probe-expectation crossModel sets", () => {
+  test("this package is included in the transaction mutation-path and selection-owned sets", () => {
     const { externalSkills } = mutationPathSkillNames(catalog);
     expect(externalSkills).toContain(PACKAGE_DIR);
-    expect(probeExpectations(catalog).crossModel).toContain(PACKAGE_DIR);
-    expect(profileOwnedSkillNames(catalog)).toContain(PACKAGE_DIR);
+    expect(selectionOwnedSkillNames(catalog)).toContain(PACKAGE_DIR);
   });
 
   test("codex-review is fully retired: absent from packages[], recorded in retiredPackages without a launcher alias", () => {
@@ -211,10 +207,9 @@ describe("repo-harness-cross-review package: activation proof -- live in manifes
   });
 
   test("this package never contributes a facade or external-skill selector name (it is a provider-skill, not a facade)", () => {
-    const profilesToCheck: Array<(typeof SKILL_SURFACE_PROFILES)[number]> = [...SKILL_SURFACE_PROFILES];
-    for (const profile of profilesToCheck) {
-      expect(facadesForProfile(catalog, profile)).not.toContain(PACKAGE_DIR);
-      expect(externalSkillsForProfile(catalog, profile)).not.toContain(PACKAGE_DIR);
+    for (const plugins of [[], PLUGIN_IDS]) {
+      expect(facadesForSelection(catalog, plugins)).not.toContain(PACKAGE_DIR);
+      expect(externalSkillsForSelection(catalog, plugins)).not.toContain(PACKAGE_DIR);
     }
   });
 });

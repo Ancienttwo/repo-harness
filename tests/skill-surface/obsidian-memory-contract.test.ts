@@ -2,11 +2,9 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import {
-  facadesForProfile,
+  facadesForSelection,
   parseSkillSurfaceCatalog,
-  SKILL_SURFACE_PROFILES,
 } from "../../src/core/skill-surface/catalog";
-import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
 
 // obsidian-memory is a repo-owned facade whose authority boundary is not
 // expressible in the manifest alone: the vault is a projection of repo
@@ -47,7 +45,6 @@ function allFilesUnder(dir: string): string[] {
 describe("obsidian-memory: manifest registration", () => {
   const resolution = parseSkillSurfaceCatalog(readFileSync(MANIFEST_PATH, "utf-8"), {
     declared: true,
-    profileComponents: PROFILE_COMPONENTS,
     exists: (p) => existsSync(join(ROOT, p)),
   });
   if (resolution.status !== "valid") {
@@ -72,16 +69,17 @@ describe("obsidian-memory: manifest registration", () => {
       expect(entry).toBeDefined();
       expect(entry?.kind).toBe("external");
       expect(entry?.provider).toBe("kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202");
-      expect(entry?.profiles).toEqual([]);
+      expect(entry?.owner).toBe("strategy-memory");
+      expect(entry?.explicitOnly).toBe(true);
       expect(entry?.hosts).toEqual(["claude", "codex", "pi"]);
       expect(entry?.integrity).toMatch(/^sha256:[0-9a-f]{64}$/);
     }
   });
 
-  test("is discovered by every install profile", () => {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(catalog, profile)).toContain(PACKAGE_NAME);
-    }
+  test("is owned by strategy-memory and discovered only when that plugin is selected", () => {
+    expect(catalog.packages.find((pkg) => pkg.name === PACKAGE_NAME)?.owner).toBe("strategy-memory");
+    expect(facadesForSelection(catalog, ["strategy-memory"])).toContain(PACKAGE_NAME);
+    expect(facadesForSelection(catalog, [])).not.toContain(PACKAGE_NAME);
   });
 });
 
