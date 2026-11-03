@@ -28,7 +28,8 @@ const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker
 // The orchestrator is Claude-only: no Codex TOML is generated or expected for it.
 const CODEX_AGENTS = MANAGED_AGENTS.filter((agent) => agent !== "orchestrator");
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
-const HERDR_SKILL = "---\nname: herdr\n---\n\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n";
+// The first lines of `hc --skill` from the pinned herdr-core 0.1.17 release.
+const HERDR_SKILL = "# hc manual (herdr-core)\n\nThe current manual for herdr-core's CLI, `hc`.\n`$HC_TERMINAL_ID` is your address. Terminals you start are your children.\n";
 
 test("strict readiness rejects a missing required Herdr skill", () => {
   const envRoot = setupFakeEnvironment("check-agent-tooling-herdr-skill");
@@ -66,6 +67,13 @@ test("strict readiness rejects a missing required Herdr skill", () => {
     });
     expect(unreadable.status).toBe(2);
     expect(JSON.parse(unreadable.stdout).tools.herdr_skill.status).toBe("invalid");
+
+    // The expected text comes only from the hc manual; classic skill output gives no expected text.
+    writeExecutable(join(envRoot.fakeBin, "hc"), `#!/bin/sh\nif [ "$1" = --skill ]; then printf '%s\\n' '---' 'name: herdr' '---' 'Check HERDR_ENV before control.'; else printf 'hc ${HERDR_CORE_PIN.min_version}\\n'; fi\n`);
+    const classic = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
+      cwd: ROOT, encoding: "utf8", env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+    });
+    expect(JSON.parse(classic.stdout).tools.herdr_skill.status).toBe("unavailable");
   } finally {
     rmSync(envRoot.root, { recursive: true, force: true });
   }
@@ -154,7 +162,8 @@ function setupFakeEnvironment(prefix: string) {
   mkdirSync(home, { recursive: true });
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
-  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.5\\n'; fi\n`);
+  writeExecutable(join(fakeBin, "herdr"), "#!/bin/sh\nprintf 'herdr 0.9.5\\n'\n");
+  writeExecutable(join(fakeBin, "hc"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'hc ${HERDR_CORE_PIN.min_version}\\n'; fi\n`);
   for (const host of [".claude", ".codex"]) {
     const skillDir = join(home, host, "skills", "herdr");
     mkdirSync(skillDir, { recursive: true });
@@ -1915,6 +1924,7 @@ test.each([
   try {
     rmSync(join(fixture.fakeBin, "herdr"));
     if (hcVersion) writeExecutable(join(fixture.fakeBin, "hc"), `#!/bin/sh\nprintf '${hcVersion}\\n'\n`);
+    else rmSync(join(fixture.fakeBin, "hc"));
     // An explicit utility PATH keeps the developer's herdr and hc installations out of the report.
     for (const utility of ["dirname", "basename", "node", "bun", "git", "bash", "sh", "which", "uname"]) {
       const actual = Bun.which(utility);

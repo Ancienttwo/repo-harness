@@ -52,7 +52,7 @@
       "name": "herdr skill",
       "kind": "skill",
       "category": "orchestration",
-      "url": "https://github.com/herdrdev/herdr",
+      "url": "https://herdr.dev/",
       "author": "herdrdev",
       "license": "Apache-2.0",
       "tags": [
@@ -61,8 +61,8 @@
       ],
       "install_profiles": [],
       "summary": {
-        "en": "The skill text from herdr --skill. The repo-harness skill needs it to control Herdr panes on Claude and Codex.",
-        "zh": "来自 herdr --skill 的 skill 文本。repo-harness skill 在 Claude 和 Codex 上要用它控制 Herdr pane。"
+        "en": "The hc manual from hc --skill. The repo-harness skill needs it to control herdr-core terminals on Claude and Codex.",
+        "zh": "来自 hc --skill 的 hc 手册。repo-harness skill 在 Claude 和 Codex 上要用它控制 herdr-core 终端。"
       },
       "detector": "herdr_skill",
       "docs_anchor": "#runtime-ownership-boundary"
