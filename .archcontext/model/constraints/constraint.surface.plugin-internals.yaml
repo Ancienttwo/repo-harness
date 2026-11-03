@@ -1,0 +1,15 @@
+schemaVersion: archcontext.constraint/v1
+id: constraint.surface.plugin-internals
+name: Surface reads plugin state only through the plugin contract
+severity: error
+scope:
+  nodes:
+    - capability.runtime-harness.operator
+    - capability.runtime-harness.mcp-sidecar
+    - capability.organization.task-fleet
+rule:
+  type: forbid-dependency
+  targets:
+    - capability.runtime-harness.task-agent-host
+    - component.global-runtime-reconciliation.archctx-closure
+rationale: ADR-0002 rule 5. A surface does not import the internals of another plugin. It reads plugin state through the contract node of the owner. A contract node is a separate node that is not a descendant of a target, for example component.execution-primitives.task-session-record.

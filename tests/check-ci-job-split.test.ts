@@ -586,7 +586,7 @@ describe('single affected verification and daily fallback', () => {
     const { jobs } = workflow;
     expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
-    expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar']);
+    expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar', 'architecture-advisory']);
     // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
     expect(jobs['state-boundaries'].needs).toBeUndefined();
     expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
@@ -659,10 +659,10 @@ describe('single affected verification and daily fallback', () => {
 
   test('real aggregate shell rejects failure, cancellation, omission and invalid coverage', () => {
     const command = workflow.jobs.required.steps[0].run;
-    const run = (selection: string, verification: string, mode: string, home: string, native: string, homeFlag: string, nativeFlag: string, boundaries = 'success') =>
+    const run = (selection: string, verification: string, mode: string, home: string, native: string, homeFlag: string, nativeFlag: string, boundaries = 'success', architecture = 'success') =>
       spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env,
         SELECTION_RESULT: selection, STATE_BOUNDARIES_RESULT: boundaries, COVERAGE_MODE: mode, VERIFY_RESULT: verification,
-        HOME_ISOLATION_RESULT: home, NATIVE_OAR_RESULT: native, HOME_ISOLATION: homeFlag, NATIVE_OAR: nativeFlag,
+        HOME_ISOLATION_RESULT: home, NATIVE_OAR_RESULT: native, HOME_ISOLATION: homeFlag, NATIVE_OAR: nativeFlag, ARCHITECTURE_RESULT: architecture,
       } }).status;
     for (const selection of ['success', 'failure', 'cancelled', 'skipped']) {
       for (const verification of ['success', 'failure', 'cancelled', 'skipped']) {
@@ -677,6 +677,11 @@ describe('single affected verification and daily fallback', () => {
     for (const boundaries of ['success', 'failure', 'cancelled', 'skipped', '']) {
       expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', boundaries) === 0).toBe(boundaries === 'success');
       expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success');
+    }
+    // The PR architecture job runs in both PR modes, so only its success passes.
+    for (const architecture of ['success', 'failure', 'cancelled', 'skipped', '']) {
+      expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', 'success', architecture) === 0).toBe(architecture === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', 'success', architecture) === 0).toBe(architecture === 'success');
     }
     for (const home of ['success', 'failure', 'cancelled', 'skipped', '']) {
       for (const native of ['success', 'failure', 'cancelled', 'skipped', '']) {
@@ -945,7 +950,7 @@ describe('single affected verification and daily fallback', () => {
     }
   });
 
-  test('architecture runs as one daily job and one advisory PR job outside the required aggregate', () => {
+  test('architecture runs as one daily job and one PR job that the required aggregate reads', () => {
     const { jobs } = workflow;
     const daily = jobs.architecture;
     expect(daily.name).toBe(ARCHITECTURE_JOB);
@@ -970,8 +975,8 @@ describe('single affected verification and daily fallback', () => {
     const advisory = jobs['architecture-advisory'];
     expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'");
     expect(advisory.permissions).toBeUndefined();
-    expect(jobs.required.needs).not.toContain('architecture-advisory');
-    const warn = advisory.steps.find((step: any) => step.name === 'Warn about architecture debt');
+    expect(jobs.required.steps[0].env.ARCHITECTURE_RESULT).toBe('${{ needs.architecture-advisory.result }}');
+    const warn = advisory.steps.find((step: any) => step.name === 'Check the plugin-internals constraint and warn about architecture debt');
     expect(warn.env).toEqual({ BASE_SHA: '${{ github.event.pull_request.base.sha }}' });
     expect(warn.run).toBe('bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"');
     expect(advisory.steps.find((step: any) => step.uses === 'actions/checkout@v4').with['fetch-depth']).toBe(0);
@@ -989,9 +994,17 @@ describe('architecture lanes', () => {
     introduced, resolvedIds: ['debt.gone'] });
   const planned = JSON.stringify({ edits: [{ path: 'docs/architecture/a.md', reasonCode: 'projection-generated-region-manually-edited' }] });
   const noop = JSON.stringify({ edits: [] });
+  const PLUGIN_INTERNALS = 'constraint.surface.plugin-internals';
+  const LAYER_DIRECTION = 'constraint.architecture.layer-direction';
+  const constraintViolation = (constraintId: string) => ({ constraintId, fromPath: 'src/effects/operator/a.ts', toPath: 'src/effects/terminal/herdr-core.ts',
+    fromNode: 'component.operator.primary', toNode: 'component.task-agent-host.primary', severity: constraintId === PLUGIN_INTERNALS ? 'error' : 'warning' });
+  // An `archctx constraints check --json` envelope. The layer-direction warning keeps the global status violated, as on main.
+  const constraints = (fields: Record<string, unknown> = {}) => JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'constraints', data: {
+    schemaVersion: 'archcontext.dependency-constraint-evaluation/v1', status: 'violated', coverage: 'complete', reasonCodes: [],
+    constraintIds: [LAYER_DIRECTION, PLUGIN_INTERNALS], importEdgeCount: 5521, unresolvedImports: [], violations: [constraintViolation(LAYER_DIRECTION)], ...fields } });
 
   // Real check-ci.sh with stub CLI results. `bun -e` and the shell logic stay real.
-  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; summary?: boolean }) {
+  function runLane(args: string[], fixture: { debt?: string; debtExit?: number; check?: string; checkExit?: number; codegraphExit?: number; constraints?: string; summary?: boolean }) {
     const root = mkdtempSync(join(tmpdir(), 'rh-ci-architecture-'));
     const bin = join(root, 'bin');
     try {
@@ -1001,6 +1014,7 @@ describe('architecture lanes', () => {
       symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
       writeFileSync(join(root, 'debt.json'), fixture.debt ?? '');
       writeFileSync(join(root, 'check.json'), fixture.check ?? '');
+      writeFileSync(join(root, 'constraints.json'), fixture.constraints ?? constraints());
       writeFileSync(join(bin, 'bun'), [
         '#!/bin/bash',
         'if [[ "$1" == install ]]; then exit 0; fi',
@@ -1008,7 +1022,12 @@ describe('architecture lanes', () => {
         `if [[ "$1" == src/cli/index.ts && "$2" == architecture-projection ]]; then touch ${JSON.stringify(join(root, 'checked'))}; cat ${JSON.stringify(join(root, 'check.json'))}; exit ${fixture.checkExit ?? 1}; fi`,
         `exec ${JSON.stringify(process.execPath)} "$@"`,
       ].join('\n'), { mode: 0o755 });
-      writeFileSync(join(bin, 'npm'), `#!/bin/bash\nexit ${fixture.codegraphExit ?? 0}\n`, { mode: 0o755 });
+      // archctx exits 0 for every report, as 0.11.2 does for violated and undetermined.
+      writeFileSync(join(bin, 'npm'), [
+        '#!/bin/bash',
+        `if [[ "$4" == archctx ]]; then cat ${JSON.stringify(join(root, 'constraints.json'))}; exit 0; fi`,
+        `exit ${fixture.codegraphExit ?? 0}`,
+      ].join('\n'), { mode: 0o755 });
       const summaryPath = join(root, 'out/architecture/summary.json');
       const result = spawnSync('/bin/bash', ['scripts/check-ci.sh', ...args], {
         cwd: join(root, 'repo'), encoding: 'utf8',
@@ -1027,6 +1046,7 @@ describe('architecture lanes', () => {
     }
   }
   const warnings = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::warning '));
+  const errors = (stdout: string) => stdout.split('\n').filter(line => line.startsWith('::error '));
 
   test('new PR debt warns once per item with its subjects and action, then hand-edited generated output warns, and the lane exits 0', () => {
     const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1), debtItem(2, [])]), check: planned, checkExit: 0 });
@@ -1093,11 +1113,41 @@ describe('architecture lanes', () => {
     expect(warnings(malformed.stdout)).toHaveLength(1);
     expect(warnings(malformed.stdout)[0]).toContain('not an architecture debt report with a base');
 
+    // Without code facts the debt and hand-edit checks only warn; the constraint gate fails.
     const noFacts = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([debtItem(1)]), codegraphExit: 1 });
-    expect(noFacts.status, noFacts.stderr).toBe(0);
+    expect(noFacts.status, noFacts.stderr).toBe(1);
     expect(noFacts.debtArgs).toBeNull();
     expect(noFacts.checked).toBe(false);
     expect(warnings(noFacts.stdout).map(line => line.split('::')[1])).toEqual(['warning title=Architecture debt check failed', 'warning title=Architecture check failed']);
+    expect(errors(noFacts.stdout)).toEqual(['::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log.']);
+  });
+
+  const RULE = 'ADR-0002 rule 5: a surface reads plugin state only through the plugin contract node.';
+  test.each([
+    ['pass with the layer-direction warning only', constraints(), []],
+    ['violation', constraints({ violations: [constraintViolation(LAYER_DIRECTION), constraintViolation(PLUGIN_INTERNALS)] }),
+      ['src/effects/operator/a.ts imports src/effects/terminal/herdr-core.ts (component.operator.primary -> component.task-agent-host.primary)']],
+    ['undetermined with stale code facts', constraints({ status: 'undetermined', coverage: 'unknown', reasonCodes: ['code-facts-unavailable'], importEdgeCount: 0, violations: [] }),
+      ['coverage is unknown', 'reason codes: code-facts-unavailable']],
+    ['partial coverage', constraints({ coverage: 'partial' }), ['coverage is partial']],
+    ['unresolved import', constraints({ unresolvedImports: [{ from: 'src/effects/operator/a.ts', specifier: './missing' }] }),
+      ['unresolved import ./missing from src/effects/operator/a.ts']],
+    ['constraint not evaluated', constraints({ constraintIds: [LAYER_DIRECTION] }), [`${PLUGIN_INTERNALS} was not evaluated`]],
+  ])('the PR lane gates only on the plugin-internals result: %s', (_name, report, failures) => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([]), check: noop, checkExit: 0, constraints: report });
+    expect(result.status, result.stderr).toBe(failures.length === 0 ? 0 : 1);
+    expect(errors(result.stdout)).toEqual(failures.map(failure => `::error title=Plugin internals constraint::${failure}. ${RULE}`));
+    if (failures.length === 0) expect(result.stdout).toContain(`[ci] ${PLUGIN_INTERNALS}: 0 violations, coverage complete.`);
+    // The warning steps still run after a gate failure.
+    expect(result.checked).toBe(true);
+  });
+
+  test('a failed archctx envelope fails the gate without reading its exit code', () => {
+    const result = runLane(['architecture-advisory', '--base', 'abc123'], { debt: debt([]), check: noop, checkExit: 0,
+      constraints: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: false, requestId: 'constraints', error: { code: 'AC_CODE_FACTS_UNAVAILABLE' } }) });
+    expect(result.status, result.stderr).toBe(1);
+    expect(result.stderr).toContain('archctx constraints check failed: {"code":"AC_CODE_FACTS_UNAVAILABLE"}');
+    expect(errors(result.stdout)).toEqual(['::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log.']);
   });
 
   test.each([

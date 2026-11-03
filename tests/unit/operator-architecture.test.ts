@@ -797,6 +797,7 @@ describe('architecture map', () => {
     expect(undetermined(['unresolved-import'])).toEqual({ state: 'unavailable', reason: 'code_facts_incomplete' });
     expect(() => report({ status: 'unknown' })).toThrow('archctx constraints check status is invalid');
     expect(() => report({ reasonCodes: ['not-a-code'] })).toThrow('archctx constraints check reason codes are invalid');
+    expect(() => report({ unresolvedImports: [{ from: 'src/core/a.ts' }] })).toThrow('archctx constraints check unresolved imports are invalid');
   });
 
   test('a checkout or edit during a cycle drops PR impact when the model moved and each violation check when the tree moved', () => {
