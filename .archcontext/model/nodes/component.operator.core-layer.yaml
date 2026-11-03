@@ -25,9 +25,13 @@ source:
     - src/core/operator/agents-settings.ts
     - src/core/operator/architecture-map.ts
     - src/core/operator/architecture.ts
+    - src/core/operator/board-read.ts
     - src/core/operator/bot-access.ts
     - src/core/operator/doc-citation.ts
+    - src/core/operator/doc-session-changes.ts
     - src/core/operator/doc-session-events.ts
+    - src/core/operator/doc-session-finalization-view.ts
+    - src/core/operator/doc-session-finalize.ts
     - src/core/operator/doc-session-views.ts
     - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts
@@ -41,11 +45,13 @@ source:
     - src/core/operator/runtime-capture-decoders.ts
     - src/core/operator/runtime-capture.ts
     - src/core/operator/runtime-status.ts
+    - src/core/operator/seats-settings.ts
     - src/core/operator/slack-review.ts
     - src/core/operator/task-activity.ts
     - src/core/operator/task-diff.ts
     - src/core/operator/task-history.ts
     - src/core/operator/tests.ts
+    - src/core/operator/worktree-cleanup-plan.ts
     - src/core/operator/worktree-cleanup.ts
     - src/core/operator/worktrees.ts
     - src/core/setup/cli-inventory.ts

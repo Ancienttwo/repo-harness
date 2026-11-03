@@ -1,0 +1,490 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness.board",
+  "observed_at": "2026-11-02T23:29:42.936Z",
+  "repository": "Ancienttwo/repo-harness",
+  "default_branch": "main",
+  "parent": {
+    "number": 1474,
+    "title": "herdr-core \u8fc1\u79fb\uff1a\u9000\u5f79 classic herdr CLI\uff08G37\uff09",
+    "url": "https://github.com/Ancienttwo/repo-harness/issues/1474",
+    "state": "open",
+    "labels": [
+      "enhancement"
+    ],
+    "milestone": null
+  },
+  "plan": {
+    "status": "unavailable",
+    "comment_url": "https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468",
+    "reason": "plan block invalid: the plan comment has 0 fenced json blocks, expected 1"
+  },
+  "items": [
+    {
+      "number": 1475,
+      "title": "herdr-core \u8fc1\u79fb 1\uff5ctransport\uff1ahc \u4e0e herdr-app \u4f20\u8f93\u5c42",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1475",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "observed",
+        "url": "https://github.com/Ancienttwo/repo-harness/issues/1475#issuecomment-6588559168",
+        "created_at": "2026-11-02T21:11:15Z",
+        "status": "ready for review; claim remains active",
+        "pr": 1491,
+        "head_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62"
+      },
+      "pull_requests": [
+        1491
+      ]
+    },
+    {
+      "number": 1476,
+      "title": "herdr-core \u8fc1\u79fb 2\uff5csessions\uff1a\u4efb\u52a1\u4f1a\u8bdd\u6539\u5230 herdr-app \u548c hc",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1476",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "observed",
+        "url": "https://github.com/Ancienttwo/repo-harness/issues/1476#issuecomment-6587733596",
+        "created_at": "2026-11-02T20:30:38Z",
+        "status": "ready for review; claim remains active",
+        "pr": 1499,
+        "head_sha": "606d8d6238d426856709713764fddeea8e6b434d"
+      },
+      "pull_requests": [
+        1499
+      ]
+    },
+    {
+      "number": 1477,
+      "title": "herdr-core \u8fc1\u79fb 3\uff5creview\uff1a\u8bc4\u5ba1\u5bbf\u4e3b\u5728 herdr-core \u4e0a\u542f\u52a8",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1477",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "none"
+      },
+      "pull_requests": []
+    },
+    {
+      "number": 1478,
+      "title": "herdr-core \u8fc1\u79fb 4\uff5coperator\uff1a\u4ece hc \u8bfb\u8fd0\u884c\u72b6\u6001",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1478",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "none"
+      },
+      "pull_requests": []
+    },
+    {
+      "number": 1479,
+      "title": "herdr-core \u8fc1\u79fb 5\uff5cnotify\uff1ablocked/done \u901a\u77e5\u7684\u6295\u9012\u4f4d\u7f6e",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1479",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "observed",
+        "url": "https://github.com/Ancienttwo/repo-harness/issues/1479#issuecomment-6585737924",
+        "created_at": "2026-11-02T19:00:12Z",
+        "status": "draft PR open; claim remains active",
+        "pr": null,
+        "head_sha": null
+      },
+      "pull_requests": [
+        1494
+      ]
+    },
+    {
+      "number": 1480,
+      "title": "herdr-core \u8fc1\u79fb 6\uff5creadiness\uff1a\u53ea\u8ba4 herdr-core\uff0c\u5220\u9664 classic pin",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1480",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "none"
+      },
+      "pull_requests": []
+    },
+    {
+      "number": 1481,
+      "title": "herdr-core \u8fc1\u79fb 7\uff5cci\uff1a\u5b89\u88c5 pin \u4f4f\u7684 herdr-core",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1481",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "none"
+      },
+      "pull_requests": []
+    },
+    {
+      "number": 1482,
+      "title": "herdr-core \u8fc1\u79fb 8\uff5cdocs\uff1a\u6280\u80fd\u4e0e\u6307\u5f15\u53ea\u8bb2 herdr-core",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1482",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "none"
+      },
+      "pull_requests": []
+    },
+    {
+      "number": 1483,
+      "title": "herdr-core \u8fc1\u79fb 9\uff5carchitecture\uff1a\u6a21\u578b\u6362\u6210 herdr-core \u8282\u70b9",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1483",
+      "state": "open",
+      "labels": [
+        "enhancement"
+      ],
+      "tier": null,
+      "milestone": null,
+      "blocked_by": [],
+      "claim_status": {
+        "status_kind": "none"
+      },
+      "pull_requests": []
+    }
+  ],
+  "pull_requests": [
+    {
+      "number": 1491,
+      "url": "https://github.com/Ancienttwo/repo-harness/pull/1491",
+      "state": "open",
+      "is_draft": false,
+      "base_ref": "main",
+      "base_sha": "ead86532de4232c24ac37c5dd8d3cf6eab1b5995",
+      "head_ref": "feat/1475-hc-transport",
+      "head_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62",
+      "head_committed_at": "2026-11-02T21:03:24Z",
+      "merged_at": null,
+      "closes": [
+        1475
+      ],
+      "refs": [
+        1474,
+        1475
+      ],
+      "files": [
+        ".archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml",
+        ".archcontext/model/nodes/component.task-agent-host.primary.yaml",
+        "src/effects/terminal/herdr-core.ts",
+        "tests/effects/herdr-core-transport.test.ts"
+      ],
+      "required_check": {
+        "status": "success",
+        "completed_at": "2026-11-02T21:10:01Z"
+      },
+      "acceptance": {
+        "status": "accepted",
+        "via": "record",
+        "accepted_at": "2026-11-02T21:12:35Z",
+        "evidence_url": "https://github.com/Ancienttwo/repo-harness/pull/1491#issuecomment-6588586440"
+      },
+      "merge_readiness": {
+        "provider_repository_id": "1186405141",
+        "repository": "Ancienttwo/repo-harness",
+        "pr_number": 1491,
+        "expected_head_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62",
+        "expected_base_sha": "ead86532de4232c24ac37c5dd8d3cf6eab1b5995",
+        "protocol": 2,
+        "kind": "repo-harness-pull-request-readiness",
+        "ready": true,
+        "blockers": []
+      }
+    },
+    {
+      "number": 1494,
+      "url": "https://github.com/Ancienttwo/repo-harness/pull/1494",
+      "state": "open",
+      "is_draft": true,
+      "base_ref": "feat/1475-hc-transport",
+      "base_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62",
+      "head_ref": "feat/1479-notify-relay",
+      "head_sha": "a0875a9ebeb3b24371c3c5f5e64e35f223b6f64c",
+      "head_committed_at": "2026-11-02T21:27:29Z",
+      "merged_at": null,
+      "closes": [
+        1479
+      ],
+      "refs": [
+        1474
+      ],
+      "files": [
+        ".ai/harness/policy.json",
+        ".archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml",
+        ".archcontext/model/nodes/component.task-agent-host.core-layer.yaml",
+        ".archcontext/model/nodes/component.task-agent-host.primary.yaml",
+        ".github/actions/install-pinned-herdr-core/action.yml",
+        ".github/workflows/ci.yml",
+        "assets/herdr/github-events/bot-event.d.mts",
+        "assets/herdr/github-events/bot-event.mjs",
+        "assets/herdr/github-events/worker.mjs",
+        "assets/herdr/webhook-notify/herdr-plugin.toml",
+        "assets/herdr/webhook-notify/notify.mjs",
+        "assets/herdr/webhook-notify/pane-status.mjs",
+        "assets/herdr/webhook-notify/worktree-location.mjs",
+        "assets/reference-configs/external-tooling.md",
+        "assets/reference-configs/herdr-notify.md",
+        "docs/CHANGELOG.md",
+        "docs/adr/ADR-0002-surface-contract.md",
+        "docs/reference-configs/external-tooling.md",
+        "docs/reference-configs/herdr-notify.md",
+        "scripts/lib/project-init-lib.sh",
+        "scripts/sync-helper-sources.ts",
+        "src/cli/commands/doctor.ts",
+        "src/cli/commands/events.ts",
+        "src/cli/commands/herdr.ts",
+        "src/cli/index.ts",
+        "src/core/decision/pane-status.d.mts",
+        "src/core/decision/pane-status.mjs",
+        "src/core/operator/bot-access.ts",
+        "src/core/operator/notify-status.ts",
+        "src/effects/adoption/standard-plan.ts",
+        "src/effects/operator/bot-access.ts",
+        "src/effects/operator/execution-collector.ts",
+        "src/effects/operator/notify-collector.ts",
+        "src/effects/operator/notify-status.ts",
+        "src/effects/operator/server.ts",
+        "src/effects/terminal/herdr-decision.ts",
+        "src/effects/terminal/herdr-notify-install.ts",
+        "src/effects/terminal/notify-relay.ts",
+        "src/operator-web/BotsPage.tsx",
+        "src/operator-web/NotifyStatus.tsx",
+        "src/operator-web/bots.ts",
+        "src/operator-web/fixtures/bots.ts",
+        "src/operator-web/fixtures/index.ts",
+        "src/operator-web/i18n.ts",
+        "tests/check-agent-tooling.test.ts",
+        "tests/check-ci-job-split.test.ts",
+        "tests/cli/doctor.test.ts",
+        "tests/cli/operator-serve.test.ts",
+        "tests/effects/notify-relay.test.ts",
+        "tests/effects/operator-bot-access.test.ts",
+        "tests/effects/operator-execution-state.test.ts",
+        "tests/effects/operator-notify-status.test.ts",
+        "tests/github-events.test.ts",
+        "tests/herdr-runtime-pin.test.ts",
+        "tests/operator-web/operator-bots-page.test.tsx",
+        "tests/operator-web/operator-interactions.test.tsx",
+        "tests/operator-web/operator-notify-status.test.tsx",
+        "tests/unit/helper-projection-drift.test.ts",
+        "tests/unit/pane-status.test.ts"
+      ],
+      "required_check": {
+        "status": "missing"
+      },
+      "acceptance": {
+        "status": "not_accepted"
+      },
+      "merge_readiness": {
+        "provider_repository_id": "1186405141",
+        "repository": "Ancienttwo/repo-harness",
+        "pr_number": 1494,
+        "expected_head_sha": "a0875a9ebeb3b24371c3c5f5e64e35f223b6f64c",
+        "expected_base_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62",
+        "protocol": 2,
+        "kind": "repo-harness-pull-request-readiness",
+        "ready": false,
+        "blockers": [
+          {
+            "code": "draft",
+            "attention_owner": "agent"
+          }
+        ]
+      }
+    },
+    {
+      "number": 1499,
+      "url": "https://github.com/Ancienttwo/repo-harness/pull/1499",
+      "state": "open",
+      "is_draft": true,
+      "base_ref": "feat/1475-hc-transport",
+      "base_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62",
+      "head_ref": "feat/1476-sessions-herdr-core",
+      "head_sha": "23627c4f5a717f0434df1468dc72a5042678a95d",
+      "head_committed_at": "2026-11-02T21:27:08Z",
+      "merged_at": null,
+      "closes": [
+        1476
+      ],
+      "refs": [
+        1474
+      ],
+      "files": [
+        ".ai/harness/policy.json",
+        ".github/actions/install-pinned-herdr-core/action.yml",
+        ".github/workflows/ci.yml",
+        "assets/reference-configs/external-tooling.md",
+        "assets/skills/repo-harness-cross-review/references/generic-review.md",
+        "docs/CHANGELOG.md",
+        "docs/reference-configs/external-tooling.md",
+        "docs/spec.md",
+        "scripts/contract-worktree.sh",
+        "scripts/lib/project-init-lib.sh",
+        "src/cli/commands/review.ts",
+        "src/core/operator/admitted-task-context.ts",
+        "src/core/operator/execution-state.ts",
+        "src/core/review/runner-port.ts",
+        "src/core/sessions/task-sessions.ts",
+        "src/effects/adoption/standard-plan.ts",
+        "src/effects/operator/execution-state.ts",
+        "src/effects/review-runner/task-review-runner.ts",
+        "src/effects/review/generic-review.ts",
+        "src/effects/terminal/herdr.ts",
+        "src/effects/terminal/task-session-admission.ts",
+        "src/effects/terminal/task-session-record.ts",
+        "src/effects/terminal/task-session.ts",
+        "src/effects/terminal/task-worktree-runtime.ts",
+        "src/operator-web/fixtures/dev-activity.ts",
+        "tests/acceptance-receipt.test.ts",
+        "tests/check-agent-tooling.test.ts",
+        "tests/check-ci-job-split.test.ts",
+        "tests/effects/external-source-binding.test.ts",
+        "tests/effects/operator-execution-state.test.ts",
+        "tests/effects/operator-task-diff.test.ts",
+        "tests/effects/task-session-admission.test.ts",
+        "tests/effects/task-worktree-closeout-notify.test.ts",
+        "tests/generic-review.test.ts",
+        "tests/helpers/admitted-inbox-fixture.ts",
+        "tests/helpers/engineer-runtime-fixture.ts",
+        "tests/herdr-runtime-pin.test.ts",
+        "tests/herdr-task-lifecycle.test.ts"
+      ],
+      "required_check": {
+        "status": "missing"
+      },
+      "acceptance": {
+        "status": "not_accepted"
+      },
+      "merge_readiness": {
+        "provider_repository_id": "1186405141",
+        "repository": "Ancienttwo/repo-harness",
+        "pr_number": 1499,
+        "expected_head_sha": "23627c4f5a717f0434df1468dc72a5042678a95d",
+        "expected_base_sha": "20e2cbd211ea41450e47dd3fb470c388b0238b62",
+        "protocol": 2,
+        "kind": "repo-harness-pull-request-readiness",
+        "ready": false,
+        "blockers": [
+          {
+            "code": "draft",
+            "attention_owner": "agent"
+          }
+        ]
+      }
+    }
+  ],
+  "execution": {
+    "status": "observed",
+    "terminals": [
+      {
+        "address": "t1",
+        "name": "w1476",
+        "state": "live",
+        "status": "blocked",
+        "status_kind": "question",
+        "status_ms": 1793661522936,
+        "turn": 0,
+        "seat_status": "observed",
+        "seat": "worker",
+        "issue": 1476,
+        "pr": 1499
+      },
+      {
+        "address": "t2",
+        "name": "w1475",
+        "state": "live",
+        "status": "done",
+        "status_kind": null,
+        "status_ms": 1793661522954,
+        "turn": 0,
+        "seat_status": "observed",
+        "seat": "worker",
+        "issue": 1475,
+        "pr": 1491
+      },
+      {
+        "address": "t3",
+        "name": "orch",
+        "state": "live",
+        "status": "idle",
+        "status_kind": null,
+        "status_ms": 1793661522964,
+        "turn": 0,
+        "seat_status": "observed",
+        "seat": "orchestrator",
+        "issue": null,
+        "pr": null
+      },
+      {
+        "address": "t4",
+        "name": "nolabel",
+        "state": "live",
+        "status": null,
+        "status_kind": null,
+        "status_ms": null,
+        "turn": 0,
+        "seat_status": "unavailable",
+        "reason": "seat_label_missing"
+      }
+    ]
+  },
+  "daily_run": {
+    "status": "observed",
+    "run_url": "https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043",
+    "conclusion": "failure",
+    "created_at": "2026-11-01T22:39:48Z",
+    "open_repair_issues": []
+  },
+  "tooling": {
+    "hc": {
+      "status": "observed",
+      "version": "0.1.17",
+      "min_version": "0.1.16"
+    },
+    "herdr_app": {
+      "status": "not_pinned"
+    }
+  }
+}

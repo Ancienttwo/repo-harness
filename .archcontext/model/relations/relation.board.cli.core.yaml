@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.cli.core
+kind: calls
+source: component.board.cli
+target: component.board.core
+intent: "Run the attention rules on the collected board"

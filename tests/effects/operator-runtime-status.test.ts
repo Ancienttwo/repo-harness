@@ -4,62 +4,65 @@ import * as fsPromises from 'node:fs/promises';
 import { mkdtempSync, writeFileSync, readFileSync, readdirSync, rmSync, renameSync, symlinkSync, mkdirSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
-import { createServer, type Socket } from 'node:net';
 import { decodeRuntimeOverlay, projectRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, unavailableRuntimeOverlay, type RuntimeIdentity, type RuntimeObservation } from '../../src/core/operator/runtime-status';
-import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver, observeHerdrPane, type RuntimeInvalidation, type RuntimeSnapshot } from '../../src/effects/operator/runtime-status';
-import { decodeRuntimeConfig, startRuntimeService, type NativeRuntimeConfig, type HerdrRuntimeConfig } from '../../src/effects/operator/runtime-service';
+import { createRuntimeStatusObserver, createNativeRuntimeStatusObserver, observeHcTerminal, type RuntimeInvalidation, type RuntimeSnapshot } from '../../src/effects/operator/runtime-status';
+import { decodeRuntimeConfig, startRuntimeService, type NativeRuntimeConfig, type HerdrCoreRuntimeConfig } from '../../src/effects/operator/runtime-service';
 import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from '../../src/effects/operator/native-runtime-source';
 import { RUNTIME_CAPTURE_MAX_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { configureRuntimeSource, RUNTIME_SOURCE_EVENTS, RUNTIME_SOURCE_PROTOCOL, type ConfiguredRuntimeSource } from '../../src/effects/operator/runtime-source';
-import { HerdrVersionMismatchError, herdrVersionCheck } from '../../src/effects/terminal/herdr-observation';
+import { HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
+import { fakeHc } from '../helpers/fake-hc';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
 const at = '2026-10-08T00:00:00.000Z';
 const identity: RuntimeIdentity = {
   source_host: 'fixture-host', repository_id: `sha256:${'a'.repeat(64)}`, task: 'task-1', role: 'implementer', round: 1, pipeline_state_version: 7,
   request_id: 'request-1', context_sha256: `sha256:${'b'.repeat(64)}`, runtime_session: 'runtime-1', attempt: 1,
-  generation: 'generation-1', source_epoch: 0, herdr_session: 'fixture', terminal_id: 'terminal-1', pane_id: 'pane-1', agent_session: 'agent-1',
+  generation: 'generation-1', source_epoch: 0, hc_core: 'core-1', terminal_id: 't12',
 };
-const pane = { pane_id: 'pane-1', terminal_id: 'terminal-1', agent_session: 'agent-1', revision: 1, agent_status: 'working' };
-const observation = (changes: Partial<RuntimeObservation> = {}): RuntimeObservation => ({ identity, revision: 1, state: 'working', reason: 'unknown', changed_at: null, source: 'herdr-agent', ...changes });
+const terminal = { terminal_id: 't12', revision: 1, status: 'working' };
+const observation = (changes: Partial<RuntimeObservation> = {}): RuntimeObservation => ({ identity, revision: 1, state: 'working', reason: 'unknown', changed_at: null, source: 'hc-status', ...changes });
 const snapshot = (o = observation()): RuntimeSnapshot => ({ bindings: [o.identity], observations: [o] });
 const project = (observations: RuntimeObservation[], bindings: RuntimeIdentity[] = [identity]) => projectRuntimeOverlay(bindings, observations, at, 0, Date.parse(at));
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 
-const versionCheck = () => herdrVersionCheck({ version: '999.0.0', protocol: 999 });
+const versionCheck = () => hcVersionCheck('0.1.15', '0.1.17');
 const versionReason = () => {
   const { expected, actual } = versionCheck();
-  return { code: 'herdr_version_mismatch' as const, expected, actual };
+  return { code: 'hc_version_mismatch' as const, expected, actual };
 };
 
 describe('structured runtime overlay', () => {
-  test('requires the v6 reason field and accepts only bounded unavailable version facts', () => {
+  test('requires the v7 reason field and accepts only bounded unavailable version facts', () => {
     const reason = versionReason(), overlay = unavailableRuntimeOverlay(0, reason);
     expect(decodeRuntimeOverlay(overlay)).toEqual(overlay);
-    expect(decodeRuntimeOverlay({ ...overlay, reason: { ...reason, actual: { version: null, protocol: null } } }).reason?.actual).toEqual({ version: null, protocol: null });
+    const pin = unavailableRuntimeOverlay(0, { code: 'hc_pin_unavailable' });
+    expect(decodeRuntimeOverlay(pin)).toEqual(pin);
     const { reason: omitted, ...missing } = overlay;
     expect(omitted).toEqual(reason);
     for (const invalid of [
       missing,
-      { ...overlay, projection_version: 'repo-harness.runtime-overlay.v5' },
+      { ...overlay, projection_version: 'repo-harness.runtime-overlay.v6' },
       { ...overlay, status: 'ready', observed_at: at },
       { ...overlay, reason: { ...reason, message: '/private/secret' } },
-      { ...overlay, reason: { ...reason, actual: { ...reason.actual, version: '/private/secret' } } },
-      { ...overlay, reason: { ...reason, actual: { ...reason.actual, protocol: -1 } } },
-      { ...overlay, reason: { ...reason, expected: { ...reason.expected, revision: '/private/secret' } } },
+      { ...overlay, reason: { ...reason, actual: { version: '/private/secret' } } },
+      { ...overlay, reason: { ...reason, actual: { version: null } } },
+      { ...overlay, reason: { ...reason, expected: { min_version: '0.1.17', revision: 'a'.repeat(40) } } },
+      { ...overlay, reason: { code: 'hc_pin_unavailable', expected: reason.expected } },
+      { ...overlay, reason: { code: 'herdr_version_mismatch', expected: reason.expected, actual: reason.actual } },
     ]) expect(() => decodeRuntimeOverlay(invalid)).toThrow();
     expect(project([observation()]).reason).toBeNull();
   });
-  test('Herdr maps only documented structured states and strips raw fields', () => {
-    for (const [input, state] of [['idle','idle'],['working','working'],['blocked','blocked'],['done','done-unseen'],['unknown','unknown'],['aborted','unknown']] as const) {
-      const result = observeHerdrPane({ ...pane, agent_status: input, title: 'private-secret', cwd: '/private/path', text: 'auth-secret' }, identity)!;
+  test('hc maps only its status words and strips raw fields; no report is unknown', () => {
+    for (const [input, state] of [['idle','idle'],['working','working'],['blocked','blocked'],['done','done-unseen'],['error','unknown'],[null,'unknown'],['toString','unknown']] as const) {
+      const result = observeHcTerminal({ ...terminal, status: input, title: 'private-secret', cwd: '/private/path', text: 'auth-secret' }, identity)!;
       expect(result.state).toBe(state);
       expect(result.reason).toBe('unknown');
       expect(result.changed_at).toBeNull();
       expect(JSON.stringify(result)).not.toMatch(/private-secret|auth-secret|\"title\"|\"cwd\"|\"text\"/);
     }
-    for (const key of ['pane_id','terminal_id','agent_session']) expect(observeHerdrPane({ ...pane, [key]: 'reused' }, identity)).toBeNull();
-    expect(() => observeHerdrPane({ ...pane, revision: -1 }, identity)).toThrow();
+    expect(observeHcTerminal({ ...terminal, terminal_id: 't13' }, identity)).toBeNull();
+    expect(() => observeHcTerminal({ ...terminal, revision: -1 }, identity)).toThrow();
   });
 
   test('deduplicates, rejects conflicts and fences out-of-order revisions', () => {
@@ -85,7 +88,7 @@ describe('structured runtime overlay', () => {
     }
   });
 
-  test('bounds payloads and rejects unknown fields, raw paths and invented Herdr completion', () => {
+  test('bounds payloads and rejects unknown fields, raw paths and invented hc completion', () => {
     const overlay = project([observation()]);
     expect(() => decodeRuntimeOverlay({ ...overlay, raw_terminal: 'secret' })).toThrow();
     expect(() => project([observation({ identity: { ...identity, task: '/private/path' } })])).toThrow();
@@ -97,7 +100,7 @@ describe('structured runtime overlay', () => {
 
 describe('snapshot lifecycle', () => {
   test('preserves startup and snapshot version failures, clears generic failures and recovers', async () => {
-    let failure: Error | null = new HerdrVersionMismatchError(versionCheck());
+    let failure: Error | null = new HcVersionMismatchError(versionCheck());
     const observer = createRuntimeStatusObserver({ async subscribe() {
       if (failure) throw failure;
       return () => {};
@@ -110,10 +113,10 @@ describe('snapshot lifecycle', () => {
       expect(observer.read()).toEqual(unavailableRuntimeOverlay(0, versionReason()));
       failure = null; await observer.start();
       expect(observer.read()).toMatchObject({ status: 'ready', reason: null });
-      failure = new HerdrVersionMismatchError(versionCheck()); await observer.refresh();
+      failure = new HcVersionMismatchError(versionCheck()); await observer.refresh();
       expect(observer.read()).toMatchObject({ status: 'unavailable', reason: versionReason() });
       const returned = observer.read();
-      returned.reason!.actual.version = 'caller-mutated';
+      (returned.reason as { actual: { version: string } }).actual.version = 'caller-mutated';
       expect(observer.read().reason).toEqual(versionReason());
       failure = new Error('/private/secret version mismatch'); await observer.refresh();
       expect(observer.read()).toMatchObject({ status: 'unavailable', reason: null });
@@ -125,7 +128,7 @@ describe('snapshot lifecycle', () => {
 
   test('preserves a version failure before the first snapshot and clears it on disconnect', async () => {
     const observer = createRuntimeStatusObserver({ async subscribe() { return () => {}; }, async snapshot() {
-      throw new HerdrVersionMismatchError(versionCheck());
+      throw new HcVersionMismatchError(versionCheck());
     } });
     try {
       await observer.start();
@@ -223,7 +226,7 @@ describe('snapshot lifecycle', () => {
     expect(current.source_epoch).toBe(1); expect(current.badges[0].state).toBe('working'); expect(snapshots).toBe(1);
     first.resolve(() => { firstCloses++; }); await oldStart;
     callbacks[0]('events_lost'); callbacks[0]('disconnected');
-    callbacks[0]({ type: 'failure', error: new HerdrVersionMismatchError(versionCheck()) }); await Promise.resolve();
+    callbacks[0]({ type: 'failure', error: new HcVersionMismatchError(versionCheck()) }); await Promise.resolve();
     expect(observer.read()).toEqual(current); expect(firstCloses).toBe(1); expect(secondCloses).toBe(0); expect(snapshots).toBe(1);
     callbacks[1]('updated'); await observer.refresh(); expect(snapshots).toBe(2);
     observer.stop(); expect(secondCloses).toBe(1);
@@ -250,33 +253,22 @@ describe('snapshot lifecycle', () => {
   });
 });
 
-test.skipIf(!['darwin','linux'].includes(process.platform))('runtime service retains a rejected Herdr ping reason without probing on reads', async () => {
-  const root = mkdtempSync('/tmp/rh-runtime-reason-'), socketPath = join(root, 'herdr.sock'), configPath = join(root, 'runtime.json');
-  const sockets = new Set<Socket>();
-  let requests = 0, service: Awaited<ReturnType<typeof startRuntimeService>> | null = null;
-  const server = createServer(socket => {
-    sockets.add(socket); socket.on('close', () => sockets.delete(socket)); socket.on('error', () => {});
-    let input = '';
-    socket.on('data', chunk => {
-      input += chunk.toString(); const end = input.indexOf('\n'); if (end < 0) return;
-      const request = JSON.parse(input.slice(0, end)); input = input.slice(end + 1); requests++;
-      socket.end(JSON.stringify({ id: request.id, result: { type: 'pong', version: '999.0.0', protocol: 999, capabilities: {} } }) + '\n');
-    });
-  });
+test('runtime service retains a core-below-pin reason without probing on reads', async () => {
+  const f = fakeHc('rh-runtime-reason'), configPath = join(f.root, 'runtime.json');
+  let service: Awaited<ReturnType<typeof startRuntimeService>> | null = null;
   try {
-    await new Promise<void>((resolve, reject) => { server.once('error', reject); server.listen(socketPath, resolve); });
-    writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'fixture', herdr_session: 'fixture', socket_path: socketPath, deadline_ms: 1000 }));
-    service = await startRuntimeService(configPath);
+    f.setVersion('0.1.15');
+    writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr-core', source_host: 'fixture', deadline_ms: 2000 }));
+    service = await startRuntimeService(configPath, f.env);
     expect(service.read()).toEqual(unavailableRuntimeOverlay(0, versionReason()));
-    const result = service.read(); result.reason!.expected.version = 'caller-mutated';
-    expect(service.read().reason).toEqual(versionReason()); expect(requests).toBe(1);
+    const result = service.read(); (result.reason as { expected: { min_version: string } }).expected.min_version = 'caller-mutated';
+    const statusCalls = () => f.argv().filter(line => line.startsWith('server status')).length;
+    expect(service.read().reason).toEqual(versionReason()); expect(statusCalls()).toBe(1);
     await service.refresh();
-    expect(service.read()).toEqual(unavailableRuntimeOverlay(0, versionReason())); expect(requests).toBe(2);
-  } finally {
-    service?.close(); for (const socket of sockets) socket.destroy();
-    if (server.listening) await new Promise<void>(resolve => server.close(() => resolve()));
-    rmSync(root, { recursive: true, force: true });
-  }
+    expect(service.read()).toEqual(unavailableRuntimeOverlay(0, versionReason())); expect(statusCalls()).toBe(2);
+    // The core was below the pin, so no terminal stream was opened.
+    expect(f.argv().some(line => line.startsWith('events'))).toBe(false);
+  } finally { service?.close(); f.cleanup(); }
 });
 
 test('GET and HEAD use only the injected cache; no subprocess or canonical state mutation', async () => {
@@ -303,47 +295,45 @@ test('GET and HEAD use only the injected cache; no subprocess or canonical state
 describe('configured synthetic source adapter', () => {
   function fixture() {
     const config: ConfiguredRuntimeSource = {
-      source_host: identity.source_host, herdr_session: identity.herdr_session,
-      source_revision: '4dc23bb15d4a2fd2c093abfb509f903c3015bf56', deadline_ms: 1000,
+      source_host: identity.source_host, deadline_ms: 1000,
       bindings: async epoch => [{ ...identity, source_epoch: epoch }],
       transport: {
-        capabilities: async () => ({ protocol: RUNTIME_SOURCE_PROTOCOL, source_host: identity.source_host, herdr_session: identity.herdr_session,
-          source_revision: '4dc23bb15d4a2fd2c093abfb509f903c3015bf56', agent_status: true }),
+        capabilities: async () => ({ protocol: RUNTIME_SOURCE_PROTOCOL, source_host: identity.source_host, hc_core: identity.hc_core, agent_status: true }),
         subscribe: async () => () => {},
-        snapshot: async () => ({ protocol: 'repo-harness.runtime-source.snapshot.v1', source_host: identity.source_host,
-          herdr_session: identity.herdr_session, source_revision: '4dc23bb15d4a2fd2c093abfb509f903c3015bf56', panes: [pane] }),
+        snapshot: async () => ({ protocol: 'repo-harness.runtime-source.snapshot.v2', source_host: identity.source_host,
+          hc_core: identity.hc_core, terminals: [terminal] }),
       },
     };
     return config;
   }
 
-  test('configures explicit capabilities before subscription, binds structured panes and counts unbound panes', async () => {
+  test('configures explicit capabilities before subscription, binds structured terminals and counts unbound terminals', async () => {
     const config = fixture(), calls: string[] = [];
     let callback!: (event: string) => void, closed = false;
     const cap = config.transport.capabilities, frame = config.transport.snapshot;
     config.transport.capabilities = async signal => { calls.push('capabilities'); return cap(signal); };
     config.transport.subscribe = async (events, cb) => { expect(events).toEqual(RUNTIME_SOURCE_EVENTS); calls.push('subscribe'); callback = cb; return () => { closed = true; }; };
     config.bindings = async epoch => { calls.push('bindings'); return [{ ...identity, source_epoch: epoch }]; };
-    config.transport.snapshot = async signal => { calls.push('snapshot'); return { ...await frame(signal) as object, panes: [pane, { ...pane, pane_id: 'unbound-pane' }] }; };
+    config.transport.snapshot = async signal => { calls.push('snapshot'); return { ...await frame(signal) as object, terminals: [terminal, { ...terminal, terminal_id: 't1b' }] }; };
     const source = await configureRuntimeSource(config), observer = createRuntimeStatusObserver(source, () => Date.parse(at));
     expect(calls).toEqual(['capabilities']); await observer.start();
     expect(calls).toEqual(['capabilities','subscribe','bindings','snapshot','bindings']);
     expect(observer.read().unclaimed).toBe(1); expect(observer.read().badges[0].state).toBe('working');
     const before = calls.length; callback('unrelated-event'); await Promise.resolve(); expect(calls.length).toBe(before);
-    callback('pane.moved'); await observer.refresh(); expect(calls.length).toBeGreaterThan(before);
+    callback('terminal.changed'); await observer.refresh(); expect(calls.length).toBeGreaterThan(before);
     observer.stop(); expect(closed).toBe(true);
   });
 
   test('fails closed for unsupported capabilities, conflicting source identity and oversized payloads', async () => {
-    for (const changes of [{ source_host: 'different-host' }, { herdr_session: 'different-session' }, { source_revision: 'b'.repeat(40) }, { agent_status: false }, { unknown: true }]) {
+    for (const changes of [{ source_host: 'different-host' }, { hc_core: '/private/core' }, { agent_status: false }, { unknown: true }]) {
       const config = fixture(), cap = config.transport.capabilities;
       config.transport.capabilities = async signal => ({ ...await cap(signal) as object, ...changes });
       await expect(configureRuntimeSource(config)).rejects.toThrow();
     }
     const config = fixture(), frame = config.transport.snapshot;
-    config.transport.snapshot = async signal => ({ ...await frame(signal) as object, panes: [{ ...pane, text: 'x'.repeat(1024 * 1024) }] });
+    config.transport.snapshot = async signal => ({ ...await frame(signal) as object, terminals: [{ ...terminal, text: 'x'.repeat(1024 * 1024) }] });
     const source = await configureRuntimeSource(config); await expect(source.snapshot(0)).rejects.toThrow('runtime_source_limit');
-    config.transport.snapshot = async signal => ({ ...await frame(signal) as object, herdr_session: 'wrong' });
+    config.transport.snapshot = async signal => ({ ...await frame(signal) as object, hc_core: 'core-2' });
     await expect(source.snapshot(0)).rejects.toThrow('runtime_source_identity');
   });
 
@@ -406,10 +396,10 @@ describe('native runtime observation cache', () => {
     const source = { source_id: 'source-1', provider: 'codex', snapshot_path: '/tmp/explicit-native.json' };
     const config: NativeRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [{ ...source, provider: 'codex' }] };
     expect(decodeRuntimeConfig(config)).toEqual(config);
-    const herdr: HerdrRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000 };
+    const herdr: HerdrCoreRuntimeConfig = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr-core', source_host: 'host', deadline_ms: 1000 };
     expect(decodeRuntimeConfig(herdr)).toEqual(herdr);
     for (const invalid of [
-      { ...config, protocol: 'repo-harness.runtime-config.v1' }, { ...herdr, protocol: 'repo-harness.herdr-runtime-config.v1' },
+      { ...config, protocol: 'repo-harness.runtime-config.v1' }, { ...herdr, protocol: 'repo-harness.herdr-runtime-config.v1' }, { ...herdr, deadline_ms: 0 }, { ...herdr, herdr_session: 'session' },
       { ...config, socket_path: '/tmp/herdr.sock' }, { ...herdr, sources: [source] },
       { ...config, sources: [] }, { ...config, sources: Array.from({ length: 9 }, (_, i) => ({ ...source, source_id: `source-${i}`, snapshot_path: `/tmp/${i}.json` })) },
       { ...config, sources: [source, { ...source, snapshot_path: '/tmp/other.json' }] },
@@ -418,17 +408,10 @@ describe('native runtime observation cache', () => {
     ]) expect(() => decodeRuntimeConfig(invalid)).toThrow();
   });
 
-  test('retired Herdr binding keys give an explicit config repair error', () => {
+  test('a classic Herdr config gives an explicit config repair error', () => {
     const config = { protocol: 'repo-harness.runtime-config.v2', kind: 'herdr', source_host: 'host', herdr_session: 'session', socket_path: '/tmp/explicit-herdr.sock', deadline_ms: 1000 };
-    for (const fields of [
-      { bindings_path: null },
-      { pipeline_snapshot: null },
-      { bindings_path: null, pipeline_snapshot: null },
-      { bindings_path: '/tmp/bindings.json', pipeline_snapshot: '/tmp/snapshot.json' },
-    ]) {
-      expect(() => decodeRuntimeConfig({ ...config, ...fields })).toThrow(
-        'runtime_config_retired_fields: remove bindings_path and pipeline_snapshot; task bindings are no longer supported',
-      );
+    for (const fields of [{}, { bindings_path: '/tmp/bindings.json', pipeline_snapshot: '/tmp/snapshot.json' }]) {
+      expect(() => decodeRuntimeConfig({ ...config, ...fields })).toThrow('runtime_config_classic_herdr_retired');
     }
   });
 
@@ -556,7 +539,7 @@ describe('native runtime observation cache', () => {
       writeFileSync(configPath, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'native', sources: [config] }));
       server = await startOperatorServer({ port: 0, runtime_status_config: configPath });
       const first = await (await fetch(`${server.url}/api/v1/runtime/status`)).json();
-      expect(first).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v6', status: 'ready', badges: [], native_sources: [{ source_id: config.source_id, freshness: 'fresh', observations: [{ state: 'working', event_received_at: at }] }] });
+      expect(first).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v7', status: 'ready', badges: [], native_sources: [{ source_id: config.source_id, freshness: 'fresh', observations: [{ state: 'working', event_received_at: at }] }] });
       rmSync(config.snapshot_path);
       const before = readdirSync(root).map(name => [name, readFileSync(join(root, name), 'utf8')]);
       const open = spyOn(fsPromises, 'open'), lstat = spyOn(fsPromises, 'lstat'); spies.push(open, lstat);
@@ -598,7 +581,7 @@ describe('native runtime observation cache', () => {
     expect(observer.read()).toMatchObject({ status: 'unavailable', observed_at: null, native_sources: [{ observations: [] }, { observations: [] }] });
   });
 
-  test('overlay v6 rejects mixed authority, raw fields, duplicate sources and older schemas', async () => {
+  test('overlay v7 rejects mixed authority, raw fields, duplicate sources and older schemas', async () => {
     const root = mkdtempSync(join(tmpdir(), 'rh-native-overlay-')), config = nativeFile(root), observer = nativeObserver([config], () => Date.parse(at));
     try {
       replaceNativeFile(config, nativeSnapshot()); await observer.start(); const overlay = observer.read();

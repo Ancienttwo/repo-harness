@@ -2,9 +2,9 @@
 // serve` process on a timer, never on a request path; a GET reads `read()`.
 //
 // Sources: `repo-harness mcp doctor --json`, the Bot registry, the repository
-// registry, the newest MCP audit row of each registered repository, the Herdr
-// notify install record (the session), `herdr status --json` and the
-// `session.snapshot` socket method, and the notify
+// registry, the newest MCP audit row of each registered repository, the hc
+// core (`hc server status` against the policy pin, and one `hc events`
+// snapshot of the task-session terminals), and the notify
 // collector's cache (that collector owns the notify probes). Every source
 // passes through a projection in `core/operator/bot-access`, so the cache
 // holds no secret, absolute path, stderr or environment value. Nothing here writes: the
@@ -20,6 +20,7 @@ import { promisify } from 'node:util';
 
 import {
   projectBots,
+  projectHcTerminal,
   projectMcpAuditEntry,
   projectMcpDoctor,
   projectRegistryRepo,
@@ -30,6 +31,9 @@ import {
 } from '../../core/operator/bot-access';
 import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
+import { HcPinUnavailableError } from '../../core/operator/herdr-pin';
+import { HerdrCoreError } from '../terminal/herdr-core';
+import { TASK_SESSION_LABELS, observeHcCore, readHcSnapshot } from './herdr-runtime-transport';
 import type { NotifyCacheV1 } from './notify-collector';
 
 const runFile = promisify(execFile);
@@ -38,6 +42,7 @@ export const BOT_ACCESS_INTERVAL_MS = 5 * 60_000;
 export const BOT_ACCESS_TIMEOUT_MS = 30_000;
 const STDOUT_LIMIT = 4 * 1024 * 1024;
 const AUDIT_TAIL_BYTES = 64 * 1024;
+const HC_TIMEOUT_MS = 5_000;
 
 /**
  * Working directory of every child. The doctor reports on the repository that
@@ -158,9 +163,29 @@ async function registrySection(env: NodeJS.ProcessEnv, directory: BotDirectory):
   return { state: 'ok', authorization_revision: snapshot.authorizationRevision, registry_revision: snapshot.registryRevision, repos };
 }
 
-/** The notify relay record names no Herdr session, so no classic Herdr session is asked; #1478 moves this section to hc. */
-async function herdrSection(): Promise<BotAccessSnapshotV1['herdr']> {
-  return { state: 'unavailable', reason: 'notify_session_missing' };
+/**
+ * The hc core that the server's environment selects. A core below the pin is shown with both versions, and its
+ * terminals are not read, so a mismatch never looks like a missing core.
+ */
+async function hcSection(env: NodeJS.ProcessEnv): Promise<BotAccessSnapshotV1['hc']> {
+  const herdr_app = { state: 'not_pinned' } as const;
+  let observed;
+  try { observed = await observeHcCore(env, HC_TIMEOUT_MS); }
+  catch (error) {
+    if (error instanceof HcPinUnavailableError) {
+      return { state: 'ok', version: { state: 'unavailable', reason: 'hc_pin_unavailable' }, herdr_app, terminals: { state: 'unavailable', reason: 'hc_pin_unavailable' } };
+    }
+    return { state: 'unavailable', reason: error instanceof HerdrCoreError && error.reason === 'missing' ? 'hc_missing' : 'hc_unreachable' };
+  }
+  const version = { state: 'ok', value: observed.check } as const;
+  if (observed.check.state !== 'aligned') return { state: 'ok', version, herdr_app, terminals: { state: 'unavailable', reason: 'hc_version_mismatch' } };
+  try {
+    const { terminals } = await readHcSnapshot(TASK_SESSION_LABELS, env, AbortSignal.timeout(HC_TIMEOUT_MS));
+    const value = terminals.map(projectHcTerminal).sort((a, b) => a.address.localeCompare(b.address));
+    return { state: 'ok', version, herdr_app, terminals: { state: 'ok', value } };
+  } catch {
+    return { state: 'ok', version, herdr_app, terminals: { state: 'unavailable', reason: 'hc_terminals_failed' } };
+  }
 }
 
 function notifySection(cache: NotifyCacheV1): BotAccessSnapshotV1['notify'] {
@@ -178,13 +203,13 @@ export async function collectBotAccess(input: BotAccessReadInput): Promise<BotAc
   // One registry read per cycle, so every attribution in a snapshot agrees.
   const directory = botDirectory(env);
   const bots: BotAccessSnapshotV1['bots'] = directory.state === 'ok' ? { state: 'ok', bots: projectBots(directory) } : { state: 'unavailable', reason: 'bot_registry_invalid' };
-  const [mcp, registry, herdr] = await Promise.all([
+  const [mcp, registry, hc] = await Promise.all([
     mcpSection(base),
     registrySection(env, directory),
-    herdrSection(),
+    hcSection(env),
   ]);
   const notify = notifySection(input.read_notify());
-  return { protocol: 1, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, registry, herdr, notify };
+  return { protocol: 2, kind: 'operator_bot_access', observed_at: now.toISOString(), bots, mcp, registry, hc, notify };
 }
 
 /**

@@ -1,0 +1,15 @@
+{
+  "total_count": 30,
+  "workflow_runs": [
+    {
+      "id": 41358255043,
+      "event": "schedule",
+      "head_branch": "main",
+      "path": ".github/workflows/ci.yml",
+      "status": "completed",
+      "conclusion": "failure",
+      "html_url": "https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043",
+      "created_at": "2026-11-01T22:39:48Z"
+    }
+  ]
+}

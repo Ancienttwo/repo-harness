@@ -4,7 +4,7 @@ import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 import {
   HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcLabel, hcList, hcListAsync, hcRead, hcRm, hcRun,
-  hcSend, hcWait, herdrAppDo, type HcLabels, type HcStreamItem,
+  hcSend, hcServerStatusAsync, hcWait, herdrAppCommand, herdrAppDo, type HcLabels, type HcStreamItem,
 } from '../../src/effects/terminal/herdr-core';
 import { NOTIFY_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
 
@@ -199,6 +199,22 @@ test('herdr-app do sends one JSON object and reads its stdout error', () => {
   expect(ok.argv()).toEqual(['do', 'pane.split', '{"direction":"right","pane":"p3","argv":["claude"]}']);
   const error = failure(() => herdrAppDo('tab.new', { place: 'x' }, { env: fake('app-error').env }));
   expect([error.program, error.reason, error.exitCode, error.message]).toEqual(['herdr-app', 'failed', 1, 'herdr-app_failed (exit 1): unknown argument "place"']);
+  // The operator shows the argv that herdrAppDo runs, so both come from one builder.
+  const keep = fake('ok', { pane: 'p4', terminal: 't12' });
+  expect(herdrAppCommand('terminal.keep', { terminal: 't12' })).toEqual(['herdr-app', 'do', 'terminal.keep', '{"terminal":"t12"}']);
+  expect(herdrAppDo('terminal.keep', { terminal: 't12' }, { env: keep.env })).toEqual({ pane: 'p4', terminal: 't12' });
+  expect(keep.argv()).toEqual(['do', 'terminal.keep', '{"terminal":"t12"}']);
+});
+
+test('server status: the core id and version are read; a bad version, a missing core id or an hc error fail', async () => {
+  const STATUS = { core: { id: 'c-1', name: 'host' }, finished: 0, holder: null, holders: [], installed_by: null, live: 2, pid: 9, uptime_ms: 5, version: '0.1.17' };
+  const ok = fake('ok', STATUS);
+  expect(await hcServerStatusAsync({ env: ok.env })).toEqual({ version: '0.1.17', core: { id: 'c-1', name: 'host' }, live: 2, finished: 0 });
+  expect(ok.argv()).toEqual(['server', 'status', '--json']);
+  for (const invalid of [{ version: '0.1' }, { version: 'v0.1.17' }, { core: { id: '', name: 'host' } }, { core: null }, { live: -1 }]) {
+    expect((await asyncFailure(() => hcServerStatusAsync({ env: fake('ok', { ...STATUS, ...invalid }).env }))).reason).toBe('invalid_response');
+  }
+  expect((await asyncFailure(() => hcServerStatusAsync({ env: fake('hc-error').env }))).kind).toBe('not_found');
 });
 
 test('events: snapshot, heartbeat, missed and event; close resolves, and a bad line or a throwing onItem stops the stream', async () => {

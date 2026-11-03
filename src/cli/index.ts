@@ -40,6 +40,8 @@ import { buildMcpCommand } from './commands/mcp';
 import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
+import { buildBoardCommand } from './commands/board';
+import { boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
 import { buildRefactorCommand } from './commands/refactor';
@@ -482,6 +484,8 @@ export function runTransactionalRuntimeRefresh(
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
 ): GlobalRuntimeResult {
   const transactionEnv = runtimeHostTransactionEnv(options.env);
+  // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
+  providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
     const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
@@ -935,6 +939,7 @@ export function buildProgram(): Command {
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());
+  program.addCommand(buildBoardCommand(boardHostPorts()));
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
   program.addCommand(buildOperatorCommand());
