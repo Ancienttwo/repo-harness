@@ -931,7 +931,7 @@ function detectCodexAutomationProfile() {
   };
 }
 
-function detectRequiredHerdrSkill(herdrRuntime) {
+function detectRequiredHerdrSkill(herdrCoreRuntime) {
   let declared = false;
   try {
     const catalog = JSON.parse(fs.readFileSync(SKILL_SURFACE_MANIFEST_PATH, "utf8"));
@@ -939,11 +939,11 @@ function detectRequiredHerdrSkill(herdrRuntime) {
       && catalog.packages.some((entry) => entry.name === "herdr" && entry.kind === "external");
   } catch (_) { /* The catalog check below reports the invalid source. */ }
   let expected = null;
-  if (herdrRuntime.status === "present" && herdrRuntime.path) {
-    const result = spawnSync(herdrRuntime.path, ["--skill"], { encoding: "utf8", timeout: 5000 });
-    if (result.status === 0 && result.stdout?.startsWith("---\nname: herdr\n") && result.stdout.includes("HERDR_ENV")) {
+  if (herdrCoreRuntime.status === "present" && herdrCoreRuntime.path) {
+    const result = spawnSync(herdrCoreRuntime.path, ["--skill"], { encoding: "utf8", timeout: 5000 });
+    if (result.status === 0) {
       try { expected = renderHerdrSkill(result.stdout); }
-      catch (_) { /* Unsupported binary layout remains unavailable. */ }
+      catch (_) { /* Output that is not the hc manual remains unavailable. */ }
     }
   }
   const skillRoots = SELECTED_HOSTS.map(host => [host, HOSTS[host].skillsDir]);
@@ -975,8 +975,8 @@ function detectRequiredHerdrSkill(herdrRuntime) {
   return {
     name: "herdr_skill",
     status,
-    reason: status === "present" ? "Binary CLI reference and managed session policy are present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the binary CLI reference plus managed session policy.",
-    source: "herdr --skill",
+    reason: status === "present" ? "The hc manual and the managed caller-context policy are present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the hc manual plus the managed caller-context policy.",
+    source: "hc --skill",
     required_by: "assets/skill-commands/manifest.json#repo-harness.requires",
     hosts,
     install_command: `repo-harness update --target ${hostMode}`,
@@ -1992,7 +1992,7 @@ const report = {
   runtime_capabilities: runtimeCapabilities,
   tools: {
     waza: wazaReport,
-    herdr_skill: detectRequiredHerdrSkill(runtimeCapabilities.herdr),
+    herdr_skill: detectRequiredHerdrSkill(runtimeCapabilities.herdr_core),
     codex_automation_profile: detectCodexAutomationProfile(),
     obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
