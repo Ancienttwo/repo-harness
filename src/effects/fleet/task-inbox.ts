@@ -56,6 +56,7 @@ import * as historicalMessage from '../../core/fleet/task-message';
 import { taskInboxRecipientStorageKey as historicalRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import { withTaskLock } from '../locking/task-lock';
 import { withExclusiveDirectoryLock } from '../locking/exclusive-directory-lock';
+import { newestTaskMessageFirst } from '../../core/fleet/task-message-order';
 
 export const TASK_INBOX_RELATIVE_PATH = TASK_INBOX_V2_RELATIVE_PATH;
 
@@ -842,7 +843,10 @@ export function readHistoricalTaskMessageDelivery(input: { repo_root: string; ta
   return { event, receipt, globally_satisfied: globallySatisfied };
 }
 
-/** Read-only admitted-wire activity; recorded provenance is not current authorization. */
+/**
+ * Read-only admitted-wire activity, newest first by `created_at`, then `message_id`.
+ * `after` continues that order below the named event. Recorded provenance is not current authorization.
+ */
 export function readAdmittedTaskActivity(input: {
   repo_root: string; task_id: string; limit: number; after: string | null; message_id: string | null;
   budget: { max_scan: number; max_bytes: number; deadline_ms: number };
@@ -894,19 +898,23 @@ export function readAdmittedTaskActivity(input: {
     });
     return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(b))));
   };
-  const events: TaskMessageEventV2[] = [];
-  const entries: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
+  // A record is one event with all its receipts; a budget stop keeps the complete records already read.
+  const read: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
+  let cursor: TaskMessageEventV2 | null = null;
+  const keep = (event: TaskMessageEventV2) => {
+    if (cursor === null || newestTaskMessageFirst(cursor, event) < 0) read.push({ event, receipts: receiptsAt(event) });
+  };
   let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
   try {
-    if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) events.push(event); }
-    else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); events.push(event); });
-    events.sort((a,b) => a.message_id < b.message_id ? -1 : a.message_id > b.message_id ? 1 : 0);
-    for (const event of events.filter(e => input.after === null || e.message_id > input.after).slice(0,input.limit)) {
-      entries.push({ event, receipts: receiptsAt(event) });
+    if (input.after !== null) {
+      count(); cursor = eventAt(input.after);
+      if (!cursor) fail('task_message_invalid', 'activity cursor names no stored event');
     }
+    if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) keep(event); }
+    else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); keep(event); });
   } catch (error) { if (!exhausted) throw error; }
-  const more = events.filter(e => input.after === null || e.message_id > input.after).length > entries.length;
-  const reason = exhausted ?? (more ? 'page' as const : null);
+  const entries = read.sort((a,b) => newestTaskMessageFirst(a.event, b.event)).slice(0, input.limit);
+  const reason = exhausted ?? (read.length > entries.length ? 'page' as const : null);
   const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
   return { history_exists: historyExists, entries, coverage,
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
