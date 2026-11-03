@@ -14,11 +14,11 @@ import type { TaskSessionAuthority } from '../admission/admission-source';
 import { taskRepository } from '../git/task-repository';
 import { piExecutable } from '../pi-executable';
 import { reviewHostCommand } from '../review/review-isolation';
-import { readTaskAgent, taskSessionDirectory, type HerdrCoreEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
+import { processProofAlive, readTaskAgent, taskSessionDirectory, type HerdrCoreEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { assertTaskBinding, assertTerminalHostCommand, bindTerminalApplicationHost, cancelTaskAgent, closeTaskAgent, collectTaskResult,
-  processProofAlive, sendTaskRequest, startTaskApplicationHost, taskAgentStatus, validateHerdrCoreEndpoint } from '../terminal/task-session';
+  sendTaskRequest, startTaskApplicationHost, taskAgentStatus, validateHerdrCoreEndpoint } from '../terminal/task-session';
 import { taskBindingSha256 } from '../terminal/task-session-admission';
 import { readSessionArtifact, writeSessionArtifact } from '../terminal/task-session-io';
 import { commitPrePromptInbox, preparePrePromptInbox } from './task-pre-prompt-inbox';

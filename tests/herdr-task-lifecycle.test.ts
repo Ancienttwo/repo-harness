@@ -8,7 +8,7 @@ import { seedReviewAdmissionFixture } from './helpers/review-admission-fixture';
 import { copyHelpers } from './helpers/helper-script-fixture';
 import { taskRepository } from '../src/effects/git/task-repository';
 import { taskReviewRunner } from '../src/effects/review-runner/task-review-runner';
-import { processProofAlive } from '../src/effects/terminal/task-session';
+import { processProofAlive } from '../src/effects/terminal/task-session-record';
 import { processIdentity } from '../src/effects/terminal/task-session-io';
 import type { HerdrTaskBinding } from '../src/effects/terminal/task-session-record';
 
