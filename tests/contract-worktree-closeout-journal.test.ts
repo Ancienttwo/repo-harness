@@ -1,6 +1,7 @@
 import { fixtureTaskId } from './helpers/sprint-fixture';
 import { describe, expect, test, setDefaultTimeout } from "bun:test";
 import { chmodSync, copyFileSync, existsSync, mkdirSync, mkdtempSync, realpathSync, readFileSync, readdirSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { randomBytes } from "crypto";
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawn, spawnSync } from "child_process";
@@ -470,42 +471,100 @@ describe("ship-worktrees closeout journal", () => {
   }, 30_000);
 
   // Claim paths: acquire creates only the claims parent; the recovery lane never
-  // creates a parent; release, cancel and failed writes rename before rm. Each
-  // row pauses one caller inside a claim path and runs the other to the end.
+  // creates a parent; release, cancel and failed writes rename before rm.
+  // Recovery acts only on the owner generation that it checked, and refuses a
+  // record without a generation. Each row seeds the claim records and starts its
+  // actors in order. A paused actor stops at its pause point (after the command
+  // when `after` is set) before the next actor starts; an unpaused actor runs to
+  // the end. Paused actors then resume one at a time in start order. `error` ""
+  // means exit 0; an absent `error` also accepts a lost election.
+  type SeedRecord = "dead" | "empty" | "pre-generation";
+  interface Actor { readonly args: string[]; readonly pause?: { cmd: string; glob: string; after?: boolean }; readonly error?: string }
   const SHIP = ["--target", "main", "--remote", "origin"];
-  test.each([
-    { name: "recovery resumes after another recovery removed the claim", cmd: "mkdir", glob: "*/recovery.lock", args: ["--recover", "abort"], pausedError: "another recovery already owns this ship closeout" },
-    { name: "ship elects while the owner removes its claim", cmd: "rm", glob: "*/claims/ship/*.lock*", args: SHIP, pausedError: "" },
-  ])("a released claim is never recreated or shared: $name", async ({ cmd, glob, args, pausedError }) => {
+  const ABORT = ["--recover", "abort"];
+  const NO_GENERATION = "ship ownership record has no generation";
+  test.each<{ name: string; seed: { claim?: SeedRecord; lane?: SeedRecord; journal?: boolean }; actors: Actor[]; kept?: string }>([
+    { name: "recovery resumes after another recovery removed the claim", seed: { claim: "dead" }, actors: [
+      { args: ABORT, pause: { cmd: "mkdir", glob: "*/recovery.lock" }, error: "another recovery already owns this ship closeout" },
+      { args: ABORT, error: "" }] },
+    { name: "ship elects while the owner removes its claim", seed: {}, actors: [
+      { args: SHIP, pause: { cmd: "rm", glob: "*/claims/ship/*.lock*" }, error: "" },
+      { args: SHIP }] },
+    { name: "a paused recovery leaves a new ship's live claim alone", seed: { claim: "dead" }, actors: [
+      { args: ABORT, pause: { cmd: "mkdir", glob: "*/recovery.lock" }, error: "ship closeout is still owned by a live process" },
+      { args: ABORT, error: "" },
+      { args: SHIP, pause: { cmd: "mkdir", glob: "*/snapshot" }, error: "" }] },
+    { name: "two recoveries that read one dead lane never both own it", seed: { claim: "dead", lane: "dead", journal: true }, actors: [
+      { args: ABORT, pause: { cmd: "sed", glob: "*pid*/recovery.lock/owner.json", after: true }, error: "another recovery already owns this ship closeout" },
+      { args: ABORT, pause: { cmd: "rm", glob: "*/transactions/ship/*" }, error: "" }] },
+    { name: "an empty claim record", seed: { claim: "empty" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "owner.json" },
+    { name: "a claim record from before generations", seed: { claim: "pre-generation" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "owner.json" },
+    { name: "a lane record from before generations", seed: { claim: "dead", lane: "pre-generation" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "recovery.lock/owner.json" },
+  ])("a claim is never recreated, shared or taken from another generation: $name", async ({ seed, actors, kept }) => {
     await withTempRepoAsync("closeout-claim-paths", async (container) => {
       const fixture = installShipFixture(container);
       const env = { REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
       const worktree = realpathSync(fixture.linked);
       const key = spawnSync(REAL_GIT, ["hash-object", "--stdin"], { input: `operation=ship\nworktree=${worktree}\n`, encoding: "utf-8" }).stdout.trim();
       const claim = join(fixture.journalRoot, "claims/ship", `${key}.lock`);
-      if (args[0] === "--recover") {
+      const record = (kind: SeedRecord, journalKey: string) => kind === "empty" ? ""
+        : `{\n  "version": 1,\n  "operation": "ship",\n  "worktree": "${worktree}",\n  "pid": "${spawnSync("true").pid}",\n`
+          + (kind === "dead" ? `  "generation": "${randomBytes(16).toString("hex")}",\n` : "") + `  "journal_key": "${journalKey}"\n}\n`;
+      if (seed.claim) {
         mkdirSync(claim, { recursive: true });
-        writeFileSync(join(claim, "owner.json"), `{\n  "version": 1,\n  "operation": "ship",\n  "worktree": "${worktree}",\n  "pid": "${spawnSync("true").pid}",\n  "journal_key": ""\n}\n`);
+        writeFileSync(join(claim, "owner.json"), record(seed.claim, seed.journal ? "orphan-journal" : ""));
+      }
+      if (seed.journal) mkdirSync(join(fixture.journalRoot, "ship/orphan-journal"), { recursive: true });
+      if (seed.lane) {
+        mkdirSync(join(claim, "recovery.lock"));
+        writeFileSync(join(claim, "recovery.lock/owner.json"), record(seed.lane, ""));
       }
       const shimDir = join(container, "pause-shim");
       mkdirSync(shimDir);
-      // rm models rm -rf: it unlinks the owner record, waits, then removes the
-      // directory, which fails when a caller elected inside it meanwhile.
-      const shim = ["#!/bin/bash", 'target=""; for arg in "$@"; do target="$arg"; done', 'real="/bin/$(basename "$0")"',
-        'if [[ "$(basename "$0")" == "$PAUSE_CMD" && "$target" == $PAUSE_GLOB ]]; then',
-        '  [[ "$real" == /bin/rm ]] && { /bin/rm -f "$target/owner.json"; real=/bin/rmdir; set -- "$target"; }',
-        '  touch "$PAUSE_DIR/reached"; for _ in $(seq 1 3000); do [[ -f "$PAUSE_DIR/go" ]] && break; sleep 0.01; done', "fi", 'exec "$real" "$@"', ""].join("\n");
-      for (const name of ["mkdir", "rm"]) writeExecutable(join(shimDir, name), shim);
-      const paused = runHelperAsync("scripts/ship-worktrees.sh", [...args], fixture.linked, { ...env, PATH: `${shimDir}:${process.env.PATH ?? ""}`, PAUSE_CMD: cmd, PAUSE_GLOB: glob, PAUSE_DIR: container });
-      for (let i = 0; i < 3000 && !existsSync(join(container, "reached")); i++) await Bun.sleep(10);
-      const other = runHelper("scripts/ship-worktrees.sh", [...args], fixture.linked, env);
-      writeFileSync(join(container, "go"), "");
-      const first = await paused;
-      // The other caller finishes, or loses to a claim that was still owned.
-      expect(other.status === 0 || other.stderr.includes("closeout already owned"), other.stderr).toBe(true);
-      expect(first.status === 0, first.stderr).toBe(!pausedError);
-      expect(first.stderr).toContain(pausedError);
-      expect(readdirSync(join(claim, ".."))).toEqual([]);
+      // The first matching call pauses. rm models rm -rf: it unlinks the owner
+      // record, waits, then removes the directory, which fails when a caller
+      // elected inside it meanwhile.
+      const shim = ["#!/bin/bash", 'name="$(basename "$0")"; target=""; for arg in "$@"; do target="$arg"; done',
+        'real=""; for dir in /bin /usr/bin; do [[ -x "$dir/$name" ]] && { real="$dir/$name"; break; }; done',
+        'wait_go() { touch "$PAUSE_DIR/reached"; for _ in $(seq 1 3000); do [[ -f "$PAUSE_DIR/go" ]] && break; sleep 0.01; done; }',
+        'if [[ "$name" == "$PAUSE_CMD" && "$*" == $PAUSE_GLOB && ! -e "$PAUSE_DIR/reached" ]]; then',
+        '  if [[ -n "$PAUSE_AFTER" ]]; then "$real" "$@"; status=$?; wait_go; exit "$status"; fi',
+        '  [[ "$name" == rm ]] && { /bin/rm -f "$target/owner.json"; real=/bin/rmdir; set -- "$target"; }',
+        "  wait_go", "fi", 'exec "$real" "$@"', ""].join("\n");
+      for (const name of ["mkdir", "rm", "sed"]) writeExecutable(join(shimDir, name), shim);
+      const runs: Promise<{ status: number | null; stdout: string; stderr: string }>[] = [];
+      const pauseDirs: string[] = [];
+      for (const [index, actor] of actors.entries()) {
+        if (!actor.pause) {
+          runs.push(Promise.resolve(runHelper("scripts/ship-worktrees.sh", actor.args, fixture.linked, env)));
+          continue;
+        }
+        const pauseDir = join(container, `actor-${index}`);
+        mkdirSync(pauseDir);
+        pauseDirs.push(pauseDir);
+        runs.push(runHelperAsync("scripts/ship-worktrees.sh", actor.args, fixture.linked, { ...env, PATH: `${shimDir}:${process.env.PATH ?? ""}`,
+          PAUSE_CMD: actor.pause.cmd, PAUSE_GLOB: actor.pause.glob, PAUSE_AFTER: actor.pause.after ? "1" : "", PAUSE_DIR: pauseDir }));
+        for (let i = 0; i < 3000 && !existsSync(join(pauseDir, "reached")); i++) await Bun.sleep(10);
+        expect(existsSync(join(pauseDir, "reached")), `actor ${index} never reached its pause`).toBe(true);
+      }
+      for (const [index, actor] of actors.entries()) {
+        if (!actor.pause) continue;
+        writeFileSync(join(pauseDirs.shift()!, "go"), "");
+        await runs[index];
+      }
+      const results = await Promise.all(runs);
+      for (const [index, { error }] of actors.entries()) {
+        const result = results[index]!;
+        const log = `actor ${index}: exit ${result.status}\n${result.stderr}`;
+        if (error === undefined) {
+          expect(result.status === 0 || result.stderr.includes("closeout already owned"), log).toBe(true);
+        } else {
+          expect(result.status === 0, log).toBe(!error);
+          expect(result.stderr, log).toContain(error);
+        }
+      }
+      if (kept) expect(existsSync(join(claim, kept))).toBe(true);
+      else expect(readdirSync(join(claim, ".."))).toEqual([]);
     });
   }, 60_000);
 
