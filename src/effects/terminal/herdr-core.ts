@@ -1,5 +1,7 @@
 import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
+import type { BoardHostPortsV1 } from '../../core/board/board';
+import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 
 /**
  * herdr-core transport: typed `hc` CLI calls with `--json`, its event stream, and `herdr-app do` for pane
@@ -30,7 +32,7 @@ export class HerdrCoreError extends Error {
 }
 
 export interface HerdrCoreOptions {
-  /** The environment for the child; `HC_SESSION` / `HC_SOCKET` select the core. Defaults to `process.env`. */
+  /** The environment for the child; `HC_SESSION` / `HC_SOCKET` select the core. Defaults to `process.env`. The notify secret keys never reach the child. */
   readonly env?: NodeJS.ProcessEnv;
   readonly timeoutMs?: number;
 }
@@ -42,6 +44,8 @@ export interface HcForeground { readonly pid: number; readonly name: string; rea
 export interface HcTerminal extends HcTerminalSummary {
   readonly labels: HcLabels;
   readonly status: HcStatus | null;
+  /** When the status word last changed, ms since the epoch; absent when hc omits it (schema default null). */
+  readonly status_ms?: number | null;
   readonly turn: number;
   /** The program's pid (it leads its own process group), not the holder's. */
   readonly pid: number | null;
@@ -61,9 +65,16 @@ export type HcStreamItem =
   /** A fact change. `data` is null for a `foreground` change when no process is in the foreground. */
   | { readonly type: 'event'; readonly seq: number; readonly terminal: string; readonly event: string; readonly data: Readonly<Record<string, unknown>> | null };
 export interface HcEventStream { close(): void; readonly done: Promise<void> }
+/** `hc server status`: the core that answers. `core.id` is permanent until the core state is wiped. */
+export interface HcServerStatus {
+  readonly version: string; readonly core: { readonly id: string; readonly name: string }; readonly live: number; readonly finished: number;
+}
 
-/** The Herdr.app commands that place panes; every other path goes through hc. */
-export type HerdrAppPlacement = 'tab.new' | 'pane.split' | 'pane.close';
+/**
+ * The Herdr.app commands that place panes; every other path goes through hc. `terminal.keep` gives a running
+ * terminal without a pane a pane in the person's window (a new tab, or `place` "right" / "down").
+ */
+export type HerdrAppPlacement = 'tab.new' | 'pane.split' | 'pane.close' | 'terminal.keep';
 
 /** The repo-harness label keys; the only source for every surface that writes or filters hc labels. */
 export const RH_LABEL = {
@@ -73,6 +84,11 @@ export const RH_LABEL = {
   repository: 'repo-harness.repository',
   harness: 'repo-harness.harness',
   notify: 'repo-harness.notify',
+  /** Seat labels, written at seat launch (#1473) and read by the board (#1505). */
+  seat: 'repo-harness.seat',
+  issue: 'repo-harness.issue',
+  pr: 'repo-harness.pr',
+  parent: 'repo-harness.parent',
 } as const;
 /** `repo-harness.role` values. A surface that needs a new role adds it here. */
 export const RH_ROLE = { notifyRelay: 'notify-relay', taskSession: 'task-session' } as const;
@@ -92,13 +108,21 @@ const LABEL_VALUE = /^[\x21-\x7e][\x20-\x7e]{0,255}$/;
  */
 const ADDRESS = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/;
 
+/** True when `value` has hc's terminal address shape (see ADDRESS). */
+export function isHcAddress(value: string): boolean {
+  return ADDRESS.test(value);
+}
+
 const invalidResponse = (detail: string) => new HerdrCoreError('hc', 'invalid_response', undefined, undefined, detail);
 
 function environment(program: HerdrCoreProgram, options: HerdrCoreOptions): NodeJS.ProcessEnv {
   const env = options.env ?? process.env;
   // A classic Herdr pane inside an hc terminal (or the reverse) is a nested multiplexer.
   if (env.HC_TERMINAL_ID && env.HERDR_ENV === '1') throw new HerdrCoreError(program, 'nested', undefined, undefined, 'HC_TERMINAL_ID and HERDR_ENV=1 are both set');
-  return env;
+  // A call can start a stopped core. The core keeps this environment and gives it to every terminal it starts later.
+  const child = { ...env };
+  for (const key of NOTIFY_SECRET_KEYS) delete child[key];
+  return child;
 }
 
 /** Every labeled write and filter carries a repo-harness key, so repo-harness never touches unlabeled terminals. */
@@ -116,7 +140,7 @@ function labelArgs(labels: HcLabels): string[] {
 }
 
 function address(value: string): string {
-  if (!ADDRESS.test(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
+  if (!isHcAddress(value)) throw new HerdrCoreError('hc', 'invalid_address', undefined, undefined, `${JSON.stringify(value)} is not a t<n> address`);
   return value;
 }
 
@@ -164,12 +188,16 @@ function settle(program: HerdrCoreProgram, status: number | null, signal: string
   return parseObject(program, stdout);
 }
 
-function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+function run(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): SpawnSyncReturns<Buffer> {
   const env = environment(program, options);
   const result: SpawnSyncReturns<Buffer> = spawnSync(program, [...args], {
     env, timeout: timeoutOf(options), killSignal: 'SIGKILL', shell: false, maxBuffer: MAX_OUTPUT_BYTES, stdio: ['ignore', 'pipe', 'pipe'],
   });
   if (result.error) throw spawnError(program, result.error);
+  return result;
+}
+function invoke(program: HerdrCoreProgram, args: readonly string[], options: HerdrCoreOptions): Record<string, unknown> {
+  const result = run(program, args, options);
   return settle(program, result.status, result.signal, result.stdout.toString('utf8'), result.stderr.toString('utf8'));
 }
 
@@ -194,6 +222,7 @@ function hc(subcommand: string, args: readonly string[], options: HerdrCoreOptio
 
 const isString = (value: unknown): value is string => typeof value === 'string';
 const isPid = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) > 0;
+const isMs = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
 const orNull = <T>(valid: (value: unknown) => value is T) => (value: unknown): value is T | null => value === null || valid(value);
 
 /** The one rule for a field that the hc schema does not require: absent is undefined, present must be valid. */
@@ -234,8 +263,10 @@ function terminal(value: unknown): HcTerminal {
   if (!isRecord(labels) || !Object.values(labels).every(isString)) throw invalidResponse(`${where} has invalid labels`);
   if (!Number.isSafeInteger(record.turn)) throw invalidResponse(`${where} has an invalid turn`);
   const current = optional(record, 'foreground', orNull(isForeground), where) ?? null;
+  const statusMs = optional(record, 'status_ms', orNull(isMs), where);
   return {
-    ...summary, labels: labels as HcLabels, status: status(record.status ?? null, where), turn: record.turn as number,
+    ...summary, labels: labels as HcLabels, status: status(record.status ?? null, where),
+    ...(statusMs === undefined ? {} : { status_ms: statusMs }), turn: record.turn as number,
     pid: optional(record, 'pid', orNull(isPid), where) ?? null,
     foreground: current === null ? null : { pid: current.pid, name: current.name, argv: [...current.argv], cwd: current.cwd },
     reason: optional(record, 'reason', orNull(isString), where) ?? null,
@@ -248,6 +279,15 @@ function ownedTerminal(value: unknown): HcTerminal {
     throw new HerdrCoreError('hc', 'unowned', undefined, undefined, `terminal ${result.address} has no repo-harness label`);
   }
   return result;
+}
+
+/** `hc --version`: the installed client version (`hc 0.1.17`). It reads no core and no terminal. */
+export function hcVersion(options: HerdrCoreOptions = {}): string {
+  const result = run('hc', ['--version'], options);
+  if (result.signal || result.status !== 0) throw new HerdrCoreError('hc', 'failed', result.status ?? undefined);
+  const match = /^hc ([0-9]+\.[0-9]+\.[0-9]+)\s*$/u.exec(result.stdout.toString('utf8'));
+  if (!match) throw invalidResponse('version output is not "hc x.y.z"');
+  return match[1]!;
 }
 
 /** `hc get`: one terminal by its `t<n>` address. A terminal without a repo-harness label is refused (`unowned`). */
@@ -291,6 +331,22 @@ export async function hcListAsync(labels: HcLabels, options: HcListOptions = {})
 function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
   if (!Array.isArray(result.terminals)) throw invalidResponse('ls has no terminals array');
   return result.terminals.map(terminalSummary);
+}
+
+const VERSION = /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/u;
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+
+/**
+ * `hc server status` without blocking the event loop: the version and identity of the core that answers. It reads
+ * no terminal. Like every hc call, it starts the core when it is stopped.
+ */
+export async function hcServerStatusAsync(options: HerdrCoreOptions = {}): Promise<HcServerStatus> {
+  const result = await invokeAsync('hc', ['server', 'status', '--json'], options);
+  const { core } = result;
+  if (!isString(result.version) || !VERSION.test(result.version)) throw invalidResponse('server status has an invalid version');
+  if (!isRecord(core) || !isString(core.id) || !core.id || !isString(core.name)) throw invalidResponse('server status has an invalid core');
+  if (!isCount(result.live) || !isCount(result.finished)) throw invalidResponse('server status has invalid terminal counts');
+  return { version: result.version, core: { id: core.id, name: core.name }, live: result.live, finished: result.finished };
 }
 
 /**
@@ -398,7 +454,46 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
   return { close: () => stop(), done };
 }
 
+/** The argv of `herdr-app do <command> <json>`: the one source for the call below and for a command the console shows to copy. */
+export function herdrAppCommand(command: HerdrAppPlacement, args: Readonly<Record<string, unknown>>): readonly ['herdr-app', 'do', HerdrAppPlacement, string] {
+  return ['herdr-app', 'do', command, JSON.stringify(args)];
+}
+
 /** `herdr-app do <command> <json>`: place a tab or pane in the person's window. Returns the created IDs. */
 export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<string, unknown>>, options: HerdrCoreOptions = {}): Record<string, unknown> {
-  return invoke('herdr-app', ['do', command, JSON.stringify(args)], options);
+  const [program, ...rest] = herdrAppCommand(command, args);
+  return invoke(program, rest, options);
+}
+
+/** The board host port (#1505): seat terminals of one parent issue by its parent label, and the hc version. */
+export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
+  const unavailable = (error: unknown) => {
+    if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
+    throw error;
+  };
+  return {
+    seatTerminals: (repositoryId, parent) => {
+      try {
+        const terminals = hcList({ [RH_LABEL.repository]: repositoryId, [RH_LABEL.parent]: String(parent) }, options).map(({ address }) => {
+          const terminal = hcGet(address, options);
+          const label = (key: string) => terminal.labels[key];
+          return {
+            address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
+            status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
+            labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr) },
+          };
+        });
+        return { status: 'observed', terminals };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+    hcVersion: () => {
+      try {
+        return { status: 'observed', version: hcVersion(options) };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+  };
 }

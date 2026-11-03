@@ -94,8 +94,8 @@ export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Sess
     if (operation === 'round') child.requiredOption('--reviewer-repo <path>', 'Dedicated linked reviewer checkout')
       .requiredOption('--claim-ref <reference>', 'Upstream immutable GitHub claim reference; coordination provenance, not authorization')
       .requiredOption('--claim-revision <sha256>', 'Upstream claim content revision')
-      .option('--herdr-endpoint <file>', 'JSON {endpoint:{session,configPath?,home?},parent_pane}; required for --launch herdr')
-      .option('--launch <mode>', 'herdr, or app-terminal: the Claude app operator runs the printed host command', 'herdr')
+      .option('--herdr-endpoint <file>', 'JSON {endpoint:{socket,home?},parent_pane}: the hc core socket, the review credential home, and the owner\'s hc terminal; required for --launch herdr-app')
+      .option('--launch <mode>', 'herdr-app: an hc terminal runs the host; app-terminal: the Claude app operator runs the printed host command', 'herdr-app')
       .option('--harness <kind>', 'Explicit claude, codex or pi; no fallback for an explicit override')
       .requiredOption('--verification <path>', 'Native verification report under .ai/harness/runs/')
       .option('--timeout-ms <ms>', 'Round deadline, at most 1800000 ms')
@@ -104,14 +104,16 @@ export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Sess
       .option('--base <sha>', 'Explicit expected PR base for the coverage read');
     child.action(async opts => {
       try {
+        if (operation === 'round') {
+          if (!['herdr-app', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
+          if ((opts.launch === 'herdr-app') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr-app and refused for app-terminal');
+        }
         const authority = readReviewAdmissionSource(opts.repo, {
           'repository-id': opts.repositoryId, 'issue-id': opts.issueId, 'campaign-id': opts.campaignId,
           'grant-sha256': opts.grantSha256, 'policy-sha256': opts.policySha256, actor: opts.actor,
         });
         let result;
         if (operation === 'round') {
-          if (!['herdr', 'app-terminal'].includes(opts.launch)) throw new Error('review_launch_unsupported');
-          if ((opts.launch === 'herdr') !== (opts.herdrEndpoint !== undefined)) throw new Error('review_launch_addressing_invalid; --herdr-endpoint is required for herdr and refused for app-terminal');
           const addressing = opts.herdrEndpoint ? JSON.parse(readFileSync(opts.herdrEndpoint, 'utf8')) : {};
           if (opts.harness && !isReviewRuntimeId(opts.harness)) throw new Error('review_harness_unsupported');
           const pullRequest = pullRequestSelectionFromOptions(opts);

@@ -4,8 +4,9 @@ import { join } from 'path';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 import {
   HerdrCoreError, RH_LABEL, RH_NOTIFY_LABELS, RH_NOTIFY_RELAY, hcEvents, hcGet, hcKill, hcLabel, hcList, hcListAsync, hcRead, hcRm, hcRun,
-  hcSend, hcWait, herdrAppDo, type HcLabels, type HcStreamItem,
+  hcSend, hcServerStatusAsync, hcWait, herdrAppCommand, herdrAppDo, type HcLabels, type HcStreamItem,
 } from '../../src/effects/terminal/herdr-core';
+import { NOTIFY_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -14,8 +15,9 @@ const TERMINAL = { address: 't4', name: 'rh-worker', state: 'live', labels: { 'r
   status: { state: 'idle', app: 'repo-harness', kind: null }, turn: 2,
   pid: 9, foreground: { pid: 9, name: 'claude', argv: ['claude'], cwd: '/w' }, reason: null, holder: 3 };
 // One script stands in for both programs. FAKE_MODE picks the outcome; FAKE_OUT_<subcommand> overrides the
-// reply for one subcommand; argv is logged one argument per line.
+// reply for one subcommand; argv is logged one argument per line, and the env key names go to FAKE_ENV_LOG.
 const FAKE = `#!/bin/sh
+env | cut -d= -f1 >> "$FAKE_ENV_LOG"
 for arg in "$@"; do printf '%s\\n' "$arg" >> "$FAKE_LOG"; done
 case "$FAKE_MODE" in
   ok) eval "out=\\\${FAKE_OUT_$1:-}"; printf '%s' "\${out:-$FAKE_STDOUT}" ;;
@@ -29,13 +31,14 @@ esac
 
 function fake(mode: string, stdout: unknown = {}, replies: Readonly<Record<string, unknown>> = {}) {
   const root = tmpWorkspace('hc-transport'); roots.push(root);
-  const bin = join(root, 'bin'), log = join(root, 'argv.log');
-  mkdirSync(bin); writeFileSync(log, '');
+  const bin = join(root, 'bin'), log = join(root, 'argv.log'), envLog = join(root, 'env.log');
+  mkdirSync(bin); writeFileSync(log, ''); writeFileSync(envLog, '');
   for (const name of ['hc', 'herdr-app']) { writeFileSync(join(bin, name), FAKE); chmodSync(join(bin, name), 0o755); }
-  const env: NodeJS.ProcessEnv = { PATH: `${bin}:/bin:/usr/bin`, FAKE_MODE: mode, FAKE_LOG: log,
+  const env: NodeJS.ProcessEnv = { PATH: `${bin}:/bin:/usr/bin`, FAKE_MODE: mode, FAKE_LOG: log, FAKE_ENV_LOG: envLog,
     FAKE_STDOUT: typeof stdout === 'string' ? stdout : JSON.stringify(stdout) };
   for (const [subcommand, reply] of Object.entries(replies)) env[`FAKE_OUT_${subcommand}`] = JSON.stringify(reply);
-  return { env, root, argv: () => readFileSync(log, 'utf8').split('\n').filter(Boolean) };
+  return { env, root, argv: () => readFileSync(log, 'utf8').split('\n').filter(Boolean),
+    envKeys: () => readFileSync(envLog, 'utf8').split('\n').filter(Boolean) };
 }
 
 function failure(call: () => unknown): HerdrCoreError {
@@ -127,6 +130,39 @@ test('hc error: the exit code and hc error kind are kept; malformed replies fail
   expect(failure(() => hcRm('t4', { env: fake('ok', TERMINAL, { rm: { gone: 't4' } }).env })).reason).toBe('invalid_response');
 });
 
+// Fake values only: the test proves which keys reach the child, never a real credential.
+const SECRETS = Object.fromEntries(NOTIFY_SECRET_KEYS.map(key => [key, `fake-${key.toLowerCase()}`]));
+const leaked = (keys: readonly string[]) => NOTIFY_SECRET_KEYS.filter(key => keys.includes(key));
+
+test('environment: no notify secret key reaches a sync, async or event-stream child from an explicit env', async () => {
+  const run = fake('stream', JSON.stringify({ channel: null, seq: 1, terminals: [TERMINAL] }), { get: TERMINAL, ls: { hidden_finished: 0, terminals: [] } });
+  const env: NodeJS.ProcessEnv = { ...run.env, ...SECRETS, HC_SOCKET: '/tmp/hc-fake.sock' };
+  hcGet('t4', { env: { ...env, FAKE_MODE: 'ok' } });
+  await hcListAsync(RH_NOTIFY_LABELS, { env: { ...env, FAKE_MODE: 'ok' } });
+  let ready!: () => void;
+  const received = new Promise<void>(resolve => { ready = resolve; });
+  const events = hcEvents(RH_NOTIFY_LABELS, () => ready(), { env });
+  await received;
+  events.close();
+  await events.done;
+  const keys = run.envKeys();
+  expect(keys.filter(key => key === 'HC_SOCKET')).toHaveLength(3);
+  expect(leaked(keys)).toEqual([]);
+});
+
+test('environment: no notify secret key reaches the child from the process.env default', () => {
+  const run = fake('ok', TERMINAL);
+  const saved = { ...process.env };
+  Object.assign(process.env, run.env, SECRETS);
+  try { hcGet('t4'); } finally {
+    for (const key of Object.keys(process.env)) if (!(key in saved)) delete process.env[key];
+    Object.assign(process.env, saved);
+  }
+  const keys = run.envKeys();
+  expect(keys).toContain('FAKE_MODE');
+  expect(leaked(keys)).toEqual([]);
+});
+
 test('hc missing: the error names the missing program', () => {
   const empty = tmpWorkspace('hc-missing'); roots.push(empty);
   const error = failure(() => hcGet('t4', { env: { PATH: empty } }));
@@ -163,6 +199,22 @@ test('herdr-app do sends one JSON object and reads its stdout error', () => {
   expect(ok.argv()).toEqual(['do', 'pane.split', '{"direction":"right","pane":"p3","argv":["claude"]}']);
   const error = failure(() => herdrAppDo('tab.new', { place: 'x' }, { env: fake('app-error').env }));
   expect([error.program, error.reason, error.exitCode, error.message]).toEqual(['herdr-app', 'failed', 1, 'herdr-app_failed (exit 1): unknown argument "place"']);
+  // The operator shows the argv that herdrAppDo runs, so both come from one builder.
+  const keep = fake('ok', { pane: 'p4', terminal: 't12' });
+  expect(herdrAppCommand('terminal.keep', { terminal: 't12' })).toEqual(['herdr-app', 'do', 'terminal.keep', '{"terminal":"t12"}']);
+  expect(herdrAppDo('terminal.keep', { terminal: 't12' }, { env: keep.env })).toEqual({ pane: 'p4', terminal: 't12' });
+  expect(keep.argv()).toEqual(['do', 'terminal.keep', '{"terminal":"t12"}']);
+});
+
+test('server status: the core id and version are read; a bad version, a missing core id or an hc error fail', async () => {
+  const STATUS = { core: { id: 'c-1', name: 'host' }, finished: 0, holder: null, holders: [], installed_by: null, live: 2, pid: 9, uptime_ms: 5, version: '0.1.17' };
+  const ok = fake('ok', STATUS);
+  expect(await hcServerStatusAsync({ env: ok.env })).toEqual({ version: '0.1.17', core: { id: 'c-1', name: 'host' }, live: 2, finished: 0 });
+  expect(ok.argv()).toEqual(['server', 'status', '--json']);
+  for (const invalid of [{ version: '0.1' }, { version: 'v0.1.17' }, { core: { id: '', name: 'host' } }, { core: null }, { live: -1 }]) {
+    expect((await asyncFailure(() => hcServerStatusAsync({ env: fake('ok', { ...STATUS, ...invalid }).env }))).reason).toBe('invalid_response');
+  }
+  expect((await asyncFailure(() => hcServerStatusAsync({ env: fake('hc-error').env }))).kind).toBe('not_found');
 });
 
 test('events: snapshot, heartbeat, missed and event; close resolves, and a bad line or a throwing onItem stops the stream', async () => {

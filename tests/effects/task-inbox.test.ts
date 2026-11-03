@@ -101,13 +101,17 @@ function interruptedWriter(
     const operation = process.env.STAGING_OPERATION;
     const intercepted = operation === 'event' ? 'linkSync' : 'renameSync';
     const original = fs[intercepted];
+    const rename = fs.renameSync;
     mock.module('fs', () => ({
       ...fs,
       [intercepted]: (...args) => {
         // The task lock also links its owner record. Stop only at the inbox's
         // own publication, whose source is a staged inbox file.
         if (!/[\\\\/]staging[\\\\/]/.test(String(args[0]))) return original(...args);
-        fs.writeFileSync(process.env.STAGING_MARKER, JSON.stringify(args));
+        // The parent polls for the marker name, so it must appear only complete.
+        const partial = process.env.STAGING_MARKER + '.partial';
+        fs.writeFileSync(partial, JSON.stringify(args));
+        rename(partial, process.env.STAGING_MARKER);
         const wait = new Int32Array(new SharedArrayBuffer(4));
         Atomics.wait(wait, 0, 0);
       },

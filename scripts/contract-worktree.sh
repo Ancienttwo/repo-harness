@@ -57,11 +57,11 @@ usage() {
 Usage:
   repo-harness run contract-worktree start --issue <number> [--type <branch-type>] [--path <worktree-path>] [--branch <branch-name>] [--fresh] [--json] [--herdr-endpoint <json-file>]
   repo-harness run contract-worktree cleanup --slug <slug> [--target <branch>] [--dry-run]
-  repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <pane-id> --pr <number> --merge <sha>
+  repo-harness run contract-worktree notify-merged --worktree <path> --branch <branch> --owner <hc terminal t<n>> --pr <number> --merge <sha>
   repo-harness run contract-worktree sweep
   repo-harness run contract-worktree status
 
-  --herdr-endpoint JSON: {"endpoint":{"session":"<name>","home":"<path>","configPath":"<path>"},"parent_pane":"<pane-id>"}
+  --herdr-endpoint JSON: {"endpoint":{"socket":"<hc core socket>"}}
 USAGE_EOF
 }
 
@@ -456,7 +456,7 @@ start_worktree() {
   run_contract_runtime record --repo "$REPO_ROOT" --worktree "$worktree_path" --creator contract --purpose "$issue_url" --task "$slug" >&2
   if [[ -n "$herdr_endpoint" ]]; then
     if ! run_contract_runtime register --worktree "$worktree_path" --endpoint "$herdr_endpoint" >&2; then
-      echo "contract-worktree: Herdr registration incomplete; checkout preserved; register its runtime with the supplied endpoint before continuing" >&2
+      echo "contract-worktree: herdr-core registration incomplete; checkout preserved; register its runtime with the supplied endpoint before continuing" >&2
       return 1
     fi
   fi

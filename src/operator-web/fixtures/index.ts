@@ -28,11 +28,15 @@ import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
-import { agentsSettingsStore } from './settings';
+import { agentsSettingsStore, seatsSettingsStore } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
 import architectureMap from './architecture-map.json';
+// The board of #1474 projected from the recorded GitHub and hc reads in tests/fixtures/board.
+import board1474 from './board-1474.json';
+import { decodeBoard } from '../../core/board/board';
+import type { BoardRead } from '../board-view';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -70,7 +74,9 @@ export function fixtureProps(name: string): OperatorAppProps {
   const fixture = name as FixtureName;
   const activity: DevActivitySnapshotV2 = decodeDevActivitySnapshot(
     fixture === 'busy' ? busyDevActivity(now) : fixture === 'empty' ? emptyDevActivity(now) : degradedDevActivity(now));
-  const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : unavailableRuntimeOverlay();
+  // degraded: the hc core is below the pin, as in the Bots fixture.
+  const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : fixture === 'empty' ? unavailableRuntimeOverlay()
+    : unavailableRuntimeOverlay(0, { code: 'hc_version_mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } });
   const snapshot = fleet(fixture === 'busy' ? stableSnapshot : fixture === 'empty' ? emptySnapshot : degradedSnapshot);
   const notifyStatus = notify(now, fixture !== 'degraded');
   // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.
@@ -108,11 +114,18 @@ export function fixtureProps(name: string): OperatorAppProps {
     : fixture === 'empty' ? slackReviewsUnavailable('slack_pending') : degradedBotReviews(now)) };
   // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
   const agentsSettings = agentsSettingsStore(now, fixture);
+  const seatsSettings = seatsSettingsStore(fixture);
   // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
   const tests = (repositoryId: string): TestsRead => fixture === 'busy'
     ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }
     : { state: 'unavailable', reason: fixture === 'empty' ? 'tests_pending' : 'artifacts_missing' };
+  // busy: the recorded board of #1474 in repo-harness; empty: the board command failed; degraded: the hc seats could not be read.
+  const recorded = decodeBoard(board1474);
+  const board = (repositoryId: string, parent: number): BoardRead => fixture === 'empty' || repositoryId !== HARNESS_ID || parent !== recorded.parent.number
+    ? { state: 'unavailable', reason: 'board_collect_failed' }
+    : { state: 'ok', board: fixture === 'busy' ? recorded : { ...recorded, execution: { status: 'unavailable', reason: 'hc_unavailable' } } };
   return {
+    readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
     readRuntimeStatus: fixture === 'degraded' ? unavailable('runtime') : () => Promise.resolve(runtime),
@@ -135,6 +148,8 @@ export function fixtureProps(name: string): OperatorAppProps {
     readBotReviews: () => Promise.resolve(botReviews),
     readAgentsSettings: agentsSettings.read,
     writeAgentsSettings: agentsSettings.write,
+    readSeatsSettings: seatsSettings.read,
+    writeSeatsSettings: seatsSettings.write,
     readTests: repositoryId => Promise.resolve(tests(repositoryId)),
     // busy: a tree with a dirty file, a diagram and a refused symlink; empty: no collection yet; degraded: the reader is down.
     readDocsTree: repositoryId => docsAnswer(answer(fixture === 'busy' ? docsTreeAnswer(repositoryId, now) : fixture === 'empty' ? docsPendingAnswer

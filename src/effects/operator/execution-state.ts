@@ -28,8 +28,13 @@ function sessionDirectories(primaryRoot: string): string[] {
   return names.map(name => join(base, name));
 }
 
-function verify(primaryRoot: string, dir: string, task: string, role: string): TaskExecution {
-  const refuse = (reason: UnverifiedExecutionReason): TaskExecution => ({ state: 'unverified', task, role, reason });
+/** The core of a live hc task session, by its socket; null when the core does not answer. */
+export type HcCoreIdOf = (socket: string) => Promise<string | null>;
+/** The hc terminal of a verified session and the socket of its core, which never leaves the collector child. */
+type Verified = { readonly execution: TaskExecution; readonly terminal: { readonly address: string; readonly name: string; readonly socket: string } | null };
+
+function verify(primaryRoot: string, dir: string, task: string, role: string): Verified {
+  const refuse = (reason: UnverifiedExecutionReason): Verified => ({ execution: { state: 'unverified', task, role, reason }, terminal: null });
   if (existsSync(join(dir, 'closed.json'))) return refuse('closed');
   let binding: TaskPaneBinding;
   try { binding = readTaskAgent(primaryRoot, task, role).binding; } catch { return refuse('binding_invalid'); }
@@ -49,18 +54,20 @@ function verify(primaryRoot: string, dir: string, task: string, role: string): T
   try { if (digest(readTaskAgent(primaryRoot, task, role).binding) !== bindingDigest) return refuse('binding_mismatch'); }
   catch { return refuse('binding_invalid'); }
   const admitted = binding.task_admission?.identity.branch ?? null;
-  return { state: 'verified', task, role, issue_id: binding.task_admission?.identity.issue_id ?? null,
+  // hc never reuses an address on its core, so the bound address still names this session's terminal.
+  return { execution: { state: 'verified', task, role, issue_id: binding.task_admission?.identity.issue_id ?? null,
     branch: admitted?.startsWith(BRANCH_REF) ? admitted.slice(BRANCH_REF.length) : null, agent: native.host, runtime: binding.runtime, native_session_id: native.native_session_id,
-    herdr_pane: binding.runtime === 'herdr' ? { session: binding.endpoint.session, workspace_id: binding.workspace_id,
-      pane_id: binding.pane_id, agent_name: binding.agent_name } : null };
+    hc_terminal: null },
+    terminal: binding.runtime === 'herdr-core' ? { address: binding.terminal_id, name: binding.terminal_name, socket: binding.endpoint.socket } : null };
 }
 
 /**
  * Background collector for task execution state. It reads only the task-agent
- * records and the OS process table: no conversation, no terminal text, no write.
- * The snapshot holds no path, endpoint home or process identity string.
+ * records, the OS process table and the core id of each live hc session: no
+ * conversation, no terminal text, no write. The snapshot holds no path,
+ * endpoint home or process identity string.
  */
-export function collectTaskExecutionStates(repoRoot: string): TaskExecutionSnapshot {
+export async function collectTaskExecutionStates(repoRoot: string, coreIdOf: HcCoreIdOf): Promise<TaskExecutionSnapshot> {
   const primaryRoot = taskRepository(repoRoot).primary_root;
   const executions: TaskExecution[] = [];
   for (const dir of sessionDirectories(primaryRoot)) {
@@ -70,7 +77,10 @@ export function collectTaskExecutionStates(repoRoot: string): TaskExecutionSnaps
     const { task, role } = stored ?? {};
     // A record outside the directory that its task and role select names no session of that task.
     if (typeof task !== 'string' || typeof role !== 'string' || taskSessionDirectory(primaryRoot, task, role) !== dir) continue;
-    executions.push(verify(primaryRoot, dir, task, role));
+    const { execution, terminal } = verify(primaryRoot, dir, task, role);
+    const core_id = execution.state === 'verified' && terminal !== null ? await coreIdOf(terminal.socket) : null;
+    executions.push(execution.state !== 'verified' || core_id === null || terminal === null ? execution
+      : { ...execution, hc_terminal: { address: terminal.address, name: terminal.name, core_id } });
   }
   return { protocol: 1, kind: 'operator_task_execution', observed_at: new Date().toISOString(), executions };
 }

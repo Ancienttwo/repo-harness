@@ -1,7 +1,6 @@
 // Bot access fixtures. Each passes the strict decoder. Like the collector's
 // projection, none holds a token, passphrase, webhook URL or local path.
 import type { BotAccessSnapshotV1 } from '../../core/operator/bot-access';
-import { HERDR_OBSERVATION_PROTOCOL, HERDR_OBSERVATION_REVISION, HERDR_OBSERVATION_VERSION } from '../../core/operator/herdr-pin';
 import { NOTIFY_PLUGIN_ID, type NotifyDeliveryV1, type NotifyStatusV1 } from '../../core/operator/notify-status';
 import { slackTsToIso, type SlackReviewsSnapshotV1, type SlackReviewThreadV1 } from '../../core/operator/slack-review';
 import { HARNESS_ID } from './dev-activity';
@@ -14,8 +13,8 @@ const HOUR = 3_600_000;
 const DAY = 86_400_000;
 const at = (time: number) => new Date(time).toISOString();
 
-/** The observation pin the server compares a running Herdr server against. */
-const EXPECTED = { version: HERDR_OBSERVATION_VERSION, protocol: HERDR_OBSERVATION_PROTOCOL, revision: HERDR_OBSERVATION_REVISION };
+/** The policy pin of the scenario; the server reads the real one from the registered repository policies. */
+const PIN = { min_version: '0.1.17' };
 const REGISTRY_REVISION = `sha256:${'4c'.repeat(32)}`;
 
 function notifyStatus(now: number, enabled: NotifyStatusV1['enabled'], last: NotifyDeliveryV1): NotifyStatusV1 {
@@ -26,11 +25,11 @@ function notifyStatus(now: number, enabled: NotifyStatusV1['enabled'], last: Not
   };
 }
 
-/** Every section read: two registered Bots, an aligned Herdr server with three agent panes. */
+/** Every section read: two registered Bots, an hc core at the pin with three task terminals. */
 export function busyBotAccess(now: number): BotAccessSnapshotV1 {
   const sent = at(now - 40 * MINUTE);
   return {
-    protocol: 1, kind: 'operator_bot_access', observed_at: at(now - 20_000),
+    protocol: 2, kind: 'operator_bot_access', observed_at: at(now - 20_000),
     bots: { state: 'ok', bots: [
       { bot_id: 'grok-pm', name: 'Grok PM', host: 'Grok', slack_bot_id: null, herdr_agent: 'grok-pm' },
       { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B07HERMES1', herdr_agent: 'hermes' },
@@ -47,17 +46,13 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
         last_audit: { state: 'ok', entry: { at: at(now - 3 * HOUR), tool: 'write_prd', status: 'blocked', bot: { state: 'unregistered' } } } },
       { repo_id: DOCS_ID, label: 'field-notes', access_mode: 'read_only', last_audit: { state: 'missing' } },
     ] },
-    herdr: {
-      state: 'ok', session: 'main',
-      status: { state: 'ok', value: {
-        client: { version: '0.9.5', protocol: 22 },
-        server: { status: 'running', version: { state: 'aligned', expected: EXPECTED, actual: { version: '0.9.5', protocol: 22 } }, restart_needed: false },
-      } },
-      snapshot: { state: 'ok', value: { workspaces: 2, tabs: 5, panes: 7, agents: [
-        { pane_id: 'w1:p1', agent: 'claude', name: 'hermes', agent_status: 'idle', bot: { state: 'registered', bot_id: 'hermes' } },
-        { pane_id: 'w2:p1', agent: 'codex', name: 'kanban-redesign', agent_status: 'working', bot: { state: 'unregistered' } },
-        { pane_id: 'w2:p2', agent: 'claude', name: null, agent_status: 'blocked', bot: { state: 'unregistered' } },
-      ] } },
+    hc: {
+      state: 'ok', version: { state: 'ok', value: { state: 'aligned', expected: PIN, actual: { version: '0.1.17' } } }, herdr_app: { state: 'not_pinned' },
+      terminals: { state: 'ok', value: [
+        { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', status: 'working' },
+        { address: 't1b', name: 'task-7a3e9c1d5b2f4e6a8c90', status: 'blocked' },
+        { address: 't7', name: null, status: 'unknown' },
+      ] },
     },
     notify: {
       state: 'ok', status: notifyStatus(now, 'enabled', { at: sent, result: 'failed' }),
@@ -69,11 +64,11 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
 
 /**
  * The Bot registry and `mcp doctor` fail, one audit log is unreadable, the
- * notify plugin is disabled, and Herdr runs an older 0.9.3 server (1-BOTS-F1).
+ * notify plugin is disabled, and the hc core is 0.1.15, below the pin (1-BOTS-F1).
  */
 export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
   return {
-    protocol: 1, kind: 'operator_bot_access', observed_at: at(now - 6 * MINUTE),
+    protocol: 2, kind: 'operator_bot_access', observed_at: at(now - 6 * MINUTE),
     bots: { state: 'unavailable', reason: 'bot_registry_invalid' },
     mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
     registry: { state: 'ok', authorization_revision: 12, registry_revision: REGISTRY_REVISION, repos: [
@@ -81,13 +76,9 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
       { repo_id: SITE_ID, label: 'operator-site', access_mode: 'read_only',
         last_audit: { state: 'ok', entry: { at: at(now - 2 * DAY), tool: 'harness_status', status: 'failed', bot: { state: 'unavailable' } } } },
     ] },
-    herdr: {
-      state: 'ok', session: 'main',
-      status: { state: 'ok', value: {
-        client: { version: '0.9.5', protocol: 22 },
-        server: { status: 'running', version: { state: 'mismatch', expected: EXPECTED, actual: { version: '0.9.3', protocol: 22 } }, restart_needed: false },
-      } },
-      snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' },
+    hc: {
+      state: 'ok', version: { state: 'ok', value: { state: 'mismatch', expected: PIN, actual: { version: '0.1.15' } } }, herdr_app: { state: 'not_pinned' },
+      terminals: { state: 'unavailable', reason: 'hc_version_mismatch' },
     },
     notify: {
       state: 'ok', status: notifyStatus(now, 'disabled', { at: at(now - 2 * DAY), result: 'failed' }),

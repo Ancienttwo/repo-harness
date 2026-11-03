@@ -18,6 +18,9 @@ source:
   include:
     - "src/core/operator/**"
   exclude:
+    - "src/core/operator/doc-session-agent-record.ts"
+    - "src/core/operator/doc-session-record.ts"
     - "src/core/operator/public-text.ts"
     - "src/core/operator/tests.ts"
+    - "src/core/operator/worktree-cleanup-observation.ts"
     - "src/core/operator/worktrees.ts"

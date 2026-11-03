@@ -1,10 +1,10 @@
 # Kanban runtime observations
 
-The operator console reads a separate runtime overlay. Observations never admit work, release leases, accept results or change evidence. The overlay uses `repo-harness.runtime-overlay.v6`. The configured service has no task identity source, so its `badges` array is empty. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
+The operator console reads a separate runtime overlay. Observations never admit work, release leases, accept results or change evidence. The overlay uses `repo-harness.runtime-overlay.v7`. The configured service has no task identity source, so its `badges` array is empty. Its `native_sources` array contains independent native session or terminal observations. Native observations have no task binding.
 
 Without configuration, `/api/v1/runtime/status` reports unavailable. Native mode needs no Herdr process, socket or fork. The operator owner supplies an absolute config path with `repo-harness operator serve --runtime-status-config /authorized/runtime-config.json`.
 
-The unreleased config v1 is replaced by the closed `repo-harness.runtime-config.v2` union. Old config files fail closed. A service uses either native capture files or the optional Herdr adapter. It cannot mix their clocks. Native mode accepts one through eight explicit sources. Source IDs and paths must be unique. The reader does not scan HOME, logs or sockets.
+The unreleased config v1 is replaced by the closed `repo-harness.runtime-config.v2` union. Old config files fail closed. A service uses either native capture files or the optional herdr-core adapter. It cannot mix their clocks. Native mode accepts one through eight explicit sources. Source IDs and paths must be unique. The reader does not scan HOME, logs or sockets.
 
 ```json
 {
@@ -52,35 +52,31 @@ Native settled, idle, error and cancelled states are program reports. They do no
 
 Runtime source health remains separate from task identity. The native roster still reads the independent runtime overlay. It does not assign a terminal or session observation to a card.
 
-## Optional Herdr source
+## Optional herdr-core source
 
-Herdr remains optional. Observations are unbound because the pipeline identity source is retired. Herdr mode has empty task badges and an empty `native_sources` array. Select it explicitly with this config shape:
+The herdr-core source is optional. Observations are unbound because the pipeline identity source is retired. herdr-core mode has empty task badges and an empty `native_sources` array. Select it explicitly with this config shape:
 
 ```json
 {
   "protocol": "repo-harness.runtime-config.v2",
-  "kind": "herdr",
+  "kind": "herdr-core",
   "source_host": "authorized-host",
-  "herdr_session": "authorized-session",
-  "socket_path": "/authorized/herdr.sock",
   "deadline_ms": 1000
 }
 ```
 
-Herdr mode starts owned Unix socket observations before HTTP serving. GET only reads the cache. The service subscribes before snapshots, serializes refresh, rereads on intervening events, refreshes every 30 seconds, and resubscribes with a new source epoch on disconnect or `events_lost`. Shutdown closes only its own sockets and timer. Unreachable or unsupported sources report unavailable. Successful snapshots update observation time, not agent progress time. Failed refresh preserves the original age. Five minutes without a successful snapshot marks data stale; silent working agents do not become errors.
+The config names no core and no socket. The service reads the core that its environment selects (`HC_SESSION` or `HC_SOCKET`), through the typed `hc` helpers in `src/effects/terminal/herdr-core.ts`. It reads only terminals with the label `repo-harness.role=task-session`.
 
-The base socket codec follows [immutable Herdr source](https://github.com/herdrdev/herdr/tree/4dc23bb15d4a2fd2c093abfb509f903c3015bf56). The schema revision is [upstream v0.9.5 `2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01`](https://github.com/herdrdev/herdr/commit/2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01). The pin lives in `src/core/operator/herdr-pin.ts` so browser bundles and the Node transport read one value.
+Before it reads terminals, the service runs `hc server status --json`. The core identity is `core.id`. The version must be at or above the pin: the highest `external_tooling.herdr_core.min_version` over the policies of the registered repositories. When no policy gives a pin, the source is unavailable with `hc_pin_unavailable`. A core below the pin is unavailable with `hc_version_mismatch` and shows the expected and the actual version. A status read starts a stopped core; this is hc behavior.
 
-The codec requires reported version 0.9.5 and protocol 22. These fields do not attest the remote binary commit. Only `ping`, `session.snapshot` and `events.subscribe` are sent. Each connection's version check requires exactly 0.9.5 and protocol 22. Global lifecycle subscriptions precede exact pane status subscriptions and a second snapshot. Titles, cwd, terminal text, arbitrary event payloads and raw agent session paths are excluded from the public projection. The agent-session object is represented by a digest.
+The service opens one `hc events` stream before HTTP serving. Its first snapshot completes the subscription. Each later event invalidates the cache; a `missed` notice starts a new source epoch. Each refresh is a new one-shot `hc events` snapshot. The snapshot `seq` is the revision of every terminal in it. When the stream ends, the service reconnects after one second, and checks the version again first. GET only reads the cache. Shutdown closes only its own `hc` children and timer. Five minutes without a successful snapshot marks data stale; silent working agents do not become errors.
 
-### Breaking change: remove retired binding keys
+hc `idle`, `working` and `blocked` are agent observations. hc `done` displays "Idle · not seen". It does not mean accepted completion. A terminal without a status report, or with another state, is `unknown`. The blocking reason is unknown. hc has no pane, workspace or agent-session field, so the overlay has none. Titles, cwd, argv, terminal text and the per-terminal scope token are excluded from the public projection.
 
-Herdr v2 config files must remove `bindings_path` and `pipeline_snapshot`. This includes files that set both keys to `null`. The service rejects either key with `runtime_config_retired_fields` and an error that names both keys. Edit the config file before starting `operator serve --runtime-status-config <file>` again. Native v2 config files keep their current shape.
+### Breaking change: classic Herdr config is retired
 
-Task badge binding through a manifest is removed. The service no longer opens a pipeline snapshot or verifies dispatch bindings. Observations remain unclaimed. No task association comes from titles, cwd or other local guesses.
+The classic Herdr adapter (Herdr 0.9.5, socket protocol 22) is removed. A config with `"kind": "herdr"` fails with `runtime_config_classic_herdr_retired`. The error gives the herdr-core shape. Remove `herdr_session` and `socket_path`, set `"kind": "herdr-core"`, and start `operator serve --runtime-status-config <file>` again. Native v2 config files keep their current shape. Overlay v6 caches are rejected; the browser and server update together to v7.
 
-Herdr `idle`, `working`, `blocked`, `unknown` and readable `done` remain supported agent observations. Agent `done` displays “Idle · not seen”. It does not mean accepted completion. Its blocking reason is unknown.
+Task badge binding through a manifest stays removed. No task association comes from titles, cwd or other local guesses.
 
-Herdr mode observes only `agent_status`.
-
-Backend tests cover a real Unix socket and the HTTP cache path with controlled structured frames. The Herdr adapter does not install a daemon or start a provider.
+Backend tests use a fake `hc` that writes the probed hc 0.1.17 wire format. They cover the version check, the pin, reconnect, `missed` and the HTTP cache path. The adapter does not install a daemon or start a provider.

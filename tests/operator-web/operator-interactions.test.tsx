@@ -1,16 +1,13 @@
 import { AdmittedTaskContext } from '../../src/operator-web/AdmittedTaskContext';
 import { afterEach, beforeEach, describe, expect, test } from 'bun:test';
-import { act } from 'react';
+import { act, useRef } from 'react';
 import { createRoot, type Root } from 'react-dom/client';
 import { Window } from 'happy-dom';
 import { useObservationRefresh } from '../../src/operator-web/useObservationRefresh';
 
 import { OperatorApp, OPERATOR_REPOSITORY_STORAGE_KEY } from '../../src/operator-web/App';
-import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
-import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
-import { busyDevActivity, emptyExecution, HARNESS_ID } from '../../src/operator-web/fixtures/dev-activity';
-import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { LOGO_MARK, MASCOTS } from '../../src/operator-web/brand';
+import { DrawerFrame, useModalFocus } from '../../src/operator-web/Drawer';
 import { copyOperatorIdentifier } from '../../src/operator-web/clipboard';
 import { asApiError, fetchOperatorSnapshot } from '../../src/operator-web/fleet-api';
 import { defaultCollapsedGroups, groupWorklist, primaryCause, taskDisplayLabel, taskKey } from '../../src/operator-web/worklist';
@@ -561,13 +558,18 @@ describe('operator web interactions', () => {
   });
 
   test('drawer Tab traversal skips copy controls inside a closed disclosure until it opens', async () => {
-    const now = Date.now(), activity = decodeDevActivitySnapshot(busyDevActivity(now)), worktrees = busyWorktrees(now);
-    window.location.hash = `#board/${encodeURIComponent(`${HARNESS_ID}:feat/pipeline-observer`)}`;
-    await mount(<OperatorApp initialSnapshot={stableSnapshot} initialLocale="en" fetchSnapshot={async () => stableSnapshot}
-      initialDevActivity={activity} fetchDevActivity={async () => activity}
-      initialRuntimeOverlay={unavailableRuntimeOverlay()} readRuntimeStatus={async () => unavailableRuntimeOverlay()}
-      readNotifyStatus={() => new Promise(() => {})} initialWorktrees={worktrees} readWorktrees={async () => worktrees}
-      readExecution={async id => emptyExecution(id, now)} />);
+    function Harness() {
+      const dialogRef = useRef<HTMLElement | null>(null), closeRef = useRef<HTMLButtonElement | null>(null);
+      useModalFocus({ dialogRef, closeRef, identity: 'subject', onClose: () => {} });
+      return (
+        <DrawerFrame dialogRef={dialogRef} labelledBy="harness-title" closeLabel="Close" onClose={() => {}}
+          header={<header><h2 id="harness-title">Subject</h2><button ref={closeRef} type="button">Close</button></header>}>
+          <a href="#board">Open</a>
+          <details><summary>More</summary><button type="button">Copy branch</button><button type="button">Copy head</button></details>
+        </DrawerFrame>
+      );
+    }
+    await mount(<Harness />);
     const dialog = document.querySelector('[role="dialog"]')!;
     const details = Array.from(dialog.querySelectorAll<HTMLDetailsElement>('details')).at(-1)!;
     const summary = details.querySelector<HTMLElement>('summary')!;

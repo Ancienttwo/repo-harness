@@ -2,7 +2,6 @@ import { useMemo, useState, type ReactNode } from 'react';
 import { Banner } from '@cloudflare/kumo';
 import { HourglassIcon, WarningIcon } from '@phosphor-icons/react';
 import { DEV_ACTIVITY_COLUMNS, type DevActivityAttention, type DevActivityItem, type DevActivitySnapshotV2 } from '../core/dev-activity/types';
-import { BoardState } from './Board';
 import { Mascot } from './brand';
 import { attentionItem, failedSources, repositoryLabel, truncatedCategories, type DevActivityView } from './dev-activity';
 import type { OperatorTranslate } from './i18n';
@@ -18,7 +17,7 @@ import {
   type ExecutionResult,
   type ItemOwner,
 } from './repository-reads';
-import { ExternalLink, PageLink, StatusDot } from './ui';
+import { BoardState, ExternalLink, PageLink, StatusDot } from './ui';
 import type { WorkspaceLocation } from './workspace-location';
 import { reclaimableSpace, spaceWords, worktreesOf, type WorktreesView } from './worktrees';
 
@@ -29,7 +28,6 @@ const TODAY_PREVIEW = 3;
 const BOARD: WorkspaceLocation = { workspace: 'board', module: null, item: null };
 const SYSTEM: WorkspaceLocation = { workspace: 'system', module: null, item: null };
 const WORKTREES: WorkspaceLocation = { workspace: 'worktrees', module: null, item: null };
-const boardItem = (item: string): WorkspaceLocation => ({ workspace: 'board', module: null, item });
 
 type Open = (next: WorkspaceLocation) => void;
 
@@ -94,7 +92,7 @@ function WaitingRow({ row, snapshot, executions, now, onOpen, t }: {
         <StatusDot tone="accent" className="mt-1.5" />
         <div className="min-w-0">
           {item
-            ? <PageLink to={boardItem(item.id)} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{row.summary}</PageLink>
+            ? <PageLink to={BOARD} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{row.summary}</PageLink>
             : <p className="truncate text-sm font-medium text-kumo-strong">{row.summary}</p>}
           <p className="type-caption truncate text-kumo-subtle">{t(`attention.kind.${row.kind}`)} · {where(snapshot, item, row.repository_id)}</p>
         </div>
@@ -119,7 +117,7 @@ function ContinueRow({ item, snapshot, executions, now, onOpen, t }: {
       <div className="flex min-w-0 flex-1 items-start gap-3">
         <StatusDot tone="active" className="mt-1.5" />
         <div className="min-w-0">
-          <PageLink to={boardItem(item.id)} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{item.title}</PageLink>
+          <PageLink to={BOARD} onOpen={onOpen} className="block truncate text-sm font-medium text-kumo-strong hover:underline">{item.title}</PageLink>
           <p className="type-caption truncate text-kumo-subtle">{where(snapshot, item, item.repository_id)}</p>
         </div>
       </div>
@@ -151,7 +149,7 @@ function ItemLinks({ items, onOpen }: { readonly items: readonly { readonly id: 
     <ul className="mt-1 flex flex-col gap-1">
       {items.map(entry => (
         <li key={entry.id} className="flex min-w-0 items-baseline gap-2">
-          <PageLink to={boardItem(entry.id)} onOpen={onOpen} className="min-w-0 truncate text-kumo-link hover:underline">{entry.text}</PageLink>
+          <PageLink to={BOARD} onOpen={onOpen} className="min-w-0 truncate text-kumo-link hover:underline">{entry.text}</PageLink>
           <span className="type-caption shrink-0 text-kumo-subtle">{entry.meta}</span>
         </li>
       ))}

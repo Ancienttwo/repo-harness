@@ -135,8 +135,8 @@ function executionView(repositoryId: string, now: number, tasks: readonly unknow
 }
 
 /**
- * The execution route beside the busy board. repo-harness: Codex in a Herdr
- * pane on the console redesign, Claude Code in a terminal on the pipeline
+ * The execution route beside the busy board. repo-harness: Codex in an hc
+ * terminal on the console redesign, Claude Code in a terminal on the pipeline
  * observer, a session whose provider exited, and one session left out because
  * its branch is not public text. operator-site has no first collection yet.
  */
@@ -144,12 +144,12 @@ export function busyExecution(repositoryId: string, now: number): ExecutionRead 
   if (repositoryId === SITE_ID) return { state: 'unavailable', reason: 'execution_state_pending' };
   if (repositoryId !== HARNESS_ID) return executionView(repositoryId, now, [], 0);
   return executionView(repositoryId, now, [
-    { state: 'verified', task: 'kanban-redesign', role: 'implementer', issue_id: '608', branch: 'feat/kanban-human-redesign', agent: 'codex', runtime: 'herdr',
+    { state: 'verified', task: 'kanban-redesign', role: 'implementer', issue_id: '608', branch: 'feat/kanban-human-redesign', agent: 'codex', runtime: 'herdr-core',
       follow_up: { task_id: 'kanban-redesign', resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
-        herdr_pane: { session: 'main', workspace_id: 'w2', pane_id: 'w2:p1', agent_name: 'implementer' } } },
+        hc_terminal: { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', open_command: `herdr-app do terminal.keep '{"terminal":"t12"}'` } } },
     { state: 'verified', task: 'pipeline-observer', role: 'deep-reasoner', issue_id: '603', branch: 'feat/pipeline-observer', agent: 'claude', runtime: 'terminal',
-      follow_up: { task_id: 'pipeline-observer', resume: { host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' }, herdr_pane: null } },
-    { state: 'unverified', task: 'oar-0-45', role: 'implementer', reason: 'provider_exited', follow_up: { task_id: 'oar-0-45', resume: null, herdr_pane: null } },
+      follow_up: { task_id: 'pipeline-observer', resume: { host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' }, hc_terminal: null } },
+    { state: 'unverified', task: 'oar-0-45', role: 'implementer', reason: 'provider_exited', follow_up: { task_id: 'oar-0-45', resume: null, hc_terminal: null } },
   ], 1);
 }
 

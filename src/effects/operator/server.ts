@@ -34,6 +34,9 @@ import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModu
 import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '../architecture/archctx-provider';
 export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
+import { decodeBoard } from '../../core/board/board';
+import { BoardReadError, readRepositoryBoard, type BoardReadInput } from './board-read';
+import type { BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { createHash, randomUUID } from 'node:crypto';
 import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
@@ -51,6 +54,8 @@ import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
+import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE, SEATS_CONFIGURATION_FAILURES, readSeatsSettings, seatsSettingsWriteRoute } from './seats-settings-route';
+import { SeatsConfigurationError } from './seats-configuration';
 import { AgentsConfigurationError } from '../configuration/agents-configuration';
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
@@ -101,6 +106,8 @@ export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Z
  * second opinion about it.
  */
 export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tests$/u;
+/** The board of one parent issue in one registered repository; `?parent=<issue number>` is required. */
+export const OPERATOR_BOARD_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
 export const OPERATOR_DOCS_TREE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/tree$/u;
 export const OPERATOR_DOCS_FILE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/file$/u;
@@ -147,6 +154,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'bot_reviews', method: 'GET', pattern: OPERATOR_BOT_REVIEWS_PATH, write: false }),
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
+  Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
@@ -160,6 +168,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false }),
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
+  Object.freeze({ id: 'settings_seats', method: 'GET', pattern: OPERATOR_SETTINGS_SEATS_PATH, write: false }),
+  // It changes only the host config's `seats` section; running panes keep their launch arguments.
+  Object.freeze({ id: 'settings_seats_write', method: 'POST', pattern: OPERATOR_SETTINGS_SEATS_ROUTE.source, write: true }),
   // The second write route: it verifies citations, then creates the doc session's worktree in the managed root.
   Object.freeze({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true }),
   Object.freeze({ id: 'architecture_modules', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MODULES_ROUTE.source, write: false }),
@@ -238,6 +249,8 @@ export interface OperatorServerOptions {
   readonly read_architecture_map?: (repositoryId: string) => ArchitectureMapRepositoryCache;
   /** Start the in-process architecture map collector (operator serve). Ignored when a cache reader is injected. */
   readonly architecture_map_collector?: boolean;
+  /** The board read: the board CLI's JSON for one repository and parent. Production runs the CLI; only tests inject another. */
+  readonly read_board?: (input: BoardReadInput) => Promise<unknown>;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -443,6 +456,18 @@ const EXECUTION_UNAVAILABLE: Readonly<Record<ExecutionStateUnavailableReason, { 
   registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   execution_state_unavailable: { status: 503, message: 'The task session records of this repository could not be read.', next_action: 'Wait for the next collection, then run `repo-harness fleet board --json` for diagnostics.' },
+};
+
+const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
+  board_collect_failed: { status: 503, message: 'The board read failed: GitHub, the local repository or the parent issue could not be read.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
+  board_source_invalid: { status: 503, message: 'GitHub returned a board source that failed validation.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
+  board_unavailable: { status: 503, message: 'The board command did not return a board.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
+  board_timeout: { status: 504, message: 'The board read did not finish in time.', next_action: 'Refresh the board and retry.' },
+  board_parent_invalid: { status: 400, message: 'The board needs exactly one parent issue number.', next_action: 'Request the board with ?parent=<issue number>.' },
+  board_invalid: { status: 503, message: 'The board failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same board protocol.' },
+  board_busy: { status: 503, message: 'Too many board reads are in progress.', next_action: 'Retry in a few seconds.' },
 };
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -1013,6 +1038,9 @@ export async function startOperatorServer(
   let nextSnapshotSequence = 1;
   const activeTaskReadCancellers = new Set<() => void>();
   const activeTaskReadCompletions = new Set<Promise<void>>();
+  const activeBoardReads = new Set<AbortController>();
+  const boardCompletions = new Set<Promise<void>>();
+  const boardEnvironment: NodeJS.ProcessEnv = { ...process.env, ...repositoryWorkerEnvironment(options.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT, GH_PROMPT_DISABLED: '1' };
 
   interface FleetObservation {
     readonly key: string;
@@ -1210,6 +1238,40 @@ export async function startOperatorServer(
   };
 
   /**
+   * One board CLI run per request, under its own concurrency cap. The CLI's
+   * JSON is decoded once here; a client that leaves aborts the run.
+   */
+  const handleBoardRead = (request: IncomingMessage, response: ServerResponse, headOnly: boolean, repositoryId: string, parent: number): void => {
+    const refuse = (code: keyof typeof BOARD_UNAVAILABLE) => {
+      const refusal = BOARD_UNAVAILABLE[code];
+      sendRefusal(request, response, refusal.status, errorBody(code, refusal.message, refusal.next_action), headOnly);
+    };
+    if (closed || activeBoardReads.size >= maxConcurrency) { refuse('board_busy'); return; }
+    const controller = new AbortController();
+    activeBoardReads.add(controller);
+    const onClose = () => controller.abort();
+    response.once('close', onClose);
+    const read = options.read_board ?? readRepositoryBoard;
+    const completion: Promise<void> = Promise.resolve()
+      .then(() => read({ repository_id: repositoryId, parent, env: boardEnvironment, signal: controller.signal }))
+      .then((value) => {
+        if (response.destroyed) return;
+        let board;
+        try { board = decodeBoard(value); } catch { refuse('board_invalid'); return; }
+        sendJson(response, 200, board, headOnly);
+      }, (error: unknown) => {
+        if (response.destroyed) return;
+        refuse(error instanceof BoardReadError ? error.code : 'board_unavailable');
+      })
+      .finally(() => {
+        activeBoardReads.delete(controller);
+        response.removeListener('close', onClose);
+        boardCompletions.delete(completion);
+      });
+    boardCompletions.add(completion);
+  };
+
+  /**
    * One object request to the collector's resident process, under its own
    * concurrency cap and deadline. A client that leaves gets no late reply.
    */
@@ -1259,6 +1321,7 @@ export async function startOperatorServer(
   const injectedWriteRoutes = options.write_routes ?? [];
   const writeRoutes = [
     agentsSettingsWriteRoute(readAgentRuntimes, options.env),
+    seatsSettingsWriteRoute(options.env),
     docSessionCreateRoute({
       env: options.env ?? process.env,
       platform: options.docs_session_platform,
@@ -1538,6 +1601,21 @@ export async function startOperatorServer(
       return;
     }
 
+    if (pathname === OPERATOR_SETTINGS_SEATS_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Seat settings accept no query selectors.'), headOnly);
+        return;
+      }
+      try {
+        sendJson(response, 200, readSeatsSettings(options.env), headOnly);
+      } catch (error) {
+        if (!(error instanceof SeatsConfigurationError)) throw error;
+        sendRefusal(request, response, SEATS_CONFIGURATION_FAILURES[error.code].status,
+          errorBody(error.code, error.message, SEATS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
+      }
+      return;
+    }
+
     if (pathname === OPERATOR_BOT_ACCESS_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Bot access accepts no query selectors.'), headOnly);
@@ -1661,6 +1739,24 @@ export async function startOperatorServer(
       handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, SESSION_OBSERVATION_FAILURES,
         'diff', options.read_task_diff,
         failure => failure === 'stale' ? 409 : 503);
+      return;
+    }
+
+    const boardRoute = OPERATOR_BOARD_ROUTE.exec(pathname);
+    if (boardRoute !== null) {
+      // A board read runs the board CLI and about ten GitHub reads; HEAD gets no read.
+      if (headOnly) {
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board route supports only GET.'), true, { Allow: 'GET' });
+        return;
+      }
+      const keys = [...url.searchParams.keys()];
+      const parent = url.searchParams.get('parent');
+      if (keys.length !== 1 || parent === null || !/^[1-9][0-9]{0,9}$/u.test(parent)) {
+        const refusal = BOARD_UNAVAILABLE.board_parent_invalid;
+        sendRefusal(request, response, refusal.status, errorBody('board_parent_invalid', refusal.message, refusal.next_action), headOnly);
+        return;
+      }
+      handleBoardRead(request, response, headOnly, boardRoute[1]!, Number(parent));
       return;
     }
 
@@ -1802,7 +1898,7 @@ export async function startOperatorServer(
   if (options.runtime_status_config && options.read_runtime_status) throw new OperatorServerError('invalid_argument', 'Select runtime config or cache reader.', 400);
   // Collector groups of a server that died with SIGKILL have no other owner.
   reapOrphanedProcessGroups();
-  const runtimeService = options.runtime_status_config ? await startRuntimeService(options.runtime_status_config) : null;
+  const runtimeService = options.runtime_status_config ? await startRuntimeService(options.runtime_status_config, { ...process.env, ...options.env }) : null;
   const devActivity = options.dev_activity_collector && !options.read_dev_activity
     ? startDevActivityCollector({
       env: options.env,
@@ -1891,9 +1987,11 @@ export async function startOperatorServer(
       // them: a retiring Fleet read must not leave other queues launching work.
       for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
       for (const cancel of activeTaskReadCancellers) cancel();
+      for (const controller of activeBoardReads) controller.abort();
       await Promise.allSettled([
         ...fleetCompletions,
         ...activeTaskReadCompletions,
+        ...boardCompletions,
       ]);
       if (!server.listening) return;
       await new Promise<void>((resolveClose, rejectClose) => {
