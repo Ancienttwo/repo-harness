@@ -15,6 +15,7 @@ source:
     - src/cli/commands/module.ts
     - src/cli/commands/setup-snapshot.ts
     - src/cli/commands/setup-check-child.ts
+    - src/cli/commands/seats.ts
   exclude:
     - src/cli/commands/module.ts
     - src/cli/commands/operator.ts
