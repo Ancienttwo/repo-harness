@@ -308,27 +308,39 @@ test('R5: two owning capabilities among the counted paths are a High signal; an 
         .map(entry => `${entry.reason}: ${entry.subject}`),
     ];
   };
-  const capabilities = '2 capabilities (capability.runtime-harness.operator, capability.runtime-harness.task-agent-host)';
-  const hit = (paths = '') => `#1499 changes ${capabilities}${paths}, a High signal, but #1476 is tier:low`;
+  const hit = `#1499 changes 2 capabilities (capability.runtime-harness.operator, capability.runtime-harness.task-agent-host), a High signal, but #1476 is tier:low`;
   const timedOut: RunArchctxProcess = () => ({ status: null, signal: null, stdout: '', stderr: '', timedOut: true });
   const rejected: RunArchctxProcess = () => ({ status: 1, signal: null, stdout: JSON.stringify(errorEnvelope('resolve', 'AC_SCHEMA_INVALID', 'boom')), stderr: '' });
-  // Owned capabilities {0, 1, 2} x unknown path {none, unowned, ambiguous}: every unknown path is in the result.
+  // Tier {below High, High} x unknown path {none, unowned, ambiguous} x owned capabilities {0, 1, 2}:
+  // every unknown path is in the result; the tier decides only the finding.
   const owned = [['tests/herdr-task-lifecycle.test.ts'], [task], [task, operator]] as const;
-  const grid: Record<string, readonly string[][]> = {
-    none: [[], [], [hit()]],
-    [unowned]: [0, 1].map(() => [`owner_undetermined: #1499 ${unowned} (unowned)`]).concat([[hit(` and 1 path with no single owner (${unowned} (unowned))`)]]),
-    [ambiguous]: [0, 1].map(() => [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]).concat([[hit(` and 1 path with no single owner (${ambiguous} (ambiguous))`)]]),
-  };
-  for (const [path, expected] of Object.entries(grid)) {
-    for (const [count, files] of owned.entries()) expect(r5([...files, ...(path === 'none' ? [] : [path])])).toEqual(expected[count]!);
-  }
+  for (const [tier, unknown, count, expected] of [
+    ['tier:low', null, 0, []],
+    ['tier:low', null, 1, []],
+    ['tier:low', null, 2, [hit]],
+    ['tier:low', unowned, 0, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:low', unowned, 1, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:low', unowned, 2, [`${hit}; 1 path with no single owner: ${unowned} (unowned)`]],
+    ['tier:low', ambiguous, 0, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:low', ambiguous, 1, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:low', ambiguous, 2, [`${hit}; 1 path with no single owner: ${ambiguous} (ambiguous)`]],
+    ['tier:high', null, 0, []],
+    ['tier:high', null, 1, []],
+    ['tier:high', null, 2, []],
+    ['tier:high', unowned, 0, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:high', unowned, 1, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:high', unowned, 2, [`owner_unknown: #1499 ${unowned} (unowned)`]],
+    ['tier:high', ambiguous, 0, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:high', ambiguous, 1, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:high', ambiguous, 2, [`owner_unknown: #1499 ${ambiguous} (ambiguous)`]],
+  ] as const) expect(r5([...owned[count], ...(unknown === null ? [] : [unknown])], {}, tier)).toEqual([...expected]);
   for (const [files, options, expected, tier, incomplete] of [
     // The recorded ambiguity of admitted-task-context.ts is between two components of the operator capability.
-    [[task, 'src/core/operator/admitted-task-context.ts'], {}, [hit()]],
-    [[task, operator, unowned, ambiguous], {}, [hit(` and 2 paths with no single owner (${unowned} (unowned), ${ambiguous} (ambiguous))`)]],
+    [[task, 'src/core/operator/admitted-task-context.ts'], {}, [hit]],
+    [[task, operator, unowned, ambiguous], {}, [`${hit}; 2 paths with no single owner: ${unowned} (unowned), ${ambiguous} (ambiguous)`]],
+    [[task, operator, unowned, ambiguous], {}, [`owner_unknown: #1499 ${unowned} (unowned) ${ambiguous} (ambiguous)`], 'tier:high'],
     // Without a tier label, the unevaluated entry names the unknown path too.
     [[task, operator, unowned], {}, [`tier_label_missing: #1499 #1476 ${unowned} (unowned)`], null],
-    [[task, operator, unowned], {}, [], 'tier:high'],
     [[task, operator], {}, ['files_incomplete: #1499'], 'tier:low', true],
     // Tests, docs, the model and root Markdown do not count; each has another recorded owner.
     [[task, 'src/effects/terminal/herdr.ts', 'tests/herdr-task-lifecycle.test.ts', 'docs/spec.md', '.archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml', 'README.md'],

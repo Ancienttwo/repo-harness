@@ -328,10 +328,10 @@ function boundaryCounted(path: string): boolean {
 /**
  * R5: the counted paths of an open pull request have two or more owning
  * capabilities, and an item that it closes or refs has a tier label below
- * High. A change across more than one capability boundary sets High. A
- * counted path with no single owner (unowned or ambiguous) is never dropped:
- * below two owned capabilities it leaves the rule unevaluated, and from two
- * owned capabilities the finding lists it (#1623 decision on round 1).
+ * High. A change across more than one capability boundary sets High. Every
+ * counted path with no single owner (unowned or ambiguous) appears in the R5
+ * output with its status, for every tier; the tier only decides whether R5
+ * also raises the finding (#1623 decision on round 2).
  */
 function r5(context: Context): void {
   const owners = context.board.path_owners;
@@ -344,22 +344,37 @@ function r5(context: Context): void {
     }
     const counted = pr.files.filter(boundaryCounted).map(path => byPath.get(path)!);
     const capabilities = [...new Set(counted.flatMap(owner => (owner.status === 'owned' ? [owner.capability] : [])))].sort();
-    // Every R5 entry of the pull request names each unknown path with its status.
     const unknown = counted.flatMap(owner => (owner.status === 'owned' ? [] : [`${owner.path} (${owner.status})`]));
-    if (capabilities.length < 2) {
-      if (unknown.length > 0) skip(context, 'R5', 'owner_undetermined', `#${pr.number} ${unknown.join(' ')}`);
-      continue;
+    const entries = capabilities.length < 2 ? [] : r5TierEntries(context, pr, capabilities);
+    // The R5 invariant lives here, after the tier branches: every entry of the pull request lists every unknown
+    // path, and when no branch made an entry, one entry carries them. Below two owned capabilities the signal
+    // is undetermined; from two it is certain, and only the owners of these paths are unknown.
+    if (unknown.length > 0 && entries.length === 0) {
+      entries.push({ kind: 'unevaluated', reason: capabilities.length < 2 ? 'owner_undetermined' : 'owner_unknown', subject: `#${pr.number}` });
     }
-    // An unknown path can only add a capability, so two owned capabilities already make the High signal certain.
-    const items = itemsOf(context.board, pr).map(number => context.board.items.find(item => item.number === number)!);
-    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R5', 'tier_label_missing', [`#${pr.number} #${item.number}`, ...unknown].join(' '));
-    const below = items.filter(item => item.tier === 'low' || item.tier === 'medium');
-    if (below.length > 0) {
-      const paths = unknown.length === 0 ? '' : ` and ${unknown.length} path${unknown.length === 1 ? '' : 's'} with no single owner (${unknown.join(', ')})`;
-      find(context, 'R5', { issues: below.map(item => item.number), pull_requests: [pr.number] },
-        `#${pr.number} changes ${capabilities.length} capabilities (${capabilities.join(', ')})${paths}, a High signal, but ${below.map(item => `#${item.number} is tier:${item.tier}`).join(', ')}`);
+    const paths = `${unknown.length} path${unknown.length === 1 ? '' : 's'} with no single owner: ${unknown.join(', ')}`;
+    for (const entry of entries) {
+      if (entry.kind === 'unevaluated') skip(context, 'R5', entry.reason, [entry.subject, ...unknown].join(' '));
+      else find(context, 'R5', { issues: entry.issues, pull_requests: [pr.number] }, unknown.length === 0 ? entry.message : `${entry.message}; ${paths}`);
     }
   }
+}
+
+type R5Entry =
+  | { readonly kind: 'finding'; readonly issues: number[]; readonly message: string }
+  | { readonly kind: 'unevaluated'; readonly reason: string; readonly subject: string };
+
+/** Two or more owned capabilities make the High signal certain: an unknown path can only add a capability. */
+function r5TierEntries(context: Context, pr: BoardPullRequestV1, capabilities: readonly string[]): R5Entry[] {
+  const items = itemsOf(context.board, pr).map(number => context.board.items.find(item => item.number === number)!);
+  const entries: R5Entry[] = items.filter(item => item.tier === null)
+    .map(item => ({ kind: 'unevaluated', reason: 'tier_label_missing', subject: `#${pr.number} #${item.number}` }));
+  const below = items.filter(item => item.tier === 'low' || item.tier === 'medium');
+  if (below.length > 0) {
+    entries.push({ kind: 'finding', issues: below.map(item => item.number),
+      message: `#${pr.number} changes ${capabilities.length} capabilities (${capabilities.join(', ')}), a High signal, but ${below.map(item => `#${item.number} is tier:${item.tier}`).join(', ')}` });
+  }
+  return entries;
 }
 
 function r4(context: Context): void {
