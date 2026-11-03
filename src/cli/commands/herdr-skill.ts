@@ -87,7 +87,8 @@ export function configureRequiredHerdrSkill(
   // `hc --skill` prints its manual and starts no hc core.
   const result = spawnSync("hc", ["--skill"], { env, encoding: "utf8", timeout: 5_000 });
   if (result.status !== 0) {
-    const why = result.error?.message ?? (result.stderr?.trim() || `exit ${result.status}`);
+    const why = result.error?.message
+      ?? (result.stderr?.trim() || (result.signal ? `signal ${result.signal}` : `exit ${result.status}`));
     return { step: STEP, status: "failed", detail: `hc --skill failed: ${why}` };
   }
   let content: string;
