@@ -1,5 +1,5 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e05fea8631182acb81574c4e449b12847296761c66c344b83d7633d1fabe0af8" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:04d917ac46e47bb9a7678bf1abccb5e119e65d9e40fc46a6ae445e983031c8ff" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
 > **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
@@ -60,6 +60,7 @@ flowchart LR
 - `depends-on` → `capability.verification.acceptance-review` — Test Acceptance Review behavior through its source modules.
 - `depends-on` → `capability.public-surface.action-commands` — Test Action Commands behavior through its source modules.
 - `depends-on` → `capability.public-surface.adoption` — Test Adoption behavior through its source modules.
+- `depends-on` → `capability.organization.board` — Test Board behavior through its source modules
 - `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.dsh-host` — Test DSH Host Plugin behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.external-source-intake` — Test External Source Intake behavior through its source modules.
@@ -78,6 +79,7 @@ flowchart LR
 入向關係:
 
 - `depends-on` ← `capability.public-surface.action-commands` — Run the skill evaluation engine for routing checks.
+- `depends-on` ← `capability.organization.board` — Match open CI repair issues by the marker that the CI report writes
 - `depends-on` ← `capability.verification.codegraph-readiness` — Use shared repository fixtures for CodeGraph resolver tests.
 - `depends-on` ← `capability.runtime-harness.global-runtime-reconciliation` — Use shared test fixtures for global runtime checks.
 

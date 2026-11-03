@@ -1,6 +1,6 @@
 # organization/publication 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:efcc348723784b4498e66aec3504538f19ec8b9ded6cbc36e03a647758901cb5" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-publication" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f0a37b85cab2e5dab23e6d2d3830d8665315c64e3f5e64d329710b5464fe95ad" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.publication`(kind `capability`)
 > **Matched Prefixes**:`src/core/publication/**`、`src/effects/publication/**`、`src/cli/commands/publication.ts`
@@ -59,6 +59,7 @@ flowchart LR
 
 入向關係:
 
+- `depends-on` ← `capability.organization.board` — Parse closing references and reuse the single-PR merge readiness projection
 - `depends-on` ← `capability.workflow-engine.contract-assets` — Read publication merge readiness from the merge helper.
 - `depends-on` ← `capability.verification.evals-checks` — Test PR Publication behavior through its source modules.
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the publication command
