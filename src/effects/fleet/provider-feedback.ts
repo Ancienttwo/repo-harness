@@ -2,7 +2,7 @@ import { type TaskMessageClaim } from '../../core/messages/task-message-claim';
 /** Manual GitHub feedback observation and durable intake. */
 import { spawnSync } from 'child_process';
 
-import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, canonicalFeedbackDeliveryReceiptBytes, canonicalFeedbackEventBytes, canonicalReactionAttemptReceiptBytes, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
+import { buildFeedbackDeliveryReceipt, buildFeedbackEvent, deriveFeedbackRevision, deriveReactionToken, projectRepairOffer, transitionFeedbackDeliveryReceipt, type FeedbackDeliveryTransitionInput, type FeedbackCheckConclusion, type FeedbackEventV1, type FeedbackFailingCheckV1, type FeedbackMergeability, type RepairOfferProjection } from '../../core/publication/feedback';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { withTaskLock } from '../locking/task-lock';
@@ -71,17 +71,6 @@ export interface FeedbackIntakeResult {
 export type PendingFeedbackOffer =
   | { readonly state: 'none'; readonly publication_id: string }
   | RepairOfferProjection;
-
-export interface FleetFeedbackProjection {
-  readonly pending_count: number;
-  readonly no_progress: boolean;
-  readonly repair_actions: readonly never[];
-  /** Event-set authority consumed by repair offers. */
-  readonly feedback_revision: string;
-  /** Digest of the publication, events, deliveries, and reaction attempts observed together. */
-  readonly store_revision: string;
-  readonly snapshot_consistency: 'stable' | 'changed_during_read';
-}
 
 export interface FleetFeedbackProjectionDependencies {
   readonly read_events: typeof readFeedbackEvents;
@@ -782,7 +771,7 @@ export function projectPendingFeedbackOffer(
   let lastTorn: unknown = null;
   for (let attempt = 0; attempt < 2; attempt += 1) {
     try {
-      return observeFeedbackProjection(input, gitBin, productionFleetFeedbackProjectionDependencies).projection;
+      return observeFeedbackProjection(input, gitBin, productionFleetFeedbackProjectionDependencies);
     } catch (error) {
       if (error instanceof TornReadError) {
         lastTorn = error;
@@ -796,13 +785,6 @@ export function projectPendingFeedbackOffer(
   throw new FeedbackError('feedback_incomplete', 'publication changed during both feedback offer projections', lastTorn);
 }
 
-interface FeedbackProjectionObservation {
-  readonly projection: PendingFeedbackOffer;
-  readonly pending_count: number;
-  readonly feedback_revision: string;
-  readonly store_revision: string;
-}
-
 const productionFleetFeedbackProjectionDependencies: FleetFeedbackProjectionDependencies = Object.freeze({
   read_events: readFeedbackEvents,
   read_deliveries: readFeedbackDeliveryReceipts,
@@ -813,7 +795,7 @@ function observeFeedbackProjection(
   input: FeedbackIntakeInput,
   gitBin: string,
   dependencies: FleetFeedbackProjectionDependencies,
-): FeedbackProjectionObservation {
+): PendingFeedbackOffer {
   const before = currentPublication(input);
   const publicationId = before.receipt.publication_id;
   const events = dependencies.read_events(input.repo_root, publicationId, gitBin);
@@ -868,63 +850,7 @@ function observeFeedbackProjection(
       reaction_attempts: reactions,
     });
   }
-  const storeRevision = publicationSha256(stablePublicationJson({
-    publication_receipt: stablePublicationJson(before.receipt),
-    admitted_session: before.session_bytes,
-    events: events.map(canonicalFeedbackEventBytes),
-    deliveries: deliveries.map(canonicalFeedbackDeliveryReceiptBytes),
-    reactions: reactions.map(canonicalReactionAttemptReceiptBytes),
-  }));
-  return Object.freeze({ projection, pending_count: events.length, feedback_revision: feedbackRevision, store_revision: storeRevision });
-}
-
-function fleetFeedbackProjection(
-  observation: FeedbackProjectionObservation,
-  snapshotConsistency: FleetFeedbackProjection['snapshot_consistency'],
-): FleetFeedbackProjection {
-  const projection = observation.projection;
-  return Object.freeze({
-    pending_count: observation.pending_count,
-    no_progress: projection.state === 'no_progress',
-    repair_actions: Object.freeze(projection.state === 'offered' ? [...projection.offer.allowed_actions] : []),
-    feedback_revision: observation.feedback_revision,
-    store_revision: observation.store_revision,
-    snapshot_consistency: snapshotConsistency,
-  });
-}
-
-/**
- * Observe every Fleet feedback field from one store revision. Each attempt
- * compares two complete observations; one changed attempt is retried, and a
- * second change is published only as explicitly torn input.
- */
-export function projectFleetFeedback(
-  input: FeedbackIntakeInput,
-  dependencyOverrides: Partial<FleetFeedbackProjectionDependencies> = {},
-): FleetFeedbackProjection {
-  const gitBin = input.git_bin ?? 'git';
-  const dependencies = { ...productionFleetFeedbackProjectionDependencies, ...dependencyOverrides };
-  let latest: FeedbackProjectionObservation | null = null;
-  let lastTorn: unknown = null;
-  for (let attempt = 0; attempt < 2; attempt += 1) {
-    try {
-      const before = observeFeedbackProjection(input, gitBin, dependencies);
-      const after = observeFeedbackProjection(input, gitBin, dependencies);
-      latest = after;
-      if (before.store_revision === after.store_revision) return fleetFeedbackProjection(after, 'stable');
-      lastTorn = new TornReadError('feedback store changed during Fleet projection');
-    } catch (error) {
-      if (error instanceof TornReadError || (error instanceof FeedbackError && error.code === 'feedback_incomplete' && attempt === 0)) {
-        lastTorn = error;
-        continue;
-      }
-      if (error instanceof FeedbackError) throw error;
-      if (error instanceof FeedbackStoreError) throw new FeedbackError(error.code, error.message, error);
-      throw new FeedbackError('feedback_incomplete', 'Fleet feedback projection failed', error);
-    }
-  }
-  if (latest !== null) return fleetFeedbackProjection(latest, 'changed_during_read');
-  throw new FeedbackError('feedback_incomplete', 'feedback store changed during both Fleet projections', lastTorn);
+  return projection;
 }
 
 /**

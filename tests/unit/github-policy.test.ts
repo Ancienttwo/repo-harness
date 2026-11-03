@@ -2,7 +2,7 @@ import { describe, expect, test } from 'bun:test';
 
 import { parseExternalSourcesPolicy, requireManualGithubPolicy } from '../../src/effects/github/policy';
 
-describe('external source policy', () => {
+describe('GitHub external_sources policy', () => {
   test('only absent or exact off policy disables refresh', () => {
     expect(parseExternalSourcesPolicy(undefined).mode).toBe('off');
     expect(parseExternalSourcesPolicy({ version: 1, mode: 'off' }).mode).toBe('off');

@@ -121,18 +121,13 @@ sequenceDiagram
 
 ## 3. P3: Retained fleet observations
 
-- `fleet board` joins each registered repository to provider issue observations and zero or more exact admitted sessions. Its result is read-only. It does not grant a claim or create a worktree.
-- `fleet board` and the operator show issue, PR readiness, inbox and runtime observations. They do not persist board columns or readiness flags.
 - Task messages remain immutable communication records. Per-recipient delivery receipts do not change a provider claim or PR state.
 - Admitted messages name the admission digest and the exact claim reference and revision. The manual inbox path checks that recipient before delivery or acknowledgement.
 - Message bodies remain untrusted data. The UserPromptSubmit inbox adapter is a no-op and prints no message context.
 - Inbox layout migration retains canonical recipient keys and checks record bytes. It refuses retired reply records and deletes nothing. The operator reader performs no migration.
-- Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Provider feedback and per-repository board reads remain for slice C.
+- Global fleet offers and acquire, Engineer steer APIs and WorkEnvelope issuance are retired. Provider feedback remains. `repo-harness board` (capability `organization.board`) is the one board read model (#1507).
 - A provider issue or PR owns current task identity, claim, status and dependency. A local board, Sprint row or lease record is a bounded observation. It cannot grant admission, transfer a claim or complete an issue.
 - Protected admission binds an approved goal and scope to an exact execution session and claim. A matching actor name grants no admission.
-- `fleet board` compares complete projected provider and session revisions, with at most three observations. A continued change returns `changed_during_read`. A discovery failure is a typed unavailable observation, not an empty session list.
-- An issue without an admitted session remains a provider issue card. Runtime progress does not determine issue status.
-- Current diff, activity and context routes require the closed session selector and reobserve current admission. Historical routes are explicit. A missing current session never falls back to Sprint or lease history.
 - Admitted inbox delivery binds the admission SHA and the exact claim reference and revision. Owner preparation reserves a bounded pre-prompt companion without marking messages delivered. The host consumer checks native/request attribution, local approval and expiry before it reads the companion. Only exact input-scoped accepted OAR proof lets the owner commit delivery receipts. Missing or unknown acceptance leaves delivery pending; recovery repeats the ledger commit without resending the prompt. Native host attribution grants no admission.
 - The task mutex stays at `<git-common-dir>/repo-harness/coordination/v1/locks/tasks/<64hex>.lock`. Moving its implementation out of the retired lease reader created no new lock namespace.
 - Worktree safety keeps exact worktree identity and merge-proof checks. Dirty, locked, marked or unknown worktrees stay protected. `ship-worktrees` journals operation progress, not task authority. PR readiness reobserves canonical provider identity, expected head/base, checks, reviews and threads before it reports readiness. Historical Sprint documents, owner bytes and message codecs remain for explicit history reads; they cannot replace current approval or provider evidence.
@@ -154,6 +149,12 @@ sequenceDiagram
 - P1：`src/effects/fleet/provider-feedback.ts`（1,001 行）原归 `component.publication.provider-feedback`，只有 `fleet.ts` 与 `effects/fleet/board.ts` 导入它。它导入 `effects/fleet/task-inbox.ts`，所以 publication 经过它导入 task-fleet，再经过 `observeTaskInboxContext` 到 task-agent-host。`src/core/publication/feedback.ts` 导入 task-fleet 的 `core/messages/task-message-claim.ts`。
 - P2：只改模型，源码与 import 不变。`provider-feedback.ts` 归新的 `component.task-fleet.provider-feedback`。三个 `core/messages` 文件（106 行）归新的 `component.execution-primitives.task-message-claim`。`component.publication.provider-feedback` 与它的四条关系删除，没有 alias。
 - P3：publication 不再导入 task-fleet 的文件。task-fleet → publication 只剩 plugin → core 边。看板仍在 task-fleet；移到 Operator 插件不在 #1352。
+
+### 删除旧 fleet 看板栈 (2026-11-03, #1507)
+
+- P1：[src/core/fleet/board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/core/fleet/board.ts) 与 [src/effects/fleet/board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/fleet/board.ts) 是旧 fleet 看板子命令（`board`、`watch`）的读模型。PR #1541 合并后，operator 不再导入它们。`summarizeTaskInboxForFleet` 与 `projectFleetFeedback` 只有这个看板读取。
+- P2：两个文件、fleet 的 `board`、`watch`、`ready` 子命令和两个只给看板用的 helper 一起删除。两个只装看板文件的 layer component（`primary-core`、`primary-effects`）和 operator → task-fleet 的两条关系也删除，因为 operator 已没有对应的 import。
+- P3：`repo-harness board`（`capability.organization.board`）是唯一的看板读模型。task-fleet 保留 task inbox、provider feedback、`fleet register` 与 `fleet prune`。
 
 ## Optimization Backlog
 

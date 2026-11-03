@@ -66,7 +66,8 @@ export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
 const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
 const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 
-const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for diagnostics and retry.';
+const OPERATOR_DIAGNOSTIC_ACTION = 'Retry. If the error stays, restart `repo-harness operator serve`.';
+const OPERATOR_REGISTRY_ACTION = 'Run `repo-harness fleet prune` to show the registry error.';
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
 const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, then refresh the board.';
 
@@ -402,7 +403,7 @@ const NOTIFY_UNAVAILABLE: Readonly<Record<NotifyUnavailableReason, { readonly me
 
 const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   tests_pending: { status: 503, message: 'The test results are not collected yet.', next_action: 'Retry in a minute.' },
-  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   default_branch_unknown: { status: 503, message: 'GitHub has not named the default branch of this repository.', next_action: 'Check `gh auth status` and the GitHub remote, then wait for the next collection.' },
   github_unavailable: { status: 503, message: 'GitHub did not answer the CI run or artifact query.', next_action: 'Check `gh auth status`, then wait for the next collection.' },
@@ -416,7 +417,7 @@ const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly stat
 
 const ARCHITECTURE_MAP_UNAVAILABLE: Readonly<Record<ArchitectureMapUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   architecture_map_pending: { status: 503, message: 'The architecture map is not collected yet.', next_action: 'Retry in a minute.' },
-  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   model_unavailable: { status: 503, message: 'The committed architecture model could not be read.', next_action: 'Run `repo-harness architecture-projection status --json` in the repository.' },
   architecture_map_invalid: { status: 503, message: 'The architecture map failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
@@ -424,13 +425,13 @@ const ARCHITECTURE_MAP_UNAVAILABLE: Readonly<Record<ArchitectureMapUnavailableRe
 
 const EXECUTION_UNAVAILABLE: Readonly<Record<ExecutionStateUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   execution_state_pending: { status: 503, message: 'The task execution state is not collected yet.', next_action: 'Retry in a few seconds.' },
-  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
-  execution_state_unavailable: { status: 503, message: 'The task session records of this repository could not be read.', next_action: 'Wait for the next collection, then run `repo-harness fleet board --json` for diagnostics.' },
+  execution_state_unavailable: { status: 503, message: 'The task session records of this repository could not be read.', next_action: 'Wait for the next collection. If the error stays, restart `repo-harness operator serve`.' },
 };
 
 const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
-  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   board_collect_failed: { status: 503, message: 'The board read failed: GitHub, the local repository or the parent issue could not be read.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
   board_source_invalid: { status: 503, message: 'GitHub returned a board source that failed validation.', next_action: 'Run `repo-harness board --parent <n> --json` in the repository for the error.' },
@@ -443,7 +444,7 @@ const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: nu
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   docs_pending: { status: 503, message: 'The docs listing is not collected yet.', next_action: 'Retry in a minute.' },
-  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: 'Run `repo-harness fleet board --json` for diagnostics.' },
+  registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   default_branch_unknown: { status: 503, message: 'GitHub has not named the default branch of this repository.', next_action: 'Check `gh auth status` and the GitHub remote, then wait for the next collection.' },
   github_remote_missing: { status: 503, message: 'No git remote points to the GitHub repository.', next_action: 'Add the GitHub remote to the repository.' },
@@ -1310,7 +1311,7 @@ export async function startOperatorServer(
       try { repositories = readOperatorRepositories(options.env ?? process.env); }
       catch {
         sendRefusal(request, response, 503, errorBody('registry_unavailable', 'The repository registry is unreadable.',
-          'Run `repo-harness fleet board --json` for diagnostics.'), headOnly);
+          OPERATOR_REGISTRY_ACTION), headOnly);
         return;
       }
       sendJson(response, 200, repositories, headOnly);

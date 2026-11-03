@@ -348,6 +348,7 @@ describe('standing-orders register', () => {
         expect(occurrences(text, STANDING_ORDERS_MARKER)).toBe(content?.startsWith('1.') ? 1 : 0);
         if (content?.startsWith('1.')) expect(text).toContain(`${STANDING_ORDERS_MARKER}\n${content}`);
       }
+      if (content?.startsWith('1.')) expect(prompt.indexOf('[repo-harness:return-channel]')).toBeLessThan(prompt.indexOf(STANDING_ORDERS_MARKER));
       expect(invokeSubagent({
         event: 'PreToolUse', repoRoot: root,
         payload: { tool_name: 'Agent', tool_input: { prompt } },
@@ -688,38 +689,6 @@ describe('typed subagent hook handlers', () => {
       rmSync(evidenceOutside, { recursive: true, force: true });
       rmSync(linkedAgentRepo, { recursive: true, force: true });
       rmSync(linkedEvidenceRepo, { recursive: true, force: true });
-    }
-  });
-
-  // tests/board-slice.test.ts covers the armed case: both mounts render one slice from the provider issue store.
-  test('a repository with no coordination state receives no slice on either mount', () => {
-    const repoRoot = tempRepo();
-    try {
-      const spawn = invokeSubagent({
-        event: 'PreToolUse',
-        repoRoot,
-        payload: { tool_name: 'Agent', tool_input: { prompt: 'Write the report.' } },
-      });
-      const prompt = String(
-        ((jsonResult(spawn.stdout).hookSpecificOutput as Record<string, unknown>)
-          .updatedInput as Record<string, unknown>).prompt,
-      );
-      expect(prompt).toContain('[repo-harness:return-channel]');
-      expect(prompt).not.toContain('[repo-harness:board-slice]');
-
-      const start = invokeSubagent({
-        event: 'SubagentStart',
-        repoRoot,
-        env: codexEnv(),
-        payload: { agent_type: 'default', model: 'gpt-x', agent_id: 'a-1', turn_id: 't-1' },
-      });
-      const context = String(
-        (jsonResult(start.stdout).hookSpecificOutput as Record<string, unknown>).additionalContext,
-      );
-      expect(context).toContain('[repo-harness:subagent-context]');
-      expect(context).not.toContain('[repo-harness:board-slice]');
-    } finally {
-      rmSync(repoRoot, { recursive: true, force: true });
     }
   });
 

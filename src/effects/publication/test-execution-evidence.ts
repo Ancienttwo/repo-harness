@@ -8,7 +8,7 @@
  * `unavailable`; it never becomes a passing test-level set.
  */
 
-import { execFile, spawnSync } from 'node:child_process';
+import { spawnSync } from 'node:child_process';
 import { mkdtempSync, readdirSync, readFileSync, rmSync, statSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { basename, join } from 'node:path';
@@ -137,69 +137,4 @@ export function readTestExecutionEvidence(input: TestExecutionReadInput): Requir
   if (artifacts === null) return UNAVAILABLE;
   const files = collectTestFiles(input, artifacts);
   return files === null ? UNAVAILABLE : projectTestExecution(files);
-}
-
-function runAsync(
-  bin: string,
-  args: readonly string[],
-  input: TestExecutionReadInput,
-  signal: AbortSignal | undefined,
-): Promise<{ status: number; stdout: string }> {
-  return new Promise((resolve) => {
-    execFile(bin, [...args], {
-      cwd: input.repo_root,
-      env: ghEnvironment(),
-      encoding: 'utf8',
-      timeout: 120_000,
-      maxBuffer: 16 * 1024 * 1024,
-      signal,
-    }, (error, stdout) => {
-      if (error) resolve({ status: 1, stdout: stdout ?? '' });
-      else resolve({ status: 0, stdout: stdout ?? '' });
-    });
-  });
-}
-
-/** Abortable variant of the artifact read for the asynchronous readiness path. */
-export async function readTestExecutionEvidenceAbortable(
-  input: TestExecutionReadInput,
-  signal: AbortSignal | undefined,
-): Promise<RequiredCheckTestExecutionV1> {
-  const artifacts: ListedArtifact[] = [];
-  try {
-    let complete = false;
-    for (let page = 1; page <= ARTIFACT_PAGE_LIMIT; page++) {
-      const path = `repos/${input.repository}/actions/runs/${input.run_id}/artifacts?per_page=${ARTIFACT_PAGE}&page=${page}`;
-      const result = input.gh_runner
-        ? input.gh_runner(['api', path, '--hostname', 'github.com'])
-        : await runAsync(ghBinary(input), ['api', path, '--hostname', 'github.com'], input, signal);
-      if (result.status !== 0) return UNAVAILABLE;
-      const parsed = artifactPage(JSON.parse(result.stdout));
-      if (parsed === null) return UNAVAILABLE;
-      artifacts.push(...parsed.artifacts);
-      if (artifacts.length >= parsed.total) { complete = true; break; }
-    }
-    if (!complete) return UNAVAILABLE;
-    const selected = selectAttemptTestArtifacts(artifacts, input.attempt);
-    if (selected.length === 0) return UNAVAILABLE;
-    const root = mkdtempSync(join(tmpdir(), 'repo-harness-test-execution-'));
-    try {
-      const files: TestExecutionFileV1[] = [];
-      for (const artifact of selected) {
-        const directory = mkdtempSync(join(root, `${basename(artifact.name)}-`));
-        const downloaded = input.download !== undefined
-          ? input.download(artifact.name, directory)
-          : (await runAsync(ghBinary(input),
-            ['run', 'download', String(input.run_id), '--repo', input.repository, '--name', artifact.name, '--dir', directory],
-            input, signal)).status === 0;
-        if (!downloaded) return UNAVAILABLE;
-        readTree(directory, files);
-      }
-      return projectTestExecution(files);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  } catch {
-    return UNAVAILABLE;
-  }
 }

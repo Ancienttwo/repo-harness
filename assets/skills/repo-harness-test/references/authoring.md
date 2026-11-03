@@ -98,9 +98,6 @@ to disagree.
 A serial pass can miss this race. `BUN_TEST_JOBS=4` (PR #425) loaded the
 runner enough to expose two instances of the same defect back to back.
 
-- `refreshExternalSource` (`src/effects/external-sources/refresh.ts:64`) had the
-  identical gap against the same fetcher, fixed separately in PR #427 (line 78).
-
 Assert on the injected clock's values, not on a tolerance window: a test that
 needs a tolerance is usually reporting that some callee still reads real time.
 

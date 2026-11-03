@@ -226,7 +226,7 @@ sequenceDiagram
 8. **Hook 不做架构工作。** Hook 不记录架构漂移，不运行投影，不写 capability 块。架构更新在 PR 里显式完成：ChangeSet 加 `architecture-projection apply`。
 9. **payload 与 identity 只解析一次。** host event 的 payload 解析一次，identity 只来自 payload 的 `session_id`、`run_id`、`turn_id`；缺失保持 null。hook 不生成、不存储 identity，handler 不读 session、run 或 turn 环境变量。`HOOK_HOST` 缺失、route 未知或该 host 未安装 route 时，在 handler 运行前停止。
 10. **handler 失败语义固定。** handler 返回 typed result；throw 的 handler 退出 1，edit guard 例外：throw 在 Claude 与 Codex 都退出 2（fail closed）。handler 不写 host 文件描述符。
-11. **board slice 是 advisory。** `SubagentStart.context` 与 `PreToolUse.subagent` 只附加最新有界 provider observation slice。`receipt-head.json` 缺失、过期或超限时不渲染 slice。slice 只给 issue reference、state 和 execution status，不给 provider title，也不做网络或 session discovery。解析失败不阻断事件。
+11. **subagent 上下文不带 provider 看板。** `SubagentStart.context` 与 `PreToolUse.subagent` 只附加 return-channel 契约、standing orders 和执行边界说明。看板切片已删除（#1507）：它只是 advisory，不授予 scope 或权限，也不决定验收。父任务 packet 与 host 权限仍是 scope 权威。
 12. **`PreToolUse.edit` 不做 lease 检查。** `LeaseOwnershipGuard` 已删除。lease authority 只在 `start-task`、`complete-task` 和 `contract-worktree finish`。
 13. **迁移只在 adoption transaction 内。** `managed-entries.ts` 把 registry 投影成 user-level adapter entries，并保留 host trust boundary。`standard-plan.ts` 是唯一的 adoption planner。旧 repo-local adapter command 只由一次性迁移识别和删除，runtime dispatch 不读它们。未匹配字节和 custom sibling hooks 保持不动。
 14. **架构债通知是 advisory。** `agent-notice` 选择 citation debt；checkpoint 只接收 owned changed paths。每次 archctx ownership 或 checkpoint 调用有 3 s deadline。模型文本最多 3 条、800 UTF-8 字节；SessionStart section 保持 mandatory。失败只在 exit 0 输出一条诊断，不阻断事件。
@@ -249,7 +249,7 @@ sequenceDiagram
 | --- | --- | --- | --- |
 | `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 11 / 1037（2026-10-16） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
 | `component.hook-adapters.edit-guards`（Edit Guard Handlers） | `hook/{mutation-guard,circuit-breaker}.ts` | 2 / 489（2026-10-16） | PreToolUse.edit 路径边界、semantic-review circuit breaker |
-| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,subagent-context,task-inbox-handler,board-slice-context,state-snapshot}.ts`、`run-summary-retention.ts` | 8 / 1373（2026-10-16） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
+| `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,subagent-context,task-inbox-handler,state-snapshot}.ts`、`run-summary-retention.ts` | 8 / 1373（2026-10-16） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
 | `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`commands/{install,status,security}.ts` | 14 / 3670（2026-10-16） | managed entries、install profile、status 与 security scan |
 
 与归属提议 §5 的一处偏差，有源码证据：

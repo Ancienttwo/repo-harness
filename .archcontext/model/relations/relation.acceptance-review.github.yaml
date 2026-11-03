@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.acceptance-review.github"
+kind: "reads"
+source: "capability.verification.acceptance-review"
+target: "external.github"
+intent: "Read the GitHub repository identity and the admitted issue goal through gh under the manual external_sources policy"

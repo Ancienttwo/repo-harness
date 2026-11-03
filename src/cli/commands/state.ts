@@ -18,8 +18,6 @@ import {
   repairAttemptLedgerTail,
   type AttemptLedgerRepair,
 } from '../../effects/state/attempt-ledger-store';
-import { resolveProviderBoard, type CollectProviderBoardOptions } from '../../effects/state/collect-provider-board-inputs';
-import type { ProviderBoardV2 } from '../../core/state/provider-board';
 import { resolveContinuationEnvelope } from '../../effects/state/resolve-continuation-envelope';
 import { resolveEffectiveState } from '../../effects/state/resolve-effective-state';
 
@@ -185,20 +183,6 @@ export function attemptRepairStateCommand(deps: AttemptRepairCommandDependencies
   return { exitCode: 0, stdout: `${JSON.stringify(document, null, 2)}\n`, stderr: '' };
 }
 
-export interface BoardCommandOptions { readonly repositoryId?: string; readonly json?: boolean }
-export interface BoardCommandDependencies {
-  readonly resolveBoard: (options: CollectProviderBoardOptions) => ProviderBoardV2;
-}
-/** Explicit registered repository selection. Sprint/lease selectors are not accepted. */
-export function boardStateCommand(options: BoardCommandOptions, deps: BoardCommandDependencies): CommandOutcome {
-  if (Object.keys(options).some(key => !['repositoryId', 'json'].includes(key))
-    || typeof options.repositoryId !== 'string' || !/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u.test(options.repositoryId)) {
-    return { exitCode: 2, stdout: '', stderr: 'state board requires an explicit --repository-id; legacy Sprint selectors are not supported\n' };
-  }
-  try { return { exitCode: 0, stdout: `${JSON.stringify(deps.resolveBoard({ repository_id: options.repositoryId }), null, 2)}\n`, stderr: '' }; }
-  catch (error) { return operationalFailure(error); }
-}
-
 function writeOutcome(outcome: CommandOutcome): void {
   if (outcome.stdout) process.stdout.write(outcome.stdout);
   if (outcome.stderr) process.stderr.write(outcome.stderr);
@@ -271,15 +255,6 @@ export function buildStateCommand(): Command {
         nowMs: Date.now(),
         repair: repairAttemptLedgerTail,
       }));
-    });
-
-  state
-    .command('board')
-    .description('Observe provider issues and admitted execution sessions for a registered repository')
-    .requiredOption('--json', 'Output the provider board document as JSON')
-    .requiredOption('--repository-id <id>', 'Exact registered repository identity')
-    .action((opts: BoardCommandOptions) => {
-      writeOutcome(boardStateCommand(opts, { resolveBoard: resolveProviderBoard }));
     });
 
   return state;
