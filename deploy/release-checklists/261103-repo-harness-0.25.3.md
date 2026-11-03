@@ -3,10 +3,10 @@
 ## Scope and authority
 
 - Release-prep base: `origin/main`
-  `240f561530201a5913072149e36c69c57010d01d` (#1574).
-  Final base: pending. #1571 (PR #1575, architecture render) merges first;
-  then the release-prep branch merges `origin/main` with a merge commit and
-  no rebase.
+  `7ed64f8489d12069dba7b0f4bfadb1d57b0ad675` (#1575, the #1571 render of
+  generated architecture docs). The release-prep branch merges this base with
+  merge commit `a9491c3d9` and no rebase. This is the final release base. The
+  last product change in the range is #1574 (`240f56153`).
 - Source commit: the head of the release-prep PR. The publish candidate is
   the merge commit of that PR on `origin/main`. The owner records it below
   before publish.
@@ -15,9 +15,9 @@
   published 0.25.2: npm shows 0.25.1, and no `v0.25.2` tag exists.
   - Tag `v0.25.2`: pending the owner. Tag object: `<owner fills>`. Target:
     `<owner fills>`.
-- Merged range: `801506036..240f56153`: 34 first-parent commits and
-  53 commits in total (`git rev-list --count`). Batch merge #1517 keeps the
-  member commits of #1491 and #1492. The final range adds #1575.
+- Merged range: `801506036..7ed64f848`: 35 first-parent commits and
+  54 commits in total (`git rev-list --count`). Batch merge #1517 keeps the
+  member commits of #1491 and #1492.
 - The npm package goes from 0.25.2 to 0.25.3. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.3.
@@ -58,7 +58,7 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
   the runtime lock (#1526), capture signal listeners before spawn (#1551),
   CI test selection for the global working rules (#1520).
 - Tests and CI: #1528, #1569, #1572, #1545.
-- #1512 (projection refresh) and #1517 (batch integration of #1491 and
+- #1512 and #1575 (projection refreshes) and #1517 (batch integration of #1491 and
   #1492) carry no user-visible change.
 - The full list is in `docs/CHANGELOG.md`, section `[0.25.3]`. The
   release-prep PR also moves the three #1494 entries out of the shipped
@@ -94,8 +94,9 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
   failure. Only the job "Daily architecture freshness" failed. #1571 owns
   that render. The last green Daily run is 41503838293 on `0765762aa`
   (before 0.25.2).
-- Push CI run 41601998066 on `240f56153` passed. Every push CI run on main
-  from `c1c727052` to `240f56153` passed.
+- Push CI run 41601998066 on `240f56153` passed. Push CI run 41603308041
+  on `7ed64f848` passed. Every push CI run on main from `c1c727052` to
+  `7ed64f848` passed. The Daily run did not run after #1575.
 - The release-prep PR needs green `Required / CI` on its head before merge.
 
 ## Acceptance environment
@@ -126,7 +127,15 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
 - `grep -rln "0\.25\.2" tests` finds 3 files: `tests/board.test.ts` and two
   board fixtures. Each hit is issue or PR text that names the 0.25.2
   release. No test pins the old package version.
-- Architecture projection and final subject: pending the merge of #1575.
+- Final subject: merge commit `a9491c3d9` of `7ed64f848` into the branch.
+  - `bash scripts/check-ci.sh architecture`: exit 0, `renderEquivalent:
+    true`, `differingPaths: []`, `[ci] OK`. Guard calls: 0.
+  - `bun run check:release`: exit 0, `[release] OK`; expensive lane 31 pass,
+    0 fail; tarball smoke OK. Guard calls: 1 (`hc server status --json`).
+  - `bun run check:type`: exit 0. Version-surface tests: 10, 29, 32 and 14
+    pass, 0 fail. Guard calls: 0.
+  - #1575 changes only `docs/architecture/.projection-manifest.json` and
+    `hook-adapters.md`.
 
 ## Release readiness items
 
@@ -148,14 +157,18 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
 
 ### Subject and commands
 
-- Candidate: the release worktree at `a74d046b4`, after `bun install
-  --frozen-lockfile`, with the guard first on PATH.
+- Candidate: the release worktree at `a9491c3d9` (final subject) for
+  `setup check`, after `bun install --frozen-lockfile` and the CodeGraph
+  index of the architecture check, with the guard first on PATH. The other
+  commands ran at `a74d046b4`; #1575 changes no input of them.
 - Real HOME, read-only by contract, with `CLAUDECODE`, `AI_AGENT`, `AGENT`,
   `REPL_ID`, `REPO_HARNESS_SOURCE_ROOT`, `HC_*` and `HERDR_ENV` removed and
   `TMPDIR=/tmp`:
   - `bun src/cli/index.ts setup check --target both --check-updates --json`:
-    exit 1, `status: blocked`; 30 ok, 4 warn, 1 fail, 3 na, 6 needs_agent.
-    The fail is `doctor.codegraph-index` (`index=not-initialized`; flag 1).
+    exit 0, `status: attention`; 33 ok, 4 warn, 0 fail, 3 na,
+    4 needs_agent. Guard calls: 2 (`hc --version`). At `a74d046b4`, before
+    the CodeGraph index, it exited 1 with one fail, `doctor.codegraph-index`
+    (`index=not-initialized`).
   - `bash scripts/check-agent-tooling.sh --json --host both
     --check-updates`: exit 0.
   - `bun src/cli/index.ts security scan --json`: exit 0, `status: warn`,
@@ -163,7 +176,7 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
   - `bun src/cli/index.ts upgrade --json` (no `--apply`): exit 1 by design,
     because leftovers exist; 41 items, 23 refresh and 18 report. With a
     temporary HOME: exit 0, 0 items.
-  - Guard calls: 3 (`hc --version`).
+  - Guard calls at `a74d046b4`: 3 (`hc --version`).
 - Temporary HOME: `bun src/cli/index.ts run check-deploy-sql-order`:
   exit 0, `[deploy-sql] OK`.
 - `git check-ignore -v _ops/`: `.gitignore:46:_ops/`. `git ls-files _ops`:
@@ -174,30 +187,27 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
 Each flag is host state of the acceptance host or of the guard, not package
 content. The owner accepts or repairs each flag before publish.
 
-1. `doctor.codegraph-index` fails: `index=not-initialized` in the release
-   worktree. The architecture check builds the index. Repair:
-   `bash scripts/ensure-codegraph.sh --init`.
-2. `runtime.herdr_core` is `unavailable (required)` and `tooling.herdr_skill`
+1. `runtime.herdr_core` is `unavailable (required)` and `tooling.herdr_skill`
    is `unavailable`. The guard `hc` answers every call with exit 97, so these
    rows do not describe the owner's `hc`. Repair, an owner step: run
    `setup check` with the real `hc` 0.1.17 or later, then
    `repo-harness update`.
-3. Global rules managed blocks are stale (`global-rules.claude`,
+2. Global rules managed blocks are stale (`global-rules.claude`,
    `global-rules.codex`). #1560 changes these rules. Repair after
    publication: `repo-harness update`.
-4. `repo-harness` and `repo-harness-hook` are not on PATH
+3. `repo-harness` and `repo-harness-hook` are not on PATH
    (`doctor.cli-on-path`). The guard PATH leaves out the global install by
    design. Repair: none for the release; the owner's PATH has them.
-5. Security config: 2 warn findings, the first `unmanaged-hook-command` in
+4. Security config: 2 warn findings, the first `unmanaged-hook-command` in
    `~/.claude/settings.json`. Repair: a reviewed exception for each in
    `~/.repo-harness/config.json`.
-6. Waza update available and Skills CLI missing. These are external,
+5. Waza update available and Skills CLI missing. These are external,
    optional tools. Repair: the Waza upgrade command from
    `check-agent-tooling.sh`, then `repo-harness install --target both`.
-7. Leftovers: 41 items, 23 refresh and 18 report. 0 with a temporary HOME.
+6. Leftovers: 41 items, 23 refresh and 18 report. 0 with a temporary HOME.
    Repair after publication: `repo-harness update`, then
    `repo-harness upgrade`.
-8. Skill eval evidence unavailable for 0.25.3 (see above).
+7. Skill eval evidence unavailable for 0.25.3 (see above).
 
 ## Publication
 
