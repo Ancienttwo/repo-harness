@@ -1,6 +1,6 @@
 import { AGENT_RUNTIME_CAPABILITIES, decodeAgentsSettings, type AgentsSettingsV1 } from '../../core/operator/agents-settings';
 import { isReviewRuntimeId } from '../../core/review/review-runtimes';
-import { DEFAULT_SEATS_CONFIG, decodeSeatsSettings, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/operator/seats-settings';
+import { DEFAULT_SEATS_CONFIG, SEAT_IDS, decodeSeatsSettings, type SeatsConfigV1, type SeatsSettingsRequestV1, type SeatsSettingsV1 } from '../../core/operator/seats-settings';
 import type { AgentsSettingsRead, AgentsSettingsWrite, AgentsSettingsPost, SettingsRead, SettingsWrite } from '../settings';
 
 const REVISION = `sha256:${'4'.repeat(64)}`;
@@ -40,68 +40,6 @@ export function agentsSettingsFixture(now: number, fixture: 'busy' | 'degraded')
   });
 }
 
-/**
- * An in-page stand-in for the settings route. busy applies each change, so a
- * save shows on the next read; degraded answers every save with the write
- * channel's `reconcile_required`.
- */
-export function agentsSettingsStore(now: number, fixture: 'busy' | 'empty' | 'degraded') {
-  // empty: no `agents` section and no finished detection, so nothing can be saved yet.
-  let settings = fixture === 'empty'
-    ? decodeAgentsSettings({
-      protocol: 1, kind: 'operator_agents_settings',
-      config: { revision: 'absent', enabled: [], uses: { docs: [], review: [] }, default_docs: null },
-      runtimes: { status: 'unavailable', reason: 'collection_pending', collected_at: null, entries: [] },
-    })
-    : agentsSettingsFixture(now, fixture);
-  let serial = 0;
-  const read = (): Promise<AgentsSettingsRead> => Promise.resolve({ state: 'ok', settings });
-  const write = (body: AgentsSettingsPost): Promise<AgentsSettingsWrite> => {
-    if (fixture === 'empty') {
-      return Promise.resolve({ state: 'refused', status: 503, error: {
-        code: 'runtimes_unavailable', message: 'The runtime list is not collected yet. Nothing was changed.',
-        next_action: 'Wait for the runtime probe, then send the change with a new request_id.',
-      } });
-    }
-    if (fixture === 'degraded') {
-      return Promise.resolve({ state: 'refused', status: 409, error: {
-        code: 'reconcile_required', message: 'The action may have run, but its result is not recorded.',
-        next_action: 'Check the target state before you retry. Do not send the request again with a new request_id.',
-      } });
-    }
-    if (body.expected_revision !== settings.config.revision) {
-      return Promise.resolve({ state: 'refused', status: 409, error: {
-        code: 'revision_conflict', message: 'The configuration changed after it was read.', next_action: 'Reload the settings, then apply your change again.',
-      } });
-    }
-    const { config } = settings;
-    const enabled = new Set(config.enabled);
-    const docs = new Set(config.uses.docs);
-    const review = new Set(config.uses.review);
-    for (const change of body.changes) {
-      if (change.enabled) enabled.add(change.runtime); else enabled.delete(change.runtime);
-      for (const [use, set] of [['docs', docs], ['review', review]] as const) {
-        if (change.uses.includes(use)) set.add(change.runtime); else set.delete(change.runtime);
-      }
-    }
-    serial += 1;
-    const revision = `sha256:${serial.toString(16).padStart(64, '0')}`;
-    const next = {
-      enabled: [...enabled].sort(), uses: { docs: [...docs].sort(), review: [...review].sort() },
-      default_docs: body.default_docs_runtime === undefined ? config.default_docs : body.default_docs_runtime,
-    };
-    const changedKeys = [
-      ...(next.enabled.join() === config.enabled.join() ? [] : ['agents.enabled']),
-      ...(next.uses.docs.join() === config.uses.docs.join() ? [] : ['agents.uses.docs']),
-      ...(next.uses.review.join() === config.uses.review.join() ? [] : ['agents.uses.review']),
-      ...(next.default_docs === config.default_docs ? [] : ['agents.default_docs']),
-    ];
-    settings = decodeAgentsSettings({ ...settings, config: { revision, ...next } });
-    return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changedKeys } });
-  };
-  return { read, write };
-}
-
 const SUB_AGENTS = [
   { name: 'explorer', writable: false }, { name: 'deep-reasoner', writable: false }, { name: 'fast-worker', writable: true },
   { name: 'deep-worker', writable: true }, { name: 'gatekeeper', writable: false }, { name: 'root-cause-prover', writable: true },
@@ -127,41 +65,94 @@ function seatsRanges(enabled: readonly string[]) {
   };
 }
 
+type SeatsWrite = SeatsSettingsRequestV1 & { readonly request_id: string };
+
 /**
- * An in-page stand-in for the seats route. busy: a stored section with the
- * worker on Claude, and saves apply. empty: no section and no enabled runtime,
- * so a save is refused. degraded: the stored worker runtime is no longer
- * enabled, and a save meets a revision conflict.
+ * In-page stand-ins for the two settings routes. They share one file, as the
+ * real routes do: one revision, and the seats ranges read `enabled` from the
+ * agents section. busy applies each change, so a save shows on the next read.
+ * empty: no file and no finished detection, so nothing can be saved yet.
+ * degraded: every agents save meets the write channel's `reconcile_required`,
+ * the stored worker runtime is not enabled, and a seats save meets a revision conflict.
  */
-export function seatsSettingsStore(fixture: 'busy' | 'empty' | 'degraded') {
-  const enabled = fixture === 'busy' ? ['claude', 'codex', 'pi'] : fixture === 'empty' ? [] : ['claude'];
-  const stored = fixture === 'busy'
+export function settingsStores(now: number, fixture: 'busy' | 'empty' | 'degraded') {
+  let agents = fixture === 'empty'
+    ? decodeAgentsSettings({
+      protocol: 1, kind: 'operator_agents_settings',
+      config: { revision: 'absent', enabled: [], uses: { docs: [], review: [] }, default_docs: null },
+      runtimes: { status: 'unavailable', reason: 'collection_pending', collected_at: null, entries: [] },
+    })
+    : agentsSettingsFixture(now, fixture);
+  let seats: SeatsConfigV1 = fixture === 'busy'
     ? { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, runtime: 'claude', model: 'sonnet' } }
     : DEFAULT_SEATS_CONFIG;
-  let settings = decodeSeatsSettings({
-    protocol: 1, kind: 'operator_seats_settings', config: { revision: fixture === 'empty' ? 'absent' : REVISION, ...stored },
-    defaults: DEFAULT_SEATS_CONFIG, ranges: seatsRanges(enabled),
-  });
   let serial = 0;
-  const read = (): Promise<SettingsRead<SeatsSettingsV1>> => Promise.resolve({ state: 'ok', settings });
-  const write = (body: SeatsSettingsRequestV1 & { readonly request_id: string }): Promise<SettingsWrite> => {
+  const nextRevision = () => { serial += 1; return `sha256:${serial.toString(16).padStart(64, '0')}`; };
+  const conflict: SettingsWrite = { state: 'refused', status: 409, error: {
+    code: 'revision_conflict', message: 'The configuration changed after it was read.', next_action: 'Reload the settings, then apply your change again.',
+  } };
+  const seatsSettings = () => decodeSeatsSettings({
+    protocol: 1, kind: 'operator_seats_settings', config: { revision: agents.config.revision, ...seats },
+    defaults: DEFAULT_SEATS_CONFIG, ranges: seatsRanges(agents.config.enabled),
+  });
+
+  const readAgents = (): Promise<AgentsSettingsRead> => Promise.resolve({ state: 'ok', settings: agents });
+  const writeAgents = (body: AgentsSettingsPost): Promise<AgentsSettingsWrite> => {
     if (fixture === 'empty') {
+      return Promise.resolve({ state: 'refused', status: 503, error: {
+        code: 'runtimes_unavailable', message: 'The runtime list is not collected yet. Nothing was changed.',
+        next_action: 'Wait for the runtime probe, then send the change with a new request_id.',
+      } });
+    }
+    if (fixture === 'degraded') {
+      return Promise.resolve({ state: 'refused', status: 409, error: {
+        code: 'reconcile_required', message: 'The action may have run, but its result is not recorded.',
+        next_action: 'Check the target state before you retry. Do not send the request again with a new request_id.',
+      } });
+    }
+    if (body.expected_revision !== agents.config.revision) return Promise.resolve(conflict);
+    const { config } = agents;
+    const enabled = new Set(config.enabled);
+    const docs = new Set(config.uses.docs);
+    const review = new Set(config.uses.review);
+    for (const change of body.changes) {
+      if (change.enabled) enabled.add(change.runtime); else enabled.delete(change.runtime);
+      for (const [use, set] of [['docs', docs], ['review', review]] as const) {
+        if (change.uses.includes(use)) set.add(change.runtime); else set.delete(change.runtime);
+      }
+    }
+    const revision = nextRevision();
+    const next = {
+      enabled: [...enabled].sort(), uses: { docs: [...docs].sort(), review: [...review].sort() },
+      default_docs: body.default_docs_runtime === undefined ? config.default_docs : body.default_docs_runtime,
+    };
+    const changedKeys = [
+      ...(next.enabled.join() === config.enabled.join() ? [] : ['agents.enabled']),
+      ...(next.uses.docs.join() === config.uses.docs.join() ? [] : ['agents.uses.docs']),
+      ...(next.uses.review.join() === config.uses.review.join() ? [] : ['agents.uses.review']),
+      ...(next.default_docs === config.default_docs ? [] : ['agents.default_docs']),
+    ];
+    agents = decodeAgentsSettings({ ...agents, config: { revision, ...next } });
+    return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changedKeys } });
+  };
+
+  const readSeats = (): Promise<SettingsRead<SeatsSettingsV1>> => Promise.resolve({ state: 'ok', settings: seatsSettings() });
+  const writeSeats = (body: SeatsWrite): Promise<SettingsWrite> => {
+    if (fixture === 'degraded' || body.expected_revision !== agents.config.revision) return Promise.resolve(conflict);
+    // The route checks every seat against agents.enabled before it writes.
+    const off = SEAT_IDS.find(id => !agents.config.enabled.includes(body.seats[id].runtime));
+    if (off !== undefined) {
       return Promise.resolve({ state: 'refused', status: 422, error: {
-        code: 'seat_runtime_not_enabled', message: 'The orchestrator seat runtime claude is not enabled in Agent settings.',
+        code: 'seat_runtime_not_enabled', message: `The ${off} seat runtime ${body.seats[off].runtime} is not enabled in Agent settings.`,
         next_action: 'Enable the runtime in Agent settings, or choose an enabled runtime.',
       } });
     }
-    if (fixture === 'degraded' || body.expected_revision !== settings.config.revision) {
-      return Promise.resolve({ state: 'refused', status: 409, error: {
-        code: 'revision_conflict', message: 'The configuration changed after it was read.', next_action: 'Reload the settings, then apply your change again.',
-      } });
-    }
-    serial += 1;
-    const revision = `sha256:${serial.toString(16).padStart(64, '0')}`;
-    const changed = (['orchestrator', 'advisor', 'worker'] as const).flatMap(id => (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
-      .filter(field => String(settings.config[id][field]) !== String(body.seats[id][field])).map(field => `seats.${id}.${field}`));
-    settings = decodeSeatsSettings({ ...settings, config: { revision, ...body.seats } });
+    const revision = nextRevision();
+    const changed = SEAT_IDS.flatMap(id => (['runtime', 'model', 'effort', 'tools', 'fleet'] as const)
+      .filter(field => String(seats[id][field]) !== String(body.seats[id][field])).map(field => `seats.${id}.${field}`));
+    seats = body.seats;
+    agents = decodeAgentsSettings({ ...agents, config: { ...agents.config, revision } });
     return Promise.resolve({ state: 'saved', result: { config_revision: revision, changed_keys: changed } });
   };
-  return { read, write };
+  return { agents: { read: readAgents, write: writeAgents }, seats: { read: readSeats, write: writeSeats } };
 }

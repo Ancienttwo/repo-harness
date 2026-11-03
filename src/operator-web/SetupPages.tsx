@@ -30,6 +30,10 @@ import {
 } from './setup';
 import { CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
 import { ToolGroup } from './ToolsPage';
+import { AgentSettings, HostRuntimeControls } from './SettingsPage';
+import { SeatsSection } from './SeatsPage';
+import type { AgentsSettingsForm } from './settings';
+import type { SeatsSettingsForm } from './seats';
 
 export type SetupPage = 'agents' | 'skills' | 'hooks';
 
@@ -73,8 +77,12 @@ function stateName(state: SetupPageState): string {
   return state.refreshFailed ? 'refresh-failed' : 'ready';
 }
 
-/** The shared frame: the first read, a failure, or data with its age. */
-function SetupFrame({ page, view, now, t, children }: PageProps & { readonly page: SetupPage; readonly children: (snapshot: SetupSnapshotV2) => ReactNode }) {
+/**
+ * The shared frame: the first read, a failure, or data with its age. The
+ * children get the snapshot, or null while there is none: the Agents page
+ * keeps its settings sections without a setup check result.
+ */
+function SetupFrame({ page, view, now, t, children }: PageProps & { readonly page: SetupPage; readonly children: (snapshot: SetupSnapshotV2 | null) => ReactNode }) {
   const state = setupPageState(view);
   const age = state.kind === 'data' && state.snapshot.collected_at ? ageWords(state.snapshot.collected_at, now, t) : null;
   return (
@@ -97,8 +105,8 @@ function SetupFrame({ page, view, now, t, children }: PageProps & { readonly pag
           <Banner variant="alert" icon={<WarningIcon />} title={t('setup.refreshFailed.title')}
             description={age ? t('setup.refreshFailed.body', { age }) : t('setup.refreshFailed.bodyUnknown')} />
         )}
-        {children(state.snapshot)}
       </>}
+      {children(state.kind === 'data' ? state.snapshot : null)}
     </div>
   );
 }
@@ -225,11 +233,14 @@ function hostTone(facts: SetupHostFacts): DotTone {
   return facts.adapter_check === null ? 'neutral' : CHECK_TONE[facts.adapter_check];
 }
 
-function HostList({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; readonly t: OperatorTranslate }) {
+/** Section 1: each host of the setup check with its Agent settings switch, then the runtimes no host row shows. */
+function HostList({ snapshot, agents, now, t }: {
+  readonly snapshot: SetupSnapshotV2 | null; readonly agents: AgentsSettingsForm; readonly now: number; readonly t: OperatorTranslate;
+}) {
   return (
     <Card labelledBy="setup-hosts-heading">
       <SectionTitle id="setup-hosts-heading">{t('setup.hosts.title')}</SectionTitle>
-      <ul className="flex flex-col divide-y divide-kumo-hairline rounded-lg border border-kumo-hairline">
+      {snapshot && <ul className="flex flex-col divide-y divide-kumo-hairline rounded-lg border border-kumo-hairline">
         {snapshot.hosts.map(facts => {
           const repair = hostCommand(snapshot.checks, facts.host);
           const mismatches = facts.adapter?.mismatches ?? [];
@@ -258,10 +269,12 @@ function HostList({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; readonl
                   ? <CommandLine command={repair.command} t={t} />
                   : facts.adapter_check && <span className="text-xs text-kumo-subtle">{t(`setup.check.status.${facts.adapter_check}`)}</span>}
               </span>
+              <HostRuntimeControls form={agents} id={facts.host} t={t} />
             </li>
           );
         })}
-      </ul>
+      </ul>}
+      <AgentSettings form={agents} hostRows={snapshot ? snapshot.hosts.map(facts => facts.host) : []} now={now} t={t} />
     </Card>
   );
 }
@@ -299,13 +312,15 @@ function FleetTable({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; reado
   );
 }
 
-export function AgentsPage(props: PageProps) {
+/** Hosts, then the sub-agents, then the seats that run on both: the order is the dependency order. */
+export function AgentsPage({ agents, seats, ...props }: PageProps & { readonly agents: AgentsSettingsForm; readonly seats: SeatsSettingsForm }) {
   return (
     <SetupFrame page="agents" {...props}>
       {snapshot => <>
-        <AttentionSummary snapshot={snapshot} t={props.t} />
-        <HostList snapshot={snapshot} t={props.t} />
-        <FleetTable snapshot={snapshot} t={props.t} />
+        {snapshot && <AttentionSummary snapshot={snapshot} t={props.t} />}
+        <HostList snapshot={snapshot} agents={agents} now={props.now} t={props.t} />
+        {snapshot && <FleetTable snapshot={snapshot} t={props.t} />}
+        <SeatsSection form={seats} agents={agents} setup={snapshot} t={props.t} />
       </>}
     </SetupFrame>
   );
@@ -335,6 +350,7 @@ export function SkillsPage(props: PageProps & { readonly onOpenTool: (id: string
     <>
     <SetupFrame page="skills" {...props}>
       {snapshot => {
+        if (snapshot === null) return null;
         const skills = orderSkills(snapshot.skills);
         const abnormal = skills.filter(skillAbnormal).length;
         // The skill projection check itself, when setup check flagged it; its detail explains missing rows.
@@ -424,7 +440,7 @@ export function HooksPage(props: PageProps) {
   const { t } = props;
   return (
     <SetupFrame page="hooks" {...props}>
-      {snapshot => <>
+      {snapshot => snapshot && <>
         <ManagedEntries snapshot={snapshot} t={t} />
         <Card labelledBy="setup-usage-heading">
           <SectionTitle id="setup-usage-heading">{t('setup.hooks.usage')}</SectionTitle>
