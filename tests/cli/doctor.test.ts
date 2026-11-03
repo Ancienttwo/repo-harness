@@ -20,6 +20,8 @@ import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
+import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
+import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -145,9 +147,34 @@ describe('doctor command (Phase 1C)', () => {
   }
 
   test('runDoctor emits the built-in checks (path/version/hosts/trust)', () => {
-    withTempHome(() => {
+    withTempHome((home) => {
       const r = runDoctor(CLI_PORTS.doctor);
       const ids = r.checks.map((c) => c.id);
+      expect(r.checks.find((c) => c.id === 'herdr-notify-relay')).toMatchObject({ status: 'na', detail: 'Herdr notify is not installed.' });
+      // With an install record, the relay check reads one `hc ls` and names the start command when no relay is live.
+      const rhHome = path.join(home, '.repo-harness');
+      writeNotifyInstallRecord({ REPO_HARNESS_HOME: rhHome });
+      const bin = path.join(home, 'bin');
+      fs.mkdirSync(bin);
+      writeExecutable(path.join(bin, 'hc'), [
+        '#!/bin/sh',
+        `env | grep -E '^(WEBHOOK|SLACK|DISCORD|TELEGRAM)_' >> '${path.join(home, 'hc-env')}'`,
+        'case "$FIXTURE_HC" in',
+        `  live) echo '{"terminals":[{"address":"t5","name":"rh-notify-relay","state":"live"}]}' ;;`,
+        `  stopped) echo '{"terminals":[]}' ;;`,
+        '  *) exit 1 ;;',
+        'esac',
+        '',
+      ].join('\n'));
+      // Notify values exported in the caller's shell never reach the hc child: hc can keep them in a core it starts.
+      const exported = { WEBHOOK_URL: 'https://bot.example/x', WEBHOOK_KEY: 'k', SLACK_WEBHOOK_URL: 'https://slack.example/x',
+        DISCORD_WEBHOOK_URL: 'https://discord.example/x', TELEGRAM_BOT_TOKEN: '1:t', TELEGRAM_CHAT_ID: '-1' };
+      const relay = (mode: string) => { let result; withEnv({ ...exported, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOME: rhHome, FIXTURE_HC: mode }, () => { result = notifyRelayDoctorCheck(); }); return result; };
+      expect(relay('live')).toMatchObject({ status: 'ok', detail: 'Relay terminal rh-notify-relay is live.' });
+      expect(relay('stopped')).toMatchObject({ status: 'warn',
+        detail: 'Relay terminal rh-notify-relay is not live (relay_stopped). Notifications are paused. Run: repo-harness herdr notify start' });
+      expect(relay('fail')).toMatchObject({ status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' });
+      expect(fs.readFileSync(path.join(home, 'hc-env'), 'utf8')).toBe('');
       expect(ids).toContain('cli-on-path');
       expect(ids).toContain('cli-version');
       expect(ids).toContain('codex-cli-version');

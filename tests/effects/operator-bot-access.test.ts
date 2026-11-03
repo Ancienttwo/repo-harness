@@ -24,7 +24,7 @@ const LEAKS = [SLACK_URL, 'webhook-secret', 'https://', 'stderr-secret'];
 
 const notifyStatus: NotifyChannelDeliveryStatus = {
   status: {
-    protocol: 1, kind: 'operator_notify_status', plugin_id: 'aimpact.webhook-notify', linked: 'linked', enabled: 'enabled',
+    protocol: 2, kind: 'operator_notify_status', relay: 'live',
     config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' },
     last_delivery: { at: '2026-10-26T00:00:00.000Z', result: 'succeeded' }, observed_at: NOW.toISOString(),
   },
@@ -255,11 +255,11 @@ describe('Bot access collector', () => {
       let failedNotify: NotifyCacheV1 = { state: 'pending' };
       const failing = startBotAccessCollector({ env: f.env, now: () => NOW, interval_ms: 60_000, first_cycle_after: failedFirstCycle,
         run_command: async () => ({ ok: false, code: 'failed' }), read_notify: () => failedNotify });
-      failedNotify = { state: 'unavailable', reason: 'herdr_unavailable' };
+      failedNotify = { state: 'unavailable', reason: 'hc_unavailable' };
       failedRelease();
       await failing.settled();
       const failed = failing.read();
-      expect(failed.state === 'ok' && failed.snapshot.notify).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
+      expect(failed.state === 'ok' && failed.snapshot.notify).toEqual({ state: 'unavailable', reason: 'hc_unavailable' });
       await failing.close();
     } finally { f.cleanup(); }
   });

@@ -74,6 +74,8 @@ export interface DoctorCheck {
 export interface DoctorPorts {
   /** The CodeGraph readiness, MCP host and index checks, in report order. */
   readonly codegraphChecks: (cwd: string) => DoctorCheckResult[];
+  /** The Herdr notify relay check (read-only, one `hc ls`). */
+  readonly notifyRelayCheck: () => DoctorCheckResult;
 }
 
 export interface DoctorReport {
@@ -647,6 +649,7 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
+  checks.push(ports.notifyRelayCheck());
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();
     checks.push({ id: plugin.id, describe: plugin.describe, ...r });
