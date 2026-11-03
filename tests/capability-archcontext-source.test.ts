@@ -444,6 +444,38 @@ describe("capability source: no fallback in either direction", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("a process with no architecture provider fails closed at each core port consumer", () => {
+    const cwd = archcontextWorkspace("capability-source-no-provider");
+    // A bare bun process has no test preload, so it registers no provider.
+    const script = `
+      const { ARCHITECTURE_CONTRACT_VERSION, architecturePort, registerArchitecturePorts } = await import(${JSON.stringify(join(ROOT, "src/core/architecture/contracts.ts"))});
+      const { capabilityOwnersForPaths } = await import(${JSON.stringify(join(ROOT, "src/effects/state/resolve-effective-state.ts"))});
+      const { runCapabilityContextStatus } = await import(${JSON.stringify(join(ROOT, "src/cli/commands/capability-context.ts"))});
+      const { collectArchitectureNotice } = await import(${JSON.stringify(join(ROOT, "src/cli/hook/hook-protocol.ts"))});
+      const message = (run) => { try { run(); return "returned"; } catch (error) { return error.message; } };
+      const ownership = (await import(${JSON.stringify(join(ROOT, "src/effects/architecture/providers.ts"))})).ARCHITECTURE_PROVIDERS.ownership;
+      console.log(JSON.stringify({
+        otherVersion: message(() => registerArchitecturePorts({ ownership: { ...ownership, contractVersion: ARCHITECTURE_CONTRACT_VERSION + 1 } })),
+        stillUnavailable: architecturePort("ownership").status,
+        effectiveState: message(() => capabilityOwnersForPaths(process.cwd(), ["apps/web/page.tsx"])),
+        capabilityContext: message(() => runCapabilityContextStatus(process.cwd())),
+        notice: collectArchitectureNotice(process.cwd(), () => null, {}),
+      }));`;
+    try {
+      const res = spawnSync("bun", ["-e", script], { cwd, encoding: "utf-8" });
+      expect(res.status, res.stderr).toBe(0);
+      const rows = JSON.parse(res.stdout);
+      expect(rows.otherVersion).toBe("architecture ownership provider has contract version 2; core requires 1");
+      expect(rows.stillUnavailable).toBe("unavailable");
+      for (const row of ["effectiveState", "capabilityContext"]) {
+        expect(rows[row], row).toContain("no architecture ownership provider is registered in this process");
+      }
+      expect(rows.notice).toEqual({ diagnostics: "repo-harness: architecture notice unavailable: no architecture notice provider is registered in this process\n" });
+    } finally {
+      rmSync(cwd, { recursive: true, force: true });
+    }
+  }, 30_000);
 });
 
 describe("capability source: source-layer failures S1-S5", () => {
