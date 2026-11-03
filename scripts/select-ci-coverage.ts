@@ -16,12 +16,12 @@ export function validSha(value: unknown): value is string {
 export function isDocumentationPath(path: string): boolean {
   if (path.split('/').some(part => !part || part === '.' || part === '..')) return false;
   if (path.startsWith('docs/reference-configs/')) return false;
-  return path === 'README.md' || path === 'DEBUG.md' || path === 'docs/architecture/.projection-manifest.json'
+  return path === 'README.md' || path === 'DEBUG.md'
     || (path.startsWith('examples/') && path.endsWith('.md'))
     || path === 'tasks/lessons.md'
     || (path.startsWith('docs/') && path.endsWith('.md'));
 }
-/** A PR diff of documentation paths only runs no build or test job. */
+/** A diff of documentation paths only selects just the tests that name a changed document. */
 export function documentationOnly(paths: readonly string[]): boolean {
   return paths.length > 0 && paths.every(isDocumentationPath);
 }
@@ -298,7 +298,16 @@ if (import.meta.main) {
     if (untracked.some(path => !validPath(path))) throw new Error('invalid-diff');
     selection.paths = [...new Set([...selection.paths, ...untracked])];
   }
-  if (selection.mode === 'affected' && documentationOnly(selection.paths)) selection.mode = 'documentation';
+  // A mixed diff keeps every documentation consumer. A documentation-only diff runs the tests that
+  // name a changed document; with none, it runs no build or test job. A test that only may read
+  // any document (a child process in the checkout root) runs in the daily suite.
+  let documentationConsumers: string[] = [];
+  if (selection.mode === 'affected' && selection.paths.some(isDocumentationPath)) {
+    const { discoverDocumentationReaders, namedDocumentReaders } = await import('./ci-documentation-consumers');
+    const readers = await discoverDocumentationReaders(process.cwd());
+    documentationConsumers = documentationOnly(selection.paths) ? namedDocumentReaders(readers, selection.paths) : [...readers.keys()];
+    if (!documentationConsumers.length && documentationOnly(selection.paths)) selection.mode = 'documentation';
+  }
   // The push-to-main run fills the cache that PR runs restore; it runs no test.
   const referenceCache = process.env.CI_PATH_REFERENCE_CACHE;
   if (selection.mode === 'affected' || (selection.mode === 'report' && referenceCache)) {
@@ -315,8 +324,6 @@ if (import.meta.main) {
         const old = spawnSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' });
         if (old.status === 0) previousSources.set(file, old.stdout);
       }
-      const documentationConsumers = selection.paths.some(isDocumentationPath)
-        ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
       platforms = selectPlatformCoverage(selection.paths, await discoverPlatformInputs(sources));
       const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
       if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
