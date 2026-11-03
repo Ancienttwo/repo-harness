@@ -268,6 +268,12 @@ describe('board page', () => {
     await settle();
     expect(dialog()!.querySelector('#task-drawer-title')?.textContent).toBe('herdr-core 迁移 2｜sessions：任务会话改到 herdr-app 和 hc');
     expect(dialog()!.querySelector('[aria-current="step"]')?.getAttribute('data-step')).toBe('build');
+    // The stage source panel follows the identifiers, as Task.dc.html orders it, and names the stage that the board fields give.
+    const stageSource = dialog()!.querySelector('section[aria-labelledby="task-stage-source"]')!;
+    expect(stageSource.querySelector('h3')?.textContent).toBe('阶段来源');
+    expect(stageSource.previousElementSibling?.tagName).toBe('DL');
+    expect(stageSource.querySelector('[data-stage-source]')?.getAttribute('data-stage-source')).toBe('building');
+    expect(stageSource.querySelector('[data-stage-source]')?.textContent).toBe('Git + GitHub构建中');
     for (const part of ['席位卡住', 'feat/1476-sessions-herdr-core', '23627c4f5a71', '没有 CI', '未验收', 'w1476', 'blocked']) expect(dialog()!.textContent).toContain(part);
     expect(dialog()!.querySelector('[data-blocker="draft"]')?.textContent).toBe('PR 还是草稿');
     const claim = BOARD.items.find(item => item.number === 1476)!.claim_status;
@@ -278,6 +284,7 @@ describe('board page', () => {
     await key('k');
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1475`);
     expect(dialog()!.querySelector('[data-merge-ready]')).not.toBeNull();
+    expect(dialog()!.querySelector('[data-stage-source]')?.getAttribute('data-stage-source')).toBe('ready');
     expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491 --squash');
     await key('j');
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1476`);
@@ -294,6 +301,8 @@ describe('board page', () => {
     await settle();
     expect(dialog()!.textContent).toContain('Closed');
     expect(dialog()!.querySelector('[aria-current="step"]')).toBeNull();
+    // Without a pull request the panel still names the stage; there are no identifiers before it.
+    expect(dialog()!.querySelector('[data-stage-source]')?.textContent).toBe('Git + GitHubClosed');
 
     await act(async () => root?.unmount());
     root = null;
