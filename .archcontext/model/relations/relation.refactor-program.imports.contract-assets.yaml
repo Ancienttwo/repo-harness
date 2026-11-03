@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.refactor-program.imports.contract-assets
+kind: depends-on
+source: capability.runtime-harness.refactor-program
+target: capability.workflow-engine.contract-assets
+intent: "Type the archctx provider options with the core architecture contract"

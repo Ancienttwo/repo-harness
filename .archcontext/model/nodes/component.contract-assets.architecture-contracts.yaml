@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.architecture-contracts
+kind: component
+name: Architecture Contracts (core)
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: core
+summary: The core ports, contract version and typed unavailable results through which core reaches the Architecture plugin code.
+responsibilities:
+  - Define the ownership, display, notice, runtime and CodeGraph doctor port types and their one contract version.
+  - Hold the per-process provider registration, refuse a provider of another contract version, and return a typed unavailable result for a port without a provider.
+source:
+  include:
+    - src/core/architecture/contracts.ts

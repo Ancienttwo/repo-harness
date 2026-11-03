@@ -13,7 +13,6 @@ responsibilities:
   - Append one loop-engine-hook-event/v2 record per handled event and rotate the bounded log archive.
 source:
   include:
-    - src/cli/hook-entry.ts
     - src/cli/hook/runtime.ts
     - src/cli/hook/route-registry.ts
     - src/cli/hook/handler-*.ts

@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.hook-adapters.hook-root
+kind: component
+name: "Hook Composition Root"
+status: active
+parent: capability.runtime-harness.hook-adapters
+layer: "cli"
+summary: "Starts the repo-harness-hook process and registers the architecture providers that core hook code reaches through ports."
+responsibilities:
+  - Register the archctx ownership, display, runtime and notice providers once per hook process, after the contract version check.
+  - Parse the hook argv and pass the event and its stdin payload to the hook runtime.
+extensions:
+  harnessTier: "composition"
+source:
+  include:
+    - src/cli/hook-entry.ts
