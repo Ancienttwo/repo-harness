@@ -304,7 +304,9 @@ if (import.meta.main) {
   let documentationConsumers: string[] = [];
   if (selection.mode === 'affected' && selection.paths.some(isDocumentationPath)) {
     const { discoverDocumentationReaders, namedDocumentReaders } = await import('./ci-documentation-consumers');
-    const readers = await discoverDocumentationReaders(process.cwd());
+    // Changed paths add the base-tree documents that the head no longer has, so a deletion keeps its readers.
+    const tracked = git(['ls-files', '-z']).split('\0').filter(isDocumentationPath);
+    const readers = await discoverDocumentationReaders(process.cwd(), new Set([...tracked, ...selection.paths.filter(isDocumentationPath)]));
     documentationConsumers = documentationOnly(selection.paths) ? namedDocumentReaders(readers, selection.paths) : [...readers.keys()];
     if (!documentationConsumers.length && documentationOnly(selection.paths)) selection.mode = 'documentation';
   }

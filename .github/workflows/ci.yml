@@ -63,9 +63,11 @@ jobs:
           include-hidden-files: true
           if-no-files-found: error
 
-  # Runs beside selection, so it does not delay the selected jobs.
+  # Runs beside selection, so it does not delay the selected jobs. A push to
+  # main runs only selection; pull requests, daily and manual runs keep this check.
   state-boundaries:
     name: State boundaries
+    if: github.event_name != 'push'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:

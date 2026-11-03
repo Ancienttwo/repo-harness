@@ -587,9 +587,12 @@ describe('single affected verification and daily fallback', () => {
     expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
     expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar']);
-    // State boundaries run beside selection on every event, and Required / CI requires them.
+    // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
     expect(jobs['state-boundaries'].needs).toBeUndefined();
-    expect(jobs['state-boundaries'].if).toBeUndefined();
+    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
+    expect(jobs.required.if).toBe("always() && github.event_name == 'pull_request'");
+    const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
+    expect(pushJobs).toEqual(['selection']);
     expect(jobs.selection.steps.some((step: any) => step.run === 'bun run check:state-boundaries')).toBe(false);
     const boundarySteps = jobs['state-boundaries'].steps.filter((step: any) => step.run === 'bun run check:state-boundaries');
     expect(boundarySteps).toHaveLength(1);
@@ -827,7 +830,7 @@ describe('single affected verification and daily fallback', () => {
       writePlatformFixture(write);
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
-      for (const document of ['docs/guide.md', 'docs/helper.md', 'docs/unread.md', 'tasks/lessons.md']) write(document, '# Document');
+      for (const document of ['docs/guide.md', 'docs/helper.md', 'docs/unread.md', 'docs/named.md', 'docs/area/page.md', 'docs/glob/one.md', 'tasks/lessons.md']) write(document, '# Document');
       write('docs/architecture/.projection-manifest.json', '{}');
       write('src/feature.ts', "export const targetDirectories = ['docs', 'plans'];");
       write('src/manifest.ts', "import { readFileSync } from 'node:fs'; import { join } from 'node:path'; export const manifest = () => readFileSync(join(import.meta.dir, '../docs/architecture/.projection-manifest.json'));");
@@ -836,6 +839,10 @@ describe('single affected verification and daily fallback', () => {
       write('tests/guide.test.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readFileSync(join(ROOT, 'docs/guide.md'));");
       write('tests/helpers/doc.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; export const helper = () => readFileSync(join(import.meta.dir, '../..', 'docs/helper.md'));");
       write('tests/helper.test.ts', "import { helper } from './helpers/doc';");
+      // The named-checkout rule: a fixture read of a tracked guide name in a test that resolves checkout code.
+      write('tests/named.test.ts', "import { join } from 'node:path'; import { mkdtempSync, readFileSync } from 'node:fs'; const CLI = join(import.meta.dir, '..', 'src/feature.ts'); readFileSync(join(mkdtempSync('fixture'), 'docs/named.md'));");
+      write('tests/directory.test.ts', "import { join } from 'node:path'; import { readdirSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readdirSync(join(ROOT, 'docs/area'));");
+      write('tests/glob.test.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); for (const name of process.argv) readFileSync(join(ROOT, 'docs/glob', name));");
       write('tests/root.test.ts', "import { join } from 'node:path'; import { spawnSync } from 'node:child_process'; const ROOT = join(import.meta.dir, '..'); spawnSync('bun', ['scripts/check.ts'], { cwd: ROOT });");
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
       const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output'); const selected = join(repo, '.ci-affected-tests.json');
@@ -844,19 +851,38 @@ describe('single affected verification and daily fallback', () => {
         ['named read', ['docs/guide.md', 'tasks/lessons.md'], 'affected', ['tests/guide.test.ts']],
         ['helper import', ['docs/helper.md'], 'affected', ['tests/helper.test.ts']],
         ['root-process consumer runs daily only', ['docs/unread.md'], 'documentation', null],
-        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/feature.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/root.test.ts']],
+        ['directory prefix', ['docs/area/page.md'], 'affected', ['tests/directory.test.ts']],
+        ['glob', ['docs/glob/one.md'], 'affected', ['tests/glob.test.ts']],
+        // Deleted documents are matched as well: the base tree still names them.
+        ['deleted document keeps its named reader', ['-docs/named.md'], 'affected', ['tests/named.test.ts']],
+        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
         ['manifest reader', ['docs/architecture/.projection-manifest.json'], 'affected', ['tests/manifest.test.ts']],
         ['no reader', ['tasks/lessons.md'], 'documentation', null],
       ];
       for (const [name, changed, mode, tests] of rows) {
         rmSync(selected, { force: true }); git('checkout', '-q', '-B', 'candidate', base);
-        for (const path of changed) write(path, path.endsWith('.json') ? '{"changed":true}' : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
+        for (const path of changed) {
+          if (path.startsWith('-')) rmSync(join(repo, path.slice(1)));
+          else write(path, path.endsWith('.json') ? '{"changed":true}' : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
+        }
         git('add', '.'); git('commit', '-qm', name); const head = git('rev-parse', 'HEAD');
         writeFileSync(output, '');
         const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
         expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
         expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
         expect({ name, tests: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, tests });
+      }
+      // The local affected lane stops after a documentation selection; an affected selection goes on to typecheck.
+      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) write(file, readFileSync(join(ROOT, file), 'utf8'));
+      write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
+      spawnSync('chmod', ['+x', join(repo, 'bin/bun')]);
+      for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
+        const log = join(repo, `.git/bun-${mode}.log`);
+        const lane = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected', '--base', base], { cwd: repo, encoding: 'utf8',
+          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode } });
+        expect({ mode, status: lane.status }, lane.stderr).toEqual({ mode, status: 0 });
+        expect({ mode, exit: lane.stdout.includes('[ci] Documentation-only diff: no build or test job.') }).toEqual({ mode, exit: !typecheck });
+        expect({ mode, typecheck: readFileSync(log, 'utf8').includes('bun run check:type') }).toEqual({ mode, typecheck });
       }
     } finally { rmSync(repo, { recursive: true, force: true }); }
   }, 120_000);
