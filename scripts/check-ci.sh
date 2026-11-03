@@ -99,10 +99,29 @@ if [[ "$lane" == affected ]]; then
   exit 0
 fi
 
-# PR advisory: warn about architecture debt that is new since the PR base, and
-# about hand-edited generated regions. Architecture diagnostics never fail the
-# PR, so every outcome here exits 0.
+# PR architecture lane. Only the ADR-0002 rule 5 constraint can fail it. The
+# debt and hand-edit results that follow are warnings.
 if [[ "$lane" == architecture-advisory ]]; then
+  # archctx exits 0 for violated and undetermined, and the layer-direction
+  # warnings keep the global status violated. So the gate reads only this
+  # constraint's own result, never the exit code or the global status.
+  echo "[ci] plugin-internals constraint"
+  constraint_json="$(mktemp /tmp/rh-arch-constraints-XXXXXX)"
+  constraint_status=0
+  with_architecture_home npm exec --no -- archctx constraints check --json > "$constraint_json" || true
+  constraint_failures="$(bun -e 'const { decodeConstraintEvaluation } = await import("./src/core/architecture/projection.ts"); const id = "constraint.surface.plugin-internals"; const envelope = JSON.parse(await Bun.file(process.argv[1]).text()); if (envelope.ok !== true) throw new Error(`archctx constraints check failed: ${JSON.stringify(envelope.error ?? null)}`); const r = decodeConstraintEvaluation(envelope.data); const failures = []; if (!r.constraintIds.includes(id)) failures.push(`${id} was not evaluated`); if (r.coverage !== "complete") failures.push(`coverage is ${r.coverage}`); if (r.reasonCodes.length > 0) failures.push(`reason codes: ${r.reasonCodes.join(", ")}`); for (const u of r.unresolvedImports) failures.push(`unresolved import ${u.specifier} from ${u.from}`); for (const v of r.violations) if (v.constraintId === id) failures.push(`${v.fromPath} imports ${v.toPath} (${v.fromNode} -> ${v.toNode})`); console.log(failures.map(f => f.replace(/\s+/g, " ")).join("\n"));' "$constraint_json")" || constraint_status=$?
+  if [[ "$constraint_status" -ne 0 ]]; then
+    echo "::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log."
+  elif [[ -n "$constraint_failures" ]]; then
+    constraint_status=1
+    while IFS= read -r failure; do
+      echo "::error title=Plugin internals constraint::${failure//'%'/%25}. ADR-0002 rule 5: a surface reads plugin state only through the plugin contract node."
+    done <<< "$constraint_failures"
+  else
+    echo "[ci] constraint.surface.plugin-internals: 0 violations, coverage complete."
+  fi
+  rm -f "$constraint_json"
+
   echo "[ci] architecture debt"
   debt_json="$(mktemp /tmp/rh-arch-debt-XXXXXX)"
   debt_err="$(mktemp /tmp/rh-arch-debt-err-XXXXXX)"
@@ -147,6 +166,10 @@ if [[ "$lane" == architecture-advisory ]]; then
     echo "[ci] No hand-edited generated output in this PR."
   fi
   rm -f "$arch_json"
+  if [[ "$constraint_status" -ne 0 ]]; then
+    echo "[ci] The plugin-internals constraint failed." >&2
+    exit 1
+  fi
   echo "[ci] OK"
   exit 0
 fi

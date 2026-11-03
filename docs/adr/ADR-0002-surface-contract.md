@@ -139,12 +139,10 @@ scan of the task session directories with its entry bound.
 owner in the architecture model, not by its directory, so a read of this
 primitive does not break it.
 
-Known operator imports of task-agent-host that still break rule 5, for #1287
-step 1e:
-
-- The hc client `src/effects/terminal/herdr-core.ts`, from
-  `execution-collector.ts`, `execution-state-worker.ts`,
-  `herdr-runtime-transport.ts`, `notify-status.ts` and `bot-access.ts`.
-- The notify records, from `notify-status.ts`:
-  `src/effects/terminal/herdr-notify-install.ts` and
-  `src/effects/terminal/notify-relay.ts`.
+Known operator imports of task-agent-host that still break rule 5: none
+(#1640). #1626 moved the hc client `src/effects/terminal/herdr-core.ts` to the
+core-tier node `component.execution-primitives.hc-client`. #1627 moved the
+notify file reads to one read contract module that execution-primitives owns.
+The archctx constraint `constraint.surface.plugin-internals` now fails
+`Required / CI` on a new import of task-agent-host or archctx-closure
+internals from the operator, mcp-sidecar or task-fleet.
