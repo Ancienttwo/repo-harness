@@ -3,6 +3,7 @@
 // done turn to the Bot webhook and the selected human channels.
 
 import { hostname } from 'node:os';
+import { NOTIFY_CHANNEL_SECRET_KEYS, type NotifyChannelSecretKey } from '../../core/decision/notify-secret-keys';
 import { parseEnv } from 'node:util';
 import { NAME_PATTERN, botEvent } from '../../../assets/herdr/github-events/bot-event.mjs';
 import {
@@ -17,9 +18,8 @@ import {
 import { RH_LABEL, RH_NOTIFY_LABELS, hcEvents, type HcEventStream, type HcLabels, type HcStreamItem } from './herdr-core';
 import { notifyConfigPath, notifyDeliveriesPath, readPrivateFile, writePrivateFile } from './herdr-notify-install';
 
-export const NOTIFY_SECRET_KEYS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID'] as const;
 export const NOTIFY_DONE_KEYS = ['WEBHOOK_NOTIFY_DONE', 'SLACK_NOTIFY_DONE', 'DISCORD_NOTIFY_DONE', 'TELEGRAM_NOTIFY_DONE'] as const;
-export type NotifyConfig = Readonly<Record<typeof NOTIFY_SECRET_KEYS[number] | typeof NOTIFY_DONE_KEYS[number], string>>;
+export type NotifyConfig = Readonly<Record<NotifyChannelSecretKey | typeof NOTIFY_DONE_KEYS[number], string>>;
 
 const TIMEOUT_MS = 5_000;
 const CONFIG_MAX_BYTES = 64 * 1024;
@@ -29,7 +29,7 @@ const CHANNEL_NAMES: Readonly<Record<NotifyChannel, string>> = { webhook: 'WEBHO
 
 /** The one serializer of the config file; install writes it and the relay reads it per event. */
 export function renderNotifyConfig(config: NotifyConfig): string {
-  return [...NOTIFY_SECRET_KEYS, ...NOTIFY_DONE_KEYS].map(key => `${key}='${config[key]}'`).join('\n') + '\n';
+  return [...NOTIFY_CHANNEL_SECRET_KEYS, ...NOTIFY_DONE_KEYS].map(key => `${key}='${config[key]}'`).join('\n') + '\n';
 }
 
 /** A config value breaks a rule. The message names the key and the rule, never the value. */
@@ -40,7 +40,7 @@ export class NotifyConfigError extends Error {
   }
 }
 
-const URL_KEYS = ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL'] as const;
+const URL_KEYS = ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL'] as const satisfies readonly NotifyChannelSecretKey[];
 
 /**
  * The one config decoder. Install input and each relay reload pass through it, so a changed file
@@ -49,7 +49,7 @@ const URL_KEYS = ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL'] as 
  */
 export function decodeNotifyConfig(values: Readonly<Record<string, string | undefined>>): NotifyConfig {
   const config: Record<string, string> = {};
-  for (const key of NOTIFY_SECRET_KEYS) {
+  for (const key of NOTIFY_CHANNEL_SECRET_KEYS) {
     const value = values[key] ?? '';
     if (/[\x00-\x1f\x7f'"\\]/.test(value)) throw new NotifyConfigError(`${key} contains an unsupported character.`);
     config[key] = value;

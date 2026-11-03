@@ -6,6 +6,7 @@ import { PassThrough } from 'node:stream';
 import { assertBotEvent } from '../../assets/herdr/github-events/bot-event.mjs';
 import { askMasked } from '../../src/cli/commands/herdr';
 import type { HcEventStream, HcStreamItem, HcTerminal } from '../../src/effects/terminal/herdr-core';
+import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath } from '../../src/effects/terminal/herdr-notify-install';
 import { createNotifyRelay, runNotifyRelay } from '../../src/effects/terminal/notify-relay';
 import { tmpWorkspace } from '../helpers/repo-fixture';
@@ -209,7 +210,8 @@ function cliFixture() {
   writeFileSync(join(bin, 'hc'), `#!${process.execPath}
 import { appendFileSync } from 'node:fs';
 const argv = process.argv.slice(2);
-appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ argv, secret: process.env.WEBHOOK_KEY ?? null }) + '\\n');
+const notify = (process.env.FIXTURE_KEYS ?? '').split(',').filter(key => key && process.env[key] !== undefined);
+appendFileSync(process.env.FIXTURE_CALLS, JSON.stringify({ argv, secret: process.env.WEBHOOK_KEY ?? null, notify }) + '\\n');
 const mode = process.env.FIXTURE_HC ?? 'none';
 const relay = { address: 't5', name: 'rh-notify-relay', state: 'live', labels: { 'repo-harness.role': 'notify-relay' }, status: null, turn: 0 };
 if (mode === 'fail') { process.stderr.write(JSON.stringify({ error: { kind: 'unavailable', message: 'private ' + process.env.FIXTURE_PRIVATE } })); process.exit(1); }
@@ -227,7 +229,7 @@ else process.exit(2);
   for (const key of Object.keys(env)) if (/^(WEBHOOK_|SLACK_|DISCORD_|TELEGRAM_|HC_|HERDR_)/.test(key)) delete env[key];
   const cli = (args: string[], extra: NodeJS.ProcessEnv = {}) =>
     spawnSync(process.execPath, [join(ROOT, 'src/cli/index.ts'), 'herdr', 'notify', ...args], { env: { ...env, ...extra }, encoding: 'utf8', timeout: 20_000 });
-  const calls = (): { argv: string[]; secret: string | null }[] => existsSync(env.FIXTURE_CALLS!)
+  const calls = (): { argv: string[]; secret: string | null; notify: string[] }[] => existsSync(env.FIXTURE_CALLS!)
     ? readFileSync(env.FIXTURE_CALLS!, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
   return { root, env, cli, calls, cleanup: () => rmSync(root, { recursive: true, force: true }) };
 }
@@ -260,6 +262,22 @@ describe('herdr notify install and uninstall', () => {
       expect(again.status, again.stderr).toBe(0);
       expect(f.calls().slice(2).map(call => call.argv[0])).toEqual(['ls']);
       expect(readFileSync(notifyConfigPath(f.env), 'utf8')).toContain(`SLACK_WEBHOOK_URL=''`);
+    } finally { f.cleanup(); }
+  });
+
+  test('install writes every core channel key to notify.env, and no hc child gets one', () => {
+    const f = cliFixture();
+    try {
+      const valid: Record<string, string> = { WEBHOOK_URL: 'https://bot.example/routine', WEBHOOK_KEY: KEY, SLACK_WEBHOOK_URL: SLACK,
+        DISCORD_WEBHOOK_URL: DISCORD, TELEGRAM_BOT_TOKEN: TOKEN, TELEGRAM_CHAT_ID: '-42' };
+      // The loop covers a key that is added to the core channel list later; it has no format rule, so a plain value stands in.
+      const exported = Object.fromEntries(NOTIFY_CHANNEL_SECRET_KEYS.map(key => [key, valid[key] ?? `fixture-${key.toLowerCase()}`]));
+      const result = f.cli(['install', '--non-interactive'], { ...exported, FIXTURE_KEYS: NOTIFY_CHANNEL_SECRET_KEYS.join(',') });
+      expect(result.status, result.stderr).toBe(0);
+      const config = readFileSync(notifyConfigPath(f.env), 'utf8');
+      for (const key of NOTIFY_CHANNEL_SECRET_KEYS) expect(config).toContain(`${key}='${exported[key]}'`);
+      expect(f.calls().map(call => call.argv[0])).toEqual(['ls', 'run']);
+      expect(f.calls().flatMap(call => call.notify)).toEqual([]);
     } finally { f.cleanup(); }
   });
 

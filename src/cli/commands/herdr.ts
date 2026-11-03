@@ -2,7 +2,8 @@ import { RH_NOTIFY_RELAY, hcKill, hcList, hcRm, hcRun } from '../../effects/term
 import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, readNotifyInstallRecord, relayIsLive, writeNotifyInstallRecord, writePrivateFile } from '../../effects/terminal/herdr-notify-install.ts';
 import type { DoctorCheckResult } from './doctor.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
-import { NOTIFY_SECRET_KEYS, decodeNotifyConfig, renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
+import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys.ts';
+import { NOTIFY_DONE_KEYS, decodeNotifyConfig, renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
 import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/operator/notify-status.ts';
 import { Command } from 'commander';
 import { existsSync, rmSync } from 'node:fs';
@@ -71,20 +72,13 @@ function startRelay(running: readonly unknown[]): void {
 
 export async function installNotify(options: NotifyOptions): Promise<void> {
   if (process.platform === 'win32') throw new Error('Herdr notify needs POSIX file permissions.');
-  const values: Record<string, string> = {
-    WEBHOOK_URL: options.webhookUrl ?? process.env.WEBHOOK_URL ?? '',
-    WEBHOOK_KEY: options.webhookKey ?? process.env.WEBHOOK_KEY ?? '',
-    SLACK_WEBHOOK_URL: options.slackWebhookUrl ?? process.env.SLACK_WEBHOOK_URL ?? '',
-    DISCORD_WEBHOOK_URL: options.discordWebhookUrl ?? process.env.DISCORD_WEBHOOK_URL ?? '',
-    TELEGRAM_BOT_TOKEN: options.telegramBotToken ?? process.env.TELEGRAM_BOT_TOKEN ?? '',
-    TELEGRAM_CHAT_ID: options.telegramChatId ?? process.env.TELEGRAM_CHAT_ID ?? '',
-    WEBHOOK_NOTIFY_DONE: options.webhookNotifyDone ? '1' : '0',
-    SLACK_NOTIFY_DONE: options.slackNotifyDone ? '1' : '0',
-    DISCORD_NOTIFY_DONE: options.discordNotifyDone ? '1' : '0',
-    TELEGRAM_NOTIFY_DONE: options.telegramNotifyDone ? '1' : '0',
-  };
+  // Each key comes from its option (`--webhook-url` for WEBHOOK_URL) or the caller's environment.
+  const option = (key: string): unknown => (options as Record<string, unknown>)[key.toLowerCase().replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())];
+  const values: Record<string, string> = {};
+  for (const key of NOTIFY_CHANNEL_SECRET_KEYS) values[key] = (option(key) as string | undefined) ?? process.env[key] ?? '';
+  for (const key of NOTIFY_DONE_KEYS) values[key] = option(key) ? '1' : '0';
   if (!options.nonInteractive) {
-    for (const key of NOTIFY_SECRET_KEYS) {
+    for (const key of NOTIFY_CHANNEL_SECRET_KEYS) {
       if (!values[key]) values[key] = (await askMasked(`${key}${key === 'WEBHOOK_URL' || key === 'WEBHOOK_KEY' ? ' (required)' : ' (optional; Enter to skip)'}`)).trim();
     }
     for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM']) {
