@@ -119,13 +119,19 @@ The bot selects scope, worker and verification by risk. Use independent gatekeep
 
 A hazard is a change that runs or exposes code, secrets, data or network access on a machine or in CI. One hit on any item sets an internal PR to High under [Review by risk](#review-by-risk). An external PR stops and escalates under its protocol; that behavior does not change.
 
-- Changes a workflow or other CI configuration under `.github/`.
-- Changes a release, publish, update or install script, or a package script that runs at install or release.
-- Changes a `Dockerfile` or another container build file.
-- Adds a network address, endpoint or telemetry.
-- Reads credentials, such as tokens, keys, `~/.ssh`, `~/.npmrc` or credential environment variables.
-- Adds or changes a dependency or a lockfile entry. A lockfile-only bump is still a hit; its source does not lower the tier.
-- Adds a binary, or an encoded or opaque blob, such as base64, long hex, minified or otherwise unreadable content.
+<!-- review-hazards:list:begin -->
+The board rule R3 reads only the rows with `path_visible: true`: a changed path that matches one of their patterns is a hit. Reviewers apply every row.
+
+| Hazard | Paths that R3 reads |
+| --- | --- |
+| Changes a workflow or other CI configuration under `.github/`. | `.github/**` |
+| Changes a release, publish, update or install script, or a package script that runs at install or release. | None (`path_visible: false`) |
+| Changes a `Dockerfile` or another container build file. | `**/Dockerfile`, `**/Dockerfile.*`, `**/*.Dockerfile`, `**/Containerfile`, `**/Containerfile.*` |
+| Adds a network address, endpoint or telemetry. | None (`path_visible: false`) |
+| Reads credentials, such as tokens, keys, `~/.ssh`, `~/.npmrc` or credential environment variables. | None (`path_visible: false`) |
+| Adds or changes a dependency or a lockfile entry. A lockfile-only bump is still a hit; its source does not lower the tier. | `**/bun.lock`, `**/bun.lockb`, `**/package-lock.json`, `**/npm-shrinkwrap.json`, `**/yarn.lock`, `**/pnpm-lock.yaml`, `**/Cargo.lock`, `**/go.sum`, `**/poetry.lock`, `**/uv.lock`, `**/Pipfile.lock`, `**/Gemfile.lock`, `**/composer.lock` |
+| Adds a binary, or an encoded or opaque blob, such as base64, long hex, minified or otherwise unreadable content. | None (`path_visible: false`) |
+<!-- review-hazards:list:end -->
 
 ### Review by risk
 The diff sets the tier. The author does not: a human change and a model change with the same diff get the same tier. One hit on a higher signal sets the higher tier.

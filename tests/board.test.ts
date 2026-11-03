@@ -7,6 +7,7 @@ import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliver
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
+import { pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
 import { githubRemoteRepository } from '../src/core/operator/docs';
@@ -117,10 +118,13 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['R2', 'advisor', [1494, 1499], []],
   ]);
   // t4 has no seat label: the board does not guess its seat. The plan comment has no block, so R1 and R4 wait.
+  // #1494 and #1499 change `.github/` and their items carry no tier label, so R3 waits.
   expect(attention.unevaluated.map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
     ['R1', 'plan_unavailable', 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468'],
+    ['R3', 'tier_label_missing', '#1479'],
+    ['R3', 'tier_label_missing', '#1476'],
     ['R4', 'plan_unavailable', null],
   ]);
 });
@@ -200,6 +204,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
       issueNode(data, 1478).blockedBy.nodes.push({ number: 1480, state: 'OPEN' });
       issueNode(data, 1480).blockedBy.nodes.push({ number: 1478, state: 'OPEN' });
       issueNode(data, 1476).labels.nodes.push({ name: 'tier:low' });
+      issueNode(data, 1479).labels.nodes.push({ name: 'tier:medium' });
     },
     pulls: (data) => {
       const pr1499 = data.repository.pr1499;
@@ -212,11 +217,22 @@ test('one hit for each rule that the recorded state does not trigger', () => {
     },
   });
   const hits = rules(board);
-  for (const rule of ['A2', 'A4', 'A5', 'A6', 'A8', 'R1', 'R4'] as const) expect(hits).toContain(rule);
+  for (const rule of ['A2', 'A4', 'A5', 'A6', 'A8', 'R1', 'R3', 'R4'] as const) expect(hits).toContain(rule);
   const findings = evaluateBoardAttention(board).findings;
   expect(findings.find(finding => finding.rule === 'A2')?.pull_requests).toEqual([1491, 1499]);
   expect(findings.filter(finding => finding.rule === 'A6').map(finding => finding.issues)).toEqual([[1477, 1490], [1478, 1480]]);
   expect(findings.find(finding => finding.rule === 'R1')?.issues).toEqual([1477, 1478, 1479, 1480, 1481, 1482, 1483]);
+  // R3: #1494 changes `.github/` for tier:medium #1479. #1499 (tier:low #1476) changes no hazard path. A tier:high item is no hit.
+  expect(findings.filter(finding => finding.rule === 'R3').map(finding => [finding.pull_requests, finding.issues])).toEqual([[[1494], [1479]]]);
+  const high = { ...board, items: board.items.map(item => (item.number === 1479 ? { ...item, tier: 'high' as const } : item)) };
+  expect(rules(high)).not.toContain('R3');
+  // `**` matches zero or more whole segments, `*` stays inside one segment; the other hazards need a reviewer.
+  expect(pathHazardHits(['.github/workflows/ci.yml', 'docs/.github/x', 'Dockerfile', 'ops/web/Dockerfile.dev', 'ops/api.Dockerfile', 'bun.lock', 'pkg/a/yarn.lock', 'bun.lock.bak', 'install.sh']))
+    .toEqual([
+      { hazard: 'ci-config', path: '.github/workflows/ci.yml' },
+      { hazard: 'container-build', path: 'Dockerfile' }, { hazard: 'container-build', path: 'ops/web/Dockerfile.dev' }, { hazard: 'container-build', path: 'ops/api.Dockerfile' },
+      { hazard: 'dependency', path: 'bun.lock' }, { hazard: 'dependency', path: 'pkg/a/yarn.lock' },
+    ]);
 
   // A rule that cannot read its input lists the subject: no status time, no issue label, an issue or a claim PR off the board.
   const [blocked, done] = board.execution.status === 'observed' ? board.execution.terminals : [];
