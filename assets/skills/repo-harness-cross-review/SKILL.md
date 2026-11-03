@@ -19,7 +19,9 @@ ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 
 ## Boundaries
 
-Prepare verification and the contract before review. The task session owns
+Attach the CI status of the head, the recorded evidence and the contract
+before review (`repo-harness-issue-flow`, `references/acceptor.md` §2.1).
+The task session owns
 the run: the addressed hc terminal or app-terminal host, the isolated reviewer
 checkout and the OAR Session. The reviewer takes its instructions from the
 `deep-reasoner` role in `agents/fleet/`. History/idle are observations; the request-bound file Result

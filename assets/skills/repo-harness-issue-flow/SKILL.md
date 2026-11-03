@@ -35,7 +35,7 @@ writer, head owner, integrator or acceptor.
 | Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Posts its own claim, widens scope, merges, pushes to another owner's branch |
-| Acceptor | A seat holds the acceptor role and can call the gatekeeper sub-agent, the default reviewer. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review round | Reviews its own code, pushes code |
+| Acceptor | A seat holds the acceptor role and can call the gatekeeper sub-agent, the default reviewer. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review in one round | Reviews its own code, pushes code |
 
 The suggested models are advice, not a requirement. Any capable host may
 hold any claim role. The High tier records its `model_relation` in the
@@ -115,7 +115,7 @@ map ─▶ split ─▶ gap review ─▶ publish ─▶ dispatch ─▶ worker 
   (`references/orchestrator.md` §9.3): it merges several accepted PRs and
   adds no change of its own. Parallel workers never share a file.
 - One head owner per PR. Any other agent asks on the board, or takes the
-  seat through a handoff comment before it pushes.
+  head-owner role through a handoff comment before it pushes.
 - The worker follows the issue boundary. A needed change outside it is a
   boundary question for the orchestrator, not a reason to widen the PR.
 - No compatibility code unless the issue asks for it by name: no aliases,

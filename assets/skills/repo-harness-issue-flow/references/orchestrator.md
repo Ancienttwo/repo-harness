@@ -103,7 +103,7 @@ The parent issue holds the goal, the child table and the done criteria. Use the 
 status column when a child changes state, so that the parent is one
 screenful of truth.
 
-The seat/status column uses only `unclaimed`, `unclaimed · waits for
+The role/status column uses only `unclaimed`, `unclaimed · waits for
 #n`, `writer <agent> · active`, `writer <agent> · PR #p` and `merged`.
 The claim comment wins over the table.
 
@@ -201,8 +201,7 @@ module is in the title so that a list view shows the write scopes.
 - Match the model to the issue. Give a weaker or over-defensive model the
   issues with the tightest boundaries and the clearest acceptance checks.
   Keep contract-design issues for a strong model.
-- Limit each artifact to two review rounds. Ask the owner to decide before
-  a third round. One reviewer takes each artifact.
+- Review rounds converge by the round rules in `acceptor.md` §2.2.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
   or a top-level host session). A dispatched agent has its own process. A
   sub-agent runs inside a seat process and is not a dispatch target. A
@@ -243,15 +242,14 @@ host's PR events or check when the worker reports.
 - **Review.** Select the review depth by the diff's risk tier. A Low PR
   that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
   seat (`docs/reference-configs/agentic-development-flow.md`, Review by
-  risk). Each reviewer posts an `acceptance claim` for its round and subject SHA before
-  it reads, so that two reviewers do not take the same round. Classify
-  findings:
-  - P1 — wrong behavior or broken boundary: fix in this PR.
-  - P2 — real defect, small: fix in this PR, or defer with an issue link.
-  - P3 — improvement: becomes a follow-up issue, not a PR blocker.
-  Send the findings to the worker that wrote the PR. Record the result in
-  one acceptance record comment on the PR, in the row shape of
-  `templates.md`: round, seat, subject, verdict and model relation.
+  risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
+  reviewer posts an `acceptance claim` before it reads. Who reviews each
+  round, and how many claims a round has, follow `acceptor.md` §2.2.
+  Findings take the severities of `acceptor.md` §3. A P3 becomes a follow-up issue, not a PR blocker.
+  Send the findings to the worker that wrote the PR. You make the
+  second-finding choice of the class rule (`worker.md` §7). Record
+  the result in one acceptance record comment on the PR, in the row shape
+  of `templates.md`: round, role, subject, verdict and model relation.
 - **Defensive code.** Reject compatibility branches, fallbacks and
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
@@ -357,14 +355,16 @@ A PR is eligible when all of these are true:
 
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
-- Its tier review passed on a subject SHA. A Low PR needs no review, but
+- Its tier review passed on a subject SHA, or rule 4 of `acceptor.md`
+  §2.2 applies. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges
   of main since it. `git rev-list --no-merges <subject>..<head> ^origin/main`
   prints nothing.
 - It has no unresolved review thread that a person started. A review bot
-  thread is advisory input and does not block.
+  thread is advisory input and does not block. For a rule-4 merge, you
+  resolve the remaining P2 threads first (`acceptor.md` §6).
 - Its closing references are correct.
 
 ```bash
