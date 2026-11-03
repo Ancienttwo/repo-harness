@@ -264,8 +264,14 @@ export function OperatorApp({
 
   const repositories = useRepositories(readRepositories, initialRepositories, refreshGeneration);
   const registered = repositoriesOf(repositories);
-  const activeRepositoryId = repositoryId ?? registered[0]?.repository_id ?? null;
-  const activeRepository = registered.find(repo => repo.repository_id === activeRepositoryId) ?? null;
+  // Pin the first registered repository once it is known. The server sorts by name, so a later
+  // registration that sorts first must not move the single-repository pages; only the switcher changes the pin.
+  const firstRegistered = registered[0]?.repository_id ?? null;
+  if (repositoryId === null && firstRegistered !== null) setRepositoryId(firstRegistered);
+  useEffect(() => {
+    if (repositoryId !== null) writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, repositoryId);
+  }, [repositoryId]);
+  const activeRepository = registered.find(repo => repo.repository_id === repositoryId) ?? null;
 
   const devActivity = useDevActivity(readDevActivity, initialDevActivity, refreshGeneration);
   const devSnapshot = snapshotOf(devActivity);
@@ -307,10 +313,7 @@ export function OperatorApp({
     window.history.pushState(null, '', window.location.pathname + window.location.search + workspaceHash(next));
     setPlace(next);
   }, []);
-  const switchRepository = (id: string) => {
-    writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, id);
-    setRepositoryId(id);
-  };
+  const switchRepository = (id: string) => setRepositoryId(id);
   const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
   // A Repositories row opens the board form of that repository.
   const openRepositoryBoard = (id: string) => {

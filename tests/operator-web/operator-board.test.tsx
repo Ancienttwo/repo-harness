@@ -469,6 +469,25 @@ describe('board page', () => {
     expect(window.location.hash).toBe('#board');
     expect(document.querySelector<HTMLSelectElement>('[data-board-subject] select')?.value).toBe(site);
   });
+
+  test('a failed registry refresh keeps the last rows and marks the list, apart from the Dev Activity line', async () => {
+    installDom('http://127.0.0.1:4318/#repositories');
+    let fail = false;
+    const activity = busy();
+    await mount(<OperatorApp {...props(activity, {
+      initialRepositories: REGISTRY,
+      readRepositories: async () => { if (fail) throw new Error('registry_unavailable'); return REGISTRY; },
+    })} />);
+    const marker = () => document.querySelector('[data-freshness-source="repositories"]');
+    expect(marker()).toBeNull();
+    fail = true;
+    await act(async () => button('Refresh').click());
+    await act(async () => {});
+    expect(marker()?.getAttribute('data-freshness')).toBe('refresh-failed');
+    expect(marker()?.textContent).toBe('Registry refresh failed · showing the last list');
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(REGISTRY.repositories.length);
+    expect(document.querySelector('.operator-header [data-freshness]')?.getAttribute('data-freshness')).toBe(activity.status);
+  });
 });
 
 const HOME_URL = 'http://127.0.0.1:4318/';

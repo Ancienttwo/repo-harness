@@ -124,6 +124,10 @@ export function RepositoriesPage({ view, activity, now, onOpen, t }: {
   return (
     <section aria-labelledby="repositories-heading" className="flex flex-col gap-4">
       <SectionTitle id="repositories-heading" count={repositories.length} className="text-base">{t('nav.repositories')}</SectionTitle>
+      {/* The registry list has its own freshness; the header line is about Dev Activity. */}
+      {view.refreshFailed && <p role="status" className="text-xs text-kumo-warning" data-freshness="refresh-failed" data-freshness-source="repositories">
+        {t('freshness.repositories.refreshFailed')}
+      </p>}
       {repositories.length === 0 && stale === 0
         ? <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} commandLine="repo-harness adopt --help" />
         : (

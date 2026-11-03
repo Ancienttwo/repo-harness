@@ -179,8 +179,8 @@ JS_EOF
 }
 
 assert_operator_runtime() {
-  bun - "$OPERATOR_URL" "$OPERATOR_HOME" <<'JS_EOF'
-const [, , baseUrl, isolatedHome] = process.argv;
+  bun - "$OPERATOR_URL" "$OPERATOR_HOME" "$OPERATOR_REGISTRY" <<'JS_EOF'
+const [, , baseUrl, isolatedHome, registryHome] = process.argv;
 const fail = (message) => {
   console.error(`[tarball-smoke] ERROR: ${message}`);
   process.exit(1);
@@ -212,12 +212,20 @@ for (const token of ['--color-kumo-base', '--color-kumo-line', '[data-mode=dark]
 }
 // `?fixture=` exists only under the Vite dev server; its data must not ship.
 if (assetText.js.includes('unknown operator fixture')) fail('operator bundle contains development fixtures');
+// Register one repository with the installed package, so the path check below reads a real row.
+const { mkdirSync } = await import('node:fs');
+const smokeRepo = `${isolatedHome}/smoke-repo`;
+mkdirSync(smokeRepo, { recursive: true });
+const { registerRepoHarnessRepo } = await import(`${process.cwd()}/node_modules/repo-harness/src/effects/repo-registry.ts`);
+const registration = registerRepoHarnessRepo(smokeRepo, 'manual', { env: { HOME: isolatedHome, REPO_HARNESS_HOME: registryHome }, requireAdopted: false });
+if (!registration.registered) fail(`could not register the smoke repository: ${registration.reason}`);
 const listed = await fetch(`${baseUrl}/api/v1/repositories`);
 if (!listed.ok) fail(`operator repository list returned ${listed.status}`);
 const payload = await listed.json();
 // Decode with the installed package's own decoder, so a protocol bump cannot pass here with a stale literal.
 const { decodeOperatorRepositories } = await import(`${process.cwd()}/node_modules/repo-harness/src/core/operator/repositories.ts`);
-decodeOperatorRepositories(payload);
+const list = decodeOperatorRepositories(payload);
+if (list.repositories.length !== 1 || list.repositories[0].display_name !== 'smoke-repo') fail('operator repository list did not show the registered repository');
 if (JSON.stringify(payload).includes(isolatedHome)) fail('operator repository list exposed a local path');
 JS_EOF
 }

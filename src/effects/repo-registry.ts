@@ -432,12 +432,6 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
   });
 }
 
-/**
- * Read every authorized row once without the legacy empty-registry fallback.
- * This does not touch repository paths: a missing or unsafe individual root
- * is a repository-local fleet result, while malformed enumeration authority is
- * fatal before a collector can claim it saw all authorized repositories.
- */
 /** A registered root counts only when it names a real directory, not a symlink. */
 export function registeredRootReadable(repo: RepoHarnessRegisteredRepo): boolean {
   let path = repo.path;
@@ -452,6 +446,12 @@ export function registeredRootReadable(repo: RepoHarnessRegisteredRepo): boolean
   }
 }
 
+/**
+ * Read every authorized row once without the legacy empty-registry fallback.
+ * This does not touch repository paths: a missing or unsafe individual root
+ * is a repository-local fleet result, while malformed enumeration authority is
+ * fatal before a collector can claim it saw all authorized repositories.
+ */
 export function readRepoHarnessRegistryStrictSnapshot(opts: {
   readonly env?: NodeJS.ProcessEnv;
   readonly adoptedOnly?: false;

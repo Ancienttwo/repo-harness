@@ -1309,7 +1309,7 @@ export async function startOperatorServer(
       try { repositories = readOperatorRepositories(options.env ?? process.env); }
       catch {
         sendRefusal(request, response, 503, errorBody('registry_unavailable', 'The repository registry is unreadable.',
-          'Run `repo-harness fleet prune` to read the registry, then retry.'), headOnly);
+          'Run `repo-harness fleet board --json` for diagnostics.'), headOnly);
         return;
       }
       sendJson(response, 200, repositories, headOnly);
