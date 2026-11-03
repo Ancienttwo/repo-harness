@@ -129,13 +129,12 @@ describe('herdr-core runtime observation', () => {
     const path = join(f.root, 'runtime.json');
     writeFileSync(path, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr-core', source_host: 'fixture', deadline_ms: 2000 }));
     const service = await startRuntimeService(path, f.env);
-    const statusReads = () => f.argv().filter(line => line === 'server status --json').length;
     try {
       expect(service.read()).toMatchObject({ status: 'ready', unclaimed: 1 });
-      const before = statusReads();
+      const epoch = service.read().source_epoch;
       f.setVersion('0.1.17', 'core-2'); f.setSnapshot(1, [terminal, { ...terminal, address: 't1b' }]); f.emit('not json');
-      // The reconnect opens its stream only after it has identified the new core.
-      await until(() => f.argv().slice(-1)[0]?.startsWith('events') === true && statusReads() > before);
+      // The reconnect advances the source epoch only after it has identified the new core.
+      await until(() => service.read().source_epoch > epoch);
       await service.refresh();
       expect(service.read()).toMatchObject({ status: 'ready', reason: null, unclaimed: 2 });
     } finally { service.close(); f.cleanup(); }

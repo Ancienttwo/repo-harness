@@ -17,8 +17,10 @@ case "$1" in
     printf '%s' '{"error":{"kind":"unreachable","message":"no core"}}' >&2; exit 1 ;;
   events)
     if [ -f "$FAKE_HC/events-fail" ]; then printf '%s' '{"error":{"kind":"unreachable","message":"no core"}}' >&2; exit 1; fi
+    # hc subscribes before it sends the snapshot: the stream starts at the event file's end before the snapshot line.
+    from=$(($(wc -c < "$FAKE_HC/events.jsonl") + 1))
     cat "$FAKE_HC/snapshot.json"; printf '\\n'
-    exec tail -n 0 -f "$FAKE_HC/events.jsonl" ;;
+    exec tail -c +"$from" -f "$FAKE_HC/events.jsonl" ;;
 esac
 exit 2
 `;
