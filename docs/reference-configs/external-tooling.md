@@ -374,8 +374,7 @@ boundary explicit:
 
 | Capability | Owner | Required for |
 |---|---|---|
-| `herdr` | user install (herdr.dev) | required at the version pinned in `.ai/harness/policy.json#external_tooling.herdr`; peer terminals and persistent task reviewer hosting |
-| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | optional, at least the version pinned in `.ai/harness/policy.json#external_tooling.herdr_core`; persistent terminals and agent messaging; no repo-harness automation uses it yet |
+| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | required, at least the version pinned in `.ai/harness/policy.json#external_tooling.herdr_core`; persistent agent terminals, task sessions, review hosting and the notify relay |
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
@@ -383,12 +382,15 @@ boundary explicit:
 | `rsync` | platform filesystem | installed-copy runtime mirroring |
 | `symlink` | platform filesystem | link-mode aliases; copy mode is the fallback |
 
-`.ai/harness/policy.json#external_tooling.herdr` is the single herdr pin: it owns
-the `min_version` floor and the checksum-verified `release_assets` entry that CI
-installs. Install herdr through its official installer or platform package manager
-and verify `herdr --version` reports at least that pinned `min_version`.
-`check-agent-tooling.sh --strict-readiness` reads the same key and fails if herdr is
-missing, unusable, or older than the pin; `setup check` projects `runtime.herdr`. Repo-harness does not install it or edit user Herdr config.
+`.ai/harness/policy.json#external_tooling.herdr_core` is the single herdr pin: it
+owns the `min_version` floor and the checksum-verified `release_assets` entry that
+CI installs. Install hc through Herdr.app or a herdr-core release and verify
+`hc --version` reports at least that pinned `min_version`.
+`check-agent-tooling.sh --strict-readiness` reads the same key and fails if hc is
+missing, unusable, or older than the pin. A missing or malformed pin is a
+`configuration-error`. `setup check` projects `runtime.herdr_core`. Repo-harness
+does not install hc or edit user Herdr config. Herdr.app is not a readiness
+requirement: it has no Intel macOS build.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
 `repo-harness install` and `repo-harness update` combine the CLI reference from
 `herdr --skill` with the caller-context policy in
@@ -398,7 +400,7 @@ Both hosts receive the same generated skill. When Codex is selected, an existing
 shared copy at `~/.agents/skills/herdr` is also updated and checked because Codex
 can discover it. Claude-only operations leave that shared copy unchanged.
 Install refuses to replace a
-user-edited or unowned copy. Strict readiness compares against the same renderer.
+user-edited or unowned copy.
 Missing tool environment variables do not prove that the user is outside Herdr.
 Read-only discovery lists running sessions and panes by the task's exact path.
 Reuse a suitable task reviewer or create a new pane in the matched workspace.
@@ -410,19 +412,10 @@ Admitted task sessions start only in a Herdr pane, so they and their Task Inbox 
 Drain old tmux reviewers with the previous repo-harness version before upgrading.
 No runtime or collaboration path automatically falls back to tmux.
 
-herdr-core (`hc`) is a separate product with its own pin. It has persistent
-terminals and a JSON-RPC API, and it has built-in remote host access
-(`hc machine`, `hc run --on <machine>`). It has no sessions, panes,
-workspaces or plugins. `check-agent-tooling.sh` reports it as the optional
-`runtime_capabilities.herdr_core`; `setup check` projects `runtime.herdr_core`.
-`hc --version` must report at least the `min_version` at
-`.ai/harness/policy.json#external_tooling.herdr_core`. CI installs hc from the
-checksum-verified `release_assets` entry of the same key, beside classic herdr.
-The two checks are independent: `hc` never satisfies `runtime.herdr`, the
-`herdr` skill or strict readiness. The transport, task sessions,
-`review --launch herdr`, operator collectors, the `herdr notify` plugin, the
-`herdr` skill, doctor and the CI tests stay classic-only. No runtime falls back to the
-other.
+herdr-core (`hc`) has persistent terminals and a JSON-RPC API, and it has
+built-in remote host access (`hc machine`, `hc run --on <machine>`). It has no
+sessions, panes, workspaces or plugins. Doctor has no Herdr Pi integration
+check: Pi reports its terminal status to hc natively.
 The native protected-helper tool contract below remains a separate boundary.
 
 The policy is Bun-first, not Bun-only. Repo-harness-owned install/repair commands

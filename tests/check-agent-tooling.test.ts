@@ -1,4 +1,3 @@
-import { renderHerdrSkill } from "../src/cli/commands/herdr-skill-render.mjs";
 import { describe, expect, test } from "bun:test";
 import {
   copyFileSync,
@@ -28,76 +27,7 @@ const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker
 // The orchestrator is Claude-only: no Codex TOML is generated or expected for it.
 const CODEX_AGENTS = MANAGED_AGENTS.filter((agent) => agent !== "orchestrator");
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
-const HERDR_SKILL = "---\nname: herdr\n---\n\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n";
-
-test("strict readiness rejects a missing required Herdr skill", () => {
-  const envRoot = setupFakeEnvironment("check-agent-tooling-herdr-skill");
-  try {
-    rmSync(join(envRoot.home, ".codex", "skills", "herdr"), { recursive: true, force: true });
-    const res = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
-    });
-    expect(res.status).toBe(2);
-    const report = JSON.parse(res.stdout);
-    expect(report.tools.herdr_skill.status).toBe("missing");
-    expect(report.tools.herdr_skill.hosts.codex.status).toBe("missing");
-    expect(res.stderr).toContain("Herdr skill readiness is missing");
-
-    const skillDir = join(envRoot.home, ".codex", "skills", "herdr");
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, "SKILL.md"), "---\nname: herdr\n---\nWrong body.\n");
-    const drift = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
-    });
-    expect(drift.status).toBe(2);
-    expect(JSON.parse(drift.stdout).tools.herdr_skill.status).toBe("mismatch");
-    expect(JSON.parse(drift.stdout).tools.herdr_skill.hosts.codex.status).toBe("mismatch");
-
-    rmSync(join(skillDir, "SKILL.md"));
-    mkdirSync(join(skillDir, "SKILL.md"));
-    const unreadable = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
-      cwd: ROOT,
-      encoding: "utf8",
-      env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
-    });
-    expect(unreadable.status).toBe(2);
-    expect(JSON.parse(unreadable.stdout).tools.herdr_skill.status).toBe("invalid");
-  } finally {
-    rmSync(envRoot.root, { recursive: true, force: true });
-  }
-});
-
-test("readiness rejects a stale shared Herdr skill even when both host copies are current", () => {
-  const fixture = setupFakeEnvironment("check-agent-tooling-shared-herdr");
-  try {
-    const shared = join(fixture.home, ".agents", "skills", "herdr");
-    mkdirSync(shared, { recursive: true });
-    writeFileSync(join(shared, "SKILL.md"), HERDR_SKILL);
-    const check = (host = "both", json = true) => spawnSync("bash", [SCRIPT, ...(json ? ["--json"] : []), "--strict-readiness", "--host", host], {
-      cwd: ROOT, encoding: "utf8",
-      env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH ?? ""}` },
-    });
-    const stale = check();
-    expect(stale.status).toBe(2);
-    const report = JSON.parse(stale.stdout).tools.herdr_skill;
-    expect(report.hosts.codex.status).toBe("present");
-    expect(report.hosts.claude.status).toBe("present");
-    expect(report.hosts.shared.status).toBe("mismatch");
-    expect(report.status).toBe("mismatch");
-    const claudeOnly = JSON.parse(check("claude").stdout).tools.herdr_skill;
-    expect(claudeOnly.status).toBe("present");
-    expect(claudeOnly.hosts.shared).toBeUndefined();
-    expect(check("both", false).stdout).toContain("shared: mismatch");
-    writeFileSync(join(shared, "SKILL.md"), renderHerdrSkill(HERDR_SKILL));
-    const fixed = check();
-    expect(JSON.parse(fixed.stdout).tools.herdr_skill.status).toBe("present");
-  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
-});
-
+const { herdr_core: HERDR_CORE_PIN } = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf8")).external_tooling;
 function sha256File(filePath: string) {
   return createHash("sha256").update(readFileSync(filePath)).digest("hex");
 }
@@ -154,12 +84,8 @@ function setupFakeEnvironment(prefix: string) {
   mkdirSync(home, { recursive: true });
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
-  writeExecutable(join(fakeBin, "herdr"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'herdr 0.9.5\\n'; fi\n`);
-  for (const host of [".claude", ".codex"]) {
-    const skillDir = join(home, host, "skills", "herdr");
-    mkdirSync(skillDir, { recursive: true });
-    writeFileSync(join(skillDir, "SKILL.md"), renderHerdrSkill(HERDR_SKILL));
-  }
+  // A fake hc first on PATH keeps the developer's herdr-core out of the report.
+  writeExecutable(join(fakeBin, "hc"), `#!/bin/sh\nprintf 'hc ${HERDR_CORE_PIN.min_version}\\n'\n`);
   writeOfficialCodexPluginFixture(join(home, ".claude/plugins/cache/openai-codex/codex/1.0.6"));
   writeExecutable(
     join(fakeBin, "timeout"),
@@ -431,16 +357,14 @@ function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
   );
 }
 
-const { herdr: HERDR_PIN, herdr_core: HERDR_CORE_PIN } = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf8")).external_tooling;
-
 /**
- * Readiness reads the runtime floors from
- * `.ai/harness/policy.json#external_tooling.{herdr,herdr_core}`, so a fixture repo
- * that stands in for a ready repo must carry the same pins this repo publishes.
+ * Readiness reads the hc floor from
+ * `.ai/harness/policy.json#external_tooling.herdr_core`, so a fixture repo
+ * that stands in for a ready repo must carry the same pin this repo publishes.
  */
 function writeFixturePolicy(repoRoot: string, policy: Record<string, unknown> = {}) {
   mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
-  const externalTooling = { ...((policy.external_tooling as Record<string, unknown>) ?? {}), herdr: HERDR_PIN, herdr_core: HERDR_CORE_PIN };
+  const externalTooling = { ...((policy.external_tooling as Record<string, unknown>) ?? {}), herdr_core: HERDR_CORE_PIN };
   writeFileSync(
     join(repoRoot, ".ai/harness/policy.json"),
     `${JSON.stringify({ ...policy, external_tooling: externalTooling }, null, 2)}\n`
@@ -525,9 +449,6 @@ describe("check-agent-tooling", () => {
       expect(report.tools.waza.hosts.codex.shared_rules_staging_sync).toBe("synced");
       expect(report.tools.waza.hosts.codex.stale_status).toBe("not-checked");
       expect(report.tools.codex_automation_profile.status).toBe("present");
-      expect(report.tools.herdr_skill.status).toBe("present");
-      expect(report.tools.herdr_skill.hosts.claude.status).toBe("present");
-      expect(report.tools.herdr_skill.hosts.codex.status).toBe("present");
       expect(report.tools.codex_automation_profile.required_skills).toEqual(["health", "check", "mermaid"]);
       expect(report.tools.codex_automation_profile.routes).toEqual({
         workflow_health: "waza:health",
@@ -1860,60 +1781,16 @@ describe("check-agent-tooling", () => {
   }, 15000);
 });
 
-test.each(['present', 'missing', 'unavailable'])('herdr is a required runtime capability: %s', status => {
-  const fixture = setupFakeEnvironment('required-herdr');
-  try {
-    const herdrPath = join(fixture.fakeBin, 'herdr');
-    if (status === 'unavailable') writeExecutable(herdrPath, '#!/bin/sh\nexit 2\n');
-    if (status === 'missing') rmSync(herdrPath);
-    // An explicit utility PATH makes absence independent of the developer's herdr installation.
-    const utilities = ['dirname', 'basename', 'node', 'bun', 'git', 'bash', 'sh', 'which', 'uname'];
-    for (const utility of utilities) {
-      const actual = Bun.which(utility);
-      if (actual && !existsSync(join(fixture.fakeBin, utility))) symlinkSync(actual, join(fixture.fakeBin, utility));
-    }
-    const result = spawnSync('/bin/bash', [SCRIPT, '--json', '--strict-readiness', '--host', 'claude'], {
-      cwd: ROOT, encoding: 'utf8', env: { ...process.env, HOME: fixture.home, PATH: fixture.fakeBin }, timeout: 15_000,
-    });
-    const report = JSON.parse(result.stdout);
-    expect(report.runtime_capabilities.herdr.required).toBe(true);
-    expect(report.runtime_capabilities.herdr.status).toBe(status);
-    if (status === 'present') {
-      expect(report.runtime_capabilities.herdr.version).toBe('herdr 0.9.5');
-      expect(result.stderr).not.toContain('herdr runtime is');
-    } else {
-      expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain(`herdr runtime is ${status}`);
-    }
-  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
-}, 20_000);
-
-test.each([undefined, "invalid"])("Herdr missing or malformed version policy is a configuration error: %s", pin => {
-  const fixture = setupFakeEnvironment("herdr-policy-error");
-  try {
-    mkdirSync(join(fixture.root, ".ai/harness"), { recursive: true });
-    writeFileSync(join(fixture.root, ".ai/harness/policy.json"), JSON.stringify({ external_tooling: { herdr: { min_version: pin } } }));
-    const result = spawnSync("/bin/bash", [SCRIPT, "--json", "--strict-readiness", "--host", "claude"], {
-      cwd: fixture.root, encoding: "utf8", env: { ...process.env, HOME: fixture.home, PATH: `${fixture.fakeBin}:${process.env.PATH}` }, timeout: 15000,
-    });
-    const herdr = JSON.parse(result.stdout).runtime_capabilities.herdr;
-    expect(herdr.status).toBe("configuration-error");
-    expect(herdr.version).toBe("herdr 0.9.5");
-    expect(herdr.reason).toContain("min_version");
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("repo-harness init --repo .");
-  } finally { rmSync(fixture.root, { recursive: true, force: true }); }
-}, 20000);
-
 test.each([
-  ["present", "hc 0.1.17"],
-  ["unavailable", "hc 0.1.15"],
-  ["missing", null],
-  ["configuration-error", "hc 0.1.17"],
-])("herdr-core is a separate optional runtime capability: %s", (status, hcVersion) => {
+  ["present", "hc 0.1.17", null],
+  ["unavailable", "hc 0.1.15", null],
+  ["missing", null, null],
+  ["configuration-error", "hc 0.1.17", null],
+  ["configuration-error", "hc 0.1.17", "invalid"],
+])("herdr-core is the required herdr runtime capability: %s (hc %s, pin %s)", (status, hcVersion, malformedPin) => {
   const fixture = setupFakeEnvironment("herdr-core-runtime");
   try {
-    rmSync(join(fixture.fakeBin, "herdr"));
+    rmSync(join(fixture.fakeBin, "hc"));
     if (hcVersion) writeExecutable(join(fixture.fakeBin, "hc"), `#!/bin/sh\nprintf '${hcVersion}\\n'\n`);
     // An explicit utility PATH keeps the developer's herdr and hc installations out of the report.
     for (const utility of ["dirname", "basename", "node", "bun", "git", "bash", "sh", "which", "uname"]) {
@@ -1924,22 +1801,28 @@ test.each([
     if (status === "configuration-error") {
       const policyPath = join(fixture.root, ".ai/harness/policy.json");
       const policy = JSON.parse(readFileSync(policyPath, "utf8"));
-      delete policy.external_tooling.herdr_core;
+      if (malformedPin) policy.external_tooling.herdr_core.min_version = malformedPin;
+      else delete policy.external_tooling.herdr_core;
       writeFileSync(policyPath, JSON.stringify(policy));
     }
     const result = spawnSync("/bin/bash", [SCRIPT, "--json", "--strict-readiness", "--host", "claude"], {
       cwd: fixture.root, encoding: "utf8", env: { ...process.env, HOME: fixture.home, PATH: fixture.fakeBin }, timeout: 15_000,
     });
-    const { herdr, herdr_core: herdrCore } = JSON.parse(result.stdout).runtime_capabilities;
+    const report = JSON.parse(result.stdout);
+    const herdrCore = report.runtime_capabilities.herdr_core;
     expect(herdrCore.name).toBe("hc");
-    expect(herdrCore.required).toBe(false);
+    expect(herdrCore.required).toBe(true);
     expect(herdrCore.status).toBe(status);
     expect(herdrCore.min_version).toBe(status === "configuration-error" ? null : HERDR_CORE_PIN.min_version);
     if (hcVersion) expect(herdrCore.version).toBe(hcVersion);
-    // hc never satisfies the classic runtime: strict readiness still fails on a missing herdr.
-    expect(herdr.status).toBe("missing");
-    expect(result.status).not.toBe(0);
-    expect(result.stderr).toContain("herdr runtime is missing");
+    if (status === "present") {
+      expect(result.stderr).not.toContain("herdr-core");
+    } else {
+      expect(result.status).not.toBe(0);
+      expect(result.stderr).toContain(status === "configuration-error"
+        ? "herdr-core configuration error: .ai/harness/policy.json#external_tooling.herdr_core.min_version is missing or malformed"
+        : `herdr-core runtime is ${status}; install hc >=${HERDR_CORE_PIN.min_version}`);
+    }
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 }, 20_000);
 

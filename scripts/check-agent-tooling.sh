@@ -118,7 +118,6 @@ const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
 const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
-const { renderHerdrSkill } = require(path.join(PACKAGE_ROOT, "src/cli/commands/herdr-skill-render.mjs"));
 const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "src", "core", "skill-surface", "waza-shared-rules.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
@@ -144,7 +143,6 @@ const ARCHCTX_MODEL_DIR = ".archcontext/model";
 const ARCHCTX_NODES_DIR = ".archcontext/model/nodes";
 const ARCHCTX_CAPABILITY_SOURCE_KEY = ".ai/harness/policy.json#context.capability_source";
 const ARCHCTX_STATUS_COMMAND = "repo-harness architecture-projection status --json";
-const HERDR_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr";
 const HERDR_CORE_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr_core";
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
@@ -792,9 +790,8 @@ function detectWaza() {
 
 /**
  * Reads one runtime pin at `.ai/harness/policy.json#external_tooling.<key>`.
- * Classic Herdr (`herdr`) and herdr-core (`herdr_core`) each own one pin; the
- * herdr pin also owns the release URL and checksum that CI installs from. A
- * missing or malformed pin fails closed instead of assuming a floor.
+ * The herdr-core pin also owns the release URL and checksum that CI installs
+ * from. A missing or malformed pin fails closed instead of assuming a floor.
  */
 function pinnedMinVersion(key) {
   const policy = readJson(path.join(REPO_ROOT, ".ai/harness/policy.json"));
@@ -832,17 +829,11 @@ function pinnedRuntimeCapability(capability, key, pinKey, versionPattern) {
 }
 
 function detectRuntimeCapabilities(waza) {
-  // Two separate runtimes: hc never satisfies runtime.herdr, because the classic surfaces gated on it do not run on herdr-core.
-  const herdr = pinnedRuntimeCapability(
-    commandCapability("herdr", "persistent agent terminals, peer collaboration and task-scoped Claude acceptance review", "platform-runtime", true),
-    "herdr", HERDR_PIN_KEY, /^herdr (\d+\.\d+\.\d+)$/
-  );
   const herdrCore = pinnedRuntimeCapability(
-    commandCapability("hc", "persistent terminals and agent messaging through herdr-core", "platform-runtime", false),
+    commandCapability("hc", "persistent agent terminals, task sessions, review hosting and notify relay through herdr-core", "platform-runtime", true),
     "herdr_core", HERDR_CORE_PIN_KEY, /^hc (\d+\.\d+\.\d+)$/
   );
   return {
-    herdr,
     herdr_core: herdrCore,
     bun: commandCapability(
       "bun",
@@ -928,58 +919,6 @@ function detectCodexAutomationProfile() {
     installed_skills: installedSkills,
     missing_skills: missingSkills,
     skills,
-  };
-}
-
-function detectRequiredHerdrSkill(herdrRuntime) {
-  let declared = false;
-  try {
-    const catalog = JSON.parse(fs.readFileSync(SKILL_SURFACE_MANIFEST_PATH, "utf8"));
-    declared = catalog.packages.find((entry) => entry.name === "repo-harness")?.requires?.includes("herdr") === true
-      && catalog.packages.some((entry) => entry.name === "herdr" && entry.kind === "external");
-  } catch (_) { /* The catalog check below reports the invalid source. */ }
-  let expected = null;
-  if (herdrRuntime.status === "present" && herdrRuntime.path) {
-    const result = spawnSync(herdrRuntime.path, ["--skill"], { encoding: "utf8", timeout: 5000 });
-    if (result.status === 0 && result.stdout?.startsWith("---\nname: herdr\n") && result.stdout.includes("HERDR_ENV")) {
-      try { expected = renderHerdrSkill(result.stdout); }
-      catch (_) { /* Unsupported binary layout remains unavailable. */ }
-    }
-  }
-  const skillRoots = SELECTED_HOSTS.map(host => [host, HOSTS[host].skillsDir]);
-  const sharedRoot = path.join(HOME, ".agents", "skills");
-  if (SELECTED_HOSTS.includes("codex")) {
-    try {
-      fs.lstatSync(path.join(sharedRoot, "herdr"));
-      skillRoots.push(["shared", sharedRoot]);
-    } catch (error) {
-      if (error.code !== "ENOENT") throw error;
-    }
-  }
-  const hosts = Object.fromEntries(skillRoots.map(([host, root]) => {
-    const skillFile = path.join(root, "herdr", "SKILL.md");
-    let installed = null;
-    let unreadable = false;
-    try {
-      if (fs.existsSync(skillFile)) installed = fs.readFileSync(skillFile, "utf8");
-    } catch (_) { unreadable = true; }
-    return [host, {
-      path: skillFile,
-      status: unreadable ? "invalid" : installed === null ? "missing" : expected === null ? "unverified" : installed === expected ? "present" : "mismatch",
-    }];
-  }));
-  const hostStatuses = Object.values(hosts).map((entry) => entry.status);
-  const status = !declared ? "invalid" : expected === null ? "unavailable"
-    : hostStatuses.includes("invalid") ? "invalid" : hostStatuses.includes("missing") ? "missing"
-      : hostStatuses.includes("mismatch") ? "mismatch" : "present";
-  return {
-    name: "herdr_skill",
-    status,
-    reason: status === "present" ? "Binary CLI reference and managed session policy are present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the binary CLI reference plus managed session policy.",
-    source: "herdr --skill",
-    required_by: "assets/skill-commands/manifest.json#repo-harness.requires",
-    hosts,
-    install_command: `repo-harness update --target ${hostMode}`,
   };
 }
 
@@ -1992,7 +1931,6 @@ const report = {
   runtime_capabilities: runtimeCapabilities,
   tools: {
     waza: wazaReport,
-    herdr_skill: detectRequiredHerdrSkill(runtimeCapabilities.herdr),
     codex_automation_profile: detectCodexAutomationProfile(),
     obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
@@ -2002,13 +1940,10 @@ const report = {
 };
 
 const strictFailures = [];
-if (strictReadiness && report.runtime_capabilities.herdr.status !== "present") {
-  const pinned = report.runtime_capabilities.herdr.min_version;
-  if (!pinned) strictFailures.push(`herdr configuration error: ${report.runtime_capabilities.herdr.reason}`);
-  else strictFailures.push(`herdr runtime is ${report.runtime_capabilities.herdr.status}; install herdr >=${pinned} and verify herdr --version`);
-}
-if (strictReadiness && report.tools.herdr_skill.status !== "present") {
-  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; run ${report.tools.herdr_skill.install_command}`);
+if (strictReadiness && report.runtime_capabilities.herdr_core.status !== "present") {
+  const hc = report.runtime_capabilities.herdr_core;
+  if (!hc.min_version) strictFailures.push(`herdr-core configuration error: ${hc.reason}`);
+  else strictFailures.push(`herdr-core runtime is ${hc.status}; install hc >=${hc.min_version} and verify hc --version`);
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
@@ -2044,13 +1979,6 @@ function printText(result) {
     console.log(`  - ${capability.name}: ${capability.status} (${required})${pathBits}`);
     console.log(`    owner=${capability.owner}; required_for=${capability.required_for}`);
   }
-  console.log("");
-
-  const herdrSkill = result.tools.herdr_skill;
-  console.log(`Herdr skill [${herdrSkill.status}]`);
-  console.log(`  - Source: ${herdrSkill.source}`);
-  for (const [host, skill] of Object.entries(herdrSkill.hosts)) console.log(`  - ${host}: ${skill.status} (${skill.path})`);
-  if (herdrSkill.status !== "present") console.log(`  - Install: ${herdrSkill.install_command}`);
   console.log("");
 
   const waza = result.tools.waza;

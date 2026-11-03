@@ -7,10 +7,10 @@ import { run, withTempRepo } from "./helpers/repo-fixture";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 
 /**
- * `.ai/harness/policy.json#external_tooling.herdr` is the single herdr runtime
- * pin. These are drift checks for its readers: CI, the readiness script, and the
- * downstream policy seed must derive the floor, URL, and checksum from that key
- * instead of restating them.
+ * `.ai/harness/policy.json#external_tooling.herdr_core` is the single herdr
+ * runtime pin. These are drift checks for its readers: CI, the readiness script,
+ * and the downstream policy seed must derive the floor, URL, and checksum from
+ * that key instead of restating them.
  */
 const ROOT = join(import.meta.dir, "..");
 const POLICY_PATH = join(ROOT, ".ai/harness/policy.json");
@@ -24,8 +24,8 @@ function readPolicy() {
   return JSON.parse(readFileSync(POLICY_PATH, "utf8"));
 }
 
-function herdrInstallStep(actionName = 'install-pinned-herdr') {
-  const action = Bun.YAML.parse(readFileSync(join(ROOT, `.github/actions/${actionName}/action.yml`), 'utf8')) as {
+function herdrInstallStep() {
+  const action = Bun.YAML.parse(readFileSync(join(ROOT, '.github/actions/install-pinned-herdr-core/action.yml'), 'utf8')) as {
     runs: { using: string; steps: Array<{ shell: string; run: string }> };
   };
   expect(action.runs.using).toBe('composite');
@@ -36,44 +36,6 @@ function herdrInstallStep(actionName = 'install-pinned-herdr') {
 }
 
 describe("herdr runtime pin has one source of truth", () => {
-  test("the pin parses and its release URL embeds the pinned version", () => {
-    const herdr = readPolicy().external_tooling?.herdr;
-    expect(herdr).toBeDefined();
-    expect(herdr.min_version).toMatch(/^\d+\.\d+\.\d+$/);
-    expect(herdr.min_version).toBe("0.9.5");
-    for (const platform of ['linux-x86_64', 'macos-aarch64', 'macos-x86_64']) {
-      const asset = herdr.release_assets?.[platform];
-      expect(asset?.sha256).toMatch(/^[0-9a-f]{64}$/);
-      expect(asset?.url).toContain(`/v${herdr.min_version}/herdr-${platform}`);
-    }
-  });
-
-  test("the CI install step reads the pin instead of restating it", () => {
-    const workflow = Bun.YAML.parse(readFileSync(CI_PATH, 'utf8')) as {
-      jobs: Record<string, { steps: Array<{ name?: string; uses?: string }> }>;
-    };
-    for (const job of ['verify', 'test']) {
-      expect(workflow.jobs[job]!.steps.some(step => step.name === 'Install pinned Herdr runtime'
-        && step.uses === './.github/actions/install-pinned-herdr')).toBe(true);
-    }
-    const step = herdrInstallStep();
-    expect(step).toContain(".ai/harness/policy.json");
-    expect(step).toContain(".external_tooling.herdr.min_version");
-    expect(step).toContain("sha256sum --check");
-    expect(step).toContain('"$bin/herdr" --version');
-    expect(step).toContain('shasum -a 256 --check');
-    expect(step).toContain('GITHUB_PATH');
-    const nativeSteps = workflow.jobs['native-oar']!.steps as Array<{ name?: string; uses?: string; if?: string }>;
-    const install = nativeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
-    const native = nativeSteps.findIndex(step => step.name === 'Run native OAR acceptance tests');
-    expect(install).toBeGreaterThan(-1);
-    expect(install).toBeLessThan(native);
-    expect(nativeSteps[install]!.if).toBeUndefined();
-    // No hardcoded version, release tag, or checksum may survive in the step.
-    expect(step).not.toMatch(/v?\d+\.\d+\.\d+/);
-    expect(step).not.toMatch(/[0-9a-f]{64}/);
-  });
-
   test("the herdr-core pin names an official release asset for each CI runner platform", () => {
     const core = readPolicy().external_tooling?.herdr_core;
     expect(core.min_version).toBe("0.1.17");
@@ -84,22 +46,29 @@ describe("herdr runtime pin has one source of truth", () => {
     }
   });
 
-  test("each job that installs classic herdr also installs the pinned hc before its tests", () => {
+  test("each CI job installs hc from the pin before its tests", () => {
     const workflow = Bun.YAML.parse(readFileSync(CI_PATH, 'utf8')) as {
       jobs: Record<string, { steps: Array<{ name?: string; uses?: string; if?: string; run?: string }> }>;
     };
     for (const job of ['native-oar', 'verify', 'test']) {
       const steps = workflow.jobs[job]!.steps;
-      const classic = steps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr');
       const core = steps.findIndex(step => step.name === 'Install pinned herdr-core runtime'
         && step.uses === './.github/actions/install-pinned-herdr-core');
-      expect(classic, job).toBeGreaterThan(-1);
-      expect(core, job).toBe(classic + 1);
+      expect(core, job).toBeGreaterThan(-1);
       expect(steps[core]!.if, job).toBeUndefined();
     }
-    const step = herdrInstallStep('install-pinned-herdr-core');
+    const nativeSteps = workflow.jobs['native-oar']!.steps;
+    const install = nativeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr-core');
+    expect(install).toBeLessThan(nativeSteps.findIndex(step => step.name === 'Run native OAR acceptance tests'));
+    const step = herdrInstallStep();
+    expect(step).toContain(".ai/harness/policy.json");
     expect(step).toContain(".external_tooling.herdr_core.min_version");
     expect(step).toContain(".external_tooling.herdr_core.release_assets[$asset]");
+    expect(step).toContain("sha256sum --check");
+    expect(step).toContain('shasum -a 256 --check');
+    expect(step).toContain('"$bin/hc" --version');
+    expect(step).toContain('GITHUB_PATH');
+    // No hardcoded version, release tag, or checksum may survive in the step.
     expect(step).not.toMatch(/v?\d+\.\d+\.\d+/);
     expect(step).not.toMatch(/[0-9a-f]{64}/);
   });
@@ -118,7 +87,7 @@ describe("herdr runtime pin has one source of truth", () => {
     mkdirSync(join(root, '.ai/harness'), { recursive: true });
     writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: version, release_assets } } }));
     mkdirSync(join(root, 'runner'));
-    const result = run('bash', ['-c', herdrInstallStep('install-pinned-herdr-core')], root, {
+    const result = run('bash', ['-c', herdrInstallStep()], root, {
       RUNNER_TEMP: join(root, 'runner'), GITHUB_PATH: join(root, 'github-path'),
     });
     expect(result.status, result.stderr).toBe(digestMatches ? 0 : 1);
@@ -129,10 +98,8 @@ describe("herdr runtime pin has one source of truth", () => {
 
   test("check-agent-tooling.sh carries no hand-coded herdr version floor", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
-    expect(script).toContain('".ai/harness/policy.json#external_tooling.herdr"');
     expect(script).toContain('".ai/harness/policy.json#external_tooling.herdr_core"');
     expect(script).toContain("external_tooling?.[key]?.min_version");
-    expect(script).toContain('"herdr", HERDR_PIN_KEY,');
     expect(script).toContain('"herdr_core", HERDR_CORE_PIN_KEY,');
     const herdrLines = script.split("\n").filter((line) => /herdr/i.test(line));
     expect(herdrLines.length).toBeGreaterThan(0);
@@ -148,7 +115,7 @@ describe("herdr runtime pin has one source of truth", () => {
     }
   });
 
-  test.each(["herdr", "herdr_core"])("the downstream policy seed projects the same %s pin", key => {
+  test.each(["herdr_core"])("the downstream policy seed projects the same %s pin", key => {
     const pin = readPolicy().external_tooling[key];
     expect(pin).toBeDefined();
     expect((defaultPolicy("minimal-agentic", "en").external_tooling as Record<string, unknown>)[key]).toEqual(pin);
