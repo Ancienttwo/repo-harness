@@ -15,8 +15,10 @@ import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
 import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
-import { fetchBoard, type BoardSubject } from '../../src/operator-web/board-view';
+import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
+import boardParents from '../../src/operator-web/fixtures/board-parents.json';
+import { decodeBoardParents } from '../../src/core/board/parents';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
@@ -82,6 +84,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readExecution: async id => emptyExecution(id, NOW),
     readTaskMessages: async request => busyTaskMessages(request, NOW),
     readBoard: async () => ({ state: 'ok', board: BOARD }),
+    readBoardParents: async () => ({ state: 'ok', list: PARENTS }),
     ...overrides,
   };
 }
@@ -102,6 +105,8 @@ const sessions: ExecutionReader = async id => busyExecution(id, NOW);
 const sessionsOn = (from: string, to: string): ExecutionReader => async id => JSON.parse(JSON.stringify(busyExecution(id, NOW)).replaceAll(`"branch":"${from}"`, `"branch":"${to}"`));
 /** The board of #1474 projected from the recorded GitHub and hc reads (tests/fixtures/board). */
 const BOARD = decodeBoard(board1474);
+/** The parent list projected from the recorded GitHub and hc reads (tests/board.test.ts). */
+const PARENTS = decodeBoardParents(boardParents);
 const boardAt = (issue?: number) => installDom(`http://127.0.0.1:4318/#board/${HARNESS_ID}/1474${issue === undefined ? '' : `/${issue}`}`);
 const followUp = () => document.querySelector<HTMLElement>('[role="dialog"] section[aria-labelledby="drawer-follow-up"]')!;
 
@@ -185,23 +190,39 @@ describe('board page', () => {
   const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
   const button = (text: string) => rows('button').find(element => element.textContent?.includes(text))!;
 
-  test('the board has no default subject: the form names the repository and the parent, then the board reads that subject', async () => {
+  test('the board has no default subject: the list shows the open parents with progress and seats, the filter narrows it, and a row opens that board', async () => {
     const subjects: BoardSubject[] = [];
-    await mount(<OperatorApp {...props(busy(), { readBoard: async (subject) => { subjects.push(subject); return { state: 'ok', board: BOARD }; } })} />);
-    const form = document.querySelector('[data-board-subject]')!;
+    const lists: string[] = [];
+    await mount(<OperatorApp {...props(busy(), {
+      readBoardParents: async (id) => { lists.push(id); return { state: 'ok', list: PARENTS }; },
+      readBoard: async (subject) => { subjects.push(subject); return { state: 'ok', board: BOARD }; } })} />);
+    await settle();
     expect(subjects).toEqual([]);
-    expect(form.querySelector('select')?.value).toBe(HARNESS_ID);
-    const open = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    expect(open.disabled).toBe(true);
-    const parent = form.querySelector<HTMLInputElement>('input')!;
-    // react-dom loads before this DOM exists, so it watches text inputs through focus and keyup, not the input event.
-    await act(async () => {
-      parent.focus();
-      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(parent, '1474');
-      parent.dispatchEvent(new window.KeyboardEvent('keyup', { key: '4', bubbles: true }) as unknown as Event);
+    expect(lists).toEqual([HARNESS_ID]);
+    const list = document.querySelector('[data-board-subject]')!;
+    expect(list.querySelector('select')?.value).toBe(HARNESS_ID);
+    expect(list.querySelector('input:not([type="search"])')).toBeNull();
+    // Live seats first: #1474 has three seat terminals, #1651 none.
+    expect(rows('[data-board-parent-row]').map(row => [row.getAttribute('data-board-parent-row'), row.querySelector('[data-progress]')?.getAttribute('data-progress'), row.getAttribute('data-seats')]))
+      .toEqual([['1474', '2/9', '3'], ['1651', '3/9', '0']]);
+    for (const part of ['#1651', 'Post-0.25.4 wave', '3/9', 'No seats']) expect(rows('[data-board-parent-row="1651"]')[0]!.textContent).toContain(part);
+    expect(rows('[data-board-parent-row="1474"]')[0]!.textContent).toContain('3 seats');
+    const filter = list.querySelector<HTMLInputElement>('[data-board-parents-filter]')!;
+    const type = (value: string) => act(async () => {
+      // react-dom loads before this DOM exists, so it watches text inputs through focus and keyup, not the input event.
+      filter.focus();
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(filter, value);
+      filter.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'a', bubbles: true }) as unknown as Event);
     });
-    expect(open.disabled).toBe(false);
-    await act(async () => open.click());
+    for (const [query, shown] of [['#165', ['1651']], ['herdr-core', ['1474']], ['WAVE', ['1651']], ['', ['1474', '1651']]] as const) {
+      await type(query);
+      expect(rows('[data-board-parent-row]').map(row => row.getAttribute('data-board-parent-row'))).toEqual([...shown]);
+    }
+    await type('9999');
+    expect(rows('[data-board-parent-row]')).toHaveLength(0);
+    expect(list.textContent).toContain('No parent issue matches');
+    await type('1474');
+    await act(async () => rows('[data-board-parent-row="1474"] a')[0]!.click());
     await settle();
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474`);
     expect(subjects).toEqual([{ repository_id: HARNESS_ID, parent: 1474 }]);
@@ -209,6 +230,20 @@ describe('board page', () => {
     expect(localStorage.getItem(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY)).toBe(HARNESS_ID);
     for (const hash of ['#board/repo/0', '#board/repo/1474/x', '#board//1474', '#board/repo/1474/1476/9']) expect(parseWorkspaceLocation(hash).workspace).toBe('home');
     expect(workspaceHash(parseWorkspaceLocation(`#board/${HARNESS_ID}/1474/1476`))).toBe(`#board/${HARNESS_ID}/1474/1476`);
+  });
+
+  test('a failed parent list read shows its named reason and the command, never an empty list', async () => {
+    for (const reason of ['parents_github_failed', 'parents_hc_failed'] as const) {
+      await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'unavailable', reason }) })} />);
+      await settle();
+      const refusal = document.querySelector('[data-board-parents-reason]')!;
+      expect(refusal.getAttribute('data-board-parents-reason')).toBe(reason);
+      expect(refusal.textContent).toContain('repo-harness board parents --json');
+      expect(rows('[data-board-parent-row]')).toHaveLength(0);
+      expect(document.body.textContent).not.toContain('No open parent issue');
+      await act(async () => root?.unmount());
+    }
+    expect(document.body.textContent).toBe('');
   });
 
   test('waiting for you lists the core attention findings; in progress lists the other open items by stage', async () => {
@@ -241,28 +276,20 @@ describe('board page', () => {
     for (const affordance of ['Approve', 'Merge now', 'Close PR', 'Start agent', 'Delete']) expect(words).not.toContain(affordance);
   });
 
-  test('on a cold load the form takes its options from the registry list that arrives after mount, without Dev Activity, and Open reads it', async () => {
+  test('on a cold load the list reads the repository of the registry list that arrives after mount, without Dev Activity', async () => {
     let arrive: (list: OperatorRepositoriesV1) => void = () => {};
-    const subjects: BoardSubject[] = [];
+    const lists: string[] = [];
     await mount(<OperatorApp {...props(busy(), {
       initialDevActivity: undefined, fetchDevActivity: () => new Promise(() => {}),
       initialRepositories: undefined, readRepositories: () => new Promise(resolve => { arrive = resolve; }),
-      readBoard: async (subject) => { subjects.push(subject); return { state: 'ok', board: BOARD }; } })} />);
+      readBoardParents: async (id) => { lists.push(id); return { state: 'ok', list: PARENTS }; } })} />);
     expect(document.querySelectorAll('[data-board-subject] option')).toHaveLength(0);
+    expect(lists).toEqual([]);
     await act(async () => arrive(registry([HARNESS_ID])));
-    expect(document.querySelectorAll('[data-board-subject] option')).toHaveLength(1);
-    const form = document.querySelector('[data-board-subject]')!;
-    const parent = form.querySelector<HTMLInputElement>('input')!;
-    await act(async () => {
-      parent.focus();
-      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(parent, '1474');
-      parent.dispatchEvent(new window.KeyboardEvent('keyup', { key: '4', bubbles: true }) as unknown as Event);
-    });
-    const open = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
-    expect(open.disabled).toBe(false);
-    await act(async () => open.click());
     await settle();
-    expect(subjects).toEqual([{ repository_id: HARNESS_ID, parent: 1474 }]);
+    expect(document.querySelectorAll('[data-board-subject] option')).toHaveLength(1);
+    expect(lists).toEqual([HARNESS_ID]);
+    expect(rows('[data-board-parent-row]')).toHaveLength(2);
   });
 
   test('a deep link opens the Task drawer; j/k move through the board order and Escape returns to the board', async () => {
@@ -505,6 +532,29 @@ describe('board page', () => {
         1474, 'board_invalid', 'board_parent_invalid', 'repository_not_found', 'board_collect_failed', 'board_timeout', 'unreachable', 'unreachable',
       ]);
       expect(new Set(requests)).toEqual(new Set([`/api/v1/repositories/${HARNESS_ID}/board?parent=1474`]));
+    } finally { globalThis.fetch = original; }
+  });
+
+  test('the parent list reader decodes the body with the core decoder and keeps each route refusal; any other answer is unreachable', async () => {
+    const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
+    const answers: (() => Response)[] = [
+      () => Response.json(PARENTS),
+      () => Response.json({ ...PARENTS, kind: 'repo-harness.board' }),
+      refusal('parents_github_failed', 503),
+      refusal('parents_hc_failed', 503),
+      refusal('a_code_from_a_newer_server', 503),
+      () => { throw new TypeError('connection refused'); },
+    ];
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: unknown) => { requests.push(String(url)); return answers[requests.length - 1]!(); }) as typeof fetch;
+    try {
+      const results: BoardParentsRead[] = [];
+      for (const _ of answers) results.push(await fetchBoardParents(HARNESS_ID, new AbortController().signal));
+      expect(results.map(result => result.state === 'ok' ? result.list.parents.length : result.reason)).toEqual([
+        2, 'parents_invalid', 'parents_github_failed', 'parents_hc_failed', 'unreachable', 'unreachable',
+      ]);
+      expect(new Set(requests)).toEqual(new Set([`/api/v1/repositories/${HARNESS_ID}/board/parents`]));
     } finally { globalThis.fetch = original; }
   });
 

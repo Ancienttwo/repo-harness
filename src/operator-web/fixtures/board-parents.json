@@ -1,0 +1,30 @@
+{
+  "protocol": 1,
+  "kind": "repo-harness.board-parents",
+  "observed_at": "2026-11-02T23:29:42.936Z",
+  "repository": "Ancienttwo/repo-harness",
+  "parents": [
+    {
+      "number": 1474,
+      "title": "herdr-core 迁移：退役 classic herdr CLI（G37）",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1474",
+      "updated_at": "2026-11-02T23:00:00Z",
+      "sub_issues": {
+        "total": 9,
+        "completed": 2
+      },
+      "seats": 3
+    },
+    {
+      "number": 1651,
+      "title": "Post-0.25.4 wave: defect, #1287 step 3 design and owner gates",
+      "url": "https://github.com/Ancienttwo/repo-harness/issues/1651",
+      "updated_at": "2026-11-03T19:43:35Z",
+      "sub_issues": {
+        "total": 9,
+        "completed": 3
+      },
+      "seats": 0
+    }
+  ]
+}
