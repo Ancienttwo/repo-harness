@@ -488,6 +488,19 @@ describe('board page', () => {
     expect(document.querySelectorAll('[data-repository]')).toHaveLength(REGISTRY.repositories.length);
     expect(document.querySelector('.operator-header [data-freshness]')?.getAttribute('data-freshness')).toBe(activity.status);
   });
+
+  test('a refresh that answers another protocol drops the last list instead of keeping it', async () => {
+    installDom('http://127.0.0.1:4318/#repositories');
+    let answer: unknown = REGISTRY;
+    await mount(<OperatorApp {...props(busy(), { initialRepositories: REGISTRY, readRepositories: async () => decodeOperatorRepositories(answer) })} />);
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(REGISTRY.repositories.length);
+    answer = { ...REGISTRY, protocol: 2 };
+    await act(async () => button('Refresh').click());
+    await act(async () => {});
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(0);
+    expect(document.body.textContent).toContain('The repository registry cannot be read');
+    expect(document.querySelector('[data-freshness-source="repositories"]')).toBeNull();
+  });
 });
 
 const HOME_URL = 'http://127.0.0.1:4318/';

@@ -28,8 +28,13 @@ export interface OperatorRepositoriesV1 {
 
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 
+/** The answer is not protocol 1: no row of it, nor an earlier list, may be shown. */
+export class OperatorRepositoriesInvalidError extends Error {
+  constructor() { super('repositories response is invalid'); }
+}
+
 function invalid(): never {
-  throw new Error('repositories response is invalid');
+  throw new OperatorRepositoriesInvalidError();
 }
 
 function exactRecord(value: unknown, keys: readonly string[]): Record<string, unknown> {

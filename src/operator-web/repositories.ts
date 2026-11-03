@@ -1,5 +1,5 @@
 import { useCallback, useState } from 'react';
-import { decodeOperatorRepositories, type OperatorRepositoriesV1, type OperatorRepositoryV1 } from '../core/operator/repositories';
+import { decodeOperatorRepositories, OperatorRepositoriesInvalidError, type OperatorRepositoriesV1, type OperatorRepositoryV1 } from '../core/operator/repositories';
 import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -30,9 +30,11 @@ export function useRepositories(read: RepositoriesReader, initial: OperatorRepos
       if (signal.aborted) return false;
       setView({ kind: 'ready', list, refreshFailed: false });
       return true;
-    } catch {
+    } catch (error) {
       if (signal.aborted) return false;
-      setView(current => current.kind === 'ready' ? { ...current, refreshFailed: true } : { kind: 'failed' });
+      // A transport or registry failure keeps the last list, marked; an answer that fails the decoder drops it.
+      setView(current => current.kind === 'ready' && !(error instanceof OperatorRepositoriesInvalidError)
+        ? { ...current, refreshFailed: true } : { kind: 'failed' });
       return false;
     }
   }, [read]);
