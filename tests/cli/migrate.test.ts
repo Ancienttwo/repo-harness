@@ -67,16 +67,19 @@ const LEGACY_WITH_SIBLING = `${JSON.stringify(
 describe('migrate command (Phase 1C)', () => {
   // The home path keeps its tmpdir spelling (/var on macOS), and git reports the real path (/private/var).
   // The link rows put the Claude adapter in HOME/dotfiles, a repository, behind a file or a directory symlink.
+  // The denied row is the file link with HOME/.claude not searchable: EACCES must refuse, not read as missing.
   for (const [name, layout, error] of [
     ['cwd is a HOME that is not in a repository', 'home', 'cwd is not in a git repository'],
     ['the repository root is HOME', 'home-repo', 'refusing user-level adapter'],
     ['a HOME adapter file links into a dotfiles repository', 'file-link', 'refusing user-level adapter'],
     ['a HOME adapter directory links into a dotfiles repository', 'dir-link', 'refusing user-level adapter'],
+    ['a HOME adapter directory cannot be searched', 'denied', 'EACCES'],
   ] as const) {
-    test(`issue 1650 migrate --apply refuses the user-level adapters when ${name}`, () => {
+    const denied = layout === 'denied';
+    test.skipIf(denied && (process.platform === 'win32' || process.getuid?.() === 0))(`issue 1650 migrate --apply refuses the user-level adapters when ${name}`, () => {
       const home = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-migrate-home-'));
       try {
-        const linked = layout === 'file-link' || layout === 'dir-link';
+        const linked = layout !== 'home' && layout !== 'home-repo';
         const dotfiles = path.join(home, 'dotfiles');
         if (layout === 'home-repo') initGitRepo(home);
         if (linked) {
@@ -89,13 +92,18 @@ describe('migrate command (Phase 1C)', () => {
           const file = path.join(behindLink ? dotfiles : home, rel);
           fs.mkdirSync(path.dirname(file), { recursive: true });
           fs.writeFileSync(file, text);
-          if (behindLink && layout === 'file-link') {
+          if (behindLink && layout !== 'dir-link') {
             fs.mkdirSync(path.join(home, '.claude'));
             fs.symlinkSync(file, path.join(home, rel));
           }
           if (behindLink && layout === 'dir-link') fs.symlinkSync(path.dirname(file), path.join(home, '.claude'));
         }
-        expect(() => runMigrate({ cwd: linked ? dotfiles : home, home, apply: true })).toThrow(error);
+        if (denied) fs.chmodSync(path.join(home, '.claude'), 0o600);
+        try {
+          expect(() => runMigrate({ cwd: linked ? dotfiles : home, home, apply: true })).toThrow(error);
+        } finally {
+          if (denied) fs.chmodSync(path.join(home, '.claude'), 0o700);
+        }
         for (const [rel, text] of Object.entries(adapters)) {
           const real = fs.realpathSync(path.join(home, rel));
           expect(fs.readFileSync(path.join(home, rel), 'utf8')).toBe(text);

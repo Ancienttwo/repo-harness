@@ -762,25 +762,33 @@ function legacyChecks(cwd: string, home: string, target: InitHookTarget, checkUp
     { id: ids[0], filePath: join(repoRoot, '.claude', 'settings.json') },
     { id: ids[1], filePath: join(repoRoot, '.codex', 'hooks.json') },
   ];
+  const title = 'Retired repo-local host adapter config';
   const checks: InitHookCheck[] = [];
   const present: string[] = [];
   const presentChecks: string[] = [];
+  // runMigrate refuses the whole repository when a candidate is, or cannot be resolved apart from, a user-level adapter.
+  let migrateRefuses = false;
   for (const entry of files) {
+    let userLevel: boolean;
+    try {
+      userLevel = isUserLevelAdapter(entry.filePath, home);
+    } catch (error) {
+      migrateRefuses = true;
+      checks.push({ id: entry.id, title, status: 'needs_agent', source: 'legacy', detail: `cannot resolve ${entry.filePath}: ${(error as Error).message}` });
+      present.push(entry.filePath);
+      presentChecks.push(entry.id);
+      continue;
+    }
     // A repository rooted at $HOME, or a dotfiles file behind a home adapter link, is the user-level adapter.
-    if (isUserLevelAdapter(entry.filePath, home)) {
-      checks.push({
-        id: entry.id,
-        title: 'Retired repo-local host adapter config',
-        status: 'na',
-        source: 'legacy',
-        detail: `user-level adapter, not a project adapter: ${entry.filePath}`,
-      });
+    if (userLevel) {
+      migrateRefuses = true;
+      checks.push({ id: entry.id, title, status: 'na', source: 'legacy', detail: `user-level adapter, not a project adapter: ${entry.filePath}` });
       continue;
     }
     const detail = legacyAdapterDetail(entry.filePath);
     checks.push({
       id: entry.id,
-      title: 'Retired repo-local host adapter config',
+      title,
       status: detail.legacy ? 'needs_agent' : 'ok',
       source: 'legacy',
       detail: detail.text,
@@ -795,10 +803,12 @@ function legacyChecks(cwd: string, home: string, target: InitHookTarget, checkUp
     addAction(actions, {
       id: 'legacy.project-adapters.review',
       status: 'needs_agent',
-      reason: 'Repo-local host adapter configs are retired; user-level adapters should own runtime routing.',
+      reason: migrateRefuses
+        ? 'Repo-local host adapter configs are retired. repo-harness migrate refuses this repository because a candidate is, or cannot be resolved apart from, a user-level adapter; review the targets manually.'
+        : 'Repo-local host adapter configs are retired; user-level adapters should own runtime routing.',
       requires_agent: true,
       risk: 'These files may contain user-owned historical config; review or migrate before removal.',
-      command: 'repo-harness migrate --apply',
+      ...(migrateRefuses ? {} : { command: 'repo-harness migrate --apply' }),
       targets: present,
       verification: verificationCommand(target, checkUpdates),
     }, presentChecks);

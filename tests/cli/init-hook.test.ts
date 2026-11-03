@@ -212,6 +212,15 @@ describe('init-hook command', () => {
       report = run(repo);
       expect(report.checks.find((entry) => entry.id === 'legacy.project-codex-hooks')).toMatchObject({ status: 'na', detail: `user-level adapter, not a project adapter: ${codex}` });
       expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
+
+      // A dotfiles layout: HOME links one adapter into the repository, so migrate refuses the legacy codex file too.
+      mkdirSync(join(home, '.claude'), { recursive: true });
+      symlinkSync(claude, join(home, '.claude', 'settings.json'));
+      report = run();
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-claude-settings')?.status).toBe('na');
+      const review = report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review');
+      expect(review).toMatchObject({ targets: [codex], reason: expect.stringContaining('review the targets manually') });
+      expect(review?.command).toBeUndefined();
     });
   });
 

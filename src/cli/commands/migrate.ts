@@ -88,22 +88,36 @@ function applyForFile(filePath: string): void {
 
 const CANDIDATES = ['.codex/hooks.json', '.claude/settings.json'] as const;
 
+/** Only these errors mean that the path, or a directory on it, does not exist. */
+const MISSING_PATH_CODES = new Set(['ENOENT', 'ENOTDIR']);
+
+/** The real path, or null when the path does not exist. Every other error (EACCES, ELOOP, ...) throws. */
+function realPathOrMissing(filePath: string): string | null {
+  try {
+    return fs.realpathSync(filePath);
+  } catch (error) {
+    if (MISSING_PATH_CODES.has((error as NodeJS.ErrnoException).code ?? '')) return null;
+    throw error;
+  }
+}
+
 /**
- * The real identity of a file: its full real path when it exists (a final
- * symlink is followed), else its name under the real parent directory. Null
- * when the parent does not exist, so no file is there to read or write.
- * Resolution errors propagate, so a path that cannot be resolved fails closed.
+ * The real identity of a file: its full real path (a final symlink is
+ * followed), else its name under the real parent directory, else null when
+ * the parent does not exist either, so no file is there to read or write.
  */
 function fileIdentity(filePath: string): string | null {
-  if (fs.existsSync(filePath)) return fs.realpathSync(filePath);
-  const dir = path.dirname(filePath);
-  return fs.existsSync(dir) ? path.join(fs.realpathSync(dir), path.basename(filePath)) : null;
+  const real = realPathOrMissing(filePath);
+  if (real !== null) return real;
+  const dir = realPathOrMissing(path.dirname(filePath));
+  return dir === null ? null : path.join(dir, path.basename(filePath));
 }
 
 /**
  * True when the file is a user-level adapter (<home>/.claude/settings.json or
  * <home>/.codex/hooks.json) by real identity: a repository rooted at $HOME, or
- * a dotfiles repository whose file a home adapter links to.
+ * a dotfiles repository whose file a home adapter links to. A path that
+ * cannot be resolved throws, so callers fail closed.
  */
 export function isUserLevelAdapter(filePath: string, home: string): boolean {
   const identity = fileIdentity(filePath);
