@@ -33,13 +33,11 @@ export interface SeatLaunchV1 {
   readonly limits: readonly SeatLimitV1[];
 }
 
-/** Built-in Claude Code agent types (Claude Code 2.1.316 init event and Agent tool), and `fork`. */
+/** Built-in Claude Code agent types (Claude Code 2.1.316 and 2.1.317 init events and Agent tool), and `fork`. */
 export const CLAUDE_BUILTIN_AGENT_TYPES = ['claude', 'claude-code-guide', 'Explore', 'fork', 'general-purpose', 'Plan', 'statusline-setup', 'web-fetch'] as const;
 
 /** The triage queue of the orchestrator seat keeps its name when the seat restarts (#1510). */
 export const ORCHESTRATOR_TASK_LIST_ID = 'repo-harness-orchestrator';
-
-const CLAUDE_TASK_TOOLS = ['TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate'];
 
 /** GitHub write commands that a missing `gh` group refuses. Other commands, such as `gh api`, still run. */
 const GITHUB_WRITE_COMMANDS = [
@@ -48,14 +46,20 @@ const GITHUB_WRITE_COMMANDS = [
   'gh release create', 'git push',
 ];
 
-/** The deny rules that block the direct tools of each group. */
-const CLAUDE_DENIED_TOOLS: Readonly<Record<SeatGroup, readonly string[]>> = {
-  edit: ['Edit', 'NotebookEdit', 'Write'],
-  shell: ['Bash'],
+/**
+ * The built-in Claude tools of each group, for the `--tools` allow list (owner decision M22). Every built-in tool
+ * that no enabled group names is off, also a tool that a later host version adds. `gh` names no tool: it needs the
+ * shell, and a seat without `gh` denies the GitHub write command prefixes of Bash. `--tools` does not filter MCP
+ * tools, so a seat without `mcp` also passes `--strict-mcp-config` (init-event probe, #1473).
+ */
+const CLAUDE_GROUP_TOOLS: Readonly<Record<SeatTool, readonly string[]>> = {
+  read: ['Read', 'Glob', 'Grep'],
+  edit: ['Edit', 'Write', 'NotebookEdit'],
+  shell: ['Bash', 'Monitor', 'TaskStop'],
   net: ['WebFetch', 'WebSearch'],
-  tasks: CLAUDE_TASK_TOOLS,
-  mcp: ['ListMcpResourcesTool', 'ReadMcpResourceDirTool', 'ReadMcpResourceTool', 'mcp__*'],
-  gh: GITHUB_WRITE_COMMANDS.map(command => `Bash(${command} *)`),
+  tasks: ['TaskCreate', 'TaskGet', 'TaskList', 'TaskUpdate'],
+  mcp: ['ToolSearch', 'ListMcpResourcesTool', 'ReadMcpResourceTool'],
+  gh: [],
 };
 
 /** Groups whose effect a shell command or an MCP tool can also reach. */
@@ -132,28 +136,28 @@ function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], lim
 }
 
 function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[]): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
-  const off = OFF_GROUPS(config);
-  // The Workflow tool starts its own agents, and the bare Agent rule does not remove it (probe, #1473).
-  const fleetRules = config.fleet.length === 0
-    ? ['Agent', 'Workflow']
-    : [...[...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`), 'Workflow'];
-  const denied = [...off.flatMap(group => CLAUDE_DENIED_TOOLS[group]), ...fleetRules];
-  // A plain session has no Glob, Grep or task tools; naming one of each in --allowedTools turns its set on.
-  const allowed = ['Glob', 'Grep', ...(config.tools.includes('tasks') ? CLAUDE_TASK_TOOLS : [])];
+  const on = (group: SeatTool) => config.tools.includes(group);
+  // `--tools` cannot name agent types (`Agent(<type>)` there removes the Agent tool), so a fleet keeps the Agent
+  // tool and denies every other known type by name.
+  const tools = [...config.tools.flatMap(group => CLAUDE_GROUP_TOOLS[group]), ...(config.fleet.length > 0 ? ['Agent'] : [])];
+  const denied = [
+    ...(on('shell') && !on('gh') ? GITHUB_WRITE_COMMANDS.map(command => `Bash(${command} *)`) : []),
+    ...(config.fleet.length > 0 ? [...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`) : []),
+  ];
   const limits: SeatLimitV1[] = [
-    // Without the shell and MCP groups, the argv denies Bash and `mcp__*`, so no side path stays open.
-    ...off.map(group => ({ subject: group, level: pathLevel(group, 'enforced', config.tools.includes('shell') || config.tools.includes('mcp')) })),
+    ...OFF_GROUPS(config).map(group => ({ subject: group, level: pathLevel(group, 'enforced', on('shell') || on('mcp')) })),
     { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
   ];
   const text = brief(seat, config, config.fleet, limits);
   return {
     argv: [
-      ...(seat === 'orchestrator' && config.tools.includes('tasks') ? ['env', `CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
+      ...(seat === 'orchestrator' && on('tasks') ? ['env', `CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
       'claude',
       ...(config.model === null ? [] : ['--model', config.model]),
       ...(config.effort === null ? [] : ['--effort', config.effort]),
-      '--allowedTools', ...allowed,
-      '--disallowedTools', ...denied,
+      '--tools', ...tools,
+      ...(on('mcp') ? [] : ['--strict-mcp-config']),
+      ...(denied.length === 0 ? [] : ['--disallowedTools', ...denied]),
       '--append-system-prompt', text,
     ],
     brief: text,

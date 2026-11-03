@@ -44,7 +44,15 @@ function run(env: Record<string, string>, args: string[]) {
 const argv = (home: string, ...args: string[]) => run({ HOME: home }, args);
 
 const launch = (home: string, seat: string) => JSON.parse(argv(home, seat, "--json").stdout);
-const denied = (args: string[]) => args.slice(args.indexOf("--disallowedTools") + 1, args.indexOf("--append-system-prompt"));
+/** The values of `flag`, up to the next flag; empty when `flag` is absent. */
+function values(args: string[], flag: string): string[] {
+  const start = args.indexOf(flag);
+  if (start === -1) return [];
+  const end = args.findIndex((arg, index) => index > start && arg.startsWith("--"));
+  return args.slice(start + 1, end);
+}
+const tools = (args: string[]) => values(args, "--tools");
+const denied = (args: string[]) => values(args, "--disallowedTools");
 
 describe("repo-harness seats argv", () => {
   test("without a seats section the advisor launch comes from the defaults and briefs the default fleet", () => {
@@ -54,10 +62,14 @@ describe("repo-harness seats argv", () => {
       expect(advisor.brief).toContain("Collect evidence through your sub-agents: `deep-reasoner`, `explorer`.");
       expect(advisor.argv.slice(0, 5)).toEqual(["claude", "--model", "opus", "--effort", "max"]);
       expect(advisor.argv.at(-1)).toBe(advisor.brief);
-      // Every agent type outside the fleet is refused by name: managed roles, built-in types, fork, nested user
-      // types and plugin types by the host identity rule. The Workflow tool starts agents too.
+      // The allow list holds only the tools of the enabled groups; every other built-in tool, such as Workflow, is off.
+      expect(tools(advisor.argv)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
+        "Bash", "Monitor", "TaskStop", "Agent"]);
+      expect(advisor.argv).not.toContain("--strict-mcp-config");
+      // `--tools` cannot name agent types, so every agent type outside the fleet is refused by name: managed roles,
+      // built-in types, fork, nested user types and plugin types by the host identity rule.
       expect(denied(advisor.argv)).toEqual(expect.arrayContaining(["Agent(fast-worker)", "Agent(orchestrator)", "Agent(general-purpose)", "Agent(fork)",
-        "Agent(nested-auditor)", "Agent(demo:helper)", "Agent(demo:review:security)", "Workflow", "Bash(gh pr create *)"]));
+        "Agent(nested-auditor)", "Agent(demo:helper)", "Agent(demo:review:security)", "Bash(gh pr create *)"]));
       expect(denied(advisor.argv)).not.toContain("Agent(explorer)");
       expect(advisor.limits).toContainEqual({ subject: "fleet", level: "named_types_only" });
       // With a shell on, Bash can still write files, so the edit limit is partial.
@@ -72,7 +84,7 @@ describe("repo-harness seats argv", () => {
       const advisor = launch(home, "advisor");
       expect(advisor.source).toBe("seats");
       expect(advisor.brief).toContain("You have no sub-agents. Collect evidence yourself.");
-      expect(denied(advisor.argv)).toEqual(expect.arrayContaining(["Agent", "Workflow"]));
+      expect(tools(advisor.argv)).not.toContain("Agent");
       expect(denied(advisor.argv).some((rule: string) => rule.startsWith("Agent("))).toBe(false);
       const worker = launch(home, "worker");
       expect(worker.argv).toEqual(["pi", "--append-system-prompt", worker.brief]);
@@ -82,13 +94,14 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("the orchestrator seat names its triage queue, opts in to the task tools and refuses the Agent tool", () => {
+  test("the orchestrator seat names its triage queue and allows exactly its groups' tools, without the Agent tool", () => {
     withHome(undefined, (home) => {
       const orchestrator = launch(home, "orchestrator").argv;
       expect(orchestrator.slice(0, 3)).toEqual(["env", "CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator", "claude"]);
-      expect(orchestrator.slice(orchestrator.indexOf("--allowedTools") + 1, orchestrator.indexOf("--disallowedTools")))
-        .toEqual(["Glob", "Grep", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]);
-      expect(denied(orchestrator)).toEqual(["Edit", "NotebookEdit", "Write", "Agent", "Workflow"]);
+      expect(tools(orchestrator)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "WebFetch", "WebSearch", "Read", "Glob", "Grep",
+        "Bash", "Monitor", "TaskStop", "TaskCreate", "TaskGet", "TaskList", "TaskUpdate"]);
+      expect(orchestrator).not.toContain("--disallowedTools");
+      expect(orchestrator).not.toContain("--strict-mcp-config");
     });
   });
 
@@ -127,7 +140,7 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("on Claude, edit is enforced only when the shell and MCP groups are both off", () => {
+  test("on Claude, an mcp-off seat loads no MCP server, and edit is enforced only when the shell and MCP groups are both off", () => {
     const seats = {
       ...DEFAULT_SEATS_CONFIG,
       advisor: { runtime: "claude", model: null, effort: null, tools: ["read"], fleet: [] },
@@ -135,11 +148,15 @@ describe("repo-harness seats argv", () => {
     };
     withHome(seats, (home) => {
       const worker = launch(home, "worker");
-      expect(denied(worker.argv)).not.toContain("mcp__*");
+      expect(tools(worker.argv)).toEqual(["ToolSearch", "ListMcpResourcesTool", "ReadMcpResourceTool", "Read", "Glob", "Grep"]);
+      expect(worker.argv).not.toContain("--strict-mcp-config");
       expect(worker.limits).toContainEqual({ subject: "edit", level: "common_commands" });
       expect(worker.brief).toContain("Keep them yourself. Do not edit files.");
       const advisor = launch(home, "advisor");
-      expect(denied(advisor.argv)).toEqual(expect.arrayContaining(["Bash", "mcp__*"]));
+      expect(tools(advisor.argv)).toEqual(["Read", "Glob", "Grep"]);
+      expect(advisor.argv).toContain("--strict-mcp-config");
+      expect(advisor.argv).not.toContain("--mcp-config");
+      expect(advisor.argv).not.toContain("--disallowedTools");
       expect(advisor.limits).toContainEqual({ subject: "edit", level: "enforced" });
       expect(advisor.limits).toContainEqual({ subject: "net", level: "enforced" });
     });
@@ -153,6 +170,23 @@ describe("repo-harness seats argv", () => {
       const advisor = JSON.parse(run({ HOME: home, CLAUDE_CONFIG_DIR: root }, ["advisor", "--json"]).stdout);
       expect(denied(advisor.argv)).toContain("Agent(alternate-auditor)");
       expect(denied(advisor.argv)).not.toContain("Agent(nested-auditor)");
+    });
+  });
+
+  test("an agent file with list and nested frontmatter fields is read by its name", () => {
+    withHome(undefined, (home) => {
+      writeFileSync(join(home, ".claude", "agents", "api.md"),
+        "---\nname: api-developer\ndescription: Builds APIs: REST and RPC\nskills:\n  - api-design\n  - testing\nhooks:\n  PreToolUse:\n    - matcher: Bash\n---\nBody\n");
+      expect(denied(launch(home, "advisor").argv)).toContain("Agent(api-developer)");
+    });
+  });
+
+  test("an empty CLAUDE_CONFIG_DIR fails closed", () => {
+    withHome(undefined, (home) => {
+      const result = run({ HOME: home, CLAUDE_CONFIG_DIR: "" }, ["advisor", "--json"]);
+      expect(result.status).toBe(1);
+      expect(result.stdout).toBe("");
+      expect(JSON.parse(result.stderr).error).toBe("claude_agent_types_unreadable");
     });
   });
 
