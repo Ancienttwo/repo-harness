@@ -8,7 +8,7 @@ import {
   type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
-import { itemOwner, useExecutions, type ExecutionReader } from './repository-reads';
+import { itemOwner, useExecutions, useTaskMessages, type ExecutionReader, type ItemOwner, type TaskMessagesReader } from './repository-reads';
 import { TaskDrawer } from './TaskDrawer';
 import { Age, BoardState, ExternalLink, PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
 import { boardLocation, type BoardPlace, type WorkspaceLocation } from './workspace-location';
@@ -176,9 +176,9 @@ function matches(board: BoardV1, item: BoardItemV1, query: string): boolean {
   return [item.title, `#${item.number}`, pr?.head_ref ?? '', pr ? `#${pr.number}` : ''].some(text => text.toLowerCase().includes(query));
 }
 
-function ReadyBoard({ view, place, readExecution, generation, onOpen, now, t }: {
+function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   readonly view: BoardView & { readonly kind: 'ready' }; readonly place: BoardPlace;
-  readonly readExecution: ExecutionReader; readonly generation: number;
+  readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const { board, attention } = view;
@@ -207,6 +207,10 @@ function ReadyBoard({ view, place, readExecution, generation, onOpen, now, t }: 
   ];
   const drawerItem = place.issue === null ? null : board.items.find(item => item.number === place.issue) ?? null;
   const drawerBranch = drawerItem ? primaryPullRequest(board, drawerItem)?.head_ref ?? null : null;
+  const owner: ItemOwner = drawerBranch === null ? { state: 'none' } : itemOwner(executions, { repository_id: place.repository_id, branch: drawerBranch });
+  // Only a verified session names the task whose inbox the drawer reads.
+  const taskIds = owner.state === 'verified' ? [...new Set(owner.tasks.map(task => task.task))] : [];
+  const inbox = useTaskMessages(readTaskMessages, place.repository_id, taskIds, generation, place.issue !== null);
   return (
     <div className="flex flex-col gap-5" data-board-parent={board.parent.number}>
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -276,7 +280,7 @@ function ReadyBoard({ view, place, readExecution, generation, onOpen, now, t }: 
       )}
       {place.issue !== null && (
         <TaskDrawer board={board} attention={attention} item={drawerItem} issue={place.issue}
-          owner={drawerBranch === null ? { state: 'none' } : itemOwner(executions, { repository_id: place.repository_id, branch: drawerBranch })}
+          owner={owner} inbox={inbox}
           order={[...new Set([...findings.flatMap(finding => findingItem(board, finding) ?? []), ...inflight])]}
           place={place} onOpen={onOpen} now={now} t={t} />
       )}
@@ -284,10 +288,12 @@ function ReadyBoard({ view, place, readExecution, generation, onOpen, now, t }: 
   );
 }
 
-export function BoardPage({ place, view, repositories, chosenRepository, onRepository, readExecution, generation, onOpen, now, t }: {
+export function BoardPage({ place, view, repositories, chosenRepository, onRepository, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   readonly place: BoardPlace | null;
   /** The execution route: the verified sessions behind the Task drawer's follow-up. */
   readonly readExecution: ExecutionReader;
+  /** The task messages route: the stored inbox of each verified task in the Task drawer. */
+  readonly readTaskMessages: TaskMessagesReader;
   readonly generation: number;
   /** Null exactly when `place` is null. */
   readonly view: BoardView | null;
@@ -308,5 +314,5 @@ export function BoardPage({ place, view, repositories, chosenRepository, onRepos
       </div>
     );
   }
-  return <ReadyBoard view={view} place={place} readExecution={readExecution} generation={generation} onOpen={onOpen} now={now} t={t} />;
+  return <ReadyBoard view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }

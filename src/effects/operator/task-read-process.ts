@@ -7,6 +7,8 @@ import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
 import { isDocSessionReadRequest } from '../../core/operator/doc-session-changes';
 import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from './doc-session-changes';
+import { isTaskMessagesRequest } from '../../core/operator/task-messages';
+import { readOperatorTaskMessages, TaskMessagesReadError } from './task-messages';
 
 // Stay inert until the supervisor has assigned this process to its ownership boundary.
 function run(): void {
@@ -53,9 +55,11 @@ function run(): void {
         finish({ok:true,snapshot:readDocSessionFinalizationView(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_loss' && isDocSessionReadRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionLoss(env ?? process.env,message.request.session_id)});
+      } else if (message.kind === 'task_messages' && isTaskMessagesRequest(message.request)) {
+        finish({ok:true,snapshot:readOperatorTaskMessages(message.request,env ?? process.env)});
       } else throw new Error('invalid reader');
     } catch (error) {
-      finish({ok:false,code:error instanceof DocSessionReadError || error instanceof DocSessionEventsError ? error.code : 'unavailable'});
+      finish({ok:false,code:error instanceof DocSessionReadError || error instanceof DocSessionEventsError || error instanceof TaskMessagesReadError ? error.code : 'unavailable'});
     }
   });
 }

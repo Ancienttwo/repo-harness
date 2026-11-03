@@ -4,7 +4,8 @@ import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityIte
 import { decodeTaskExecutionView } from '../../core/operator/execution-state';
 import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/operator/runtime-status';
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
-import type { ExecutionRead } from '../repository-reads';
+import { decodeTaskMessagesView, type TaskMessagesRequest } from '../../core/operator/task-messages';
+import type { ExecutionRead, TaskMessagesRead } from '../repository-reads';
 
 export const HARNESS_ID = 'repo_a5b76eee64af71c3';
 export const SITE_ID = 'repo_1f2e3d4c5b6a7980';
@@ -136,8 +137,10 @@ function executionView(repositoryId: string, now: number, tasks: readonly unknow
 /**
  * The execution route beside the busy board. repo-harness: Codex in an hc
  * terminal on the console redesign, Claude Code in a terminal on the pipeline
- * observer, a session whose provider exited, and one session left out because
- * its branch is not public text. operator-site has no first collection yet.
+ * observer, Claude Code in an hc terminal on the branch of board item #1475
+ * (the task with an inbox), a session whose provider exited, and one session
+ * left out because its branch is not public text. operator-site has no first
+ * collection yet.
  */
 export function busyExecution(repositoryId: string, now: number): ExecutionRead {
   if (repositoryId === SITE_ID) return { state: 'unavailable', reason: 'execution_state_pending' };
@@ -148,8 +151,33 @@ export function busyExecution(repositoryId: string, now: number): ExecutionRead 
         hc_terminal: { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', open_command: `herdr-app do terminal.keep '{"terminal":"t12"}'` } } },
     { state: 'verified', task: 'pipeline-observer', role: 'deep-reasoner', issue_id: '603', branch: 'feat/pipeline-observer', agent: 'claude', runtime: 'terminal',
       follow_up: { task_id: 'pipeline-observer', resume: { host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' }, hc_terminal: null } },
+    { state: 'verified', task: INBOX_TASK, role: 'implementer', issue_id: '1475', branch: 'feat/1475-hc-transport', agent: 'claude', runtime: 'herdr-core',
+      follow_up: { task_id: INBOX_TASK, resume: { host: 'claude', command: 'claude --resume 7f3c9a2e-41d0-4b8e-9c55-0a6e2d1b8f47' },
+        hc_terminal: { address: 't14', name: 'rh-task-1475', open_command: `herdr-app do terminal.keep '{"terminal":"t14"}'` } } },
     { state: 'unverified', task: 'oar-0-45', role: 'implementer', reason: 'provider_exited', follow_up: { task_id: 'oar-0-45', resume: null, hc_terminal: null } },
   ], 1);
+}
+
+/** The task of board item #1475 in the busy fixture: the one task whose inbox has stored messages. */
+export const INBOX_TASK = 'f'.repeat(64);
+
+/**
+ * The task messages route beside the busy execution view: three stored
+ * messages for #1475 (delivered, acknowledged, and one to the orchestrator
+ * with no receipt yet). Every other verified task has an empty inbox.
+ */
+export function busyTaskMessages(request: TaskMessagesRequest, now: number): TaskMessagesRead {
+  const owner = (state: 'delivered' | 'acknowledged', delivered: number) => ({ recipient_kind: 'claim', recipient_id: null, delivery_state: state,
+    delivered_at: at(now, delivered), acknowledged_at: state === 'acknowledged' ? at(now, delivered - 10 * MINUTE) : null });
+  const messages = request.task_id !== INBOX_TASK ? [] : [
+    { message_id: '0b6f2c1e-4d3a-4e5f-8a7b-9c0d1e2f3a01', body: 'Merge #1490 first, then rebase this branch.', sender_kind: 'operator', sender_id: 'hermes',
+      audience: 'owner', created_at: at(now, 4 * MINUTE), receipts: [owner('delivered', 3 * MINUTE)] },
+    { message_id: '0b6f2c1e-4d3a-4e5f-8a7b-9c0d1e2f3a02', body: 'CI is green on the head. Ready for review?', sender_kind: 'agent', sender_id: 'rh-w-1475',
+      audience: 'orchestrator', created_at: at(now, 2 * HOUR), receipts: [] },
+    { message_id: '0b6f2c1e-4d3a-4e5f-8a7b-9c0d1e2f3a03', body: 'The review notes are updated. Read item 2 first.', sender_kind: 'agent', sender_id: 'codex-reviewer',
+      audience: 'owner', created_at: at(now, DAY + HOUR), receipts: [owner('acknowledged', DAY + 30 * MINUTE)] },
+  ];
+  return { state: 'ok', view: decodeTaskMessagesView({ protocol: 1, kind: 'operator_task_messages', ...request, messages, complete: true }, request) };
 }
 
 /** Repositories registered, no task session. */

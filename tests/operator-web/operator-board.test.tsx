@@ -19,16 +19,18 @@ import { fetchBoard, type BoardSubject } from '../../src/operator-web/board-view
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
-import { fetchExecution, itemOwner, type CiRepairsReader, type ExecutionReader } from '../../src/operator-web/repository-reads';
+import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import {
   busyDevActivity,
   busyExecution,
   busyRuntimeOverlay,
+  busyTaskMessages,
   degradedDevActivity,
   emptyDevActivity,
   emptyExecution,
   HARNESS_ID,
+  INBOX_TASK,
 } from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
@@ -78,6 +80,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readNotifyStatus: () => new Promise(() => {}),
     initialWorktrees: worktrees, readWorktrees: async () => worktrees,
     readExecution: async id => emptyExecution(id, NOW),
+    readTaskMessages: async request => busyTaskMessages(request, NOW),
     readBoard: async () => ({ state: 'ok', board: BOARD }),
     ...overrides,
   };
@@ -170,7 +173,7 @@ describe('board data rules', () => {
       const results = [];
       for (const _ of answers) results.push(await fetchExecution(HARNESS_ID, new AbortController().signal));
       expect(results.map(result => result.state === 'ok' ? result.view.tasks.length : result.reason)).toEqual([
-        3, 'execution_state_invalid', 'execution_state_pending', 'repository_not_found', 'execution_state_unavailable', 'execution_state_invalid', 'unreachable', 'unreachable',
+        4, 'execution_state_invalid', 'execution_state_pending', 'repository_not_found', 'execution_state_unavailable', 'execution_state_invalid', 'unreachable', 'unreachable',
       ]);
       expect(new Set(requests)).toEqual(new Set([`GET /api/v1/repositories/${HARNESS_ID}/execution`]));
     } finally { globalThis.fetch = original; }
@@ -360,6 +363,75 @@ describe('board page', () => {
       await act(async () => root?.unmount());
       root = null;
     }
+  });
+
+  test('the task inbox of a verified session lists its stored messages newest first, read-only; each read state is itself', async () => {
+    const inbox = () => document.querySelector<HTMLElement>('[role="dialog"] section[aria-labelledby="task-inbox"]')!;
+    boardAt(1475);
+    await mount(<OperatorApp {...props(busy(), { readExecution: sessions })} />);
+    await settle();
+    // Task.dc.html orders the inbox after the follow-up.
+    expect(inbox().previousElementSibling).toBe(followUp());
+    expect(inbox().textContent).toContain('Read-only · delivered by the Bot');
+    const rows = Array.from(inbox().querySelectorAll<HTMLElement>('li'));
+    expect(rows.map(row => row.querySelector('[data-message]')?.firstElementChild?.textContent)).toEqual([
+      'Merge #1490 first, then rebase this branch.', 'CI is green on the head. Ready for review?', 'The review notes are updated. Read item 2 first.']);
+    expect(rows.map(row => row.querySelector('[data-message]')?.lastElementChild?.textContent)).toEqual([
+      'hermes → Owner · 4m', 'rh-w-1475 → Orchestrator · 2h', 'codex-reviewer → Owner · 1d']);
+    expect(rows.map(row => Array.from(row.querySelectorAll('[data-receipt]')).map(badge => `${badge.getAttribute('data-receipt')} ${badge.textContent}`)))
+      .toEqual([['delivered Delivered'], ['none Not delivered'], ['acknowledged Acknowledged']]);
+    expect(inbox().querySelectorAll('button, input, textarea, select, form, [contenteditable], [data-write-action]')).toHaveLength(0);
+    expect(inbox().textContent).not.toMatch(PRIVATE_LABEL);
+
+    const ok = busyTaskMessages({ repository_id: HARNESS_ID, task_id: INBOX_TASK }, NOW);
+    if (ok.state !== 'ok') throw new Error('the busy fixture serves the inbox of #1475');
+    const states: [TaskMessagesReader, string, string][] = [
+      [() => new Promise(() => {}), 'reading', 'Reading…'],
+      [async request => ({ state: 'ok', view: { ...ok.view, task_id: request.task_id, messages: [] } }), 'empty', 'No messages for this task.'],
+      [async () => ({ state: 'ok', view: { ...ok.view, complete: false } }), 'incomplete', 'The read stopped at its limit: some stored messages are not shown.'],
+      [async () => ({ state: 'unavailable', reason: 'task_unverified' }), 'unavailable', 'Task inbox unavailable · The task has no verified session'],
+    ];
+    for (const [readTaskMessages, state, text] of states) {
+      await act(async () => root?.unmount());
+      boardAt(1475);
+      await mount(<OperatorApp {...props(busy(), { readExecution: sessions, readTaskMessages })} />);
+      await settle();
+      expect(inbox().querySelector(`[data-inbox="${state}"]`)?.textContent).toBe(text);
+    }
+    // Without a verified session there is no task id, so no inbox read and no section.
+    await act(async () => root?.unmount());
+    const reads: string[] = [];
+    boardAt(1476);
+    await mount(<OperatorApp {...props(busy(), { readExecution: sessions, readTaskMessages: async request => { reads.push(request.task_id); return ok; } })} />);
+    await settle();
+    expect(document.querySelector('[role="dialog"] section[aria-labelledby="task-inbox"]')).toBeNull();
+    expect(reads).toEqual([]);
+  });
+
+  test('the task messages reader keeps both refusal forms and refuses a view for another task', async () => {
+    const ok = busyTaskMessages({ repository_id: HARNESS_ID, task_id: INBOX_TASK }, NOW);
+    if (ok.state !== 'ok') throw new Error('the busy fixture serves the inbox of #1475');
+    const answers: (() => Response)[] = [
+      () => Response.json(ok.view),
+      () => Response.json({ ...ok.view, task_id: '0'.repeat(64) }),
+      () => Response.json({ error: { code: 'task_not_found', message: 'refused', next_action: 'retry' } }, { status: 404 }),
+      () => Response.json({ error: { code: 'task_unverified', message: 'refused', next_action: 'retry' } }, { status: 409 }),
+      // A failure of the read process is a bare code.
+      () => Response.json({ code: 'timeout' }, { status: 504 }),
+      () => Response.json({ code: 'a_code_from_a_newer_server' }, { status: 503 }),
+      () => { throw new TypeError('connection refused'); },
+    ];
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: unknown) => { requests.push(String(url)); return answers[requests.length - 1]!(); }) as typeof fetch;
+    try {
+      const results = [];
+      for (const _ of answers) results.push(await fetchTaskMessages({ repository_id: HARNESS_ID, task_id: INBOX_TASK }, new AbortController().signal));
+      expect(results.map(result => result.state === 'ok' ? result.view.messages.length : result.reason)).toEqual([
+        3, 'task_messages_invalid', 'task_not_found', 'task_unverified', 'timeout', 'unreachable', 'unreachable',
+      ]);
+      expect(new Set(requests)).toEqual(new Set([`/api/v1/repositories/${HARNESS_ID}/tasks/${INBOX_TASK}/messages`]));
+    } finally { globalThis.fetch = original; }
   });
 
   test('a refusal names its reason and the command; a failed refresh keeps the last board; a lost source is one banner', async () => {

@@ -23,7 +23,8 @@ import { startTestsCollector, type TestsRepositoryCache } from './tests-collecto
 import { startExecutionCollector, type ExecutionRepositoryCache } from './execution-collector';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from './architecture-map-collector';
 import { decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
-import { decodeTaskExecutionView, type ExecutionStateUnavailableReason } from '../../core/operator/execution-state';
+import { decodeTaskExecutionView, type ExecutionStateUnavailableReason, type TaskExecutionViewV1 } from '../../core/operator/execution-state';
+import { decodeTaskMessagesView, TASK_MESSAGES_FAILURES, type TaskMessagesRefusal } from '../../core/operator/task-messages';
 import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
 import { DocsReadError } from './docs-reader';
 import { decodeDocsFile, decodeDocsTree, OPERATOR_DOCS_FILE_KIND, type DocsUnavailableReason } from '../../core/operator/docs';
@@ -89,6 +90,8 @@ export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za
 /** The board of one parent issue in one registered repository; `?parent=<issue number>` is required. */
 export const OPERATOR_BOARD_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
+/** The stored task inbox of one task that the execution view of the same repository lists as verified. */
+export const OPERATOR_TASK_MESSAGES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tasks\/([0-9a-f]{64})\/messages$/u;
 export const OPERATOR_DOCS_TREE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/tree$/u;
 export const OPERATOR_DOCS_FILE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/docs\/file$/u;
 export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
@@ -134,6 +137,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
+  Object.freeze({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_file', method: 'GET', pattern: OPERATOR_DOCS_FILE_ROUTE.source, write: false }),
   Object.freeze({ id: 'session_list', method: 'GET', pattern: OPERATOR_SESSION_LIST_PATH, write: false }),
@@ -428,6 +432,11 @@ const EXECUTION_UNAVAILABLE: Readonly<Record<ExecutionStateUnavailableReason, { 
   registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
   execution_state_unavailable: { status: 503, message: 'The task session records of this repository could not be read.', next_action: 'Wait for the next collection. If the error stays, restart `repo-harness operator serve`.' },
+};
+
+const TASK_MESSAGES_REFUSALS: Readonly<Record<TaskMessagesRefusal, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
+  task_not_found: { status: 404, message: 'The execution state of this repository has no task with this id.', next_action: 'Read the task id from the execution route of the same repository.' },
+  task_unverified: { status: 409, message: 'The task has no verified session, so its inbox is not served.', next_action: 'Wait until the execution route shows the task as verified.' },
 };
 
 const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -908,7 +917,7 @@ export async function startOperatorServer(
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
+    failures: readonly string[], kind: 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization' | 'task_messages',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1504,25 +1513,50 @@ export async function startOperatorServer(
       return;
     }
 
+    /** The decoded execution view of one repository; null after it sends the refusal. */
+    const executionView = (repositoryId: string): TaskExecutionViewV1 | null => {
+      const cache = (options.read_execution_state ?? execution?.read ?? (() => ({ state: 'unavailable', reason: 'execution_state_pending' }) as const))(repositoryId);
+      if (cache.state !== 'ready') {
+        const refusal = EXECUTION_UNAVAILABLE[cache.reason];
+        sendRefusal(request, response, refusal.status, errorBody(cache.reason, refusal.message, refusal.next_action), headOnly);
+        return null;
+      }
+      try { return decodeTaskExecutionView(cache.view); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('execution_state_invalid', 'The task execution state failed validation.'), headOnly);
+        return null;
+      }
+    };
+
     const executionRoute = OPERATOR_EXECUTION_STATE_ROUTE.exec(pathname);
     if (executionRoute !== null) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Execution state accepts no query parameters.'), headOnly);
         return;
       }
-      const cache = (options.read_execution_state ?? execution?.read ?? (() => ({ state: 'unavailable', reason: 'execution_state_pending' }) as const))(executionRoute[1]!);
-      if (cache.state !== 'ready') {
-        const refusal = EXECUTION_UNAVAILABLE[cache.reason];
-        sendRefusal(request, response, refusal.status, errorBody(cache.reason, refusal.message, refusal.next_action), headOnly);
+      const view = executionView(executionRoute[1]!);
+      if (view !== null) sendJson(response, 200, view, headOnly);
+      return;
+    }
+
+    const messagesRoute = OPERATOR_TASK_MESSAGES_ROUTE.exec(pathname);
+    if (messagesRoute !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Task messages accept no query parameters.'), headOnly);
         return;
       }
-      let view;
-      try { view = decodeTaskExecutionView(cache.view); }
-      catch {
-        sendRefusal(request, response, 503, errorBody('execution_state_invalid', 'The task execution state failed validation.'), headOnly);
+      const input = { repository_id: messagesRoute[1]!, task_id: messagesRoute[2]! };
+      const view = executionView(input.repository_id);
+      if (view === null) return;
+      const task = view.tasks.find(entry => entry.task === input.task_id);
+      if (task === undefined || task.state !== 'verified') {
+        const code: TaskMessagesRefusal = task === undefined ? 'task_not_found' : 'task_unverified';
+        const refusal = TASK_MESSAGES_REFUSALS[code];
+        sendRefusal(request, response, refusal.status, errorBody(code, refusal.message, refusal.next_action), headOnly);
         return;
       }
-      sendJson(response, 200, view, headOnly);
+      handleBoundedTaskRead(response, headOnly, input, decodeTaskMessagesView, TASK_MESSAGES_FAILURES, 'task_messages', undefined,
+        code => code === 'repository_not_found' ? 404 : code === 'timeout' ? 504 : 503);
       return;
     }
 

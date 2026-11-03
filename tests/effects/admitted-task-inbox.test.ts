@@ -6,6 +6,11 @@ import { seedReviewAdmissionFixture } from '../helpers/review-admission-fixture'
 import { acknowledgeTaskInbox, deliverTaskInbox, listTaskInbox, readAdmittedTaskActivity, sendTaskMessage, taskInboxTaskDirectory } from '../../src/effects/fleet/task-inbox';
 import { buildTaskMessageEvent, validateTaskMessageEvent } from '../../src/core/fleet/admitted-task-message';
 import { taskMessageSender } from '../../src/cli/commands/fleet';
+import type { TaskExecutionViewV1 } from '../../src/core/operator/execution-state';
+import { decodeTaskMessagesView } from '../../src/core/operator/task-messages';
+import { startOperatorServer } from '../../src/effects/operator/server';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { tmpWorkspace } from '../helpers/repo-fixture';
 
 const time = '2026-10-25T01:00:00Z';
 const budget = { max_scan: 100, max_bytes: 1024 * 1024, deadline_ms: 5000 };
@@ -91,4 +96,46 @@ test('a message sent for a registered Bot keeps local operator trust and names t
     expect(activity.entries[0]?.event).toMatchObject({ sender_kind: 'operator', sender_id: 'hermes' });
     expect(activity.entries[0]?.receipts.map(receipt => receipt.delivery_state)).toEqual(['delivered']);
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
+});
+
+test('the task messages route serves the stored inbox of a verified task and refuses an unknown or unverified task id', async () => {
+  const f = await admittedInboxFixture();
+  const registry = tmpWorkspace('task-messages-registry');
+  try {
+    sendTaskMessage({ repo_root: f.root, source: f.source, event: f.event });
+    deliverTaskInbox({ ...f.input, delivery_channel: 'manual', delivered_at: time });
+    const id = repoHarnessRepoIdFor(f.root);
+    writeFileSync(join(registry, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
+      id, path: f.root, accessMode: 'read_only', source: 'manual', registeredAt: time, lastSeenAt: time }] }));
+    const unverified = '2'.repeat(64);
+    const follow = (task: string) => ({ task_id: task, resume: null, hc_terminal: null });
+    const view: TaskExecutionViewV1 = { protocol: 1, kind: 'operator_task_execution', repository_id: id, observed_at: '2026-10-25T01:00:00.000Z', unlisted_tasks: 0, tasks: [
+      { state: 'verified', task: f.task, role: 'deep-reasoner', issue_id: null, branch: null, agent: 'codex', runtime: 'terminal', follow_up: follow(f.task) },
+      { state: 'unverified', task: unverified, role: 'deep-reasoner', reason: 'closed', follow_up: follow(unverified) },
+    ] };
+    const server = await startOperatorServer({ port: 0, env: { ...process.env, REPO_HARNESS_HOME: registry }, read_execution_state: () => ({ state: 'ready', view }) });
+    const get = async (task: string, query = '') => {
+      const response = await fetch(`${server.url}/api/v1/repositories/${id}/tasks/${task}/messages${query}`);
+      return { status: response.status, text: await response.text() };
+    };
+    try {
+      const served = await get(f.task);
+      expect(served.status).toBe(200);
+      const request = { repository_id: id, task_id: f.task };
+      expect(decodeTaskMessagesView(JSON.parse(served.text), request)).toEqual({ protocol: 1, kind: 'operator_task_messages', ...request, complete: true, messages: [{
+        message_id: f.event.message_id, body: 'Please inspect the failing check.', sender_kind: 'user', sender_id: 'fixture-user', audience: 'owner',
+        created_at: f.event.created_at, receipts: [{ recipient_kind: 'claim', recipient_id: null, delivery_state: 'delivered', delivered_at: time, acknowledged_at: null }] }] });
+      // The public view carries no path, claim reference, admission or digest.
+      for (const hidden of [f.root, registry, f.input.recipient.claim.reference, f.event.admission_sha256, f.event.event_digest]) expect(served.text).not.toContain(hidden);
+      for (const [task, query, status, code] of [
+        ['3'.repeat(64), '', 404, 'task_not_found'],
+        [unverified, '', 409, 'task_unverified'],
+        [f.task, '?after=x', 400, 'invalid_request'],
+      ] as const) {
+        const answer = await get(task, query);
+        expect(answer.status).toBe(status);
+        expect((JSON.parse(answer.text) as { error: { code: string } }).error.code).toBe(code);
+      }
+    } finally { await server.close(); }
+  } finally { rmSync(f.directory, { recursive: true, force: true }); rmSync(registry, { recursive: true, force: true }); }
 });
