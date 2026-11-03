@@ -56,16 +56,6 @@ export function worktreesOf(view: WorktreesView): WorktreesSnapshot | null {
   return view.kind === 'ready' && view.snapshot.status !== 'unavailable' ? view.snapshot : null;
 }
 
-/**
- * The green worktrees of one branch: the Board's only cleanup signal. Green is
- * the collector's sweep verdict; nothing here re-judges a worktree. Only a
- * registered repository joins; unassigned directories have no repository to match.
- */
-export function reclaimableFor(snapshot: WorktreesSnapshot | null, repositoryId: string, branch: string): readonly WorktreeView[] {
-  const repository = snapshot?.repositories.find(row => row.repository_id === repositoryId);
-  return repository?.worktrees.filter(tree => tree.judgment === 'green' && tree.repository_id === repositoryId && tree.branch === branch) ?? [];
-}
-
 export interface SpaceTotal {
   /** Sum of the measured sizes only. */
   readonly bytes: number;

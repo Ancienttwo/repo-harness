@@ -30,6 +30,9 @@ import type { DocsRepositoryCache } from '../../src/effects/operator/docs-collec
 import type { DocsTreeV1 } from '../../src/core/operator/docs';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
+import { decodeBoard } from '../../src/core/board/board';
+import { BoardReadError, readRepositoryBoard, type BoardReadInput } from '../../src/effects/operator/board-read';
+import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 
 import {
   architectureStatus,
@@ -534,6 +537,75 @@ describe('operator serve command and HTTP boundary', () => {
       await server.close();
     }
   });
+
+  test('board route needs one parent, decodes the board CLI JSON once and maps each refusal', async () => {
+    const board = decodeBoard(board1474);
+    let result: () => Promise<unknown> = async () => board;
+    const inputs: BoardReadInput[] = [];
+    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_board: input => { inputs.push(input); return result(); } });
+    const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
+    const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
+    const path = '/api/v1/repositories/repo-a/board';
+    try {
+      for (const query of ['', '?parent=0', '?parent=x', '?parent=1474&parent=1475', '?parent=1474&run=1']) {
+        const response = await get(`${path}${query}`);
+        expect([response.status, await code(response)]).toEqual([400, 'board_parent_invalid']);
+      }
+      expect(inputs).toHaveLength(0);
+      const ready = await get(`${path}?parent=1474`);
+      expect(ready.status).toBe(200);
+      expect(await ready.json()).toEqual(board);
+      expect(inputs[0]).toMatchObject({ repository_id: 'repo-a', parent: 1474, env: { GH_PROMPT_DISABLED: '1' } });
+      for (const [failure, status] of [['repository_not_found', 404], ['board_collect_failed', 503], ['board_timeout', 504]] as const) {
+        result = async () => { throw new BoardReadError(failure); };
+        const response = await get(`${path}?parent=1474`);
+        expect([response.status, await code(response)]).toEqual([status, failure]);
+      }
+      result = async () => ({ ...board, protocol: 2 });
+      const invalid = await get(`${path}?parent=1474`);
+      expect([invalid.status, await code(invalid)]).toEqual([503, 'board_invalid']);
+      const head = await get(`${path}?parent=1474`, { method: 'HEAD' });
+      expect([head.status, head.headers.get('allow')]).toEqual([405, 'GET']);
+      expect((await get(`${path}?parent=1474`, { headers: { Host: 'foreign.invalid' } })).status).toBe(421);
+      expect((await get(`${path}?parent=1474`, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+      expect((await get(`${path}?parent=1474`, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      // One read per admitted GET; HEAD, the Host and Origin refusals and POST start none.
+      expect(inputs).toHaveLength(5);
+    } finally {
+      await server.close();
+    }
+  });
+
+  test('board reader runs the board CLI in the registered repository, without its bunfig, .env or a GH_REPO override', async () => {
+    const repository = mkdtempSync(join(tmpdir(), 'repo-harness-board-'));
+    const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-board-gh-'));
+    expect(spawnSync('git', ['init', '-q'], { cwd: repository }).status).toBe(0);
+    // The registered repository tries to run code and to choose gh; the operator environment names another repository.
+    const marker = join(scratch, 'preload-ran');
+    writeFileSync(join(repository, 'preload.ts'), `require('node:fs').writeFileSync(${JSON.stringify(marker)}, 'ran');\n`);
+    writeFileSync(join(repository, 'bunfig.toml'), 'preload = ["./preload.ts"]\n');
+    const repositoryGh = join(scratch, 'repository-gh');
+    writeFileSync(repositoryGh, `#!/bin/sh\necho repository-gh >> ${JSON.stringify(join(scratch, 'calls'))}\nexit 1\n`);
+    writeFileSync(join(repository, '.env'), `REPO_HARNESS_GH_BIN=${repositoryGh}\n`);
+    const operatorGh = join(scratch, 'operator-gh');
+    writeFileSync(operatorGh, `#!/bin/sh\necho "operator-gh GH_REPO=$GH_REPO GIT_DIR=$GIT_DIR" >> ${JSON.stringify(join(scratch, 'calls'))}\nexit 1\n`);
+    chmodSync(repositoryGh, 0o755);
+    chmodSync(operatorGh, 0o755);
+    const registry = registryHome([{ path: repository, accessMode: 'read_only' }]);
+    const env = { ...process.env, ...registry.env, REPO_HARNESS_GH_BIN: operatorGh, GH_REPO: 'other/repo', GIT_DIR: join(scratch, 'other.git') };
+    const signal = new AbortController().signal;
+    try {
+      // `gh repo view` fails, so the CLI exits with BoardCollectError on stderr.
+      await expect(readRepositoryBoard({ repository_id: registry.ids[0]!, parent: 1474, env, signal })).rejects.toMatchObject({ code: 'board_collect_failed' });
+      expect(existsSync(marker)).toBe(false);
+      expect(readFileSync(join(scratch, 'calls'), 'utf8')).toBe('operator-gh GH_REPO= GIT_DIR=\n');
+      await expect(readRepositoryBoard({ repository_id: 'repo-missing', parent: 1474, env, signal })).rejects.toMatchObject({ code: 'repository_not_found' });
+    } finally {
+      rmSync(repository, { recursive: true, force: true });
+      rmSync(scratch, { recursive: true, force: true });
+      rmSync(registry.home, { recursive: true, force: true });
+    }
+  }, 60_000);
 
   test('serves the docs tree from the cache and a file from the resident reader, with typed refusals', async () => {
     const root = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-docs-')));

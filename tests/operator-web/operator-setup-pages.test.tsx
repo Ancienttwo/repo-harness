@@ -180,7 +180,7 @@ describe('topbar freshness', () => {
     const line = () => document.querySelector('[data-freshness]')!;
     expect(line().getAttribute('data-freshness-source')).toBe('setup');
     expect(line().textContent).toBe('Setup check read 3m ago · 2 need attention');
-    await act(async () => navLink('board').click());
+    await act(async () => navLink('home').click());
     expect(line().hasAttribute('data-freshness-source')).toBe(false);
     expect(line().textContent).toContain('sources ok');
     await act(async () => navLink('hooks').click());

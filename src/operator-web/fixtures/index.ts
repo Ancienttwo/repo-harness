@@ -33,6 +33,10 @@ import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
 import architectureMap from './architecture-map.json';
+// The board of #1474 projected from the recorded GitHub and hc reads in tests/fixtures/board.
+import board1474 from './board-1474.json';
+import { decodeBoard } from '../../core/board/board';
+import type { BoardRead } from '../board-view';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -115,7 +119,13 @@ export function fixtureProps(name: string): OperatorAppProps {
   const tests = (repositoryId: string): TestsRead => fixture === 'busy'
     ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }
     : { state: 'unavailable', reason: fixture === 'empty' ? 'tests_pending' : 'artifacts_missing' };
+  // busy: the recorded board of #1474 in repo-harness; empty: the board command failed; degraded: the hc seats could not be read.
+  const recorded = decodeBoard(board1474);
+  const board = (repositoryId: string, parent: number): BoardRead => fixture === 'empty' || repositoryId !== HARNESS_ID || parent !== recorded.parent.number
+    ? { state: 'unavailable', reason: 'board_collect_failed' }
+    : { state: 'ok', board: fixture === 'busy' ? recorded : { ...recorded, execution: { status: 'unavailable', reason: 'hc_unavailable' } } };
   return {
+    readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
     readRuntimeStatus: fixture === 'degraded' ? unavailable('runtime') : () => Promise.resolve(runtime),
