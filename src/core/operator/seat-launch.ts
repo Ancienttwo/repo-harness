@@ -9,7 +9,7 @@ export type SeatLaunchSource = 'seats' | 'defaults';
 /**
  * - `enforced`: the host refuses the tool.
  * - `named_types_only`: the host refuses the agent types that the argv names; other types are not refused.
- * - `common_commands`: the host refuses the named tools and command prefixes; a shell can still reach the same effect.
+ * - `common_commands`: the host refuses the named tools and command prefixes; another tool (a shell, or an MCP tool) can still reach the same effect.
  * - `instructions_only`: written into the launch instructions only; the host does not refuse it.
  * - `unavailable`: the seat has the group, but the host sandbox removes it.
  */
@@ -49,6 +49,7 @@ const GITHUB_WRITE_COMMANDS = [
   'gh release create', 'git push',
 ];
 
+/** `edit` is `enforced` only without a shell: Bash can write files too. */
 const CLAUDE_DENIED_TOOLS: Readonly<Record<SeatGroup, { readonly rules: readonly string[]; readonly level: SeatLimitLevel }>> = {
   edit: { rules: ['Edit', 'NotebookEdit', 'Write'], level: 'enforced' },
   shell: { rules: ['Bash'], level: 'enforced' },
@@ -108,22 +109,32 @@ const KEEP_YOURSELF = {
   instructions_only: 'These limits are instructions only; the host does not enforce them. Keep them yourself.',
 } as const;
 
-/** `fleet` is the list that the brief names: Pi has no sub-agents, whatever the stored list holds. */
-function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], selfKept: readonly string[], level: keyof typeof KEEP_YOURSELF): string {
-  const limits = selfKept.length === 0 ? [] : [`${KEEP_YOURSELF[level]} ${selfKept.join(' ')}`];
-  return [...roleParagraphs(seat, config, fleet), ...limits].join('\n\n');
+/**
+ * `fleet` is the list that the brief names: Pi has no sub-agents, whatever the stored list holds.
+ * Each tool group that the host does not fully enforce goes into a keep-yourself paragraph.
+ */
+function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], limits: readonly SeatLimitV1[]): string {
+  const kept = (Object.keys(KEEP_YOURSELF) as (keyof typeof KEEP_YOURSELF)[]).flatMap((level) => {
+    const groups = limits.flatMap(limit => (limit.level === level && limit.subject !== 'fleet' ? [GROUP_TEXT[limit.subject]] : []));
+    return groups.length === 0 ? [] : [`${KEEP_YOURSELF[level]} ${groups.join(' ')}`];
+  });
+  return [...roleParagraphs(seat, config, fleet), ...kept].join('\n\n');
 }
 
 function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[]): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const off = OFF_GROUPS(config);
+  // The Workflow tool starts its own agents, and the bare Agent rule does not remove it (probe, #1473).
   const fleetRules = config.fleet.length === 0
-    ? ['Agent']
-    : [...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`);
+    ? ['Agent', 'Workflow']
+    : [...[...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`), 'Workflow'];
   const denied = [...off.flatMap(group => CLAUDE_DENIED_TOOLS[group].rules), ...fleetRules];
   // A plain session has no Glob, Grep or task tools; naming one of each in --allowedTools turns its set on.
   const allowed = ['Glob', 'Grep', ...(config.tools.includes('tasks') ? CLAUDE_TASK_TOOLS : [])];
-  const softGroups = off.filter(group => CLAUDE_DENIED_TOOLS[group].level === 'common_commands').map(group => GROUP_TEXT[group]);
-  const text = brief(seat, config, config.fleet, softGroups, 'common_commands');
+  const limits: SeatLimitV1[] = [
+    ...off.map(group => ({ subject: group, level: group === 'edit' && config.tools.includes('shell') ? 'common_commands' as const : CLAUDE_DENIED_TOOLS[group].level })),
+    { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
+  ];
+  const text = brief(seat, config, config.fleet, limits);
   return {
     argv: [
       ...(seat === 'orchestrator' && config.tools.includes('tasks') ? ['env', `CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
@@ -135,30 +146,31 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
       '--append-system-prompt', text,
     ],
     brief: text,
-    limits: [
-      ...off.map(group => ({ subject: group, level: CLAUDE_DENIED_TOOLS[group].level })),
-      { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
-    ],
+    limits,
   };
 }
 
 function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const off = OFF_GROUPS(config);
   const writable = config.tools.includes('edit');
-  // The sandbox mode enforces `edit`; `network_access=false` or the read-only sandbox enforces `net`.
-  const instructed: readonly SeatGroup[] = off.filter(group => group !== 'edit' && group !== 'net');
-  const text = brief(seat, config, config.fleet, instructed.map(group => GROUP_TEXT[group]), 'instructions_only');
-  const limits: SeatLimitV1[] = off.map(group => ({ subject: group, level: instructed.includes(group) ? 'instructions_only' : 'enforced' }));
+  const network = config.tools.includes('net');
+  // The sandbox mode enforces `edit`. Without `net`, the sandbox blocks shell network access and
+  // `web_search="disabled"` removes web search, but an MCP tool can still reach the network.
+  const level = (group: SeatGroup): SeatLimitLevel => group === 'edit' ? 'enforced'
+    : group === 'net' ? (config.tools.includes('mcp') ? 'common_commands' : 'enforced') : 'instructions_only';
+  const limits: SeatLimitV1[] = off.map(group => ({ subject: group, level: level(group) }));
   // The read-only sandbox has no network access, whatever the seat's net group says (codex sandbox probe, #1473).
-  if (!writable && config.tools.includes('net')) limits.push({ subject: 'net', level: 'unavailable' });
-  if (config.fleet.length > 0) limits.push({ subject: 'fleet', level: 'instructions_only' });
+  if (!writable && network) limits.push({ subject: 'net', level: 'unavailable' });
+  limits.push({ subject: 'fleet', level: 'instructions_only' });
+  const text = brief(seat, config, config.fleet, limits);
   return {
     argv: [
       'codex',
       ...(config.model === null ? [] : ['-m', config.model]),
       ...(config.effort === null ? [] : ['-c', `model_reasoning_effort=${JSON.stringify(config.effort)}`]),
       '-s', writable ? 'workspace-write' : 'read-only',
-      ...(writable ? ['-c', `sandbox_workspace_write.network_access=${config.tools.includes('net')}`] : []),
+      ...(writable ? ['-c', `sandbox_workspace_write.network_access=${network}`] : []),
+      ...(network ? [] : ['-c', 'web_search="disabled"']),
       // A JSON string is a TOML basic string, so `-c` reads it back as the same text.
       '-c', `developer_instructions=${JSON.stringify(text)}`,
     ],
@@ -168,13 +180,9 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
 }
 
 function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
-  const off = OFF_GROUPS(config);
-  const text = brief(seat, config, [], off.map(group => GROUP_TEXT[group]), 'instructions_only');
-  return {
-    argv: ['pi', '--append-system-prompt', text],
-    brief: text,
-    limits: off.map(group => ({ subject: group, level: 'instructions_only' })),
-  };
+  const limits: SeatLimitV1[] = OFF_GROUPS(config).map(group => ({ subject: group, level: 'instructions_only' }));
+  const text = brief(seat, config, [], limits);
+  return { argv: ['pi', '--append-system-prompt', text], brief: text, limits };
 }
 
 /**
