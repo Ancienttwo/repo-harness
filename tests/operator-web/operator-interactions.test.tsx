@@ -259,7 +259,7 @@ describe('operator web interactions', () => {
 
     // Repository names and the read-only contract are never translated.
     expect(text).toContain('repo-harness');
-    expect(text).toContain('read-only except Settings');
+    expect(text).toContain('read-only except Agents');
 
     await act(async () => buttonWithText('EN').click());
     expect(document.documentElement.lang).toBe('en');

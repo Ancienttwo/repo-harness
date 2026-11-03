@@ -182,6 +182,8 @@ export interface SettingsForm<S, C, D, R> {
   readonly draft: D | null;
   readonly request: R | null;
   readonly save: SettingsSaveState;
+  /** Successful saves; the other section on the same file reads again after each one. */
+  readonly saves: number;
   readonly edit: (change: (draft: D) => D) => void;
   readonly discard: () => void;
   readonly submit: () => void;
@@ -207,13 +209,17 @@ interface FormState<S, C, D> {
   readonly base: C | null;
   readonly draft: D | null;
   readonly save: SettingsSaveState;
+  readonly saves: number;
 }
 
-/** Reads only while the page shows. */
+/**
+ * Reads only while the page shows. Both sections live in one file with one
+ * revision, so `sharedSaves` (the saves of the other section) starts a new read.
+ */
 export function useSettingsForm<S, C extends { readonly revision: string }, D, R>(
-  section: SettingsSection<S, C, D, R>, read: SettingsReader<S>, write: SettingsWriter<R>, generation: number, enabled: boolean,
+  section: SettingsSection<S, C, D, R>, read: SettingsReader<S>, write: SettingsWriter<R>, generation: number, sharedSaves: number, enabled: boolean,
 ): SettingsForm<S, C, D, R> {
-  const [state, setState] = useState<FormState<S, C, D>>({ view: { kind: 'loading' }, base: null, draft: null, save: { kind: 'idle' } });
+  const [state, setState] = useState<FormState<S, C, D>>({ view: { kind: 'loading' }, base: null, draft: null, save: { kind: 'idle' }, saves: 0 });
   const adoptNextRead = useRef(false);
   // A read that started before a save succeeded can carry the section from before the write.
   const readsStarted = useRef(0);
@@ -236,14 +242,16 @@ export function useSettingsForm<S, C extends { readonly revision: string }, D, R
     setState((current) => {
       const view: SettingsView<S> = { kind: 'ready', settings: result.settings, refreshFailed: false };
       const latest = config(result.settings);
-      const adopt = forced || current.base === null || current.draft === null
-        || (!saveNeedsReload(current.save) && current.save.kind !== 'saving' && sameDraft(current.draft, draftOf(current.base)));
-      if (!adopt) return { ...current, view };
-      return { view, base: latest, draft: draftOf(latest), save: forced ? { kind: 'idle' } : current.save };
+      if (forced || current.base === null || current.draft === null) return { view, base: latest, draft: draftOf(latest), save: forced ? { kind: 'idle' } : current.save, saves: current.saves };
+      const open = !saveNeedsReload(current.save) && current.save.kind !== 'saving';
+      if (open && sameDraft(current.draft, draftOf(current.base))) return { view, base: latest, draft: draftOf(latest), save: current.save, saves: current.saves };
+      // A new revision whose stored section equals the base changed only another section: the edited draft moves to it.
+      if (open && sameDraft(draftOf(latest), draftOf(current.base))) return { ...current, view, base: latest };
+      return { ...current, view };
     });
     return true;
   }, [read, config, draftOf, sameDraft]);
-  const readNow = useObservationRefresh(observe, JSON.stringify([`settings-${section.id}`, generation]), { enabled });
+  const readNow = useObservationRefresh(observe, JSON.stringify([`settings-${section.id}`, generation, sharedSaves]), { enabled });
 
   const request = state.base && state.draft ? requestOf(state.base, state.draft) : null;
 
@@ -274,7 +282,7 @@ export function useSettingsForm<S, C extends { readonly revision: string }, D, R
       if (outcome.state === 'saved') {
         pending.current = null;
         staleReadsThrough.current = readsStarted.current;
-        setState(current => ({ ...current, base: applied(outcome.result.config_revision, draft), draft, save: { kind: 'saved', changed: outcome.result.changed_keys.length } }));
+        setState(current => ({ ...current, base: applied(outcome.result.config_revision, draft), draft, save: { kind: 'saved', changed: outcome.result.changed_keys.length }, saves: current.saves + 1 }));
         readNow();
         return;
       }
@@ -286,7 +294,7 @@ export function useSettingsForm<S, C extends { readonly revision: string }, D, R
     });
   }, [request, state.save, state.draft, write, readNow, applied]);
 
-  return { view: state.view, base: state.base, draft: state.draft, request, save: state.save, edit, discard, submit, reload };
+  return { view: state.view, base: state.base, draft: state.draft, request, save: state.save, saves: state.saves, edit, discard, submit, reload };
 }
 
 const sameAgentsDraft = (left: AgentsDraft, right: AgentsDraft): boolean =>
@@ -302,6 +310,6 @@ const AGENTS_SECTION: SettingsSection<AgentsSettingsV1, AgentsSettingsV1['config
   applied: (revision, draft) => ({ revision, enabled: draft.enabled, uses: { docs: draft.docs, review: draft.review }, default_docs: draft.default_docs }),
 };
 
-export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsSettingsWriter, generation: number, enabled: boolean): AgentsSettingsForm {
-  return useSettingsForm(AGENTS_SECTION, read, write, generation, enabled);
+export function useAgentsSettingsForm(read: AgentsSettingsReader, write: AgentsSettingsWriter, generation: number, seatsSaves: number, enabled: boolean): AgentsSettingsForm {
+  return useSettingsForm(AGENTS_SECTION, read, write, generation, seatsSaves, enabled);
 }

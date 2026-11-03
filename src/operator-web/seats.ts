@@ -55,8 +55,8 @@ const SEATS_SECTION: SettingsSection<SeatsSettingsV1, SeatsSettingsV1['config'],
   applied: (revision, draft) => ({ revision, ...draft }),
 };
 
-export function useSeatsSettingsForm(read: SeatsSettingsReader, write: SeatsSettingsWriter, generation: number, enabled: boolean): SeatsSettingsForm {
-  return useSettingsForm(SEATS_SECTION, read, write, generation, enabled);
+export function useSeatsSettingsForm(read: SeatsSettingsReader, write: SeatsSettingsWriter, generation: number, agentsSaves: number, enabled: boolean): SeatsSettingsForm {
+  return useSettingsForm(SEATS_SECTION, read, write, generation, agentsSaves, enabled);
 }
 
 const toggled = <T extends string>(items: readonly T[], item: T, on: boolean): readonly T[] =>

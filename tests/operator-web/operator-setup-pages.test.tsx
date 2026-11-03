@@ -50,6 +50,7 @@ function props(setup: SetupSnapshotV2 | null, overrides: Partial<OperatorAppProp
     readCliInventory: async () => unavailableCliInventory(),
     readBotAccess: () => new Promise(() => {}),
     readAgentsSettings: () => new Promise(() => {}),
+    readSeatsSettings: () => new Promise(() => {}),
     readTests: async () => ({ state: 'unavailable', reason: 'tests_pending' }),
     ...(setup ? { initialSetup: setup, readSetup: async () => setup } : {}),
     initialWorktrees: worktrees, readWorktrees: async () => worktrees,
@@ -139,7 +140,7 @@ describe('navigation', () => {
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
     const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
-      ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
+      ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {
         await act(async () => root?.unmount());
@@ -154,8 +155,9 @@ describe('navigation', () => {
       expect(document.querySelector('.operator-header [data-repository-switch], .operator-header select, main [data-repository-switch]')).toBeNull();
     }
     expect(all('.workspace-nav a[data-workspace]').map(link => link.getAttribute('data-workspace')))
-      .toEqual(['home', 'board', 'repositories', 'worktrees', 'docs', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools', 'settings']);
-    for (const later of ['sessions', 'recent']) {
+      .toEqual(['home', 'board', 'repositories', 'worktrees', 'docs', 'agents', 'skills', 'hooks', 'cli', 'bots', 'architecture', 'tests', 'system', 'tools']);
+    // The Settings page is gone, with no alias: its old fragments open Home.
+    for (const later of ['sessions', 'recent', 'settings', 'settings/seats']) {
       expect(parseWorkspaceLocation(`#${later}`).workspace).toBe('home');
     }
   });
@@ -618,8 +620,8 @@ describe('CLI inventory page', () => {
   });
 });
 
-test('setup pages carry no write, form or drag controls', async () => {
-  for (const hash of ['#agents', '#skills', '#hooks']) {
+test('the Skills and Hooks pages carry no write, form or drag controls', async () => {
+  for (const hash of ['#skills', '#hooks']) {
     await mount(hash, props(degradedSetup(NOW)));
     const main = document.querySelector('main')!;
     expect(main.querySelectorAll('form, input, select, textarea, [draggable="true"], [contenteditable]')).toHaveLength(0);
