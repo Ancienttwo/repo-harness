@@ -147,7 +147,7 @@ export function fixtureProps(name: string): OperatorAppProps {
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
-    // Only the busy execution view has verified tasks, so only busy reads an inbox.
+    // Only the busy execution view has a verified task with a 64-hex id, so only busy reads an inbox.
     readTaskMessages: request => Promise.resolve(busyTaskMessages(request, now)),
     readArchitectureMap: repositoryId => Promise.resolve(map(repositoryId)),
     readBotAccess: () => Promise.resolve(botAccess),

@@ -4,7 +4,7 @@ import { DEV_ACTIVITY_PROJECTION, type DevActivityAttention, type DevActivityIte
 import { decodeTaskExecutionView } from '../../core/operator/execution-state';
 import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/operator/runtime-status';
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
-import { decodeTaskMessagesView, type TaskMessagesRequest } from '../../core/operator/task-messages';
+import { decodeTaskMessagesView, isTaskMessagesTaskId, type TaskMessagesRequest } from '../../core/operator/task-messages';
 import type { ExecutionRead, TaskMessagesRead } from '../repository-reads';
 
 export const HARNESS_ID = 'repo_a5b76eee64af71c3';
@@ -164,12 +164,16 @@ export const INBOX_TASK = 'f'.repeat(64);
 /**
  * The task messages route beside the busy execution view: three stored
  * messages for #1475 (delivered, acknowledged, and one to the orchestrator
- * with no receipt yet). Every other verified task has an empty inbox.
+ * with no receipt yet). It refuses what the server refuses: a task id that is
+ * not 64 hex matches no route (`unreachable` in the browser), and any other task
+ * is not in the busy execution view (`task_not_found`).
  */
 export function busyTaskMessages(request: TaskMessagesRequest, now: number): TaskMessagesRead {
+  if (!isTaskMessagesTaskId(request.task_id)) return { state: 'unavailable', reason: 'unreachable' };
+  if (request.repository_id !== HARNESS_ID || request.task_id !== INBOX_TASK) return { state: 'unavailable', reason: 'task_not_found' };
   const owner = (state: 'delivered' | 'acknowledged', delivered: number) => ({ recipient_kind: 'claim', recipient_id: null, delivery_state: state,
     delivered_at: at(now, delivered), acknowledged_at: state === 'acknowledged' ? at(now, delivered - 10 * MINUTE) : null });
-  const messages = request.task_id !== INBOX_TASK ? [] : [
+  const messages = [
     { message_id: '0b6f2c1e-4d3a-4e5f-8a7b-9c0d1e2f3a01', body: 'Merge #1490 first, then rebase this branch.', sender_kind: 'operator', sender_id: 'hermes',
       audience: 'owner', created_at: at(now, 4 * MINUTE), receipts: [owner('delivered', 3 * MINUTE)] },
     { message_id: '0b6f2c1e-4d3a-4e5f-8a7b-9c0d1e2f3a02', body: 'CI is green on the head. Ready for review?', sender_kind: 'agent', sender_id: 'rh-w-1475',

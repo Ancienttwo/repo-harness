@@ -389,6 +389,8 @@ describe('board page', () => {
       [() => new Promise(() => {}), 'reading', 'Reading…'],
       [async request => ({ state: 'ok', view: { ...ok.view, task_id: request.task_id, messages: [] } }), 'empty', 'No messages for this task.'],
       [async () => ({ state: 'ok', view: { ...ok.view, complete: false } }), 'incomplete', 'The read stopped at its limit: some stored messages are not shown.'],
+      // A read that stopped before any entry is not an empty inbox.
+      [async () => ({ state: 'ok', view: { ...ok.view, messages: [], complete: false } }), 'incomplete', 'The read stopped at its limit: some stored messages are not shown.'],
       [async () => ({ state: 'unavailable', reason: 'task_unverified' }), 'unavailable', 'Task inbox unavailable · The task has no verified session'],
     ];
     for (const [readTaskMessages, state, text] of states) {
@@ -397,20 +399,28 @@ describe('board page', () => {
       await mount(<OperatorApp {...props(busy(), { readExecution: sessions, readTaskMessages })} />);
       await settle();
       expect(inbox().querySelector(`[data-inbox="${state}"]`)?.textContent).toBe(text);
+      if (state !== 'empty') expect(inbox().querySelector('[data-inbox="empty"]')).toBeNull();
     }
-    // Without a verified session there is no task id, so no inbox read and no section.
-    await act(async () => root?.unmount());
-    const reads: string[] = [];
-    boardAt(1476);
-    await mount(<OperatorApp {...props(busy(), { readExecution: sessions, readTaskMessages: async request => { reads.push(request.task_id); return ok; } })} />);
-    await settle();
-    expect(document.querySelector('[role="dialog"] section[aria-labelledby="task-inbox"]')).toBeNull();
-    expect(reads).toEqual([]);
+    // No inbox task id, so no read and no section: no verified session on the branch, or a verified
+    // session whose task id is not 64 hex (kanban-redesign), which has no inbox and matches no route.
+    for (const [readExecution, owner] of [[sessions, 'none'], [sessionsOn('feat/kanban-human-redesign', 'feat/1476-sessions-herdr-core'), 'verified']] as const) {
+      await act(async () => root?.unmount());
+      const reads: string[] = [];
+      boardAt(1476);
+      await mount(<OperatorApp {...props(busy(), { readExecution, readTaskMessages: async request => { reads.push(request.task_id); return ok; } })} />);
+      await settle();
+      expect(followUp().querySelector(`[data-owner="${owner}"]`)).not.toBeNull();
+      expect(document.querySelector('[role="dialog"] section[aria-labelledby="task-inbox"]')).toBeNull();
+      expect(reads).toEqual([]);
+    }
   });
 
   test('the task messages reader keeps both refusal forms and refuses a view for another task', async () => {
     const ok = busyTaskMessages({ repository_id: HARNESS_ID, task_id: INBOX_TASK }, NOW);
     if (ok.state !== 'ok') throw new Error('the busy fixture serves the inbox of #1475');
+    // The fixture refuses as the server does: no route for a task id that is not 64 hex, no task outside the execution view.
+    expect(busyTaskMessages({ repository_id: HARNESS_ID, task_id: 'kanban-redesign' }, NOW)).toEqual({ state: 'unavailable', reason: 'unreachable' });
+    expect(busyTaskMessages({ repository_id: HARNESS_ID, task_id: '0'.repeat(64) }, NOW)).toEqual({ state: 'unavailable', reason: 'task_not_found' });
     const answers: (() => Response)[] = [
       () => Response.json(ok.view),
       () => Response.json({ ...ok.view, task_id: '0'.repeat(64) }),

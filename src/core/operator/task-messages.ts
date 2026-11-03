@@ -65,14 +65,23 @@ const AUDIENCES: readonly unknown[] = ['owner', 'orchestrator', 'user'];
 const RECIPIENT_KINDS: readonly unknown[] = ['claim', 'orchestrator', 'user'];
 const DELIVERY_STATES: readonly unknown[] = ['pending', 'delivered', 'acknowledged', 'superseded'];
 
+/**
+ * Only a 64-hex task id has a task inbox (the inbox and the route both require
+ * it). The execution view admits wider task text, so a caller filters with this.
+ */
+export function isTaskMessagesTaskId(value: string): boolean {
+  return TASK_ID.test(value);
+}
+
 export function isTaskMessagesRequest(value: unknown): value is TaskMessagesRequest {
   if (typeof value !== 'object' || value === null || Array.isArray(value)) return false;
   const record = value as Record<string, unknown>;
   return Object.keys(record).length === 2 && typeof record.repository_id === 'string' && REPOSITORY_ID.test(record.repository_id)
-    && typeof record.task_id === 'string' && TASK_ID.test(record.task_id);
+    && typeof record.task_id === 'string' && isTaskMessagesTaskId(record.task_id);
 }
 
-const newestFirst = (left: TaskMessageView, right: TaskMessageView): number =>
+/** Newest first, then by message id: the order of `messages` in every view. */
+export const newestFirst = (left: TaskMessageView, right: TaskMessageView): number =>
   left.created_at !== right.created_at ? (left.created_at < right.created_at ? 1 : -1)
     : left.message_id < right.message_id ? 1 : left.message_id > right.message_id ? -1 : 0;
 

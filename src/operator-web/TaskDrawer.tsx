@@ -7,7 +7,7 @@ import { itemFindings, itemPullRequests, itemStage, itemTerminals, primaryPullRe
 import { DrawerFrame, useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import type { ItemOwner, TaskMessagesResult, VerifiedTask } from './repository-reads';
-import type { TaskMessageView } from '../core/operator/task-messages';
+import { newestFirst, type TaskMessageView } from '../core/operator/task-messages';
 import { Age, CommandLine, CopyButton, ExternalLink, StatusDot } from './ui';
 import { boardLocation, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 
@@ -134,6 +134,9 @@ function FollowUp({ owner, t }: { readonly owner: ItemOwner; readonly t: Operato
   );
 }
 
+/** Null when no verified task has an inbox id: no section. `reads` is null until the first read settles. */
+export type TaskInbox = { readonly reads: readonly TaskMessagesResult[] | null } | null;
+
 const RECEIPT_BADGE = { none: 'secondary', pending: 'info', delivered: 'success', acknowledged: 'secondary', superseded: 'secondary' } as const;
 
 function InboxRow({ message, now, t }: { readonly message: TaskMessageView; readonly now: number; readonly t: OperatorTranslate }) {
@@ -163,8 +166,9 @@ function InboxRow({ message, now, t }: { readonly message: TaskMessageView; read
 function Inbox({ inbox, now, t }: { readonly inbox: readonly TaskMessagesResult[] | null; readonly now: number; readonly t: OperatorTranslate }) {
   const failed = inbox?.flatMap(read => read.state === 'unavailable' ? [read] : []) ?? [];
   const views = inbox?.flatMap(read => read.state === 'ok' ? [read.view] : []) ?? [];
-  // Each view is newest first; a second verified task interleaves by the same order.
-  const messages = views.flatMap(view => view.messages).sort((left, right) => (left.created_at < right.created_at ? 1 : left.created_at > right.created_at ? -1 : 0));
+  // A second verified task interleaves by the order of each view.
+  const messages = views.flatMap(view => view.messages).sort(newestFirst);
+  const complete = views.every(view => view.complete);
   return (
     <section aria-labelledby="task-inbox" className="flex flex-col gap-2">
       <div className="flex items-baseline gap-2">
@@ -178,8 +182,8 @@ function Inbox({ inbox, now, t }: { readonly inbox: readonly TaskMessagesResult[
           </p>
         ))}
         {messages.length > 0 ? <ul className="overflow-hidden rounded-lg border border-kumo-line">{messages.map(message => <InboxRow key={message.message_id} message={message} now={now} t={t} />)}</ul>
-          : failed.length === 0 && <p className="text-sm text-kumo-subtle" data-inbox="empty">{t('drawer.inbox.empty')}</p>}
-        {views.some(view => !view.complete) && <p className="text-xs text-kumo-subtle" data-inbox="incomplete">{t('drawer.inbox.incomplete')}</p>}
+          : failed.length === 0 && complete && <p className="text-sm text-kumo-subtle" data-inbox="empty">{t('drawer.inbox.empty')}</p>}
+        {!complete && <p className="text-xs text-kumo-subtle" data-inbox="incomplete">{t('drawer.inbox.incomplete')}</p>}
       </>}
     </section>
   );
@@ -199,7 +203,7 @@ function Claim({ item, now, t }: { readonly item: BoardItemV1; readonly now: num
 
 function Detail({ board, attention, item, owner, inbox, now, t }: {
   readonly board: BoardV1; readonly attention: BoardAttentionV1; readonly item: BoardItemV1; readonly owner: ItemOwner;
-  readonly inbox: readonly TaskMessagesResult[] | null; readonly now: number; readonly t: OperatorTranslate;
+  readonly inbox: TaskInbox; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const pr = primaryPullRequest(board, item);
   const stage = itemStage(board, item);
@@ -272,7 +276,7 @@ function Detail({ board, attention, item, owner, inbox, now, t }: {
           <p className="text-xs text-kumo-subtle">{t('board.drawer.readOnly')}</p>
         </Section>
         <FollowUp owner={owner} t={t} />
-        {owner.state === 'verified' && <Inbox inbox={inbox} now={now} t={t} />}
+        {inbox !== null && <Inbox inbox={inbox.reads} now={now} t={t} />}
         <Section id="task-claim" title={t('board.drawer.claim')}><Claim item={item} now={now} t={t} /></Section>
         {itemPullRequests(board, item).length > 1 && (
           <Section id="task-prs" title={t('board.drawer.pullRequests')}>
@@ -289,8 +293,7 @@ export function TaskDrawer({ board, attention, item, owner, inbox, issue, order,
   readonly board: BoardV1; readonly attention: BoardAttentionV1; readonly item: BoardItemV1 | null; readonly issue: number;
   /** The verified sessions on the branch of the item's pull request; `none` without a pull request. */
   readonly owner: ItemOwner;
-  /** The task messages read of each verified task id; null until it settles. */
-  readonly inbox: readonly TaskMessagesResult[] | null;
+  readonly inbox: TaskInbox;
   readonly order: readonly BoardItemV1[]; readonly place: BoardPlace;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {

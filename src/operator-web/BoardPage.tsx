@@ -8,6 +8,7 @@ import {
   type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
+import { isTaskMessagesTaskId } from '../core/operator/task-messages';
 import { itemOwner, useExecutions, useTaskMessages, type ExecutionReader, type ItemOwner, type TaskMessagesReader } from './repository-reads';
 import { TaskDrawer } from './TaskDrawer';
 import { Age, BoardState, ExternalLink, PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
@@ -208,9 +209,9 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
   const drawerItem = place.issue === null ? null : board.items.find(item => item.number === place.issue) ?? null;
   const drawerBranch = drawerItem ? primaryPullRequest(board, drawerItem)?.head_ref ?? null : null;
   const owner: ItemOwner = drawerBranch === null ? { state: 'none' } : itemOwner(executions, { repository_id: place.repository_id, branch: drawerBranch });
-  // Only a verified session names the task whose inbox the drawer reads.
-  const taskIds = owner.state === 'verified' ? [...new Set(owner.tasks.map(task => task.task))] : [];
-  const inbox = useTaskMessages(readTaskMessages, place.repository_id, taskIds, generation, place.issue !== null);
+  // Only a verified session names the task whose inbox the drawer reads, and only a 64-hex task id has an inbox.
+  const taskIds = owner.state === 'verified' ? [...new Set(owner.tasks.map(task => task.task).filter(isTaskMessagesTaskId))] : [];
+  const inboxReads = useTaskMessages(readTaskMessages, place.repository_id, taskIds, generation, place.issue !== null);
   return (
     <div className="flex flex-col gap-5" data-board-parent={board.parent.number}>
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
@@ -280,7 +281,7 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
       )}
       {place.issue !== null && (
         <TaskDrawer board={board} attention={attention} item={drawerItem} issue={place.issue}
-          owner={owner} inbox={inbox}
+          owner={owner} inbox={taskIds.length === 0 ? null : { reads: inboxReads }}
           order={[...new Set([...findings.flatMap(finding => findingItem(board, finding) ?? []), ...inflight])]}
           place={place} onOpen={onOpen} now={now} t={t} />
       )}
