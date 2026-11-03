@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.board.imports.publication
+kind: depends-on
+source: capability.organization.board
+target: capability.organization.publication
+intent: "Parse closing references and reuse the single-PR merge readiness projection"
