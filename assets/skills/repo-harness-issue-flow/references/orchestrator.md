@@ -204,8 +204,14 @@ module is in the title so that a list view shows the write scopes.
 - Review rounds converge by the round rules in `acceptor.md` §2.2.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
   or a top-level host session). A dispatched agent has its own process. A
-  sub-agent runs inside a seat process and is not a dispatch target. A
-  dispatch does not grant publication, deletion or credential authority.
+  sub-agent runs inside a seat process and is not a dispatch target. You
+  may call only the read-only sub-agents `gatekeeper`, `explorer`,
+  `deep-reasoner` and `root-cause-prover`. A writer (`fast-worker`,
+  `deep-worker`) and the Codex cross-review always run in a seat, for
+  worktree isolation and one writer per file. You do not review a PR
+  yourself. An independent `gatekeeper` sub-agent may review a PR that you
+  dispatched; route every other review of it to another seat. A dispatch
+  does not grant publication, deletion or credential authority.
   For the Herdr pane topology, follow
   [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
