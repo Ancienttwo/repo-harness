@@ -1,6 +1,6 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9feee209ab65ac5db7b747d6b709d951abb4211e03750e61c78a07a6283daf58" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:efc48318346387eaae4c35f5881e7f3a462550bf0545506eda5903d125bca549" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
 > **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
@@ -113,7 +113,7 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.task-agent-host.cli-layer` | Task Agent Host (cli) | `2–5` 個文件 / `10–20` 行 | 未宣告 |
 | `component.task-agent-host.events-cli` | Bot Events Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
-| `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.primary-cli` | Herdr Task Session Host (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.primary-core` | Herdr Task Session Host (core) | `1–2` 個文件 / `5–10` 行 | 未宣告 |

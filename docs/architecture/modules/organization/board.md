@@ -1,6 +1,6 @@
 # organization/board 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c4073e30abef21960749c66b779dcbff56f33c92974a6a72f265ff5525d33c2e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3b34b4bc51552c1d8df54058acb174e5884ab53de5cc4c28f84126e31d34f861" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.board`(kind `capability`)
 > **Matched Prefixes**:`src/core/board/**`、`src/effects/board/**`、`src/cli/commands/board.ts`
@@ -44,7 +44,7 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`5–10` 個文件 / `1000–2000` 行
+- 規模量級:`10–20` 個文件 / `2000–5000` 行
 - 匹配前綴:`src/core/board/**`、`src/effects/board/**`、`src/cli/commands/board.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -77,9 +77,9 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.board.cli` | Board (cli) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
-| `component.board.core` | Board (core) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.board.effects` | Board (effects) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.board.cli` | Board (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.board.core` | Board (core) | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.board.effects` | Board (effects) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
