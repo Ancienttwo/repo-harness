@@ -11,6 +11,7 @@ import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpe
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
+import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallProfile, beginInstallHostTransaction, installProfileHostMutationPaths, installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
@@ -61,12 +62,6 @@ function writeFakeSkillsCli(fakeBin: string): void {
     join(fakeBin, 'skills'),
     `#!/bin/bash\nif [[ "$*" == "ls -g --json" ]]; then echo '[]'; exit 0; fi\nexit 1\n`,
   );
-}
-
-// The install skill step spawns `hc --skill`, and readiness spawns `hc --version`.
-// A fixture puts this fake first on PATH, so no test runs the developer's hc.
-function writeFakeHc(fakeBin: string): void {
-  writeExecutable(join(fakeBin, 'hc'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."; else printf "hc 0.1.17\\n"; fi\n');
 }
 
 function writeOfficialCodexPluginFixture(pluginRoot: string): void {

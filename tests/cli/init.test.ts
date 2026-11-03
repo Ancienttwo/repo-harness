@@ -1,11 +1,12 @@
 import { recordInstallOwnership } from "../helpers/install-ownership";
-import { describe, expect, test } from "bun:test";
+import { afterAll, beforeAll, describe, expect, test } from "bun:test";
 import {
   existsSync,
   mkdirSync,
   readFileSync,
   readdirSync,
   readlinkSync,
+  mkdtempSync,
   realpathSync,
   rmSync,
   writeFileSync,
@@ -27,10 +28,23 @@ import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
 import { CLI_PORTS } from '../../src/cli/index';
+import { writeFakeHc } from '../helpers/fake-hc';
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 const CODEGRAPH_INIT_TIMEOUT_MS = 30000;
+
+// Applied init runs the external tooling detector, which spawns `hc` from PATH; a fake hc first on PATH keeps the developer's hc out of every test.
+const fakeHcBin = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-init-hc-')));
+const pathBeforeFakeHc = process.env.PATH;
+beforeAll(() => {
+  writeFakeHc(fakeHcBin);
+  process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
+});
+afterAll(() => {
+  process.env.PATH = pathBeforeFakeHc;
+  rmSync(fakeHcBin, { recursive: true, force: true });
+});
 
 function makeExecutable(path: string, body: string): void {
   writeFileSync(path, body);
