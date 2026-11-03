@@ -41,7 +41,8 @@ import { buildRunCommand } from './commands/run';
 import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
 import { buildBoardCommand } from './commands/board';
-import { boardHostPorts } from '../effects/terminal/herdr-core';
+import { attentionWatchDoctorCheck } from '../effects/board/attention-watch';
+import { attentionHostPorts, boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
 import { buildRefactorCommand } from './commands/refactor';
@@ -130,7 +131,7 @@ export const CLI_PORTS: {
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck },
+  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: () => attentionWatchDoctorCheck(attentionHostPorts()) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
   retention: {
@@ -941,7 +942,7 @@ export function buildProgram(): Command {
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());
-  program.addCommand(buildBoardCommand(boardHostPorts()));
+  program.addCommand(buildBoardCommand(boardHostPorts(), attentionHostPorts()));
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
   program.addCommand(buildOperatorCommand());

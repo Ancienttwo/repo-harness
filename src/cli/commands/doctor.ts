@@ -75,6 +75,8 @@ export interface DoctorPorts {
   readonly codegraphChecks: (cwd: string) => DoctorCheckResult[];
   /** The Herdr notify relay check (read-only, one `hc ls`). */
   readonly notifyRelayCheck: () => DoctorCheckResult;
+  /** The board attention watcher check (read-only, `hc ls` and `hc get` of the watcher terminals). */
+  readonly attentionWatchCheck: () => DoctorCheckResult;
 }
 
 export interface DoctorReport {
@@ -646,6 +648,7 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
   checks.push(ports.notifyRelayCheck());
+  checks.push(ports.attentionWatchCheck());
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();
     checks.push({ id: plugin.id, describe: plugin.describe, ...r });

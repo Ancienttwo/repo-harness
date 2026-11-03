@@ -66,7 +66,9 @@ export interface BoardCollectInput {
   readonly now?: () => Date;
 }
 
-function gh(input: BoardCollectInput, args: readonly string[]): unknown {
+type GhInput = Pick<BoardCollectInput, 'repo_root' | 'gh_bin' | 'gh_runner'>;
+
+function gh(input: GhInput, args: readonly string[]): unknown {
   const result = input.gh_runner?.(args) ?? spawnSync(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
     cwd: input.repo_root, env: { ...process.env, GH_HOST: 'github.com' }, encoding: 'utf-8', timeout: GH_TIMEOUT_MS, killSignal: 'SIGKILL',
   });
@@ -150,6 +152,13 @@ function execution(input: BoardCollectInput, repositoryId: number): BoardExecuti
   if (read.status === 'unavailable') return read;
   if (read.terminals.length === 0) return { status: 'unavailable', reason: 'no_seat_terminals' };
   return { status: 'observed', terminals: Object.freeze(read.terminals.map(seatTerminal)) };
+}
+
+/** The GitHub numeric id of the local repository: the value of the `repo-harness.repository` label. */
+export function readRepositoryId(input: GhInput): number {
+  const id = (gh(input, ['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']) as { id?: unknown } | null)?.id;
+  if (!Number.isSafeInteger(id) || (id as number) < 1) throw new BoardCollectError('the local GitHub repository id is unknown');
+  return id as number;
 }
 
 export function collectBoard(input: BoardCollectInput): BoardV1 {

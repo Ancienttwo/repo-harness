@@ -1,5 +1,6 @@
 import { execFile, spawn, spawnSync, type ExecFileException, type SpawnSyncReturns } from 'child_process';
 import { createInterface } from 'readline';
+import type { AttentionHostFailureV1, AttentionHostPortsV1, AttentionWatcherV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { NOTIFY_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 
@@ -89,12 +90,16 @@ export const RH_LABEL = {
   issue: 'repo-harness.issue',
   pr: 'repo-harness.pr',
   parent: 'repo-harness.parent',
+  /** A resident repo-harness program that is not a seat (#1509). */
+  service: 'repo-harness.service',
 } as const;
 /** `repo-harness.role` values. A surface that needs a new role adds it here. */
 export const RH_ROLE = { notifyRelay: 'notify-relay', taskSession: 'task-session' } as const;
 /** Terminals that carry this pair send blocked and done notices through the relay. */
 export const RH_NOTIFY_LABELS: HcLabels = { [RH_LABEL.notify]: 'on' };
 export const RH_NOTIFY_RELAY = { name: 'rh-notify-relay', labels: { [RH_LABEL.role]: RH_ROLE.notifyRelay } } as const;
+/** The terminals of the attention watcher (#1509) carry this pair, with the repository and parent labels of their board. */
+export const RH_ATTENTION_SERVICE_LABELS: HcLabels = { [RH_LABEL.service]: 'attention' };
 
 const RH_PREFIX = 'repo-harness.';
 const RH_KEYS: ReadonlySet<string> = new Set(Object.values(RH_LABEL));
@@ -135,6 +140,7 @@ function labelArgs(labels: HcLabels): string[] {
     if (key.startsWith(RH_PREFIX) && !RH_KEYS.has(key)) throw invalid(`unknown repo-harness label ${JSON.stringify(key)}`);
     if (key === RH_LABEL.role && !RH_ROLES.has(value)) throw invalid(`unknown repo-harness role ${JSON.stringify(value)}`);
     if (key === RH_LABEL.notify && value !== 'on') throw invalid(`${RH_LABEL.notify} must be on`);
+    if (key === RH_LABEL.service && value !== 'attention') throw invalid(`unknown repo-harness service ${JSON.stringify(value)}`);
   }
   return entries.flatMap(([key, value]) => ['--label', `${key}=${value}`]);
 }
@@ -501,3 +507,51 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
     },
   };
 }
+
+/** The attention watcher host port (#1509): watcher terminals by the service label, and send and wait on seat terminals. */
+export function attentionHostPorts(options: HerdrCoreOptions = {}): AttentionHostPortsV1 {
+  const failed = (error: unknown): AttentionHostFailureV1 => {
+    if (error instanceof HerdrCoreError) return { status: 'failed', reason: `hc_${error.reason}`, detail: error.message };
+    throw error;
+  };
+  const scoped = (scope: { readonly repository: number; readonly parent: number }): HcLabels =>
+    ({ ...RH_ATTENTION_SERVICE_LABELS, [RH_LABEL.repository]: String(scope.repository), [RH_LABEL.parent]: String(scope.parent) });
+  const watcher = (terminal: HcTerminal): AttentionWatcherV1 => ({
+    address: terminal.address, state: terminal.state,
+    repository: terminal.labels[RH_LABEL.repository] ?? null, parent: terminal.labels[RH_LABEL.parent] ?? null,
+  });
+  return {
+    ownTerminal: () => {
+      const address = (options.env ?? process.env).HC_TERMINAL_ID;
+      if (address === undefined || address === '') return { status: 'failed', reason: 'not_watcher', detail: 'HC_TERMINAL_ID is not set' };
+      try {
+        const terminal = hcGet(address, options);
+        if (terminal.labels[RH_LABEL.service] !== RH_ATTENTION_SERVICE_LABELS[RH_LABEL.service]) {
+          return { status: 'failed', reason: 'not_watcher', detail: `terminal ${terminal.address} has no attention service label` };
+        }
+        return { status: 'observed', ...watcher(terminal) };
+      } catch (error) { return failed(error); }
+    },
+    watchers: (scope) => {
+      try {
+        const rows = hcList(scope === undefined ? RH_ATTENTION_SERVICE_LABELS : scoped(scope), { ...options, all: true });
+        return { status: 'observed', watchers: rows.map(({ address }) => watcher(hcGet(address, options))) };
+      } catch (error) { return failed(error); }
+    },
+    startWatcher: (scope, cwd, argv) => {
+      try {
+        return { status: 'started', address: hcRun({ argv: [...argv], labels: scoped(scope), cwd, noParent: true }, options).address };
+      } catch (error) { return failed(error); }
+    },
+    send: (terminal, text) => {
+      try { hcSend(terminal, text, options); return { status: 'sent' }; } catch (error) { return failed(error); }
+    },
+    wait: (terminal, seconds) => {
+      try {
+        const result = hcWait(terminal, seconds, options);
+        return { status: 'observed', ended: result.ended, reason: result.reason, state: result.status?.state ?? null };
+      } catch (error) { return failed(error); }
+    },
+  };
+}
+
