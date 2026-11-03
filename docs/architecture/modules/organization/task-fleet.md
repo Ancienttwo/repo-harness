@@ -152,7 +152,7 @@ sequenceDiagram
 
 ### 删除旧 fleet 看板栈 (2026-11-03, #1507)
 
-- P1：`src/core/fleet/board.ts` 与 `src/effects/fleet/board.ts` 是旧 fleet 看板子命令（`board`、`watch`）的读模型。PR #1541 合并后，operator 不再导入它们。`summarizeTaskInboxForFleet` 与 `projectFleetFeedback` 只有这个看板读取。
+- P1：[src/core/fleet/board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/core/fleet/board.ts) 与 [src/effects/fleet/board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/fleet/board.ts) 是旧 fleet 看板子命令（`board`、`watch`）的读模型。PR #1541 合并后，operator 不再导入它们。`summarizeTaskInboxForFleet` 与 `projectFleetFeedback` 只有这个看板读取。
 - P2：两个文件、fleet 的 `board`、`watch`、`ready` 子命令和两个只给看板用的 helper 一起删除。两个只装看板文件的 layer component（`primary-core`、`primary-effects`）和 operator → task-fleet 的两条关系也删除，因为 operator 已没有对应的 import。
 - P3：`repo-harness board`（`capability.organization.board`）是唯一的看板读模型。task-fleet 保留 task inbox、provider feedback、`fleet register` 与 `fleet prune`。
 
