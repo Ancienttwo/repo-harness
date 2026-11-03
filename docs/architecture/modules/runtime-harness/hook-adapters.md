@@ -573,9 +573,9 @@ does not claim a direct CodeGraph call from the bridge to `runHook`.
 
 ### Install profile 删除（2026-11-03，#1601）
 
-- P1：install profile `minimal|full` 已删除。安装面是 core 加插件，install state 是 protocol 3。`Route.minimalProfile` 已删除。全部 7 条 hook route 都属于 core，`buildManagedHooks` 为 Claude 与 Codex 投影 host 支持的每一条 route。`routesForHost` 给 Claude 6 条，给 Codex、Pi 与 DSH 各 5 条。
+- P1：install profile `minimal|full` 已删除。安装面是 core 加插件，install state 是 protocol 3。`Route.minimalProfile` 已删除。全部 7 条 hook route 都属于 core，`buildManagedHooks` 为 Claude 与 Codex 投影 host 支持的每一条 route。`routesForHost` 给 Claude 6 条，给 Codex 与 Pi 各 5 条。
 - P2：`install-state-migration.ts` 是 protocol 2 的唯一读者。`repo-harness update` 在 install 事务内运行它；protocol 1 必须先用 0.25.x 桥接版本迁移。
-- P3：`src/effects/dsh-plugin-state.ts` 归 host-installer-effects。installer 用它判断 `dsh` 插件能否选择，doctor 用它报告 DSH profile 是否声明 repo-harness。它只读 DSH 状态。
+- P3：DSH 插件与 `dsh` 插件 id 已删除（2026-11-04，#1653，owner decision M45）。记录 `dsh` 的 install state 以 `install_state_invalid` 失败。
 
 ## 5. 验证面
 
