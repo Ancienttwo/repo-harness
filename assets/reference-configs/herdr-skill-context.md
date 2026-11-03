@@ -32,7 +32,7 @@ absent.
   task and meets the requested independence requirement. A matching path or an
   idle agent alone does not authorize repurposing another task's terminal.
 - If no suitable reviewer exists, start one at the task path with
-  `hc run --bg --name <name> --cwd <task path>`. Record the returned address.
+  `hc run --bg --name <name> --cwd <task path> <template-or-agent> "<task>"`. Record the returned address.
   Do not send input to terminals of another task.
 - For a visible pane, use `herdr-app do`. Split right; keep at most three
   panes per tab and create a new tab when full. `herdr-app --skill` gives the
