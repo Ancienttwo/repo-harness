@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.test-projection-check
+kind: component
+name: Test Capability Projection Check
+status: active
+parent: capability.runtime-harness.architecture
+layer: scripts
+summary: Projects each test file to its source modules and their owning capabilities through archctx resolve.
+responsibilities:
+  - Projects each test file to its source modules and their owning capabilities through archctx resolve.
+source:
+  include:
+    - scripts/project-test-capabilities.ts

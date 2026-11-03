@@ -39,7 +39,8 @@ import {
 } from '../src/effects/architecture/archctx-provider';
 import { architectureModelReady, readArchitectureNativeContext, readArchitectureHandEdits } from '../src/effects/architecture/architecture-read';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
-import { architectureProjectionExitCode, buildArchitectureProjectionCommand, humanActionLine } from '../src/cli/commands/architecture-projection';
+import { buildArchitectureProjectionCommand } from '../src/cli/commands/architecture-projection';
+import { architectureProjectionExitCode, humanActionLine } from '../src/cli/commands/architecture-projection-actions';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
 

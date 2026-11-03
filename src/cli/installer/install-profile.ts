@@ -52,6 +52,7 @@ import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
+import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -1444,11 +1445,17 @@ export function notAddedPluginLine(id: PluginId): string {
   return `not added ${id} in a partial refresh; run: ${UPDATE_COMMAND}`;
 }
 
+/** The install command that keeps these plugins and adds `architecture`; with no recorded state, the default install. */
+export function architectureRepair(plugins: readonly PluginId[] | null): string {
+  return plugins === null ? installSelectionCommand('all') : installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === 'architecture'));
+}
+
 /**
- * CodeGraph follows the architecture plugin. A repository whose policy enables
- * CodeGraph while the selection lacks `architecture` stops before any write.
+ * A repository whose policy sets `context.capability_source: archcontext` or
+ * `tooling.codegraph.enabled: true` needs the architecture plugin. update,
+ * install and init stop here before any write when the selection lacks it.
  */
-export function assertCodegraphPolicySelection(cwd: string, plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): void {
+export function assertArchitecturePolicySelection(cwd: string, plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): void {
   if (plugins.includes('architecture')) return;
   const policyPath = join(cwd, '.ai/harness/policy.json');
   let raw: string;
@@ -1459,9 +1466,13 @@ export function assertCodegraphPolicySelection(cwd: string, plugins: readonly Pl
     throw error;
   }
   const policy = JSON.parse(raw) as { tooling?: { codegraph?: { enabled?: unknown } } };
-  if (policy.tooling?.codegraph?.enabled !== true) return;
+  const needs = [
+    ...(capabilitySourceModeFromPolicy(policy) === 'archcontext' ? ['context.capability_source: archcontext'] : []),
+    ...(policy.tooling?.codegraph?.enabled === true ? ['tooling.codegraph.enabled: true'] : []),
+  ];
+  if (needs.length === 0) return;
   throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),
-    `${policyPath} enables CodeGraph (tooling.codegraph.enabled), and CodeGraph needs the architecture plugin; run: ${installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === 'architecture'))}`);
+    `${policyPath} sets ${needs.join(' and ')}, which needs the architecture plugin; run: ${architectureRepair(plugins)}`);
 }
 
 /** `run` drives the Pi package and skill projections; `record` is the plugin set that the plan installs, keeps and removes. */

@@ -3,15 +3,15 @@ id: component.global-runtime-reconciliation.architecture-read
 kind: component
 name: Architecture Read
 status: active
-parent: capability.runtime-harness.global-runtime-reconciliation
+parent: capability.runtime-harness.architecture
 layer: effects
 summary: The typed architecture reads for consumers outside ArchContext Closure. It runs archctx through the closure client and passes no write command.
 responsibilities:
-  - Read the native architecture context of the worktree or of a commit, and keep the last four commit reads.
+  - "Read the native architecture context of the worktree or of a commit, and keep the last four commit reads."
   - Report whether the worktree model is complete and has an active capability.
-  - Read one page of the architecture history, the generated-region hand edits and the archctx model entry path.
+  - "Read one page of the architecture history, the generated-region hand edits and the archctx model entry path."
   - Resolve one batch of paths to their owning nodes with the one resolve decoder.
-  - Read one operator view report (debt, flow check, docs anchors, dependencies, constraint check or impact) as its data or its error envelope.
+  - "Read one operator view report (debt, flow check, docs anchors, dependencies, constraint check or impact) as its data or its error envelope."
 source:
   include:
     - src/effects/architecture/architecture-read.ts

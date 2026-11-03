@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.state-boundaries-check
+kind: component
+name: State Boundaries Check
+status: active
+parent: capability.runtime-harness.architecture
+layer: scripts
+summary: "Checks the layer, canonical symbol, helper projection and core/plugin tier rules from one archctx resolve batch."
+responsibilities:
+  - "Checks the layer, canonical symbol, helper projection and core/plugin tier rules from one archctx resolve batch."
+source:
+  include:
+    - scripts/check-state-boundaries.ts

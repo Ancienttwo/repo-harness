@@ -1,14 +1,16 @@
 schemaVersion: archcontext.node/v2
 id: component.action-commands.primary
 kind: component
-name: "Command Facades and Manifest"
+name: Command Facades and Manifest
 status: active
 parent: capability.public-surface.action-commands
-layer: "assets"
-summary: "Holds the skill package manifest and the thin command facade skills that it projects."
+layer: assets
+summary: Holds the skill package manifest and the thin command facade skills that it projects.
 responsibilities:
-  - Keep manifest.json as the single discovery authority for packages, their owners and host placements.
+  - "Keep manifest.json as the single discovery authority for packages, their owners and host placements."
   - Keep each command facade a thin router to CLI commands and reference configs.
 source:
   include:
     - assets/skill-commands/**
+  exclude:
+    - assets/skill-commands/repo-harness-architecture/**

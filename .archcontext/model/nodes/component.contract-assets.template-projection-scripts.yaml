@@ -10,5 +10,4 @@ responsibilities:
   - Hold the scripts-layer source files of Template Projection so layer direction is checked per directory.
 source:
   include:
-    - scripts/sync-helper-sources.ts
     - scripts/sync-reference-configs.ts

@@ -18,8 +18,7 @@ import {
   type ArchContextNodeV2,
   type MatchAuthority,
 } from "../src/effects/architecture/capability-resolver";
-import { registerArchitecturePorts } from "../src/core/architecture/contracts";
-import { ARCHITECTURE_PROVIDERS } from "../src/effects/architecture/providers";
+import { readRecordedSelection, registerSelectedArchitecturePorts } from "../src/cli/installer/architecture-selection";
 
 export {
   CapabilitySourceError,
@@ -36,8 +35,8 @@ export {
 
 export type { ArchContextNodeV2, MatchAuthority };
 
-// The package entry registers the archctx providers; the standalone projection has none.
-registerArchitecturePorts(ARCHITECTURE_PROVIDERS);
+// The package entry loads the archctx providers for a selected architecture plugin; the standalone projection has none.
+await registerSelectedArchitecturePorts(readRecordedSelection(), async () => (await import("../src/effects/architecture/providers")).ARCHITECTURE_PROVIDERS);
 
 if (import.meta.main) {
   try {

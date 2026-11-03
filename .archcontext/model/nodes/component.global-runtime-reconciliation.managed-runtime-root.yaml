@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.managed-runtime-root
+kind: component
+name: Managed Runtime Check Process Root
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: scripts
+summary: Verifies the installed managed runtime and loads the architecture providers when the install selection includes architecture.
+responsibilities:
+  - Verifies the installed managed runtime and loads the architecture providers when the install selection includes architecture.
+extensions:
+  harnessTier: composition
+source:
+  include:
+    - scripts/check-managed-runtime.ts

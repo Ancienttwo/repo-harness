@@ -7,9 +7,20 @@ scope:
     - capability.runtime-harness.operator
     - capability.runtime-harness.mcp-sidecar
     - capability.organization.task-fleet
+    - capability.runtime-mcp.general-repo-access
 rule:
   type: forbid-dependency
   targets:
     - capability.runtime-harness.task-agent-host
     - component.global-runtime-reconciliation.archctx-closure
-rationale: ADR-0002 rule 5. A surface does not import the internals of another plugin. It reads plugin state through the contract node of the owner. A contract node is a separate node that is not a descendant of a target, for example component.execution-primitives.task-session-record.
+    - component.global-runtime-reconciliation.archctx-closure-cli
+    - component.global-runtime-reconciliation.archctx-closure-scripts
+    - component.architecture.notice
+    - component.architecture.state-boundaries-check
+    - component.architecture.test-projection-check
+    - component.architecture.helper-projection
+    - component.architecture.skills
+    - component.codegraph-readiness.primary
+    - component.codegraph-readiness.scripts-layer
+    - capability.runtime-harness.refactor-program
+rationale: "ADR-0002 rule 5. A surface does not import the internals of another plugin. It reads plugin state through the contract node of the owner. A contract node is a separate node that is not a descendant of a target, for example component.execution-primitives.task-session-record. The architecture plugin keeps its read contracts inside its capability: component.global-runtime-reconciliation.architecture-read, component.global-runtime-reconciliation.archctx-closure-core and component.architecture.owners (the path ownership read; this exception ends with #1670, which moves the operator module diff to the ownership port) are not targets, and neither is component.codegraph-readiness.mcp-adapter. So the targets name the internal nodes, not capability.runtime-harness.architecture or capability.verification.codegraph-readiness (#1624, #1656). Limit: a component added to the architecture capability or to codegraph-readiness later is not a target until the same change adds it to this list."

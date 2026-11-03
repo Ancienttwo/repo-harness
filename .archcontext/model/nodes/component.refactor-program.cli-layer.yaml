@@ -11,3 +11,4 @@ responsibilities:
 source:
   include:
     - src/cli/commands/refactor.ts
+    - src/cli/commands/refactor-actions.ts

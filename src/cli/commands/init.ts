@@ -1,7 +1,5 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
-import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
-import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
-import { architectureModelReady } from '../../effects/architecture/architecture-read';
+import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 /**
  * Existing-repo harness adoption implementation.
  *
@@ -35,7 +33,7 @@ import {
 import type { PluginId } from "../../core/skill-surface/plugin-manifest";
 import { hostSkillRoot, SKILL_HOSTS, type SkillHost } from "../../effects/host-skill-roots";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
-import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstallState } from "../installer/install-profile";
+import { assertArchitecturePolicySelection, beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstallState } from "../installer/install-profile";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
 import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
@@ -97,6 +95,8 @@ export interface InitCommandOptions {
   target?: InstallTargetSpec;
   mode?: AdoptionMode;
   env?: NodeJS.ProcessEnv;
+  /** The recorded plugins. CodeGraph and the architecture readiness follow `architecture`. */
+  plugins: readonly PluginId[];
 }
 
 export interface InitStep {
@@ -298,9 +298,33 @@ export function syncCrossReviewSkills(
   return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog, plugins), env);
 }
 
+const READINESS_STEP = 'architecture projection readiness';
+
+function architectureReadinessStep(repoRoot: string, selected: boolean, env: NodeJS.ProcessEnv | undefined): InitStep {
+  if (!selected) return { step: READINESS_STEP, status: 'skipped', detail: 'architecture plugin not selected' };
+  const setup = architecturePort('setup');
+  if (isArchitectureUnavailable(setup)) return { step: READINESS_STEP, status: 'failed', detail: setup.message };
+  try {
+    const { initialized } = setup.configuration(env);
+    const readiness = setup.readiness(repoRoot, env);
+    const provider = readiness.projectionProvider;
+    return {
+      step: READINESS_STEP,
+      status: !initialized ? 'skipped' : provider.state === 'ready' || provider.state === 'disabled' ? 'ok' : 'failed',
+      detail: !initialized ? 'global architecture is not initialized; run repo-harness update once for this account' : provider.state === 'ready' && !readiness.apply.enabled
+        ? readiness.next
+          ? `global provider ready; ${readiness.next}`
+          : 'global provider ready; global architecture.projection_apply=disabled'
+        : provider.reason,
+    };
+  } catch (error) {
+    return { step: READINESS_STEP, status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+  }
+}
+
 export function runInit(
   ports: InitPorts,
-  opts: InitCommandOptions = {},
+  opts: InitCommandOptions,
   dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
 ): InitCommandResult {
   const sourceRoot = resolve(opts.sourceRoot ?? REPO_ROOT);
@@ -312,6 +336,7 @@ export function runInit(
   const syncCodegraph = opts.syncCodegraph === true;
   const target = opts.target ?? "both";
   const mode = opts.mode ?? "standard";
+  const architecture = opts.plugins.includes('architecture');
   const steps: InitStep[] = [];
 
   const targetError = validateRepoAdoptionTarget(repoRoot, opts.repo !== undefined, commandEnv);
@@ -325,6 +350,7 @@ export function runInit(
     };
   }
 
+  if (apply) assertArchitecturePolicySelection(repoRoot, opts.plugins, commandEnv);
   steps.push(requiredHerdrSkillReadiness(target, commandEnv));
 
   const adoptionApply = apply
@@ -354,8 +380,10 @@ export function runInit(
     });
   }
 
-  if (codegraph && apply) {
+  if (codegraph && apply && architecture) {
     steps.push(...ports.codegraphStep.run({ repoRoot, sync: syncCodegraph, env: commandEnv, target }));
+  } else if (codegraph && apply) {
+    steps.push({ step: ports.codegraphStep.step, status: "skipped", detail: "architecture plugin not selected" });
   } else {
     steps.push({
       step: ports.codegraphStep.step,
@@ -372,24 +400,7 @@ export function runInit(
     steps.push({ step: "verify repo harness", status: "skipped" });
   }
 
-  if (apply && adoption.exitCode === 0 && mode !== 'minimal') {
-    try {
-      const { initialized } = readGlobalArchitectureConfiguration(commandEnv);
-      const readiness = inspectArchitectureProjectionReadiness(repoRoot, architectureModelReady, { env: commandEnv });
-      const provider = readiness.projectionProvider;
-      steps.push({
-        step: 'architecture projection readiness',
-        status: !initialized ? 'skipped' : provider.state === 'ready' || provider.state === 'disabled' ? 'ok' : 'failed',
-        detail: !initialized ? 'global architecture is not initialized; run repo-harness update once for this account' : provider.state === 'ready' && !readiness.apply.enabled
-          ? readiness.next
-            ? `global provider ready; ${readiness.next}`
-            : 'global provider ready; global architecture.projection_apply=disabled'
-          : provider.reason,
-      });
-    } catch (error) {
-      steps.push({ step: 'architecture projection readiness', status: 'failed', detail: error instanceof Error ? error.message : String(error) });
-    }
-  }
+  if (apply && adoption.exitCode === 0 && mode !== 'minimal') steps.push(architectureReadinessStep(repoRoot, architecture, commandEnv));
 
   const failed = steps.some((step) => step.status === "failed");
   return {

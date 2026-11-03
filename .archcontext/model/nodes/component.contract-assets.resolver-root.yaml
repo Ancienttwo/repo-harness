@@ -1,0 +1,18 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.resolver-root
+kind: component
+name: Capability Resolver Process Roots
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: scripts
+summary: "Process roots that read the capability registry: the packaged capability resolver loads the architecture providers when the install selection includes architecture, and capability config and the context map check read the registry through it."
+responsibilities:
+  - Run the packaged capability resolver and load the architecture providers when the install selection includes architecture.
+  - Run capability config and the context map check on the registry that the resolver root reads.
+extensions:
+  harnessTier: composition
+source:
+  include:
+    - scripts/capability-resolver.ts
+    - scripts/capability-config.ts
+    - scripts/check-context-map.ts

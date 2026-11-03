@@ -6,6 +6,7 @@ import { randomUUID } from 'node:crypto';
 import { syncDirectoryDurably } from '../atomic-append';
 import { ExclusiveLockContentionError } from '../locking/exclusive-directory-lock';
 import { assertRuntimeTransactionContext, globalRuntimeScope, withRuntimeTransactionContext, type RuntimeTransactionContext } from '../locking/runtime-transaction-lock';
+import type { GlobalConfigurationWrite } from '../../core/architecture/contracts';
 
 export class GlobalConfigurationError extends Error {
   constructor(readonly code: 'config_invalid' | 'config_is_link' | 'revision_conflict' | 'busy', message: string) {
@@ -105,6 +106,18 @@ export function mutateGlobalConfiguration<T>(
     if (error instanceof ExclusiveLockContentionError) throw new GlobalConfigurationError('busy', 'A runtime transaction is changing configuration. Nothing was changed. Retry after it ends.');
     throw error;
   }
+}
+
+/** Whether the host configuration has an `architecture` section. Core reads only its presence; the architecture plugin validates it. */
+export function globalArchitectureSectionPresent(env: NodeJS.ProcessEnv = process.env): { readonly path: string; readonly present: boolean } {
+  const { path, config } = readGlobalConfiguration(env);
+  return { path, present: config.architecture !== undefined };
+}
+
+/** The write callback that core gives a plugin configuration owner: each change runs under `runtimeLock`, or under its own lock. */
+export function globalConfigurationWriter(env: NodeJS.ProcessEnv, runtimeLock?: RuntimeTransactionContext): GlobalConfigurationWrite {
+  return <T>(mutate: (config: Record<string, unknown>) => { readonly config?: Record<string, unknown> | null; readonly value: T }): T =>
+    mutateGlobalConfiguration(env, mutate, { runtimeLock }).value;
 }
 
 /** One host configuration document; typed consumers validate their own section. */

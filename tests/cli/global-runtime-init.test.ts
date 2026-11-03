@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
-import { CLI_PORTS, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
+import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
@@ -2452,7 +2452,8 @@ test('managed runtime readback reports stale shared daemon after a successful pa
     const nodePath = join(fakeBin, 'node.fixture-body');
     const original = readFileSync(nodePath, 'utf8');
     writeFileSync(nodePath, original.replace('"data":{"running":false}', `"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"${ARCHCTX_PIN}","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}`));
-    const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, env: {
+    registerArchitecturePlugin();
+    const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, plugins: ['architecture'], env: {
       ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath,
     } });
@@ -2478,7 +2479,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     const globalModules = join(home, '.bun/install/global/node_modules');
     const harnessManifest = join(globalModules, 'repo-harness/package.json');
     writeFileSync(harnessManifest, JSON.stringify({ name: 'repo-harness', version: '1.0.0', dependencies: { archctx: '0.2.3', 'archctx-contracts': '0.2.3' } }));
-    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, plugins: [] as const,
+    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, plugins: ['architecture'] as const,
       installCli: false, installSpec: 'repo-harness@9.9.9', updateMode: true,
       syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
       env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
@@ -2514,7 +2515,7 @@ test('a fleet failure after the CLI install restores the predecessor hoisted arc
     const globalModules = join(home, '.bun/install/global/node_modules');
     const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath };
-    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', plugins: [], env }, () => {
+    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', plugins: ['architecture'], env }, () => {
       writeFileSync(join(globalModules, 'repo-harness/package.json'), JSON.stringify({
         name: 'repo-harness', version: '9.9.9', dependencies: { archctx: '9.9.9', 'archctx-contracts': '9.9.9' },
       }));
@@ -2533,7 +2534,7 @@ test('a fleet failure after the CLI install restores the predecessor hoisted arc
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(readFileSync(join(globalModules, 'archctx/package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
     expect(JSON.parse(readFileSync(join(globalModules, 'archctx-contracts/package.json'), 'utf8')).version).toBe(ARCHCTX_CONTRACTS_PIN);
-    expect(verifyInstalledManagedRuntime({ sourceRoot: predecessor, cwd: tmp, env }).status).toBe('ok');
+    expect(verifyInstalledManagedRuntime({ sourceRoot: predecessor, cwd: tmp, plugins: ['architecture'], env }).status).toBe('ok');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 

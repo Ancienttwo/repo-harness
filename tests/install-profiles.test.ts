@@ -9,7 +9,7 @@ import { basename, dirname, join } from 'path';
 import {
   agentFleetUserManagedReceiptPath,
   applyInstallSelection,
-  assertCodegraphPolicySelection,
+  assertArchitecturePolicySelection,
   beginInstallHostTransaction,
   codegraphProjection,
   commitInstallHostTransaction,
@@ -1654,18 +1654,25 @@ describe('install selection', () => {
     expect(rollbackInstallSelection(env).selection).toEqual([]);
   }));
 
-  test('CodeGraph follows the architecture plugin: a policy opt-in without it fails closed, never repo size', () => withHome((env) => {
+  test('CodeGraph and the archcontext source follow the architecture plugin: a policy opt-in without it fails closed, never repo size', () => withHome((env) => {
     const cwd = env.HOME!;
-    expect(() => assertCodegraphPolicySelection(cwd, [], env)).not.toThrow();
+    expect(() => assertArchitecturePolicySelection(cwd, [], env)).not.toThrow();
 
-    const optIn = mkdtempSync(join(tmpdir(), 'repo-harness-codegraph-optin-'));
-    try {
-      writePath(join(optIn, '.ai/harness/policy.json'), JSON.stringify({ tooling: { codegraph: { enabled: true } } }));
-      expect(installStateCode(() => assertCodegraphPolicySelection(optIn, ['product'], env))).toBe('install_plugin_unavailable');
-      expect(() => assertCodegraphPolicySelection(optIn, ['product'], env)).toThrow('run: repo-harness install --plugins architecture,product');
-      expect(() => assertCodegraphPolicySelection(optIn, ['architecture'], env)).not.toThrow();
-    } finally {
-      rmSync(optIn, { recursive: true, force: true });
+    // Each policy key that needs the plugin, alone and together.
+    for (const [policy, needs] of [
+      [{ tooling: { codegraph: { enabled: true } } }, 'tooling.codegraph.enabled: true'],
+      [{ context: { capability_source: 'archcontext' } }, 'context.capability_source: archcontext'],
+      [{ context: { capability_source: 'archcontext' }, tooling: { codegraph: { enabled: true } } }, 'context.capability_source: archcontext and tooling.codegraph.enabled: true'],
+    ] as const) {
+      const optIn = mkdtempSync(join(tmpdir(), 'repo-harness-architecture-optin-'));
+      try {
+        writePath(join(optIn, '.ai/harness/policy.json'), JSON.stringify(policy));
+        expect(installStateCode(() => assertArchitecturePolicySelection(optIn, ['product'], env))).toBe('install_plugin_unavailable');
+        expect(() => assertArchitecturePolicySelection(optIn, ['product'], env)).toThrow(`sets ${needs}, which needs the architecture plugin; run: repo-harness install --plugins architecture,product`);
+        expect(() => assertArchitecturePolicySelection(optIn, ['architecture'], env)).not.toThrow();
+      } finally {
+        rmSync(optIn, { recursive: true, force: true });
+      }
     }
 
     // A large tracked-file count is not an opt-in signal: no policy entry, no CodeGraph requirement.
@@ -1677,7 +1684,7 @@ describe('install selection', () => {
       expect(spawnSync('git', ['add', '-A'], { cwd: large, encoding: 'utf-8' }).status).toBe(0);
       const tracked = spawnSync('git', ['ls-files'], { cwd: large, encoding: 'utf-8' });
       expect(tracked.stdout.split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(2_000);
-      expect(() => assertCodegraphPolicySelection(large, [], env)).not.toThrow();
+      expect(() => assertArchitecturePolicySelection(large, [], env)).not.toThrow();
     } finally {
       rmSync(large, { recursive: true, force: true });
     }

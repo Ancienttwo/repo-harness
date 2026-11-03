@@ -36,6 +36,7 @@ test('one global configuration controls two repos without repository projection 
 
 import { existsSync, readFileSync } from 'node:fs';
 import { ensureGlobalArchitectureProjection } from '../../src/cli/commands/architecture-configuration';
+import { globalConfigurationWriter } from '../../src/effects/configuration/global-configuration';
 import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration } from '../../src/effects/architecture/projection-config';
 import { planStandardAdoption } from '../../src/effects/adoption/standard-plan';
 
@@ -50,11 +51,11 @@ test('global setup seeds once and preserves unrelated global configuration', () 
   const f = globalFixture();
   expect(existsSync(f.path)).toBe(false);
   writeFileSync(f.path, JSON.stringify({ brainRoot: '/existing/vault', protectedHelperRuntime: { preserved: true } }));
-  expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
+  expect(ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env)).status).toBe('ok');
   expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'manual' });
   const first = readFileSync(f.path, 'utf8');
   expect(JSON.parse(first)).toMatchObject({ brainRoot: '/existing/vault', protectedHelperRuntime: { preserved: true } });
-  expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
+  expect(ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env)).status).toBe('ok');
   expect(readFileSync(f.path, 'utf8')).toBe(first);
 });
 
@@ -62,12 +63,12 @@ test('global setup preserves an explicit global disabled choice and rejects malf
   const f = globalFixture();
   const disabled = JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled' } });
   writeFileSync(f.path, disabled);
-  expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
+  expect(ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env)).status).toBe('ok');
   expect(readFileSync(f.path, 'utf8')).toBe(disabled);
   expect(loadArchitectureProjectionPolicy(f.env).provider).toBe('disabled');
   for (const invalid of ['{', 'null', '[]', JSON.stringify({ architecture: { projection_provider: null, projection_apply: 'manual' } }), JSON.stringify({ architecture: { projection_provider: 'archctx', projection_apply: null } }), '{"architecture":{}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"manaul"}}', '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_version":"0.0.1"}}']) {
     writeFileSync(f.path, invalid);
-    expect(ensureGlobalArchitectureProjection(f.env).status).toBe('failed');
+    expect(ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env)).status).toBe('failed');
     expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow();
     expect(readFileSync(f.path, 'utf8')).toBe(invalid);
   }
@@ -79,18 +80,18 @@ test('update migrates retired automatic projection settings once and readers ref
     projection_provider: 'archctx', projection_apply: 'automatic', projection_failure_gate: 'strict', projection_timeout_ms: 90000,
   } }));
   expect(() => readGlobalArchitectureConfiguration(f.env)).toThrow('run `repo-harness update` to migrate');
-  const migrated = ensureGlobalArchitectureProjection(f.env);
+  const migrated = ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env));
   expect(migrated).toMatchObject({ status: 'ok', detail: expect.stringContaining('migrated retired automatic projection settings') });
   expect(JSON.parse(readFileSync(f.path, 'utf8'))).toEqual({ brainRoot: '/existing/vault', architecture: {
     projection_provider: 'archctx', projection_apply: 'manual', projection_timeout_ms: 90000,
   } });
   expect(loadArchitectureProjectionPolicy(f.env)).toMatchObject({ provider: 'archctx', applyMode: 'manual', timeoutMs: 90000 });
   const settled = readFileSync(f.path, 'utf8');
-  expect(ensureGlobalArchitectureProjection(f.env).detail).toContain('using ');
+  expect(ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env)).detail).toContain('using ');
   expect(readFileSync(f.path, 'utf8')).toBe(settled);
 
   writeFileSync(f.path, JSON.stringify({ architecture: { projection_provider: 'disabled', projection_apply: 'disabled', projection_failure_gate: 'advisory' } }));
-  expect(ensureGlobalArchitectureProjection(f.env).status).toBe('ok');
+  expect(ensureGlobalArchitectureProjection(f.env, globalConfigurationWriter(f.env)).status).toBe('ok');
   expect(JSON.parse(readFileSync(f.path, 'utf8')).architecture).toEqual({ projection_provider: 'disabled', projection_apply: 'disabled' });
 });
 

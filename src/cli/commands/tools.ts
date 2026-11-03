@@ -313,15 +313,10 @@ function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
 
 /**
  * The `doctor` CodeGraph checks: readiness, the Codex and Claude MCP hosts,
- * and the project index. CodeGraph follows the architecture plugin, so
- * without it each check is `na` and nothing runs. An unreadable selection
- * fails each check.
+ * and the project index. The CLI root registers this provider only when the
+ * architecture plugin is selected.
  */
-function codegraphDoctorChecks(cwd: string, plugins: readonly string[] | Error): DoctorCheckResult[] {
-  if (plugins instanceof Error) return codegraphChecksFor({ error: plugins });
-  if (!plugins.includes('architecture')) {
-    return codegraphChecksFor({}).map(({ id, describe }) => ({ id, describe, status: 'na', detail: 'architecture plugin not selected' }));
-  }
+function codegraphDoctorChecks(cwd: string): DoctorCheckResult[] {
   return codegraphChecksFor(probeCodegraph(cwd));
 }
 

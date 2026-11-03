@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.contract-assets.worktree-runtime-root
+kind: component
+name: Contract Worktree Runtime Process Root
+status: active
+parent: capability.workflow-engine.contract-assets
+layer: scripts
+summary: Runs the contract worktree runtime actions and loads the architecture runtime provider for a selected plugin to stop archctx daemons.
+responsibilities:
+  - Runs the contract worktree runtime actions and loads the architecture runtime provider for a selected plugin to stop archctx daemons.
+extensions:
+  harnessTier: composition
+source:
+  include:
+    - scripts/contract-worktree-runtime.ts

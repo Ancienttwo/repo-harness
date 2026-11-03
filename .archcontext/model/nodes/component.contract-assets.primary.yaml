@@ -1,19 +1,21 @@
 schemaVersion: archcontext.node/v2
 id: component.contract-assets.primary
 kind: component
-name: "Workflow Contract And Policy"
+name: Workflow Contract And Policy
 status: active
 parent: capability.workflow-engine.contract-assets
-layer: "scripts"
+layer: scripts
 summary: "Holds the package workflow contract, the opt-in marker, the harness policy and the context map, and loads the contract fail closed."
 responsibilities:
   - "Keep assets/workflow-contract.v1.json as the only inventory of directories, helpers, legacy paths and upgrade actions."
-  - "Keep .ai/harness/workflow-contract.json as an opt-in marker only."
-  - "Load the contract from the package or an explicit source checkout and reject unsafe helper entries."
-  - "Check the context map and select agent context blocks."
+  - Keep .ai/harness/workflow-contract.json as an opt-in marker only.
+  - Load the contract from the package or an explicit source checkout and reject unsafe helper entries.
+  - Check the context map and select agent context blocks.
 source:
   include:
     - .ai/context/**
     - scripts/workflow-contract.ts
     - scripts/check-context-*
     - scripts/select-agent-context-blocks.sh
+  exclude:
+    - scripts/check-context-map.ts

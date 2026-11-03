@@ -10,8 +10,11 @@ responsibilities:
   - Map archcontext capability nodes to registry metadata and literal include anchors.
   - Resolve path owners by longest prefix under registry and through archctx resolve under archcontext.
   - Fail closed on ambiguous owners and on an archctx resolve failure.
-  - Serve the resolver CLI, capability config and capability context commands.
+  - "Serve the resolver CLI, capability config and capability context commands."
 source:
   include:
     - .archcontext/**
     - scripts/capability-*.ts
+  exclude:
+    - scripts/capability-resolver.ts
+    - scripts/capability-config.ts

@@ -1,5 +1,5 @@
 #!/usr/bin/env bun
-// @generated-from src/core/capabilities/registry.ts sha256:ec8114204385ad46b7a9e85e17ad75d3fcdb98aaa3fff9843d5e359765f058a9
+// @generated-from src/core/capabilities/registry.ts sha256:9ca724195f6081e32ffe7cad95d537161016c2deb466426223ef60f1faedafb4
 // Standalone typed Bun projection. Regenerate from the capability resolver library; do not edit by hand.
 export const CAPABILITY_REGISTRY_VERSION = 1 as const;
 
@@ -532,7 +532,6 @@ export const CAPABILITY_SOURCE_MODES = ["registry", "archcontext"] as const;
 
 export type CapabilitySourceMode = (typeof CAPABILITY_SOURCE_MODES)[number];
 
-/** One `archctx resolve --paths-from` result, reduced to the fields this registry reads. */
 /** One capability that owns some of the resolved implementation paths. */
 export interface CapabilityOwnershipEntry {
   readonly id: string;
@@ -554,6 +553,7 @@ export interface CapabilityOwnership {
   readonly unowned_paths: readonly string[];
 }
 
+/** One `archctx resolve --paths-from` result, reduced to the fields this registry reads. */
 export interface ArchcontextPathOwner {
   readonly path: string;
   readonly matched: boolean;
@@ -859,11 +859,12 @@ export function toArchContextNodeV2(capability: Capability, isExistingDirectory:
 }
 /**
  * The core contract of the Architecture plugin. Core reaches the archctx
- * ownership, notice, runtime and CodeGraph code only through these ports. A
- * process entry registers the providers once; a port without a provider is a
- * typed unavailable result, never a fallback.
+ * ownership, notice, runtime, setup and CodeGraph code only through these
+ * ports. A process entry registers the providers once, and only when the
+ * plugin is selected; a port without a provider is a typed unavailable
+ * result, never a fallback.
  */
-export const ARCHITECTURE_CONTRACT_VERSION = 1;
+export const ARCHITECTURE_CONTRACT_VERSION = 2;
 export type ArchitectureContractVersion = typeof ARCHITECTURE_CONTRACT_VERSION;
 
 export type ProjectionProvider = 'disabled' | 'archctx';
@@ -874,6 +875,22 @@ export interface ArchitectureProjectionPolicy {
   applyMode: ProjectionApplyMode;
   requiredVersion: string;
   timeoutMs: number;
+}
+
+export interface ArchitectureProjectionReadinessV1 {
+  schemaVersion: 'repo-harness.architecture-projection-readiness/v1';
+  modelAuthority: { source: 'registry' | 'archcontext' | 'unadopted'; ready: boolean };
+  /**
+   * `command` is the managed invocation `[nodePath, binaryPath]`. Guidance runs
+   * archctx only through it, never through a PATH copy. It is null unless the
+   * package and Node runtime resolve.
+   */
+  projectionProvider: { provider: ProjectionProvider; state: 'disabled' | 'missing' | 'mismatch' | 'error' | 'ready'; binaryPath: string | null; nodePath: string | null; command: [string, string] | null; version: string | null; reason: string; reasonCode?: string };
+  codeFacts: { requirement: 'required'; state: 'not-evaluated' | 'ready' | 'not-ready' | 'index-missing' | 'unavailable'; issues?: Array<{ code: string; message: string }>; reasonCode?: string; message?: string };
+  daemonRuntime: { state: 'not-evaluated' | 'compatible' | 'mismatch' | 'error' };
+  apply: { mode: ProjectionApplyMode; enabled: boolean };
+  /** The next operator step for adoption, code facts or provider repair; null when none is needed. */
+  next: string | null;
 }
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
@@ -1005,10 +1022,45 @@ export interface ArchitectureDoctorCheck {
   readonly detail: string;
 }
 
-/** The `doctor` CodeGraph rows for the selected plugin ids, or the selection read error. */
+/** The `doctor` CodeGraph rows. */
 export interface CodegraphDoctorPort {
   readonly contractVersion: ArchitectureContractVersion;
-  checks(cwd: string, plugins: readonly string[] | Error): readonly ArchitectureDoctorCheck[];
+  checks(cwd: string): readonly ArchitectureDoctorCheck[];
+}
+
+export interface ArchitectureSetupStep {
+  readonly step: string;
+  readonly status: 'ok' | 'skipped' | 'failed';
+  readonly detail?: string;
+}
+
+export interface ArchitectureProjectionConfiguration {
+  readonly scope: 'global';
+  readonly path: string;
+  readonly initialized: boolean;
+}
+
+/** The archctx part of the managed runtime readback. */
+export type ManagedArchctxReadback =
+  | { readonly status: 'ready'; readonly versions: readonly string[] }
+  | { readonly status: 'package-mismatch' | 'runtime-mismatch'; readonly detail: string };
+
+/** Writes one change to the global configuration under the caller's runtime transaction and returns its value. */
+export type GlobalConfigurationWrite = <T>(mutate: (config: Record<string, unknown>) => { readonly config?: Record<string, unknown> | null; readonly value: T }) => T;
+
+/** The archctx steps of update, status and init. Only the CLI root registers it. */
+export interface ArchitectureSetupPort {
+  readonly contractVersion: ArchitectureContractVersion;
+  /** The CodeGraph CLI version that archctx pins. */
+  readonly codegraphVersion: string;
+  /** archctx and archctx-contracts as declared, the archctx Node range, its CodeGraph, and one handshake. */
+  readManagedPackages(globalPackageRoot: string, cwd: string, env: NodeJS.ProcessEnv): ManagedArchctxReadback;
+  /** Throws when the shared daemon is not compatible and does not stop cleanly. */
+  verifyDaemon(cwd: string, env: NodeJS.ProcessEnv): void;
+  /** Migrates a retired section and writes the default section when it is absent. */
+  ensureGlobalConfiguration(env: NodeJS.ProcessEnv, write: GlobalConfigurationWrite): ArchitectureSetupStep;
+  readiness(repoRoot: string, env?: NodeJS.ProcessEnv): ArchitectureProjectionReadinessV1;
+  configuration(env?: NodeJS.ProcessEnv): ArchitectureProjectionConfiguration;
 }
 
 export interface ArchitecturePorts {
@@ -1016,19 +1068,29 @@ export interface ArchitecturePorts {
   readonly display: ArchitectureDisplayPort;
   readonly notice: ArchitectureNoticePort;
   readonly runtime: ArchitectureRuntimePort;
+  readonly setup: ArchitectureSetupPort;
   readonly codegraphDoctor: CodegraphDoctorPort;
 }
 
 export type ArchitecturePortName = keyof ArchitecturePorts;
 
+/** `ARCHITECTURE_PLUGIN_NOT_SELECTED`: the install selection lacks the plugin, so the root registered no provider. */
+export type ArchitectureUnavailableCode = 'ARCHITECTURE_PROVIDER_UNAVAILABLE' | 'ARCHITECTURE_PLUGIN_NOT_SELECTED';
+
 export interface ArchitectureUnavailable {
   readonly status: 'unavailable';
-  readonly code: 'ARCHITECTURE_PROVIDER_UNAVAILABLE';
+  readonly code: ArchitectureUnavailableCode;
   readonly port: ArchitecturePortName;
   readonly message: string;
 }
 
 const registered: { -readonly [K in ArchitecturePortName]?: ArchitecturePorts[K] } = {};
+let absence: { readonly code: ArchitectureUnavailableCode; readonly message: string } | null = null;
+
+/** A root that registers no provider states why; each port then returns this code and message. */
+export function declareArchitectureAbsent(code: ArchitectureUnavailableCode, message: string): void {
+  absence = { code, message };
+}
 
 /**
  * A process entry calls this once with the providers it runs. A provider of
@@ -1046,11 +1108,13 @@ export function registerArchitecturePorts(ports: Partial<ArchitecturePorts>): vo
 export function architecturePort<K extends ArchitecturePortName>(name: K): ArchitecturePorts[K] | ArchitectureUnavailable {
   const port = registered[name];
   if (port) return port as ArchitecturePorts[K];
+  if (absence) return { status: 'unavailable', code: absence.code, port: name, message: absence.message };
   return { status: 'unavailable', code: 'ARCHITECTURE_PROVIDER_UNAVAILABLE', port: name, message: `no architecture ${name} provider is registered in this process` };
 }
 
 export function isArchitectureUnavailable(value: object): value is ArchitectureUnavailable {
-  return 'status' in value && value.status === 'unavailable' && 'code' in value && value.code === 'ARCHITECTURE_PROVIDER_UNAVAILABLE';
+  return 'status' in value && value.status === 'unavailable' && 'code' in value
+    && (value.code === 'ARCHITECTURE_PROVIDER_UNAVAILABLE' || value.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED');
 }
 import { AsyncLocalStorage } from 'node:async_hooks';
 import * as fs from 'node:fs';

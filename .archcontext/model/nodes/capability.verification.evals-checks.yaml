@@ -4,64 +4,63 @@ kind: capability
 name: Evals And Checks
 status: active
 layer: scripts
-summary: Runs repository verification, contract gates, benchmarks, and evaluation suites.
+summary: "Runs repository verification, contract gates, benchmarks, and evaluation suites."
 responsibilities:
-  - Own machine-verifiable checks, bounded verifier execution, and evaluation evidence.
-  - Own the test suite, CI coverage selection and the CI report.
-  - Own the workflow gate scripts that check the contract files, agent tooling and protected paths.
+  - "Own machine-verifiable checks, bounded verifier execution, and evaluation evidence."
+  - "Own the test suite, CI coverage selection and the CI report."
+  - "Own the workflow gate scripts that check the contract files, agent tooling and protected paths."
 source:
   include:
-    - "tests/**"
-    - "evals/**"
-    - "scripts/run-skill-evals.ts"
-    - "scripts/run-harness-profile-benchmark.ts"
-    - "scripts/validate-harness-profile-benchmark.ts"
-    - "scripts/verify-sprint.sh"
-    - "scripts/check-agent-tooling.sh"
-    - "bunfig.toml"
-    - ".github/**"
-    - "scripts/test-file-durations.json"
-    - "scripts/verification-plan.ts"
-    - "scripts/check-ci.sh"
-    - "scripts/check-protected-paths.ts"
-    - "scripts/select-ci-coverage.ts"
-    - "scripts/replay-ci-coverage.ts"
-    - "scripts/report-ci.ts"
-    - "scripts/select-test-suite.ts"
-    - "scripts/project-test-capabilities.ts"
-    - "scripts/ci-documentation-consumers.ts"
-    - "scripts/harness-trace-grade.sh"
+    - tests/**
+    - evals/**
+    - scripts/run-skill-evals.ts
+    - scripts/run-harness-profile-benchmark.ts
+    - scripts/validate-harness-profile-benchmark.ts
+    - scripts/verify-sprint.sh
+    - scripts/check-agent-tooling.sh
+    - bunfig.toml
+    - .github/**
+    - scripts/test-file-durations.json
+    - scripts/verification-plan.ts
+    - scripts/check-ci.sh
+    - scripts/check-protected-paths.ts
+    - scripts/select-ci-coverage.ts
+    - scripts/replay-ci-coverage.ts
+    - scripts/report-ci.ts
+    - scripts/select-test-suite.ts
+    - scripts/ci-documentation-consumers.ts
+    - scripts/harness-trace-grade.sh
   exclude:
-    - "tests/cli/adoption-plan.test.ts"
-    - "tests/fixtures/adoption/**"
-    - "tests/architecture-projection-provider.test.ts"
-    - "tests/cli/global-runtime-init.test.ts"
-    - "tests/cli/global-runtime.test.ts"
-    - "tests/cli/mcp-codegraph-contract.test.ts"
-    - "tests/cli/mcp-policy.test.ts"
-    - "tests/cli/mcp-reader-tools.test.ts"
-    - "tests/cli/mcp-tools.test.ts"
-    - "tests/cli/codegraph-resolver.test.ts"
+    - tests/cli/adoption-plan.test.ts
+    - tests/fixtures/adoption/**
+    - tests/architecture-projection-provider.test.ts
+    - tests/cli/global-runtime-init.test.ts
+    - tests/cli/global-runtime.test.ts
+    - tests/cli/mcp-codegraph-contract.test.ts
+    - tests/cli/mcp-policy.test.ts
+    - tests/cli/mcp-reader-tools.test.ts
+    - tests/cli/mcp-tools.test.ts
+    - tests/cli/codegraph-resolver.test.ts
   entrypoints:
     - id: entrypoint.evals-checks.primary
-      path: "src/effects/evidence/verification-execution.ts"
+      path: src/effects/evidence/verification-execution.ts
       symbols:
-        - name: "executeAdmittedVerification"
+        - name: executeAdmittedVerification
           sinks:
             - id: sink.evals-checks.prepare
-              path: "src/effects/evidence/verification-execution.ts"
-              symbol: "executePrepared"
-        - name: "executePrepared"
+              path: src/effects/evidence/verification-execution.ts
+              symbol: executePrepared
+        - name: executePrepared
           sinks:
             - id: sink.evals-checks.primary
-              path: "src/effects/evidence/verification-execution.ts"
-              symbol: "executeCheck"
+              path: src/effects/evidence/verification-execution.ts
+              symbol: executeCheck
 extensions:
-  harnessTier: "core"
+  harnessTier: core
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun run test:core"
-    - "bun run check:type"
+    - bun run test:core
+    - bun run check:type

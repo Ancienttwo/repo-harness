@@ -1,0 +1,50 @@
+schemaVersion: archcontext.flow/v1
+id: flow.architecture.helper-projection
+capabilityId: capability.runtime-harness.architecture
+name: Project the standalone capability resolver
+applicability: required
+participants:
+  - id: capability
+    nodeId: capability.runtime-harness.architecture
+  - id: projection
+    nodeId: component.architecture.helper-projection
+steps:
+  - id: build-resolver
+    from: capability
+    to: projection
+    label: Build the standalone resolver from scripts/capability-resolver.ts and the registry core
+    evidence:
+      entrypointId: entrypoint.architecture.helper-projection
+      sourceSymbol: main
+      sinkId: sink.architecture.capability-projection
+outcomes:
+  - id: success
+    kind: success
+    label: The resolver copy matches its source
+    steps:
+      - id: write-copies
+        from: capability
+        to: projection
+        label: Write a byte and mode identical resolver copy atomically
+        evidence:
+          entrypointId: entrypoint.architecture.helper-projection
+          sourceSymbol: main
+          sinkId: sink.architecture.projection-write
+    terminal:
+      participant: projection
+      label: The resolver copy equals its source
+  - id: error
+    kind: error
+    label: The resolver copy drifts or an unclassified helper file exists
+    steps:
+      - id: report-drift
+        from: capability
+        to: projection
+        label: Compare projected bytes and report drift in check mode
+        evidence:
+          entrypointId: entrypoint.architecture.helper-projection
+          sourceSymbol: main
+          sinkId: sink.architecture.projection-compare
+    terminal:
+      participant: capability
+      label: Exit non-zero without a partial projection

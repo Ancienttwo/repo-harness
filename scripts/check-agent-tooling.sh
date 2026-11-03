@@ -1890,23 +1890,27 @@ function bunExecutable() {
  * Node engine contract, bin.archctx and the binary. This probe runs that
  * function under Bun from the repo-harness package root and reports its
  * answer. The runnable command, with the resolved Node path, comes from
- * `repo-harness architecture-projection status --json`.
+ * `repo-harness architecture-projection status --json`. Without the
+ * architecture plugin in the recorded selection the probe loads no provider.
  */
 function detectManagedArchctx() {
   const unusable = (reason) => ({ status: "invalid", version: null, required_version: null, bin_path: null, node_range: null, reason, command_source: ARCHCTX_STATUS_COMMAND });
   const bun = bunExecutable();
   if (!bun) return unusable("bun is not available, so the managed archctx cannot be resolved");
   const script = [
-    "const [contracts, providers, consumerRoot] = process.argv.slice(1);",
-    "const { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } = await import(contracts);",
-    "registerArchitecturePorts((await import(providers)).ARCHITECTURE_PROVIDERS);",
+    "const [selection, contracts, providers, consumerRoot] = process.argv.slice(1);",
+    "const { readRecordedSelection, registerSelectedArchitecturePorts } = await import(selection);",
+    "const { architecturePort, isArchitectureUnavailable } = await import(contracts);",
+    "await registerSelectedArchitecturePorts(readRecordedSelection(), async () => (await import(providers)).ARCHITECTURE_PROVIDERS);",
     "const runtime = architecturePort('runtime');",
+    "if (isArchitectureUnavailable(runtime) && runtime.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED') { console.log(JSON.stringify({ ok: false, notSelected: true, reason: runtime.message })); process.exit(0); }",
     "if (isArchitectureUnavailable(runtime)) throw new Error(runtime.message);",
     "try { console.log(JSON.stringify({ ok: true, required: runtime.requiredArchctxVersion, resolved: runtime.resolvePackageLocalArchctx(consumerRoot) })); }",
     "catch (error) { console.log(JSON.stringify({ ok: false, required: runtime.requiredArchctxVersion, reason: error instanceof Error ? error.message : String(error) })); }",
   ].join("\n");
   const result = run(bun, [
     "-e", script,
+    path.join(PACKAGE_ROOT, "src", "cli", "installer", "architecture-selection.ts"),
     path.join(PACKAGE_ROOT, "src", "core", "architecture", "contracts.ts"),
     path.join(PACKAGE_ROOT, "src", "effects", "architecture", "providers.ts"),
     PACKAGE_ROOT,
@@ -1915,6 +1919,7 @@ function detectManagedArchctx() {
   if (!answer || typeof answer !== "object") {
     return unusable(`the provider resolution did not run: ${(result.error || result.stderr || result.stdout).trim().slice(0, 300) || `exit ${result.status}`}`);
   }
+  if (answer.notSelected) return { ...unusable(answer.reason), status: "not-selected" };
   if (!answer.ok) return { ...unusable(answer.reason), required_version: answer.required };
   return {
     status: "present",
@@ -1942,7 +1947,8 @@ function detectArchctx() {
   const versionOutput = versionResult?.ok ? versionResult.stdout.trim() : "";
   const pathVersion = versionOutput && !versionOutput.includes("\n") ? versionOutput : null;
   const warnings = [];
-  if (managed.status !== "present") {
+  if (managed.status === "not-selected") warnings.push(`Managed archctx is not loaded: ${managed.reason}.`);
+  else if (managed.status !== "present") {
     warnings.push(`Managed archctx is not usable: ${managed.reason}. Run repo-harness update.`);
   }
   if (pathBin && pathVersion !== managed.version) {

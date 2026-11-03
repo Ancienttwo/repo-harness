@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.notice
+kind: component
+name: Architecture Notice
+status: active
+parent: capability.runtime-harness.architecture
+layer: cli
+summary: "Selects, bounds and dedupes the architecture debt and archimap notice for SessionStart, Claude Stop and Codex or Pi UserPromptSubmit."
+responsibilities:
+  - "Selects, bounds and dedupes the architecture debt and archimap notice for SessionStart, Claude Stop and Codex or Pi UserPromptSubmit."
+source:
+  include:
+    - src/cli/hook/agent-notice.ts

@@ -3,7 +3,7 @@ id: component.global-runtime-reconciliation.archctx-closure-core
 kind: component
 name: ArchContext Closure (core)
 status: active
-parent: capability.runtime-harness.global-runtime-reconciliation
+parent: capability.runtime-harness.architecture
 layer: core
 summary: The core-layer files of ArchContext Closure. Responsibilities stay with the parent node.
 responsibilities:

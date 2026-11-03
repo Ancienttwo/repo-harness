@@ -34,7 +34,7 @@ import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
 import { buildToolsCommand, CODEGRAPH_DOCTOR_PROVIDER, CODEGRAPH_INIT_STEP, configureCodegraphMcpStep } from './commands/tools';
 import { registerArchitecturePorts } from '../core/architecture/contracts';
-import { ARCHITECTURE_PROVIDERS } from '../effects/architecture/providers';
+import { architectureSelected, assertArchitectureCommandSelected, declareArchitectureSelection, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
 import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
@@ -96,7 +96,7 @@ import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
 import { providerSkillLock } from '../effects/host-skill-roots';
 import {
   applyInstallSelection,
-  assertCodegraphPolicySelection,
+  assertArchitecturePolicySelection,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
   effectiveSkillRoots,
@@ -129,8 +129,31 @@ import {
 } from './commands/validators';
 import type { Location } from './installer/types';
 
-// Core reaches the architecture code only through these ports; registration checks the contract version.
-registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, codegraphDoctor: CODEGRAPH_DOCTOR_PROVIDER });
+// The recorded selection, read once per process. Core reaches the architecture code only through the ports.
+const architectureSelection = readRecordedSelection();
+let architectureRegistered = false;
+
+/**
+ * Loads and registers the architecture providers. The root calls it only for
+ * a selected plugin: at start for the recorded selection, and in install,
+ * update and candidate reconciliation when their plugin set adds it.
+ */
+/** Registers the architecture providers once; in-process tests of a selected plugin call it too. */
+export function registerArchitecturePlugin(): void {
+  if (architectureRegistered) return;
+  const { ARCHITECTURE_PROVIDERS } = require('../effects/architecture/providers') as typeof import('../effects/architecture/providers');
+  const { ARCHITECTURE_SETUP_PROVIDER } = require('./commands/architecture-setup') as typeof import('./commands/architecture-setup');
+  registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, setup: ARCHITECTURE_SETUP_PROVIDER, codegraphDoctor: CODEGRAPH_DOCTOR_PROVIDER });
+  architectureRegistered = true;
+}
+
+if (architectureSelected(architectureSelection)) registerArchitecturePlugin();
+else declareArchitectureSelection(architectureSelection);
+
+/** An architecture command stays in help; its handler checks the selection before any probe or write, then loads the plugin code. */
+function architectureCommand(command: Command, name: string = command.name()): Command {
+  return command.hook('preAction', () => assertArchitectureCommandSelected(architectureSelection, name));
+}
 
 /**
  * The plugin checks, setup steps and storage roots that core commands take as
@@ -278,6 +301,7 @@ function runTransactionalSelectionProjection(
     try {
       priorReceipts = readInstallState(transactionEnv)?.ownership_manifest ?? [];
       prepareInstallSelectionSwitch(selected.record, options.env);
+      if (plugins.includes('architecture')) registerArchitecturePlugin();
       result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...options, plugins, runtimeLock: lock });
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error);
@@ -422,6 +446,7 @@ export function runCandidateRuntimeReconciliation(
   const state = requireInstallState(env);
   const resolved = resolveRecordedSelection(state, request.target, env, { partial: !complete });
   const plugins = resolved.run;
+  if (plugins.includes('architecture')) registerArchitecturePlugin();
   // Stdout is the receipt; the parent shows this stderr in its reconcile step.
   for (const line of selectionLines(resolved)) console.error(line);
   const piSkillRoot = piSkillRootSnapshots(env);
@@ -560,7 +585,8 @@ export function runTransactionalRuntimeRefresh(
         recordedSelection = { state, resolved };
         plugins = resolved.run;
       }
-      assertCodegraphPolicySelection(options.cwd ?? process.cwd(), plugins, transactionEnv);
+      assertArchitecturePolicySelection(options.cwd ?? process.cwd(), plugins, transactionEnv);
+      if (plugins.includes('architecture')) registerArchitecturePlugin();
     } catch (error) {
       // Nothing outside the snapshot ran yet, so a restore is enough.
       restoreTransactionBytes(transaction, error);
@@ -632,7 +658,7 @@ async function runGlobalRuntimeBootstrap(
   const selection: PluginSelection = rawOpts.plugins === false ? [] : rawOpts.plugins === undefined ? 'all' : parsePluginList(rawOpts.plugins);
   const resolved = resolveRecordedSelection({ selection, plugins: current?.plugins ?? [] }, target);
   const { run: plugins, record } = resolved;
-  assertCodegraphPolicySelection(process.cwd(), plugins);
+  assertArchitecturePolicySelection(process.cwd(), plugins);
   const basePlan = planInstallSelection(selection, resolved, current, process.env);
   const plan = { ...basePlan,
     pi_package: planPiPackage(basePlan.pi_package.source, plugins.includes('pi') && target === 'both' && rawOpts.hooks !== false),
@@ -861,7 +887,7 @@ export function buildProgram(): Command {
         mode,
         env,
       };
-      const result = runInit(CLI_PORTS.init, common);
+      const result = runInit(CLI_PORTS.init, { ...common, plugins: recordedPlugins(architectureSelection) });
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -1029,7 +1055,13 @@ export function buildProgram(): Command {
       process.exit(rawOpts.strict === true && strictFailure ? 1 : 0);
     });
 
-  program.addCommand(buildToolsCommand());
+  const tools = buildToolsCommand();
+  for (const group of ['ensure', 'configure']) {
+    const codegraph = tools.commands.find(command => command.name() === group)?.commands.find(command => command.name() === 'codegraph');
+    if (!codegraph) throw new Error(`tools ${group} codegraph is not defined`);
+    architectureCommand(codegraph, `tools ${group} codegraph`);
+  }
+  program.addCommand(tools);
   program.addCommand(buildHerdrCommand());
   program.addCommand(buildEventsCommand());
   program.addCommand(buildBrainCommand());
@@ -1045,9 +1077,9 @@ export function buildProgram(): Command {
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
-  program.addCommand(buildRefactorCommand());
-  program.addCommand(buildArchitectureProjectionCommand());
-  program.addCommand(buildArchitectureDebtCommand());
+  program.addCommand(architectureCommand(buildRefactorCommand()));
+  program.addCommand(architectureCommand(buildArchitectureProjectionCommand()));
+  program.addCommand(architectureCommand(buildArchitectureDebtCommand()));
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
   program.addCommand(buildSeatsCommand());

@@ -29,14 +29,32 @@ BUN_TEST_SUITE=full
 
 source "$ROOT/scripts/lib/ci-run-tests.sh"
 
-# Runs "$@" with a private HOME that enables the archctx provider without
-# touching the caller's global configuration. It first builds or syncs the
-# CodeGraph index at HEAD, which supplies the code facts. The architecture
-# commands write no repository files.
+# Records an install selection with the architecture plugin in the private
+# HOME $1. The repository policy sets capability_source archcontext, which
+# needs that plugin; without a recorded selection the plugin is not loaded.
+record_architecture_selection() {
+  mkdir -p "$1/.repo-harness"
+  bun -e 'const version = (await Bun.file("package.json").json()).version; await Bun.write(process.argv[1], `${JSON.stringify({ protocol: 3, core: { version }, plugins: [{ id: "architecture", version }], selection: ["architecture"], transaction_id: "ci", applied_at: new Date(0).toISOString(), ownership_manifest: [], previous: null })}\n`);' "$1/.repo-harness/install-state.json"
+}
+
+# Runs "$@" with a private HOME that selects the architecture plugin.
+with_architecture_selection() {
+  local selection_home status=0
+  selection_home="$(mktemp -d /tmp/rh-arch-selection-XXXXXX)"
+  record_architecture_selection "$selection_home"
+  HOME="$selection_home" "$@" || status=$?
+  rm -rf "$selection_home"
+  return "$status"
+}
+
+# Runs "$@" with a private HOME that selects the architecture plugin and
+# enables the archctx provider without touching the caller's global
+# configuration. It first builds or syncs the CodeGraph index at HEAD, which
+# supplies the code facts. The architecture commands write no repository files.
 with_architecture_home() {
   local arch_home status=0
   arch_home="$(mktemp -d /tmp/rh-arch-home-XXXXXX)"
-  mkdir -p "$arch_home/.repo-harness"
+  record_architecture_selection "$arch_home"
   printf '%s\n' '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_timeout_ms":600000}}' > "$arch_home/.repo-harness/config.json"
   if [[ -d .codegraph ]]; then
     HOME="$arch_home" npm exec --no -- codegraph sync -q . </dev/null >/dev/null || status=$?
@@ -215,7 +233,7 @@ if [[ "$lane" == all || "$lane" == governance ]]; then
   echo "[ci] context files"
   bash scripts/check-context-files.sh
   echo "[ci] context map"
-  bun run check:context-map
+  with_architecture_selection bun run check:context-map
 
   echo "[ci] repository inspection"
   bun scripts/inspect-project-state.ts --repo . --format text >/dev/null

@@ -196,13 +196,13 @@ test('configuration writes preserve sibling sections and reject invalid input or
   const { configureBrainRoot } = await import('../../src/cli/commands/brain-root');
   const { ensureGlobalArchitectureProjection } = await import('../../src/cli/commands/architecture-configuration');
   const { applyAgentsSettings } = await import('../../src/effects/configuration/agents-configuration');
-  const { readGlobalConfiguration, mutateGlobalConfiguration } = await import('../../src/effects/configuration/global-configuration');
+  const { globalConfigurationWriter, readGlobalConfiguration, mutateGlobalConfiguration } = await import('../../src/effects/configuration/global-configuration');
   fixture((home, env) => {
     const path = join(home, '.repo-harness/config.json');
     mkdirSync(join(home, '.repo-harness'));
     writeFileSync(path, JSON.stringify({ security: { mode: 'strict' } }));
     configureBrainRoot(join(home, 'brain'), env);
-    expect(ensureGlobalArchitectureProjection(env).status).toBe('ok');
+    expect(ensureGlobalArchitectureProjection(env, globalConfigurationWriter(env)).status).toBe('ok');
     const before = readGlobalConfiguration(env);
     // A review use is a valid agents write; a new docs use is refused while no runtime has verified docs isolation.
     applyAgentsSettings({ expected_revision: before.revision, changes: [{ runtime: 'codex', enabled: true, uses: ['review'] }] }, ['codex'], env);

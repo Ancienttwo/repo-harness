@@ -3,7 +3,7 @@ id: component.global-runtime-reconciliation.archctx-closure-scripts
 kind: component
 name: ArchContext Closure (scripts)
 status: active
-parent: capability.runtime-harness.global-runtime-reconciliation
+parent: capability.runtime-harness.architecture
 layer: scripts
 summary: The scripts-layer files of ArchContext Closure. Responsibilities stay with the parent node.
 responsibilities:

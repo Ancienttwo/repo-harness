@@ -10,8 +10,9 @@ export function boundedHookDiagnostic(text: string): string {
 }
 
 /**
- * The architecture notice at SessionStart, `inbox` and Stop. Without a
- * provider the hook gives no notice and one visible diagnostic.
+ * The architecture notice at SessionStart, `inbox` and Stop. An unselected
+ * plugin gives no notice and no diagnostic. Any other missing provider, an
+ * unreadable selection included, gives no notice and one visible diagnostic.
  */
 export function collectArchitectureNotice(
   repoRoot: string,
@@ -20,6 +21,7 @@ export function collectArchitectureNotice(
   point?: AgentNoticePoint,
 ): AgentNotice {
   const notice = architecturePort('notice');
+  if (isArchitectureUnavailable(notice) && notice.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED') return {};
   if (isArchitectureUnavailable(notice)) return { diagnostics: `${boundedHookDiagnostic(`repo-harness: architecture notice unavailable: ${notice.message}`)}\n` };
   return notice.collect(repoRoot, ownership, options, point);
 }

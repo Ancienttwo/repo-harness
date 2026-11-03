@@ -529,7 +529,6 @@ export const CAPABILITY_SOURCE_MODES = ["registry", "archcontext"] as const;
 
 export type CapabilitySourceMode = (typeof CAPABILITY_SOURCE_MODES)[number];
 
-/** One `archctx resolve --paths-from` result, reduced to the fields this registry reads. */
 /** One capability that owns some of the resolved implementation paths. */
 export interface CapabilityOwnershipEntry {
   readonly id: string;
@@ -551,6 +550,7 @@ export interface CapabilityOwnership {
   readonly unowned_paths: readonly string[];
 }
 
+/** One `archctx resolve --paths-from` result, reduced to the fields this registry reads. */
 export interface ArchcontextPathOwner {
   readonly path: string;
   readonly matched: boolean;

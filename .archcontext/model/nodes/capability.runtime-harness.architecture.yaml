@@ -1,0 +1,63 @@
+schemaVersion: archcontext.node/v2
+id: capability.runtime-harness.architecture
+kind: capability
+name: Architecture
+status: active
+layer: effects
+summary: "The Architecture plugin: the package-local archctx closure, the architecture reads, the projection, debt and setup commands, the hook notice, the architecture Checks and the architecture skills."
+responsibilities:
+  - "Run the pinned package-local archctx on a trusted Node runtime, and apply and check the architecture projection."
+  - "Provide the ownership, display, notice, runtime, setup and CodeGraph doctor ports that core reads; the roots register them only when the install selection includes architecture."
+  - "Own the architecture-projection and architecture-debt commands, the archctx part of the managed runtime readback and the global architecture projection configuration."
+  - Resolve path ownership under capability_source archcontext and keep the resolve answer cache of a worktree.
+  - "Own the state-boundaries Check, the test capability projection Check and the standalone capability resolver projection."
+  - Own the repo-harness-architecture and repo-harness-archimap skills.
+source:
+  include:
+    - src/effects/architecture/**
+    - src/core/architecture/projection.ts
+    - src/cli/hook/agent-notice.ts
+    - scripts/axr5-archctx-clean-room.ts
+    - scripts/check-state-boundaries.ts
+    - scripts/project-test-capabilities.ts
+    - scripts/sync-helper-sources.ts
+    - assets/skills/repo-harness-archimap/**
+    - assets/skill-commands/repo-harness-architecture/**
+    - docs/verification/**
+  exclude:
+    - src/effects/architecture/capability-resolver.ts
+    - src/effects/architecture/model-reader.ts
+  entrypoints:
+    - id: entrypoint.architecture.helper-projection
+      path: scripts/sync-helper-sources.ts
+      symbols:
+        - name: main
+          sinks:
+            - id: sink.architecture.capability-projection
+              path: scripts/sync-helper-sources.ts
+              symbol: buildCapabilityProjection
+            - id: sink.architecture.projection-write
+              path: src/effects/source-projection.ts
+              symbol: writeProjectionFileAtomic
+            - id: sink.architecture.projection-compare
+              path: src/effects/source-projection.ts
+              symbol: sameProjectionBytes
+    - id: entrypoint.architecture.writer
+      path: src/cli/commands/architecture-projection-actions.ts
+      symbols:
+        - name: publish
+          sinks:
+            - id: sink.architecture.writer
+              path: src/effects/architecture/projection-writer.ts
+              symbol: runArchitectureWriter
+extensions:
+  harnessTier: plugin
+  harnessContract: Check
+  contractFiles:
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
+  verification:
+    - bun run check:state-boundaries
+    - bun run check:helpers
+    - bun run test:files tests/architecture-projection-provider.test.ts tests/architecture-debt.test.ts tests/agent-notice.test.ts tests/capability-archcontext-source.test.ts --timeout 60000 --max-concurrency 1

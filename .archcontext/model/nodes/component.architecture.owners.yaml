@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.owners
+kind: component
+name: ArchContext Path Owners
+status: active
+parent: capability.runtime-harness.architecture
+layer: effects
+summary: Resolves path ownership through archctx resolve and caches the answers of one worktree model.
+responsibilities:
+  - Resolves path ownership through archctx resolve and caches the answers of one worktree model.
+source:
+  include:
+    - src/effects/architecture/archcontext-owners.ts
+    - src/effects/architecture/archcontext-resolve-cache.ts
