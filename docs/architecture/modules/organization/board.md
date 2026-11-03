@@ -1,6 +1,6 @@
 # organization/board 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ac21891f3883bad0b09743221b4ae6fe11a6975825981c3afeaa8bb32cb58151" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c4073e30abef21960749c66b779dcbff56f33c92974a6a72f265ff5525d33c2e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.board`(kind `capability`)
 > **Matched Prefixes**:`src/core/board/**`、`src/effects/board/**`、`src/cli/commands/board.ts`
@@ -60,6 +60,7 @@ flowchart LR
 
 - `depends-on` ← `capability.verification.evals-checks` — Test Board behavior through its source modules
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the board command
+- `depends-on` ← `capability.runtime-harness.operator` — Serve and show the board of one parent issue: decode the board CLI output and evaluate the attention rules in the browser.
 - `depends-on` ← `capability.runtime-harness.task-agent-host` — Implement the board host port: seat terminals by parent label and the hc version
 
 組件出向關係:
