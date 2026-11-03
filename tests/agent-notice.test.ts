@@ -4,7 +4,8 @@ import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { ERROR_CATALOG } from 'archctx-contracts';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
-import { checkpointArchitectureDebt, type ArchctxProviderOptions } from '../src/effects/architecture/archctx-provider';
+import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
+import type { ArchctxProviderOptions } from '../src/core/architecture/projection';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, registryProjectedFixture, unignoreNoticeState, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';
@@ -61,7 +62,7 @@ describe('AgentNotice', () => {
         expect(options.env).toBe(env);
         expect(options.timeoutMs).toBe(3_000);
         const paths = args[0] === 'resolve' ? readFileSync(args[2]!, 'utf8').trim().split('\n') : [];
-        const data = args[0] === 'resolve' ? { results: paths.map(path => ({ path, matched: true, ambiguous: false, owningCapabilityId: NOTICE_CAPABILITY })) } : report;
+        const data = args[0] === 'resolve' ? { results: paths.map(path => ({ path, matched: true, ambiguous: false, stableId: NOTICE_CAPABILITY, owningCapabilityId: NOTICE_CAPABILITY })) } : report;
         return { status: 0, signal: null, stdout: JSON.stringify({ schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: args[0], data }), stderr: '' };
       },
     });

@@ -89,6 +89,19 @@ export class ArchctxClientError extends Error {
 
 export type NativeContextSource = { readonly kind: 'worktree' } | { readonly kind: 'ref'; readonly commit: string };
 
+export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
+export type RunArchctxProcess = (binary: string, args: readonly string[], options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }) => ArchctxProcessResult;
+
+export interface ArchctxProviderOptions {
+  consumerRoot?: string;
+  policy?: ArchitectureProjectionPolicy;
+  env?: NodeJS.ProcessEnv;
+  run?: RunArchctxProcess;
+  trustedNodeCandidateSource?: () => readonly string[];
+  deadlineMs?: number;
+  nowMs?: () => number;
+}
+
 /** Validate the provider contract and bind its snapshot to the requested source. */
 export function decodeNativeContextExport(value: unknown, source: NativeContextSource): NativeContextExportV1 {
   try {

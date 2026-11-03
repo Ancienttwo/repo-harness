@@ -3,7 +3,7 @@ import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSyn
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
-import { readArchitectureNativeContext } from '../src/effects/architecture/archctx-provider';
+import { readArchitectureNativeContext } from '../src/effects/architecture/architecture-read';
 import { readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from '../src/effects/architecture/archcontext-owners';
 import { buildArchContextNodesV2, findMatch, type ArchContextNodeV2 } from '../scripts/capability-resolver';
 import { type Capability, type CapabilityRegistry } from '../src/core/capabilities/registry';

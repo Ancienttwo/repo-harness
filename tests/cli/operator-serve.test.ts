@@ -11,7 +11,7 @@ import { spyOn } from 'bun:test';
 import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { readArchitecture, readHistory } from '../../src/effects/operator/architecture';
-import type { ArchctxProcessResult } from '../../src/effects/architecture/archctx-provider';
+import type { ArchctxProcessResult } from '../../src/core/architecture/projection';
 import { ARCHITECTURE_FAILURES } from '../../src/core/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';

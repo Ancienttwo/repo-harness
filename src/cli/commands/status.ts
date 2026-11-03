@@ -30,6 +30,7 @@ import {
   readLegacyInstalledProfileForMigration,
 } from '../installer/install-profile';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
+import { architectureModelReady } from '../../effects/architecture/architecture-read';
 import type { ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
 import { WORKFLOW_CONTRACT_MARKER_PATH } from '../../core/adoption/minimum-harness-version';
 import { gitExecFileSync } from '../../effects/git/runner';
@@ -239,7 +240,7 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
   let architectureProjection: StatusReport['architectureProjection'];
   if (repoRoot && repo.optIn) {
     try {
-      architectureProjection = inspectArchitectureProjectionReadiness(repoRoot);
+      architectureProjection = inspectArchitectureProjectionReadiness(repoRoot, architectureModelReady);
     } catch (error) {
       architectureProjection = { error: error instanceof Error ? error.message : String(error) };
     }

@@ -19,7 +19,7 @@ import {
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
 import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../architecture/archcontext-owners';
 import { archcontextResolveFileCache } from '../architecture/archcontext-resolve-cache';
-import { ArchctxClientError, type ArchctxProviderOptions } from '../architecture/archctx-provider';
+import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
 import type {
   CapabilityOwnership,
   EffectiveState,

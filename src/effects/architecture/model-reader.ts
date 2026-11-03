@@ -4,12 +4,12 @@ import type { DocsAnchorsReportV1, NativeContextExportV1 } from 'archctx-contrac
 import { capabilityRegistryFromNativeContext, archcontextNodeId, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { generatedSummaryState, moduleDetail, ModuleReadError, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
 import { buildModuleReviewPrompt, moduleStaleCitations, sha256, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
-import type { GeneratedSummaryFreshness } from '../../core/architecture/projection';
+import { ArchctxClientError, type ArchctxProviderOptions, type GeneratedSummaryFreshness } from '../../core/architecture/projection';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { repoHarnessRepoIdFor } from '../repo-registry';
 import { resolveArchcontextCapabilityPaths } from './archcontext-owners';
-import { ARCHCONTEXT_MANIFEST, ArchctxClientError, readArchitectureNativeContext, type ArchctxProviderOptions } from './archctx-provider';
+import { ARCHCONTEXT_MANIFEST, readArchitectureNativeContext } from './architecture-read';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { gitExecFileSync } from '../git/runner';
 
