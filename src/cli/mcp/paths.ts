@@ -1,4 +1,4 @@
-import { existsSync, realpathSync } from 'fs';
+import { existsSync, lstatSync, realpathSync } from 'fs';
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import type { McpPathDecision, McpPathIntent, McpPolicy } from './types';
 
@@ -72,14 +72,26 @@ export function isPathInside(parent: string, child: string): boolean {
   );
 }
 
+function hasEntry(path: string): boolean {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
+  } catch (error) {
+    // A path below a regular file has no entry; the walk continues to that file.
+    if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') return false;
+    throw error;
+  }
+}
+
+// lstatSync does not follow links, so a dangling parent link is the nearest
+// entry. It has no real path, so the caller refuses the path.
 function nearestExistingPath(path: string): string | undefined {
   let current = path;
-  while (!existsSync(current)) {
+  while (!hasEntry(current)) {
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
   }
-  return current;
+  return existsSync(current) ? current : undefined;
 }
 
 export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpPolicy, intent: McpPathIntent): McpPathDecision {

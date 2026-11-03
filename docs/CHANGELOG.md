@@ -41,7 +41,8 @@ All notable changes to this skill are documented here.
   Assessment, with `state` `present`, `absent` or `invalid`. An invalid record
   carries `check_record_invalid` and the decoder message. A record that is a
   link, is not a regular file, is too large or resolves outside the
-  repository is `invalid`. The `message` of a `fail` record is redacted. The
+  repository is `invalid`. On win32 there is no `O_NOFOLLOW`, so a record
+  that is a link to another file in the repository is read. The `message` of a `fail` record is redacted. The
   planner profile can no longer list or read `.ai/harness/handoff/**` and
   `.ai/harness/checks/**` through `list_workflow_files` and
   `read_workflow_file`; `read_workflow_file` returns `POLICY_DENIED` for them.

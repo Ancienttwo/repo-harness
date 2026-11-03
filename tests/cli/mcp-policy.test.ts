@@ -157,6 +157,14 @@ describe('mcp policy and paths', () => {
       const decision = resolveMcpPath(tmp, 'docs/prds/linked.md', policy, 'read');
       expect(decision.ok).toBe(false);
       expect(decision.reason).toContain('escapes repository root');
+
+      symlinkSync(join(outside, 'missing-dir'), join(tmp, 'docs/prds', 'dangdir'));
+      const danglingWrite = resolveMcpPath(tmp, 'docs/prds/dangdir/x.prd.md', policy, 'write');
+      expect(danglingWrite.ok).toBe(false);
+      expect(danglingWrite.reason).toContain('path cannot be resolved');
+      const danglingRead = resolveMcpPath(tmp, 'docs/prds/dangdir/x.prd.md', policy, 'read');
+      expect(danglingRead.ok).toBe(false);
+      expect(danglingRead.reason).toContain('path does not exist');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
