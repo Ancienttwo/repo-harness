@@ -4,10 +4,10 @@ kind: "capability"
 name: "Workflow State"
 status: "active"
 layer: "effects"
-summary: "Resolves deterministic Effective State, provider issue and admitted session board observations, worktree safety and the continuation ledger."
+summary: "Resolves deterministic Effective State, worktree safety and the continuation ledger."
 responsibilities:
   - "Project repository workflow artifacts into one deterministic Effective State. No local task snapshot is a state authority."
-  - "Join stored canonical provider issue observations to every exact admitted session binding. Preserve exact worktree cleanup; task mutex ownership belongs to Execution Primitives."
+  - "Preserve exact worktree cleanup; task mutex ownership belongs to Execution Primitives."
   - "Own the continuation envelope and the append-only attempt ledger with its no-progress breaker."
   - "Keep src/core/state and src/core/workflow pure. Effects do IO under directory locks."
   - "Project state snapshots without local task-file or contract fields. Resolve recovery paths without review or notes directory policy keys."
@@ -56,17 +56,6 @@ source:
             - id: "sink.workflow-state.git-common-dir"
               path: "src/effects/git/common-directory.ts"
               symbol: "resolveGitCommonDirectory"
-    - id: "entrypoint.workflow-state.board"
-      path: "src/effects/state/collect-provider-board-inputs.ts"
-      symbols:
-        - name: "resolveProviderBoard"
-          sinks:
-            - id: "sink.workflow-state.board-inputs"
-              path: "src/effects/state/collect-provider-board-inputs.ts"
-              symbol: "collectProviderBoardInputs"
-            - id: "sink.workflow-state.board-projection"
-              path: "src/core/state/provider-board.ts"
-              symbol: "projectProviderBoard"
 extensions:
   harnessTier: "core"
   contractFiles:
@@ -76,4 +65,4 @@ extensions:
   verification:
     - "bun run check:type"
     - "bun run check:state-boundaries"
-    - "bun run test:files tests/state/cli-state-golden.test.ts tests/state/state-concurrency.test.ts tests/state/state-effects.test.ts tests/state/adapter-parity.test.ts tests/effective-state.test.ts tests/coordination-lease-store.test.ts tests/unit/provider-board.test.ts tests/board-slice.test.ts tests/provider-board-state-boundary.test.ts tests/continuation-envelope.test.ts tests/cli/state-command.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/state/cli-state-golden.test.ts tests/state/state-concurrency.test.ts tests/state/state-effects.test.ts tests/state/adapter-parity.test.ts tests/effective-state.test.ts tests/coordination-lease-store.test.ts tests/continuation-envelope.test.ts tests/cli/state-command.test.ts --timeout 60000 --max-concurrency 1"
