@@ -329,8 +329,9 @@ function boundaryCounted(path: string): boolean {
  * R5: the counted paths of an open pull request have two or more owning
  * capabilities, and an item that it closes or refs has a tier label below
  * High. A change across more than one capability boundary sets High. A
- * counted path with no single owner leaves the rule unevaluated, unless the
- * owned paths already reach two capabilities.
+ * counted path with no single owner (unowned or ambiguous) is never dropped:
+ * below two owned capabilities it leaves the rule unevaluated, and from two
+ * owned capabilities the finding lists it (#1623 decision on round 1).
  */
 function r5(context: Context): void {
   const owners = context.board.path_owners;
@@ -343,17 +344,20 @@ function r5(context: Context): void {
     }
     const counted = pr.files.filter(boundaryCounted).map(path => byPath.get(path)!);
     const capabilities = [...new Set(counted.flatMap(owner => (owner.status === 'owned' ? [owner.capability] : [])))].sort();
+    // Every R5 entry of the pull request names each unknown path with its status.
+    const unknown = counted.flatMap(owner => (owner.status === 'owned' ? [] : [`${owner.path} (${owner.status})`]));
     if (capabilities.length < 2) {
-      const undetermined = counted.filter(owner => owner.status !== 'owned');
-      if (undetermined.length > 0) skip(context, 'R5', 'owner_undetermined', `#${pr.number} ${undetermined.map(owner => `${owner.path} (${owner.status})`).join(' ')}`);
+      if (unknown.length > 0) skip(context, 'R5', 'owner_undetermined', `#${pr.number} ${unknown.join(' ')}`);
       continue;
     }
+    // An unknown path can only add a capability, so two owned capabilities already make the High signal certain.
     const items = itemsOf(context.board, pr).map(number => context.board.items.find(item => item.number === number)!);
-    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R5', 'tier_label_missing', `#${pr.number} #${item.number}`);
+    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R5', 'tier_label_missing', [`#${pr.number} #${item.number}`, ...unknown].join(' '));
     const below = items.filter(item => item.tier === 'low' || item.tier === 'medium');
     if (below.length > 0) {
+      const paths = unknown.length === 0 ? '' : ` and ${unknown.length} path${unknown.length === 1 ? '' : 's'} with no single owner (${unknown.join(', ')})`;
       find(context, 'R5', { issues: below.map(item => item.number), pull_requests: [pr.number] },
-        `#${pr.number} changes ${capabilities.length} capabilities (${capabilities.join(', ')}), a High signal, but ${below.map(item => `#${item.number} is tier:${item.tier}`).join(', ')}`);
+        `#${pr.number} changes ${capabilities.length} capabilities (${capabilities.join(', ')})${paths}, a High signal, but ${below.map(item => `#${item.number} is tier:${item.tier}`).join(', ')}`);
     }
   }
 }

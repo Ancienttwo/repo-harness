@@ -140,8 +140,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   ]);
   // t4 has no seat label: the board does not guess its seat. The plan comment has no block, so R1 and R4 wait.
   // #1494 and #1499 change `.github/` and their items carry no tier label, so R3 waits.
-  // #1494 and #1499 change several capabilities, so R5 waits too. #1491 changes one capability and its own
-  // model node file (owned by contract-assets), which R5 does not count.
+  // #1494 and #1499 change several capabilities, so R5 waits too, and names their unowned paths. #1491 changes
+  // one capability and its own model node file (owned by contract-assets), which R5 does not count.
   expect(attention.unevaluated.map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
@@ -149,8 +149,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['R3', 'tier_label_missing', '#1494 #1479'],
     ['R3', 'tier_label_missing', '#1499 #1476'],
     ['R4', 'plan_unavailable', null],
-    ['R5', 'tier_label_missing', '#1494 #1479'],
-    ['R5', 'tier_label_missing', '#1499 #1476'],
+    ['R5', 'tier_label_missing', '#1494 #1479 .ai/harness/policy.json (unowned) src/effects/terminal/herdr-decision.ts (unowned)'],
+    ['R5', 'tier_label_missing', '#1499 #1476 .ai/harness/policy.json (unowned) src/core/sessions/task-sessions.ts (unowned)'],
   ]);
 });
 
@@ -285,14 +285,21 @@ test('one hit for each rule that the recorded state does not trigger', () => {
   ]);
 });
 
-test('R5: two owning capabilities among the counted paths are a High signal; one owner, an unowned or ambiguous path or no archctx answer is not', () => {
-  // Recorded owners: task-agent-host, operator.
-  const [task, operator] = ['src/effects/terminal/task-session.ts', 'src/operator-web/i18n.ts'];
-  const r5 = (files: string[], options: Replay = {}): string[] => {
+test('R5: two owning capabilities among the counted paths are a High signal; an unowned or ambiguous path is always reported', () => {
+  // Recorded owners: task-agent-host, operator; .ai/harness/policy.json is unowned. task-sessions.ts is made ambiguous below.
+  const [task, operator, unowned, ambiguous] = ['src/effects/terminal/task-session.ts', 'src/operator-web/i18n.ts', '.ai/harness/policy.json', 'src/core/sessions/task-sessions.ts'];
+  const edit = (path: string, result: Json) => (results: Json[]) => {
+    const index = results.findIndex(entry => entry.path === path);
+    results.splice(index === -1 ? results.length : index, index === -1 ? 0 : 1, { path, matched: false, ambiguous: false, owningCapabilityId: null, ...result });
+  };
+  const makeAmbiguous = edit(ambiguous, { ambiguous: true, candidates: ['capability.a.b', 'capability.c.d'] });
+  // `tier` null: #1476 has no tier label. `incomplete`: the read returns fewer files than the PR changes.
+  const r5 = (files: string[], options: Replay = {}, tier: string | null = 'tier:low', incomplete = false): string[] => {
     const attention = evaluateBoardAttention(replay({
       ...options,
-      parent: (data) => { issueNode(data, 1476).labels.nodes.push({ name: 'tier:low' }); },
-      pulls: (data) => { data.repository.pr1499.files = { totalCount: files.length, nodes: files.map(path => ({ path })) }; },
+      owners: (results) => { makeAmbiguous(results); options.owners?.(results); },
+      parent: (data) => { if (tier !== null) issueNode(data, 1476).labels.nodes.push({ name: tier }); },
+      pulls: (data) => { data.repository.pr1499.files = { totalCount: files.length + (incomplete ? 1 : 0), nodes: files.map(path => ({ path })) }; },
     }));
     return [
       ...attention.findings.filter(finding => finding.rule === 'R5' && finding.pull_requests.includes(1499)).map(finding => finding.message),
@@ -301,27 +308,34 @@ test('R5: two owning capabilities among the counted paths are a High signal; one
         .map(entry => `${entry.reason}: ${entry.subject}`),
     ];
   };
-  const hit = '#1499 changes 2 capabilities (capability.runtime-harness.operator, capability.runtime-harness.task-agent-host), a High signal, but #1476 is tier:low';
-  const edit = (path: string, result: Json) => ({ owners: (results: Json[]) => {
-    const index = results.findIndex(entry => entry.path === path);
-    results.splice(index === -1 ? results.length : index, index === -1 ? 0 : 1, { path, matched: false, ambiguous: false, owningCapabilityId: null, ...result });
-  } });
+  const capabilities = '2 capabilities (capability.runtime-harness.operator, capability.runtime-harness.task-agent-host)';
+  const hit = (paths = '') => `#1499 changes ${capabilities}${paths}, a High signal, but #1476 is tier:low`;
   const timedOut: RunArchctxProcess = () => ({ status: null, signal: null, stdout: '', stderr: '', timedOut: true });
   const rejected: RunArchctxProcess = () => ({ status: 1, signal: null, stdout: JSON.stringify(errorEnvelope('resolve', 'AC_SCHEMA_INVALID', 'boom')), stderr: '' });
-  for (const [files, options, expected] of [
-    [[task, operator], {}, [hit]],
+  // Owned capabilities {0, 1, 2} x unknown path {none, unowned, ambiguous}: every unknown path is in the result.
+  const owned = [['tests/herdr-task-lifecycle.test.ts'], [task], [task, operator]] as const;
+  const grid: Record<string, readonly string[][]> = {
+    none: [[], [], [hit()]],
+    [unowned]: [0, 1].map(() => [`owner_undetermined: #1499 ${unowned} (unowned)`]).concat([[hit(` and 1 path with no single owner (${unowned} (unowned))`)]]),
+    [ambiguous]: [0, 1].map(() => [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]).concat([[hit(` and 1 path with no single owner (${ambiguous} (ambiguous))`)]]),
+  };
+  for (const [path, expected] of Object.entries(grid)) {
+    for (const [count, files] of owned.entries()) expect(r5([...files, ...(path === 'none' ? [] : [path])])).toEqual(expected[count]!);
+  }
+  for (const [files, options, expected, tier, incomplete] of [
     // The recorded ambiguity of admitted-task-context.ts is between two components of the operator capability.
-    [[task, 'src/core/operator/admitted-task-context.ts'], {}, [hit]],
-    [[task, operator, '.ai/harness/policy.json'], {}, [hit]],
+    [[task, 'src/core/operator/admitted-task-context.ts'], {}, [hit()]],
+    [[task, operator, unowned, ambiguous], {}, [hit(` and 2 paths with no single owner (${unowned} (unowned), ${ambiguous} (ambiguous))`)]],
+    // Without a tier label, the unevaluated entry names the unknown path too.
+    [[task, operator, unowned], {}, [`tier_label_missing: #1499 #1476 ${unowned} (unowned)`], null],
+    [[task, operator, unowned], {}, [], 'tier:high'],
+    [[task, operator], {}, ['files_incomplete: #1499'], 'tier:low', true],
     // Tests, docs, the model and root Markdown do not count; each has another recorded owner.
     [[task, 'src/effects/terminal/herdr.ts', 'tests/herdr-task-lifecycle.test.ts', 'docs/spec.md', '.archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml', 'README.md'],
-      edit('README.md', { matched: true, owningCapabilityId: 'capability.public-surface.root-router' }), []],
-    [[task, '.ai/harness/policy.json'], {}, ['owner_undetermined: #1499 .ai/harness/policy.json (unowned)']],
-    [[task, 'src/core/sessions/task-sessions.ts'], edit('src/core/sessions/task-sessions.ts', { ambiguous: true, candidates: ['capability.a.b', 'capability.c.d'] }),
-      ['owner_undetermined: #1499 src/core/sessions/task-sessions.ts (ambiguous)']],
+      { owners: edit('README.md', { matched: true, owningCapabilityId: 'capability.public-surface.root-router' }) }, []],
     [[task, operator], { archctx: timedOut }, ['RH_ARCHCTX_TIMEOUT: null']],
     [[task, operator], { archctx: rejected }, ['ARCHCONTEXT_MODEL_REJECTED: null']],
-  ] as const) expect(r5([...files], options)).toEqual([...expected]);
+  ] as const) expect(r5([...files], options, tier, incomplete)).toEqual([...expected]);
 });
 
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
