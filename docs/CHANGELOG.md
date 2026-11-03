@@ -2,7 +2,96 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.25.4] - 2026-11-04
+
+This release has breaking changes. Install state is protocol 3 (core plus
+plugins, no install profile), the orchestrator is a seat that may call only
+read-only sub-agents, the old fleet board stack and the Fleet snapshot are
+removed, and the claim field `Seat:` is now `Role:`.
+
+### Upgrade
+
+- Install the new CLI directly, then update. A 0.25.x CLI before 0.25.4
+  cannot run the cutover, because it cannot read protocol 3 after the
+  candidate returns. This holds for every 0.25.x start point:
+
+  ```bash
+  bun add -g repo-harness@0.25.4 --no-cache
+  repo-harness update
+  ```
+
+  `update` migrates the protocol 2 state to protocol 3 once, under the install
+  transaction. `repo-harness update --check` prints the mapping first and
+  writes nothing. A `full` state becomes the selection `"all"`. A `minimal`
+  state becomes the explicit list `platform`, `strategy-memory`, plus the
+  owners of its recorded surfaces. Either one gets `dsh` only when a DSH
+  profile declares the repo-harness bundle. A `minimal` state that records a
+  Pi package maps to a list with `pi`; when `pi` is not on `PATH`, the
+  migration refuses before any write with `install_plugin_unavailable`.
+  Install Pi and run `repo-harness update` again, or use the rollback below. A former minimal install gains the
+  core surfaces, and the plan lists each one. Issue #1607 deletes this one-shot
+  in 0.26.0; after that, protocol 2 gets `install_state_protocol_retired`.
+  The one-shot commits `previous: null`. When the refresh in the same update
+  changes the state, it records the migrated state as `previous`, so
+  `repo-harness install --rollback` restores the migrated selection. An install
+  or update that changes nothing writes nothing: the state bytes and
+  `previous` stay. (#1625)
+- The selection `"all"` grows: `update` adds a plugin that a new version
+  ships, and adds `pi` or `dsh` when its host program appears. An explicit
+  list never grows, and an unavailable plugin in it fails closed with
+  `install_plugin_unavailable`. When a recorded plugin becomes unavailable,
+  `update` keeps it in the record and prints `[plugins] kept <id>: <reason>;
+  update keeps the recorded plugin; to remove it, run: repo-harness install
+  --plugins <ids>`. A partial refresh (`update --no-sync-skill` or
+  `--no-hooks`) never grows the set and prints `[plugins] not added <id> in a
+  partial refresh; run: repo-harness update`. `repo-harness status` prints a
+  `selection:` line. (#1625)
+- CodeGraph now follows the `architecture` plugin, not
+  `tooling.codegraph.enabled` in the current repository's policy. A repository
+  policy that enables CodeGraph while `architecture` is not selected fails
+  with the install command that adds it. A minimal state with a CodeGraph
+  surface migrates to a list with `architecture`, which also installs the
+  architecture skills. (#1625)
+- Only a Pi package registration selects `pi` in the migration. A `--target
+  both` install without Pi loses the unused Pi skill-root copies: the
+  migration deletes each owned, unchanged copy and keeps and reports each
+  changed one. Install Pi and run `repo-harness update` to bring them back,
+  because a fresh install and a migrated `full` state record `"all"`. (#1625)
+- Rollback after a committed migration: run
+  `bun add -g repo-harness@0.25.3 --no-cache`, delete
+  `~/.repo-harness/install-state.json`, then run
+  `repo-harness install --profile full|minimal` (the 0.25.3 command). The
+  fleet and CodeGraph files stay as user-managed files. A source `git revert`
+  does not restore a ledger. (#1625)
+- The protocol 2 to 3 migration in `update` removes the retired
+  `~/.claude/agents/orchestrator.md`. It deletes the file only when the install
+  state owns it and its hash did not change. It keeps a changed file and
+  reports it. It drops the file from the state and from the user-managed fleet
+  receipt. (#1585, #1625)
+- In each repository, run `repo-harness init --dry-run`, review the plan,
+  then run `repo-harness init`. The adoption apply removes `orchestrator`
+  from `external_tooling.agent_fleet.managed_agents` in
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`.
+  `repo-harness upgrade` does not change the policy. Until the apply, the
+  agent tooling check lists `orchestrator` as a missing fleet role, or as one
+  without a packaged source. (#1585)
+- Restart an orchestrator pane that runs `claude --agent orchestrator` or a
+  plain `claude` with the argv of `repo-harness seats argv orchestrator`.
+  Before, a plain `claude` pane had no task tools, so the triage queue did not
+  work. (#1585)
+- The managed Global Working Rules describe the orchestrator seat, not a
+  fleet role. After the update, readiness shows the `global-rules.claude` and
+  `global-rules.codex` blocks as stale. Run `repo-harness update` to refresh
+  them. (#1585)
+- Set the orchestrator fleet on the Seats page to `gatekeeper`, `explorer`
+  and `deep-reasoner` (owner decision M40). The orchestrator fleet takes only
+  these three roles; a save with `root-cause-prover` fails with
+  `seat_fleet_not_allowed`. Restart the orchestrator seat from
+  `repo-harness seats argv orchestrator` after `repo-harness update`, so
+  the seat reads the new managed rules and skills. (#1630, #1636)
+- The same `repo-harness init` apply removes `circuit_breakers` from
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`.
+  (#1599)
 
 ### Breaking
 
@@ -16,7 +105,7 @@ All notable changes to this skill are documented here.
   page read only this list. The `#repository` workspace is removed; a
   Repositories row opens the board for that repository. The Windows Job
   controller is now `assets/operator/windows-job-controller.ps1`. Update the
-  browser and the server together. (#1533)
+  browser and the server together. (#1541)
 - The old fleet board stack is removed. `repo-harness board --parent <n> --json`
   is the one board read model.
   - `fleet board` with `--admission-associations`, `--pr-associations`,
@@ -36,15 +125,15 @@ All notable changes to this skill are documented here.
     the Codex `SubagentStart` context: no replacement. The block was
     advisory and granted no scope or permission.
 
-  No MCP tool is removed. (#1507)
+  No MCP tool is removed. (#1590)
 - The orchestrator is a seat, not a fleet role. `agents/fleet/orchestrator.md`
   and `claude --agent orchestrator` are removed. Start the seat with the argv
-  that `repo-harness seats argv orchestrator` prints (#1473). The argv names
+  that `repo-harness seats argv orchestrator` prints (#1521). The argv names
   the task tools, Glob and Grep, and sets
   `CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator`, so the triage queue
   keeps its name when the seat restarts. The fleet has seven roles, and the
   installer projects each one to Claude and Codex. `CLAUDE_ONLY_AGENTS` is
-  removed. (#1510)
+  removed. (#1585)
 - Install state is protocol 3. It records core, the enabled plugins and the
   plugin selection, not an install profile. The plugin ids are
   `architecture`, `cross-review`, `dsh`, `peer-runtime`, `pi`, `platform`,
@@ -76,79 +165,112 @@ All notable changes to this skill are documented here.
     `selection-projection --plugins <ids>|--all-plugins`. The routing eval
     takes `--plugins <ids>` or `--no-plugins`.
   - The #1510 update step and the `retired-fleet-file` doctor check are
-    removed. The protocol 2 to 3 migration does that cleanup. (#1601)
+    removed. The protocol 2 to 3 migration does that cleanup. (#1625)
+- The claim field `Seat:` is now `Role:` in the issue claim, the handoff
+  and the acceptance claim. The acceptance record header is
+  `| Round | Role | Subject | Verdict |`, and `repo-harness review publish`
+  writes `Role: acceptor`. No reader reads `Seat:`. Post an open claim again
+  with `Role:`. (#1598)
 
-### Upgrade
+### Added
 
-- Install the new CLI directly, then update. A 0.25.3 CLI cannot run the
-  cutover, because it cannot read protocol 3 after the candidate returns:
+- `repo-harness board migrate-dependencies --parent <n> [--json]` prints the
+  plan that moves the `Depends on` lines of the open sub-issue bodies to
+  GitHub blocked-by links and tier labels. It writes nothing.
+  `--write --plan <digest>` applies exactly the plan with that digest. A
+  refused or unparsed line stops every write. The issue-flow plan data is
+  now only in GitHub native fields (sub-issue, blocked-by link, milestone,
+  tier label, base branch) and the `repo-harness plan` block. (#1519)
+- The Task drawer shows the stage source (Git and GitHub) after the branch,
+  head and base identifiers. (#1579)
+- `repo-harness board attention --parent <n> --watch --deliver` runs in an hc
+  terminal with the label `repo-harness.service=attention` and sends the
+  attention findings to the seat terminals with `hc send`. It calls no model.
+  `repo-harness board attention start --parent <n>` starts it when no live
+  watcher of that repository and parent exists. The doctor check
+  `board-attention-watcher` reports a stopped watcher as
+  `warn attention_stopped` with the start command. (#1580)
+- `GET /api/v1/repositories/<id>/tasks/<task_id>/messages` returns the task
+  inbox (read-only): message body, sender, recipients, age and delivery
+  receipts. The Task drawer shows it. (#1604)
+- `assets/review-hazards.v1.json` is the one change hazard list. The hazard
+  table in `agentic-development-flow.md` is generated from it. Board rule R3
+  reports a PR whose changed paths hit a hazard while its item has the label
+  `tier:low` or `tier:medium`. (#1621)
+- Board rule R5 reports the High signal when the changed paths of an open PR
+  have two or more owning capabilities (`archctx resolve`) and its item is
+  `tier:low` or `tier:medium`. `BoardV1.path_owners` gives the owner of each
+  changed file, or `unavailable` with a reason. R5 lists every unowned or
+  ambiguous path for every tier. (#1629)
 
-  ```bash
-  bun add -g repo-harness@0.25.4 --no-cache
-  repo-harness update
-  ```
+### Changed
 
-  `update` migrates the protocol 2 state to protocol 3 once, under the install
-  transaction. `repo-harness update --check` prints the mapping first and
-  writes nothing. A `full` state becomes the selection `"all"`. A `minimal`
-  state becomes the explicit list `platform`, `strategy-memory`, plus the
-  owners of its recorded surfaces. Either one gets `dsh` only when a DSH
-  profile declares the repo-harness bundle. A `minimal` state that records a
-  Pi package maps to a list with `pi`; when `pi` is not on `PATH`, the
-  migration refuses before any write with `install_plugin_unavailable`.
-  Install Pi and run `repo-harness update` again, or use the rollback below. A former minimal install gains the
-  core surfaces, and the plan lists each one. Issue #1607 deletes this one-shot
-  in 0.26.0; after that, protocol 2 gets `install_state_protocol_retired`.
-  The one-shot commits `previous: null`. When the refresh in the same update
-  changes the state, it records the migrated state as `previous`, so
-  `repo-harness install --rollback` restores the migrated selection. An install
-  or update that changes nothing writes nothing: the state bytes and
-  `previous` stay. (#1601)
-- The selection `"all"` grows: `update` adds a plugin that a new version
-  ships, and adds `pi` or `dsh` when its host program appears. An explicit
-  list never grows, and an unavailable plugin in it fails closed with
-  `install_plugin_unavailable`. When a recorded plugin becomes unavailable,
-  `update` keeps it in the record and prints `[plugins] kept <id>: <reason>;
-  update keeps the recorded plugin; to remove it, run: repo-harness install
-  --plugins <ids>`. A partial refresh (`update --no-sync-skill` or
-  `--no-hooks`) never grows the set and prints `[plugins] not added <id> in a
-  partial refresh; run: repo-harness update`. `repo-harness status` prints a
-  `selection:` line. (#1601)
-- CodeGraph now follows the `architecture` plugin, not
-  `tooling.codegraph.enabled` in the current repository's policy. A repository
-  policy that enables CodeGraph while `architecture` is not selected fails
-  with the install command that adds it. A minimal state with a CodeGraph
-  surface migrates to a list with `architecture`, which also installs the
-  architecture skills. (#1601)
-- Only a Pi package registration selects `pi` in the migration. A `--target
-  both` install without Pi loses the unused Pi skill-root copies: the
-  migration deletes each owned, unchanged copy and keeps and reports each
-  changed one. Install Pi and run `repo-harness update` to bring them back,
-  because a fresh install and a migrated `full` state record `"all"`. (#1601)
-- Rollback after a committed migration: run
-  `bun add -g repo-harness@0.25.3 --no-cache`, delete
-  `~/.repo-harness/install-state.json`, then run
-  `repo-harness install --profile full|minimal` (the 0.25.3 command). The
-  fleet and CodeGraph files stay as user-managed files. A source `git revert`
-  does not restore a ledger. (#1601)
-- The protocol 2 to 3 migration in `update` removes the retired
-  `~/.claude/agents/orchestrator.md`. It deletes the file only when the install
-  state owns it and its hash did not change. It keeps a changed file and
-  reports it. It drops the file from the state and from the user-managed fleet
-  receipt. (#1510, #1601)
-- Run `repo-harness upgrade` in each repository. It removes `orchestrator`
-  from `external_tooling.agent_fleet.managed_agents` in
-  `.ai/harness/policy.json` and reports it under `retired-policy-keys`. Until
-  then, the agent tooling check lists `orchestrator` as a missing fleet role,
-  or as one without a packaged source. (#1510)
-- Restart an orchestrator pane that runs `claude --agent orchestrator` or a
-  plain `claude` with the argv of `repo-harness seats argv orchestrator`.
-  Before, a plain `claude` pane had no task tools, so the triage queue did not
-  work. (#1510)
-- The managed Global Working Rules describe the orchestrator seat, not a
-  fleet role. After the update, readiness shows the `global-rules.claude` and
-  `global-rules.codex` blocks as stale. Run `repo-harness update` to refresh
-  them. (#1510)
+- The orchestrator seat may call the read-only sub-agents `gatekeeper`,
+  `explorer` and `deep-reasoner` (owner decisions M37, M39 and M40). The
+  writers `fast-worker`, `deep-worker` and `root-cause-prover` and the Codex
+  cross-review run only in Herdr seats. The Seats page and
+  `POST /api/v1/settings/seats` refuse every other orchestrator fleet role
+  with `seat_fleet_not_allowed`. With `gatekeeper` in the fleet, the seat
+  brief says that an independent `gatekeeper` sub-agent may review a PR that
+  the orchestrator dispatched. The default orchestrator fleet stays empty.
+  (#1630, #1636)
+- The board accepts a PR head only when a record on that head is `PASS` and
+  no record on that head is `FAIL`. A truncated comment page with a `PASS`
+  on the head is `unknown` (`comments_truncated`). An unparsed record is
+  `unknown` (`acceptance_record_unparsed`). (#1578)
+- `circuit_breakers` is removed from the harness policy seed. It had no
+  reader. The adoption apply (`repo-harness init`) removes it from
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`.
+  (#1599)
+- `archctx` and `archctx-contracts` are pinned to exact 0.11.2. (#1616)
+- CI: a documentation-only PR runs no build or test job, and
+  `Required / CI` still reports. The path reference parse is cached, and
+  `check:state-boundaries` runs in its own job. (#1603)
+- Operator reads go through owned modules: the task session records through
+  `task-session-record.ts` (#1605, #1617), the notify files through
+  `notify-read.ts` (#1638), and the architecture views through
+  `architecture-read.ts` (#1639). Behavior does not change.
+- Dead readers and stale comments that the old board deletion left are
+  removed. (#1606)
+
+### Fixed
+
+- The task inbox reader returns the newest records within its budget. A
+  budget stop in the receipt reads keeps the complete records already read
+  and marks the view `complete: false`. (#1612)
+- The task inbox orders messages by parsed time, not by text, so
+  `…00.500Z` is later than `…00Z`. It reads receipts only for the returned
+  page. (#1618)
+- A task inbox walk that stops at a budget returns no records and keeps the
+  first stop reason. Before, it returned a partial page. (#1620)
+- Ship closeout elects the claim owner with an exclusive create of
+  `owner.json`, not with `mkdir`. On Ubuntu 26.04, uutils `mkdir` could
+  report success to two racing callers, so two ship calls could own one
+  worktree closeout. (#1637)
+- The attention watcher logs a seat whose program ended as
+  `terminal_ended`. The watcher doctor check is `na` in a checkout with no
+  GitHub remote. (#1589)
+
+### Tests
+
+- The closeout hard-timeout test stops the supervisor process itself, so the
+  stop lands inside the target window. (#1581)
+- No test starts `hc` or `herdr-app` from the process PATH without a fake
+  first on PATH. (#1589)
+
+### Documentation
+
+- Issue-flow review rounds converge (owner decision M33), and reviewers read
+  CI and the recorded evidence instead of rerunning passing checks (owner
+  decision M32). `acceptor.md` §2.2 is the one authority for the round
+  rules. (#1608, #1614)
+- The herdr skill context starts a reviewer or worker with
+  `hc run --bg --no-parent`, so it keeps running when the orchestrator
+  restarts or its pane closes. (#1632)
+- The architecture model gives the hc client, the notify secret keys and the
+  global configuration owners outside plugin internals. (#1633)
+- Publication records for 0.25.2 and 0.25.3, with the real 0.25.3 upload
+  method and the 0.25.1 npm base. (#1584, #1591)
 
 ## [0.25.3] - 2026-11-03
 
