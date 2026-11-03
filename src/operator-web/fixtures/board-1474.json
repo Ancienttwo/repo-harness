@@ -415,6 +415,443 @@
       }
     }
   ],
+  "path_owners": {
+    "status": "observed",
+    "owners": [
+      {
+        "path": ".ai/harness/policy.json",
+        "status": "unowned"
+      },
+      {
+        "path": ".archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": ".archcontext/model/nodes/component.task-agent-host.core-layer.yaml",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": ".archcontext/model/nodes/component.task-agent-host.primary.yaml",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": ".github/actions/install-pinned-herdr-core/action.yml",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": ".github/workflows/ci.yml",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "assets/herdr/github-events/bot-event.d.mts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/herdr/github-events/bot-event.mjs",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/herdr/github-events/worker.mjs",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/herdr/webhook-notify/herdr-plugin.toml",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/herdr/webhook-notify/notify.mjs",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/herdr/webhook-notify/pane-status.mjs",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/herdr/webhook-notify/worktree-location.mjs",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "assets/reference-configs/external-tooling.md",
+        "status": "owned",
+        "capability": "capability.runtime-harness.global-runtime-reconciliation"
+      },
+      {
+        "path": "assets/reference-configs/herdr-notify.md",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": "assets/skills/repo-harness-cross-review/references/generic-review.md",
+        "status": "owned",
+        "capability": "capability.public-surface.action-commands"
+      },
+      {
+        "path": "docs/CHANGELOG.md",
+        "status": "owned",
+        "capability": "capability.public-surface.root-router"
+      },
+      {
+        "path": "docs/adr/ADR-0002-surface-contract.md",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": "docs/reference-configs/external-tooling.md",
+        "status": "owned",
+        "capability": "capability.runtime-harness.global-runtime-reconciliation"
+      },
+      {
+        "path": "docs/reference-configs/herdr-notify.md",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": "docs/spec.md",
+        "status": "owned",
+        "capability": "capability.public-surface.root-router"
+      },
+      {
+        "path": "scripts/contract-worktree.sh",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": "scripts/lib/project-init-lib.sh",
+        "status": "owned",
+        "capability": "capability.workflow-engine.inspection-migration"
+      },
+      {
+        "path": "scripts/sync-helper-sources.ts",
+        "status": "owned",
+        "capability": "capability.workflow-engine.contract-assets"
+      },
+      {
+        "path": "src/cli/commands/doctor.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.global-runtime-reconciliation"
+      },
+      {
+        "path": "src/cli/commands/events.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/cli/commands/herdr.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/cli/commands/review.ts",
+        "status": "owned",
+        "capability": "capability.verification.acceptance-review"
+      },
+      {
+        "path": "src/cli/index.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.global-runtime-reconciliation"
+      },
+      {
+        "path": "src/core/decision/pane-status.d.mts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/core/decision/pane-status.mjs",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/core/operator/admitted-task-context.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/core/operator/bot-access.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/core/operator/execution-state.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/core/operator/notify-status.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/core/review/runner-port.ts",
+        "status": "owned",
+        "capability": "capability.verification.acceptance-review"
+      },
+      {
+        "path": "src/core/sessions/task-sessions.ts",
+        "status": "unowned"
+      },
+      {
+        "path": "src/effects/adoption/standard-plan.ts",
+        "status": "owned",
+        "capability": "capability.public-surface.adoption"
+      },
+      {
+        "path": "src/effects/operator/bot-access.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/effects/operator/execution-collector.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/effects/operator/execution-state.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/effects/operator/notify-collector.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/effects/operator/notify-status.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/effects/operator/server.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/effects/review-runner/task-review-runner.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/effects/review/generic-review.ts",
+        "status": "owned",
+        "capability": "capability.verification.acceptance-review"
+      },
+      {
+        "path": "src/effects/terminal/herdr-core.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/effects/terminal/herdr-decision.ts",
+        "status": "unowned"
+      },
+      {
+        "path": "src/effects/terminal/herdr-notify-install.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/effects/terminal/herdr.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/effects/terminal/notify-relay.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/effects/terminal/task-session-admission.ts",
+        "status": "owned",
+        "capability": "capability.workflow-engine.workflow-state"
+      },
+      {
+        "path": "src/effects/terminal/task-session-record.ts",
+        "status": "owned",
+        "capability": "capability.workflow-engine.execution-primitives"
+      },
+      {
+        "path": "src/effects/terminal/task-session.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/effects/terminal/task-worktree-runtime.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.task-agent-host"
+      },
+      {
+        "path": "src/operator-web/BotsPage.tsx",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/operator-web/NotifyStatus.tsx",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/operator-web/bots.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/operator-web/fixtures/bots.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/operator-web/fixtures/dev-activity.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/operator-web/fixtures/index.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "src/operator-web/i18n.ts",
+        "status": "owned",
+        "capability": "capability.runtime-harness.operator"
+      },
+      {
+        "path": "tests/acceptance-receipt.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/check-agent-tooling.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/check-ci-job-split.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/cli/doctor.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/cli/operator-serve.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/external-source-binding.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/herdr-core-transport.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/notify-relay.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/operator-bot-access.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/operator-execution-state.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/operator-notify-status.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/operator-task-diff.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/task-session-admission.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/effects/task-worktree-closeout-notify.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/generic-review.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/github-events.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/helpers/admitted-inbox-fixture.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/helpers/engineer-runtime-fixture.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/herdr-runtime-pin.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/herdr-task-lifecycle.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/operator-web/operator-bots-page.test.tsx",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/operator-web/operator-interactions.test.tsx",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/operator-web/operator-notify-status.test.tsx",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/unit/helper-projection-drift.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      },
+      {
+        "path": "tests/unit/pane-status.test.ts",
+        "status": "owned",
+        "capability": "capability.verification.evals-checks"
+      }
+    ]
+  },
   "execution": {
     "status": "observed",
     "terminals": [

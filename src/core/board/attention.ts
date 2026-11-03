@@ -25,7 +25,7 @@ const A2_BATCH_MAX = 6;
 const WORKER_SEAT = 'worker';
 const RED_CONCLUSIONS = new Set(['failure', 'timed_out', 'startup_failure']);
 
-export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'R1' | 'R2' | 'R3' | 'R4';
+export type BoardRuleId = 'A1' | 'A2' | 'A3' | 'A4' | 'A5' | 'A6' | 'A7' | 'A8' | 'R1' | 'R2' | 'R3' | 'R4' | 'R5';
 export type BoardAttentionRoute = 'orchestrator' | 'advisor';
 
 export interface BoardFindingV1 {
@@ -311,6 +311,53 @@ function r3(context: Context): void {
   }
 }
 
+/**
+ * The paths that R5 counts: product source, scripts and assets. Tests, prose
+ * docs (`docs/` and the Markdown files at the repository root) and
+ * `.archcontext/model/` do not count. Docs or tests alone are Low, and a new
+ * test file does not raise the tier (`agentic-development-flow.md`, Review by
+ * risk). archctx gives every model path the one owner
+ * `capability.workflow-engine.contract-assets`, so a model path would add a
+ * false second capability; a model-only boundary change stays with the
+ * reviewer (#1623 decision).
+ */
+function boundaryCounted(path: string): boolean {
+  return !path.startsWith('tests/') && !path.startsWith('docs/') && !path.startsWith('.archcontext/model/') && !/^[^/]+\.md$/u.test(path);
+}
+
+/**
+ * R5: the counted paths of an open pull request have two or more owning
+ * capabilities, and an item that it closes or refs has a tier label below
+ * High. A change across more than one capability boundary sets High. A
+ * counted path with no single owner leaves the rule unevaluated, unless the
+ * owned paths already reach two capabilities.
+ */
+function r5(context: Context): void {
+  const owners = context.board.path_owners;
+  if (owners.status === 'unavailable') return skip(context, 'R5', owners.reason);
+  const byPath = new Map(owners.owners.map(owner => [owner.path, owner] as const));
+  for (const pr of openPullRequests(context.board)) {
+    if (pr.files === null) {
+      skip(context, 'R5', 'files_incomplete', `#${pr.number}`);
+      continue;
+    }
+    const counted = pr.files.filter(boundaryCounted).map(path => byPath.get(path)!);
+    const capabilities = [...new Set(counted.flatMap(owner => (owner.status === 'owned' ? [owner.capability] : [])))].sort();
+    if (capabilities.length < 2) {
+      const undetermined = counted.filter(owner => owner.status !== 'owned');
+      if (undetermined.length > 0) skip(context, 'R5', 'owner_undetermined', `#${pr.number} ${undetermined.map(owner => `${owner.path} (${owner.status})`).join(' ')}`);
+      continue;
+    }
+    const items = itemsOf(context.board, pr).map(number => context.board.items.find(item => item.number === number)!);
+    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R5', 'tier_label_missing', `#${pr.number} #${item.number}`);
+    const below = items.filter(item => item.tier === 'low' || item.tier === 'medium');
+    if (below.length > 0) {
+      find(context, 'R5', { issues: below.map(item => item.number), pull_requests: [pr.number] },
+        `#${pr.number} changes ${capabilities.length} capabilities (${capabilities.join(', ')}), a High signal, but ${below.map(item => `#${item.number} is tier:${item.tier}`).join(', ')}`);
+    }
+  }
+}
+
 function r4(context: Context): void {
   const plan = context.board.plan;
   if (plan.status !== 'observed') return skip(context, 'R4', plan.status === 'absent' ? 'plan_absent' : 'plan_unavailable');
@@ -326,7 +373,7 @@ function r4(context: Context): void {
 
 export function evaluateBoardAttention(board: BoardV1): BoardAttentionV1 {
   const context: Context = { board, now: Date.parse(board.observed_at), findings: [], unevaluated: [] };
-  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, r1, r2, r3, r4]) rule(context);
+  for (const rule of [a1, a2, a3, a4, a5, a6, a7, a8, r1, r2, r3, r4, r5]) rule(context);
   return Object.freeze({
     protocol: BOARD_ATTENTION_PROTOCOL,
     kind: BOARD_ATTENTION_KIND,
