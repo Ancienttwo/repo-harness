@@ -10,16 +10,18 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 
 1. Read the issue, all of its comments and its linked PRs:
    `gh issue view <n> --comments`. Use `gh api` with pagination for a long
-   thread. Read the parent too: its seat table and its latest `plan`. The
-   latest `scope change` comments amend the body, and the plan fixes your
-   wave and merge order.
+   thread. Read the parent too (`gh issue view <n> --json parent` names
+   it): its seat table and its latest `plan`. The
+   latest `scope change` comments amend the body, and the plan block fixes
+   your merge order.
 2. Check the claims. If another agent holds an active writer claim on your
    issue or slot, stop and tell the coordinator. Do not start duplicate
    work. Silence or an old timestamp does not release a claim. A `plan`,
    `decision`, `scope change` or `unblocked` from an agent without the
    coordinator seat does not count until the coordinator confirms it
    (`board.md`).
-3. Check the dependencies. Each `Depends on #N` must be merged, unless the
+3. Check the dependencies. Each issue that blocks yours (its blocked-by
+   links: `gh issue view <n> --json blockedBy`) must be closed, unless the
    issue allows early start. With early start, branch from the producer's
    PR head when your code needs its unmerged changes to compile, set your
    PR's base to the producer's branch, and keep the PR draft until the
@@ -129,8 +131,8 @@ typecheck and the affected test files, and say so.
 
 - Title: `<type>(<scope>): <outcome> (#<issue>)`.
 - Body: use the PR template. `Closes #<issue>` only when this PR finishes
-  the issue. Otherwise use `Refs #<issue>`. List `Depends on #<PR>` for
-  each PR that must merge first.
+  the issue. Otherwise use `Refs #<issue>`. A PR stacked on a producer PR has
+  the producer's branch as its base.
 - Open as draft while a dependency is unmerged, otherwise ready.
 - Post `issue claim status` with `Status: ready for review; claim remains
   active`, the PR URL, the head SHA and the CI state.

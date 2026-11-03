@@ -7,6 +7,8 @@ import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/boa
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard } from '../src/effects/board/collect';
+import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
+import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { boardHostPorts } from '../src/effects/terminal/herdr-core';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -222,4 +224,184 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
   })).findings.filter(finding => ['A1', 'A2', 'R4'].includes(finding.rule)).map(finding => [finding.rule, finding.pull_requests]);
   expect(findings([])).toEqual([['A1', [1491]], ['A2', [1494, 1499]], ['R4', [1491]], ['R4', [1494]], ['R4', [1499]]]);
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
+});
+
+// One-shot dependency migration (#1504): a stateful gh stub answers the reads and records every write.
+// Node ids are `I<n>` for issues of the parent's repository; `blocked_by` seeds links to other node ids.
+interface MigrationSubIssue {
+  readonly number: number;
+  readonly state: 'OPEN' | 'CLOSED';
+  readonly body: string;
+  readonly repository?: string;
+  readonly blocked_by?: readonly string[];
+}
+
+function migrationStub(initial: readonly MigrationSubIssue[], missing: readonly number[] = []) {
+  const subIssues = [...initial];
+  const labels = new Set<string>();
+  let blockerReads = 0;
+  let calls = 0;
+  const edges = new Set(subIssues.flatMap(node => (node.blocked_by ?? []).map(blocker => `I${node.number}:${blocker}`)));
+  const writes: string[] = [];
+  const answer = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
+  const number = (id: string) => Number(id.replace(/^[A-Z]+/u, ''));
+  const runner = (args: readonly string[]) => {
+    calls += 1;
+    if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
+    if (args.includes('POST')) {
+      const name = args.find(arg => arg.startsWith('name='))!.slice(5);
+      labels.add(name); writes.push(`label ${name}`);
+      return answer({ name });
+    }
+    const query = args.find(arg => arg.startsWith('query='))!.slice(6);
+    const variable = (key: string) => args.find(arg => arg.startsWith(`${key}=`))!.slice(key.length + 1);
+    if (query.includes('addBlockedBy')) {
+      edges.add(`${variable('issue')}:${variable('blocker')}`); writes.push(`#${number(variable('issue'))} blocked by #${number(variable('blocker'))}`);
+      return answer({ data: { addBlockedBy: { issue: { number: number(variable('issue')) } } } });
+    }
+    if (query.includes('subIssues')) {
+      const repository: Json = { issue: { subIssues: { pageInfo: { hasNextPage: false }, nodes: subIssues.map(node => ({
+        id: `I${node.number}`, number: node.number, state: node.state, body: node.body,
+        repository: { nameWithOwner: node.repository ?? 'Ancienttwo/repo-harness' },
+        blockedBy: { pageInfo: { hasNextPage: false }, nodes: [...edges].filter(edge => edge.startsWith(`I${node.number}:`))
+          .map(edge => ({ id: edge.split(':')[1], number: number(edge.split(':')[1]!) })) },
+      })) } } };
+      ['tier:low', 'tier:medium', 'tier:high'].forEach((name, index) => { repository[`t${index}`] = labels.has(name) ? { name } : null; });
+      return answer({ data: { repository } });
+    }
+    blockerReads += 1;
+    const repository = Object.fromEntries([...query.matchAll(/b([0-9]+): issue/gu)]
+      .map(match => [`b${match[1]}`, missing.includes(Number(match[1])) ? null : { id: `I${match[1]}`, number: Number(match[1]) }]));
+    return answer({ data: { repository } });
+  };
+  const input = { repo_root: '/nonexistent', parent: 1503, gh_runner: runner };
+  // `plan` is the run without --write. `migrate` is `--write --plan <digest>`: a fresh plan, the digest check, then exactly its writes;
+  // without a digest it uses the fresh plan's own, as a person who checked that same list would.
+  return {
+    runner, writes, blockerReads: () => blockerReads, calls: () => calls, plan: () => planDependencyMigration(input),
+    command: (flags: { readonly write: boolean; readonly plan: string | undefined }) => runDependencyMigration(input, flags),
+    edit: (number: number, body: string) => { subIssues.splice(subIssues.findIndex(node => node.number === number), 1, { ...subIssues.find(node => node.number === number)!, body }); },
+    migrate: (digest?: string) => { const plan = planDependencyMigration(input); return applyDependencyMigration(input, plan, digest ?? plan.digest); },
+    apply: (digest: string | undefined) => applyDependencyMigration(input, planDependencyMigration(input), digest),
+  };
+}
+
+const MIGRATION_SUB_ISSUES: readonly MigrationSubIssue[] = [
+  { number: 1508, state: 'OPEN', body: '## Goal\nConsole board.\n\n## Depends on\nDepends on #1505 board core\nEarly start: not allowed\n\n## Out of scope\n- #1507 owns the deletion' },
+  { number: 1509, state: 'OPEN', body: '## 依赖\n#1505；#1473（启动时写席位标签）、#1476 合入后再做。\n风险：High（验收链路）。\n---\n_Generated in #9_' },
+  { number: 1510, state: 'OPEN', body: 'Watcher.\n依赖：#1505\n' },
+  // An existing link to #1505 of another repository is not the local #1505 link.
+  { number: 1512, state: 'OPEN', body: 'Depends on #1505\n', blocked_by: ['FOREIGN1505'] },
+  { number: 1490, state: 'CLOSED', body: '## Depends on\nDepends on #1505\n' },
+];
+
+test('migrate-dependencies turns the dependency lines of open sub-issues into blocked-by links and creates the tier labels', () => {
+  const stub = migrationStub(MIGRATION_SUB_ISSUES);
+  const result = stub.migrate();
+  expect(result.edges.map(edge => [edge.issue, edge.blocker, edge.line_number, edge.result])).toEqual([
+    [1508, 1505, 5, 'created'],
+    [1509, 1505, 2, 'created'], [1509, 1473, 2, 'created'], [1509, 1476, 2, 'created'],
+    [1510, 1505, 2, 'created'],
+    [1512, 1505, 1, 'created'],
+  ]);
+  expect(result.skipped).toEqual([{ issue: 1509, line_number: 3, line: '风险：High（验收链路）。' }]);
+  expect(result.labels).toEqual([
+    { name: 'tier:low', result: 'created' }, { name: 'tier:medium', result: 'created' }, { name: 'tier:high', result: 'created' }]);
+  // Lines after a heading or `---` and the closed sub-issue #1490 give no link.
+  expect(stub.writes).toEqual(['label tier:low', 'label tier:medium', 'label tier:high', '#1508 blocked by #1505',
+    '#1509 blocked by #1505', '#1509 blocked by #1473', '#1509 blocked by #1476', '#1510 blocked by #1505', '#1512 blocked by #1505']);
+});
+
+test('migrate-dependencies without --write prints the whole plan and writes nothing', () => {
+  const stub = migrationStub(MIGRATION_SUB_ISSUES);
+  const text = renderDependencyMigrationPlan(stub.plan());
+  expect(stub.writes).toEqual([]);
+  for (const line of ['create label tier:low', 'create #1508 blocked by #1505 (line 5: Depends on #1505 board core)',
+    'create #1512 blocked by #1505 (line 1: Depends on #1505)', 'skip #1509 line 3: 风险：High（验收链路）。', '--write makes 9 writes',
+    `plan digest: ${stub.plan().digest} (apply with --write --plan ${stub.plan().digest})`]) {
+    expect(text).toContain(line);
+  }
+  const refused = migrationStub([...MIGRATION_SUB_ISSUES, { number: 1505, state: 'OPEN', body: '- Example:\n\n      Depends on #7\n' }]);
+  const stopped = renderDependencyMigrationPlan(refused.plan());
+  expect(refused.writes).toEqual([]);
+  expect(stopped).toContain('refuse #1505 line 3: Depends on #7');
+  expect(stopped).toContain('--write stops before any write: dependency_line_ambiguous');
+});
+
+test('a second migrate-dependencies run writes nothing and reports every link and label as existing', () => {
+  const stub = migrationStub(MIGRATION_SUB_ISSUES);
+  stub.migrate();
+  const writes = stub.writes.length;
+  const second = stub.migrate();
+  expect(stub.writes.length).toBe(writes);
+  expect([...second.edges, ...second.labels].every(entry => entry.result === 'exists')).toBe(true);
+  expect(second.edges).toHaveLength(6);
+});
+
+test('migrate-dependencies stops before any write on an unparsable line, a declaration in a possible code position, another heading form or a sub-issue of another repository', () => {
+  const open = (number: number, body: string): MigrationSubIssue => ({ number, state: 'OPEN', body });
+  // [added sub-issues, error code, the lines the message names]; an ambiguous stop names exactly those lines.
+  const stops: readonly [readonly MigrationSubIssue[], string, readonly string[]][] = [
+    [[open(1505, '## 依赖\n\n无。席位标签来自 #1473 和 #1476；合入前执行轴为 unavailable。\n')], 'dependency_line_unparsed', ['#1505 line 3']],
+    [[open(1505, 'Depends on other/repo#7\n')], 'dependency_line_unparsed', ['#1505 line 1']],
+    [[open(1505, '#### 依赖\n#1473\n')], 'dependency_line_unparsed', ['#1505 line 1']],
+    // Refusals (owner rule M24): a code or HTML marker anywhere in the body, leading whitespace, or a wide list marker.
+    [[open(1505, '- Example:\n\n    ```\n    Depends on #7\n    ```\n')], 'dependency_line_ambiguous', ['#1505 line 4: Depends on #7']],
+    [[open(1505, '- Example:\n\n      Depends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 3: Depends on #7']],
+    [[open(1505, '````markdown\n```\nDepends on #7\n````\n')], 'dependency_line_ambiguous', ['#1505 line 3: Depends on #7']],
+    [[open(1505, '```\n    ```\nDepends on #7\n```\n')], 'dependency_line_ambiguous', ['#1505 line 3: Depends on #7']],
+    [[open(1505, '- Step:\n  ```\n  code\n```\nDepends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 5: Depends on #7']],
+    [[open(1505, ' \tDepends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 1: Depends on #7']],
+    [[open(1505, '- Example:\n\n    ## 依赖\n')], 'dependency_line_ambiguous', ['#1505 line 3: ## 依赖']],
+    [[open(1505, '## 依赖\n- #1476 core\n    and #1473\n')], 'dependency_line_ambiguous', ['#1505 line 3: and #1473']],
+    [[open(1505, '- ```\nDepends on #7\n- ```\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    [[open(1505, '1. ```\n   Depends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    [[open(1505, '-     Depends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 1: -     Depends on #7']],
+    [[open(1505, '-\t\tDepends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 1: -\t\tDepends on #7']],
+    [[open(1505, '## 依赖\n-     #7\n')], 'dependency_line_ambiguous', ['#1505 line 2: -     #7']],
+    [[open(1505, '## 依赖\n```\n~~~ #1473\n')], 'dependency_line_ambiguous', ['#1505 line 1: ## 依赖', '#1505 line 3: ~~~ #1473']],
+    [[open(1505, '<pre>\nDepends on #7\n</pre>\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    [[open(1505, '<!--\nDepends on #7\n-->\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    // Only `- #n` in a section is a template list form (owner rule M24 item 5); every other list form refuses.
+    [[open(1505, '1. Depends on #7\n+ 依赖：#7\n* Depends on #7\n- Depends on #7\n')], 'dependency_line_ambiguous',
+      ['#1505 line 1: 1. Depends on #7', '#1505 line 2: + 依赖：#7', '#1505 line 3: * Depends on #7', '#1505 line 4: - Depends on #7']],
+    [[open(1505, '## 依赖\n1. #7\n+ #7\n* #7\n')], 'dependency_line_ambiguous', ['#1505 line 2: 1. #7', '#1505 line 3: + #7', '#1505 line 4: * #7']],
+    // The marker may come after the declaration: the whole body refuses.
+    [[open(1505, 'Depends on #7\n\n```\nexample\n```\n')], 'dependency_line_ambiguous', ['#1505 line 1: Depends on #7']],
+    // One scan over all bodies: both refusals are named, and the parse error of #10 does not hide them.
+    [[open(10, '    Depends on #7\nDepends on other/repo#8\n'), open(11, '    Depends on #9\n')], 'dependency_line_ambiguous',
+      ['#10 line 1: Depends on #7', '#11 line 1: Depends on #9']],
+    [[{ number: 10, state: 'OPEN', body: 'Depends on #20\n', repository: 'other/repo' }], 'foreign_sub_issue', ['#10 of other/repo']],
+  ];
+  for (const [added, code, lines] of stops) {
+    const stub = migrationStub([...MIGRATION_SUB_ISSUES, ...added]);
+    let error: unknown;
+    try { stub.migrate(); } catch (caught) { error = caught; }
+    expect(error).toMatchObject({ code });
+    for (const line of lines) expect((error as Error).message).toContain(line);
+    if (code === 'dependency_line_ambiguous') expect((error as Error).message.match(/#[0-9]+ line [0-9]+/gu)).toHaveLength(lines.length);
+    expect(stub.writes).toEqual([]);
+  }
+  const stopOf = (run: () => unknown): unknown => {
+    try { run(); } catch (caught) { return caught; }
+    return undefined;
+  };
+  // A refusal stops the plan before any blocker read, so the missing blocker #999 cannot hide it.
+  const missing = migrationStub([...MIGRATION_SUB_ISSUES, open(1505, '-     Depends on #7\n'), open(1506, 'Depends on #999\n')], [999]);
+  expect(stopOf(() => missing.migrate())).toMatchObject({ code: 'dependency_line_ambiguous' });
+  expect([missing.blockerReads(), missing.writes]).toEqual([0, []]);
+  // --write applies only the checked list: a body edited after the dry run changes the digest.
+  const drift = migrationStub(MIGRATION_SUB_ISSUES);
+  const checked = drift.plan();
+  drift.edit(1510, 'Watcher.\n依赖：#1473\n');
+  expect(stopOf(() => drift.migrate(checked.digest))).toMatchObject({ code: 'dependency_plan_changed' });
+  expect(drift.writes).toEqual([]);
+  // --write without --plan <digest> is refused, and the command refuses it before any GitHub call.
+  expect(stopOf(() => drift.apply(undefined))).toMatchObject({ code: 'plan_digest_required' });
+  expect(drift.writes).toEqual([]);
+  const flags = migrationStub(MIGRATION_SUB_ISSUES);
+  expect(stopOf(() => flags.command({ write: true, plan: undefined }))).toMatchObject({ code: 'plan_digest_required' });
+  // --plan <digest> without --write is refused too.
+  expect(stopOf(() => flags.command({ write: false, plan: checked.digest }))).toMatchObject({ code: 'plan_without_write' });
+  expect([flags.calls(), flags.writes]).toEqual([0, []]);
 });

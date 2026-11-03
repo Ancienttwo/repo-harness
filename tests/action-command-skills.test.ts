@@ -548,7 +548,7 @@ describe("repo-harness action command skills", () => {
   test("issue-flow templates carry the plan, the claim fields and the parent status values", () => {
     const templates = readReference("repo-harness-issue-flow", "templates.md");
 
-    for (const field of ["repo-harness plan", "Coordinator:", "Baseline: main@<sha>", "Waves:", "Merge order:", "Blocked:", "Supersedes:"]) {
+    for (const field of ["repo-harness plan", "Coordinator:", "Baseline: main@<sha>", "Supersedes:", "src/core/board/plan-block.ts"]) {
       expect(templates).toContain(field);
     }
     for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {

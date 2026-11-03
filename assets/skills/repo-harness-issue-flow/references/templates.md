@@ -15,8 +15,25 @@ for them.
 | The changed component on the capability map | Architecture slice | 架构切片 |
 | Forbidden scope, invariants, deletes, compatibility | Boundaries | 边界 |
 | Proof | Acceptance | 验收 |
-| Dependencies | Depends on | 依赖 |
 | Exclusions | Out of scope | 不做 |
+
+## Plan data
+
+GitHub native fields hold the plan. Never write a second copy in a body or
+a comment.
+
+| Fact | Authority | Write it with |
+|---|---|---|
+| Child of a parent | Sub-issue of the parent | `gh api graphql` mutation `addSubIssue(input: {issueId: <parent node id>, subIssueId: <child node id>})` |
+| Issue dependency | Blocked-by link on the blocked issue | `gh api graphql` mutation `addBlockedBy(input: {issueId: <blocked node id>, blockingIssueId: <blocker node id>})` |
+| Release window | Milestone | `gh issue edit <n> --milestone <title>` |
+| Plan tier | One label `tier:low`, `tier:medium` or `tier:high` | `gh issue edit <n> --add-label tier:<tier>` |
+| PR stack | The PR base branch | `gh pr create --base <producer branch>`, later `gh pr edit <p> --base main` |
+| PR to issue | `Closes #<issue>` or `Refs #<issue>` in the PR body | the PR body template |
+| Merge order, holds, batches, seat limit | The plan block in the newest `plan` comment | the `plan` template |
+
+`gh issue view <n> --json number,id` gives the node id. A body line such
+as `Depends on #<n>` is not a dependency. Nothing reads it.
 
 ## Parent issue
 
@@ -27,14 +44,12 @@ for them.
 <the user-visible end state, 1–3 sentences>
 
 ## Children
-| Order | Issue | Module | Outcome | Depends on | Seat / status |
-|---|---|---|---|---|---|
-| 1 | #<n> | <module id> | <outcome> | — | merged |
-| 2 | #<n> | <module id> | <outcome> | #<n> | writer <agent> · PR #<p> |
-| 3 | #<n> | <module id> | <outcome> | #<n> | unclaimed · waits for #<n> |
-| 4 | #<n> | <module id> | <outcome> | — | unclaimed |
-
-Merge order: <1 → 2 → (3, 4 in parallel) → 5>.
+| Order | Issue | Module | Outcome | Seat / status |
+|---|---|---|---|---|
+| 1 | #<n> | <module id> | <outcome> | merged |
+| 2 | #<n> | <module id> | <outcome> | writer <agent> · PR #<p> |
+| 3 | #<n> | <module id> | <outcome> | unclaimed · waits for #<n> |
+| 4 | #<n> | <module id> | <outcome> | unclaimed |
 
 ## Done when
 - <observable end condition>
@@ -50,7 +65,8 @@ The seat/status column uses only these values: `unclaimed`,
 writes `待认领`, `待认领 · 等待 #n 合并`, `writer <agent> · active`,
 `writer <agent> · PR #p`, `merged`. The claim comment wins over the
 table. The coordinator corrects the table after each claim or status
-change.
+change. The sub-issue list is the authority for membership. The table is a
+view of it, and the plan block holds the merge order.
 
 A parent with more than two children gets a `plan` comment before
 dispatch (`plan`, below). A parent with two children or fewer needs none.
@@ -60,7 +76,7 @@ dispatch (`plan`, below). A parent with two children or fewer needs none.
 Title: `<module>: <outcome>` or `<area> <phase>.<n>｜<module>：<outcome>（<IDs>）`.
 
 ````markdown
-Part of #<parent>. Source: <PRD or design link at pinned SHA>, requirement and scenario IDs <IDs>.
+Source: <PRD or design link at pinned SHA>, requirement and scenario IDs <IDs>.
 
 ## Goal
 <one or two sentences, user-visible>
@@ -99,15 +115,12 @@ flowchart LR
 - Delete in this PR: <old functions, flags, routes, files>
 - Compatibility: none. <old thing> is removed, not aliased.
 - PR slots: <only when split in advance: PR-1a <scope>, PR-1b <scope>>
+- Early start: <allowed against <contract>, the PR stays draft until its blockers merge | not allowed>
 
 ## Acceptance
 - <observable check> (<scenario ID>)
 - Negative: <what must NOT happen> (<scenario ID>)
 - Verify: `<typecheck command>`; `<test command with files>`
-
-## Depends on
-Depends on #<n> <short name>
-Early start: <allowed against <contract>, PR stays draft until #<n> merges | not allowed>
 
 ## Out of scope
 - <plausible addition> (owned by #<n>)
@@ -122,11 +135,13 @@ add `class <node ID> target`. Take the entrypoint and `file#symbol`
 anchors from §1.2 of the same document. Never draw a slice from the
 archimap, a source scan or memory.
 
+The child has no dependency section. Its parent, blockers, milestone and
+tier are GitHub fields (Plan data, above).
+
 ## PR body
 
 ````markdown
 Closes #<issue>            <!-- or: Refs #<issue> for a non-final PR of the issue -->
-Depends on #<PR>           <!-- one line per PR that must merge first; omit when none -->
 
 ## Goal
 <one sentence, from the issue>
@@ -160,6 +175,16 @@ Otherwise write the one line `Architecture slice unchanged, see #<issue>`.
 Never commit a generated region. `.projection-manifest.json` and the
 machine regions of `docs/architecture/modules/**` come from the rolling
 writer, not from this PR.
+
+A PR stacked on a producer PR sets its base to the producer's branch. The
+body names no PR dependency.
+
+Write a closing keyword (`Closes`, `Fixes`, `Resolves`) followed by an
+issue number only for the issues that the PR closes, and never in a code
+span or a quote. The squash commit message on main is plain text, so a
+keyword in a code span can close an issue there even when the PR link list
+ignores it. `repo-harness publication merge` refuses the mismatch
+(`closing_references_mismatch`).
 
 ## Batch PR body
 
@@ -295,17 +320,18 @@ repo-harness plan
 Coordinator: <coordinator claim URL>
 Baseline: main@<sha>
 Supersedes: <previous plan URL>   # omit on the first plan
-Waves:
-- Wave 1: #<n>, #<m> (parallel; no shared file)
-- Wave 2: #<k> (after #<n> merges)
-Merge order: #<n> → #<k> → (#<m>, #<p> in parallel)
-Blocked: <what blocks a wave; none when nothing blocks>
 ```
 
+After the fields comes exactly one fenced `json` block: the plan block.
+`decodePlanBlock` in `src/core/board/plan-block.ts` of repo-harness defines
+its protocol and fields (merge order, holds, batches, seat limit).
+`repo-harness board --parent <n>` decodes the newest plan and fails on an
+invalid block. The block holds no dependency, membership or tier: those are
+GitHub fields (Plan data, above).
+
 The coordinator posts a `plan` on a parent with more than two children
-before dispatch. It names the waves, the dependencies inside each wave,
-the merge order and the cross-issue preconditions. A plan change is a new
-comment with `Supersedes:`. Never edit the old plan.
+before dispatch. A plan change is a new comment with `Supersedes:`. Never
+edit the old plan.
 
 ### handoff
 
@@ -341,11 +367,23 @@ Claim: <acceptance claim URL>
 
 | Round | Seat | Subject | Verdict |
 |---|---|---|---|
-| 1 | <model>, fresh context, read-only | `<sha>` | CHANGES: 1 P1 (<short>), 2 P2 (<short>) |
-| 2 (delta `<a>..<b>`) | <model> | `<sha>` | ACCEPT: round-1 findings closed |
+| <n> | <harness> (<model> or unobserved), read-only | `<40-hex subject sha>` | <PASS or FAIL>: <finding counts, for example 1 P2, 2 P3, or none> |
 
-Author: <writer>. Tier: <tier>. Follow-ups: #<n> (P3).
+Model relation: <different-family | same-family | unknown>
+
+Findings:
+
+- <severity> <id> at <path>:<line>: <evidence> -> <fix>
+- <none when the round has no finding>
 ```
+
+Every round writes this record, one row per round. The fields are `Round`,
+`Seat`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
+(`PASS` or `FAIL`, a colon, then the finding counts) and the
+`Model relation` line. `repo-harness review publish` writes it for rounds
+1 to 3. The session that runs a round above 3 posts the same text by hand
+(`acceptor.md` §4). The board reads only this shape. A record that it cannot
+read makes the PR state unknown, not accepted.
 
 ### review reply (in the PR review thread)
 
