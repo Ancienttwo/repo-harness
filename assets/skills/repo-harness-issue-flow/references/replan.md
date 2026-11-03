@@ -9,7 +9,7 @@ files link it and do not restate it.
 The advisor is the long-lived pane session beside the orchestrator
 ([Issue-flow topology](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#issue-flow-topology)).
 It holds no seat. It does not edit code, commit, write to GitHub or
-decide. It may use read-only probe sub-agents for research.
+decide.
 
 ## 1. Triggers
 
