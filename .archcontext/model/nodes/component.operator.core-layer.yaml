@@ -45,6 +45,7 @@ source:
     - src/core/operator/runtime-capture-decoders.ts
     - src/core/operator/runtime-capture.ts
     - src/core/operator/runtime-status.ts
+    - src/core/operator/seat-launch.ts
     - src/core/operator/seats-settings.ts
     - src/core/operator/slack-review.ts
     - src/core/operator/task-activity.ts
