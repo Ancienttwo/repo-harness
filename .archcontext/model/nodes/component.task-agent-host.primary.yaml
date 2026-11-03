@@ -5,11 +5,10 @@ name: Herdr Task Session Host
 status: active
 parent: capability.runtime-harness.task-agent-host
 layer: effects
-summary: "Owns the hc transport, task sessions in hc terminals, task worktrees, the Herdr commands, the installed persona assets, and the notify relay with its install record. Sends post-merge closeout notices to dispatch-attributed owner terminals through existing workspace bindings without granting Git deletion authority."
+summary: "Owns task sessions in hc terminals, task worktrees, the Herdr commands, the installed persona assets, and the notify relay with its install record. Sends post-merge closeout notices to dispatch-attributed owner terminals through existing workspace bindings without granting Git deletion authority."
 source:
   include:
     - src/effects/terminal/herdr.ts
-    - src/effects/terminal/herdr-core.ts
     - src/effects/terminal/task-*.ts
     - .codex/agents/**
     - src/effects/terminal/herdr-notify-install.ts
