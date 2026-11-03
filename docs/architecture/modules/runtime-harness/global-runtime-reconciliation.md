@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:a5062a9f41cc4d6c609e409562bccd2dc7e1a02c4043cf7bba788b58a5760b6e" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bd8f129eb8c2bc8468e1e1fdd8d2d81d555ead13cd6c3edf7698d815b683d6b1" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -127,6 +127,7 @@ flowchart LR
   - `calls` → `capability.verification.acceptance-review` — Register the review command
   - `calls` → `capability.public-surface.adoption` — Register the adoption-plan command and run the adoption plan for the setup check
   - `calls` → `component.global-runtime-reconciliation.archctx-closure` — Register the architecture-projection command
+  - `calls` → `capability.organization.board` — Register the board command
   - `calls` → `component.global-runtime-reconciliation.cli-diagnostics` — Register the doctor and init-hook commands and validate the shared CLI options
   - `calls` → `capability.verification.codegraph-readiness` — Register the tools command and pass the CodeGraph doctor checks and setup steps to core commands
   - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands

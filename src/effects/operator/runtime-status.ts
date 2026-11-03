@@ -1,17 +1,20 @@
 import { decodeRuntimeIdentity, decodeRuntimeObservation, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
   unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimeUnavailableReason } from '../../core/operator/runtime-status';
-import { HerdrVersionMismatchError } from '../terminal/herdr-observation';
+import { HcPinUnavailableError, HcVersionMismatchError } from '../../core/operator/herdr-pin';
 import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
-/** Select only documented structured pane fields. No title, cwd or text inference. */
-export function observeHerdrPane(value: unknown, binding: RuntimeIdentity): RuntimeObservation | null {
+/**
+ * Select only the hc status word of the bound terminal. No title, cwd or text inference. A terminal without a
+ * status report, or with a word outside these, is unknown: never idle.
+ */
+export function observeHcTerminal(value: unknown, binding: RuntimeIdentity): RuntimeObservation | null {
   const identity = decodeRuntimeIdentity(binding);
   if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
-  const pane = value as Record<string, unknown>;
-  if (pane.pane_id !== identity.pane_id || pane.terminal_id !== identity.terminal_id || pane.agent_session !== identity.agent_session) return null;
-  const states = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done-unseen', unknown: 'unknown' } as const;
-  const state = states[pane.agent_status as keyof typeof states] ?? 'unknown';
-  return decodeRuntimeObservation({ identity, revision: runtimeInteger(pane.revision), state, reason: 'unknown', changed_at: null, source: 'herdr-agent' });
+  const terminal = value as Record<string, unknown>;
+  if (terminal.terminal_id !== identity.terminal_id) return null;
+  const states = { idle: 'idle', working: 'working', blocked: 'blocked', done: 'done-unseen' } as const;
+  const state = Object.hasOwn(states, terminal.status as string) ? states[terminal.status as keyof typeof states] : 'unknown';
+  return decodeRuntimeObservation({ identity, revision: runtimeInteger(terminal.revision), state, reason: 'unknown', changed_at: null, source: 'hc-status' });
 }
 export type RuntimeInvalidation = 'updated' | 'reconnect' | 'events_lost' | 'disconnected' | { type: 'failure'; error: unknown };
 export interface RuntimeSnapshot {
@@ -25,10 +28,10 @@ export interface RuntimeSource {
 
 /** Preserve only the typed public version facts, never an arbitrary error message. */
 export function runtimeUnavailableReason(error: unknown): RuntimeUnavailableReason | null {
-  if (!(error instanceof HerdrVersionMismatchError)) return null;
+  if (error instanceof HcPinUnavailableError) return { code: 'hc_pin_unavailable' };
+  if (!(error instanceof HcVersionMismatchError)) return null;
   const { expected, actual } = error.check;
-  return { code: 'herdr_version_mismatch', expected: { version: expected.version, protocol: expected.protocol, revision: expected.revision },
-    actual: { version: actual.version, protocol: actual.protocol } };
+  return { code: 'hc_version_mismatch', expected: { min_version: expected.min_version }, actual: { version: actual.version } };
 }
 
 /** Explicit lifecycle outside GET. Events invalidate snapshots; they never update task state. */

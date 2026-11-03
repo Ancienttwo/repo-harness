@@ -70,7 +70,9 @@ export function fixtureProps(name: string): OperatorAppProps {
   const fixture = name as FixtureName;
   const activity: DevActivitySnapshotV2 = decodeDevActivitySnapshot(
     fixture === 'busy' ? busyDevActivity(now) : fixture === 'empty' ? emptyDevActivity(now) : degradedDevActivity(now));
-  const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : unavailableRuntimeOverlay();
+  // degraded: the hc core is below the pin, as in the Bots fixture.
+  const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : fixture === 'empty' ? unavailableRuntimeOverlay()
+    : unavailableRuntimeOverlay(0, { code: 'hc_version_mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } });
   const snapshot = fleet(fixture === 'busy' ? stableSnapshot : fixture === 'empty' ? emptySnapshot : degradedSnapshot);
   const notifyStatus = notify(now, fixture !== 'degraded');
   // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.

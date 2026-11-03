@@ -1,7 +1,8 @@
+import { HC_VERSION_TEXT } from './herdr-pin';
 import { decodeNativeRuntimeObservation, runtimeCaptureId, RUNTIME_CAPTURE_MAX_OBSERVATIONS, type NativeRuntimeObservation, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from './runtime-capture';
 
 /** An observation projection. It has no task transition authority. */
-export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v6' as const;
+export const RUNTIME_OVERLAY_VERSION = 'repo-harness.runtime-overlay.v7' as const;
 export const RUNTIME_STALE_AFTER_MS = 300_000;
 export const RUNTIME_LIMIT = 512;
 export const NATIVE_RUNTIME_SOURCE_LIMIT = 8;
@@ -21,23 +22,22 @@ export function nativeRuntimeFreshness(source: Pick<NativeRuntimeSourceSummary, 
 export interface RuntimeIdentity {
   source_host: string; repository_id: string; task: string; role: string; round: number; pipeline_state_version: number;
   request_id: string; context_sha256: string; runtime_session: string; attempt: number;
-  generation: string; source_epoch: number; herdr_session: string; terminal_id: string;
-  pane_id: string; agent_session: string;
+  /** `hc_core` is the core's `core.id`; `terminal_id` is the hc address on that core. */
+  generation: string; source_epoch: number; hc_core: string; terminal_id: string;
 }
 export type RuntimeState = 'unknown' | 'idle' | 'working' | 'blocked' | 'done-unseen';
 export type BlockReason = 'permission' | 'question' | 'auth' | 'unknown';
 export interface RuntimeObservation {
   identity: RuntimeIdentity; revision: number; state: RuntimeState; reason: BlockReason;
-  changed_at: string | null; source: 'herdr-agent';
+  changed_at: string | null; source: 'hc-status';
 }
 export interface RuntimeBadge extends RuntimeObservation {
   badge: RuntimeState; freshness: 'fresh' | 'stale' | 'disconnected';
 }
-export interface RuntimeUnavailableReason {
-  code: 'herdr_version_mismatch';
-  expected: { version: string; protocol: number; revision: string };
-  actual: { version: string | null; protocol: number | null };
-}
+/** Why the hc source is unavailable, when the reason is a typed fact: the core is below the pin, or no pin is readable. */
+export type RuntimeUnavailableReason =
+  | { code: 'hc_version_mismatch'; expected: { min_version: string }; actual: { version: string } }
+  | { code: 'hc_pin_unavailable' };
 export interface RuntimeOverlay {
   projection_version: typeof RUNTIME_OVERLAY_VERSION; status: 'ready' | 'unavailable'; reason: RuntimeUnavailableReason | null;
   observed_at: string | null; source_epoch: number;
@@ -69,7 +69,7 @@ export function runtimeTime(value: unknown): string | null {
 }
 export function decodeRuntimeIdentity(value: unknown): RuntimeIdentity {
   const v = record(value);
-  exact(v, ['source_host','repository_id','task','role','round','pipeline_state_version','request_id','context_sha256','runtime_session','attempt','generation','source_epoch','herdr_session','terminal_id','pane_id','agent_session']);
+  exact(v, ['source_host','repository_id','task','role','round','pipeline_state_version','request_id','context_sha256','runtime_session','attempt','generation','source_epoch','hc_core','terminal_id']);
   const result: Record<string, string | number> = {};
   for (const [key, item] of Object.entries(v).sort(([a], [b]) => a.localeCompare(b))) result[key] = ['round','attempt','source_epoch','pipeline_state_version'].includes(key) ? runtimeInteger(item) : runtimeId(item);
   for (const field of ['repository_id','context_sha256']) if (!/^sha256:[a-f0-9]{64}$/.test(result[field] as string)) throw new Error('runtime_digest_invalid');
@@ -81,24 +81,24 @@ export function runtimeIdentityKey(identity: RuntimeIdentity): string {
 export function decodeRuntimeObservation(value: unknown): RuntimeObservation {
   const v = record(value);
   exact(v, ['identity','revision','state','reason','changed_at','source']);
-  if (!['unknown','idle','working','blocked','done-unseen'].includes(v.state as string) || v.source !== 'herdr-agent') throw new Error('runtime_state_invalid');
+  if (!['unknown','idle','working','blocked','done-unseen'].includes(v.state as string) || v.source !== 'hc-status') throw new Error('runtime_state_invalid');
   if (v.reason !== 'unknown' || v.changed_at !== null) throw new Error('runtime_capability_invalid');
   return { identity: decodeRuntimeIdentity(v.identity), revision: runtimeInteger(v.revision), state: v.state as RuntimeState,
     reason: v.reason as BlockReason, changed_at: runtimeTime(v.changed_at), source: v.source as RuntimeObservation['source'] };
 }
 function decodeRuntimeUnavailableReason(value: unknown): RuntimeUnavailableReason | null {
   if (value === null) return null;
-  const reason = record(value); exact(reason, ['code','expected','actual']);
-  if (reason.code !== 'herdr_version_mismatch') throw new Error('runtime_unavailable_reason_invalid');
+  const reason = record(value);
+  if (reason.code === 'hc_pin_unavailable') { exact(reason, ['code']); return { code: 'hc_pin_unavailable' }; }
+  exact(reason, ['code','expected','actual']);
+  if (reason.code !== 'hc_version_mismatch') throw new Error('runtime_unavailable_reason_invalid');
   const expected = record(reason.expected), actual = record(reason.actual);
-  exact(expected, ['version','protocol','revision']); exact(actual, ['version','protocol']);
+  exact(expected, ['min_version']); exact(actual, ['version']);
   const version = (value: unknown): string => {
-    if (typeof value !== 'string' || !/^[0-9A-Za-z][0-9A-Za-z.+-]{0,31}$/.test(value)) throw new Error('runtime_version_invalid');
+    if (typeof value !== 'string' || !HC_VERSION_TEXT.test(value)) throw new Error('runtime_version_invalid');
     return value;
   };
-  if (typeof expected.revision !== 'string' || !/^[a-f0-9]{40}$/.test(expected.revision)) throw new Error('runtime_revision_invalid');
-  return { code: 'herdr_version_mismatch', expected: { version: version(expected.version), protocol: runtimeInteger(expected.protocol), revision: expected.revision },
-    actual: { version: actual.version === null ? null : version(actual.version), protocol: actual.protocol === null ? null : runtimeInteger(actual.protocol) } };
+  return { code: 'hc_version_mismatch', expected: { min_version: version(expected.min_version) }, actual: { version: version(actual.version) } };
 }
 export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
   const v = record(value);
@@ -138,18 +138,18 @@ export function decodeRuntimeOverlay(value: unknown): RuntimeOverlay {
   return { projection_version: RUNTIME_OVERLAY_VERSION, status: v.status as RuntimeOverlay['status'], reason, observed_at,
     source_epoch: epoch, unclaimed: runtimeInteger(v.unclaimed), badges, native_sources };
 }
-/** Only current, unique dispatch-to-pane bindings can claim an observation. */
+/** Only current, unique dispatch-to-terminal bindings can claim an observation. */
 export function runtimeBindingKeys(bindings: readonly RuntimeIdentity[]): Set<string> {
   if (bindings.length > RUNTIME_LIMIT) throw new Error('runtime_limit');
-  const counts = new Map<string, number>(), panes = new Map<string, number>();
-  const paneKey = (b: RuntimeIdentity) => JSON.stringify([b.source_host,b.herdr_session,b.terminal_id,b.pane_id]);
+  const counts = new Map<string, number>(), terminals = new Map<string, number>();
+  const terminalKey = (b: RuntimeIdentity) => JSON.stringify([b.source_host,b.hc_core,b.terminal_id]);
   for (const binding of bindings) {
-    const key = runtimeIdentityKey(binding), pane = paneKey(binding);
-    counts.set(key, (counts.get(key) ?? 0) + 1); panes.set(pane, (panes.get(pane) ?? 0) + 1);
+    const key = runtimeIdentityKey(binding), terminal = terminalKey(binding);
+    counts.set(key, (counts.get(key) ?? 0) + 1); terminals.set(terminal, (terminals.get(terminal) ?? 0) + 1);
   }
-  return new Set(bindings.filter(binding => counts.get(runtimeIdentityKey(binding)) === 1 && panes.get(paneKey(binding)) === 1).map(runtimeIdentityKey));
+  return new Set(bindings.filter(binding => counts.get(runtimeIdentityKey(binding)) === 1 && terminals.get(terminalKey(binding)) === 1).map(runtimeIdentityKey));
 }
-/** Exact binding only. Ambiguous identities and pane reuse cannot claim a card. */
+/** Exact binding only. Ambiguous identities and terminal reuse cannot claim a card. */
 export function projectRuntimeOverlay(bindings: readonly RuntimeIdentity[], observations: readonly RuntimeObservation[], observedAt: string,
   epoch: number, now: number, connected = true, unclaimedCount = 0): RuntimeOverlay {
   if (bindings.length > RUNTIME_LIMIT || observations.length > RUNTIME_LIMIT) throw new Error('runtime_limit');
