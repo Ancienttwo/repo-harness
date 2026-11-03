@@ -1,5 +1,5 @@
 /** Stop publishes the evidence checkpoint and reports notices; it never grants publication permission. */
-import { collectAgentNotice } from './agent-notice';
+import { collectArchitectureNotice } from './hook-protocol';
 import { collectProtectedPathNotice } from './protected-path-notice';
 import { publishCheckpointFromLedger } from '../../effects/evidence/checkpoint-store';
 import type { StateInputCollector } from '../../effects/loop/state-input-collector';
@@ -48,7 +48,7 @@ export function runStopHandler(opts: StopHandlerInput): StopHandlerResult {
 /** The architecture and protected path notices fail independently. */
 function claudeNotices(repoRoot: string, env: NodeJS.ProcessEnv): StopHandlerResult {
   const notices = [
-    collectAgentNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env }),
+    collectArchitectureNotice(repoRoot, options => resolveCapabilityOwnership(repoRoot, undefined, options), { env }),
     collectProtectedPathNotice(repoRoot, env),
   ];
   const joined = (field: 'content' | 'systemMessage') => notices.map(notice => notice[field]).filter(Boolean).join('\n');

@@ -7,10 +7,8 @@ import {
   capabilityOwnershipNextAction,
   type CapabilityOwnershipBlocker,
 } from '../capabilities/ownership-blocker';
-import type {
-  CapabilityOwnership,
-  EffectiveState,
-} from './types';
+import type { CapabilityOwnership } from '../capabilities/registry';
+import type { EffectiveState } from './types';
 
 const CEREMONY_GUIDANCE: Readonly<Record<WorkflowProfile, string>> = {
   routine: 'Implement the authorized scope; verify typecheck and affected tests once; record goal/change/verification/risk/rollback in the PR',

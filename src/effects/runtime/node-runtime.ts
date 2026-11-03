@@ -1,6 +1,5 @@
 import { existsSync, realpathSync, statSync } from 'node:fs';
 import { isAbsolute, join } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE } from 'archctx-contracts';
 
 export type NodeSelection =
   | { readonly status: 'selected'; readonly path: string }
@@ -8,6 +7,8 @@ export type NodeSelection =
   | { readonly status: 'not-found' };
 
 export interface NodeSelectionInput {
+  /** The semver range that a selected Node version must satisfy. */
+  readonly range: string;
   /** `REPO_HARNESS_NODE_BIN` when the caller honors it. Omit to skip that tier. */
   readonly explicit?: string;
   /** Search PATH only when this is set. An empty string searches nothing. */
@@ -19,8 +20,8 @@ export interface NodeSelectionInput {
   readonly platform?: NodeJS.Platform;
 }
 
-function satisfies(version: string | null): boolean {
-  return version !== null && Bun.semver.satisfies(version, ARCHCONTEXT_NODE_RANGE);
+function satisfies(version: string | null, range: string): boolean {
+  return version !== null && Bun.semver.satisfies(version, range);
 }
 
 /**
@@ -36,7 +37,7 @@ export function selectCompatibleNode(input: NodeSelectionInput): NodeSelection {
     const actual = realpathSync(explicit);
     const stat = statSync(actual);
     if (!stat.isFile() || (stat.mode & 0o111) === 0) return { status: 'explicit-rejected', reason: 'not-executable' };
-    if (!satisfies(input.versionOf(actual))) return { status: 'explicit-rejected', reason: 'version' };
+    if (!satisfies(input.versionOf(actual), input.range)) return { status: 'explicit-rejected', reason: 'version' };
     return { status: 'selected', path: actual };
   }
   if (input.pathValue !== undefined) {
@@ -48,7 +49,7 @@ export function selectCompatibleNode(input: NodeSelectionInput): NodeSelection {
       for (const extension of extensions) {
         const candidate = join(directory, `node${extension}`);
         if (!existsSync(candidate)) continue;
-        if (!satisfies(input.versionOf(candidate))) continue;
+        if (!satisfies(input.versionOf(candidate), input.range)) continue;
         return { status: 'selected', path: realpathSync(candidate) };
       }
     }
@@ -59,7 +60,7 @@ export function selectCompatibleNode(input: NodeSelectionInput): NodeSelection {
     const actual = realpathSync(candidate);
     const stat = statSync(actual);
     if (!stat.isFile() || (stat.mode & 0o111) === 0) continue;
-    if (!satisfies(input.versionOf(actual))) continue;
+    if (!satisfies(input.versionOf(actual), input.range)) continue;
     return { status: 'selected', path: actual };
   }
   return { status: 'not-found' };

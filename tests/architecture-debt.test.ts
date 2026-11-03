@@ -4,7 +4,8 @@ import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSy
 import { tmpdir } from 'node:os';
 import { dirname, join } from 'node:path';
 import { digestJson, errorEnvelope, type ArchitectureDebtItemV1, type ArchitectureDebtReportV1, type Json } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeArchitectureDebtReport, type ArchctxProcessResult, type ArchitectureProjectionPolicy, type RunArchctxProcess } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeArchitectureDebtReport } from '../src/core/architecture/projection';
+import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
 import { completeArchitectureDebt, checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
 import { architectureDebtReport, architectureDebtSummary } from '../src/cli/commands/architecture-debt';
 

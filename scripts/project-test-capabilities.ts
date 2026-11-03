@@ -18,7 +18,8 @@ import { spawnSync } from 'node:child_process';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { analyzeAffectedTests } from './select-ci-coverage';
-import { resolveArchcontextCapabilityPaths } from '../src/effects/architecture/archcontext-owners';
+import { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } from '../src/core/architecture/contracts';
+import { ARCHITECTURE_PROVIDERS } from '../src/effects/architecture/providers';
 import { TEST_PROJECTION_SCHEMA } from '../src/core/operator/tests';
 
 const MODEL_NODES = '.archcontext/model/nodes';
@@ -135,9 +136,13 @@ function trackedSources(root: string): Map<string, string> {
   return sources;
 }
 
+registerArchitecturePorts(ARCHITECTURE_PROVIDERS);
+
 /** Ownership comes from `archctx resolve`, the model's own rule (ADR-0043). */
 function archctxOwners(root: string, paths: readonly string[]): Map<string, string> {
-  const resolution = resolveArchcontextCapabilityPaths(root, { get: id => ({ id }) }, paths);
+  const ownership = architecturePort('ownership');
+  if (isArchitectureUnavailable(ownership)) throw new Error(ownership.message);
+  const resolution = ownership.resolvePaths(root, { get: id => ({ id }) }, paths);
   if (resolution.status !== 'valid') {
     throw new Error(`archctx resolve failed: ${resolution.diagnostics.map(entry => entry.message).join('; ') || resolution.status}`);
   }

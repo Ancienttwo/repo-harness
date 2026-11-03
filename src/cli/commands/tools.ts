@@ -18,7 +18,7 @@ import {
   type CodegraphEnsureResult,
 } from '../tools/codegraph';
 import type { CheckStatus, DoctorCheckResult } from './doctor';
-import type { PluginId } from '../../core/skill-surface/plugin-manifest';
+import { ARCHITECTURE_CONTRACT_VERSION, type CodegraphDoctorPort } from '../../core/architecture/contracts';
 import type { GlobalRuntimeStep } from './global-runtime';
 import type { InitPorts, InitStep } from './init';
 import type { InstallTargetSpec } from './install';
@@ -317,13 +317,15 @@ function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
  * without it each check is `na` and nothing runs. An unreadable selection
  * fails each check.
  */
-export function codegraphDoctorChecks(cwd: string, plugins: readonly PluginId[] | Error): DoctorCheckResult[] {
+function codegraphDoctorChecks(cwd: string, plugins: readonly string[] | Error): DoctorCheckResult[] {
   if (plugins instanceof Error) return codegraphChecksFor({ error: plugins });
   if (!plugins.includes('architecture')) {
     return codegraphChecksFor({}).map(({ id, describe }) => ({ id, describe, status: 'na', detail: 'architecture plugin not selected' }));
   }
   return codegraphChecksFor(probeCodegraph(cwd));
 }
+
+export const CODEGRAPH_DOCTOR_PROVIDER: CodegraphDoctorPort = { contractVersion: ARCHITECTURE_CONTRACT_VERSION, checks: codegraphDoctorChecks };
 
 function codegraphChecksFor(probe: CodegraphProbe): DoctorCheckResult[] {
   return [

@@ -3,7 +3,7 @@
 import { join } from 'node:path';
 import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
 import { readArchitectureHandEdits } from '../architecture/architecture-read';
-import type { ArchctxProviderOptions } from '../../core/architecture/projection';
+import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { docsHostProtectedProjection } from '../review/docs-host-isolation';
 import { normalizeDocsPath } from './docs-reader';
 import { DocSessionScopeRefusal, type DocSessionFinalizeDependencies } from './doc-session-finalize';

@@ -13,6 +13,12 @@ import type { HookEvent, RouteId } from './hook/route-registry';
 import { writeAllSync } from './runtime/write-all-sync';
 import { PROCESS_GROUP_LAUNCHER_FLAG, runProcessGroupLauncherCli } from '../effects/process-group-launcher';
 import { PROCESS_SUPERVISOR_FLAG, runProcessSupervisorCli } from '../effects/process-supervisor';
+import { registerArchitecturePorts } from '../core/architecture/contracts';
+import { ARCHITECTURE_PROVIDERS } from '../effects/architecture/providers';
+import { AGENT_NOTICE_PROVIDER } from './hook/agent-notice';
+
+// The hook process root: core hook code reaches the architecture code only through these ports.
+registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, notice: AGENT_NOTICE_PROVIDER });
 
 export { runHook };
 

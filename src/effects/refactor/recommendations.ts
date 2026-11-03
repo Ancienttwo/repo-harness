@@ -2,7 +2,7 @@ import { existsSync, realpathSync } from 'node:fs';
 import { join } from 'node:path';
 import type { RecommendationV3 } from 'archctx-contracts';
 import { RefactorProviderError, type RefactorScanResultV1 } from '../../core/refactor/provider-contract';
-import type { ArchctxProviderOptions } from '../../core/architecture/projection';
+import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { listOpenRecommendations, runRefactorScan } from './archctx-provider';
 
 type Observation = RecommendationV3 & { category: 'structural_observation' };

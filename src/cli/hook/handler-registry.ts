@@ -7,7 +7,7 @@ import { runSubagentContext } from './subagent-context';
 import type { HookHandlerId, Route } from './route-registry';
 import type { HookHandlerContext, HookHandlerResult, TypedHookHandler } from './handler-contract';
 import type { SessionContextSection } from './session-context-budget';
-import { collectAgentNotice } from './agent-notice';
+import { collectArchitectureNotice } from './hook-protocol';
 import { resolveCapabilityOwnership } from '../../effects/state/resolve-effective-state';
 
 /**
@@ -30,7 +30,7 @@ function textResult(value: { readonly exitCode: number; readonly stdout: string;
 function runSessionContext(context: HookHandlerContext): HookHandlerResult {
   const resolution = context.collector.getEffectiveState();
   const sections: SessionContextSection[] = [...buildSessionStartSections(resolution), EDIT_GUARD_SCOPE_SECTION];
-  const notice = resolution.ok ? collectAgentNotice(context.repoRoot, () => resolution.state.capability_ownership, { env: context.env }, 'session-start') : {};
+  const notice = resolution.ok ? collectArchitectureNotice(context.repoRoot, () => resolution.state.capability_ownership, { env: context.env }, 'session-start') : {};
   if (notice.content) sections.push({ id: 'architecture-debt', priority: 2, mandatory: true, content: notice.content, source: 'repo-harness architecture-debt --json', systemMessage: notice.systemMessage });
   const systemMessage = sections.map((section) => section.systemMessage).filter(Boolean).join('\n');
   return { exitCode: 0, sessionContexts: sections, ...(systemMessage ? { systemMessage } : {}), ...(notice.diagnostics ? { diagnostics: notice.diagnostics } : {}), ...(resolution.ok ? {} : { reason: 'context-unavailable' }) };
@@ -75,7 +75,7 @@ const handlers: Readonly<Record<HookHandlerId, TypedHookHandler>> = Object.freez
     id: 'agent-notice',
     run: (context: HookHandlerContext) => {
       if (context.identity.host !== 'codex' && context.identity.host !== 'pi') return { exitCode: 0 };
-      const notice = collectAgentNotice(context.repoRoot,
+      const notice = collectArchitectureNotice(context.repoRoot,
         options => resolveCapabilityOwnership(context.repoRoot, undefined, options), { env: context.env });
       return { exitCode: 0, ...(notice.content ? { additionalContext: notice.content } : {}), ...(notice.diagnostics ? { diagnostics: notice.diagnostics } : {}) };
     },

@@ -10,7 +10,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
-import type { RunArchctxProcess } from '../src/core/architecture/projection';
+import type { RunArchctxProcess } from '../src/core/architecture/contracts';
 import { errorEnvelope } from 'archctx-contracts';
 import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';

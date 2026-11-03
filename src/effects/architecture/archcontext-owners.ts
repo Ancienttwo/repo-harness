@@ -1,6 +1,14 @@
 import { statSync } from 'node:fs';
 import { resolve } from 'node:path';
-import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
+import { ArchctxClientError } from '../../core/architecture/projection';
+import {
+  ARCHCONTEXT_IDENTITY_OWNERS,
+  type ArchcontextCapabilityContext,
+  type ArchcontextOwnerLookup,
+  type ArchcontextResolveCache,
+  type ArchctxProviderOptions,
+  type ArchitecturePathOwnersRead,
+} from '../../core/architecture/contracts';
 import {
   capabilityPathResolutionFromArchcontextOwners,
   capabilityIdentityFromNodeId,
@@ -8,21 +16,14 @@ import {
   normalizeCapabilityPath,
   type ArchcontextCapabilityResolution,
   type Capability,
-  type CapabilityIdentity,
-  type ArchcontextPathOwner,
   type CapabilityPathResolution,
   type CapabilityRegistryDiagnostic,
 } from '../../core/capabilities/registry';
+import { CapabilitySourceError } from '../../core/capabilities/resolver';
 import { readArchitectureNativeContext, resolveArchitecturePaths } from './architecture-read';
 import { currentReadonlyObservation } from '../readonly-observation';
 
-export interface ArchcontextOwnerLookup<C> {
-  get(nodeId: string): C | undefined;
-}
-
-export const ARCHCONTEXT_IDENTITY_OWNERS: ArchcontextOwnerLookup<CapabilityIdentity> = {
-  get: (nodeId) => capabilityIdentityFromNodeId(nodeId) ?? undefined,
-};
+const CAPABILITY_NODES_DIR = '.archcontext/model/nodes';
 
 /** Keep native model diagnostics useful without printing the whole issue list. */
 export function formatArchcontextCapabilityError(error: unknown): string {
@@ -52,16 +53,27 @@ export function readArchcontextCapabilityAuthority(
   }
 }
 
+/** The authority and the summary of each capability node, from one worktree export. */
+export function readArchcontextCapabilityContext(repoRoot: string): ArchcontextCapabilityContext {
+  try {
+    const context = readArchitectureNativeContext(repoRoot, { kind: 'worktree' });
+    const authority = capabilityRegistryFromNativeContext(context, { repoRoot });
+    if (authority.status !== 'valid') throw new CapabilitySourceError(authority.diagnostics.map((item) => item.message).join('; '));
+    const summaries = new Map<string, string>();
+    for (const node of context.model.nodes) {
+      if (node.kind !== 'capability' || typeof node.id !== 'string' || typeof node.summary !== 'string') continue;
+      const identity = capabilityIdentityFromNodeId(node.id);
+      if (identity) summaries.set(identity.id, node.summary);
+    }
+    return { registry: authority.registry, owners: authority.owners, summaries };
+  } catch (error) {
+    if (error instanceof CapabilitySourceError) throw error;
+    throw new CapabilitySourceError(formatArchcontextCapabilityError(error));
+  }
+}
+
 // Notice callers can supply a shorter deadline through ArchctxProviderOptions.
 const RESOLVE_TIMEOUT_MS = 10_000;
-
-export type ArchctxResolveResult = Omit<ArchcontextPathOwner, 'path'>;
-
-/** Answers keyed by the exact query line; the owner of the cache binds them to one model. */
-export interface ArchcontextResolveCache {
-  lookup(queries: readonly string[]): ReadonlyMap<string, ArchctxResolveResult>;
-  store(answers: ReadonlyMap<string, ArchctxResolveResult>): void;
-}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return Boolean(value) && typeof value === 'object' && !Array.isArray(value);
@@ -138,4 +150,31 @@ export function resolveArchcontextCapabilityPaths<C extends { readonly id: strin
   const resolution = capabilityPathResolutionFromArchcontextOwners(owners, queries.map((query, index) => ({ ...answers.get(query)!, path: paths[index]! })));
   if (diagnostics.length === 0) return resolution;
   return { ...resolution, status: 'invalid', diagnostics: [...diagnostics, ...resolution.diagnostics] };
+}
+
+/**
+ * A model rejection never reaches this mapping: archctx answers it with an
+ * error envelope, which the resolve returns as ARCHCONTEXT_MODEL_REJECTED.
+ */
+export function archcontextResolveFailure(error: unknown): CapabilityRegistryDiagnostic {
+  const archctxErrorCode = error instanceof ArchctxClientError ? error.code : undefined;
+  if (archctxErrorCode === 'RH_ARCHCTX_TIMEOUT') {
+    return { code: 'ARCHCONTEXT_RESOLVE_TIMEOUT', path: CAPABILITY_NODES_DIR, message: 'archctx resolve timed out; the architecture notice is skipped for this turn' };
+  }
+  return {
+    code: 'ARCHCONTEXT_RESOLVE_FAILED',
+    path: CAPABILITY_NODES_DIR,
+    message: (error as Error).message,
+    ...(archctxErrorCode ? { archctxErrorCode } : {}),
+  };
+}
+
+/** The board's path owners: one resolve batch with no policy branch. A typed archctx failure names its code. */
+export function readArchcontextPathOwners(repoRoot: string, paths: readonly string[], options?: ArchctxProviderOptions): ArchitecturePathOwnersRead {
+  try {
+    return { status: 'resolved', resolution: resolveArchcontextCapabilityPaths(repoRoot, ARCHCONTEXT_IDENTITY_OWNERS, paths, options) };
+  } catch (error) {
+    if (!(error instanceof ArchctxClientError)) throw error;
+    return { status: 'failed', code: error.code };
+  }
 }

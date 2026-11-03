@@ -6,29 +6,10 @@ import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsP
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
-import type { CapabilityOwnership } from '../../core/state/types';
-import {
-  ARCHCTX_REQUIRED_VERSION,
-  ArchctxClientError,
-  assertArchctxVersion,
-  assertProjectionApplyReadbackResult,
-  assertProjectionResult,
-  decodeArchitectureDebtReport,
-  decodeDocsAnchorsReport,
-  type ArchctxProcessResult,
-  type ArchctxProviderOptions,
-  type ArchitectureProjectionPolicy,
-  type RunArchctxProcess,
-  type ArchitectureProjectionReadinessV1,
-} from '../../core/architecture/projection';
+import type { CapabilityOwnership } from '../../core/capabilities/registry';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, assertArchctxVersion, assertProjectionApplyReadbackResult, assertProjectionResult, decodeArchitectureDebtReport, decodeDocsAnchorsReport, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
+import type { ArchctxProcessResult, ArchctxProviderOptions, ArchitectureProjectionPolicy, RunArchctxProcess, ArchitectureDaemonStopFailure, ArchitectureDaemonStopReportV1, ResolvedArchctxPackage } from '../../core/architecture/contracts';
 import { gitExecFileSync } from '../git/runner';
-
-export interface ResolvedArchctxPackage {
-  binaryPath: string;
-  nodeRange: string;
-  packageRoot: string;
-  version: string;
-}
 
 const ARCHCTX_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;
 const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
@@ -98,6 +79,7 @@ export function resolveCompatibleNodeRuntime(
   const pathValue = env.PATH ?? '';
   let trustedCandidates: readonly string[] = [];
   const selected = selectCompatibleNode({
+    range: ARCHCONTEXT_NODE_RANGE,
     explicit: env.REPO_HARNESS_NODE_BIN,
     pathValue,
     pathExt: env.PATHEXT,
@@ -262,24 +244,6 @@ export function verifyArchctxDaemonRuntime(repoRoot: string, options: ArchctxPro
   if (data.running && (data.rpcVersionCompatible !== true || data.productVersionCompatible !== true)) {
     throw new Error('archctx daemon status did not prove runtime compatibility');
   }
-}
-
-export interface ArchitectureDaemonStopFailure {
-  /** Null when the daemon listing failed before a state directory was known. */
-  stateDir: string | null;
-  code: string;
-  action: string;
-  reasonCode?: string;
-  retryable?: boolean;
-  message: string;
-}
-
-export interface ArchitectureDaemonStopReportV1 {
-  schemaVersion: 'repo-harness.architecture-daemon-stop/v1';
-  worktree: string;
-  provider: ArchitectureProjectionPolicy['provider'];
-  stopped: string[];
-  failures: ArchitectureDaemonStopFailure[];
 }
 
 function daemonStopFailure(stateDir: string | null, error: ArchctxClientError): ArchitectureDaemonStopFailure {

@@ -4,7 +4,8 @@ import type { DocsAnchorsReportV1, NativeContextExportV1 } from 'archctx-contrac
 import { capabilityRegistryFromNativeContext, archcontextNodeId, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
 import { generatedSummaryState, moduleDetail, ModuleReadError, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
 import { buildModuleReviewPrompt, moduleStaleCitations, sha256, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
-import { ARCHCONTEXT_MANIFEST, ArchctxClientError, type ArchctxProviderOptions, type GeneratedSummaryFreshness } from '../../core/architecture/projection';
+import { ARCHCONTEXT_MANIFEST, ArchctxClientError, type GeneratedSummaryFreshness } from '../../core/architecture/projection';
+import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { repoHarnessRepoIdFor } from '../repo-registry';

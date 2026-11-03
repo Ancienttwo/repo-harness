@@ -530,6 +530,27 @@ export const CAPABILITY_SOURCE_MODES = ["registry", "archcontext"] as const;
 export type CapabilitySourceMode = (typeof CAPABILITY_SOURCE_MODES)[number];
 
 /** One `archctx resolve --paths-from` result, reduced to the fields this registry reads. */
+/** One capability that owns some of the resolved implementation paths. */
+export interface CapabilityOwnershipEntry {
+  readonly id: string;
+  readonly module_document: string;
+  /** The resolved implementation paths this capability owns, sorted. */
+  readonly paths: readonly string[];
+}
+
+/**
+ * The capability ownership answer for the resolved implementation paths: the
+ * explicit target paths plus the review subject. It is a projection of the
+ * one ownership result the resolver already computes.
+ */
+export interface CapabilityOwnership {
+  /** The commit the review subject was diffed against; null when the subject was unavailable. */
+  readonly review_base: string | null;
+  readonly capability_ids: readonly string[];
+  readonly capabilities: readonly CapabilityOwnershipEntry[];
+  readonly unowned_paths: readonly string[];
+}
+
 export interface ArchcontextPathOwner {
   readonly path: string;
   readonly matched: boolean;

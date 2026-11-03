@@ -8,7 +8,8 @@ import {
   indexPackageLocalCodeGraph,
   stopWorkspaceArchitectureDaemons,
 } from '../../effects/architecture/archctx-provider';
-import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
+import { ArchctxClientError } from '../../core/architecture/projection';
+import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { gitSpawnSync } from '../../effects/git/runner';
 import { recordWorktree, endWorktreeRecord, type WorktreeRecord } from '../../effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';

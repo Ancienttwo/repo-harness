@@ -5,6 +5,7 @@ import { runProcess as runBoundedProcess } from '../process-runner';
 import { runGit } from '../git/run-git';
 import { trustedNodeCandidates } from './node-candidates';
 import { selectCompatibleNode } from './node-runtime';
+import { engines } from '../../../package.json';
 import {
   protectedHelperRuntimeEnv,
   resolveProtectedHelperPlatform,
@@ -34,6 +35,7 @@ function protectedPath(runtime: ProtectedHelperPlatform): string {
 
 function trustedNodeRuntime(runtime: ProtectedHelperPlatform): string | undefined {
   const selected = selectCompatibleNode({
+    range: engines.node,
     candidates: trustedNodeCandidates(runtime.accountHome),
     versionOf(actual) {
       const result = runBoundedProcess(actual, ['--version'], {

@@ -8,9 +8,8 @@ import {
   readRegistry as readCapabilityRegistry,
 } from '../../effects/architecture/capability-resolver';
 import type { Capability, CapabilityRegistry, ContractFiles } from '../../core/capabilities/registry';
-import { formatArchcontextCapabilityError, resolveArchcontextCapabilityPaths } from '../../effects/architecture/archcontext-owners';
-import { readArchitectureNativeContext } from '../../effects/architecture/architecture-read';
-import { capabilityIdentityFromNodeId, capabilityRegistryFromNativeContext, type ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
+import type { ArchcontextCapabilityOwners } from '../../core/capabilities/registry';
+import { architecturePort, isArchitectureUnavailable, type ArchitectureOwnershipPort } from '../../core/architecture/contracts';
 import { gitExecFileSync } from '../../effects/git/runner';
 
 export type { Capability, ContractFiles };
@@ -131,26 +130,19 @@ function writeJsonFile(file: string, value: unknown): void {
 function readCapabilityContext(repo: string): {
   registry: CapabilityRegistry;
   owners: ArchcontextCapabilityOwners | null;
-  summaries: Map<string, string>;
+  summaries: ReadonlyMap<string, string>;
 } {
   if (capabilitySourceMode(repo) !== 'archcontext') {
     return { registry: readCapabilityRegistry(repo), owners: null, summaries: new Map() };
   }
-  try {
-    const context = readArchitectureNativeContext(repo, { kind: 'worktree' });
-    const authority = capabilityRegistryFromNativeContext(context, { repoRoot: repo });
-    if (authority.status !== 'valid') throw new CapabilitySourceError(authority.diagnostics.map((item) => item.message).join('; '));
-    const summaries = new Map<string, string>();
-    for (const node of context.model.nodes) {
-      if (node.kind !== 'capability' || typeof node.id !== 'string' || typeof node.summary !== 'string') continue;
-      const identity = capabilityIdentityFromNodeId(node.id);
-      if (identity) summaries.set(identity.id, node.summary);
-    }
-    return { registry: authority.registry, owners: authority.owners, summaries };
-  } catch (error) {
-    if (error instanceof CapabilitySourceError) throw error;
-    throw new CapabilitySourceError(formatArchcontextCapabilityError(error));
-  }
+  return ownershipPort().readCapabilityContext(repo);
+}
+
+/** Under `archcontext`, ownership needs its provider; without one the command fails closed. */
+function ownershipPort(): ArchitectureOwnershipPort {
+  const port = architecturePort('ownership');
+  if (isArchitectureUnavailable(port)) throw new CapabilitySourceError(port.message);
+  return port;
 }
 
 /** The file or directory that owns capabilities under the active source mode. */
@@ -214,7 +206,7 @@ function targetContractFiles(repo: string, capability: Capability): ContractFile
 // `archctx resolve` under `archcontext`. Nothing here re-implements either rule.
 function findCapabilityByPath(registry: CapabilityRegistry, repo: string, inputPath: string, owners: ArchcontextCapabilityOwners | null): Capability {
   if (owners) {
-    const resolution = resolveArchcontextCapabilityPaths(repo, owners, [inputPath]);
+    const resolution = ownershipPort().resolvePaths(repo, owners, [inputPath]);
     if (resolution.status !== 'valid') throw new Error(resolution.diagnostics.map((item) => item.message).join('; '));
     if (resolution.matches.length === 1) return resolution.matches[0].capability;
   } else {
