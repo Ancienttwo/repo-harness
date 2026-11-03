@@ -1,12 +1,16 @@
 import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { ArchctxClientError } from '../../core/architecture/projection';
 import {
-  linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardSeatTerminalReadV1,
-  type BoardTerminalV1, type BoardToolingV1, type BoardV1,
+  linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
+  type BoardPathOwnersV1, type BoardSeatTerminalReadV1, type BoardTerminalV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
+import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
+import { ARCHCONTEXT_IDENTITY_OWNERS, resolveArchcontextCapabilityPaths } from '../architecture/archcontext-owners';
+import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import { gitSpawnSync } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 
@@ -63,6 +67,8 @@ export interface BoardCollectInput {
   readonly gh_runner?: (args: readonly string[]) => { readonly status: number; readonly stdout: string; readonly stderr?: string };
   /** Effect seam for tests: the single-PR readiness projection. */
   readonly readiness?: (selection: PullRequestSelectionV2) => PullRequestReadinessV2;
+  /** Effect seam for tests: the archctx process of the path owner read. */
+  readonly archctx?: ArchctxProviderOptions;
   readonly host: BoardHostPortsV1;
   readonly now?: () => Date;
 }
@@ -155,6 +161,32 @@ function execution(input: BoardCollectInput, repositoryId: number): BoardExecuti
   return { status: 'observed', terminals: Object.freeze(read.terminals.map(seatTerminal)) };
 }
 
+/**
+ * The owners of the changed paths of the open pull requests, from one
+ * `archctx resolve` batch on the local model. An ambiguous path keeps its
+ * entry. A failed run, a rejected model or an owner that is no capability
+ * node makes every owner unavailable, because it does not name its path.
+ */
+function pathOwners(input: BoardCollectInput, reads: readonly BoardPullRequestReadV1[]): BoardPathOwnersV1 {
+  const paths = [...new Set(reads.filter(read => read.state === 'open').flatMap(read => read.files ?? []))].sort();
+  if (paths.length === 0) return { status: 'observed', owners: [] };
+  let resolution;
+  try {
+    resolution = resolveArchcontextCapabilityPaths(input.repo_root, ARCHCONTEXT_IDENTITY_OWNERS, paths, input.archctx);
+  } catch (error) {
+    if (!(error instanceof ArchctxClientError)) throw error;
+    return { status: 'unavailable', reason: error.code };
+  }
+  const fault = resolution.diagnostics.find(diagnostic => diagnostic.code !== 'AMBIGUOUS_MATCH');
+  if (fault !== undefined) return { status: 'unavailable', reason: fault.code };
+  const owners = new Map<string, BoardPathOwnerV1>();
+  for (const match of resolution.matches) owners.set(match.filePath, { path: match.filePath, status: 'owned', capability: match.prefix });
+  for (const path of resolution.unmappedPaths) owners.set(path, { path, status: 'unowned' });
+  for (const diagnostic of resolution.diagnostics) owners.set(diagnostic.path, { path: diagnostic.path, status: 'ambiguous' });
+  // The resolver answers each path in its normalized form; the board keys the owner by the GitHub path.
+  return { status: 'observed', owners: Object.freeze(paths.map(path => ({ ...owners.get(normalizeCapabilityPath(path, input.repo_root))!, path }))) };
+}
+
 /** The GitHub numeric id of the local repository: the value of the `repo-harness.repository` label. */
 export function readRepositoryId(input: GhInput): number {
   const id = (gh(input, ['api', '--hostname', 'github.com', 'repos/{owner}/{repo}']) as { id?: unknown } | null)?.id;
@@ -181,7 +213,8 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
   }), repository);
   const candidates = [...new Set(parent.sub_issues.flatMap(issue => issue.pull_request_candidates))].sort((left, right) => left - right);
   const reads: BoardPullRequestReadV1[] = candidates.length === 0 ? [] : decodePullRequestsRead(graphql(input, pullRequestsQuery(candidates), { owner, name }), candidates);
-  const readiness = linkedPullRequests(parent, reads).filter(read => read.state === 'open').map((read) => {
+  const linked = linkedPullRequests(parent, reads);
+  const readiness = linked.filter(read => read.state === 'open').map((read) => {
     const selection: PullRequestSelectionV2 = {
       provider_repository_id: String(parent.repository.database_id), repository, pr_number: read.number,
       expected_head_sha: read.head_sha, expected_base_sha: read.base_sha,
@@ -193,6 +226,7 @@ export function collectBoard(input: BoardCollectInput): BoardV1 {
     parent,
     pull_requests: reads,
     readiness,
+    path_owners: pathOwners(input, linked),
     execution: execution(input, parent.repository.database_id),
     daily_run: dailyRun(input, repository, parent.repository.default_branch),
     tooling: tooling(input),
