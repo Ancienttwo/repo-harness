@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.operator.console-collectors.herdr-core"
+kind: "reads"
+source: "component.operator.console-collectors"
+target: "external.herdr-core"
+intent: "Run hc ls for the notify relay terminal on each notify cycle, and hc server status for the core id of each execution cycle and terminal socket."

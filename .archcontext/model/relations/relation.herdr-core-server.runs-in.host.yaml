@@ -1,6 +1,6 @@
 schemaVersion: "archcontext.relation/v1"
-id: "relation.herdr-server.runs-in.host"
+id: "relation.herdr-core-server.runs-in.host"
 kind: "runs-in"
-source: "process.herdr-server"
+source: "process.herdr-core-server"
 target: "namespace.host.developer"
 intent: "Runs on the developer host."

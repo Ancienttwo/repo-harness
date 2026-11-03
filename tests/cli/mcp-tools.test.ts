@@ -482,6 +482,20 @@ describe('mcp tools', () => {
     });
   });
 
+  test('refuses an in-repo symlink from an allowed root into a denied root', async () => {
+    await withRepo(async (repoRoot, ctx) => {
+      mkdirSync(join(repoRoot, '.ai/context'), { recursive: true });
+      writeFileSync(join(repoRoot, '.ai/harness/handoff/secret.md'), 'handoff-secret\n');
+      symlinkSync('../harness/handoff/secret.md', join(repoRoot, '.ai/context/link.md'));
+
+      const result = await callMcpTool(ctx, 'read_workflow_file', { path: '.ai/context/link.md' });
+      expect(JSON.parse(result.content[0].text).error.code).toBe('POLICY_DENIED');
+      expect(JSON.stringify(result)).not.toContain('handoff-secret');
+      const listed = await jsonTool(ctx, 'list_workflow_files');
+      expect(listed.files.map((entry: { path: string }) => entry.path)).not.toContain('.ai/context/link.md');
+    });
+  });
+
   test('blocks oversized workflow reads', async () => {
     await withRepo(async (repoRoot, ctx) => {
       writeFileSync(join(repoRoot, 'docs/prds/large.prd.md'), 'x'.repeat(32));

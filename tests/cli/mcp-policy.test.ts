@@ -188,7 +188,8 @@ describe('mcp policy and paths', () => {
       expect(executorTools).not.toContain('read_text');
       expect(executorTools).not.toContain('search_text');
       expect(executorTools).not.toContain('run_agent_goal');
-      expect(resolveMcpPath(tmp, '.ai/harness/checks/change-assessment.latest.json', executor, 'write')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, '.ai/harness/checks/change-assessment.latest.json', executor, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', executor, 'write')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', executor, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'tasks/lessons.md', executor, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'docs/prds/new.prd.md', executor, 'write')).toMatchObject({ ok: true });
