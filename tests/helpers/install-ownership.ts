@@ -1,9 +1,9 @@
 import { createHash } from 'crypto';
 import { lstatSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'fs';
 import { dirname, join, relative } from 'path';
-import { installProfileStatePath, PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
+import { installProfileStatePath, versions } from '../../src/cli/installer/install-profile';
 
-/** Seed the persisted protocol, independently of unrelated full-profile probes. */
+/** Seed the persisted protocol, independently of unrelated owner probes. */
 export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv): void {
   const ownership_manifest = paths.map(path => {
     const directory = lstatSync(path).isDirectory();
@@ -24,7 +24,7 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
       }
     } else hash.update(readFileSync(path));
     return {
-      path, components: [directory ? 'cross-model-acceptance' : 'agent-fleet'],
+      owner: directory ? 'cross-review' : 'core', path,
       authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
       type: directory ? 'directory-copy' : 'managed-file',
       managed_marker: directory ? 'transaction-created-directory' : 'transaction-created-file',
@@ -33,6 +33,6 @@ export function recordInstallOwnership(paths: string[], env: NodeJS.ProcessEnv):
   });
   const statePath = installProfileStatePath(env);
   mkdirSync(dirname(statePath), { recursive: true });
-  writeFileSync(statePath, JSON.stringify({ protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
+  writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory']), selection: 'all',
     transaction_id: 'owned-upgrade-fixture', applied_at: new Date().toISOString(), ownership_manifest, previous: null }));
 }

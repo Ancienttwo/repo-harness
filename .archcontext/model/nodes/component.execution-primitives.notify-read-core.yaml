@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.notify-read-core
+kind: component
+name: Notify Read Contract (core)
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: core
+summary: The core-layer file of Notify Read Contract. Responsibilities stay with component.execution-primitives.notify-read.
+responsibilities:
+  - Hold the core-layer relay delivery record file of Notify Read Contract so layer direction is checked per directory.
+source:
+  include:
+    - src/core/decision/notify-relay-record.ts

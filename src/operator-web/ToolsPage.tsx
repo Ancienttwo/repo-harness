@@ -105,7 +105,7 @@ function ToolDrawer({ tool, onClose, locale, t, rowButton }: {
           <Fact label={t('tools.column.status')}><Status tool={tool} t={t} /></Fact>
           <Fact label={t('tools.author')}>{tool.author}</Fact>
           <Fact label={t('tools.tags')}>{tool.tags.join(' · ') || t('tools.tags.none')}</Fact>
-          <Fact label={t('tools.profiles')}>{tool.install_profiles.join(' · ') || t('tools.profiles.none')}</Fact>
+          <Fact label={t('tools.profiles')}>{tool.owner ?? t('tools.profiles.none')}</Fact>
         </dl>
         <p className="text-xs text-kumo-subtle" data-tool-status-reason>
           {status === 'unknown' ? t('tools.reason.unknown') : tool.kind === 'resource' ? t('tools.reason.resource') : t('tools.reason.noDetector')}

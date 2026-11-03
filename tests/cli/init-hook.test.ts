@@ -94,7 +94,7 @@ function baseStatusReport(overrides: Partial<StatusReport['targets'][number]> = 
         Stop: 1,
       },
     },
-    installedProfile: { recorded: false },
+    installState: { recorded: false },
   };
 }
 
@@ -364,7 +364,7 @@ describe('init-hook command', () => {
     });
   });
 
-  test('accepts a complete profile-relative adapter count', () => {
+  test('accepts a complete expected adapter count', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
@@ -425,15 +425,15 @@ describe('init-hook command', () => {
     });
   });
 
-  test('invalid installed profile state requires migration even when adapter count is complete', () => {
+  test('a protocol 2 install state requires migration even when adapter count is complete', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const statusReport = baseStatusReport();
-      statusReport.installedProfile = {
+      statusReport.installState = {
         recorded: 'invalid',
-        kind: 'legacy_protocol',
-        error: 'legacy installed profile state requires explicit migration',
+        code: 'install_state_migration_required',
+        error: 'install state is protocol 2; run: repo-harness update',
         path: join(home, '.repo-harness', 'install-state.json'),
       };
 
@@ -447,26 +447,24 @@ describe('init-hook command', () => {
       });
 
       const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
-      const migration = report.agent_actions.find((entry) => entry.id === 'install-profile.migrate');
+      const migration = report.agent_actions.find((entry) => entry.id === 'install-state.migrate');
       expect(adapter?.status).toBe('needs_agent');
-      expect(adapter?.detail).toContain('legacy installed profile state');
-      expect(migration?.command).toBe(
-        'repo-harness install --migrate-profile-state --profile full --target codex',
-      );
+      expect(adapter?.detail).toContain('install state is protocol 2');
+      expect(migration?.command).toBe('repo-harness update');
       expect(migration?.targets).toEqual([join(home, '.repo-harness', 'install-state.json')]);
       expect(report.agent_actions.find((entry) => entry.id === 'adapter.codex.install')).toBeUndefined();
     });
   });
 
-  test('corrupt installed profile state requires manual repair without an inapplicable command', () => {
+  test('corrupt install state requires manual repair without an inapplicable command', () => {
     withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const statusReport = baseStatusReport();
-      statusReport.installedProfile = {
+      statusReport.installState = {
         recorded: 'invalid',
-        kind: 'corrupt_current',
-        error: 'invalid installed profile state',
+        code: 'install_state_invalid',
+        error: 'install state is not valid JSON',
         path: join(home, '.repo-harness', 'install-state.json'),
       };
 
@@ -480,10 +478,10 @@ describe('init-hook command', () => {
       });
 
       expect(report.checks.find((entry) => entry.id === 'status.adapter.codex')?.status).toBe('needs_agent');
-      const repair = report.agent_actions.find((entry) => entry.id === 'install-profile.repair');
+      const repair = report.agent_actions.find((entry) => entry.id === 'install-state.repair');
       expect(repair?.command).toBeUndefined();
       expect(repair?.targets).toEqual([join(home, '.repo-harness', 'install-state.json')]);
-      expect(report.agent_actions.find((entry) => entry.id === 'install-profile.migrate')).toBeUndefined();
+      expect(report.agent_actions.find((entry) => entry.id === 'install-state.migrate')).toBeUndefined();
       expect(report.agent_actions.find((entry) => entry.id === 'adapter.codex.install')).toBeUndefined();
     });
   });

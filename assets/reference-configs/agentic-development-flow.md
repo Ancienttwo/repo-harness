@@ -111,7 +111,11 @@ runtime or task authority.
 The orchestrator seat is the long-lived coordinator and integrator seat of
 `repo-harness-issue-flow`. Start it with the argv that
 `repo-harness seats argv orchestrator` prints. It dispatches work and follows
-PRs and CI. It edits no product code and dispatches no subagents.
+PRs and CI. It edits no product code. It may call the read-only roles
+`gatekeeper`, `explorer` and `deep-reasoner` as sub-agents. The writers
+(`fast-worker`, `deep-worker`, `root-cause-prover`) and the Codex
+cross-review never run as its sub-agents: they run in Herdr seats, for
+worktree isolation and one writer per file.
 
 The bot selects scope, worker and verification by risk. Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty; do not rerun a passing check or require multiple re-gates.
 

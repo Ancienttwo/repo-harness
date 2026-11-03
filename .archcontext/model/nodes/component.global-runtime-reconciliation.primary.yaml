@@ -5,7 +5,7 @@ name: Global Runtime Reconciler
 status: active
 parent: capability.runtime-harness.global-runtime-reconciliation
 layer: effects
-summary: Executes bounded install, exact dependency readback, runtime handshake, and profile-tool refresh.
+summary: Executes bounded install, exact dependency readback, runtime handshake, and the refresh of selected plugin tooling.
 responsibilities:
   - Keep one skill-root authority for Claude, Codex and Pi, including PI_CODING_AGENT_DIR.
   - Register the Pi package from the installed candidate after mandatory setup succeeds, and retain the created-source ownership result.

@@ -235,7 +235,7 @@ sequenceDiagram
 | 候选包接管 update 后半段 | 新目录格式和新 schema 由新代码解析，避免旧模块误读（PR #628 的事故）。代价是多一个进程和一次 token 交接。 |
 | daemon 失败降级为 `skipped` | 包升级不会因为共享 daemon 的维护问题回退，避免 hoisted 依赖停在新版本而 CLI 回到旧版本。代价是 update 成功时 daemon 可能还没就绪，要等下一次严格检查发现。 |
 | CLI 根集中在 `index.ts` | 所有命令在一个 commander 程序里注册（`buildProgram`，`src/cli/index.ts:500`），帮助和选项校验一致。代价是 `index.ts` 引用约 26 个 capability 的命令模块，成为单一 SCC 的原因之一（见 §3.3 和 Backlog）。 |
-| update 事务放在 CLI 根 | `runTransactionalProfileProjection` 和 `runTransactionalRuntimeRefresh` 在 `index.ts` 里开启 host 事务并捕获配置还原点。代价是 CLI 根同时承担路由和事务，文件有 911 行。 |
+| update 事务放在 CLI 根 | `runTransactionalSelectionProjection` 和 `runTransactionalRuntimeRefresh` 在 `index.ts` 里开启 host 事务并捕获配置还原点。代价是 CLI 根同时承担路由和事务，文件有 1087 行。 |
 | 发布门禁用 shell 脚本 | 门禁逻辑一个脚本两种模式（`--prepublish` 与完整模式），不分叉。代价是 CodeGraph 看不到 shell 调用，`release-packaging → cli-root` 关系只能凭文本证据声明（`check-tarball-install-smoke.sh:131-132`）。 |
 
 ### 3.3 组件拆分（2026-10-11）
@@ -357,7 +357,7 @@ the old Pi package sync script remain absent.
 ## Optimization Backlog
 
 - **CLI 根是单一 SCC 的原因之一。** `src/cli/index.ts` 引用约 26 个 capability 的命令模块，而多个 capability 又通过 `src/cli/runtime/write-all-sync.ts`、`src/core/architecture/projection.ts` 等文件回到本 capability。组合根本身合理。可以做的是让被别人依赖的叶子文件离开组合根所在的 capability：`write-all-sync.ts` 移到 `execution-primitives`，`core/architecture/projection.ts` 的策略类型与 archctx 版本 pin 移到被依赖方。
-- **`index.ts` 同时是路由和事务。** 911 行里有命令注册和 `runTransactional*` 事务函数。把事务函数移到 primary 组件，可以让 cli-root 只剩注册。需要先确认事务函数没有依赖 commander 状态。
+- **`index.ts` 同时是路由和事务。** 1087 行里有命令注册和 `runTransactional*` 事务函数。把事务函数移到 primary 组件，可以让 cli-root 只剩注册。需要先确认事务函数没有依赖 commander 状态。
 - **`global-runtime.ts` 有 1,631 行。** setup 步骤、外部 skill 安装、Waza 规则同步、CodeGraph 配置都在一个文件里。按步骤族拆分前需要改动频率证据。
 - **反向边：** primary → cli-root（`doctor.ts` 的版本比较函数）。把 `compareVersions`、`readLatestPackageVersion` 移到 primary 或一个版本工具模块即可去掉。archctx-closure → primary 只有类型引用（`GlobalRuntimeStep`），可以把类型移到 `src/cli/runtime/`。
 - **多归属文件。** 3 个测试文件和 3 个 reference config 仍在本 capability 的 include 里，与 evals-checks、contract-assets 重叠。按用户决定，等 arch-context#296 和 resolver 改动后再收窄。

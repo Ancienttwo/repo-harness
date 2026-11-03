@@ -20,7 +20,6 @@ import { homedir } from 'os';
 import { isAbsolute, join, relative, resolve, sep } from 'path';
 
 import type { InstallTargetSpec } from './install';
-import type { InstallProfile } from '../installer/install-profile';
 import { REPORT_LANGUAGE_FLAG_VALUES, type ReportLanguageFlag } from '../installer/global-context';
 import {
   buildManagedHooks,
@@ -36,7 +35,8 @@ import {
   type RuntimeTransactionScope,
 } from '../../effects/locking/runtime-transaction-lock';
 
-export const CANDIDATE_RECONCILIATION_PROTOCOL = 1;
+/** Protocol 2 drops the request profile: the candidate reads the recorded plugin selection from the install state. */
+export const CANDIDATE_RECONCILIATION_PROTOCOL = 2;
 export const CANDIDATE_RECONCILIATION_CAPABILITY_PROTOCOL = 1;
 const CANDIDATE_CAPABILITY_NAME = '.candidate-runtime-reconciliation-capability.v1.json';
 
@@ -92,7 +92,6 @@ export interface CandidateReconciliationRequest {
   readonly candidate: CandidatePackageIdentity;
   readonly cwd: string;
   readonly target: InstallTargetSpec;
-  readonly profile: InstallProfile;
   readonly sync_skill: boolean;
   readonly host_adapters: boolean;
   readonly external_skills: boolean;
@@ -107,7 +106,6 @@ export interface CandidateReceiptExpectation {
   readonly transaction_id: string;
   readonly candidate: CandidatePackageIdentity;
   readonly target: InstallTargetSpec;
-  readonly profile: InstallProfile;
   readonly require_complete: boolean;
   readonly require_adapter_projection?: boolean;
 }
@@ -345,13 +343,10 @@ export function hostsForTarget(target: InstallTargetSpec): readonly HookHost[] {
   return target === 'both' ? ['claude', 'codex'] : [target];
 }
 
-export function expectedAdapterProjectionDigests(
-  target: InstallTargetSpec,
-  profile: InstallProfile,
-): Readonly<Record<HookHost, string>> {
+export function expectedAdapterProjectionDigests(target: InstallTargetSpec): Readonly<Record<HookHost, string>> {
   return Object.fromEntries(hostsForTarget(target).map((host) => [
     host,
-    managedProjectionDigest(buildManagedHooks(host, profile)),
+    managedProjectionDigest(buildManagedHooks(host)),
   ])) as Record<HookHost, string>;
 }
 
@@ -372,10 +367,9 @@ export function installedAdapterProjectionDigest(path: string): string | null {
 
 export function assertInstalledAdapterProjection(
   target: InstallTargetSpec,
-  profile: InstallProfile,
   env: NodeJS.ProcessEnv = process.env,
 ): Readonly<Record<HookHost, string>> {
-  const expected = expectedAdapterProjectionDigests(target, profile);
+  const expected = expectedAdapterProjectionDigests(target);
   for (const host of hostsForTarget(target)) {
     const actual = installedAdapterProjectionDigest(adapterPath(host, env));
     if (actual !== expected[host]) {
@@ -416,7 +410,7 @@ export function assertCandidateReconciliationReceipt(
     throw new Error('candidate reconciliation is partial');
   }
   if (expected.require_adapter_projection !== false) {
-    const expectedDigests = expectedAdapterProjectionDigests(expected.target, expected.profile);
+    const expectedDigests = expectedAdapterProjectionDigests(expected.target);
     for (const host of hostsForTarget(expected.target)) {
       if (receipt.adapter_projection_digests[host] !== expectedDigests[host]) {
         throw new Error(`adapter projection mismatch for ${host}`);
@@ -471,7 +465,22 @@ export function encodeCandidateRequest(request: CandidateReconciliationRequest):
   return Buffer.from(JSON.stringify(request), 'utf-8').toString('base64url');
 }
 
-export function parseCandidateRequest(encoded: string): CandidateReconciliationRequest {
+/**
+ * A released parent that predates request protocol 2 still sends a profile.
+ * Its own update re-reads the install state after this candidate returns and
+ * cannot read protocol 3, so the cutover cannot run under it. The candidate
+ * refuses before any write and names the direct bootstrap.
+ */
+export class CandidateRequestProtocolRetiredError extends Error {
+  readonly code = 'candidate_request_protocol_retired';
+  constructor(protocol: number, candidateVersion: string) {
+    super(`repo-harness ${candidateVersion} does not accept a reconciliation request of protocol ${protocol} from an older repo-harness. `
+      + `Install the new CLI directly, then update: bun add -g repo-harness@${candidateVersion} --no-cache && repo-harness update`);
+    this.name = 'CandidateRequestProtocolRetiredError';
+  }
+}
+
+export function parseCandidateRequest(encoded: string, candidateVersion: string): CandidateReconciliationRequest {
   let parsed: unknown;
   try {
     parsed = JSON.parse(Buffer.from(encoded, 'base64url').toString('utf-8'));
@@ -482,6 +491,7 @@ export function parseCandidateRequest(encoded: string): CandidateReconciliationR
     throw new Error('candidate reconciliation request is not an object');
   }
   const request = parsed as Record<string, unknown>;
+  if (request.protocol === 1) throw new CandidateRequestProtocolRetiredError(1, candidateVersion);
   const requiredStrings = ['transaction_id', 'transaction_backup_root', 'parent_token', 'cwd'];
   const booleans = [
     'sync_skill', 'host_adapters', 'external_skills', 'reverse_skill', 'obsidian_skills', 'codegraph',
@@ -493,7 +503,7 @@ export function parseCandidateRequest(encoded: string): CandidateReconciliationR
     || request.candidate === null
     || Array.isArray(request.candidate)
     || !['codex', 'claude', 'both'].includes(String(request.target))
-    || !['minimal', 'full'].includes(String(request.profile))
+    || 'profile' in request
     || booleans.some((key) => typeof request[key] !== 'boolean')
     || (request.brain_root !== undefined && typeof request.brain_root !== 'string')
     || (request.report_language !== undefined

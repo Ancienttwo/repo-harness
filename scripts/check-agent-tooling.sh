@@ -1038,12 +1038,10 @@ function detectObsidianRuntimeSkills() {
     .filter(([, entry]) => entry.missing_skills.length > 0)
     .map(([host, entry]) => `${host}: ${entry.missing_skills.join(", ")}`);
 
-  const installState = readJson(path.join(HOME, ".repo-harness", "install-state.json"));
-  const ownership = Array.isArray(installState?.ownership_manifest) ? installState.ownership_manifest : [];
-  const managed = ownership.some((surface) => {
-    if (typeof surface?.path !== "string") return false;
-    const normalized = surface.path.replaceAll("\\", "/");
-    return normalized.includes("/skills/") && contract.requiredSkills.includes(path.basename(surface.path));
+  const ledger = readInstallLedgerPaths();
+  const managed = ledger.ok && ledger.paths.some((surfacePath) => {
+    const normalized = surfacePath.replaceAll("\\", "/");
+    return normalized.includes("/skills/") && contract.requiredSkills.includes(path.basename(surfacePath));
   });
   const target = hostMode === "both" ? "both" : hostMode;
 
@@ -1059,10 +1057,31 @@ function detectObsidianRuntimeSkills() {
     mode: "catalog-dependency-closure",
     readiness: managed ? "managed" : "advisory",
     managed_receipt: managed,
+    ...(ledger.ok ? {} : { install_state_error: ledger.reason }),
     install_command: `repo-harness install --target ${target} --with-obsidian-skills`,
     vendoring_policy: "do-not-vendor-skill-body",
     hosts,
 };
+}
+
+// The install ledger comes only from the strict install-state reader, run under
+// Bun from this package. An unreadable state proves no managed receipt.
+function readInstallLedgerPaths() {
+  const bun = bunExecutable();
+  if (!bun) return { ok: false, reason: "bun is not available, so the install state cannot be read", paths: [] };
+  const script = [
+    "const [reader] = process.argv.slice(1);",
+    "const { readInstallState } = await import(reader);",
+    "try { console.log(JSON.stringify({ ok: true, paths: (readInstallState()?.ownership_manifest ?? []).map((surface) => surface.path) })); }",
+    "catch (error) { console.log(JSON.stringify({ ok: false, reason: error instanceof Error ? error.message : String(error), paths: [] })); }",
+  ].join("\n");
+  const result = run(bun, ["-e", script, path.join(PACKAGE_ROOT, "src", "cli", "installer", "install-profile.ts")],
+    { cwd: PACKAGE_ROOT, timeoutMs: 15000 });
+  const answer = result.ok ? parseJson(result.stdout.trim()) : null;
+  if (!answer || typeof answer !== "object") {
+    return { ok: false, reason: `the install-state reader did not run: ${(result.error || result.stderr || result.stdout).trim().slice(0, 300) || `exit ${result.status}`}`, paths: [] };
+  }
+  return answer;
 }
 
 function obsidianRuntimeContract() {

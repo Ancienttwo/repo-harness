@@ -1,6 +1,7 @@
 import { existsSync, lstatSync, realpathSync } from 'fs';
 import { join, resolve } from 'path';
-import { facadesForProfile, hostSkillPlacements, type SkillSurfaceCatalog, type SkillSurfaceProfile } from '../../core/skill-surface/catalog';
+import { facadesForSelection, hostSkillPlacements, type SkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import { ownerEnabled, type PluginId } from '../../core/skill-surface/plugin-manifest';
 import { hostSkillRoot, stagedSkillRoot, SKILL_HOSTS, type SkillHost } from '../../effects/host-skill-roots';
 
 export function bunGlobalPackageRoot(env?: NodeJS.ProcessEnv): string | null {
@@ -45,17 +46,18 @@ export interface SkillProjection {
  * The catalog owns selection. Install ownership and doctor share these paths.
  * PR-A covers Waza staging only. Mermaid retains transaction ownership and
  * stays outside this diagnostic. The Waza provider matches its runtime group.
+ * The Pi skill root belongs to the `pi` plugin, so it is projected only with it.
  */
 export function expectedSkillProjections(
   catalog: SkillSurfaceCatalog,
   sourceRoot: string,
   home: string,
-  profile: SkillSurfaceProfile,
+  plugins: readonly PluginId[],
   env: NodeJS.ProcessEnv = process.env,
 ): readonly SkillProjection[] {
-  const facades = new Set(facadesForProfile(catalog, profile));
-  const placements = hostSkillPlacements(catalog, profile);
-  return SKILL_HOSTS.flatMap(host => {
+  const facades = new Set(facadesForSelection(catalog, plugins));
+  const placements = hostSkillPlacements(catalog, plugins);
+  return SKILL_HOSTS.filter(host => host !== 'pi' || plugins.includes('pi')).flatMap(host => {
     const names = new Set([...facades, ...placements[host]]);
     const root = hostSkillRoot(home, host, env);
     const projections: SkillProjection[] = [{ host, name: catalog.router, source: sourceRoot, staged: false,
@@ -65,7 +67,7 @@ export function expectedSkillProjections(
       if (pkg.source !== null && names.has(pkg.name)) {
         projections.push({ host, name: pkg.name, source: join(sourceRoot, pkg.source), staged: false,
           destination: join(root, pkg.name) });
-      } else if (pkg.provider === 'tw93/Waza' && pkg.profiles.includes(profile)) {
+      } else if (pkg.provider === 'tw93/Waza' && !pkg.explicitOnly && ownerEnabled(pkg.owner, plugins)) {
         projections.push({ host, name: pkg.name, source: join(stagedSkillRoot(home), pkg.name), staged: true,
           destination: join(root, pkg.name) });
       }

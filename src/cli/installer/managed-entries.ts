@@ -15,7 +15,6 @@
  */
 
 import { routesForHost, type AdapterHost, type Route } from '../hook/route-registry';
-import type { InstallProfile } from './install-profile';
 import {
   MANAGED_TAG,
   isRepoHarnessManagedHookCommand,
@@ -85,13 +84,10 @@ export function isManagedEntry(entry: HookEntry): boolean {
   return entry.hooks.some((hook) => isRepoHarnessManagedHookCommand(hook?.command));
 }
 
-function routeInProfile(route: Route, profile: InstallProfile): boolean {
-  return profile === 'full' || route.minimalProfile === true;
-}
-
-export function buildManagedHooks(host: HookHost, profile: InstallProfile = 'full'): HooksByEvent {
+/** Every hook route is core: each install projects every route that the host supports. */
+export function buildManagedHooks(host: HookHost): HooksByEvent {
   const out: HooksByEvent = {};
-  for (const route of routesForHost(host).filter((candidate) => routeInProfile(candidate, profile))) {
+  for (const route of routesForHost(host)) {
     if (!out[route.event]) out[route.event] = [];
     out[route.event].push(buildHookEntry(route, host));
   }
@@ -331,9 +327,8 @@ export function compareManagedHooks(
 export function compareManagedHookProjection(
   actual: unknown,
   host: HookHost,
-  profile: InstallProfile = 'full',
 ): ManagedHookProjectionReport {
-  return compareManagedHooks(actual, buildManagedHooks(host, profile));
+  return compareManagedHooks(actual, buildManagedHooks(host));
 }
 
 export function stripManagedEntries(existing: HooksByEvent | undefined): HooksByEvent {

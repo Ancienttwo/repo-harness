@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.notify-read-core
+kind: reads
+source: component.operator.view-projections
+target: component.execution-primitives.notify-read-core
+intent: "Key the notify status and the Bot access notify channels by the relay channel names, and project the relay delivery record into the public delivery status."

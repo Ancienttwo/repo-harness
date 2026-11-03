@@ -111,7 +111,7 @@ const CLAUDE_TARGET_DIR = path.join(HOME, ".claude", "agents");
 const CODEX_TARGET_DIR = path.join(HOME, ".codex", "agents");
 const SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const {
-  readInstalledProfile,
+  readInstallState,
   managedInstallSurfaceIsCurrent,
   agentFleetUserManagedReceiptPath,
   readAgentFleetUserManagedReceipt,
@@ -119,7 +119,7 @@ const {
   path.join(SOURCE_DIR, "../../src/cli/installer/install-profile.ts"),
 );
 const USER_MANAGED_RECEIPT_PATH = agentFleetUserManagedReceiptPath({ ...process.env, HOME });
-const installedProfile = readInstalledProfile();
+const installState = readInstallState();
 
 // A generated persona carries role identity only. The anti-extras execution
 // boundary belongs to the final runtime task packet, which is the only surface that knows
@@ -250,7 +250,7 @@ function compareAndWrite(targetPath, content, acceptedHash) {
 
   if (acceptedHash === sha256(existing)) return "user-managed";
 
-  const owned = installedProfile?.ownership_manifest.find((surface) =>
+  const owned = installState?.ownership_manifest.find((surface) =>
     surface.path === targetPath && surface.type === "managed-file");
   if (owned && managedInstallSurfaceIsCurrent(owned)) {
     fs.writeFileSync(targetPath, content);

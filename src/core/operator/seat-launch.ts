@@ -93,9 +93,16 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
     const queue = config.tools.includes('tasks')
       ? ['Keep worker notices in a triage queue with TaskCreate, TaskUpdate, TaskList and TaskGet, as `references/orchestrator.md` §8.1 of repo-harness-issue-flow says: answer the owner first, then take one queue item at a time by priority.']
       : [];
+    // A gatekeeper sub-agent is an independent reviewer inside this seat; every other review and every writer stays in a seat.
+    const review = fleet.includes('gatekeeper')
+      ? 'You do not review a PR yourself. An independent `gatekeeper` sub-agent may review a PR that you dispatched; route every other review of that PR to another seat.'
+      : 'You do not review a PR that you dispatched; route that review to another seat.';
+    const dispatch = fleet.length === 0
+      ? 'You do not dispatch sub-agents (the Agent tool) for execution. Dispatch work only to seats through Herdr.'
+      : `You may call these read-only sub-agents: ${roleList(fleet)}. Call no other agent type. Writers and the Codex review run only in Herdr seats: dispatch them to seats through Herdr.`;
     return [
-      'You are the orchestrator seat. You hold the coordinator and integrator seats of repo-harness-issue-flow. You dispatch, accept and merge. You do not edit product code, tests or configuration. You do not review a PR that you dispatched; route that review to another seat. You do not push, tag, release, delete, or change credentials or permissions.',
-      'You do not dispatch sub-agents (the Agent tool) for execution. Dispatch work only to seats through Herdr. When `publication.acceptance_merge` is `on`, merge only with `repo-harness publication merge`. When it is `off`, hand each ready PR to the owner.',
+      `You are the orchestrator seat. You hold the coordinator and integrator seats of repo-harness-issue-flow. You dispatch, accept and merge. You do not edit product code, tests or configuration. ${review} You do not push, tag, release, delete, or change credentials or permissions.`,
+      `${dispatch} When \`publication.acceptance_merge\` is \`on\`, merge only with \`repo-harness publication merge\`. When it is \`off\`, hand each ready PR to the owner.`,
       ...queue,
     ];
   }

@@ -5,9 +5,9 @@ name: Tool Catalog
 status: active
 parent: capability.workflow-engine.contract-assets
 layer: core
-summary: Decodes the packaged tool catalog asset into the typed catalog that reference config sync, skill surface profiles and the operator read.
+summary: Decodes the packaged tool catalog asset into the typed catalog that reference config sync and the operator read.
 responsibilities:
-  - Decode assets/tool-catalog.v1.json with exact fields into the tool catalog and its kinds, categories and install profiles.
+  - Decode assets/tool-catalog.v1.json with exact fields into the tool catalog and its kinds, categories and install owners.
 source:
   include:
     - src/core/tools/catalog.ts

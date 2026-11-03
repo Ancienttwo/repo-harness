@@ -21,14 +21,14 @@ import { CLI_PORTS } from '../../src/cli/index';
  * Most consumers are masked: `homeDir(env)` resolves
  * `env?.HOME ?? process.env.HOME ?? homedir()`, so it re-reads process.env and
  * survives the drop. The one unmasked sink is the very first use of the record,
- * `readInstalledProfile(env)` -> `installProfileStatePath(env)`
- * (src/cli/installer/install-profile.ts:502), whose chain is
+ * `requireInstallState(env)` -> `installProfileStatePath(env)`
+ * (src/cli/installer/install-profile.ts), whose chain is
  * `env.HOME ?? homedir()` with no process.env step. Bun caches `homedir()` at
  * process start, so on a dropped base that resolves to the operator's real home
  * and every caller-visible HOME lever is lost.
  *
  * Observable: a legacy protocol-1 install-state file seeded under an overridden
- * HOME must be the file the profile read fails closed on, and the thrown message
+ * HOME must be the file the install state read fails closed on, and the thrown message
  * carries the resolved path. That read happens before any process spawn or
  * filesystem write, so this guard has no side effects on either code path.
  */
@@ -53,7 +53,7 @@ describe('global runtime setup command env base', () => {
     const previousFlag = process.env.AGENTIC_DEV_LINK_INSTALLED_COPIES;
     try {
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
-      // Legacy protocol-1 state: readInstalledProfile fails closed on it and the
+      // Retired protocol-1 state: readInstallState fails closed on it and the
       // error names the path it resolved, which is exactly the datum under guard.
       writeFileSync(statePath, JSON.stringify({ protocol: 1, profile: 'full' }));
       process.env.HOME = home;

@@ -309,6 +309,7 @@ describe('seat settings routes', () => {
     expect(value.config.orchestrator).toEqual({ runtime: 'claude', model: 'opus', effort: 'high', tools: ['gh', 'mcp', 'net', 'read', 'shell', 'tasks'], fleet: [] });
     expect(value.config.advisor.fleet).toEqual(['deep-reasoner', 'explorer']);
     expect(value.ranges.seats.advisor.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper']);
+    expect(value.ranges.seats.orchestrator.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper']);
     expect(value.ranges.seats.worker.fleet).not.toContain('orchestrator');
     // The core defaults stay inside the ranges that the fleet role profiles give.
     expect(value.defaults.worker.fleet).toEqual([...value.ranges.seats.worker.fleet].sort());
@@ -339,7 +340,6 @@ describe('seat settings routes', () => {
       ['advisor', { fleet: ['explorer', 'fast-worker'] }, 'seat_fleet_not_allowed'],
       ['advisor', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
       ['advisor', { tools: ['gh', 'read'] }, 'seat_tool_not_allowed'],
-      ['orchestrator', { fleet: ['explorer'] }, 'seat_fleet_not_allowed'],
       ['orchestrator', { tools: ['edit', 'read'] }, 'seat_tool_not_allowed'],
       ['advisor', { runtime: 'pi', model: null, effort: null }, 'seat_fleet_not_allowed'],
       ['worker', { runtime: 'codex' }, 'seat_runtime_not_enabled'],
@@ -351,6 +351,24 @@ describe('seat settings routes', () => {
       expect([seat, response.status, (await response.json()).error.code]).toEqual([seat, 422, code]);
     }
     expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
+  });
+
+  test('the orchestrator fleet takes the three read-only roles and refuses every writer', async () => {
+    const harness = await startHarness({ agents: PANE_AGENTS });
+    const { revision, ...section } = (await seats(harness)).config;
+    // The refused rows come first: a refusal writes nothing, so the revision stays valid for the accepted row.
+    for (const [fleet, status] of [
+      [['fast-worker'], 422],
+      [['deep-worker'], 422],
+      [['harness-evaluator'], 422],
+      [['root-cause-prover'], 422],
+      [['deep-reasoner', 'explorer', 'gatekeeper'], 200],
+    ] as const) {
+      const response = await post(harness, { expected_revision: revision, seats: { ...section, orchestrator: { ...section.orchestrator, fleet } } }, 'seats');
+      const body = await response.json();
+      expect([fleet, response.status, status === 422 ? body.error.code : body.changed_keys])
+        .toEqual([fleet, status, status === 422 ? 'seat_fleet_not_allowed' : ['seats.orchestrator.fleet']]);
+    }
   });
 
   test('a stale revision and a reused request_id with another body get 409', async () => {

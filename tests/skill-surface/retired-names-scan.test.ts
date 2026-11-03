@@ -69,10 +69,6 @@ const FILE_ALLOWLIST: Record<string, string> = {
   // manifest entry above).
   "docs/architecture/modules/public-surface/action-commands.md":
     "documents the retiredPackages[] mapping as migration metadata",
-  // Explanatory code comments about why repo-harness-handoff is no longer
-  // specially handled (historical, not a live reference).
-  "src/cli/installer/install-profile.ts":
-    "explanatory comments documenting the retired repo-harness-handoff facade",
 };
 
 // R1: "Do NOT touch scripts/acceptance-receipt.ts,

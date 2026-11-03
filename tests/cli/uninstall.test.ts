@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
+import { versions } from '../../src/cli/installer/install-profile';
 import { test, expect } from 'bun:test';
 import { chmodSync, mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync, readdirSync, symlinkSync } from 'fs';
 import { tmpdir } from 'os';
@@ -89,9 +89,9 @@ test('restores Codex MCP section while preserving other TOML tables',()=>fixture
 }));
 
 function profile(home: string, entries: any[]) {
- put(home,'.repo-harness/install-state.json',JSON.stringify({protocol:2,profile:'minimal',components:PROFILE_COMPONENTS.minimal,transaction_id:'fixture',applied_at:new Date().toISOString(),ownership_manifest:entries,previous:null}));
+ put(home,'.repo-harness/install-state.json',JSON.stringify({protocol:3,...versions(['architecture']),selection:['architecture'],transaction_id:'fixture',applied_at:new Date().toISOString(),ownership_manifest:entries,previous:null}));
 }
-function ownedFile(path: string, content: string) { return {components:['planning-integrations'],authority:'repo-harness-install-transaction',removal:'managed-surfaces-only',path,type:'managed-file',content_hash:`sha256:${createHash('sha256').update(content).digest('hex')}`,managed_marker:'transaction-created-file',symlink_target:null}; }
+function ownedFile(path: string, content: string) { return {owner:'core',authority:'repo-harness-install-transaction',removal:'managed-surfaces-only',path,type:'managed-file',content_hash:`sha256:${createHash('sha256').update(content).digest('hex')}`,managed_marker:'transaction-created-file',symlink_target:null}; }
 test('removes profile-owned rules and retires profile but preserves user files',()=>fixture((home,env)=>{
  const path=join(home,'.codex/rules/anti-patterns.md');put(home,'.codex/rules/anti-patterns.md','owned');put(home,'.codex/rules/user.md','user');
  profile(home,[ownedFile(path,'owned')]);
@@ -143,7 +143,7 @@ test('old transaction-owned MCP projection composes with hook removal',()=>fixtu
  const server={command:'cg'};const allowedTools=['user-tool','mcp__codegraph__*'];
  put(home,'.claude/settings.json',JSON.stringify({mcpServers:{codegraph:server,user:{command:'keep'}},allowedTools,hooks:buildManagedHooks('claude')}));
  const projection=JSON.stringify({server,allowedTools:['mcp__codegraph__*']});
- profile(home,[{...ownedFile(path,''),components:['codegraph-conditional'],managed_marker:'codegraph-config-projection',content_hash:`sha256:${createHash('sha256').update(projection).digest('hex')}`}]);
+ profile(home,[{...ownedFile(path,''),owner:'architecture',managed_marker:'codegraph-config-projection',content_hash:`sha256:${createHash('sha256').update(projection).digest('hex')}`}]);
  const result=runUserUninstall({target:'both',env});expect(result.status,result.lines.join('\n')).toBe('complete');
  expect(JSON.parse(readFileSync(path,'utf8'))).toEqual({mcpServers:{user:{command:'keep'}},allowedTools:['user-tool']});
 }));

@@ -162,7 +162,7 @@ describe('settings seats page', () => {
     expect(document.querySelector('[data-seats-saved]')?.textContent).toContain('Running panes do not change');
 
     await click(pane('orchestrator'));
-    expect(document.querySelector('[data-fleet-locked]')?.textContent).toContain('repo-harness seats argv orchestrator');
+    expect([allow('explorer').disabled, allow('fast-worker').disabled]).toEqual([false, true]);
     expect(allow('Edit files').disabled).toBe(true);
   });
 

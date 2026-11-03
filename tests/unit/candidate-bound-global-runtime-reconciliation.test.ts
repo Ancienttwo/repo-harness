@@ -1,15 +1,14 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { dirname, join } from 'path';
+import { join } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { writeFakeHc } from '../helpers/fake-hc';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
-import { beginInstallHostTransaction, installProfileStatePath, PROFILE_COMPONENTS, readInstalledProfile, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
-import { recordInstallOwnership } from '../helpers/install-ownership';
+import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
   assertCandidateReconciliationReceipt,
   candidatePackageIdentity,
@@ -113,12 +112,12 @@ function requireLegacyRenderer(packageRoot: string): void {
   if (renderers.architectureDocs !== 'archcontext.docs-renderer/v4') throw new Error('archctx architecture docs renderer mismatch');`));
 }
 
-function writeMinimalInstallState(home: string): void {
+function writeCoreOnlyInstallState(home: string): void {
   mkdirSync(join(home, '.repo-harness'), { recursive: true });
   writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-    protocol: 2,
-    profile: 'minimal',
-    components: PROFILE_COMPONENTS.minimal,
+    protocol: 3,
+    selection: [],
+    ...versions([]),
     transaction_id: 'fixture-install',
     applied_at: '2026-09-04T00:00:00.000Z',
     ownership_manifest: [],
@@ -139,7 +138,7 @@ function fixtureCandidate(ownerRoot?: string): CandidatePackageIdentity {
 
 function candidateReceipt(identity: CandidatePackageIdentity, adapterDigest: string): CandidateReconciliationReceipt {
   return {
-    protocol: 1,
+    protocol: 2,
     transaction_id: 'transaction-fixture',
     candidate_package_root: identity.root,
     candidate_version: identity.version,
@@ -222,7 +221,7 @@ function runCandidateChild(
 describe('candidate-bound global runtime reconciliation', () => {
   test('rejects a predecessor Stop timeout projection even when the route count is unchanged', () => {
     const identity = fixtureCandidate();
-    const candidate = buildManagedHooks('codex', 'full');
+    const candidate = buildManagedHooks('codex');
     const predecessor = structuredClone(candidate);
     const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
     if (!stop) throw new Error('fixture requires Stop.default');
@@ -234,19 +233,17 @@ describe('candidate-bound global runtime reconciliation', () => {
       transaction_id: 'transaction-fixture',
       candidate: identity,
       target: 'codex',
-      profile: 'full',
       require_complete: true,
     })).toThrow('adapter projection mismatch for codex');
   });
 
   test('accepts the candidate projection and binds its package identity to the transaction receipt', () => {
     const identity = fixtureCandidate();
-    const candidate = buildManagedHooks('codex', 'full');
+    const candidate = buildManagedHooks('codex');
     expect(() => assertCandidateReconciliationReceipt(candidateReceipt(identity, managedProjectionDigest(candidate)), {
       transaction_id: 'transaction-fixture',
       candidate: identity,
       target: 'codex',
-      profile: 'full',
       require_complete: true,
     })).not.toThrow();
   });
@@ -266,9 +263,11 @@ describe('candidate-bound global runtime reconciliation', () => {
     };
     try {
       mkdirSync(cwd, { recursive: true });
+      // The candidate reads the recorded selection; a partial reconciliation commits no new install transaction.
+      writeCoreOnlyInstallState(home);
       const transaction = beginInstallHostTransaction([], env);
       expect(existsSync(transaction.backup_root)).toBe(true);
-      const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
+      const predecessor = structuredClone(buildManagedHooks('codex'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
       stop.hooks[0]!.timeout = 150;
@@ -280,14 +279,13 @@ describe('candidate-bound global runtime reconciliation', () => {
       }, null, 2));
 
       const request: CandidateReconciliationRequest = {
-        protocol: 1,
+        protocol: 2,
         transaction_id: sha256(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
         parent_token: token,
         candidate,
         cwd,
         target: 'codex',
-        profile: 'minimal',
         sync_skill: false,
         host_adapters: true,
         external_skills: false,
@@ -304,8 +302,8 @@ describe('candidate-bound global runtime reconciliation', () => {
       expect(installedStop).toBe(30);
       expect(installed.custom).toEqual({ untouched: true });
       expect(receipt.reconciliation_scope).toBe('partial');
-      expect(receipt.adapter_projection_digests.codex).toBe(managedProjectionDigest(buildManagedHooks('codex', 'minimal')));
-      expect(existsSync(join(home, '.repo-harness', 'install-state.json'))).toBe(false);
+      expect(receipt.adapter_projection_digests.codex).toBe(managedProjectionDigest(buildManagedHooks('codex')));
+      expect(readInstallState(env)).toMatchObject({ transaction_id: 'fixture-install', selection: [], plugins: [] });
       rollbackInstallHostTransaction(transaction);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -321,8 +319,9 @@ describe('candidate-bound global runtime reconciliation', () => {
     const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
     try {
       mkdirSync(cwd, { recursive: true });
+      writeCoreOnlyInstallState(home);
       const transaction = beginInstallHostTransaction([], env);
-      const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
+      const predecessor = structuredClone(buildManagedHooks('codex'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
       stop.hooks[0]!.timeout = 150;
@@ -330,12 +329,11 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(hookPath, JSON.stringify({ hooks: predecessor }, null, 2));
       const requestBase = {
-        protocol: 1 as const,
+        protocol: 2 as const,
         parent_token: token,
         candidate,
         cwd,
         target: 'codex' as const,
-        profile: 'minimal' as const,
         sync_skill: false,
         host_adapters: true,
         external_skills: false,
@@ -399,7 +397,8 @@ describe('candidate-bound global runtime reconciliation', () => {
     const env = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
     try {
       mkdirSync(cwd, { recursive: true });
-      const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
+      writeCoreOnlyInstallState(home);
+      const predecessor = structuredClone(buildManagedHooks('codex'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
       stop.hooks[0]!.timeout = 150;
@@ -407,14 +406,13 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(hookPath, JSON.stringify({ hooks: predecessor }, null, 2));
       const requestFor = (backupRoot: string): CandidateReconciliationRequest => ({
-        protocol: 1,
+        protocol: 2,
         parent_token: token,
         transaction_id: sha256(backupRoot),
         transaction_backup_root: backupRoot,
         candidate,
         cwd,
         target: 'codex',
-        profile: 'minimal',
         sync_skill: false,
         host_adapters: true,
         external_skills: false,
@@ -482,23 +480,16 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(cwd, { recursive: true });
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
       writeExecutable(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\nexit 0\n');
-      // An older parent has no migration step, so the candidate removes the retired fleet file it owns (#1510).
-      const retired = join(home, '.claude', 'agents', 'orchestrator.md');
-      mkdirSync(dirname(retired), { recursive: true });
-      writeFileSync(retired, '---\nname: orchestrator\n---\n');
-      recordInstallOwnership([retired], env);
-      const seeded = JSON.parse(readFileSync(installProfileStatePath(env), 'utf-8'));
-      writeFileSync(installProfileStatePath(env), JSON.stringify({ ...seeded, profile: 'minimal', components: PROFILE_COMPONENTS.minimal }));
+      writeCoreOnlyInstallState(home);
       const transaction = beginInstallHostTransaction([], env);
       const request: CandidateReconciliationRequest = {
-        protocol: 1,
+        protocol: 2,
         transaction_id: sha256(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
         parent_token: token,
         candidate,
         cwd,
         target: 'codex',
-        profile: 'minimal',
         sync_skill: true,
         host_adapters: true,
         external_skills: false,
@@ -510,14 +501,11 @@ describe('candidate-bound global runtime reconciliation', () => {
       expect(result.status).toBe(0);
       const receipt = JSON.parse((result.stdout ?? '').toString()) as CandidateReconciliationReceipt;
 
-      const installed = readInstalledProfile(env);
+      const installed = readInstallState(env);
       expect(receipt.reconciliation_scope).toBe('complete');
       expect(receipt.ownership_manifest_digest).toBe(`sha256:${createHash('sha256').update(JSON.stringify(installed?.ownership_manifest)).digest('hex')}`);
-      expect(installed?.profile).toBe('minimal');
+      expect(installed?.plugins).toEqual([]);
       expect(installed?.ownership_manifest.some((surface) => surface.path === join(home, '.codex', 'hooks.json'))).toBe(true);
-      expect(String(result.stderr)).toContain(`[runtime] retired fleet file: removed ${retired}`);
-      expect(existsSync(retired)).toBe(false);
-      expect(installed?.ownership_manifest.some((surface) => surface.path === retired)).toBe(false);
       rollbackInstallHostTransaction(transaction);
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -540,8 +528,8 @@ describe('candidate-bound global runtime reconciliation', () => {
       const globalPackagePath = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
       mkdirSync(join(home, '.bun', 'install', 'global', 'node_modules'), { recursive: true });
       symlinkSync(parentRoot, globalPackagePath, 'dir');
-      writeMinimalInstallState(home);
-      const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
+      writeCoreOnlyInstallState(home);
+      const predecessor = structuredClone(buildManagedHooks('codex'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
       stop.hooks[0]!.timeout = 30;
@@ -620,7 +608,7 @@ describe('candidate-bound global runtime reconciliation', () => {
         const globalPackage = join(globalRoot, 'node_modules', 'repo-harness');
         mkdirSync(join(globalRoot, 'node_modules'), { recursive: true });
         symlinkSync(parentRoot, globalPackage, 'dir');
-        writeMinimalInstallState(home);
+        writeCoreOnlyInstallState(home);
         const globalManifest = join(globalRoot, 'package.json');
         const oldManifest = JSON.stringify({ dependencies: { 'repo-harness': '^0.21.2' } });
         writeFileSync(globalManifest, oldManifest);
@@ -710,7 +698,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const globalPackagePath = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
       mkdirSync(join(home, '.bun', 'install', 'global', 'node_modules'), { recursive: true });
       symlinkSync(parentRoot, globalPackagePath, 'dir');
-      writeMinimalInstallState(home);
+      writeCoreOnlyInstallState(home);
       writeCandidateSwitchingBun(
         join(bin, 'bun'),
         bunLog,
@@ -766,7 +754,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       const globalPackagePath = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
       mkdirSync(join(home, '.bun', 'install', 'global', 'node_modules'), { recursive: true });
       symlinkSync(legacyParentRoot, globalPackagePath, 'dir');
-      writeMinimalInstallState(home);
+      writeCoreOnlyInstallState(home);
       writeCandidateSwitchingBun(join(bin, 'bun'), bunLog, globalPackagePath, candidateRoot);
       const sharedEnv = {
         ...process.env,
@@ -823,15 +811,15 @@ describe('candidate-bound global runtime reconciliation', () => {
       symlinkSync(ROOT, join(globalModules, 'repo-harness'), 'dir');
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       writeFileSync(join(home, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-        protocol: 2,
-        profile: 'minimal',
-        components: PROFILE_COMPONENTS.minimal,
+        protocol: 3,
+        selection: [],
+        ...versions([]),
         transaction_id: 'predecessor-install',
         applied_at: '2026-09-04T00:00:00.000Z',
         ownership_manifest: [],
         previous: null,
       }, null, 2)}\n`);
-      const predecessor = structuredClone(buildManagedHooks('codex', 'minimal'));
+      const predecessor = structuredClone(buildManagedHooks('codex'));
       const stop = predecessor.Stop?.find((entry) => entry.hooks[0]?.command.includes(' Stop --route default'));
       if (!stop) throw new Error('fixture requires Stop.default');
       stop.hooks[0]!.timeout = 30;

@@ -1,13 +1,14 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, relative } from "path";
 import { spawnSync } from "child_process";
 import { removeOwnedDanglingSkillLinks } from "../src/effects/skill-tree-integrity";
+import { PLUGIN_IDS } from "../src/core/skill-surface/plugin-manifest";
 
 const ROOT = join(import.meta.dir, "..");
 /**
- * profile_facades() now unconditionally needs a real `bun` on PATH (to run
+ * The facade selection now unconditionally needs a real `bun` on PATH (to run
  * the adapter) before it can reach any of this script's own capability
  * probes (rsync, symlink). The three tests below deliberately restrict PATH
  * to a minimal fakeBin to test those probes in isolation; this appends the
@@ -15,9 +16,11 @@ const ROOT = join(import.meta.dir, "..");
  * step succeeds and execution reaches the capability probe under test.
  */
 const BUN_BIN_DIR = dirname(process.execPath);
+/** The sync script's explicit every-plugin selection; an empty value selects core only. */
+const ALL_PLUGINS = PLUGIN_IDS.join(",");
 
 /**
- * profile_facades() now resolves `$SOURCE_ROOT/scripts/skill-surface-select.ts`
+ * The facade selection now resolves `$SOURCE_ROOT/scripts/skill-surface-select.ts`
  * eagerly (see scripts/sync-codex-installed-copies.sh), which imports
  * src/core/skill-surface/catalog.ts and reads
  * assets/skill-commands/manifest.json, all resolved relative to SOURCE_ROOT;
@@ -66,7 +69,7 @@ describe("Codex installed copy sync", () => {
       const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
         cwd: ROOT, encoding: "utf-8",
         env: { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
-          REPO_HARNESS_INSTALL_PROFILE: "minimal", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
+          REPO_HARNESS_INSTALL_PLUGINS: "", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
       });
       expect(result.status, result.stderr).toBe(0);
       for (const root of roots) {
@@ -105,7 +108,7 @@ describe("Codex installed copy sync", () => {
         const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
           cwd: ROOT, encoding: "utf-8",
           env: { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
-            REPO_HARNESS_INSTALL_PROFILE: "minimal", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
+            REPO_HARNESS_INSTALL_PLUGINS: "", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
         });
         expect(result.status).toBe(1);
         expect(result.stderr).toContain("symlink target is not the expected package source");
@@ -170,7 +173,7 @@ describe("Codex installed copy sync", () => {
         env: {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
-          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          REPO_HARNESS_INSTALL_PLUGINS: "",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: claudeSkills,
         },
@@ -222,7 +225,7 @@ describe("Codex installed copy sync", () => {
         env: {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
-          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          REPO_HARNESS_INSTALL_PLUGINS: "",
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: claudeSkills,
@@ -244,7 +247,7 @@ describe("Codex installed copy sync", () => {
     }
   }, 30_000);
 
-  test("full sync leaves separately managed provider skills untouched", () => {
+  test("every-plugin sync leaves separately managed provider skills untouched", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-provider-skill-${Date.now()}`);
     const source = join(tmp, "source");
     const codexSkills = join(tmp, "codex-skills");
@@ -270,7 +273,7 @@ describe("Codex installed copy sync", () => {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
-          REPO_HARNESS_INSTALL_PROFILE: "full",
+          REPO_HARNESS_INSTALL_PLUGINS: ALL_PLUGINS,
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: claudeSkills,
         },
@@ -288,8 +291,8 @@ describe("Codex installed copy sync", () => {
     }
   }, 30_000);
 
-  test("minimal removes an exact package-owned full-only facade", () => {
-    const tmp = join(tmpdir(), `repo-harness-installed-minimal-${Date.now()}`);
+  test("core only removes an exact package-owned product-plugin facade", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-core-only-${Date.now()}`);
     const source = join(tmp, "source");
     const codexSkills = join(tmp, "codex-skills");
     try {
@@ -310,7 +313,7 @@ describe("Codex installed copy sync", () => {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
-          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          REPO_HARNESS_INSTALL_PLUGINS: "",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: "",
         },
@@ -321,6 +324,45 @@ describe("Codex installed copy sync", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("the public sync projects into the Pi root only when the selection includes pi", () => {
+    const rows = [
+      { plugins: "", userRoot: false, projected: false },
+      { plugins: "product", userRoot: true, projected: false },
+      { plugins: "pi,product", userRoot: false, projected: true },
+    ];
+    for (const row of rows) {
+      const tmp = realpathSync(mkdtempSync(join(tmpdir(), "repo-harness-installed-pi-root-")));
+      const home = join(tmp, "home");
+      const source = join(tmp, "source");
+      const tools = join(tmp, "tool-bin");
+      const piRoot = join(home, ".pi", "agent", "skills");
+      try {
+        seedSkillSurfaceRuntime(source);
+        writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+        mkdirSync(tools, { recursive: true });
+        symlinkSync(process.execPath, join(tools, "bun"));
+        if (row.userRoot) {
+          mkdirSync(join(piRoot, "user-skill"), { recursive: true });
+          writeFileSync(join(piRoot, "user-skill", "SKILL.md"), "# user\n");
+        }
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: join(tmp, "bun"), XDG_STATE_HOME: join(tmp, "state"),
+          REPO_HARNESS_HOME: join(home, ".repo-harness"), PATH: `${tools}:/usr/bin:/bin`, AGENTIC_DEV_SOURCE_ROOT: source,
+          REPO_HARNESS_INSTALL_PLUGINS: row.plugins };
+        for (const key of ["CODEX_SKILLS_ROOT", "CLAUDE_SKILLS_ROOT", "PI_CODING_AGENT_DIR", "REPO_HARNESS_INCLUDE_PI", "AGENTIC_DEV_LINK_INSTALLED_COPIES"]) delete env[key];
+        const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], { cwd: ROOT, encoding: "utf-8", env });
+        expect(result.status, `${row.plugins}: ${result.stderr}`).toBe(0);
+        expect(existsSync(join(home, ".codex", "skills", "repo-harness")), row.plugins).toBe(true);
+        expect(existsSync(join(piRoot, "repo-harness")), row.plugins).toBe(row.projected);
+        if (!row.projected) {
+          expect(existsSync(piRoot) ? readdirSync(piRoot) : [], row.plugins).toEqual(row.userRoot ? ["user-skill"] : []);
+          if (row.userRoot) expect(readFileSync(join(piRoot, "user-skill", "SKILL.md"), "utf-8")).toBe("# user\n");
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  }, 60_000);
 
   test("unknown facade fails closed before changing any managed surface", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-unknown-${Date.now()}`);
@@ -343,7 +385,7 @@ describe("Codex installed copy sync", () => {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
-          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          REPO_HARNESS_INSTALL_PLUGINS: "",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: "",
         },
@@ -376,7 +418,7 @@ describe("Codex installed copy sync", () => {
         ...process.env,
         AGENTIC_DEV_SOURCE_ROOT: source,
         AGENTIC_DEV_LINK_INSTALLED_COPIES: "0",
-        REPO_HARNESS_INSTALL_PROFILE: "minimal",
+        REPO_HARNESS_INSTALL_PLUGINS: "",
         CODEX_SKILLS_ROOT: codexSkills,
         CLAUDE_SKILLS_ROOT: "",
       };
@@ -399,8 +441,8 @@ describe("Codex installed copy sync", () => {
     }
   }, 30_000);
 
-  test("wires plan/check into both profiles and product/ship into full only", () => {
-    const tmp = join(tmpdir(), `repo-harness-installed-product-ship-profile-${Date.now()}`);
+  test("wires check/ship into core and product into the product plugin only", () => {
+    const tmp = join(tmpdir(), `repo-harness-installed-product-ship-selection-${Date.now()}`);
     const source = join(tmp, "source");
     try {
       seedSkillSurfaceRuntime(source);
@@ -414,11 +456,11 @@ describe("Codex installed copy sync", () => {
       }
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
 
-      for (const [profile, expectCoreFacades, expectProduct, expectShip] of [
-        ["minimal", true, false, false],
-        ["full", true, true, true],
+      for (const [label, plugins, expectCoreFacades, expectProduct, expectShip] of [
+        ["core", "", true, false, true],
+        ["product", "product", true, true, true],
       ] as const) {
-        const codexSkills = join(tmp, `codex-skills-${profile}`);
+        const codexSkills = join(tmp, `codex-skills-${label}`);
         mkdirSync(codexSkills, { recursive: true });
         const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
           cwd: ROOT,
@@ -426,7 +468,7 @@ describe("Codex installed copy sync", () => {
           env: {
             ...process.env,
             AGENTIC_DEV_SOURCE_ROOT: source,
-            REPO_HARNESS_INSTALL_PROFILE: profile,
+            REPO_HARNESS_INSTALL_PLUGINS: plugins,
             CODEX_SKILLS_ROOT: codexSkills,
             CLAUDE_SKILLS_ROOT: "",
           },
@@ -441,7 +483,7 @@ describe("Codex installed copy sync", () => {
     }
   }, 30_000);
 
-  test("the default profile installs the architecture worker guidance on both hosts", () => {
+  test("the default selection installs the architecture worker guidance on both hosts", () => {
     const tmp = mkdtempSync(join(tmpdir(), "repo-harness-default-architecture-"));
     const source = join(tmp, "source");
     const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
@@ -450,9 +492,9 @@ describe("Codex installed copy sync", () => {
       cpSync(join(ROOT, "assets", "skill-commands", "repo-harness-architecture"), join(source, "assets", "skill-commands", "repo-harness-architecture"), { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
       for (const root of roots) mkdirSync(root, { recursive: true });
-      // `repo-harness init` runs this script without a profile; the script default is the profile under test.
+      // `repo-harness init` runs this script without a selection; the script default (every plugin) is under test.
       const env: NodeJS.ProcessEnv = { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "0", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] };
-      delete env.REPO_HARNESS_INSTALL_PROFILE;
+      delete env.REPO_HARNESS_INSTALL_PLUGINS;
       const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], { cwd: ROOT, encoding: "utf-8", timeout: 60000, env });
       expect(result.status, result.stderr + result.stdout).toBe(0);
       for (const root of roots) {
@@ -466,8 +508,8 @@ describe("Codex installed copy sync", () => {
     }
   }, 60_000);
 
-  test("copy sync installs a selected facade when the profile projection exceeds pipe capacity", () => {
-    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-profile-pipe-"));
+  test("copy sync installs a selected facade when the selection projection exceeds pipe capacity", () => {
+    const tmp = mkdtempSync(join(tmpdir(), "repo-harness-selection-pipe-"));
     const source = join(tmp, "source");
     const roots = [join(tmp, "codex-skills"), join(tmp, "claude-skills")];
     try {
@@ -480,7 +522,6 @@ describe("Codex installed copy sync", () => {
       for (let index = 0; index < 512; index++) {
         const name = `repo-harness-tail-${index}-${"x".repeat(220)}`;
         manifest.packages.push({ ...product, name, source: `assets/skills/tail-${index}` });
-        manifest.expectedProjections.facadesByProfile.full.push(name);
       }
       writeFileSync(manifestPath, JSON.stringify(manifest));
       writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
@@ -490,7 +531,7 @@ describe("Codex installed copy sync", () => {
       const result = spawnSync("bash", [join(ROOT, "scripts/sync-codex-installed-copies.sh")], {
         cwd: ROOT, encoding: "utf8", timeout: 60000,
         env: { ...process.env, AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: "0",
-          REPO_HARNESS_INSTALL_PROFILE: "full", CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
+          REPO_HARNESS_INSTALL_PLUGINS: ALL_PLUGINS, CODEX_SKILLS_ROOT: roots[0], CLAUDE_SKILLS_ROOT: roots[1] },
       });
       expect(result.status, result.stderr + result.stdout).toBe(0);
       for (const root of roots) {
@@ -501,7 +542,7 @@ describe("Codex installed copy sync", () => {
     } finally { rmSync(tmp, { recursive: true, force: true }); }
   }, 60000);
 
-  test("retires an owner-marked facade once its canonical source and profile selection are both gone", () => {
+  test("retires an owner-marked facade once its canonical source and plugin selection are both gone", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-retire-${Date.now()}`);
     const source = join(tmp, "source");
     const codexSkills = join(tmp, "codex-skills");
@@ -526,20 +567,20 @@ describe("Codex installed copy sync", () => {
         CLAUDE_SKILLS_ROOT: claudeSkills,
       };
 
-      // Phase 1: full legitimately installs and marks
+      // Phase 1: every plugin legitimately installs and marks
       // repo-harness-product on both hosts.
       const bootstrap = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
-        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "full" },
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PLUGINS: ALL_PLUGINS },
       });
       expect(bootstrap.status).toBe(0);
       const productDest = join(codexSkills, "repo-harness-product");
       expect(existsSync(join(productDest, ".repo-harness-owner.json"))).toBe(true);
 
       // Phase 2: the package retires repo-harness-product's canonical
-      // source, and the host moves to a profile that never selects it.
+      // source, and the host moves to a selection that never selects it.
       rmSync(productSource, { recursive: true, force: true });
       const retire = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
-        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "minimal" },
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PLUGINS: "" },
       });
 
       expect(retire.status).toBe(0);
@@ -579,7 +620,7 @@ describe("Codex installed copy sync", () => {
       };
 
       const bootstrap = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
-        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "full" },
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PLUGINS: ALL_PLUGINS },
       });
       expect(bootstrap.status).toBe(0);
       const productDest = join(codexSkills, "repo-harness-product");
@@ -589,7 +630,7 @@ describe("Codex installed copy sync", () => {
       writeFileSync(join(productDest, "SKILL.md"), "---\nname: repo-harness-product\n---\nuser edit\n");
 
       const retry = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], {
-        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PROFILE: "minimal" },
+        cwd: ROOT, encoding: "utf-8", env: { ...baseEnv, REPO_HARNESS_INSTALL_PLUGINS: "" },
       });
 
       // A retired conflict stays visible without blocking selected runtime sync.
@@ -623,7 +664,7 @@ describe("Codex installed copy sync", () => {
           ...process.env,
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "1",
-          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          REPO_HARNESS_INSTALL_PLUGINS: "",
           CODEX_SKILLS_ROOT: codexSkills,
           CLAUDE_SKILLS_ROOT: "",
         },
@@ -786,10 +827,10 @@ root="$1"
   });
 });
 
-describe('minimal provider ownership boundary', () => {
+describe('core-only provider ownership boundary', () => {
   for (const link of [true, false]) {
-    test(`minimal sync preserves an unselected provider ${link ? 'link' : 'copy'}`, () => {
-      const tmp = mkdtempSync('/tmp/rh-minimal-provider-');
+    test(`core-only sync preserves an unselected provider ${link ? 'link' : 'copy'}`, () => {
+      const tmp = mkdtempSync('/tmp/rh-core-provider-');
       try {
         const source = join(tmp, 'source');
         seedSkillSurfaceRuntime(source);
@@ -804,7 +845,7 @@ describe('minimal provider ownership boundary', () => {
         }
         const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], {
           env: { ...process.env, HOME: join(tmp, 'home'), BUN_INSTALL: join(tmp, 'home/.bun'),
-            AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' }, encoding: 'utf8',
+            AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' }, encoding: 'utf8',
         });
         expect(result.status, result.stderr).toBe(0);
         for (const root of roots) {
@@ -820,9 +861,9 @@ describe('minimal provider ownership boundary', () => {
 });
 
 describe('separately installed integration ownership boundary', () => {
-  for (const profile of ['minimal', 'full'] as const) {
+  for (const [label, plugins] of [['core', ''], ['all', ALL_PLUGINS]] as const) {
     for (const link of [true, false]) {
-      test(`${profile} ${link ? 'link' : 'copy'} sync keeps an installed Strategy skill link`, async () => {
+      test(`${label} ${link ? 'link' : 'copy'} sync keeps an installed Strategy skill link`, async () => {
         const { projectStrategySkill } = await import('../src/effects/strategy/skill');
         const tmp = mkdtempSync('/tmp/rh-integration-boundary-');
         try {
@@ -836,7 +877,7 @@ describe('separately installed integration ownership boundary', () => {
           expect([...installed.changed].sort()).toEqual([...links].sort());
           const result = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], {
             env: { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
-              AGENTIC_DEV_LINK_INSTALLED_COPIES: link ? '1' : '0', REPO_HARNESS_INSTALL_PROFILE: profile }, encoding: 'utf8',
+              AGENTIC_DEV_LINK_INSTALLED_COPIES: link ? '1' : '0', REPO_HARNESS_INSTALL_PLUGINS: plugins }, encoding: 'utf8',
           });
           expect(result.status, result.stderr).toBe(0);
           for (const dest of links) expect(readlinkSync(dest)).toBe(realpathSync(join(ROOT, 'assets/skills/repo-harness-strategy')));
@@ -880,7 +921,7 @@ describe('installed copy file projection', () => {
       put(join(facade, 'references/retired.md'), 'old shipped guide\n');
       const env = { ...process.env, HOME: tmp, BUN_INSTALL: join(tmp, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
         CODEX_SKILLS_ROOT: join(tmp, 'codex'), CLAUDE_SKILLS_ROOT: join(tmp, 'claude'),
-        AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', REPO_HARNESS_INSTALL_PROFILE: 'minimal' };
+        AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', REPO_HARNESS_INSTALL_PLUGINS: '' };
       const installed = spawnSync('bash', [join(ROOT, 'scripts/sync-codex-installed-copies.sh')], { env, encoding: 'utf8' });
       expect(installed.status, installed.stdout + installed.stderr).toBe(0);
       rmSync(join(facade, 'references/retired.md'));
@@ -933,7 +974,7 @@ test('a missing canonical projection fails before changing existing owned copies
     mkdirSync(facade, { recursive: true });
     writeFileSync(join(facade, 'SKILL.md'), 'facade\n');
     const env = { ...process.env, HOME: tmp, BUN_INSTALL: join(tmp, '.bun'), AGENTIC_DEV_SOURCE_ROOT: source,
-      CODEX_SKILLS_ROOT: join(tmp, 'codex'), CLAUDE_SKILLS_ROOT: join(tmp, 'claude'), REPO_HARNESS_INSTALL_PROFILE: 'minimal' };
+      CODEX_SKILLS_ROOT: join(tmp, 'codex'), CLAUDE_SKILLS_ROOT: join(tmp, 'claude'), REPO_HARNESS_INSTALL_PLUGINS: '' };
     const installed = spawnSync('bash', [writer], { env: { ...env, AGENTIC_DEV_LINK_INSTALLED_COPIES: '0' }, encoding: 'utf8' });
     expect(installed.status, installed.stdout + installed.stderr).toBe(0);
     const targets = ['codex/repo-harness', 'claude/repo-harness', 'codex/repo-harness-check', 'claude/repo-harness-check'].map(path => join(tmp, path));

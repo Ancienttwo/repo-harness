@@ -19,6 +19,7 @@ import { runSubagentContext } from "../src/cli/hook/subagent-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
+import { versions } from "../src/cli/installer/install-profile";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
@@ -581,10 +582,23 @@ describe("check-agent-tooling", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-obsidian-managed");
     try {
       mkdirSync(join(envRoot.home, ".repo-harness"), { recursive: true });
-      writeFileSync(join(envRoot.home, ".repo-harness", "install-state.json"), JSON.stringify({
-        protocol: 2,
+      const statePath = join(envRoot.home, ".repo-harness", "install-state.json");
+      writeFileSync(statePath, JSON.stringify({
+        protocol: 3,
+        ...versions(["strategy-memory"]),
+        selection: ["strategy-memory"],
+        transaction_id: "obsidian-receipt",
+        applied_at: "2026-01-01T00:00:00.000Z",
+        previous: null,
         ownership_manifest: [{
+          owner: "strategy-memory",
           path: join(envRoot.home, ".agents", "skills", "obsidian-markdown"),
+          type: "symlink",
+          authority: "repo-harness-install-transaction",
+          removal: "managed-surfaces-only",
+          content_hash: null,
+          managed_marker: null,
+          symlink_target: join(envRoot.root, "obsidian-markdown-source"),
         }],
       }));
       writeFakeSkillsCli(envRoot.fakeBin);
@@ -604,6 +618,23 @@ describe("check-agent-tooling", () => {
       const report = JSON.parse(res.stdout);
       expect(report.tools.obsidian_runtime_skills.readiness).toBe("managed");
       expect(report.tools.obsidian_runtime_skills.managed_receipt).toBe(true);
+      expect(report.tools.obsidian_runtime_skills.install_state_error).toBeUndefined();
+
+      // A state that the strict reader rejects proves no receipt and names the reader error.
+      writeFileSync(statePath, JSON.stringify({ protocol: 2, ownership_manifest: [] }));
+      const rejected = spawnSync("bash", [SCRIPT, "--json", "--host", "codex"], {
+        cwd: ROOT,
+        encoding: "utf-8",
+        env: {
+          ...process.env,
+          HOME: envRoot.home,
+          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`,
+          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: "0",
+        },
+      });
+      const rejectedSkills = JSON.parse(rejected.stdout).tools.obsidian_runtime_skills;
+      expect(rejectedSkills.managed_receipt).toBe(false);
+      expect(rejectedSkills.install_state_error).toContain("protocol 2");
     } finally {
       rmSync(envRoot.root, { recursive: true, force: true });
     }

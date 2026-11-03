@@ -70,8 +70,6 @@ export interface Route {
    * the user. Installer projections do not read this field.
    */
   readonly failClosed?: true;
-  /** The minimal install profile also installs this route. The full profile installs every route. */
-  readonly minimalProfile?: true;
 }
 
 export const ROUTES: readonly Route[] = Object.freeze([
@@ -81,7 +79,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     // HRD-04: context assembly is owned by the in-process session-context
     // handler and is invoked directly by the runtime.
     handler: 'session-context',
-    minimalProfile: true as const,
   }),
   Object.freeze({
     event: 'PreToolUse' as const,
@@ -90,7 +87,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     // HRD-03: mutation decisions are owned by the in-process guard handler.
     handler: 'mutation-guard',
     failClosed: true as const,
-    minimalProfile: true as const,
   }),
   Object.freeze({
     event: 'PreToolUse' as const,
@@ -106,7 +102,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     hosts: ['claude', 'pi', 'dsh'] as const,
     handler: 'bash-mutation-guard',
     // A tripwire is advisory on unparsed input or failure; a known path denial exits 2.
-    minimalProfile: true as const,
   }),
   Object.freeze({
     event: 'UserPromptSubmit' as const,
@@ -114,7 +109,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     // Preserve the installed tuple and adapter order.
     handler: 'agent-notice',
     hosts: ['claude', 'codex', 'pi', 'dsh'] as const,
-    minimalProfile: true as const,
   }),
   Object.freeze({
     event: 'SubagentStart' as const,
@@ -127,7 +121,6 @@ export const ROUTES: readonly Route[] = Object.freeze([
     routeId: 'default' as const,
     // HRD-06: Stop orchestration is owned by the in-process stop-handler.
     handler: 'stop',
-    minimalProfile: true as const,
   }),
 ]);
 
