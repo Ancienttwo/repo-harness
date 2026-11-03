@@ -10,7 +10,8 @@ import { NotifyStatusUnavailableError, readNotifyChannelStatus, type NotifyStatu
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
 import { translate } from '../../src/operator-web/i18n';
 import { startOperatorServer } from '../../src/effects/operator/server';
-import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
+import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
+import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath } from '../../src/effects/terminal/notify-read';
 
 const SECRET = 'fixture-secret-key-must-not-leak';
 
@@ -305,7 +306,7 @@ describe('notify relay status', () => {
   test('the reader performs no synchronous filesystem or process call on the server request path', async () => {
     const source = await Bun.file(new URL('../../src/effects/operator/notify-status.ts', import.meta.url)).text();
     expect(source).not.toMatch(/\b\w+Sync\s*\(/u);
-    // The relay list call is the async transport call; the files are read through node:fs/promises in herdr-notify-install.ts.
+    // The relay list call is the async transport call; the files are read in notify-read.ts.
     expect(source).toContain('await hcListAsync(');
   });
 });

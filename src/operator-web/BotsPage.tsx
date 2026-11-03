@@ -7,7 +7,8 @@ import type {
   McpAuditProjection,
   RegistryRepoProjection,
 } from '../core/operator/bot-access';
-import { NOTIFY_CHANNELS, NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyDeliveryState, type NotifyDeliveryV1 } from '../core/operator/notify-status';
+import { NOTIFY_CHANNELS } from '../core/decision/notify-relay-record';
+import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyDeliveryState, type NotifyDeliveryV1 } from '../core/operator/notify-status';
 import type { SlackReviewReason, SlackReviewState, SlackReviewThreadV1 } from '../core/operator/slack-review';
 import {
   botLabel,
