@@ -339,9 +339,15 @@ export function OperatorApp({
   const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
   const boardSubject = workspace === 'board' ? boardPlace(place.item) : null;
   const board = useBoard(readBoard, boardSubject, refreshGeneration);
+  // The one owner of the board repository choice: the open board, the rail and the subject form set it.
+  const [boardRepository, setBoardRepository] = useState<string | null>(() => readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY));
+  const chooseBoardRepository = useCallback((id: string) => {
+    writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
+    setBoardRepository(id);
+  }, []);
   useEffect(() => {
-    if (boardSubject !== null) writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, boardSubject.repository_id);
-  }, [boardSubject?.repository_id]);
+    if (boardSubject !== null) chooseBoardRepository(boardSubject.repository_id);
+  }, [boardSubject?.repository_id, chooseBoardRepository]);
 
   useEffect(() => {
     const restore = () => {
@@ -454,7 +460,7 @@ export function OperatorApp({
     allowAll: false,
     onSelect: id => {
       if (id === null || id === boardSubject?.repository_id) return;
-      writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
+      chooseBoardRepository(id);
       openPlace(boardHome);
     },
   } : {
@@ -497,7 +503,7 @@ export function OperatorApp({
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage place={boardSubject} view={board} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={devRepositories.map(row => ({ id: row.repository_id, label: repositoryLabel(devRepositories, row.repository_id) }))}
-            initialRepository={readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY)} />}
+            chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
           {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}

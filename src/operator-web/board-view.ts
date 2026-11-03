@@ -43,7 +43,16 @@ export async function fetchBoard(subject: BoardSubject, signal: AbortSignal): Pr
   try { return { state: 'ok', board: decodeBoard(body) }; } catch { return { state: 'unavailable', reason: 'board_invalid' }; }
 }
 
-/** A failed refresh keeps the last board of the same subject and names the refusal. */
+/**
+ * Failures of transport or collection: the last board of the subject stays,
+ * marked stale. A validation refusal, a missing repository or a bad request
+ * drops it (ADR-0002 Versions: no last good copy after a refusal).
+ */
+const STALE_BOARD_KEPT: ReadonlySet<BoardReason> = new Set<BoardReason>([
+  'unreachable', 'board_busy', 'board_timeout', 'board_unavailable', 'board_collect_failed', 'registry_unavailable',
+]);
+
+/** A failed refresh keeps the last board of the same subject only for the failures in STALE_BOARD_KEPT. */
 export type BoardView =
   | { readonly kind: 'loading' }
   | { readonly kind: 'failed'; readonly reason: BoardReason }
@@ -61,7 +70,7 @@ export function useBoard(read: BoardReader, subject: BoardSubject | null, genera
       setState({ key, view: { kind: 'ready', board: result.board, attention: evaluateBoardAttention(result.board), refreshFailed: null } });
       return true;
     }
-    setState(current => current?.key === key && current.view.kind === 'ready'
+    setState(current => current?.key === key && current.view.kind === 'ready' && STALE_BOARD_KEPT.has(result.reason)
       ? { key, view: { ...current.view, refreshFailed: result.reason } }
       : { key, view: { kind: 'failed', reason: result.reason } });
     return false;

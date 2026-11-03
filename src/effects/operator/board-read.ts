@@ -1,5 +1,7 @@
 import { spawn } from 'node:child_process';
+import { devNull } from 'node:os';
 import { fileURLToPath } from 'node:url';
+import { withoutRepositorySelectingGitEnv } from '../git/runner';
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
 import type { BoardReadFailure } from '../../core/operator/board-read';
@@ -62,11 +64,18 @@ export function readRepositoryBoard(input: BoardReadInput): Promise<unknown> {
     return Promise.reject(new BoardReadError('registry_unavailable'));
   }
   if (input.signal.aborted) return Promise.reject(new BoardReadError('board_timeout'));
+  // The registered root alone selects the repository: no GH_REPO or Git
+  // repository override from the operator environment reaches the child.
+  const env = withoutRepositorySelectingGitEnv(input.env);
+  delete env.GH_REPO;
   return new Promise((resolveRead, rejectRead) => {
+    // `gh repo view` needs the root as cwd. Bun would then load that
+    // repository's bunfig.toml (preload code) and .env, so the child takes
+    // neither: the package bunfig holds only test settings.
     const child = spawnRegisteredProcessGroup('operator-board', () => spawn(
       process.execPath,
-      [BOARD_CLI_ENTRY, 'board', '--parent', String(input.parent), '--json'],
-      { cwd: root, env: input.env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true },
+      ['--no-env-file', `--config=${devNull}`, BOARD_CLI_ENTRY, 'board', '--parent', String(input.parent), '--json'],
+      { cwd: root, env, stdio: ['ignore', 'pipe', 'pipe'], detached: process.platform !== 'win32', windowsHide: true },
     ));
     const stdout: Buffer[] = [];
     const stderr: Buffer[] = [];

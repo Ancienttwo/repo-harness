@@ -1744,6 +1744,11 @@ export async function startOperatorServer(
 
     const boardRoute = OPERATOR_BOARD_ROUTE.exec(pathname);
     if (boardRoute !== null) {
+      // A board read runs the board CLI and about ten GitHub reads; HEAD gets no read.
+      if (headOnly) {
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board route supports only GET.'), true, { Allow: 'GET' });
+        return;
+      }
       const keys = [...url.searchParams.keys()];
       const parent = url.searchParams.get('parent');
       if (keys.length !== 1 || parent === null || !/^[1-9][0-9]{0,9}$/u.test(parent)) {

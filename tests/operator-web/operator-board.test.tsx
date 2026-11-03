@@ -231,6 +231,29 @@ describe('board page', () => {
     for (const affordance of ['Approve', 'Merge now', 'Close PR', 'Start agent', 'Delete']) expect(words).not.toContain(affordance);
   });
 
+  test('on a cold load the form takes the repository that arrives after mount, and Open reads it', async () => {
+    const one = busy();
+    const single = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...one, repositories: [one.repositories[0]], items: one.items.filter(item => item.repository_id === HARNESS_ID), attention: [] })));
+    let arrive: (snapshot: DevActivitySnapshotV2) => void = () => {};
+    const subjects: BoardSubject[] = [];
+    await mount(<OperatorApp {...props(single, { initialDevActivity: undefined, fetchDevActivity: () => new Promise(resolve => { arrive = resolve; }),
+      readBoard: async (subject) => { subjects.push(subject); return { state: 'ok', board: BOARD }; } })} />);
+    expect(document.querySelectorAll('[data-board-subject] option')).toHaveLength(0);
+    await act(async () => arrive(single));
+    const form = document.querySelector('[data-board-subject]')!;
+    const parent = form.querySelector<HTMLInputElement>('input')!;
+    await act(async () => {
+      parent.focus();
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(parent, '1474');
+      parent.dispatchEvent(new window.KeyboardEvent('keyup', { key: '4', bubbles: true }) as unknown as Event);
+    });
+    const open = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(open.disabled).toBe(false);
+    await act(async () => open.click());
+    await settle();
+    expect(subjects).toEqual([{ repository_id: HARNESS_ID, parent: 1474 }]);
+  });
+
   test('a deep link opens the Task drawer; j/k move through the board order and Escape returns to the board', async () => {
     boardAt(1476);
     await mount(<OperatorApp {...props(busy(), { initialLocale: 'zh' })} />);
@@ -247,12 +270,22 @@ describe('board page', () => {
     await key('k');
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1475`);
     expect(dialog()!.querySelector('[data-merge-ready]')).not.toBeNull();
-    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge 1491 --squash');
+    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge https://github.com/Ancienttwo/repo-harness/pull/1491 --squash');
     await key('j');
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1476`);
     await key('Escape');
     expect(dialog()).toBeNull();
     expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474`);
+
+    await act(async () => root?.unmount());
+    root = null;
+    // #1477 has no pull request: closed without merged work is not shipped.
+    boardAt(1477);
+    const closed: BoardV1 = { ...BOARD, items: BOARD.items.map(item => item.number === 1477 ? { ...item, state: 'closed' } : item) };
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: closed }) })} />);
+    await settle();
+    expect(dialog()!.textContent).toContain('Closed');
+    expect(dialog()!.querySelector('[aria-current="step"]')).toBeNull();
 
     await act(async () => root?.unmount());
     root = null;
@@ -280,6 +313,16 @@ describe('board page', () => {
     expect(buttons.every(element => element.getAttribute('aria-label')?.startsWith('Copy '))).toBe(true);
     for (const element of buttons) await act(async () => element.click());
     expect(copied).toEqual(['t12', open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', 'kanban-redesign']);
+
+    await act(async () => root?.unmount());
+    root = null;
+    boardAt(1476);
+    await mount(<OperatorApp {...props(busy(), { initialLocale: 'zh', readExecution: sessionsOn('feat/pipeline-observer', 'feat/1476-sessions-herdr-core') })} />);
+    await settle();
+    expect(followUp().querySelector('[data-owner="verified"]')?.textContent).toContain('Claude Code');
+    expect(followUp().textContent).toContain('只读观测');
+    // A terminal session has no Herdr pane: its one command is the resume command.
+    expect(Array.from(followUp().querySelectorAll('[data-command] code')).map(code => code.textContent)).toEqual(['claude --resume 5f0c1e2a-0000-4000-8000-000000000001']);
   });
 
   test('1-TASK-F1 the follow-up states no session, a read in flight, a pending collection and an unreadable route, each as itself', async () => {
@@ -324,6 +367,18 @@ describe('board page', () => {
     expect(rows('[data-board-banner]')[0]!.getAttribute('data-board-banner')).toBe('refresh');
     expect(rows('[data-board-banner]')[0]!.textContent).toContain('The board read did not finish in time.');
     expect(document.querySelector('[data-freshness-source="board"]')?.getAttribute('data-freshness')).toBe('refresh-failed');
+
+    // A validation refusal drops the last board: no old readiness or merge command stays.
+    await act(async () => root?.unmount());
+    let protocolReads = 0;
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => (protocolReads++ === 0 ? { state: 'ok', board: BOARD } : { state: 'unavailable', reason: 'board_invalid' }) })} />);
+    await settle();
+    expect(rows('[data-finding]').length).toBeGreaterThan(0);
+    await act(async () => button('Refresh').click());
+    await settle();
+    expect(protocolReads).toBe(2);
+    expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_invalid');
+    expect(rows('[data-finding]')).toHaveLength(0);
   });
 
   test('the board reader decodes the body with the core decoder and keeps each route refusal; any other answer is unreachable', async () => {

@@ -11,7 +11,7 @@ import { Age, CommandLine, CopyButton, ExternalLink, StatusDot } from './ui';
 import { boardLocation, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 
 const STEPS = ['plan', 'build', 'verify', 'ready', 'shipped'] as const;
-const STEP_OF_STAGE: Readonly<Record<BoardStage, number>> = { building: 1, verifying: 2, ready: 3, closed: 4 };
+const STEP_OF_STAGE: Readonly<Record<Exclude<BoardStage, 'closed'>, number>> = { building: 1, verifying: 2, ready: 3 };
 const TEST_PATH = /(^|\/)tests?\//u;
 
 function Section({ id, title, children }: { readonly id: string; readonly title: string; readonly children: ReactNode }) {
@@ -153,7 +153,8 @@ function Detail({ board, attention, item, owner, now, t }: {
   const findings = itemFindings(board, attention, item);
   const terminals = itemTerminals(board, item);
   const tests = pr?.files?.filter(path => TEST_PATH.test(path)) ?? null;
-  const step = pr?.state === 'merged' ? 4 : STEP_OF_STAGE[stage];
+  // Only a merged pull request ships; an issue closed without one stops at no step.
+  const step = pr?.state === 'merged' ? 4 : stage === 'closed' ? null : STEP_OF_STAGE[stage];
   return (
     <div className="flex flex-col gap-5 py-5">
       <h2 id="task-drawer-title" className="text-lg font-semibold leading-snug text-kumo-strong">
@@ -162,7 +163,7 @@ function Detail({ board, attention, item, owner, now, t }: {
       <ol aria-label={t('board.drawer.steps')} className="grid grid-cols-5 gap-1.5">
         {STEPS.map((name, index) => (
           <li key={name} className="flex flex-col gap-1.5" data-step={name} aria-current={index === step ? 'step' : undefined}>
-            <span className={cn('h-1 rounded-full', index < step ? 'bg-kumo-interact' : index === step ? 'bg-(--rh-accent)' : 'bg-kumo-hairline')} />
+            <span className={cn('h-1 rounded-full', step !== null && index < step ? 'bg-kumo-interact' : index === step ? 'bg-(--rh-accent)' : 'bg-kumo-hairline')} />
             <span className={cn('text-xs', index === step ? 'text-kumo-strong' : 'text-kumo-subtle')}>{t(`board.drawer.step.${name}` as OperatorMessageKey)}</span>
           </li>
         ))}
@@ -191,7 +192,7 @@ function Detail({ board, attention, item, owner, now, t }: {
       )}
       <div className="flex flex-wrap items-center gap-2">
         <ExternalLink href={pr?.url ?? item.url} className="rounded-lg border border-kumo-line px-3 py-1.5 text-sm">{t('board.drawer.openGitHub')}</ExternalLink>
-        {pr?.state === 'open' && pr.merge_readiness?.ready === true && <CommandLine command={`gh pr merge ${pr.number} --squash`} t={t} />}
+        {pr?.state === 'open' && pr.merge_readiness?.ready === true && <CommandLine command={`gh pr merge ${pr.url} --squash`} t={t} />}
       </div>
       <div className="flex flex-col gap-4 border-t border-kumo-hairline pt-4">
         <Section id="task-owner" title={t('board.drawer.owner')}>

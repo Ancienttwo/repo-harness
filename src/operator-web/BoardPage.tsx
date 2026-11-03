@@ -24,11 +24,16 @@ export interface BoardRepositoryOption {
 const STAGE_TONE: Readonly<Record<BoardStage, DotTone>> = { building: 'active', verifying: 'warn', ready: 'ok', closed: 'neutral' };
 
 /** The board has no default subject: the operator names the repository and the parent issue. */
-function SubjectForm({ repositories, initialRepository, onOpen, t }: {
-  readonly repositories: readonly BoardRepositoryOption[]; readonly initialRepository: string | null;
+/**
+ * The App owns the chosen repository. The form shows it while it is an
+ * option, else the first option, so options that arrive after mount still
+ * give a valid choice and a later list keeps a valid choice.
+ */
+function SubjectForm({ repositories, chosenRepository, onRepository, onOpen, t }: {
+  readonly repositories: readonly BoardRepositoryOption[]; readonly chosenRepository: string | null; readonly onRepository: (id: string) => void;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
 }) {
-  const [repository, setRepository] = useState(() => repositories.find(option => option.id === initialRepository)?.id ?? repositories[0]?.id ?? '');
+  const repository = repositories.find(option => option.id === chosenRepository)?.id ?? repositories[0]?.id ?? '';
   const [parent, setParent] = useState('');
   const valid = repository !== '' && /^[1-9][0-9]{0,9}$/u.test(parent);
   const submit = (event: FormEvent) => {
@@ -43,7 +48,7 @@ function SubjectForm({ repositories, initialRepository, onOpen, t }: {
       <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
         <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-kumo-subtle">
           {t('board.subject.repository')}
-          <select className={field} value={repository} onChange={event => setRepository(event.target.value)}>
+          <select className={field} value={repository} onChange={event => onRepository(event.target.value)}>
             {repositories.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
@@ -279,7 +284,7 @@ function ReadyBoard({ view, place, readExecution, generation, onOpen, now, t }: 
   );
 }
 
-export function BoardPage({ place, view, repositories, initialRepository, readExecution, generation, onOpen, now, t }: {
+export function BoardPage({ place, view, repositories, chosenRepository, onRepository, readExecution, generation, onOpen, now, t }: {
   readonly place: BoardPlace | null;
   /** The execution route: the verified sessions behind the Task drawer's follow-up. */
   readonly readExecution: ExecutionReader;
@@ -287,12 +292,13 @@ export function BoardPage({ place, view, repositories, initialRepository, readEx
   /** Null exactly when `place` is null. */
   readonly view: BoardView | null;
   readonly repositories: readonly BoardRepositoryOption[];
-  readonly initialRepository: string | null;
+  readonly chosenRepository: string | null;
+  readonly onRepository: (id: string) => void;
   readonly onOpen: (next: WorkspaceLocation) => void;
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
-  if (place === null || view === null) return <SubjectForm repositories={repositories} initialRepository={initialRepository} onOpen={onOpen} t={t} />;
+  if (place === null || view === null) return <SubjectForm repositories={repositories} chosenRepository={chosenRepository} onRepository={onRepository} onOpen={onOpen} t={t} />;
   if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;
   if (view.kind === 'failed') {
     return (
