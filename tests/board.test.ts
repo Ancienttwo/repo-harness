@@ -236,8 +236,10 @@ interface MigrationSubIssue {
   readonly blocked_by?: readonly string[];
 }
 
-function migrationStub(subIssues: readonly MigrationSubIssue[]) {
+function migrationStub(initial: readonly MigrationSubIssue[], missing: readonly number[] = []) {
+  const subIssues = [...initial];
   const labels = new Set<string>();
+  let blockerReads = 0;
   const edges = new Set(subIssues.flatMap(node => (node.blocked_by ?? []).map(blocker => `I${node.number}:${blocker}`)));
   const writes: string[] = [];
   const answer = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
@@ -265,12 +267,20 @@ function migrationStub(subIssues: readonly MigrationSubIssue[]) {
       ['tier:low', 'tier:medium', 'tier:high'].forEach((name, index) => { repository[`t${index}`] = labels.has(name) ? { name } : null; });
       return answer({ data: { repository } });
     }
-    const repository = Object.fromEntries([...query.matchAll(/b([0-9]+): issue/gu)].map(match => [`b${match[1]}`, { id: `I${match[1]}`, number: Number(match[1]) }]));
+    blockerReads += 1;
+    const repository = Object.fromEntries([...query.matchAll(/b([0-9]+): issue/gu)]
+      .map(match => [`b${match[1]}`, missing.includes(Number(match[1])) ? null : { id: `I${match[1]}`, number: Number(match[1]) }]));
     return answer({ data: { repository } });
   };
   const input = { repo_root: '/nonexistent', parent: 1503, gh_runner: runner };
-  // `plan` is the default no-write run; `migrate` is the `--write` run: the plan, then exactly its writes.
-  return { runner, writes, plan: () => planDependencyMigration(input), migrate: () => applyDependencyMigration(input, planDependencyMigration(input)) };
+  // `plan` is the run without --write. `migrate` is `--write --plan <digest>`: a fresh plan, the digest check, then exactly its writes;
+  // without a digest it uses the fresh plan's own, as a person who checked that same list would.
+  return {
+    runner, writes, blockerReads: () => blockerReads, plan: () => planDependencyMigration(input),
+    edit: (number: number, body: string) => { subIssues.splice(subIssues.findIndex(node => node.number === number), 1, { ...subIssues.find(node => node.number === number)!, body }); },
+    migrate: (digest?: string) => { const plan = planDependencyMigration(input); return applyDependencyMigration(input, plan, digest ?? plan.digest); },
+    apply: (digest: string | undefined) => applyDependencyMigration(input, planDependencyMigration(input), digest),
+  };
 }
 
 const MIGRATION_SUB_ISSUES: readonly MigrationSubIssue[] = [
@@ -304,7 +314,8 @@ test('migrate-dependencies without --write prints the whole plan and writes noth
   const text = renderDependencyMigrationPlan(stub.plan());
   expect(stub.writes).toEqual([]);
   for (const line of ['create label tier:low', 'create #1508 blocked by #1505 (line 5: Depends on #1505 board core)',
-    'create #1512 blocked by #1505 (line 1: Depends on #1505)', 'skip #1509 line 3: 风险：High（验收链路）。', '--write makes 9 writes']) {
+    'create #1512 blocked by #1505 (line 1: Depends on #1505)', 'skip #1509 line 3: 风险：High（验收链路）。', '--write makes 9 writes',
+    `plan digest: ${stub.plan().digest} (apply with --write --plan ${stub.plan().digest})`]) {
     expect(text).toContain(line);
   }
   const refused = migrationStub([...MIGRATION_SUB_ISSUES, { number: 1505, state: 'OPEN', body: '- Example:\n\n      Depends on #7\n' }]);
@@ -348,6 +359,10 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
     [[open(1505, '## 依赖\n```\n~~~ #1473\n')], 'dependency_line_ambiguous', ['#1505 line 1: ## 依赖', '#1505 line 3: ~~~ #1473']],
     [[open(1505, '<pre>\nDepends on #7\n</pre>\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
     [[open(1505, '<!--\nDepends on #7\n-->\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    // Only `- #n` in a section is a template list form (owner rule M24 item 5); every other list form refuses.
+    [[open(1505, '1. Depends on #7\n+ 依赖：#7\n* Depends on #7\n- Depends on #7\n')], 'dependency_line_ambiguous',
+      ['#1505 line 1: 1. Depends on #7', '#1505 line 2: + 依赖：#7', '#1505 line 3: * Depends on #7', '#1505 line 4: - Depends on #7']],
+    [[open(1505, '## 依赖\n1. #7\n+ #7\n* #7\n')], 'dependency_line_ambiguous', ['#1505 line 2: 1. #7', '#1505 line 3: + #7', '#1505 line 4: * #7']],
     // The marker may come after the declaration: the whole body refuses.
     [[open(1505, 'Depends on #7\n\n```\nexample\n```\n')], 'dependency_line_ambiguous', ['#1505 line 1: Depends on #7']],
     // One scan over all bodies: both refusals are named, and the parse error of #10 does not hide them.
@@ -364,4 +379,21 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
     if (code === 'dependency_line_ambiguous') expect((error as Error).message.match(/#[0-9]+ line [0-9]+/gu)).toHaveLength(lines.length);
     expect(stub.writes).toEqual([]);
   }
+  const stopOf = (run: () => unknown): unknown => {
+    try { run(); } catch (caught) { return caught; }
+    return undefined;
+  };
+  // A refusal stops the plan before any blocker read, so the missing blocker #999 cannot hide it.
+  const missing = migrationStub([...MIGRATION_SUB_ISSUES, open(1505, '-     Depends on #7\n'), open(1506, 'Depends on #999\n')], [999]);
+  expect(stopOf(() => missing.migrate())).toMatchObject({ code: 'dependency_line_ambiguous' });
+  expect([missing.blockerReads(), missing.writes]).toEqual([0, []]);
+  // --write applies only the checked list: a body edited after the dry run changes the digest.
+  const drift = migrationStub(MIGRATION_SUB_ISSUES);
+  const checked = drift.plan();
+  drift.edit(1510, 'Watcher.\n依赖：#1473\n');
+  expect(stopOf(() => drift.migrate(checked.digest))).toMatchObject({ code: 'dependency_plan_changed' });
+  expect(drift.writes).toEqual([]);
+  // --write without --plan <digest> is refused.
+  expect(stopOf(() => drift.apply(undefined))).toMatchObject({ code: 'plan_digest_required' });
+  expect(drift.writes).toEqual([]);
 });

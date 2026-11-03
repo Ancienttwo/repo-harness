@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { dependencyMigrationStop, parseDependencyLines, TIER_LABELS, type AmbiguousLineV1, type DependencyLineV1, type DependencyMigrationPlanV1, type SkippedLineV1, type UnparsedLineV1 } from '../../core/board/dependency-migration';
+import { dependencyMigrationStop, dependencyPlanDigest, parseDependencyLines, TIER_LABELS, type AmbiguousLineV1, type DependencyLineV1, type DependencyMigrationPlanV1, type SkippedLineV1, type UnparsedLineV1 } from '../../core/board/dependency-migration';
 
 const GH_TIMEOUT_MS = 30_000;
 const PAGE = 100;
@@ -9,6 +9,8 @@ export type DependencyMigrationErrorCode =
   | 'dependency_line_ambiguous'
   | 'parent_not_found'
   | 'foreign_sub_issue'
+  | 'plan_digest_required'
+  | 'dependency_plan_changed'
   | 'sub_issues_truncated'
   | 'blocked_by_truncated'
   | 'github_failed';
@@ -139,7 +141,9 @@ export function planDependencyMigration(input: DependencyMigrationInput): Depend
     unparsed.push(...parsed.unparsed);
   }
 
-  const blockers = [...new Set(parsedLines.map(entry => entry.line.blocker))];
+  // A refusal or parse error stops the plan before any blocker read, so a missing blocker cannot hide it.
+  const stop = dependencyMigrationStop(ambiguous, unparsed);
+  const blockers = stop === null ? [...new Set(parsedLines.map(entry => entry.line.blocker))] : [];
   const blockerIds = new Map<number, string>();
   if (blockers.length > 0) {
     const read = graphql(input, `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n${
@@ -153,26 +157,33 @@ export function planDependencyMigration(input: DependencyMigrationInput): Depend
 
   const labels = TIER_LABELS.map((label, index) => Object.freeze({ ...label, action: data[`t${index}`]?.name === label.name ? 'exists' as const : 'create' as const }));
   const linked = new Set(open.flatMap(target => target.blockedBy.nodes.map(node => `${target.id}:${node.id}`)));
-  const edges = parsedLines.map(({ target, line }) => {
+  const edges = stop !== null ? [] : parsedLines.map(({ target, line }) => {
     const blockerId = blockerIds.get(line.blocker)!;
     const key = `${target.id}:${blockerId}`;
     const action = linked.has(key) ? 'exists' as const : 'create' as const;
     linked.add(key);
     return Object.freeze({ ...line, action, issue_id: target.id, blocker_id: blockerId });
   });
-  return Object.freeze({
-    protocol: 1, kind: 'repo-harness.dependency-migration-plan', parent: input.parent, repository,
+  const plan = {
+    protocol: 1 as const, kind: 'repo-harness.dependency-migration-plan' as const, parent: input.parent, repository,
     labels: Object.freeze(labels), edges: Object.freeze(edges), skipped: Object.freeze(skipped),
-    ambiguous: Object.freeze(ambiguous), unparsed: Object.freeze(unparsed), stop: dependencyMigrationStop(ambiguous, unparsed),
-  });
+    ambiguous: Object.freeze(ambiguous), unparsed: Object.freeze(unparsed), stop,
+  };
+  return Object.freeze({ ...plan, digest: dependencyPlanDigest(plan) });
 }
 
 /**
- * Writes exactly the `create` items of a plan: the labels, then the links.
- * A plan with a stop makes no write. A failed write stops the run and
- * reports the writes that finished; a new plan and run skip them.
+ * Writes exactly the `create` items of a fresh plan: the labels, then the
+ * links. `reviewedDigest` is the digest that the checked dry run printed; a
+ * fresh plan with another digest makes no write, because its list is not the
+ * one a person checked. A plan with a stop makes no write. A failed write
+ * stops the run and reports the writes that finished; a new plan skips them.
  */
-export function applyDependencyMigration(input: DependencyMigrationInput, plan: DependencyMigrationPlanV1): DependencyMigrationResultV1 {
+export function applyDependencyMigration(input: DependencyMigrationInput, plan: DependencyMigrationPlanV1, reviewedDigest: string | undefined): DependencyMigrationResultV1 {
+  if (reviewedDigest === undefined) throw new DependencyMigrationError('plan_digest_required', '--write requires --plan <digest> from a run without --write');
+  if (plan.digest !== reviewedDigest) {
+    throw new DependencyMigrationError('dependency_plan_changed', `the plan changed since the checked run (${reviewedDigest} -> ${plan.digest}); run without --write and check the list again`);
+  }
   if (plan.stop !== null) throw new DependencyMigrationError(plan.stop.code, plan.stop.message);
   const labels: DependencyMigrationLabelV1[] = [];
   const edges: DependencyMigrationEdgeV1[] = [];

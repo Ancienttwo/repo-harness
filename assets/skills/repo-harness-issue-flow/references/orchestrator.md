@@ -126,11 +126,18 @@ moves them once, in two steps:
 1. Run `repo-harness board migrate-dependencies --parent <n>`. It writes
    nothing. It lists every planned label and every planned link as
    `#X blocked by #Y (line N: <source line>)`, each existing item, each
-   skipped line, and the refused or unparsed lines that stop a write.
-2. A person checks every listed link against its source line. Then run the
-   same command with `--write`. It writes exactly the planned items. A body
-   with a code or HTML marker refuses all of its declarations; add those
-   links by hand.
+   skipped line, the refused or unparsed lines that stop a write, and the
+   plan digest.
+2. A person checks every listed link against its source line. Then run
+   `repo-harness board migrate-dependencies --parent <n> --write --plan
+   <digest>`. It plans again and writes exactly the planned items. When the
+   new plan differs from the checked one, it writes nothing
+   (`dependency_plan_changed`); start again at step 1.
+
+A refused or unparsed line stops every write. A body with a code or HTML
+marker refuses all of its declarations, and only the template forms parse.
+Delete the refused line from the body (add the link by hand if it is
+needed), then run again.
 
 ## 5. Gap review
 

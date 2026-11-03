@@ -13,6 +13,7 @@ interface BoardOptions {
 
 interface MigrateDependenciesOptions extends BoardOptions {
   readonly write?: boolean;
+  readonly plan?: string;
 }
 
 function parentNumber(options: BoardOptions): number {
@@ -70,7 +71,8 @@ export function buildBoardCommand(host: BoardHostPortsV1): Command {
     })(command.optsWithGlobals<BoardOptions>()));
   board.command('migrate-dependencies')
     .description('One-shot operator migration: plan the blocked-by links for the Depends on / 依赖 lines of the open sub-issues of one parent and the tier labels, with no write; --write applies the plan (takes --parent and --json)')
-    .option('--write', 'Apply the plan: create the planned labels and blocked-by links')
+    .option('--write', 'Apply the plan: create the planned labels and blocked-by links (requires --plan)')
+    .option('--plan <digest>', 'The plan digest that the checked run without --write printed')
     .action((_options: MigrateDependenciesOptions, command: Command) => {
       const options = command.optsWithGlobals<MigrateDependenciesOptions>();
       try {
@@ -80,7 +82,7 @@ export function buildBoardCommand(host: BoardHostPortsV1): Command {
           process.stdout.write(options.json === true ? `${JSON.stringify(plan)}\n` : renderDependencyMigrationPlan(plan));
           return;
         }
-        const result = applyDependencyMigration(input, plan);
+        const result = applyDependencyMigration(input, plan, options.plan);
         process.stdout.write(options.json === true ? `${JSON.stringify(result)}\n` : migrationText(result));
       } catch (error) {
         if (!(error instanceof DependencyMigrationError || error instanceof BoardCollectError)) throw error;

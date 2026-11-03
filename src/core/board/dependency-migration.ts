@@ -6,6 +6,8 @@
  * the run stops before it guesses an edge.
  */
 
+import { createHash } from 'crypto';
+
 /** The plan tier labels (`templates.md`, Plan data). */
 export const TIER_LABELS = Object.freeze([
   { name: 'tier:low', color: '0e8a16', description: 'Plan tier low (repo-harness-issue-flow)' },
@@ -117,11 +119,11 @@ function declarationBlockers(issue: number, line: string, inSection: boolean): n
  *
  * A declaration-like line goes to `ambiguous` and makes no edge when the
  * body holds a code or HTML marker (`CODE_MARKER`) anywhere, when the line
- * has leading whitespace, or when more than one space or a tab follows its
- * list marker. Otherwise only the template forms at column 0 parse:
- * `Depends on #n` / `依赖：#n`, and inside a section a line that starts with
- * a `#<n>` list (`leadingReferences`), each with at most one list marker and
- * one space. Inside a section, a "none" line, an `Early start:` line and a
+ * has leading whitespace, or when it has a list marker in any form other
+ * than `- #n` in a section. Otherwise only the template forms at column 0
+ * parse: `Depends on #n` / `依赖：#n` with no list marker, and inside a
+ * section a line that starts with a `#<n>` list (`leadingReferences`), bare
+ * or after `- `. Inside a section, a "none" line, an `Early start:` line and a
  * `风险：` / `Risk:` line without a reference carry no edge. Every other line
  * in a dependency position goes to `unparsed`, and so does a heading or bold
  * line that names dependencies in another form (`#### 依赖`,
@@ -142,7 +144,9 @@ export function parseDependencyLines(issue: number, body: string): DependencyLin
     const line = marker === null ? text : text.slice(marker[0].length);
     const heading = SECTION.test(text) || DEPENDENCY_TITLE.test(text);
     const declarationLike = LEAD.test(line) || heading || (inSection && /#[0-9]/u.test(text));
-    if (declarationLike && (refuseBody || raw !== raw.trimStart() || (marker !== null && marker[1] !== ' '))) {
+    // Owner rule M24 item 5: the only list form that parses is `- #n` (dash, one space) in a section.
+    const templateMarker = marker === null || (inSection && marker[0] === '- ' && line.startsWith('#'));
+    if (declarationLike && (refuseBody || raw !== raw.trimStart() || !templateMarker)) {
       ambiguous.push(Object.freeze(at));
       if (SECTION.test(text)) inSection = true;
       else if (HEADING.test(text)) inSection = false;
@@ -204,12 +208,32 @@ export interface DependencyMigrationPlanV1 {
   readonly ambiguous: readonly AmbiguousLineV1[];
   readonly unparsed: readonly UnparsedLineV1[];
   readonly stop: DependencyMigrationStopV1 | null;
+  /** `sha256:<hex>` over the checked items; `--write --plan <digest>` refuses a plan that differs. */
+  readonly digest: string;
+}
+
+/**
+ * The digest of what a person checks: every label and link with its action
+ * and source line, every skip, refusal and parse error, in plan order. Node
+ * ids are not part of it, because the printed list does not show them.
+ */
+export function dependencyPlanDigest(plan: Omit<DependencyMigrationPlanV1, 'digest'>): string {
+  const items = [
+    plan.parent,
+    plan.repository,
+    plan.labels.map(label => [label.name, label.action]),
+    plan.edges.map(edge => [edge.issue, edge.blocker, edge.line_number, edge.line, edge.action]),
+    plan.skipped.map(line => [line.issue, line.line_number, line.line]),
+    plan.ambiguous.map(line => [line.issue, line.line_number, line.line]),
+    plan.unparsed.map(line => [line.issue, line.line_number, line.line, line.reason]),
+  ];
+  return `sha256:${createHash('sha256').update(JSON.stringify(items)).digest('hex')}`;
 }
 
 /** Refusals stop first and name every refused line; otherwise parse errors stop and name every line. */
 export function dependencyMigrationStop(ambiguous: readonly AmbiguousLineV1[], unparsed: readonly UnparsedLineV1[]): DependencyMigrationStopV1 | null {
   if (ambiguous.length > 0) {
-    return Object.freeze({ code: 'dependency_line_ambiguous' as const, message: `dependency lines that may be code (a code or HTML marker in the body, leading whitespace or a wide list marker); edit the body or add the link by hand: ${
+    return Object.freeze({ code: 'dependency_line_ambiguous' as const, message: `dependency lines that may be code (a code or HTML marker in the body, leading whitespace or a wide list marker); delete each refused line from the body (add the link by hand if it is needed), then run again: ${
       ambiguous.map(entry => `#${entry.issue} line ${entry.line_number}: ${entry.line.trim()}`).join('; ')}` });
   }
   if (unparsed.length > 0) {
@@ -229,5 +253,6 @@ export function renderDependencyMigrationPlan(plan: DependencyMigrationPlanV1): 
     ...plan.ambiguous.map(line => `refuse #${line.issue} line ${line.line_number}: ${line.line.trim()}`),
     ...plan.unparsed.map(line => `unparsed #${line.issue} line ${line.line_number} (${line.reason}): ${line.line.trim()}`),
     plan.stop === null ? `--write makes ${writes} writes` : `--write stops before any write: ${plan.stop.code}`,
+    `plan digest: ${plan.digest} (apply with --write --plan ${plan.digest})`,
   ].join('\n') + '\n';
 }
