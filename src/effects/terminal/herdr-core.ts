@@ -331,9 +331,13 @@ function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
  * That terminal has no labels yet, so this is the one call that does not first require a repo-harness label;
  * use it only with the `t<n>` address that the placement returned.
  */
+/** The `k=v` arguments of `hc label`, checked with the label rules. */
+export function hcLabelPairs(labels: HcLabels): string[] {
+  return labelArgs(labels).filter((_, index) => index % 2 === 1);
+}
+
 export function hcLabel(terminalAddress: string, labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminal {
-  const pairs = labelArgs(labels).filter((_, index) => index % 2 === 1);
-  return ownedTerminal(hc('label', ['--', address(terminalAddress), ...pairs], options));
+  return ownedTerminal(hc('label', ['--', address(terminalAddress), ...hcLabelPairs(labels)], options));
 }
 
 /** `hc send`: paste text into a repo-harness terminal and press Enter. hc refuses a blocked program (exit 9). */

@@ -91,6 +91,17 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("the seat labels hold the GitHub repository id and the dispatch numbers, and need --repository-id", () => {
+    withHome(undefined, (home) => {
+      const worker = JSON.parse(argv(home, "worker", "--repository-id", "1186405141", "--issue", "1473", "--pr", "1521", "--parent", "1000", "--json").stdout);
+      expect(worker.labels).toEqual(["repo-harness.seat=worker", "repo-harness.repository=1186405141", "repo-harness.issue=1473", "repo-harness.pr=1521", "repo-harness.parent=1000"]);
+      const missing = argv(home, "worker", "--issue", "1473");
+      expect(missing.status).toBe(1);
+      expect(missing.stdout).toBe("");
+      expect(JSON.parse(missing.stderr).error).toBe("repository_id_required");
+    });
+  });
+
   test("an invalid seats section fails closed", () => {
     withHome({ advisor: {} }, (home) => {
       const result = argv(home, "advisor", "--json");
