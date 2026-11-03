@@ -102,15 +102,26 @@ protocol 2 → 3 one-shot and of the M29 `orchestrator.md` retirement.
    directory, run `repo-harness update --version 0.25.4`.
 3. After that update, the managed Global Working Rules block in
    `~/.claude/CLAUDE.md` and `~/.codex/AGENTS.md` and the installed skills
-   carry #1622 (M37), #1635 (M40) and #1632 (`hc run --no-parent`). Restart
+   carry #1622 (PR #1630, M37), #1635 (PR #1636, M40) and PR #1632
+   (`hc run --no-parent`). Restart
    a seat orchestrator only after this update.
 4. Seats page: set the orchestrator fleet to `gatekeeper`, `explorer` and
    `deep-reasoner` (owner decision M40). A save with `root-cause-prover`
    fails with `seat_fleet_not_allowed`. Then restart the orchestrator seat
    from `repo-harness seats argv orchestrator`.
-5. Run `repo-harness upgrade` in each repository. It removes `orchestrator`
-   from `external_tooling.agent_fleet.managed_agents` (#1585) and
-   `circuit_breakers` (#1599) from `.ai/harness/policy.json`.
+5. In each repository, run `repo-harness init --dry-run`, review the plan,
+   then run `repo-harness init`. The adoption apply
+   (`runAdoptionApply` → `planStandardAdoption`,
+   `src/effects/adoption/standard-plan.ts:620,664-672`) removes these
+   0.25.4 policy entries from `.ai/harness/policy.json` and reports them in
+   the `retired-policy-keys` warning:
+   - `orchestrator` from `external_tooling.agent_fleet.managed_agents`
+     (#1585);
+   - the `circuit_breakers` block (#1599).
+
+   The plan also lists every other change that the adoption apply makes;
+   review it before the apply. `repo-harness upgrade` does not change the
+   repository policy: its cleanup path does not call the adoption plan.
 6. Rollback after a committed migration:
    `bun add -g repo-harness@0.25.3 --no-cache`, delete
    `~/.repo-harness/install-state.json`, then

@@ -68,11 +68,13 @@ removed, and the claim field `Seat:` is now `Role:`.
   state owns it and its hash did not change. It keeps a changed file and
   reports it. It drops the file from the state and from the user-managed fleet
   receipt. (#1585, #1625)
-- Run `repo-harness upgrade` in each repository. It removes `orchestrator`
+- In each repository, run `repo-harness init --dry-run`, review the plan,
+  then run `repo-harness init`. The adoption apply removes `orchestrator`
   from `external_tooling.agent_fleet.managed_agents` in
-  `.ai/harness/policy.json` and reports it under `retired-policy-keys`. Until
-  then, the agent tooling check lists `orchestrator` as a missing fleet role,
-  or as one without a packaged source. (#1585)
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`.
+  `repo-harness upgrade` does not change the policy. Until the apply, the
+  agent tooling check lists `orchestrator` as a missing fleet role, or as one
+  without a packaged source. (#1585)
 - Restart an orchestrator pane that runs `claude --agent orchestrator` or a
   plain `claude` with the argv of `repo-harness seats argv orchestrator`.
   Before, a plain `claude` pane had no task tools, so the triage queue did not
@@ -87,8 +89,9 @@ removed, and the claim field `Seat:` is now `Role:`.
   `seat_fleet_not_allowed`. Restart the orchestrator seat from
   `repo-harness seats argv orchestrator` after `repo-harness update`, so
   the seat reads the new managed rules and skills. (#1630, #1636)
-- Run `repo-harness upgrade` in each repository to remove `circuit_breakers`
-  from `.ai/harness/policy.json`. (#1599)
+- The same `repo-harness init` apply removes `circuit_breakers` from
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`.
+  (#1599)
 
 ### Breaking
 
@@ -216,8 +219,9 @@ removed, and the claim field `Seat:` is now `Role:`.
   on the head is `unknown` (`comments_truncated`). An unparsed record is
   `unknown` (`acceptance_record_unparsed`). (#1578)
 - `circuit_breakers` is removed from the harness policy seed. It had no
-  reader. `repo-harness upgrade` removes it from `.ai/harness/policy.json`
-  and reports it under `retired-policy-keys`. (#1599)
+  reader. The adoption apply (`repo-harness init`) removes it from
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`.
+  (#1599)
 - `archctx` and `archctx-contracts` are pinned to exact 0.11.2. (#1616)
 - CI: a documentation-only PR runs no build or test job, and
   `Required / CI` still reports. The path reference parse is cached, and
