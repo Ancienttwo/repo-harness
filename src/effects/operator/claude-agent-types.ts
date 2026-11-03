@@ -1,6 +1,6 @@
 import { readdirSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { parseRoleNameScalar } from './task-role-profiles';
+import { parseRoleNameScalar } from '../terminal/task-role-profiles';
 
 export class ClaudeAgentTypesError extends Error {
   readonly code = 'claude_agent_types_unreadable';

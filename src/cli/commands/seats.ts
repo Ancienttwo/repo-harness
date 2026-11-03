@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { CLAUDE_BUILTIN_AGENT_TYPES, buildSeatLaunch, type SeatLaunchV1 } from '../../core/operator/seat-launch';
 import { SEAT_IDS, decodeSeatsConfig, type SeatId } from '../../core/operator/seats-settings';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
-import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/terminal/claude-agent-types';
+import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/operator/claude-agent-types';
 import { RH_LABEL, hcLabelPairs } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 
