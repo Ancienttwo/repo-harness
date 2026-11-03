@@ -25,6 +25,7 @@ source:
     - src/core/operator/agents-settings.ts
     - src/core/operator/architecture-map.ts
     - src/core/operator/architecture.ts
+    - src/core/operator/board-read.ts
     - src/core/operator/bot-access.ts
     - src/core/operator/doc-citation.ts
     - src/core/operator/doc-session-changes.ts
