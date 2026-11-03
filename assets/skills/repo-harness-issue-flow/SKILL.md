@@ -27,15 +27,18 @@ executes them or stops and asks.
 
 A **seat** is a process seat: the orchestrator, the advisor or a worker. A
 **sub-agent** is an `agents/fleet/` role that runs inside a seat process.
+The orchestrator calls only the read-only sub-agents `gatekeeper`,
+`explorer`, `deep-reasoner` and `root-cause-prover`. Writers and the Codex
+cross-review run in seats.
 A **claim role** is the GitHub role that a claim gives: coordinator,
 writer, head owner, integrator or acceptor.
 
 | Agent | Suggested model | Claim roles it holds | Never does |
 |---|---|---|---|
-| Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
+| Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree; calls a writer sub-agent (`fast-worker`, `deep-worker`) or runs the Codex cross-review as a sub-agent |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Posts its own claim, widens scope, merges, pushes to another owner's branch |
-| Acceptor | A seat holds the acceptor role and can call the gatekeeper sub-agent, the default reviewer. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review in one round | Reviews its own code, pushes code |
+| Acceptor | A seat holds the acceptor role and can call the gatekeeper sub-agent, the default reviewer. The orchestrator can run a gatekeeper round through that sub-agent. The Codex cross-review runs in its own seat. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review in one round | Reviews its own code, pushes code |
 
 The suggested models are advice, not a requirement. Any capable host may
 hold any claim role. The High tier records its `model_relation` in the
