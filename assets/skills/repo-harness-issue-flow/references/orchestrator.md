@@ -353,10 +353,13 @@ gh pr view <p> --json state,isDraft,headRefOid,statusCheckRollup,closingIssuesRe
 
 ### 9.2 Serial integration
 
-Merge in the plan block's merge order. After each merge, the next PR merges or
-rebases onto the current main. A PR that passed review on an old base
-needs its affected checks again on the new base. It does not need a new
-full review unless the merge changed its subject.
+Merge in the plan block's merge order. A parent without a plan (two
+children or fewer) merges in blocked-by order: a blocker merges before the
+issue it blocks. The Order column of the parent table is only a view.
+After each merge, the next PR merges or rebases onto the current main. A
+PR that passed review on an old base needs its affected checks again on
+the new base. It does not need a new full review unless the merge changed
+its subject.
 
 ### 9.3 Batch integration
 

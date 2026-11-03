@@ -172,17 +172,19 @@ Attach the changed slice when this PR changes `.archcontext/model/**` or a
 capability entrypoint. Produce it as `worker.md` §6.1 says: apply the
 `plan` preview to a scratch copy of the document, then take §1.1.
 Otherwise write the one line `Architecture slice unchanged, see #<issue>`.
+Never commit a generated region. `.projection-manifest.json` and the
+machine regions of `docs/architecture/modules/**` come from the rolling
+writer, not from this PR.
+
 A PR stacked on a producer PR sets its base to the producer's branch. The
-body names no PR dependency. Never commit a generated region.
+body names no PR dependency.
 
 Write a closing keyword (`Closes`, `Fixes`, `Resolves`) followed by an
 issue number only for the issues that the PR closes, and never in a code
 span or a quote. The squash commit message on main is plain text, so a
 keyword in a code span can close an issue there even when the PR link list
 ignores it. `repo-harness publication merge` refuses the mismatch
-(`closing_references_mismatch`). `.projection-manifest.json` and the
-machine regions of `docs/architecture/modules/**` come from the rolling
-writer, not from this PR.
+(`closing_references_mismatch`).
 
 ## Batch PR body
 

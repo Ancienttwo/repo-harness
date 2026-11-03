@@ -7,6 +7,7 @@ const PAGE = 100;
 export type DependencyMigrationErrorCode =
   | 'dependency_line_unparsed'
   | 'parent_not_found'
+  | 'foreign_sub_issue'
   | 'sub_issues_truncated'
   | 'blocked_by_truncated'
   | 'github_failed';
@@ -60,7 +61,8 @@ interface SubIssueRead {
   readonly number: number;
   readonly state: string;
   readonly body: string;
-  readonly blockedBy: { readonly pageInfo: { readonly hasNextPage: boolean }; readonly nodes: readonly { readonly number: number }[] };
+  readonly repository: { readonly nameWithOwner: string };
+  readonly blockedBy: { readonly pageInfo: { readonly hasNextPage: boolean }; readonly nodes: readonly { readonly id: string; readonly number: number }[] };
 }
 
 function gh(input: DependencyMigrationInput, args: readonly string[]): unknown {
@@ -90,8 +92,8 @@ const READ_QUERY = `query($owner: String!, $name: String!, $number: Int!) {
     ${TIER_LABELS.map((label, index) => `t${index}: label(name: "${label.name}") { name }`).join('\n    ')}
     issue(number: $number) {
       subIssues(first: ${PAGE}) { pageInfo { hasNextPage } nodes {
-        id number state body
-        blockedBy(first: ${PAGE}) { pageInfo { hasNextPage } nodes { number } }
+        id number state body repository { nameWithOwner }
+        blockedBy(first: ${PAGE}) { pageInfo { hasNextPage } nodes { id number } }
       } }
     }
   }
@@ -105,7 +107,10 @@ const ADD_BLOCKED_BY = `mutation($issue: ID!, $blocker: ID!) {
  * Moves the dependency lines of the open sub-issues of one parent to
  * blocked-by links and creates the tier labels. Every body is parsed before
  * the first write, so an unparsable line stops the run with no change.
- * Existing labels and links are reported as `exists` and not written again.
+ * Existing labels and links are reported as `exists` and not written again;
+ * a link is identified by the node ids of both issues, because issue numbers
+ * are local to a repository. A bare `#n` is resolved in the parent's
+ * repository, so an open sub-issue from another repository stops the run.
  * Closed sub-issues are not read.
  */
 export function migrateDependencies(input: DependencyMigrationInput): DependencyMigrationResultV1 {
@@ -121,6 +126,9 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
   const planned: { readonly target: SubIssueRead; readonly line: DependencyLineV1 }[] = [];
   const skipped: SkippedLineV1[] = [];
   for (const target of open) {
+    if (target.repository.nameWithOwner !== repository) {
+      throw new DependencyMigrationError('foreign_sub_issue', `#${target.number} of ${target.repository.nameWithOwner} is not in ${repository}; this migration reads one repository only`);
+    }
     if (target.blockedBy.pageInfo.hasNextPage) throw new DependencyMigrationError('blocked_by_truncated', `#${target.number} has more than ${PAGE} blocked-by links`);
     try {
       const parsed = parseDependencyLines(target.number, target.body);
@@ -164,16 +172,17 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
     labels.push({ name: label.name, result: 'created' });
   });
 
-  const linked = new Set(open.flatMap(target => target.blockedBy.nodes.map(node => `${target.number}:${node.number}`)));
+  const linked = new Set(open.flatMap(target => target.blockedBy.nodes.map(node => `${target.id}:${node.id}`)));
   for (const { target, line } of planned) {
-    const key = `${target.number}:${line.blocker}`;
+    const blockerId = blockerIds.get(line.blocker)!;
+    const key = `${target.id}:${blockerId}`;
     const edge = { issue: target.number, blocker: line.blocker, line_number: line.line_number, line: line.line };
     if (linked.has(key)) {
       edges.push({ ...edge, result: 'exists' });
       continue;
     }
     try {
-      const added = graphql(input, ADD_BLOCKED_BY, { issue: target.id, blocker: blockerIds.get(line.blocker)! });
+      const added = graphql(input, ADD_BLOCKED_BY, { issue: target.id, blocker: blockerId });
       if (added.addBlockedBy?.issue?.number !== target.number) throw new DependencyMigrationError('github_failed', `addBlockedBy for #${target.number} returned no issue`);
     } catch (error) {
       stop(error);

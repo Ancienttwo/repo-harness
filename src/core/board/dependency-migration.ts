@@ -41,9 +41,14 @@ export class DependencyLineError extends Error {
 }
 
 const SECTION = /^#{2,3}\s*(?:依赖|depends on)(?:\s*\/\s*(?:依赖|depends on))?\s*$/iu;
+// Any other heading or bold line that names dependencies stops the run instead of opening a section.
+const DEPENDENCY_TITLE = /^(?:#{1,6}\s*|\*\*|__)?\s*(?:依赖|depends on|dependencies)(?:\s*\/\s*(?:依赖|depends on|dependencies))*\s*[:：]?\s*(?:\*\*|__)?$/iu;
 const HEADING = /^#{1,6}\s/u;
-const FENCE = /^\s*(?:```|~~~)/u;
-const LEAD = /^(?:depends on|依赖)(?=\s*[:：#])/iu;
+// CommonMark: a fence closes only with the same character and at least the opening length.
+const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/u;
+const INDENTED_CODE = /^(?: {4}|\t)/u;
+const LIST_ITEM = /^ {0,3}(?:[-*+]|[0-9]{1,9}[.)])(?:\s|$)/u;
+const LEAD = /^(?:depends on|依赖)(?=$|[\s:：#])/iu;
 const DEPENDENCY = /^(?:depends on|依赖)\s*[:：]?\s*#([1-9][0-9]*)(?:\s+(.*))?$/iu;
 const NONE = /^(?:无|none|—)[。.]?$/iu;
 const BREAK = /^(?:-{3,}|\*{3,}|_{3,})$/u;
@@ -52,7 +57,7 @@ const RISK = /^(?:风险|risk)\s*[:：]/iu;
 const REFERENCE = /^#([1-9][0-9]*)\s*(?:（[^）]*）|\([^)]*\))?/u;
 const JOIN = /^\s*(?:、|；|;|,|，|和|and)\s*(?=#)/iu;
 const EARLY_START = /^early start\s*:/iu;
-const LIST_MARK = /^[-*]\s+/u;
+const LIST_MARK = /^(?:[-*+]|[0-9]{1,9}[.)])\s+/u;
 
 /** The blockers of a section line that starts with `#<n>`: a list joined by `、；;,，和 and`, each with an optional `（…）` note. */
 function leadingReferences(line: string, fail: (reason: string) => never): number[] {
@@ -73,44 +78,60 @@ function leadingReferences(line: string, fail: (reason: string) => never): numbe
 
 /**
  * The dependency lines of one issue body. A line counts when it starts with
- * `Depends on` or `依赖` before `#`, `:` or `：`, or when it stands in a
- * `## 依赖` / `## Depends on` section; a heading or `---` ends the section.
+ * `Depends on` or `依赖` followed by a space, `#`, `:`, `：` or the line end,
+ * whatever its argument is, or when it stands in a `## 依赖` /
+ * `## Depends on` section; a heading or `---` ends the section.
  * A section line may also start with a list of `#<n>` references
  * (`leadingReferences`). Inside a section, an empty line, a "none" line, an
  * `Early start:` line and a `风险：` / `Risk:` line without a reference carry
  * no edge. Every other line in those positions throws `DependencyLineError`.
- * Fenced code is not read.
+ * Fenced and indented code is not read. A heading or bold line that names
+ * dependencies in another form (`#### 依赖`, `## Dependencies`, `**依赖**`)
+ * also throws: only the template headings open a section.
  */
 export function parseDependencyLines(issue: number, body: string): DependencyLinesV1 {
   const result: DependencyLineV1[] = [];
   const skipped: SkippedLineV1[] = [];
   let inSection = false;
-  let inFence = false;
+  let fence: string | null = null;
+  let inList = false;
   body.replace(/\r\n/gu, '\n').split('\n').forEach((raw, index) => {
-    if (FENCE.test(raw)) {
-      inFence = !inFence;
+    if (fence !== null) {
+      const close = FENCE_OPEN.exec(raw);
+      if (close !== null && close[1]![0] === fence[0] && close[1]!.length >= fence.length && raw.slice(close[0].length).trim() === '') fence = null;
       return;
     }
-    if (inFence) return;
+    const open = FENCE_OPEN.exec(raw);
+    if (open !== null) {
+      fence = open[1]!;
+      return;
+    }
     const text = raw.trim();
+    if (text === '') return;
+    if (INDENTED_CODE.test(raw)) {
+      if (!inList) return;
+    } else {
+      inList = LIST_ITEM.test(raw);
+    }
+    const fail = (reason: string): never => {
+      throw new DependencyLineError(issue, index + 1, raw, reason);
+    };
     if (SECTION.test(text)) {
       inSection = true;
       return;
     }
+    if (DEPENDENCY_TITLE.test(text)) fail('only "## 依赖" or "## Depends on" opens a dependency section');
     if (HEADING.test(text) || (inSection && BREAK.test(text))) {
       inSection = false;
       return;
     }
     const line = text.replace(LIST_MARK, '');
     if (!inSection && !LEAD.test(line)) return;
-    if (inSection && (line === '' || NONE.test(line) || EARLY_START.test(line))) return;
+    if (inSection && (NONE.test(line) || EARLY_START.test(line))) return;
     if (inSection && RISK.test(line) && !/#[0-9]/u.test(line)) {
       skipped.push(Object.freeze({ issue, line_number: index + 1, line: raw }));
       return;
     }
-    const fail = (reason: string): never => {
-      throw new DependencyLineError(issue, index + 1, raw, reason);
-    };
     let blockers: number[];
     if (inSection && line.startsWith('#')) {
       blockers = leadingReferences(line, fail);

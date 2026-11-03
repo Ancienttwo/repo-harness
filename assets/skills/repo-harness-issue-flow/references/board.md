@@ -170,7 +170,9 @@ after each claim or status change.
   its own issue. The coordinator decides and posts a `scope change` on
   every affected issue.
 - **Serial integration.** The default for one PR. The integrator merges in
-  the plan block's merge order. After each merge, the next PR syncs with
+  the plan block's merge order. A parent without a plan (two children or
+  fewer) merges in blocked-by order, and the Order column of the parent
+  table is only a view. After each merge, the next PR syncs with
   main. When the sync delta has no conflict and leaves the reviewed source unchanged,
   the acceptance stays valid with the delta recorded. A changed subject
   needs a new round.
