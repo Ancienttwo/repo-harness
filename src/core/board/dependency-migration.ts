@@ -28,9 +28,17 @@ export interface SkippedLineV1 {
   readonly line: string;
 }
 
+/** A declaration-like line in a possible code position: it makes no edge, and the run stops on it. */
+export interface AmbiguousLineV1 {
+  readonly issue: number;
+  readonly line_number: number;
+  readonly line: string;
+}
+
 export interface DependencyLinesV1 {
   readonly edges: readonly DependencyLineV1[];
   readonly skipped: readonly SkippedLineV1[];
+  readonly ambiguous: readonly AmbiguousLineV1[];
 }
 
 export class DependencyLineError extends Error {
@@ -44,10 +52,10 @@ const SECTION = /^#{2,3}\s*(?:依赖|depends on)(?:\s*\/\s*(?:依赖|depends on)
 // Any other heading or bold line that names dependencies stops the run instead of opening a section.
 const DEPENDENCY_TITLE = /^(?:#{1,6}\s*|\*\*|__)?\s*(?:依赖|depends on|dependencies)(?:\s*\/\s*(?:依赖|depends on|dependencies))*\s*[:：]?\s*(?:\*\*|__)?$/iu;
 const HEADING = /^#{1,6}\s/u;
-// CommonMark: a fence closes only with the same character and at least the opening length.
-const FENCE_OPEN = /^ {0,3}(`{3,}|~{3,})/u;
-const INDENTED_CODE = /^(?: {4}|\t)/u;
-const LIST_ITEM = /^ {0,3}(?:[-*+]|[0-9]{1,9}[.)])(?:\s|$)/u;
+// A possible code position: any fence at any indentation, or a line indented by 4 spaces or a tab.
+// The run refuses a declaration there instead of deciding whether Markdown renders it as code.
+const FENCE = /^\s*(`{3,}|~{3,})/u;
+const INDENTED = /^(?: {4}|\t)/u;
 const LEAD = /^(?:depends on|依赖)(?=$|[\s:：#])/iu;
 const DEPENDENCY = /^(?:depends on|依赖)\s*[:：]?\s*#([1-9][0-9]*)(?:\s+(.*))?$/iu;
 const NONE = /^(?:无|none|—)[。.]?$/iu;
@@ -85,33 +93,35 @@ function leadingReferences(line: string, fail: (reason: string) => never): numbe
  * (`leadingReferences`). Inside a section, an empty line, a "none" line, an
  * `Early start:` line and a `风险：` / `Risk:` line without a reference carry
  * no edge. Every other line in those positions throws `DependencyLineError`.
- * Fenced and indented code is not read. A heading or bold line that names
+ * A declaration-like line (`Depends on` / `依赖`, or a `#<n>` item in a
+ * section) inside a fence or indented by 4 spaces or a tab makes no edge and
+ * is returned in `ambiguous`; other lines there are not read. A fence closes
+ * with a line of its own character, at least as long. A heading or bold line that names
  * dependencies in another form (`#### 依赖`, `## Dependencies`, `**依赖**`)
  * also throws: only the template headings open a section.
  */
 export function parseDependencyLines(issue: number, body: string): DependencyLinesV1 {
   const result: DependencyLineV1[] = [];
   const skipped: SkippedLineV1[] = [];
+  const ambiguous: AmbiguousLineV1[] = [];
   let inSection = false;
   let fence: string | null = null;
-  let inList = false;
   body.replace(/\r\n/gu, '\n').split('\n').forEach((raw, index) => {
-    if (fence !== null) {
-      const close = FENCE_OPEN.exec(raw);
-      if (close !== null && close[1]![0] === fence[0] && close[1]!.length >= fence.length && raw.slice(close[0].length).trim() === '') fence = null;
+    const marker = FENCE.exec(raw);
+    if (fence !== null && marker !== null && marker[1]![0] === fence[0] && marker[1]!.length >= fence.length && raw.slice(marker[0].length).trim() === '') {
+      fence = null;
       return;
     }
-    const open = FENCE_OPEN.exec(raw);
-    if (open !== null) {
-      fence = open[1]!;
+    if (fence === null && marker !== null) {
+      fence = marker[1]!;
       return;
     }
     const text = raw.trim();
     if (text === '') return;
-    if (INDENTED_CODE.test(raw)) {
-      if (!inList) return;
-    } else {
-      inList = LIST_ITEM.test(raw);
+    if (fence !== null || INDENTED.test(raw)) {
+      const line = text.replace(LIST_MARK, '');
+      if (LEAD.test(line) || (inSection && /^#[0-9]/u.test(line))) ambiguous.push(Object.freeze({ issue, line_number: index + 1, line: raw }));
+      return;
     }
     const fail = (reason: string): never => {
       throw new DependencyLineError(issue, index + 1, raw, reason);
@@ -145,5 +155,5 @@ export function parseDependencyLines(issue: number, body: string): DependencyLin
       result.push(Object.freeze({ issue, blocker, line_number: index + 1, line: raw }));
     }
   });
-  return Object.freeze({ edges: Object.freeze(result), skipped: Object.freeze(skipped) });
+  return Object.freeze({ edges: Object.freeze(result), skipped: Object.freeze(skipped), ambiguous: Object.freeze(ambiguous) });
 }

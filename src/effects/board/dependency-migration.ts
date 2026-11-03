@@ -1,11 +1,12 @@
 import { spawnSync } from 'child_process';
-import { DependencyLineError, parseDependencyLines, TIER_LABELS, type DependencyLineV1, type SkippedLineV1 } from '../../core/board/dependency-migration';
+import { DependencyLineError, parseDependencyLines, TIER_LABELS, type AmbiguousLineV1, type DependencyLineV1, type SkippedLineV1 } from '../../core/board/dependency-migration';
 
 const GH_TIMEOUT_MS = 30_000;
 const PAGE = 100;
 
 export type DependencyMigrationErrorCode =
   | 'dependency_line_unparsed'
+  | 'dependency_line_ambiguous'
   | 'parent_not_found'
   | 'foreign_sub_issue'
   | 'sub_issues_truncated'
@@ -106,7 +107,9 @@ const ADD_BLOCKED_BY = `mutation($issue: ID!, $blocker: ID!) {
 /**
  * Moves the dependency lines of the open sub-issues of one parent to
  * blocked-by links and creates the tier labels. Every body is parsed before
- * the first write, so an unparsable line stops the run with no change.
+ * the first write, so an unparsable line stops the run with no change, and
+ * so do the declaration-like lines in possible code positions, all named in
+ * one `dependency_line_ambiguous` error.
  * Existing labels and links are reported as `exists` and not written again;
  * a link is identified by the node ids of both issues, because issue numbers
  * are local to a repository. A bare `#n` is resolved in the parent's
@@ -125,6 +128,7 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
   const open = subIssues.nodes.filter(node => node.state === 'OPEN');
   const planned: { readonly target: SubIssueRead; readonly line: DependencyLineV1 }[] = [];
   const skipped: SkippedLineV1[] = [];
+  const ambiguous: AmbiguousLineV1[] = [];
   for (const target of open) {
     if (target.repository.nameWithOwner !== repository) {
       throw new DependencyMigrationError('foreign_sub_issue', `#${target.number} of ${target.repository.nameWithOwner} is not in ${repository}; this migration reads one repository only`);
@@ -134,10 +138,15 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
       const parsed = parseDependencyLines(target.number, target.body);
       for (const line of parsed.edges) planned.push({ target, line });
       skipped.push(...parsed.skipped);
+      ambiguous.push(...parsed.ambiguous);
     } catch (error) {
       if (error instanceof DependencyLineError) throw new DependencyMigrationError('dependency_line_unparsed', error.message);
       throw error;
     }
+  }
+  if (ambiguous.length > 0) {
+    throw new DependencyMigrationError('dependency_line_ambiguous', `dependency lines in a possible code position (fence or indentation); edit the body or add the link by hand: ${
+      ambiguous.map(entry => `#${entry.issue} line ${entry.line_number}: ${entry.line.trim()}`).join('; ')}`);
   }
 
   const blockers = [...new Set(planned.map(entry => entry.line.blocker))];

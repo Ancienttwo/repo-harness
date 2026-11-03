@@ -274,8 +274,6 @@ const MIGRATION_SUB_ISSUES: readonly MigrationSubIssue[] = [
   { number: 1508, state: 'OPEN', body: '## Goal\nConsole board.\n\n## Depends on\nDepends on #1505 board core\nEarly start: not allowed\n\n## Out of scope\n- #1507 owns the deletion' },
   { number: 1509, state: 'OPEN', body: '## 依赖\n#1505；#1473（启动时写席位标签）、#1476 合入后再做。\n风险：High（验收链路）。\n---\n_Generated in #9_' },
   { number: 1510, state: 'OPEN', body: 'Watcher.\n依赖：#1505\n' },
-  // Code is not a declaration: a longer fence that holds a shorter one, and an indented code line.
-  { number: 1511, state: 'OPEN', body: 'Notes.\n\n````markdown\n```\nDepends on #7\n````\n\n    Depends on #7\n' },
   // An existing link to #1505 of another repository is not the local #1505 link.
   { number: 1512, state: 'OPEN', body: 'Depends on #1505\n', blocked_by: ['FOREIGN1505'] },
   { number: 1490, state: 'CLOSED', body: '## Depends on\nDepends on #1505\n' },
@@ -293,7 +291,7 @@ test('migrate-dependencies turns the dependency lines of open sub-issues into bl
   expect(result.skipped).toEqual([{ issue: 1509, line_number: 3, line: '风险：High（验收链路）。' }]);
   expect(result.labels).toEqual([
     { name: 'tier:low', result: 'created' }, { name: 'tier:medium', result: 'created' }, { name: 'tier:high', result: 'created' }]);
-  // Lines after a heading or `---`, code, and the closed sub-issue #1490 give no link.
+  // Lines after a heading or `---` and the closed sub-issue #1490 give no link.
   expect(stub.writes).toEqual(['label tier:low', 'label tier:medium', 'label tier:high', '#1508 blocked by #1505',
     '#1509 blocked by #1505', '#1509 blocked by #1473', '#1509 blocked by #1476', '#1510 blocked by #1505', '#1512 blocked by #1505']);
 });
@@ -308,11 +306,15 @@ test('a second migrate-dependencies run writes nothing and reports every link an
   expect(second.edges).toHaveLength(6);
 });
 
-test('migrate-dependencies stops before any write on an unparsable line, another heading form or a sub-issue of another repository', () => {
+test('migrate-dependencies stops before any write on an unparsable line, a declaration in a possible code position, another heading form or a sub-issue of another repository', () => {
   const stops: readonly [MigrationSubIssue, string, string][] = [
     [{ number: 1505, state: 'OPEN', body: '## 依赖\n\n无。席位标签来自 #1473 和 #1476；合入前执行轴为 unavailable。\n' }, 'dependency_line_unparsed', '#1505 line 3'],
     [{ number: 1505, state: 'OPEN', body: 'Depends on other/repo#7\n' }, 'dependency_line_unparsed', '#1505 line 1'],
     [{ number: 1505, state: 'OPEN', body: '#### 依赖\n#1473\n' }, 'dependency_line_unparsed', '#1505 line 1'],
+    // A fence or an indented line may be code: list-contained fence, list-contained indented line, top-level fence.
+    [{ number: 1505, state: 'OPEN', body: '- Example:\n\n    ```\n    Depends on #7\n    ```\n' }, 'dependency_line_ambiguous', '#1505 line 4: Depends on #7'],
+    [{ number: 1505, state: 'OPEN', body: '- Example:\n\n      Depends on #7\n' }, 'dependency_line_ambiguous', '#1505 line 3: Depends on #7'],
+    [{ number: 1505, state: 'OPEN', body: '````markdown\n```\nDepends on #7\n````\n' }, 'dependency_line_ambiguous', '#1505 line 3: Depends on #7'],
     [{ number: 10, state: 'OPEN', body: 'Depends on #20\n', repository: 'other/repo' }, 'foreign_sub_issue', '#10 of other/repo'],
   ];
   for (const [subIssue, code, message] of stops) {
@@ -321,6 +323,7 @@ test('migrate-dependencies stops before any write on an unparsable line, another
     try { stub.migrate(); } catch (caught) { error = caught; }
     expect(error).toMatchObject({ code });
     expect((error as Error).message).toContain(message);
+    if (code === 'dependency_line_ambiguous') expect((error as Error).message.match(/#[0-9]+ line [0-9]+/gu)).toHaveLength(1);
     expect(stub.writes).toEqual([]);
   }
 });
