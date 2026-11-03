@@ -135,6 +135,19 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("an orchestrator fleet is named in the brief, keeps the Agent tool and refuses every other agent type", () => {
+    const fleet = ["deep-reasoner", "explorer", "gatekeeper", "root-cause-prover"];
+    withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
+      const orchestrator = launch(home, "orchestrator");
+      expect(orchestrator.brief).toContain("You may call these read-only sub-agents: `deep-reasoner`, `explorer`, `gatekeeper`, `root-cause-prover`. Call no other agent type. Writers and the Codex review run in Herdr seats.");
+      expect(orchestrator.brief).not.toContain("You do not dispatch sub-agents");
+      expect(tools(orchestrator.argv)).toContain("Agent");
+      expect(denied(orchestrator.argv)).toEqual(expect.arrayContaining(["Agent(fast-worker)", "Agent(deep-worker)", "Agent(general-purpose)", "Agent(fork)"]));
+      expect(denied(orchestrator.argv).filter((rule: string) => fleet.some(role => rule === `Agent(${role})`))).toEqual([]);
+      expect(orchestrator.limits).toContainEqual({ subject: "fleet", level: "named_types_only" });
+    });
+  });
+
   test("the Codex argv holds only flags that Codex applies; the fleet goes into the launch instructions only", () => {
     const seats = { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: ["edit", "net", "read", "shell"] } };
     withHome(seats, (home) => {
