@@ -469,6 +469,46 @@ describe("ship-worktrees closeout journal", () => {
     });
   }, 30_000);
 
+  // Claim paths: acquire creates only the claims parent; the recovery lane never
+  // creates a parent; release, cancel and failed writes rename before rm. Each
+  // row pauses one caller inside a claim path and runs the other to the end.
+  const SHIP = ["--target", "main", "--remote", "origin"];
+  test.each([
+    { name: "recovery resumes after another recovery removed the claim", cmd: "mkdir", glob: "*/recovery.lock", args: ["--recover", "abort"], pausedError: "another recovery already owns this ship closeout" },
+    { name: "ship elects while the owner removes its claim", cmd: "rm", glob: "*/claims/ship/*.lock*", args: SHIP, pausedError: "" },
+  ])("a released claim is never recreated or shared: $name", async ({ cmd, glob, args, pausedError }) => {
+    await withTempRepoAsync("closeout-claim-paths", async (container) => {
+      const fixture = installShipFixture(container);
+      const env = { REPO_HARNESS_GH_BIN: fixture.ghBin, GH_LOG: fixture.ghLog };
+      const worktree = realpathSync(fixture.linked);
+      const key = spawnSync(REAL_GIT, ["hash-object", "--stdin"], { input: `operation=ship\nworktree=${worktree}\n`, encoding: "utf-8" }).stdout.trim();
+      const claim = join(fixture.journalRoot, "claims/ship", `${key}.lock`);
+      if (args[0] === "--recover") {
+        mkdirSync(claim, { recursive: true });
+        writeFileSync(join(claim, "owner.json"), `{\n  "version": 1,\n  "operation": "ship",\n  "worktree": "${worktree}",\n  "pid": "${spawnSync("true").pid}",\n  "journal_key": ""\n}\n`);
+      }
+      const shimDir = join(container, "pause-shim");
+      mkdirSync(shimDir);
+      // rm models rm -rf: it unlinks the owner record, waits, then removes the
+      // directory, which fails when a caller elected inside it meanwhile.
+      const shim = ["#!/bin/bash", 'target=""; for arg in "$@"; do target="$arg"; done', 'real="/bin/$(basename "$0")"',
+        'if [[ "$(basename "$0")" == "$PAUSE_CMD" && "$target" == $PAUSE_GLOB ]]; then',
+        '  [[ "$real" == /bin/rm ]] && { /bin/rm -f "$target/owner.json"; real=/bin/rmdir; set -- "$target"; }',
+        '  touch "$PAUSE_DIR/reached"; for _ in $(seq 1 3000); do [[ -f "$PAUSE_DIR/go" ]] && break; sleep 0.01; done', "fi", 'exec "$real" "$@"', ""].join("\n");
+      for (const name of ["mkdir", "rm"]) writeExecutable(join(shimDir, name), shim);
+      const paused = runHelperAsync("scripts/ship-worktrees.sh", [...args], fixture.linked, { ...env, PATH: `${shimDir}:${process.env.PATH ?? ""}`, PAUSE_CMD: cmd, PAUSE_GLOB: glob, PAUSE_DIR: container });
+      for (let i = 0; i < 3000 && !existsSync(join(container, "reached")); i++) await Bun.sleep(10);
+      const other = runHelper("scripts/ship-worktrees.sh", [...args], fixture.linked, env);
+      writeFileSync(join(container, "go"), "");
+      const first = await paused;
+      // The other caller finishes, or loses to a claim that was still owned.
+      expect(other.status === 0 || other.stderr.includes("closeout already owned"), other.stderr).toBe(true);
+      expect(first.status === 0, first.stderr).toBe(!pausedError);
+      expect(first.stderr).toContain(pausedError);
+      expect(readdirSync(join(claim, ".."))).toEqual([]);
+    });
+  }, 60_000);
+
 
 
   test.each(['branch', 'head', 'dirty', 'clean'] as const)('fresh ship abort preserves foreign work: %s', change => {
