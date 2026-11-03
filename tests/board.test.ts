@@ -313,7 +313,7 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
     [[open(1505, '## 依赖\n\n无。席位标签来自 #1473 和 #1476；合入前执行轴为 unavailable。\n')], 'dependency_line_unparsed', ['#1505 line 3']],
     [[open(1505, 'Depends on other/repo#7\n')], 'dependency_line_unparsed', ['#1505 line 1']],
     [[open(1505, '#### 依赖\n#1473\n')], 'dependency_line_unparsed', ['#1505 line 1']],
-    // Possible code positions: every line after the first fence line, and leading whitespace with 4 spaces or a tab.
+    // Refusals (owner rule M24): a code or HTML marker anywhere in the body, leading whitespace, or a wide list marker.
     [[open(1505, '- Example:\n\n    ```\n    Depends on #7\n    ```\n')], 'dependency_line_ambiguous', ['#1505 line 4: Depends on #7']],
     [[open(1505, '- Example:\n\n      Depends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 3: Depends on #7']],
     [[open(1505, '````markdown\n```\nDepends on #7\n````\n')], 'dependency_line_ambiguous', ['#1505 line 3: Depends on #7']],
@@ -322,6 +322,16 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
     [[open(1505, ' \tDepends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 1: Depends on #7']],
     [[open(1505, '- Example:\n\n    ## 依赖\n')], 'dependency_line_ambiguous', ['#1505 line 3: ## 依赖']],
     [[open(1505, '## 依赖\n- #1476 core\n    and #1473\n')], 'dependency_line_ambiguous', ['#1505 line 3: and #1473']],
+    [[open(1505, '- ```\nDepends on #7\n- ```\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    [[open(1505, '1. ```\n   Depends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    [[open(1505, '-     Depends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 1: -     Depends on #7']],
+    [[open(1505, '-\t\tDepends on #7\n')], 'dependency_line_ambiguous', ['#1505 line 1: -\t\tDepends on #7']],
+    [[open(1505, '## 依赖\n-     #7\n')], 'dependency_line_ambiguous', ['#1505 line 2: -     #7']],
+    [[open(1505, '## 依赖\n```\n~~~ #1473\n')], 'dependency_line_ambiguous', ['#1505 line 1: ## 依赖', '#1505 line 3: ~~~ #1473']],
+    [[open(1505, '<pre>\nDepends on #7\n</pre>\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    [[open(1505, '<!--\nDepends on #7\n-->\n')], 'dependency_line_ambiguous', ['#1505 line 2: Depends on #7']],
+    // The marker may come after the declaration: the whole body refuses.
+    [[open(1505, 'Depends on #7\n\n```\nexample\n```\n')], 'dependency_line_ambiguous', ['#1505 line 1: Depends on #7']],
     // One scan over all bodies: both refusals are named, and the parse error of #10 does not hide them.
     [[open(10, '    Depends on #7\nDepends on other/repo#8\n'), open(11, '    Depends on #9\n')], 'dependency_line_ambiguous',
       ['#10 line 1: Depends on #7', '#11 line 1: Depends on #9']],

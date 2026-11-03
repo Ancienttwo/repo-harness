@@ -143,7 +143,7 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
     unparsed.push(...parsed.unparsed);
   }
   if (ambiguous.length > 0) {
-    throw new DependencyMigrationError('dependency_line_ambiguous', `dependency lines in a possible code position (after a fence or indented); edit the body or add the link by hand: ${
+    throw new DependencyMigrationError('dependency_line_ambiguous', `dependency lines that may be code (a code or HTML marker in the body, leading whitespace or a wide list marker); edit the body or add the link by hand: ${
       ambiguous.map(entry => `#${entry.issue} line ${entry.line_number}: ${entry.line.trim()}`).join('; ')}`);
   }
   if (unparsed.length > 0) {

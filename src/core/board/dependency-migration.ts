@@ -58,11 +58,11 @@ const SECTION = /^#{2,3}\s*(?:依赖|depends on)(?:\s*\/\s*(?:依赖|depends on)
 // Any other heading or bold line that names dependencies stops the run instead of opening a section.
 const DEPENDENCY_TITLE = /^(?:#{1,6}\s*|\*\*|__)?\s*(?:依赖|depends on|dependencies)(?:\s*\/\s*(?:依赖|depends on|dependencies))*\s*[:：]?\s*(?:\*\*|__)?$/iu;
 const HEADING = /^#{1,6}\s/u;
-// A possible code position (owner rule M21): every line after the first fence line, and a line whose
-// leading whitespace holds 4 spaces or a tab. The run refuses a declaration there instead of deciding
-// whether Markdown renders it as code.
-const FENCE = /^\s*(?:```|~~~)/u;
-const INDENTED = /^(?: {4}| *\t)/u;
+// Owner rule M24: the parser does not reason about Markdown positions. A body with a code or HTML
+// marker anywhere refuses all its declaration-like lines; so does a declaration-like line with
+// leading whitespace or with more than one space (or a tab) after its list marker.
+const CODE_MARKER = /```|~~~|<pre|<!--/iu;
+const LIST_MARKER = /^(?:[-*+]|[0-9]{1,9}[.)])([ \t]+)/u;
 const LEAD = /^(?:depends on|依赖)(?=$|[\s:：#])/iu;
 const DEPENDENCY = /^(?:depends on|依赖)\s*[:：]?\s*#([1-9][0-9]*)(?:\s+(.*))?$/iu;
 const NONE = /^(?:无|none|—)[。.]?$/iu;
@@ -72,7 +72,6 @@ const RISK = /^(?:风险|risk)\s*[:：]/iu;
 const REFERENCE = /^#([1-9][0-9]*)\s*(?:（[^）]*）|\([^)]*\))?/u;
 const JOIN = /^\s*(?:、|；|;|,|，|和|and)\s*(?=#)/iu;
 const EARLY_START = /^early start\s*:/iu;
-const LIST_MARK = /^(?:[-*+]|[0-9]{1,9}[.)])\s+/u;
 
 function reject(reason: string): never {
   throw new LineRejected(reason);
@@ -110,42 +109,43 @@ function declarationBlockers(issue: number, line: string, inSection: boolean): n
 }
 
 /**
- * The dependency lines of one issue body. A line counts when it starts with
- * `Depends on` or `依赖` followed by a space, `#`, `:`, `：` or the line end,
- * whatever its argument is, or when it stands in a `## 依赖` /
- * `## Depends on` section; a heading or `---` ends the section.
- * A section line may also start with a list of `#<n>` references
- * (`leadingReferences`). Inside a section, an empty line, a "none" line, an
- * `Early start:` line and a `风险：` / `Risk:` line without a reference carry
- * no edge. Every other line in those positions goes to `unparsed`. A heading
- * or bold line that names dependencies in another form (`#### 依赖`,
- * `## Dependencies`, `**依赖**`) also goes to `unparsed`: only the template
- * headings open a section.
+ * The dependency lines of one issue body. Declaration-like lines are: a line
+ * that starts with `Depends on` or `依赖` (after an optional list marker),
+ * followed by a space, `#`, `:`, `：` or the line end, whatever its argument
+ * is; a dependency heading; and inside a `## 依赖` / `## Depends on` section
+ * any line with `#<digit>`. A heading or `---` ends the section.
  *
- * In a possible code position (every line after the first fence line, or a
- * line whose leading whitespace holds 4 spaces or a tab) a declaration-like
- * line makes no edge and goes to `ambiguous`: a `Depends on` / `依赖` line, a
- * dependency heading, or inside a section any line with `#<digit>`. Other
- * lines there are not read, and the section does not change.
+ * A declaration-like line goes to `ambiguous` and makes no edge when the
+ * body holds a code or HTML marker (`CODE_MARKER`) anywhere, when the line
+ * has leading whitespace, or when more than one space or a tab follows its
+ * list marker. Otherwise only the template forms at column 0 parse:
+ * `Depends on #n` / `依赖：#n`, and inside a section a line that starts with
+ * a `#<n>` list (`leadingReferences`), each with at most one list marker and
+ * one space. Inside a section, a "none" line, an `Early start:` line and a
+ * `风险：` / `Risk:` line without a reference carry no edge. Every other line
+ * in a dependency position goes to `unparsed`, and so does a heading or bold
+ * line that names dependencies in another form (`#### 依赖`,
+ * `## Dependencies`, `**依赖**`): only the template headings open a section.
  */
 export function parseDependencyLines(issue: number, body: string): DependencyLinesV1 {
   const edges: DependencyLineV1[] = [];
   const skipped: SkippedLineV1[] = [];
   const ambiguous: AmbiguousLineV1[] = [];
   const unparsed: UnparsedLineV1[] = [];
+  const refuseBody = CODE_MARKER.test(body);
   let inSection = false;
-  let afterFence = false;
   body.replace(/\r\n/gu, '\n').split('\n').forEach((raw, index) => {
     const text = raw.trim();
     if (text === '') return;
     const at = { issue, line_number: index + 1, line: raw };
-    if (FENCE.test(raw)) {
-      afterFence = true;
-      return;
-    }
-    const line = text.replace(LIST_MARK, '');
-    if (afterFence || INDENTED.test(raw)) {
-      if (LEAD.test(line) || SECTION.test(text) || DEPENDENCY_TITLE.test(text) || (inSection && /#[0-9]/u.test(text))) ambiguous.push(Object.freeze(at));
+    const marker = LIST_MARKER.exec(text);
+    const line = marker === null ? text : text.slice(marker[0].length);
+    const heading = SECTION.test(text) || DEPENDENCY_TITLE.test(text);
+    const declarationLike = LEAD.test(line) || heading || (inSection && /#[0-9]/u.test(text));
+    if (declarationLike && (refuseBody || raw !== raw.trimStart() || (marker !== null && marker[1] !== ' '))) {
+      ambiguous.push(Object.freeze(at));
+      if (SECTION.test(text)) inSection = true;
+      else if (HEADING.test(text)) inSection = false;
       return;
     }
     if (SECTION.test(text)) {
