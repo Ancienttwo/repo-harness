@@ -471,6 +471,51 @@ describe('single affected verification and daily fallback', () => {
     await expect(selectAffectedTests(['scripts/after.sh'], sources, [])).rejects.toThrow('coverage is unknown');
   });
 
+  test('persisted path references give the full-parse result on hit, partial hit, miss and corrupt input', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'rh-ci-path-cache-'));
+    const sources = [
+      ['tests/guide.test.ts', "import { readFileSync } from 'node:fs'; readFileSync('docs/guide.md'); // comment"],
+      ['scripts/run.ts', "import { spawnSync } from 'node:child_process'; spawnSync('bash', ['scripts/tool.sh'], { cwd: '/repo' });"],
+      ['src/data.ts', "import { join } from 'node:path'; export const data = join(import.meta.dir, '../templates/data.json');"],
+    ];
+    // A fresh process per row, so only the persisted file can supply an entry.
+    const parse = (cache: string, save = false) => {
+      const result = spawnSync(process.execPath, ['-e', `
+        const { discoverPathReferences, loadPathReferences, savePathReferences, sourceEvidence, sourceKey } = await import(${JSON.stringify(join(ROOT, 'scripts/ci-path-consumers.ts'))});
+        const sources = JSON.parse(process.env.SOURCES);
+        const loaded = loadPathReferences(process.env.CACHE, 'analyzer-1');
+        const references = await discoverPathReferences(sources);
+        if (process.env.SAVE) savePathReferences(process.env.CACHE, 'analyzer-1', sources);
+        console.log(JSON.stringify({ loaded, entries: sources.map(([file, source]) => [references.get(sourceKey(file, source)), sourceEvidence.get(sourceKey(file, source))]) }));
+      `], { encoding: 'utf8', env: { ...process.env, SOURCES: JSON.stringify(sources), CACHE: cache, SAVE: save ? '1' : '' } });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout) as { loaded: number; entries: unknown[] };
+    };
+    try {
+      const full = join(directory, 'full.json');
+      const baseline = parse(full, true);
+      expect(baseline.loaded).toBe(0);
+      expect(baseline.entries.every(entry => Array.isArray((entry as unknown[])[0]))).toBe(true);
+      const saved = JSON.parse(readFileSync(full, 'utf8'));
+      const keys = Object.keys(saved.entries);
+      expect(keys).toHaveLength(sources.length);
+      const variant = (name: string, content: string) => { const file = join(directory, name); writeFileSync(file, content); return file; };
+      const rows: [string, string, number][] = [
+        ['hit', full, sources.length],
+        ['partial hit', variant('partial.json', JSON.stringify({ ...saved, entries: { [keys[0]!]: saved.entries[keys[0]!] } })), 1],
+        ['miss: no file', join(directory, 'absent.json'), 0],
+        ['miss: another analyzer', variant('analyzer.json', JSON.stringify({ ...saved, analyzer: 'analyzer-2' })), 0],
+        ['corrupt file', variant('corrupt.json', '{"analyzer":'), 0],
+        ['corrupt entry', variant('entry.json', JSON.stringify({ ...saved, entries: { ...saved.entries, [keys[1]!]: { references: [{ path: 1 }], evidence: [] } } })), sources.length - 1],
+      ];
+      for (const [name, cache, loaded] of rows) {
+        const result = parse(cache);
+        expect({ name, loaded: result.loaded }).toEqual({ name, loaded });
+        expect({ name, entries: result.entries }).toEqual({ name, entries: baseline.entries });
+      }
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  }, 60_000);
+
   test('exact complete diff is required, including draft candidates', () => {
     expect(selectCoverage({ ...input, diffRaw: record })).toEqual({ mode: 'affected', reason: 'complete-diff', paths: ['src/feature.ts'] });
     for (const diffRaw of [null, '', record.slice(0, -1), record + '\0', record.replace(' M\0', ' R100\0'), record.replace(sha, 'bad'), record.replace('src/feature.ts', 'src/../feature.ts')]) {
@@ -541,15 +586,26 @@ describe('single affected verification and daily fallback', () => {
     const { jobs } = workflow;
     expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
-    expect(jobs.required.needs).toEqual(['selection', 'verify', 'home-isolation', 'native-oar']);
-    const boundarySteps = jobs.selection.steps.filter((step: any) => step.run === 'bun run check:state-boundaries');
+    expect(jobs.required.needs).toEqual(['selection', 'state-boundaries', 'verify', 'home-isolation', 'native-oar']);
+    // State boundaries run beside selection on every event except a push to main, and Required / CI requires them.
+    expect(jobs['state-boundaries'].needs).toBeUndefined();
+    expect(jobs['state-boundaries'].if).toBe("github.event_name != 'push'");
+    expect(jobs.required.if).toBe("always() && github.event_name == 'pull_request'");
+    const pushJobs = Object.entries(jobs).filter(([, job]: [string, any]) => !job.needs && job.if !== "github.event_name != 'push'").map(([id]) => id);
+    expect(pushJobs).toEqual(['selection']);
+    expect(jobs.selection.steps.some((step: any) => step.run === 'bun run check:state-boundaries')).toBe(false);
+    const boundarySteps = jobs['state-boundaries'].steps.filter((step: any) => step.run === 'bun run check:state-boundaries');
     expect(boundarySteps).toHaveLength(1);
     const boundary = boundarySteps[0];
     expect(boundary.if).toBeUndefined();
     expect(boundary['continue-on-error']).toBeUndefined();
-    expect(jobs.selection.steps.indexOf(boundary)).toBeGreaterThan(
-      jobs.selection.steps.findIndex((step: any) => step.run === 'bun install --frozen-lockfile'),
+    expect(jobs['state-boundaries'].steps.indexOf(boundary)).toBeGreaterThan(
+      jobs['state-boundaries'].steps.findIndex((step: any) => step.run === 'bun install --frozen-lockfile'),
     );
+    const select = jobs.selection.steps.find((step: any) => step.id === 'select');
+    const referenceCache = jobs.selection.steps.find((step: any) => step.uses === 'actions/cache@v4' && step.with.path === select.env.CI_PATH_REFERENCE_CACHE);
+    expect(referenceCache.with).toEqual({ path: '${{ runner.temp }}/ci-path-references.json', key: 'ci-path-references-${{ github.sha }}', 'restore-keys': 'ci-path-references-' });
+    expect(jobs.selection.steps.indexOf(referenceCache)).toBeLessThan(jobs.selection.steps.indexOf(select));
     expect(jobs.verify.if).toBe("needs.selection.outputs.mode == 'affected'");
     const affected = jobs.verify.steps.find((step: any) => step.run === 'bash scripts/check-ci.sh affected');
     const total = Number(/^\$\{\{ matrix\.shard \}\}\/(\d+)$/.exec(affected.env.CI_SHARD)![1]);
@@ -603,18 +659,24 @@ describe('single affected verification and daily fallback', () => {
 
   test('real aggregate shell rejects failure, cancellation, omission and invalid coverage', () => {
     const command = workflow.jobs.required.steps[0].run;
-    const run = (selection: string, verification: string, mode: string, home: string, native: string, homeFlag: string, nativeFlag: string) =>
+    const run = (selection: string, verification: string, mode: string, home: string, native: string, homeFlag: string, nativeFlag: string, boundaries = 'success') =>
       spawnSync('/bin/bash', ['-c', command], { encoding: 'utf8', env: { ...process.env,
-        SELECTION_RESULT: selection, COVERAGE_MODE: mode, VERIFY_RESULT: verification,
+        SELECTION_RESULT: selection, STATE_BOUNDARIES_RESULT: boundaries, COVERAGE_MODE: mode, VERIFY_RESULT: verification,
         HOME_ISOLATION_RESULT: home, NATIVE_OAR_RESULT: native, HOME_ISOLATION: homeFlag, NATIVE_OAR: nativeFlag,
       } }).status;
     for (const selection of ['success', 'failure', 'cancelled', 'skipped']) {
       for (const verification of ['success', 'failure', 'cancelled', 'skipped']) {
-        for (const mode of ['affected', 'daily', 'invalid', '']) {
-          expect(run(selection, verification, mode, 'success', 'success', 'true', 'true') === 0)
-            .toBe(selection === 'success' && verification === 'success' && mode === 'affected');
+        for (const mode of ['affected', 'documentation', 'daily', 'invalid', '']) {
+          // A documentation-only diff passes with its verify job skipped.
+          const pass = selection === 'success' && ((verification === 'success' && mode === 'affected') || (verification === 'skipped' && mode === 'documentation'));
+          expect(run(selection, verification, mode, 'success', 'success', 'true', 'true') === 0).toBe(pass);
+          expect(run(selection, verification, mode, 'skipped', 'skipped', 'false', 'false') === 0).toBe(pass);
         }
       }
+    }
+    for (const boundaries of ['success', 'failure', 'cancelled', 'skipped', '']) {
+      expect(run('success', 'success', 'affected', 'success', 'success', 'true', 'true', boundaries) === 0).toBe(boundaries === 'success');
+      expect(run('success', 'skipped', 'documentation', 'skipped', 'skipped', 'false', 'false', boundaries) === 0).toBe(boundaries === 'success');
     }
     for (const home of ['success', 'failure', 'cancelled', 'skipped', '']) {
       for (const native of ['success', 'failure', 'cancelled', 'skipped', '']) {
@@ -760,7 +822,7 @@ describe('single affected verification and daily fallback', () => {
     } finally { rmSync(repo, { recursive: true, force: true }); }
   });
 
-  test('documentation-only PR selects scanned checkout consumers and reports both platform skips', () => {
+  test('documentation diffs select named readers; root-process consumers run daily; program-input documents select their readers', () => {
     const repo = mkdtempSync(join(tmpdir(), 'rh-ci-documentation-selection-'));
     const git = (...args: string[]) => { const result = spawnSync('git', args, { cwd: repo, encoding: 'utf8' }); if (result.status !== 0) throw Error(result.stderr); return result.stdout.trim(); };
     const write = (path: string, content: string) => { mkdirSync(resolve(repo, path, '..'), { recursive: true }); writeFileSync(join(repo, path), content); };
@@ -768,20 +830,62 @@ describe('single affected verification and daily fallback', () => {
       writePlatformFixture(write);
       git('init', '-q'); git('config', 'user.name', 'CI fixture'); git('config', 'user.email', 'ci@example.invalid'); git('config', 'commit.gpgsign', 'false');
       write('tsconfig.json', JSON.stringify({ compilerOptions: { noEmit: true }, include: ['src/**/*.ts', 'tests/**/*.ts'] }));
-      write('docs/guide.md', '# Guide');
+      for (const document of ['docs/guide.md', 'docs/helper.md', 'docs/unread.md', 'docs/named.md', 'docs/area/page.md', 'docs/glob/one.md', 'tasks/lessons.md']) write(document, '# Document');
+      write('docs/architecture/.projection-manifest.json', '{}');
       write('src/feature.ts', "export const targetDirectories = ['docs', 'plans'];");
+      write('src/manifest.ts', "import { readFileSync } from 'node:fs'; import { join } from 'node:path'; export const manifest = () => readFileSync(join(import.meta.dir, '../docs/architecture/.projection-manifest.json'));");
       write('tests/feature.test.ts', "import { targetDirectories } from '../src/feature';");
+      write('tests/manifest.test.ts', "import { manifest } from '../src/manifest';");
       write('tests/guide.test.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readFileSync(join(ROOT, 'docs/guide.md'));");
+      write('tests/helpers/doc.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; export const helper = () => readFileSync(join(import.meta.dir, '../..', 'docs/helper.md'));");
+      write('tests/helper.test.ts', "import { helper } from './helpers/doc';");
+      // The named-checkout rule: a fixture read of a tracked guide name in a test that resolves checkout code.
+      write('tests/named.test.ts', "import { join } from 'node:path'; import { mkdtempSync, readFileSync } from 'node:fs'; const CLI = join(import.meta.dir, '..', 'src/feature.ts'); readFileSync(join(mkdtempSync('fixture'), 'docs/named.md'));");
+      write('tests/directory.test.ts', "import { join } from 'node:path'; import { readdirSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); readdirSync(join(ROOT, 'docs/area'));");
+      write('tests/glob.test.ts', "import { join } from 'node:path'; import { readFileSync } from 'node:fs'; const ROOT = join(import.meta.dir, '..'); for (const name of process.argv) readFileSync(join(ROOT, 'docs/glob', name));");
+      write('tests/root.test.ts', "import { join } from 'node:path'; import { spawnSync } from 'node:child_process'; const ROOT = join(import.meta.dir, '..'); spawnSync('bun', ['scripts/check.ts'], { cwd: ROOT });");
       git('add', '.'); git('commit', '-qm', 'base'); const base = git('rev-parse', 'HEAD');
-      write('docs/guide.md', '# Changed guide'); write('tasks/lessons.md', '# Lessons'); git('add', '.'); git('commit', '-qm', 'candidate'); const head = git('rev-parse', 'HEAD');
-      const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output');
-      writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } })); writeFileSync(output, '');
-      const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
-      expect(result.status, result.stderr).toBe(0);
-      expect(JSON.parse(readFileSync(join(repo, '.ci-affected-tests.json'), 'utf8'))).toEqual(['tests/guide.test.ts']);
-      expect(readFileSync(output, 'utf8')).toBe(`mode=affected\nsha=${head}\nnative_oar=false\nhome_isolation=false\n`);
+      const event = join(repo, '.git/event.json'); const output = join(repo, '.git/output'); const selected = join(repo, '.ci-affected-tests.json');
+      writeFileSync(event, JSON.stringify({ pull_request: { base: { sha: base } } }));
+      const rows: [string, string[], string, string[] | null][] = [
+        ['named read', ['docs/guide.md', 'tasks/lessons.md'], 'affected', ['tests/guide.test.ts']],
+        ['helper import', ['docs/helper.md'], 'affected', ['tests/helper.test.ts']],
+        ['root-process consumer runs daily only', ['docs/unread.md'], 'documentation', null],
+        ['directory prefix', ['docs/area/page.md'], 'affected', ['tests/directory.test.ts']],
+        ['glob', ['docs/glob/one.md'], 'affected', ['tests/glob.test.ts']],
+        // Deleted documents are matched as well: the base tree still names them.
+        ['deleted document keeps its named reader', ['-docs/named.md'], 'affected', ['tests/named.test.ts']],
+        ['mixed diff keeps every documentation consumer', ['docs/unread.md', 'src/feature.ts'], 'affected', ['tests/directory.test.ts', 'tests/feature.test.ts', 'tests/glob.test.ts', 'tests/guide.test.ts', 'tests/helper.test.ts', 'tests/named.test.ts', 'tests/root.test.ts']],
+        ['manifest reader', ['docs/architecture/.projection-manifest.json'], 'affected', ['tests/manifest.test.ts']],
+        ['no reader', ['tasks/lessons.md'], 'documentation', null],
+      ];
+      for (const [name, changed, mode, tests] of rows) {
+        rmSync(selected, { force: true }); git('checkout', '-q', '-B', 'candidate', base);
+        for (const path of changed) {
+          if (path.startsWith('-')) rmSync(join(repo, path.slice(1)));
+          else write(path, path.endsWith('.json') ? '{"changed":true}' : `${readFileSync(join(repo, path), 'utf8')}\nchanged\n`);
+        }
+        git('add', '.'); git('commit', '-qm', name); const head = git('rev-parse', 'HEAD');
+        writeFileSync(output, '');
+        const result = spawnSync(process.execPath, [join(ROOT, 'scripts/select-ci-coverage.ts')], { cwd: repo, encoding: 'utf8', env: { ...process.env, GITHUB_EVENT_NAME: 'pull_request', GITHUB_EVENT_PATH: event, GITHUB_OUTPUT: output, GITHUB_SHA: head } });
+        expect({ name, status: result.status }, result.stderr).toEqual({ name, status: 0 });
+        expect({ name, output: readFileSync(output, 'utf8') }).toEqual({ name, output: `mode=${mode}\nsha=${head}\nnative_oar=false\nhome_isolation=false\n` });
+        expect({ name, tests: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, tests });
+      }
+      // The local affected lane stops after a documentation selection; an affected selection goes on to typecheck.
+      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) write(file, readFileSync(join(ROOT, file), 'utf8'));
+      write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
+      spawnSync('chmod', ['+x', join(repo, 'bin/bun')]);
+      for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
+        const log = join(repo, `.git/bun-${mode}.log`);
+        const lane = spawnSync('/bin/bash', [join(repo, 'scripts/check-ci.sh'), 'affected', '--base', base], { cwd: repo, encoding: 'utf8',
+          env: { PATH: `${join(repo, 'bin')}:/usr/bin:/bin`, HOME: repo, BUN_LOG: log, SELECTED_MODE: mode } });
+        expect({ mode, status: lane.status }, lane.stderr).toEqual({ mode, status: 0 });
+        expect({ mode, exit: lane.stdout.includes('[ci] Documentation-only diff: no build or test job.') }).toEqual({ mode, exit: !typecheck });
+        expect({ mode, typecheck: readFileSync(log, 'utf8').includes('bun run check:type') }).toEqual({ mode, typecheck });
+      }
     } finally { rmSync(repo, { recursive: true, force: true }); }
-  }, 60_000);
+  }, 120_000);
 
   test('local base selects committed, staged, unstaged and untracked changes with removed import edges', () => {
     const repo = mkdtempSync(join(tmpdir(), 'rh-ci-local-selection-'));
@@ -864,7 +968,7 @@ describe('single affected verification and daily fallback', () => {
     expect(reporter.jobs.report.permissions).toEqual({ actions: 'read', contents: 'read', issues: 'write' });
 
     const advisory = jobs['architecture-advisory'];
-    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected'");
+    expect(advisory.if).toBe("needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'");
     expect(advisory.permissions).toBeUndefined();
     expect(jobs.required.needs).not.toContain('architecture-advisory');
     const warn = advisory.steps.find((step: any) => step.name === 'Warn about architecture debt');

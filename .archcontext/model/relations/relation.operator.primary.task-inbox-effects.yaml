@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.primary.task-inbox-effects
+kind: reads
+source: component.operator.primary
+target: component.task-fleet.task-inbox-effects
+intent: "Read the stored task inbox of one verified task for the Task drawer, read-only, in the supervised read process"

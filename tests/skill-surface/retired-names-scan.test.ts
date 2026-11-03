@@ -149,10 +149,12 @@ describe("retired Skill package names: live-reference scan", () => {
   // entirely absent (git does not track empty directories; this repo's
   // .agents/skills/ contained only the two now-deleted static ChatGPT skill
   // dirs). An absent surface has nothing to scan, not an error.
-  const files = SCAN_SURFACES
-    .map((surface) => join(ROOT, surface))
-    .filter((absolute) => existsSync(absolute))
-    .flatMap((absolute) => allFiles(absolute));
+  // A plain loop keeps each surface a named read for CI selection
+  // (scripts/ci-documentation-consumers.ts), so a docs-only diff runs this scan.
+  const files: string[] = [];
+  for (const surface of SCAN_SURFACES) {
+    if (existsSync(join(ROOT, surface))) files.push(...allFiles(join(ROOT, surface)));
+  }
 
   test("scan surface is non-trivial (sanity check against a vacuous pass)", () => {
     expect(files.length).toBeGreaterThan(100);

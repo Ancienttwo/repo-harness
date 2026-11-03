@@ -682,7 +682,7 @@ function* checkEvidence(
   });
 }
 
-/** Shared read protocol; the sync and abortable drivers only differ in transport. */
+/** Read protocol for required-check failures; `driveRequestsSync` answers its requests. */
 function* requiredCheckFailures(
   identity: ProviderIdentity,
   checks: readonly ProviderCheck[],
@@ -851,9 +851,9 @@ function coverageFacts(identity: ProviderIdentity, input: PublicationReadinessIn
 
 /**
  * Run the declared regeneration on the merge tree. The check is synchronous
- * and bounded by the declared timeout; the abortable readiness path accepts
- * that bound because the child runs in a process group and is killed at the
- * deadline. Every failure is a typed blocker, never a provider outage.
+ * and bounded by the declared timeout: the child runs in a process group and
+ * is killed at the deadline. Every failure is a typed blocker, never a
+ * provider outage.
  */
 function generatedArtifactsFacts(
   identity: ProviderIdentity,
@@ -875,7 +875,7 @@ function generatedArtifactsFacts(
   });
 }
 
-/** One read protocol for synchronous and abortable consumers; reads only the current commit boundary. */
+/** Read protocol for the rollback boundary; reads only the current commit boundary. */
 function* rollbackBoundary(identity: ProviderIdentity): Generator<string, ProviderMergeReadinessFactsV1['rollback_boundary'], unknown> {
   const validSha = (value: unknown): value is string => typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
   if (!validSha(identity.base_sha)) throw new MergeReadinessError('provider_data_incomplete', 'rollback base SHA is invalid');

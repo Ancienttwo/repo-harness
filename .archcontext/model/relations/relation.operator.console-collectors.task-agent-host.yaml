@@ -3,4 +3,4 @@ id: relation.operator.console-collectors.task-agent-host
 kind: reads
 source: component.operator.console-collectors
 target: component.task-agent-host.primary
-intent: "Read the notify install record, notify.env and the relay delivery record on each notify cycle, and read the task agent binding, native session and closed records."
+intent: "Read the notify install record, notify.env and the relay delivery record on each notify cycle."

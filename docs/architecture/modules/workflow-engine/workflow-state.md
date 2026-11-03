@@ -215,7 +215,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 ### 2026-11-03 删除 provider 看板、hook 看板切片与 session 发现链（#1507）
 
 - 删除 state 的 `board` 子命令、[src/core/state/provider-board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/core/state/provider-board.ts)、[src/effects/state/collect-provider-board-inputs.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/state/collect-provider-board-inputs.ts) 与 [src/effects/state/collect-slice-inputs.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/state/collect-slice-inputs.ts)。`flow.workflow-state.board` 与 `entrypoint.workflow-state.board` 一起删除。
-- 删除 `readAdmittedTaskSessions`、`observeAdmittedSessionSource` 与 admitted session selector。PR #1541 合并后它们没有读者。`TASK_SESSIONS_MAX_ENTRIES` 留在 `src/core/sessions/task-sessions.ts`，因为 `src/effects/operator/execution-state.ts` 用它限制会话目录数。
+- 删除 `readAdmittedTaskSessions`、`observeAdmittedSessionSource` 与 admitted session selector。PR #1541 合并后它们没有读者。`TASK_SESSIONS_MAX_ENTRIES` 留在 [src/core/sessions/task-sessions.ts](https://github.com/Ancienttwo/repo-harness/blob/65e8c8c6cee08416c6ebd16c4c0ff8bf766b50dc/src/core/sessions/task-sessions.ts)，因为 `src/effects/operator/execution-state.ts` 用它限制会话目录数。
 - coordination-plane 改名为 Task Session Admission and Historical Worktree Safety。它保留 session 观察失败码与只读 git runner，operator 的 task diff 与 doc session 读取用它们。
 
 ## Optimization Backlog

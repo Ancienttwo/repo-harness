@@ -607,10 +607,6 @@ export function validateReactionAttemptReceipt(value: unknown): ReactionAttemptR
   }
 }
 
-export function canonicalReactionAttemptReceiptBytes(receipt: ReactionAttemptReceiptV1): string {
-  return stablePublicationJson(validateReactionAttemptReceipt(receipt));
-}
-
 /**
  * Deliberately excludes summary, URLs, timestamps, delivery state and local
  * attempt metadata. The frozen breaker domain is publication/head identity,
