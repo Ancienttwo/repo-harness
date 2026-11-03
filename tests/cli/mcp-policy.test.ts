@@ -165,6 +165,8 @@ describe('mcp policy and paths', () => {
       const danglingRead = resolveMcpPath(tmp, 'docs/prds/dangdir/x.prd.md', policy, 'read');
       expect(danglingRead.ok).toBe(false);
       expect(danglingRead.reason).toContain('path does not exist');
+      symlinkSync('loop', join(tmp, 'docs/prds', 'loop'));
+      expect(resolveMcpPath(tmp, 'docs/prds/loop/sub/x.prd.md', policy, 'write').reason).toContain('path cannot be resolved');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });

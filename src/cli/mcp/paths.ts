@@ -76,8 +76,10 @@ function hasEntry(path: string): boolean {
   try {
     return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
   } catch (error) {
-    // A path below a regular file has no entry; the walk continues to that file.
-    if ((error as NodeJS.ErrnoException).code === 'ENOTDIR') return false;
+    // A path below a regular file or a link loop has no entry. The walk
+    // continues to that file or loop link; a loop link has no real path.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOTDIR' || code === 'ELOOP') return false;
     throw error;
   }
 }
