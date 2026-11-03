@@ -7,7 +7,7 @@ layers hold every workflow fact, and each fact has one source. Root
 | Layer | Question | Source |
 | --- | --- | --- |
 | Flow | Who acts, when, and in what order | `repo-harness-issue-flow` skill |
-| Roles | Which seat and model fill a role | The `seats` section of `~/.repo-harness/config.json`; sub-agent roles in `agents/fleet/` |
+| Roles | Which seat runs which model, and which sub-agents it may call | The `seats` section of `~/.repo-harness/config.json`; sub-agent roles in `agents/fleet/` |
 | Tools | How an action runs | Herdr, the review and publication commands, `contract-worktree` |
 
 ## Flow
@@ -37,8 +37,11 @@ rollback in the PR description. A one-time decision goes in the issue.
 
 ## Roles
 
-Roles are seats in the flow. The model choice is advice, not a gate. Any
-host can fill a seat.
+A seat is a process: the orchestrator, the advisor or a worker. A
+sub-agent is an `agents/fleet/` role that runs inside a seat process. A
+claim role (coordinator, writer, head owner, integrator, acceptor) is the
+role that a GitHub claim gives on one issue or PR. The model choice is
+advice, not a gate. Any host can fill a seat.
 
 | Role | Suggested fit | Writes |
 | --- | --- | --- |

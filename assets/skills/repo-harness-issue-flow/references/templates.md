@@ -241,7 +241,7 @@ at most a short body.
 ```text
 repo-harness issue claim
 Status: active                  # required: active
-Seat: writer                    # required: coordinator | writer | integrator
+Role: writer                    # required: coordinator | writer | integrator
 Slot: PR-1b                     # only for a named PR slot
 Agent: <kind>, session <id>     # required
 Branch: <type>/<issue>-<slug>   # required
@@ -251,7 +251,7 @@ Coordinator: <parent claim URL> # the coordinator's own claim
 Prior claim: <comment URL>      # required on a handoff
 ```
 
-`Status`, `Seat`, `Agent`, `Branch`, `Scope` and `Not in scope` are
+`Status`, `Role`, `Agent`, `Branch`, `Scope` and `Not in scope` are
 required. A handoff claim also requires `Prior claim`. A claim without
 any of them is invalid. The coordinator reads its claim back; when a
 field is missing it posts `issue claim status` with `Status: released`,
@@ -337,7 +337,7 @@ edit the old plan.
 
 ```text
 repo-harness handoff
-Seat: writer | head owner | coordinator | integrator
+Role: writer | head owner | coordinator | integrator
 From: <agent identity>, claim <URL>
 To: <agent identity>
 Authority: <the owner's instruction, quoted, or the prior holder's release>
@@ -352,7 +352,7 @@ The coordinator then posts the receiver's `issue claim` with
 
 ```text
 repo-harness acceptance claim
-Seat: acceptor
+Role: acceptor
 Round: <n>
 Subject: <head sha>
 Tier: low | medium | high
@@ -365,7 +365,7 @@ Agent: <kind and model>, read-only
 repo-harness acceptance record
 Claim: <acceptance claim URL>
 
-| Round | Seat | Subject | Verdict |
+| Round | Role | Subject | Verdict |
 |---|---|---|---|
 | <n> | <harness> (<model> or unobserved), read-only | `<40-hex subject sha>` | <PASS or FAIL>: <finding counts, for example 1 P2, 2 P3, or none> |
 
@@ -378,7 +378,7 @@ Findings:
 ```
 
 Every round writes this record, one row per round. The fields are `Round`,
-`Seat`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
+`Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
 `Model relation` line. `repo-harness review publish` writes it for rounds
 1 to 3. The session that runs a round above 3 posts the same text by hand

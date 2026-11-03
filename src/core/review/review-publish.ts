@@ -191,7 +191,7 @@ function findingSummary(finding: ReviewPublishFinding): string {
 export function renderAcceptanceClaim(receipt: ReviewPublishReceipt): string {
   return [
     'repo-harness acceptance claim',
-    'Seat: acceptor',
+    'Role: acceptor',
     'Round: ' + receipt.round,
     'Subject: ' + receipt.subject_sha,
     'Tier: ' + receipt.risk_tier,
@@ -226,7 +226,7 @@ export function renderAcceptanceRecord(receipt: ReviewPublishReceipt, claimUrl: 
     'repo-harness acceptance record',
     'Claim: ' + claimUrl,
     '',
-    '| Round | Seat | Subject | Verdict |',
+    '| Round | Role | Subject | Verdict |',
     '|---|---|---|---|',
     '| ' + receipt.round + ' | ' + reviewerIdentity(receipt) + ', read-only | `' + receipt.subject_sha + '` | ' + verdict + ' |',
     '',
