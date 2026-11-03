@@ -396,18 +396,22 @@ describe('architecture map', () => {
     });
   });
 
-  test('every model node is placed once, members inside their group, siblings apart, nested groups and the recorded map included', () => {
+  test('every model node is placed once, members inside their group, siblings apart, nested groups and the recorded map included; no relation crosses its own group box', () => {
     const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     // Three namespace levels, with a relation that ends on the deepest one.
     const nested = projectArchitectureMap({
       repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
         mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
-      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c')], flows: [], flow_evidence: [],
+      // A group to a member two levels down, and a member back to its own group: both lines would cross the group box.
+      relations: [mapRelation('relation.p-runs', 'runs-in', 'process.p', 'namespace.a-b-c'), mapRelation('relation.a-holds', 'calls', 'namespace.a', 'namespace.a-b-c'),
+        mapRelation('relation.c-up', 'calls', 'namespace.a-b-c', 'namespace.a-b')], flows: [], flow_evidence: [],
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
       layer_order: undeclaredLayers,
     });
-    for (const map of [mapFor(), nested, decodeArchitectureMap(recordedMap)]) {
+    const recorded = decodeArchitectureMap(recordedMap);
+    const cases: [ArchitectureMapV1, string[] | null][] = [[mapFor(), ['relation.a-own']], [nested, ['relation.a-holds', 'relation.c-up']], [recorded, null]];
+    for (const [map, undrawn] of cases) {
       const layout = layoutArchitectureMap(map);
       expect(layout.nodes.map(item => item.node.id).sort()).toEqual(map.nodes.map(node => node.id).sort());
       const placed = new Map(layout.nodes.map(item => [item.node.id, item]));
@@ -424,8 +428,32 @@ describe('architecture map', () => {
       for (const [index, item] of layout.nodes.entries()) {
         if (item.node.parent !== null) expect(layout.nodes.findIndex(other => other.node.id === item.node.parent)).toBeLessThan(index);
       }
-      expect(layout.edges.map(edge => edge.relation.id)).toEqual(map.relations.map(relation => relation.id));
+      // The canvas draws every relation except one between a group and a node inside it; the map count keeps them all.
+      const ancestors = (id: string): string[] => { const out: string[] = []; for (let cursor = placed.get(id)!.node.parent; cursor !== null; cursor = placed.get(cursor)!.node.parent) out.push(cursor); return out; };
+      const inside = map.relations.filter(relation => ancestors(relation.target).includes(relation.source) || ancestors(relation.source).includes(relation.target)).map(relation => relation.id);
+      expect(inside).toEqual(undrawn ?? inside);
+      expect(inside.length).toBeGreaterThan(0);
+      expect(layout.edges.map(edge => edge.relation.id)).toEqual(map.relations.map(relation => relation.id).filter(id => !inside.includes(id)));
     }
+  });
+
+  test('without bands, top-level nodes that no relation links to another top-level node sit on a near-square grid; with bands they keep one row', () => {
+    const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
+    // Nine capabilities like an unlayered model whose relations stay inside each capability.
+    const loose = (layerOrder: ArchitectureLayerOrderV1) => projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
+      nodes: Array.from({ length: 9 }, (_, index) => mapNode(`capability.loose.c${index}`, 'capability')), relations: [], flows: [], flow_evidence: [],
+      sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
+    });
+    const rows = (map: ArchitectureMapV1) => new Set(layoutArchitectureMap(map).nodes.map(item => item.y)).size;
+    expect([rows(loose(undeclaredLayers)), rows(loose(coreOnly))]).toEqual([3, 1]);
+    const grid = layoutArchitectureMap(loose(undeclaredLayers));
+    for (const [index, a] of grid.nodes.entries()) for (const b of grid.nodes.slice(index + 1)) expect(overlaps(a, b)).toBe(false);
+    // A linked pair keeps its dagre ranks, and the unlinked node sits below them.
+    const linked = layoutArchitectureMap(mapFor(true, mapLayers, undeclaredLayers));
+    const box = new Map(linked.nodes.map(item => [item.node.id, item]));
+    expect(box.get(CALLER)!.y + box.get(CALLER)!.height).toBeLessThan(box.get(CENTER)!.y);
+    expect(box.get(EXTERNAL)!.y).toBeGreaterThan(box.get(CENTER)!.y);
   });
 
   test('box width follows lines, I/O relations are dashed, and only a capability pair with imports is weighted', () => {
@@ -435,9 +463,9 @@ describe('architecture map', () => {
     expect(width(EXTERNAL)).toBe(MAP_NODE_MIN_WIDTH);
     const edges = new Map(layout.edges.map(edge => [edge.relation.id, edge]));
     expect(edges.get('relation.c-git')!.dashed).toBe(true);
-    expect(edges.get('relation.a-own')!.dashed).toBe(false);
+    expect(edges.get('relation.b-router')!.dashed).toBe(false);
     expect(edges.get('relation.b-router')).toMatchObject({ imports: 7, strokeWidth: 6 });
-    expect(edges.get('relation.a-own')).toMatchObject({ imports: null, strokeWidth: 1 });
+    expect(edges.get('relation.c-git')).toMatchObject({ imports: null, strokeWidth: 1 });
     const bare = layoutArchitectureMap(mapFor(false));
     expect(bare.nodes.every(item => item.size === null && (item.group || item.width === MAP_NODE_MIN_WIDTH))).toBe(true);
     expect(bare.edges.every(edge => edge.imports === null)).toBe(true);
@@ -501,6 +529,10 @@ describe('architecture map', () => {
     expect(inspector.textContent).toContain('100 lines in 1 files');
     await act(async () => [...inspector.querySelectorAll('button')].find(item => item.textContent === 'Open module')!.click());
     expect(opened).toEqual([CALLER]);
+    // The group's relation to its own member has no line on the canvas, but the inspector lists it.
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${CENTER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    expect([...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.getAttribute('data-relation-id'))).toContain('relation.a-own');
   });
 
   test('a missing line or import source is stated with its reason, and a failed read shows its code', async () => {
@@ -622,6 +654,28 @@ describe('architecture map', () => {
     const refused = document.querySelector('.architecture-map__gap[data-gap="pull_request"]')!;
     expect([refused.getAttribute('data-reason'), refused.getAttribute('data-code'), refused.textContent]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-context-arguments-invalid',
       'No impact for this pull request: archctx impact refused with AC_SCHEMA_INVALID native-context-arguments-invalid.']);
+  });
+
+  test('a layer with data that marks no node dims no node', async () => {
+    // A day without a change, a PR that touches no node, no violation, no test result per capability, no decision that applies to a node.
+    const emptyImpact = { paths: [], unowned_paths: [], nodes: [], dependents: [], dependency_coverage: 'complete', flow_steps: noCodeFactSteps, truncated: whole } as const;
+    const unlit: ArchitectureMapLayersInput = {
+      changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 0, model: [], ...emptyImpact },
+      pull_requests: { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
+        { number: 21, title: 'Docs', url: 'https://github.com/acme/widgets/pull/21', head_sha: 'e'.repeat(40), impact: { state: 'ok', ...emptyImpact } }] },
+      violations: { debt: { state: 'ok', items: [] }, flows: { state: 'ok', selectors: 0, proven: 0, unproven: 0, used_unproven: 0, unprovable: [], evidence: [] },
+        anchors: noCodeFacts, dependencies: { state: 'ok', edges: [] }, layer_direction: undeclaredLayers },
+      tests: { state: 'ok', run: { id: 41, head_sha: 'd'.repeat(40), created_at: '2026-10-27T03:00:00Z' }, results: 'ok', capabilities: [] },
+      decisions: mapLayers.decisions.state === 'ok' ? { state: 'ok', items: mapLayers.decisions.items.filter(item => item.applies_to.length === 0) } : mapLayers.decisions,
+    };
+    await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, unlit) }) }));
+    const seen: [string, string | null, number][] = [];
+    for (const button of document.querySelectorAll<HTMLButtonElement>('.architecture-layers button')) {
+      await act(async () => button.click());
+      await settle();
+      seen.push([button.getAttribute('data-layer')!, button.getAttribute('data-state'), document.querySelectorAll('[data-quiet]').length]);
+    }
+    expect(seen).toEqual(['changes', 'violations', 'pull_requests', 'tests', 'decisions'].map(layer => [layer, 'ok', 0]));
   });
 
   test('a layer without data is still listed and says why', async () => {

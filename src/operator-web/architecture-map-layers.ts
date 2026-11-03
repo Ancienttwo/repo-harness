@@ -15,10 +15,10 @@ export type MapMarkTone = 'change' | 'danger' | 'success' | 'muted';
 export interface MapMark { readonly tone: MapMarkTone; readonly label: string }
 
 export interface MapLayerView {
-  /** False when the collector has no data for any part of the layer. */
+  /** The layer marks at least one node. False when the collector has no data for any part of the layer, or its data marks no node. */
   readonly available: boolean;
   readonly marks: ReadonlyMap<string, MapMark>;
-  /** Nodes that hold a mark or contain one; the canvas dims the rest while the layer has data. */
+  /** Nodes that hold a mark or contain one; the canvas dims the rest only while `available` is true, so a layer that marks nothing dims nothing. */
   readonly lit: ReadonlySet<string>;
   /** Imports that archctx marks undeclared, drawn over the model's relations. */
   readonly edges: readonly ArchitectureMapImportV1[];
@@ -90,7 +90,7 @@ function impactMarks(impact: ArchitectureImpactV1, label: (entry: ArchitectureIm
 /** `pullRequest` picks the PR that the PR impact layer marks; the other layers ignore it. */
 export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: number | null = null): MapLayerView {
   const view = (marks: Map<string, MapMark>, edges: readonly ArchitectureMapImportV1[] = []): MapLayerView =>
-    ({ available: true, marks, lit: withAncestors(map, marks.keys()), edges });
+    ({ available: marks.size > 0, marks, lit: withAncestors(map, marks.keys()), edges });
   if (layer === 'changes') {
     const { changes } = map.layers;
     if (changes.state !== 'ok') return EMPTY;
