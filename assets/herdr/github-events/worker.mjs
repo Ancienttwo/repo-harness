@@ -1,8 +1,7 @@
 // GitHub App webhook receiver. It filters GitHub events in code and sends a short bot event
 // to the Bot routine webhook. It never calls a GitHub API and makes no decision.
-// `repo-harness events install` stages this directory and ../webhook-notify/bot-event.mjs in the same
-// layout, and wrangler bundles them.
-import { botEvent } from '../webhook-notify/bot-event.mjs';
+// `repo-harness events install` stages this directory, and wrangler bundles it.
+import { botEvent } from './bot-event.mjs';
 import { classify } from './filter.mjs';
 
 const DEBOUNCE_SECONDS = 60;

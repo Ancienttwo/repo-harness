@@ -112,15 +112,6 @@ function buildCapabilityProjection(): ProjectionFileRecord {
 
 function main(): void {
   const mode = parseMode(process.argv.slice(2));
-  for (const [source, name] of [
-    ['src/core/worktree-location.mjs', 'worktree-location.mjs'],
-    ['src/core/decision/pane-status.mjs', 'pane-status.mjs'],
-  ]) {
-    const bytes = readFileSync(join(REPO_ROOT, source!));
-    const target = join(REPO_ROOT, 'assets/herdr/webhook-notify', name!);
-    if (mode === 'write') writeProjectionFileAtomic(REPO_ROOT, target, bytes, 0o644);
-    else if (!existsSync(target) || !sameProjectionBytes(readFileSync(target), bytes)) throw new Error(`Herdr ${name} projection drift`);
-  }
   const sourceFiles = [buildCapabilityProjection()];
   const errors: string[] = [];
 

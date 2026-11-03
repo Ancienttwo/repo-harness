@@ -153,7 +153,7 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
 - A new Pi review in a Herdr pane fails with `review_pi_launch_not_ready`
   when the installed Pi is below `MIN_PI_VERSION`. (#1100)
 - A DSH sidebar tab lists the guard denials of the session. (#1299)
-- Readiness reports herdr-core (`hc`, minimum 0.1.16) as an optional runtime
+- Readiness reports herdr-core (`hc`, minimum 0.1.17) as an optional runtime
   capability. (#1413)
 - Before a refresh changes `~/.claude/CLAUDE.md` or `~/.codex/AGENTS.md`,
   repo-harness keeps a copy in `~/.repo-harness/global-context-backups/` and
@@ -175,6 +175,32 @@ and agent-runtime clusters. #1292 retires the manual handoff helpers.
 - The Waza sync and upgrade commands run `repo-harness install --target
   <host>` to project the host links. The rsync and cp loops are removed.
   (#1442)
+
+### Breaking
+
+- Herdr notify runs on herdr-core. `repo-harness herdr notify install` takes
+  no `--session` and installs no classic Herdr plugin. It writes the config to
+  `~/.repo-harness/herdr/notify.env` and starts the relay in an hc terminal
+  named `rh-notify-relay`. The relay follows `hc events --json --label
+  repo-harness.notify=on` and sends the same `repo-harness.bot-event/v1`
+  envelope protocol on each blocked or done turn. The envelope `data` drops
+  `session`, `pane_id`, `workspace_id`, `display_agent`, `title`,
+  `state_labels`, `workspace_label` and `tab_label`, and adds `terminal`,
+  `name` and `blocked_kind`. Each hc turn is sent once per channel; the 120 s
+  debounce is removed. The relay does not restart itself;
+  `repo-harness herdr notify start` starts it again, and `repo-harness doctor`
+  reports a stopped relay. `repo-harness herdr notify
+  uninstall` stops the relay and removes its files. A classic notify install
+  record fails closed as `notify_session_invalid`: run install again. Remove
+  the old plugin with `herdr plugin unlink aimpact.webhook-notify` before
+  classic Herdr is removed. (#1479)
+- The operator notify status is protocol 2: `relay: 'live'` replaces
+  `plugin_id`, `linked` and `enabled`. A relay that is not live is
+  `relay_stopped`, and an hc that does not answer is `hc_unavailable`. The
+  delivery state `unsupported` is removed. (#1479)
+- The Clef shadow decision is removed: `repo-harness herdr decision label`,
+  the `CLEF_MODE` and Cloudflare install options, and the shadow records. It
+  read the pane tail through classic Herdr and had no recorded use. (#1479)
 
 ### Fixed
 

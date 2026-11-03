@@ -11,6 +11,3 @@ responsibilities:
 source:
   include:
     - src/core/decision/**
-  exclude:
-    - src/core/decision/pane-status.d.mts
-    - src/core/decision/pane-status.mjs

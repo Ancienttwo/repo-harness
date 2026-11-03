@@ -1,4 +1,4 @@
-// The one bot event envelope. Herdr notify and the GitHub event Worker both send it, so it
+// The one bot event envelope. The notify relay and the GitHub event Worker both send it, so it
 // stays plain ESM with no dependency and no Node-only API.
 export const BOT_EVENT_PROTOCOL = 'repo-harness.bot-event/v1';
 export const NAME_PATTERN = /^[\w.-]{1,128}$/;

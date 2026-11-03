@@ -8,7 +8,6 @@ import { fileURLToPath } from 'node:url';
 import { askMasked } from './herdr.ts';
 
 const WORKER_ASSETS = fileURLToPath(new URL('../../../assets/herdr/github-events/', import.meta.url));
-const BOT_EVENT = fileURLToPath(new URL('../../../assets/herdr/webhook-notify/bot-event.mjs', import.meta.url));
 const GITHUB_API = 'https://api.github.com';
 const APP_EVENTS = ['check_run', 'issue_comment', 'issues', 'pull_request', 'pull_request_review', 'pull_request_review_comment', 'workflow_run'];
 const LOGIN = /^[A-Za-z0-9][A-Za-z0-9-]{0,38}(?:\[bot\])?$/;
@@ -118,13 +117,10 @@ export async function installEvents(options: EventsInstallOptions, deps: EventsI
   const childEnv = { ...deps.env };
   for (const name of ['WEBHOOK_URL', 'WEBHOOK_KEY', 'WRANGLER_OUTPUT_FILE_DIRECTORY', 'WRANGLER_OUTPUT_FILE_PATH']) delete childEnv[name];
   const stage = mkdtempSync(join(tmpdir(), 'rh-events-'));
-  // The Worker imports ../webhook-notify/bot-event.mjs, so the stage keeps the asset layout.
   const project = join(stage, 'github-events');
   try {
     mkdirSync(project);
-    mkdirSync(join(stage, 'webhook-notify'));
-    for (const name of ['worker.mjs', 'filter.mjs', 'wrangler.json']) copyFileSync(join(WORKER_ASSETS, name), join(project, name));
-    copyFileSync(BOT_EVENT, join(stage, 'webhook-notify', 'bot-event.mjs'));
+    for (const name of ['worker.mjs', 'filter.mjs', 'bot-event.mjs', 'wrangler.json']) copyFileSync(join(WORKER_ASSETS, name), join(project, name));
     const secret = randomBytes(32).toString('hex');
     writeFileSync(join(project, 'secrets.json'), JSON.stringify({ GITHUB_WEBHOOK_SECRET: secret, BOT_WEBHOOK_URL: inputs.webhookUrl, BOT_WEBHOOK_KEY: inputs.webhookKey }), { mode: 0o600, flag: 'wx' });
     const wrangler = (args: string[], env: NodeJS.ProcessEnv = childEnv, stdio: 'ignore' | 2 = 2) =>
