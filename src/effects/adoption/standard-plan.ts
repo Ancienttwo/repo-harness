@@ -390,7 +390,7 @@ Use \`repo-harness docs show ${docId}\` for the full generic runtime guide.
 }
 
 function addLegacyCleanup(repoRoot: string, operations: AdoptionOperation[]): AdoptionWarning[] {
-  const plan = planLegacyLeftovers({ scope: "project", cwd: repoRoot, home: repoRoot, packageRoot: join(ASSET_ROOT, "..") });
+  const plan = planLegacyLeftovers({ scope: "project", cwd: repoRoot, home: repoRoot, packageRoot: join(ASSET_ROOT, ".."), installOwnership: () => [] });
   const warnings: AdoptionWarning[] = [];
   const hookPaths = new Set<string>();
   for (const item of plan.items) {

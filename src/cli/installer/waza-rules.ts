@@ -3,7 +3,7 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import wazaRules from '../../core/skill-surface/waza-shared-rules.json';
 import { runProcess } from '../../effects/process-runner';
-import { managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, type ManagedInstallSurface } from './install-profile';
+import { managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, type ManagedInstallSurface } from './install-profile';
 import { atomicWriteFileSync } from './shared';
 
 interface RulesResult {
@@ -49,7 +49,7 @@ export function wazaStagingRulesAbsent(home: string): boolean {
 
 /**
  * One preflight covers staging and all hosts before the first rule write.
- * `hostReceipts` judges host-rule ownership when a caller's own profile write
+ * `hostReceipts` judges host-rule ownership when a caller's own state write
  * has already renewed the current receipts.
  */
 export function syncWazaSharedRules(
@@ -70,13 +70,13 @@ export function syncWazaSharedRules(
     const missing = wazaRules.files.filter((rule) => next.get(rule) === undefined);
     if (missing.length > 0) return { status: 'failed', detail: `missing ${missing.join(', ')}` };
 
-    const state = refresh ? readInstalledProfile(env) : null;
+    const state = refresh ? readInstallState(env) : null;
     const adoptedPaths: string[] = [];
     if (refresh) {
       for (const rule of wazaRules.files) {
         const current = previous.get(rule);
         if (current === undefined && state === null) {
-          return { status: 'failed', detail: 'an installed profile is required to own new Waza rules; run repo-harness install first' };
+          return { status: 'failed', detail: 'an install state is required to own new Waza rules; run repo-harness install first' };
         }
         if (current === undefined) continue;
         const source = join(sourceDir, rule);
@@ -89,7 +89,7 @@ export function syncWazaSharedRules(
           // The old sync wrote this projection without a receipt. Adopt it only once.
           if (existingHosts.length > 0 && existingHosts.every((path) => readFileSync(path).equals(stagedBytes))) {
             if (state === null) {
-              return { status: 'failed', detail: 'an installed profile is required to own Waza rules; run repo-harness install first' };
+              return { status: 'failed', detail: 'an install state is required to own Waza rules; run repo-harness install first' };
             }
             adoptedPaths.push(source, ...existingHosts);
             // Preserve proof of the old projection before shared staging advances.
@@ -136,7 +136,7 @@ export function syncWazaSharedRules(
       }
     }
     for (const [destination, value] of writes) atomicWriteFileSync(destination, value);
-    // The candidate update path has no install transaction when it records its profile.
+    // The candidate update path has no install transaction when it records its selection.
     // Reconcile existing receipts even when upstream bytes need no write (for example,
     // a retry after rule writes completed but receipt persistence did not).
     if (refresh) recordRefreshedInstallOwnership(

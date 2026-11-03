@@ -14,9 +14,7 @@
         "debugging",
         "review"
       ],
-      "install_profiles": [
-        "full"
-      ],
+      "owner": "core",
       "summary": {
         "en": "Agent skills for planning, debugging, review and project health: think, hunt, check and health.",
         "zh": "规划、排查、审查和项目体检的 agent skill：think、hunt、check 和 health。"
@@ -36,10 +34,7 @@
         "code-index",
         "mcp"
       ],
-      "install_profiles": [
-        "minimal",
-        "full"
-      ],
+      "owner": "architecture",
       "summary": {
         "en": "A local code index and MCP server. Agents use it to find symbols and call paths faster.",
         "zh": "本机代码索引和 MCP server。Agent 用它更快地找到符号和调用路径。"
@@ -59,7 +54,7 @@
         "terminal",
         "multi-agent"
       ],
-      "install_profiles": [],
+      "owner": null,
       "summary": {
         "en": "The hc manual from hc --skill. The repo-harness skill needs it to control herdr-core terminals on Claude and Codex.",
         "zh": "来自 hc --skill 的 hc 手册。repo-harness skill 在 Claude 和 Codex 上要用它控制 herdr-core 终端。"
@@ -78,7 +73,7 @@
       "tags": [
         "direction-judgment"
       ],
-      "install_profiles": [],
+      "owner": null,
       "summary": {
         "en": "Optional agent skills. repo-harness recommends the geju skill for direction judgments.",
         "zh": "可选的 agent skill。repo-harness 推荐其中的 geju skill，用于方向判断。"
@@ -98,7 +93,7 @@
         "webgpu",
         "react"
       ],
-      "install_profiles": [],
+      "owner": null,
       "summary": {
         "en": "WebGPU shader components for React, Vue, Svelte, Solid, plain JavaScript and Framer",
         "zh": "WebGPU shader 组件，支持 React、Vue、Svelte、Solid、原生 JavaScript 和 Framer"
@@ -118,7 +113,7 @@
         "design-system",
         "ui"
       ],
-      "install_profiles": [],
+      "owner": null,
       "summary": {
         "en": "DESIGN.md files from popular brand design systems. Put one in a project, and coding agents make UI that matches it",
         "zh": "来自知名品牌设计系统的 DESIGN.md 文件。把一份放进项目，coding agent 做出的 UI 就会和它一致"
@@ -138,7 +133,7 @@
         "claude-api",
         "agents"
       ],
-      "install_profiles": [],
+      "owner": null,
       "summary": {
         "en": "Anthropic reference projects for the Claude API: agents, computer use, browser use, autonomous coding and managed agents",
         "zh": "Anthropic 的 Claude API 参考项目：agent、computer use、browser use、autonomous coding 和 managed agents"

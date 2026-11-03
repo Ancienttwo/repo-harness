@@ -78,11 +78,15 @@ function cleanupStaleStages(root: string, remove: BackupCleanup): string[] {
   return notes;
 }
 
-/** Project the hc manual with the managed caller-context policy. */
+/**
+ * Project the hc manual with the managed caller-context policy. With
+ * `includePi` false a `both` target writes the Claude and Codex copies only.
+ */
 export function configureRequiredHerdrSkill(
   target: InstallTargetSpec,
   env: NodeJS.ProcessEnv = process.env,
   removeBackup: BackupCleanup = (path) => rmSync(path, { recursive: true, force: true }),
+  includePi = true,
 ): Step {
   // `hc --skill` prints its manual and starts no hc core.
   const result = spawnSync("hc", ["--skill"], { env, encoding: "utf8", timeout: 5_000 });
@@ -97,7 +101,7 @@ export function configureRequiredHerdrSkill(
     return { step: STEP, status: "failed", detail: error instanceof Error ? error.message : String(error) };
   }
   const home = env.HOME || homedir();
-  const hosts: readonly SkillHost[] = target === "both" ? SKILL_HOSTS : [target];
+  const hosts: readonly SkillHost[] = target === "both" ? SKILL_HOSTS.filter(host => includePi || host !== "pi") : [target];
   const plans: Array<{ root: string; destination: string; staged: string; backup: string | null; changed: boolean; current: boolean }> = [];
   try {
     const canonicalHome = realpathSync(home);

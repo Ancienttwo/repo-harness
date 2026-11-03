@@ -7,9 +7,11 @@
  */
 
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
-import { installedProfileStatus, managedInstallSurfaceIsCurrent, readInstalledProfile, retiredAgentFleetFile, PROFILE_COMPONENTS } from '../installer/install-profile';
+import { defaultPluginSelection, enabledPlugins, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState, type InstallState } from '../installer/install-profile';
+import { installSelectionCommand, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
+import { readDshPluginState } from '../../effects/dsh-plugin-state';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
-import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import { externalSkillsForSelection, parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/skill-surface/projection-state';
 import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
@@ -23,7 +25,7 @@ import * as path from 'path';
 import { spawnSync } from 'child_process';
 import { fileURLToPath } from 'url';
 import { ALL_TARGETS } from '../installer/targets/registry';
-import { CLI_VERSION, expectedManagedProfile, formatManagedHookProjectionMismatch, inspectManagedProjection, readInstalledProfileForStatus } from './status';
+import { CLI_VERSION, formatManagedHookProjectionMismatch, inspectManagedProjection } from './status';
 import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
@@ -71,8 +73,8 @@ export interface DoctorCheck {
 
 /** Plugin checks that the composition root (src/cli/index.ts) passes in. */
 export interface DoctorPorts {
-  /** The CodeGraph readiness, MCP host and index checks, in report order. */
-  readonly codegraphChecks: (cwd: string) => DoctorCheckResult[];
+  /** The CodeGraph readiness, MCP host and index checks, in report order, for the plugins the doctor judges. */
+  readonly codegraphChecks: (cwd: string, plugins: readonly PluginId[] | Error) => DoctorCheckResult[];
   /** The Herdr notify relay check (read-only, one `hc ls`). */
   readonly notifyRelayCheck: () => DoctorCheckResult;
   /** The board attention watcher check of the repository at `cwd` (read-only: `hc ls` and `hc get` of the watcher terminals, then `gh api` for the repository id only when a watcher terminal exists). */
@@ -313,7 +315,7 @@ function checkTargetInstall(target: (typeof ALL_TARGETS)[number]): DoctorCheckRe
       detail: `host detected but repo-harness not installed (run: repo-harness install --target ${target.id} --location global)`,
     };
   }
-  const projection = inspectManagedProjection(det.configPath, target.id, expectedManagedProfile(readInstalledProfileForStatus()));
+  const projection = inspectManagedProjection(det.configPath, target.id);
   if (projection.status === 'drift') {
     return {
       id, describe, status: 'warn',
@@ -444,9 +446,10 @@ interface SkillProjectionJudgment {
 }
 
 /** CLI text projection of one judgment. Only `ok link` names its target. */
-function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, profile: string): string {
-  const { destination, source, host } = projection;
-  const fix = `repo-harness install --profile ${profile} --target ${host === 'pi' ? 'both' : host}`;
+function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, selection: PluginSelection): string {
+  const { destination, source } = projection;
+  // The repair reinstalls the recorded selection on the default target; one broken projection narrows neither.
+  const fix = installSelectionCommand(selection);
   const problems: string[] = [];
   if (!row.state.startsWith('ok ')) {
     const preserve = row.state === 'missing' || row.state === 'source missing' ? '' : `preserve or move ${destination}, then `;
@@ -469,8 +472,10 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
   const describe = 'Host skills match their source and install ledger';
   try {
     const home = env.HOME ?? env.USERPROFILE ?? os.homedir();
-    const installed = readInstalledProfile(env);
-    const profile = installed?.profile ?? 'full';
+    const installed = readInstallState(env);
+    const plugins = judgedPlugins(installed, env);
+    // Without a ledger the install default is `all`.
+    const selection: PluginSelection = installed?.selection ?? 'all';
     const sourceRoot = skillProjectionSourceRoot(env);
     const contractPath = path.join(sourceRoot, 'assets', 'workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
@@ -483,11 +488,11 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       throw new Error('invalid installed copy exclusions');
     }
     const manifestPath = path.join(sourceRoot, 'assets', 'skill-commands', 'manifest.json');
-    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true, profileComponents: PROFILE_COMPONENTS });
+    const catalog = parseSkillSurfaceCatalog(fs.readFileSync(manifestPath, 'utf8'), { declared: true });
     if (catalog.status !== 'valid') throw new Error(`invalid skill catalog: ${manifestPath}`);
     const judgments: SkillProjectionJudgment[] = [];
     const details: string[] = [];
-    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, profile, env)) {
+    for (const projection of expectedSkillProjections(catalog.catalog, sourceRoot, home, plugins, env)) {
       if (target !== 'both' && target !== projection.host) continue;
       const state = skillProjectionState(projection, contract);
       const records = installed?.ownership_manifest.filter(surface => surface.path === projection.destination) ?? [];
@@ -504,24 +509,24 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
         ledgerDrift,
       };
       judgments.push(judgment);
-      details.push(formatSkillProjectionJudgment(judgment, profile));
+      details.push(formatSkillProjectionJudgment(judgment, selection));
     }
     const dshRows: SkillProjectionRow[] = [];
     const dshHome = env.DSH_HOME?.trim() || path.join(home, '.dsh');
     if (target === 'both' && fs.existsSync(path.join(dshHome, 'profiles'))) {
-      for (const name of catalog.catalog.expectedProjections.externalSkillsByProfile[profile]) {
+      for (const name of externalSkillsForSelection(catalog.catalog, plugins)) {
         const state = sharedSkillState(path.join(stagedSkillRoot(home), name));
         dshRows.push({ host: 'dsh', name, state, ok: state.startsWith('ok ') });
       }
     }
     let warning = judgments.some(judgment => !judgment.row.ok) || dshRows.some(row => !row.ok);
     if (installed) {
-      const drift = installedProfileStatus(installed, env).drift;
+      const drift = installStateStatus(installed, env).drift;
       if (drift.status === 'drift') warning = true;
-      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? '; inspect: repo-harness install --state; run: repo-harness install --profile ' + profile : ''}`);
+      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? `; inspect: repo-harness install --state; run: ${installSelectionCommand(selection)}` : ''}`);
     } else {
       warning = true;
-      details.push('install ledger: missing; run: repo-harness install --profile ' + profile);
+      details.push('install ledger: missing; run: repo-harness install');
     }
     return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: [...judgments.map(judgment => judgment.row), ...dshRows] };
   } catch (error) {
@@ -585,18 +590,6 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   };
 }
 
-/** A Claude orchestrator file that `repo-harness update` kept (#1510). Delete with install-state protocol 3 (#1287). */
-export function checkRetiredFleetFile(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult {
-  const id = 'retired-fleet-file';
-  const describe = 'No retired fleet role file remains';
-  const file = retiredAgentFleetFile(env);
-  if (!fs.existsSync(file)) return { id, describe, status: 'ok', detail: 'no orchestrator fleet file' };
-  return {
-    id, describe, status: 'warn',
-    detail: `${file} is left from the retired orchestrator fleet role. Start the orchestrator seat with repo-harness seats argv orchestrator. Review the file and delete it by hand; update deletes it only when the install state owns it unchanged.`,
-  };
-}
-
 /**
  * Read-only DSH profile check. DSH owns its plugin installation, so this check
  * reports whether a profile declares the repo-harness bundle. It never writes
@@ -605,41 +598,29 @@ export function checkRetiredFleetFile(env: NodeJS.ProcessEnv = process.env): Doc
 function checkDshPlugin(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult {
   const id = 'dsh-plugin';
   const describe = 'DSH profile declares the repo-harness plugin';
-  const configuredHome = env.DSH_HOME?.trim();
-  const home = configuredHome ? path.resolve(configuredHome) : path.join(env.HOME ?? env.USERPROFILE ?? os.homedir(), '.dsh');
-  const profilesDir = path.join(home, 'profiles');
-  let entries: fs.Dirent[];
-  try {
-    entries = fs.readdirSync(profilesDir, { withFileTypes: true });
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
-      return { id, describe, status: 'na', detail: `no DSH profiles at ${profilesDir}; DSH is not installed for this account` };
-    }
-    return { id, describe, status: 'warn', detail: `cannot read ${profilesDir}: ${(error as Error).message}` };
+  let state;
+  try { state = readDshPluginState(env); } catch (error) {
+    return { id, describe, status: 'warn', detail: (error as Error).message };
   }
-  const profiles = entries.filter(entry => entry.isDirectory()).map(entry => entry.name).sort();
-  if (profiles.length === 0) return { id, describe, status: 'warn', detail: `no DSH profile under ${profilesDir}` };
-  const declared: string[] = [];
-  for (const profile of profiles) {
-    const dir = path.join(profilesDir, profile);
-    let manifest: { dependencies?: Record<string, unknown>; devDependencies?: Record<string, unknown>; dsh?: { profile?: { bundles?: unknown } } } = {};
-    try { manifest = JSON.parse(fs.readFileSync(path.join(dir, 'package.json'), 'utf8')); } catch { /* reported by the decision below */ }
-    const dependencies = { ...(manifest.dependencies ?? {}), ...(manifest.devDependencies ?? {}) };
-    const bundles = Array.isArray(manifest.dsh?.profile?.bundles) ? manifest.dsh.profile.bundles : [];
-    let patch = '';
-    try { patch = fs.readFileSync(path.join(dir, 'cordis.patch.yml'), 'utf8'); } catch { /* absent patch is normal */ }
-    if (PACKAGE_NAME in dependencies || bundles.includes(PACKAGE_NAME) || patch.includes(PACKAGE_NAME)) declared.push(profile);
-  }
-  if (declared.length === 0) {
+  if (state.status === 'absent') return { id, describe, status: 'na', detail: `no DSH profiles at ${state.profilesDir}; DSH is not installed for this account` };
+  if (state.status === 'undeclared') {
+    if (state.profiles.length === 0) return { id, describe, status: 'warn', detail: `no DSH profile under ${state.profilesDir}` };
     return { id, describe, status: 'warn',
-      detail: `profiles ${profiles.join(', ')} do not declare repo-harness; run: dsh plugin add link:${PACKAGE_ROOT}` };
+      detail: `profiles ${state.profiles.join(', ')} do not declare repo-harness; run: dsh plugin add link:${PACKAGE_ROOT}` };
   }
-  return { id, describe, status: 'ok', detail: `repo-harness bundle declared in profile ${declared.join(', ')}` };
+  return { id, describe, status: 'ok', detail: `repo-harness bundle declared in profile ${state.profiles.join(', ')}` };
+}
+
+/** The ledger's plugins; without a ledger no install chose a selection, so the install default. */
+function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): readonly PluginId[] {
+  return installed ? enabledPlugins(installed) : defaultPluginSelection('both', env).plugins;
 }
 
 export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
-  const codegraphChecks = ports.codegraphChecks(cwd);
+  let plugins: readonly PluginId[] | Error;
+  try { plugins = judgedPlugins(readInstallState(process.env), process.env); } catch (error) { plugins = error as Error; }
+  const codegraphChecks = ports.codegraphChecks(cwd, plugins);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
@@ -659,7 +640,6 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
-  checks.push(checkRetiredFleetFile());
   checks.push(ports.notifyRelayCheck());
   checks.push(ports.attentionWatchCheck(cwd));
   for (const plugin of REGISTERED_CHECKS) {

@@ -5,11 +5,10 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import { runStatus, formatStatus } from '../../src/cli/commands/status';
 import { runInstall } from '../../src/cli/commands/install';
-import {
-  installProfileStatePath,
-  PROFILE_COMPONENTS,
-  type InstallProfile,
-} from '../../src/cli/installer/install-profile';
+import { installProfileStatePath, versions } from '../../src/cli/installer/install-profile';
+import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
+
+const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
 
 const ROOT = path.join(import.meta.dir, '..', '..');
 
@@ -26,14 +25,14 @@ function withTempHome(fn: (home: string) => void): void {
   }
 }
 
-function writeInstalledProfileFixture(profile: InstallProfile): void {
+function writeInstallStateFixture(plugins: readonly PluginId[]): void {
   const statePath = installProfileStatePath(process.env);
   fs.mkdirSync(path.dirname(statePath), { recursive: true });
   fs.writeFileSync(statePath, JSON.stringify({
-    protocol: 2,
-    profile,
-    components: PROFILE_COMPONENTS[profile],
-    transaction_id: `test-${profile}`,
+    protocol: 3,
+    ...versions(plugins),
+    selection: plugins === FULL_PLUGINS ? 'all' : plugins,
+    transaction_id: `test-${plugins.join('-') || 'core'}`,
     applied_at: '2026-01-01T00:00:00.000Z',
     ownership_manifest: [],
     previous: null,
@@ -184,22 +183,17 @@ describe('status command (Phase 1C)', () => {
     });
   });
 
-  test('uses the recorded install profile for expected managed entry count', () => {
-    const cases: ReadonlyArray<readonly [InstallProfile, number]> = [
-      ['minimal', 4],
-      ['full', 5],
-    ];
-
-    for (const [profile, expectedCount] of cases) {
+  test('every hook route is core: the expected managed entry count does not depend on the plugin selection', () => {
+    for (const plugins of [[], FULL_PLUGINS] as const) {
       withTempHome(() => {
-        runInstall({ target: 'codex', location: 'global', profile });
-        writeInstalledProfileFixture(profile);
+        runInstall({ target: 'codex', location: 'global' });
+        writeInstallStateFixture(plugins);
 
         const report = runStatus();
         const codex = report.targets.find((target) => target.id === 'codex')!;
-        expect(codex.managedEntryCount).toBe(expectedCount);
-        expect(codex.expectedEntryCount).toBe(expectedCount);
-        expect(report.installedProfile).toMatchObject({ recorded: true, profile });
+        expect(codex.managedEntryCount).toBe(5);
+        expect(codex.expectedEntryCount).toBe(5);
+        expect(report.installState).toMatchObject({ recorded: true, plugins, selection: plugins === FULL_PLUGINS ? 'all' : plugins });
       });
     }
   });
@@ -325,35 +319,41 @@ describe('status command (Phase 1C)', () => {
     });
   });
 
-  test('installedProfile reports not recorded when install-state.json is absent', () => {
+  test('installState reports not recorded when install-state.json is absent', () => {
     withTempHome(() => {
       const r = runStatus();
-      expect(r.installedProfile).toEqual({ recorded: false });
+      expect(r.installState).toEqual({ recorded: false });
       expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(5);
       const text = formatStatus(r, false);
-      expect(text).toContain('Installed profile:');
+      expect(text).toContain('Install state:');
       expect(text).toContain('(not recorded)');
     });
   });
 
-  test('installedProfile reads back profile + components from install-state.json', () => {
+  test('installState reads back the core version and plugins from install-state.json', () => {
     withTempHome(() => {
-      writeInstalledProfileFixture('minimal');
+      writeInstallStateFixture(['architecture', 'product']);
+      const { core } = versions([]);
 
       const r = runStatus();
-      expect(r.installedProfile).toEqual({
+      expect(r.installState).toEqual({
         recorded: true,
-        profile: 'minimal',
-        components: PROFILE_COMPONENTS.minimal,
+        core_version: core.version,
+        plugins: ['architecture', 'product'],
+        selection: ['architecture', 'product'],
       });
 
       const text = formatStatus(r, false);
-      expect(text).toContain('profile: minimal');
-      expect(text).toContain(`components: ${PROFILE_COMPONENTS.minimal.join(', ')}`);
+      expect(text).toContain(`core: ${core.version}`);
+      expect(text).toContain('plugins: architecture, product');
+      expect(text).toContain('selection:');
+
+      writeInstallStateFixture([]);
+      expect(formatStatus(runStatus(), false)).toContain('plugins: (none)');
     });
   });
 
-  test('installedProfile reports invalid (not not-recorded) when install-state.json is corrupt JSON', () => {
+  test('installState reports invalid (not not-recorded) when install-state.json is corrupt JSON', () => {
     // A corrupt install is a materially different diagnostic signal than
     // "never installed" -- conflating them (as this test used to assert)
     // hides a broken host install behind text that reads as "just run
@@ -364,24 +364,26 @@ describe('status command (Phase 1C)', () => {
       fs.writeFileSync(statePath, '{not valid json');
 
       const r = runStatus();
-      expect(r.installedProfile.recorded).toBe('invalid');
-      expect(r.installedProfile).toMatchObject({ kind: 'corrupt_current' });
-      expect(r.installedProfile).not.toEqual({ recorded: false });
+      expect(r.installState.recorded).toBe('invalid');
+      expect(r.installState).toMatchObject({ code: 'install_state_invalid', path: statePath });
+      expect(r.installState).not.toEqual({ recorded: false });
       expect(r.targets.find((target) => target.id === 'codex')?.expectedEntryCount).toBe(5);
       const text = formatStatus(r, false);
-      expect(text).toContain('(invalid)');
+      expect(text).toContain('(install_state_invalid)');
       expect(text).not.toContain('(not recorded)');
     });
   });
 
-  test('installedProfile reports invalid when protocol/profile/ownership_manifest fails readInstalledProfile validation', () => {
+  test('installState reports invalid when a plugin entry fails readInstallState validation', () => {
     withTempHome(() => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      const { core } = versions([]);
       fs.writeFileSync(statePath, JSON.stringify({
-        protocol: 2,
-        profile: 'not-a-real-profile',
-        components: [],
+        protocol: 3,
+        core,
+        plugins: [{ id: 'not-a-real-plugin', version: core.version }],
+        selection: 'all',
         transaction_id: 'test-txn',
         applied_at: '2026-01-01T00:00:00.000Z',
         ownership_manifest: [],
@@ -389,12 +391,12 @@ describe('status command (Phase 1C)', () => {
       }));
 
       const r = runStatus();
-      expect(r.installedProfile.recorded).toBe('invalid');
-      expect(r.installedProfile).toMatchObject({ kind: 'corrupt_current' });
+      expect(r.installState.recorded).toBe('invalid');
+      expect(r.installState).toMatchObject({ code: 'install_state_invalid' });
     });
   });
 
-  test('installedProfile distinguishes a valid protocol-1 state as explicitly migratable', () => {
+  test('installState names the next step for protocol 1 and protocol 2 states', () => {
     withTempHome(() => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
@@ -417,22 +419,39 @@ describe('status command (Phase 1C)', () => {
       }));
 
       const r = runStatus();
-      expect(r.installedProfile).toMatchObject({
+      expect(r.installState).toMatchObject({
         recorded: 'invalid',
-        kind: 'legacy_protocol',
+        code: 'install_state_protocol_retired',
       });
+
+      fs.writeFileSync(statePath, JSON.stringify({
+        protocol: 2,
+        profile: 'full',
+        components: [],
+        transaction_id: 'legacy-full',
+        applied_at: '2026-07-14T00:00:00.000Z',
+        ownership_manifest: [],
+        previous: null,
+      }));
+      const migratable = runStatus();
+      expect(migratable.installState).toMatchObject({
+        recorded: 'invalid',
+        code: 'install_state_migration_required',
+      });
+      expect(formatStatus(migratable, false)).toContain('repo-harness update');
     });
   });
 
-  test('installedProfile reports invalid instead of crashing when a syntactically valid install-state.json is missing components', () => {
-    // A syntactically valid state with missing components must remain
-    // diagnosable instead of reaching formatStatus's `.components.join()`.
+  test('installState reports invalid instead of crashing when a syntactically valid install-state.json is missing plugins', () => {
+    // A syntactically valid state with missing plugins must remain
+    // diagnosable instead of reaching formatStatus's `.plugins.join()`.
     withTempHome(() => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
-        protocol: 2,
-        profile: 'minimal',
+        protocol: 3,
+        core: versions([]).core,
+        selection: 'all',
         transaction_id: 'test-txn',
         applied_at: '2026-01-01T00:00:00.000Z',
         ownership_manifest: [],
@@ -440,22 +459,23 @@ describe('status command (Phase 1C)', () => {
       }));
 
       const r = runStatus();
-      expect(r.installedProfile.recorded).toBe('invalid');
-      if (r.installedProfile.recorded === 'invalid') {
-        expect(r.installedProfile.error).toContain('components');
+      expect(r.installState.recorded).toBe('invalid');
+      if (r.installState.recorded === 'invalid') {
+        expect(r.installState.error).toContain('plugins');
       }
       expect(() => formatStatus(r, false)).not.toThrow();
     });
   });
 
-  test('installedProfile reports invalid instead of crashing when components is a non-array value', () => {
+  test('installState reports invalid instead of crashing when plugins is a non-array value', () => {
     withTempHome(() => {
       const statePath = installProfileStatePath(process.env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({
-        protocol: 2,
-        profile: 'minimal',
-        components: 'cli,effective-state',
+        protocol: 3,
+        core: versions([]).core,
+        plugins: 'architecture,product',
+        selection: 'all',
         transaction_id: 'test-txn',
         applied_at: '2026-01-01T00:00:00.000Z',
         ownership_manifest: [],
@@ -463,7 +483,7 @@ describe('status command (Phase 1C)', () => {
       }));
 
       const r = runStatus();
-      expect(r.installedProfile.recorded).toBe('invalid');
+      expect(r.installState.recorded).toBe('invalid');
       expect(() => formatStatus(r, false)).not.toThrow();
     });
   });

@@ -1,5 +1,5 @@
 {
-  "version": 3,
+  "version": 4,
   "surface": "repo-harness-cli-hooks-command-facades",
   "source": "assets/skill-commands",
   "router": "repo-harness",
@@ -14,17 +14,14 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "minimal",
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "always",
-      "component": "cli",
       "requires": [
         "herdr"
       ],
       "mutatesRepoByDefault": false,
-      "summary": "Root router Skill; canonical entrypoint synced unconditionally to both hosts regardless of install profile.",
+      "summary": "Root router Skill; canonical entrypoint synced unconditionally to every host regardless of the plugin selection.",
       "retirementCandidate": null,
       "audience": "bot"
     },
@@ -38,12 +35,12 @@
         "codex",
         "pi"
       ],
-      "profiles": [],
+      "owner": "core",
+      "explicitOnly": true,
       "discoverability": "cli-reference",
-      "component": "cli",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Canonical rule owner for installing, migrating, upgrading, repairing, scaffolding, and capability-configuring the repo-harness workflow in a repository. Router-only progressive load; never auto-discovered by a profile.",
+      "summary": "Canonical rule owner for installing, migrating, upgrading, repairing, scaffolding, and capability-configuring the repo-harness workflow in a repository. Router-only progressive load; never auto-discovered by a plugin selection.",
       "retirementCandidate": null,
       "audience": "worker"
     },
@@ -57,12 +54,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "minimal",
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "profile-facade",
-      "component": "scope-worktree-check-guards",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Plan or review scoped work. Assess recorded verification and risk.",
@@ -79,11 +73,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "profile-facade",
-      "component": "verifier",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Testing router for the repo-harness source checkout: authoring and fixture selection, test execution and CI lane selection, the evidence a test refactor owes, and the test side of a contract Verification Plan. Routes to docs/reference-configs/global-working-rules.md#test-budget for policy and owns no policy of its own.",
@@ -100,11 +92,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "product",
+      "explicitOnly": false,
       "discoverability": "profile-facade",
-      "component": "planning-integrations",
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Canonical rule owner for PRD drafting and native Goal-session preparation from repo-harness planning artifacts. Backlog ordering, issue splitting and dispatch belong to repo-harness-issue-flow.",
@@ -121,11 +111,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "profile-facade",
-      "component": "planning-integrations",
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Runs GitHub issue and PR driven development with agents. The orchestrator splits work by architecture module into issues with dependencies and boundaries, dispatches workers, and follows PRs and CI. A worker delivers one issue as one PR.",
@@ -142,11 +130,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "explicit-only",
-      "component": "release-deployment-gates",
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Validates finished worktrees, commits through finish --no-merge, pushes branches, and creates GitHub PRs by default.",
@@ -163,14 +149,12 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "architecture",
+      "explicitOnly": false,
       "discoverability": "explicit-only",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": true,
-      "summary": "Inspects or updates an assigned architecture model, document or Mermaid diagram without refreshing the harness. A real responsibility change goes through a model ChangeSet and archctx projection. The full profile installs it; agents load it explicitly.",
+      "summary": "Inspects or updates an assigned architecture model, document or Mermaid diagram without refreshing the harness. A real responsibility change goes through a model ChangeSet and archctx projection. The architecture plugin installs it; agents load it explicitly.",
       "retirementCandidate": null,
       "audience": "worker"
     },
@@ -184,11 +168,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "architecture",
+      "explicitOnly": false,
       "discoverability": "profile-facade",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": true,
       "summary": "Draws or refreshes the human-facing architecture map at docs/architecture/archimap.html from the architecture model and measured code facts.",
@@ -205,12 +187,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "minimal",
-        "full"
-      ],
+      "owner": "strategy-memory",
+      "explicitOnly": false,
       "discoverability": "explicit-only",
-      "component": "adaptive-workflow",
       "requires": [
         "obsidian-markdown",
         "obsidian-cli"
@@ -230,12 +209,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "minimal",
-        "full"
-      ],
+      "owner": "platform",
+      "explicitOnly": false,
       "discoverability": "profile-facade",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Native Windows file and text operations. Prefer Python with explicit encoding. Keep simple shell commands. Does not apply Windows rules to macOS, Linux, or WSL.",
@@ -252,11 +228,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "cross-review",
+      "explicitOnly": false,
       "discoverability": "cross-model",
-      "component": "cross-model-acceptance",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Persistent fleet deep-reasoner acceptance review in Herdr through the existing OAR host, request-bound file Result and generic-review Receipt; direct advisory runtime retired.",
@@ -271,11 +245,9 @@
       "hosts": [
         "claude"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "peer-runtime",
+      "explicitOnly": false,
       "discoverability": "cross-model",
-      "component": "cross-model-acceptance",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Start or reuse a named Claude CLI worker in a visible Herdr pane from a Claude Code session (App Code tab first), return its portal record, then coordinate through Claude Code cross-session messaging.",
@@ -288,12 +260,12 @@
       "source": null,
       "provider": null,
       "hosts": [],
-      "profiles": [],
+      "owner": "core",
+      "explicitOnly": true,
       "discoverability": "cli-reference",
-      "component": "non-projected-judge",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Classification-only entry for the full-profile discovery matrix's 'merge-gate on gatekeeper host' row. repo-harness ships no merge-gate SKILL.md and ships no runtime projection for it; empty hosts/profiles keep this entry non-selectable by every catalog selector. See docs/reference-configs/external-tooling.md for the authoritative statement that runtime setup installs no merge-gate skill.",
+      "summary": "Classification-only entry for the full discovery matrix's 'merge-gate on gatekeeper host' row. repo-harness ships no merge-gate SKILL.md and ships no runtime projection for it; empty hosts and explicitOnly keep this entry non-selectable by every catalog selector. See docs/reference-configs/external-tooling.md for the authoritative statement that runtime setup installs no merge-gate skill.",
       "retirementCandidate": null,
       "audience": "bot"
     },
@@ -307,9 +279,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [],
+      "owner": "core",
+      "explicitOnly": true,
       "discoverability": "external-marketplace",
-      "component": "cli",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Required Herdr control skill. Install the hc manual from hc --skill under the repo-harness caller-context policy for both hosts.",
@@ -326,11 +298,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza planning skill: turns rough ideas into approved, decision-complete plans. Fetched from tw93/Waza via bunx skills add.",
@@ -347,11 +317,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza root-cause debugging skill. Fetched from tw93/Waza via bunx skills add.",
@@ -368,11 +336,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza review/audit skill for diffs, PRs, and release readiness. Fetched from tw93/Waza via bunx skills add.",
@@ -389,11 +355,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Waza project-audit skill. Fetched from tw93/Waza via bunx skills add.",
@@ -410,11 +374,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [
-        "full"
-      ],
+      "owner": "core",
+      "explicitOnly": false,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Diagram-design skill. Fetched from BfdCampos/dotfiles via bunx skills add.",
@@ -432,9 +394,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [],
+      "owner": "core",
+      "explicitOnly": true,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in reverse-engineering and security-task router pack. Fetched from zhaoxuya520/reverse-skill via bunx skills add after independent authorization review.",
@@ -452,9 +414,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [],
+      "owner": "strategy-memory",
+      "explicitOnly": true,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in official Obsidian Markdown authoring companion Skill. Pinned to kepano/obsidian-skills and verified before projection.",
@@ -472,9 +434,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [],
+      "owner": "strategy-memory",
+      "explicitOnly": true,
       "discoverability": "external-marketplace",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit-opt-in official Obsidian CLI companion Skill. Does not install or require the Obsidian executable or desktop App.",
@@ -491,9 +453,9 @@
         "codex",
         "pi"
       ],
-      "profiles": [],
+      "owner": "strategy-memory",
+      "explicitOnly": true,
       "discoverability": "explicit-setup",
-      "component": "adaptive-workflow",
       "requires": [],
       "mutatesRepoByDefault": false,
       "summary": "Explicit project-local strategic reflection and progressive lesson recall. Context packet only; no dispatch or automatic goal edits.",
@@ -501,57 +463,6 @@
       "audience": "bot"
     }
   ],
-  "expectedProjections": {
-    "facadesByProfile": {
-      "minimal": [
-        "repo-harness-check",
-        "obsidian-memory",
-        "windows-python-first"
-      ],
-      "full": [
-        "repo-harness-check",
-        "repo-harness-test",
-        "repo-harness-product",
-        "repo-harness-issue-flow",
-        "repo-harness-ship",
-        "repo-harness-architecture",
-        "repo-harness-archimap",
-        "obsidian-memory",
-        "windows-python-first"
-      ]
-    },
-    "externalSkillsByProfile": {
-      "minimal": [],
-      "full": [
-        "think",
-        "hunt",
-        "check",
-        "health",
-        "mermaid"
-      ]
-    },
-    "hostSkillPlacementsByProfile": {
-      "minimal": {
-        "claude": [],
-        "codex": [],
-        "pi": [],
-        "dsh": []
-      },
-      "full": {
-        "claude": [
-          "repo-harness-cross-review",
-          "repo-harness-herdr-portal"
-        ],
-        "codex": [
-          "repo-harness-cross-review"
-        ],
-        "pi": [
-          "repo-harness-cross-review"
-        ],
-        "dsh": []
-      }
-    }
-  },
   "nonPublicInternalSteps": [
     "hooks-init",
     "docs-init",

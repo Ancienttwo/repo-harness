@@ -821,10 +821,11 @@ function projectHarnessBase(
   const env = isolatedHarnessEnvironment(hostRoot);
   const installedCli = installBenchmarkRuntimeArtifact(runtimeArtifact, hostRoot);
   run(installedCli, ['init', '--repo', workspace, '--no-codegraph', '--mode', 'standard'], workspace, env);
-  const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';
+  // adaptive-lite measures core only; the other harness profiles install every plugin.
+  const selection = profile === 'adaptive-lite' ? ['--no-plugins'] : [];
   assertBenchmarkRuntimeArtifactUnchanged(runtimeArtifact);
   run(installedCli, [
-    'install', '--profile', installProfile, '--target', provider,
+    'install', ...selection, '--target', provider,
     '--no-cli', '--no-external-skills', '--no-codegraph', '--json',
   ], workspace, env);
   run('git', ['add', '.'], workspace, env);

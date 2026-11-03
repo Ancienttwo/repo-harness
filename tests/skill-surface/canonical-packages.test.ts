@@ -2,16 +2,14 @@ import { describe, expect, test } from "bun:test";
 import { existsSync, readFileSync, readdirSync, statSync } from "fs";
 import { join } from "path";
 import {
-  externalSkillsForProfile,
-  facadesForProfile,
+  externalSkillsForSelection,
+  facadesForSelection,
   hostSkillPlacements,
   mutationPathSkillNames,
   parseSkillSurfaceCatalog,
-  probeExpectations,
-  profileOwnedSkillNames,
-  SKILL_SURFACE_PROFILES,
+  selectionOwnedSkillNames,
 } from "../../src/core/skill-surface/catalog";
-import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
+import { PLUGIN_IDS } from "../../src/core/skill-surface/plugin-manifest";
 
 // SSD-03 staged these packages as pure content, inactive until SSD-06
 // repointed the manifest at them. SSD-06 has now performed that activation
@@ -20,7 +18,7 @@ import { PROFILE_COMPONENTS } from "../../src/cli/installer/install-profile";
 // this file's content-quality describe blocks are unchanged in spirit but
 // the former "inertness proof" flips to an "activation proof": these
 // packages now DO appear in manifest.json packages[] and in the selector
-// outputs their target profiles require.
+// outputs their owner selections require.
 
 const ROOT = join(import.meta.dir, "..", "..");
 const SKILLS_ROOT = join(ROOT, "assets", "skills");
@@ -233,7 +231,6 @@ describe("canonical packages: activation proof — present in manifest v2 and co
   const source = readFileSync(MANIFEST_PATH, "utf-8");
   const resolution = parseSkillSurfaceCatalog(source, {
     declared: true,
-    profileComponents: PROFILE_COMPONENTS,
     exists: (p) => existsSync(join(ROOT, p)),
   });
   if (resolution.status !== "valid") {
@@ -250,48 +247,34 @@ describe("canonical packages: activation proof — present in manifest v2 and co
     }
   });
 
-  test("repo-harness-setup is discovered by no profile (router-only progressive load)", () => {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(catalog, profile)).not.toContain("repo-harness-setup");
+  test("repo-harness-setup is discovered by no selection (router-only progressive load)", () => {
+    for (const plugins of [[], PLUGIN_IDS]) {
+      expect(facadesForSelection(catalog, plugins)).not.toContain("repo-harness-setup");
     }
   });
 
-  test("repo-harness-check is discovered by both profiles", () => {
-    for (const profile of SKILL_SURFACE_PROFILES) {
-      expect(facadesForProfile(catalog, profile)).toContain("repo-harness-check");
+  test("repo-harness-check is discovered by core and every selection", () => {
+    for (const plugins of [[], PLUGIN_IDS]) {
+      expect(facadesForSelection(catalog, plugins)).toContain("repo-harness-check");
     }
   });
 
-  test("repo-harness-product is discovered only by full", () => {
-    expect(facadesForProfile(catalog, "full")).toContain("repo-harness-product");
-    expect(facadesForProfile(catalog, "minimal")).not.toContain("repo-harness-product");
+  test("repo-harness-product is discovered only when the product plugin is selected", () => {
+    expect(facadesForSelection(catalog, ["product"])).toContain("repo-harness-product");
+    expect(facadesForSelection(catalog, [])).not.toContain("repo-harness-product");
   });
 
   test("no selector output still names the old disambiguating staging directory repo-harness-plan-canonical", () => {
-    const profilesToCheck: Array<(typeof SKILL_SURFACE_PROFILES)[number] | undefined> = [
-      ...SKILL_SURFACE_PROFILES,
-      undefined,
-    ];
     const allSelectorNames: string[] = [];
-    for (const profile of profilesToCheck) {
-      if (profile !== undefined) {
-        allSelectorNames.push(...facadesForProfile(catalog, profile));
-        allSelectorNames.push(...externalSkillsForProfile(catalog, profile));
-      } else {
-        allSelectorNames.push(...externalSkillsForProfile(catalog, undefined));
-      }
-      const placements = hostSkillPlacements(catalog, profile);
+    for (const plugins of [[], PLUGIN_IDS, undefined]) {
+      if (plugins !== undefined) allSelectorNames.push(...facadesForSelection(catalog, plugins));
+      allSelectorNames.push(...externalSkillsForSelection(catalog, plugins));
+      const placements = hostSkillPlacements(catalog, plugins);
       allSelectorNames.push(...placements.claude, ...placements.codex);
     }
     const { repoHarnessSkills, externalSkills } = mutationPathSkillNames(catalog);
     allSelectorNames.push(...repoHarnessSkills, ...externalSkills);
-    allSelectorNames.push(...profileOwnedSkillNames(catalog));
-    const expectations = probeExpectations(catalog);
-    allSelectorNames.push(
-      ...expectations.planningSkillNames,
-      ...expectations.planningCapabilityPaths,
-      ...expectations.crossModel,
-    );
+    allSelectorNames.push(...selectionOwnedSkillNames(catalog));
     expect(allSelectorNames.some((name) => name.includes("repo-harness-plan-canonical"))).toBe(false);
     expect(existsSync(join(SKILLS_ROOT, "repo-harness-plan-canonical"))).toBe(false);
   });

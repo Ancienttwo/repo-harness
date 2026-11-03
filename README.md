@@ -119,11 +119,14 @@ helpers do not rediscover tools from a caller's `PATH`; rerun
 `repo-harness update` after relocating or replacing Git for Windows.
 
 The global bootstrap: installs the npm package as the global CLI, refreshes
-repo-harness skill aliases, installs user-level hook adapters, and records an
-explicit install profile. It is idempotent and does not apply repo-local workflow
-files to the current directory. `--dry-run --json` lists components to install,
-skip, and remove first. Profiles, native Codex delegation authority, refresh commands, and the
-read-only `setup check` audit:
+repo-harness skill aliases, installs user-level hook adapters, and records the
+plugin selection. With no flag it installs core and every plugin that the host
+can run; `--plugins <ids>` selects exactly those plugins, and `--no-plugins`
+installs core only. It is idempotent and does not apply repo-local workflow
+files to the current directory. `--dry-run --json` lists the plugins to install,
+keep, remove and skip first. Plugins, the protocol 2 to 3 migration, native
+Codex delegation authority, refresh commands, and the read-only `setup check`
+audit:
 [`install-profiles.md`](docs/reference-configs/install-profiles.md).
 
 ### 3. Preview the repo-local contract

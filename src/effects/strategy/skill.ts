@@ -14,7 +14,7 @@ export function projectStrategySkill(opts: { action: 'install' | 'uninstall'; ta
   const catalog = parseSkillSurfaceCatalog(readFileSync(join(PACKAGE_ROOT, 'assets/skill-commands/manifest.json'), 'utf8'));
   if (catalog.status !== 'valid') throw new Error('Invalid Skill catalog');
   const pkg = catalog.catalog.packages.find(p => p.name === NAME);
-  if (!pkg?.source || pkg.profiles.length || pkg.discoverability !== 'explicit-setup') throw new Error('Strategy Skill must remain explicit');
+  if (!pkg?.source || !pkg.explicitOnly || pkg.discoverability !== 'explicit-setup') throw new Error('Strategy Skill must remain explicit');
   const source = realpathSync(join(PACKAGE_ROOT, pkg.source));
   if (!lstatSync(join(source, 'SKILL.md')).isFile()) throw new Error('Missing strategy Skill');
   const home = realpathSync(opts.home ?? process.env.HOME ?? homedir());

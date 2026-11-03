@@ -35,6 +35,12 @@ export interface LegacyInventoryOptions {
   readonly repoHarnessHome?: string;
   readonly packageRoot: string;
   readonly includeStateArtifacts?: boolean;
+  /**
+   * The install ledger, read through the strict install-state reader at the
+   * CLI boundary. It is a function because an upgrade run refreshes receipts
+   * between its plans.
+   */
+  readonly installOwnership: () => readonly ManifestSurface[];
 }
 
 interface RetirementAction {
@@ -54,7 +60,7 @@ interface RetirementAction {
   readonly sourcePaths?: Readonly<Record<string, string>>;
 }
 interface Contract { readonly installedCopyIncludes?: readonly string[]; readonly installedCopyExcludes?: readonly string[]; readonly helpers?: { readonly scripts?: readonly string[] }; readonly migrations?: { readonly upgrade?: { readonly actions?: readonly RetirementAction[] } } }
-interface ManifestSurface {
+export interface ManifestSurface {
   readonly authority?: string;
   readonly removal?: string;
   readonly path?: string;
@@ -253,16 +259,6 @@ export function stripLegacyHookEntries(
 
 function readJson(path: string): unknown {
   try { return JSON.parse(readFileSync(path, 'utf8')); } catch { return undefined; }
-}
-function manifestOf(home: string): readonly ManifestSurface[] {
-  const path = join(home, '.repo-harness/install-state.json');
-  if (!isLegacyPathSafe(home, path, false) || !stat(path)?.isFile()) return [];
-  const state = readJson(path);
-  if (!record(state) || !Array.isArray(state.ownership_manifest)) return [];
-  return state.ownership_manifest.filter((surface: unknown): surface is ManifestSurface => record(surface)
-    && surface.authority === 'repo-harness-install-transaction'
-    && surface.removal === 'managed-surfaces-only'
-    && typeof surface.path === 'string');
 }
 
 function classify(
@@ -593,7 +589,7 @@ function directoryHasOtherEntries(directory: string, ownName: string): boolean {
 /** Read-only inventory. Shipped retirement records define candidates and ownership proof. */
 export function planLegacyLeftovers(options: LegacyInventoryOptions): { items: LeftoverItem[] } {
   const actions = actionsOf();
-  const manifest = manifestOf(options.home);
+  const manifest = options.installOwnership();
   const packages = options.scope === 'project' ? [] : currentCatalogPackages(options.packageRoot);
   const livePaths = new Set(packages.flatMap((pkg) => ['.claude', '.codex', '.agents'].map((host) => `${host}/skills/${pkg.name}`)));
   const hookAction = actions.find((action) => action.surface === 'hook-entry');

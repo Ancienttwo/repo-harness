@@ -225,14 +225,13 @@ import { tmpdir } from "os";
 import { resolve } from "path";
 import {
   parseSkillSurfaceCatalog,
-  facadesForProfile,
+  facadesForSelection,
   hostSkillPlacements,
   SKILL_SURFACE_HOSTS,
-  SKILL_SURFACE_PROFILES,
   type SkillSurfaceCatalog,
   type SkillSurfaceHost,
-  type SkillSurfaceProfile,
 } from "../src/core/skill-surface/catalog";
+import { parsePluginList, PLUGIN_IDS, type PluginId } from "../src/core/skill-surface/plugin-manifest";
 import {
   parseClaudeStructuredOutput,
   parseCodexStructuredOutput,
@@ -264,15 +263,15 @@ export interface DiscoveredSkillSurfaceEntry {
 
 /**
  * The Skill directories a real host would actually project for this
- * profile/host (root always; profile-gated facades; host-aware provider
- * skills) -- exactly what installProfileHostMutationPaths()/
+ * plugin selection and host (root always; selected facades; host-aware
+ * provider skills) -- exactly what installProfileHostMutationPaths()/
  * sync-codex-installed-copies.sh materialize today, computed from the same
- * catalog selectors (facadesForProfile/hostSkillPlacements) SSD-02 made the
+ * catalog selectors (facadesForSelection/hostSkillPlacements) SSD-02 made the
  * runtime authority.
  */
 export function buildDiscoveredSkillSurface(
   catalog: SkillSurfaceCatalog,
-  profile: SkillSurfaceProfile,
+  plugins: readonly PluginId[],
   host: SkillSurfaceHost,
 ): DiscoveredSkillSurfaceEntry[] {
   const entries: DiscoveredSkillSurfaceEntry[] = [];
@@ -287,15 +286,15 @@ export function buildDiscoveredSkillSurface(
   for (const pkg of catalog.packages) {
     if (pkg.discoverability === "always" && pkg.hosts.includes(host)) add(pkg.name, "always");
   }
-  for (const name of facadesForProfile(catalog, profile)) add(name, "profile-facade");
-  const placements = hostSkillPlacements(catalog, profile);
+  for (const name of facadesForSelection(catalog, plugins)) add(name, "profile-facade");
+  const placements = hostSkillPlacements(catalog, plugins);
   for (const name of host === "claude" ? placements.claude : placements.codex) add(name, "cross-model");
   // discoverability:"explicit-setup" (repo-harness-strategy today) is never
-  // profile-gated -- neither facadesForProfile (kind:"facade" only) nor
+  // selection-gated -- neither facadesForSelection (kind:"facade" only) nor
   // hostSkillPlacements (kind:"provider-skill" only) covers it. Production
   // discovery is additive only after an explicit setup action, orthogonal
-  // to profile; this eval models it as always reachable regardless of
-  // --profile.
+  // to the selection; this eval models it as always reachable regardless of
+  // --plugins.
   for (const pkg of catalog.packages) {
     if (pkg.discoverability === "explicit-setup" && pkg.hosts.includes(host)) add(pkg.name, "explicit-setup");
   }
@@ -866,7 +865,7 @@ export const SINGLE_RUN_EVIDENCE_NOTE =
   "whose union covers every canonical route.";
 
 export interface RunOptions {
-  readonly profile: SkillSurfaceProfile;
+  readonly plugins: readonly PluginId[];
   readonly host: SkillSurfaceHost;
   readonly provider: ProviderKind;
   readonly reportPath: string;
@@ -884,7 +883,7 @@ export interface RoutingRunReport {
   readonly evidence_scope: "single_run_partial";
   readonly evidence_note: string;
   readonly generated_at: string;
-  readonly profile: SkillSurfaceProfile;
+  readonly plugins: readonly PluginId[];
   readonly host: SkillSurfaceHost;
   readonly provider: ProviderKind;
   readonly dry_run: boolean;
@@ -951,7 +950,7 @@ export interface AggregateRunReport {
   readonly manifest_sha256: string;
   readonly inputs: ReadonlyArray<{
     readonly path: string;
-    readonly profile: SkillSurfaceProfile;
+    readonly plugins: readonly PluginId[];
     readonly host: SkillSurfaceHost;
     readonly provider: ProviderKind;
   }>;
@@ -1061,7 +1060,7 @@ export function buildAggregateReport(
     manifest_sha256: first.report.manifest_sha256,
     inputs: sorted.map((entry) => ({
       path: entry.path,
-      profile: entry.report.profile,
+      plugins: entry.report.plugins,
       host: entry.report.host,
       provider: entry.report.provider,
     })),
@@ -1076,7 +1075,7 @@ export function runProviderEval(options: RunOptions): RoutingRunReport {
   const corpus = options.corpus ?? loadCorpus();
   const catalog = options.catalog ?? loadLiveCatalog();
   const canonicalRoutes = canonicalRoutesFromBaseline(loadBaseline());
-  const discovered = buildDiscoveredSkillSurface(catalog, options.profile, options.host);
+  const discovered = buildDiscoveredSkillSurface(catalog, options.plugins, options.host);
   const referenceOnly = referenceOnlySkillPackages(catalog);
   const candidates = [...discovered, ...referenceOnly];
   // Mirrors the selectedRoutes filter below exactly (candidates by name, plus
@@ -1128,7 +1127,7 @@ export function runProviderEval(options: RunOptions): RoutingRunReport {
     evidence_scope: "single_run_partial",
     evidence_note: SINGLE_RUN_EVIDENCE_NOTE,
     generated_at: new Date().toISOString(),
-    profile: options.profile,
+    plugins: options.plugins,
     host: options.host,
     provider: options.provider,
     dry_run: options.dryRun,
@@ -1150,7 +1149,7 @@ export function runProviderEval(options: RunOptions): RoutingRunReport {
 }
 
 function parseRunArgs(argv: string[]): RunOptions {
-  let profile: SkillSurfaceProfile | undefined;
+  let plugins: readonly PluginId[] | undefined;
   let host: SkillSurfaceHost | undefined;
   let provider: ProviderKind | undefined;
   let reportPath: string | undefined;
@@ -1158,12 +1157,15 @@ function parseRunArgs(argv: string[]): RunOptions {
 
   for (let i = 0; i < argv.length; i += 1) {
     const arg = argv[i];
-    if (arg === "--profile") {
-      const value = argv[++i];
-      if (!(SKILL_SURFACE_PROFILES as readonly string[]).includes(value)) {
-        throw new CliError(`run: --profile must be one of ${SKILL_SURFACE_PROFILES.join(", ")}`, 2);
+    if (arg === "--plugins") {
+      const value = argv[++i] ?? "";
+      try {
+        plugins = parsePluginList(value);
+      } catch (error) {
+        throw new CliError(`run: ${(error as Error).message}`, 2);
       }
-      profile = value as SkillSurfaceProfile;
+    } else if (arg === "--no-plugins") {
+      plugins = [];
     } else if (arg === "--host") {
       const value = argv[++i];
       if (!(SKILL_SURFACE_HOSTS as readonly string[]).includes(value)) {
@@ -1188,7 +1190,7 @@ function parseRunArgs(argv: string[]): RunOptions {
     }
   }
 
-  if (!profile) throw new CliError("run: --profile is required", 2);
+  if (!plugins) throw new CliError("run: --plugins <ids> or --no-plugins is required", 2);
   if (!host) throw new CliError("run: --host is required", 2);
   if (!reportPath) throw new CliError("run: --report is required (both --dry-run and the real mode write a report + .sha256 sidecar)", 2);
 
@@ -1198,13 +1200,13 @@ function parseRunArgs(argv: string[]): RunOptions {
     // default: a single fixed literal route, "repo-harness", echoed for
     // every case -- this smoke-tests the full pipeline including the FAIL
     // path of threshold evaluation, not just an artificially perfect run).
-    return { profile, host, provider: "stub", reportPath, dryRun: true };
+    return { plugins, host, provider: "stub", reportPath, dryRun: true };
   }
 
   if (!provider || provider === "stub") {
     throw new CliError("run: --provider claude|codex is required for the real (non-dry-run) mode", 2);
   }
-  return { profile, host, provider, reportPath, dryRun: false };
+  return { plugins, host, provider, reportPath, dryRun: false };
 }
 
 function formatRate(rate: number | null): string {
@@ -1238,7 +1240,7 @@ function printMetricsAndThresholds(metrics: RoutingMetrics, thresholds: Threshol
 
 function printRunSummary(report: RoutingRunReport, reportPath: string): void {
   console.log(
-    `run-skill-routing-eval: run OK: profile=${report.profile} host=${report.host} provider=${report.provider}${report.dry_run ? " (dry-run)" : ""}`,
+    `run-skill-routing-eval: run OK: plugins=${report.plugins.join(",") || "(core only)"} host=${report.host} provider=${report.provider}${report.dry_run ? " (dry-run)" : ""}`,
   );
   printMetricsAndThresholds(report.metrics, report.thresholds);
   console.log(`  evidence_scope=${report.evidence_scope} -- ${report.evidence_note}`);
@@ -1279,7 +1281,7 @@ function parseAggregateArgs(argv: string[]): { reportPath: string; inputPaths: s
 function printAggregateSummary(report: AggregateRunReport, reportPath: string): void {
   console.log(`run-skill-routing-eval: aggregate OK: ${report.inputs.length} input reports, ${report.records.length} cases`);
   for (const input of report.inputs) {
-    console.log(`  input: profile=${input.profile} host=${input.host} provider=${input.provider} path=${input.path}`);
+    console.log(`  input: plugins=${input.plugins.join(",") || "(core only)"} host=${input.host} provider=${input.provider} path=${input.path}`);
   }
   printMetricsAndThresholds(report.metrics, report.thresholds);
   console.log(`  advisory=${String(report.advisory)} -- ${report.advisory_reason}`);
@@ -1396,10 +1398,10 @@ export function buildSubjectFreeze(): SubjectFreeze {
   }
 
   const discoveredSetProjections: SubjectFreeze["discovered_set_projections"] = {};
-  for (const profile of SKILL_SURFACE_PROFILES) {
+  for (const [label, plugins] of [["core", []], ["all", PLUGIN_IDS]] as const) {
     for (const host of SKILL_SURFACE_HOSTS) {
-      const key = `${profile}/${host}`;
-      discoveredSetProjections[key] = buildDiscoveredSkillSurface(catalog, profile, host).map((e) => ({ name: e.name, reason: e.reason }));
+      const key = `${label}/${host}`;
+      discoveredSetProjections[key] = buildDiscoveredSkillSurface(catalog, plugins, host).map((e) => ({ name: e.name, reason: e.reason }));
     }
   }
 
@@ -1488,7 +1490,7 @@ function usage(): string {
     "  bun scripts/run-skill-routing-eval.ts validate",
     "  bun scripts/run-skill-routing-eval.ts hash [--write]",
     "  bun scripts/run-skill-routing-eval.ts dry-run",
-    "  bun scripts/run-skill-routing-eval.ts run --profile <p> --host <h> --report <path> [--dry-run] [--provider <claude|codex|stub>]",
+    "  bun scripts/run-skill-routing-eval.ts run (--plugins <ids> | --no-plugins) --host <h> --report <path> [--dry-run] [--provider <claude|codex|stub>]",
     "  bun scripts/run-skill-routing-eval.ts aggregate --report <path> <run-report.json> <run-report.json> [...]",
     "",
     "validate: schema-shape plus coverage requirements (per-route zh+en positives,",
@@ -1498,7 +1500,7 @@ function usage(): string {
     "dry-run: asserts every expected_route is \"none\" or a baseline canonical route,",
     "then prints per-route case counts. No provider call; SSD-07 owns that run.",
     "run: executes the frozen corpus once per case against the post-cutover",
-    "discovered Skill surface for --profile/--host, scores canonical top-1",
+    "discovered Skill surface for --plugins/--host, scores canonical top-1",
     "accuracy / per-route recall / double-trigger / ordinary-QA false",
     "activation against the plan's floors, and writes a report + .sha256",
     "sidecar to --report. --dry-run always uses a built-in stub provider (no",

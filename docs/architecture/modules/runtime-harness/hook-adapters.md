@@ -250,7 +250,7 @@ sequenceDiagram
 | `component.hook-adapters.primary`（Hook Route Runtime） | `hook-entry.ts`、`hook/{runtime,route-registry,handler-registry,handler-contract,hook-input,hook-protocol,event-telemetry,session-context-budget}.ts`、`src/effects/loop/**`、`hook-event-log.ts` | 11 / 1037（2026-10-16） | route 表、handler 绑定、opt-in 检查、payload 与 identity 解析、host 渲染表、遥测与日志轮转 |
 | `component.hook-adapters.edit-guards`（Edit Guard Handlers） | `hook/{mutation-guard,circuit-breaker}.ts` | 2 / 489（2026-10-16） | PreToolUse.edit 路径边界、semantic-review circuit breaker |
 | `component.hook-adapters.session-lifecycle`（Session Lifecycle Handlers） | `hook/{session-context,stop-handler,return-channel,subagent-context,task-inbox-handler,state-snapshot}.ts`、`run-summary-retention.ts` | 8 / 1373（2026-10-16） | SessionStart、Stop 恢复视图、subagent route、Task Inbox |
-| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`commands/{install,status,security}.ts` | 14 / 3670（2026-10-16） | managed entries、install profile、status 与 security scan |
+| `component.hook-adapters.host-installer`（Host Adapter Installer） | `src/cli/installer/**`、`commands/{install,status,security}.ts` | 14 / 3670（2026-10-16） | managed entries、插件选择与 install state、status 与 security scan |
 
 与归属提议 §5 的一处偏差，有源码证据：
 
@@ -298,7 +298,7 @@ host-installer 有 14 个文件、3670 行（2026-10-16），标记为 expandabl
 3. **`PreToolUse.edit` 阻塞编辑热路径。** mutation-guard 是**同步前置**门，p50 253ms 直接计入用户可感知的编辑延迟，且 max 10.9s 说明它在状态解析退化时会长尾。#692 删除了状态解析、lease 检查、circuit breaker 与 advisory。现在只剩路径边界，以及 owned path 的一次 `git status`。需要重新采样。
 4. **SessionStart 上下文预算（#693 已修正）。** 旧实现把五个 provider 拼成一整块 section，超预算时一起消失。现在每个 provider 是独立 section，各有 id 与 source。`budgetSessionContext` 按 priority 排序，保留 mandatory section，放不下的 optional section 变成 `[ContextRef:<id>] <source>` 指针。#770 删除了 resume 与 active-sprint 两个 provider。`[HarnessState]` 只保留 `references.resume` 指针。它不再输出 sprint 指针。延迟本身不是瓶颈（4.6%、p95 711ms）。
 5. **只读解析的 stability 重读耗尽。** `runtime.ts` 的 `resolveHookEffectiveState` 是唯一的重试策略。它调用不取锁、不写状态的 `resolveEffectiveStateReadOnly`，最多三次（`EFFECTIVE_STATE_RESOLUTION_MAX_ATTEMPTS = 3`），只重试 `StateResolutionUnstableError`。一次 SessionStart 的快乐路径是两次解析，最坏十二次。2026-10-25 前 hook 走写路径，这两个数是三次和三十次。权威源被并发改写时，重试耗尽会把 SessionStart 推进 `[HarnessStateUnavailable]` 分支 —— 这是正确的 fail-closed，但用户侧表现为上下文突然消失。
-6. **`install-profile.ts` 1,441 行的单点（2026-10-11 实测，旧版记录为 1,167 行）。** profile 组件矩阵继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
+6. **`install-profile.ts` 1,576 行的单点（2026-11-03 实测；2026-10-11 为 1,441 行）。** 插件 owner 与 install state 规则继续增长时，这里是最先需要拆分的文件。不在 dispatch 热路径上。
 7. **同步遥测 append 与不完整测量。** 10x 事件量下，第一个压力点是每条 route 完成后同步 append 的竞争或测量缺失，不是第二次 handler invocation。遥测保持非安全权威；证据消费者在必需字段缺失时 fail closed。
 
 两个 sink 不是同一个东西，早期版本把它们混为一谈：
@@ -571,6 +571,12 @@ existing managed-adapter flow therefore remains specific to Claude and Codex.
 `hostSkillRoot`. The event-to-Bun handoff crosses a process boundary; the model
 does not claim a direct CodeGraph call from the bridge to `runHook`.
 
+### Install profile 删除（2026-11-03，#1601）
+
+- P1：install profile `minimal|full` 已删除。安装面是 core 加插件，install state 是 protocol 3。`Route.minimalProfile` 已删除。全部 7 条 hook route 都属于 core，`buildManagedHooks` 为 Claude 与 Codex 投影 host 支持的每一条 route。`routesForHost` 给 Claude 6 条，给 Codex、Pi 与 DSH 各 5 条。
+- P2：`install-state-migration.ts` 是 protocol 2 的唯一读者。`repo-harness update` 在 install 事务内运行它；protocol 1 必须先用 0.25.x 桥接版本迁移。
+- P3：`src/effects/dsh-plugin-state.ts` 归 host-installer-effects。installer 用它判断 `dsh` 插件能否选择，doctor 用它报告 DSH profile 是否声明 repo-harness。它只读 DSH 状态。
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：
@@ -600,7 +606,7 @@ The event route registry remains the host adapter authority. Ordinary edits and 
 
 ## Optimization Backlog
 
-- `install-profile.ts` 有 1,441 行，是本 capability 最大的文件。它同时承担 profile 计划、事务、ownership 记录和遗留迁移（`planLegacyInstallProfileMigration`、`beginInstallHostTransaction`、`recordVerifiedAgentFleetOwnership`）。拆分顺序需要改动频率证据，目前没有。
+- `install-profile.ts` 有 1,576 行，是本 capability 最大的文件。它同时承担插件选择计划、事务、ownership 记录和 install state 读写（`planInstallSelection`、`beginInstallHostTransaction`、`recordVerifiedAgentFleetOwnership`）。protocol 2 → 3 的一次性迁移在 `install-state-migration.ts`，#1607 在 0.26.0 删除它。拆分顺序需要改动频率证据，目前没有。
 - route-runtime 与 handler 组件之间的环（§3.3）。如果 archctx 的环检测开始阻塞，把 handler 契约移到叶子组件。
 - `write-all-sync.ts` 归 global-runtime-reconciliation，但 hook 热路径也用它。它造成 hook-adapters → global-runtime-reconciliation 的一条边，而 global-runtime-reconciliation 也调用 hook-adapters。这个 26 行的工具可以移到 `execution-primitives`（G2 新建），以去掉这条 capability 级回边。
 - host-installer 与 edit-guards → acceptance-review 没有声明。`relation.acceptance-review.hook-adapters` 已经声明反向（review 命令调用 circuit breaker）。本方向有 5 条边，反向有 2 条。集成不新增反向关系。是否翻转方向是开放问题。

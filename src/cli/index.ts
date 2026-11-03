@@ -20,7 +20,9 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
-import { migrateRetiredAgentFleetFile, newPiPackagesSinceTransaction, retiredAgentFleetMigrationPaths, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
+import { newPiPackagesSinceTransaction, parseState, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
+import { formatInstallStateMigrationPlan, installStateMigrationPaths, migrateInstallState, protocol2SnapshotSurfaces } from './installer/install-state-migration';
+import { parsePluginList, PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection } from '../core/skill-surface/plugin-manifest';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit, type InitPorts } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -66,6 +68,7 @@ import {
   agentFleetVerified,
   bunVersionIsSupported,
   ownFreshWazaSharedRules,
+  reconciledByCandidate,
   runGlobalRuntimeSetup,
   type GlobalRuntimePorts,
   updateLeftoverSummary,
@@ -77,6 +80,7 @@ import { REPORT_LANGUAGE_FLAG_VALUES, parseReportLanguageFlag, type ReportLangua
 import {
   assertCandidateReconciliationReceipt,
   assertInstalledAdapterProjection,
+  CANDIDATE_RECONCILIATION_PROTOCOL,
   candidatePackageIdentity,
   consumeCandidateReconciliationCapability,
   parseCandidateRequest,
@@ -89,25 +93,27 @@ import { windowsProtectedHelperConfigPath } from '../effects/runtime/protected-h
 import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
 import { providerSkillLock } from '../effects/host-skill-roots';
 import {
-  applyInstallProfile,
+  applyInstallSelection,
+  assertCodegraphPolicySelection,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
   effectiveSkillRoots,
+  enabledPlugins,
   installProfileTransactionPaths,
-  installedProfileStatus,
-  assertInstallProfile,
-  planLegacyInstallProfileMigration,
-  planInstallProfile,
-  profileEnablesCodegraph,
-  profileEnablesExternalSkills,
-  prepareLegacyInstallProfileMigration,
-  prepareInstallProfileSwitch,
-  readInstalledProfile,
+  installStateStatus,
+  keptPluginLine,
+  notAddedPluginLine,
+  piSkillRootSnapshots,
+  planInstallSelection,
+  prepareInstallSelectionSwitch,
+  readInstallState,
+  requireInstallState,
+  resolveRecordedSelection,
   rollbackInstallHostTransaction,
-  rollbackInstallProfile,
-  type InstalledProfileState,
-  type InstallProfile,
-  type LegacyInstalledProfileState,
+  rollbackInstallSelection,
+  skippedPluginLine,
+  type InstallState,
+  type SelectionResolution,
 } from './installer/install-profile';
 import { runAdoptionPlan } from './commands/adoption-plan';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
@@ -134,7 +140,10 @@ export const CLI_PORTS: {
 } = {
   doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
-  globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
+  globalRuntime: {
+    configureCodegraphMcp: configureCodegraphMcpStep,
+    configureHerdrSkill: (target, env, piSelected) => configureRequiredHerdrSkill(target, env, undefined, piSelected),
+  },
   retention: {
     rotatingLogs: [MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH],
     commonProtocolRoots: [TASK_INBOX_V2_RELATIVE_PATH],
@@ -184,9 +193,9 @@ interface GlobalRuntimeCommandOptions {
   brainRoot?: string;
   reportLanguage?: string;
   json?: boolean;
-  profile?: string;
+  /** `--plugins a,b` gives a string; `--no-plugins` gives false; neither gives undefined. */
+  plugins?: string | false;
   dryRun?: boolean;
-  migrateProfileState?: boolean;
 }
 
 /** Minimal duck-typed slice of `Command` so tests can fake option-value sourcing without constructing a real commander `Command`. */
@@ -240,59 +249,60 @@ export async function resolveOptionalRuntimeDeps(
   return { externalSkills, codegraph };
 }
 
-function runTransactionalProfileProjection(
-  profile: InstallProfile,
+/** A selection on its way into a host transaction: its kind, the setup set (`run`) and the recorded set (`record`). */
+interface TransactionSelection {
+  readonly selection: PluginSelection;
+  readonly run: readonly PluginId[];
+  readonly record: readonly PluginId[];
+}
+
+function runTransactionalSelectionProjection(
+  selected: TransactionSelection,
   options: GlobalRuntimeOptions,
-  commitState: (
-    transaction: ReturnType<typeof beginInstallHostTransaction>,
-    migrationSource: LegacyInstalledProfileState | null,
-    result: GlobalRuntimeResult,
-  ) => InstalledProfileState,
-  prepareProjection: () => LegacyInstalledProfileState | null = () => {
-    prepareInstallProfileSwitch(profile, options.env);
-    return null;
-  },
-): { result: GlobalRuntimeResult; state: InstalledProfileState | null } {
+  commitState: (transaction: ReturnType<typeof beginInstallHostTransaction>, result: GlobalRuntimeResult) => InstallState,
+): { result: GlobalRuntimeResult; state: InstallState | null } {
+  const plugins = selected.run;
+  const recorded = { selection: selected.selection, plugins: selected.record };
   const transactionEnv = runtimeHostTransactionEnv(options.env);
   // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
   providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
-    let migrationSource: LegacyInstalledProfileState | null;
     let result: GlobalRuntimeResult;
+    let priorReceipts: readonly ManagedInstallSurface[];
     try {
-      migrationSource = prepareProjection();
-      result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...options, runtimeLock: lock });
+      priorReceipts = readInstallState(transactionEnv)?.ownership_manifest ?? [];
+      prepareInstallSelectionSwitch(selected.record, options.env);
+      result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...options, plugins, runtimeLock: lock });
     } catch (error) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
+      rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error);
       throw error;
     }
     if (result.exitCode !== 0) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
-        new Error(`install profile ${profile} failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
+      rollbackRuntimeTransaction(transaction, transactionEnv, recorded,
+        new Error(`install failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
       return { result, state: null };
     }
     let owned: GlobalRuntimeResult;
     try {
-      const priorReceipts = (migrationSource ?? readInstalledProfile(transactionEnv))?.ownership_manifest ?? [];
-      commitState(transaction, migrationSource, result);
+      commitState(transaction, result);
       owned = ownFreshWazaSharedRules(result, options.target ?? 'both', transactionEnv, priorReceipts);
     } catch (error) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
+      rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error, result);
       throw error;
     }
     if (owned.exitCode !== 0) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
-        new Error(`install profile ${profile} failed: ${owned.stderr || owned.lines.join('; ')}`), owned);
+      rollbackRuntimeTransaction(transaction, transactionEnv, recorded,
+        new Error(`install failed: ${owned.stderr || owned.lines.join('; ')}`), owned);
       return { result: owned, state: null };
     }
     try {
-      const state = readInstalledProfile(transactionEnv)!;
+      const state = requireInstallState(transactionEnv);
       captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
       commitInstallHostTransaction(transaction);
       return { result: owned, state };
     } catch (error) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, owned);
+      rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error, owned);
       throw error;
     }
   });
@@ -312,14 +322,33 @@ function compensatePiPackages(surfaces: Iterable<ManagedInstallSurface>, env: No
   return { unresolved, failures };
 }
 
+/**
+ * The state snapshot of an update that migrated protocol 2 is protocol 2; the
+ * one-shot reader reads it (#1601). Every other snapshot is protocol 3.
+ */
+function snapshotSurfaces(env: NodeJS.ProcessEnv) {
+  return (raw: unknown, path: string) => (
+    typeof raw === 'object' && raw !== null && (raw as { protocol?: unknown }).protocol === 2
+      ? protocol2SnapshotSurfaces(raw, path, env)
+      : parseState(raw, path, env).ownership_manifest
+  );
+}
+
+/** Restore the snapshot bytes only. A failed restore keeps both errors. */
+function restoreTransactionBytes(transaction: ReturnType<typeof beginInstallHostTransaction>, cause: unknown): void {
+  try { rollbackInstallHostTransaction(transaction); } catch (restoreError) {
+    throw new AggregateError([cause, restoreError], `runtime transaction failed and its restore failed: ${[cause, restoreError].map(item => (item instanceof Error ? item.message : String(item))).join('; ')}`);
+  }
+}
+
 function rollbackRuntimeTransaction(
   transaction: ReturnType<typeof beginInstallHostTransaction>, env: NodeJS.ProcessEnv,
-  profile: InstallProfile, cause: unknown, result?: GlobalRuntimeResult,
+  recorded: { readonly selection: PluginSelection; readonly plugins: readonly PluginId[] }, cause: unknown, result?: GlobalRuntimeResult,
 ): void {
   const failures: unknown[] = [];
   const surfaces = new Map(newPiSurfaces(result).map(surface => [surface.path, surface]));
   try {
-    for (const surface of newPiPackagesSinceTransaction(transaction, env)) surfaces.set(surface.path, surface);
+    for (const surface of newPiPackagesSinceTransaction(transaction, env, snapshotSurfaces(env))) surfaces.set(surface.path, surface);
   } catch (error) { failures.push(error); }
   const compensation = compensatePiPackages(surfaces.values(), env);
   const unresolved = compensation.unresolved;
@@ -327,7 +356,7 @@ function rollbackRuntimeTransaction(
   // The filesystem contains the ownership ledger. Restore it even when Pi
   // cleanup fails, then retain the unresolved external resources in that ledger.
   try {
-    rollbackInstallHostTransaction(transaction, { unresolvedPi: unresolved.length ? { profile, surfaces: unresolved, env } : undefined });
+    rollbackInstallHostTransaction(transaction, { unresolvedPi: unresolved.length ? { ...recorded, surfaces: unresolved, env } : undefined });
   } catch (error) { failures.push(error); }
   if (failures.length) {
     const errors = [cause, ...failures];
@@ -362,7 +391,9 @@ export function runCandidateRuntimeReconciliation(
   encodedRequest: string,
   env: NodeJS.ProcessEnv = process.env,
 ): CandidateReconciliationReceipt {
-  const request = parseCandidateRequest(encodedRequest);
+  const sourceRoot = candidateSourceRoot();
+  const candidate = candidatePackageIdentity(sourceRoot);
+  const request = parseCandidateRequest(encodedRequest, candidate.version);
   if (
     env.REPO_HARNESS_RUNTIME_RECONCILIATION_PARENT !== '1'
     || env.REPO_HARNESS_RUNTIME_RECONCILIATION_TOKEN !== request.parent_token
@@ -371,8 +402,6 @@ export function runCandidateRuntimeReconciliation(
   }
   const capability = consumeCandidateReconciliationCapability(request, globalRuntimeScope(env));
   const runtimeLock = parentRuntimeTransactionContext(globalRuntimeScope(env), { pid: capability.parent_pid, lockPath: capability.lock_path, ownerToken: capability.lock_owner_token });
-  const sourceRoot = candidateSourceRoot();
-  const candidate = candidatePackageIdentity(sourceRoot);
   if (
     candidate.root !== request.candidate.root
     || candidate.version !== request.candidate.version
@@ -380,16 +409,24 @@ export function runCandidateRuntimeReconciliation(
   ) {
     throw new Error('candidate reconciliation package authority mismatch');
   }
-  // An older parent has no migration step, so the candidate runs it inside the parent transaction.
-  reportRetiredAgentFleetMigration(env);
-
+  // The parent migrated any protocol 2 state before this handoff, so the recorded selection is protocol 3.
+  // This package version owns the resolution: it knows the plugins that it ships.
+  // The parent reads and writes no install state after this handoff: this commit owns
+  // the whole state, including the Pi package and Pi skill-root receipts.
+  const complete = request.sync_skill && request.host_adapters;
+  const state = requireInstallState(env);
+  const resolved = resolveRecordedSelection(state, request.target, env, { partial: !complete });
+  const plugins = resolved.run;
+  // Stdout is the receipt; the parent shows this stderr in its reconcile step.
+  for (const line of selectionLines(resolved)) console.error(line);
+  const piSkillRoot = piSkillRootSnapshots(env);
   const runtime = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
     runtimeLock,
     sourceRoot,
     cwd: request.cwd,
     env,
     target: request.target,
-    profile: request.profile,
+    plugins,
     installCli: false,
     installSpec: `repo-harness@${candidate.version}`,
     syncSkill: request.sync_skill,
@@ -406,7 +443,7 @@ export function runCandidateRuntimeReconciliation(
     throw new Error(`candidate reconciliation failed: ${runtime.lines.join('; ')}`);
   }
   try {
-    // Stdout is the protocol-1 receipt. Keep maintenance advice visible without
+    // Stdout is the receipt. Keep maintenance advice visible without
     // changing the receipt parsed by an already released parent.
     const daemon = runtime.steps.find(step => step.step === 'check shared ArchContext daemon');
     if (daemon?.status === 'skipped') console.error(daemon.detail);
@@ -415,21 +452,20 @@ export function runCandidateRuntimeReconciliation(
     const globalRules = runtime.steps.find(step => step.step === GLOBAL_RULES_REFRESH_STEP);
     if (globalRules) console.error(`[runtime] ${globalRules.status}: ${globalRules.step} - ${globalRules.detail}`);
 
-    const complete = request.sync_skill && request.host_adapters;
     const adapterDigests = request.host_adapters
-      ? assertInstalledAdapterProjection(request.target, request.profile, env)
+      ? assertInstalledAdapterProjection(request.target, env)
       : {};
     let ownershipManifestDigest: string | null = null;
     if (complete) {
-      const applied = applyInstallProfile(request.profile, env, new Date(), undefined, undefined, { additionalSurfaces: newPiSurfaces(runtime) });
-      const status = installedProfileStatus(applied.state, env);
-      if (status.drift.status !== 'consistent') {
-        throw new Error(`candidate reconciliation ownership ledger drift: ${status.drift.surface_drift.join(',') || '(unknown)'}`);
-      }
+      const applied = applyInstallSelection(state.selection, resolved.record, env, new Date(), piSkillRoot, {
+        additionalSurfaces: newPiSurfaces(runtime), kept: resolved.kept.map(entry => entry.id),
+      });
       ownershipManifestDigest = sha256(JSON.stringify(applied.state.ownership_manifest));
+    } else if (request.target === 'both') {
+      recordPiInstallOwnership(newPiSurfaces(runtime), env, piSkillRoot);
     }
     const receipt: CandidateReconciliationReceipt = {
-      protocol: 1,
+      protocol: CANDIDATE_RECONCILIATION_PROTOCOL,
       transaction_id: request.transaction_id,
       candidate_package_root: candidate.root,
       candidate_version: candidate.version,
@@ -445,7 +481,6 @@ export function runCandidateRuntimeReconciliation(
       transaction_id: request.transaction_id,
       candidate,
       target: request.target,
-      profile: request.profile,
       require_complete: complete,
       require_adapter_projection: request.host_adapters,
     });
@@ -454,7 +489,7 @@ export function runCandidateRuntimeReconciliation(
     const compensation = compensatePiPackages(newPiSurfaces(runtime), env);
     // The parent must still see ownership when candidate cleanup fails, so
     // its filesystem rollback can preserve the unresolved external effect.
-    try { recordUnresolvedPiOwnership(request.profile, compensation.unresolved, env, request.transaction_id); }
+    try { recordUnresolvedPiOwnership(state.selection, resolved.record, compensation.unresolved, env, request.transaction_id); }
     catch (ownershipError) { compensation.failures.push(ownershipError); }
     if (compensation.failures.length) {
       const errors = [error, ...compensation.failures];
@@ -484,9 +519,10 @@ function candidateHandoffContext(
   return context;
 }
 
-/** Update's one-shot step before its first install-state read (#1510). Stdout stays free for `--json` and the candidate receipt. */
-function reportRetiredAgentFleetMigration(env: NodeJS.ProcessEnv): void {
-  for (const line of migrateRetiredAgentFleetFile(env)) console.error(`[runtime] retired fleet file: ${line}`);
+/** Update's one-shot step before its first install-state read (#1601). Stdout stays free for `--json`. */
+function reportInstallStateMigration(env: NodeJS.ProcessEnv): void {
+  const plan = migrateInstallState(env);
+  if (plan !== null) for (const line of formatInstallStateMigrationPlan(plan)) console.error(`[runtime] ${line}`);
 }
 
 export function runTransactionalRuntimeRefresh(
@@ -498,46 +534,87 @@ export function runTransactionalRuntimeRefresh(
   providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
     const updateMode = options.updateMode === true;
-    // The update migration deletes or rewrites files that the current fleet no longer lists, so the snapshot names them
-    // and a failed update restores them.
+    // The protocol 2 -> 3 migration deletes or rewrites files outside the install set, so the snapshot names them
+    // and a failed update restores them with the protocol 2 state.
     const transaction = beginInstallHostTransaction(
-      [...runtimeHostMutationPaths(transactionEnv), ...(updateMode ? retiredAgentFleetMigrationPaths(transactionEnv) : [])],
+      [...runtimeHostMutationPaths(transactionEnv), ...(updateMode ? installStateMigrationPaths(transactionEnv) : [])],
       transactionEnv,
       { runtimeLock: lock },
     );
-    let profile: InstallProfile;
+    let plugins: readonly PluginId[];
+    // Null when the caller passes its own plugin set; then the recorded state does not change.
+    let recordedSelection: { readonly state: InstallState; readonly resolved: SelectionResolution } | null = null;
     try {
-      if (updateMode) reportRetiredAgentFleetMigration(transactionEnv);
-      profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
-    } catch (error) {
-      // Nothing outside the snapshot ran yet, so a restore is enough. A failed restore keeps both errors.
-      try { rollbackInstallHostTransaction(transaction); } catch (restoreError) {
-        throw new AggregateError([error, restoreError], `runtime transaction failed and its restore failed: ${[error, restoreError].map(item => (item instanceof Error ? item.message : String(item))).join('; ')}`);
+      if (updateMode) reportInstallStateMigration(transactionEnv);
+      if (options.plugins !== undefined) plugins = options.plugins;
+      else {
+        const state = requireInstallState(transactionEnv);
+        const resolved = resolveRecordedSelection(state, options.target ?? 'both', transactionEnv, {
+          partial: options.syncSkill === false || options.hostAdapters === false,
+        });
+        recordedSelection = { state, resolved };
+        plugins = resolved.run;
       }
+      assertCodegraphPolicySelection(options.cwd ?? process.cwd(), plugins, transactionEnv);
+    } catch (error) {
+      // Nothing outside the snapshot ran yet, so a restore is enough.
+      restoreTransactionBytes(transaction, error);
       throw error;
     }
+    const recorded = recordedSelection === null
+      ? { selection: plugins, plugins }
+      : { selection: recordedSelection.state.selection, plugins: recordedSelection.resolved.record };
     let result: GlobalRuntimeResult;
     try {
-      result = setup({ ...options, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });
+      result = setup({ ...options, plugins, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });
     } catch (error) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error);
+      rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error);
       throw error;
     }
+    // After a candidate handoff the parent reads and writes no install state: the candidate
+    // version may record plugins that this version does not know. A failure restores bytes only.
+    const byCandidate = reconciledByCandidate(result);
     if (result.exitCode !== 0) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile,
-        new Error(`runtime refresh failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`), result);
+      const cause = new Error(`runtime refresh failed: ${result.stderr || result.lines.join('; ') || `exit ${result.exitCode}`}`);
+      if (byCandidate) restoreTransactionBytes(transaction, cause);
+      else rollbackRuntimeTransaction(transaction, transactionEnv, recorded, cause, result);
       return result;
     }
     try {
-      if ((options.target ?? 'both') === 'both') recordPiInstallOwnership(newPiSurfaces(result), transactionEnv, transaction);
+      if (!byCandidate) {
+        if (recordedSelection !== null) {
+          const { state, resolved } = recordedSelection;
+          if (selectionChanged(state, resolved)) {
+            applyInstallSelection(state.selection, resolved.record, transactionEnv, new Date(), transaction, {
+              agentFleetVerified: agentFleetVerified(result), additionalSurfaces: newPiSurfaces(result), kept: resolved.kept.map(entry => entry.id),
+            });
+          }
+          result = { ...result, lines: [...selectionLines(resolved), ...result.lines] };
+        }
+        if ((options.target ?? 'both') === 'both') recordPiInstallOwnership(newPiSurfaces(result), transactionEnv, transaction);
+      }
       captureConfigurationRestores(transaction, hostConfigurationRoot(transactionEnv));
       commitInstallHostTransaction(transaction);
       return result;
     } catch (error) {
-      rollbackRuntimeTransaction(transaction, transactionEnv, profile, error, result);
+      if (byCandidate) restoreTransactionBytes(transaction, error);
+      else rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error, result);
       throw error;
     }
   });
+}
+
+/** True when the resolved record set differs from the recorded plugin ids, so the state must commit it. */
+function selectionChanged(state: InstallState, resolved: SelectionResolution): boolean {
+  return resolved.record.join(',') !== enabledPlugins(state).join(',');
+}
+
+function selectionLines(resolved: Pick<SelectionResolution, 'skipped' | 'kept'> & { readonly notAdded?: readonly PluginId[] }): string[] {
+  return [
+    ...resolved.skipped.map(skippedPluginLine),
+    ...resolved.kept.map(keptPluginLine),
+    ...(resolved.notAdded ?? []).map(notAddedPluginLine),
+  ].map(line => `[plugins] ${line}`);
 }
 
 async function runGlobalRuntimeBootstrap(
@@ -545,44 +622,45 @@ async function runGlobalRuntimeBootstrap(
   cmd?: OptionSourceLookup,
 ): Promise<never> {
   const target = assertTarget(rawOpts.target, 'install');
-  const profile = assertInstallProfile(rawOpts.profile ?? 'full');
-  const migrationRequested = rawOpts.migrateProfileState === true;
-  const currentProfile = migrationRequested ? null : readInstalledProfile();
-  const baseProfilePlan = migrationRequested
-    ? planLegacyInstallProfileMigration(profile)
-    : planInstallProfile(profile, currentProfile);
-  const profilePlan = { ...baseProfilePlan,
-    pi_package: planPiPackage(baseProfilePlan.pi_package.source, target === 'both' && rawOpts.hooks !== false),
-    skill_projections: rawOpts.syncSkill === false ? [] : baseProfilePlan.skill_projections.filter(projection => projection.host !== 'pi' || target === 'both'),
+  const current = readInstallState();
+  // `--plugins` selects exactly its ids, `--no-plugins` core only, and neither `all`.
+  const selection: PluginSelection = rawOpts.plugins === false ? [] : rawOpts.plugins === undefined ? 'all' : parsePluginList(rawOpts.plugins);
+  const resolved = resolveRecordedSelection({ selection, plugins: current?.plugins ?? [] }, target);
+  const { run: plugins, record } = resolved;
+  assertCodegraphPolicySelection(process.cwd(), plugins);
+  const basePlan = planInstallSelection(selection, resolved, current, process.env);
+  const plan = { ...basePlan,
+    pi_package: planPiPackage(basePlan.pi_package.source, plugins.includes('pi') && target === 'both' && rawOpts.hooks !== false),
+    skill_projections: rawOpts.syncSkill === false ? [] : basePlan.skill_projections.filter(projection => projection.host !== 'pi' || target === 'both'),
   };
   if (rawOpts.dryRun === true) {
     const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
-      effectiveSkillRoots(),
+      effectiveSkillRoots(plugins),
       true,
-      currentProfile?.ownership_manifest,
+      current?.ownership_manifest,
     );
-    if (rawOpts.json === true) console.log(JSON.stringify({ ...profilePlan, removedDanglingSkillLinks }, null, 2));
+    if (rawOpts.json === true) console.log(JSON.stringify({ ...plan, removedDanglingSkillLinks }, null, 2));
     else {
-      console.log(`[profile] requested=${profile} current=${currentProfile?.profile ?? 'none'}`);
-      console.log(`[profile] install=${profilePlan.install.join(',') || '(none)'}`);
-      console.log(`[profile] skip=${profilePlan.skip.join(',') || '(none)'}`);
-      console.log(`[profile] remove=${profilePlan.remove.join(',') || '(none)'}`);
+      console.log(`[plugins] selection=${selectionLabel(selection)}`);
+      console.log(`[plugins] requested=${record.join(',') || '(core only)'} current=${plan.current_plugins === null ? 'none' : plan.current_plugins.join(',') || '(core only)'}`);
+      console.log(`[plugins] install=${plan.install.join(',') || '(none)'}`);
+      console.log(`[plugins] keep=${plan.keep.join(',') || '(none)'}`);
+      console.log(`[plugins] remove=${plan.remove.join(',') || '(none)'}`);
+      for (const line of selectionLines(resolved)) console.log(line);
       for (const link of removedDanglingSkillLinks) console.log(`[sync-installed] would remove dangling skill symlink: ${link}`);
     }
     process.exit(0);
   }
   const interactive = process.stdin.isTTY === true && process.stdout.isTTY === true && rawOpts.json !== true;
-  const defaults = {
-    externalSkills: profileEnablesExternalSkills(profile),
-    codegraph: profileEnablesCodegraph(profile),
-  };
+  // Waza and Mermaid are core and fetched by default; CodeGraph follows the architecture plugin.
+  const defaults = { externalSkills: true, codegraph: plugins.includes('architecture') };
   const selectedDefaults = {
     externalSkills: cmd?.getOptionValueSource('externalSkills') === 'cli'
       ? rawOpts.externalSkills !== false
       : defaults.externalSkills,
     codegraph: cmd?.getOptionValueSource('codegraph') === 'cli'
-      ? rawOpts.codegraph !== false
+      ? rawOpts.codegraph !== false && defaults.codegraph
       : defaults.codegraph,
   };
   const { externalSkills, codegraph } = interactive
@@ -592,7 +670,7 @@ async function runGlobalRuntimeBootstrap(
         codegraph: selectedDefaults.codegraph,
       }, cmd, { interactive })
     : selectedDefaults;
-  const transaction = runTransactionalProfileProjection(profile, {
+  const transaction = runTransactionalSelectionProjection({ selection, run: plugins, record }, {
     target,
     installCli: rawOpts.cli !== false,
     syncSkill: rawOpts.syncSkill !== false,
@@ -603,25 +681,23 @@ async function runGlobalRuntimeBootstrap(
     codegraph,
     brainRoot: rawOpts.brainRoot,
     reportLanguage: rawOpts.reportLanguage === undefined ? undefined : parseReportLanguageFlag(rawOpts.reportLanguage),
-    profile,
-  }, (transaction, migrationSource, result) => (
-    applyInstallProfile(
-      profile,
+  }, (transaction, result) => (
+    applyInstallSelection(
+      selection,
+      record,
       process.env,
       new Date(),
       transaction,
-      migrationSource ?? undefined,
-      { agentFleetVerified: agentFleetVerified(result), additionalSurfaces: newPiSurfaces(result) },
+      { agentFleetVerified: agentFleetVerified(result), additionalSurfaces: newPiSurfaces(result), kept: resolved.kept.map(entry => entry.id) },
     ).state
-  ), migrationRequested
-    ? () => prepareLegacyInstallProfileMigration(profile)
-    : undefined);
+  ));
   const result = transaction.result;
   const installed = transaction.state;
   if (rawOpts.json === true) {
-    console.log(JSON.stringify({ ...result, profile_plan: profilePlan, installed_state: installed }, null, 2));
+    console.log(JSON.stringify({ ...result, install_plan: plan, installed_state: installed }, null, 2));
   } else {
-    console.log(`[profile] ${profile}`);
+    console.log(`[plugins] ${record.join(',') || '(core only)'}`);
+    for (const line of selectionLines(resolved)) console.log(line);
     for (const line of result.lines) console.log(line);
   }
   process.exit(result.exitCode);
@@ -639,11 +715,11 @@ export function buildProgram(): Command {
     .command('install')
     .description('Install the repo-harness global runtime; with --location, install only hook adapters')
     .option('--target <target>', `Target host: ${TARGET_HELP}`, 'both')
-    .option('--profile <profile>', 'Install profile: minimal|full', 'full')
-    .option('--migrate-profile-state', 'Explicitly replace legacy protocol-1 profile state with protocol 2')
-    .option('--dry-run', 'Print install/skip/remove plan without writing')
-    .option('--state', 'Print effective installed profile state without writing')
-    .option('--rollback', 'Restore the previous installed profile state')
+    .option('--plugins <ids>', `Enable exactly these comma-separated plugins (${PLUGIN_IDS.join('|')}); omitted, every plugin that this host can run`)
+    .option('--no-plugins', 'Enable core only')
+    .option('--dry-run', 'Print the install/keep/remove plugin plan without writing')
+    .option('--state', 'Print the effective install state without writing')
+    .option('--rollback', 'Restore the previous install state')
     .option('--location <location>', `Adapter-only install location: ${LOCATION_HELP}`)
     .option('--no-cli', 'Skip installing the repo-harness CLI globally')
     .option('--no-sync-skill', 'Skip refreshing repo-harness skill aliases under host skill roots')
@@ -661,40 +737,36 @@ export function buildProgram(): Command {
       if (rawOpts.reportLanguage !== undefined && rawOpts.location !== undefined) {
         throw new Error('--report-language cannot be combined with --location');
       }
-      if (
-        rawOpts.migrateProfileState === true
-        && (rawOpts.state === true || rawOpts.rollback === true || rawOpts.location !== undefined)
-      ) {
-        throw new Error('--migrate-profile-state cannot be combined with --state, --rollback, or --location');
+      if (rawOpts.plugins !== undefined && (rawOpts.state === true || rawOpts.rollback === true || rawOpts.location !== undefined)) {
+        throw new Error('--plugins and --no-plugins cannot be combined with --state, --rollback, or --location');
       }
       if (rawOpts.dryRun === true && rawOpts.location !== undefined) {
         throw new Error('--dry-run cannot be combined with --location');
       }
       if (rawOpts.state === true) {
-        const state = readInstalledProfile();
-        console.log(JSON.stringify(state ? installedProfileStatus(state) : null, null, 2));
+        const state = readInstallState();
+        console.log(JSON.stringify(state ? installStateStatus(state) : null, null, 2));
         process.exit(state ? 0 : 1);
       }
       if (rawOpts.rollback === true) {
-        const current = readInstalledProfile();
-        if (!current?.previous) throw new Error('no previous install profile transaction to roll back');
-        const profile = current.previous.profile;
-        const transaction = runTransactionalProfileProjection(profile, {
+        const current = readInstallState();
+        if (!current?.previous) throw new Error('no previous install transaction to roll back');
+        const plugins = enabledPlugins(current.previous);
+        const transaction = runTransactionalSelectionProjection({ selection: current.previous.selection, run: plugins, record: plugins }, {
           target,
           installCli: false,
           syncSkill: true,
           hostAdapters: true,
-          externalSkills: profileEnablesExternalSkills(profile),
-          codegraph: profileEnablesCodegraph(profile),
-          profile,
-        }, (transaction) => rollbackInstallProfile(process.env, transaction));
+          externalSkills: true,
+          codegraph: plugins.includes('architecture'),
+        }, (transaction) => rollbackInstallSelection(process.env, transaction));
         const result = transaction.result;
         const restored = transaction.state;
         if (rawOpts.json === true) {
           console.log(JSON.stringify({ ...result, restored_state: restored }, null, 2));
         } else {
           for (const line of result.lines) console.log(line);
-          if (restored) console.log(`[profile] restored=${restored.profile}`);
+          if (restored) console.log(`[plugins] restored=${enabledPlugins(restored).join(',') || '(core only)'}`);
         }
         process.exit(result.exitCode);
       }
@@ -702,15 +774,11 @@ export function buildProgram(): Command {
         await runGlobalRuntimeBootstrap(rawOpts, cmd);
         return;
       }
-      // Adapter-only installs still mutate a profile-owned host surface. Validate
-      // the installed-state protocol before touching it so legacy protocol-1
-      // state cannot be mixed with a new protocol-2 route projection.
-      readInstalledProfile();
-      const installAdapters = () => runInstall({
-        target,
-        location,
-        profile: assertInstallProfile(rawOpts.profile ?? 'full'),
-      });
+      // Adapter-only installs still mutate a core-owned host surface. Validate
+      // the install-state protocol before touching it so an older state
+      // cannot be mixed with the current route projection.
+      readInstallState();
+      const installAdapters = () => runInstall({ target, location });
       const result = withRuntimeTransactionLock(globalRuntimeScope(process.env), installAdapters);
       for (const line of result.lines) console.log(line);
       process.exit(result.exitCode);

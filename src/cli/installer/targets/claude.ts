@@ -83,7 +83,7 @@ class ClaudeTarget implements AgentTarget {
     assertConfigurationPath(filePath, hostConfigurationRoot());
     const data = readJsonOrEmpty<SettingsFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
-    const managed = buildManagedHooks('claude', opts.profile);
+    const managed = buildManagedHooks('claude');
     const merged = mergeHooks(cleaned, managed);
     const next: SettingsFile = { ...data, hooks: merged };
     const nextContent = formatJson(next);
