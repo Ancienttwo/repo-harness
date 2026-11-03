@@ -16,6 +16,7 @@ import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { CLI_PORTS } from '../../src/cli/index';
+import { initGitRepo } from '../helpers/repo-fixture';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -155,7 +156,7 @@ describe('init-hook command', () => {
       mkdirSync(join(repo, '.ai/hooks/lib'), { recursive: true });
       mkdirSync(join(repo, '.ai/harness'), { recursive: true });
       writeFileSync(join(repo, library), readUpgradeFixture('upgrade-v0.10-project', library));
-      const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
+      const run = (homeDir = home) => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: homeDir },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       expect(run().leftovers).toEqual({ total: 1, removable: 0 });
 
@@ -173,7 +174,8 @@ describe('init-hook command', () => {
   });
   test('flags a project host config only when it holds a repo-harness command', () => {
     withTempHome((home, repo) => {
-      const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
+      initGitRepo(repo);
+      const run = (homeDir = home) => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: homeDir },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       const claude = join(repo, '.claude/settings.json');
       const codex = join(repo, '.codex/hooks.json');
@@ -196,6 +198,29 @@ describe('init-hook command', () => {
       expect(report.checks.find((entry) => entry.id === 'legacy.project-claude-settings')?.detail).toContain('cannot inspect');
       expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')?.targets).toEqual([claude, codex]);
       expect(readFileSync(claude, 'utf8')).toBe('{ broken');
+
+      // Issue 1650: outside a repository (cwd = $HOME) the same files are the user-level adapters.
+      rmSync(join(repo, '.git'), { recursive: true, force: true });
+      report = run();
+      for (const id of ['legacy.project-claude-settings', 'legacy.project-codex-hooks']) {
+        expect(report.checks.find((entry) => entry.id === id)).toMatchObject({ status: 'na', detail: `cwd is not in a git repository: ${repo}` });
+      }
+      expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
+
+      // A repository rooted at HOME holds the user-level adapters, which migrate refuses.
+      initGitRepo(repo);
+      report = run(repo);
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-codex-hooks')).toMatchObject({ status: 'na', detail: `user-level adapter, not a project adapter: ${codex}` });
+      expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
+
+      // A dotfiles layout: HOME links one adapter into the repository, so migrate refuses the legacy codex file too.
+      mkdirSync(join(home, '.claude'), { recursive: true });
+      symlinkSync(claude, join(home, '.claude', 'settings.json'));
+      report = run();
+      expect(report.checks.find((entry) => entry.id === 'legacy.project-claude-settings')?.status).toBe('na');
+      const review = report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review');
+      expect(review).toMatchObject({ targets: [codex], reason: expect.stringContaining('review the targets manually') });
+      expect(review?.command).toBeUndefined();
     });
   });
 

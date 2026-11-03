@@ -14,21 +14,27 @@
  * Safety:
  *   - --dry-run is default; --apply explicitly mutates.
  *   - Per-file backup before --apply: <file>.repo-harness-migrate-backup.
+ *   - Outside a git repository, or for a candidate that is a user-level
+ *     adapter (<home>/.claude/settings.json, <home>/.codex/hooks.json), it
+ *     fails before any read or write.
  *   - A symlink in any candidate or backup path fails before any read or write.
  *   - If the file's hooks segment becomes empty after removal, the field is
  *     dropped entirely (cleaner for Claude settings.json which has non-hook config).
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { atomicWriteFileSync, formatJson, readJsonOrEmpty } from '../installer/shared';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { assertNoSymlinkInPath } from '../../effects/fs-transaction';
+import { resolveRepoRoot } from '../hook/runtime';
 
 const BACKUP_SUFFIX = '.repo-harness-migrate-backup';
 
 export interface MigrateOptions {
   cwd?: string;
+  home?: string;
   apply?: boolean;
 }
 
@@ -82,17 +88,64 @@ function applyForFile(filePath: string): void {
 
 const CANDIDATES = ['.codex/hooks.json', '.claude/settings.json'] as const;
 
+/** Only these errors mean that the path, or a directory on it, does not exist. */
+const MISSING_PATH_CODES = new Set(['ENOENT', 'ENOTDIR']);
+
+/** The real path, or null when the path does not exist. Every other error (EACCES, ELOOP, ...) throws. */
+function realPathOrMissing(filePath: string): string | null {
+  try {
+    return fs.realpathSync(filePath);
+  } catch (error) {
+    if (MISSING_PATH_CODES.has((error as NodeJS.ErrnoException).code ?? '')) return null;
+    throw error;
+  }
+}
+
+/**
+ * The real identity of a file: its full real path (a final symlink is
+ * followed), else its name under the real parent directory, else null when
+ * the parent does not exist either, so no file is there to read or write.
+ */
+function fileIdentity(filePath: string): string | null {
+  const real = realPathOrMissing(filePath);
+  if (real !== null) return real;
+  const dir = realPathOrMissing(path.dirname(filePath));
+  return dir === null ? null : path.join(dir, path.basename(filePath));
+}
+
+/**
+ * True when the file is a user-level adapter (<home>/.claude/settings.json or
+ * <home>/.codex/hooks.json) by real identity: a repository rooted at $HOME, or
+ * a dotfiles repository whose file a home adapter links to. A path that
+ * cannot be resolved throws, so callers fail closed.
+ */
+export function isUserLevelAdapter(filePath: string, home: string): boolean {
+  const identity = fileIdentity(filePath);
+  return identity !== null && CANDIDATES.some((rel) => fileIdentity(path.join(home, rel)) === identity);
+}
+
 export function runMigrate(opts: MigrateOptions = {}): MigratePlan {
   const cwd = opts.cwd ?? process.cwd();
+  const home = opts.home ?? process.env.HOME ?? os.homedir();
   const apply = opts.apply === true;
+  const repoRoot = resolveRepoRoot(cwd);
+  if (repoRoot === null) {
+    throw new Error(`repo-harness migrate: cwd is not in a git repository: ${cwd}`);
+  }
+  const candidates = CANDIDATES.map((rel) => path.join(repoRoot, rel));
+  for (const filePath of candidates) {
+    if (isUserLevelAdapter(filePath, home)) {
+      throw new Error(`repo-harness migrate: refusing user-level adapter: ${filePath}`);
+    }
+  }
   const files: MigratePlanFile[] = [];
   // Reads, backups, and atomic temp files all follow a linked host directory,
   // so refuse every symlink before any candidate is read or written.
   for (const rel of CANDIDATES) {
-    const symlinkError = assertNoSymlinkInPath(cwd, rel) ?? assertNoSymlinkInPath(cwd, `${rel}${BACKUP_SUFFIX}`);
+    const symlinkError = assertNoSymlinkInPath(repoRoot, rel) ?? assertNoSymlinkInPath(repoRoot, `${rel}${BACKUP_SUFFIX}`);
     if (symlinkError) throw new Error(symlinkError);
   }
-  for (const filePath of CANDIDATES.map((rel) => path.join(cwd, rel))) {
+  for (const filePath of candidates) {
     const plan = planForFile(filePath);
     if (!plan) continue;
     files.push(plan);
