@@ -1,4 +1,4 @@
-# Seats, topology and the comment board
+# Claim roles, topology and the comment board
 
 Many agents work on one goal at the same time. This file defines who owns
 what, and how they talk. The issue and PR comment threads are the message
@@ -6,12 +6,13 @@ board. Every agent and the owner can read them, they persist, and GitHub
 orders them. Chat, Herdr and session messages carry only a link to a
 comment. They never carry the content itself.
 
-## Seats
+## Claim roles
 
-A seat is a role on one GitHub object. An agent holds a seat by an active
-claim comment. One seat has at most one active holder.
+A claim role is a role on one GitHub object. An agent holds a claim role by
+an active claim comment. One claim role has at most one active holder. A
+seat is a process (`SKILL.md`, Seats, sub-agents and claim roles).
 
-| Seat | Object | Holds it | Can write | Released by |
+| Claim role | Object | Holds it | Can write | Released by |
 |---|---|---|---|---|
 | Coordinator | Parent issue | Orchestrator | Parent body (child table), plan, plan data (sub-issues, blocked-by, milestone, `tier:` labels), dispatch, scope changes | Closing comment, or handoff |
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
@@ -50,7 +51,7 @@ Rules that keep the topology safe:
 
 One `issue claim` comment takes one seat. `issue claim` is seat-only:
 only the active coordinator holder posts it (see "Seat-only comment
-kinds"). A valid claim carries `Status`, `Seat`, `Agent`, `Branch`,
+kinds"). A valid claim carries `Status`, `Role`, `Agent`, `Branch`,
 `Scope` and `Not in scope`. A claim that takes over a seat also carries
 `Prior claim`. Board rules 2, 3 and 8 apply: one identity, read back, and
 stop on an uncertain read or post.

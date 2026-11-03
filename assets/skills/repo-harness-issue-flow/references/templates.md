@@ -251,7 +251,7 @@ Coordinator: <parent claim URL> # the coordinator's own claim
 Prior claim: <comment URL>      # required on a handoff
 ```
 
-`Status`, `Seat`, `Agent`, `Branch`, `Scope` and `Not in scope` are
+`Status`, `Role`, `Agent`, `Branch`, `Scope` and `Not in scope` are
 required. A handoff claim also requires `Prior claim`. A claim without
 any of them is invalid. The coordinator reads its claim back; when a
 field is missing it posts `issue claim status` with `Status: released`,
@@ -378,7 +378,7 @@ Findings:
 ```
 
 Every round writes this record, one row per round. The fields are `Round`,
-`Seat`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
+`Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
 `Model relation` line. `repo-harness review publish` writes it for rounds
 1 to 3. The session that runs a round above 3 posts the same text by hand

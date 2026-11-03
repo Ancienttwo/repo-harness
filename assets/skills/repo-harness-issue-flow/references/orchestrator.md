@@ -189,7 +189,7 @@ module is in the title so that a list view shows the write scopes.
 - Each parallel worker gets its own worktree from a clean base.
 - Keep at most 8 active writer seats under one coordinator. A seat is
   active until its PR is merged or its claim status is `done` or
-  `released` (`board.md` Seats). Hold further
+  `released` (`board.md` Claim roles). Hold further
   dispatches until a seat ends. Each active worker adds notices to your
   queue (§8.1), and more than 8 makes the owner wait.
 - Default model preference (D3): no role is bound to one vendor. The old
