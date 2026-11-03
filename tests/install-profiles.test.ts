@@ -997,7 +997,7 @@ describe('install profiles', () => {
       writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
       writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
       writeFileSync(join(bin, 'curl'), '#!/bin/sh\n[ -n "$FAKE_CURL_FAIL" ] && { echo "fixture HTTP 503" >&2; exit 22; }\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
-      writeFileSync(join(bin, 'herdr'), '#!/bin/sh\nprintf "%s\\n" "---" "name: herdr" "---" "Check HERDR_ENV before control." "" "## Learn the current CLI"\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'hc'), '#!/bin/sh\nprintf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."\n', { mode: 0o755 });
     }
     const run = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
       cwd: ROOT, env: { ...env, ...extraEnv, PATH: `${bin}:/bin:/usr/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') }, encoding: 'utf-8',
