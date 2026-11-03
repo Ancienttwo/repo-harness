@@ -226,7 +226,7 @@ sequenceDiagram
 8. **Hook 不做架构工作。** Hook 不记录架构漂移，不运行投影，不写 capability 块。架构更新在 PR 里显式完成：ChangeSet 加 `architecture-projection apply`。
 9. **payload 与 identity 只解析一次。** host event 的 payload 解析一次，identity 只来自 payload 的 `session_id`、`run_id`、`turn_id`；缺失保持 null。hook 不生成、不存储 identity，handler 不读 session、run 或 turn 环境变量。`HOOK_HOST` 缺失、route 未知或该 host 未安装 route 时，在 handler 运行前停止。
 10. **handler 失败语义固定。** handler 返回 typed result；throw 的 handler 退出 1，edit guard 例外：throw 在 Claude 与 Codex 都退出 2（fail closed）。handler 不写 host 文件描述符。
-11. **subagent 上下文不带 provider 看板。** `SubagentStart.context` 与 `PreToolUse.subagent` 只附加 return-channel 契约、standing orders 和执行边界说明。看板切片已删除（#1507）：它只是 advisory，不授予 scope 或权限，也不决定验收。父任务 packet 与 host 权限仍是 scope 权威。
+11. **subagent 上下文不带 provider 看板。** `PreToolUse.subagent` 只处理 Claude `Agent`，附加 return-channel 契约和 standing orders。`SubagentStart.context` 只装进 Codex，附加 standing orders、native role routing、执行边界说明（按 sandbox 模式）和 long-command guardrail。return channel 只在 Claude 一侧。看板切片已删除（#1507）：它只是 advisory，不授予 scope 或权限，也不决定验收。父任务 packet 与 host 权限仍是 scope 权威。
 12. **`PreToolUse.edit` 不做 lease 检查。** `LeaseOwnershipGuard` 已删除。lease authority 只在 `start-task`、`complete-task` 和 `contract-worktree finish`。
 13. **迁移只在 adoption transaction 内。** `managed-entries.ts` 把 registry 投影成 user-level adapter entries，并保留 host trust boundary。`standard-plan.ts` 是唯一的 adoption planner。旧 repo-local adapter command 只由一次性迁移识别和删除，runtime dispatch 不读它们。未匹配字节和 custom sibling hooks 保持不动。
 14. **架构债通知是 advisory。** `agent-notice` 选择 citation debt；checkpoint 只接收 owned changed paths。每次 archctx ownership 或 checkpoint 调用有 3 s deadline。模型文本最多 3 条、800 UTF-8 字节；SessionStart section 保持 mandatory。失败只在 exit 0 输出一条诊断，不阻断事件。

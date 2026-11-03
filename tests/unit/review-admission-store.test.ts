@@ -11,7 +11,7 @@ import { hashVerificationPlan } from '../../src/core/evidence/verification-plan'
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
-import { approveReviewAdmission, readActiveReviewAdmission, readCurrentReviewAdmissionSelection, readReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
+import { approveReviewAdmission, readActiveReviewAdmission, readReviewAdmission, revokeActiveReviewAdmission } from '../../src/effects/admission/admission-store';
 import { initGitRepo, tmpWorkspace } from '../helpers/repo-fixture';
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -202,7 +202,6 @@ test('active revocation requires the exact grant digest and current revision', (
   expect(revokeActiveReviewAdmission({ ...identity, expectedRevision: 1, expectedGrantSha256: first.grant_sha256 }))
     .toEqual({ revision: 2, revoked_grant_sha256: first.grant_sha256 });
   expect(() => readReviewAdmission(f.args(first.grant_sha256))).toThrow('revoked_or_replaced');
-  expect(readCurrentReviewAdmissionSelection(identity)).toBeNull();
   expect(() => revokeActiveReviewAdmission({ ...identity, expectedRevision: 2, expectedGrantSha256: first.grant_sha256 })).toThrow('revoked_or_replaced');
 });
 

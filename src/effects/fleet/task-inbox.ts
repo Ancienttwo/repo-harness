@@ -1,5 +1,5 @@
 import { retiredDeliveryChannelRecord, TaskMessageError } from '../../core/messages/task-message-error';
-import { sameTaskMessageClaim, type TaskMessageClaim } from '../../core/messages/task-message-claim';
+import { sameTaskMessageClaim } from '../../core/messages/task-message-claim';
 import { TASK_INBOX_V2_RELATIVE_PATH, admittedTaskInboxRecipientStorageKey as taskInboxRecipientStorageKey } from '../../core/fleet/task-inbox-layout';
 import {
   inspectTaskInboxLayout,
