@@ -636,7 +636,7 @@ async function runGlobalRuntimeBootstrap(
   if (rawOpts.dryRun === true) {
     const removedDanglingSkillLinks = rawOpts.syncSkill === false ? [] : removeOwnedDanglingSkillLinks(
       join(dirname(fileURLToPath(import.meta.url)), '..', '..'),
-      effectiveSkillRoots(),
+      effectiveSkillRoots(plugins),
       true,
       current?.ownership_manifest,
     );

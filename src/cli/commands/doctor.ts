@@ -8,7 +8,7 @@
 
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
 import { defaultPluginSelection, enabledPlugins, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState, type InstallState } from '../installer/install-profile';
-import { installSelectionCommand, type PluginId } from '../../core/skill-surface/plugin-manifest';
+import { installSelectionCommand, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 import { readDshPluginState } from '../../effects/dsh-plugin-state';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { externalSkillsForSelection, parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
@@ -446,9 +446,10 @@ interface SkillProjectionJudgment {
 }
 
 /** CLI text projection of one judgment. Only `ok link` names its target. */
-function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, plugins: readonly PluginId[]): string {
-  const { destination, source, host } = projection;
-  const fix = `${installSelectionCommand(plugins)} --target ${host === 'pi' ? 'both' : host}`;
+function formatSkillProjectionJudgment({ row, projection, ledgerDrift }: SkillProjectionJudgment, selection: PluginSelection): string {
+  const { destination, source } = projection;
+  // The repair reinstalls the recorded selection on the default target; one broken projection narrows neither.
+  const fix = installSelectionCommand(selection);
   const problems: string[] = [];
   if (!row.state.startsWith('ok ')) {
     const preserve = row.state === 'missing' || row.state === 'source missing' ? '' : `preserve or move ${destination}, then `;
@@ -473,6 +474,8 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     const home = env.HOME ?? env.USERPROFILE ?? os.homedir();
     const installed = readInstallState(env);
     const plugins = judgedPlugins(installed, env);
+    // Without a ledger the install default is `all`.
+    const selection: PluginSelection = installed?.selection ?? 'all';
     const sourceRoot = skillProjectionSourceRoot(env);
     const contractPath = path.join(sourceRoot, 'assets', 'workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
@@ -506,7 +509,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
         ledgerDrift,
       };
       judgments.push(judgment);
-      details.push(formatSkillProjectionJudgment(judgment, plugins));
+      details.push(formatSkillProjectionJudgment(judgment, selection));
     }
     const dshRows: SkillProjectionRow[] = [];
     const dshHome = env.DSH_HOME?.trim() || path.join(home, '.dsh');
@@ -520,7 +523,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
     if (installed) {
       const drift = installStateStatus(installed, env).drift;
       if (drift.status === 'drift') warning = true;
-      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? `; inspect: repo-harness install --state; run: ${installSelectionCommand(plugins)}` : ''}`);
+      details.push(`install ledger: ${JSON.stringify(drift)}${drift.status === 'drift' ? `; inspect: repo-harness install --state; run: ${installSelectionCommand(selection)}` : ''}`);
     } else {
       warning = true;
       details.push('install ledger: missing; run: repo-harness install');

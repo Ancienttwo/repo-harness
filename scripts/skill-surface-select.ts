@@ -111,7 +111,7 @@ async function main(argv: readonly string[]): Promise<void> {
   if (subcommand === "selection-projection") {
     if (selection === undefined) fail("selection-projection requires --plugins <ids> or --all-plugins");
     if (!process.env.CODEX_SKILLS_ROOT && !process.env.HOME) fail("HOME is required when CODEX_SKILLS_ROOT is not set.");
-    const roots = syncSkillRoots(process.env, process.env.HOME ?? "");
+    const roots = syncSkillRoots(process.env, process.env.HOME ?? "", selection);
     console.log(`codex-root\t${roots.codex}`);
     console.log(`claude-root\t${roots.claude ?? ""}`);
     console.log(`pi-root\t${roots.pi ?? ""}`);

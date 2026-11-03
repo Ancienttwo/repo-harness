@@ -231,6 +231,14 @@ function p2Directory(path: string, components: readonly string[]) {
   return { ...OWNED, components, path, type: 'directory-copy', content_hash: hashManagedTree(path), managed_marker: 'transaction-created-directory' };
 }
 
+/** A 0.25.3 copy-mode copy: the files, then the sync's owner marker over their tree hash, and its protocol 2 ledger entry. */
+function p2MarkedCopy(dest: string, surface: 'canonical-skill' | 'command-facade', files: Readonly<Record<string, string>>, components: readonly string[]) {
+  for (const [relative, content] of Object.entries(files)) writePath(join(dest, relative), content);
+  const contentHash = hashManagedTree(dest);
+  writeFileSync(join(dest, '.repo-harness-owner.json'), `{"owner":"repo-harness","surface":"${surface}","content_hash":"${contentHash}"}\n`);
+  return { ...OWNED, components, path: dest, type: 'directory-copy', content_hash: contentHash, managed_marker: `.repo-harness-owner.json:owner=repo-harness;surface=${surface}` };
+}
+
 function writeProtocol2State(env: NodeJS.ProcessEnv, profile: Protocol2Profile, ownership: readonly object[]): string {
   const path = installProfileStatePath(env);
   writePath(path, `${JSON.stringify({
@@ -477,11 +485,17 @@ describe('install selection', () => {
         check: (env, _plan, state) => expect(state.ownership_manifest).toEqual([piPackageSurface(bunGlobalPackageRoot(env)!)]),
       },
       {
-        name: 'full with Pi skill-root copies and pi absent',
+        // 0.25.3 copy mode, --target both: owner-marked Pi copies; the owner then edits one facade.
+        name: 'full with marked Pi skill-root copies and pi absent, then the candidate apply',
         profile: 'full',
         arrange: env => {
-          for (const skill of ['repo-harness-check', 'repo-harness-test']) writePath(join(piRoot(env), skill, 'SKILL.md'), `# ${skill}\n`);
-          const ledger = ['repo-harness-check', 'repo-harness-test'].map(skill => p2Directory(join(piRoot(env), skill), ['adaptive-workflow']));
+          writeManagedHostSurfaces(env, ALL_PLUGINS);
+          const copies = [
+            ['repo-harness', 'canonical-skill', { 'SKILL.md': '# managed\n', 'assets/skill-commands/repo-harness-test/SKILL.md': '# repo-harness-test\n' }],
+            ['repo-harness-check', 'command-facade', { 'SKILL.md': '# repo-harness-check\n' }],
+            ['repo-harness-test', 'command-facade', { 'SKILL.md': '# repo-harness-test\n' }],
+          ] as const;
+          const ledger = copies.map(([name, surface, files]) => p2MarkedCopy(join(piRoot(env), name), surface, files, ['adaptive-workflow']));
           writeFileSync(join(piRoot(env), 'repo-harness-test', 'SKILL.md'), '# owner edit\n');
           return ledger;
         },
@@ -489,12 +503,16 @@ describe('install selection', () => {
         plugins: ALL_PLUGINS,
         skipped: ['pi', 'dsh'],
         check: (env, plan, state) => {
-          const [unchanged, changed] = ['repo-harness-check', 'repo-harness-test'].map(skill => join(piRoot(env), skill));
-          expect(plan.remove).toEqual([unchanged!]);
+          const [canonical, unchanged, changed] = ['repo-harness', 'repo-harness-check', 'repo-harness-test'].map(skill => join(piRoot(env), skill));
+          expect([...plan.remove].sort()).toEqual([canonical!, unchanged!].sort());
           expect(plan.keep.map(({ path }) => path)).toEqual([changed!]);
-          expect(existsSync(unchanged!)).toBe(false);
-          expect(readFileSync(join(changed!, 'SKILL.md'), 'utf-8')).toBe('# owner edit\n');
+          expect([existsSync(canonical!), existsSync(unchanged!)]).toEqual([false, false]);
           expect(state.ownership_manifest).toEqual([]);
+          // The candidate's full apply after the one-shot does not claim the kept copy again.
+          const applied = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-11-03T00:00:01.000Z'));
+          expect(applied.state.ownership_manifest.filter(({ path }) => path.startsWith(`${piRoot(env)}/`))).toEqual([]);
+          expect(readInstallState(env)!.selection).toBe('all');
+          expect(readFileSync(join(changed!, 'SKILL.md'), 'utf-8')).toBe('# owner edit\n');
         },
       },
       {
@@ -879,7 +897,7 @@ describe('install selection', () => {
       const transaction = beginInstallHostTransaction(installProfileTransactionPaths(env), env);
       const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' });
       expect(sync.status, sync.stderr).toBe(0);
-      expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots(env)]);
+      expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots([], env)]);
       for (const root of roots) expect(existsSync(join(root, 'repo-harness-retired-demo'))).toBe(false);
       rollbackInstallHostTransaction(transaction);
 
@@ -905,7 +923,7 @@ describe('install selection', () => {
       const transaction = beginInstallHostTransaction(installProfileTransactionPaths(custom), custom);
       const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' });
       expect(sync.status, sync.stderr).toBe(0);
-      expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots(custom)]);
+      expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots([], custom)]);
       expect(readlinkSync(join(codexRoot, 'repo-harness'))).toBe(source);
       if (claudeOverride) {
         expect(readlinkSync(join(claudeRoot, 'repo-harness-check'))).toBe(join(source, 'assets', 'skill-commands', 'repo-harness-check'));
@@ -928,7 +946,7 @@ describe('install selection', () => {
     const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' });
     expect(sync.status, sync.stderr).toBe(0);
     expect(syncedSkillRoots(sync.stdout)).toEqual([codexRoot, claudeRoot]);
-    expect(effectiveSkillRoots(custom)).toEqual([codexRoot, claudeRoot]);
+    expect(effectiveSkillRoots([], custom)).toEqual([codexRoot, claudeRoot]);
 
     const { HOME: _home, CODEX_SKILLS_ROOT: _codex, ...homeless } = env;
     const rejected = runSkillSync(homeless, { AGENTIC_DEV_SOURCE_ROOT: source, REPO_HARNESS_INSTALL_PLUGINS: '' });
@@ -1011,14 +1029,21 @@ describe('install selection', () => {
     expect(status.drift.status).toBe('drift');
   }));
 
-  test('a plugin probe does not treat staging-only skills as host discovery', () => withHome((env) => {
-    writeManagedHostSurfaces(env);
-    const core = applyInstallSelection([], [], env).state;
-    writePath(join(env.HOME!, '.agents', 'skills', 'repo-harness-product', 'SKILL.md'), '# staging only\n');
-    const status = installStateStatus({ ...core, ...versions(['product']), selection: ['product'] }, env);
-    expect(status.probes.product?.status).toBe('missing');
-    expect(status.drift.missing_owners).toContain('product');
-  }));
+  test('a plugin probe reads only the host roots of the selection, never staging', () => {
+    const rows: readonly { readonly root: (env: NodeJS.ProcessEnv) => string; readonly plugins: readonly PluginId[]; readonly status: 'present' | 'missing' }[] = [
+      { root: env => join(env.HOME!, '.agents', 'skills'), plugins: ['product'], status: 'missing' },
+      // A copy left in the Pi root is evidence only when the selection has `pi`.
+      { root: env => hostSkillRoot(env.HOME!, 'pi', env), plugins: ['product'], status: 'missing' },
+      { root: env => hostSkillRoot(env.HOME!, 'pi', env), plugins: ['pi', 'product'], status: 'present' },
+    ];
+    for (const row of rows) withHome((env) => {
+      writeManagedHostSurfaces(env);
+      const core = applyInstallSelection([], [], env).state;
+      writePath(join(row.root(env), 'repo-harness-product', 'SKILL.md'), '# outside the host roots\n');
+      const status = installStateStatus({ ...core, ...versions(row.plugins), selection: row.plugins }, env);
+      expect(status.probes.product?.status, `${row.root(env)} ${row.plugins}`).toBe(row.status);
+    });
+  });
 
   test('a target without a host for a plugin skips it under all, fails an explicit list and probes per host root', () => withHome((base) => {
     const env = withPi(base);

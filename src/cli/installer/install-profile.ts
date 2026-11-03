@@ -400,6 +400,15 @@ function hostSkillRoots(home: string, env: NodeJS.ProcessEnv = process.env): rea
 }
 
 /**
+ * The skill hosts that a selection manages. The Pi root is the `pi` plugin's
+ * surface, so discovery and probes never read it without `pi`: a copy left
+ * there is not evidence and not a record.
+ */
+function selectedSkillHosts(plugins: readonly PluginId[]): readonly SkillHost[] {
+  return SKILL_HOSTS.filter((host) => host !== 'pi' || plugins.includes('pi'));
+}
+
+/**
  * Discovery records every owner-marked repo-harness-* directory, including a
  * name that later leaves the catalog. The state reader accepts the same
  * bounded set, so a committed receipt stays readable until removal.
@@ -450,7 +459,7 @@ function discoverManagedSurfaces(
   // A catalog facade can lack the prefix (obsidian-memory). Its copy needs
   // the same marker-based receipt as a prefixed facade copy.
   const facadeNames = new Set(catalog.packages.filter((pkg) => pkg.kind === 'facade').map((pkg) => pkg.name));
-  for (const root of hostSkillRoots(home, env)) {
+  for (const root of selectedSkillHosts(plugins).map((host) => hostSkillRoot(home, host, env))) {
     const canonicalOwner = ownerForInstallPath(join(root, 'repo-harness'), env);
     if (enabled(canonicalOwner)) {
       const canonical = captureDirectoryOrLink(join(root, 'repo-harness'), canonicalOwner);
@@ -458,8 +467,8 @@ function discoverManagedSurfaces(
     }
     if (!existsSync(root)) continue;
     for (const name of readdirSync(root).filter((entry) => entry.startsWith(FACADE_NAME_PREFIX) || facadeNames.has(entry)).sort()) {
-      // A retired facade keeps its receipt under `core` until skill sync removes it.
-      const owner = facadeIsCanonical(root, name, catalog) ? ownerForInstallPath(join(root, name), env) : 'core';
+      // A retired facade keeps its receipt under `core` until skill sync removes it; in the Pi root it stays `pi`.
+      const owner = facadeIsCanonical(root, name, catalog) || root === hostSkillRoot(home, 'pi', env) ? ownerForInstallPath(join(root, name), env) : 'core';
       if (!enabled(owner)) continue;
       const facade = captureDirectoryOrLink(join(root, name), owner);
       if (facade) surfaces.push(facade);
@@ -804,11 +813,12 @@ export function installProfileHostMutationPaths(env: NodeJS.ProcessEnv = process
 }
 
 /**
- * The skill roots that scripts/sync-codex-installed-copies.sh writes. The
- * shell reads the same syncSkillRoots result from skill-surface-select.ts.
+ * The skill roots that scripts/sync-codex-installed-copies.sh writes for a
+ * selection. The shell reads the same syncSkillRoots result from
+ * skill-surface-select.ts.
  */
-export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  const roots = syncSkillRoots(env, env.HOME ?? homedir());
+export function effectiveSkillRoots(plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const roots = syncSkillRoots(env, env.HOME ?? homedir(), plugins);
   return [roots.codex, roots.claude, roots.pi].filter((root): root is string => root !== null);
 }
 
@@ -820,7 +830,8 @@ export function effectiveSkillRoots(env: NodeJS.ProcessEnv = process.env): reado
 export function installProfileTransactionPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const { repoHarnessSkills } = catalogMutationPathSkillNames(loadSkillSurfaceCatalog());
   const paths = [...installProfileHostMutationPaths(env)];
-  for (const root of effectiveSkillRoots(env)) {
+  // The snapshot covers every root that any selection's sync can write.
+  for (const root of effectiveSkillRoots(PLUGIN_IDS, env)) {
     for (const skill of repoHarnessSkills) paths.push(join(root, skill));
     // Follow a linked root, as the shell's [[ -d ]] test does.
     if (!statSync(root, { throwIfNoEntry: false })?.isDirectory()) continue;
@@ -1222,8 +1233,8 @@ function existing(paths: readonly string[]): string[] {
   return paths.filter((path) => existsSync(path));
 }
 
-function canonicalEvidence(home: string, relativePaths: readonly string[], env: NodeJS.ProcessEnv): string[] {
-  return existing(hostSkillRoots(home, env).flatMap((root) => relativePaths.map((relative) => join(root, 'repo-harness', relative))));
+function canonicalEvidence(home: string, hosts: readonly SkillHost[], relativePaths: readonly string[], env: NodeJS.ProcessEnv): string[] {
+  return existing(hosts.flatMap((host) => relativePaths.map((relative) => join(hostSkillRoot(home, host, env), 'repo-harness', relative))));
 }
 
 function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
@@ -1243,8 +1254,8 @@ function ownedProbeSkills(catalog: SkillSurfaceCatalog, owner: SurfaceOwner) {
  * Each host root requires the owned skills that list its host. The set is
  * present when one root holds its non-empty required set completely.
  */
-function completeHostSkillSetEvidence(home: string, packages: ReturnType<typeof ownedProbeSkills>, env: NodeJS.ProcessEnv): string[] {
-  for (const host of SKILL_HOSTS) {
+function completeHostSkillSetEvidence(home: string, hosts: readonly SkillHost[], packages: ReturnType<typeof ownedProbeSkills>, env: NodeJS.ProcessEnv): string[] {
+  for (const host of hosts) {
     const root = hostSkillRoot(home, host, env);
     const paths = packages.filter(pkg => pkg.hosts.includes(host)).map(pkg => join(root, pkg.name, 'SKILL.md'));
     if (paths.length > 0 && paths.every(existsSync)) return paths;
@@ -1265,12 +1276,12 @@ function probe(checks: Readonly<Record<string, readonly string[]>>): OwnerProbe 
   return { status: missing.length === 0 ? 'present' : 'missing', evidence: Object.values(checks).flat(), missing };
 }
 
-function allOrNone(home: string, relativePaths: readonly string[], env: NodeJS.ProcessEnv): string[] {
-  const evidence = canonicalEvidence(home, relativePaths, env);
+function allOrNone(home: string, hosts: readonly SkillHost[], relativePaths: readonly string[], env: NodeJS.ProcessEnv): string[] {
+  const evidence = canonicalEvidence(home, hosts, relativePaths, env);
   return relativePaths.every((relative) => evidence.some((path) => path.endsWith(relative))) ? evidence : [];
 }
 
-function probeCore(env: NodeJS.ProcessEnv, catalog: SkillSurfaceCatalog): OwnerProbe {
+function probeCore(env: NodeJS.ProcessEnv, catalog: SkillSurfaceCatalog, hosts: readonly SkillHost[]): OwnerProbe {
   const home = env.HOME ?? homedir();
   const adapters = ([
     { path: join(home, '.codex', 'hooks.json'), host: 'codex' },
@@ -1280,18 +1291,18 @@ function probeCore(env: NodeJS.ProcessEnv, catalog: SkillSurfaceCatalog): OwnerP
   const coreFacades = ownedProbeSkills(catalog, 'core').filter(pkg => pkg.kind === 'facade');
   return probe({
     'cli': executableEvidence('repo-harness', env),
-    'effective-state': canonicalEvidence(home, ['src/cli/commands/state.ts'], env),
+    'effective-state': canonicalEvidence(home, hosts, ['src/cli/commands/state.ts'], env),
     // The mutation guard is an in-process handler bundled in the canonical copy.
-    'guards': allOrNone(home, ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'], env),
-    'handoff': canonicalEvidence(home, ['references/handoff.md'], env),
+    'guards': allOrNone(home, hosts, ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'], env),
+    'handoff': canonicalEvidence(home, hosts, ['references/handoff.md'], env),
     'host-adapters': adapters,
-    'workflow': canonicalEvidence(home, ['src/core/workflow/profile.ts'], env),
-    'core-skills': completeHostSkillSetEvidence(home, coreFacades, env),
+    'workflow': canonicalEvidence(home, hosts, ['src/core/workflow/profile.ts'], env),
+    'core-skills': completeHostSkillSetEvidence(home, hosts, coreFacades, env),
     'agent-fleet': fleet,
     'verifier': fleet.some((path) => /\/gatekeeper\.(?:toml|md)$/.test(path))
-      ? canonicalEvidence(home, ['src/effects/review-runner/task-oar-host.ts'], env)
+      ? canonicalEvidence(home, hosts, ['src/effects/review-runner/task-oar-host.ts'], env)
       : [],
-    'release-gates': allOrNone(home, ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'], env),
+    'release-gates': allOrNone(home, hosts, ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'], env),
   });
 }
 
@@ -1311,11 +1322,12 @@ function probeDsh(env: NodeJS.ProcessEnv): OwnerProbe {
 function probeOwners(plugins: readonly PluginId[], env: NodeJS.ProcessEnv): Partial<Record<SurfaceOwner, OwnerProbe>> {
   const home = env.HOME ?? homedir();
   const catalog = loadSkillSurfaceCatalog();
-  const probes: Partial<Record<SurfaceOwner, OwnerProbe>> = { core: probeCore(env, catalog) };
+  const hosts = selectedSkillHosts(plugins);
+  const probes: Partial<Record<SurfaceOwner, OwnerProbe>> = { core: probeCore(env, catalog, hosts) };
   for (const id of plugins) {
     if (id === 'pi') probes.pi = probePi(env);
     else if (id === 'dsh') probes.dsh = probeDsh(env);
-    else probes[id] = probe({ skills: completeHostSkillSetEvidence(home, ownedProbeSkills(catalog, id), env) });
+    else probes[id] = probe({ skills: completeHostSkillSetEvidence(home, hosts, ownedProbeSkills(catalog, id), env) });
   }
   return probes;
 }

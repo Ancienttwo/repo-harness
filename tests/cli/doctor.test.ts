@@ -1,6 +1,6 @@
-import { CLI_PORTS, buildProgram } from '../../src/cli/index';
-import { defaultPluginSelection, installProfileStatePath, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
-import { installSelectionCommand, parsePluginList, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
+import { CLI_PORTS } from '../../src/cli/index';
+import { installProfileStatePath, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
+import { installSelectionCommand, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
@@ -27,7 +27,9 @@ import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 // The default selection on a host without DSH and without `pi` on PATH.
 const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
-const FULL_FIX = installSelectionCommand(FULL_PLUGINS);
+// No ledger: the doctor judges the install default `all`, so the repair is a bare install.
+const DEFAULT_FIX = installSelectionCommand('all');
+const DEFAULT_FIX_LINE = /run: repo-harness install(?:;|$)/m;
 
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
@@ -685,7 +687,7 @@ describe('doctor skill projection', () => {
       const result = checkSkillProjection('both', f.env);
       expect(result.id).toBe('skill-projection');
       expect(result.detail).toContain(`${f.destination}: ${state}`);
-      expect(result.detail).toContain(`${FULL_FIX} --target codex`);
+      expect(result.detail).toMatch(DEFAULT_FIX_LINE);
       expect(result.detail).toContain(path.join(home, '.claude/skills/repo-harness-cross-review') + ': missing');
       expect(result.detail).toContain(path.join(home, '.codex/skills/think') + ': missing');
       if (state === 'stale copy') expect(fs.readFileSync(path.join(f.destination, 'SKILL.md'), 'utf8')).toBe('user change\n');
@@ -701,7 +703,7 @@ describe('doctor skill projection', () => {
     if (catalog.status !== 'valid') throw new Error('fixture catalog invalid');
     // The pre-row CLI line format, frozen: the rows must regenerate it byte for byte.
     const frozenLine = (projection: SkillProjection, state: string, ledgerDrift: boolean): string => {
-      const fix = `${FULL_FIX} --target ${projection.host === 'pi' ? 'both' : projection.host}`;
+      const fix = DEFAULT_FIX;
       const shown = state === 'ok link' ? `ok link -> ${projection.source}` : state;
       const problems: string[] = [];
       if (!shown.startsWith('ok ')) {
@@ -868,7 +870,7 @@ describe('doctor skill projection', () => {
     const result = checkSkillProjection('codex', f.env);
     expect(result.status).toBe('warn');
     expect(result.detail).toContain(`${f.destination}: source missing`);
-    expect(result.detail).toContain(`run: ${FULL_FIX} --target codex`);
+    expect(result.detail).toMatch(DEFAULT_FIX_LINE);
     expect(hashManagedTree(f.destination)).toBe(before);
   }));
 
@@ -920,7 +922,7 @@ describe('doctor skill projection', () => {
     fs.cpSync(staging, dest, { recursive: true });
     const result = checkSkillProjection('codex', f.env);
     expect(result.detail).toContain(`${dest}: unowned real directory; expected ${staging}; preserve or move ${dest}`);
-    expect(result.detail).toContain(`${FULL_FIX} --target codex`);
+    expect(result.detail).toMatch(DEFAULT_FIX_LINE);
     expect(fs.lstatSync(dest).isDirectory()).toBe(true);
     fs.writeFileSync(path.join(dest, 'SKILL.md'), 'private instructions\n');
     expect(checkSkillProjection('codex', f.env).detail).toContain(`${dest}: stale copy`);
@@ -937,24 +939,40 @@ describe('doctor skill projection', () => {
   }), DOCTOR_CHECK_TIMEOUT_MS);
 });
 
-test('skill-projection repair commands use supported install arguments', () => {
-  withTempHome(home => {
-    const env = { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun') };
-    const result = checkSkillProjection('both', env);
-    const judged = defaultPluginSelection('both', env).plugins;
-    const repairs = [...result.detail.matchAll(/run: repo-harness (install[^;\n]*)/g)].map(match => match[1]);
-    expect(repairs.length).toBeGreaterThan(0);
-    for (const repair of repairs) {
-      const install = buildProgram().commands.find(command => command.name() === 'install')!;
-      const args = repair.trim().split(/\s+/).slice(1);
-      expect(install.parseOptions(args).unknown).toEqual([]);
-      // Each repair restores the judged selection: a bare install selects the
-      // same default, and `--plugins` names it exactly.
-      const plugins = install.opts().plugins as string | undefined;
-      if (plugins !== undefined) expect(parsePluginList(plugins)).toEqual(judged);
-    }
+test('each skill-projection repair command keeps the recorded selection and passes the install selection gate', () => {
+  const rows: readonly { readonly selection: 'all' | readonly PluginId[]; readonly plugins: readonly PluginId[]; readonly pi?: true; readonly repair: string }[] = [
+    // `all` on a host without pi and DSH runs peer-runtime, which has no Codex host: a `--target codex` repair would fail the gate.
+    { selection: 'all', plugins: FULL_PLUGINS, repair: 'repo-harness install' },
+    { selection: ['cross-review', 'product'], plugins: ['cross-review', 'product'], repair: 'repo-harness install --plugins cross-review,product' },
+    { selection: [], plugins: [], repair: 'repo-harness install --no-plugins' },
+    { selection: ['pi', 'product'], plugins: ['pi', 'product'], pi: true, repair: 'repo-harness install --plugins pi,product' },
+  ];
+  for (const row of rows) withTempHome(home => {
+    const tools = path.join(home, 'tool-bin');
+    fs.mkdirSync(tools, { recursive: true });
+    if (row.pi) writeExecutable(path.join(tools, 'pi'), '#!/bin/sh\ncase "$1" in --version) echo 1.4.0 ;; list) echo "No packages installed." ;; esac\n');
+    const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun'), XDG_STATE_HOME: path.join(home, '.local/state'),
+      REPO_HARNESS_HOME: path.join(home, '.repo-harness'), PATH: `${tools}:/usr/bin:/bin` };
+    for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'DSH_HOME', 'REPO_HARNESS_INSTALL_PLUGINS']) delete env[key];
+    // One broken projection that the ledger owns: the Codex router link points at the wrong tree.
+    const router = path.join(home, '.codex/skills/repo-harness');
+    fs.mkdirSync(path.dirname(router), { recursive: true });
+    fs.symlinkSync(home, router);
+    const statePath = path.join(home, '.repo-harness/install-state.json');
+    fs.mkdirSync(path.dirname(statePath), { recursive: true });
+    fs.writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(row.plugins), selection: row.selection, transaction_id: 'repair', applied_at: new Date(0).toISOString(),
+      previous: null, ownership_manifest: [{ owner: 'core', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', path: router, type: 'symlink',
+        content_hash: null, managed_marker: null, symlink_target: path.join(home, '.bun/install/global/node_modules/repo-harness') }] }));
+    const label = JSON.stringify(row.selection);
+    const result = checkSkillProjection('codex', env);
+    const repairs = [...new Set([...result.detail.matchAll(/run: (repo-harness install[^;\n]*)/g)].map(match => match[1]!.trim()))];
+    expect(repairs, label).toEqual([row.repair]);
+    // The repair runs the install action's selection resolution and its availability gate.
+    const dryRun = spawnSync(process.execPath, [path.join(import.meta.dir, '..', '..', 'src/cli/index.ts'), ...row.repair.split(' ').slice(1), '--dry-run', '--json'], { cwd: home, env, encoding: 'utf-8' });
+    expect(dryRun.status, `${label}: ${dryRun.stderr}`).toBe(0);
+    expect(JSON.parse(dryRun.stdout).selection, label).toEqual(row.selection);
   });
-});
+}, 60_000);
 
 describe('legacy workflow-state diagnostic', () => {
   test('reports a legacy copy from a nested cwd without changing its bytes', () => {

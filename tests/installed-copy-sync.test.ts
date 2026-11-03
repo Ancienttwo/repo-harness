@@ -1,5 +1,5 @@
 import { describe, expect, test } from "bun:test";
-import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
+import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, realpathSync, rmSync, symlinkSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { dirname, join, relative } from "path";
 import { spawnSync } from "child_process";
@@ -324,6 +324,45 @@ describe("Codex installed copy sync", () => {
       rmSync(tmp, { recursive: true, force: true });
     }
   }, 30_000);
+
+  test("the public sync projects into the Pi root only when the selection includes pi", () => {
+    const rows = [
+      { plugins: "", userRoot: false, projected: false },
+      { plugins: "product", userRoot: true, projected: false },
+      { plugins: "pi,product", userRoot: false, projected: true },
+    ];
+    for (const row of rows) {
+      const tmp = realpathSync(mkdtempSync(join(tmpdir(), "repo-harness-installed-pi-root-")));
+      const home = join(tmp, "home");
+      const source = join(tmp, "source");
+      const tools = join(tmp, "tool-bin");
+      const piRoot = join(home, ".pi", "agent", "skills");
+      try {
+        seedSkillSurfaceRuntime(source);
+        writeFileSync(join(source, "SKILL.md"), "---\nname: repo-harness\n---\n");
+        mkdirSync(tools, { recursive: true });
+        symlinkSync(process.execPath, join(tools, "bun"));
+        if (row.userRoot) {
+          mkdirSync(join(piRoot, "user-skill"), { recursive: true });
+          writeFileSync(join(piRoot, "user-skill", "SKILL.md"), "# user\n");
+        }
+        const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: join(tmp, "bun"), XDG_STATE_HOME: join(tmp, "state"),
+          REPO_HARNESS_HOME: join(home, ".repo-harness"), PATH: `${tools}:/usr/bin:/bin`, AGENTIC_DEV_SOURCE_ROOT: source,
+          REPO_HARNESS_INSTALL_PLUGINS: row.plugins };
+        for (const key of ["CODEX_SKILLS_ROOT", "CLAUDE_SKILLS_ROOT", "PI_CODING_AGENT_DIR", "REPO_HARNESS_INCLUDE_PI", "AGENTIC_DEV_LINK_INSTALLED_COPIES"]) delete env[key];
+        const result = spawnSync("bash", [join(ROOT, "scripts", "sync-codex-installed-copies.sh")], { cwd: ROOT, encoding: "utf-8", env });
+        expect(result.status, `${row.plugins}: ${result.stderr}`).toBe(0);
+        expect(existsSync(join(home, ".codex", "skills", "repo-harness")), row.plugins).toBe(true);
+        expect(existsSync(join(piRoot, "repo-harness")), row.plugins).toBe(row.projected);
+        if (!row.projected) {
+          expect(existsSync(piRoot) ? readdirSync(piRoot) : [], row.plugins).toEqual(row.userRoot ? ["user-skill"] : []);
+          if (row.userRoot) expect(readFileSync(join(piRoot, "user-skill", "SKILL.md"), "utf-8")).toBe("# user\n");
+        }
+      } finally {
+        rmSync(tmp, { recursive: true, force: true });
+      }
+    }
+  }, 60_000);
 
   test("unknown facade fails closed before changing any managed surface", () => {
     const tmp = join(tmpdir(), `repo-harness-installed-unknown-${Date.now()}`);

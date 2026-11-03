@@ -53,11 +53,15 @@ function withoutTrailingSlash(root: string): string {
   return root.endsWith('/') ? root.slice(0, -1) : root;
 }
 
-/** The roots that the shell skill sync writes. An empty variable counts as unset. */
-export function syncSkillRoots(env: Readonly<Record<string, string | undefined>>, home: string): SyncSkillRoots {
+/**
+ * The roots that the shell skill sync writes for a plugin selection. An empty
+ * variable counts as unset. The Pi root is the `pi` plugin's surface, so it is
+ * a root only when the selection includes `pi`.
+ */
+export function syncSkillRoots(env: Readonly<Record<string, string | undefined>>, home: string, plugins: readonly string[]): SyncSkillRoots {
   const claudeOverride = env.CLAUDE_SKILLS_ROOT ? withoutTrailingSlash(env.CLAUDE_SKILLS_ROOT) : null;
   if (env.CODEX_SKILLS_ROOT) {
     return { codex: withoutTrailingSlash(env.CODEX_SKILLS_ROOT), claude: claudeOverride, pi: null, overridden: true };
   }
-  return { codex: hostSkillRoot(home, 'codex'), claude: claudeOverride ?? hostSkillRoot(home, 'claude'), pi: env.REPO_HARNESS_INCLUDE_PI === '0' ? null : hostSkillRoot(home, 'pi', env), overridden: false };
+  return { codex: hostSkillRoot(home, 'codex'), claude: claudeOverride ?? hostSkillRoot(home, 'claude'), pi: env.REPO_HARNESS_INCLUDE_PI === '0' || !plugins.includes('pi') ? null : hostSkillRoot(home, 'pi', env), overridden: false };
 }
