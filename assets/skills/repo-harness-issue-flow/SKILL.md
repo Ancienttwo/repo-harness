@@ -23,22 +23,27 @@ decision that the issue leaves open turns into permanent code. The
 orchestrator therefore makes the decisions in the issue, and the worker
 executes them or stops and asks.
 
-## Roles and seats
+## Seats, sub-agents and claim roles
 
-| Role | Suggested model | Seats it holds | Never does |
+A **seat** is a process seat: the orchestrator, the advisor or a worker. A
+**sub-agent** is an `agents/fleet/` role that runs inside a seat process.
+A **claim role** is the GitHub role that a claim gives: coordinator,
+writer, head owner, integrator or acceptor.
+
+| Agent | Suggested model | Claim roles it holds | Never does |
 |---|---|---|---|
 | Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
-| Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Claims its own seat, widens scope, merges, pushes to another owner's branch |
-| Acceptor | Gatekeeper by default. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review round | Reviews its own code, pushes code |
+| Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Posts its own claim, widens scope, merges, pushes to another owner's branch |
+| Acceptor | A seat holds the acceptor role and can call the gatekeeper sub-agent, the default reviewer. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review round | Reviews its own code, pushes code |
 
 The suggested models are advice, not a requirement. Any capable host may
-hold any seat. The High tier records its `model_relation` in the
+hold any claim role. The High tier records its `model_relation` in the
 acceptance record (`references/acceptor.md`).
 
 Many agents work at once. A parent issue has children, a child can have
-named PR slots, and PRs can depend on PRs with other owners. Each seat has
-one holder at a time. Every PR has one head owner, the only agent that
+named PR slots, and PRs can depend on PRs with other owners. Each claim
+role has one holder at a time. Every PR has one head owner, the only agent that
 pushes to it. Claims, handoffs and dependency rules are in
 `references/board.md`.
 

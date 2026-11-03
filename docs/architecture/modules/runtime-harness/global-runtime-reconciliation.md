@@ -1,6 +1,6 @@
 # runtime-harness/global-runtime-reconciliation 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:552d6699dbc878e3e9afb7434b11efa6f668421d315b550adf2aca14da5a8712" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-global-runtime-reconciliation" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:29444ee84dfbaf5231d12e818324c91e0cfebcab381ce2abc85c492091e11692" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.global-runtime-reconciliation`(kind `capability`)
 > **Matched Prefixes**:`package.json`、`bun.lock`、`scripts/check-managed-runtime.ts`、`scripts/sync-codex-installed-copies.sh`、`src/effects/architecture/**`、`assets/reference-configs/external-tooling.md`、`docs/reference-configs/external-tooling.md`、`docs/reference-configs/install-profiles.md`、`src/effects/upgrade/**`、`src/effects/runtime/node-candidates.ts`、`src/effects/runtime/protected-helper-platform.ts`、`src/effects/skill-tree-integrity.ts`、`src/effects/host-skill-roots.ts`、`src/effects/configuration/**`、`src/core/architecture/projection.ts`、`scripts/axr5-archctx-clean-room.ts`、`src/core/release/**`、`src/effects/release/**`、`scripts/check-npm-release.sh`、`scripts/check-release-published.sh`、`scripts/check-tarball-install-smoke.sh`、`scripts/check-pi-package-smoke.ts`、`scripts/runtime-evidence-receipt.ts`、`install.sh`、`install.ps1`、`tsconfig.json`
@@ -131,7 +131,6 @@ flowchart LR
   - `calls` → `component.global-runtime-reconciliation.cli-diagnostics` — Register the doctor and init-hook commands and validate the shared CLI options
   - `calls` → `capability.verification.codegraph-readiness` — Register the tools command and pass the CodeGraph doctor checks and setup steps to core commands
   - `calls` → `capability.workflow-engine.contract-assets` — Register the init and capability-context commands
-  - `calls` → `capability.runtime-harness.external-source-intake` — Register the external-source command
   - `calls` → `capability.runtime-mcp.general-repo-access` — Pass the MCP index, metrics and trace log roots to retention
   - `calls` → `capability.runtime-harness.hook-adapters` — Register the install and status and security and hook commands and run host transactions with the install profile
   - `calls` → `capability.runtime-harness.mcp-sidecar` — Register the mcp and bots commands and pass the MCP audit log root to retention

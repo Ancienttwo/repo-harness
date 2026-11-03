@@ -34,7 +34,7 @@ export function pullRequestSelectionFromOptions(opts: Record<string, string | un
 
 /** The composition root passes the one reviewer runner implementation. */
 export function buildReviewCommand<Session, Endpoint>(runner: ReviewEffects<Session, Endpoint>): Command {
-  const command = new Command('review').description('Generic domain acceptance review by a persistent fleet deep-reasoner task-agent');
+  const command = new Command('review').description('Generic domain acceptance review by a persistent task session that runs the deep-reasoner role');
   command.command('admit').description('Apply an already-authorized upstream Bot request (trusted integration only)')
     .requiredOption('--request <file>', 'JSON {admission, approval, expectedRevision}; approval requires upstream authorization_ref and bound scope')
     .option('--repo <path>', 'Execution repository', process.cwd())

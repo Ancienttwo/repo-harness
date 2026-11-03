@@ -1246,14 +1246,6 @@ pi_write_harness_policy() {
   "guards": {
     "rule": "the mutation guard blocks protected paths only; no plan gate is evaluated"
   },
-  "circuit_breakers": {
-    "guard_repeat": 2,
-    "review": { "lite": 1, "standard": 1, "strict": 2 },
-    "semantic_reviews_per_work_package": 1,
-    "subagents": { "default": 2, "strict_explicit_contract": 3 },
-    "repair_loops": 2,
-    "cross_model_consults_default": 0
-  },
   "delegation": {
     "mode": "explicit",
     "brief_source": "approved task/session admission"
