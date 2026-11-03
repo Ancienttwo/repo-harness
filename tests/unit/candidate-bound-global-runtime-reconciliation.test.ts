@@ -1,4 +1,4 @@
-import { afterAll, describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -6,6 +6,7 @@ import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
+import { writeFakeHc } from '../helpers/fake-hc';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, PROFILE_COMPONENTS, readInstalledProfile, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
@@ -24,6 +25,18 @@ import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusi
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src', 'cli', 'index.ts');
+
+// The update runs the Herdr skill step, which spawns `hc` from PATH; a fake hc first on PATH keeps the developer's hc out of every test.
+const fakeHcBin = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-candidate-runtime-hc-')));
+const pathBeforeFakeHc = process.env.PATH;
+beforeAll(() => {
+  writeFakeHc(fakeHcBin);
+  process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
+});
+afterAll(() => {
+  process.env.PATH = pathBeforeFakeHc;
+  rmSync(fakeHcBin, { recursive: true, force: true });
+});
 
 function writeExecutable(path: string, content: string): void {
   writeFileSync(path, content);
