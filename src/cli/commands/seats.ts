@@ -1,8 +1,11 @@
 import { Command } from 'commander';
-import { CLAUDE_BUILTIN_AGENT_TYPES, buildSeatLaunch, type SeatLaunchV1 } from '../../core/operator/seat-launch';
+import { dirname } from 'path';
+import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/operator/seat-launch';
 import { SEAT_IDS, decodeSeatsConfig, type SeatId } from '../../core/operator/seats-settings';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
+import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/operator/claude-agent-types';
+import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
 import { RH_LABEL, hcLabelPairs } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 
@@ -18,18 +21,23 @@ export interface SeatLabelInput {
   readonly issue?: string;
   readonly pr?: string;
   readonly parent?: string;
+  /** Pane name inputs only (#1544): the release item digits and the slice word. */
+  readonly release?: string;
+  readonly qualifier?: string;
 }
 
 const POSITIVE = /^[1-9][0-9]*$/u;
 
 /** The `hc label` pairs that the board reads (#1505). The GitHub numeric repository id identifies the repository. */
 function seatLabels(seat: SeatId, input: SeatLabelInput): string[] {
-  const { repositoryId, ...dispatch } = input;
-  for (const [name, value] of Object.entries(input)) {
+  const { repositoryId, release, qualifier, ...dispatch } = input;
+  for (const [name, value] of Object.entries({ repositoryId, ...dispatch })) {
     if (value !== undefined && !POSITIVE.test(value)) throw new SeatsCommandError('label_value_invalid', `--${name === 'repositoryId' ? 'repository-id' : name} must be a positive decimal integer.`);
   }
   if (repositoryId === undefined) {
-    if (Object.values(dispatch).some(value => value !== undefined)) throw new SeatsCommandError('repository_id_required', '--issue, --pr and --parent need --repository-id.');
+    if ([...Object.values(dispatch), release, qualifier].some(value => value !== undefined)) {
+      throw new SeatsCommandError('repository_id_required', '--issue, --pr, --parent, --release and --qualifier need --repository-id.');
+    }
     return [];
   }
   return hcLabelPairs({
@@ -41,7 +49,23 @@ function seatLabels(seat: SeatId, input: SeatLabelInput): string[] {
   });
 }
 
-export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env): SeatLaunchV1 & { readonly labels: readonly string[] } {
+/** The registry entry of the primary checkout of `cwd` holds the pane prefix; a linked worktree resolves to its primary root. */
+function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
+  let root: string;
+  try {
+    root = canonicalRepoPath(dirname(resolveGitCommonDirectory(cwd, undefined, undefined, repoCheckoutProbeEnv(env))));
+  } catch {
+    throw new SeatPaneNameError(`Pane name: ${cwd} is not in a git repository, so its registry entry is unknown.`);
+  }
+  const registry = readRepoHarnessRegistryStrictSnapshot({ env });
+  const prefix = registry.repos.find(repo => repo.path === root)?.panePrefix;
+  if (prefix === undefined) throw new SeatPaneNameError(`Pane name: set panePrefix for ${root} in ${registry.registryPath}.`);
+  return prefix;
+}
+
+export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): SeatLaunchV1 & {
+  readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
+} {
   if (!SEAT_IDS.includes(seat as SeatId)) throw new SeatsCommandError('seat_unknown', `Unknown seat ${seat}. Use one of: ${SEAT_IDS.join(', ')}.`);
   let config: Record<string, unknown>;
   try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
@@ -49,10 +73,15 @@ export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJ
   try { seats = decodeSeatsConfig(config.seats); } catch { throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.'); }
   const id = seat as SeatId;
   const pairs = seatLabels(id, labels);
+  // The pane name needs the registry prefix, so it comes only with the seat labels.
+  const name = labels.repositoryId === undefined ? null : seatPaneName({
+    prefix: panePrefix(cwd, env), seat: id, issue: id === 'worker' ? labels.issue : undefined, release: labels.release, qualifier: labels.qualifier,
+  });
+  const tab = labels.repositoryId === undefined ? null : seatTabName(id, labels.parent);
   const agentTypes = seats[id].runtime === 'claude' && seats[id].fleet.length > 0
     ? [...MANAGED_AGENTS, ...CLAUDE_BUILTIN_AGENT_TYPES, ...claudeHostAgentTypes(env)]
     : [];
-  return { ...buildSeatLaunch(id, seats[id], config.seats === undefined ? 'defaults' : 'seats', agentTypes), labels: pairs };
+  return { ...buildSeatLaunch(id, seats[id], config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined), labels: pairs, name, tab };
 }
 
 export function buildSeatsCommand(): Command {
@@ -64,14 +93,19 @@ export function buildSeatsCommand(): Command {
     .option('--repository-id <id>', 'GitHub numeric repository id; adds the seat labels for `hc label`')
     .option('--issue <n>', 'Issue number for the seat labels')
     .option('--pr <n>', 'PR number for the seat labels')
-    .option('--parent <n>', 'Parent issue number for the seat labels')
-    .option('--json', 'Print the argv, the seat brief, the source, the limits and the labels as JSON')
+    .option('--parent <n>', 'Parent issue number for the seat labels and the tab name')
+    .option('--release <digits>', 'Release item of a worker pane name, for example 0252 for rh-w-rel0252')
+    .option('--qualifier <word>', 'Slice word of a worker pane name when one issue has two live worker panes')
+    .option('--json', 'Print the argv, the seat brief, the source, the limits, the labels, the pane name and the tab name as JSON')
     .action((seat: string, options: SeatLabelInput & { json?: boolean }) => {
       let launch: ReturnType<typeof seatLaunch>;
       try {
-        launch = seatLaunch(seat, { repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent });
+        launch = seatLaunch(seat, {
+          repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent, release: options.release, qualifier: options.qualifier,
+        });
       } catch (error) {
-        const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError ? error.code : 'seat_launch_failed';
+        const code = error instanceof SeatsCommandError || error instanceof ClaudeAgentTypesError || error instanceof SeatPaneNameError
+          || error instanceof RepoHarnessRegistryStrictError ? error.code : 'seat_launch_failed';
         process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: (error as Error).message })}\n`);
         process.exitCode = 1;
         return;
@@ -88,6 +122,7 @@ export function buildSeatsCommand(): Command {
         process.stderr.write(`limit ${limit.subject}: ${limit.level}${note}\n`);
       }
       if (launch.labels.length > 0) process.stderr.write(`labels: ${launch.labels.join(' ')}\n`);
+      if (launch.name !== null) process.stderr.write(`name: ${launch.name}\ntab: ${launch.tab}\n`);
     });
   return seats;
 }
