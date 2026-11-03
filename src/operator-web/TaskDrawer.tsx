@@ -169,6 +169,15 @@ function Detail({ board, attention, item, owner, now, t }: {
         ))}
       </ol>
       {pr && <Identifiers pr={pr} t={t} />}
+      {/* itemStage reads only board fields: GitHub issue and pull request state, and the merge readiness read of git and GitHub. */}
+      <Section id="task-stage-source" title={t('board.drawer.stageSource')}>
+        <div className="grid grid-cols-2 gap-2">
+          <div className="flex flex-col gap-0.5 rounded-lg border border-kumo-line px-3.5 py-3" data-stage-source={stage}>
+            <span className="text-xs text-kumo-subtle">Git + GitHub</span>
+            <span className="text-sm font-semibold text-kumo-strong">{t(`board.stage.${stage}` as OperatorMessageKey)}</span>
+          </div>
+        </div>
+      </Section>
       {findings.length > 0 && (
         <Section id="task-findings" title={t('board.attention.title')}>
           <ul className="overflow-hidden rounded-lg border border-kumo-line">
