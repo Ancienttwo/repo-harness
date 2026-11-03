@@ -312,7 +312,7 @@
       "component": "cli",
       "requires": [],
       "mutatesRepoByDefault": false,
-      "summary": "Required Herdr control skill. Install the release-matched body from herdr --skill for both hosts.",
+      "summary": "Required Herdr control skill. Install the hc manual from hc --skill under the repo-harness caller-context policy for both hosts.",
       "retirementCandidate": null,
       "audience": "bot"
     },
