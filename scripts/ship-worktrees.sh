@@ -150,9 +150,9 @@ closeout_journal_derive_key() {
 }
 
 # One worktree may have at most one live closeout for a given operation. The
-# stable claim directory is elected with one atomic mkdir before any journal
-# temp file, lifecycle mutation, merge, or push. Its owner record is operation
-# evidence only and lives beside (never inside) workflow state.
+# stable claim directory is elected before any journal temp file, lifecycle
+# mutation, merge, or push. Its owner record is operation evidence only and
+# lives beside (never inside) workflow state.
 closeout_claim_path() {
   local operation="$1" root key
   root="$(closeout_journal_root)" || return 1
@@ -173,11 +173,17 @@ closeout_claim_write_owner() {
   } | closeout_journal_write "$target"
 }
 
+# The election is the creation of the empty owner record with O_EXCL (bash
+# noclobber), not mkdir: uutils mkdir 0.10.0 (Ubuntu 26.04) can report success
+# to both callers of one racing mkdir.
+closeout_claim_elect() {
+  mkdir -p "$1" && (set -C; : >"$1/owner.json") 2>/dev/null
+}
+
 closeout_claim_acquire() {
   local operation="$1" claim
   claim="$(closeout_claim_path "$operation")" || return 1
-  mkdir -p "$(dirname "$claim")"
-  if ! mkdir "$claim" 2>/dev/null; then
+  if ! closeout_claim_elect "$claim"; then
     closeout_claim_conflict_dir="$claim"
     return 1
   fi
@@ -247,7 +253,7 @@ closeout_claim_takeover_for_recovery() {
     fi
     rm -rf "$recovery"
   fi
-  mkdir "$recovery" 2>/dev/null || return 3
+  closeout_claim_elect "$recovery" || return 3
   closeout_claim_dir="$claim"
   closeout_claim_mode="recovery"
   closeout_claim_operation="$operation"

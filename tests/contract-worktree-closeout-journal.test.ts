@@ -136,6 +136,9 @@ function installCloseoutBarrier(container: string, operation: "ship") {
       '      sleep 0.01',
       '    done',
       '    [[ "$count" -ge 2 ]] || exit 70',
+      // Models uutils mkdir 0.10.0 (Ubuntu 26.04): both callers of a racing
+      // mkdir can see success, so the election must not rely on mkdir.
+      '    exec /bin/mkdir -p "$target"',
       '    ;;',
       'esac',
       'exec /bin/mkdir "$@"',
@@ -449,7 +452,10 @@ describe("ship-worktrees closeout journal", () => {
       // claim path rather than merely overlapping in time.
       expect(readdirSync(barrierDir).length).toBeGreaterThanOrEqual(2);
 
-      expect(results.filter((result) => result.status === 0)).toHaveLength(1);
+      const callers = results
+        .map((result, index) => `caller ${index}: exit ${result.status}\n--- stderr\n${result.stderr}--- stdout\n${result.stdout}`)
+        .join("\n");
+      expect(results.filter((result) => result.status === 0), callers).toHaveLength(1);
       const loser = results.find((result) => result.status !== 0);
       expect(loser).toBeDefined();
       expect(loser!.stderr).toContain("closeout already owned for this worktree and operation");
