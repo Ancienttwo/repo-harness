@@ -36,7 +36,7 @@ hc ls --json
 #   no row with name == "portal-<slug>"                → step 2
 hc get portal-<slug> --json
 #   status.state == "blocked"                          → report the record; no message; stop
-#   state == "live", foreground.name == "claude",
+#   state == "live", basename(foreground.argv[0]) == "claude",
 #     foreground.cwd == <cwd>                          → reused: true, step 4
 #   any other result                                   → portal_name_conflict; stop
 

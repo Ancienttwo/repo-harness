@@ -1395,9 +1395,12 @@ exit 0
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-full-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
@@ -1408,7 +1411,7 @@ exit 0
         syncSkill: false,
         hostAdapters: false,
         codegraph: false,
-        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       }, { authorityHome: () => home });
 
       expect(result.exitCode).toBe(0);
