@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.hook-root.primary
+kind: calls
+source: component.hook-adapters.hook-root
+target: component.hook-adapters.primary
+intent: "Run the hook route runtime for one host event"

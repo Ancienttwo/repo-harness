@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.hook-adapters.hook-root.architecture-contracts
+kind: calls
+source: component.hook-adapters.hook-root
+target: component.contract-assets.architecture-contracts
+intent: "Register the architecture providers after the contract version check"
