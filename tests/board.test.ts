@@ -10,6 +10,8 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import type { RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
+import { errorEnvelope } from 'archctx-contracts';
 import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
@@ -45,6 +47,10 @@ else process.exit(2);
 interface Replay {
   readonly parent?: (data: Json) => void;
   readonly pulls?: (data: Json) => void;
+  /** Edits the recorded `archctx resolve` results of the open pull request files. */
+  readonly owners?: (results: Json[]) => void;
+  /** Replaces the recorded archctx process. */
+  readonly archctx?: RunArchctxProcess;
   readonly pin?: string;
   readonly now?: Date;
 }
@@ -64,6 +70,7 @@ function replay(options: Replay = {}): BoardV1 {
   writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: options.pin ?? '0.1.16' } } }));
   const parent = JSON.parse(fixture('parent-1474.graphql.json')); options.parent?.(parent.data);
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
+  const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
   const answer = (value: unknown) => ({ status: 0, stdout: typeof value === 'string' ? value : JSON.stringify(value) });
   return collectBoard({
     repo_root: root,
@@ -78,6 +85,20 @@ function replay(options: Replay = {}): BoardV1 {
     },
     // #1491 is the only PR that the recorded data shows as accepted; the readiness projection has its own suite.
     readiness: (selection) => ({ ...selection, protocol: 2, kind: 'repo-harness-pull-request-readiness', ready: selection.pr_number === 1491 }) as unknown as PullRequestReadinessV2,
+    // archctx 0.11.2 at d0f4223f4 on the files of the open PRs. A request gets the recorded result of each of its
+    // paths, in its order; exit 2 when one is ambiguous. An unrecorded path fails the test.
+    archctx: {
+      run: options.archctx ?? ((_binary, args) => {
+        if (args[0] !== 'resolve' || args[1] !== '--paths-from') throw new Error(`unexpected archctx call: ${args.join(' ')}`);
+        const results = readFileSync(args[2]!, 'utf8').trim().split('\n').map((path) => {
+          const result = resolved.data.results.find((entry: Json) => entry.path === path);
+          if (result === undefined) throw new Error(`no recorded archctx result for ${path}`);
+          return result;
+        });
+        const status = results.some((result: Json) => result.ambiguous) ? 2 : 0;
+        return { status, signal: null, stdout: JSON.stringify({ ...resolved, data: { results } }), stderr: '' };
+      }),
+    },
   });
 }
 
@@ -119,6 +140,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   ]);
   // t4 has no seat label: the board does not guess its seat. The plan comment has no block, so R1 and R4 wait.
   // #1494 and #1499 change `.github/` and their items carry no tier label, so R3 waits.
+  // #1494 and #1499 change several capabilities, so R5 waits too, and names their unowned paths. #1491 changes
+  // one capability and its own model node file (owned by contract-assets), which R5 does not count.
   expect(attention.unevaluated.map(entry => [entry.rule, entry.reason, entry.subject])).toEqual([
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
@@ -126,6 +149,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['R3', 'tier_label_missing', '#1494 #1479'],
     ['R3', 'tier_label_missing', '#1499 #1476'],
     ['R4', 'plan_unavailable', null],
+    ['R5', 'tier_label_missing', '#1494 #1479 .ai/harness/policy.json (unowned) src/effects/terminal/herdr-decision.ts (unowned)'],
+    ['R5', 'tier_label_missing', '#1499 #1476 .ai/harness/policy.json (unowned) src/core/sessions/task-sessions.ts (unowned)'],
   ]);
 });
 
@@ -217,7 +242,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
     },
   });
   const hits = rules(board);
-  for (const rule of ['A2', 'A4', 'A5', 'A6', 'A8', 'R1', 'R3', 'R4'] as const) expect(hits).toContain(rule);
+  for (const rule of ['A2', 'A4', 'A5', 'A6', 'A8', 'R1', 'R3', 'R4', 'R5'] as const) expect(hits).toContain(rule);
   const findings = evaluateBoardAttention(board).findings;
   expect(findings.find(finding => finding.rule === 'A2')?.pull_requests).toEqual([1491, 1499]);
   expect(findings.filter(finding => finding.rule === 'A6').map(finding => finding.issues)).toEqual([[1477, 1490], [1478, 1480]]);
@@ -260,10 +285,76 @@ test('one hit for each rule that the recorded state does not trigger', () => {
   ]);
 });
 
+test('R5: two owning capabilities among the counted paths are a High signal; an unowned or ambiguous path is always reported', () => {
+  // Recorded owners: task-agent-host, operator; .ai/harness/policy.json is unowned. task-sessions.ts is made ambiguous below.
+  const [task, operator, unowned, ambiguous] = ['src/effects/terminal/task-session.ts', 'src/operator-web/i18n.ts', '.ai/harness/policy.json', 'src/core/sessions/task-sessions.ts'];
+  const edit = (path: string, result: Json) => (results: Json[]) => {
+    const index = results.findIndex(entry => entry.path === path);
+    results.splice(index === -1 ? results.length : index, index === -1 ? 0 : 1, { path, matched: false, ambiguous: false, owningCapabilityId: null, ...result });
+  };
+  const makeAmbiguous = edit(ambiguous, { ambiguous: true, candidates: ['capability.a.b', 'capability.c.d'] });
+  // `tier` null: #1476 has no tier label. `incomplete`: the read returns fewer files than the PR changes.
+  const r5 = (files: string[], options: Replay = {}, tier: string | null = 'tier:low', incomplete = false): string[] => {
+    const attention = evaluateBoardAttention(replay({
+      ...options,
+      owners: (results) => { makeAmbiguous(results); options.owners?.(results); },
+      parent: (data) => { if (tier !== null) issueNode(data, 1476).labels.nodes.push({ name: tier }); },
+      pulls: (data) => { data.repository.pr1499.files = { totalCount: files.length + (incomplete ? 1 : 0), nodes: files.map(path => ({ path })) }; },
+    }));
+    return [
+      ...attention.findings.filter(finding => finding.rule === 'R5' && finding.pull_requests.includes(1499)).map(finding => finding.message),
+      // #1494 keeps its recorded files and no tier label; this case reads #1499 and the board-wide entries.
+      ...attention.unevaluated.filter(entry => entry.rule === 'R5' && (entry.subject === null || entry.subject.startsWith('#1499')))
+        .map(entry => `${entry.reason}: ${entry.subject}`),
+    ];
+  };
+  const hit = `#1499 changes 2 capabilities (capability.runtime-harness.operator, capability.runtime-harness.task-agent-host), a High signal, but #1476 is tier:low`;
+  const timedOut: RunArchctxProcess = () => ({ status: null, signal: null, stdout: '', stderr: '', timedOut: true });
+  const rejected: RunArchctxProcess = () => ({ status: 1, signal: null, stdout: JSON.stringify(errorEnvelope('resolve', 'AC_SCHEMA_INVALID', 'boom')), stderr: '' });
+  // Tier {below High, High} x unknown path {none, unowned, ambiguous} x owned capabilities {0, 1, 2}:
+  // every unknown path is in the result; the tier decides only the finding.
+  const owned = [['tests/herdr-task-lifecycle.test.ts'], [task], [task, operator]] as const;
+  for (const [tier, unknown, count, expected] of [
+    ['tier:low', null, 0, []],
+    ['tier:low', null, 1, []],
+    ['tier:low', null, 2, [hit]],
+    ['tier:low', unowned, 0, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:low', unowned, 1, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:low', unowned, 2, [`${hit}; 1 path with no single owner: ${unowned} (unowned)`]],
+    ['tier:low', ambiguous, 0, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:low', ambiguous, 1, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:low', ambiguous, 2, [`${hit}; 1 path with no single owner: ${ambiguous} (ambiguous)`]],
+    ['tier:high', null, 0, []],
+    ['tier:high', null, 1, []],
+    ['tier:high', null, 2, []],
+    ['tier:high', unowned, 0, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:high', unowned, 1, [`owner_undetermined: #1499 ${unowned} (unowned)`]],
+    ['tier:high', unowned, 2, [`owner_unknown: #1499 ${unowned} (unowned)`]],
+    ['tier:high', ambiguous, 0, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:high', ambiguous, 1, [`owner_undetermined: #1499 ${ambiguous} (ambiguous)`]],
+    ['tier:high', ambiguous, 2, [`owner_unknown: #1499 ${ambiguous} (ambiguous)`]],
+  ] as const) expect(r5([...owned[count], ...(unknown === null ? [] : [unknown])], {}, tier)).toEqual([...expected]);
+  for (const [files, options, expected, tier, incomplete] of [
+    // The recorded ambiguity of admitted-task-context.ts is between two components of the operator capability.
+    [[task, 'src/core/operator/admitted-task-context.ts'], {}, [hit]],
+    [[task, operator, unowned, ambiguous], {}, [`${hit}; 2 paths with no single owner: ${unowned} (unowned), ${ambiguous} (ambiguous)`]],
+    [[task, operator, unowned, ambiguous], {}, [`owner_unknown: #1499 ${unowned} (unowned) ${ambiguous} (ambiguous)`], 'tier:high'],
+    // Without a tier label, the unevaluated entry names the unknown path too.
+    [[task, operator, unowned], {}, [`tier_label_missing: #1499 #1476 ${unowned} (unowned)`], null],
+    [[task, operator], {}, ['files_incomplete: #1499'], 'tier:low', true],
+    // Tests, docs, the model and root Markdown do not count; each has another recorded owner.
+    [[task, 'src/effects/terminal/herdr.ts', 'tests/herdr-task-lifecycle.test.ts', 'docs/spec.md', '.archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml', 'README.md'],
+      { owners: edit('README.md', { matched: true, owningCapabilityId: 'capability.public-surface.root-router' }) }, []],
+    [[task, operator], { archctx: timedOut }, ['RH_ARCHCTX_TIMEOUT: null']],
+    [[task, operator], { archctx: rejected }, ['ARCHCONTEXT_MODEL_REJECTED: null']],
+  ] as const) expect(r5([...files], options, tier, incomplete)).toEqual([...expected]);
+});
+
 test('A2 finds a batch behind an overlapping pull request, and a plan hold removes a PR from A1, A2 and R4', () => {
   const green = { name: 'Required / CI', status: 'COMPLETED', conclusion: 'SUCCESS', completedAt: '2026-11-02T21:30:00Z' };
   const findings = (holds: number[]) => evaluateBoardAttention(replay({
     now: new Date('2026-11-03T02:00:00Z'),
+    owners: (results) => { results.push(...['a', 'b'].map(path => ({ path, matched: false, ambiguous: false, owningCapabilityId: null }))); },
     parent: (data) => {
       const plan = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: holds.map(issue => ({ issue, reason: 'held' })), batches: [], seat_limits: { worker: 3 } };
       data.repository.issue.comments.nodes.push(comment(`repo-harness plan\n\n\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`\n`, '2026-11-02T23:00:00Z'));
