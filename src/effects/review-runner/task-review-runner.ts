@@ -130,7 +130,7 @@ export function reviewSessionOptions(kind: ReviewRuntimeId, output: string, runt
     appendSystemPrompt: `${fleet.body}\nReview communication exception: writing the final JSON once to this request's exact result_ref is the only authorized mutation. No temporary file, rename, other edits or permission workarounds. This is communication, not production editing.` };
 }
 
-/** The one reviewer runner. A Herdr or app-terminal launch is an option of each session, not a second implementation. */
+/** The one reviewer runner. An hc or app-terminal launch is an option of each session, not a second implementation. */
 export const taskReviewRunner: ReviewerRunner<TaskPaneBinding, HerdrCoreEndpoint, TaskSessionAuthority> = {
   validateEndpoint: validateHerdrCoreEndpoint,
   endpointHome: endpoint => endpoint?.home,

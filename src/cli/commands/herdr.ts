@@ -1,5 +1,6 @@
 import { labelDecision } from '../../effects/terminal/herdr-decision.ts';
 import { HERDR_SESSION_NAME, writeNotifyInstallRecord } from '../../effects/terminal/herdr-notify-install.ts';
+import { NOTIFY_SECRET_KEYS as SECRETS } from '../../core/decision/notify-secret-keys.ts';
 import { Command } from 'commander';
 import { spawnSync } from 'node:child_process';
 import { constants, fchmodSync, closeSync, copyFileSync, fsyncSync, lstatSync, mkdirSync, openSync, renameSync, unlinkSync, writeFileSync } from 'node:fs';
@@ -9,7 +10,6 @@ import { fileURLToPath } from 'node:url';
 
 const PLUGIN_ID = 'aimpact.webhook-notify';
 const ASSETS = fileURLToPath(new URL('../../../assets/herdr/webhook-notify/', import.meta.url));
-const SECRETS = ['WEBHOOK_URL', 'WEBHOOK_KEY', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL', 'TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'CLOUDFLARE_ACCOUNT_ID', 'CLOUDFLARE_API_TOKEN'] as const;
 interface NotifyOptions {
   session: string;
   clefMode?: string;

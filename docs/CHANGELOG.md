@@ -18,6 +18,11 @@ All notable changes to this skill are documented here.
   fails with `task_agent_classic_herdr_record_retired`.
   Archive the record and start the session again. No migration command
   exists. (#1476)
+- `review round --launch herdr` is now `--launch herdr-app`, and
+  `herdr-app` is the default. The value `herdr` fails with
+  `review_launch_unsupported`; no alias exists. The OAR review host reports
+  its idle or working status to hc with OSC 7501 (`app=repo-harness`).
+  (#1477)
 - The operator console reads herdr-core, not classic Herdr. A runtime config
   with `"kind": "herdr"` fails with `runtime_config_classic_herdr_retired`;
   write `{"protocol":"repo-harness.runtime-config.v2","kind":"herdr-core","source_host":"<host>","deadline_ms":<ms>}`.
