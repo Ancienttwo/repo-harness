@@ -1,0 +1,7 @@
+schemaVersion: "archcontext.node/v2"
+id: "process.herdr-core-server"
+kind: "process"
+name: "herdr-core server"
+status: "active"
+layer: "external"
+summary: "hc core server that owns the persistent terminals and runs the argv of each one: the OAR host of each task-agent and review session, and the notify relay. Any hc CLI call starts a stopped core."

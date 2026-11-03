@@ -12,7 +12,7 @@ steps:
   - id: start-agent
     from: host
     to: session
-    label: Start the task agent pane for one task and role and record its binding
+    label: Start the task agent hc terminal for one task and role and record its binding
     evidence:
       entrypointId: entrypoint.task-agent-host.session
       sourceSymbol: startTaskApplicationHost
