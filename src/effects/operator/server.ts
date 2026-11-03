@@ -33,7 +33,7 @@ import { decodeRuntimeOverlay, unavailableRuntimeOverlay, type RuntimeOverlay } 
 import { ARCHITECTURE_FAILURES, parseArchitectureRequest, decodeArchitectureModuleIndex, decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt, OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '../architecture/archctx-provider';
 export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
-import { decodeNotifyStatus, type NotifyUnavailableReason } from '../../core/operator/notify-status';
+import { decodeNotifyStatus, NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyUnavailableReason } from '../../core/operator/notify-status';
 import { decodeBoard } from '../../core/board/board';
 import { BoardReadError, readRepositoryBoard, type BoardReadInput } from './board-read';
 import type { BoardReadFailure } from '../../core/operator/board-read';
@@ -423,10 +423,11 @@ function sendRefusal(
 }
 
 const NOTIFY_UNAVAILABLE: Readonly<Record<NotifyUnavailableReason, { readonly message: string; readonly next_action: string }>> = {
-  notify_session_missing: { message: 'No Herdr notify install record names the session.', next_action: 'Run `repo-harness herdr notify install --session <name>`.' },
-  notify_session_invalid: { message: 'The Herdr notify install record cannot be read.', next_action: 'Run `repo-harness herdr notify install --session <name>` again.' },
-  herdr_unavailable: { message: 'Herdr did not list its plugins.', next_action: 'Check that Herdr is running, then wait for the next collection.' },
-  notify_config_unavailable: { message: 'The notify plugin configuration could not be read.', next_action: 'Check the notify plugin installation, then wait for the next collection.' },
+  notify_session_missing: { message: 'No notify relay install record exists.', next_action: `Run \`${NOTIFY_INSTALL_COMMAND}\`.` },
+  notify_session_invalid: { message: 'The notify relay install record cannot be read.', next_action: `Run \`${NOTIFY_INSTALL_COMMAND}\` again.` },
+  hc_unavailable: { message: 'hc did not list its terminals.', next_action: 'Check that the hc core runs, then wait for the next collection.' },
+  relay_stopped: { message: 'The notify relay terminal is not live.', next_action: `Run \`${NOTIFY_START_COMMAND}\` to start it again.` },
+  notify_config_unavailable: { message: 'The notify relay configuration could not be read.', next_action: `Run \`${NOTIFY_INSTALL_COMMAND}\` again, then wait for the next collection.` },
 };
 
 const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {

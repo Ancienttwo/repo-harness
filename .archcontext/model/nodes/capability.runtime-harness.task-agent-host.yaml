@@ -27,7 +27,6 @@ source:
     - agents/fleet/**
     - .codex/agents/**
     - scripts/install-agent-fleet.sh
-    - src/effects/terminal/herdr-decision.ts
     - src/effects/terminal/native-task-session.ts
     - src/effects/review-runner/**
   entrypoints:
