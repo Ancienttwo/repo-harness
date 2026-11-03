@@ -3,9 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, 
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
-import { createConnection } from 'node:net';
-import { projectFleetBoardSnapshot } from '../../src/core/fleet/board';
-import { repoHarnessRegisteredReposPath, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
@@ -37,7 +35,6 @@ import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import {
   architectureStatus,
   startOperatorServer,
-  type OperatorServerOptions,
 } from '../../src/effects/operator/server';
 import {
   buildOperatorCommand,
@@ -58,17 +55,7 @@ import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree
 import { fakeHc } from '../helpers/fake-hc';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
 
-function snapshot(sequence = 1) {
-  return projectFleetBoardSnapshot({
-    registry_revision: 'sha256:registry',
-    sequence,
-    observed_at: '2026-08-24T01:03:00.000Z',
-    repositories: [],
-  });
-}
-
 const TASK_ID = 'a'.repeat(64);
-const CLAIM_ID = '123e4567-e89b-42d3-a456-426614174012';
 function registryHome(entries: readonly { readonly path: string; readonly accessMode: 'read_only' | 'read_write' }[]): {
   readonly env: NodeJS.ProcessEnv;
   readonly home: string;
@@ -116,61 +103,49 @@ describe('operator serve command and HTTP boundary', () => {
     expect(buildOperatorCommand().name()).toBe('operator');
   });
 
-  test('UX-local-human-control-board-v1-P1 serves health, browser-safe Fleet snapshot, and static fallback', async () => {
+  test('UX-local-human-control-board-v1-P1 serves health, the registered repositories without their roots, and static fallback', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-ui-'));
-    let collectCalls = 0;
-    const collect = async (options?: { readonly sequence?: number }) => {
-      collectCalls += 1;
-      await Bun.sleep(10);
-      return snapshot(options?.sequence ?? 1);
-    };
-    const options: OperatorServerOptions = {
-      port: 0,
-      static_root: staticRoot,
-      collect_fleet_board: collect,
-    };
+    const parent = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-registry-roots-')));
+    for (const name of ['beta', 'alpha']) mkdirSync(join(parent, name));
+    const registry = registryHome([
+      { path: join(parent, 'beta'), accessMode: 'read_write' },
+      { path: join(parent, 'alpha'), accessMode: 'read_only' },
+      { path: join(parent, 'gone'), accessMode: 'read_write' },
+    ]);
     writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
     writeFileSync(join(staticRoot, 'app.js'), 'console.log("operator");');
-    const server = await startOperatorServer(options);
+    const server = await startOperatorServer({ port: 0, static_root: staticRoot, env: registry.env });
     try {
       const health = await fetch(`${server.url}/healthz`);
       expect(health.status).toBe(200);
       expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 1 });
-      expect(collectCalls).toBe(0);
 
-      const rejectedHost = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+      const rejectedHost = await fetch(`${server.url}/api/v1/repositories`, {
         headers: { Host: 'attacker.example' },
       });
       expect(rejectedHost.status).toBe(421);
       expect(await rejectedHost.json()).toMatchObject({ error: { code: 'host_not_allowed' } });
-      expect(collectCalls).toBe(0);
 
-      const rejectedOrigin = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+      const rejectedOrigin = await fetch(`${server.url}/api/v1/repositories`, {
         headers: { Origin: 'http://attacker.example' },
       });
       expect(rejectedOrigin.status).toBe(403);
       expect(await rejectedOrigin.json()).toMatchObject({ error: { code: 'origin_not_allowed' } });
-      expect(collectCalls).toBe(0);
 
-      const [first, second] = await Promise.all([
-        fetch(`${server.url}/api/v1/fleet/snapshot`),
-        fetch(`${server.url}/api/v1/fleet/snapshot`),
-      ]);
-      expect(first.status).toBe(200);
-      expect(second.status).toBe(200);
-      expect(collectCalls).toBe(1);
-      const payload = await first.json() as Record<string, unknown>;
-      expect(payload).toMatchObject({ protocol: 8, kind: 'operator_fleet_snapshot', sequence: 1 });
-      expect(await second.json()).toMatchObject({ sequence: 1 });
-      expect(JSON.stringify(payload)).not.toContain('repo_root');
-
-      const third = await fetch(`${server.url}/api/v1/fleet/snapshot`);
-      expect(third.status).toBe(200);
-      expect(await third.json()).toMatchObject({ sequence: 2 });
-      const fourth = await fetch(`${server.url}/api/v1/fleet/snapshot`);
-      expect(fourth.status).toBe(200);
-      expect(await fourth.json()).toMatchObject({ sequence: 3 });
-      expect(collectCalls).toBe(3);
+      const listed = await fetch(`${server.url}/api/v1/repositories`);
+      expect(listed.status).toBe(200);
+      const text = await listed.text();
+      expect(JSON.parse(text)).toEqual({
+        protocol: 1, kind: 'operator_repositories', stale_registrations: 1,
+        repositories: [
+          { repository_id: registry.ids[1], display_name: 'alpha', access_mode: 'read_only' },
+          { repository_id: registry.ids[0], display_name: 'beta', access_mode: 'read_write' },
+        ],
+      });
+      expect(text).not.toContain(parent);
+      const query = await fetch(`${server.url}/api/v1/repositories?repository=${registry.ids[0]}`);
+      expect(query.status).toBe(400);
+      expect(await query.json()).toMatchObject({ error: { code: 'invalid_request' } });
 
       const staticResponse = await fetch(`${server.url}/app.js`);
       expect(staticResponse.status).toBe(200);
@@ -183,7 +158,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await navigation.text()).toContain('<main>operator</main>');
     } finally {
       await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
+      for (const path of [staticRoot, parent, registry.home]) rmSync(path, { recursive: true, force: true });
     }
   });
 
@@ -197,7 +172,6 @@ describe('operator serve command and HTTP boundary', () => {
           host: '::1',
           port: 0,
           static_root: staticRoot,
-          collect_fleet_board: async () => snapshot(),
         });
       } catch (error) {
         const code = (error as NodeJS.ErrnoException).code;
@@ -210,11 +184,11 @@ describe('operator serve command and HTTP boundary', () => {
       expect(health.status).toBe(200);
       expect(await health.json()).toEqual({ ok: true, service: 'repo-harness-operator', protocol: 1 });
 
-      const api = await fetch(`${server.url}/api/v1/fleet/snapshot`, {
+      const api = await fetch(`${server.url}/api/v1/dev-activity`, {
         headers: { Host: `[::1]:${server.port}`, Origin: server.url },
       });
       expect(api.status).toBe(200);
-      expect(await api.json()).toMatchObject({ kind: 'operator_fleet_snapshot' });
+      expect(await api.json()).toMatchObject({ projection_version: 'repo-harness.dev-activity.v2' });
 
       const html = await fetch(`${server.url}/dashboard`, {
         headers: { Host: `[::1]:${server.port}`, Origin: server.url, Accept: 'text/html' },
@@ -227,26 +201,20 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('UX-local-human-control-board-v1-F1 fails closed when Fleet authority is unavailable', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-failure-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      collect_fleet_board: async () => { throw new Error('secret provider stderr /private/path'); },
-    });
+  test('UX-local-human-control-board-v1-F1 fails closed when the registry is unreadable', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-registry-invalid-'));
+    // A registry that is not a regular file is unreadable; the refusal names no path.
+    mkdirSync(join(home, 'registered-repos.json'));
+    const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home } });
     try {
-      const response = await fetch(`${server.url}/api/v1/fleet/snapshot`);
+      const response = await fetch(`${server.url}/api/v1/repositories`);
       expect(response.status).toBe(503);
-      const body = await response.json() as { error: { code: string; message: string; next_action: string } };
-      expect(body.error).toMatchObject({ code: 'fleet_snapshot_unavailable' });
-      expect(body.error.message).toBe('Fleet snapshot is unavailable.');
-      expect(body.error.next_action).toContain('repo-harness fleet board --json');
-      expect(JSON.stringify(body)).not.toContain('secret provider stderr');
-      expect(JSON.stringify(body)).not.toContain('/private/path');
+      const text = await response.text();
+      expect(JSON.parse(text).error).toMatchObject({ code: 'registry_unavailable', message: 'The repository registry is unreadable.' });
+      expect(text).not.toContain(home);
     } finally {
       await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
+      rmSync(home, { recursive: true, force: true });
     }
   });
 
@@ -254,12 +222,10 @@ describe('operator serve command and HTTP boundary', () => {
     let reads = 0;
     const server = await startOperatorServer({
       port: 0,
-      collect_fleet_board: async () => { reads++; return snapshot(); },
-      read_task_context: async () => { reads++; throw new Error('unexpected read'); },
-      read_task_diff: async () => { reads++; throw new Error('unexpected read'); },
+      read_dev_activity: () => { reads++; return unavailableDevActivitySnapshot(); },
     });
     try {
-      const paths = ['/', '/healthz', '/api/v1/fleet/snapshot', '/api/v1/dev-activity', '/api/v1/setup',
+      const paths = ['/', '/healthz', '/api/v1/repositories', '/api/v1/dev-activity', '/api/v1/setup',
         ...['context', 'activity', 'diff', 'messages'].map(route => `/api/v1/fleet/tasks/repo-a/${TASK_ID}/${route}`)];
       for (const method of ['POST', 'PUT', 'PATCH', 'DELETE']) {
         for (const path of paths) {
@@ -287,7 +253,7 @@ describe('operator serve command and HTTP boundary', () => {
       const retired = await fetch(`${server.url}/api/v1/fleet/tasks/repo-a/${TASK_ID}/messages`);
       expect(retired.status).toBe(404);
       expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
-      expect((await fetch(`${server.url}/api/v1/fleet/snapshot`)).status).toBe(200);
+      expect((await fetch(`${server.url}/api/v1/dev-activity`)).status).toBe(200);
       expect(reads).toBe(1);
     } finally { await server.close(); }
   });
@@ -295,7 +261,7 @@ describe('operator serve command and HTTP boundary', () => {
   test('worktree route reads only its cache and rejects private or write payloads', async () => {
     let reads = 0;
     let current: unknown = { ...unavailableWorktrees(), status: 'ready', collected_at: '2026-10-27T00:00:00.000Z' };
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), worktree_collector: true,
+    const server = await startOperatorServer({ port: 0, worktree_collector: true,
       read_worktrees: () => { reads++; return current as WorktreesSnapshot; } });
     try {
       expect(await (await fetch(`${server.url}/api/v1/worktrees`)).json()).toEqual(current);
@@ -312,7 +278,7 @@ describe('operator serve command and HTTP boundary', () => {
     let reads = 0;
     const ready: DevActivitySnapshotV2 = { ...unavailableDevActivitySnapshot(), status: 'ready', collected_at: '2026-10-10T00:00:00.000Z', unreadable_registrations: 3 };
     let current: unknown = ready;
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_dev_activity: () => { reads++; return current as DevActivitySnapshotV2; } });
+    const server = await startOperatorServer({ port: 0, read_dev_activity: () => { reads++; return current as DevActivitySnapshotV2; } });
     try {
       const response = await fetch(`${server.url}/api/v1/dev-activity`);
       expect(response.status).toBe(200);
@@ -329,7 +295,7 @@ describe('operator serve command and HTTP boundary', () => {
     } finally { await server.close(); }
 
     const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-dev-activity-'));
-    const collecting = await startOperatorServer({ port: 0, dev_activity_collector: true, collect_fleet_board: async () => snapshot(),
+    const collecting = await startOperatorServer({ port: 0, dev_activity_collector: true,
       env: { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_PIPELINES_DB: join(home, 'none.db') } });
     try {
       let body: DevActivitySnapshotV2 = unavailableDevActivitySnapshot();
@@ -355,7 +321,7 @@ describe('operator serve command and HTTP boundary', () => {
     let current: unknown = ready;
     const spawnSpy = spyOn(childProcess, 'spawn');
     const spawnSyncSpy = spyOn(childProcess, 'spawnSync');
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_setup: () => { reads++; return current as SetupSnapshotV2; } });
+    const server = await startOperatorServer({ port: 0, read_setup: () => { reads++; return current as SetupSnapshotV2; } });
     try {
       const response = await fetch(`${server.url}/api/v1/setup`);
       expect(response.status).toBe(200);
@@ -378,7 +344,7 @@ describe('operator serve command and HTTP boundary', () => {
 
     // The serve collector answers from its cache at once: the first run is still pending.
     const home = mkdtempSync(join(tmpdir(), 'repo-harness-operator-setup-'));
-    const collecting = await startOperatorServer({ port: 0, setup_collector: true, collect_fleet_board: async () => snapshot(),
+    const collecting = await startOperatorServer({ port: 0, setup_collector: true,
       env: { PATH: process.env.PATH, HOME: home } });
     try {
       const started = Date.now();
@@ -408,7 +374,7 @@ describe('operator serve command and HTTP boundary', () => {
     const spawnSpy = spyOn(childProcess, 'spawn');
     const spawnSyncSpy = spyOn(childProcess, 'spawnSync');
     const execFileSpy = spyOn(childProcess, 'execFile');
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(),
+    const server = await startOperatorServer({ port: 0,
       read_bot_access: () => { reads++; return botCache; }, read_cli_inventory: () => { reads++; return cli as CliInventorySnapshotV1; } });
     const get = (path: string, init?: RequestInit) => fetch(`${server.url}${path}`, init);
     try {
@@ -461,7 +427,7 @@ describe('operator serve command and HTTP boundary', () => {
     }
 
     // Without a collector both routes report pending, never empty data.
-    const bare = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot() });
+    const bare = await startOperatorServer({ port: 0 });
     try {
       expect(await (await fetch(`${bare.url}/api/v1/bot-access`)).json()).toMatchObject({ error: { code: 'bot_access_pending' } });
       expect(await (await fetch(`${bare.url}/api/v1/cli-inventory`)).json()).toEqual(unavailableCliInventory('collection_pending'));
@@ -470,7 +436,7 @@ describe('operator serve command and HTTP boundary', () => {
     // The serve collectors take the session only from the install record: HERDR_SESSION in the server
     // environment neither fails Bot access at start nor stands in for a missing record.
     const home = mkdtempSync(join(tmpdir(), 'rh-serve-notify-session-'));
-    const collecting = await startOperatorServer({ port: 0, notify_collector: true, collect_fleet_board: async () => snapshot(),
+    const collecting = await startOperatorServer({ port: 0, notify_collector: true,
       env: { ...process.env, REPO_HARNESS_HOME: home, HERDR_SESSION: 'pane-session' } });
     try {
       let notify = await (await fetch(`${collecting.url}/api/v1/notify/status`)).json() as { error: { code: string; message: string; next_action: string } };
@@ -494,7 +460,7 @@ describe('operator serve command and HTTP boundary', () => {
     let reads = 0;
     const spawnSpy = spyOn(childProcess, 'spawn');
     const execFileSpy = spyOn(childProcess, 'execFile');
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_tests: id => { reads++; return id === 'repo-a' ? cache : { state: 'unavailable', reason: 'repository_not_found' }; } });
+    const server = await startOperatorServer({ port: 0, read_tests: id => { reads++; return id === 'repo-a' ? cache : { state: 'unavailable', reason: 'repository_not_found' }; } });
     const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
     try {
       for (const [state, status] of [
@@ -542,7 +508,7 @@ describe('operator serve command and HTTP boundary', () => {
     const board = decodeBoard(board1474);
     let result: () => Promise<unknown> = async () => board;
     const inputs: BoardReadInput[] = [];
-    const server = await startOperatorServer({ port: 0, collect_fleet_board: async () => snapshot(), read_board: input => { inputs.push(input); return result(); } });
+    const server = await startOperatorServer({ port: 0, read_board: input => { inputs.push(input); return result(); } });
     const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
     const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
     const path = '/api/v1/repositories/repo-a/board';
@@ -636,7 +602,7 @@ describe('operator serve command and HTTP boundary', () => {
           : { state: 'unavailable', reason: 'repository_not_found' });
     const spawnSpy = spyOn(childProcess, 'spawn');
     const execFileSpy = spyOn(childProcess, 'execFile');
-    const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1_000, collect_fleet_board: async () => snapshot(), read_docs });
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1_000, read_docs });
     const get = (path: string, init?: RequestInit) => fetch(`${server.url}${path}`, init);
     const file = (repo: string, query: string, init?: RequestInit) => get(`/api/v1/repositories/${repo}/docs/file?${query}`, init);
     const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
@@ -714,127 +680,6 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
-  test('isolates default Fleet collection and clears a blocked Worker for retry and shutdown', async () => {
-    if (process.platform === 'win32') return;
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-worker-'));
-    const repoRoot = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-repo-')));
-    expect(spawnSync('git', ['init', '-q', repoRoot]).status).toBe(0);
-    const registry = registryHome([{ path: repoRoot, accessMode: 'read_write' }]);
-    // Block a real Git read used by provider observation, not the retired Sprint marker.
-    const markerPath = join(repoRoot, 'git-read-gate'), bin = join(repoRoot, 'bin');
-    mkdirSync(bin);
-    const realGit = Bun.which('git')!, originalPath = process.env.PATH;
-    writeFileSync(join(bin, 'git'), `#!/bin/sh\ncat < '${markerPath}' > /dev/null\nexec '${realGit}' "$@"\n`, { mode: 0o755 });
-    process.env.PATH = `${bin}:${originalPath}`;
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      // The retry starts a real collector process and real Git reads within this
-      // deadline. On a busy host that work took more than one second.
-      timeout_ms: 5_000,
-      env: registry.env,
-    });
-    let writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
-    let closed = false;
-    try {
-      const startedAt = Date.now();
-      const blocked = fetch(`${server.url}/api/v1/fleet/snapshot`);
-      await Bun.sleep(30);
-      expect((await fetch(`${server.url}/healthz`)).status).toBe(200);
-      const timedOut = await blocked;
-      expect(Date.now() - startedAt).toBeLessThan(6_500);
-      expect(timedOut.status).toBe(503);
-      expect(await timedOut.json()).toMatchObject({ error: { code: 'fleet_snapshot_timeout' } });
-
-      writer.kill('SIGTERM');
-      rmSync(markerPath);
-      writeFileSync(markerPath, '\n');
-      const retry = await fetch(`${server.url}/api/v1/fleet/snapshot`);
-      expect(retry.status).toBe(200);
-      expect(JSON.stringify(await retry.json())).not.toContain(registry.home);
-
-      rmSync(markerPath);
-      expect(spawnSync('mkfifo', [markerPath]).status).toBe(0);
-      writer = spawn('bash', ['-c', 'exec 3>"$1"; sleep 10', 'bash', markerPath], { stdio: 'ignore' });
-      const active = fetch(`${server.url}/api/v1/fleet/snapshot`).catch(() => null);
-      await Bun.sleep(30);
-      const closeStartedAt = Date.now();
-      await server.close();
-      closed = true;
-      expect(Date.now() - closeStartedAt).toBeLessThan(2_500);
-      await active;
-    } finally {
-      process.env.PATH = originalPath;
-      writer.kill('SIGTERM');
-      if (!closed) await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-      rmSync(repoRoot, { recursive: true, force: true });
-      rmSync(registry.home, { recursive: true, force: true });
-    }
-  });
-
-  test('cancels a sole Fleet observation when its client disconnects and permits a clean retry', async () => {
-    const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-fleet-disconnect-'));
-    writeFileSync(join(staticRoot, 'index.html'), '<!doctype html><main>operator</main>');
-    let started = false;
-    let abortObserved = false;
-    let healthy = false;
-    let cleanupSettled = false;
-    let overlap = false;
-    let collectCalls = 0;
-    const server = await startOperatorServer({
-      port: 0,
-      static_root: staticRoot,
-      collect_fleet_board: async (options) => {
-        collectCalls += 1;
-        if (healthy) { overlap = !cleanupSettled; return snapshot(options?.sequence ?? 1); }
-        started = true;
-        return new Promise<never>((_resolve, reject) => {
-          options?.signal?.addEventListener('abort', () => {
-            abortObserved = true;
-            // The production collector settles long after the abort signal: it
-            // drains a cleanup grace period and then waits for the collector
-            // process group to disappear. A fixture that rejects inside the
-            // abort listener hides the reload race entirely, because the shared
-            // in-flight promise is already gone by the time a retry arrives.
-            setTimeout(() => { cleanupSettled = true; reject(new Error('cancelled Fleet fixture')); }, 300);
-          }, { once: true });
-        });
-      },
-    });
-    const socket = createConnection({ host: server.host, port: server.port });
-    try {
-      await new Promise<void>((resolveConnected, rejectConnected) => {
-        socket.once('connect', resolveConnected);
-        socket.once('error', rejectConnected);
-      });
-      socket.write([
-        'GET /api/v1/fleet/snapshot HTTP/1.1',
-        `Host: ${server.host}:${server.port}`,
-        'Connection: keep-alive',
-        '',
-        '',
-      ].join('\r\n'));
-      await waitFor(() => started, 'Fleet observation did not start');
-      socket.destroy();
-      await waitFor(() => abortObserved, 'Fleet client disconnect did not abort collection');
-      healthy = true;
-      // A page reload lands here: the cancelled collection has not settled yet,
-      // so a shared in-flight promise would hand this request the dying one.
-      const retry = await fetch(`${server.url}/api/v1/fleet/snapshot`);
-      expect(retry.status).toBe(200);
-      expect(await retry.json()).toMatchObject({ kind: 'operator_fleet_snapshot' });
-      expect(collectCalls).toBe(2);
-      expect(overlap).toBe(false);
-    } finally {
-      socket.destroy();
-      await server.close();
-      rmSync(staticRoot, { recursive: true, force: true });
-    }
-  });
-
   test('refuses static assets that escape through an intermediate symlink', async () => {
     const staticRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-ui-'));
     const outsideRoot = mkdtempSync(join(tmpdir(), 'repo-harness-operator-outside-'));
@@ -845,7 +690,6 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
-      collect_fleet_board: async () => snapshot(),
     });
     try {
       const response = await fetch(`${server.url}/assets/secret.js`);
@@ -864,10 +708,9 @@ describe('operator serve command and HTTP boundary', () => {
     const server = await startOperatorServer({
       port: 0,
       static_root: staticRoot,
-      collect_fleet_board: async () => snapshot(),
     });
     try {
-      for (const variant of ['/API/v1/fleet/snapshot', '/Api/v1/repository/repo-write/snapshot', '/API']) {
+      for (const variant of ['/API/v1/dev-activity', '/Api/v1/repository/repo-write/snapshot', '/API']) {
         const response = await fetch(`${server.url}${variant}`, { headers: { Accept: 'text/html' } });
         expect(response.status).toBe(404);
         expect(response.headers.get('content-type')).toBe('application/json; charset=utf-8');
@@ -882,7 +725,7 @@ describe('operator serve command and HTTP boundary', () => {
         "default-src 'self'; base-uri 'none'; connect-src 'self'; font-src 'self'; form-action 'none'; img-src 'self' data:; script-src 'self'; style-src 'self' 'unsafe-inline'; frame-ancestors 'none'",
       );
 
-      const options = await fetch(`${server.url}/api/v1/fleet/snapshot`, { method: 'OPTIONS' });
+      const options = await fetch(`${server.url}/api/v1/dev-activity`, { method: 'OPTIONS' });
       expect(options.status).toBe(405);
       expect(options.headers.get('allow')).toBe('GET, HEAD');
       expect(options.headers.get('content-security-policy')).toBeNull();
@@ -931,213 +774,6 @@ describe('operator serve command and HTTP boundary', () => {
       await server.close();
     }
   });
-});
-
-const admittedDiffSelector = {
-  repository_id: 'repo-a', provider_repository_id: '123', issue_id: '456', campaign_id: 'campaign',
-  task: 'review-task', role: 'deep-reasoner', claim_ref: 'https://github.com/acme/widgets/issues/1#issuecomment-2',
-  claim_revision: 'sha256:' + 'a'.repeat(64), grant_sha256: 'sha256:' + 'b'.repeat(64),
-  policy_sha256: 'sha256:' + 'c'.repeat(64), actor_id: 'owner', session_binding_sha256: 'sha256:' + 'd'.repeat(64),
-};
-const admittedDiffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSearchParams(
-  Object.fromEntries(Object.entries(admittedDiffSelector).filter(([key]) => key !== 'repository_id')));
-
-describe('reader retirement', () => {
-  // Activity shares this slot but requires an inbox-compatible stable task ID.
-  const selector = { ...admittedDiffSelector, task: TASK_ID };
-  const diffPath = '/api/v1/fleet/task-sessions/repo-a/diff?' + new URLSearchParams(
-    Object.fromEntries(Object.entries(selector).filter(([key]) => key !== 'repository_id')));
-  const diff = {
-    ...selector, protocol: 2 as const, kind: 'operator_task_diff' as const,
-    target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
-    observed_at: '2026-09-22T00:00:00.000Z', patch: '', untracked_paths: [],
-  };
-  const path = diffPath;
-  for (const ending of ['timeout', 'disconnect'] as const) {
-    test(`diff ${ending} holds its slot until retirement and refuses a premature same-source retry`, async () => {
-      let calls = 0, secondaryCalls = 0, firstSignal: AbortSignal | undefined, retire!: () => void;
-      const hold = (signal: AbortSignal) => {
-        calls++; if (calls > 1) return Promise.resolve();
-        firstSignal = signal; return new Promise<void>(resolve => { retire = resolve; });
-      };
-      const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
-        read_task_diff: async input => { await hold(input.signal); return diff; },
-        read_admitted_task_activity: async () => { secondaryCalls++; throw new Error('retired slot must block activity'); },
-        read_task_context: async () => { secondaryCalls++; throw new Error('retired slot must block context'); },
-      });
-      const abort = new AbortController();
-      const first = fetch(server.url + path, { signal: abort.signal }).catch(() => null);
-      try {
-        await waitFor(() => calls === 1, 'reader not started');
-        if (ending === 'disconnect') abort.abort();
-        const response = await first;
-        if (ending === 'timeout') expect(response?.status).toBe(503);
-        await waitFor(() => firstSignal?.aborted === true, 'reader cancellation not observed');
-        const busy = await fetch(server.url + path);
-        expect(busy.status).toBe(503);
-        expect(await busy.json()).toMatchObject({ code: 'busy' });
-        expect(calls).toBe(1);
-        for (const route of ['activity', 'context']) {
-          const blocked = await fetch(server.url + diffPath.replace('/diff?', `/${route}?`));
-          expect(blocked.status).toBe(503);
-          expect(await blocked.json()).toEqual({ code: 'busy' });
-        }
-        expect(secondaryCalls).toBe(0);
-        retire(); await Bun.sleep(0);
-        const fresh = await fetch(server.url + path);
-        expect(fresh.status).toBe(200);
-        expect(await fresh.json()).toEqual(diff);
-        expect(calls).toBe(2);
-      } finally { retire?.(); abort.abort(); await first; await server.close(); }
-    });
-  }
-
-  test(`diff shutdown awaits retirement for every concurrent close caller`, async () => {
-    let signal: AbortSignal | undefined, retire!: () => void;
-    const hold = (value: AbortSignal) => { signal = value; return new Promise<void>(resolve => { retire = resolve; }); };
-    const server = await startOperatorServer({ port: 0,
-      read_task_diff: async input => { await hold(input.signal); return diff; },
-    });
-    const request = fetch(server.url + path).catch(() => null);
-    try {
-      await waitFor(() => signal !== undefined, 'reader not started');
-      const closed = [false, false];
-      const first = server.close().then(() => { closed[0] = true; });
-      const second = server.close().then(() => { closed[1] = true; });
-      await waitFor(() => signal?.aborted === true, 'shutdown did not abort');
-      await Bun.sleep(30);
-      expect(closed).toEqual([false, false]);
-      retire(); await Promise.all([first, second]);
-      expect(closed).toEqual([true, true]);
-      expect((await request)?.status).not.toBe(200);
-    } finally { retire?.(); await server.close(); await request; }
-  });
-});
-
-describe('read-only task diff route', () => {
-  const path = admittedDiffPath;
-  const result = {
-    ...admittedDiffSelector, protocol: 2 as const, kind: 'operator_task_diff' as const,
-    target_ref: 'main', branch: 'codex/task', base_sha: 'a'.repeat(40), head_sha: 'b'.repeat(40),
-    observed_at: '2026-09-10T00:00:00.000Z', patch: '', untracked_paths: [],
-  };
-  test('validates query/fence and reuses origin and method guards', async () => {
-    let calls = 0;
-    const server = await startOperatorServer({ port: 0, read_task_diff: async () => { calls++; return result; } });
-    try {
-      const response = await fetch(server.url+path); expect(response.status).toBe(200); expect(await response.json()).toEqual(result);
-      const head = await fetch(server.url+path, { method: 'HEAD' }); expect(head.status).toBe(200); expect(await head.text()).toBe('');
-      expect((await fetch(server.url+path+'&root=/tmp')).status).toBe(400);
-      expect((await fetch(server.url+path+'&actor_id=other')).status).toBe(400);
-      expect((await fetch(server.url+path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
-      expect((await fetch(server.url+path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
-      expect(calls).toBe(2);
-    } finally { await server.close(); }
-  });
-  test('caps concurrent reads, enforces deadline and aborts the injected reader', async () => {
-    let entered!: () => void; const started = new Promise<void>(resolve => { entered = resolve; });
-    let signal: AbortSignal | undefined;
-    const server = await startOperatorServer({ port: 0, max_concurrency: 1, timeout_ms: 1000,
-      read_task_diff: input => { signal = input.signal; entered(); return new Promise((_resolve, reject) => input.signal.addEventListener('abort', () => reject(new Error('cancelled')), { once: true })); },
-    });
-    try {
-      const pending = fetch(server.url+path); await started;
-      expect(await (await fetch(server.url+path)).json()).toEqual({ code: 'busy' });
-      expect(await (await pending).json()).toEqual({ code: 'timeout' }); expect(signal?.aborted).toBe(true);
-    } finally { await server.close(); }
-  });
-  test('rejects mismatched reader payload', async () => {
-    const server = await startOperatorServer({ port: 0, read_task_diff: async () => ({ ...result, actor_id: 'other' }) });
-    try { expect(await (await fetch(server.url+path)).json()).toEqual({ code: 'unavailable' }); }
-    finally { await server.close(); }
-  });
-});
-
-test('task diff disconnect and shutdown cancel active reads', async () => {
-  const path = admittedDiffPath;
-  let entered!: () => void;
-  let stopped!: () => void;
-  let started = new Promise<void>(resolve => { entered = resolve; });
-  let cancelled = new Promise<void>(resolve => { stopped = resolve; });
-  const server = await startOperatorServer({ port: 0, read_task_diff: ({ signal }) => {
-    entered(); return new Promise((_resolve, reject) => signal.addEventListener('abort', () => { stopped(); reject(new Error('cancelled')); }, { once: true }));
-  } });
-  try {
-    const abort = new AbortController();
-    const response = fetch(server.url+path, { signal: abort.signal }).catch(() => null);
-    await started; abort.abort(); await cancelled; await response;
-    started = new Promise<void>(resolve => { entered = resolve; });
-    cancelled = new Promise<void>(resolve => { stopped = resolve; });
-    const closing = fetch(server.url+path).catch(() => null);
-    await started; await server.close(); await cancelled; await closing;
-  } finally { await server.close(); }
-});
-
-describe('current Task context route',()=>{
-  const hash='sha256:'+'a'.repeat(64);
-  const selector={repository_id:'repo-a',provider_repository_id:'123',issue_id:'456',campaign_id:'review',task:TASK_ID,role:'worker',claim_ref:'claim:1',claim_revision:hash,grant_sha256:hash,policy_sha256:hash,actor_id:'owner',session_binding_sha256:hash};
-  const query=new URLSearchParams(Object.entries(selector).filter(([key])=>key!=='repository_id'));
-  const path=`/api/v1/fleet/task-sessions/repo-a/context?${query}`;
-  const context:import('../../src/core/operator/admitted-task-context').AdmittedTaskContext={
-    protocol:2,kind:'operator_admitted_task_context',selector,goal:{revision:hash,content:'Current goal'},verification:{plan_sha256:hash,plan_json:'{}'},
-    scope:{allowed_paths:['src/**'],benchmark:'not_required',oracles_json:'[]'},approval:{admission_sha256:hash,grant_sha256:hash,revision:1,goal_revision:hash,scope_sha256:hash},
-    execution:{branch:'codex/task',runtime:'terminal',harness_kind:'codex'},observed_at:'2026-10-25T00:00:00Z',
-  };
-  test('validates Host, Origin and selectors before reading, then binds expected revision',async()=>{
-    let calls=0;const server=await startOperatorServer({port:0,read_task_context:async()=>{calls++;return context;}});
-    try {
-      expect((await fetch(server.url+path,{headers:{Host:'foreign.invalid'}})).status).toBe(421);
-      expect((await fetch(server.url+path,{headers:{Origin:'https://foreign.invalid'}})).status).toBe(403);
-      expect((await fetch(server.url+path+'&source_ref=private')).status).toBe(400);
-      expect(calls).toBe(0);
-      expect((await fetch(server.url+path)).status).toBe(200);
-      const changedQuery=new URLSearchParams(query);changedQuery.set('grant_sha256','sha256:'+'b'.repeat(64));
-      expect(await(await fetch(server.url+'/api/v1/fleet/task-sessions/repo-a/context?'+changedQuery)).json()).toEqual({code:'unavailable'});
-    } finally {await server.close();}
-  });
-  test('context timeout holds shared activity capacity until the original reader settles',async()=>{
-    let entered!:()=>void,settle!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});
-    let signal:AbortSignal|undefined,activityCalls=0;
-    const server=await startOperatorServer({port:0,timeout_ms:1000,max_concurrency:1,
-      read_task_context:input=>{signal=input.signal;entered();return new Promise(resolve=>{settle=()=>resolve(context);});},
-      read_admitted_task_activity:async()=>{activityCalls++;throw new Error('unused');},
-    });
-    try {
-      const pending=fetch(server.url+path);await started;
-      const activityPath=server.url+path.replace('/context','/activity');
-      expect(await(await fetch(activityPath)).json()).toEqual({code:'busy'});
-      expect(await(await pending).json()).toEqual({code:'timeout'});expect(signal?.aborted).toBeTrue();
-      expect(await(await fetch(activityPath)).json()).toEqual({code:'busy'});expect(activityCalls).toBe(0);
-      settle();await new Promise(resolve=>setTimeout(resolve,0));
-      expect(await(await fetch(activityPath)).json()).toEqual({code:'unavailable'});expect(activityCalls).toBe(1);
-    } finally {settle?.();await server.close();}
-  });
-  test('server shutdown aborts a context reader and does not publish a late response',async()=>{
-    let entered!:()=>void;const started=new Promise<void>(resolve=>{entered=resolve;});let aborted=false;
-    const server=await startOperatorServer({port:0,read_task_context:({signal})=>new Promise((_,reject)=>{
-      signal.addEventListener('abort',()=>{aborted=true;reject(new Error('cancelled'));},{once:true});entered();
-    })});
-    const pending=fetch(server.url+path).catch(()=>null);await started;await server.close();await pending;expect(aborted).toBeTrue();
-  });
-});
-
-test('fleet snapshots use a new service epoch after server restart', async () => {
-  const root = mkdtempSync(join(tmpdir(), 'operator-epoch-'));
-  const epochs: string[] = [];
-  try {
-    for (let i = 0; i < 2; i += 1) {
-      const server = await startOperatorServer({ port: 0, static_root: root, collect_fleet_board: async (input) =>
-        projectFleetBoardSnapshot({ registry_revision: `sha256:${'a'.repeat(64)}`, sequence: input!.sequence!,
-          observed_at: '2026-09-22T00:00:00.000Z', repositories: [{ repository_id: 'repo-a',
-            repo_root: '/private/repo', access_mode: 'read_only', status: 'ok', snapshot_consistency: 'stable', cards: [], error: null }] }),
-      });
-      try {
-        const fleet = await (await fetch(server.url + '/api/v1/fleet/snapshot')).json() as {service_epoch: string; protocol: number};
-        expect(fleet.protocol).toBe(8); epochs.push(fleet.service_epoch);
-      } finally { await server.close(); }
-    }
-    expect(epochs[0]).not.toBe(epochs[1]);
-  } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
 // Phase B uses the real Phase A fixture and the production worker/supervisor.
@@ -1292,7 +928,7 @@ test('architecture rejects F-01 query injections before any child and refuses cr
         expect((await fetch(server.url + path + '?' + query, { method })).status).toBe(400);
       }
       for (const site of ['cross-site', 'same-site', 'foreign']) expect((await fetch(server.url + path + '?shard=1', { method, headers: { 'Sec-Fetch-Site': site } })).status).toBe(403);
-      expect((await fetch(server.url + '/api/v1/fleet/snapshot', { method, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
+      expect((await fetch(server.url + '/api/v1/dev-activity', { method, headers: { 'Sec-Fetch-Site': 'cross-site' } })).status).toBe(403);
     }
     expect(architectureArgv(git.log)).toEqual([]); expect(processSpy.mock.calls).toHaveLength(0);
     expect(existsSync(join(root, 'output'))).toBe(false);
@@ -1421,21 +1057,6 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
     child.kill('SIGTERM'); expect(await exited).toBe(0);
   } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } for (const path of [root, home, hc.root]) rmSync(path, { recursive: true, force: true }); }
-});
-
-test('session discovery is bounded read-only transport with a closed repository selector', async () => {
-  const value = { protocol: 1 as const, kind: 'operator_task_sessions' as const, repository_id: 'repo-a',
-    observed_at: '2026-10-25T00:00:00Z', sessions: [] };
-  let calls = 0;
-  const server = await startOperatorServer({ port: 0, read_task_sessions: async () => { calls++; return value; } });
-  try {
-    const path = server.url + '/api/v1/fleet/task-sessions/repo-a';
-    const response = await fetch(path); expect(response.status).toBe(200); expect(await response.json()).toEqual(value);
-    expect((await fetch(path + '?root=/tmp')).status).toBe(400);
-    expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
-    expect((await fetch(path, { headers: { Origin: 'https://example.com' } })).status).toBe(403);
-    expect(calls).toBe(1);
-  } finally { await server.close(); }
 });
 
 describe('architecture map', () => {
@@ -1579,7 +1200,7 @@ describe('worktree cleanup write route', () => {
     const repo = { id: repoHarnessRepoIdFor(main), path: main, accessMode: 'read_only' as const, source: 'adopt' as const, registeredAt: '2026-10-28T00:00:00.000Z', lastSeenAt: '2026-10-28T00:00:00.000Z' };
     writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [repo] }));
     const env = { REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: root, ...extraEnv };
-    const server = await startOperatorServer({ port: 0, static_root: ui, env, collect_fleet_board: async () => snapshot(), write_routes: writeRoutes(env) });
+    const server = await startOperatorServer({ port: 0, static_root: ui, env, write_routes: writeRoutes(env) });
     const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
     const post = (body: unknown) => fetch(`${server.url}/api/v1/worktrees/cleanup`, { method: 'POST', body: JSON.stringify(body),
       headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie } });

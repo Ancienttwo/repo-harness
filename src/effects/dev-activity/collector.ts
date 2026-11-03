@@ -8,8 +8,7 @@
 
 import { spawn } from 'node:child_process';
 import { spawnGit } from '../git/runner';
-import { lstatSync, realpathSync } from 'node:fs';
-import { basename, isAbsolute, sep } from 'node:path';
+import { basename, isAbsolute } from 'node:path';
 
 import { spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup } from '../process-group-termination';
@@ -31,6 +30,7 @@ import type { RuntimeOverlay } from '../../core/operator/runtime-status';
 import { parseWorktreeTopology } from '../git/worktree-topology';
 import {
   readRepoHarnessRegistryStrictSnapshot,
+  registeredRootReadable,
   type RepoHarnessRegisteredRepo,
 } from '../repo-registry';
 
@@ -193,20 +193,6 @@ function subprocessEnv(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
 
 const failureReason = (prefix: string, code: DevActivityProcessFailure): string =>
   `${prefix}_${code === 'not_found' ? 'not_installed' : code}`;
-
-/** The registry entry must name a real directory, not a symlink (same rule as Fleet). */
-function readableAuthority(repo: RepoHarnessRegisteredRepo): boolean {
-  let path = repo.path;
-  while (path.length > 1 && (path.endsWith(sep) || path.endsWith('/'))) path = path.slice(0, -1);
-  try {
-    const stat = lstatSync(path);
-    if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
-    realpathSync(path);
-    return true;
-  } catch {
-    return false;
-  }
-}
 
 async function boundedMap<T, U>(values: readonly T[], limit: number, map: (value: T) => Promise<U>): Promise<U[]> {
   const output = new Array<U>(values.length);
@@ -411,7 +397,7 @@ Promise<DevActivitySnapshotV2> {
   } catch {
     return { ...unavailableDevActivitySnapshot(), collected_at: new Date(now()).toISOString() };
   }
-  const readable = repos.filter(readableAuthority);
+  const readable = repos.filter(registeredRootReadable);
   let runtime: DevActivitySourceHealth;
   if (!options.read_runtime) runtime = runtimeSourceHealth(null, now());
   else {

@@ -32,7 +32,8 @@ import {
 } from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
+import { fetchRepositories } from '../../src/operator-web/repositories';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
@@ -59,13 +60,19 @@ function installDom(url = 'http://127.0.0.1:4318/#board'): void {
 
 const NOW = Date.now();
 const busy = (): DevActivitySnapshotV2 => decodeDevActivitySnapshot(busyDevActivity(NOW));
+/** The registry rows of the busy Dev Activity repositories, in its order. */
+const registry = (ids: readonly string[] = busy().repositories.map(row => row.repository_id), stale = 0): OperatorRepositoriesV1 => decodeOperatorRepositories({
+  protocol: 1, kind: 'operator_repositories', stale_registrations: stale,
+  repositories: ids.map(id => ({ repository_id: id, display_name: busy().repositories.find(row => row.repository_id === id)!.display_name, access_mode: 'read_write' })),
+});
+const REGISTRY = registry();
 const trees = (): WorktreesSnapshot => decodeWorktrees(busyWorktrees(NOW));
 const MB = 1024 * 1024;
 
 function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   const worktrees = trees();
   return {
-    initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
+    initialLocale: 'en', initialRepositories: REGISTRY, readRepositories: async () => REGISTRY,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
@@ -231,15 +238,16 @@ describe('board page', () => {
     for (const affordance of ['Approve', 'Merge now', 'Close PR', 'Start agent', 'Delete']) expect(words).not.toContain(affordance);
   });
 
-  test('on a cold load the form takes the repository that arrives after mount, and Open reads it', async () => {
-    const one = busy();
-    const single = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...one, repositories: [one.repositories[0]], items: one.items.filter(item => item.repository_id === HARNESS_ID), attention: [] })));
-    let arrive: (snapshot: DevActivitySnapshotV2) => void = () => {};
+  test('on a cold load the form takes its options from the registry list that arrives after mount, without Dev Activity, and Open reads it', async () => {
+    let arrive: (list: OperatorRepositoriesV1) => void = () => {};
     const subjects: BoardSubject[] = [];
-    await mount(<OperatorApp {...props(single, { initialDevActivity: undefined, fetchDevActivity: () => new Promise(resolve => { arrive = resolve; }),
+    await mount(<OperatorApp {...props(busy(), {
+      initialDevActivity: undefined, fetchDevActivity: () => new Promise(() => {}),
+      initialRepositories: undefined, readRepositories: () => new Promise(resolve => { arrive = resolve; }),
       readBoard: async (subject) => { subjects.push(subject); return { state: 'ok', board: BOARD }; } })} />);
     expect(document.querySelectorAll('[data-board-subject] option')).toHaveLength(0);
-    await act(async () => arrive(single));
+    await act(async () => arrive(registry([HARNESS_ID])));
+    expect(document.querySelectorAll('[data-board-subject] option')).toHaveLength(1);
     const form = document.querySelector('[data-board-subject]')!;
     const parent = form.querySelector<HTMLInputElement>('input')!;
     await act(async () => {
@@ -418,15 +426,89 @@ describe('board page', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('stale registrations fold into one row with the preview command', async () => {
+  test('the registry reader decodes the list with the core decoder and refuses any other shape', async () => {
+    const valid = { protocol: 1, kind: 'operator_repositories', repositories: [{ repository_id: HARNESS_ID, display_name: 'repo-harness', access_mode: 'read_write' }], stale_registrations: 3 };
+    const answers: (() => Response)[] = [
+      () => Response.json(valid),
+      () => Response.json({ ...valid, protocol: 2 }),
+      () => Response.json({ ...valid, repositories: [{ ...valid.repositories[0], repo_root: '/Users/me/repo-harness' }] }),
+      () => Response.json({ ...valid, repositories: [valid.repositories[0], valid.repositories[0]] }),
+      () => Response.json({ error: { code: 'registry_unavailable', message: 'unreadable', next_action: 'retry' } }, { status: 503 }),
+    ];
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: unknown) => { requests.push(String(url)); return answers[requests.length - 1]!(); }) as typeof fetch;
+    try {
+      const results: string[] = [];
+      for (const _ of answers) {
+        try { results.push(`ok ${(await fetchRepositories(new AbortController().signal)).stale_registrations}`); }
+        catch (error) { results.push((error as Error).message); }
+      }
+      expect(results).toEqual(['ok 3', 'repositories response is invalid', 'repositories response is invalid', 'repositories response is invalid', 'registry_unavailable']);
+      expect(new Set(requests)).toEqual(new Set(['/api/v1/repositories']));
+    } finally { globalThis.fetch = original; }
+  });
+
+  test('Repositories lists the registry rows with Dev Activity health; a row opens the board form of that repository', async () => {
     installDom('http://127.0.0.1:4318/#repositories');
-    await mount(<OperatorApp {...props(decodeDevActivitySnapshot(degradedDevActivity(NOW)))} />);
+    const site = busy().repositories[1]!.repository_id;
+    const uncollected = 'repo_2b3c4d5e6f708192';
+    const list = decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', stale_registrations: 2489, repositories: [
+      ...REGISTRY.repositories, { repository_id: uncollected, display_name: 'service-api', access_mode: 'read_only' },
+      ...['a', 'b', 'c'].map(name => ({ repository_id: `repo_${name}`, display_name: `extra-${name}`, access_mode: 'read_write' })),
+    ] });
+    await mount(<OperatorApp {...props(decodeDevActivitySnapshot(degradedDevActivity(NOW)), { initialRepositories: list, readRepositories: async () => list })} />);
+    const row = (id: string) => document.querySelector<HTMLButtonElement>(`[data-repository="${id}"]`);
+    // Six rows show; the rest stay behind one toggle.
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(6);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-more-repositories]')!.click());
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(7);
+    expect(row(site)!.querySelector('[data-source-kind="github"]')?.getAttribute('data-source-status')).toBe('unavailable');
+    expect(row(uncollected)!.querySelector('[data-not-collected]')?.textContent).toBe('not collected');
+    expect(row(uncollected)!.querySelector('[data-access]')?.getAttribute('data-access')).toBe('read_only');
+    // Registrations whose root is gone fold into one row; its commands show only when opened.
     const stale = document.querySelector('[data-stale-registrations]')!;
     expect(stale.getAttribute('data-stale-registrations')).toBe('2489');
-    expect(stale.querySelector('[data-command]')?.textContent).toContain('repo-harness fleet prune');
+    expect(stale.querySelector('[data-command]')).toBeNull();
+    await act(async () => stale.querySelector<HTMLButtonElement>('button[aria-expanded]')!.click());
+    expect(Array.from(stale.querySelectorAll('[data-command] code')).map(code => code.textContent)).toEqual([
+      'repo-harness fleet prune', 'repo-harness fleet prune --apply --expected-revision <digest>']);
     expect(stale.textContent).toContain('without a backup');
-    expect(document.querySelectorAll('[data-repository]')).toHaveLength(2);
-    expect(document.querySelector('[data-source-kind="github"]')?.getAttribute('data-source-status')).toBe('unavailable');
+    await act(async () => row(site)!.click());
+    expect(window.location.hash).toBe('#board');
+    expect(document.querySelector<HTMLSelectElement>('[data-board-subject] select')?.value).toBe(site);
+  });
+
+  test('a failed registry refresh keeps the last rows and marks the list, apart from the Dev Activity line', async () => {
+    installDom('http://127.0.0.1:4318/#repositories');
+    let fail = false;
+    const activity = busy();
+    await mount(<OperatorApp {...props(activity, {
+      initialRepositories: REGISTRY,
+      readRepositories: async () => { if (fail) throw new Error('registry_unavailable'); return REGISTRY; },
+    })} />);
+    const marker = () => document.querySelector('[data-freshness-source="repositories"]');
+    expect(marker()).toBeNull();
+    fail = true;
+    await act(async () => button('Refresh').click());
+    await act(async () => {});
+    expect(marker()?.getAttribute('data-freshness')).toBe('refresh-failed');
+    expect(marker()?.textContent).toBe('Registry refresh failed · showing the last list');
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(REGISTRY.repositories.length);
+    expect(document.querySelector('.operator-header [data-freshness]')?.getAttribute('data-freshness')).toBe(activity.status);
+  });
+
+  test('a refresh that answers another protocol drops the last list instead of keeping it', async () => {
+    installDom('http://127.0.0.1:4318/#repositories');
+    let answer: unknown = REGISTRY;
+    await mount(<OperatorApp {...props(busy(), { initialRepositories: REGISTRY, readRepositories: async () => decodeOperatorRepositories(answer) })} />);
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(REGISTRY.repositories.length);
+    answer = { ...REGISTRY, protocol: 2 };
+    await act(async () => button('Refresh').click());
+    await act(async () => {});
+    expect(document.querySelectorAll('[data-repository]')).toHaveLength(0);
+    expect(document.body.textContent).toContain('The repository registry cannot be read');
+    expect(document.querySelector('[data-freshness-source="repositories"]')).toBeNull();
   });
 });
 

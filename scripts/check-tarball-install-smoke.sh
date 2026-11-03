@@ -75,8 +75,7 @@ const required = [
   "scripts/verification-plan.ts",
   "src/core/evidence/verification-plan.ts",
   "src/effects/evidence/verification-execution.ts",
-  "src/effects/operator/fleet-collector-process.ts",
-  "assets/operator/fleet-windows-job-controller.ps1",
+  "assets/operator/windows-job-controller.ps1",
   "dist/operator-ui/index.html",
 ];
 const retired = [
@@ -180,8 +179,8 @@ JS_EOF
 }
 
 assert_operator_runtime() {
-  bun - "$OPERATOR_URL" "$OPERATOR_HOME" <<'JS_EOF'
-const [, , baseUrl, isolatedHome] = process.argv;
+  bun - "$OPERATOR_URL" "$OPERATOR_HOME" "$OPERATOR_REGISTRY" <<'JS_EOF'
+const [, , baseUrl, isolatedHome, registryHome] = process.argv;
 const fail = (message) => {
   console.error(`[tarball-smoke] ERROR: ${message}`);
   process.exit(1);
@@ -213,28 +212,21 @@ for (const token of ['--color-kumo-base', '--color-kumo-line', '[data-mode=dark]
 }
 // `?fixture=` exists only under the Vite dev server; its data must not ship.
 if (assetText.js.includes('unknown operator fixture')) fail('operator bundle contains development fixtures');
-const snapshot = await fetch(`${baseUrl}/api/v1/fleet/snapshot`);
-if (!snapshot.ok) fail(`operator Fleet API returned ${snapshot.status}`);
-const payload = await snapshot.json();
-// The operator browser payload versions itself separately from FLEET_BOARD_PROTOCOL
-// (src/core/fleet/board.ts) and from the /healthz route protocol above. Read the
-// installed package's own constant rather than restating it, so a protocol bump
-// cannot pass its own tests here while this smoke asserts a stale literal.
-const { decodeOperatorFleetSnapshot, OPERATOR_FLEET_PAYLOAD_PROTOCOL } = await import(`${process.cwd()}/node_modules/repo-harness/src/operator-web/types.ts`);
-if (payload?.protocol !== OPERATOR_FLEET_PAYLOAD_PROTOCOL || payload?.kind !== 'operator_fleet_snapshot' || !Array.isArray(payload?.repositories)
-  || typeof payload?.source_snapshot_sha256 !== 'string') {
-  fail('operator Fleet API did not return OperatorFleetSnapshotV1');
-}
-const { stableSnapshot } = await import(`${process.cwd()}/node_modules/repo-harness/src/operator-web/fixture.ts`);
-decodeOperatorFleetSnapshot(payload);
-const fixture = decodeOperatorFleetSnapshot(stableSnapshot);
-if (!fixture.repositories.flatMap((repo) => repo.cards).some((card) => card.inbox.unread_count > 0 && card.inbox.addressed_to_current_claim === true)) {
-  fail('installed operator payload consumer did not preserve nonempty inbox state');
-}
-const serialized = JSON.stringify(payload);
-for (const forbidden of ['repo_root', 'cause', 'stderr', 'stack', isolatedHome]) {
-  if (serialized.includes(forbidden)) fail(`operator Fleet payload exposed ${forbidden}`);
-}
+// Register one repository with the installed package, so the path check below reads a real row.
+const { mkdirSync } = await import('node:fs');
+const smokeRepo = `${isolatedHome}/smoke-repo`;
+mkdirSync(smokeRepo, { recursive: true });
+const { registerRepoHarnessRepo } = await import(`${process.cwd()}/node_modules/repo-harness/src/effects/repo-registry.ts`);
+const registration = registerRepoHarnessRepo(smokeRepo, 'manual', { env: { HOME: isolatedHome, REPO_HARNESS_HOME: registryHome }, requireAdopted: false });
+if (!registration.registered) fail(`could not register the smoke repository: ${registration.reason}`);
+const listed = await fetch(`${baseUrl}/api/v1/repositories`);
+if (!listed.ok) fail(`operator repository list returned ${listed.status}`);
+const payload = await listed.json();
+// Decode with the installed package's own decoder, so a protocol bump cannot pass here with a stale literal.
+const { decodeOperatorRepositories } = await import(`${process.cwd()}/node_modules/repo-harness/src/core/operator/repositories.ts`);
+const list = decodeOperatorRepositories(payload);
+if (list.repositories.length !== 1 || list.repositories[0].display_name !== 'smoke-repo') fail('operator repository list did not show the registered repository');
+if (JSON.stringify(payload).includes(isolatedHome)) fail('operator repository list exposed a local path');
 JS_EOF
 }
 

@@ -7,7 +7,9 @@ import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { docsLink, MERMAID_CONFIG } from '../../src/operator-web/DocsMarkdown';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
+
+const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { DOCS_COMMIT, DOCS_COMMITTED_AT, docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from '../../src/operator-web/fixtures/docs';
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
@@ -76,7 +78,7 @@ async function settle(): Promise<void> {
 
 function props(): OperatorAppProps {
   return {
-    initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
+    initialLocale: 'en', initialRepositories: REGISTRY, readRepositories: async () => REGISTRY,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),

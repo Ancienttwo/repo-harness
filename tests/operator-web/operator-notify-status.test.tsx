@@ -2,9 +2,8 @@ import { beforeEach, describe, expect, test } from 'bun:test';
 import { renderToStaticMarkup } from 'react-dom/server';
 import { OperatorApp } from '../../src/operator-web/App';
 import { NotifyStatusPanel } from '../../src/operator-web/NotifyStatus';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
 import { translate } from '../../src/operator-web/i18n';
-import { projectSnapshotViewState } from '../../src/operator-web/types';
 import type { NotifyStatusV1 } from '../../src/core/operator/notify-status';
 
 const SECRET = 'super-secret-webhook-key';
@@ -57,7 +56,7 @@ describe('notify plugin status panel', () => {
       <OperatorApp
         initialLocale="en"
         initialPlace={{ workspace: 'system', module: null, item: null }}
-        initialState={projectSnapshotViewState(stableSnapshot)}
+        initialRepositories={registryOf(['repo-harness'])}
         initialNotifyStatus={{ ...status, last_delivery: { at: null, result: 'missing' } }}
       />,
     );

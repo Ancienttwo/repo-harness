@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, isAbsolute, join, resolve } from "path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import {
   acquireExclusiveDirectoryLock,
   exclusiveDirectoryLockOwnerLiveness,
@@ -444,6 +444,20 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
     lastSeenAt: entry.lastSeenAt,
     ...panePrefixOf(entry),
   });
+}
+
+/** A registered root counts only when it names a real directory, not a symlink. */
+export function registeredRootReadable(repo: RepoHarnessRegisteredRepo): boolean {
+  let path = repo.path;
+  while (path.length > 1 && (path.endsWith(sep) || path.endsWith("/"))) path = path.slice(0, -1);
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
+    realpathSync(path);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /**

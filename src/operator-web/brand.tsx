@@ -8,6 +8,7 @@ import { cn } from '@cloudflare/kumo';
 export const LOGO_MARK = '/logos/repo-harness-carrot-mark-transparent.svg';
 export const MASCOTS = {
   'buddy-happy': '/mascots/buddy-happy.svg',
+  'buddy-sleep': '/mascots/buddy-sleep.svg',
   'cloud-off': '/mascots/cloud-off.svg',
 } as const;
 export type MascotName = keyof typeof MASCOTS;

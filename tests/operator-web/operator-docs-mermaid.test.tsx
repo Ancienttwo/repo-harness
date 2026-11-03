@@ -7,7 +7,9 @@ import { decodeDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { docsLines } from '../../src/core/operator/docs';
 import { unavailableRuntimeOverlay } from '../../src/core/operator/runtime-status';
 import { OperatorApp } from '../../src/operator-web/App';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
+
+const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { docsFileAnswer, docsTreeAnswer } from '../../src/operator-web/fixtures/docs';
 
@@ -69,7 +71,7 @@ test('a malformed Mermaid block shows its source and leaves no Mermaid node in t
   document.body.append(container);
   root = createRoot(container);
   await act(async () => root?.render(
-    <OperatorApp initialLocale="en" initialSnapshot={stableSnapshot} fetchSnapshot={async () => stableSnapshot}
+    <OperatorApp initialLocale="en" initialRepositories={REGISTRY} readRepositories={async () => REGISTRY}
       initialDevActivity={activity} fetchDevActivity={async () => activity}
       initialRuntimeOverlay={unavailableRuntimeOverlay()} readRuntimeStatus={async () => unavailableRuntimeOverlay()}
       readNotifyStatus={() => new Promise(() => {})} />,

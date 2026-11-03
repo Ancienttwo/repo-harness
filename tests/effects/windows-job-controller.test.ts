@@ -4,8 +4,6 @@ import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
-import { parseFleetCollectorRequest } from '../../src/effects/operator/fleet-collector-process';
-
 const ROOT = join(import.meta.dir, '../..');
 const testWindows = process.platform === 'win32' ? test : test.skip;
 const RESPONSE_TIMEOUT_MS = 15_000;
@@ -77,30 +75,9 @@ function processIsAlive(pid: number): boolean {
   }
 }
 
-describe('Fleet collector supervision protocol', () => {
-  test('keeps the collector inert until a complete start payload arrives', () => {
-    expect(parseFleetCollectorRequest({ type: 'cancel' })).toEqual({ type: 'cancel' });
-    expect(parseFleetCollectorRequest({ type: 'start', protocol: 2, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1 })).toBeNull();
-    expect(parseFleetCollectorRequest({
-      type: 'start', protocol: 2, scope: { kind: 'fleet' },
-      sequence: 1,
-      max_concurrency: 1,
-      timeout_ms: 1_000,
-      env: { REPO_HARNESS_HOME: '/tmp/collector' },
-    })).toEqual({
-      type: 'start', protocol: 2, scope: { kind: 'fleet' },
-      sequence: 1,
-      max_concurrency: 1,
-      timeout_ms: 1_000,
-      env: { REPO_HARNESS_HOME: '/tmp/collector' },
-    });
-    expect(parseFleetCollectorRequest({
-      type: 'start', protocol: 2, scope: { kind: 'fleet' }, sequence: 1, max_concurrency: 1, timeout_ms: 1_000, env: { PATH: 42 },
-    })).toBeNull();
-  });
-
-  test.each(['fleet-collector-process.ts','task-read-process.ts'])('%s exits through the cooperative cancel protocol before it is started', async (entrypoint) => {
-    const collector = spawn(process.execPath, [join(ROOT, 'src/effects/operator',entrypoint)], {
+describe('operator supervised read protocol', () => {
+  test('the read process exits through the cooperative cancel protocol before it is started', async () => {
+    const collector = spawn(process.execPath, [join(ROOT, 'src/effects/operator/task-read-process.ts')], {
       stdio: ['pipe', 'pipe', 'pipe'],
       windowsHide: true,
     });
@@ -115,14 +92,14 @@ describe('Fleet collector supervision protocol', () => {
   });
 
   test('Windows controller creates and assigns its own exact collector handle before accepting work', () => {
-    const controller = readFileSync(join(ROOT, 'assets/operator/fleet-windows-job-controller.ps1'), 'utf-8');
+    const controller = readFileSync(join(ROOT, 'assets/operator/windows-job-controller.ps1'), 'utf-8');
     expect(controller).toContain('CreateJobObject');
     expect(controller).toContain('ConfigureKillOnClose');
     expect(controller).toContain('JOB_OBJECT_LIMIT_KILL_ON_JOB_CLOSE');
     expect(controller).toContain('AssignProcessToJobObject');
     expect(controller).toContain('$collector.Handle');
     expect(controller).toContain('$collector.HasExited');
-    expect(controller).toContain('[RepoHarnessFleetJob]::BeginForwarding($collector)');
+    expect(controller).toContain('[RepoHarnessOperatorJob]::BeginForwarding($collector)');
     expect(controller).toContain('function Stop-ExactCollector');
     expect(controller).toContain('$process.WaitForExit(10)');
     expect(controller).toContain("$request.type -ne 'launch'");
@@ -131,8 +108,8 @@ describe('Fleet collector supervision protocol', () => {
     expect(controller.indexOf('$collector.HasExited')).toBeLessThan(controller.indexOf('AssignProcessToJobObject($job, $collector.Handle)'));
     expect(controller.indexOf('AssignProcessToJobObject')).toBeLessThan(controller.indexOf("Write-Response 'assigned'"));
     const assignmentFailure = controller.slice(
-      controller.indexOf('if (-not [RepoHarnessFleetJob]::AssignProcessToJobObject'),
-      controller.indexOf("Write-Response 'cleanup_failed'", controller.indexOf('if (-not [RepoHarnessFleetJob]::AssignProcessToJobObject')),
+      controller.indexOf('if (-not [RepoHarnessOperatorJob]::AssignProcessToJobObject'),
+      controller.indexOf("Write-Response 'cleanup_failed'", controller.indexOf('if (-not [RepoHarnessOperatorJob]::AssignProcessToJobObject')),
     );
     expect(assignmentFailure.indexOf('Stop-ExactCollector')).toBeGreaterThan(-1);
     expect(controller).toContain('TerminateJobObject');
@@ -155,14 +132,14 @@ describe('Fleet collector supervision protocol', () => {
     expect(assignmentBranch.indexOf("if (controllerAssigned")).toBeLessThan(assignmentBranch.indexOf("writeChildJsonLine(controller, input.start)"));
     expect(server).toContain("requestWindowsCleanup(true)");
     expect(server).toContain("'cleanup_ack'");
-    const fleetBoundary = server.slice(
-      server.indexOf('type OperatorFleetCollectorResponse'),
-      server.indexOf('type WorkerTaskMessageErrorCode'),
+    const supervisedRead = server.slice(
+      server.indexOf('type WindowsJobControllerResponse'),
+      server.indexOf('function contentType'),
     );
-    expect(fleetBoundary).not.toContain('taskkill');
-    expect(fleetBoundary).not.toContain('collector_pid');
-    expect(fleetBoundary).toContain("controller.kill('SIGKILL')");
-    expect(fleetBoundary).toContain('controllerCleanupAcknowledged && controllerClosed');
+    expect(supervisedRead).not.toContain('taskkill');
+    expect(supervisedRead).not.toContain('collector_pid');
+    expect(supervisedRead).toContain("controller.kill('SIGKILL')");
+    expect(supervisedRead).toContain('controllerCleanupAcknowledged && controllerClosed');
   });
 
   testWindows.each([false,true])('Windows Job controller terminates collector and descendants before cleanup acknowledgement, synchronous child=%s', async (synchronous) => {
@@ -183,7 +160,7 @@ describe('Fleet collector supervision protocol', () => {
     ].join('\n'));
     const controller = spawn('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-      join(ROOT, 'assets/operator/fleet-windows-job-controller.ps1'),
+      join(ROOT, 'assets/operator/windows-job-controller.ps1'),
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     let collectorPid = 0;
     let descendantPid = 0;
@@ -193,7 +170,7 @@ describe('Fleet collector supervision protocol', () => {
       expect(await assigned).toEqual({ type: 'assigned' });
 
       const started = nextJsonLine(controller, 'collector identity response');
-      controller.stdin.write('{"type":"start","protocol":2,"scope":{"kind":"fleet"},"sequence":1,"max_concurrency":1,"timeout_ms":1000}\n');
+      controller.stdin.write('{"type":"start","protocol":1}\n');
       const identities = await started;
       collectorPid = Number(identities.collector_pid);
       descendantPid = Number(identities.descendant_pid);
@@ -224,7 +201,7 @@ describe('Fleet collector supervision protocol', () => {
   testWindows('a bare PID is rejected and cannot redirect Job cleanup to an unrelated process identity', async () => {
     const controller = spawn('powershell.exe', [
       '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-      join(ROOT, 'assets/operator/fleet-windows-job-controller.ps1'),
+      join(ROOT, 'assets/operator/windows-job-controller.ps1'),
     ], { stdio: ['pipe', 'pipe', 'pipe'], windowsHide: true });
     const unrelated = spawn(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], { stdio: 'ignore', windowsHide: true });
     try {
@@ -242,16 +219,4 @@ describe('Fleet collector supervision protocol', () => {
       unrelated.kill('SIGKILL');
     }
   }, 30_000);
-});
-
-test('collector requires the versioned fleet scope and rejects any repository scope', () => {
-  const base = { type: 'start', protocol: 2, sequence: 1, max_concurrency: 1, timeout_ms: 1_000 };
-  expect(parseFleetCollectorRequest(base)).toBeNull();
-  expect(parseFleetCollectorRequest({ ...base, protocol: 1, scope: { kind: 'fleet' } })).toBeNull();
-  for (const scope of [{ kind: 'fleet', repository_id: 'repo-a' }, { kind: 'repository' },
-    { kind: 'repository', repository_id: '../root' }, { kind: 'repository', repository_id: 'repo-a' }]) {
-    expect(parseFleetCollectorRequest({ ...base, scope })).toBeNull();
-  }
-  expect(parseFleetCollectorRequest({ ...base, scope: { kind: 'fleet' } }))
-    .toMatchObject({ protocol: 2, scope: { kind: 'fleet' } });
 });

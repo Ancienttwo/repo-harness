@@ -102,7 +102,7 @@ function readRecent(): readonly string[] {
 }
 
 function isActive(current: Workspace, workspace: NavWorkspace): boolean {
-  return current === workspace || (workspace === 'repositories' && current === 'repository');
+  return current === workspace;
 }
 
 const HOME: WorkspaceLocation = { workspace: 'home', module: null, item: null };

@@ -13,7 +13,9 @@ import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyBotAccess, busyBotReviews, degradedBotAccess, degradedBotReviews } from '../../src/operator-web/fixtures/bots';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
+
+const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
@@ -47,7 +49,7 @@ function edited(snapshot: BotAccessSnapshotV1, change: (raw: Record<string, any>
 
 function props(readBotAccess: BotAccessReader, locale: OperatorLocale = 'en', readBotReviews: BotReviewsReader = reviews(busyBotReviews(NOW))): OperatorAppProps {
   return {
-    initialLocale: locale, initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
+    initialLocale: locale, initialRepositories: REGISTRY, readRepositories: async () => REGISTRY,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),

@@ -13,4 +13,4 @@ source:
     - assets/tool-catalog.v1.json
     - assets/operator/**
   exclude:
-    - assets/operator/fleet-windows-job-controller.ps1
+    - assets/operator/windows-job-controller.ps1

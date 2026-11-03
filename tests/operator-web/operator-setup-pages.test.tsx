@@ -16,7 +16,9 @@ import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { decodeWorktrees } from '../../src/core/operator/worktrees';
 import { degradedSetup, loadingSetup, readySetup } from '../../src/operator-web/fixtures/setup';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
+
+const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
@@ -41,7 +43,7 @@ const worktrees = decodeWorktrees(busyWorktrees(NOW));
 
 function props(setup: SetupSnapshotV2 | null, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   return {
-    initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
+    initialLocale: 'en', initialRepositories: REGISTRY, readRepositories: async () => REGISTRY,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
@@ -136,7 +138,7 @@ describe('navigation', () => {
   });
 
   test('1-SHELL-N1 every page in the shell routes by its hash with one repository switch; later pages have no entry or route', async () => {
-    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['repository', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
+    const pages = [['home', 'home'], ['board', 'board'], ['repositories', 'repositories'], ['worktrees', 'worktrees'], ['docs', 'docs'], ['agents', 'agents'], ['skills', 'skills'],
       ['hooks', 'hooks'], ['cli', 'cli'], ['bots', 'bots'], ['architecture', 'architecture'], ['tests', 'tests'], ['system', 'system'], ['tools', 'tools'], ['settings', 'settings']] as const;
     for (const [workspace, entry] of pages) {
       if (root) {

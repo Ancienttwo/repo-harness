@@ -13,7 +13,7 @@ import {
   type TestsSnapshotV1,
   type TestsUnavailableReason,
 } from '../core/operator/tests';
-import { asApiError } from './fleet-api';
+import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**
