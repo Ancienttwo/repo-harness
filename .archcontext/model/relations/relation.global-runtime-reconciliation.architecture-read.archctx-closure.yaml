@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.architecture-read.archctx-closure
+kind: calls
+source: component.global-runtime-reconciliation.architecture-read
+target: component.global-runtime-reconciliation.archctx-closure
+intent: "Run each read through the package-local archctx client and read the projection policy"
