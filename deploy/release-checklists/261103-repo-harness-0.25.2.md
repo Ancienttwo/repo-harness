@@ -21,7 +21,8 @@
   operator bot fixture show 0.25.2.
 - `archctx` and `archctx-contracts` stay at the locked exact 0.11.1. The
   release-prep PR changes no dependency version.
-- Publish status: pending owner publish.
+- Publish status: tagged and released on GitHub; not published to npm (owner
+  choice, superseded by 0.25.3).
 - Hold reason: none.
 
 ### Owner decision
@@ -185,3 +186,28 @@ owner accepts or repairs each flag before publish.
 - The owner records the publish candidate, the npm version, the Git tag and
   the published tarball digest here, then runs
   `bun run check:release-published`.
+
+  - Publish candidate: `801506036505c8f561723459466b4962557297e6` (main after #1511).
+  - npm version: none. The owner did not run `npm publish` for 0.25.2.
+    `npm view repo-harness versions` goes from 0.25.1 to 0.25.3. 0.25.3
+    contains the 0.25.2 changes.
+  - Git tag: annotated `v0.25.2`, tag object
+    `f4fb79894f57cc54dbbb83bdeb3e9ebb03a58350`, on `801506036`; GitHub Release
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.25.2, created
+    2026-11-03T09:06:39Z, published 2026-11-03T09:06:43Z. The release body
+    starts "Not published to npm. Its changes ship in 0.25.3. Install 0.25.3."
+  - Published tarball digest: none, because no npm package exists.
+  - `bun run check:release-published`: not applicable, because the check
+    reads the npm registry.
+
+### Yellow flag acceptance
+
+- Flags 1, 2, 3, 5, 6 and 7: the owner accepted them as host state
+  ("全部接受，照命令发布", at about 2026-11-03T04:31Z).
+- Flag 4: accepted by decision M5 on #1309
+  (https://github.com/Ancienttwo/repo-harness/issues/1309#issuecomment-6594688563).
+  Until G37 #1480 merges, the 0.25.2 readiness check still checks classic
+  Herdr.
+- Repairs after publication, the owner's choice: `repo-harness update` and
+  `repo-harness upgrade` for flags 2 and 6. The two hook exceptions of flag 3
+  get their own review later.
