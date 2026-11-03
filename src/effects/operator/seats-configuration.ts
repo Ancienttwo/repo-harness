@@ -40,7 +40,7 @@ export class SeatsConfigurationError extends Error {
   }
 }
 
-// Every range below is a projection of the fleet role profiles.
+// The advisor and worker ranges are projections of the fleet role profiles; the orchestrator range is the named M37 list.
 const READ_ONLY_SUB_AGENTS = MANAGED_AGENTS.filter(role => !WRITABLE_AGENTS.has(role));
 const without = (...excluded: SeatTool[]): readonly SeatTool[] => SEAT_TOOLS.filter(tool => !excluded.includes(tool));
 

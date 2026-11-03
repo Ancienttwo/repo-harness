@@ -135,17 +135,28 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("an orchestrator fleet is named in the brief, keeps the Agent tool and refuses every other agent type", () => {
-    const fleet = ["deep-reasoner", "explorer", "gatekeeper", "root-cause-prover"];
-    withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
-      const orchestrator = launch(home, "orchestrator");
-      expect(orchestrator.brief).toContain("You may call these read-only sub-agents: `deep-reasoner`, `explorer`, `gatekeeper`, `root-cause-prover`. Call no other agent type. Writers and the Codex review run in Herdr seats.");
-      expect(orchestrator.brief).not.toContain("You do not dispatch sub-agents");
-      expect(tools(orchestrator.argv)).toContain("Agent");
-      expect(denied(orchestrator.argv)).toEqual(expect.arrayContaining(["Agent(fast-worker)", "Agent(deep-worker)", "Agent(general-purpose)", "Agent(fork)"]));
-      expect(denied(orchestrator.argv).filter((rule: string) => fleet.some(role => rule === `Agent(${role})`))).toEqual([]);
-      expect(orchestrator.limits).toContainEqual({ subject: "fleet", level: "named_types_only" });
-    });
+  test("the orchestrator brief names its fleet and its review path; a fleet keeps the Agent tool and refuses every other agent type", () => {
+    const seatReview = "You do not review a PR that you dispatched; route that review to another seat.";
+    const gatekeeperReview = "You do not review a PR yourself. An independent `gatekeeper` sub-agent may review a PR that you dispatched; route every other review of that PR to another seat.";
+    const seatsOnly = (roles: string) => `You may call these read-only sub-agents: ${roles}. Call no other agent type. Writers and the Codex review run only in Herdr seats: dispatch them to seats through Herdr.`;
+    for (const [fleet, review, dispatch] of [
+      [[], seatReview, "You do not dispatch sub-agents (the Agent tool) for execution. Dispatch work only to seats through Herdr."],
+      [["explorer"], seatReview, seatsOnly("`explorer`")],
+      [["deep-reasoner", "explorer", "gatekeeper", "root-cause-prover"], gatekeeperReview, seatsOnly("`deep-reasoner`, `explorer`, `gatekeeper`, `root-cause-prover`")],
+    ] as const) {
+      withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
+        const orchestrator = launch(home, "orchestrator");
+        // Each row also refuses the conflicting sentences: the other review path, and the Herdr-only rule with a fleet.
+        const other = review === seatReview ? gatekeeperReview : seatReview;
+        expect([fleet, orchestrator.brief.includes(review), orchestrator.brief.includes(dispatch), orchestrator.brief.includes(other)]).toEqual([fleet, true, true, false]);
+        if (fleet.length === 0) return;
+        expect(orchestrator.brief).not.toContain("Dispatch work only to seats through Herdr.");
+        expect(tools(orchestrator.argv)).toContain("Agent");
+        expect(denied(orchestrator.argv)).toEqual(expect.arrayContaining(["Agent(fast-worker)", "Agent(deep-worker)", "Agent(general-purpose)", "Agent(fork)"]));
+        expect(denied(orchestrator.argv).filter((rule: string) => fleet.some(role => rule === `Agent(${role})`))).toEqual([]);
+        expect(orchestrator.limits).toContainEqual({ subject: "fleet", level: "named_types_only" });
+      });
+    }
   });
 
   test("the Codex argv holds only flags that Codex applies; the fleet goes into the launch instructions only", () => {

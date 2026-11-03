@@ -208,8 +208,10 @@ module is in the title so that a list view shows the write scopes.
   may call only the read-only sub-agents `gatekeeper`, `explorer`,
   `deep-reasoner` and `root-cause-prover`. A writer (`fast-worker`,
   `deep-worker`) and the Codex cross-review always run in a seat, for
-  worktree isolation and one writer per file. A dispatch does not grant
-  publication, deletion or credential authority.
+  worktree isolation and one writer per file. You do not review a PR
+  yourself. An independent `gatekeeper` sub-agent may review a PR that you
+  dispatched; route every other review of it to another seat. A dispatch
+  does not grant publication, deletion or credential authority.
   For the Herdr pane topology, follow
   [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
