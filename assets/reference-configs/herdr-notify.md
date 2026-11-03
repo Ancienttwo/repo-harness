@@ -33,10 +33,10 @@ herdr-core commands for the topology steps:
 
 | Step | Command |
 |---|---|
-| Start the orchestrator | `herdr-app do tab.new --name 1 --space <id> --folder <repository> --argv "$(repo-harness seats argv orchestrator)"` |
-| New worker tab | `herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker)" --task <packet>` |
-| Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "$(repo-harness seats argv advisor)"` |
-| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker)"` |
+| Start the orchestrator | `herdr-app do tab.new --name "$(repo-harness seats argv orchestrator --repository-id <repository-id> --json \| jq -r .tab)" --space <id> --folder <repository> --argv "$(repo-harness seats argv orchestrator --repository-id <repository-id>)"` |
+| New worker tab | `herdr-app do tab.new --name "$(repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n> --json \| jq -r .tab)" --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --issue <n>)" --task <packet>` |
+| Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"` |
+| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --issue <n>)"` |
 | Label a seat | `hc label <t> $(repo-harness seats argv <seat> --repository-id <repository-id> --parent <n> --issue <n> --pr <n> --json \| jq -r '.labels[]')` |
 | Message a worker | `hc send <t> <comment URL>` |
 | Read a worker | `hc read <t>` |
@@ -46,6 +46,34 @@ herdr-core commands for the topology steps:
 `repo-harness seats argv <seat>` prints the argv of the seat from the `seats` section of `~/.repo-harness/config.json`, or from the seat defaults when the section is absent. The argv holds the model, the effort, the tool limits and the seat brief. Its stderr names the source and each limit. A limit marked `instructions_only` is written into the launch instructions only; the host does not enforce it. Without `--argv`, the pane opens a shell.
 
 Each start prints the new `terminal`. Label it in the next step, or the board shows the execution axis as `unavailable` (`no_seat_terminals`). `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
+
+### Pane and tab names
+
+With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). A Claude seat gets the pane name as its session name (`-n`) in the argv. Use the same string for an hc `--name`. Do not type a name.
+
+The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters of `a-z 0-9 -`. Examples: `rh-orch`, `rh-adv`, `rh-w-1508`, `rh-w-rel0252`, `rh-rv-1536-codex`, `aip-w-485-device`.
+
+| Part | Values | Source |
+|---|---|---|
+| `prefix` | 2-6 characters, `[a-z][a-z0-9]{1,5}`, one per registered repository, unique on the machine | `panePrefix` of the repository entry in `~/.repo-harness/registered-repos.json` |
+| `role` | `orch`, `adv`, `w`; `rv` for a reviewer pane started by hand | the seat |
+| `item` | worker: the issue number (`--issue`) or `rel<digits>` for release prep (`--release`); reviewer: the PR number. None for `orch` and `adv` | the dispatch |
+| `qualifier` | worker: a slice word when one issue has two live worker panes (`--qualifier`); reviewer: the review runtime id (`claude`, `codex`) | the dispatch |
+
+- Set `panePrefix` by hand in the entry of the repository in `registered-repos.json`. Every registry writer keeps it. The registry read refuses a malformed or duplicate prefix.
+- `seats argv` reads the entry of the primary checkout of the current directory; a linked worktree resolves to its primary checkout. No entry, or an entry without `panePrefix`, fails with `pane_name_invalid`. A name over 32 characters fails the same way.
+- One pane serves one item. Do not reuse a pane for another issue: close it and start a new one. hc refuses a second live terminal with the same name.
+- The name carries no state (round, status, PR state). The board reads those from GitHub and the labels.
+- Reserved names stay as they are: `rh-notify-relay` and `task-<uuid20>`.
+
+| Tab | Holds | Name |
+|---|---|---|
+| Tab 1 | the orchestrator (left), the advisor (right), one optional worker | `orch` |
+| Worker tab | up to 3 worker panes whose issues have the same parent | `#<parent>` |
+| Worker tab, no parent | up to 3 worker panes of issues without a parent | `other` |
+| Review tab | up to 3 reviewer panes | `review` |
+
+A new pane goes into the first tab of its kind with fewer than 3 panes. When every tab of that kind is full, add ` 2`, ` 3` to the base name, for example `#1000 2`. A tab closes with its last pane. The space name stays the repository name.
 
 Classic Herdr starts the advisor in two steps: `herdr pane split --pane <orchestrator pane> --direction right`, then `herdr agent start advisor --kind <kind> --pane <new pane>`. A second worker in a tab uses the same two steps with the worker's name.
 
