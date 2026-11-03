@@ -115,14 +115,8 @@ export interface InitCommandResult {
   lines: string[];
 }
 
-/** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
-export interface InitPorts {
-  /** The CodeGraph index step. `step` names the skipped step when CodeGraph is disabled or the run is a dry run. */
-  readonly codegraphStep: {
-    readonly step: string;
-    readonly run: (ctx: { repoRoot: string; sync: boolean; env: NodeJS.ProcessEnv | undefined; target: InstallTargetSpec }) => InitStep[];
-  };
-}
+/** The CodeGraph index step; this name also labels its skipped row. */
+const CODEGRAPH_INDEX_STEP = "ensure codegraph index";
 
 /** Internal dependency seam for filesystem-isolated tests. CLI callers use the OS account resolver. */
 export interface InitRuntimeDependencies {
@@ -323,7 +317,6 @@ function architectureReadinessStep(repoRoot: string, selected: boolean, env: Nod
 }
 
 export function runInit(
-  ports: InitPorts,
   opts: InitCommandOptions,
   dependencies: InitRuntimeDependencies = DEFAULT_INIT_RUNTIME_DEPENDENCIES,
 ): InitCommandResult {
@@ -381,12 +374,14 @@ export function runInit(
   }
 
   if (codegraph && apply && architecture) {
-    steps.push(...ports.codegraphStep.run({ repoRoot, sync: syncCodegraph, env: commandEnv, target }));
+    const codegraphPort = architecturePort('codegraph');
+    if (isArchitectureUnavailable(codegraphPort)) steps.push({ step: CODEGRAPH_INDEX_STEP, status: "failed", detail: codegraphPort.message });
+    else steps.push(...codegraphPort.indexSteps({ repoRoot, sync: syncCodegraph, env: commandEnv, target }));
   } else if (codegraph && apply) {
-    steps.push({ step: ports.codegraphStep.step, status: "skipped", detail: "architecture plugin not selected" });
+    steps.push({ step: CODEGRAPH_INDEX_STEP, status: "skipped", detail: "architecture plugin not selected" });
   } else {
     steps.push({
-      step: ports.codegraphStep.step,
+      step: CODEGRAPH_INDEX_STEP,
       status: "skipped",
       detail: codegraph ? "dry-run" : "disabled",
     });

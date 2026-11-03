@@ -131,7 +131,7 @@ try {
     await registerSelectedArchitecturePorts(readRecordedSelection(), async () => (await import(pathToFileURL(join(packageRoot, 'src/effects/architecture/providers.ts')).href) as typeof import('../src/effects/architecture/providers')).ARCHITECTURE_PROVIDERS);
     const runtime = architecturePort('runtime');
     const worktree = checkoutPath(value('--worktree'));
-    // Without the plugin no archctx daemon of this package runs, so nothing is stopped and archctx does not start.
+    // Without the plugin the closeout starts no archctx and stops nothing. A daemon that started while the plugin was selected keeps running after a deselection.
     if (isArchitectureUnavailable(runtime) && runtime.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED') {
       console.log(JSON.stringify({ schemaVersion: 'repo-harness.architecture-daemon-stop/v1', worktree, provider: 'disabled', stopped: [], failures: [] }));
     } else {

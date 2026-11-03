@@ -27,7 +27,7 @@ import { globalRuntimeScope, withRuntimeTransactionLock } from "../../src/effect
 import { beginInstallHostTransaction, rollbackInstallHostTransaction } from "../../src/cli/installer/install-profile";
 import { configuredBrainRoot } from "../../src/cli/commands/brain-root";
 import { listHelperFiles } from "../../src/effects/runtime/helper-runner";
-import { CLI_PORTS, registerArchitecturePlugin } from '../../src/cli/index';
+import { registerArchitecturePlugin } from '../../src/cli/index';
 import type { InitCommandOptions } from "../../src/cli/commands/init";
 import { writeFakeHc } from '../helpers/fake-hc';
 
@@ -37,7 +37,7 @@ const CODEGRAPH_INIT_TIMEOUT_MS = 30000;
 
 // These cases select the architecture plugin, as a recorded install would.
 registerArchitecturePlugin();
-const runSelectedInit = (options: Omit<InitCommandOptions, 'plugins'>) => runInit(CLI_PORTS.init, { plugins: ['architecture'], ...options });
+const runSelectedInit = (options: Omit<InitCommandOptions, 'plugins'>) => runInit({ plugins: ['architecture'], ...options });
 
 // Applied init runs the external tooling detector, which spawns `hc` from PATH; a fake hc first on PATH keeps the developer's hc out of every test.
 const fakeHcBin = realpathSync(mkdtempSync(join(tmpdir(), 'repo-harness-init-hc-')));
@@ -233,7 +233,7 @@ describe("init command", () => {
       expect(readFileSync(configPath, "utf8")).toBe(disabled);
 
       // Without the plugin, init skips the readiness read; a policy that needs the plugin fails closed before any write.
-      const unselected = runInit(CLI_PORTS.init, { ...options, plugins: ["product"] });
+      const unselected = runInit({ ...options, plugins: ["product"] });
       expect(unselected.exitCode).toBe(0);
       expect(unselected.steps.find((step) => step.step === "architecture projection readiness")).toEqual({
         step: "architecture projection readiness", status: "skipped", detail: "architecture plugin not selected",
@@ -241,7 +241,7 @@ describe("init command", () => {
       const policyPath = join(repo, ".ai/harness/policy.json");
       const policy = { ...JSON.parse(readFileSync(policyPath, "utf8")), context: { capability_source: "archcontext" } };
       writeFileSync(policyPath, JSON.stringify(policy));
-      expect(() => runInit(CLI_PORTS.init, { ...options, plugins: ["product"] }))
+      expect(() => runInit({ ...options, plugins: ["product"] }))
         .toThrow(`${policyPath} sets context.capability_source: archcontext, which needs the architecture plugin; run: repo-harness install --plugins architecture,product`);
       expect(readFileSync(policyPath, "utf8")).toBe(JSON.stringify(policy));
     } finally {

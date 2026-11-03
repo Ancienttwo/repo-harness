@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { startMcpStdio } from '../mcp/transports/stdio';
 import { setRepoHarnessAccessMode } from '../../effects/repo-registry';
 import { runMcpDoctor } from '../mcp/doctor';
+import type { GeneralRepoCodeGraphAdapter } from '../mcp/codegraph-adapter';
 
 export interface McpServeOptions {
   repo?: string;
@@ -23,7 +24,8 @@ async function runMcpAction(action: () => void | Promise<void>): Promise<void> {
   }
 }
 
-export function buildMcpCommand(): Command {
+/** `codeGraphAdapter` gives the CodeGraph reads of the served reader tools; the root decides it from the recorded selection. */
+export function buildMcpCommand(codeGraphAdapter: () => GeneralRepoCodeGraphAdapter): Command {
   const mcp = new Command('mcp').description('Run and configure the repo-harness MCP workflow sidecar');
 
   mcp
@@ -40,6 +42,7 @@ export function buildMcpCommand(): Command {
           profile: rawOpts.profile,
           enableReader: rawOpts.enableReader === true,
           allowedRoots: rawOpts.allowRoot,
+          codeGraphAdapter: codeGraphAdapter(),
         });
       });
     });

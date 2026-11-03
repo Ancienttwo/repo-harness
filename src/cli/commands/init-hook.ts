@@ -552,6 +552,7 @@ function normalizeToolCommand(command: string | undefined, target: InitHookTarge
 
 function toolCheckStatus(toolName: string, status: string | undefined, target: InitHookTarget): InitHookCheckStatus {
   if (toolName === 'codex_automation_profile' && target === 'claude') return 'na';
+  if (status === 'not-selected') return 'na';
   const normalized = (status ?? 'unknown').toLowerCase();
   if (['present', 'ok', 'configured', 'ready', 'synced'].includes(normalized)) return 'ok';
   if (['missing', 'not-detected', 'unavailable', 'failed', 'fail', 'missing-local', 'partial', 'mismatch', 'invalid'].includes(normalized)) {
@@ -694,7 +695,7 @@ function toolingChecks(
       status,
       source: 'tooling',
       detail: status === 'na'
-        ? `skipped for target=${target}`
+        ? tool.status === 'not-selected' ? `not-selected; ${tool.reason ?? 'no detail'}` : `skipped for target=${target}`
         : `${tool.status ?? 'unknown'}${update}; ${requirement}${tool.reason ?? 'no detail'}`,
     });
 

@@ -24,7 +24,7 @@ import { newPiPackagesSinceTransaction, parseState, recordPiInstallOwnership, re
 import { formatInstallStateMigrationPlan, installStateMigrationPaths, migrateInstallState, protocol2SnapshotSurfaces } from './installer/install-state-migration';
 import { parsePluginList, PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection } from '../core/skill-surface/plugin-manifest';
 import { writeAllSync } from './runtime/write-all-sync';
-import { runInit, type InitPorts } from './commands/init';
+import { runInit } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor, type DoctorPorts } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
@@ -32,8 +32,8 @@ import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
-import { buildToolsCommand, CODEGRAPH_DOCTOR_PROVIDER, CODEGRAPH_INIT_STEP, configureCodegraphMcpStep } from './commands/tools';
-import { registerArchitecturePorts } from '../core/architecture/contracts';
+import { buildToolsCommand } from './commands/tools';
+import { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } from '../core/architecture/contracts';
 import { architectureSelected, assertArchitectureCommandSelected, declareArchitectureSelection, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
 import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
@@ -62,6 +62,7 @@ import { buildRetentionCommand, type RetentionPorts } from './commands/retention
 import { configureRequiredHerdrSkill } from './commands/herdr-skill';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from './mcp/audit';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './mcp/general-repo-access';
+import { createCodeGraphCliAdapter, createCodeGraphNotSelectedAdapter } from './mcp/codegraph-adapter';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -134,16 +135,17 @@ const architectureSelection = readRecordedSelection();
 let architectureRegistered = false;
 
 /**
- * Loads and registers the architecture providers. The root calls it only for
- * a selected plugin: at start for the recorded selection, and in install,
- * update and candidate reconciliation when their plugin set adds it.
+ * Loads and registers the architecture providers, once. The root calls it
+ * only for a selected plugin: at start for the recorded selection, and in
+ * install, update and candidate reconciliation when their plugin set adds
+ * it. In-process tests of a selected plugin call it too.
  */
-/** Registers the architecture providers once; in-process tests of a selected plugin call it too. */
 export function registerArchitecturePlugin(): void {
   if (architectureRegistered) return;
   const { ARCHITECTURE_PROVIDERS } = require('../effects/architecture/providers') as typeof import('../effects/architecture/providers');
   const { ARCHITECTURE_SETUP_PROVIDER } = require('./commands/architecture-setup') as typeof import('./commands/architecture-setup');
-  registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, setup: ARCHITECTURE_SETUP_PROVIDER, codegraphDoctor: CODEGRAPH_DOCTOR_PROVIDER });
+  const { CODEGRAPH_PROVIDER } = require('./tools/codegraph') as typeof import('./tools/codegraph');
+  registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, setup: ARCHITECTURE_SETUP_PROVIDER, codegraph: CODEGRAPH_PROVIDER });
   architectureRegistered = true;
 }
 
@@ -162,14 +164,11 @@ function architectureCommand(command: Command, name: string = command.name()): C
  */
 export const CLI_PORTS: {
   readonly doctor: DoctorPorts;
-  readonly init: InitPorts;
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
   doctor: { notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
-  init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: {
-    configureCodegraphMcp: configureCodegraphMcpStep,
     configureHerdrSkill: (target, env, piSelected) => configureRequiredHerdrSkill(target, env, undefined, piSelected),
   },
   retention: {
@@ -887,7 +886,7 @@ export function buildProgram(): Command {
         mode,
         env,
       };
-      const result = runInit(CLI_PORTS.init, { ...common, plugins: recordedPlugins(architectureSelection) });
+      const result = runInit({ ...common, plugins: recordedPlugins(architectureSelection) });
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -1067,7 +1066,11 @@ export function buildProgram(): Command {
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
-  program.addCommand(buildMcpCommand());
+  program.addCommand(buildMcpCommand(() => {
+    // The reader tools run CodeGraph only for a selected plugin; otherwise each read reports the absence.
+    const port = architecturePort('codegraph');
+    return isArchitectureUnavailable(port) ? createCodeGraphNotSelectedAdapter(port.message) : createCodeGraphCliAdapter();
+  }));
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());

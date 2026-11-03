@@ -1459,7 +1459,6 @@ function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly Plugin
 
 /** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
 export interface GlobalRuntimePorts {
-  readonly configureCodegraphMcp: (cwd: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv) => GlobalRuntimeStep;
   /** `piSelected` false: Herdr stays core on Claude and Codex, and its Pi copy is not written. */
   readonly configureHerdrSkill: (target: InstallTargetSpec, env: NodeJS.ProcessEnv, piSelected: boolean) => GlobalRuntimeStep;
 }
@@ -1657,11 +1656,14 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "architecture plugin not selected" });
   } else if (opts.codegraph ?? updateMode) {
     const setup = architecturePort('setup');
+    const codegraphPort = architecturePort('codegraph');
     const ensure = isArchitectureUnavailable(setup)
       ? { step: "ensure CodeGraph CLI", status: "failed" as const, detail: setup.message }
-      : ensureCodegraphCli(cwd, bunExecutable, setup.codegraphVersion, env, updateMode);
+      : isArchitectureUnavailable(codegraphPort)
+        ? { step: "ensure CodeGraph CLI", status: "failed" as const, detail: codegraphPort.message }
+        : ensureCodegraphCli(cwd, bunExecutable, setup.codegraphVersion, env, updateMode);
     steps.push(ensure);
-    if (ensure.status === "ok") steps.push(ports.configureCodegraphMcp(cwd, target, env));
+    if (ensure.status === "ok" && !isArchitectureUnavailable(codegraphPort)) steps.push(codegraphPort.configureMcp(cwd, target, env));
     else steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "CodeGraph CLI install failed" });
   } else {
     steps.push({ step: "ensure CodeGraph CLI", status: "skipped", detail: "disabled" });

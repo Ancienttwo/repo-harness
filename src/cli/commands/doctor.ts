@@ -574,11 +574,11 @@ function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): 
 
 /**
  * The CodeGraph readiness, MCP host and index checks, in report order, from
- * the CodeGraph doctor port. CodeGraph follows the architecture plugin, so
+ * the CodeGraph port. CodeGraph follows the architecture plugin, so
  * without it one `na` row stands for them and nothing runs.
  */
 export function codegraphDoctorChecks(cwd: string): readonly ArchitectureDoctorCheck[] {
-  const port = architecturePort('codegraphDoctor');
+  const port = architecturePort('codegraph');
   if (isArchitectureUnavailable(port)) {
     return [{ id: 'codegraph', describe: 'CodeGraph checks', status: port.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED' ? 'na' : 'fail', detail: port.message }];
   }

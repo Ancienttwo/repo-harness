@@ -22,10 +22,16 @@ All notable changes to this skill are documented here.
   the inbox and Stop hooks, `status`, `init`, `doctor`, `setup check` and
   `update` start no archctx or CodeGraph process and write no architecture
   configuration. `status` and `doctor` report `not selected` with the repair
-  command, and the hooks give no architecture notice.
+  command, and the hooks give no architecture notice. The MCP repo tools run
+  no CodeGraph read and report the absence in their `codegraph` summary.
+  The worktree closeout stops no archctx daemon either: a daemon that
+  started while the plugin was selected keeps running after a deselection.
+  Stop it before you remove the plugin, or select the plugin again and run
+  the closeout.
   `repo-harness architecture-projection`, `architecture-debt`, `refactor`,
   `tools ensure codegraph` and `tools configure codegraph` fail closed with
-  `install_plugin_unavailable` before they start a process.
+  `install_plugin_unavailable` before they start a process or load the
+  plugin code.
   A repository policy that sets `context.capability_source: archcontext` or
   `tooling.codegraph.enabled: true` needs the plugin: `install`, `update` and
   `init` (apply) on that repository fail closed with

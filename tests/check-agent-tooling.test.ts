@@ -20,7 +20,8 @@ import { runSubagentContext } from "../src/cli/hook/subagent-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
-import { versions } from "../src/cli/installer/install-profile";
+import { installProfileStatePath, versions } from "../src/cli/installer/install-profile";
+import type { PluginId } from "../src/core/skill-surface/plugin-manifest";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-agent-tooling.sh");
@@ -155,12 +156,14 @@ function writeOfficialCodexPluginFixture(pluginRoot: string) {
   }));
 }
 
-function setupFakeEnvironment(prefix: string) {
+/** `plugins` is the recorded install selection; null records none. */
+function setupFakeEnvironment(prefix: string, plugins: readonly PluginId[] | null = ["architecture"]) {
   const root = mkdtempSync(join(tmpdir(), `${prefix}-`));
   const home = join(root, "home");
   const fakeBin = join(root, "fakebin");
 
   mkdirSync(home, { recursive: true });
+  if (plugins) recordPluginSelection({ HOME: home }, plugins);
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
   // A fake hc first on PATH keeps the developer's herdr-core out of the report.
@@ -1758,6 +1761,51 @@ describe("check-agent-tooling", () => {
     }
   }, 15000);
 
+  test("resolves and runs no archctx or CodeGraph binary unless the recorded selection includes the architecture plugin", () => {
+    const cases: Array<{ name: string; plugins: readonly PluginId[] | null; unreadable?: true; caller?: true; status: string; reason: string }> = [
+      { name: "no-state", plugins: null, status: "not-selected", reason: "the architecture plugin is not selected; run: repo-harness install" },
+      { name: "other-plugin", plugins: ["product"], status: "not-selected", reason: "the architecture plugin is not selected; run: repo-harness install" },
+      { name: "unreadable", plugins: null, unreadable: true, status: "selection-unreadable", reason: "the install selection cannot be read" },
+      { name: "selected", plugins: ["architecture"], status: "present", reason: "" },
+      // An install applies the selection before it records it; its plugin code passes the flag.
+      { name: "caller", plugins: null, caller: true, status: "present", reason: "" },
+    ];
+    for (const entry of cases) {
+      const envRoot = setupFakeEnvironment(`check-agent-tooling-selection-${entry.name}`, entry.plugins);
+      try {
+        const log = join(envRoot.root, "plugin-binaries.log");
+        writeArchctxRepo(envRoot.root, "registry");
+        writeFakeCodeGraph(envRoot.fakeBin, { logFile: log });
+        writeExecutable(join(envRoot.fakeBin, "archctx"), `#!/bin/sh\necho "archctx $*" >> "${log}"\necho 0.5.13\n`);
+        if (entry.unreadable) {
+          mkdirSync(join(envRoot.home, ".repo-harness"), { recursive: true });
+          writeFileSync(installProfileStatePath({ HOME: envRoot.home }), "{");
+        }
+        const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", ...(entry.caller ? ["--architecture-selected"] : [])], {
+          cwd: envRoot.root,
+          encoding: "utf-8",
+          env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}`, AGENTIC_DEV_CODEGRAPH_LOCAL_BIN: join(envRoot.fakeBin, "codegraph") },
+        });
+
+        expect(res.status).toBe(0);
+        const { codegraph, archctx } = JSON.parse(res.stdout).tools;
+        if (entry.status === "present") {
+          // The positive control: with the plugin both detectors run their binaries.
+          expect(readFileSync(log, "utf-8")).toBe("codegraph --version\ncodegraph status .\narchctx --version\n");
+          expect(archctx.status).toBe("present");
+          continue;
+        }
+        expect(existsSync(log)).toBe(false);
+        for (const tool of [codegraph, archctx]) {
+          expect(tool).toMatchObject({ status: entry.status, readiness: "inactive", plugin: "architecture" });
+          expect(tool.reason).toContain(entry.reason);
+        }
+      } finally {
+        rmSync(envRoot.root, { recursive: true, force: true });
+      }
+    }
+  }, 60000);
+
   test("reports archctx as present under the registry capability source and keeps strict readiness green", () => {
     const envRoot = setupFakeEnvironment("check-agent-tooling-archctx-registry");
     try {
@@ -1800,7 +1848,6 @@ describe("check-agent-tooling", () => {
       writeArchctxRepo(envRoot.root, "registry");
       writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
 
-      recordPluginSelection({ HOME: envRoot.home });
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",
@@ -1843,7 +1890,6 @@ describe("check-agent-tooling", () => {
       mkdirSync(archctxRoot, { recursive: true });
       writeFileSync(join(archctxRoot, "package.json"), JSON.stringify({ name: "archctx", version: packaged.version, engines: packaged.engines, bin: { archctx: "./bin/archctx.mjs" } }));
 
-      recordPluginSelection({ HOME: envRoot.home });
       const res = spawnSync("bash", [join(packageRoot, "scripts", "check-agent-tooling.sh"), "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",

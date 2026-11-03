@@ -489,7 +489,7 @@ describe("capability source: no fallback in either direction", () => {
         expect(rows.board, code).toEqual({ status: "unavailable", reason: code });
       }
       expect(missing.notice).toEqual({ diagnostics: "repo-harness: architecture notice unavailable: no architecture notice provider is registered in this process\n" });
-      expect(missing.doctor).toEqual([{ id: "codegraph", describe: "CodeGraph checks", status: "fail", detail: "no architecture codegraphDoctor provider is registered in this process" }]);
+      expect(missing.doctor).toEqual([{ id: "codegraph", describe: "CodeGraph checks", status: "fail", detail: "no architecture codegraph provider is registered in this process" }]);
       expect(notSelected.notice).toEqual({});
       expect(notSelected.doctor).toEqual([
         { id: "codegraph", describe: "CodeGraph checks", status: "na", detail: "the architecture plugin is not selected; run: repo-harness install" },

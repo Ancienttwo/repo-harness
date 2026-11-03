@@ -176,10 +176,21 @@ export interface ArchitectureDoctorCheck {
   readonly detail: string;
 }
 
-/** The `doctor` CodeGraph rows. */
-export interface CodegraphDoctorPort {
+export type CodegraphHostTarget = 'codex' | 'claude' | 'both';
+
+export interface CodegraphSetupStep {
+  readonly step: string;
+  readonly status: 'ok' | 'skipped' | 'failed';
+  readonly detail?: string;
+  readonly stderr?: string;
+}
+
+/** The CodeGraph rows of `doctor`, the `init` index step and the global MCP configuration of the runtime setup. */
+export interface CodegraphPort {
   readonly contractVersion: ArchitectureContractVersion;
   checks(cwd: string): readonly ArchitectureDoctorCheck[];
+  indexSteps(ctx: { repoRoot: string; sync: boolean; env: NodeJS.ProcessEnv | undefined; target: CodegraphHostTarget }): readonly CodegraphSetupStep[];
+  configureMcp(cwd: string, target: CodegraphHostTarget, env: NodeJS.ProcessEnv): CodegraphSetupStep;
 }
 
 export interface ArchitectureSetupStep {
@@ -223,7 +234,7 @@ export interface ArchitecturePorts {
   readonly notice: ArchitectureNoticePort;
   readonly runtime: ArchitectureRuntimePort;
   readonly setup: ArchitectureSetupPort;
-  readonly codegraphDoctor: CodegraphDoctorPort;
+  readonly codegraph: CodegraphPort;
 }
 
 export type ArchitecturePortName = keyof ArchitecturePorts;
