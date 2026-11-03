@@ -1,9 +1,9 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:558591cc8b7e756e40f48d920427ced687b9d54c0e13d6e18a89759d00b67682" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:68c8a027542926ba640e86cf142fd88cc67b49f9f9772e776c832e56c703bd9a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
-> **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
+> **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -73,7 +73,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`100–200` 個文件 / `20k–50k` 行
-- 匹配前綴:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`src/effects/terminal/herdr-observation.ts`、`vite.operator.config.ts`
+- 匹配前綴:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
 - 排除前綴:`src/effects/setup/pi-host-probe.ts`、`src/effects/setup/pi-herdr-integration.ts`、`src/effects/setup/pi-capability-child.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -85,6 +85,7 @@ flowchart LR
 - `deployed-on` → `process.operator-server` — The operator board runs in the operator server process.
 - `reads` → `external.github` — Collect pull request and CI activity, the newest daily CI run with its JUnit and test projection artifacts, the open CI repair issues, and the CLI inventory repository lookups through gh in background collectors.
 - `depends-on` → `capability.public-surface.action-commands` — Read the skill catalog for the setup snapshot.
+- `depends-on` → `capability.organization.board` — Serve and show the board of one parent issue: decode the board CLI output and evaluate the attention rules in the browser.
 - `depends-on` → `component.evals-checks.ci-report-core` — Read the tests snapshot decoder, the test projection types and the CI repair keys for the tests board.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Read Git topology for task diffs and development activity.
 - `depends-on` → `capability.organization.publication` — Use publication readiness types in the Operator fixture.
