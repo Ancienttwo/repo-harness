@@ -4,9 +4,8 @@ import type { AgentRuntimeSettingsEntryV1, AgentUse, AgentsSettingsV1 } from '..
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
-import { saveNeedsReload, setDefaultDocs, setEnabled, setUse, type AgentsDraft, type AgentsSettingsForm, type AgentsSettingsView, type SettingsSaveState } from './settings';
-import { PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
-import type { WorkspaceLocation } from './workspace-location';
+import { saveNeedsReload, setDefaultDocs, setEnabled, setUse, type AgentsDraft, type AgentsSettingsForm, type SettingsSaveState } from './settings';
+import { StatusDot, type DotTone } from './ui';
 
 /** Copy for a refused save is keyed by its code; a code this bundle does not know shows the server's sentence, marked as such. */
 function refusalText(error: OperatorApiErrorV1, t: OperatorTranslate): { readonly message: string; readonly next_action: string; readonly localized: boolean } {
@@ -15,22 +14,6 @@ function refusalText(error: OperatorApiErrorV1, t: OperatorTranslate): { readonl
   return isOperatorMessageKey(message) && isOperatorMessageKey(action)
     ? { message: t(message), next_action: t(action), localized: true }
     : { message: error.message, next_action: error.next_action, localized: false };
-}
-
-export function SettingsFreshness({ view, now, t }: { readonly view: AgentsSettingsView; readonly now: number; readonly t: OperatorTranslate }) {
-  if (view.kind === 'loading') return <span className="inline-flex items-center gap-1.5" data-freshness="pending" data-freshness-source="settings"><Loader size={12} />{t('freshness.settings.pending')}</span>;
-  if (view.kind === 'unavailable') {
-    return <span className="text-kumo-danger" data-freshness="failed" data-freshness-source="settings">{t('freshness.settings.failed', { reason: t(`settings.reason.${view.reason}`) })}</span>;
-  }
-  const { runtimes } = view.settings;
-  if (runtimes.collected_at === null) return <span data-freshness="pending" data-freshness-source="settings">{t('freshness.settings.notDetected')}</span>;
-  const age = ageWords(runtimes.collected_at, now, t);
-  const warn = runtimes.status === 'stale' || view.refreshFailed;
-  return (
-    <span className={cn('truncate', warn && 'text-kumo-warning')} data-freshness={runtimes.status === 'stale' ? 'stale' : view.refreshFailed ? 'refresh-failed' : 'ready'} data-freshness-source="settings">
-      {t(runtimes.status === 'stale' ? 'freshness.settings.stale' : view.refreshFailed ? 'freshness.settings.refreshFailed' : 'freshness.settings.read', { age })}
-    </span>
-  );
 }
 
 const INSTALL_TONE: Readonly<Record<AgentRuntimeSettingsEntryV1['installation']['kind'], DotTone>> = {
@@ -52,7 +35,7 @@ function installText(entry: AgentRuntimeSettingsEntryV1, t: OperatorTranslate): 
 const UNSUPPORTED_REASON = { docs: 'settings.use.docsIsolationUnverified', review: 'settings.use.reviewUnsupported' } as const satisfies Record<AgentUse, OperatorMessageKey>;
 
 /** A runtime the section names but the probe no longer lists can only be turned off. */
-type Row = { readonly id: string; readonly entry: AgentRuntimeSettingsEntryV1 | null };
+export type Row = { readonly id: string; readonly entry: AgentRuntimeSettingsEntryV1 | null };
 
 function UseToggle({ use, row, draft, locked, onEdit, t }: {
   readonly use: AgentUse; readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean;
@@ -77,17 +60,47 @@ function UseToggle({ use, row, draft, locked, onEdit, t }: {
   );
 }
 
-function RuntimeRow({ row, draft, locked, docsAvailable, onEdit, t }: {
-  readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean; readonly docsAvailable: boolean;
-  readonly onEdit: (change: (draft: AgentsDraft) => AgentsDraft) => void; readonly t: OperatorTranslate;
+type Edit = (change: (draft: AgentsDraft) => AgentsDraft) => void;
+
+/** The runtime enable switch. The Seats section shows the same switch, on the same draft, beside a seat runtime that is not enabled. */
+export function EnableSwitch({ row, draft, locked, onEdit, t }: {
+  readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean; readonly onEdit: Edit; readonly t: OperatorTranslate;
 }) {
   const enabled = draft.enabled.includes(row.id);
   const installed = row.entry?.installation.kind === 'available';
+  // Not installed and off: there is nothing to turn on. An enabled runtime can always be turned off.
+  if (!installed && !enabled) return null;
+  return (
+    <Switch checked={enabled} disabled={locked || (!enabled && !installed)} aria-label={t('settings.enable', { runtime: row.id })}
+      onCheckedChange={on => onEdit(current => setEnabled(current, row.id, on))} />
+  );
+}
+
+function RuntimeControls({ row, draft, locked, docsAvailable, onEdit, t }: {
+  readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean; readonly docsAvailable: boolean; readonly onEdit: Edit; readonly t: OperatorTranslate;
+}) {
+  return (
+    <div className="flex shrink-0 flex-wrap items-center gap-2" data-runtime-controls={row.id}>
+      {docsAvailable && <UseToggle use="docs" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />}
+      <UseToggle use="review" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />
+      <EnableSwitch row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />
+    </div>
+  );
+}
+
+function UseReasons({ row, draft, docsAvailable, t }: { readonly row: Row; readonly draft: AgentsDraft; readonly docsAvailable: boolean; readonly t: OperatorTranslate }) {
   // No runtime is docs-supported while the launch allowlist is empty, so the docs use and default stay off the page.
   const unsupported = row.entry === null ? [] : [
     ...(!docsAvailable || row.entry.docs_supported ? [] : [UNSUPPORTED_REASON.docs]),
     ...(row.entry.review_supported ? [] : [UNSUPPORTED_REASON.review]),
   ];
+  if (!draft.enabled.includes(row.id) || unsupported.length === 0) return null;
+  return <p className="text-xs text-kumo-subtle" data-use-reasons>{unsupported.map(key => t(key)).join(' ')}</p>;
+}
+
+function RuntimeRow({ row, draft, locked, docsAvailable, onEdit, t }: {
+  readonly row: Row; readonly draft: AgentsDraft; readonly locked: boolean; readonly docsAvailable: boolean; readonly onEdit: Edit; readonly t: OperatorTranslate;
+}) {
   return (
     <li className="flex flex-col gap-3 px-3 py-3 sm:flex-row sm:items-center sm:gap-4" data-runtime={row.id}>
       <div className="flex min-w-0 flex-1 flex-col gap-1">
@@ -99,17 +112,9 @@ function RuntimeRow({ row, draft, locked, docsAvailable, onEdit, t }: {
           <StatusDot tone={row.entry ? INSTALL_TONE[row.entry.installation.kind] : 'unknown'} className="mt-1" />
           <span className="min-w-0 [overflow-wrap:anywhere]">{row.entry ? installText(row.entry, t) : t('settings.install.missing')}</span>
         </p>
-        {enabled && unsupported.length > 0 && <p className="text-xs text-kumo-subtle" data-use-reasons>{unsupported.map(key => t(key)).join(' ')}</p>}
+        <UseReasons row={row} draft={draft} docsAvailable={docsAvailable} t={t} />
       </div>
-      <div className="flex shrink-0 flex-wrap items-center gap-2">
-        {docsAvailable && <UseToggle use="docs" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />}
-        <UseToggle use="review" row={row} draft={draft} locked={locked} onEdit={onEdit} t={t} />
-        {/* Not installed and off: there is nothing to turn on. An enabled runtime can always be turned off. */}
-        {(installed || enabled) && (
-          <Switch checked={enabled} disabled={locked || (!enabled && !installed)} aria-label={t('settings.enable', { runtime: row.id })}
-            onCheckedChange={on => onEdit(current => setEnabled(current, row.id, on))} />
-        )}
-      </div>
+      <RuntimeControls row={row} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={onEdit} t={t} />
     </li>
   );
 }
@@ -182,9 +187,32 @@ export function SaveResult({ save, reload: onReload, changedElsewhere, t }: {
   return null;
 }
 
-function rowsOf(settings: AgentsSettingsV1): { readonly main: readonly Row[]; readonly extra: readonly Row[]; readonly missing: readonly Row[] } {
-  const entries = settings.runtimes.entries;
-  const listed = new Set(entries.map(entry => entry.id));
+/** Locked while a save runs or after an outcome that needs a reload. */
+export const formLocked = (form: { readonly save: SettingsSaveState }): boolean => saveNeedsReload(form.save) || form.save.kind === 'saving';
+
+/** The agent settings row of one runtime, or null while the settings or the runtime list are not there. */
+export function runtimeRowOf(form: AgentsSettingsForm, id: string): Row | null {
+  if (form.view.kind !== 'ready' || form.view.settings.runtimes.status === 'unavailable' || form.draft === null) return null;
+  const entry = form.view.settings.runtimes.entries.find(item => item.id === id);
+  return entry === undefined ? null : { id, entry };
+}
+
+/** The use toggles and the enable switch beside a host row of the setup check. */
+export function HostRuntimeControls({ form, id, t }: { readonly form: AgentsSettingsForm; readonly id: string; readonly t: OperatorTranslate }) {
+  const row = runtimeRowOf(form, id);
+  if (row === null || form.view.kind !== 'ready') return null;
+  const docsAvailable = form.view.settings.runtimes.entries.some(entry => entry.docs_supported);
+  return (
+    <span className="flex shrink-0 flex-col gap-1 md:items-end">
+      <RuntimeControls row={row} draft={form.draft!} locked={formLocked(form)} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+      <UseReasons row={row} draft={form.draft!} docsAvailable={docsAvailable} t={t} />
+    </span>
+  );
+}
+
+function rowsOf(settings: AgentsSettingsV1, shown: ReadonlySet<string>): { readonly main: readonly Row[]; readonly extra: readonly Row[]; readonly missing: readonly Row[] } {
+  const entries = settings.runtimes.entries.filter(entry => !shown.has(entry.id));
+  const listed = new Set(settings.runtimes.entries.map(entry => entry.id));
   return {
     main: entries.filter(entry => entry.group === 'default').map(entry => ({ id: entry.id, entry })),
     extra: entries.filter(entry => entry.group !== 'default').map(entry => ({ id: entry.id, entry })),
@@ -192,86 +220,59 @@ function rowsOf(settings: AgentsSettingsV1): { readonly main: readonly Row[]; re
   };
 }
 
-export function SettingsPage({ form, now, t }: { readonly form: AgentsSettingsForm; readonly now: number; readonly t: OperatorTranslate }) {
+/**
+ * The agents section under the Hosts list: the runtimes that no host row
+ * shows, the docs default, and the section's one Save. `hostRows` are the
+ * runtimes whose controls already sit in a host row.
+ */
+export function AgentSettings({ form, hostRows, now, t }: {
+  readonly form: AgentsSettingsForm; readonly hostRows: readonly string[]; readonly now: number; readonly t: OperatorTranslate;
+}) {
   const { view, draft, base } = form;
-  if (view.kind === 'loading') {
-    return <Empty icon={<Loader />} title={t('settings.pending.title')} />;
-  }
+  if (view.kind === 'loading') return <Empty size="sm" icon={<Loader />} title={t('settings.pending.title')} />;
   if (view.kind === 'unavailable') {
-    return <div className="flex flex-col gap-5">
-      <Banner variant="error" data-settings-unavailable={view.reason} title={t('settings.failed.title')} description={t(`settings.reason.${view.reason}`)} />
-    </div>;
+    return <Banner variant="error" data-settings-unavailable={view.reason} title={t('settings.failed.title')} description={t(`settings.reason.${view.reason}`)} />;
   }
   const { settings } = view;
   const { runtimes } = settings;
-  const locked = saveNeedsReload(form.save) || form.save.kind === 'saving';
+  const locked = formLocked(form);
   // During a save, a newer revision is most likely this page's own write.
   const changedElsewhere = base !== null && form.request !== null && form.save.kind !== 'saving' && settings.config.revision !== base.revision;
-  const rows = rowsOf(settings);
+  const rows = rowsOf(settings, new Set(hostRows.filter(id => runtimeRowOf(form, id) !== null)));
   // The settings response is the one source: the docs use and default appear only while a runtime reports docs_supported.
   const docsAvailable = runtimes.entries.some(entry => entry.docs_supported);
   const stale = runtimes.status === 'stale' && runtimes.reason !== null && runtimes.collected_at !== null;
   return (
-    <div className="flex flex-col gap-5">
-      <section aria-labelledby="settings-agents-heading" className="flex flex-col gap-4 rounded-xl border border-kumo-line bg-kumo-base p-4 sm:p-5">
-        <SectionTitle id="settings-agents-heading">{t('settings.agents.title')}</SectionTitle>
-        {/* The contract gives every runtime the same capabilities before a session opens, so they are stated once. */}
-        {runtimes.entries[0] && (
-          <p className="text-sm text-kumo-subtle" data-capabilities>
-            {t(`settings.capability.stop.${runtimes.entries[0].capabilities.stop}`)}{' · '}{t(`settings.capability.steer.${runtimes.entries[0].capabilities.steer}`)}{' · '}{t(`settings.capability.withdraw.${runtimes.entries[0].capabilities.withdraw}`)}
-          </p>
-        )}
-        {runtimes.status === 'unavailable' && runtimes.reason !== null && (
-          <Banner variant={runtimes.reason === 'collection_pending' ? 'default' : 'error'} data-runtimes={runtimes.reason}
-            description={t(`settings.runtimes.unavailable.${runtimes.reason}` as OperatorMessageKey)} />
-        )}
-        {stale && (
-          <Banner variant="alert" data-runtimes="stale"
-            description={t('settings.runtimes.stale', { age: ageWords(runtimes.collected_at!, now, t), reason: t(`settings.runtimes.reason.${runtimes.reason!}`) })} />
-        )}
-        {runtimes.status !== 'unavailable' && draft !== null && <>
-          <RuntimeGroup id="settings-group-default" title={t('settings.group.default')} rows={rows.main} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
-          <RuntimeGroup id="settings-group-extra" title={t('settings.group.extra')} rows={rows.extra} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
-          <RuntimeGroup id="settings-group-missing" title={t('settings.group.missing')} rows={rows.missing} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
-          {docsAvailable && <DefaultDocs draft={draft} settings={settings} locked={locked} onEdit={form.edit} t={t} />}
-          {/* Next to Save, where the result of a save is read. */}
-          <SaveResult save={form.save} reload={form.reload} changedElsewhere={changedElsewhere} t={t} />
-          <div className="flex flex-wrap items-center gap-3 border-t border-kumo-hairline pt-4">
-            <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked} data-save>
-              {form.save.kind === 'saving' ? t('settings.saving') : t('settings.save')}
-            </Button>
-            <Button variant="ghost" onClick={form.discard} disabled={form.request === null || locked}>{t('settings.discard')}</Button>
-            {form.request !== null && !locked && <span className="text-sm text-kumo-subtle">{t('settings.unsaved')}</span>}
-          </div>
-        </>}
-      </section>
-    </div>
-  );
-}
-
-export const SETTINGS_SECTIONS = ['agents', 'seats'] as const;
-export type SettingsSectionId = typeof SETTINGS_SECTIONS[number];
-
-/** The Settings heading and its section links; `#settings` is Agent settings, `#settings/seats` the seats. */
-export function SettingsLayout({ current, onOpen, t, children }: {
-  readonly current: SettingsSectionId; readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate; readonly children: ReactNode;
-}) {
-  return (
-    <div className="flex flex-col gap-5">
-      <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.settings')}</h1>
-      <div className="flex flex-col gap-6 lg:flex-row lg:items-start">
-        <nav aria-label={t('settings.sections')} className="flex shrink-0 gap-1 lg:w-44 lg:flex-col">
-          {SETTINGS_SECTIONS.map(section => (
-            <PageLink key={section} to={{ workspace: 'settings', module: null, item: section === 'agents' ? null : section }} onOpen={onOpen}
-              aria-current={section === current ? 'page' : undefined} data-settings-section={section}
-              className={cn('flex h-8 items-center rounded-md px-2.5 text-sm',
-                section === current ? 'bg-kumo-tint font-medium text-kumo-strong' : 'text-kumo-default hover:bg-kumo-tint')}>
-              {t(`settings.section.${section}`)}
-            </PageLink>
-          ))}
-        </nav>
-        <div className="min-w-0 flex-1">{children}</div>
-      </div>
+    <div className="flex flex-col gap-4" data-agent-settings>
+      {/* The contract gives every runtime the same capabilities before a session opens, so they are stated once. */}
+      {runtimes.entries[0] && (
+        <p className="text-sm text-kumo-subtle" data-capabilities>
+          {t(`settings.capability.stop.${runtimes.entries[0].capabilities.stop}`)}{' · '}{t(`settings.capability.steer.${runtimes.entries[0].capabilities.steer}`)}{' · '}{t(`settings.capability.withdraw.${runtimes.entries[0].capabilities.withdraw}`)}
+        </p>
+      )}
+      {runtimes.status === 'unavailable' && runtimes.reason !== null && (
+        <Banner variant={runtimes.reason === 'collection_pending' ? 'default' : 'error'} data-runtimes={runtimes.reason}
+          description={t(`settings.runtimes.unavailable.${runtimes.reason}` as OperatorMessageKey)} />
+      )}
+      {stale && (
+        <Banner variant="alert" data-runtimes="stale"
+          description={t('settings.runtimes.stale', { age: ageWords(runtimes.collected_at!, now, t), reason: t(`settings.runtimes.reason.${runtimes.reason!}`) })} />
+      )}
+      {runtimes.status !== 'unavailable' && draft !== null && <>
+        <RuntimeGroup id="settings-group-default" title={t('settings.group.default')} rows={rows.main} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+        <RuntimeGroup id="settings-group-extra" title={t('settings.group.extra')} rows={rows.extra} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+        <RuntimeGroup id="settings-group-missing" title={t('settings.group.missing')} rows={rows.missing} draft={draft} locked={locked} docsAvailable={docsAvailable} onEdit={form.edit} t={t} />
+        {docsAvailable && <DefaultDocs draft={draft} settings={settings} locked={locked} onEdit={form.edit} t={t} />}
+        {/* Next to Save, where the result of a save is read. */}
+        <SaveResult save={form.save} reload={form.reload} changedElsewhere={changedElsewhere} t={t} />
+        <div className="flex flex-wrap items-center gap-3 border-t border-kumo-hairline pt-4" data-agents-savebar>
+          <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked} data-save="agents">
+            {form.save.kind === 'saving' ? t('settings.saving') : t('settings.save')}
+          </Button>
+          <Button variant="ghost" onClick={form.discard} disabled={form.request === null || locked}>{t('settings.discard')}</Button>
+          {form.request !== null && !locked && <span className="text-sm text-kumo-subtle">{t('settings.unsaved')}</span>}
+        </div>
+      </>}
     </div>
   );
 }

@@ -22,8 +22,6 @@ export const WORKSPACES = [
   { id: 'tests', group: 'observe' },
   { id: 'system', group: 'observe' },
   { id: 'tools', group: 'observe' },
-  // Below the groups, at the foot of the rail.
-  { id: 'settings', group: null },
 ] as const;
 export type NavWorkspace = typeof WORKSPACES[number]['id'];
 export type NavGroup = NonNullable<typeof WORKSPACES[number]['group']>;
@@ -40,7 +38,7 @@ export interface WorkspaceLocation {
    * parent issue and `#board/<repository>/<parent>/<issue>` opens one of its
    * issues in the drawer (see `boardPlace`). `#tools/<id>` opens one catalog entry.
    * `#docs/<path>` names one repository-relative file; the docs route decides
-   * whether it may be read. `#settings/seats` opens the seats section.
+   * whether it may be read.
    */
   readonly item: string | null;
 }
@@ -94,10 +92,6 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   if (name === 'home' || name === 'repositories' || name === 'worktrees' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'tests') {
     return parameter === undefined ? { workspace: name, module: null, item: null } : HOME;
   }
-  if (name === 'settings') {
-    if (parameter === undefined) return { workspace: 'settings', module: null, item: null };
-    return parameter === 'seats' ? { workspace: 'settings', module: null, item: 'seats' } : HOME;
-  }
   if (name === 'architecture') {
     if (parameter === undefined) return { workspace: 'architecture', module: null, item: null };
     return CAPABILITY_ID.test(parameter) ? { workspace: 'architecture', module: parameter, item: null } : HOME;
@@ -114,7 +108,6 @@ export function workspaceHash({ workspace, module, item }: WorkspaceLocation): s
   if (workspace === 'board') return item === null ? '#board' : `#board/${item}`;
   if (workspace === 'architecture' && module !== null) return `#architecture/${module}`;
   if (workspace === 'tools' && item !== null) return `#tools/${item}`;
-  if (workspace === 'settings' && item !== null) return `#settings/${item}`;
   // Each segment is encoded on its own, so the path stays readable in the address bar.
   if (workspace === 'docs' && item !== null) return `#docs/${item.split('/').map(encodeURIComponent).join('/')}`;
   return `#${workspace}`;

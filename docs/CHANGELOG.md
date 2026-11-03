@@ -17,6 +17,19 @@ All notable changes to this skill are documented here.
   `selection`), or delete the file and run `repo-harness install`. No known
   machine records `dsh`. (#1653)
 
+### Changed
+
+- The operator console has one Agents page for hosts, sub-agents and seats
+  (owner decision M46). Its sections are Hosts (the setup check status of each
+  host with its enable switch, then the other agent runtimes), Subagents (read
+  only) and Seats. A seat offers only the runtimes that are saved as enabled. A
+  runtime that is not enabled shows its Hosts switch in place, and the seats
+  Save stays off until each seat runtime is enabled, so a save cannot fail
+  with `seat_runtime_not_enabled`. After a save of one section, the other
+  section reads again, and an edited draft moves to the new revision when its
+  own stored section did not change. The Settings page and its rail entry are
+  removed. `#settings` and `#settings/seats` open Home. (#1658)
+
 ## [0.25.4] - 2026-11-04
 
 This release has breaking changes. Install state is protocol 3 (core plus

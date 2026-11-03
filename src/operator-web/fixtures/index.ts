@@ -21,7 +21,7 @@ import { busyDevActivity, busyExecution, busyRuntimeOverlay, busyTaskMessages, d
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
-import { agentsSettingsStore, seatsSettingsStore } from './settings';
+import { settingsStores } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
 import type { ArchitectureMapRead } from '../ArchitectureMap';
 // A recorded `operator serve` map of this repository: the model, git line counts and archctx import counts.
@@ -118,8 +118,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   const botReviews: BotReviewsRead = { state: 'ok', snapshot: decodeSlackReviews(fixture === 'busy' ? busyBotReviews(now)
     : fixture === 'empty' ? slackReviewsUnavailable('slack_pending') : degradedBotReviews(now)) };
   // busy: saves apply in the page; degraded: a timed-out probe, a runtime that left the list, and saves that end in reconcile_required.
-  const agentsSettings = agentsSettingsStore(now, fixture);
-  const seatsSettings = seatsSettingsStore(fixture);
+  const { agents: agentsSettings, seats: seatsSettings } = settingsStores(now, fixture);
   // busy: the latest daily run with one failing file and one file without results; empty: no collection yet; degraded: the run uploaded nothing.
   const tests = (repositoryId: string): TestsRead => fixture === 'busy'
     ? { state: 'ok', snapshot: decodeTestsSnapshot({ ...readyTests(now), repository_id: repositoryId }) }

@@ -11,7 +11,7 @@ import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
-import { agentsSettingsFixture, seatsSettingsStore } from '../../src/operator-web/fixtures/settings';
+import { agentsSettingsFixture, settingsStores } from '../../src/operator-web/fixtures/settings';
 import type { SeatsSettingsRequestV1 } from '../../src/core/operator/seats-settings';
 import { registryOf } from '../../src/operator-web/fixtures';
 
@@ -98,10 +98,12 @@ function props(route: ReturnType<typeof server>, locale: OperatorLocale = 'en'):
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
     readAgentsSettings: route.read, writeAgentsSettings: route.write,
+    // The setup check stays pending, so every runtime shows in the agent settings list below Hosts.
+    readSetup: () => new Promise(() => {}), readSeatsSettings: () => new Promise(() => {}),
   };
 }
 
-async function mount(appProps: OperatorAppProps, hash = '#settings'): Promise<void> {
+async function mount(appProps: OperatorAppProps, hash = '#agents'): Promise<void> {
   window.location.hash = hash;
   const container = document.createElement('div');
   document.body.append(container);
@@ -115,7 +117,8 @@ const all = (selector: string, scope: ParentNode = document) => Array.from(scope
 const row = (id: string) => document.querySelector<HTMLElement>(`[data-runtime="${id}"]`)!;
 const toggle = (id: string) => row(id).querySelector<HTMLButtonElement>(`[aria-label="Enable ${id}"], [aria-label="启用 ${id}"]`);
 const use = (id: string, name: 'docs' | 'review') => row(id).querySelector<HTMLButtonElement>(`[data-use="${name}"]`)!;
-const saveButton = () => document.querySelector<HTMLButtonElement>('[data-save]')!;
+const saveButton = () => document.querySelector<HTMLButtonElement>('[data-save="agents"]')!;
+const seatsSave = () => document.querySelector<HTMLButtonElement>('[data-save="seats"]')!;
 const result = () => document.querySelector<HTMLElement>('[data-save-result]');
 const buttonWithText = (label: string) => all('button').find(button => button.textContent?.trim() === label)!;
 const click = async (element: HTMLElement) => { await act(async () => element.click()); await settle(); };
@@ -127,12 +130,12 @@ afterEach(async () => {
   window.happyDOM.abort();
 });
 
-describe('settings seats page', () => {
+describe('agents page seats section', () => {
   /** The busy fixture's read; writes are recorded and answered as saved. */
   function seatsProps(posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[]): OperatorAppProps {
     return {
-      ...props(server(settings(), [])), readSetup: () => new Promise(() => {}),
-      readSeatsSettings: seatsSettingsStore('busy').read,
+      ...props(server(settings(), [])),
+      readSeatsSettings: settingsStores(NOW, 'busy').seats.read,
       writeSeatsSettings: async (body) => { posts.push(body); return { state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['seats.advisor.fleet'] } }; },
     };
   }
@@ -142,8 +145,7 @@ describe('settings seats page', () => {
 
   test('the advisor cannot take a writable role, edit or GitHub writes; save sends the whole section and leaves running panes alone', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
-    await mount(seatsProps(posts), '#settings/seats');
-    expect(document.querySelector('[data-settings-section="seats"]')?.getAttribute('aria-current')).toBe('page');
+    await mount(seatsProps(posts));
     expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('advisor');
     for (const label of ['fast-worker', 'deep-worker', 'Edit files', 'GitHub writes']) expect([label, allow(label).disabled]).toEqual([label, true]);
     // The levels are those of buildSeatLaunch (#1531): Claude advisor with shell on, tasks, edit and gh off.
@@ -152,7 +154,7 @@ describe('settings seats page', () => {
     // The page shows no running pane count: the operator cannot read hc (#1413).
     expect(document.querySelector('[data-seats-page]')?.textContent).not.toMatch(/running \d|\d+ running/u);
     await click(allow('gatekeeper'));
-    await click(saveButton());
+    await click(seatsSave());
     expect(posts).toHaveLength(1);
     const { request_id, expected_revision, seats } = posts[0]!;
     expect(request_id).toMatch(UUID);
@@ -168,20 +170,37 @@ describe('settings seats page', () => {
 
   test('a stored advisor role outside the range can be switched off and saved, and cannot be switched back on', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
-    const read = await seatsSettingsStore('busy').read();
+    const read = await settingsStores(NOW, 'busy').seats.read();
     if (read.state !== 'ok') throw new Error('fixture read failed');
     const stored = { ...read.settings, config: { ...read.settings.config, advisor: { ...read.settings.config.advisor, fleet: ['explorer', 'fast-worker'] } } };
-    await mount({ ...seatsProps(posts), readSeatsSettings: async () => ({ state: 'ok', settings: stored }) }, '#settings/seats');
+    await mount({ ...seatsProps(posts), readSeatsSettings: async () => ({ state: 'ok', settings: stored }) });
     expect([allow('fast-worker').disabled, allow('fast-worker').getAttribute('aria-checked')]).toEqual([false, 'true']);
     await click(allow('fast-worker'));
     expect(allow('fast-worker').disabled).toBe(true);
-    await click(saveButton());
+    await click(seatsSave());
     expect(posts[0]!.seats.advisor.fleet).toEqual(['explorer']);
   });
 
-  test('moving a seat to Pi clears its fleet and model, and locks its effort and fleet', async () => {
+  const choices = () => all('[data-seat-card] [role="group"][aria-label="Runtime"] button').map(button => button.textContent);
+  const inPlace = (runtime: string) => document.querySelector<HTMLButtonElement>(`[data-runtime-enable="${runtime}"] [aria-label="Enable ${runtime}"]`);
+
+  test('the runtime choice offers only enabled runtimes; Pi is enabled in place, saved under Hosts, then a seat moves to Pi and saves against the fixture server', async () => {
+    const stores = settingsStores(NOW, 'busy');
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
-    await mount(seatsProps(posts), '#settings/seats');
+    await mount({ ...props(server(settings(), [])), readAgentsSettings: stores.agents.read, writeAgentsSettings: stores.agents.write,
+      readSeatsSettings: stores.seats.read, writeSeatsSettings: async (body) => { posts.push(body); return stores.seats.write(body); } });
+    expect(choices()).toEqual(['Claude Code', 'Codex']);
+    // An edited seat draft before the Hosts save: it must move to the new revision, not meet a conflict.
+    await click(allow('gatekeeper'));
+    await click(inPlace('pi')!);
+    // The in-place switch is the Hosts switch on the same draft; Pi is a choice only after the Hosts save.
+    expect(toggle('pi')!.getAttribute('aria-checked')).toBe('true');
+    expect(choices()).toEqual(['Claude Code', 'Codex']);
+    await click(saveButton());
+    await settle();
+    expect(choices()).toEqual(['Claude Code', 'Codex', 'Pi']);
+    expect(inPlace('pi')).toBeNull();
+    expect(allow('gatekeeper').getAttribute('aria-checked')).toBe('true');
     // Codex: the sandbox blocks edit, but an MCP path stays open; tasks, gh and the fleet are instructions only.
     await click(buttonWithText('Codex'));
     expect(levels()).toEqual(['common_commands', 'instructions_only', 'instructions_only', 'instructions_only']);
@@ -189,8 +208,32 @@ describe('settings seats page', () => {
     expect(levels()).toEqual(['instructions_only', 'instructions_only', 'instructions_only']);
     expect(allow('explorer').disabled).toBe(true);
     expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(true);
-    await click(saveButton());
+    // An agents draft edited before the seats save moves to the seats revision the same way.
+    await click(use('codex', 'review'));
+    await click(seatsSave());
+    await settle();
+    expect(posts).toHaveLength(1);
     expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: null, fleet: [] });
+    expect(document.querySelector('[data-seats-saved]')).not.toBeNull();
+    await click(saveButton());
+    expect(result()?.getAttribute('data-save-result')).toBe('saved');
+    const read = await stores.agents.read();
+    expect(read.state === 'ok' && read.settings.config).toMatchObject({ enabled: ['claude', 'codex', 'pi'], uses: { review: ['claude'] } });
+  });
+
+  test('a seat on a runtime that is not enabled keeps Save off and shows the Hosts switch in place of the choice', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    // degraded: agents.enabled is claude and gemini; the stored worker runs on codex.
+    const stores = settingsStores(NOW, 'degraded');
+    await mount({ ...props(server(settings(), [])), readAgentsSettings: stores.agents.read,
+      readSeatsSettings: stores.seats.read, writeSeatsSettings: async (body) => { posts.push(body); return stores.seats.write(body); } });
+    await click(pane('worker'));
+    expect(choices()).toEqual(['Claude Code']);
+    expect(inPlace('codex')!.getAttribute('aria-checked')).toBe('false');
+    await click(allow('gatekeeper'));
+    expect(seatsSave().disabled).toBe(true);
+    await click(seatsSave());
+    expect(posts).toHaveLength(0);
   });
 });
 
@@ -349,8 +392,7 @@ describe('settings page', () => {
     const pending = decodeAgentsSettings({ ...settings(), runtimes: { status: 'unavailable', reason: 'collection_pending', collected_at: null, entries: [] } });
     await mount(props(server(pending, [])));
     expect(document.querySelector('[data-runtimes="collection_pending"]')).not.toBeNull();
-    expect(document.querySelector('[data-save]')).toBeNull();
-    expect(document.querySelector('[data-freshness-source="settings"]')?.textContent).toBe('Installed agents not detected yet');
+    expect(document.querySelector('[data-save="agents"]')).toBeNull();
     await act(async () => root?.unmount());
     root = null;
     const route = server(settings(), []);
@@ -364,21 +406,24 @@ describe('settings page', () => {
     const route = server(agentsSettingsFixture(NOW, 'degraded'), []);
     await mount(props(route));
     expect(document.querySelector('[data-runtimes="stale"]')?.textContent).toContain('The last detection timed out.');
-    expect(document.querySelector('[data-freshness-source="settings"]')?.getAttribute('data-freshness')).toBe('stale');
     expect(toggle('codex')!.disabled).toBe(false);
   });
 
-  test.each(['en', 'zh'] as const)('the rail and the System page name Settings as the one page that writes in %s', async locale => {
+  test.each(['en', 'zh'] as const)('the rail and the System page name the Agents page as the page that writes settings in %s', async locale => {
     await mount(props(server(settings(), []), locale), '#system');
-    expect(document.querySelector('[data-operator-status]')?.textContent).toContain('read-only except Settings');
-    expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Settings page' : '除了设置页和 Worktree 页，它是只读的。');
+    expect(document.querySelector('[data-operator-status]')?.textContent).toContain('read-only except Agents');
+    expect(document.body.textContent).toContain(locale === 'en' ? 'It is read-only except the Agents page' : '除了 Agents 页和 Worktree 页，它是只读的。');
   });
 
-  test.each([...FIXTURE_NAMES])('the %s fixture renders the page and reads only the settings route', async name => {
+  test.each([...FIXTURE_NAMES])('the %s fixture renders Hosts, Subagents and Seats in that order on the Agents page', async name => {
     await mount(fixtureProps(name));
-    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('settings');
-    expect(document.querySelector('.workspace-nav a[data-workspace="settings"]')?.getAttribute('aria-current')).toBe('page');
-    expect(document.querySelector('[data-freshness-source="settings"]')).not.toBeNull();
+    await settle();
+    expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('agents');
+    expect(document.querySelector('.workspace-nav a[data-workspace="agents"]')?.getAttribute('aria-current')).toBe('page');
+    // empty: the setup check has not finished, so the Subagents list waits for it.
+    expect(all('main h2[id]').map(heading => heading.id).filter(id => ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading'].includes(id)))
+      .toEqual(name === 'empty' ? ['setup-hosts-heading', 'agents-seats-heading'] : ['setup-hosts-heading', 'setup-fleet-heading', 'agents-seats-heading']);
+    expect(document.querySelector('[data-agents-section="seats"] [data-seats-page]')).not.toBeNull();
   });
 });
 

@@ -1,12 +1,12 @@
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
 import { buildSeatLaunch, type SeatLimitLevel } from '../core/operator/seat-launch';
-import { SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1 } from '../core/operator/seats-settings';
+import { SEAT_IDS, SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1 } from '../core/operator/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import { seatChanges, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, type SeatsSettingsForm } from './seats';
-import { SaveResult } from './SettingsPage';
-import { saveNeedsReload } from './settings';
+import { EnableSwitch, formLocked, runtimeRowOf, SaveResult } from './SettingsPage';
+import type { AgentsSettingsForm } from './settings';
 import { CommandLine, SectionTitle } from './ui';
 
 const LEVEL_TONE: Readonly<Record<SeatLimitLevel, string>> = {
@@ -90,8 +90,20 @@ function fleetDetail(setup: SetupSnapshotV2 | null, role: string): string {
   return [model, entry.description].filter(Boolean).join(' · ');
 }
 
-function SeatCard({ seat, form, settings, setup, locked, t }: {
-  readonly seat: SeatId; readonly form: SeatsSettingsForm; readonly settings: SeatsSettingsV1; readonly setup: SetupSnapshotV2 | null;
+/** The Hosts switch of a runtime that the last seats read does not report enabled, on the same agents draft. */
+function InPlaceEnable({ runtime, agents, t }: { readonly runtime: SeatRuntime; readonly agents: AgentsSettingsForm; readonly t: OperatorTranslate }) {
+  const row = runtimeRowOf(agents, runtime);
+  if (row === null) return null;
+  return (
+    <span className="inline-flex h-7 items-center gap-1.5 rounded-lg border border-dashed border-kumo-line px-2" data-runtime-enable={runtime}>
+      <span className="font-mono text-xs text-kumo-subtle">{t(`seats.runtime.${runtime}`)}</span>
+      <EnableSwitch row={row} draft={agents.draft!} locked={formLocked(agents)} onEdit={agents.edit} t={t} />
+    </span>
+  );
+}
+
+function SeatCard({ seat, form, agents, settings, setup, locked, t }: {
+  readonly seat: SeatId; readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly settings: SeatsSettingsV1; readonly setup: SetupSnapshotV2 | null;
   readonly locked: boolean; readonly t: OperatorTranslate;
 }) {
   const draft = form.draft![seat];
@@ -131,15 +143,16 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
       </div>
 
       <Field label={t('seats.field.runtime')}>
-        <Segmented label={t('seats.field.runtime')} disabled={locked} value={draft.runtime as SeatRuntime}
-          options={ranges.runtimes.map(entry => ({ value: entry.id, label: t(`seats.runtime.${entry.id}`), off: !entry.enabled && entry.id !== draft.runtime,
-            why: entry.enabled ? undefined : t('seats.runtime.notEnabled') }))}
-          onPick={value => form.edit(current => setSeatRuntime(current, seat, value, ranges))} />
-        <span className={cn('text-xs', runtime.enabled ? 'text-kumo-subtle' : 'text-kumo-danger')} data-runtime-note>
-          {!runtime.enabled ? t('seats.runtime.storedNotEnabled', { runtime: draft.runtime })
-            : draft.runtime === 'pi' ? t('seats.runtime.piModel')
-              : seat === 'orchestrator' && draft.runtime !== 'claude' ? t('seats.runtime.orchestratorMode') : t('seats.runtime.fromAgents')}
-        </span>
+        {/* Only saved runtimes are choices, so a save cannot meet seat_runtime_not_enabled; each other runtime shows its Hosts switch. */}
+        {ranges.runtimes.some(entry => entry.enabled) && (
+          <Segmented label={t('seats.field.runtime')} disabled={locked} value={draft.runtime as SeatRuntime}
+            options={ranges.runtimes.filter(entry => entry.enabled).map(entry => ({ value: entry.id, label: t(`seats.runtime.${entry.id}`) }))}
+            onPick={value => form.edit(current => setSeatRuntime(current, seat, value, ranges))} />
+        )}
+        {ranges.runtimes.filter(entry => !entry.enabled).map(entry => <InPlaceEnable key={entry.id} runtime={entry.id} agents={agents} t={t} />)}
+        {runtime.enabled && (draft.runtime === 'pi' || (seat === 'orchestrator' && draft.runtime !== 'claude')) && (
+          <span className="text-xs text-kumo-subtle" data-runtime-note>{t(draft.runtime === 'pi' ? 'seats.runtime.piModel' : 'seats.runtime.orchestratorMode')}</span>
+        )}
       </Field>
 
       <Field label={t('seats.field.model')}>
@@ -211,17 +224,32 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
   );
 }
 
-export function SeatsPage({ form, setup, t }: { readonly form: SeatsSettingsForm; readonly setup: SetupSnapshotV2 | null; readonly t: OperatorTranslate }) {
+/** The seats section of the Agents page. `agents` is the Hosts form, whose switch shows in place for a runtime that is not enabled. */
+export function SeatsSection({ form, agents, setup, t }: {
+  readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly setup: SetupSnapshotV2 | null; readonly t: OperatorTranslate;
+}) {
+  return (
+    <section aria-labelledby="agents-seats-heading" className="flex min-w-0 flex-col gap-4" data-agents-section="seats">
+      <SectionTitle id="agents-seats-heading">{t('seats.title')}</SectionTitle>
+      <SeatsBody form={form} agents={agents} setup={setup} t={t} />
+    </section>
+  );
+}
+
+function SeatsBody({ form, agents, setup, t }: {
+  readonly form: SeatsSettingsForm; readonly agents: AgentsSettingsForm; readonly setup: SetupSnapshotV2 | null; readonly t: OperatorTranslate;
+}) {
   const [seat, setSeat] = useState<SeatId>('advisor');
   const { view, draft, base } = form;
-  if (view.kind === 'loading') return <Empty icon={<Loader />} title={t('settings.pending.title')} />;
+  if (view.kind === 'loading') return <Empty size="sm" icon={<Loader />} title={t('settings.pending.title')} />;
   if (view.kind === 'unavailable') {
     return <Banner variant="error" data-settings-unavailable={view.reason} title={t('settings.failed.title')} description={t(`settings.reason.${view.reason}`)} />;
   }
   const { settings } = view;
-  const locked = saveNeedsReload(form.save) || form.save.kind === 'saving';
+  const locked = formLocked(form);
   const changedElsewhere = base !== null && form.request !== null && form.save.kind !== 'saving' && settings.config.revision !== base.revision;
   const changes = base !== null && draft !== null ? seatChanges(base, draft) : 0;
+  const notEnabled = draft !== null && SEAT_IDS.some(id => !settings.ranges.runtimes.find(entry => entry.id === draft[id].runtime)!.enabled);
   return (
     <div className="flex flex-col gap-5" data-seats-page>
       <p className="text-sm text-kumo-subtle">{t('seats.lead')}</p>
@@ -250,7 +278,7 @@ export function SeatsPage({ form, setup, t }: { readonly form: SeatsSettingsForm
         <p className="flex flex-wrap items-center gap-2 text-xs text-kumo-subtle"><Badge className="bg-kumo-fill text-kumo-subtle">{t('seats.layout.ruleBadge')}</Badge>{t('seats.layout.rule')}</p>
       </section>
 
-      {draft !== null && <SeatCard seat={seat} form={form} settings={settings} setup={setup} locked={locked} t={t} />}
+      {draft !== null && <SeatCard seat={seat} form={form} agents={agents} settings={settings} setup={setup} locked={locked} t={t} />}
 
       <SaveResult save={form.save} reload={form.reload} changedElsewhere={changedElsewhere} t={t} />
       {form.save.kind === 'saved' && <Banner variant="default" data-seats-saved description={t('seats.saved')} />}
@@ -259,7 +287,7 @@ export function SeatsPage({ form, setup, t }: { readonly form: SeatsSettingsForm
         <span className="flex-1" />
         <span className="text-xs text-kumo-subtle">{changes === 0 ? t('seats.savebar.clean') : t('seats.savebar.dirty', { count: changes })}</span>
         <Button variant="ghost" onClick={form.discard} disabled={form.request === null || locked}>{t('settings.discard')}</Button>
-        <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked} data-save>
+        <Button variant="primary" onClick={form.submit} disabled={form.request === null || locked || notEnabled} data-save="seats">
           {form.save.kind === 'saving' ? t('settings.saving') : t('settings.save')}
         </Button>
       </div>

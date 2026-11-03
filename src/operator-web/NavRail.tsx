@@ -7,7 +7,6 @@ import {
   DesktopIcon,
   FlaskIcon,
   FoldersIcon,
-  GearSixIcon,
   GitForkIcon,
   HeadCircuitIcon,
   HouseIcon,
@@ -47,7 +46,6 @@ const NAV_ICON: Readonly<Record<NavWorkspace, ReactNode>> = {
   tests: <FlaskIcon size={16} />,
   system: <CpuIcon size={16} />,
   tools: <WrenchIcon size={16} />,
-  settings: <GearSixIcon size={16} />,
 };
 
 const GROUPS: readonly NavGroup[] = ['work', 'setup', 'observe'];
@@ -356,7 +354,6 @@ export function NavRail({
               <ul aria-labelledby={`nav-group-${group}`} className="flex flex-col gap-0.5">{groupLinks(group)}</ul>
             </div>
           ))}
-          <ul className="mt-auto pt-4"><li><NavLink workspace="settings" current={current} collapsed={collapsed} attention={attention} onOpen={open} t={t} /></li></ul>
         </nav>
         <div className={cn('flex flex-col gap-2 border-t border-kumo-hairline px-1 pt-3', collapsed && 'rail:items-center rail:px-0')} data-operator-status={status}>
           <div className={cn('flex min-w-0 items-start gap-2 text-xs text-kumo-subtle', collapsed && 'rail:justify-center')} title={collapsed ? t(`rail.status.${status}`) : undefined}>
@@ -364,7 +361,7 @@ export function NavRail({
             <span className={cn('min-w-0', collapsed && 'rail:sr-only')}>
               <span className="block truncate">{t(`rail.status.${status}`)}</span>
               {/* Protocol vocabulary: never translated. The full boundary lives on the System page. It wraps rather than truncates, so the exception stays visible. */}
-              <span className="block">{host && <><span className="font-mono">{host}</span> · </>}read-only except Settings and Worktrees</span>
+              <span className="block">{host && <><span className="font-mono">{host}</span> · </>}read-only except Agents and Worktrees</span>
             </span>
           </div>
           <div className={cn('flex items-center gap-2', collapsed && 'rail:flex-col')}>
