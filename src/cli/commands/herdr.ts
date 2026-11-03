@@ -3,7 +3,7 @@ import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath, readNo
 import type { DoctorCheckResult } from './doctor.ts';
 import { repoHarnessHome } from '../../effects/repo-harness-home.ts';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys.ts';
-import { NOTIFY_DONE_KEYS, decodeNotifyConfig, renderNotifyConfig, runNotifyRelay } from '../../effects/terminal/notify-relay.ts';
+import { NOTIFY_DONE_KEYS, decodeNotifyConfig, renderNotifyConfig, runNotifyRelay, type NotifyConfig } from '../../effects/terminal/notify-relay.ts';
 import { NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND } from '../../core/operator/notify-status.ts';
 import { Command } from 'commander';
 import { existsSync, rmSync } from 'node:fs';
@@ -74,19 +74,21 @@ export async function installNotify(options: NotifyOptions): Promise<void> {
   if (process.platform === 'win32') throw new Error('Herdr notify needs POSIX file permissions.');
   // Each key comes from its option (`--webhook-url` for WEBHOOK_URL) or the caller's environment.
   const option = (key: string): unknown => (options as Record<string, unknown>)[key.toLowerCase().replace(/_([a-z])/g, (_, c: string) => c.toUpperCase())];
-  const values: Record<string, string> = {};
+  // The loops below set every key; the key type makes a renamed key fail the typecheck.
+  const values = {} as Record<keyof NotifyConfig, string>;
   for (const key of NOTIFY_CHANNEL_SECRET_KEYS) values[key] = (option(key) as string | undefined) ?? process.env[key] ?? '';
   for (const key of NOTIFY_DONE_KEYS) values[key] = option(key) ? '1' : '0';
   if (!options.nonInteractive) {
     for (const key of NOTIFY_CHANNEL_SECRET_KEYS) {
       if (!values[key]) values[key] = (await askMasked(`${key}${key === 'WEBHOOK_URL' || key === 'WEBHOOK_KEY' ? ' (required)' : ' (optional; Enter to skip)'}`)).trim();
     }
-    for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM']) {
-      const enabled = channel === 'TELEGRAM' ? values.TELEGRAM_BOT_TOKEN : values[`${channel === 'WEBHOOK' ? 'WEBHOOK' : channel + '_WEBHOOK'}_URL`];
-      if (enabled && values[`${channel}_NOTIFY_DONE`] !== '1') {
+    for (const channel of ['WEBHOOK', 'SLACK', 'DISCORD', 'TELEGRAM'] as const) {
+      const enabled = channel === 'TELEGRAM' ? values.TELEGRAM_BOT_TOKEN : values[channel === 'WEBHOOK' ? 'WEBHOOK_URL' : `${channel}_WEBHOOK_URL` as const];
+      const done = `${channel}_NOTIFY_DONE` as const;
+      if (enabled && values[done] !== '1') {
         const answer = await askMasked(`${channel}: also notify on done? [y/N]`);
         if (!['', 'n', 'no', 'y', 'yes'].includes(answer.toLowerCase())) throw new Error('Enter y or n.');
-        values[`${channel}_NOTIFY_DONE`] = ['y', 'yes'].includes(answer.toLowerCase()) ? '1' : '0';
+        values[done] = ['y', 'yes'].includes(answer.toLowerCase()) ? '1' : '0';
       }
     }
   }

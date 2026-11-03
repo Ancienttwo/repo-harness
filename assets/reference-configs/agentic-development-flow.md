@@ -104,8 +104,8 @@ breakdown, dispatch, follow-up and evidence-based reports. Coding agents own
 source edits, tests and repairs. Follow the shared PM boundary in the
 `repo-harness` Skill for the permitted tool surface and reporting duties.
 Keep direct development sessions and explicitly assigned coding workers outside
-that PM restriction. OAR owns coding-agent execution. Herdr owns panes and
-visibility. A new Bot host adapts to that path; it does not add a new coding
+that PM restriction. OAR owns coding-agent execution. herdr-core (`hc`) owns
+terminals, and Herdr.app owns panes and visibility. A new Bot host adapts to that path; it does not add a new coding
 runtime or task authority.
 
 The `orchestrator` fleet role is the long-lived coordinator and integrator seat

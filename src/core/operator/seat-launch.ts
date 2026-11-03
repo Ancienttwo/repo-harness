@@ -1,6 +1,7 @@
 // The launch of one seat in a Herdr pane (#1473): the argv for its runtime and
 // the seat brief. Each limit names what the host does with it, so the output
 // never claims a limit that the host cannot apply.
+import { PANE_PREFIX } from './pane-prefix';
 import type { SeatConfigV1, SeatId, SeatTool } from './seats-settings';
 
 /** `seats`: the stored section. `defaults`: no section, so `DEFAULT_SEATS_CONFIG`. */
@@ -224,7 +225,7 @@ export class SeatPaneNameError extends Error {
 
 /** `reviewer` is a pane started by hand; it has no seat config. */
 export interface SeatPaneNameInput {
-  /** The `panePrefix` of the repository's registry entry (#1544); the registry checks its format. */
+  /** The `panePrefix` of the repository's registry entry (#1544). */
   readonly prefix: string;
   readonly seat: SeatId | 'reviewer';
   readonly issue?: string;
@@ -241,7 +242,7 @@ export interface SeatPaneNameInput {
 export function seatPaneName(input: SeatPaneNameInput): string {
   const fail = (why: string): never => { throw new SeatPaneNameError(`Pane name: ${why}.`); };
   const { prefix, seat, issue, pr, release, qualifier } = input;
-  if (!WORD.test(prefix)) fail(`prefix ${JSON.stringify(prefix)} must match ${WORD.source}`);
+  if (!PANE_PREFIX.test(prefix)) fail(`prefix ${JSON.stringify(prefix)} must match ${PANE_PREFIX.source}`);
   const role: string | undefined = PANE_ROLE[seat];
   if (role === undefined) fail(`unknown seat ${JSON.stringify(seat)}`);
   let item: string | undefined;

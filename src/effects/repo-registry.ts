@@ -10,6 +10,7 @@ import {
   type ExclusiveDirectoryLockOwner,
 } from "./locking/exclusive-directory-lock";
 import { gitSpawnSync, withoutRepositorySelectingGitEnv } from "./git/runner";
+import { PANE_PREFIX } from "../core/operator/pane-prefix";
 import { repoHarnessHome } from "./repo-harness-home";
 
 export type RepoHarnessRegistrySource = "adopt" | "init" | "mcp-setup" | "manual" | "discovery"; // "adopt": legacy-read-only, no current writers
@@ -25,9 +26,6 @@ export interface RepoHarnessRegisteredRepo {
   /** Set by the owner by hand (#1544); the seat pane names start with it. Unique on the machine. */
   readonly panePrefix?: string;
 }
-
-/** The format of a hand-set pane prefix: 2-6 characters. The registry owns it, so only the strict read checks it. */
-const PANE_PREFIX = /^[a-z][a-z0-9]{1,5}$/u;
 
 /** Every registry writer carries the hand-set pane prefix of an entry unchanged. */
 function panePrefixOf(entry: { readonly panePrefix?: unknown } | undefined): { readonly panePrefix?: string } {

@@ -15,6 +15,8 @@ type ChangeAssessmentEffects = typeof import('../src/effects/review/change-asses
 type AdmissionSourceModule = typeof import('../src/effects/admission/admission-source');
 type ReviewAdmissionSource = import('../src/effects/admission/admission-source').ReviewAdmissionSource;
 type DiffFingerprintModule = typeof import('../src/effects/review/diff-fingerprint');
+type CheckRecordsModule = typeof import('../src/core/review/check-records');
+type PassingEvidence = Extract<import('../src/core/review/check-records').ChangeAssessmentEvidence, { status: 'pass' }>;
 
 function usage(): string {
   return [
@@ -74,11 +76,13 @@ async function modules(): Promise<{
   core: ChangeAssessmentModule;
   effects: ChangeAssessmentEffects;
   diff: DiffFingerprintModule;
+  records: CheckRecordsModule;
 }> {
   const core = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/core/review/change-assessment.ts')).href) as ChangeAssessmentModule;
   const effects = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/effects/review/change-assessment.ts')).href) as ChangeAssessmentEffects;
   const diff = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/effects/review/diff-fingerprint.ts')).href) as DiffFingerprintModule;
-  return { core, effects, diff };
+  const records = await import(pathToFileURL(resolve(PACKAGE_ROOT, 'src/core/review/check-records.ts')).href) as CheckRecordsModule;
+  return { core, effects, diff, records };
 }
 
 function envelope(value: {
@@ -108,14 +112,13 @@ async function prepare(root: string, values: Record<string, string>, authority: 
   const output = safeRepoPath(root, values.output ?? '.ai/harness/checks/change-assessment.latest.json');
   let disagreementSource: string | null = null;
   try {
-    const { core, effects } = await modules();
+    const { effects, records } = await modules();
     let reviewerDisagreementPacket: unknown;
     if (values.packet) {
       const packetPath = safeRepoPath(root, values.packet);
-      const prior = validateEnvelope(parseEnvelope(packetPath), core);
+      const prior = readPassingEvidence(packetPath, records);
       reviewerDisagreementPacket = prior.selection_packet;
-      const reasons = (prior.selection_packet as { reasons?: readonly { code?: unknown }[] }).reasons;
-      if (Array.isArray(reasons) && reasons.some((reason) => reason?.code === 'reviewer_disagreement')) {
+      if (prior.selection_packet.reasons.some((reason) => reason.code === 'reviewer_disagreement')) {
         disagreementSource = packetPath;
       }
     }
@@ -138,35 +141,11 @@ async function prepare(root: string, values: Record<string, string>, authority: 
   }
 }
 
-function parseEnvelope(path: string): Record<string, unknown> {
+function readPassingEvidence(path: string, records: CheckRecordsModule): PassingEvidence {
   if (!existsSync(path)) throw new Error(`change assessment packet is missing: ${path}`);
-  let value: unknown;
-  try {
-    value = JSON.parse(readFileSync(path, 'utf-8'));
-  } catch (error) {
-    throw new Error(`change assessment packet is invalid JSON: ${(error as Error).message}`);
-  }
-  if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('change assessment evidence must be an object');
-  return value as Record<string, unknown>;
-}
-
-function validateEnvelope(value: Record<string, unknown>, core: ChangeAssessmentModule): {
-  readonly assessment: unknown;
-  readonly selection_packet: unknown;
-} {
-  const basis = {
-    schema: value.schema,
-    status: value.status,
-    assessment: value.assessment,
-    selection_packet: value.selection_packet,
-  };
-  if (value.schema !== 'repo-harness-change-assessment-evidence.v1' || value.status !== 'pass' || value.evidence_sha256 !== sha256(basis)) {
-    throw new Error('change assessment evidence fingerprint is stale');
-  }
-  const assessment = core.validateChangeAssessment(value.assessment);
-  const packet = core.validateReviewSelectionPacketAgainstAssessment(value.selection_packet, assessment);
-  if (packet.status !== 'ready') throw new Error('change assessment evidence is blocked');
-  return { assessment, selection_packet: packet };
+  const evidence = records.decodeChangeAssessmentEvidence(readFileSync(path, 'utf-8'));
+  if (evidence.status !== 'pass') throw new Error('change assessment evidence is not passing');
+  return evidence;
 }
 
 async function escalate(root: string, values: Record<string, string>, authority: ReviewAdmissionSource): Promise<number> {
@@ -175,9 +154,8 @@ async function escalate(root: string, values: Record<string, string>, authority:
   const summary = values.summary;
   if (!packetPathValue || !pathsValue || !summary) throw new Error('escalate-disagreement requires --packet, --paths, and --summary');
   const packetPath = safeRepoPath(root, packetPathValue);
-  const evidence = parseEnvelope(packetPath);
-  const { core, effects, diff } = await modules();
-  const prior = validateEnvelope(evidence, core);
+  const { core, effects, diff, records } = await modules();
+  const prior = readPassingEvidence(packetPath, records);
   const prepared = effects.prepareChangeAssessment({ repoRoot: root, authority });
   if (prepared.assessment.status !== 'ready' || !prepared.packet) throw new Error('current base Change Assessment is unavailable');
   const packet = core.validateReviewSelectionPacketAgainstAssessment(prior.selection_packet, prepared.assessment);
@@ -204,9 +182,8 @@ async function validate(root: string, values: Record<string, string>, authority:
   const packetPathValue = values.packet;
   if (!packetPathValue) throw new Error('validate requires --packet');
   const packetPath = safeRepoPath(root, packetPathValue);
-  const evidence = parseEnvelope(packetPath);
-  const { core, effects } = await modules();
-  const prior = validateEnvelope(evidence, core);
+  const { core, effects, records } = await modules();
+  const prior = readPassingEvidence(packetPath, records);
   const prepared = effects.prepareChangeAssessment({ repoRoot: root, authority });
   if (prepared.assessment.status !== 'ready') throw new Error('current base Change Assessment is unavailable');
   const packet = core.validateReviewSelectionPacketAgainstAssessment(prior.selection_packet, prepared.assessment);

@@ -58,7 +58,8 @@ context is valid and records `model_relation` in the receipt.
   with `repo-harness run contract-worktree start --issue <number>`. Commit
   or push before a reboot or temp cleanup. Closeout removes only merged,
   clean and unowned worktrees.
-- Dispatch: run peers in visible Herdr panes. Receipt-bearing acceptance
+- Dispatch: run peers in herdr-core (`hc`) terminals that Herdr.app shows
+  as panes. Receipt-bearing acceptance
   uses `repo-harness review round`; its OAR host runs the reviewer. See
   [Herdr dispatch and notify](herdr-notify.md).
 - Review: an acceptor returns one `AcceptanceReviewResult`. The session

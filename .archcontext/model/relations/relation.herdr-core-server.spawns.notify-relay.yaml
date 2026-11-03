@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.herdr-core-server.spawns.notify-relay"
+kind: "spawns"
+source: "process.herdr-core-server"
+target: "process.notify-relay"
+intent: "Run the relay argv that herdr notify install and herdr notify start pass to hc run."

@@ -234,6 +234,9 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
     expect(readFileSync(claudeSkill, "utf8")).toBe("# user change\n");
     expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(afterCleanupFailure));
     expect(existsSync(join(home, ".codex", "skills", "herdr", ".repo-harness-owner.json"))).toBe(true);
+
+    writeFileSync(hc, "#!/bin/sh\nkill -TERM $$\n");
+    expect(configureRequiredHerdrSkill("both", env).detail).toBe("hc --skill failed: signal SIGTERM");
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

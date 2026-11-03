@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.notify-relay.runs-in.host"
+kind: "runs-in"
+source: "process.notify-relay"
+target: "namespace.host.developer"
+intent: "Runs on the developer host."

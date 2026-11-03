@@ -157,6 +157,16 @@ describe('mcp policy and paths', () => {
       const decision = resolveMcpPath(tmp, 'docs/prds/linked.md', policy, 'read');
       expect(decision.ok).toBe(false);
       expect(decision.reason).toContain('escapes repository root');
+
+      symlinkSync(join(outside, 'missing-dir'), join(tmp, 'docs/prds', 'dangdir'));
+      const danglingWrite = resolveMcpPath(tmp, 'docs/prds/dangdir/x.prd.md', policy, 'write');
+      expect(danglingWrite.ok).toBe(false);
+      expect(danglingWrite.reason).toContain('path cannot be resolved');
+      const danglingRead = resolveMcpPath(tmp, 'docs/prds/dangdir/x.prd.md', policy, 'read');
+      expect(danglingRead.ok).toBe(false);
+      expect(danglingRead.reason).toContain('path does not exist');
+      symlinkSync('loop', join(tmp, 'docs/prds', 'loop'));
+      expect(resolveMcpPath(tmp, 'docs/prds/loop/sub/x.prd.md', policy, 'write').reason).toContain('path cannot be resolved');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
       rmSync(outside, { recursive: true, force: true });
@@ -188,7 +198,8 @@ describe('mcp policy and paths', () => {
       expect(executorTools).not.toContain('read_text');
       expect(executorTools).not.toContain('search_text');
       expect(executorTools).not.toContain('run_agent_goal');
-      expect(resolveMcpPath(tmp, '.ai/harness/checks/change-assessment.latest.json', executor, 'write')).toMatchObject({ ok: true });
+      expect(resolveMcpPath(tmp, '.ai/harness/checks/change-assessment.latest.json', executor, 'write')).toMatchObject({ ok: false });
+      expect(resolveMcpPath(tmp, '.ai/harness/handoff/task-goal.md', executor, 'write')).toMatchObject({ ok: false });
       expect(resolveMcpPath(tmp, 'docs/prds/existing.prd.md', executor, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'tasks/lessons.md', executor, 'read')).toMatchObject({ ok: true });
       expect(resolveMcpPath(tmp, 'docs/prds/new.prd.md', executor, 'write')).toMatchObject({ ok: true });

@@ -63,6 +63,12 @@ function writeFakeSkillsCli(fakeBin: string): void {
   );
 }
 
+// The install skill step spawns `hc --skill`, and readiness spawns `hc --version`.
+// A fixture puts this fake first on PATH, so no test runs the developer's hc.
+function writeFakeHc(fakeBin: string): void {
+  writeExecutable(join(fakeBin, 'hc'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."; else printf "hc 0.1.17\\n"; fi\n');
+}
+
 function writeOfficialCodexPluginFixture(pluginRoot: string): void {
   mkdirSync(join(pluginRoot, 'scripts'), { recursive: true });
   mkdirSync(join(pluginRoot, '.claude-plugin'), { recursive: true });
@@ -255,6 +261,7 @@ describe('registry-bound CLI update (#701)', () => {
     const harness = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
     try {
       mkdirSync(bin, { recursive: true });
+      writeFakeHc(bin);
       mkdirSync(source, { recursive: true });
       setupFakeSource(source);
       setupManagedRuntimeReadback(home, bin, options.previous ?? '0.21.2');
@@ -405,6 +412,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       writeExecutable(
         join(fakeBin, 'bun'),
         [
@@ -505,6 +513,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       writeExecutable(
         join(fakeBin, 'bun'),
         `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n`,
@@ -562,7 +571,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(join(validatedBun, '..'), { recursive: true });
       symlinkSync(process.execPath, validatedBun);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.0.0; exit 0; fi\nexit 99\n');
-      writeExecutable(join(fakeBin, 'hc'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."; else printf "hc 0.1.17\\n"; fi\n');
+      writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
@@ -610,6 +619,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
@@ -692,6 +702,7 @@ describe('install command global runtime bootstrap', () => {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       setObsidianSkillIntegrities(source);
@@ -806,6 +817,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       setupManagedRuntimeReadback(home, fakeBin);
       for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
@@ -1305,6 +1317,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       const packDir = join(home, '.repo-harness', 'packages');
       mkdirSync(packDir, { recursive: true });
@@ -1382,9 +1395,12 @@ exit 0
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-full-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
@@ -1395,7 +1411,7 @@ exit 0
         syncSkill: false,
         hostAdapters: false,
         codegraph: false,
-        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') },
+        env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'), PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       }, { authorityHome: () => home });
 
       expect(result.exitCode).toBe(0);
@@ -1423,6 +1439,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
       writeFakeSkillsCli(fakeBin);
       // Provider rule (skills CLI): one distinct agent skillsDir selects copy
@@ -1612,6 +1629,7 @@ exit 0
       mkdirSync(source, { recursive: true });
       mkdirSync(home, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
@@ -1651,6 +1669,7 @@ exit 0
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
@@ -1695,6 +1714,7 @@ exit 0
       mkdirSync(join(globalPackage, '..'), { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       symlinkSync(source, globalPackage, 'dir');
@@ -1736,6 +1756,7 @@ exit 0
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
@@ -1783,6 +1804,7 @@ exit 0
       mkdirSync(source, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 42\n`);
 
@@ -1908,6 +1930,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       mkdirSync(join(home, '.repo-harness'), { recursive: true });
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8')).version as string);
@@ -2073,6 +2096,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       setupManagedRuntimeReadback(home, fakeBin);
       installCandidateRuntimeFixture(home, '9.9.9');
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == */src/cli/index.ts ]]; then exec "${process.execPath}" "$@"; fi\nexit 0\n`);
@@ -2180,14 +2204,17 @@ exit 0
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-check-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
+    const fakeBin = join(tmp, 'bin');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
+      mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
 
       const res = spawnSync('bun', [CLI, 'update', '--check', '--target', 'codex', '--json'], {
         cwd: repo,
         encoding: 'utf-8',
-        env: { ...sanitizedChildEnv(), HOME: home },
+        env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       const s = res.status;
@@ -2237,6 +2264,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
       writeFakeCodegraph(fakeBin, codegraphLog);
       writeExecutable(join(fakeBin, 'bun'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunLog}"\nif [[ "\${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nif [[ "\${1:-}" == "-" || "\${1:-}" == "-e" || "\${1:-}" == *.ts ]]; then exec "${process.execPath}" "$@"; fi\nif [[ " $* " == *" add -g "* ]]; then mkdir -p "$HOME/.bun/bin"; printf '#!/bin/sh\\n' > "$HOME/.bun/bin/repo-harness"; chmod +x "$HOME/.bun/bin/repo-harness"; fi\nexit 0\n`);
@@ -2418,6 +2446,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     const fakeBin = join(tmp, 'bin');
     const source = join(tmp, 'source');
     mkdirSync(fakeBin, { recursive: true });
+    writeFakeHc(fakeBin);
     mkdirSync(source);
     writeFileSync(join(source, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '9.9.9' }));
     setupManagedRuntimeReadback(home, fakeBin, '1.0.0');
@@ -2495,6 +2524,7 @@ describe('Waza shared rule refresh', () => {
     const paths: string[] = [];
     try {
       mkdirSync(fakeBin, { recursive: true });
+      writeFakeHc(fakeBin);
       mkdirSync(upstream, { recursive: true });
       for (const root of ['.agents', '.claude', '.codex']) {
         mkdirSync(join(home, root, 'rules'), { recursive: true });
@@ -2886,6 +2916,7 @@ describe('Codex Waza projection', () => {
       const bin = join(tmp, 'bin');
       try {
         mkdirSync(bin, { recursive: true });
+        writeFakeHc(bin);
         for (const name of ['think', 'hunt', 'check', 'health', 'mermaid']) {
           const stage = join(home, '.agents/skills', name);
           mkdirSync(stage, { recursive: true });
@@ -2962,7 +2993,7 @@ describe('Global Working Rules refresh during install and update', () => {
         join(source, 'assets', 'reference-configs', 'global-working-rules.md'),
       );
       writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; fi\nexit 0\n');
-      writeExecutable(join(fakeBin, 'hc'), '#!/bin/sh\nif [ "${1:-}" = --skill ]; then printf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."; else printf "hc 0.1.17\\n"; fi\n');
+      writeFakeHc(fakeBin);
       const env = {
         ...sanitizedChildEnv(),
         HOME: home,
