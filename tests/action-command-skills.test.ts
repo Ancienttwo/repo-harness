@@ -573,7 +573,9 @@ describe("repo-harness action command skills", () => {
     expect(orchestrator).toContain("repo-harness seats argv orchestrator");
     expect(orchestrator).toContain("more than two children");
     expect(orchestrator).toContain("Supersedes:");
-    expect(orchestrator).toContain("Limit each artifact to two review rounds");
+    // M33: the round rules live once in acceptor.md; the orchestrator links them.
+    expect(orchestrator).toContain("Review rounds converge by the round rules in `acceptor.md` §2.2");
+    expect(orchestrator).not.toContain("two review rounds");
     expect(orchestrator.toLowerCase()).toContain("default model preference");
     expect(orchestrator).toContain("responsibility, not by file list");
     expect(orchestrator).not.toContain("a Claude session");
@@ -591,6 +593,11 @@ describe("repo-harness action command skills", () => {
     expect(acceptor).toContain("repo-harness-review-publish-receipt");
     expect(acceptor).toContain("review_publish_unknown");
     expect(acceptor).toContain("model_relation");
+    // M32: reviewers read CI and the recorded evidence. M33 rule 4: a P2-only FAIL after round 3 can merge.
+    expect(acceptor).toContain("Never rerun a passing\ntypecheck or test.");
+    expect(acceptor).toContain("Round 3** runs with no owner question");
+    expect(acceptor).toContain("Rule 4 decides whether a P2-only `FAIL` after round 3 merges.");
+    expect(worker).toContain("**Fix the class.**");
   });
 
   test("issue-flow guidance requires no host or model", () => {

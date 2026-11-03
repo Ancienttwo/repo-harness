@@ -44,7 +44,7 @@ as `Depends on #<n>` is not a dependency. Nothing reads it.
 <the user-visible end state, 1–3 sentences>
 
 ## Children
-| Order | Issue | Module | Outcome | Seat / status |
+| Order | Issue | Module | Outcome | Role / status |
 |---|---|---|---|---|
 | 1 | #<n> | <module id> | <outcome> | merged |
 | 2 | #<n> | <module id> | <outcome> | writer <agent> · PR #<p> |
@@ -59,7 +59,7 @@ as `Depends on #<n>` is not a dependency. Nothing reads it.
 <filled by `decision` comments; list their links here when the parent is edited>
 ```
 
-The seat/status column uses only these values: `unclaimed`,
+The role/status column uses only these values: `unclaimed`,
 `unclaimed · waits for #n`, `writer <agent> · active`,
 `writer <agent> · PR #p`, `merged`. A Chinese-language repository
 writes `待认领`, `待认领 · 等待 #n 合并`, `writer <agent> · active`,

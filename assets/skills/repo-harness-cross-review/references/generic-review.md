@@ -3,7 +3,9 @@
 Acceptance runs in a persistent task session: an hc terminal or app-terminal
 host whose reviewer takes its instructions from the `deep-reasoner` role in
 `agents/fleet/`.
-Prepare verification, provide a dedicated linked reviewer checkout and a JSON
+Attach the CI status of the head and the recorded evidence
+(`repo-harness-issue-flow`, `references/acceptor.md` §2.1), provide a
+dedicated linked reviewer checkout and a JSON
 address file `{endpoint:{socket,home?},parent_pane}` (the hc core socket and the
 owner's hc terminal). Trust the exact
 checkout through the normal operator workflow before starting; never respond to

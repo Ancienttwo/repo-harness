@@ -8,7 +8,7 @@ files link it and do not restate it.
 
 The advisor is the long-lived hc terminal in the pane beside the orchestrator
 ([Issue-flow topology](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#issue-flow-topology)).
-It holds no seat. It does not edit code, commit, write to GitHub or
+It holds no claim role. It does not edit code, commit, write to GitHub or
 decide.
 
 ## 1. Triggers
@@ -17,7 +17,7 @@ Ask for a replan when any one of these is true:
 
 - The owner asks for one.
 - At least 3 open issues or PRs are not in the parent's latest `plan`.
-- A seat shows no `issue claim status` for one working session.
+- A claim shows no `issue claim status` for one working session.
 - One PR fails two fix rounds.
 - The lowest unmerged PR in the merge order is blocked.
 - The triage queue (`orchestrator.md` §8.1) holds more P1 and P2 items
@@ -73,7 +73,7 @@ The file has these sections, in this order:
 3. **Lanes and merge batches.** The proposed parallel lanes, the merge
    order, and the batches that can merge together (`orchestrator.md`
    §9.3).
-4. **Seat changes.** Each seat to reassign or release, with the evidence
+4. **Claim changes.** Each claim to reassign or release, with the evidence
    of a stall: the last `issue claim status` URL and the branch head.
 5. **Owner questions.** The decisions that only the owner can make.
 
@@ -93,7 +93,7 @@ is input only. The board holds the result:
   issue with a comment that links the decision.
 - Ask the owner each owner question. An owner answer becomes a board rule
   only through the orchestrator's `decision` or `scope change`.
-- Move a seat only by the handoff rules in `board.md`. A replan does not
+- Move a claim role only by the handoff rules in `board.md`. A replan does not
   release a claim by itself.
 
 After the decision, the orchestrator deletes the proposal file.

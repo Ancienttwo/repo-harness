@@ -125,7 +125,9 @@ Run the commands that the issue's acceptance section names, once, on the
 code that you will push. Typically this is the typecheck plus the affected
 tests. Record the commit SHA, the commands, the pass counts and the
 platform. When an issue names no command, use the repository's documented
-typecheck and the affected test files, and say so.
+typecheck and the affected test files, and say so. This record and CI on
+the head are the review evidence. Reviewers read them and do not rerun a
+passing check (`acceptor.md` §2.1).
 
 ## 6. Open the PR
 
@@ -192,10 +194,17 @@ You are the head owner. Only you push to this branch.
   your diff (a network timeout, a runner fault), and say so on the board.
   After three failed fix rounds, post `Status: blocked` with the evidence
   and stop.
-- **Review threads.** Fix each P1 and P2 in this branch. Reply in the
+- **Review threads.** Fix each P0, P1 and P2 in this branch. Reply in the
   thread with the fix SHA. Do not resolve another reviewer's thread. For a
   P3 or a finding that you dispute, reply with your reason and leave the
-  disposition to the coordinator.
+  disposition to the coordinator. Rule 4 of `acceptor.md` §2.2 can move a
+  P2 family to a follow-up issue after round 3.
+- **Fix the class.** For each finding, list the sibling inputs: the other
+  inputs that reach the same defect. Cover the finding and its siblings in
+  one table-driven case, and name the siblings in the fix commit. After a
+  second finding in one bug family, push no other instance fix. The
+  coordinator first chooses a design change or rule 4 of `acceptor.md`
+  §2.2.
 - **Main moved.** When the coordinator posts `unblocked` or asks for a
   sync, retarget a stacked PR to main, merge the current main into your
   branch (no force push), run the affected checks and post `integration
