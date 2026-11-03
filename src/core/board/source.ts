@@ -257,6 +257,57 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
   });
 }
 
+/** One open issue of the parent list read, with its sub-issue counts. */
+export interface BoardOpenIssueReadV1 {
+  readonly number: number;
+  readonly title: string;
+  readonly url: string;
+  readonly updated_at: string;
+  readonly sub_issues: { readonly total: number; readonly completed: number };
+}
+
+export interface BoardOpenIssuesReadV1 {
+  readonly repository: { readonly database_id: number; readonly name_with_owner: string };
+  readonly issues: readonly BoardOpenIssueReadV1[];
+}
+
+function count(value: unknown, label: string): number {
+  if (!Number.isSafeInteger(value) || (value as number) < 0) fail(`${label} is not a count`);
+  return value as number;
+}
+
+/**
+ * The pages of `gh api graphql --paginate --slurp` for the parent list read
+ * (`OPEN_ISSUES_QUERY` in the parent list collector). Every page names the
+ * same repository, and the last page has no next page.
+ */
+export function decodeOpenIssuesRead(pages: unknown): BoardOpenIssuesReadV1 {
+  if (!Array.isArray(pages) || pages.length === 0) fail('the open issue read has no page');
+  let repository: BoardOpenIssuesReadV1['repository'] | null = null;
+  const issues = pages.flatMap((page, at) => {
+    const repo = obj(obj(obj(page, `page ${at}`).data, `page ${at} data`).repository, `page ${at} repository`);
+    const current = { database_id: int(repo.databaseId, 'repository.databaseId'), name_with_owner: str(repo.nameWithOwner, 'repository.nameWithOwner') };
+    if (repository !== null && (repository.database_id !== current.database_id || repository.name_with_owner !== current.name_with_owner)) fail(`page ${at} names another repository`);
+    repository = current;
+    const connection = obj(repo.issues, `page ${at} issues`);
+    const next = obj(connection.pageInfo, `page ${at} issues.pageInfo`).hasNextPage;
+    if (next !== (at < pages.length - 1)) fail(`page ${at} issues.pageInfo.hasNextPage does not match the page count`);
+    return nodes(connection, `page ${at} issues`, null).map((entry, index) => {
+      const label = `page ${at} issues[${index}]`;
+      const node = obj(entry, label);
+      const summary = obj(node.subIssuesSummary, `${label}.subIssuesSummary`);
+      return Object.freeze({
+        number: int(node.number, `${label}.number`),
+        title: str(node.title, `${label}.title`),
+        url: str(node.url, `${label}.url`),
+        updated_at: time(node.updatedAt, `${label}.updatedAt`),
+        sub_issues: Object.freeze({ total: count(summary.total, `${label}.subIssuesSummary.total`), completed: count(summary.completed, `${label}.subIssuesSummary.completed`) }),
+      });
+    });
+  });
+  return Object.freeze({ repository: Object.freeze(repository!), issues: Object.freeze(issues) });
+}
+
 /** Only an account with write access holds a seat (`board.md`, Claims); other protocol comments are requests. */
 const WRITE_ACCESS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 

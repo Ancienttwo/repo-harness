@@ -6,8 +6,8 @@ import type { WorktreesSnapshot } from '../core/operator/worktrees';
 import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
-import { BoardPage } from './BoardPage';
-import { fetchBoard, useBoard, type BoardReader, type BoardView } from './board-view';
+import { BoardPage, boardListRepository } from './BoardPage';
+import { fetchBoard, fetchBoardParents, useBoard, useBoardParents, type BoardParentsReader, type BoardReader, type BoardView } from './board-view';
 import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotAccessReader, type BotReviewsReader } from './bots';
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
@@ -65,7 +65,7 @@ import { fetchRepositories, registeredLabel, repositoriesOf, useRepositories, ty
 import type { OperatorRepositoriesV1 } from '../core/operator/repositories';
 
 export interface OperatorAppProps {
-  /** The registered repositories: the switcher, the single-repository pages, the board form and the Repositories page. */
+  /** The registered repositories: the switcher, the single-repository pages, the board parent list and the Repositories page. */
   readonly readRepositories?: RepositoriesReader;
   readonly initialRepositories?: OperatorRepositoriesV1;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
@@ -78,6 +78,8 @@ export interface OperatorAppProps {
   readonly initialRuntimeOverlay?: RuntimeOverlay;
   /** The board route of one repository and parent issue, behind the Board and its Task drawer. */
   readonly readBoard?: BoardReader;
+  /** The parent list route of one repository, behind the Board page without a board. */
+  readonly readBoardParents?: BoardParentsReader;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
@@ -229,6 +231,7 @@ export function OperatorApp({
   readRuntimeStatus = fetchRuntimeOverlay,
   initialRuntimeOverlay,
   readBoard = fetchBoard,
+  readBoardParents = fetchBoardParents,
   readNotifyStatus,
   initialNotifyStatus,
   readSetup = fetchSetup,
@@ -297,7 +300,7 @@ export function OperatorApp({
   const worktreeCleanup = useWorktreeCleanup(worktreesOf(worktrees), writeWorktreeCleanup, reloadWorktrees);
   const boardSubject = workspace === 'board' ? boardPlace(place.item) : null;
   const board = useBoard(readBoard, boardSubject, refreshGeneration);
-  // The one owner of the board repository choice: the open board, the rail and the subject form set it.
+  // The one owner of the board repository choice: the open board, the rail and the parent list set it.
   const [boardRepository, setBoardRepository] = useState<string | null>(() => readStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY));
   const chooseBoardRepository = useCallback((id: string) => {
     writeStorage(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, id);
@@ -306,6 +309,9 @@ export function OperatorApp({
   useEffect(() => {
     if (boardSubject !== null) chooseBoardRepository(boardSubject.repository_id);
   }, [boardSubject?.repository_id, chooseBoardRepository]);
+  const boardOptions = registered.map(row => ({ id: row.repository_id, label: registeredLabel(registered, row.repository_id) }));
+  // The parent list reads only while the Board page shows no board.
+  const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardSubject === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
 
   useEffect(() => {
     const restore = () => setPlace(parseWorkspaceLocation(window.location.hash));
@@ -319,7 +325,7 @@ export function OperatorApp({
   }, []);
   const switchRepository = (id: string) => setRepositoryId(id);
   const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
-  // A Repositories row opens the board form of that repository.
+  // A Repositories row opens the board parent list of that repository.
   const openRepositoryBoard = (id: string) => {
     chooseBoardRepository(id);
     openPlace(boardHome);
@@ -393,9 +399,8 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <BoardPage place={boardSubject} view={board} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
-            repositories={registered.map(row => ({ id: row.repository_id, label: registeredLabel(registered, row.repository_id) }))}
-            chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
+          {workspace === 'board' && <BoardPage place={boardSubject} view={board} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+            repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} now={now} t={t} />}

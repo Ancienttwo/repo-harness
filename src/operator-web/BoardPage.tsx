@@ -1,11 +1,12 @@
-import { useMemo, useState, type FormEvent } from 'react';
-import { Banner, Button, cn } from '@cloudflare/kumo';
+import { useMemo, useState } from 'react';
+import { Banner, cn } from '@cloudflare/kumo';
 import { MagnifyingGlassIcon, WarningIcon } from '@phosphor-icons/react';
 import type { BoardFindingV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
+import type { BoardParentV1 } from '../core/board/parents';
 import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, primaryPullRequest, shippedToday,
-  type BoardReason, type BoardStage, type BoardView,
+  type BoardParentsView, type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { isTaskMessagesTaskId } from '../core/operator/task-messages';
@@ -24,42 +25,92 @@ export interface BoardRepositoryOption {
 
 const STAGE_TONE: Readonly<Record<BoardStage, DotTone>> = { building: 'active', verifying: 'warn', ready: 'ok', closed: 'neutral' };
 
-/** The board has no default subject: the operator names the repository and the parent issue. */
-/**
- * The App owns the chosen repository. The form shows it while it is an
- * option, else the first option, so options that arrive after mount still
- * give a valid choice and a later list keeps a valid choice.
- */
-function SubjectForm({ repositories, chosenRepository, onRepository, onOpen, t }: {
-  readonly repositories: readonly BoardRepositoryOption[]; readonly chosenRepository: string | null; readonly onRepository: (id: string) => void;
-  readonly onOpen: (next: WorkspaceLocation) => void; readonly t: OperatorTranslate;
+/** The visible repository of the parent list: the App's choice while it is an option, else the first option. */
+export function boardListRepository(repositories: readonly BoardRepositoryOption[], chosenRepository: string | null): string | null {
+  return repositories.find(option => option.id === chosenRepository)?.id ?? repositories[0]?.id ?? null;
+}
+
+/** `#1651`, `1651` or a part of the title. */
+function parentMatches(parent: BoardParentV1, query: string): boolean {
+  const words = query.trim().toLowerCase();
+  if (words === '') return true;
+  const number = words.replace(/^#/u, '');
+  return (/^[0-9]+$/u.test(number) && String(parent.number).startsWith(number)) || parent.title.toLowerCase().includes(words);
+}
+
+function ParentRow({ repository, parent, onOpen, now, t }: {
+  readonly repository: string; readonly parent: BoardParentV1;
+  readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
-  const repository = repositories.find(option => option.id === chosenRepository)?.id ?? repositories[0]?.id ?? '';
-  const [parent, setParent] = useState('');
-  const valid = repository !== '' && /^[1-9][0-9]{0,9}$/u.test(parent);
-  const submit = (event: FormEvent) => {
-    event.preventDefault();
-    if (valid) onOpen(boardLocation({ repository_id: repository, parent: Number(parent), issue: null }));
-  };
+  const { total, completed } = parent.sub_issues;
+  return (
+    <li className="border-b border-kumo-hairline last:border-b-0" data-board-parent-row={parent.number} data-seats={parent.seats}>
+      <PageLink to={boardLocation({ repository_id: repository, parent: parent.number, issue: null })} onOpen={onOpen}
+        className="flex flex-col gap-2 px-4 py-3 hover:bg-kumo-tint focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none active:bg-kumo-recessed md:flex-row md:items-center md:gap-4">
+        <StatusDot tone={parent.seats > 0 ? 'active' : 'neutral'} className="hidden md:inline-flex" />
+        <span className="flex min-w-0 flex-1 items-baseline gap-2">
+          <span className="shrink-0 font-mono text-xs text-kumo-subtle">#{parent.number}</span>
+          <span className="min-w-0 text-sm font-medium break-words text-kumo-strong md:truncate">{parent.title}</span>
+        </span>
+        <span className="flex shrink-0 items-center gap-x-4 text-xs md:justify-end">
+          <span className="inline-flex w-24 items-center gap-2" data-progress={`${completed}/${total}`}>
+            <span className="flex h-1.5 w-12 overflow-hidden rounded-full bg-kumo-recessed" aria-hidden="true">
+              <span className="bg-kumo-success" style={{ width: `${(completed / total) * 100}%` }} />
+            </span>
+            <span className="tabular-nums text-kumo-default">{completed}/{total}</span>
+          </span>
+          <span className={cn('w-20', parent.seats > 0 ? 'text-kumo-default' : 'text-kumo-subtle')}>{parent.seats === 0 ? t('board.parents.seatsNone') : parent.seats === 1 ? t('board.parents.seatsOne') : t('board.parents.seats', { count: parent.seats })}</span>
+          <span className="w-16 text-right text-kumo-subtle"><Age at={parent.updated_at} now={now} t={t} bare /></span>
+        </span>
+      </PageLink>
+    </li>
+  );
+}
+
+/**
+ * The entry of the Board page: the open parent issues of one repository. A
+ * row opens that parent's board; a closed parent's board stays reachable
+ * through its `#board/<repository>/<parent>` link.
+ */
+function ParentList({ repositories, repository, onRepository, parents, onOpen, now, t }: {
+  readonly repositories: readonly BoardRepositoryOption[]; readonly repository: string | null; readonly onRepository: (id: string) => void;
+  readonly parents: BoardParentsView | null; readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
+}) {
+  const [query, setQuery] = useState('');
+  const shown = useMemo(() => parents?.kind === 'ready' ? parents.list.parents.filter(parent => parentMatches(parent, query)) : [], [parents, query]);
   const field = 'h-9 rounded-md border border-kumo-line bg-kumo-base px-2.5 text-sm text-kumo-default focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none';
   return (
-    <form className="flex max-w-xl flex-col gap-3 rounded-xl border border-kumo-line bg-kumo-base p-5" onSubmit={submit} data-board-subject>
-      <h1 className="text-base font-semibold text-kumo-strong">{t('board.subject.title')}</h1>
-      <p className="text-sm text-kumo-subtle">{t('board.subject.body')}</p>
-      <div className="flex flex-col gap-3 sm:flex-row sm:items-end">
-        <label className="flex min-w-0 flex-1 flex-col gap-1 text-xs text-kumo-subtle">
-          {t('board.subject.repository')}
-          <select className={field} value={repository} onChange={event => onRepository(event.target.value)}>
+    <section className="flex w-full max-w-4xl flex-col gap-4" aria-labelledby="board-parents" data-board-subject>
+      <div className="flex flex-col gap-3 md:flex-row md:items-center">
+        <h1 id="board-parents" className="text-base font-semibold text-kumo-strong">{t('board.subject.title')}</h1>
+        <label className="flex min-w-0 md:ml-auto">
+          <span className="sr-only">{t('board.subject.repository')}</span>
+          <select className={cn(field, 'w-full md:w-56')} value={repository ?? ''} onChange={event => onRepository(event.target.value)}>
             {repositories.map(option => <option key={option.id} value={option.id}>{option.label}</option>)}
           </select>
         </label>
-        <label className="flex flex-col gap-1 text-xs text-kumo-subtle sm:w-36">
-          {t('board.subject.parent')}
-          <input className={cn(field, 'font-mono')} inputMode="numeric" placeholder="1503" value={parent} onChange={event => setParent(event.target.value.trim())} />
+        <label className="relative flex min-w-0 items-center md:w-64">
+          <MagnifyingGlassIcon size={14} aria-hidden="true" className="pointer-events-none absolute left-2.5 text-kumo-subtle" />
+          <span className="sr-only">{t('board.parents.filter')}</span>
+          <input type="search" value={query} onChange={event => setQuery(event.target.value)} placeholder={t('board.parents.filterPlaceholder')}
+            className={cn(field, 'w-full pl-8 placeholder:text-kumo-placeholder')} data-board-parents-filter />
         </label>
-        <Button type="submit" variant="primary" disabled={!valid}>{t('board.subject.open')}</Button>
       </div>
-    </form>
+      {parents === null ? <BoardState title={t('board.parents.noRepository.title')} description={t('board.parents.noRepository.body')} />
+        : parents.kind === 'loading' ? <BoardState loading title={t('board.parents.loading.title')} description={t('board.parents.loading.body')} />
+        : parents.kind === 'failed' ? (
+          <div data-board-parents-reason={parents.reason}>
+            <BoardState title={t('board.parents.failed.title')} description={t(`board.reason.${parents.reason}` as OperatorMessageKey)} command="repo-harness board parents --json" />
+          </div>
+        )
+        : parents.list.parents.length === 0 ? <BoardState title={t('board.parents.empty.title')} description={t('board.parents.empty.body')} />
+        : shown.length === 0 ? <BoardState title={t('board.parents.noMatch.title')} description={t('board.parents.noMatch.body', { query: query.trim() })} />
+        : (
+          <ul className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base" data-board-parents>
+            {shown.map(parent => <ParentRow key={parent.number} repository={repository!} parent={parent} onOpen={onOpen} now={now} t={t} />)}
+          </ul>
+        )}
+    </section>
   );
 }
 
@@ -289,7 +340,7 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
   );
 }
 
-export function BoardPage({ place, view, repositories, chosenRepository, onRepository, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+export function BoardPage({ place, view, parents, repositories, chosenRepository, onRepository, readExecution, readTaskMessages, generation, onOpen, now, t }: {
   readonly place: BoardPlace | null;
   /** The execution route: the verified sessions behind the Task drawer's follow-up. */
   readonly readExecution: ExecutionReader;
@@ -298,6 +349,8 @@ export function BoardPage({ place, view, repositories, chosenRepository, onRepos
   readonly generation: number;
   /** Null exactly when `place` is null. */
   readonly view: BoardView | null;
+  /** The parent list of the chosen repository; null when the page shows a board or no repository is registered. */
+  readonly parents: BoardParentsView | null;
   readonly repositories: readonly BoardRepositoryOption[];
   readonly chosenRepository: string | null;
   readonly onRepository: (id: string) => void;
@@ -305,7 +358,9 @@ export function BoardPage({ place, view, repositories, chosenRepository, onRepos
   readonly now: number;
   readonly t: OperatorTranslate;
 }) {
-  if (place === null || view === null) return <SubjectForm repositories={repositories} chosenRepository={chosenRepository} onRepository={onRepository} onOpen={onOpen} t={t} />;
+  if (place === null || view === null) {
+    return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} onOpen={onOpen} now={now} t={t} />;
+  }
   if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;
   if (view.kind === 'failed') {
     return (

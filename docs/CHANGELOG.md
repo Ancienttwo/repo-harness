@@ -19,6 +19,19 @@ All notable changes to this skill are documented here.
 
 ### Changed
 
+- The Board page lists the open parent issues of the chosen repository: the
+  open issues that have at least one sub-issue. Each row shows the number,
+  the title, the closed and total sub-issue counts and the number of live hc
+  seats that name the parent. Parents with live seats come first, then the
+  most recently updated. A filter matches the number or the title, and a row
+  opens that board. The free parent number input is removed; the board of a
+  closed parent stays reachable through its `#board/<repository>/<parent>`
+  link. The list comes from the new `repo-harness board parents --json` mode
+  (one paginated GitHub GraphQL read and one hc list) through
+  `GET /api/v1/repositories/<id>/board/parents`, under the board read
+  concurrency cap. A failed read shows its refusal code
+  (`parents_github_failed`, `parents_source_invalid`, `parents_hc_failed`,
+  `parents_timeout` and others), never an empty list. (#1659)
 - The operator console has one Agents page for hosts, sub-agents and seats
   (owner decision M46). Its sections are Hosts (the setup check status of each
   host with its enable switch, then the other agent runtimes), Subagents (read

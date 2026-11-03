@@ -5,7 +5,7 @@ import { useObservationRefresh } from './useObservationRefresh';
 
 /**
  * The registered repositories from `GET /api/v1/repositories`: the one list
- * behind the repository switcher, the single-repository pages, the board form
+ * behind the repository switcher, the single-repository pages, the board parent list
  * and the Repositories page. It does not depend on Dev Activity.
  */
 export type RepositoriesReader = (signal: AbortSignal) => Promise<OperatorRepositoriesV1>;

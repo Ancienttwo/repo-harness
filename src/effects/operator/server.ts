@@ -34,8 +34,9 @@ import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '
 export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodeNotifyStatus, NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyUnavailableReason } from '../../core/operator/notify-status';
 import { decodeBoard } from '../../core/board/board';
-import { BoardReadError, readRepositoryBoard, type BoardReadInput } from './board-read';
-import type { BoardReadFailure } from '../../core/operator/board-read';
+import { decodeBoardParents } from '../../core/board/parents';
+import { BoardReadError, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
+import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { readOperatorRepositories } from './repositories';
 import type { OperatorRepositoriesV1 } from '../../core/operator/repositories';
@@ -89,6 +90,8 @@ export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
 export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tests$/u;
 /** The board of one parent issue in one registered repository; `?parent=<issue number>` is required. */
 export const OPERATOR_BOARD_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board$/u;
+/** The open parent issues of one registered repository: the entry of the Board page. */
+export const OPERATOR_BOARD_PARENTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/parents$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
 /** The stored task inbox of one task that the execution view of the same repository lists as verified. */
 export const OPERATOR_TASK_MESSAGES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tasks\/([0-9a-f]{64})\/messages$/u;
@@ -136,6 +139,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'cli_inventory', method: 'GET', pattern: OPERATOR_CLI_INVENTORY_PATH, write: false }),
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
+  Object.freeze({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
@@ -229,6 +233,8 @@ export interface OperatorServerOptions {
   readonly architecture_map_collector?: boolean;
   /** The board read: the board CLI's JSON for one repository and parent. Production runs the CLI; only tests inject another. */
   readonly read_board?: (input: BoardReadInput) => Promise<unknown>;
+  /** The parent list read: the `board parents` CLI's JSON for one repository. Production runs the CLI; only tests inject another. */
+  readonly read_board_parents?: (input: BoardParentsReadInput) => Promise<unknown>;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -449,6 +455,18 @@ const BOARD_UNAVAILABLE: Readonly<Record<BoardReadFailure, { readonly status: nu
   board_parent_invalid: { status: 400, message: 'The board needs exactly one parent issue number.', next_action: 'Request the board with ?parent=<issue number>.' },
   board_invalid: { status: 503, message: 'The board failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same board protocol.' },
   board_busy: { status: 503, message: 'Too many board reads are in progress.', next_action: 'Retry in a few seconds.' },
+};
+
+const BOARD_PARENTS_UNAVAILABLE: Readonly<Record<BoardParentsReadFailure, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
+  registry_unavailable: BOARD_UNAVAILABLE.registry_unavailable,
+  repository_not_found: BOARD_UNAVAILABLE.repository_not_found,
+  parents_github_failed: { status: 503, message: 'GitHub could not list the open issues of this repository.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
+  parents_source_invalid: { status: 503, message: 'GitHub returned an open issue list that failed validation.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
+  parents_hc_failed: { status: 503, message: 'hc could not list the seat terminals of this repository.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
+  parents_unavailable: { status: 503, message: 'The board parents command did not return a parent list.', next_action: 'Run `repo-harness board parents --json` in the repository for the error.' },
+  parents_timeout: { status: 504, message: 'The parent list read did not finish in time.', next_action: 'Refresh and retry.' },
+  parents_invalid: { status: 503, message: 'The parent list failed validation.', next_action: 'Update repo-harness so that the operator and the board command use the same parent list protocol.' },
+  parents_busy: BOARD_UNAVAILABLE.board_busy,
 };
 
 const DOCS_UNAVAILABLE: Readonly<Record<DocsUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -983,30 +1001,35 @@ export async function startOperatorServer(
   };
 
   /**
-   * One board CLI run per request, under its own concurrency cap. The CLI's
-   * JSON is decoded once here; a client that leaves aborts the run.
+   * One board CLI run per request. The board and the parent list share one
+   * concurrency cap. The CLI's JSON is decoded once here; a client that
+   * leaves aborts the run.
    */
-  const handleBoardRead = (request: IncomingMessage, response: ServerResponse, headOnly: boolean, repositoryId: string, parent: number): void => {
-    const refuse = (code: keyof typeof BOARD_UNAVAILABLE) => {
-      const refusal = BOARD_UNAVAILABLE[code];
+  const handleBoardCliRead = <F extends string>(
+    request: IncomingMessage, response: ServerResponse, headOnly: boolean,
+    refusals: Readonly<Record<F, { readonly status: number; readonly message: string; readonly next_action: string }>>,
+    codes: { readonly busy: F; readonly invalid: F; readonly unavailable: F },
+    read: (signal: AbortSignal) => Promise<unknown>, decode: (value: unknown) => unknown,
+  ): void => {
+    const refuse = (code: F) => {
+      const refusal = refusals[code];
       sendRefusal(request, response, refusal.status, errorBody(code, refusal.message, refusal.next_action), headOnly);
     };
-    if (closed || activeBoardReads.size >= maxConcurrency) { refuse('board_busy'); return; }
+    if (closed || activeBoardReads.size >= maxConcurrency) { refuse(codes.busy); return; }
     const controller = new AbortController();
     activeBoardReads.add(controller);
     const onClose = () => controller.abort();
     response.once('close', onClose);
-    const read = options.read_board ?? readRepositoryBoard;
     const completion: Promise<void> = Promise.resolve()
-      .then(() => read({ repository_id: repositoryId, parent, env: boardEnvironment, signal: controller.signal }))
+      .then(() => read(controller.signal))
       .then((value) => {
         if (response.destroyed) return;
-        let board;
-        try { board = decodeBoard(value); } catch { refuse('board_invalid'); return; }
-        sendJson(response, 200, board, headOnly);
+        let decoded;
+        try { decoded = decode(value); } catch { refuse(codes.invalid); return; }
+        sendJson(response, 200, decoded, headOnly);
       }, (error: unknown) => {
         if (response.destroyed) return;
-        refuse(error instanceof BoardReadError ? error.code : 'board_unavailable');
+        refuse(error instanceof BoardReadError && Object.hasOwn(refusals, error.code) ? error.code as F : codes.unavailable);
       })
       .finally(() => {
         activeBoardReads.delete(controller);
@@ -1465,7 +1488,26 @@ export async function startOperatorServer(
         sendRefusal(request, response, refusal.status, errorBody('board_parent_invalid', refusal.message, refusal.next_action), headOnly);
         return;
       }
-      handleBoardRead(request, response, headOnly, boardRoute[1]!, Number(parent));
+      const read = options.read_board ?? readRepositoryBoard;
+      handleBoardCliRead(request, response, headOnly, BOARD_UNAVAILABLE, { busy: 'board_busy', invalid: 'board_invalid', unavailable: 'board_unavailable' },
+        signal => read({ repository_id: boardRoute[1]!, parent: Number(parent), env: boardEnvironment, signal }), decodeBoard);
+      return;
+    }
+
+    const parentsRoute = OPERATOR_BOARD_PARENTS_ROUTE.exec(pathname);
+    if (parentsRoute !== null) {
+      // A parent list read runs the board CLI, a paginated GitHub read and one hc list; HEAD gets no read.
+      if (headOnly) {
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board parents route supports only GET.'), true, { Allow: 'GET' });
+        return;
+      }
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board parents route accepts no query parameters.'), headOnly);
+        return;
+      }
+      const read = options.read_board_parents ?? readRepositoryBoardParents;
+      handleBoardCliRead(request, response, headOnly, BOARD_PARENTS_UNAVAILABLE, { busy: 'parents_busy', invalid: 'parents_invalid', unavailable: 'parents_unavailable' },
+        signal => read({ repository_id: parentsRoute[1]!, env: boardEnvironment, signal }), decodeBoardParents);
       return;
     }
 
