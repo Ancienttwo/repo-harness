@@ -262,6 +262,7 @@ describe("repo-harness seats argv", () => {
         const release = named(repo, "worker", "--release", "0252");
         expect([release.name, release.tab]).toEqual(["rh-w-rel0252", "other"]);
         expect(seatPaneName({ prefix: "rh", seat: "reviewer", pr: "1536", qualifier: "codex" })).toBe("rh-rv-1536-codex");
+        expect(() => seatPaneName({ prefix: "a", seat: "reviewer", pr: "1536" })).toThrow(expect.objectContaining({ code: "pane_name_invalid" }));
         // Without --repository-id the argv has no name, as before.
         expect(launch(home, "orchestrator").argv).not.toContain("-n");
       });
