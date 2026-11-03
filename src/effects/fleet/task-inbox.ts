@@ -899,7 +899,8 @@ export function readAdmittedTaskActivity(input: {
     return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(b))));
   };
   // The walk reads events only; receipts are read only for the returned page.
-  // A record is one event with all its receipts; a budget stop keeps the complete records, in order.
+  // A record is one event with all its receipts; a receipt-phase budget stop keeps the complete records, in order.
+  // A walk stop returns no records: the walk saw only part of the events, so it cannot name the newest page.
   const walked: TaskMessageEventV2[] = [];
   const entries: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
   let cursor: TaskMessageEventV2 | null = null;
@@ -915,7 +916,7 @@ export function readAdmittedTaskActivity(input: {
     if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) keep(event); }
     else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); keep(event); });
   } catch (error) { if (!exhausted) throw error; }
-  const page = walked.sort(newestTaskMessageFirst).slice(0, input.limit);
+  const page = exhausted ? [] : walked.sort(newestTaskMessageFirst).slice(0, input.limit);
   try {
     for (const event of page) entries.push({ event, receipts: receiptsAt(event) });
   } catch (error) { if (!exhausted) throw error; }
