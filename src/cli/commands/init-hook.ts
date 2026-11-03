@@ -26,6 +26,7 @@ import { installOwnershipReader, planUpgrade } from './upgrade';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { planAdoption } from '../../effects/adoption/plan';
 import { isRepoHarnessSourceCheckout } from '../../effects/source-checkout';
+import { resolveRepoRoot } from '../hook/runtime';
 import {
   GLOBAL_RULES_UNBALANCED,
   globalContextPath,
@@ -744,9 +745,21 @@ function legacyAdapterDetail(filePath: string): { readonly legacy: boolean; read
 }
 
 function legacyChecks(cwd: string, target: InitHookTarget, checkUpdates: boolean, actions: ActionLedger): InitHookCheck[] {
+  const ids = ['legacy.project-claude-settings', 'legacy.project-codex-hooks'] as const;
+  const repoRoot = resolveRepoRoot(cwd);
+  // Outside a repository, <cwd>/.claude and <cwd>/.codex can be the user-level adapters (cwd = $HOME).
+  if (repoRoot === null) {
+    return ids.map((id) => ({
+      id,
+      title: 'Retired repo-local host adapter config',
+      status: 'na',
+      source: 'legacy',
+      detail: `cwd is not in a git repository: ${cwd}`,
+    }));
+  }
   const files = [
-    { id: 'legacy.project-claude-settings', filePath: join(cwd, '.claude', 'settings.json') },
-    { id: 'legacy.project-codex-hooks', filePath: join(cwd, '.codex', 'hooks.json') },
+    { id: ids[0], filePath: join(repoRoot, '.claude', 'settings.json') },
+    { id: ids[1], filePath: join(repoRoot, '.codex', 'hooks.json') },
   ];
   const checks: InitHookCheck[] = [];
   const present: string[] = [];

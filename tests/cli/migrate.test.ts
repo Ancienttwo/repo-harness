@@ -3,14 +3,22 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { formatMigratePlan, runMigrate } from '../../src/cli/commands/migrate';
+import { initGitRepo } from '../helpers/repo-fixture';
 
-function withTempRepo(fn: (repo: string) => void): void {
+function withTempDir(fn: (dir: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-migrate-')));
   try {
     fn(tmp);
   } finally {
     fs.rmSync(tmp, { recursive: true, force: true });
   }
+}
+
+function withTempRepo(fn: (repo: string) => void): void {
+  withTempDir((repo) => {
+    initGitRepo(repo);
+    fn(repo);
+  });
 }
 
 const LEGACY_CODEX = `${JSON.stringify(
@@ -57,6 +65,31 @@ const LEGACY_WITH_SIBLING = `${JSON.stringify(
 )}\n`;
 
 describe('migrate command (Phase 1C)', () => {
+  // The home path keeps its tmpdir spelling (/var on macOS), and git reports the real path (/private/var).
+  for (const [name, homeIsRepo, error] of [
+    ['cwd is a HOME that is not in a repository', false, 'cwd is not in a git repository'],
+    ['the repository root is HOME', true, 'refusing user-level adapter'],
+  ] as const) {
+    test(`issue 1650 migrate --apply refuses the user-level adapters when ${name}`, () => {
+      const home = fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-migrate-home-'));
+      try {
+        if (homeIsRepo) initGitRepo(home);
+        const adapters = { '.codex/hooks.json': LEGACY_CODEX, '.claude/settings.json': LEGACY_WITH_SIBLING };
+        for (const [rel, text] of Object.entries(adapters)) {
+          fs.mkdirSync(path.join(home, path.dirname(rel)), { recursive: true });
+          fs.writeFileSync(path.join(home, rel), text);
+        }
+        expect(() => runMigrate({ cwd: home, home, apply: true })).toThrow(error);
+        for (const [rel, text] of Object.entries(adapters)) {
+          expect(fs.readFileSync(path.join(home, rel), 'utf8')).toBe(text);
+          expect(fs.readdirSync(path.join(home, path.dirname(rel)))).toEqual([path.basename(rel)]);
+        }
+      } finally {
+        fs.rmSync(home, { recursive: true, force: true });
+      }
+    });
+  }
+
   for (const rel of ['.codex/hooks.json', '.claude/settings.json']) {
     for (const apply of [false, true]) {
       test(`issue 698 migrate refuses a linked ${rel} before reads (apply=${apply})`, () => {
@@ -198,7 +231,7 @@ describe('migrate command (Phase 1C)', () => {
   ] as const) {
     test(`--apply refuses a symlinked ${linkedDir} directory before any write`, () => {
       withTempRepo((repo) => {
-        withTempRepo((outside) => {
+        withTempDir((outside) => {
           fs.writeFileSync(path.join(outside, linkedFile), LEGACY_WITH_SIBLING);
           fs.symlinkSync(outside, path.join(repo, linkedDir));
           const localPath = path.join(repo, localDir, localFile);
@@ -217,7 +250,7 @@ describe('migrate command (Phase 1C)', () => {
 
   test('--apply refuses a dangling symlink at the backup path before any write', () => {
     withTempRepo((repo) => {
-      withTempRepo((outside) => {
+      withTempDir((outside) => {
         const claudePath = path.join(repo, '.claude/settings.json');
         fs.mkdirSync(path.dirname(claudePath), { recursive: true });
         fs.writeFileSync(claudePath, LEGACY_WITH_SIBLING);

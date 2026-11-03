@@ -16,6 +16,7 @@ import { applyAdoptionPlan } from '../../src/effects/fs-transaction';
 import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { CLI_PORTS } from '../../src/cli/index';
+import { initGitRepo } from '../helpers/repo-fixture';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -173,6 +174,7 @@ describe('init-hook command', () => {
   });
   test('flags a project host config only when it holds a repo-harness command', () => {
     withTempHome((home, repo) => {
+      initGitRepo(repo);
       const run = () => runInitHook(CLI_PORTS.doctor, { cwd: repo, env: { ...process.env, HOME: home },
         statusReport: baseStatusReport(), doctorReport: baseDoctorReport(), toolingReport: baseToolingReport() });
       const claude = join(repo, '.claude/settings.json');
@@ -196,6 +198,14 @@ describe('init-hook command', () => {
       expect(report.checks.find((entry) => entry.id === 'legacy.project-claude-settings')?.detail).toContain('cannot inspect');
       expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')?.targets).toEqual([claude, codex]);
       expect(readFileSync(claude, 'utf8')).toBe('{ broken');
+
+      // Issue 1650: outside a repository (cwd = $HOME) the same files are the user-level adapters.
+      rmSync(join(repo, '.git'), { recursive: true, force: true });
+      report = run();
+      for (const id of ['legacy.project-claude-settings', 'legacy.project-codex-hooks']) {
+        expect(report.checks.find((entry) => entry.id === id)).toMatchObject({ status: 'na', detail: `cwd is not in a git repository: ${repo}` });
+      }
+      expect(report.agent_actions.find((entry) => entry.id === 'legacy.project-adapters.review')).toBeUndefined();
     });
   });
 

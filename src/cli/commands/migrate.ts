@@ -14,21 +14,27 @@
  * Safety:
  *   - --dry-run is default; --apply explicitly mutates.
  *   - Per-file backup before --apply: <file>.repo-harness-migrate-backup.
+ *   - Outside a git repository, or for a candidate that is a user-level
+ *     adapter (<home>/.claude/settings.json, <home>/.codex/hooks.json), it
+ *     fails before any read or write.
  *   - A symlink in any candidate or backup path fails before any read or write.
  *   - If the file's hooks segment becomes empty after removal, the field is
  *     dropped entirely (cleaner for Claude settings.json which has non-hook config).
  */
 
 import * as fs from 'fs';
+import * as os from 'os';
 import * as path from 'path';
 import { atomicWriteFileSync, formatJson, readJsonOrEmpty } from '../installer/shared';
 import { stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { assertNoSymlinkInPath } from '../../effects/fs-transaction';
+import { resolveRepoRoot } from '../hook/runtime';
 
 const BACKUP_SUFFIX = '.repo-harness-migrate-backup';
 
 export interface MigrateOptions {
   cwd?: string;
+  home?: string;
   apply?: boolean;
 }
 
@@ -82,17 +88,39 @@ function applyForFile(filePath: string): void {
 
 const CANDIDATES = ['.codex/hooks.json', '.claude/settings.json'] as const;
 
+/** The file path under the real parent directory; null when the parent does not exist, so no file is there to read or write. */
+function realFilePath(filePath: string): string | null {
+  const dir = path.dirname(filePath);
+  return fs.existsSync(dir) ? path.join(fs.realpathSync(dir), path.basename(filePath)) : null;
+}
+
 export function runMigrate(opts: MigrateOptions = {}): MigratePlan {
   const cwd = opts.cwd ?? process.cwd();
+  const home = opts.home ?? process.env.HOME ?? os.homedir();
   const apply = opts.apply === true;
+  const repoRoot = resolveRepoRoot(cwd);
+  if (repoRoot === null) {
+    throw new Error(`repo-harness migrate: cwd is not in a git repository: ${cwd}`);
+  }
+  // A repository whose root is $HOME has the user-level adapters as its candidates.
+  const userAdapters = new Set(
+    CANDIDATES.map((rel) => realFilePath(path.join(home, rel))).filter((real): real is string => real !== null),
+  );
+  const candidates = CANDIDATES.map((rel) => path.join(repoRoot, rel));
+  for (const filePath of candidates) {
+    const real = realFilePath(filePath);
+    if (real !== null && userAdapters.has(real)) {
+      throw new Error(`repo-harness migrate: refusing user-level adapter: ${filePath}`);
+    }
+  }
   const files: MigratePlanFile[] = [];
   // Reads, backups, and atomic temp files all follow a linked host directory,
   // so refuse every symlink before any candidate is read or written.
   for (const rel of CANDIDATES) {
-    const symlinkError = assertNoSymlinkInPath(cwd, rel) ?? assertNoSymlinkInPath(cwd, `${rel}${BACKUP_SUFFIX}`);
+    const symlinkError = assertNoSymlinkInPath(repoRoot, rel) ?? assertNoSymlinkInPath(repoRoot, `${rel}${BACKUP_SUFFIX}`);
     if (symlinkError) throw new Error(symlinkError);
   }
-  for (const filePath of CANDIDATES.map((rel) => path.join(cwd, rel))) {
+  for (const filePath of candidates) {
     const plan = planForFile(filePath);
     if (!plan) continue;
     files.push(plan);
