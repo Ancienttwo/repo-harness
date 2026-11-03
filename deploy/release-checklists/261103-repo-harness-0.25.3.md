@@ -10,22 +10,27 @@
 - Source commit: the head of the release-prep PR. The publish candidate is
   the merge commit of that PR on `origin/main`. The owner records it below
   before publish.
-- Previous release: 0.25.2, from the release-prep merge
-  `801506036505c8f561723459466b4962557297e6` (#1511). The owner has not
-  published 0.25.2: npm shows 0.25.1, and no `v0.25.2` tag exists.
-  - Tag `v0.25.2`: pending the owner. Tag object: `<owner fills>`. Target:
-    `<owner fills>`.
+- Previous npm release: 0.25.1. Previous Git release: `v0.25.2`, from the
+  release-prep merge `801506036505c8f561723459466b4962557297e6` (#1511).
+  The owner skipped the npm publish of 0.25.2 on 2026-11-03.
+  - Tag `v0.25.2`: annotated tag object
+    `f4fb79894f57cc54dbbb83bdeb3e9ebb03a58350`, target
+    `801506036505c8f561723459466b4962557297e6`. The GitHub Release
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.25.2 is not
+    marked latest and states that 0.25.2 is not on npm.
 - Merged range: `801506036..7ed64f848`: 35 first-parent commits and
   54 commits in total (`git rev-list --count`). Batch merge #1517 keeps the
   member commits of #1491 and #1492.
-- The npm package goes from 0.25.2 to 0.25.3. `package.json`,
+- The npm package goes from 0.25.1 to 0.25.3. npm never published 0.25.2.
+  So 0.25.3 also carries every 0.25.2 change to npm users. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.3.
 - `archctx` and `archctx-contracts` stay at the locked exact 0.11.1. The
   release-prep PR changes no dependency version.
-- Publish status: pending owner publish.
-- Hold reason: 0.25.2 publish pending. Publish 0.25.2 from `801506036`
-  first, then 0.25.3.
+- Publish status: published 2026-11-03 by the owner (`npm publish`, dist-tag
+  `latest`). `bun run check:release-published` passed.
+- Hold reason: none. The owner skipped the 0.25.2 npm publish and kept the
+  `v0.25.2` tag and Release.
 
 ### Owner decision
 
@@ -217,8 +222,21 @@ content. The owner accepts or repairs each flag before publish.
 ## Publication
 
 - Merge the release-prep PR only after green `Required / CI` on its head.
-- Publish 0.25.2 from `801506036` first and record its tag above.
 - Owner command: `npm publish` from the merge commit after the PR merges.
 - The owner records the publish candidate, the npm version, the Git tag and
   the published tarball digest here, then runs
   `bun run check:release-published`.
+
+  - Publish candidate: `77abe62d5b96f81d210fc3db4b0d60957aadea62` (main after #1576).
+    Its tree equals the release-prep PR head `189448212`. The `prepublishOnly`
+    gate passed on this candidate. The registry upload ran with
+    `--ignore-scripts` after npm web authentication. The upload tarball has the
+    same shasum as the gated tarball.
+  - npm version: `repo-harness@0.25.3`, gitHead `77abe62d5b96`.
+  - Git tag: annotated `v0.25.3`, tag object
+    `8881a80d2ba97375a9a42a891daaeeb3690fd705`, on `77abe62d5b96`; GitHub
+    Release https://github.com/Ancienttwo/repo-harness/releases/tag/v0.25.3.
+  - Published tarball digest: shasum `1ba984da59f8961adee83c2b5509cc8f0fb02c75`,
+    integrity `sha512-9rRlO+BMx7BRglMNRsmTXciwyarwzVa4hFYPmCrM4luBZ7P8bQm6QpbtKtzMVBxeQ1LZqDTjFJjjA/FXhpxN+Q==`.
+  - `bun run check:release-published`: `[release-published] OK: registry,
+    dist-tag, tarball, tag, and local version files agree.`
