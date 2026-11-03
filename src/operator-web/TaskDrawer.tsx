@@ -6,7 +6,8 @@ import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/boa
 import { itemFindings, itemPullRequests, itemStage, itemTerminals, primaryPullRequest, type BoardStage } from './board-view';
 import { DrawerFrame, useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
-import type { ItemOwner, VerifiedTask } from './repository-reads';
+import type { ItemOwner, TaskMessagesResult, VerifiedTask } from './repository-reads';
+import { newestFirst, type TaskMessageView } from '../core/operator/task-messages';
 import { Age, CommandLine, CopyButton, ExternalLink, StatusDot } from './ui';
 import { boardLocation, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 
@@ -133,6 +134,61 @@ function FollowUp({ owner, t }: { readonly owner: ItemOwner; readonly t: Operato
   );
 }
 
+/** Null when no verified task has an inbox id: no section. `reads` is null until the first read settles. */
+export type TaskInbox = { readonly reads: readonly TaskMessagesResult[] | null } | null;
+
+const RECEIPT_BADGE = { none: 'secondary', pending: 'info', delivered: 'success', acknowledged: 'secondary', superseded: 'secondary' } as const;
+
+function InboxRow({ message, now, t }: { readonly message: TaskMessageView; readonly now: number; readonly t: OperatorTranslate }) {
+  const sender = message.sender_id ?? t(`drawer.inbox.sender.${message.sender_kind}`);
+  const receipts = message.receipts.length === 0 ? [null] : message.receipts;
+  return (
+    <Row className="items-start">
+      <span className="flex min-w-0 flex-1 flex-col gap-0.5" data-message={message.message_id}>
+        <span className="break-words whitespace-pre-wrap text-kumo-strong">{message.body}</span>
+        <span className="text-xs text-kumo-subtle">{sender} → {t(`drawer.inbox.audience.${message.audience}`)} · <Age at={message.created_at} now={now} t={t} bare /></span>
+      </span>
+      <span className="flex flex-col items-end gap-1">
+        {receipts.map((receipt, index) => (
+          <span key={index} data-receipt={receipt?.delivery_state ?? 'none'}>
+            <Badge variant={RECEIPT_BADGE[receipt?.delivery_state ?? 'none']}>
+              {receipts.length > 1 && receipt !== null ? `${receipt.recipient_id ?? t('drawer.inbox.audience.owner')} · ` : ''}
+              {t(`drawer.inbox.receipt.${receipt?.delivery_state ?? 'none'}`)}
+            </Badge>
+          </span>
+        ))}
+      </span>
+    </Row>
+  );
+}
+
+/** The stored inbox of each verified task: read-only, delivered by the Bot. */
+function Inbox({ inbox, now, t }: { readonly inbox: readonly TaskMessagesResult[] | null; readonly now: number; readonly t: OperatorTranslate }) {
+  const failed = inbox?.flatMap(read => read.state === 'unavailable' ? [read] : []) ?? [];
+  const views = inbox?.flatMap(read => read.state === 'ok' ? [read.view] : []) ?? [];
+  // A second verified task interleaves by the order of each view.
+  const messages = views.flatMap(view => view.messages).sort(newestFirst);
+  const complete = views.every(view => view.complete);
+  return (
+    <section aria-labelledby="task-inbox" className="flex flex-col gap-2">
+      <div className="flex items-baseline gap-2">
+        <h3 id="task-inbox" className="text-xs font-medium text-kumo-subtle">{t('drawer.inbox')}</h3>
+        <span className="text-xs text-kumo-subtle">{t('drawer.inbox.readOnly')}</span>
+      </div>
+      {inbox === null ? <p className="text-sm text-kumo-subtle" data-inbox="reading">{t('drawer.followUp.reading')}</p> : <>
+        {failed.map(read => (
+          <p key={read.task_id} className="text-sm text-kumo-danger" data-inbox="unavailable" data-inbox-reason={read.reason}>
+            {t('drawer.inbox.unavailable', { reason: t(`drawer.inbox.reason.${read.reason}`) })}
+          </p>
+        ))}
+        {messages.length > 0 ? <ul className="overflow-hidden rounded-lg border border-kumo-line">{messages.map(message => <InboxRow key={message.message_id} message={message} now={now} t={t} />)}</ul>
+          : failed.length === 0 && complete && <p className="text-sm text-kumo-subtle" data-inbox="empty">{t('drawer.inbox.empty')}</p>}
+        {!complete && <p className="text-xs text-kumo-subtle" data-inbox="incomplete">{t('drawer.inbox.incomplete')}</p>}
+      </>}
+    </section>
+  );
+}
+
 function Claim({ item, now, t }: { readonly item: BoardItemV1; readonly now: number; readonly t: OperatorTranslate }) {
   const claim = item.claim_status;
   if (claim.status_kind !== 'observed') return <p className="text-sm text-kumo-subtle" data-claim={claim.status_kind}>{t(claim.status_kind === 'none' ? 'board.drawer.claimNone' : 'board.drawer.claimUnknown')}</p>;
@@ -145,8 +201,9 @@ function Claim({ item, now, t }: { readonly item: BoardItemV1; readonly now: num
   );
 }
 
-function Detail({ board, attention, item, owner, now, t }: {
-  readonly board: BoardV1; readonly attention: BoardAttentionV1; readonly item: BoardItemV1; readonly owner: ItemOwner; readonly now: number; readonly t: OperatorTranslate;
+function Detail({ board, attention, item, owner, inbox, now, t }: {
+  readonly board: BoardV1; readonly attention: BoardAttentionV1; readonly item: BoardItemV1; readonly owner: ItemOwner;
+  readonly inbox: TaskInbox; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const pr = primaryPullRequest(board, item);
   const stage = itemStage(board, item);
@@ -173,7 +230,7 @@ function Detail({ board, attention, item, owner, now, t }: {
       <Section id="task-stage-source" title={t('board.drawer.stageSource')}>
         <div className="grid grid-cols-2 gap-2">
           <div className="flex flex-col gap-0.5 rounded-lg border border-kumo-line px-3.5 py-3" data-stage-source={stage}>
-            <span className="text-xs text-kumo-subtle">Git + GitHub</span>
+            <span className="text-xs text-kumo-subtle">{t('board.drawer.stageSourceGit')}</span>
             <span className="text-sm font-semibold text-kumo-strong">{t(`board.stage.${stage}` as OperatorMessageKey)}</span>
           </div>
         </div>
@@ -219,6 +276,7 @@ function Detail({ board, attention, item, owner, now, t }: {
           <p className="text-xs text-kumo-subtle">{t('board.drawer.readOnly')}</p>
         </Section>
         <FollowUp owner={owner} t={t} />
+        {inbox !== null && <Inbox inbox={inbox.reads} now={now} t={t} />}
         <Section id="task-claim" title={t('board.drawer.claim')}><Claim item={item} now={now} t={t} /></Section>
         {itemPullRequests(board, item).length > 1 && (
           <Section id="task-prs" title={t('board.drawer.pullRequests')}>
@@ -231,10 +289,11 @@ function Detail({ board, attention, item, owner, now, t }: {
 }
 
 /** The Task drawer of one board issue: read-only facts and copyable commands, j/k moves through the board order. */
-export function TaskDrawer({ board, attention, item, owner, issue, order, place, onOpen, now, t }: {
+export function TaskDrawer({ board, attention, item, owner, inbox, issue, order, place, onOpen, now, t }: {
   readonly board: BoardV1; readonly attention: BoardAttentionV1; readonly item: BoardItemV1 | null; readonly issue: number;
   /** The verified sessions on the branch of the item's pull request; `none` without a pull request. */
   readonly owner: ItemOwner;
+  readonly inbox: TaskInbox;
   readonly order: readonly BoardItemV1[]; readonly place: BoardPlace;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
@@ -268,7 +327,7 @@ export function TaskDrawer({ board, attention, item, owner, issue, order, place,
         </button>
       </div>
     )}>
-      {item ? <Detail board={board} attention={attention} item={item} owner={owner} now={now} t={t} />
+      {item ? <Detail board={board} attention={attention} item={item} owner={owner} inbox={inbox} now={now} t={t} />
         : <div className="py-5" data-task-missing><h2 id="task-drawer-title" className="text-base font-semibold text-kumo-strong">{t('board.drawer.missing', { number: issue })}</h2>
           <p className="text-sm text-kumo-subtle">{t('board.drawer.missingBody', { parent: board.parent.number })}</p></div>}
     </DrawerFrame>
