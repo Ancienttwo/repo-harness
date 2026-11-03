@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure-cli.architecture-read
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure-cli
+target: component.global-runtime-reconciliation.architecture-read
+intent: "Read the hand edits and the model readiness for the architecture-projection command"

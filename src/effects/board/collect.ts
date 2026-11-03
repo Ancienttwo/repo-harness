@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { ArchctxClientError } from '../../core/architecture/projection';
+import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
 import {
   linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
   type BoardPathOwnersV1, type BoardSeatTerminalReadV1, type BoardTerminalV1, type BoardToolingV1, type BoardV1,
@@ -10,7 +10,6 @@ import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullReq
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { ARCHCONTEXT_IDENTITY_OWNERS, resolveArchcontextCapabilityPaths } from '../architecture/archcontext-owners';
-import type { ArchctxProviderOptions } from '../architecture/archctx-provider';
 import { gitSpawnSync } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 

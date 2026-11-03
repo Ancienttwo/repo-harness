@@ -1,12 +1,12 @@
 import type { RecommendationV3 } from "archctx-contracts";
-import { ARCHCTX_REQUIRED_VERSION } from "../../core/architecture/projection";
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, type ArchctxProviderOptions } from "../../core/architecture/projection";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
   refactorEnvelopeData,
   RefactorProviderError,
   type RefactorScanResultV1,
 } from "../../core/refactor/provider-contract";
-import { ArchctxClientError, commandLabel, runPackageLocalArchctxJson, type ArchctxProviderOptions } from "../architecture/archctx-provider";
+import { commandLabel, runPackageLocalArchctxJson } from "../architecture/archctx-provider";
 
 export type RefactorDecision = "accept" | "defer" | "reject";
 

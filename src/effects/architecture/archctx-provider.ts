@@ -2,12 +2,11 @@ import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration }
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { userInfo } from 'node:os';
 import { isAbsolute, join, resolve, sep } from 'node:path';
-import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, NATIVE_CONTEXT_PROFILE, decodeArchitectureHistory, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type ArchitectureHistory, type DocsAnchorsReportV1, type Json, type NativeContextExportV1, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
+import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
 import type { CapabilityOwnership } from '../../core/state/types';
-import { capabilityRegistryFromNativeContext } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
   ArchctxClientError,
@@ -15,31 +14,14 @@ import {
   assertProjectionApplyReadbackResult,
   assertProjectionResult,
   decodeArchitectureDebtReport,
-  decodeArchitectureHandEdits,
   decodeDocsAnchorsReport,
-  decodeNativeContextExport,
-  type NativeContextSource,
+  type ArchctxProcessResult,
+  type ArchctxProviderOptions,
   type ArchitectureProjectionPolicy,
+  type RunArchctxProcess,
   type ArchitectureProjectionReadinessV1,
 } from '../../core/architecture/projection';
 import { gitExecFileSync } from '../git/runner';
-export { ArchctxClientError, type NativeContextSource } from '../../core/architecture/projection';
-
-/** A cold `archctx history` derives every model revision (10.9 s for 50 milestones), so it has its own limit. */
-export const ARCHITECTURE_HISTORY_TIMEOUT_MS = 120_000;
-
-export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
-export type RunArchctxProcess = (binary: string, args: readonly string[], options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }) => ArchctxProcessResult;
-
-export interface ArchctxProviderOptions {
-  consumerRoot?: string;
-  policy?: ArchitectureProjectionPolicy;
-  env?: NodeJS.ProcessEnv;
-  run?: RunArchctxProcess;
-  trustedNodeCandidateSource?: () => readonly string[];
-  deadlineMs?: number;
-  nowMs?: () => number;
-}
 
 export interface ResolvedArchctxPackage {
   binaryPath: string;
@@ -62,26 +44,6 @@ const DEFAULT_RUNNER: RunArchctxProcess = (binary, args, options) => {
   const overflow = Buffer.byteLength(result.stdout, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES || Buffer.byteLength(result.stderr, 'utf8') > ARCHCTX_MAX_OUTPUT_BYTES;
   return { status: overflow ? 1 : result.status, signal: result.signal, timedOut: result.timedOut, stdout: result.stdout, stderr: result.stderr, ...((overflow ? 'archctx output exceeded maxBuffer' : result.error) ? { error: overflow ? 'archctx output exceeded maxBuffer' : result.error } : {}) };
 };
-
-// Only these export failures say the model itself is absent or invalid.
-const MODEL_NOT_READY_CODES: ReadonlySet<string> = new Set(['AC_MODEL_ADOPTION_REQUIRED', 'AC_SCHEMA_INVALID']);
-
-/**
- * A complete native model with an active capability is ready for projection.
- * Any other export failure (timeout, package, contract drift) is not a model
- * fault, so it reaches the readiness error state with its own reason.
- */
-function architectureModelReady(repoRoot: string, options: ArchctxProviderOptions): boolean {
-  if (!existsSync(join(repoRoot, '.archcontext', 'manifest.yaml')) || !existsSync(join(repoRoot, '.archcontext', 'product.yaml'))) return false;
-  try {
-    const context = readArchitectureNativeContext(repoRoot, { kind: 'worktree' }, options);
-    const authority = capabilityRegistryFromNativeContext(context, { repoRoot });
-    return authority.status === 'valid' && authority.registry.capabilities.length > 0;
-  } catch (error) {
-    if (error instanceof ArchctxClientError && MODEL_NOT_READY_CODES.has(error.code)) return false;
-    throw error;
-  }
-}
 
 const CODEGRAPH_INIT_ARGS = ['init', '-y', '.'] as const;
 
@@ -270,44 +232,6 @@ function readArchitectureCodeFacts(client: ArchctxClient, maximumMs: number): Do
   return { state: facts.state, issues };
 }
 
-const nativeContextRefs = new Map<string, NativeContextExportV1>();
-const NATIVE_CONTEXT_REF_LIMIT = 4;
-
-function freezeNativeContext(value: unknown): void {
-  if (value === null || typeof value !== 'object') return;
-  for (const child of Object.values(value)) freezeNativeContext(child);
-  Object.freeze(value);
-}
-
-/** Worktree reads stay fresh. Immutable commit reads share a four-entry LRU. */
-export function readArchitectureNativeContext(
-  repoRoot: string,
-  source: NativeContextSource,
-  options: ArchctxProviderOptions = {},
-): NativeContextExportV1 {
-  if (source.kind === 'ref' && !/^(?:[a-f0-9]{40}|[a-f0-9]{64})$/.test(source.commit)) {
-    throw new ArchctxClientError({ code: 'RH_ARCHCTX_NATIVE_CONTEXT_INVALID', action: 'update-repo-harness', message: 'native context ref must be a full commit SHA' });
-  }
-  const key = source.kind === 'ref' ? `${realpathSync(repoRoot)}\0${source.commit}` : null;
-  if (key !== null) {
-    const cached = nativeContextRefs.get(key);
-    if (cached) {
-      nativeContextRefs.delete(key);
-      nativeContextRefs.set(key, cached);
-      return cached;
-    }
-  }
-  const args = ['export', 'native', ...(source.kind === 'worktree' ? ['--worktree'] : ['--ref', source.commit]), '--profile', NATIVE_CONTEXT_PROFILE, '--json'];
-  const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, args, options, 30_000);
-  const context = decodeNativeContextExport((value as { data: unknown }).data, source);
-  if (key !== null) {
-    freezeNativeContext(context);
-    nativeContextRefs.set(key, context);
-    if (nativeContextRefs.size > NATIVE_CONTEXT_REF_LIMIT) nativeContextRefs.delete(nativeContextRefs.keys().next().value!);
-  }
-  return context;
-}
-
 export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOptions = {}): { resolved: ResolvedArchctxPackage; capabilities: ArchctxCapabilitiesV1 } {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
@@ -315,13 +239,6 @@ export function archctxCapabilities(repoRoot: string, options: ArchctxProviderOp
   try { assertArchctxVersion(value, policy.requiredVersion); }
   catch (error) { throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: error instanceof Error ? error.message : String(error) }); }
   return { resolved, capabilities: value as ArchctxCapabilitiesV1 };
-}
-
-export function readArchitectureHandEdits(repoRoot: string, options: ArchctxProviderOptions = {}) {
-  const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
-  if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
-  const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
-  return decodeArchitectureHandEdits(client.data(['docs', 'drift', '--profile', 'repo-harness/v1', '--json'], policy.timeoutMs));
 }
 
 /** Lifecycle readback is separate from the CLI-only capabilities handshake. */
@@ -419,8 +336,6 @@ export function stopWorkspaceArchitectureDaemons(repoRoot: string, canonicalWork
 
 const PROJECTION_MANIFEST_INCOMPATIBLE = 'projection-manifest-incompatible';
 const COMMITTED_PROJECTION_MANIFEST = 'docs/architecture/.projection-manifest.json';
-/** The archctx model entry. archctx 0.9.1 checkpoint refuses a repository without it. */
-export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
 
 /**
  * archctx owns the manifest compatibility rule. The committed manifest must pass
@@ -444,7 +359,12 @@ function assertCommittedProjectionManifestCompatible(repoRoot: string, capabilit
   }
 }
 
-export function inspectArchitectureProjectionReadiness(repoRoot: string, options: ArchctxProviderOptions = {}): ArchitectureProjectionReadinessV1 {
+/** `readModelReady` is the model read of `architecture-read.ts`; this module does not import that module. */
+export function inspectArchitectureProjectionReadiness(
+  repoRoot: string,
+  readModelReady: (repoRoot: string, options: ArchctxProviderOptions) => boolean,
+  options: ArchctxProviderOptions = {},
+): ArchitectureProjectionReadinessV1 {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   let source: ArchitectureProjectionReadinessV1['modelAuthority']['source'] = 'unadopted';
   let daemonState: ArchitectureProjectionReadinessV1['daemonRuntime']['state'] = 'not-evaluated';
@@ -461,7 +381,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     if (policy.provider === 'disabled') return {
       ...base(),
       projectionProvider: { provider: 'disabled', state: 'disabled', binaryPath: null, nodePath: null, command: null, version: null, reason: readGlobalArchitectureConfiguration(options.env).initialized ? 'global architecture.projection_provider=disabled' : 'global architecture configuration is missing; run repo-harness update once' },
-      next: source === 'archcontext' && architectureModelReady(repoRoot, options) ? null : architectureAdoptionStep(),
+      next: source === 'archcontext' && readModelReady(repoRoot, options) ? null : architectureAdoptionStep(),
     };
     if (source === 'unadopted') throw new ArchctxClientError({ code: 'RH_ARCHCTX_POLICY_MISSING', action: 'adopt-repository', message: 'repository policy is missing; run repo-harness init' });
     const nodePath = resolveCompatibleNodeRuntime(options.env ?? process.env, options.trustedNodeCandidateSource);
@@ -471,7 +391,7 @@ export function inspectArchitectureProjectionReadiness(repoRoot: string, options
     catch (error) { daemonState = error instanceof ArchctxClientError && error.code === 'AC_RUNTIME_VERSION_UNSUPPORTED' ? 'mismatch' : 'error'; throw error; }
     const facts = readArchitectureCodeFacts(new ArchctxClient(repoRoot, policy.requiredVersion, options), policy.timeoutMs);
     codeFacts = { requirement: 'required', ...facts };
-    const modelReady = architectureModelReady(repoRoot, options);
+    const modelReady = readModelReady(repoRoot, options);
     return {
       ...base(),
       projectionProvider: { provider: 'archctx', state: 'ready', binaryPath: handshake.resolved.binaryPath, nodePath, command: [nodePath, handshake.resolved.binaryPath], version: handshake.resolved.version, reason: 'exact package-local handshake and daemon runtime check passed; code facts are reported separately' },
@@ -581,26 +501,6 @@ export function readArchitectureDocsAnchors(repoRoot: string, options: ArchctxPr
   archctxCapabilities(repoRoot, { ...options, policy });
   const client = new ArchctxClient(repoRoot, policy.requiredVersion, options);
   return decodeDocsAnchorsReport(client.data(['docs', 'anchors', '--json'], policy.timeoutMs));
-}
-
-export interface ArchitectureHistoryPage { readonly offset: number; readonly limit: number; readonly ref: string | null }
-
-/** archctx owns the milestone and delta rules; this checks only that the page answers the request. */
-export function decodeArchitectureHistoryPage(value: unknown, page: ArchitectureHistoryPage): ArchitectureHistory {
-  const history = decodeArchitectureHistory(value);
-  if (history === undefined || history.offset !== page.offset || history.limit !== page.limit
-    || (page.ref !== null && history.head !== page.ref)) throw new Error('architecture_history_invalid');
-  return history;
-}
-
-/**
- * Runs the read-only `archctx history` for one page. Like the map collector, it does not
- * read the projection policy: that policy controls projection writes, not reads.
- */
-export function readArchitectureHistory(repoRoot: string, page: ArchitectureHistoryPage, options: ArchctxProviderOptions = {}): ArchitectureHistory {
-  const client = new ArchctxClient(repoRoot, ARCHCTX_REQUIRED_VERSION, options);
-  const args = ['history', ...(page.ref === null ? [] : ['--ref', page.ref]), '--offset', String(page.offset), '--limit', String(page.limit), '--json'];
-  return decodeArchitectureHistoryPage(client.data(args, ARCHITECTURE_HISTORY_TIMEOUT_MS), page);
 }
 
 /**

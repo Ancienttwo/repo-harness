@@ -1,7 +1,8 @@
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { Command } from 'commander';
 import type { ProjectionHumanActionReasonCode, ProjectionHumanActionV1, ProjectionMode } from 'archctx-contracts';
-import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, readArchitectureHandEdits, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { architectureProjectionRequest, inspectArchitectureProjectionReadiness, readArchitectureDocsAnchors, runArchitectureProjection } from '../../effects/architecture/archctx-provider';
+import { architectureModelReady, readArchitectureHandEdits } from '../../effects/architecture/architecture-read';
 import { ARCHITECTURE_DEBT_COMMAND, summarizeArchitectureRender } from '../../core/architecture/projection';
 import { applyArchitectureProjection } from '../../effects/architecture/projection-apply';
 import { runArchitectureWriter } from '../../effects/architecture/projection-writer';
@@ -27,7 +28,7 @@ export function buildArchitectureProjectionCommand(): Command {
     try {
       const root = repositoryRoot();
       const { path, initialized } = readGlobalArchitectureConfiguration();
-      write({ ...inspectArchitectureProjectionReadiness(root), configuration: { scope: 'global', path, initialized } });
+      write({ ...inspectArchitectureProjectionReadiness(root, architectureModelReady), configuration: { scope: 'global', path, initialized } });
     }
     catch (error) { fail(error); }
   });

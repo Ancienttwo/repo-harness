@@ -1,12 +1,11 @@
 import type { ProjectionResultV2, ProjectionRequestV1 } from 'archctx-contracts';
 import {
-  ArchctxClientError,
   architectureProjectionRequest,
   readArchitectureProjectionApply,
   runArchitectureProjection,
   type ArchitectureProjectionRequestOptions,
-  type ArchctxProviderOptions,
 } from './archctx-provider';
+import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
 
 export interface ArchitectureProjectionApplyOptions extends ArchctxProviderOptions, ArchitectureProjectionRequestOptions {
   readonly mode?: 'apply' | 'adopt';

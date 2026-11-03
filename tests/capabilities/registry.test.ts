@@ -22,7 +22,7 @@ import {
   type Capability,
   type CapabilityRegistry,
 } from "../../src/core/capabilities/registry";
-import { readArchitectureNativeContext } from "../../src/effects/architecture/archctx-provider";
+import { readArchitectureNativeContext } from "../../src/effects/architecture/architecture-read";
 
 // Recorded with package-local archctx 0.7.2: `archctx resolve --paths-from
 // ownership-0.7.2-paths.txt --json` over the nodes in ownership-0.7.2-model/.

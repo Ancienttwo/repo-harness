@@ -1,6 +1,7 @@
 import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from "../installer/skill-projection";
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
+import { architectureModelReady } from '../../effects/architecture/architecture-read';
 /**
  * Existing-repo harness adoption implementation.
  *
@@ -374,7 +375,7 @@ export function runInit(
   if (apply && adoption.exitCode === 0 && mode !== 'minimal') {
     try {
       const { initialized } = readGlobalArchitectureConfiguration(commandEnv);
-      const readiness = inspectArchitectureProjectionReadiness(repoRoot, { env: commandEnv });
+      const readiness = inspectArchitectureProjectionReadiness(repoRoot, architectureModelReady, { env: commandEnv });
       const provider = readiness.projectionProvider;
       steps.push({
         step: 'architecture projection readiness',
