@@ -91,12 +91,12 @@ afterEach(async () => {
 describe('bots fixtures', () => {
   test('every named fixture serves the Bots page through the browser decoder', async () => {
     const reads = await Promise.all(FIXTURE_NAMES.map(name => fixtureProps(name).readBotAccess!(new AbortController().signal)));
-    const panes = (read: BotAccessRead) => {
+    const terminals = (read: BotAccessRead) => {
       if (read.state !== 'ok') return read.reason;
-      const { herdr } = read.snapshot;
-      return herdr.state !== 'ok' ? herdr.reason : herdr.snapshot.state === 'ok' ? 'ok' : herdr.snapshot.reason;
+      const { hc } = read.snapshot;
+      return hc.state !== 'ok' ? hc.reason : hc.terminals.state === 'ok' ? 'ok' : hc.terminals.reason;
     };
-    expect(reads.map(panes)).toEqual(['ok', 'bot_access_pending', 'herdr_version_mismatch']);
+    expect(reads.map(terminals)).toEqual(['ok', 'bot_access_pending', 'hc_version_mismatch']);
     const reviewReads = await Promise.all(FIXTURE_NAMES.map(name => fixtureProps(name).readBotReviews!(new AbortController().signal)));
     expect(reviewReads.map(read => read.state === 'ok' ? [read.snapshot.reason, read.snapshot.threads.length] : read.reason)).toEqual([[null, 6], ['slack_pending', 0], ['slack_rate_limited', 6]]);
   });
@@ -136,7 +136,7 @@ describe('navigation', () => {
 describe('Bots page', () => {
   test('1-BOTS-P1 one section per path; each repository names its mode and last call', async () => {
     await mount('#bots', props(serve(ok(busyBotAccess(NOW)))));
-    expect(all('[data-bots-section]').map(element => element.getAttribute('data-bots-section'))).toEqual(['mcp', 'notify', 'herdr', 'reviews']);
+    expect(all('[data-bots-section]').map(element => element.getAttribute('data-bots-section'))).toEqual(['mcp', 'notify', 'hc', 'reviews']);
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.getAttribute('data-mcp-status')).toBe('ready_user');
     expect(commands(mcp)).toEqual([
@@ -152,7 +152,7 @@ describe('Bots page', () => {
     ]);
   });
 
-  test('1-BOTS-P1 notify lists every channel with its newest delivery; herdr lists each agent pane with its Bot', async () => {
+  test('1-BOTS-P1 notify lists every channel with its newest delivery; hc lists each task terminal with its status', async () => {
     await mount('#bots', props(serve(ok(busyBotAccess(NOW)))));
     const notify = section('notify');
     expect(notify.querySelector('[data-notify]')?.getAttribute('data-notify')).toBe('enabled');
@@ -162,34 +162,32 @@ describe('Bots page', () => {
     // An unconfigured channel with no delivery says only that.
     expect(notify.querySelector('[data-notify-channel="discord"]')?.textContent).toBe('Discordnot configured');
     expect(commands(notify)).toEqual([]);
-    const herdr = section('herdr');
-    expect(herdr.querySelector('[data-herdr-server]')?.textContent).toBe('Server running · session main');
-    expect(herdr.querySelector('[data-herdr-version]')?.textContent).toBe('Version 0.9.5, as expected');
-    expect(herdr.textContent).toContain('2 workspaces · 5 tabs · 7 panes');
-    const agents = all('[data-herdr-agent]', herdr);
-    expect(agents.map(row => [row.getAttribute('data-herdr-agent'), row.getAttribute('data-agent-status'), row.querySelector('[data-bot]')?.textContent])).toEqual([
-      ['w1:p1', 'idle', 'Hermes'], ['w2:p1', 'working', 'Unregistered'], ['w2:p2', 'blocked', 'Unregistered'],
+    const hc = section('hc');
+    expect(hc.querySelector('[data-hc-version]')?.textContent).toBe('hc 0.1.17 · compatible (needs 0.1.17 or later)');
+    expect(hc.querySelector('[data-herdr-app]')?.textContent).toBe('Herdr.app · no version pin yet');
+    const terminals = all('[data-hc-terminal]', hc);
+    expect(terminals.map(row => [row.getAttribute('data-hc-terminal'), row.getAttribute('data-terminal-status')])).toEqual([
+      ['t12', 'working'], ['t1b', 'blocked'], ['t7', 'unknown'],
     ]);
-    expect(agents[1]!.textContent).toContain('Codex');
-    expect(commands(herdr)).toEqual([]);
+    expect(terminals[0]!.textContent).toBe('workingt12task-1f0c2a9e4b7d3c5a8e61');
+    expect(commands(hc)).toEqual([]);
   });
 
-  test('1-BOTS-F1 a newer local herdr shows the expected and the actual version and marks pane state unavailable, never "not connected"', async () => {
+  test('1-BOTS-F1 an hc core below the pin shows the expected and the actual version and no terminal state, never "not connected"', async () => {
     for (const [locale, words, unavailable] of [
-      ['zh', '期望 0.9.5（schema 2ecf19a9），实际 0.9.3', '不可用'],
-      ['en', 'Expected 0.9.5 (schema 2ecf19a9), actual 0.9.3', 'unavailable'],
+      ['zh', 'hc 0.1.15 · 版本过低：需要 0.1.17 或更高，终端状态暂不可读', '暂不可读'],
+      ['en', 'hc 0.1.15 · too old: needs 0.1.17 or later. Terminal state is not read.', 'not read'],
     ] as const) {
       await remount('#bots', props(serve(ok(degradedBotAccess(NOW))), locale));
-      const herdr = section('herdr');
-      expect(herdr.querySelector('[data-herdr-server]')?.getAttribute('data-herdr-server')).toBe('running');
-      expect(herdr.querySelector('[data-herdr-version="mismatch"]')?.textContent).toBe(words);
-      expect(herdr.querySelector('[data-herdr-panes="herdr_version_mismatch"]')?.textContent).toContain(unavailable);
-      expect(herdr.textContent).not.toMatch(/没连上|未连接|not connected/iu);
+      const hc = section('hc');
+      expect(hc.querySelector('[data-hc-version="mismatch"]')?.textContent).toBe(words);
+      expect(hc.textContent).toContain(unavailable);
+      expect(all('[data-hc-terminal]', hc)).toEqual([]);
+      expect(hc.textContent).not.toMatch(/没连上|未连接|not connected|找不到/iu);
     }
-    // Equal version names with another protocol carry the protocols, so the two sides never read the same.
-    const protocolOnly = edited(degradedBotAccess(NOW), raw => { raw.herdr.status.value.server.version.actual = { version: '0.9.5', protocol: 23 }; });
-    await remount('#bots', props(serve(ok(protocolOnly))));
-    expect(section('herdr').querySelector('[data-herdr-version="mismatch"]')?.textContent).toBe('Expected 0.9.5 protocol 22 (schema 2ecf19a9), actual 0.9.5 protocol 23');
+    // A missing hc is its own state, not a version mismatch.
+    await remount('#bots', props(serve(ok({ ...busyBotAccess(NOW), hc: { state: 'unavailable', reason: 'hc_missing' } }))));
+    expect(section('hc').querySelector('[data-hc]')?.textContent).toBe('hc was not found. Agents cannot be started.');
   });
 
   test('1-BOTS-N1 the fixtures show no token, passphrase, webhook URL or absolute path, and every control only copies a command', async () => {
@@ -220,7 +218,8 @@ describe('Bots page', () => {
     const responses = [
       poison(raw => { raw.notify.status.webhook_url = 'https://hooks.slack.com/services/T000/B000/SECRET_HOOK'; }),
       poison(raw => { raw.mcp.doctor.passphrase = 'SECRET_PASSPHRASE'; }),
-      poison(raw => { raw.herdr.socket = '/private/tmp/herdr-SECRET.sock'; }),
+      poison(raw => { raw.hc.socket = '/private/tmp/hc-SECRET.sock'; }),
+      poison(raw => { raw.hc.terminals.value[0].cwd = '/Users/someone/SECRET_REPO'; }),
       poison(raw => { raw.registry.repos[0].label = '/Users/someone/SECRET_REPO'; }),
     ];
     const original = globalThis.fetch;
@@ -236,7 +235,7 @@ describe('Bots page', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('degraded sections each say what failed: a failed mcp doctor gives its command, Bot unknown is not unregistered, and a disabled plugin gives the install command for its session', async () => {
+  test('degraded sections each say what failed: a failed mcp doctor gives its command, Bot unknown is not unregistered, and a disabled plugin gives the install command', async () => {
     await mount('#bots', props(serve(ok(degradedBotAccess(NOW)))));
     const mcp = section('mcp');
     expect(mcp.querySelector('[data-mcp-status]')?.textContent).toBe('mcp doctor timed out.');
@@ -248,14 +247,8 @@ describe('Bots page', () => {
     expect(all('[data-last-call="failed"] [data-bot]', mcp).map(name => name.textContent)).toEqual(['Bot unknown']);
     const notify = section('notify');
     expect(notify.querySelector('[data-notify]')?.textContent).toBe('Notify plugin is off (install link: linked, plugin: disabled)');
-    expect(commands(notify)).toEqual(['repo-harness herdr notify install --session main']);
-
-    // Without an install record the session is unknown, so the command keeps its placeholder.
-    const fresh = busyBotAccess(NOW);
-    await remount('#bots', props(serve(ok({ ...fresh, herdr: { state: 'unavailable', reason: 'notify_session_missing' }, notify: { state: 'unavailable', reason: 'notify_session_missing' } }))));
-    expect(commands(section('notify'))).toEqual(['repo-harness herdr notify install --session <session>']);
-    expect(commands(section('herdr'))).toEqual(['repo-harness herdr notify install --session <session>']);
-    expect(section('herdr').querySelector('[data-herdr-server]')?.getAttribute('data-herdr-server')).toBe('notify_session_missing');
+    // hc has no Herdr session, so the install command keeps its placeholder.
+    expect(commands(notify)).toEqual(['repo-harness herdr notify install --session <session>']);
   });
 
   test('the first collection is a wait, a refused read names its reason, and a failed refresh keeps the last snapshot', async () => {

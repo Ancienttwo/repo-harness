@@ -52,6 +52,7 @@ import { OPERATOR_WORKTREES_CLEANUP_ROUTE, runWorktreeCleanupChild, selectionDig
 import { runSetupProcess } from '../../src/effects/setup/collector';
 import type { OperatorWriteRoute } from '../../src/effects/operator/write-channel';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
+import { fakeHc } from '../helpers/fake-hc';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
 
 function snapshot(sequence = 1) {
@@ -388,11 +389,11 @@ describe('operator serve command and HTTP boundary', () => {
 
   test('serves only the Bot access and CLI inventory caches on GET, with typed unavailable states', async () => {
     const bots: BotAccessSnapshotV1 = {
-      protocol: 1, kind: 'operator_bot_access', observed_at: '2026-10-27T00:00:00.000Z',
+      protocol: 2, kind: 'operator_bot_access', observed_at: '2026-10-27T00:00:00.000Z',
       bots: { state: 'unavailable', reason: 'bot_registry_invalid' },
       mcp: { state: 'unavailable', reason: 'mcp_doctor_timeout' },
       registry: { state: 'unavailable', reason: 'registry_unavailable' },
-      herdr: { state: 'unavailable', reason: 'notify_session_missing' },
+      hc: { state: 'unavailable', reason: 'hc_unreachable' },
       notify: { state: 'unavailable', reason: 'notify_session_missing' },
     };
     const entry = { id: 'brew:gh', source: 'brew', package: 'gh', version: '2.62.0', commands: ['gh'], location: '~/.local/bin',
@@ -1326,8 +1327,11 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     sources: [{ source_id: 'cli-source', provider: 'pi', snapshot_path: sourcePath }] }));
   const sourceBefore = readFileSync(sourcePath), configBefore = readFileSync(configPath);
   const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
+  // The collectors read hc; a fake one comes first on PATH, so the server never reaches a real core.
+  const hc = fakeHc('operator-serve-hc');
   const child = spawn(process.execPath, [cli, 'operator', 'serve', '--port', '0', '--runtime-status-config', configPath], {
-    cwd: home, env: { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home }, stdio: ['ignore', 'pipe', 'pipe'],
+    cwd: home, env: { ...process.env, HOME: home, TMPDIR: home, REPO_HARNESS_HOME: home, FAKE_HC: hc.env.FAKE_HC, PATH: `${hc.env.PATH}:${process.env.PATH}` },
+    stdio: ['ignore', 'pipe', 'pipe'],
   });
   let stdout = '', stderr = '';
   child.stdout.on('data', bytes => { stdout += bytes.toString(); }); child.stderr.on('data', bytes => { stderr += bytes.toString(); });
@@ -1338,13 +1342,13 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
     const filesBeforeGet = readdirSync(root).sort();
     const url = stdout.trim();
     const response = await fetch(`${url}/api/v1/runtime/status`); expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v6', status: 'ready',
+    expect(await response.json()).toMatchObject({ projection_version: 'repo-harness.runtime-overlay.v7', status: 'ready',
       badges: [], native_sources: [{ source_id: 'cli-source', provider: 'pi', freshness: 'fresh',
         observations: [{ scope: 'terminal', state: 'idle', event_received_at: heartbeat }] }] });
     expect(readFileSync(sourcePath)).toEqual(sourceBefore); expect(readFileSync(configPath)).toEqual(configBefore);
     expect(readdirSync(root).sort()).toEqual(filesBeforeGet);
     child.kill('SIGTERM'); expect(await exited).toBe(0);
-  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } for (const path of [root, home]) rmSync(path, { recursive: true, force: true }); }
+  } finally { if (child.exitCode === null) { child.kill('SIGTERM'); await exited; } for (const path of [root, home, hc.root]) rmSync(path, { recursive: true, force: true }); }
 });
 
 test('session discovery is bounded read-only transport with a closed repository selector', async () => {
