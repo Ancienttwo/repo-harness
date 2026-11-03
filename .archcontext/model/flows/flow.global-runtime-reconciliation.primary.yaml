@@ -34,7 +34,7 @@ steps:
 outcomes:
   - id: success
     kind: success
-    label: Mandatory closure and selected profile tooling are ready
+    label: Mandatory closure and selected plugin tooling are ready
     steps:
       - id: configure-architecture
         from: reconciler
@@ -47,7 +47,7 @@ outcomes:
       - id: install-adapters
         from: reconciler
         to: hook-adapters
-        label: Install the managed host adapters for the selected profile
+        label: Install the managed host adapters
         evidence:
           entrypointId: entrypoint.global-runtime-reconciliation.update
           sourceSymbol: installHostAdapters

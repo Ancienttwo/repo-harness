@@ -24,7 +24,6 @@ import { HOOK_EVENT_TELEMETRY_PATH, HOOK_EVENT_TELEMETRY_PROTOCOL } from '../../
 import { appendSegmentedLog } from '../../src/effects/segmented-log';
 import { readHookUsage, readTailLines } from '../../src/effects/setup/hook-usage';
 import { FAILURE_LOG_FILE } from '../../src/effects/state/resolve-effective-state';
-import { PROFILE_COMPONENTS } from '../../src/cli/installer/install-profile';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 
 function snapshot(collectedAt: string): SetupSnapshotV2 {
@@ -194,7 +193,7 @@ setInterval(() => {}, 1000);
 
   test('every real catalog summary and fleet frontmatter value survives projection and decode verbatim', () => {
     const manifest = readFileSync(join(import.meta.dir, '../../assets/skill-commands/manifest.json'), 'utf8');
-    const catalog = parseSkillSurfaceCatalog(manifest, { declared: true, profileComponents: PROFILE_COMPONENTS });
+    const catalog = parseSkillSurfaceCatalog(manifest, { declared: true });
     if (catalog.status !== 'valid') throw new Error('packaged catalog invalid');
     const packages = catalog.catalog.packages;
     const roles = readFleetRoles(SETUP_FLEET_SOURCE_DIR);

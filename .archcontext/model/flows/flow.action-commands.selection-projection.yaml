@@ -1,7 +1,7 @@
 schemaVersion: archcontext.flow/v1
-id: flow.action-commands.profile-projection
+id: flow.action-commands.selection-projection
 capabilityId: capability.public-surface.action-commands
-name: Select the skill projection for a profile
+name: Select the skill projection for a plugin selection
 applicability: required
 participants:
   - id: capability
@@ -12,11 +12,11 @@ steps:
   - id: select-facades
     from: capability
     to: catalog
-    label: Compute the facade set for the requested profile
+    label: Compute the facade set for the requested plugin selection
     evidence:
-      entrypointId: entrypoint.action-commands.profile-projection
+      entrypointId: entrypoint.action-commands.selection-projection
       sourceSymbol: main
-      sinkId: sink.action-commands.facades-for-profile
+      sinkId: sink.action-commands.facades-for-selection
 outcomes:
   - id: success
     kind: success
@@ -25,14 +25,14 @@ outcomes:
       - id: print-projection
         from: capability
         to: catalog
-        label: Print facades and host placements from the same selector the catalog self-check uses
+        label: Print the facades and host placements that the selection projects
         evidence:
-          entrypointId: entrypoint.action-commands.profile-projection
+          entrypointId: entrypoint.action-commands.selection-projection
           sourceSymbol: main
-          sinkId: sink.action-commands.facades-for-profile
+          sinkId: sink.action-commands.facades-for-selection
     terminal:
       participant: capability
-      label: Return the profile projection
+      label: Return the selection projection
   - id: error
     kind: error
     label: Manifest is missing or invalid
@@ -42,7 +42,7 @@ outcomes:
         to: catalog
         label: Parse manifest.json and print every diagnostic when it is not valid
         evidence:
-          entrypointId: entrypoint.action-commands.profile-projection
+          entrypointId: entrypoint.action-commands.selection-projection
           sourceSymbol: loadCatalog
           sinkId: sink.action-commands.parse-catalog
     terminal:

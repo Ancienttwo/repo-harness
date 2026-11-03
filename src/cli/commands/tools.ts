@@ -18,6 +18,7 @@ import {
   type CodegraphEnsureResult,
 } from '../tools/codegraph';
 import type { CheckStatus, DoctorCheckResult } from './doctor';
+import type { PluginId } from '../../core/skill-surface/plugin-manifest';
 import type { GlobalRuntimeStep } from './global-runtime';
 import type { InitPorts, InitStep } from './init';
 import type { InstallTargetSpec } from './install';
@@ -310,9 +311,21 @@ function checkCodegraphIndex(probe: CodegraphProbe): DoctorCheckResult {
   };
 }
 
-/** The `doctor` CodeGraph checks: readiness, the Codex and Claude MCP hosts, and the project index. */
-export function codegraphDoctorChecks(cwd: string): DoctorCheckResult[] {
-  const probe = probeCodegraph(cwd);
+/**
+ * The `doctor` CodeGraph checks: readiness, the Codex and Claude MCP hosts,
+ * and the project index. CodeGraph follows the architecture plugin, so
+ * without it each check is `na` and nothing runs. An unreadable selection
+ * fails each check.
+ */
+export function codegraphDoctorChecks(cwd: string, plugins: readonly PluginId[] | Error): DoctorCheckResult[] {
+  if (plugins instanceof Error) return codegraphChecksFor({ error: plugins });
+  if (!plugins.includes('architecture')) {
+    return codegraphChecksFor({}).map(({ id, describe }) => ({ id, describe, status: 'na', detail: 'architecture plugin not selected' }));
+  }
+  return codegraphChecksFor(probeCodegraph(cwd));
+}
+
+function codegraphChecksFor(probe: CodegraphProbe): DoctorCheckResult[] {
   return [
     checkCodegraphReadiness(probe),
     checkCodegraphMcpHost(probe, 'codex'),

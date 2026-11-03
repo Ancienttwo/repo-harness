@@ -9,7 +9,7 @@ import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
-import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, type ManagedInstallSurface } from './install-profile';
+import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstallState, type ManagedInstallSurface } from './install-profile';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, hostConfigurationRoot, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
 
 export interface UninstallOptions { target: 'codex' | 'claude' | 'both'; dryRun?: boolean; recoverInterrupted?: boolean; env?: NodeJS.ProcessEnv; runtimeLock?: RuntimeTransactionContext }
@@ -54,7 +54,7 @@ function readUninstallState(opts: UninstallOptions) {
   const home = hostConfigurationRoot(env);
   assertConfigurationPath(installProfileStatePath(env), home);
   const lock = providerSkillLock(home, env);
-  const state = readInstalledProfile(env);
+  const state = readInstallState(env);
   const receipt = readConfigurationReceipt(home);
   if (receipt.pending && !opts.recoverInterrupted) throw new Error('interrupted configuration transaction; preview recovery with uninstall --recover-interrupted --dry-run, then apply --recover-interrupted to restore recorded fragments');
   return { state, receipt, lock };
@@ -84,7 +84,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
     remember(path); writes.set(path, value); items.push({ path, action, reason });
   };
   const unresolved = (path: string, reason: string): void => { items.push({ path, action: 'unresolved', reason }); };
-  let state: ReturnType<typeof readInstalledProfile> = null;
+  let state: ReturnType<typeof readInstallState> = null;
   let receipt: ReturnType<typeof readConfigurationReceipt>;
   try {
     ({ state, receipt, lock } = readUninstallState(opts));
@@ -259,7 +259,7 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
   const statePath = installProfileStatePath(env);
   if (state) {
     const pending = state.ownership_manifest.filter((surface) => !removedSurfaces.has(surface));
-    if (opts.target === 'both' && !pending.some(surface => surface.type === 'pi-package') && !items.some((item) => item.action === 'unresolved')) change(statePath, null, 'installed profile retired');
+    if (opts.target === 'both' && !pending.some(surface => surface.type === 'pi-package') && !items.some((item) => item.action === 'unresolved')) change(statePath, null, 'install state retired');
     else if (removedSurfaces.size) change(statePath, `${JSON.stringify({ ...state, ownership_manifest: pending, previous: null }, null, 2)}\n`, 'retain remaining ownership for retry/other host');
   }
   const restored = receipt.changes.filter((entry) => entry.active && !remaining.includes(entry));

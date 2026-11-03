@@ -23,12 +23,13 @@ import {
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
 import {
+  enabledPlugins,
+  InstallStateError,
   installProfileStatePath,
-  readInstalledProfile,
-  type InstallComponent,
-  type InstallProfile,
-  readLegacyInstalledProfileForMigration,
+  readInstallState,
+  type InstallStateErrorCode,
 } from '../installer/install-profile';
+import { selectionLabel, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
 import { architectureModelReady } from '../../effects/architecture/architecture-read';
 import type { ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
@@ -70,16 +71,15 @@ export interface StatusReport {
     optInMarker: string;
   };
   routes: { total: number; byEvent: Record<string, number> };
-  installedProfile:
-    | { recorded: true; profile: InstallProfile; components: readonly InstallComponent[] }
+  installState:
+    | { recorded: true; core_version: string; plugins: readonly PluginId[]; selection: PluginSelection }
     | { recorded: false }
-    // install-state.json exists but normal protocol-2 validation rejected it.
-    // A valid protocol-1 file is explicitly migratable; malformed legacy or
-    // current state is not, and must not receive a migration command that is
-    // guaranteed to fail.
+    // install-state.json exists but the strict protocol 3 reader rejected it.
+    // The code says which next step applies: `update` migrates protocol 2,
+    // protocol 1 needs the 0.25.x bridge, and anything else needs inspection.
     | {
         recorded: 'invalid';
-        kind: 'legacy_protocol' | 'corrupt_current';
+        code: InstallStateErrorCode;
         error: string;
         path: string;
       };
@@ -112,37 +112,25 @@ function countManagedEntries(filePath: string): number {
   }
 }
 
-function expectedManagedEntryCount(
-  host: HookHost,
-  installedProfile: StatusReport['installedProfile'],
-): number {
-  if (installedProfile.recorded !== true) return routesForHost(host).length;
-  return Object.values(buildManagedHooks(host, installedProfile.profile))
-    .reduce((count, entries) => count + entries.length, 0);
-}
-
-export function expectedManagedProfile(
-  installedProfile: StatusReport['installedProfile'],
-): InstallProfile {
-  return installedProfile.recorded === true ? installedProfile.profile : 'full';
+function expectedManagedEntryCount(host: HookHost): number {
+  return Object.values(buildManagedHooks(host)).reduce((count, entries) => count + entries.length, 0);
 }
 
 export function inspectManagedProjection(
   filePath: string | undefined,
   host: HookHost,
-  profile: InstallProfile,
 ): ManagedHookProjectionReport {
   if (!filePath || !fs.existsSync(filePath)) {
-    return compareManagedHookProjection({}, host, profile);
+    return compareManagedHookProjection({}, host);
   }
   try {
     const data = readJsonOrEmpty<{ hooks?: unknown }>(filePath);
-    return compareManagedHookProjection(data.hooks ?? {}, host, profile);
+    return compareManagedHookProjection(data.hooks ?? {}, host);
   } catch {
     // Keep malformed host config fail-closed: an empty managed projection is
     // reported as drift, while the existing target diagnostics retain the
     // config path for repair.
-    return compareManagedHookProjection({}, host, profile);
+    return compareManagedHookProjection({}, host);
   }
 }
 
@@ -168,30 +156,14 @@ export function formatManagedHookProjectionMismatch(
   return `${route} ${mismatch.field} expected=${formatProjectionValue(mismatch.expected)} actual=${formatProjectionValue(mismatch.actual)}`;
 }
 
-export function readInstalledProfileForStatus(): StatusReport['installedProfile'] {
-  const statePath = installProfileStatePath();
+export function readInstallStateForStatus(): StatusReport['installState'] {
   try {
-    const state = readInstalledProfile();
+    const state = readInstallState();
     if (!state) return { recorded: false };
-    if (!Array.isArray(state.components)) {
-      return {
-        recorded: 'invalid',
-        kind: 'corrupt_current',
-        error: `installed profile state has a malformed components field (expected an array): ${statePath}`,
-        path: statePath,
-      };
-    }
-    return { recorded: true, profile: state.profile, components: state.components };
+    return { recorded: true, core_version: state.core.version, plugins: enabledPlugins(state), selection: state.selection };
   } catch (error) {
-    let kind: 'legacy_protocol' | 'corrupt_current' = 'corrupt_current';
-    try {
-      readLegacyInstalledProfileForMigration();
-      kind = 'legacy_protocol';
-    } catch {
-      // Only a fully valid protocol-1 state is migratable. Malformed JSON,
-      // malformed legacy state, and invalid protocol-2 state stay diagnostic.
-    }
-    return { recorded: 'invalid', kind, error: (error as Error).message, path: statePath };
+    if (!(error instanceof InstallStateError)) throw error;
+    return { recorded: 'invalid', code: error.code, error: error.message, path: installProfileStatePath() };
   }
 }
 
@@ -201,18 +173,14 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     byEvent[r.event] = (byEvent[r.event] ?? 0) + 1;
   }
 
-  const installedProfile = readInstalledProfileForStatus();
+  const installState = readInstallStateForStatus();
   const targets: StatusReport['targets'] = [];
   for (const target of ALL_TARGETS) {
     if (!target.supportsLocation('global')) continue;
-    const expectedEntryCount = expectedManagedEntryCount(target.id, installedProfile);
+    const expectedEntryCount = expectedManagedEntryCount(target.id);
     const det = target.detect('global');
     const managedEntryCount = det.configPath ? countManagedEntries(det.configPath) : 0;
-    const projection = inspectManagedProjection(
-      det.configPath,
-      target.id,
-      expectedManagedProfile(installedProfile),
-    );
+    const projection = inspectManagedProjection(det.configPath, target.id);
     targets.push({
       id: target.id,
       displayName: target.displayName,
@@ -251,7 +219,7 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
     targets,
     repo,
     routes: { total: ROUTES.length, byEvent },
-    installedProfile,
+    installState,
     ...(architectureProjection ? { architectureProjection } : {}),
   };
 }
@@ -280,12 +248,13 @@ export function formatStatus(report: StatusReport, asJson = false): string {
     lines.push(`    ${event}: ${count}`);
   }
   lines.push('');
-  lines.push('Installed profile:');
-  if (report.installedProfile.recorded === true) {
-    lines.push(`  profile: ${report.installedProfile.profile}`);
-    lines.push(`  components: ${report.installedProfile.components.join(', ') || '(none)'}`);
-  } else if (report.installedProfile.recorded === 'invalid') {
-    lines.push(`  (invalid): ${report.installedProfile.error}`);
+  lines.push('Install state:');
+  if (report.installState.recorded === true) {
+    lines.push(`  core: ${report.installState.core_version}`);
+    lines.push(`  selection: ${selectionLabel(report.installState.selection)}`);
+    lines.push(`  plugins: ${report.installState.plugins.join(', ') || '(none)'}`);
+  } else if (report.installState.recorded === 'invalid') {
+    lines.push(`  (${report.installState.code}): ${report.installState.error}`);
   } else {
     lines.push('  (not recorded)');
   }

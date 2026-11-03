@@ -42,9 +42,11 @@ import { FS_TRANSACTION_BACKUP_ROOT, withTargetLock, type FsTransactionManifest,
 import {
   beginInstallHostTransaction,
   installProfileStatePath,
+  readInstallState,
   recordRefreshedInstallOwnership,
   rollbackInstallHostTransaction,
   type InstallHostTransaction,
+  type ManagedInstallSurface,
 } from '../installer/install-profile';
 import { globalRuntimeScope, withRuntimeTransactionLock, type RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
@@ -99,6 +101,11 @@ export interface UpgradeResult {
 }
 
 type PlannerOptions = Parameters<typeof planLegacyLeftovers>[0];
+
+/** The strict install-state reader is the only source of the ledger that classifies leftovers. */
+export function installOwnershipReader(env: NodeJS.ProcessEnv): () => readonly ManagedInstallSurface[] {
+  return () => readInstallState(env)?.ownership_manifest ?? [];
+}
 
 function removable(item: LeftoverItem): boolean {
   return item.action !== 'report' && (item.ownership === 'owned-clean' || item.operatorDecision?.status === 'applied');
@@ -454,7 +461,7 @@ export function runUpgrade(opts: UpgradeOptions = {}, dependencies: UpgradeDepen
     const home = resolve(opts.home ?? opts.env?.HOME ?? process.env.HOME ?? homedir());
     const packageRoot = resolve(opts.packageRoot ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
     const env: NodeJS.ProcessEnv = { ...process.env, ...opts.env, HOME: home };
-    const options: PlannerOptions = { scope, cwd, home, packageRoot,
+    const options: PlannerOptions = { scope, cwd, home, packageRoot, installOwnership: installOwnershipReader(env),
       // Raw value on purpose: it matches the shim path the retired installer wrote verbatim, not a resolved home.
       ...(env.REPO_HARNESS_HOME ? { repoHarnessHome: env.REPO_HARNESS_HOME } : {}),
       ...(apply && opts.includeStateArtifacts === true ? { includeStateArtifacts: true } : {}) };
@@ -564,7 +571,7 @@ export function runUpgradeDecide(opts: UpgradeDecideOptions): UpgradeDecideResul
     const packageRoot = resolve(opts.packageRoot ?? join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..'));
     const existing = readUpgradeDecisions(cwd);
     // Decide against the raw report list, so an operator can replace a stale or earlier decision.
-    const reportItems = supportedItems(planLegacyLeftovers({ scope: 'project', cwd, home, packageRoot }).items)
+    const reportItems = supportedItems(planLegacyLeftovers({ scope: 'project', cwd, home, packageRoot, installOwnership: installOwnershipReader({ ...process.env, HOME: home }) }).items)
       .filter((item) => item.location === 'project' && item.action === 'report');
     const recorded: UpgradeDecision[] = [];
     const rejected: { path: string; reason: string }[] = [];

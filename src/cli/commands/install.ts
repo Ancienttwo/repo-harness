@@ -15,14 +15,12 @@ import { runUserUninstall } from '../installer/uninstall';
 
 import type { Location } from '../installer/types';
 import { ALL_TARGETS, getTarget, listTargetIds } from '../installer/targets/registry';
-import type { InstallProfile } from '../installer/install-profile';
 
 export type InstallTargetSpec = 'codex' | 'claude' | 'both';
 
 export interface InstallCommandOptions {
   target: InstallTargetSpec;
   location: Location;
-  profile?: InstallProfile;
 }
 
 export interface UninstallCommandOptions {
@@ -58,7 +56,7 @@ export function runInstall(opts: InstallCommandOptions): InstallCommandResult {
 
   for (const target of targets) {
     try {
-      const result = target.install(opts.location, { profile: opts.profile });
+      const result = target.install(opts.location, {});
       for (const file of result.files) {
         lines.push(`[${target.id}] ${file.action}: ${file.path}`);
       }

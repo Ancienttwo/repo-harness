@@ -150,9 +150,9 @@ closeout_journal_derive_key() {
 }
 
 # One worktree may have at most one live closeout for a given operation. The
-# stable claim directory is elected with one atomic mkdir before any journal
-# temp file, lifecycle mutation, merge, or push. Its owner record is operation
-# evidence only and lives beside (never inside) workflow state.
+# stable claim directory is elected before any journal temp file, lifecycle
+# mutation, merge, or push. Its owner record is operation evidence only and
+# lives beside (never inside) workflow state.
 closeout_claim_path() {
   local operation="$1" root key
   root="$(closeout_journal_root)" || return 1
@@ -173,11 +173,26 @@ closeout_claim_write_owner() {
   } | closeout_journal_write "$target"
 }
 
+# The election is the creation of the empty owner record with O_EXCL (bash
+# noclobber), not mkdir: uutils mkdir 0.10.0 (Ubuntu 26.04) can report success
+# to both callers of one racing mkdir. mkdir never creates the parent, so a
+# removed claim is never recreated under a recovery lane.
+closeout_claim_elect() {
+  { mkdir "$1" 2>/dev/null || [[ -d "$1" ]]; } && (set -C; : >"$1/owner.json") 2>/dev/null
+}
+
+# One rename takes the lock directory off its path before rm walks it, so no
+# caller can elect inside a directory that is being removed.
+closeout_claim_remove() {
+  local retired="$1.retired.$$"
+  mv "$1" "$retired" && rm -rf "$retired"
+}
+
 closeout_claim_acquire() {
   local operation="$1" claim
   claim="$(closeout_claim_path "$operation")" || return 1
   mkdir -p "$(dirname "$claim")"
-  if ! mkdir "$claim" 2>/dev/null; then
+  if ! closeout_claim_elect "$claim"; then
     closeout_claim_conflict_dir="$claim"
     return 1
   fi
@@ -185,7 +200,7 @@ closeout_claim_acquire() {
   closeout_claim_mode="normal"
   closeout_claim_operation="$operation"
   if ! closeout_claim_write_owner "$claim/owner.json" "$operation"; then
-    rm -rf "$claim"
+    closeout_claim_remove "$claim"
     closeout_claim_dir=""
     closeout_claim_mode=""
     closeout_claim_operation=""
@@ -217,7 +232,7 @@ closeout_claim_release() {
   fi
   owner_pid="$(closeout_journal_field "$owner_file" pid)"
   [[ "$owner_pid" == "$$" ]] || return 1
-  rm -rf "$closeout_claim_dir"
+  closeout_claim_remove "$closeout_claim_dir"
   closeout_claim_dir=""
   closeout_claim_mode=""
   closeout_claim_operation=""
@@ -247,12 +262,12 @@ closeout_claim_takeover_for_recovery() {
     fi
     rm -rf "$recovery"
   fi
-  mkdir "$recovery" 2>/dev/null || return 3
+  closeout_claim_elect "$recovery" || return 3
   closeout_claim_dir="$claim"
   closeout_claim_mode="recovery"
   closeout_claim_operation="$operation"
   if ! closeout_claim_write_owner "$recovery/owner.json" "$operation"; then
-    rm -rf "$recovery"
+    closeout_claim_remove "$recovery"
     closeout_claim_dir=""
     closeout_claim_mode=""
     closeout_claim_operation=""
@@ -267,7 +282,7 @@ closeout_claim_cancel_recovery() {
   owner_file="$closeout_claim_dir/recovery.lock/owner.json"
   owner_pid="$(closeout_journal_field "$owner_file" pid)"
   if [[ "$owner_pid" == "$$" ]]; then
-    rm -rf "$closeout_claim_dir/recovery.lock"
+    closeout_claim_remove "$closeout_claim_dir/recovery.lock"
   fi
   closeout_claim_dir=""
   closeout_claim_mode=""

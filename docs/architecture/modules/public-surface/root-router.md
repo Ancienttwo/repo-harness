@@ -95,8 +95,8 @@ sequenceDiagram
 3. **状态权威唯一。** `repo-harness state resolve --json` 是唯一入口。其他文件只在这个 JSON 指向时才读。router 不缓存也不复述状态。
 4. **`AGENTS.md` 与 `CLAUDE.md` 是两份独立的普通文件，共享规则逐字相同。** 两个文件在 host 专属章节（`## Codex` 与 `## Claude Code`）之前的部分必须相等（`tests/bootstrap-files.test.ts:160-162`）。两者不能是 symlink，也不能用 `@` 引用对方（`:153-155`）。PR #486 恢复了这个形状。
 5. **内部步骤不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 永远不公开。
-6. **专用 skill 不进入隐式发现。** `repo-harness-setup`、`repo-harness-architecture`、`repo-harness-chatgpt`、`repo-harness-strategy` 的 `profiles: []` 加上 `cli-reference` 或 `explicit-setup` 的 discoverability，使它们只能经 router 或显式安装到达。
-7. **没有兼容回落。** install state 从 protocol 1 到 2 只有一条显式迁移路径（`--migrate-profile-state`）。越界一律失败。
+6. **专用 skill 不进入隐式发现。** `repo-harness-setup`、`repo-harness-strategy` 的 `explicitOnly: true` 加上 `cli-reference` 或 `explicit-setup` 的 discoverability，使任何插件选择都不投影它们。它们只能经 router 或显式安装到达。
+7. **没有兼容回落。** install state 只读 protocol 3。protocol 2 只有一条一次性迁移路径：`repo-harness update` 在 install 事务内运行 `src/cli/installer/install-state-migration.ts`。protocol 1 必须先用 0.25.x 桥接版本迁移。越界一律失败。
 
 ### 3.2 关键权衡
 
@@ -112,7 +112,7 @@ sequenceDiagram
 先垮的是发现面，文件大小不会先垮。公开命令从约 10 个涨到 100 个时：
 
 - `SKILL.md` 不受影响。五个动作是常数，2048 字节预算与命令数无关。
-- `assets/skill-commands/manifest.json` 的 `expectedProjections` 先出问题。它手写三张表（facade、external skill、host placement），覆盖 2 个 profile 和 3 个 host。命令数增长后，要么手写维护失败，要么改成从 package 条目派生。派生会削弱"新命令默认不可发现"。
+- `assets/skill-commands/manifest.json` 的 owner 词表先出问题。selector 从每个 package 的 `owner` 和 `explicitOnly` 计算投影，没有手写投影表（#1601）。命令数增长后，压力落在 core 加 8 个插件的划分上：每个新命令都要选一个 owner，并决定是否 `explicitOnly`。
 - `retiredPackages` 只增不减（当前 20 条）。它最终会比 `packages` 本身大。
 
 ### 3.4 已知漂移
@@ -233,6 +233,11 @@ commands available without making them default model context.
 
 - #768 删除 `references/arch/**`，并从 include 删除这一条。这关闭了 §3.5 的开放问题。
 - #768 也删除 [archived best-practices.md](https://github.com/Ancienttwo/repo-harness/blob/f50c6d8c032cf6ec4776a8a671960a45ffe742af/references/best-practices.md)、[archived evaluation-playbook.md](https://github.com/Ancienttwo/repo-harness/blob/f50c6d8c032cf6ec4776a8a671960a45ffe742af/references/evaluation-playbook.md) 和 [archived hooks-guide.md](https://github.com/Ancienttwo/repo-harness/blob/f50c6d8c032cf6ec4776a8a671960a45ffe742af/references/hooks-guide.md)。没有归属的松散文档从 10 个减少到 7 个。
+
+### 2026-11-03 #1601 install profile 删除
+
+- §4 逐字保留的 P1 / P2 原文里，`--profile <profile>`、`minimal|full`、7-hook / 11-hook、protocol-2 和 `--migrate-profile-state` 都已失效。现在 `repo-harness install` 默认选择本 host 能运行的全部插件，`--plugins <ids>` 选择指定插件，`--no-plugins` 只装 core。全部 7 条 hook route 都属于 core。install state 是 protocol 3。
+- §3.1 第 6、7 条和 §3.3 按新的 owner 字段与 protocol 3 改写。
 
 ## Optimization Backlog
 

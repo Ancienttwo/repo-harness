@@ -30,12 +30,12 @@ import type { InstallTargetSpec } from "./install";
 import {
   hostSkillPlacements as catalogHostSkillPlacements,
   parseSkillSurfaceCatalog,
-  probeExpectations as catalogProbeExpectations,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
+import type { PluginId } from "../../core/skill-surface/plugin-manifest";
 import { hostSkillRoot, SKILL_HOSTS, type SkillHost } from "../../effects/host-skill-roots";
 import { skillTreeSha256 } from "../../effects/skill-tree-integrity";
-import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstalledProfile, PROFILE_COMPONENTS } from "../installer/install-profile";
+import { beginInstallHostTransaction, commitInstallHostTransaction, rollbackInstallHostTransaction, managedInstallSurfaceIsCurrent, readInstallState } from "../installer/install-profile";
 import { runProcess as runBoundedProcess } from "../../effects/process-runner";
 import { validateRepoAdoptionTarget } from "../repo-adoption/target";
 import { runAdoptionApply, runAdoptionPlan } from "./adoption-plan";
@@ -63,7 +63,7 @@ type BundledHostSkill = { skill: string; host: SkillHost; step: string };
 function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
   const manifestPath = join(sourceRoot, "assets", "skill-commands", "manifest.json");
   const source = existsSync(manifestPath) ? readFileSync(manifestPath, "utf-8") : null;
-  const resolution = parseSkillSurfaceCatalog(source, { declared: true, profileComponents: PROFILE_COMPONENTS });
+  const resolution = parseSkillSurfaceCatalog(source, { declared: true });
   if (resolution.status !== "valid") {
     const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join("; ");
     throw new Error(`invalid skill-surface catalog at ${manifestPath}: ${detail}`);
@@ -72,23 +72,17 @@ function loadSkillSurfaceCatalog(sourceRoot: string): SkillSurfaceCatalog {
 }
 
 /**
- * The unconditional (no installed-profile concept in this init flow)
- * cross-review/external-brain bundle: repo-harness-cross-review on both
- * claude and codex (host-aware provider mode selection lives inside the
- * package). Step-name prefix mirrors the
- * catalog's cross-model-acceptance vs. adaptive-workflow component split
- * (the same split that separates "cross-review skill" from "external-brain
- * skill" naming below).
+ * The provider-skill bundle: repo-harness-cross-review and the herdr portal
+ * (host-aware provider mode selection lives inside each package). Without
+ * `plugins` it is the unconditional bundle of the `repo-harness init` flow,
+ * which has no install-state concept; with `plugins` it is the part that the
+ * selection's owners project.
  */
-function crossReviewSkillsFromCatalog(catalog: SkillSurfaceCatalog): ReadonlyArray<BundledHostSkill> {
-  const crossModel = new Set(catalogProbeExpectations(catalog).crossModel);
-  const placements = catalogHostSkillPlacements(catalog);
+function crossReviewSkillsFromCatalog(catalog: SkillSurfaceCatalog, plugins?: readonly PluginId[]): ReadonlyArray<BundledHostSkill> {
+  const placements = catalogHostSkillPlacements(catalog, plugins);
   const entries: BundledHostSkill[] = [];
   for (const host of SKILL_HOSTS) {
-    for (const skill of placements[host]) {
-      const step = crossModel.has(skill) ? `cross-review skill ${skill}` : `external-brain skill ${skill}`;
-      entries.push({ skill, host, step });
-    }
+    for (const skill of placements[host]) entries.push({ skill, host, step: `cross-review skill ${skill}` });
   }
   return entries;
 }
@@ -229,7 +223,7 @@ function syncBundledItemsAtHome(
   env?: NodeJS.ProcessEnv,
 ): InitStep[] {
   const steps: InitStep[] = [];
-  const installed = home ? readInstalledProfile({ ...env, HOME: home }) : null;
+  const installed = home ? readInstallState({ ...env, HOME: home }) : null;
   const globalRoot = bunGlobalPackageRoot(env);
   const globalSource = isBunGlobalPackageSource(sourceRoot, env);
   const useLinks = globalSource
@@ -298,9 +292,10 @@ export function syncCrossReviewSkills(
   sourceRoot: string,
   target: InstallTargetSpec,
   env?: NodeJS.ProcessEnv,
+  plugins?: readonly PluginId[],
 ): InitStep[] {
   const catalog = loadSkillSurfaceCatalog(sourceRoot);
-  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog), env);
+  return syncBundledItemsAtHome(sourceRoot, target, homeDir(env), crossReviewSkillsFromCatalog(catalog, plugins), env);
 }
 
 export function runInit(

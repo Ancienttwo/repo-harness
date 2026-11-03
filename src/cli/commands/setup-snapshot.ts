@@ -14,7 +14,6 @@ import { buildSetupCheck, type SetupCheckBuild } from './init-hook';
 import { HOOK_EVENT_TELEMETRY_PATH, HOOK_EVENT_TELEMETRY_PROTOCOL } from '../hook/event-telemetry';
 import { ROUTES } from '../hook/route-registry';
 import { resolveRepoRoot } from '../hook/runtime';
-import { PROFILE_COMPONENTS } from '../installer/install-profile';
 import { projectSetupSnapshot, type SetupRawFleetRole } from '../../core/setup/projection';
 import type { SetupHookUsage, SetupSnapshotV2 } from '../../core/setup/types';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
@@ -38,7 +37,7 @@ export function readFleetRoles(directory: string = SETUP_FLEET_SOURCE_DIR): Setu
 function skillSummaries(env: NodeJS.ProcessEnv): Map<string, string> {
   try {
     const manifest = readFileSync(join(skillProjectionSourceRoot(env), 'assets', 'skill-commands', 'manifest.json'), 'utf8');
-    const catalog = parseSkillSurfaceCatalog(manifest, { declared: true, profileComponents: PROFILE_COMPONENTS });
+    const catalog = parseSkillSurfaceCatalog(manifest, { declared: true });
     return catalog.status === 'valid' ? new Map(catalog.catalog.packages.map(pkg => [pkg.name, pkg.summary])) : new Map();
   } catch {
     return new Map();

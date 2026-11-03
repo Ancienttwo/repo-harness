@@ -285,7 +285,8 @@ describe('Skills page', () => {
     expect(window.location.hash).toBe('#tools/waza');
     expect(text('[data-tool-drawer]')).toContain('tw93');
     expect(text('[data-tool-drawer]')).toContain('planning · debugging · review');
-    expect(text('[data-tool-drawer]')).toContain('full');
+    // The catalog records the install owner (core, a plugin id or none) in place of install profiles.
+    expect(text('[data-tool-drawer]')).toContain('Installed bycore');
     for (const id of ['herdr-skill', 'hai-stack']) {
       await act(async () => navLink('skills').click());
       await act(async () => document.querySelector<HTMLButtonElement>(`[data-tool="${id}"] > button`)!.click());

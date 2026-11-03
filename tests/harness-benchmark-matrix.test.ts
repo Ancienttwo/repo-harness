@@ -386,17 +386,17 @@ describe('No Harness / Lite / Strict benchmark authority', () => {
     const artifactInstall = block.indexOf(
       'const installedCli = installBenchmarkRuntimeArtifact(runtimeArtifact, hostRoot);',
     );
-    const installProfile = block.indexOf(
-      "const installProfile = profile === 'adaptive-lite' ? 'minimal' : 'full';",
+    const installSelection = block.indexOf(
+      "const selection = profile === 'adaptive-lite' ? ['--no-plugins'] : [];",
     );
 
     expect(noHarness).toBeGreaterThanOrEqual(0);
     expect(artifactInstall).toBeGreaterThan(noHarness);
-    expect(installProfile).toBeGreaterThan(artifactInstall);
+    expect(installSelection).toBeGreaterThan(artifactInstall);
     expect(source).toContain("assertPathOutsideRoot(installedCli, ROOT, 'installed benchmark CLI')");
     expect(block).not.toContain("'add', '-g'");
     expect(block).toContain("run(installedCli, ['init'");
-    expect(block).toContain("'install', '--profile', installProfile");
+    expect(block).toContain("'install', ...selection, '--target', provider");
     expect(block).toContain("'--no-cli'");
     expect(block).not.toContain("join(ROOT, 'src/cli/index.ts')");
   });

@@ -8,7 +8,7 @@ layer: cli
 summary: Builds the repo-harness command tree from the core and plugin command modules and runs the update transactions.
 responsibilities:
   - Register every top-level command module in one commander program.
-  - Run the profile projection and runtime refresh inside one host transaction with configuration restores.
+  - Run the plugin selection projection and runtime refresh inside one host transaction with configuration restores.
 extensions:
   harnessTier: "composition"
 source:

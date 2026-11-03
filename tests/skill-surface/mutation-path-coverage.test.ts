@@ -30,9 +30,9 @@ function catalogWithSyntheticPackage(newName: string): SkillSurfaceCatalog {
     source: ".",
     provider: null,
     hosts: ["claude", "codex"] as const,
-    profiles: ["minimal", "full"] as const,
+    owner: "core" as const,
+    explicitOnly: false,
     discoverability: "always" as const,
-    component: "cli",
     requires: [],
     mutatesRepoByDefault: false,
     summary: "root router",
@@ -44,9 +44,9 @@ function catalogWithSyntheticPackage(newName: string): SkillSurfaceCatalog {
     source: `assets/skill-commands/${newName}`,
     provider: null,
     hosts: ["claude", "codex"] as const,
-    profiles: ["full"] as const,
+    owner: "product" as const,
+    explicitOnly: false,
     discoverability: "profile-facade" as const,
-    component: "adaptive-workflow",
     requires: [],
     mutatesRepoByDefault: false,
     summary: "a synthetic facade the real manifest has never declared",
@@ -73,7 +73,7 @@ describe("mutation-path coverage: a synthetic new catalog package is picked up w
       expect(repoHarnessSkills).toContain(newName);
 
       // Construct the same per-host destination shape
-      // installProfileHostMutationPaths() builds from its own catalog-derived
+      // runtimeHostMutationPaths() builds from its own catalog-derived
       // name lists (join(home, host, 'skills', name) for both hosts), proving
       // the generic path-construction/transaction machinery correctly covers
       // whatever names a catalog-driven selector produces -- including one
