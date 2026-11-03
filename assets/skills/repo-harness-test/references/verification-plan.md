@@ -33,7 +33,6 @@ script such as `bun run check:ci` already runs.
 allowlist:
 
 - `README.md` and `DEBUG.md`
-- `docs/architecture/.projection-manifest.json`
 - `tasks/lessons.md`
 - any `.md` under `docs/` or `examples/`, **except** anything under
   `docs/reference-configs/`
@@ -51,8 +50,13 @@ It also counts a test that starts a child process in, or against, the checkout
 root. The check is lexical: it sees a `spawn`/`exec` call in the same test file
 whose whole argument resolves to the root. It does not see a helper in another
 file, a default parameter, an inherited working directory or a launcher with
-another name. The daily full suite covers those cases. `scripts/select-ci-coverage.ts` runs the scanner during CI selection. A changed
-documentation path selects exactly that list. There is no hand-kept copy.
+another name. The daily full suite covers those cases. `scripts/select-ci-coverage.ts` runs the scanner during CI selection. In a mixed
+diff, a changed documentation path selects that whole list. The scanner also
+records the documents that each test names (a literal path or a glob). A
+documentation-only diff selects only the tests that name a changed document; a
+test that only starts a process in the checkout root runs in the daily suite.
+A test that guards a document invariant must name the documents it reads.
+With no named reader, the diff runs no build or test job. There is no hand-kept copy.
 
 So a new test that reads a real document from the checkout (rather than from a
 temporary fixture it wrote itself) joins the list automatically. Run
