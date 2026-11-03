@@ -1,13 +1,13 @@
 import { mkdirSync, appendFileSync } from 'fs';
 import { dirname } from 'path';
 import { publicationSha256, stablePublicationJson } from '../../src/core/publication/publication-receipt';
-import { canonicalReactionAttemptReceiptBytes, type ReactionAttemptReceiptV1 } from '../../src/core/publication/feedback';
+import { validateReactionAttemptReceipt, type ReactionAttemptReceiptV1 } from '../../src/core/publication/feedback';
 import { feedbackReactionLedgerPath } from '../../src/effects/publication/feedback-store';
 
 export function seedReactionReceipt(root: string, publicationId: string, receipt: ReactionAttemptReceiptV1, gitBin = 'git'): string {
   const path = feedbackReactionLedgerPath(root, publicationId, gitBin);
   mkdirSync(dirname(path), { recursive: true });
-  appendFileSync(path, `${canonicalReactionAttemptReceiptBytes(receipt)}\n`);
+  appendFileSync(path, `${stablePublicationJson(validateReactionAttemptReceipt(receipt))}\n`);
   return path;
 }
 
