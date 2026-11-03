@@ -6,7 +6,8 @@ import { tmpdir } from 'node:os';
 import { dirname, join, relative, resolve } from 'node:path';
 import { API, type Checker, type Project, type Snapshot } from 'typescript/unstable/async';
 import { ARCHCTX_REQUIRED_VERSION } from '../src/core/architecture/projection';
-import { readArchitectureNativeContext, runPackageLocalArchctxJson } from '../src/effects/architecture/archctx-provider';
+import { runPackageLocalArchctxJson } from '../src/effects/architecture/archctx-provider';
+import { readArchitectureNativeContext } from '../src/effects/architecture/architecture-read';
 import {
   NodeFlags,
   SyntaxKind,

@@ -4,12 +4,11 @@ import { join } from 'node:path';
 import { Command } from 'commander';
 import type { ArchitectureDebtItemV1, ArchitectureDebtReportV1 } from 'archctx-contracts';
 import {
-  ArchctxClientError,
   completeArchitectureDebt,
   indexPackageLocalCodeGraph,
   stopWorkspaceArchitectureDaemons,
-  type ArchctxProviderOptions,
 } from '../../effects/architecture/archctx-provider';
+import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
 import { gitSpawnSync } from '../../effects/git/runner';
 import { recordWorktree, endWorktreeRecord, type WorktreeRecord } from '../../effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';

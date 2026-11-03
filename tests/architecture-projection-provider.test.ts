@@ -22,25 +22,21 @@ import {
   type ProjectionRequestV1,
   type ProjectionResultV2,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource, type ArchitectureProjectionPolicy } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type ArchctxProcessResult, type NativeContextSource, type ArchitectureProjectionPolicy, type RunArchctxProcess } from '../src/core/architecture/projection';
 import {
   archctxCapabilities,
-  ArchctxClientError,
   architectureProjectionRequest,
   verifyArchctxDaemonRuntime,
   inspectArchitectureProjectionReadiness,
   readArchitectureProjectionSnapshot,
-  readArchitectureNativeContext,
   resolveCompatibleNodeRuntime,
   resolvePackageLocalArchctx,
   readArchitectureDocsAnchors,
-  readArchitectureHandEdits,
   readArchitectureProjectionApply,
   runArchitectureProjection,
   stopWorkspaceArchitectureDaemons,
-  type ArchctxProcessResult,
-  type RunArchctxProcess,
 } from '../src/effects/architecture/archctx-provider';
+import { architectureModelReady, readArchitectureNativeContext, readArchitectureHandEdits } from '../src/effects/architecture/architecture-read';
 import { trustedNodeCandidates } from '../src/effects/runtime/node-candidates';
 import { architectureProjectionExitCode, buildArchitectureProjectionCommand, humanActionLine } from '../src/cli/commands/architecture-projection';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
@@ -492,7 +488,7 @@ describe('native architecture context', () => {
         if (args[0] === 'doctor') return { status: 0, signal: null, stderr: '', stdout: JSON.stringify(doctorEnvelope(state, state === 'ready' ? [] : [{ code: 'version-mismatch', message: 'CodeGraph repository status version mismatch' }])) };
         return baseRun(binary, args, options);
       };
-      const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+      const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { consumerRoot: f.consumerRoot, policy, run });
       expect(readiness.projectionProvider.state).toBe('ready');
       expect(readiness.codeFacts.state).toBe(state);
       expect(readiness.apply.enabled).toBe(state === 'ready');
@@ -511,7 +507,7 @@ describe('native architecture context', () => {
         : knownFailure('AC_PRECONDITION_FAILED', 'native-context-input-missing');
       return { status: 1, signal: null, stdout: JSON.stringify(failureEnvelope('export.native', failure)), stderr: '' };
     };
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run });
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run });
     expect(readiness.apply.enabled).toBe(false);
     if (kind === 'typed') {
       expect(readiness.projectionProvider.state).toBe('disabled');
@@ -752,7 +748,7 @@ describe('package-local ArchContext projection provider', () => {
     const f = fixture();
     const options = { consumerRoot: f.consumerRoot, policy, run: runner([], projectionEnvelope(expectedSnapshot)) };
     rmSync(join(f.repoRoot, '.ai/harness/policy.json'));
-    const missing = inspectArchitectureProjectionReadiness(f.repoRoot, options);
+    const missing = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, options);
     expect(missing.modelAuthority.source).toBe('unadopted');
     expect(missing.projectionProvider.state).toBe('missing');
     expect(missing.projectionProvider.reason).toContain('run repo-harness init');
@@ -760,7 +756,7 @@ describe('package-local ArchContext projection provider', () => {
     const run: RunArchctxProcess = (_bin, args) => ({ status: 0, signal: null, stderr: '', stdout: JSON.stringify(args[0] === 'capabilities' ? capabilities() : {
       schemaVersion: 'archcontext.envelope/v1', ok: true, requestId: 'daemon.status', data: { running: true, versionUnsupported: { reason: 'product-version-mismatch', expected: ARCHCTX_REQUIRED_VERSION, received: '0.6.3', action: 'upgrade-archctx-runtime', command: 'archctx daemon upgrade' } },
     }) });
-    const mismatch = inspectArchitectureProjectionReadiness(f.repoRoot, { ...options, run });
+    const mismatch = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { ...options, run });
     expect(mismatch.projectionProvider.state).toBe('mismatch');
     expect(mismatch.daemonRuntime.state).toBe('mismatch');
     expect(mismatch.apply.enabled).toBe(false);
@@ -777,7 +773,7 @@ describe('package-local ArchContext projection provider', () => {
       calls.push({ binary, args });
       return { status: 0, signal: null, stdout: JSON.stringify(doctorEnvelope('not-ready', issues)), stderr: '' };
     };
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { consumerRoot: f.consumerRoot, policy, run });
     expect(readiness.projectionProvider.state).toBe('ready');
     expect(readiness.codeFacts).toEqual({ requirement: 'required', state: 'not-ready', issues });
     expect(readiness.apply.enabled).toBe(false);
@@ -793,13 +789,13 @@ describe('package-local ArchContext projection provider', () => {
       ? { status: 0, signal: null, stderr: '', stdout: JSON.stringify(doctor) }
       : baseRun(binary, args, options);
     const options = { consumerRoot: f.consumerRoot, policy, run };
-    const invalid = inspectArchitectureProjectionReadiness(f.repoRoot, options);
+    const invalid = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, options);
     expect(invalid.projectionProvider.state).toBe('error');
     expect(invalid.projectionProvider.reason).toContain('RH_ARCHCTX_DOCTOR_INVALID');
     expect(invalid.apply.enabled).toBe(false);
     const facts = { schemaVersion: 'archcontext.repository-code-facts/v1', state: 'unavailable' as const, requiredVersion: '1.6.2', reasonCode: 'codegraph-unavailable', message: 'CodeGraph binary is unavailable' };
     doctor = { ...doctorEnvelope(), data: { codeFacts: facts } };
-    const unavailable = inspectArchitectureProjectionReadiness(f.repoRoot, options);
+    const unavailable = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, options);
     expect(unavailable.codeFacts).toEqual({ requirement: 'required', state: facts.state, issues: [], reasonCode: facts.reasonCode, message: facts.message });
     expect(unavailable.apply.enabled).toBe(false);
     expect(unavailable.next).toBe('repo-harness update');
@@ -811,7 +807,7 @@ describe('package-local ArchContext projection provider', () => {
     const run: RunArchctxProcess = (binary, args, options) => args[0] === 'doctor'
       ? { status: 0, signal: null, stderr: '', stdout: JSON.stringify(doctorEnvelope('ready')) }
       : baseRun(binary, args, options);
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy, run });
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { consumerRoot: f.consumerRoot, policy, run });
     expect(readiness.codeFacts.state).toBe('ready');
     expect(readiness.apply.enabled).toBe(false);
     const reference = /in (\/.+worker\.md)\.$/.exec(readiness.next!)?.[1];
@@ -837,7 +833,7 @@ describe('package-local ArchContext projection provider', () => {
       const node = join(fakeBin, 'node');
       writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
       chmodSync(node, 0o755);
-      return inspectArchitectureProjectionReadiness(f.repoRoot, {
+      return inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
         consumerRoot: f.consumerRoot, policy, env: { PATH: fakeBin }, trustedNodeCandidateSource: () => [], run: runner([], projectionEnvelope(expectedSnapshot)),
       });
     };
@@ -1209,7 +1205,7 @@ describe('package-local ArchContext projection provider', () => {
   test('disabled readiness performs zero subprocess calls', () => {
     const f = fixture();
     const calls: Array<{ binary: string; args: readonly string[] }> = [];
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: runner(calls, projectionEnvelope(expectedSnapshot)) });
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { consumerRoot: f.consumerRoot, policy: { ...policy, provider: 'disabled', applyMode: 'disabled' }, run: runner(calls, projectionEnvelope(expectedSnapshot)) });
     expect(readiness.projectionProvider.state).toBe('disabled');
     expect(calls).toHaveLength(0);
   });
@@ -1224,7 +1220,7 @@ describe('package-local ArchContext projection provider', () => {
     const node = join(fakeBin, 'node');
     writeFileSync(node, '#!/bin/sh\necho v24.1.0\n');
     chmodSync(node, 0o755);
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
       consumerRoot: f.consumerRoot,
       policy,
       env: { PATH: fakeBin },
@@ -1244,7 +1240,7 @@ describe('package-local ArchContext projection provider', () => {
     copyFileSync(join(import.meta.dir, '..', '.archcontext', 'manifest.yaml'), join(f.repoRoot, '.archcontext', 'manifest.yaml'));
     writeFileSync(join(f.repoRoot, '.archcontext', 'product.yaml'), 'name: fixture\n');
     const nodes = join(f.repoRoot, '.archcontext', 'model', 'nodes');
-    const inspect = () => inspectArchitectureProjectionReadiness(f.repoRoot, { policy: { ...policy, provider: 'disabled', applyMode: 'disabled' } });
+    const inspect = () => inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { policy: { ...policy, provider: 'disabled', applyMode: 'disabled' } });
     // A valid manifest and capability export leave no adoption step.
     expect(inspect().next).toBeNull();
     // An uncommitted node deletion is a worktree precondition fault, not an unadopted model.
@@ -1278,7 +1274,7 @@ describe('package-local ArchContext projection provider', () => {
     const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
     // An exported runtime authority must not rescue this failure mode.
     delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
       consumerRoot: f.consumerRoot,
       policy,
       env: pathOnlyEnv,
@@ -1300,7 +1296,7 @@ describe('package-local ArchContext projection provider', () => {
     chmodSync(node, 0o755);
     const pathOnlyEnv: NodeJS.ProcessEnv = { ...process.env, PATH: fakeBin };
     delete pathOnlyEnv.REPO_HARNESS_NODE_BIN;
-    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, {
+    const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, {
       consumerRoot: f.consumerRoot,
       policy: { ...policy, provider: 'disabled', applyMode: 'disabled' },
       env: pathOnlyEnv,

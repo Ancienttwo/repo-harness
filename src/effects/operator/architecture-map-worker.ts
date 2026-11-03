@@ -11,7 +11,6 @@ import { join } from 'node:path';
 
 import type { ArchitectureFlowSelectorCheckV1, DependencyConstraintEvaluationV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
 import {
-  ARCHCTX_REQUIRED_VERSION,
   decodeArchitectureDebtReport,
   decodeConstraintEvaluation,
   decodeDocsAnchorsReport,
@@ -55,7 +54,7 @@ import {
 } from '../../core/operator/architecture-map';
 import { isPublicRepoPath, publicDevActivityText } from '../../core/operator/public-text';
 import { readCommittedNativeContext } from '../architecture/model-reader';
-import { runPackageLocalArchctxJson } from '../architecture/archctx-provider';
+import { ARCHITECTURE_VIEW_TIMEOUT_MS, readArchitectureView, resolveArchitecturePaths, type ArchitectureViewArgs } from '../architecture/architecture-read';
 import { gitSpawnSync } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { publicValue } from './architecture';
@@ -68,7 +67,6 @@ const MODEL_ROOT = '.archcontext/model';
 const CONSTRAINT_ROOT = `${MODEL_ROOT}/constraints`;
 /** `archctx resolve` echoes each node's footprint per path; this many paths stay well under its 8 MiB output cap. */
 const RESOLVE_BATCH = 2_000;
-const ARCHCTX_TIMEOUT_MS = 60_000;
 /** All PR impact reads share this budget, including runtime selection. */
 export const ARCHITECTURE_MAP_PR_BUDGET_MS = 20_000;
 const GIT_TIMEOUT_MS = 30_000;
@@ -199,26 +197,11 @@ export function recheckLayers(
 /** The deepest owning node of each path. An unmatched or contested path has no owner. */
 function resolveOwners(root: string, paths: readonly string[]): ReadonlyMap<string, string | null> {
   const owners = new Map<string, string | null>();
-  if (paths.length === 0) return owners;
-  const dir = mkdtempSync(join(tmpdir(), 'repo-harness-architecture-map-'));
-  try {
-    for (let start = 0; start < paths.length; start += RESOLVE_BATCH) {
-      const batch = paths.slice(start, start + RESOLVE_BATCH);
-      const file = join(dir, 'paths.txt');
-      writeFileSync(file, `${batch.join('\n')}\n`, { mode: 0o600 });
-      // Exit 2 means at least one ambiguous path; the envelope still carries every result.
-      const { value } = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, ['resolve', '--paths-from', file, '--json'], {}, ARCHCTX_TIMEOUT_MS, true);
-      const results = isRecord(value) && value.ok === true && isRecord(value.data) ? value.data.results : null;
-      if (!Array.isArray(results) || results.length !== batch.length) throw new Error('archctx resolve result count');
-      results.forEach((result, index) => {
-        if (!isRecord(result) || result.path !== batch[index] || typeof result.matched !== 'boolean' || typeof result.ambiguous !== 'boolean') {
-          throw new Error('archctx resolve result');
-        }
-        owners.set(batch[index]!, result.matched && !result.ambiguous ? string(result.stableId) : null);
-      });
-    }
-  } finally {
-    rmSync(dir, { recursive: true, force: true });
+  for (let start = 0; start < paths.length; start += RESOLVE_BATCH) {
+    const batch = paths.slice(start, start + RESOLVE_BATCH);
+    const read = resolveArchitecturePaths(root, batch, {}, ARCHITECTURE_VIEW_TIMEOUT_MS);
+    if (!read.ok) throw new Error('archctx resolve');
+    read.owners.forEach((owner, index) => owners.set(batch[index]!, owner.stableId));
   }
   return owners;
 }
@@ -237,18 +220,9 @@ function readSizes(root: string, commit: string, checkout: CheckoutState): Archi
 
 type Violation<Fields> = ({ readonly state: 'ok' } & Fields) | { readonly state: 'unavailable'; readonly reason: ArchitectureViolationReason };
 
-/** One archctx JSON command: its data, or its error envelope's codes. null: the run failed or gave no envelope. */
-function runArchctx(root: string, args: readonly string[], deadlineMs?: number): { readonly ok: true; readonly data: Record_ } | { readonly ok: false; readonly error: Record_ | null } {
-  let value: unknown;
-  try { value = runPackageLocalArchctxJson(root, ARCHCTX_REQUIRED_VERSION, args, { deadlineMs }, ARCHCTX_TIMEOUT_MS, true).value; }
-  catch { return { ok: false, error: null }; }
-  if (isRecord(value) && value.ok === true && isRecord(value.data)) return { ok: true, data: value.data };
-  return { ok: false, error: isRecord(value) && value.ok === false && isRecord(value.error) ? value.error : null };
-}
-
 /** An error envelope or a failed run is a reason, never a partial answer. */
-function archctxData(root: string, args: readonly string[]): Record_ | ArchitectureViolationReason {
-  const read = runArchctx(root, args);
+function archctxData(root: string, args: ArchitectureViewArgs): Record_ | ArchitectureViolationReason {
+  const read = readArchitectureView(root, args);
   if (read.ok) return read.data;
   return read.error?.code === 'AC_CODE_FACTS_UNAVAILABLE' ? 'code_facts_unavailable' : 'archctx_failed';
 }
@@ -278,8 +252,8 @@ const lineList = (stdout: Buffer): string[] => stdout.toString('utf8').split('\n
  * error keeps its codes; a failed run or an answer that breaks the published
  * contract is `archctx_failed`. There is no local fallback.
  */
-function readImpact(root: string, args: readonly string[], source: RefImpactSource, deadlineMs?: number): { readonly ok: true; readonly report: RefImpactV1 } | { readonly ok: false; readonly gap: typeof ARCHCTX_FAILED | ArchctxRefusalV1 } {
-  const read = runArchctx(root, ['impact', ...args, '--json'], deadlineMs);
+function readImpact(root: string, args: Extract<ArchitectureViewArgs, readonly ['impact', ...string[]]>, source: RefImpactSource, deadlineMs?: number): { readonly ok: true; readonly report: RefImpactV1 } | { readonly ok: false; readonly gap: typeof ARCHCTX_FAILED | ArchctxRefusalV1 } {
+  const read = readArchitectureView(root, args, { deadlineMs });
   if (!read.ok) return { ok: false, gap: (read.error && archctxRefusal(read.error.code, read.error.reasonCode)) ?? ARCHCTX_FAILED };
   const report = decoded(value => decodeRefImpact(value, source), read.data);
   return report === null ? { ok: false, gap: ARCHCTX_FAILED } : { ok: true, report };
@@ -300,7 +274,7 @@ function readChanges(root: string, commit: string, since: string): ArchitectureC
   if (chain.status !== 0 || lineList(chain.stdout).slice(0, commits).join('\n') !== lineList(today.stdout).join('\n')) return { state: 'unavailable', reason: 'git_read_failed' };
   const base = lineList(chain.stdout)[commits];
   if (base === undefined) return { state: 'unavailable', reason: 'history_starts_today' };
-  const impact = readImpact(root, ['--base', base, '--head', commit], { kind: 'refs', base, head: commit });
+  const impact = readImpact(root, ['impact', '--base', base, '--head', commit, '--json'], { kind: 'refs', base, head: commit });
   if (!impact.ok) return impact.gap;
   const { modelDelta } = impact.report;
   // Two refs always give a known model delta; `unknown` belongs to a path list.
@@ -318,7 +292,7 @@ function readPullRequestImpact(root: string, commit: string, dir: string, pr: Ar
   try {
     const file = join(dir, `pull-request-${pr.number}.txt`);
     writeFileSync(file, pr.changed_files.paths.map(path => `${path}\n`).join(''), { mode: 0o600 });
-    const impact = readImpact(root, ['--paths-from', file], { kind: 'paths', head: commit }, deadlineMs);
+    const impact = readImpact(root, ['impact', '--paths-from', file, '--json'], { kind: 'paths', head: commit }, deadlineMs);
     return impact.ok ? { state: 'ok', ...architectureImpact(impact.report) } : impact.gap;
   } catch { return ARCHCTX_FAILED; }
 }
@@ -419,7 +393,7 @@ function readDependencies(root: string, commit: string, checkout: CheckoutState,
  * `AC_CODE_FACTS_UNAVAILABLE`.
  */
 function readFlows(root: string, capabilities: ReadonlySet<string>, stepSelectors: ReadonlySet<string>, declaredSelectors: ReadonlySet<string>): ArchitectureViolationsLayerV1['flows'] {
-  const read = runArchctx(root, ARCHITECTURE_VIOLATION_READS.flows);
+  const read = readArchitectureView(root, ARCHITECTURE_VIOLATION_READS.flows);
   if (!read.ok) return archctxGap(read.error);
   const report = decoded(decodeFlowSelectorCheck, read.data);
   return report === null ? ARCHCTX_FAILED : flowProofSection(report, capabilities, stepSelectors, declaredSelectors);
@@ -483,7 +457,7 @@ function readLayerDirection(root: string, commit: string, checkout: CheckoutStat
   const constraints = layerDirectionConstraints(root, commit);
   if (constraints === null) return ARCHCTX_FAILED;
   if (constraints.size === 0) return { state: 'unavailable', reason: 'layer_direction_undeclared' };
-  const read = runArchctx(root, ARCHITECTURE_VIOLATION_READS.layer_direction);
+  const read = readArchitectureView(root, ARCHITECTURE_VIOLATION_READS.layer_direction);
   if (!read.ok) return archctxGap(read.error);
   const report = decoded(decodeConstraintEvaluation, read.data);
   return report === null ? ARCHCTX_FAILED : layerDirectionSection(report, constraints, known);

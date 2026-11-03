@@ -1,7 +1,6 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync } from 'node:fs';
-import { tmpdir } from 'node:os';
-import { join, resolve } from 'node:path';
-import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
+import { statSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
 import {
   capabilityPathResolutionFromArchcontextOwners,
   capabilityIdentityFromNodeId,
@@ -14,7 +13,7 @@ import {
   type CapabilityPathResolution,
   type CapabilityRegistryDiagnostic,
 } from '../../core/capabilities/registry';
-import { ArchctxClientError, readArchitectureNativeContext, runPackageLocalArchctxJson, type ArchctxProviderOptions } from './archctx-provider';
+import { readArchitectureNativeContext, resolveArchitecturePaths } from './architecture-read';
 import { currentReadonlyObservation } from '../readonly-observation';
 
 export interface ArchcontextOwnerLookup<C> {
@@ -72,35 +71,6 @@ function isDirectory(repoRoot: string, path: string): boolean {
   try { return statSync(resolve(repoRoot, path)).isDirectory(); } catch { return false; }
 }
 
-/**
- * archctx ran and answered with an error envelope: it rejected the model, so
- * the model needs repair. This is a registry fault, not an unavailable runtime.
- */
-function rejectedModel(value: unknown): CapabilityRegistryDiagnostic | null {
-  if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || value.ok !== false) return null;
-  const error = isRecord(value.error) ? `${String(value.error.code)}: ${String(value.error.message)}` : 'unknown error';
-  return { code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: `archctx resolve rejected the model: ${error}` };
-}
-
-function readOwners(value: unknown, queries: readonly string[]): ArchctxResolveResult[] {
-  if (!isRecord(value) || value.schemaVersion !== 'archcontext.envelope/v1' || value.ok !== true) throw new Error('archctx resolve returned an invalid envelope');
-  const results = isRecord(value.data) ? value.data.results : undefined;
-  if (!Array.isArray(results) || results.length !== queries.length) throw new Error('archctx resolve returned a result count that does not match the request');
-  return results.map((result, index) => {
-    if (!isRecord(result) || result.path !== queries[index] || typeof result.matched !== 'boolean' || typeof result.ambiguous !== 'boolean'
-      || (result.owningCapabilityId !== null && typeof result.owningCapabilityId !== 'string')
-      || (result.candidates !== undefined && (!Array.isArray(result.candidates) || result.candidates.some((entry) => typeof entry !== 'string')))) {
-      throw new Error(`archctx resolve returned an invalid result for ${queries[index]}`);
-    }
-    return {
-      matched: result.matched,
-      ambiguous: result.ambiguous,
-      owningCapabilityId: result.owningCapabilityId as string | null,
-      candidates: (result.candidates ?? []) as string[],
-    };
-  });
-}
-
 function prepareQueries(repoRoot: string, inputPaths: readonly string[]) {
   const diagnostics: CapabilityRegistryDiagnostic[] = [];
   const paths: string[] = [];
@@ -155,22 +125,15 @@ export function resolveArchcontextCapabilityPaths<C extends { readonly id: strin
     };
   }
   if (misses.length > 0) {
-    const dir = mkdtempSync(join(tmpdir(), 'repo-harness-archctx-resolve-'));
-    try {
-      const listPath = join(dir, 'paths.txt');
-      writeFileSync(listPath, `${misses.join('\n')}\n`, { mode: 0o600 });
-      // Exit 2 means at least one ambiguous path; the envelope still carries every result.
-      const { value } = runPackageLocalArchctxJson(repoRoot, ARCHCTX_REQUIRED_VERSION, ['resolve', '--paths-from', listPath, '--json'], options, RESOLVE_TIMEOUT_MS, true);
-      const rejected = rejectedModel(value);
-      if (rejected) {
-        return { status: 'invalid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [...diagnostics, rejected] };
-      }
-      const resolved = new Map(readOwners(value, misses).map((result, index) => [misses[index]!, result]));
-      cache?.store(resolved);
-      for (const [query, result] of resolved) answers.set(query, result);
-    } finally {
-      rmSync(dir, { recursive: true, force: true });
+    const read = resolveArchitecturePaths(repoRoot, misses, options, RESOLVE_TIMEOUT_MS);
+    if (!read.ok) {
+      // archctx ran and rejected the model: the model needs repair. This is a registry fault, not an unavailable runtime.
+      const rejected: CapabilityRegistryDiagnostic = { code: 'ARCHCONTEXT_MODEL_REJECTED', path: '.archcontext/model/nodes', message: `archctx resolve rejected the model: ${read.error.code}: ${read.error.message}` };
+      return { status: 'invalid', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [...diagnostics, rejected] };
     }
+    const resolved = new Map(read.owners.map(({ matched, ambiguous, owningCapabilityId, candidates }, index) => [misses[index]!, { matched, ambiguous, owningCapabilityId, candidates }]));
+    cache?.store(resolved);
+    for (const [query, result] of resolved) answers.set(query, result);
   }
   const resolution = capabilityPathResolutionFromArchcontextOwners(owners, queries.map((query, index) => ({ ...answers.get(query)!, path: paths[index]! })));
   if (diagnostics.length === 0) return resolution;

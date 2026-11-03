@@ -11,7 +11,8 @@ import {
 } from "../src/core/capabilities/registry";
 
 import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, resolveArchcontextCapabilityPaths } from "../src/effects/architecture/archcontext-owners";
-import { ArchctxClientError, readArchitectureNativeContext } from "../src/effects/architecture/archctx-provider";
+import { readArchitectureNativeContext } from "../src/effects/architecture/architecture-read";
+import { ArchctxClientError } from "../src/core/architecture/projection";
 import { withReadonlyObservation } from "../src/effects/readonly-observation";
 
 const ROOT = join(import.meta.dir, "..");
@@ -366,6 +367,7 @@ describe("capability source: archctx resolve envelope checks", () => {
     expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: "yes", ambiguous: false, owningCapabilityId: null }]))).toThrow("invalid result");
     expect(() => resolveWith(JSON.stringify({ schemaVersion: "other", ok: true }))).toThrow("invalid envelope");
     expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: false, ambiguous: true, owningCapabilityId: null, candidates: "a" }]))).toThrow("invalid result");
+    expect(() => resolveWith(envelope([{ path: "apps/web/page.tsx", matched: true, ambiguous: false, owningCapabilityId: "capability.web.app" }]))).toThrow("invalid result");
   });
 
   test("joins the recorded archctx 0.7.2 batch, exit 2 included, through the owner model", () => {

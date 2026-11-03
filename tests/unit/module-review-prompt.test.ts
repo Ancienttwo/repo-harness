@@ -1,10 +1,9 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { readFileSync, rmSync, symlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { ArchctxClientError } from '../../src/effects/architecture/archctx-provider';
+import { ArchctxClientError, decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../src/core/architecture/projection';
 import { ArchitectureModelReader } from '../../src/effects/architecture/model-reader';
 import { generatedSummaryState, moduleGraph, type ModelNode } from '../../src/core/architecture/module-view';
-import { decodeDocsAnchorsReport, decodeProjectionCheckFreshness } from '../../src/core/architecture/projection';
 import { decodeArchitectureModuleDetail, decodeArchitectureReviewPrompt } from '../../src/core/operator/architecture';
 import { projectionResultReceiptDigest } from 'archctx-contracts';
 import { sha256 } from '../../src/core/review/module-review-prompt';
