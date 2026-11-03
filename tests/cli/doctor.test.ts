@@ -25,7 +25,7 @@ import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notif
 import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
-// The default selection on a host without DSH and without `pi` on PATH.
+// The default selection on a host without `pi` on PATH.
 const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
 // No ledger: the doctor judges the install default `all`, so the repair is a bare install.
 const DEFAULT_FIX = installSelectionCommand('all');
@@ -34,16 +34,12 @@ const DEFAULT_FIX_LINE = /run: repo-harness install(?:;|$)/m;
 function withTempHome(fn: (home: string) => void): void {
   const tmp = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-')));
   const prev = process.env.HOME;
-  const prevDsh = process.env.DSH_HOME;
   process.env.HOME = tmp;
-  delete process.env.DSH_HOME;
   try {
     fn(tmp);
   } finally {
     if (prev === undefined) delete process.env.HOME;
     else process.env.HOME = prev;
-    if (prevDsh === undefined) delete process.env.DSH_HOME;
-    else process.env.DSH_HOME = prevDsh;
     fs.rmSync(tmp, { recursive: true, force: true });
   }
 }
@@ -941,7 +937,7 @@ describe('doctor skill projection', () => {
 
 test('each skill-projection repair command keeps the recorded selection and passes the install selection gate', () => {
   const rows: readonly { readonly selection: 'all' | readonly PluginId[]; readonly plugins: readonly PluginId[]; readonly pi?: true; readonly repair: string }[] = [
-    // `all` on a host without pi and DSH runs peer-runtime, which has no Codex host: a `--target codex` repair would fail the gate.
+    // `all` on a host without pi runs peer-runtime, which has no Codex host: a `--target codex` repair would fail the gate.
     { selection: 'all', plugins: FULL_PLUGINS, repair: 'repo-harness install' },
     { selection: ['cross-review', 'product'], plugins: ['cross-review', 'product'], repair: 'repo-harness install --plugins cross-review,product' },
     { selection: [], plugins: [], repair: 'repo-harness install --no-plugins' },
@@ -953,7 +949,7 @@ test('each skill-projection repair command keeps the recorded selection and pass
     if (row.pi) writeExecutable(path.join(tools, 'pi'), '#!/bin/sh\ncase "$1" in --version) echo 1.4.0 ;; list) echo "No packages installed." ;; esac\n');
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: path.join(home, '.bun'), XDG_STATE_HOME: path.join(home, '.local/state'),
       REPO_HARNESS_HOME: path.join(home, '.repo-harness'), PATH: `${tools}:/usr/bin:/bin` };
-    for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'DSH_HOME', 'REPO_HARNESS_INSTALL_PLUGINS']) delete env[key];
+    for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'REPO_HARNESS_INSTALL_PLUGINS']) delete env[key];
     // One broken projection that the ledger owns: the Codex router link points at the wrong tree.
     const router = path.join(home, '.codex/skills/repo-harness');
     fs.mkdirSync(path.dirname(router), { recursive: true });
@@ -994,33 +990,4 @@ describe('legacy workflow-state diagnostic', () => {
       });
     }));
   }, DOCTOR_CHECK_TIMEOUT_MS);
-});
-
-describe('DSH host detection', () => {
-  test('dsh-plugin reports na, warn and ok from profile declarations', () => withTempHome(home => {
-    const dshHome = path.join(home, '.dsh');
-    const profile = path.join(dshHome, 'profiles', 'desktop');
-    const check = () => runDoctor(CLI_PORTS.doctor).checks.find(candidate => candidate.id === 'dsh-plugin')!;
-    expect(check().status).toBe('na');
-    fs.mkdirSync(profile, { recursive: true });
-    fs.writeFileSync(path.join(profile, 'package.json'), '{}\n');
-    expect(check().status).toBe('warn');
-    fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '0.24.3' } }));
-    expect(check().status).toBe('ok');
-  }));
-
-  test('dsh skill rows read the shared agents root', () => withTempHome(home => {
-    const profile = path.join(home, '.dsh', 'profiles', 'desktop');
-    fs.mkdirSync(profile, { recursive: true });
-    fs.writeFileSync(path.join(profile, 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '0.24.3' } }));
-    const think = path.join(home, '.agents', 'skills', 'think');
-    fs.mkdirSync(think, { recursive: true });
-    fs.writeFileSync(path.join(think, 'SKILL.md'), '# think\n');
-
-    const rows = (checkSkillProjection('both').skills ?? []).filter(row => row.host === 'dsh');
-
-    expect(rows.map(row => row.name)).toEqual(['think', 'hunt', 'check', 'health', 'mermaid']);
-    expect(rows.find(row => row.name === 'think')).toMatchObject({ state: 'ok copy', ok: true });
-    expect(rows.find(row => row.name === 'hunt')).toMatchObject({ state: 'missing', ok: false });
-  }));
 });

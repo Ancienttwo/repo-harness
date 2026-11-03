@@ -9,11 +9,9 @@
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
 import { defaultPluginSelection, enabledPlugins, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState, type InstallState } from '../installer/install-profile';
 import { installSelectionCommand, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
-import { readDshPluginState } from '../../effects/dsh-plugin-state';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
-import { externalSkillsForSelection, parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
 import type { SkillProjectionState } from '../../core/skill-surface/projection-state';
-import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
@@ -58,7 +56,7 @@ export interface DoctorCheckResult {
 
 /** One per-skill judgment of the skill projection check. Paths stay in the CLI text only. */
 export interface SkillProjectionRow {
-  host: SkillProjection['host'] | 'dsh';
+  host: SkillProjection['host'];
   name: string;
   state: SkillProjectionState;
   /** No problem for this skill: an ok state and no install ledger drift. */
@@ -424,20 +422,6 @@ function skillProjectionState(projection: SkillProjection, contract: Parameters<
   return staged ? 'unowned real directory' : 'ok copy';
 }
 
-/**
- * Shared agents root state for DSH. The skills CLI owns these trees, so there
- * is no repo-harness source to hash; presence and link target are the facts.
- */
-function sharedSkillState(destination: string): SkillProjectionState {
-  let stat: fs.Stats;
-  try { stat = fs.lstatSync(destination); } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 'missing';
-    throw error;
-  }
-  if (stat.isSymbolicLink()) return fs.existsSync(destination) ? 'ok link' : 'dangling link';
-  return stat.isDirectory() ? 'ok copy' : 'invalid path type';
-}
-
 /** One per-skill judgment. The public row omits every path; the CLI line adds them. */
 interface SkillProjectionJudgment {
   readonly row: SkillProjectionRow;
@@ -511,15 +495,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       judgments.push(judgment);
       details.push(formatSkillProjectionJudgment(judgment, selection));
     }
-    const dshRows: SkillProjectionRow[] = [];
-    const dshHome = env.DSH_HOME?.trim() || path.join(home, '.dsh');
-    if (target === 'both' && fs.existsSync(path.join(dshHome, 'profiles'))) {
-      for (const name of externalSkillsForSelection(catalog.catalog, plugins)) {
-        const state = sharedSkillState(path.join(stagedSkillRoot(home), name));
-        dshRows.push({ host: 'dsh', name, state, ok: state.startsWith('ok ') });
-      }
-    }
-    let warning = judgments.some(judgment => !judgment.row.ok) || dshRows.some(row => !row.ok);
+    let warning = judgments.some(judgment => !judgment.row.ok);
     if (installed) {
       const drift = installStateStatus(installed, env).drift;
       if (drift.status === 'drift') warning = true;
@@ -528,7 +504,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
       warning = true;
       details.push('install ledger: missing; run: repo-harness install');
     }
-    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: [...judgments.map(judgment => judgment.row), ...dshRows] };
+    return { id, describe, status: warning ? 'warn' : 'ok', detail: details.join('\n'), skills: judgments.map(judgment => judgment.row) };
   } catch (error) {
     return { id, describe, status: 'fail', detail: `${String((error as Error).message ?? error)}; inspect: repo-harness install --state` };
   }
@@ -590,27 +566,6 @@ function checkLegacyWorkflowState(cwd: string): DoctorCheckResult {
   };
 }
 
-/**
- * Read-only DSH profile check. DSH owns its plugin installation, so this check
- * reports whether a profile declares the repo-harness bundle. It never writes
- * a profile or runs the DSH package manager.
- */
-function checkDshPlugin(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult {
-  const id = 'dsh-plugin';
-  const describe = 'DSH profile declares the repo-harness plugin';
-  let state;
-  try { state = readDshPluginState(env); } catch (error) {
-    return { id, describe, status: 'warn', detail: (error as Error).message };
-  }
-  if (state.status === 'absent') return { id, describe, status: 'na', detail: `no DSH profiles at ${state.profilesDir}; DSH is not installed for this account` };
-  if (state.status === 'undeclared') {
-    if (state.profiles.length === 0) return { id, describe, status: 'warn', detail: `no DSH profile under ${state.profilesDir}` };
-    return { id, describe, status: 'warn',
-      detail: `profiles ${state.profiles.join(', ')} do not declare repo-harness; run: dsh plugin add link:${PACKAGE_ROOT}` };
-  }
-  return { id, describe, status: 'ok', detail: `repo-harness bundle declared in profile ${state.profiles.join(', ')}` };
-}
-
 /** The ledger's plugins; without a ledger no install chose a selection, so the install default. */
 function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): readonly PluginId[] {
   return installed ? enabledPlugins(installed) : defaultPluginSelection('both', env).plugins;
@@ -627,7 +582,6 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkSkillProjection(target));
   checks.push(checkCodexCliVersion());
   if (target === 'both') checks.push(...checkPiHost());
-  if (target === 'both') checks.push(checkDshPlugin());
   checks.push(checkCliUpdate(target));
   for (const target of ALL_TARGETS) {
     if (target.supportsLocation('global')) {

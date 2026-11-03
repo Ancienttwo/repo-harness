@@ -52,7 +52,7 @@ import { copyUpgradeFixture } from './helpers/upgrade-fixtures';
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
-/** What `all` resolves to on a host without `pi` on PATH and without DSH. */
+/** What `all` resolves to on a host without `pi` on PATH. */
 const ALL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
 const ALL_WITH_PI = ['architecture', 'cross-review', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
 const CORE_FACADES = ['repo-harness-check', 'repo-harness-issue-flow', 'repo-harness-ship', 'repo-harness-test'];
@@ -85,7 +85,7 @@ function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
     ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), XDG_STATE_HOME: join(home, '.local', 'state'),
     REPO_HARNESS_HOME: join(home, '.repo-harness'), PATH: `${tools}:/usr/bin:/bin`,
   };
-  for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'DSH_HOME', 'REPO_HARNESS_INSTALL_PLUGINS', 'REPO_HARNESS_INCLUDE_PI']) delete env[key];
+  for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'REPO_HARNESS_INSTALL_PLUGINS', 'REPO_HARNESS_INCLUDE_PI']) delete env[key];
   try { run(env); } finally { rmSync(home, { recursive: true, force: true }); }
 }
 
@@ -347,7 +347,7 @@ describe('install selection', () => {
   }));
 
   test('install state protocol 3 names the plugins, and every hook route is core', () => withHome((env) => {
-    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'dsh', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
+    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
     expect(Object.values(buildManagedHooks('codex')).flat()).toHaveLength(5);
     expect(Object.values(buildManagedHooks('claude')).flat()).toHaveLength(6);
     expect(planInstallSelection('all', { run: ALL_PLUGINS, record: ALL_PLUGINS }, null, env).protocol).toBe(3);
@@ -388,7 +388,7 @@ describe('install selection', () => {
     expect(plan.selection).toBe('all');
     expect(plan.requested_plugins).toEqual([...ALL_PLUGINS]);
     expect(plan.skipped.map(({ id, command }: { id: string; command: string }) => [id, command])).toEqual([
-      ['dsh', 'repo-harness update'], ['pi', 'repo-harness update'],
+      ['pi', 'repo-harness update'],
     ]);
   }), 30_000);
 
@@ -401,7 +401,6 @@ describe('install selection', () => {
       readonly selection: PluginSelection;
       readonly plugins: readonly PluginId[];
       readonly fromLedger?: readonly PluginId[];
-      readonly fromHost?: readonly PluginId[];
       readonly skipped?: readonly PluginId[];
       readonly check?: (env: NodeJS.ProcessEnv, plan: NonNullable<ReturnType<typeof migrateInstallState>>, state: InstallState) => void;
     }
@@ -447,7 +446,7 @@ describe('install selection', () => {
         arrange: () => [],
         selection: 'all',
         plugins: ALL_PLUGINS,
-        skipped: ['pi', 'dsh'],
+        skipped: ['pi'],
         check: (_env, plan) => expect(plan.skipped.every(({ command }) => command === 'repo-harness update')).toBe(true),
       },
       {
@@ -501,7 +500,7 @@ describe('install selection', () => {
         },
         selection: 'all',
         plugins: ALL_PLUGINS,
-        skipped: ['pi', 'dsh'],
+        skipped: ['pi'],
         check: (env, plan, state) => {
           const [canonical, unchanged, changed] = ['repo-harness', 'repo-harness-check', 'repo-harness-test'].map(skill => join(piRoot(env), skill));
           expect([...plan.remove].sort()).toEqual([canonical!, unchanged!].sort());
@@ -526,7 +525,7 @@ describe('install selection', () => {
         },
         selection: 'all',
         plugins: ALL_PLUGINS,
-        skipped: ['pi', 'dsh'],
+        skipped: ['pi'],
         check: (env, plan, state) => {
           expect(plan.remove).toEqual([retired(env)]);
           expect(existsSync(retired(env))).toBe(false);
@@ -547,22 +546,13 @@ describe('install selection', () => {
         },
         selection: 'all',
         plugins: ALL_PLUGINS,
-        skipped: ['pi', 'dsh'],
+        skipped: ['pi'],
         check: (env, plan, state) => {
           expect(plan.remove).toEqual([]);
           expect(plan.keep).toEqual([{ path: retired(env), reason: expect.stringContaining('repo-harness seats argv orchestrator') }]);
           expect(readFileSync(retired(env), 'utf-8')).toBe('# owner edit\n');
           expect(state.ownership_manifest).toEqual([]);
         },
-      },
-      {
-        name: 'full with a DSH profile that declares the bundle adds dsh',
-        profile: 'full',
-        arrange: env => { writePath(home(env, '.dsh', 'profiles', 'main', 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '*' } })); return []; },
-        selection: 'all',
-        plugins: ['architecture', 'cross-review', 'dsh', 'peer-runtime', 'platform', 'product', 'strategy-memory'],
-        fromHost: ['dsh'],
-        skipped: ['pi'],
       },
     ];
     for (const row of rows) withHome((base) => {
@@ -575,7 +565,6 @@ describe('install selection', () => {
         name: row.name, selection: row.selection, plugins: [...row.plugins], state: [row.selection, [...row.plugins]],
       });
       if (row.fromLedger) expect(plan!.from_ledger_plugins, row.name).toEqual([...row.fromLedger]);
-      expect(plan!.from_host_plugins, row.name).toEqual([...(row.fromHost ?? [])]);
       expect(plan!.skipped.map(({ id }) => id), row.name).toEqual([...(row.skipped ?? [])]);
       expect(state.previous, row.name).toBeNull();
       row.check?.(env, plan!, state);
@@ -745,6 +734,9 @@ describe('install selection', () => {
       [withoutSelection, 'has no valid selection'],
       [seededState(['platform'], 'full' as PluginSelection), 'has no valid selection'],
       [{ ...seededState(['platform'], 'all'), plugins: [plugin('platform'), plugin('future-plugin')] }, 'names unknown plugin "future-plugin"'],
+      // The removed DSH plugin (M45) has no reader: a recorded dsh entry fails closed like any unknown id.
+      [{ ...seededState(['platform'], 'all'), plugins: [plugin('dsh'), plugin('platform')] }, 'names unknown plugin "dsh"'],
+      [{ ...seededState(['platform'], ['platform']), selection: ['dsh', 'platform'], plugins: [plugin('dsh'), plugin('platform')] }, 'names unknown plugin "dsh"'],
       [{ ...seededState([], []), previous: snapshotWithoutSelection }, 'previous state has no valid selection'],
     ] as const) {
       writePath(statePath, `${JSON.stringify(state)}\n`);
@@ -1487,7 +1479,7 @@ describe('install selection', () => {
     const rows: readonly Row[] = [
       {
         name: 'all, pi appears: update installs and records pi', selection: 'all', recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_WITH_PI,
-        lines: ['[plugins] skipped dsh: DSH is not installed'], committed: ALL_WITH_PI,
+        committed: ALL_WITH_PI,
       },
       { name: 'explicit list, pi appears: the list does not grow', selection: ALL_PLUGINS, recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_PLUGINS, committed: null },
       {

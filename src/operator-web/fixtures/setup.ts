@@ -42,7 +42,7 @@ const SUMMARY: Readonly<Record<string, string>> = {
 };
 
 function skill(name: string, claude: SetupSkillHostRow | null, codex: SetupSkillHostRow | null): SetupSkill {
-  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex, pi: null, dsh: null } };
+  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex, pi: null } };
 }
 
 function readySkills(): SetupSkill[] {
@@ -95,12 +95,11 @@ export function readySetup(now: number): SetupSnapshotV2 {
       { host: 'codex', reported: true, adapter_check: 'ok', detected: true, cli_version: '0.162.0',
         adapter: { configured: true, managed_entries: 5, expected_entries: 5, projection: 'consistent', mismatches: [] } },
       { host: 'pi', reported: true, adapter_check: null, detected: false, cli_version: null, adapter: null, package_check: 'na' },
-      { host: 'dsh', reported: true, adapter_check: 'ok', detected: true, cli_version: null, adapter: null },
     ],
     skills: readySkills(),
     hooks: HOOKS,
     hook_usage: null,
-    fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed', pi: null, dsh: null } })),
+    fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed', pi: null } })),
   };
 }
 
@@ -151,14 +150,13 @@ export function degradedSetup(now: number): SetupSnapshotV2 {
           { kind: 'unexpected', event: 'PreToolUse', route_id: null, field: null },
         ] } },
       { host: 'pi', reported: true, adapter_check: null, detected: false, cli_version: null, adapter: null, package_check: 'na' },
-      { host: 'dsh', reported: true, adapter_check: 'warn', detected: true, cli_version: null, adapter: null },
     ],
     skills,
     hooks: HOOKS,
     hook_usage: null,
     fleet: FLEET.map(role => ({
       ...role,
-      hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed', pi: null, dsh: null },
+      hosts: { claude: 'installed', codex: role.name === 'gatekeeper' || role.name === 'harness-evaluator' ? 'missing' : 'installed', pi: null },
     })),
   };
 }

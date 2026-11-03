@@ -63,7 +63,7 @@ const projectHook = '.ai/hooks/prompt-guard.sh';
 const ownership = (opts: { home: string }) => installOwnershipReader({ ...process.env, HOME: opts.home });
 /** A protocol 3 state written by an older package: every plugin record carries that older version. */
 function priorState(version: string, ownership_manifest: readonly unknown[]) {
-  const plugins = PLUGIN_IDS.filter((id) => id !== 'dsh' && id !== 'pi');
+  const plugins = PLUGIN_IDS.filter((id) => id !== 'pi');
   return { protocol: 3, core: { version }, plugins: plugins.map((id) => ({ id, version })), selection: 'all',
     transaction_id: 'prior-install', applied_at: '2026-09-30T00:00:00Z', previous: null, ownership_manifest };
 }

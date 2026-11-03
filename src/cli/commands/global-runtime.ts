@@ -36,7 +36,6 @@ import {
   requiredExplicitExternalDependencyInstallGroups,
   requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
-  type SkillSurfaceHost,
 } from "../../core/skill-surface/catalog";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
 import { archctxCapabilities, verifyArchctxDaemonRuntime } from "../../effects/architecture/archctx-provider";
@@ -331,11 +330,6 @@ function hostIds(target: InstallTargetSpec): Array<"codex" | "claude"> {
   if (target === "codex") return ["codex"];
   if (target === "claude") return ["claude"];
   return ["claude", "codex"];
-}
-
-/** DSH reads the shared agents root; it has no installer skill root yet. */
-function isInstallSkillHost(host: SkillSurfaceHost): host is SkillHost {
-  return host === 'claude' || host === 'codex' || host === 'pi';
 }
 
 function targetFromHostIds(hosts: readonly SkillHost[]): InstallTargetSpec {
@@ -1622,7 +1616,7 @@ export function runGlobalRuntimeSetup(
       const { provider, hosts, skills, integrityBySkill } = selection.group;
       steps.push(installExternalSkillGroup(
         sourceRoot,
-        targetFromHostIds(hosts.filter(isInstallSkillHost)),
+        targetFromHostIds(hosts),
         piSelected,
         provider,
         skills,
@@ -1665,7 +1659,7 @@ export function runGlobalRuntimeSetup(
       for (const { provider, hosts, skills, integrityBySkill } of selection.groups) {
         steps.push(installExternalSkillGroup(
           sourceRoot,
-          targetFromHostIds(hosts.filter(isInstallSkillHost)),
+          targetFromHostIds(hosts),
           piSelected,
           provider,
           skills,
