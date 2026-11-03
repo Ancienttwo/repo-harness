@@ -130,15 +130,19 @@ export function configureRequiredHerdrSkill(
         }
         const existingContent = readFileSync(join(destination, "SKILL.md"), "utf8");
         if (existingContent !== content && !ownedSkillIsIntact(destination)) {
-          throw new Error(`refusing to replace unowned or changed Herdr skill: ${destination}`);
+          throw new Error(`refusing to replace unowned or changed Herdr skill: ${destination}; `
+            + `to keep it and install a fresh owned copy, move it out of ${root} `
+            + `(for example: mv "${destination}" "${join(dirname(root), "herdr-skill.moved")}"), `
+            + "then run `repo-harness update` again");
         }
         // A copy equal to the render is the managed projection. Rewrite its stale
         // marker now; otherwise the next render change refuses to replace it.
         // Replacement removes the old directory, so any other or non-file entry
-        // keeps the copy untouched.
-        current = existingContent === content && (ownedSkillIsIntact(destination)
-          || readdirSync(destination).some(name => (name !== "SKILL.md" && name !== MARKER)
-            || !lstatSync(join(destination, name)).isFile()));
+        // keeps the copy untouched. The entry check runs first: a marker read
+        // blocks when the marker is a FIFO.
+        current = existingContent === content && (readdirSync(destination).some(name =>
+          (name !== "SKILL.md" && name !== MARKER) || !lstatSync(join(destination, name)).isFile())
+          || ownedSkillIsIntact(destination));
       }
       plans.push({ root: canonicalRoot, destination, staged: "", backup: null, changed: false, current });
     }
