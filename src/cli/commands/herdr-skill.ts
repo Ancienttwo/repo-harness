@@ -132,7 +132,13 @@ export function configureRequiredHerdrSkill(
         if (existingContent !== content && !ownedSkillIsIntact(destination)) {
           throw new Error(`refusing to replace unowned or changed Herdr skill: ${destination}`);
         }
-        current = existingContent === content;
+        // A copy equal to the render is the managed projection. Rewrite its stale
+        // marker now; otherwise the next render change refuses to replace it.
+        // Replacement removes the old directory, so any other or non-file entry
+        // keeps the copy untouched.
+        current = existingContent === content && (ownedSkillIsIntact(destination)
+          || readdirSync(destination).some(name => (name !== "SKILL.md" && name !== MARKER)
+            || !lstatSync(join(destination, name)).isFile()));
       }
       plans.push({ root: canonicalRoot, destination, staged: "", backup: null, changed: false, current });
     }
