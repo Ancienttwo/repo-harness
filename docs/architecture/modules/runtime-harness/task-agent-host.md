@@ -147,34 +147,34 @@ sequenceDiagram
 
 本能力只保留内部 OAR session 路径：启动（`startTaskApplicationHost`、`bindTerminalApplicationHost`）、发送（`sendTaskRequest`）、收集（`collectTaskResult`）、关闭与取消（`closeTaskAgent`、`cancelTaskAgent`）。没有 `task-agent` 命令，也没有 provider 提交或 history API。跨模型 peer 在 Herdr pane 中通过 herdr skill 运行，不经过本路径。
 
-1. **Task pane 由 Herdr 或 operator 终端托管。** `src/effects/terminal/task-session.ts` 的 binding 有 `herdr` 与 `terminal` 两种 runtime。宿主命令只接受 `oar-review-host.js` 这一个 bundle（`assertApplicationHostCommand`）。Cleanup 从不向 `terminal` runtime 的进程发信号。
+1. **Task 会话由 hc 终端或 operator 终端托管。** `src/effects/terminal/task-session.ts` 的 binding 有 `herdr-core` 与 `terminal` 两种 runtime。`herdr-core` runtime 用 `hc run` 启动带 repo-harness 标签的终端，binding 记录终端地址和 hc core 的 endpoint；classic `herdr` 记录读到时以 retired 错误失败。宿主命令只接受 `oar-review-host.js` 这一个 bundle（`assertApplicationHostCommand`）。Cleanup 从不向 `terminal` runtime 的进程发信号。
 2. **文件工件拥有轮次预算。** 单调轮次预算存在 session 目录的文件中，从不新建进程或会话（`src/effects/terminal/task-session-io.ts#nextSessionRound`，归 `component.execution-primitives.session-artifact-io`）。
 3. **未知投递从不重放。** `started-N.json` 写入之后，崩溃、非零退出或超时都可能意味着输入已发送。`sendTaskRequest` 把这类异常写成 `delivery-N.json` 的 `state: unknown`，之后不重放，也不分配新的 request。下一轮会因 `task_agent_ambiguous_round` 被拒绝，直到同一个 request 有已保存的 result。
 4. **传输 ACK 是持久事实。** 成功的传输写入 `state: accepted`。之后的权威拒绝会停止后续工作，但不把已接受的投递改成 unknown（#619）。
 5. **Owner 验证结果。** `collectTaskResult` 在 session 内写入 `collected-N.json` 之前，先验证 request 绑定的 result（`readTaskRequestResult`）：字段只能是 `request_id`、`context_sha256`、`value`，且 id 与 hash 必须匹配。同一轮已收集的 result 与新读到的内容不一致时，抛出 `task_agent_result_conflict`。Provider 只写自己执行 checkout 下的 outbox（`assertTaskRequest`）。
 6. **OAR 观察不是 ACK。** `readOarObservation` 的输出只用于状态展示（`taskAgentStatus`）。它不是 task ACK，也不是 acceptance receipt。
-7. **已有的启动 intent 只做对账。** `reconcile(dir, intent)` 在 intent 已存在时只读取 `pane-created.json`、`launch-intent.json` 与 `provider-created.json`，并校验身份。它从不重复 split 或 launch。工件缺失时写入 `reconciliation.json` 并以 `task_agent_start_reconciliation_required` 失败。
-8. **关闭工作区不删 Git checkout。** `cleanupTaskWorktree` 只关闭 Herdr workspace，不执行 `worktree remove`。Git 的发布、脏状态与合并检查归调用方。
-9. **OAR 的 disposal 先于清理。** Reviewer runner 在调用 `closeTaskAgent` 或 `cancelTaskAgent` 之前写 `close.request`，并等待 `disposed.json` 回执（`src/effects/review-runner/task-review-runner.ts` 中 `taskReviewRunner` 的 `dispose`）。没有回执时 review 报告 cleanup pending，不调用 task-agent 清理。`close` 在仍有未收集 result 的 request 时拒绝，`cancel` 才能跳过这个检查。会话清扫（`taskWorktreeRuntimeClosed`）不关闭打开的 runtime，也不联系 Herdr。
+7. **已有的启动 intent 只做对账。** `reconcile(dir, intent)` 在 intent 已存在时只读取 `terminal-created.json`、`launch-intent.json` 与 `provider-created.json`，并校验身份。它从不重复 `hc run`。工件缺失时用 intent 的标签运行 `hc ls`，把找到的终端写入 `reconciliation.json` 并以 `task_agent_start_reconciliation_required` 失败。
+8. **关闭工作区不删 Git checkout。** hc 没有 workspace。`cleanupTaskWorktree` 关闭这个 checkout 的 task 角色，再写 `closed.json`，不执行 `worktree remove`。Git 的发布、脏状态与合并检查归调用方。
+9. **OAR 的 disposal 先于清理。** Reviewer runner 在调用 `closeTaskAgent` 或 `cancelTaskAgent` 之前写 `close.request`，并等待 `disposed.json` 回执（`src/effects/review-runner/task-review-runner.ts` 中 `taskReviewRunner` 的 `dispose`）。没有回执时 review 报告 cleanup pending，不调用 task-agent 清理。`close` 在仍有未收集 result 的 request 时拒绝，`cancel` 才能跳过这个检查。会话清扫（`taskWorktreeRuntimeClosed`）不关闭打开的 runtime，也不调用 hc。
 10. **进程身份证明从不放松。** 退出状态在身份确认之后读取（`processProofAlive`）。有歧义的 foreground 进程列表被拒绝，不按名称或位置猜测（`bindStartedAgent`）。
 11. **Lock 与 intent 先于副作用。** 启动、发送与清理都在 `withCallerLock` 目录锁内运行（`src/effects/locking/exclusive-directory-lock.ts`）。启动与清理先写 intent 工件（`intent.json`、`close-intent.json`），再产生副作用，所以崩溃后可以对账。
-12. **安装只替换自己拥有的副本。** Herdr skill 安装拒绝用户修改过的副本、无 owner 的副本与 symlink，失败时恢复旧副本（#582）。Notify 插件配置用 mode 600 原子替换，拒绝 symlink（#500）。
-13. **Reviewer runner 只有一个实现。** `taskReviewRunner` 实现 `src/core/review/runner-port.ts` 的 `ReviewerRunner`。Herdr 启动与 app-terminal 启动是每个 session 的选项，没有选择注册表。CLI 根（`src/cli/index.ts`）把它传给 `buildReviewCommand`。Port 类型在 core 中只有一个定义，本能力导入这些类型，没有映射层。
+12. **安装只替换自己拥有的副本。** Herdr skill 安装拒绝用户修改过的副本、无 owner 的副本与 symlink，失败时恢复旧副本（#582）。Notify relay 的 `notify.env` 和安装记录用 mode 600 原子替换，目录或目标是 symlink 时拒绝（`src/effects/terminal/herdr-notify-install.ts`）。
+13. **Reviewer runner 只有一个实现。** `taskReviewRunner` 实现 `src/core/review/runner-port.ts` 的 `ReviewerRunner`。hc 终端启动（`--launch herdr-app`）与 app-terminal 启动是每个 session 的选项，没有选择注册表。CLI 根（`src/cli/index.ts`）把它传给 `buildReviewCommand`。Port 类型在 core 中只有一个定义，本能力导入这些类型，没有映射层。
 14. **隔离策略由 review 生成，由 host 执行。** Review 把 Seatbelt 策略写进 `ReviewHostSpec`。`openReviewHost` 按 spec 的路径重算策略，并比较策略文件。不能隔离时 host 拒绝打开 session（`src/effects/review-runner/task-oar-host.ts#openReviewHost`）。构建产物仍是 `dist/oar-review-host.js`。
 15. **Pre-prompt inbox 只在接受证明之后投递。** Runner 在 `send` 中预留有界的 companion，不写投递回执（`preparePrePromptInbox`）。Host 在 prompt 前只读校验 companion，并记录 input 范围的 accepted OAR 证明（`recordPrePromptInboxAccepted`）。Review 调用 `settleCompanion` 时，runner 才提交已有的 inbox 投递回执（`commitPrePromptInbox`）。没有证明时结果是 `pending`，不重发 prompt。
 
 ### 3.2 关键权衡
 
-合并通知使用现有 workspace binding 的 Herdr endpoint。派工记录或 PR 中的 pane ID
-指定负责 agent。发送前，`notifyTaskWorktreeMerged` 确认该 pane 在绑定的 workspace 内，
-且 live cwd 等于 checkout。marker 只记录路径，不提供 agent 身份。投递回执只记录
+合并通知使用现有 workspace binding 的 hc endpoint。派工记录或 PR 中的 hc 终端地址
+指定负责 agent。发送前，`notifyTaskWorktreeMerged` 用 `hc get` 确认该终端带 repo-harness 标签、
+仍是 live，且前台进程的 cwd 等于 checkout，然后用 `hc send` 投递。marker 只记录路径，不提供 agent 身份。投递回执只记录
 提交状态，不构成新的归属记录。未知投递不重放。通知不授予删除权限。
 
 | 决策 | 权衡 |
 | --- | --- |
-| 每个 task 与 role 一个常驻 pane agent | 多轮请求共享上下文。代价：身份证明与清理逻辑复杂，`task-session.ts` 是本能力最大的文件 |
+| 每个 task 与 role 一个常驻 hc 终端 agent | 多轮请求共享上下文。代价：身份证明与清理逻辑复杂，`task-session.ts` 是本能力最大的文件 |
 | 去掉推测性的宿主机制，只保留通信协议（`aad93a6e`） | 表面更小。新的宿主需求要从协议重新加入 |
-| 未知投递不重放 | 安全优先于活性。代价：投递未知后不能自动恢复，操作员要在 Herdr pane 中检查同一请求（#610） |
+| 未知投递不重放 | 安全优先于活性。代价：投递未知后不能自动恢复，操作员要在同一个 hc 终端中检查同一请求（#610） |
 | 删除 `task-agent` 命令、provider 提交、history 读取与 request 回读（#771） | 只剩一条内部 OAR 路径，没有第二套 result 权威。代价：跨模型 peer 的结果不再进入 task session，由 herdr skill 路径和各自的 reader 处理 |
 | Notify 默认只发 blocked 事件，Slack、Discord 与 Telegram 可选（#500） | Bot webhook 是必需通道。完成事件要按通道单独打开 |
 | Reviewer runner 与 OAR host 放在叶子目录 `src/effects/review-runner/`（#1352） | 只有 CLI 根导入这 4 个文件，所以 effects 目录图没有环。放在 `src/effects/terminal/` 时，`check:state-boundaries` 报告 fleet ↔ terminal 与 review ↔ terminal 两个目录环。代价：本能力的源码分在两个目录 |
@@ -184,7 +184,7 @@ sequenceDiagram
 
 | 组件 | 规模 | 职责 |
 | --- | --- | --- |
-| `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | Herdr 传输、OAR task session（启动、发送、收集、关闭）、task worktree、role profile、herdr 命令与安装的 persona 和插件资产 |
+| `component.task-agent-host.primary` | 20–50 个文件 / 2000–5000 行 | hc 传输、OAR task session（启动、发送、收集、关闭）、task worktree、role profile、herdr 命令、notify relay 与安装的 persona 资产 |
 | `component.task-agent-host.review-runner` | 4 个文件 / 约 600 行 | Acceptance review 的 reviewer runner、OAR review host 与 pre-prompt inbox companion |
 
 `src/effects/terminal/` 是共享目录。本能力拥有 task session。PM dispatch 已删除。OAR coding host 在 PM 删除后没有生产调用方，已随 #911 删除。

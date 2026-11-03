@@ -421,7 +421,7 @@ The host installer, shared skill roots and catalog retain those responsibilities
 - Remove Work Exchange and the pipeline observer.
 - Keep Planning, Organization and Decision under the repository snapshot route.
 - Keep strict identity checks, bounded workers and source failure isolation.
-- Keep native runtime capture and unbound Herdr observations.
+- Keep native runtime capture and unbound Herdr observations. Since #1478 these are hc reads: `hc server status` and the task-session `hc events` snapshot.
 
 
 ### 只读边界（2026-09-05 → 2026-10-04）
