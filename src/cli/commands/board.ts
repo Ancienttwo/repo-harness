@@ -3,6 +3,7 @@ import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard } from '../../effects/board/collect';
+import { DependencyMigrationError, migrateDependencies, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -25,6 +26,12 @@ function guarded(action: (options: BoardOptions) => void): (options: BoardOption
       process.exitCode = 1;
     }
   };
+}
+
+function migrationText(result: DependencyMigrationResultV1): string {
+  return [...result.labels.map(label => `label ${label.name}: ${label.result}`),
+    ...result.edges.map(edge => `#${edge.issue} blocked by #${edge.blocker}: ${edge.result} (line ${edge.line_number}: ${edge.line.trim()})`),
+    ...result.skipped.map(line => `#${line.issue} line ${line.line_number}: skipped (${line.line.trim()})`)].join('\n') + '\n';
 }
 
 function attentionText(attention: BoardAttentionV1): string {
@@ -56,5 +63,19 @@ export function buildBoardCommand(host: BoardHostPortsV1): Command {
       const attention = evaluateBoardAttention(collectBoard({ repo_root: process.cwd(), parent: parentNumber(options), host }));
       process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
     })(command.optsWithGlobals<BoardOptions>()));
+  board.command('migrate-dependencies')
+    .description('One-shot operator migration: turn the Depends on / 依赖 lines of the open sub-issues of one parent into blocked-by links and create the tier labels (takes --parent and --json)')
+    .action((_options: BoardOptions, command: Command) => {
+      const options = command.optsWithGlobals<BoardOptions>();
+      try {
+        const result = migrateDependencies({ repo_root: process.cwd(), parent: parentNumber(options) });
+        process.stdout.write(options.json === true ? `${JSON.stringify(result)}\n` : migrationText(result));
+      } catch (error) {
+        if (!(error instanceof DependencyMigrationError || error instanceof BoardCollectError)) throw error;
+        const done = error instanceof DependencyMigrationError ? { code: error.code, labels: error.labels, edges: error.edges } : {};
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...done, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
   return board;
 }

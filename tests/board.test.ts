@@ -7,6 +7,7 @@ import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/boa
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard } from '../src/effects/board/collect';
+import { migrateDependencies } from '../src/effects/board/dependency-migration';
 import { boardHostPorts } from '../src/effects/terminal/herdr-core';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -222,4 +223,83 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
   })).findings.filter(finding => ['A1', 'A2', 'R4'].includes(finding.rule)).map(finding => [finding.rule, finding.pull_requests]);
   expect(findings([])).toEqual([['A1', [1491]], ['A2', [1494, 1499]], ['R4', [1491]], ['R4', [1494]], ['R4', [1499]]]);
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
+});
+
+// One-shot dependency migration (#1504): a stateful gh stub answers the reads and records every write.
+interface MigrationSubIssue { readonly number: number; readonly state: 'OPEN' | 'CLOSED'; readonly body: string }
+
+function migrationStub(subIssues: readonly MigrationSubIssue[]) {
+  const labels = new Set<string>();
+  const edges = new Set<string>();
+  const writes: string[] = [];
+  const answer = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
+  const runner = (args: readonly string[]) => {
+    if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
+    if (args.includes('POST')) {
+      const name = args.find(arg => arg.startsWith('name='))!.slice(5);
+      labels.add(name); writes.push(`label ${name}`);
+      return answer({ name });
+    }
+    const query = args.find(arg => arg.startsWith('query='))!.slice(6);
+    const variable = (key: string) => args.find(arg => arg.startsWith(`${key}=`))!.slice(key.length + 1);
+    if (query.includes('addBlockedBy')) {
+      const issue = Number(variable('issue').slice(1)); const blocker = Number(variable('blocker').slice(1));
+      edges.add(`${issue}:${blocker}`); writes.push(`#${issue} blocked by #${blocker}`);
+      return answer({ data: { addBlockedBy: { issue: { number: issue } } } });
+    }
+    if (query.includes('subIssues')) {
+      const repository: Json = { issue: { subIssues: { pageInfo: { hasNextPage: false }, nodes: subIssues.map(node => ({
+        id: `I${node.number}`, number: node.number, state: node.state, body: node.body,
+        blockedBy: { pageInfo: { hasNextPage: false }, nodes: [...edges].filter(edge => edge.startsWith(`${node.number}:`)).map(edge => ({ number: Number(edge.split(':')[1]) })) },
+      })) } } };
+      ['tier:low', 'tier:medium', 'tier:high'].forEach((name, index) => { repository[`t${index}`] = labels.has(name) ? { name } : null; });
+      return answer({ data: { repository } });
+    }
+    const repository = Object.fromEntries([...query.matchAll(/b([0-9]+): issue/gu)].map(match => [`b${match[1]}`, { id: `I${match[1]}`, number: Number(match[1]) }]));
+    return answer({ data: { repository } });
+  };
+  return { runner, writes, migrate: () => migrateDependencies({ repo_root: '/nonexistent', parent: 1503, gh_runner: runner }) };
+}
+
+const MIGRATION_SUB_ISSUES: readonly MigrationSubIssue[] = [
+  { number: 1508, state: 'OPEN', body: '## Goal\nConsole board.\n\n## Depends on\nDepends on #1505 board core\nEarly start: not allowed\n\n## Out of scope\n- #1507 owns the deletion' },
+  { number: 1509, state: 'OPEN', body: '## 依赖\n#1505；#1473（启动时写席位标签）、#1476 合入后再做。\n风险：High（验收链路）。\n---\n_Generated in #9_' },
+  { number: 1510, state: 'OPEN', body: 'Watcher.\n依赖：#1505\n' },
+  { number: 1490, state: 'CLOSED', body: '## Depends on\nDepends on #1505\n' },
+];
+
+test('migrate-dependencies turns the dependency lines of open sub-issues into blocked-by links and creates the tier labels', () => {
+  const stub = migrationStub(MIGRATION_SUB_ISSUES);
+  const result = stub.migrate();
+  expect(result.edges.map(edge => [edge.issue, edge.blocker, edge.line_number, edge.result])).toEqual([
+    [1508, 1505, 5, 'created'],
+    [1509, 1505, 2, 'created'], [1509, 1473, 2, 'created'], [1509, 1476, 2, 'created'],
+    [1510, 1505, 2, 'created'],
+  ]);
+  expect(result.skipped).toEqual([{ issue: 1509, line_number: 3, line: '风险：High（验收链路）。' }]);
+  expect(result.labels).toEqual([
+    { name: 'tier:low', result: 'created' }, { name: 'tier:medium', result: 'created' }, { name: 'tier:high', result: 'created' }]);
+  // Lines after a heading or `---` and the closed sub-issue #1490 give no link.
+  expect(stub.writes).toEqual(['label tier:low', 'label tier:medium', 'label tier:high', '#1508 blocked by #1505',
+    '#1509 blocked by #1505', '#1509 blocked by #1473', '#1509 blocked by #1476', '#1510 blocked by #1505']);
+});
+
+test('a second migrate-dependencies run writes nothing and reports every link and label as existing', () => {
+  const stub = migrationStub(MIGRATION_SUB_ISSUES);
+  stub.migrate();
+  const writes = stub.writes.length;
+  const second = stub.migrate();
+  expect(stub.writes.length).toBe(writes);
+  expect([...second.edges, ...second.labels].every(entry => entry.result === 'exists')).toBe(true);
+  expect(second.edges).toHaveLength(5);
+});
+
+test('an unparsable dependency line stops migrate-dependencies before any write', () => {
+  const stub = migrationStub([...MIGRATION_SUB_ISSUES,
+    { number: 1505, state: 'OPEN', body: '## 依赖\n\n无。席位标签来自 #1473 和 #1476；合入前执行轴为 unavailable。\n' }]);
+  let error: unknown;
+  try { stub.migrate(); } catch (caught) { error = caught; }
+  expect(error).toMatchObject({ code: 'dependency_line_unparsed' });
+  expect((error as Error).message).toContain('#1505 line 3');
+  expect(stub.writes).toEqual([]);
 });
