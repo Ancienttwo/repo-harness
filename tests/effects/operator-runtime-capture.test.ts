@@ -1,6 +1,6 @@
 import { spawn } from 'node:child_process';
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, existsSync, writeFileSync, chmodSync, symlinkSync, renameSync, lstatSync, rmSync } from 'node:fs';
+import { mkdtempSync, readFileSync, readdirSync, existsSync, writeFileSync, chmodSync, symlinkSync, renameSync, lstatSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { PassThrough, Writable } from 'node:stream';
@@ -215,7 +215,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('owned child transport (fixtures do not 
       await until(() => Buffer.concat(chunks).toString().includes('signal-ready'));
       process.kill(p.pid, 'SIGTERM'); expect(await p.exited).toBe(0);
       expect(Buffer.concat(chunks).toString()).toContain('{"code":17,"before":false,"after":false}');
-    } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.terminal?.close(); }
+    } finally { if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); p.terminal?.close(); }
   });
   test.skipIf(!HAS_CAPTURE_PTY)('PTY feeds bounded real stdin chunks after each drain without duplicate bytes', async () => {
     const path = join(root(), 'capture.json'), input = new PassThrough(), output = collect(), diagnostic = collect();
@@ -259,7 +259,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('owned child transport (fixtures do not 
       expect(Buffer.concat(chunks).toString()).toContain('bounded-shutdown');
       expect(JSON.parse(readFileSync(path, 'utf8'))).toMatchObject({ capture_status: 'unavailable', observations: [] });
       expect(await new Response(p.stderr).text()).toContain('runtime_capture_transport_incomplete');
-    } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); reader.releaseLock(); }
+    } finally { if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); reader.releaseLock(); }
   });
 
 });
@@ -294,7 +294,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture reti
         expect(Buffer.concat(output.chunks).toString()).toContain('{"retired":true,"external_sink_destroyed":false,"listeners_restored":true}');
         expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('unavailable');
         expect(Buffer.concat(diagnostic.chunks).toString()).toContain('runtime_capture_transport_incomplete');
-      } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited; }
+      } finally { if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited; }
     });
   }
   for (const signalled of [false, true]) {
@@ -319,11 +319,34 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture reti
         // The capture must close its own reader. It cannot kill this descendant.
         expect(() => process.kill(descendantPid!, 0)).not.toThrow();
       } finally {
-        if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited;
+        if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited;
         if (descendantPid !== null) { try { process.kill(descendantPid, 'SIGKILL'); } catch { /* Fixture already ended. */ } }
       }
     });
   }
+  // /proc shows the provider child while spawn() still runs, so this SIGTERM lands before spawn() returns.
+  test.skipIf(!existsSync('/proc/self/task'))('Codex SIGTERM as soon as the child exists stops the child through the capture listener', async () => {
+    const dir = root(), modulePath = join(process.cwd(), 'src/effects/operator/runtime-capture.ts');
+    for (let attempt = 0; attempt < 5; attempt++) {
+      const scriptPath = join(dir, `spawn-window-${attempt}.ts`);
+      writeFileSync(scriptPath, `import { runRuntimeCapture } from ${JSON.stringify(modulePath)};
+        try { process.exit(await runRuntimeCapture({provider:'codex',source_id:'spawn-window',snapshot_path:${JSON.stringify(join(dir, `capture-${attempt}.json`))},argv:[process.execPath,'-e','await Bun.sleep(30000)']})) }
+        catch { process.exit(45) }`);
+      const p = Bun.spawn([process.execPath, scriptPath], { stdin: 'pipe', stdout: 'ignore', stderr: 'ignore' });
+      let childPid: number | undefined;
+      try {
+        const end = Date.now() + 5000;
+        while (childPid === undefined && Date.now() < end) { try { childPid = readdirSync(`/proc/${p.pid}/task`).flatMap(task => readFileSync(`/proc/${p.pid}/task/${task}/children`, 'utf8').split(' ').filter(Boolean).map(Number))[0]; } catch { /* A thread ended during the scan. */ } }
+        expect(childPid).toBeDefined();
+        process.kill(p.pid, 'SIGTERM'); await boundedFixtureExit(p, 3500);
+        expect(p.signalCode).toBeNull();
+        expect(() => process.kill(childPid!, 0)).toThrow();
+      } finally {
+        if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); p.stdin.end(); await p.exited;
+        if (childPid !== undefined) { try { process.kill(childPid, 'SIGKILL'); } catch { /* Child already ended. */ } }
+      }
+    }
+  });
   test('FIFO snapshot replacement cannot block a writer or its cleanup timer', async () => {
     const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'fifo.ts');
     writeFileSync(scriptPath, `import { renameSync } from 'node:fs';import { execFileSync } from 'node:child_process';
@@ -337,7 +360,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture reti
       await until(() => Buffer.concat(output.chunks).toString().includes('fifo-ready'));
       expect(await boundedFixtureExit(p, 1000)).toBe(0);
       await output.finished; expect(Buffer.concat(output.chunks).toString()).toContain('fifo-rejected'); expect(lstatSync(path).isFIFO()).toBe(true);
-    } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; }
+    } finally { if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; }
   });
   test.skipIf(!HAS_CAPTURE_PTY)('normal PTY retirement restores real owner raw mode after incomplete output', async () => {
     const dir = root(), path = join(dir, 'capture.json'), scriptPath = join(dir, 'normal-raw-stall.ts');
@@ -352,7 +375,7 @@ describe.skipIf(!HAS_CAPTURE_OWNERSHIP)('review regression: bounded capture reti
       expect(await boundedFixtureExit(p, 3500)).toBe(0);
       expect(Buffer.concat(chunks).toString()).toContain('{"before":false,"after":false,"sink_destroyed":false}');
       expect(JSON.parse(readFileSync(path, 'utf8')).capture_status).toBe('unavailable');
-    } finally { if (p.exitCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; p.terminal?.close(); }
+    } finally { if (p.exitCode === null && p.signalCode === null) process.kill(p.pid, 'SIGKILL'); await p.exited; p.terminal?.close(); }
   });
 
 });
