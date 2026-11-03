@@ -20,7 +20,7 @@ ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 ## Boundaries
 
 Prepare verification and the contract before review. The existing fleet
-`deep-reasoner` role, addressed Herdr pane or app-terminal host, isolated
+`deep-reasoner` role, addressed hc terminal or app-terminal host, isolated
 reviewer checkout and OAR Session own the run. History/idle are observations; the request-bound file Result
 and generic-review Receipt own acceptance. Unknown model, delivery or cleanup
 stays unverified or pending. Never synthesize PASS, alias the retired command,
