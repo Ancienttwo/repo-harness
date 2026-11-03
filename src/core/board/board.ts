@@ -140,6 +140,16 @@ export type BoardDailyRunV1 =
   | { readonly status: 'observed'; readonly run_url: string; readonly conclusion: string | null; readonly created_at: string; readonly open_repair_issues: readonly number[] }
   | { readonly status: 'unavailable'; readonly reason: string };
 
+/** The owning capability of one changed path, as `archctx resolve` reports it. The board never guesses an owner. */
+export type BoardPathOwnerV1 =
+  | { readonly path: string; readonly status: 'owned'; readonly capability: string }
+  | { readonly path: string; readonly status: 'unowned' | 'ambiguous' };
+
+/** One entry for each changed path of each open pull request with a complete file list, sorted by path. */
+export type BoardPathOwnersV1 =
+  | { readonly status: 'observed'; readonly owners: readonly BoardPathOwnerV1[] }
+  | { readonly status: 'unavailable'; readonly reason: string };
+
 export interface BoardToolingV1 {
   readonly hc: { readonly status: 'observed'; readonly version: string; readonly min_version: string } | { readonly status: 'unavailable'; readonly reason: string };
   /** No policy pin exists for Herdr.app yet. */
@@ -156,6 +166,7 @@ export interface BoardV1 {
   readonly plan: BoardPlanV1;
   readonly items: readonly BoardItemV1[];
   readonly pull_requests: readonly BoardPullRequestV1[];
+  readonly path_owners: BoardPathOwnersV1;
   readonly execution: BoardExecutionV1;
   readonly daily_run: BoardDailyRunV1;
   readonly tooling: BoardToolingV1;
@@ -170,6 +181,7 @@ export interface BoardInputV1 {
   readonly parent: BoardParentReadV1;
   readonly pull_requests: readonly BoardPullRequestReadV1[];
   readonly readiness: readonly PullRequestReadinessV2[];
+  readonly path_owners: BoardPathOwnersV1;
   readonly execution: BoardExecutionV1;
   readonly daily_run: BoardDailyRunInputV1;
   readonly tooling: BoardToolingV1;
@@ -280,6 +292,11 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
       merge_readiness: readiness ?? null,
     });
   }).sort((left, right) => left.number - right.number);
+  if (input.path_owners.status === 'observed') {
+    const owned = new Set(input.path_owners.owners.map(owner => owner.path));
+    const missing = pullRequests.filter(pr => pr.state === 'open').flatMap(pr => pr.files ?? []).find(path => !owned.has(path));
+    if (missing !== undefined) throw new Error(`board input has no path owner for ${missing}`);
+  }
   const items = input.parent.sub_issues.map((issue): BoardItemV1 => Object.freeze({
     number: issue.number,
     title: issue.title,
@@ -307,6 +324,7 @@ export function projectBoard(input: BoardInputV1): BoardV1 {
     plan: projectPlan(parent),
     items: Object.freeze(items),
     pull_requests: Object.freeze(pullRequests),
+    path_owners: input.path_owners,
     execution: input.execution,
     daily_run: daily,
     tooling: input.tooling,
