@@ -350,7 +350,7 @@ describe("workflow contract manifest", () => {
           CLAUDE_SKILLS_ROOT: join(home, ".claude/skills"),
           AGENTIC_DEV_SOURCE_ROOT: ROOT,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: "0",
-          REPO_HARNESS_INSTALL_PROFILE: "minimal",
+          REPO_HARNESS_INSTALL_PLUGINS: "",
         },
       });
       expect(ownedCopy.status, ownedCopy.stdout + ownedCopy.stderr).toBe(0);

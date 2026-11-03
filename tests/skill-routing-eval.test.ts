@@ -34,6 +34,9 @@ import {
   type RoutingRunRecord,
   type RoutingRunReport,
 } from "../scripts/run-skill-routing-eval";
+import { PLUGIN_IDS } from "../src/core/skill-surface/plugin-manifest";
+
+const ALL_PLUGINS = PLUGIN_IDS.join(",");
 
 const ROOT = join(import.meta.dir, "..");
 
@@ -276,41 +279,42 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   }
 
   describe("buildDiscoveredSkillSurface (pure discovery-surface projection)", () => {
-    test("minimal discovers router, plan/check facades, and explicit-setup packages", () => {
-      const names = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name).sort();
+    test("core only discovers the router, the core facades, and explicit-setup packages", () => {
+      const names = buildDiscoveredSkillSurface(catalog, [], "claude").map((e) => e.name).sort();
       expect(names).toEqual(
-        ["obsidian-memory", "repo-harness", "repo-harness-check", "repo-harness-strategy", "windows-python-first"],
+        ["repo-harness", "repo-harness-check", "repo-harness-issue-flow", "repo-harness-ship", "repo-harness-strategy", "repo-harness-test"],
       );
-      expect(buildDiscoveredSkillSurface(catalog, "minimal", "claude").find(e => e.name === "repo-harness-strategy")?.reason).toBe("explicit-setup");
+      expect(buildDiscoveredSkillSurface(catalog, [], "claude").find(e => e.name === "repo-harness-strategy")?.reason).toBe("explicit-setup");
     });
 
-    test("full exposes the same catalog on both hosts except the Claude-only herdr portal, without the retired plan skill", () => {
-      const claudeNames = buildDiscoveredSkillSurface(catalog, "full", "claude").map((e) => e.name).sort();
-      const codexNames = buildDiscoveredSkillSurface(catalog, "full", "codex").map((e) => e.name).sort();
+    test("every plugin exposes the same catalog on both hosts except the Claude-only herdr portal, without the retired plan skill", () => {
+      const claudeNames = buildDiscoveredSkillSurface(catalog, PLUGIN_IDS, "claude").map((e) => e.name).sort();
+      const codexNames = buildDiscoveredSkillSurface(catalog, PLUGIN_IDS, "codex").map((e) => e.name).sort();
       expect(claudeNames).not.toContain("claude-plan");
       expect(codexNames).not.toContain("claude-plan");
       expect(claudeNames).toContain("repo-harness-herdr-portal");
       expect(codexNames).toEqual(claudeNames.filter((name) => name !== "repo-harness-herdr-portal"));
     });
 
-    test("full discovers both product and ship while minimal discovers neither", () => {
-      const full = buildDiscoveredSkillSurface(catalog, "full", "claude").map((e) => e.name);
-      const minimal = buildDiscoveredSkillSurface(catalog, "minimal", "claude").map((e) => e.name);
-      expect(full).toContain("repo-harness-product");
-      expect(full).toContain("repo-harness-ship");
-      expect(minimal).not.toContain("repo-harness-product");
-      expect(minimal).not.toContain("repo-harness-ship");
+    test("product is discovered only with the product plugin while ship is core", () => {
+      const all = buildDiscoveredSkillSurface(catalog, PLUGIN_IDS, "claude").map((e) => e.name);
+      const core = buildDiscoveredSkillSurface(catalog, [], "claude").map((e) => e.name);
+      expect(all).toContain("repo-harness-product");
+      expect(all).toContain("repo-harness-ship");
+      expect(core).not.toContain("repo-harness-product");
+      expect(core).toContain("repo-harness-ship");
+      expect(buildDiscoveredSkillSurface(catalog, ["product"], "claude").map((e) => e.name)).toContain("repo-harness-product");
     });
 
     test("merge-gate is never in the discovered surface (no source; kind:judge)", () => {
-      for (const profile of ["minimal", "full"] as const) {
-        expect(buildDiscoveredSkillSurface(catalog, profile, "claude").map((e) => e.name)).not.toContain("merge-gate");
+      for (const plugins of [[], PLUGIN_IDS]) {
+        expect(buildDiscoveredSkillSurface(catalog, plugins, "claude").map((e) => e.name)).not.toContain("merge-gate");
       }
     });
   });
 
-  describe("referenceOnlySkillPackages (cli-reference packages, never profile-gated)", () => {
-    test("repo-harness-setup is always reachable regardless of profile", () => {
+  describe("referenceOnlySkillPackages (cli-reference packages, never selection-gated)", () => {
+    test("repo-harness-setup is always reachable regardless of the plugin selection", () => {
       const names = referenceOnlySkillPackages(catalog).map((e) => e.name).sort();
       expect(names).toEqual(["repo-harness-setup"]);
     });
@@ -517,10 +521,10 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
   });
 
   describe("runProviderEval against the real frozen corpus (perfect-echo stub)", () => {
-    test("full/claude reaches ceiling recall for all 8 canonical routes", () => {
+    test("all-plugins/claude reaches ceiling recall for all 8 canonical routes", () => {
       const reportPath = tmpReportPath("full-perfect");
       const report = runProviderEval({
-        profile: "full",
+        plugins: PLUGIN_IDS,
         host: "claude",
         provider: "stub",
         reportPath,
@@ -540,10 +544,10 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       );
     }, 30_000);
 
-    test("minimal/claude excludes product, ship, architecture, and cross-review from scoring", () => {
-      const reportPath = tmpReportPath("minimal-perfect");
+    test("core-only/claude excludes product, architecture, and cross-review from scoring", () => {
+      const reportPath = tmpReportPath("core-perfect");
       const report = runProviderEval({
-        profile: "minimal",
+        plugins: [],
         host: "claude",
         provider: "stub",
         reportPath,
@@ -551,19 +555,19 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       expect(report.metrics.per_route_recall["repo-harness-product"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
-      expect(report.metrics.per_route_recall["repo-harness-ship"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
+      expect(report.metrics.per_route_recall["repo-harness-ship"].reachable).toBe(true);
       expect(report.metrics.per_route_recall["repo-harness-cross-review"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
       expect(report.metrics.per_route_recall["repo-harness-architecture"]).toEqual({ numerator: 0, denominator: 0, rate: null, reachable: false });
-      expect(report.metrics.excluded_unreachable_count).toBe(16);
+      expect(report.metrics.excluded_unreachable_count).toBe(12); // product, cross-review and architecture: 4 cases each; ship is core
     }, 30_000);
 
-    test("host-awareness changes nothing about route scoring for full", () => {
+    test("host-awareness changes nothing about route scoring for every plugin", () => {
       const claudeReport = runProviderEval({
-        profile: "full", host: "claude", provider: "stub", reportPath: tmpReportPath("host-claude"), dryRun: false,
+        plugins: PLUGIN_IDS, host: "claude", provider: "stub", reportPath: tmpReportPath("host-claude"), dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       const codexReport = runProviderEval({
-        profile: "full", host: "codex", provider: "stub", reportPath: tmpReportPath("host-codex"), dryRun: false,
+        plugins: PLUGIN_IDS, host: "codex", provider: "stub", reportPath: tmpReportPath("host-codex"), dryRun: false,
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       expect(codexReport.metrics.top1_accuracy).toEqual(claudeReport.metrics.top1_accuracy);
@@ -576,7 +580,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("report embeds the frozen corpus_sha256 verbatim and a fresh manifest_sha256", () => {
       const reportPath = tmpReportPath("shape");
       const report = runProviderEval({
-        profile: "minimal", host: "claude", provider: "stub", reportPath, dryRun: false,
+        plugins: [], host: "claude", provider: "stub", reportPath, dryRun: false,
       });
       expect(report.corpus_sha256).toBe(String(baseline.corpus_sha256));
       expect(report.manifest_sha256).toBe(sha256Hex(readFileSync(join(ROOT, "assets", "skill-commands", "manifest.json"))));
@@ -586,7 +590,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
     test("the written report file and its .sha256 sidecar are byte-bound", () => {
       const reportPath = tmpReportPath("sidecar");
-      runProviderEval({ profile: "minimal", host: "claude", provider: "stub", reportPath, dryRun: false });
+      runProviderEval({ plugins: [], host: "claude", provider: "stub", reportPath, dryRun: false });
       const bytes = readFileSync(reportPath);
       const sidecar = readFileSync(`${reportPath}.sha256`, "utf-8").trim();
       expect(sidecar.startsWith(sha256Hex(bytes))).toBe(true);
@@ -595,8 +599,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("re-running with an identical stub produces byte-identical report JSON except generated_at", () => {
       const pathA = tmpReportPath("repeat-a");
       const pathB = tmpReportPath("repeat-b");
-      const reportA = runProviderEval({ profile: "minimal", host: "claude", provider: "stub", reportPath: pathA, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
-      const reportB = runProviderEval({ profile: "minimal", host: "claude", provider: "stub", reportPath: pathB, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
+      const reportA = runProviderEval({ plugins: [], host: "claude", provider: "stub", reportPath: pathA, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
+      const reportB = runProviderEval({ plugins: [], host: "claude", provider: "stub", reportPath: pathB, dryRun: false, stubOptions: { routeFor: perfectEchoRouteFor } });
       const stripGeneratedAt = (r: unknown) => JSON.parse(JSON.stringify(r).replace(/"generated_at":"[^"]*"/, '"generated_at":""'));
       expect(stripGeneratedAt(reportA)).toEqual(stripGeneratedAt(reportB));
     }, 30_000);
@@ -609,7 +613,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
 
     test("--dry-run with the default fixed-route stub produces a well-formed, all-metrics-computed, non-passing report", () => {
       const reportPath = tmpReportPath("cli-dry-run");
-      const result = runCliRun(["--profile", "full", "--host", "claude", "--report", reportPath, "--dry-run"]);
+      const result = runCliRun(["--plugins", ALL_PLUGINS, "--host", "claude", "--report", reportPath, "--dry-run"]);
       expect(result.status).toBe(0);
       expect(result.stdout).toContain("run OK");
       expect(result.stdout).toContain("overall_pass=false");
@@ -622,41 +626,41 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     });
 
     test("missing --report exits non-zero with a clear usage error", () => {
-      const result = runCliRun(["--profile", "minimal", "--host", "claude", "--dry-run"]);
+      const result = runCliRun(["--no-plugins", "--host", "claude", "--dry-run"]);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("--report is required");
     });
 
     test("real (non-dry-run) mode without --provider exits non-zero", () => {
-      const result = runCliRun(["--profile", "minimal", "--host", "claude", "--report", tmpReportPath("cli-noprov")]);
+      const result = runCliRun(["--no-plugins", "--host", "claude", "--report", tmpReportPath("cli-noprov")]);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("--provider claude|codex is required");
     });
 
     test("real (non-dry-run) mode with --provider stub is rejected (stub is dry-run-only)", () => {
-      const result = runCliRun(["--profile", "minimal", "--host", "claude", "--provider", "stub", "--report", tmpReportPath("cli-stub-real")]);
+      const result = runCliRun(["--no-plugins", "--host", "claude", "--provider", "stub", "--report", tmpReportPath("cli-stub-real")]);
       expect(result.status).not.toBe(0);
       expect(result.stderr).toContain("--provider claude|codex is required");
     });
 
-    test("an invalid --profile is rejected before any workspace is touched", () => {
-      const result = runCliRun(["--profile", "bogus", "--host", "claude", "--report", tmpReportPath("cli-badprofile"), "--dry-run"]);
+    test("an invalid --plugins id is rejected before any workspace is touched", () => {
+      const result = runCliRun(["--plugins", "bogus", "--host", "claude", "--report", tmpReportPath("cli-badplugin"), "--dry-run"]);
       expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain("--profile must be one of");
+      expect(result.stderr).toContain('unknown plugin "bogus"');
     });
 
     test("--help prints run usage and exits 0", () => {
       const result = runCliRun(["--help"]);
       expect(result.status).toBe(0);
-      expect(result.stdout).toContain("run --profile");
+      expect(result.stdout).toContain("run (--plugins <ids> | --no-plugins)");
     });
   });
 
   describe("structural reachability exclusion (SSD-07 phase A HIGH-finding fix, layer 1)", () => {
     test("excluded_unreachable is stamped per-record, counted, and labeled PARTIAL evidence -- with a perfect echo, overall_pass now reflects the reachable subset (a structural impossibility before this fix)", () => {
-      const reportPath = tmpReportPath("reach-minimal");
+      const reportPath = tmpReportPath("reach-core");
       const report = runProviderEval({
-        profile: "minimal",
+        plugins: [],
         host: "claude",
         provider: "stub",
         reportPath,
@@ -667,8 +671,8 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const productRecords = report.records.filter((r) => r.expected_route === "repo-harness-product");
       expect(productRecords).toHaveLength(4);
       expect(productRecords.every((r) => r.excluded_unreachable === true)).toBe(true);
-      expect(report.records.filter((r) => r.excluded_unreachable === true)).toHaveLength(16);
-      expect(report.metrics.excluded_unreachable_count).toBe(16);
+      expect(report.records.filter((r) => r.excluded_unreachable === true)).toHaveLength(12);
+      expect(report.metrics.excluded_unreachable_count).toBe(12);
 
       expect(report.thresholds.per_route_recall["repo-harness-product"]).toEqual({
         floor: 0.9,
@@ -698,13 +702,13 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
     test("a genuinely bad REACHABLE route still fails its own floor and overall_pass end to end (exclusion does not neuter real failures)", () => {
       const reportPath = tmpReportPath("reach-bad-reachable");
       const report = runProviderEval({
-        profile: "minimal",
+        plugins: [],
         host: "claude",
         provider: "stub",
         reportPath,
         dryRun: false,
         stubOptions: {
-          // repo-harness is reachable under minimal (discoverability:"always");
+          // repo-harness is reachable with core only (discoverability:"always");
           // never returning it is a genuine 0% recall, not a structural
           // unreachability artifact -- the per-route gate must still fire.
           routeFor: (c) => (c.expected_route === "repo-harness" ? [] : perfectEchoRouteFor(c)),
@@ -721,7 +725,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       const claudePath = tmpReportPath("agg-full-claude");
       const codexPath = tmpReportPath("agg-full-codex");
       const claude = runProviderEval({
-        profile: "full",
+        plugins: PLUGIN_IDS,
         host: "claude",
         provider: "stub",
         reportPath: claudePath,
@@ -729,7 +733,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         stubOptions: { routeFor },
       });
       const codex = runProviderEval({
-        profile: "full",
+        plugins: PLUGIN_IDS,
         host: "codex",
         provider: "stub",
         reportPath: codexPath,
@@ -739,7 +743,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       return { claude, codex, claudePath, codexPath };
     }
 
-    test("aggregate over full Claude + full Codex covers all 8 canonical routes and passes", () => {
+    test("aggregate over all-plugins Claude + all-plugins Codex covers all 8 canonical routes and passes", () => {
       const corpus = loadCorpus();
       const { claude, codex, claudePath, codexPath } = runTwoReports();
 
@@ -775,7 +779,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(aggregate.metrics.top1_accuracy).toEqual({ numerator: totalPositives, denominator: totalPositives, rate: 1 });
       expect(aggregate.thresholds.overall_pass).toBe(true);
 
-      // Both full runs reach every route, so operator-first Codex supplies
+      // Both all-plugins runs reach every route, so operator-first Codex supplies
       // both product and ship cases.
       const productRecord = aggregate.records.find((r) => r.expected_route === "repo-harness-product");
       const productSource = aggregate.case_sources.find((cs) => cs.id === productRecord?.id);
@@ -816,11 +820,11 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       ).toThrow(/manifest_sha256 mismatch/);
     });
 
-    test("fails closed when a canonical route is unreachable in every input (two minimal runs)", () => {
+    test("fails closed when a canonical route is unreachable in every input (two core-only runs)", () => {
       const pathA = tmpReportPath("agg-dup-a");
       const pathB = tmpReportPath("agg-dup-b");
       const reportA = runProviderEval({
-        profile: "minimal",
+        plugins: [],
         host: "claude",
         provider: "stub",
         reportPath: pathA,
@@ -828,7 +832,7 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
         stubOptions: { routeFor: perfectEchoRouteFor },
       });
       const reportB = runProviderEval({
-        profile: "minimal",
+        plugins: [],
         host: "claude",
         provider: "stub",
         reportPath: pathB,
@@ -886,20 +890,20 @@ describe("scripts/run-skill-routing-eval.ts provider mode (run subcommand, SSD-0
       expect(aggregate.thresholds.overall_pass).toBe(false);
     });
 
-    test("aggregate CLI subcommand: --dry-run runs full for both hosts and produces a byte-bound report", () => {
+    test("aggregate CLI subcommand: --dry-run runs every plugin for both hosts and produces a byte-bound report", () => {
       const claudeReportPath = tmpReportPath("agg-cli-full-claude");
       const codexReportPath = tmpReportPath("agg-cli-full-codex");
       const aggregateReportPath = tmpReportPath("agg-cli-out");
 
       const runClaude = spawnSync(
         "bun",
-        ["scripts/run-skill-routing-eval.ts", "run", "--profile", "full", "--host", "claude", "--report", claudeReportPath, "--dry-run"],
+        ["scripts/run-skill-routing-eval.ts", "run", "--plugins", ALL_PLUGINS, "--host", "claude", "--report", claudeReportPath, "--dry-run"],
         { cwd: ROOT, encoding: "utf-8" },
       );
       expect(runClaude.status).toBe(0);
       const runCodex = spawnSync(
         "bun",
-        ["scripts/run-skill-routing-eval.ts", "run", "--profile", "full", "--host", "codex", "--report", codexReportPath, "--dry-run"],
+        ["scripts/run-skill-routing-eval.ts", "run", "--plugins", ALL_PLUGINS, "--host", "codex", "--report", codexReportPath, "--dry-run"],
         { cwd: ROOT, encoding: "utf-8" },
       );
       expect(runCodex.status).toBe(0);

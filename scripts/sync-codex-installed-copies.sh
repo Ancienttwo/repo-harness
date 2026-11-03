@@ -8,14 +8,15 @@ fi
 
 SOURCE_ROOT="${SOURCE_ROOT%/}"
 LINK_INSTALLED_COPIES="${AGENTIC_DEV_LINK_INSTALLED_COPIES:-}"
-INSTALL_PROFILE="${REPO_HARNESS_INSTALL_PROFILE:-full}"
-case "$INSTALL_PROFILE" in
-  minimal|full) ;;
-  *)
-    echo "[sync-installed] invalid REPO_HARNESS_INSTALL_PROFILE: $INSTALL_PROFILE" >&2
-    exit 2
-    ;;
-esac
+# REPO_HARNESS_INSTALL_PLUGINS is the comma-separated plugin selection; an
+# empty value selects core only. Unset, the sync projects every plugin, as a
+# fresh install with no --plugins does. skill-surface-select.ts rejects an
+# unknown id before any write.
+if [[ -n "${REPO_HARNESS_INSTALL_PLUGINS+set}" ]]; then
+  SELECTION_ARGS=(--plugins "$REPO_HARNESS_INSTALL_PLUGINS")
+else
+  SELECTION_ARGS=(--all-plugins)
+fi
 if [[ ! -d "$SOURCE_ROOT" ]]; then
   echo "[sync-installed] Source root not found: $SOURCE_ROOT" >&2
   exit 1
@@ -38,8 +39,8 @@ fi
 # One adapter call returns the skill roots, facade selection and separately-managed
 # provider placements so these boundaries do not add another Bun startup to every
 # sync. src/effects/host-skill-roots.ts owns the root rule.
-if ! PROFILE_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" profile-projection --profile "$INSTALL_PROFILE")"; then
-  echo "[sync-installed] skill-surface-select profile-projection failed for profile: $INSTALL_PROFILE" >&2
+if ! SELECTION_PROJECTION="$(bun "$SOURCE_ROOT/scripts/skill-surface-select.ts" selection-projection "${SELECTION_ARGS[@]}")"; then
+  echo "[sync-installed] skill-surface-select selection-projection failed for plugins: ${SELECTION_ARGS[*]}" >&2
   exit 1
 fi
 CODEX_SKILLS_ROOT=""
@@ -59,9 +60,9 @@ while IFS=$'\t' read -r projection_kind projection_value; do
     provider) PROVIDER_PLACEMENTS+="${PROVIDER_PLACEMENTS:+$'\n'}$projection_value" ;;
     integration) INTEGRATION_NAMES+="${INTEGRATION_NAMES:+$'\n'}$projection_value" ;;
   esac
-done <<< "$PROFILE_PROJECTION"
+done <<< "$SELECTION_PROJECTION"
 if [[ -z "$CODEX_SKILLS_ROOT" || -z "$SKILL_ROOT_OVERRIDE" ]]; then
-  echo "[sync-installed] skill-surface-select profile-projection returned no skill roots" >&2
+  echo "[sync-installed] skill-surface-select selection-projection returned no skill roots" >&2
   exit 1
 fi
 if [[ -z "$LINK_INSTALLED_COPIES" && "$SKILL_ROOT_OVERRIDE" == "0" ]]; then
@@ -69,7 +70,7 @@ if [[ -z "$LINK_INSTALLED_COPIES" && "$SKILL_ROOT_OVERRIDE" == "0" ]]; then
 fi
 
 # Manifest-derived name -> source path for every facade-kind package,
-# regardless of profile. A facade's source directory is no longer guaranteed
+# regardless of the plugin selection. A facade's source directory is no longer guaranteed
 # to live under one fixed assets/skill-commands/<name> parent (e.g.
 # repo-harness-product sources from assets/skills/repo-harness-product), so
 # every consumer below resolves the real source through this list instead of
@@ -300,9 +301,9 @@ preflight_skill_root() {
     [[ -e "$dest" || -L "$dest" ]] || continue
     name="$(basename "$dest")"
     # Provider Skills (for example repo-harness-cross-review) are installed by
-    # their own profile component after this facade sync. They are not command
+    # their own plugin step after this facade sync. They are not command
     # facades, so this loop must neither require a command-facade owner marker
-    # nor retire them. Profile cleanup owns provider retirement.
+    # nor retire them. Plugin-switch cleanup owns provider retirement.
     provider_skill_for_root "$root" "$name" && continue
     integration_skill "$name" && continue
     source_rel="$(facade_source_for "$name")"
@@ -357,7 +358,7 @@ remove_retired_owned_facades() {
   done
 }
 
-# Keep default discovery bounded: the umbrella router plus each profile's
+# Keep default discovery bounded: the umbrella router plus the selection's
 # manifest-selected facades. Specialized capabilities remain CLI
 # subcommands/references. Driven by $FACADE_SOURCES (manifest-derived name ->
 # source pairs for every facade-kind package) rather than a physical glob

@@ -12,7 +12,8 @@ import { parseStrategyDocument, validateProposal, type StrategyDocument, type St
 import { collectStrategyContext, validateStrategyRequest, StrategySourceDriftError, StrategyReader, strategyHash, strategyStatus, REPOSITORY_PILOT_READ_LIMITS } from '../src/effects/strategy/context';
 import { projectStrategySkill } from '../src/effects/strategy/skill';
 import { buildStrategyCommand } from '../src/cli/commands/strategy';
-import { facadesForProfile, hostSkillPlacements, parseSkillSurfaceCatalog } from '../src/core/skill-surface/catalog';
+import { facadesForSelection, hostSkillPlacements, parseSkillSurfaceCatalog } from '../src/core/skill-surface/catalog';
+import { PLUGIN_IDS } from '../src/core/skill-surface/plugin-manifest';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
@@ -628,9 +629,9 @@ describe('optional strategy and progressive memory', () => {
     expect(() => projectStrategySkill({ action: 'uninstall', home })).toThrow('unowned');
     const parsed = parseSkillSurfaceCatalog(readFileSync(join(import.meta.dir, '../assets/skill-commands/manifest.json'), 'utf8'));
     expect(parsed.status).toBe('valid'); if (parsed.status !== 'valid') return;
-    for (const profile of ['minimal', 'full'] as const) {
-      expect(facadesForProfile(parsed.catalog, profile)).not.toContain('repo-harness-strategy');
-      expect(hostSkillPlacements(parsed.catalog, profile).codex).not.toContain('repo-harness-strategy');
+    for (const plugins of [[], PLUGIN_IDS]) {
+      expect(facadesForSelection(parsed.catalog, plugins)).not.toContain('repo-harness-strategy');
+      expect(hostSkillPlacements(parsed.catalog, plugins).codex).not.toContain('repo-harness-strategy');
     }
   });
 });
