@@ -22,7 +22,7 @@ import {
   type PublicationPolicy,
 } from '../../core/publication/acceptance-merge-policy';
 import { checkClosingReferences, type ClosingIssueReference } from '../../core/publication/closing-references';
-import { BATCH_REF, batchMemberMerges, type MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
+import { BATCH_COMMIT_LIMIT, BATCH_REF, batchMemberMerges, type MergeReadinessBlockerV1 } from '../../core/publication/merge-readiness';
 import {
   MergeReadinessError,
   collectPullRequestMergeReadiness,
@@ -262,8 +262,6 @@ function assertSameRepositoryTarget(target: MergeTarget): void {
   if (target.auto_merge_enabled) throw new Refusal('auto_merge_enabled', 'the PR has an auto-merge request');
 }
 
-/** One compare page; a batch with more commits fails closed instead of a partial proof. */
-const BATCH_COMPARE_LIMIT = 100;
 /**
  * The compare response also carries file patches, which grow with the diff and
  * overflow the spawn buffer. gh applies this filter, so stdout holds only the
@@ -280,12 +278,12 @@ function assertBatchRef(target: MergeTarget): void {
 /** Every commit in expected base..expected head, keyed by SHA, with its parent SHAs. */
 function readBatchCommits(input: PullRequestReadinessInput): ReadonlyMap<string, readonly string[]> {
   const compare = field(read(input, ['api',
-    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMPARE_LIMIT}`,
+    `repos/${input.repository}/compare/${input.expected_base_sha}...${input.expected_head_sha}?per_page=${BATCH_COMMIT_LIMIT}`,
     '--jq', BATCH_COMPARE_JQ]), 'provider compare');
   const commits = compare.commits;
   if (!Array.isArray(commits) || !Number.isSafeInteger(compare.total_commits) || commits.length !== compare.total_commits) {
     throw new Refusal('provider_data_incomplete',
-      `provider compare did not list every commit in base..head (at most ${BATCH_COMPARE_LIMIT} are read)`);
+      `provider compare did not list every commit in base..head (at most ${BATCH_COMMIT_LIMIT} are read)`);
   }
   const graph = new Map<string, readonly string[]>();
   for (const entry of commits) {
