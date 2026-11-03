@@ -6,7 +6,6 @@ import {
   type BoardTerminalV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
-import { githubRemoteRepository } from '../../core/operator/docs';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { gitSpawnSync } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
@@ -164,11 +163,11 @@ export function readRepositoryId(input: GhInput): number {
 }
 
 /** The repository id of a checkout, or null when no remote URL of it is a GitHub URL: gh then has no repository to read. */
-export function readLocalRepositoryId(input: GhInput): number | null {
+export function readLocalRepositoryId(input: GhInput, isGitHubRemote: (url: string) => boolean): number | null {
   const remotes = gitSpawnSync(['config', '--local', '--get-regexp', '^remote\\..*\\.url$'], { cwd: input.repo_root, encoding: 'utf8' });
   // Exit 1: the checkout has no remote URL.
   if (remotes.error !== undefined || (remotes.status !== 0 && remotes.status !== 1)) throw new BoardCollectError('git did not list the remote URLs of this checkout');
-  const github = remotes.stdout.split('\n').some(line => githubRemoteRepository(line.slice(line.indexOf(' ') + 1)) !== null);
+  const github = remotes.stdout.split('\n').some(line => line !== '' && isGitHubRemote(line.slice(line.indexOf(' ') + 1)));
   return github ? readRepositoryId(input) : null;
 }
 

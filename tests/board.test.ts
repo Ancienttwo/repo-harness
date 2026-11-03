@@ -9,6 +9,7 @@ import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/boa
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
@@ -380,7 +381,7 @@ test('watch service: --watch refuses a terminal without the service labels; star
   initGitRepo(checkout);
   expect(run('git', ['remote', 'add', 'mirror', 'https://example.com/repo-harness.git'], checkout).status).toBe(0);
   const local = () => attentionWatchDoctorCheck(watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }], FAKE_TERMINALS: { t5: { labels } } }).host,
-    () => readLocalRepositoryId({ repo_root: checkout, gh_runner: () => ({ status: 0, stdout: JSON.stringify({ id: 1186405141 }) }) }));
+    () => readLocalRepositoryId({ repo_root: checkout, gh_runner: () => ({ status: 0, stdout: JSON.stringify({ id: 1186405141 }) }) }, url => githubRemoteRepository(url) !== null));
   expect(local()).toMatchObject({ status: 'na', detail: 'This checkout has no GitHub remote, so it has no attention watcher.' });
   expect(run('git', ['remote', 'add', 'origin', 'git@github.com:Ancienttwo/repo-harness.git'], checkout).status).toBe(0);
   expect(local()).toMatchObject({ status: 'ok' });

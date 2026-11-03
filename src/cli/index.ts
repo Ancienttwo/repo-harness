@@ -43,6 +43,7 @@ import { buildPublicationCommand } from './commands/publication';
 import { buildBoardCommand } from './commands/board';
 import { attentionWatchDoctorCheck } from '../effects/board/attention-watch';
 import { readLocalRepositoryId } from '../effects/board/collect';
+import { githubRemoteRepository } from '../core/operator/docs';
 import { attentionHostPorts, boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
@@ -132,7 +133,7 @@ export const CLI_PORTS: {
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd })) },
+  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
   retention: {
