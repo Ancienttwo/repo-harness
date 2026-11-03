@@ -75,7 +75,7 @@ skill routing lives in `docs/reference-configs/agentic-development-flow.md`.
 - `hai-stack` supplies `geju` for live, pre-contract exploration; only its frozen output enters a contract
 - Codex automation requires `health`, `check`, and `mermaid` from `~/.codex/skills`
 - `CodeGraph` is required agent readiness for code navigation and impact tracing
-- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`) for both hosts, plus the Claude-only `orchestrator`
+- repo-harness's packaged `agent_fleet` supplies the delegation loop's global agent definitions (`explorer`, `deep-reasoner`, `fast-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`) for both hosts
 
 Waza is Codex-first in this contract. `~/.codex/skills` is the Codex runtime
 source, while `~/.agents/skills` is only the skills CLI staging/cache path used
@@ -698,8 +698,7 @@ bun add -g @colbymchenry/codegraph@1.6.2 && codegraph sync . && codegraph status
 `check-agent-tooling.sh`. The single authored source is
 `package:agents/fleet`; it ships inside the npm package and never requires a
 network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
-`deep-worker`, `gatekeeper`, `root-cause-prover`, `harness-evaluator`, and
-`orchestrator`.
+`deep-worker`, `gatekeeper`, `root-cause-prover`, and `harness-evaluator`.
 
 ### Two targets, one source
 
@@ -707,14 +706,9 @@ network fetch. The managed list is `explorer`, `deep-reasoner`, `fast-worker`,
   is installed byte-for-byte.
 - Codex: `~/.codex/agents/<agent>.toml` — generated deterministically from the
   same packaged `.md`; there is no second authored copy for Codex.
-- `orchestrator` is projected to Claude only (`CLAUDE_ONLY_AGENTS` in
-  `src/effects/terminal/task-role-profiles.ts`). The installer writes no
-  `~/.codex/agents/orchestrator.toml`, and the checker does not expect one.
-  Start it as a long-lived session with `claude --agent orchestrator`. It is
-  the coordinator and integrator seat of `repo-harness-issue-flow`
-  (`opus/xhigh`, read-only tools plus `gh` and `hc send`). It has no
-  Codex target because a Codex fleet TOML runs in a read-only sandbox without
-  network access, which cannot run `gh`.
+- The fleet holds sub-agent roles only. The orchestrator seat is not a fleet
+  role: `repo-harness seats argv orchestrator` prints its launch argv from the
+  `seats` section of `~/.repo-harness/config.json`.
 
 ### `.md` -> `.toml` mapping
 
@@ -997,7 +991,6 @@ managed files by hand:
 ~/.claude/agents/gatekeeper.md
 ~/.claude/agents/root-cause-prover.md
 ~/.claude/agents/harness-evaluator.md
-~/.claude/agents/orchestrator.md
 ~/.codex/agents/explorer.toml
 ~/.codex/agents/deep-reasoner.toml
 ~/.codex/agents/fast-worker.toml

@@ -6,10 +6,9 @@ not implement child issues. Seats, dependencies and the comment board are
 in `board.md`. Body and comment shapes are in `templates.md`.
 
 You run in a long-lived top-level session on any host with network
-access, in this skill's orchestrator mode. On Claude,
-`claude --agent orchestrator` loads `agents/fleet/orchestrator.md`; that
-file is the Claude entry, not a requirement. Any host and any capable
-model may hold the seat.
+access, in this skill's orchestrator mode. Start the seat with the argv
+that `repo-harness seats argv orchestrator` prints. Any host and any
+capable model may hold the seat.
 
 Post your own `issue claim` with `Seat: coordinator` on the parent before
 you dispatch. Only you post `issue claim` comments: the claim for each

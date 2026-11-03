@@ -15,7 +15,6 @@ import {
 } from '../../core/operator/seats-settings';
 import {
   AGENT_TARGET_OVERRIDES,
-  CLAUDE_ONLY_AGENTS,
   EFFORT_LEVELS,
   MANAGED_AGENTS,
   MODEL_FAMILY_LABELS,
@@ -41,18 +40,15 @@ export class SeatsConfigurationError extends Error {
   }
 }
 
-// Every range below is a projection of the fleet role profiles. A Claude-only
-// role runs as its own seat (`claude --agent orchestrator`), so it is never a
-// sub-agent of a seat.
-const SUB_AGENTS = MANAGED_AGENTS.filter(role => !CLAUDE_ONLY_AGENTS.has(role));
-const READ_ONLY_SUB_AGENTS = SUB_AGENTS.filter(role => !WRITABLE_AGENTS.has(role));
+// Every range below is a projection of the fleet role profiles.
+const READ_ONLY_SUB_AGENTS = MANAGED_AGENTS.filter(role => !WRITABLE_AGENTS.has(role));
 const without = (...excluded: SeatTool[]): readonly SeatTool[] => SEAT_TOOLS.filter(tool => !excluded.includes(tool));
 
 /** Owner rules (#1472): the orchestrator calls no sub-agent; the orchestrator and the advisor do not edit; the advisor does not write GitHub. */
 const SEAT_RANGES: SeatsRangesV1['seats'] = {
   orchestrator: { fleet: [], tools: without('edit') },
   advisor: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit', 'gh') },
-  worker: { fleet: SUB_AGENTS, tools: SEAT_TOOLS },
+  worker: { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
 };
 
 /** Claude takes a fleet model family, Codex a fleet target model. Pi uses its own model and effort, and has no fleet roles. */
@@ -66,7 +62,7 @@ export function seatsRanges(enabledRuntimes: readonly string[]): SeatsRangesV1 {
   return {
     runtimes: SEAT_RUNTIMES.map(id => ({ id, enabled: enabledRuntimes.includes(id), ...RUNTIME_RANGES[id] })),
     efforts: EFFORT_LEVELS,
-    roles: SUB_AGENTS.map(name => ({ name, writable: WRITABLE_AGENTS.has(name) })),
+    roles: MANAGED_AGENTS.map(name => ({ name, writable: WRITABLE_AGENTS.has(name) })),
     seats: SEAT_RANGES,
   };
 }
