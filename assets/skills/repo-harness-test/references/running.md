@@ -47,12 +47,15 @@ all three.
 The `architecture` lane runs `repo-harness architecture-projection check --json`
 and fails when the status is not `noop`. When `ARCHITECTURE_SUMMARY` names a
 file, the lane writes the JSON summary there. The daily report puts it in the
-repair issue. `architecture-advisory --base <ref>` is the PR lane. It runs
-`repo-harness architecture-debt --json --base <ref>` and prints one
+repair issue. `architecture-advisory --base <ref>` is the PR lane, and
+`Required / CI` reads its job. It first runs `archctx constraints check --json`
+and fails unless `constraint.surface.plugin-internals` (ADR-0002 rule 5) was
+evaluated with 0 violations, `coverage: complete`, no reason codes and no
+unresolved imports. It does not read the archctx exit code or the global status.
+Then it runs `repo-harness architecture-debt --json --base <ref>` and prints one
 `::warning::` line for each debt item that is new since the base, at most 20.
 It prints coverage gaps in the log. Then it runs the check and warns when the
-documents are stale. It always exits 0, and its job is not part of
-`Required / CI`.
+documents are stale. Only the constraint result can fail the lane.
 
 Only the `all`, `functional` (daily CI) and `release` lanes export
 `REPO_HARNESS_TEST_EXPENSIVE=1`, which is what unskips the real `npm pack`/install

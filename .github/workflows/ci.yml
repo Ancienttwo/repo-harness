@@ -246,10 +246,10 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-  # Advisory only: this job is not in the Required / CI aggregate, and its
-  # script exits 0 for every architecture result.
+  # Required / CI reads this job. Only the plugin-internals constraint
+  # (ADR-0002 rule 5) can fail it; architecture debt and hand edits are warnings.
   architecture-advisory:
-    name: PR architecture freshness (advisory)
+    name: PR architecture constraint and freshness
     needs: selection
     if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'
     runs-on: ubuntu-latest
@@ -266,7 +266,7 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
-      - name: Warn about architecture debt
+      - name: Check the plugin-internals constraint and warn about architecture debt
         env:
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: bash scripts/check-ci.sh architecture-advisory --base "$BASE_SHA"
@@ -445,7 +445,7 @@ jobs:
   required:
     name: Required / CI
     if: always() && github.event_name == 'pull_request'
-    needs: [selection, state-boundaries, verify, home-isolation, native-oar]
+    needs: [selection, state-boundaries, verify, home-isolation, native-oar, architecture-advisory]
     runs-on: ubuntu-latest
     steps:
       - name: Consume the single candidate verification
@@ -458,9 +458,11 @@ jobs:
           HOME_ISOLATION: ${{ needs.selection.outputs.home_isolation }}
           NATIVE_OAR_RESULT: ${{ needs.native-oar.result }}
           NATIVE_OAR: ${{ needs.selection.outputs.native_oar }}
+          ARCHITECTURE_RESULT: ${{ needs.architecture-advisory.result }}
         run: |
           # A documentation-only diff selects no build or test job.
           [ "$SELECTION_RESULT" = success ] && [ "$STATE_BOUNDARIES_RESULT" = success ] \
             && { { [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ]; } || { [ "$COVERAGE_MODE" = documentation ] && [ "$VERIFY_RESULT" = skipped ]; }; } \
             && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$HOME_ISOLATION" = false ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; } \
-            && { [ "$NATIVE_OAR_RESULT" = success ] || { [ "$NATIVE_OAR" = false ] && [ "$NATIVE_OAR_RESULT" = skipped ]; }; }
+            && { [ "$NATIVE_OAR_RESULT" = success ] || { [ "$NATIVE_OAR" = false ] && [ "$NATIVE_OAR_RESULT" = skipped ]; }; } \
+            && [ "$ARCHITECTURE_RESULT" = success ]

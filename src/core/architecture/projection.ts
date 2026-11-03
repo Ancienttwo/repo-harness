@@ -249,7 +249,8 @@ export function decodeFlowSelectorCheck(value: unknown): ArchitectureFlowSelecto
 
 /**
  * `archctx constraints check` has no published JSON schema. Validate the fields
- * this reader consumes against the exported contract's vocabulary.
+ * the readers consume (the operator map and the CI plugin-internals gate)
+ * against the exported contract's vocabulary.
  */
 export function decodeConstraintEvaluation(value: unknown): DependencyConstraintEvaluationV1 {
   const report = record(value, 'archctx constraints check');
@@ -264,6 +265,10 @@ export function decodeConstraintEvaluation(value: unknown): DependencyConstraint
   if (typeof report.importEdgeCount !== 'number' || !Number.isSafeInteger(report.importEdgeCount) || report.importEdgeCount < 0) {
     throw new Error('archctx constraints check import edge count is invalid');
   }
+  if (!Array.isArray(report.unresolvedImports) || !report.unresolvedImports.every((entry) => {
+    const unresolved = record(entry, 'archctx constraints check unresolved import');
+    return typeof unresolved.from === 'string' && typeof unresolved.specifier === 'string';
+  })) throw new Error('archctx constraints check unresolved imports are invalid');
   if (!Array.isArray(report.violations)) throw new Error('archctx constraints check omitted violations');
   for (const entry of report.violations) {
     const violation = record(entry, 'archctx constraints check violation');
