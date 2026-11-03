@@ -35,13 +35,23 @@ All notable changes to this skill are documented here.
   `not_pinned`. The Task drawer shows the hc terminal and the
   `herdr-app do terminal.keep` command that opens it in Herdr.app. Update the
   browser and the server together. (#1478)
+- MCP `latest_checks` returns the typed check records
+  `{"protocol":1,"kind":"repo-harness.check-records","records":[...]}`, not
+  a list of files ordered by modification time. The one record is the Change
+  Assessment, with `state` `present`, `absent` or `invalid`. An invalid record
+  carries `check_record_invalid` and the decoder message. The planner profile
+  can no longer list or read `.ai/harness/handoff/**` and
+  `.ai/harness/checks/**` through `list_workflow_files` and
+  `read_workflow_file`; `read_workflow_file` returns `POLICY_DENIED` for them.
+  `harness_status` adds `protocol: 1` and
+  `kind: "repo-harness.mcp-harness-status"`, and `workflowRoots` lists only
+  `docs/spec.md` and `docs/prds`. (#1353)
 - Readiness requires herdr-core, not classic Herdr. `check-agent-tooling.sh
   --strict-readiness` fails when `hc` is missing, unusable or below
   `external_tooling.herdr_core.min_version`; a missing or malformed pin is a
   `configuration-error`. `setup check` reports `runtime.herdr_core` as
-  required. The `external_tooling.herdr` pin, `runtime.herdr`, the
-  `herdr_skill` readiness row and the doctor check `pi-herdr-integration`
-  are removed, and CI no longer installs classic Herdr. Pi reports its
+  required. The `external_tooling.herdr` pin, `runtime.herdr` and the
+  doctor check `pi-herdr-integration` are removed, and CI no longer installs classic Herdr. Pi reports its
   status to hc natively. An `external_tooling.herdr` key in a downstream
   policy has no reader; delete it. Herdr.app is not a readiness
   requirement. (#1480)

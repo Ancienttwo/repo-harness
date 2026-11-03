@@ -136,17 +136,20 @@ describe("herdr runtime pin has one source of truth", () => {
   });
 });
 
-test("Herdr skill replaces the environment-only gate and preserves binary command instructions", () => {
-  const upstream = "---\nname: herdr\ndescription: Requires HERDR_ENV=1.\n---\n# Herdr\nIf the check fails, say that you are not running inside Herdr and stop.\n\n## Learn the current CLI\nUse the binary help.\n";
-  const rendered = renderHerdrSkill(upstream);
-  expect(rendered).not.toContain("say that you are not running inside Herdr and stop");
-  expect(rendered).not.toContain("Requires HERDR_ENV=1.");
+// The first lines of `hc --skill` from the pinned herdr-core 0.1.17 release.
+const HC_MANUAL = "# hc manual (herdr-core)\n\nThe current manual for herdr-core's CLI, `hc`. It is not `herdr`, the older\nterminal multiplexer.\n\n"
+  + "# hc: programs and agents that stay alive\n\n`$HC_TERMINAL_ID` is your address. Terminals you start are your children.\n";
+
+test("Herdr skill puts the hc manual verbatim under the caller-context policy", () => {
+  const rendered = renderHerdrSkill(HC_MANUAL);
+  expect(rendered.startsWith("---\nname: herdr\n")).toBe(true);
   expect(rendered).toContain("Missing variables do not prove");
-  expect(rendered).toContain("herdr --session <owned-session>");
+  expect(rendered).toContain("hc ls --json");
   expect(rendered).toContain("Read-only discovery does not require");
-  expect(rendered).toContain("If no suitable reviewer exists, create a new pane");
-  expect(rendered.endsWith("## Learn the current CLI\nUse the binary help.\n")).toBe(true);
-  expect(() => renderHerdrSkill("---\nname: herdr\n---\nChanged upstream layout\n")).toThrow();
+  expect(rendered).toContain("If no suitable reviewer exists, start one");
+  expect(rendered).not.toContain("HERDR_ENV");
+  expect(rendered.endsWith(`(\`hc --skill\`).\n\n${HC_MANUAL}`)).toBe(true);
+  expect(() => renderHerdrSkill("---\nname: herdr\n---\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n")).toThrow("hc --skill did not return the hc manual");
 });
 
 test("Herdr skill renderer loads from an npm package path under Node", () => {
@@ -158,7 +161,7 @@ test("Herdr skill renderer loads from an npm package path under Node", () => {
       mkdirSync(join(target, ".."), { recursive: true });
       writeFileSync(target, readFileSync(join(ROOT, file)));
     }
-    const upstream = "---\nname: herdr\n---\n\n## Learn the current CLI\nPackage CLI instructions.\n";
+    const upstream = HC_MANUAL;
     const result = spawnSync("node", ["-e", "const {renderHerdrSkill}=require(process.argv[1]); process.stdout.write(renderHerdrSkill(process.argv[2]));", join(packageRoot, "src/cli/commands/herdr-skill-render.mjs"), upstream], { encoding: "utf8" });
     expect(result.status).toBe(0);
     expect(result.stderr).toBe("");
@@ -174,12 +177,17 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
     const source = join(root, "skill.md");
     mkdirSync(home);
     mkdirSync(bin);
-    const herdr = join(bin, "herdr");
-    writeFileSync(herdr, "#!/bin/sh\ncat \"$FIXTURE_SKILL_FILE\"\n");
-    chmodSync(herdr, 0o755);
+    const hc = join(bin, "hc");
+    writeFileSync(hc, "#!/bin/sh\ncat \"$FIXTURE_SKILL_FILE\"\n");
+    chmodSync(hc, 0o755);
     const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`, FIXTURE_SKILL_FILE: source };
-    const first = "---\nname: herdr\n---\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n";
+    const first = HC_MANUAL;
     writeFileSync(source, first);
+    // A copy that an earlier release installed from classic `herdr --skill` is still owned.
+    const classicCopy = join(home, ".claude", "skills", "herdr");
+    mkdirSync(classicCopy, { recursive: true });
+    writeFileSync(join(classicCopy, "SKILL.md"), "Check HERDR_ENV.\n");
+    writeFileSync(join(classicCopy, ".repo-harness-owner.json"), JSON.stringify({ owner: "repo-harness", source: "herdr --skill", sha256: `sha256:${createHash("sha256").update("Check HERDR_ENV.\n").digest("hex")}` }));
     expect(configureRequiredHerdrSkill("both", env).status).toBe("ok");
     for (const host of [".claude", ".codex"]) {
       expect(readFileSync(join(home, host, "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(first));
@@ -190,7 +198,7 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
     for (const file of ["SKILL.md", ".repo-harness-owner.json"]) {
       writeFileSync(join(shared, file), readFileSync(join(home, ".codex", "skills", "herdr", file)));
     }
-    const next = `${first}Use herdr agent list.\n`;
+    const next = `${first}Use hc ls.\n`;
     writeFileSync(source, next);
     expect(configureRequiredHerdrSkill("both", env).status).toBe("ok");
     expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(next));
@@ -242,10 +250,10 @@ test("required Herdr skill rejects a symlinked host parent before writing a new 
     mkdirSync(bin);
     symlinkSync(outside, join(home, ".codex"), "dir");
     const source = join(root, "skill.md");
-    writeFileSync(source, "---\nname: herdr\n---\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n");
-    const herdr = join(bin, "herdr");
-    writeFileSync(herdr, "#!/bin/sh\ncat \"$FIXTURE_SKILL_FILE\"\n");
-    chmodSync(herdr, 0o755);
+    writeFileSync(source, HC_MANUAL);
+    const hc = join(bin, "hc");
+    writeFileSync(hc, "#!/bin/sh\ncat \"$FIXTURE_SKILL_FILE\"\n");
+    chmodSync(hc, 0o755);
     const result = configureRequiredHerdrSkill("codex", {
       ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`, FIXTURE_SKILL_FILE: source,
     });
@@ -263,12 +271,12 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
     const home = join(root, "home");
     const bin = join(root, "bin");
     mkdirSync(home); mkdirSync(bin);
-    const upstream = "---\nname: herdr\n---\nCheck HERDR_ENV before control.\n\n## Learn the current CLI\n";
+    const upstream = HC_MANUAL;
     const content = renderHerdrSkill(upstream);
     const source = join(root, "skill.md");
     writeFileSync(source, upstream);
-    writeFileSync(join(bin, "herdr"), '#!/bin/sh\ncat "$FIXTURE_SKILL_FILE"\n');
-    chmodSync(join(bin, "herdr"), 0o755);
+    writeFileSync(join(bin, "hc"), '#!/bin/sh\ncat "$FIXTURE_SKILL_FILE"\n');
+    chmodSync(join(bin, "hc"), 0o755);
     const env = { ...process.env, HOME: home, PATH: `${bin}:${process.env.PATH ?? ""}`, FIXTURE_SKILL_FILE: source };
     expect(configureRequiredHerdrSkill(host, env).status).toBe("ok");
     const skills = join(home, `.${host}`, "skills");
@@ -361,3 +369,4 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
 import { chmodSync, existsSync, lstatSync, mkdirSync, mkdtempSync, rmSync, symlinkSync, utimesSync, renameSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { spawnSync } from 'node:child_process';
+import { createHash } from 'node:crypto';

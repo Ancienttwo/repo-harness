@@ -135,7 +135,7 @@ function brief(seat: SeatId, config: SeatConfigV1, fleet: readonly string[], lim
   return [...roleParagraphs(seat, config, fleet), ...kept].join('\n\n');
 }
 
-function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[]): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
+function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly string[], name: string | undefined): Omit<SeatLaunchV1, 'protocol' | 'kind' | 'seat' | 'runtime' | 'source'> {
   const on = (group: SeatTool) => config.tools.includes(group);
   // `--tools` cannot name agent types (`Agent(<type>)` there removes the Agent tool), so a fleet keeps the Agent
   // tool and denies every other known type by name.
@@ -153,6 +153,7 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
     argv: [
       ...(seat === 'orchestrator' && on('tasks') ? ['env', `CLAUDE_CODE_TASK_LIST_ID=${ORCHESTRATOR_TASK_LIST_ID}`] : []),
       'claude',
+      ...(name === undefined ? [] : ['-n', name]),
       ...(config.model === null ? [] : ['--model', config.model]),
       ...(config.effort === null ? [] : ['--effort', config.effort]),
       '--tools', ...tools,
@@ -203,10 +204,73 @@ function piLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'proto
 /**
  * `claudeAgentTypes` is every agent type that a Claude session of this host can
  * call. A Claude seat with a fleet refuses each of them that is not in the fleet.
+ * `paneName` (`seatPaneName`) becomes the Claude session name `-n`.
  */
-export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[]): SeatLaunchV1 {
+export function buildSeatLaunch(seat: SeatId, config: SeatConfigV1, source: SeatLaunchSource, claudeAgentTypes: readonly string[], paneName?: string): SeatLaunchV1 {
   const launch = config.runtime === 'claude'
-    ? claudeLaunch(seat, config, claudeAgentTypes)
+    ? claudeLaunch(seat, config, claudeAgentTypes, paneName)
     : config.runtime === 'codex' ? codexLaunch(seat, config) : piLaunch(seat, config);
   return { protocol: 1, kind: 'seat_launch', seat, runtime: config.runtime, source, ...launch };
+}
+
+const PANE_ROLE = { orchestrator: 'orch', advisor: 'adv', worker: 'w', reviewer: 'rv' } as const;
+const PANE_NAME_MAX = 32;
+const POSITIVE = /^[1-9][0-9]*$/u;
+const WORD = /^[a-z][a-z0-9]*$/u;
+
+export class SeatPaneNameError extends Error {
+  readonly code = 'pane_name_invalid';
+}
+
+/** `reviewer` is a pane started by hand; it has no seat config. */
+export interface SeatPaneNameInput {
+  /** The `panePrefix` of the repository's registry entry (#1544); the registry checks its format. */
+  readonly prefix: string;
+  readonly seat: SeatId | 'reviewer';
+  readonly issue?: string;
+  readonly pr?: string;
+  /** The digits of a release item, for example `0252`. */
+  readonly release?: string;
+  readonly qualifier?: string;
+}
+
+/**
+ * The hc `--name` and Claude `-n` of a seat pane: `<prefix>-<role>[-<item>][-<qualifier>]`. The worker item is its
+ * issue or `rel<digits>`; the reviewer item is its PR. The name carries no state, so it never goes stale.
+ */
+export function seatPaneName(input: SeatPaneNameInput): string {
+  const fail = (why: string): never => { throw new SeatPaneNameError(`Pane name: ${why}.`); };
+  const { prefix, seat, issue, pr, release, qualifier } = input;
+  if (!WORD.test(prefix)) fail(`prefix ${JSON.stringify(prefix)} must match ${WORD.source}`);
+  const role: string | undefined = PANE_ROLE[seat];
+  if (role === undefined) fail(`unknown seat ${JSON.stringify(seat)}`);
+  let item: string | undefined;
+  if (seat === 'worker') {
+    if ((issue === undefined) === (release === undefined)) fail('a worker needs exactly one of an issue and a release item');
+    if (pr !== undefined) fail('a worker takes no PR');
+    if (issue !== undefined && !POSITIVE.test(issue)) fail('the issue must be a positive decimal integer');
+    if (release !== undefined && !/^[0-9]+$/u.test(release)) fail('the release item must be digits');
+    item = issue ?? `rel${release}`;
+  } else if (seat === 'reviewer') {
+    if (pr === undefined || !POSITIVE.test(pr)) fail('a reviewer needs a PR, a positive decimal integer');
+    if (issue !== undefined || release !== undefined) fail('a reviewer takes only a PR');
+    item = pr;
+  } else if (issue !== undefined || pr !== undefined || release !== undefined || qualifier !== undefined) {
+    fail(`the ${seat} pane takes no item and no qualifier`);
+  }
+  if (qualifier !== undefined && !WORD.test(qualifier)) fail(`qualifier ${JSON.stringify(qualifier)} must match ${WORD.source}`);
+  const name = [prefix, role, item, qualifier].filter(part => part !== undefined).join('-');
+  if (name.length > PANE_NAME_MAX) fail(`${name} is longer than ${PANE_NAME_MAX} characters`);
+  return name;
+}
+
+/**
+ * The Herdr.app tab of a new seat pane, before the fullness suffix: the orchestrator tab, the worker tab of its parent
+ * issue (`other` without one), or the review tab. A full tab gets the next number, for example `#1000 2`.
+ */
+export function seatTabName(seat: SeatId | 'reviewer', parent?: string): string {
+  if (parent !== undefined && !POSITIVE.test(parent)) throw new SeatPaneNameError('Tab name: the parent must be a positive decimal integer.');
+  if (seat === 'reviewer') return 'review';
+  if (seat === 'worker') return parent === undefined ? 'other' : `#${parent}`;
+  return 'orch';
 }

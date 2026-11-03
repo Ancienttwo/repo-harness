@@ -400,7 +400,7 @@ Both hosts receive the same generated skill. When Codex is selected, an existing
 shared copy at `~/.agents/skills/herdr` is also updated and checked because Codex
 can discover it. Claude-only operations leave that shared copy unchanged.
 Install refuses to replace a
-user-edited or unowned copy.
+user-edited or unowned copy. Strict readiness compares against the same renderer.
 Missing tool environment variables do not prove that the user is outside Herdr.
 Read-only discovery lists running sessions and panes by the task's exact path.
 Reuse a suitable task reviewer or create a new pane in the matched workspace.

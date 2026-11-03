@@ -75,8 +75,6 @@ export const PLANNER_READ_GLOBS = [
   'docs/prds/**',
   'tasks/lessons.md',
   '.ai/context/**',
-  '.ai/harness/handoff/**',
-  '.ai/harness/checks/**',
 ];
 
 export const PLANNER_WRITE_GLOBS = [

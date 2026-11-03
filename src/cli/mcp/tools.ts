@@ -2,6 +2,8 @@ import { createHash } from 'crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { basename, isAbsolute, join, resolve } from 'path';
+import { projectCheckRecords, type CheckRecordsV1 } from '../../core/review/check-records';
+import { readChangeAssessmentRecord } from '../../effects/review/change-assessment';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
@@ -98,12 +100,22 @@ function audit(ctx: McpToolContext, tool: string, status: 'ok' | 'blocked' | 'fa
 }
 
 function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; branch: string | null; workflowRoots: Array<{ path: string; exists: boolean }> } {
-  const roots = ['docs/spec.md', 'docs/prds', '.ai/harness/handoff', '.ai/harness/checks'];
+  const roots = ['docs/spec.md', 'docs/prds'];
   return {
     repoRoot,
     adopted: isRepoHarnessAdopted(repoRoot),
     branch: currentGitBranch(repoRoot),
     workflowRoots: roots.map((path) => ({ path, exists: existsSync(join(repoRoot, path)) })),
+  };
+}
+
+/** A failed run stores its error text, which can hold a credential. */
+function redactCheckRecords(records: CheckRecordsV1): CheckRecordsV1 {
+  return {
+    ...records,
+    records: records.records.map((record) => (record.state === 'present' && record.status === 'fail' && record.message !== null
+      ? { ...record, message: redactMcpText(record.message).text }
+      : record)),
   };
 }
 
@@ -411,8 +423,6 @@ function workflowFileCandidates(repoRoot: string): string[] {
     'docs/prds',
     'tasks/lessons.md',
     '.ai/context',
-    '.ai/harness/handoff',
-    '.ai/harness/checks',
   ];
   const files: string[] = [];
   for (const root of roots) {
@@ -665,7 +675,7 @@ export function buildMcpToolDefinitions(policy: McpPolicy): McpToolDefinition[] 
     { name: 'discover_harness_repos', description: 'Discover repo-harness adopted repositories from the global registry and explicit allowed discovery roots. Pass query, name, or repo_path for repo-like user inputs such as "my-app/".', inputSchema: discoverySchema, annotations: readOnly },
     { name: 'list_workflow_files', description: 'List policy-readable workflow files. Pass repo_path to target a registered adopted repo.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'read_workflow_file', description: 'Read one policy-allowed workflow file path from the current or target registered repo.', inputSchema: stringPathSchema, annotations: readOnly },
-    { name: 'latest_checks', description: 'Return latest repo-harness check artifacts.', inputSchema: optionalRepoSchema, annotations: readOnly },
+    { name: 'latest_checks', description: 'Return the typed repo-harness check records (protocol 1): the Change Assessment record is present, absent or invalid.', inputSchema: optionalRepoSchema, annotations: readOnly },
     { name: 'list_prds', description: 'List PRD artifacts under docs/prds.', inputSchema: optionalRepoSchema, annotations: readOnly },
     ...buildStateToolDefinitions(),
     ...buildFleetToolDefinitions(),
@@ -716,6 +726,8 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
         const summary = repoSummary(target.repoRoot);
         audit(ctx, name, 'ok', args);
         return textResult({
+          protocol: 1,
+          kind: 'repo-harness.mcp-harness-status',
           repoRoot: summary.repoRoot,
           adopted: summary.adopted,
           profile: ctx.policy.profile,
@@ -786,15 +798,9 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       case 'latest_checks': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
-        const files = workflowFileCandidates(target.repoRoot)
-          .filter((path) => path.startsWith('.ai/harness/checks/'))
-          .filter((path) => resolveMcpPath(target.repoRoot, path, ctx.policy, 'read').ok)
-          .map((path) => fileSummary(path, target.repoRoot))
-          .filter((entry): entry is NonNullable<typeof entry> => entry !== null)
-          .sort((a, b) => b.modifiedAt.localeCompare(a.modifiedAt))
-          .slice(0, 20);
+        const records = projectCheckRecords({ changeAssessment: readChangeAssessmentRecord(target.repoRoot, ctx.policy.maxFileBytes) });
         audit(ctx, name, 'ok', args);
-        return textResult({ files });
+        return textResult(redactCheckRecords(records));
       }
       case 'list_prds': {
         const target = targetRepoRoot(ctx, args);

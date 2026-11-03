@@ -118,6 +118,7 @@ const CODEX_AUTOMATION_SKILLS = ["health", "check", "mermaid"];
 const OBSIDIAN_RUNTIME_CONSUMER = "obsidian-memory";
 const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
+const { renderHerdrSkill } = require(path.join(PACKAGE_ROOT, "src/cli/commands/herdr-skill-render.mjs"));
 const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "src", "core", "skill-surface", "waza-shared-rules.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
@@ -919,6 +920,58 @@ function detectCodexAutomationProfile() {
     installed_skills: installedSkills,
     missing_skills: missingSkills,
     skills,
+  };
+}
+
+function detectRequiredHerdrSkill(herdrCoreRuntime) {
+  let declared = false;
+  try {
+    const catalog = JSON.parse(fs.readFileSync(SKILL_SURFACE_MANIFEST_PATH, "utf8"));
+    declared = catalog.packages.find((entry) => entry.name === "repo-harness")?.requires?.includes("herdr") === true
+      && catalog.packages.some((entry) => entry.name === "herdr" && entry.kind === "external");
+  } catch (_) { /* The catalog check below reports the invalid source. */ }
+  let expected = null;
+  if (herdrCoreRuntime.status === "present" && herdrCoreRuntime.path) {
+    const result = spawnSync(herdrCoreRuntime.path, ["--skill"], { encoding: "utf8", timeout: 5000 });
+    if (result.status === 0) {
+      try { expected = renderHerdrSkill(result.stdout); }
+      catch (_) { /* Output that is not the hc manual remains unavailable. */ }
+    }
+  }
+  const skillRoots = SELECTED_HOSTS.map(host => [host, HOSTS[host].skillsDir]);
+  const sharedRoot = path.join(HOME, ".agents", "skills");
+  if (SELECTED_HOSTS.includes("codex")) {
+    try {
+      fs.lstatSync(path.join(sharedRoot, "herdr"));
+      skillRoots.push(["shared", sharedRoot]);
+    } catch (error) {
+      if (error.code !== "ENOENT") throw error;
+    }
+  }
+  const hosts = Object.fromEntries(skillRoots.map(([host, root]) => {
+    const skillFile = path.join(root, "herdr", "SKILL.md");
+    let installed = null;
+    let unreadable = false;
+    try {
+      if (fs.existsSync(skillFile)) installed = fs.readFileSync(skillFile, "utf8");
+    } catch (_) { unreadable = true; }
+    return [host, {
+      path: skillFile,
+      status: unreadable ? "invalid" : installed === null ? "missing" : expected === null ? "unverified" : installed === expected ? "present" : "mismatch",
+    }];
+  }));
+  const hostStatuses = Object.values(hosts).map((entry) => entry.status);
+  const status = !declared ? "invalid" : expected === null ? "unavailable"
+    : hostStatuses.includes("invalid") ? "invalid" : hostStatuses.includes("missing") ? "missing"
+      : hostStatuses.includes("mismatch") ? "mismatch" : "present";
+  return {
+    name: "herdr_skill",
+    status,
+    reason: status === "present" ? "The hc manual and the managed caller-context policy are present on each selected host." : "The required Herdr skill is absent, unreadable, or differs from the hc manual plus the managed caller-context policy.",
+    source: "hc --skill",
+    required_by: "assets/skill-commands/manifest.json#repo-harness.requires",
+    hosts,
+    install_command: `repo-harness update --target ${hostMode}`,
   };
 }
 
@@ -1931,6 +1984,7 @@ const report = {
   runtime_capabilities: runtimeCapabilities,
   tools: {
     waza: wazaReport,
+    herdr_skill: detectRequiredHerdrSkill(runtimeCapabilities.herdr_core),
     codex_automation_profile: detectCodexAutomationProfile(),
     obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
@@ -1944,6 +1998,11 @@ if (strictReadiness && report.runtime_capabilities.herdr_core.status !== "presen
   const hc = report.runtime_capabilities.herdr_core;
   if (!hc.min_version) strictFailures.push(`herdr-core configuration error: ${hc.reason}`);
   else strictFailures.push(`herdr-core runtime is ${hc.status}; install hc >=${hc.min_version} and verify hc --version`);
+}
+if (strictReadiness && report.tools.herdr_skill.status !== "present") {
+  // The skill source is `hc --skill`, so the update command cannot repair it until hc is present.
+  const installHcFirst = report.runtime_capabilities.herdr_core.status === "present" ? "" : "install hc first, then ";
+  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; ${installHcFirst}run ${report.tools.herdr_skill.install_command}`);
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
@@ -1979,6 +2038,13 @@ function printText(result) {
     console.log(`  - ${capability.name}: ${capability.status} (${required})${pathBits}`);
     console.log(`    owner=${capability.owner}; required_for=${capability.required_for}`);
   }
+  console.log("");
+
+  const herdrSkill = result.tools.herdr_skill;
+  console.log(`Herdr skill [${herdrSkill.status}]`);
+  console.log(`  - Source: ${herdrSkill.source}`);
+  for (const [host, skill] of Object.entries(herdrSkill.hosts)) console.log(`  - ${host}: ${skill.status} (${skill.path})`);
+  if (herdrSkill.status !== "present") console.log(`  - Install: ${herdrSkill.install_command}`);
   console.log("");
 
   const waza = result.tools.waza;
