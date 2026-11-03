@@ -322,6 +322,14 @@ describe('Bot access collector', () => {
         value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, terminals: { state: 'ok', value: [{ address: 'pane-1', name: null, status: 'idle' }] } } : null }),
         value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'ok', value: { state: 'aligned', expected: { min_version: '0.1.17' }, actual: { version: '/usr/bin/hc' } } } } : null }),
         value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, herdr_app: { state: 'aligned' } } : null }),
+        // Each terminals reason names one version state: aligned → failed, mismatch → mismatch, no pin → no pin.
+        ...(['hc_version_mismatch', 'hc_pin_unavailable'] as const).map(reason => (value: BotAccessSnapshotV1) =>
+          ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, terminals: { state: 'unavailable', reason } } : null })),
+        ...(['hc_terminals_failed', 'hc_pin_unavailable'] as const).map(reason => (value: BotAccessSnapshotV1) =>
+          ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'ok', value: { state: 'mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } } },
+            terminals: { state: 'unavailable', reason } } : null })),
+        ...(['hc_terminals_failed', 'hc_version_mismatch'] as const).map(reason => (value: BotAccessSnapshotV1) =>
+          ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'unavailable', reason: 'hc_pin_unavailable' }, terminals: { state: 'unavailable', reason } } : null })),
         value => ({ ...value, protocol: 1 }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, deliveries: { ...value.notify.deliveries, slack: { at: null, result: 'sent' } } } : null }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, channels: { ...value.notify.channels, email: 'configured' } } : null }),

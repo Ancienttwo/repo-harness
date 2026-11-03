@@ -248,7 +248,15 @@ test('an hc terminal location needs the core that the operator reads', async () 
   expect(await followUp(c.env)).toEqual({ task_id: f.bound.binding.task,
     resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' }, hc_terminal: null });
   c.hc.setVersion('0.1.17', 'core-1');
-  expect((await followUp(c.env))?.hc_terminal).toEqual({ address: f.bound.binding.terminal_id, name: f.bound.binding.terminal_name, open_command: open(f.bound.binding.terminal_id) });
+  // The operator runs inside an hc terminal: its terminal identity is not lent to the call on the session's socket.
+  const inTerminal: NodeJS.ProcessEnv = { ...c.env, HC_TERMINAL_ID: 't9', HC_TERMINAL_SOCKET: '/tmp/hc-owner.sock', HC_SCOPE: 'owner-scope' };
+  delete inTerminal.HERDR_ENV;
+  expect((await followUp(inTerminal))?.hc_terminal).toEqual({ address: f.bound.binding.terminal_id, name: f.bound.binding.terminal_name, open_command: open(f.bound.binding.terminal_id) });
+  const perSocket = c.hc.calls().filter(call => call.command === 'server' && call.socket === f.bound.binding.endpoint.socket);
+  expect(perSocket.length).toBeGreaterThan(0);
+  expect(perSocket.map(call => call.terminal_keys)).toEqual(perSocket.map(() => []));
+  // The guard sees the keys where they are not removed: the operator's own status call keeps them.
+  expect(c.hc.calls().some(call => call.terminal_keys.length === 3)).toBe(true);
   // The fake answers every socket as the same core; the projection keeps a location only for a matching core.
   const view = projectTaskExecutionView((await collectTaskExecutionStates(f.root, async () => 'core-2')), c.id, 'core-1', herdrAppOpenCommand);
   expect(view.tasks[0]?.follow_up.hc_terminal).toBeNull();

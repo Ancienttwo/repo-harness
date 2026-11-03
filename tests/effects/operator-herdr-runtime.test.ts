@@ -1,12 +1,13 @@
 import { describe, expect, test } from 'bun:test';
-import { writeFileSync } from 'node:fs';
+import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
 import { HcPinUnavailableError, HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
 import { createHerdrCoreRuntimeTransport, readHcPin } from '../../src/effects/operator/herdr-runtime-transport';
 import { configureRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';
-import { decodeRuntimeConfig } from '../../src/effects/operator/runtime-service';
+import { decodeRuntimeConfig, startRuntimeService } from '../../src/effects/operator/runtime-service';
+import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { parseOperatorServeOptions } from '../../src/cli/commands/operator';
 import type { RuntimeIdentity } from '../../src/core/operator/runtime-status';
@@ -76,6 +77,17 @@ describe('herdr-core runtime observation', () => {
     const f = fakeHc('hc-runtime-pin');
     try {
       expect(readHcPin(f.env)).toBe('0.1.17');
+      // A second registered repository with a lower pin: the higher pin wins in either registry order.
+      const lower = join(f.root, 'repos', 'lower'), registry = join(f.env.REPO_HARNESS_HOME!, 'registered-repos.json');
+      mkdirSync(join(lower, '.ai', 'harness'), { recursive: true });
+      writeFileSync(join(lower, '.ai', 'harness', 'policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: '0.1.9' } } }));
+      const list = JSON.parse(readFileSync(registry, 'utf8'));
+      const entry = { ...list.repos[0], id: repoHarnessRepoIdFor(lower), path: lower };
+      for (const repos of [[...list.repos, entry], [entry, ...list.repos]]) {
+        writeFileSync(registry, JSON.stringify({ ...list, repos }));
+        expect(readHcPin(f.env)).toBe('0.1.17');
+      }
+      writeFileSync(registry, JSON.stringify(list));
       writeFileSync(join(f.repo, '.ai', 'harness', 'policy.json'), '{"external_tooling":');
       expect(readHcPin(f.env)).toBeNull();
       f.setPin('0.1.9');
@@ -111,6 +123,23 @@ describe('herdr-core runtime observation', () => {
       expect(owner.observer.read()).toMatchObject({ badges: [], unclaimed: 1 });
     } finally { owner.close(); f.cleanup(); }
   });
+
+  test('a new core after a core wipe makes the service rebuild its source on the next refresh', async () => {
+    const f = fakeHc('hc-runtime-wipe'); f.setSnapshot(2, [terminal]);
+    const path = join(f.root, 'runtime.json');
+    writeFileSync(path, JSON.stringify({ protocol: 'repo-harness.runtime-config.v2', kind: 'herdr-core', source_host: 'fixture', deadline_ms: 2000 }));
+    const service = await startRuntimeService(path, f.env);
+    const statusReads = () => f.argv().filter(line => line === 'server status --json').length;
+    try {
+      expect(service.read()).toMatchObject({ status: 'ready', unclaimed: 1 });
+      const before = statusReads();
+      f.setVersion('0.1.17', 'core-2'); f.setSnapshot(1, [terminal, { ...terminal, address: 't1b' }]); f.emit('not json');
+      // The reconnect opens its stream only after it has identified the new core.
+      await until(() => f.argv().slice(-1)[0]?.startsWith('events') === true && statusReads() > before);
+      await service.refresh();
+      expect(service.read()).toMatchObject({ status: 'ready', reason: null, unclaimed: 2 });
+    } finally { service.close(); f.cleanup(); }
+  }, 10_000);
 
   test('explicit service config connects before GET; an endpoint field is refused', async () => {
     const f = fakeHc('hc-runtime-service'); f.setSnapshot(2, [terminal]);

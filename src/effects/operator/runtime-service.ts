@@ -65,6 +65,8 @@ export async function startRuntimeService(path: string, env: NodeJS.ProcessEnv =
     if (closed) return Promise.resolve();
     if (!pending) pending = (async () => {
       try {
+        // A new core (a core wipe) never matches the configured source; rebuild the source on the new core.
+        if (observer && transport?.coreChanged()) { observer.stop(); transport.close(); observer = null; }
         if (!observer) {
           transport = createHerdrCoreRuntimeTransport(config.source_host, env);
           const source = await configureRuntimeSource({ source_host: config.source_host, deadline_ms: config.deadline_ms, transport: transport.transport,

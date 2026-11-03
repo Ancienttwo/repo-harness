@@ -68,7 +68,8 @@ export function readHcSnapshot(labels: HcLabels, env: NodeJS.ProcessEnv, signal?
  * The core must answer at or above the pin before anything is read, and again after each reconnect.
  */
 export function createHerdrCoreRuntimeTransport(source_host: string, env: NodeJS.ProcessEnv) {
-  let active = false, ready = false, generation = 0, core = '';
+  // `advertised` is the core named in capabilities; a reconnect after a core wipe identifies another core.
+  let active = false, ready = false, generation = 0, core = '', advertised = '';
   let stream: ReturnType<typeof hcEvents> | null = null, retry: ReturnType<typeof setTimeout> | null = null;
   let invalidate: (event: string, error?: unknown) => void = () => {};
   async function identify(): Promise<string> {
@@ -110,7 +111,7 @@ export function createHerdrCoreRuntimeTransport(source_host: string, env: NodeJS
   }
   const transport: StructuredRuntimeTransport = {
     async capabilities() {
-      core = await identify();
+      core = advertised = await identify();
       return { protocol: RUNTIME_SOURCE_PROTOCOL, source_host, hc_core: core, agent_status: true };
     },
     async subscribe(_events, callback, signal) {
@@ -131,5 +132,7 @@ export function createHerdrCoreRuntimeTransport(source_host: string, env: NodeJS
         terminals: terminals.map(terminal => ({ terminal_id: terminal.address, status: terminal.status?.state ?? null, revision: seq })) };
     },
   };
-  return { transport, close };
+  /** True when the answering core is not the advertised core: every snapshot then fails `runtime_source_identity`. */
+  const coreChanged = () => advertised !== '' && core !== advertised;
+  return { transport, close, coreChanged };
 }
