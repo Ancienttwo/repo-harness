@@ -40,10 +40,10 @@ Other documents link here. They do not copy this table.
 | --- | --- | --- | --- | --- |
 | `SessionStart.default` | all sessions | Claude, Codex | `session-context` | Emit the Effective State section first, then the edit-guard-scope, architecture-debt and pending-plan sections under one budget. |
 | `PreToolUse.edit` | `Edit\|Write` | Claude, Codex | `mutation-guard` | Block an `Edit`, `Write` or Codex `apply_patch` target outside the repository, under `_ref/` or `_ops/`, or without a parseable target path. Bash writes skip it; see [Edit guard coverage](#edit-guard-coverage). |
-| `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract, standing orders and board slice to a Claude `Agent` prompt. |
+| `PreToolUse.subagent` | `Agent` | Claude | `return-channel` | Append the return-channel contract and standing orders to a Claude `Agent` prompt. |
 | `PreToolUse.bash` | `Bash` | Claude | `bash-mutation-guard` | Check literal write destinations under `_ops/`, `_ref/` or outside the repository. Unsupported shell syntax remains unchecked. |
 | `UserPromptSubmit.inbox` | all prompts | Claude, Codex | `agent-notice` | Deliver architecture debt on Codex; Claude emits nothing. |
-| `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context, standing orders and board slice. |
+| `SubagentStart.context` | subagent start | Codex | `subagent-context` | Record the native role and model observation. Add the bounded child context and standing orders. |
 | `Stop.default` | session stop | Claude, Codex | `stop` | Publish the evidence checkpoint and render handoff and resume. Report protected path changes. Claude can get architecture debt. |
 
 After upgrading the package, reinstall the host adapters. Codex must trust the
@@ -66,8 +66,8 @@ Both routes above use one renderer and preserve the register text verbatim.
 The block starts with `[repo-harness:standing-orders]` and is at most 1500 UTF-8
 bytes, including the marker and any truncation line.
 A truncated block ends with `... (truncated; read .ai/harness/standing-orders.md)`.
-Claude inserts it after the return-channel text and before the board slice.
-Codex includes it in `additionalContext` before the board slice.
+Claude appends it after the return-channel text.
+Codex includes it in `additionalContext`.
 Claude skips the block when its prompt already has the marker.
 Codex adds one block to the fresh context it builds for each `SubagentStart` event.
 

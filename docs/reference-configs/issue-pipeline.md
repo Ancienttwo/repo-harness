@@ -5,9 +5,8 @@ issue into a draft PR. The stages are triage, reproduce and fix. The host owns
 scheduling. repo-harness ships no scheduler and no automation code for this
 pipeline.
 
-Issue observation stays with `repo-harness external-source refresh|bind`. The
-local inbox stays with [heartbeat triage](heartbeat-triage.md). This contract
-adds the stop rules, the evidence handoff and the write rules.
+The local inbox stays with [heartbeat triage](heartbeat-triage.md). This
+contract adds the stop rules, the evidence handoff and the write rules.
 
 ## Stages
 

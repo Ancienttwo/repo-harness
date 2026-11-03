@@ -1,17 +1,13 @@
 import { describe, expect, test } from 'bun:test';
 import { selectAttemptTestArtifacts, testArtifactAttempt, type RequiredCheckTestExecutionV1 } from '../../src/core/evidence/test-execution-evidence';
-import { readTestExecutionEvidence, readTestExecutionEvidenceAbortable } from '../../src/effects/publication/test-execution-evidence';
+import { readTestExecutionEvidence } from '../../src/effects/publication/test-execution-evidence';
 import { notStackMemberDetail, projectPullRequestMergeReadiness, type MergeReadinessBlockerCode } from '../../src/core/publication/merge-readiness';
 
 import {
   MergeReadinessError,
-  observeProviderReadinessFactsAbortable,
-  observeProviderReadinessIdentityAbortable,
   observeProviderReadinessFacts,
   observeProviderReadinessIdentity,
-  resolveFleetReadiness,
   collectPullRequestMergeReadiness,
-  collectPullRequestMergeReadinessAbortable,
   type PullRequestReadinessInput,
   type PublicationReadinessInput,
 } from '../../src/effects/publication/merge-readiness';
@@ -197,7 +193,7 @@ describe('explicit PR readiness effects', () => {
       expect(verdict.blockers[0]?.code).toBe(response.status ? 'provider_unavailable' : 'provider_data_incomplete');
     }
   });
-  test('pending exit 8 and mismatched CI base remain blocked', async () => {
+  test('pending exit 8 and mismatched CI base remain blocked', () => {
     expect(collectPullRequestMergeReadiness({ ...input, gh_runner: fakeGh() }).blockers.map(b => b.code)).toContain('checks_pending');
     const passing = passingGh();
     const wrongBase = collectPullRequestMergeReadiness({ ...input, gh_runner: args => {
@@ -209,20 +205,6 @@ describe('explicit PR readiness effects', () => {
     } });
     expect(wrongBase.ready).toBe(false);
     expect(wrongBase.blockers).toEqual([{ code: 'provider_data_incomplete', attention_owner: 'external' }]);
-    let calls = 0; const controller = new AbortController(); controller.abort();
-    const verdict = await collectPullRequestMergeReadinessAbortable({ ...input, signal: controller.signal,
-      gh_runner_async: async args => { calls++; return fakeGh()(args); } });
-    expect(verdict.blockers.map(b => b.code)).toContain('provider_unavailable'); expect(calls).toBe(0);
-  });
-  test('explicit fleet order isolates provider failures', () => {
-    const source = passingGh(); let failed = false;
-    const { repo_root, ...selection } = input;
-    const aggregate = resolveFleetReadiness({ repo_root, pull_requests: [selection, selection], gh_runner: args => {
-      if (!failed) { failed = true; return { status: 1, stdout: '' }; } return source(args);
-    } });
-    expect(aggregate.pull_requests.map(item => item.pr_number)).toEqual([42,42]);
-    expect(aggregate.pull_requests[0]!.blockers[0]!.code).toBe('provider_unavailable');
-    expect(aggregate.pull_requests[1]!.ready).toBe(true);
   });
 });
 
@@ -242,7 +224,7 @@ describe('stacked pull request readiness reads', () => {
     expect(calls.some(args => args[0] === 'pr' && args[1] === 'list')).toBe(false);
   });
 
-  test('a one-level stack is blocked with the observed chain and no own-base facts', async () => {
+  test('a one-level stack is blocked with the observed chain and no own-base facts', () => {
     const source = stackGh({ member_base_ref: ONE_LEVEL.head_ref, parents: [ONE_LEVEL] });
     const calls: string[][] = [];
     const verdict = collectPullRequestMergeReadiness({
@@ -265,10 +247,6 @@ describe('stacked pull request readiness reads', () => {
     // The member is blocked without any own-base check, review or coverage read.
     expect(calls.some(args => args[0] === 'pr' && args[1] === 'checks')).toBe(false);
     expect(calls.some(args => args[0] === 'api' && (args[1]?.includes('/contents/') || args[1] === 'graphql'))).toBe(false);
-
-    const abortable = await collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => source(args) });
-    expect(abortable.stack).toEqual(expectedStack);
-    expect(abortable.blockers).toEqual(verdict.blockers);
   });
 
   test('a multi-level chain is ordered from the PR to the default branch', () => {
@@ -375,7 +353,7 @@ describe('stacked pull request readiness reads', () => {
 test.each([
   ['missing', undefined], ['whitespace', ' '], ['unknown', 'UNKNOWN'],
   ['boolean', false], ['number', 0], ['array', ['APPROVED']], ['object', { decision: 'APPROVED' }],
-] as const)('both identity adapters reject malformed CLI reviewDecision: %s', async (_label, decision) => {
+] as const)('the identity adapter rejects malformed CLI reviewDecision: %s', (_label, decision) => {
   const source = fakeGh();
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
     const observed = source(args);
@@ -385,13 +363,10 @@ test.each([
   };
   expect(() => observeProviderReadinessIdentity({ ...input, gh_runner }))
     .toThrow('provider PR reviewDecision is unknown');
-  await expect(observeProviderReadinessIdentityAbortable({
-    ...input, gh_runner_async: async args => gh_runner(args),
-  })).rejects.toMatchObject({ code: 'provider_data_incomplete' });
 });
 
 test.each([null, '', 'APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'] as const)(
-  'both identity adapters accept valid CLI reviewDecision %j', async decision => {
+  'the identity adapter accepts valid CLI reviewDecision %j', decision => {
     const source = fakeGh();
     const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
       const observed = source(args);
@@ -400,17 +375,13 @@ test.each([null, '', 'APPROVED', 'CHANGES_REQUESTED', 'REVIEW_REQUIRED'] as cons
         : observed;
     };
     const synchronous = observeProviderReadinessIdentity({ ...input, gh_runner });
-    const abortable = await observeProviderReadinessIdentityAbortable({
-      ...input, gh_runner_async: async args => gh_runner(args),
-    });
     expect(synchronous.review_decision).toBe(decision === '' ? null : decision);
-    expect(abortable).toEqual(synchronous);
   },
 );
 
 test.each([
   ['missing', undefined], ['empty', ''], ['unknown', 'UNKNOWN'], ['changed', 'APPROVED'],
-] as const)('both facts adapters refuse GraphQL reviewDecision %s with empty CLI decision', async (_label, decision) => {
+] as const)('the facts adapter refuses GraphQL reviewDecision %s with empty CLI decision', (_label, decision) => {
   const source = fakeGh();
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
     if (args[0] !== 'api' || args[1] !== 'graphql') return source(args);
@@ -421,15 +392,11 @@ test.each([
   const identity = observeProviderReadinessIdentity({ ...input, gh_runner });
   expect(() => observeProviderReadinessFacts(identity, receipt, { ...input, gh_runner }))
     .toThrow('provider review decision changed during read');
-  const asyncInput = { ...input, gh_runner_async: async (args: readonly string[]) => gh_runner(args) };
-  const asyncIdentity = await observeProviderReadinessIdentityAbortable(asyncInput);
-  await expect(observeProviderReadinessFactsAbortable(asyncIdentity, receipt, asyncInput))
-    .rejects.toMatchObject({ code: 'provider_data_incomplete' });
 });
 
 test.each([
   ['trunk', 'trunk', true], ['trunk', 'main', false], [undefined, 'main', false], ['', 'main', false],
-] as const)('identity binds the PR base to the repository default branch %j (base %s)', async (defaultBranch, baseRef, accepted) => {
+] as const)('identity binds the PR base to the repository default branch %j (base %s)', (defaultBranch, baseRef, accepted) => {
   const source = fakeGh();
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
     const observed = source(args);
@@ -440,13 +407,10 @@ test.each([
     }
     return observed;
   };
-  const asyncRead = () => observeProviderReadinessIdentityAbortable({ ...input, gh_runner_async: async args => gh_runner(args) });
   if (accepted) {
     expect(observeProviderReadinessIdentity({ ...input, gh_runner }).base_ref).toBe(baseRef);
-    expect((await asyncRead()).base_ref).toBe(baseRef);
   } else {
     expect(() => observeProviderReadinessIdentity({ ...input, gh_runner })).toThrow(MergeReadinessError);
-    await expect(asyncRead()).rejects.toMatchObject({ code: 'provider_data_incomplete' });
   }
 });
 
@@ -468,7 +432,7 @@ test('ordinary PR consumer uses trusted CI head/base once and needs no local art
   expect(moved.blockers.map(blocker => blocker.code)).toContain('base_moved_since_verification');
 });
 
-test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'thread-comments-malformed', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('ordinary and abortable consumers enforce provider review state: %s', async scenario => {
+test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'thread-comments-malformed', 'dismissed', 'approved', 'outdated-unresolved', 'review-truncated', 'threads-truncated', 'malformed', 'graphql-error', 'wrong-head', 'wrong-pr', 'wrong-repo', 'review-churn', 'unavailable'])('the ordinary consumer enforces provider review state: %s', scenario => {
   const source = fakeGh();
   const gh_runner: NonNullable<PublicationReadinessInput['gh_runner']> = args => {
     const observed = source(args);
@@ -506,14 +470,6 @@ test.each(['changes', 'threads', 'bot-threads', 'deleted-author-threads', 'threa
     : ['bot-threads', 'dismissed', 'approved'].includes(scenario) ? []
     : [scenario === 'unavailable' ? 'provider_unavailable' : 'provider_data_incomplete'];
   expect(verdict.blockers.map(blocker => blocker.code)).toEqual(expected);
-  const asyncInput = { ...input, gh_runner_async: async (args: readonly string[]) => gh_runner(args) };
-  if (expected.some(code => code.startsWith('provider_'))) {
-    await expect(observeProviderReadinessFactsAbortable(providerIdentity, receipt, asyncInput)).rejects.toMatchObject({ code: expected[0] });
-  } else {
-    const facts = await observeProviderReadinessFactsAbortable(providerIdentity, receipt, asyncInput);
-    expect(facts.review_decision).toBe(scenario === 'changes' ? 'CHANGES_REQUESTED' : null);
-    expect(facts.unresolved_thread_count).toBe(expected[0] === 'unresolved_threads' ? 1 : 0);
-  }
 });
 
 test('ordinary provider collector blocks decision changes after normalized empty CLI reads', () => {
@@ -544,7 +500,7 @@ import { existsSync, mkdtempSync, writeFileSync, rmSync } from 'node:fs';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 
-test('rollback boundary binds the current base to one merged main PR and one real parent for both adapters', async () => {
+test('rollback boundary binds the current base to one merged main PR and one real parent', () => {
   const root = mkdtempSync(join(tmpdir(), 'readiness-boundary-'));
   const git = (...args: string[]) => execFileSync('git', args, { cwd: root, encoding: 'utf8' }).trim();
   try {
@@ -642,25 +598,19 @@ test('rollback boundary binds the current base to one merged main PR and one rea
         throw Error(`Unexpected provider call: ${args.join(' ')}`);
       };
       const syncRead = () => observeProviderReadinessFacts(identity, receipt, { ...input, repo_root: root, gh_runner });
-      const asyncRead = () => observeProviderReadinessFactsAbortable(identity, receipt, { ...input, repo_root: root, gh_runner_async: async args => gh_runner(args) });
       if (['ready', '404', 'multi-commit-squash', 'parent-other-pr', 'parent-empty', 'batch-merge'].includes(scenario)) {
         const expected = scenario === '404' ? { status: 'not_active' as const } : { status: 'ready' as const, pr_number: 17, before_sha: observedParent, after_sha: observedBase };
-        const syncFacts = syncRead(); const asyncFacts = await asyncRead();
+        const syncFacts = syncRead();
         expect(syncFacts.rollback_boundary).toEqual(expected);
-        expect(asyncFacts.rollback_boundary).toEqual(expected);
-        for (const provider of [syncFacts, asyncFacts]) {
-          const verdict = projectPullRequestMergeReadiness({ expected_head_sha: HEAD, expected_base_sha: observedBase,
-            integration_mode: 'unmerged', observation: 'stable', provider, stack: notStackMemberDetail() });
-          expect(verdict.ready).toBe(true); expect(verdict.blockers).toEqual([]);
-        }
+        const verdict = projectPullRequestMergeReadiness({ expected_head_sha: HEAD, expected_base_sha: observedBase,
+          integration_mode: 'unmerged', observation: 'stable', provider: syncFacts, stack: notStackMemberDetail() });
+        expect(verdict.ready).toBe(true); expect(verdict.blockers).toEqual([]);
         if (scenario === '404') expect(requests.some(path => path.includes('/pulls') || path.includes('/git/commits/'))).toBe(false);
       } else {
         const code = scenario.endsWith('-error') || ['forbidden', 'failed-file'].includes(scenario) ? 'provider_unavailable' : 'provider_data_incomplete';
         try { syncRead(); throw Error(`unexpected readiness: ${scenario}`); } catch (error) { expect(error).toMatchObject({ code }); }
-        await expect(asyncRead()).rejects.toMatchObject({ code });
         if (scenario === 'multi-commit-rebase') {
           expect(syncRead).toThrow('Automatic rollback cannot revert only the last commit of multi-commit rebase PR #17');
-          await expect(asyncRead()).rejects.toThrow('Automatic rollback cannot revert only the last commit of multi-commit rebase PR #17');
         }
       }
       expect(requests.some(path => path.includes('/git/ref/tags/') || path.includes('/git/tags/'))).toBe(false);
@@ -777,13 +727,7 @@ function evidenceVerdict(scenario: EvidenceScenario) {
   return collectPullRequestMergeReadiness({ ...input, gh_runner, test_execution_reader: reader });
 }
 
-async function evidenceVerdictAsync(scenario: EvidenceScenario) {
-  const gh_runner = evidenceGh(scenario);
-  return collectPullRequestMergeReadinessAbortable({ ...input, gh_runner_async: async args => gh_runner(args),
-    test_execution_reader_async: async () => testExecution(scenario) });
-}
-
-test('a passing same-SHA rerun preserves the failed shard and revalidates at test level', async () => {
+test('a passing same-SHA rerun preserves the failed shard and revalidates at test level', () => {
   const sync = evidenceVerdict('passed-rerun');
   expect(sync.ready).toBe(true);
   expect(sync.blockers).toEqual([]);
@@ -817,9 +761,6 @@ test('a passing same-SHA rerun preserves the failed shard and revalidates at tes
   expect(evidence!.retry.latest.scope.executed).not.toContain('session-runtime > chunk boundary');
   expect(evidence!.observed_result).toBe('failed_then_passed');
   expect(evidence!.cause).toBe('unknown');
-
-  const asyncVerdict = await evidenceVerdictAsync('passed-rerun');
-  expect(asyncVerdict.check_failures).toEqual(sync.check_failures);
 });
 
 test('a failed required check keeps its blocker and records the failed shard', () => {
@@ -933,17 +874,6 @@ test('the default test execution source reads the attempt JUnit artifacts and fa
     .toEqual({ status: 'unavailable' });
   expect(readTestExecutionEvidence({ ...base, download: writeReport,
     gh_runner: () => ({ status: 0, stdout: '<not json>' }) })).toEqual({ status: 'unavailable' });
-});
-
-test('the attempt artifact read is available on the abortable path', async () => {
-  const report = '<?xml version="1.0"?><testsuites><testsuite><testcase name="chunk boundary" classname="session-runtime" /></testsuite></testsuites>';
-  const result = await readTestExecutionEvidenceAbortable({
-    repository: 'example/repo-harness', run_id: 123, attempt: 2, repo_root: '/tmp/merge-readiness-effect-fixture',
-    gh_runner: () => ({ status: 0, stdout: JSON.stringify({ total_count: 1,
-      artifacts: [{ id: 1, name: 'junit-daily-2', expired: false }] }) }),
-    download: (_name, directory) => { writeFileSync(join(directory, 'report.xml'), report); return true; },
-  }, undefined);
-  expect(result).toEqual({ status: 'available', executed: ['session-runtime > chunk boundary'], skipped: [] });
 });
 
 test('a rerun whose preserved summary job is missing fails closed instead of inventing history', () => {
@@ -1113,21 +1043,6 @@ describe('required-check coverage reads', () => {
     expect(verdict.required_check_coverage).toBeNull();
     const blocker = verdict.blockers.find((entry) => entry.code === 'required_check_coverage_policy_invalid')!;
     expect(blocker.detail).toContain('unknown fields: protected_path');
-  });
-
-  test('the abortable adapter reads the same coverage facts', async () => {
-    const source = fakeGh({
-      policy: ACTIVE_POLICY,
-      changedPaths: ['api-surface/entries.json'],
-      requiredBucket: 'pass',
-      allChecks: [{ name: 'Required / CI', bucket: 'pass' }, { name: MATRIX, bucket: 'skipping' }],
-    });
-    const verdict = await collectPullRequestMergeReadinessAbortable({
-      ...input, gh_runner_async: async args => source(args),
-    });
-    expect(verdict.ready).toBe(false);
-    expect(verdict.blockers.map((entry) => entry.code)).toContain('required_check_coverage_missing');
-    expect(verdict.required_check_coverage?.checks).toHaveLength(2);
   });
 });
 

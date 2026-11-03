@@ -7,18 +7,15 @@ import { existsSync, readFileSync, rmSync } from 'fs';
 import { join } from 'path';
 
 import {
-  buildFeedbackDeliveryReceipt,
-  buildFeedbackEvent,
   buildReactionAttemptReceipt,
   deriveReactionToken,
 } from '../src/core/publication/feedback';
 import {
   intakeGitHubFeedback,
-  projectFleetFeedback,
   projectPendingFeedbackOffer,
   type FeedbackObservationInput,
 } from '../src/effects/fleet/provider-feedback';
-import { readFeedbackDeliveryReceipts, readFeedbackEvents, readReactionAttemptReceipts, writeFeedbackDeliveryReceipt, writeFeedbackEvent } from '../src/effects/publication/feedback-store';
+import { readFeedbackEvents } from '../src/effects/publication/feedback-store';
 import { resolveGitCommonDirectory } from '../src/effects/git/common-directory';
 
 const roots: string[] = [];
@@ -146,72 +143,6 @@ describe('provider feedback intake fences', () => {
     const halted = projectPendingFeedbackOffer(input);
     expect(halted).toMatchObject({ state: 'no_progress', attention_owner: 'user', reaction_token: token });
     expect(readFileSync(ownerPath, 'utf-8')).toBe(before);
-  });
-
-  test('Fleet feedback retries an intake that lands between complete store observations', async () => {
-    const subject = await fixture();
-    const input = { ...subject.input, gh_runner: feedbackRunner(subject.head) };
-    intakeGitHubFeedback(input);
-    const concurrentEvent = buildFeedbackEvent({
-      provider: 'github', provider_event_id: 'THREAD_CONCURRENT', publication_id: subject.publication_id, head_sha: subject.head,
-      failing_check_ids: [], failing_checks: [], unresolved_review_thread_ids: ['THREAD_CONCURRENT'],
-      changes_requested_review_ids: [], mergeability: 'MERGEABLE', summary: 'concurrent review thread',
-      provider_url: 'https://example.invalid/pr/9', observed_at: '2026-08-23T00:05:00Z',
-    });
-    let reactionReads = 0;
-    const projected = projectFleetFeedback(input, {
-      read_reactions: (repoRoot, publicationId, gitBin) => {
-        const observed = readReactionAttemptReceipts(repoRoot, publicationId, gitBin);
-        reactionReads += 1;
-        if (reactionReads === 1) {
-          writeFeedbackEvent(subject.root, concurrentEvent);
-          writeFeedbackDeliveryReceipt(subject.root, subject.publication_id, buildFeedbackDeliveryReceipt({
-            provider_event_id: concurrentEvent.provider_event_id, delivery_state: 'pending', delivery_channel: 'none',
-            delivered_at: null, acknowledged_at: null, superseded_at: null,
-          }));
-        }
-        return observed;
-      },
-    });
-    expect(projected).toMatchObject({ pending_count: 3, no_progress: false, snapshot_consistency: 'stable' });
-    expect(projected.repair_actions).toEqual([]);
-    expect(reactionReads).toBe(4);
-  });
-
-  test('Fleet feedback never labels continuously changing reaction evidence stable', async () => {
-    const subject = await fixture();
-    const input = { ...subject.input, gh_runner: feedbackRunner(subject.head) };
-    intakeGitHubFeedback(input);
-    const events = readFeedbackEvents(subject.root, subject.publication_id);
-    const token = deriveReactionToken({
-      publication_id: subject.publication_id,
-      head_sha: subject.head,
-      failing_checks: events.flatMap((event) => event.failing_checks),
-      unresolved_review_thread_ids: events.flatMap((event) => event.unresolved_review_thread_ids),
-      mergeability: 'MERGEABLE',
-    });
-    const reaction = buildReactionAttemptReceipt({
-      publication_id: subject.publication_id,
-      repair_id: `sha256:${'8'.repeat(64)}`,
-      successor_claim_id: CLAIM,
-      successor_generation: 1,
-      completion_publication_id: subject.publication_id,
-      completion_receipt_sha256: `sha256:${'3'.repeat(64)}`,
-      completion_head_sha: subject.head,
-      completion_ship_transaction_key: 'ship-feedback-observation',
-      before_reaction_token: token,
-      after_reaction_token: token,
-      outcome: 'completed',
-      recorded_at: '2026-08-23T00:06:00Z',
-    });
-    let reactionReads = 0;
-    const projected = projectFleetFeedback(input, {
-      read_events: readFeedbackEvents,
-      read_deliveries: readFeedbackDeliveryReceipts,
-      read_reactions: () => Object.freeze(reactionReads++ % 2 === 0 ? [] : [reaction]),
-    });
-    expect(projected.snapshot_consistency).toBe('changed_during_read');
-    expect(reactionReads).toBe(4);
   });
 
   test('a stable provider head mismatch fails before any feedback write or admission binding mutation', async () => {

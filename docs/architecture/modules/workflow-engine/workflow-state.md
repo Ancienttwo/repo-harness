@@ -211,7 +211,7 @@ Effective State 的决定、冻结不变量与 P2 解析轨迹已并入本章。
 | 组件 | 文件 / 行 | 职责 | 主要出向关系 |
 | --- | ---: | --- | --- |
 | `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
-| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | worktree 安全、provider board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
+| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | worktree 安全与 task session admission 观察 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
 coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/state/coordination-*.ts`）。新的 `coordination-*` 文件自动归入该组件。其他新文件只归入 capability，直到有人把它加入某个组件。
@@ -219,8 +219,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 ### 3.4 10x 规模下先垮的点
 
 1. **同步的 Git 与源收集。** 早期设计已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.4 第 5 条。
-2. **provider board 的全量读取。** `resolveProviderBoard` 最多采样三次。每次采样，`collectProviderBoardInputs` 读取该仓库的全部 observation 与 refresh receipt，并做一次 session 发现（`src/effects/state/collect-provider-board-inputs.ts:19-43`）。记录数增加时，读成本线性增长。
-3. **`coordination-identity.ts` 只保留 task-id 路径形状。** 任务身份由 GitHub issue/PR 提供。旧 Sprint 行解析、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds` 已删除。
+2. **`coordination-identity.ts` 只保留 task-id 路径形状。** 任务身份由 GitHub issue/PR 提供。旧 Sprint 行解析、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds` 已删除。
 
 锁的已知边界：PID reuse 可让 stale token 看起来仍 live；bounded timeout 与人工清理保持 mutual exclusion，且不引入 host-native 依赖。最终 identity check 之后的 hostile ancestor rename 需要 `openat`/dirfd，超出 portable Bun/Node boundary；静态与中间 symlink redirection 会被拒绝。
 
@@ -232,13 +231,18 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - 共享协调面作为组件进入本 capability。早期协调面文档中“不 mint capability node”的记录已同步更新。
 - `src/effects/review/diff-fingerprint.ts` 不归本 capability。并行的 acceptance-review 分组整体认领了 `src/effects/review/**`。
 
+### 2026-11-03 删除 provider 看板、hook 看板切片与 session 发现链（#1507）
+
+- 删除 state 的 `board` 子命令、[src/core/state/provider-board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/core/state/provider-board.ts)、[src/effects/state/collect-provider-board-inputs.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/state/collect-provider-board-inputs.ts) 与 [src/effects/state/collect-slice-inputs.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/state/collect-slice-inputs.ts)。`flow.workflow-state.board` 与 `entrypoint.workflow-state.board` 一起删除。
+- 删除 `readAdmittedTaskSessions`、`observeAdmittedSessionSource` 与 admitted session selector。PR #1541 合并后它们没有读者。`TASK_SESSIONS_MAX_ENTRIES` 留在 `src/core/sessions/task-sessions.ts`，因为 `src/effects/operator/execution-state.ts` 用它限制会话目录数。
+- coordination-plane 改名为 Task Session Admission and Historical Worktree Safety。它保留 session 观察失败码与只读 git runner，operator 的 task diff 与 doc session 读取用它们。
+
 ## Optimization Backlog
 
 以下是回边与边界缺口。它们是重构证据，不是声明的关系。
 
-- **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
-- **coordination-plane 读取 task session 记录。** `src/effects/state/coordination-worktree-topology.ts:14` 从 `src/effects/terminal/task-session-record.ts`（execution-primitives）读取 `taskWorktreeRuntimeClosed`，在 prune 前确认 task runtime 已关闭。#1402 后 workflow-state 不导入 task-agent-host，模型也不再声明 coordination-plane → task-agent-host。coordination-plane 拥有 `src/effects/sessions/{task-sessions,admitted-source}.ts` 与 `src/effects/terminal/task-session-admission.ts`。inbox 与外部来源绑定调用 `observeCurrentTaskSession`，并传入各自的拒绝函数，所以错误类与消息不变。
+- **coordination-plane 读取 task session 记录。** `src/effects/state/coordination-worktree-topology.ts:14` 从 `src/effects/terminal/task-session-record.ts`（execution-primitives）读取 `taskWorktreeRuntimeClosed`，在 prune 前确认 task runtime 已关闭。#1402 后 workflow-state 不导入 task-agent-host，模型也不再声明 coordination-plane → task-agent-host。coordination-plane 拥有 `src/effects/sessions/admitted-source.ts` 与 `src/effects/terminal/task-session-admission.ts`。inbox 调用 `observeCurrentTaskSession`，并传入自己的拒绝函数，所以错误类与消息不变。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** 早期设计把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。

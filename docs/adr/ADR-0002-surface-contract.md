@@ -44,7 +44,7 @@ datum has one authority, one reader and one projection.
 | Datum | Authority | Projection |
 |---|---|---|
 | Workflow state of a repository | `resolveEffectiveStateReadOnly` → `EffectiveStateV2`, decoded by `decodeEffectiveState` (`src/core/state/types.ts`) | `CompactEffectiveState` (`src/cli/mcp/state-tools.ts`) |
-| Fleet board | `collectFleetBoard` (`src/effects/fleet/board.ts`) → `FleetBoardSnapshotV2`, decoded by `decodeFleetBoardSnapshot` (`src/core/fleet/board.ts`) | `OperatorFleetSnapshotV1` (`src/core/operator/fleet-snapshot.ts`) |
+| Board of one parent issue | `collectBoard` (`src/effects/board/collect.ts`) → `BoardV1`, decoded by `decodeBoard` (`src/core/board/board.ts`) | the same type |
 | Merge readiness of one pull request | `collectPullRequestMergeReadiness` → `PullRequestReadinessV2` (`src/core/publication/merge-readiness.ts`) | the same type |
 | Registered repositories and access mode | `readRepoHarnessRegistryStrictSnapshot` (`src/effects/repo-registry.ts`) | registry entries without absolute paths |
 | Check and assessment records | no surface reader yet | to define in a later decision (#1353 S3) |
@@ -112,3 +112,14 @@ the core worktree command, not raw git. #1287 step 1e checks this.
   `read_workflow_file` return raw `.ai/harness/*` files, and `latest_checks`
   orders evidence by file time (#1353 S3). The MCP planner write tools and the
   ChatGPT bridge are deleted in #1354.
+
+## Amendment 2026-11-03 (#1507)
+
+The "Fleet board" row is replaced by the board of one parent issue.
+`collectBoard` (`src/effects/board/collect.ts`) is the authority and returns
+`BoardV1`. `decodeBoard` (`src/core/board/board.ts`) decodes it. The operator
+serves `BoardV1` and the console decodes it with `decodeBoard`, so the
+projection is the same type. PR #1541 removed the Fleet snapshot, and #1507
+removed `collectFleetBoard`, `FleetBoardSnapshotV2` and
+`decodeFleetBoardSnapshot`. The Context and Consequences text above describes
+the state at the decision date.

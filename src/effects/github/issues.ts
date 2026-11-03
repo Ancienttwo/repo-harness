@@ -1,7 +1,20 @@
 import { execFileSync } from 'child_process';
 
-import type { ExternalSourceFailureClass } from '../../core/external-sources/issue-observation';
 import type { ExternalSourcesManualGithubPolicyV1 } from './policy';
+
+export type ExternalSourceFailureClass =
+  | 'authentication'
+  | 'rate_limit'
+  | 'network'
+  | 'invalid_response'
+  | 'pagination_limit'
+  | 'issue_limit'
+  | 'body_limit'
+  | 'payload_limit'
+  | 'deadline'
+  | 'repository_identity'
+  | 'policy'
+  | 'persistence';
 
 export interface GithubRepositoryIdentityV1 {
   readonly provider_repository_id: string;
@@ -140,21 +153,6 @@ function parseIssue(raw: unknown, repository: GithubRepositoryIdentityV1, maxBod
 
 function isTerminalPage(items: readonly unknown[]): boolean {
   return items.length === 0;
-}
-
-export function evaluateGithubEligibility(issue: GithubIssueV1, policy: ExternalSourcesManualGithubPolicyV1): { readonly eligible: boolean; readonly reasons: readonly string[] } {
-  if (policy.github.selection.kind === 'issue_numbers') {
-    const selected = policy.github.selection.issue_numbers.includes(issue.number);
-    return Object.freeze({ eligible: selected, reasons: Object.freeze(selected ? [] : ['issue_not_selected']) });
-  }
-  const labels = new Set(issue.labels);
-  const missingLabels = policy.github.selection.labels_all.filter((label) => !labels.has(label));
-  const assigneeMatches = policy.github.selection.assignees_any.length === 0 || policy.github.selection.assignees_any.some((assignee) => issue.assignees.includes(assignee));
-  const reasons = [
-    ...missingLabels.map((label) => `missing_label:${label}`),
-    ...(assigneeMatches ? [] : ['assignee_not_allowed']),
-  ].sort();
-  return Object.freeze({ eligible: reasons.length === 0, reasons: Object.freeze(reasons) });
 }
 
 export function fetchGithubIssues(

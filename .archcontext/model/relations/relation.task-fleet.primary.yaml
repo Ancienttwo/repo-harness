@@ -4,5 +4,5 @@
   "kind": "calls",
   "source": "capability.organization.task-fleet",
   "target": "component.task-fleet.primary",
-  "intent": "Project per-repository task observations and fleet board cards from the owning readers"
+  "intent": "Run the fleet command group for task messages, inbox, provider feedback and repository registration"
 }

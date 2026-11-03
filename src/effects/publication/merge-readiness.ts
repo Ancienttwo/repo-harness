@@ -1,5 +1,5 @@
 import { gitExecFileSync } from '../git/runner';
-import { spawn, spawnSync } from 'child_process';
+import { spawnSync } from 'child_process';
 import {
   assessRequiredCheckFailure,
   type RequiredCheckAttemptObservationV1,
@@ -15,7 +15,6 @@ import {
 } from '../../core/evidence/workflow-needs';
 import {
   readTestExecutionEvidence,
-  readTestExecutionEvidenceAbortable,
 } from './test-execution-evidence';
 import {
   projectPullRequestMergeReadiness,
@@ -94,20 +93,6 @@ export interface PublicationReadinessInput {
   readonly policy_file_at_base?: PolicyFileAtRef;
 }
 
-export interface AbortablePublicationReadinessInput extends Omit<PublicationReadinessInput, 'gh_runner'> {
-  /** Abort propagates to every live provider child; no caller receives a partial provider payload. */
-  readonly signal?: AbortSignal;
-  /** Async test seam. Production uses the configured gh binary. */
-  readonly gh_runner_async?: (args: readonly string[], signal: AbortSignal | undefined) => Promise<{
-    readonly status: number | null;
-    readonly stdout: string;
-    readonly stderr?: string;
-    readonly error?: Error;
-  }>;
-  /** Async test seam for the rerun attempt's test-level execution source. */
-  readonly test_execution_reader_async?: (request: TestExecutionReadRequest, signal: AbortSignal | undefined) => Promise<RequiredCheckTestExecutionV1>;
-}
-
 export interface ProviderIdentity {
   readonly provider_repo_id: string;
   readonly repo_name_with_owner: string;
@@ -126,37 +111,7 @@ export interface ProviderIdentity {
   readonly mergeable: 'MERGEABLE' | 'CONFLICTING' | 'UNKNOWN';
 }
 
-const PROVIDER_TERMINATION_GRACE_MS = 500;
 const PROVIDER_SYNCHRONOUS_TIMEOUT_MS = 30_000;
-
-/**
- * Fleet owns process-tree termination at the collector boundary. This helper
- * therefore addresses only its direct provider child; on Windows the parent
- * Job controller is the sole tree owner, so no PID-based tree fallback exists.
- */
-function waitForProviderChildExit(child: ReturnType<typeof spawn>, timeoutMs: number): Promise<boolean> {
-  if (child.exitCode !== null || child.signalCode !== null) return Promise.resolve(true);
-  return new Promise((resolve) => {
-    const timer = setTimeout(() => {
-      child.removeListener('close', onClose);
-      resolve(false);
-    }, timeoutMs);
-    const onClose = (): void => {
-      clearTimeout(timer);
-      resolve(true);
-    };
-    child.once('close', onClose);
-  });
-}
-
-async function terminateProviderChild(child: ReturnType<typeof spawn>): Promise<void> {
-  try { child.kill('SIGTERM'); } catch { /* the direct provider child already exited */ }
-  if (await waitForProviderChildExit(child, PROVIDER_TERMINATION_GRACE_MS)) return;
-  try { child.kill('SIGKILL'); } catch { /* the direct provider child already exited */ }
-  if (!await waitForProviderChildExit(child, PROVIDER_SYNCHRONOUS_TIMEOUT_MS)) {
-    throw new Error('provider child did not exit after forced termination');
-  }
-}
 
 function object(value: unknown, label: string): Record<string, unknown> {
   if (!value || typeof value !== 'object' || Array.isArray(value)) {
@@ -232,117 +187,6 @@ function gh(input: PublicationReadinessInput, args: readonly string[], accepted 
 /** A provider read where 404 is a real answer: a missing policy file, not a provider outage. */
 function ghOptional(input: PublicationReadinessInput, args: readonly string[]): unknown | null {
   const observed = ghObserve(input, args, [0, 1]);
-  if (observed.status === 0) {
-    if ((observed.value as { status?: unknown } | null)?.status === '404') {
-      throw new MergeReadinessError('provider_data_incomplete', 'provider returned a 404 with a success status');
-    }
-    return observed.value;
-  }
-  if ((observed.value as { status?: unknown } | null)?.status === '404') return null;
-  throw new MergeReadinessError('provider_unavailable', `provider observation failed: gh ${args.join(' ')}: HTTP ${observed.status}`);
-}
-
-async function ghAbortableObserve(
-  input: AbortablePublicationReadinessInput,
-  args: readonly string[],
-  accepted: readonly number[],
-): Promise<GhObservation> {
-  args = githubArguments(input, args);
-  if (input.signal?.aborted) {
-    throw new MergeReadinessError('provider_unavailable', `provider observation aborted: gh ${args.join(' ')}`);
-  }
-  const result = input.gh_runner_async
-    ? await input.gh_runner_async(args, input.signal)
-    : await new Promise<{ status: number | null; stdout: string; stderr: string; error?: Error }>((resolve) => {
-      const child = spawn(input.gh_bin ?? process.env.REPO_HARNESS_GH_BIN ?? 'gh', [...args], {
-        cwd: input.repo_root,
-        env: { ...process.env, GH_HOST: 'github.com' },
-        stdio: ['ignore', 'pipe', 'pipe'],
-      });
-      let stdout = '';
-      let stderr = '';
-      let settled = false;
-      let abortRequested = false;
-      let completion: { status: number | null; stdout: string; stderr: string; error?: Error } | null = null;
-      const finish = (result: { status: number | null; stdout: string; stderr: string; error?: Error }) => {
-        if (settled) return;
-        settled = true;
-        input.signal?.removeEventListener('abort', abort);
-        resolve(result);
-      };
-      const maybeFinish = () => {
-        if (completion !== null && !abortRequested) finish(completion);
-      };
-      const abort = () => {
-        if (abortRequested || settled) return;
-        abortRequested = true;
-        void terminateProviderChild(child)
-          .then(() => {
-            finish(completion ?? {
-              status: null,
-              stdout,
-              stderr,
-              error: new Error('provider process did not exit after process-tree termination'),
-            });
-          })
-          .catch((error) => {
-            finish({
-              status: null,
-              stdout,
-              stderr,
-              error: error instanceof Error ? error : new Error(String(error)),
-            });
-          });
-      };
-      input.signal?.addEventListener('abort', abort, { once: true });
-      child.stdout.setEncoding('utf-8');
-      child.stderr.setEncoding('utf-8');
-      child.stdout.on('data', (chunk: string) => { stdout += chunk; });
-      child.stderr.on('data', (chunk: string) => { stderr += chunk; });
-      child.once('error', (error) => {
-        completion = { status: null, stdout, stderr, error };
-        maybeFinish();
-      });
-      child.once('close', (status) => {
-        completion = { status, stdout, stderr };
-        maybeFinish();
-      });
-      if (input.signal?.aborted) abort();
-    });
-  if (input.signal?.aborted || result.error || result.status === null || !accepted.includes(result.status)) {
-    const detail = input.signal?.aborted ? 'aborted' : (result.stderr || result.error?.message || `exit ${result.status}`).trim();
-    throw new MergeReadinessError('provider_unavailable', `provider observation failed: gh ${args.join(' ')}: ${detail}`, result.error);
-  }
-  try {
-    return { status: result.status, value: JSON.parse(result.stdout) };
-  } catch (error) {
-    throw new MergeReadinessError('provider_data_incomplete', `provider returned invalid JSON: gh ${args.join(' ')}`, error);
-  }
-}
-
-async function ghAbortable(
-  input: AbortablePublicationReadinessInput,
-  args: readonly string[],
-  accepted = [0],
-): Promise<unknown> {
-  const observed = await ghAbortableObserve(input, args, accepted);
-  if (args[0] === 'api' && accepted.includes(1)) {
-    if (observed.status !== 0 && (observed.value as { status?: unknown } | null)?.status !== '404') {
-      throw new MergeReadinessError('provider_unavailable', 'rollback reporter activation unavailable');
-    }
-    if (observed.status === 0 && (observed.value as { status?: unknown } | null)?.status === '404') {
-      throw new MergeReadinessError('provider_data_incomplete', 'rollback reporter activation HTTP status is inconsistent');
-    }
-  }
-  return observed.value;
-}
-
-/** A provider read where 404 is a real answer: a missing policy file, not a provider outage. */
-async function ghAbortableOptional(
-  input: AbortablePublicationReadinessInput,
-  args: readonly string[],
-): Promise<unknown | null> {
-  const observed = await ghAbortableObserve(input, args, [0, 1]);
   if (observed.status === 0) {
     if ((observed.value as { status?: unknown } | null)?.status === '404') {
       throw new MergeReadinessError('provider_data_incomplete', 'provider returned a 404 with a success status');
@@ -896,45 +740,6 @@ function driveRequestsSync<T>(protocol: Generator<ProviderRequest, T, unknown>, 
   return request.value;
 }
 
-async function readTestExecutionAbortable(
-  input: AbortablePublicationReadinessInput,
-  request: TestExecutionReadRequest,
-): Promise<RequiredCheckTestExecutionV1> {
-  try {
-    if (input.test_execution_reader_async !== undefined) {
-      return await input.test_execution_reader_async(request, input.signal);
-    }
-    return await readTestExecutionEvidenceAbortable({
-      repository: request.repository,
-      run_id: request.run_id,
-      attempt: request.attempt,
-      repo_root: input.repo_root,
-      gh_bin: input.gh_bin,
-    }, input.signal);
-  } catch {
-    return Object.freeze({ status: 'unavailable' });
-  }
-}
-
-async function driveRequestsAbortable<T>(
-  protocol: Generator<ProviderRequest, T, unknown>,
-  input: AbortablePublicationReadinessInput,
-): Promise<T> {
-  let request = protocol.next();
-  while (!request.done) {
-    let value: unknown = null;
-    try {
-      value = request.value.test_execution !== undefined
-        ? await readTestExecutionAbortable(input, request.value.test_execution)
-        : await ghAbortable(input, request.value.args!);
-    } catch (error) {
-      if (!request.value.optional) throw error;
-    }
-    request = protocol.next(value);
-  }
-  return request.value;
-}
-
 const CHANGED_FILE_PAGE_SIZE = 100;
 /** GitHub caps the PR file list at 3000 entries; a longer list fails closed instead of looping. */
 const CHANGED_FILE_LIMIT = 3000;
@@ -1016,16 +821,6 @@ function publicationPolicy(input: PublicationReadinessInput, ref: string): Publi
   return publicationPolicyBlocksAtRef(contents === null ? { status: 'missing' } : policyAtRef(contents, ref));
 }
 
-async function publicationPolicyAbortable(
-  input: AbortablePublicationReadinessInput,
-  ref: string,
-): Promise<PublicationPolicyBlocks> {
-  const reused = reusedPolicyFile(input, ref);
-  if (reused !== null) return publicationPolicyBlocksAtRef(reused);
-  const contents = await ghAbortableOptional(input, ['api', `repos/${input.repository}/contents/${PUBLICATION_POLICY_PATH}?ref=${ref}`]);
-  return publicationPolicyBlocksAtRef(contents === null ? { status: 'missing' } : policyAtRef(contents, ref));
-}
-
 /**
  * The all-checks read is the only view that shows a declared check which branch
  * protection does not require. A declared matrix job is usually such a check:
@@ -1051,17 +846,6 @@ function coverageFacts(identity: ProviderIdentity, input: PublicationReadinessIn
   if (policy.coverage.status !== 'active') return policy.coverage;
   const changed = driveRequestsSync(changedPaths(identity), input);
   const observed = observedCheckFacts(checkArray(gh(input, ALL_CHECKS_ARGS(identity), [0, 1, 8])));
-  return Object.freeze({ status: 'active', policy: policy.coverage.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
-}
-
-async function coverageFactsAbortable(
-  identity: ProviderIdentity,
-  input: AbortablePublicationReadinessInput,
-  policy: PublicationPolicyBlocks,
-): Promise<RequiredCheckCoverageFactsV1> {
-  if (policy.coverage.status !== 'active') return policy.coverage;
-  const changed = await driveRequestsAbortable(changedPaths(identity), input);
-  const observed = observedCheckFacts(checkArray(await ghAbortable(input, ALL_CHECKS_ARGS(identity), [0, 1, 8])));
   return Object.freeze({ status: 'active', policy: policy.coverage.policy, changed_paths: Object.freeze(changed), observed_checks: observed });
 }
 
@@ -1162,26 +946,6 @@ export function observeProviderReadinessFacts(identity: ProviderIdentity, receip
   return parseProviderReadinessFacts(identity, checks, request.value, gh(input, providerReviewArgs(identity)), checkFailures, coverage, generated);
 }
 
-export async function observeProviderReadinessFactsAbortable(
-  identity: ProviderIdentity,
-  receipt: Pick<PullRequestSelectionV2, 'pr_number'>,
-  input: AbortablePublicationReadinessInput,
-): Promise<ProviderMergeReadinessFactsV1> {
-  const checks = await ghAbortable(input, [
-    'pr', 'checks', String(receipt.pr_number), '--required', '--json', 'name,bucket,link',
-  ], [0, 1, 8]);
-  const providers = checkArray(checks);
-  const firstRun = validateRequiredCIRun(identity, await ghAbortable(input, ['api', requiredCIRunPath(identity, providers)]), providers);
-  const checkFailures = await driveRequestsAbortable(requiredCheckFailures(identity, providers, firstRun), input);
-  const policy = await publicationPolicyAbortable(input, identity.base_sha);
-  const coverage = await coverageFactsAbortable(identity, input, policy);
-  const generated = generatedArtifactsFacts(identity, input, policy);
-  const boundary = rollbackBoundary(identity);
-  let request = boundary.next();
-  while (!request.done) request = boundary.next(await ghAbortable(input, ['api', request.value], request.value.includes('/contents/') ? [0, 1] : [0]));
-  return parseProviderReadinessFacts(identity, checks, request.value, await ghAbortable(input, providerReviewArgs(identity)), checkFailures, coverage, generated);
-}
-
 export interface PullRequestReadinessInput extends PublicationReadinessInput {
   readonly repository: string;
   readonly provider_repository_id: string;
@@ -1243,22 +1007,6 @@ function observeProviderReadinessTarget(input: PullRequestReadinessInput): Provi
 
 export function observeProviderReadinessIdentity(input: PullRequestReadinessInput): ProviderIdentity {
   const target = observeProviderReadinessTarget(input);
-  if (target.identity.base_ref !== target.default_branch) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
-  return target.identity;
-}
-
-export interface AbortablePullRequestReadinessInput extends Omit<AbortablePublicationReadinessInput, 'repository'>, PullRequestSelectionV2 {}
-
-async function observeProviderReadinessTargetAbortable(input: AbortablePullRequestReadinessInput): Promise<ProviderReadinessTarget> {
-  selectionOf(input);
-  const repo = await ghAbortable(input, ['repo', 'view', '--json', 'id,nameWithOwner']);
-  const pr = await ghAbortable(input, ['pr', 'view', String(input.pr_number), '--json', PR_IDENTITY_FIELDS]);
-  const identity = parseProviderPullRequestIdentity(input.pr_number, repo, pr);
-  return { identity, default_branch: confirmRepositoryIdentity(input, identity, await ghAbortable(input, ['api', `repos/${input.repository}`])) };
-}
-
-export async function observeProviderReadinessIdentityAbortable(input: AbortablePullRequestReadinessInput): Promise<ProviderIdentity> {
-  const target = await observeProviderReadinessTargetAbortable(input);
   if (target.identity.base_ref !== target.default_branch) throw new MergeReadinessError('provider_data_incomplete', 'provider repository or default-branch target does not match selection');
   return target.identity;
 }
@@ -1366,16 +1114,6 @@ function observeStack(target: ProviderReadinessTarget, input: PublicationReadine
   return request.value;
 }
 
-async function observeStackAbortable(target: ProviderReadinessTarget, input: AbortablePublicationReadinessInput): Promise<MergeReadinessStackDetailV1> {
-  const protocol = stackProtocol(target.identity, target.default_branch);
-  let request = protocol.next();
-  while (!request.done) {
-    const list = await ghAbortable(input, ['pr', 'list', '--head', request.value, '--state', 'all', '--json', STACK_PR_FIELDS, '--limit', String(STACK_PR_LIST_LIMIT)]);
-    request = protocol.next(providerStackList(list));
-  }
-  return request.value;
-}
-
 function readinessProjection(input: PullRequestReadinessInput, provider: ProviderMergeReadinessFactsV1 | null, observation: MergeReadinessObservation, stack: MergeReadinessStackDetailV1): PullRequestReadinessV2 {
   return Object.freeze({ protocol: 2, kind: 'repo-harness-pull-request-readiness', ...selectionOf(input),
     ...projectPullRequestMergeReadiness({ expected_head_sha: input.expected_head_sha, expected_base_sha: input.expected_base_sha,
@@ -1431,43 +1169,11 @@ function stableReadinessRound(input: PullRequestReadinessInput): ReadinessRound 
   return null;
 }
 
-async function stableReadinessRoundAbortable(input: AbortablePullRequestReadinessInput): Promise<ReadinessRound | null> {
-  for (let attempt = 0; attempt < 2; attempt++) {
-    const before = await observeProviderReadinessTargetAbortable(input);
-    const stack = await observeStackAbortable(before, input);
-    if (stack.member) {
-      const after = await observeProviderReadinessTargetAbortable(input);
-      const stackAfter = await observeStackAbortable(after, input);
-      if (identityBytes(before.identity) === identityBytes(after.identity)
-        && JSON.stringify(stack) === JSON.stringify(stackAfter)) return { facts: null, stack: stackAfter };
-      continue;
-    }
-    const facts = await observeProviderReadinessFactsAbortable(before.identity, input, input);
-    const after = await observeProviderReadinessTargetAbortable(input);
-    const stackAfter = await observeStackAbortable(after, input);
-    if (identityBytes(before.identity) === identityBytes(after.identity)
-      && JSON.stringify(stack) === JSON.stringify(stackAfter)) return { facts, stack: stackAfter };
-  }
-  return null;
-}
-
 /** Ordinary default-branch PRs consume the shared provider decoder without a receipt or Lease. */
 export function collectPullRequestMergeReadiness(input: PullRequestReadinessInput): PullRequestReadinessV2 {
   selectionOf(input);
   try {
     const round = stableReadinessRound(input);
-    return round ? readinessProjection(input, round.facts, 'stable', round.stack)
-      : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
-  } catch (error) {
-    if (!(error instanceof MergeReadinessError)) throw error;
-    return readinessProjection(input, null, error.code, unobservedStackDetail());
-  }
-}
-
-export async function collectPullRequestMergeReadinessAbortable(input: AbortablePullRequestReadinessInput): Promise<PullRequestReadinessV2> {
-  selectionOf(input);
-  try {
-    const round = await stableReadinessRoundAbortable(input);
     return round ? readinessProjection(input, round.facts, 'stable', round.stack)
       : readinessProjection(input, null, 'changed_during_read', unobservedStackDetail());
   } catch (error) {
@@ -1518,18 +1224,4 @@ export function collectPullRequestIntegration(input: PullRequestIntegrationInput
   const blockers = verdict.blockers.filter(blocker => !['already_integrated', 'pr_not_open', 'not_mergeable'].includes(blocker.code));
   if (blockers.length) throw new MergeReadinessError('provider_data_incomplete', `integrated PR evidence refused: ${blockers.map(blocker => blocker.code).join(', ')}`);
   return Object.freeze({ merge_commit_sha: round.extra.merge_commit_sha, merge_tree_sha: round.extra.merge_tree_sha });
-}
-
-export interface FleetReadinessV2 {
-  readonly protocol: 2;
-  readonly kind: 'repo-harness-fleet-readiness';
-  readonly pull_requests: readonly PullRequestReadinessV2[];
-}
-
-/** Explicit PRs preserve caller order. No local task/publication store selects authority. */
-export function resolveFleetReadiness(input: PublicationReadinessInput & { readonly pull_requests: readonly PullRequestSelectionV2[] }): FleetReadinessV2 {
-  if (!Array.isArray(input.pull_requests) || input.pull_requests.length === 0) throw new MergeReadinessError('provider_data_incomplete', 'explicit pull_requests are required');
-  const selected = input.pull_requests.map(validatePullRequestSelection);
-  return Object.freeze({ protocol: 2, kind: 'repo-harness-fleet-readiness',
-    pull_requests: Object.freeze(selected.map(selection => collectPullRequestMergeReadiness({ ...input, ...selection }))) });
 }
