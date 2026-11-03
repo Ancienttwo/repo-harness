@@ -1,5 +1,5 @@
 import { spawnSync } from 'child_process';
-import { parseDependencyLines, TIER_LABELS, type AmbiguousLineV1, type DependencyLineV1, type SkippedLineV1, type UnparsedLineV1 } from '../../core/board/dependency-migration';
+import { dependencyMigrationStop, parseDependencyLines, TIER_LABELS, type AmbiguousLineV1, type DependencyLineV1, type DependencyMigrationPlanV1, type SkippedLineV1, type UnparsedLineV1 } from '../../core/board/dependency-migration';
 
 const GH_TIMEOUT_MS = 30_000;
 const PAGE = 100;
@@ -105,19 +105,15 @@ const ADD_BLOCKED_BY = `mutation($issue: ID!, $blocker: ID!) {
 }`;
 
 /**
- * Moves the dependency lines of the open sub-issues of one parent to
- * blocked-by links and creates the tier labels. One scan reads every open
- * body before the first write. Declaration-like lines in possible code
- * positions stop the run with one `dependency_line_ambiguous` error that names
- * all of them; otherwise unparsable lines stop it with one
- * `dependency_line_unparsed` error that names all of them.
- * Existing labels and links are reported as `exists` and not written again;
- * a link is identified by the node ids of both issues, because issue numbers
- * are local to a repository. A bare `#n` is resolved in the parent's
- * repository, so an open sub-issue from another repository stops the run.
- * Closed sub-issues are not read.
+ * Reads the open sub-issues of one parent and plans the move of their
+ * dependency lines to blocked-by links and the tier labels. It makes no
+ * write. One scan reads every open body and collects every refusal and parse
+ * error into the plan's `stop`. A link is identified by the node ids of both
+ * issues, because issue numbers are local to a repository. A bare `#n` is
+ * resolved in the parent's repository, so an open sub-issue from another
+ * repository stops the plan. Closed sub-issues are not read.
  */
-export function migrateDependencies(input: DependencyMigrationInput): DependencyMigrationResultV1 {
+export function planDependencyMigration(input: DependencyMigrationInput): DependencyMigrationPlanV1 {
   const repository = (gh(input, ['repo', 'view', '--json', 'nameWithOwner']) as { nameWithOwner?: unknown } | null)?.nameWithOwner;
   if (typeof repository !== 'string' || !/^[^/\s]+\/[^/\s]+$/u.test(repository)) throw new DependencyMigrationError('github_failed', 'gh repo view returned no nameWithOwner');
   const [owner, name] = repository.split('/') as [string, string];
@@ -127,7 +123,7 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
   if (subIssues.pageInfo.hasNextPage) throw new DependencyMigrationError('sub_issues_truncated', `#${input.parent} has more than ${PAGE} sub-issues`);
 
   const open = subIssues.nodes.filter(node => node.state === 'OPEN');
-  const planned: { readonly target: SubIssueRead; readonly line: DependencyLineV1 }[] = [];
+  const parsedLines: { readonly target: SubIssueRead; readonly line: DependencyLineV1 }[] = [];
   const skipped: SkippedLineV1[] = [];
   const ambiguous: AmbiguousLineV1[] = [];
   const unparsed: UnparsedLineV1[] = [];
@@ -137,21 +133,13 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
     }
     if (target.blockedBy.pageInfo.hasNextPage) throw new DependencyMigrationError('blocked_by_truncated', `#${target.number} has more than ${PAGE} blocked-by links`);
     const parsed = parseDependencyLines(target.number, target.body);
-    for (const line of parsed.edges) planned.push({ target, line });
+    for (const line of parsed.edges) parsedLines.push({ target, line });
     skipped.push(...parsed.skipped);
     ambiguous.push(...parsed.ambiguous);
     unparsed.push(...parsed.unparsed);
   }
-  if (ambiguous.length > 0) {
-    throw new DependencyMigrationError('dependency_line_ambiguous', `dependency lines that may be code (a code or HTML marker in the body, leading whitespace or a wide list marker); edit the body or add the link by hand: ${
-      ambiguous.map(entry => `#${entry.issue} line ${entry.line_number}: ${entry.line.trim()}`).join('; ')}`);
-  }
-  if (unparsed.length > 0) {
-    throw new DependencyMigrationError('dependency_line_unparsed', `lines that are not dependency lines: ${
-      unparsed.map(entry => `#${entry.issue} line ${entry.line_number} (${entry.reason}): ${entry.line.trim()}`).join('; ')}`);
-  }
 
-  const blockers = [...new Set(planned.map(entry => entry.line.blocker))];
+  const blockers = [...new Set(parsedLines.map(entry => entry.line.blocker))];
   const blockerIds = new Map<number, string>();
   if (blockers.length > 0) {
     const read = graphql(input, `query($owner: String!, $name: String!) { repository(owner: $owner, name: $name) {\n${
@@ -163,43 +151,56 @@ export function migrateDependencies(input: DependencyMigrationInput): Dependency
     }
   }
 
+  const labels = TIER_LABELS.map((label, index) => Object.freeze({ ...label, action: data[`t${index}`]?.name === label.name ? 'exists' as const : 'create' as const }));
+  const linked = new Set(open.flatMap(target => target.blockedBy.nodes.map(node => `${target.id}:${node.id}`)));
+  const edges = parsedLines.map(({ target, line }) => {
+    const blockerId = blockerIds.get(line.blocker)!;
+    const key = `${target.id}:${blockerId}`;
+    const action = linked.has(key) ? 'exists' as const : 'create' as const;
+    linked.add(key);
+    return Object.freeze({ ...line, action, issue_id: target.id, blocker_id: blockerId });
+  });
+  return Object.freeze({
+    protocol: 1, kind: 'repo-harness.dependency-migration-plan', parent: input.parent, repository,
+    labels: Object.freeze(labels), edges: Object.freeze(edges), skipped: Object.freeze(skipped),
+    ambiguous: Object.freeze(ambiguous), unparsed: Object.freeze(unparsed), stop: dependencyMigrationStop(ambiguous, unparsed),
+  });
+}
+
+/**
+ * Writes exactly the `create` items of a plan: the labels, then the links.
+ * A plan with a stop makes no write. A failed write stops the run and
+ * reports the writes that finished; a new plan and run skip them.
+ */
+export function applyDependencyMigration(input: DependencyMigrationInput, plan: DependencyMigrationPlanV1): DependencyMigrationResultV1 {
+  if (plan.stop !== null) throw new DependencyMigrationError(plan.stop.code, plan.stop.message);
   const labels: DependencyMigrationLabelV1[] = [];
   const edges: DependencyMigrationEdgeV1[] = [];
   const stop = (error: unknown): never => {
     if (error instanceof DependencyMigrationError) throw new DependencyMigrationError(error.code, error.message, labels, edges);
     throw error;
   };
-  TIER_LABELS.forEach((label, index) => {
-    if (data[`t${index}`]?.name === label.name) {
-      labels.push({ name: label.name, result: 'exists' });
-      return;
+  for (const label of plan.labels) {
+    if (label.action === 'create') {
+      try {
+        gh(input, ['api', '--hostname', 'github.com', '--method', 'POST', `repos/${plan.repository}/labels`,
+          '-f', `name=${label.name}`, '-f', `color=${label.color}`, '-f', `description=${label.description}`]);
+      } catch (error) {
+        stop(error);
+      }
     }
-    try {
-      gh(input, ['api', '--hostname', 'github.com', '--method', 'POST', `repos/${repository}/labels`,
-        '-f', `name=${label.name}`, '-f', `color=${label.color}`, '-f', `description=${label.description}`]);
-    } catch (error) {
-      stop(error);
-    }
-    labels.push({ name: label.name, result: 'created' });
-  });
-
-  const linked = new Set(open.flatMap(target => target.blockedBy.nodes.map(node => `${target.id}:${node.id}`)));
-  for (const { target, line } of planned) {
-    const blockerId = blockerIds.get(line.blocker)!;
-    const key = `${target.id}:${blockerId}`;
-    const edge = { issue: target.number, blocker: line.blocker, line_number: line.line_number, line: line.line };
-    if (linked.has(key)) {
-      edges.push({ ...edge, result: 'exists' });
-      continue;
-    }
-    try {
-      const added = graphql(input, ADD_BLOCKED_BY, { issue: target.id, blocker: blockerId });
-      if (added.addBlockedBy?.issue?.number !== target.number) throw new DependencyMigrationError('github_failed', `addBlockedBy for #${target.number} returned no issue`);
-    } catch (error) {
-      stop(error);
-    }
-    linked.add(key);
-    edges.push({ ...edge, result: 'created' });
+    labels.push({ name: label.name, result: label.action === 'create' ? 'created' : 'exists' });
   }
-  return Object.freeze({ protocol: 1, kind: 'repo-harness.dependency-migration', parent: input.parent, labels, edges, skipped });
+  for (const planned of plan.edges) {
+    if (planned.action === 'create') {
+      try {
+        const added = graphql(input, ADD_BLOCKED_BY, { issue: planned.issue_id, blocker: planned.blocker_id });
+        if (added.addBlockedBy?.issue?.number !== planned.issue) throw new DependencyMigrationError('github_failed', `addBlockedBy for #${planned.issue} returned no issue`);
+      } catch (error) {
+        stop(error);
+      }
+    }
+    edges.push({ issue: planned.issue, blocker: planned.blocker, line_number: planned.line_number, line: planned.line, result: planned.action === 'create' ? 'created' : 'exists' });
+  }
+  return Object.freeze({ protocol: 1, kind: 'repo-harness.dependency-migration', parent: plan.parent, labels, edges, skipped: plan.skipped });
 }

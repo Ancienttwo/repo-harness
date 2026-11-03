@@ -3,11 +3,16 @@ import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard } from '../../effects/board/collect';
-import { DependencyMigrationError, migrateDependencies, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
+import { renderDependencyMigrationPlan } from '../../core/board/dependency-migration';
+import { applyDependencyMigration, DependencyMigrationError, planDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 
 interface BoardOptions {
   readonly parent?: string;
   readonly json?: boolean;
+}
+
+interface MigrateDependenciesOptions extends BoardOptions {
+  readonly write?: boolean;
 }
 
 function parentNumber(options: BoardOptions): number {
@@ -64,11 +69,18 @@ export function buildBoardCommand(host: BoardHostPortsV1): Command {
       process.stdout.write(options.json === true ? `${JSON.stringify(attention)}\n` : attentionText(attention));
     })(command.optsWithGlobals<BoardOptions>()));
   board.command('migrate-dependencies')
-    .description('One-shot operator migration: turn the Depends on / 依赖 lines of the open sub-issues of one parent into blocked-by links and create the tier labels (takes --parent and --json)')
-    .action((_options: BoardOptions, command: Command) => {
-      const options = command.optsWithGlobals<BoardOptions>();
+    .description('One-shot operator migration: plan the blocked-by links for the Depends on / 依赖 lines of the open sub-issues of one parent and the tier labels, with no write; --write applies the plan (takes --parent and --json)')
+    .option('--write', 'Apply the plan: create the planned labels and blocked-by links')
+    .action((_options: MigrateDependenciesOptions, command: Command) => {
+      const options = command.optsWithGlobals<MigrateDependenciesOptions>();
       try {
-        const result = migrateDependencies({ repo_root: process.cwd(), parent: parentNumber(options) });
+        const input = { repo_root: process.cwd(), parent: parentNumber(options) };
+        const plan = planDependencyMigration(input);
+        if (options.write !== true) {
+          process.stdout.write(options.json === true ? `${JSON.stringify(plan)}\n` : renderDependencyMigrationPlan(plan));
+          return;
+        }
+        const result = applyDependencyMigration(input, plan);
         process.stdout.write(options.json === true ? `${JSON.stringify(result)}\n` : migrationText(result));
       } catch (error) {
         if (!(error instanceof DependencyMigrationError || error instanceof BoardCollectError)) throw error;

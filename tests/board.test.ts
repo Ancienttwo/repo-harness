@@ -7,7 +7,8 @@ import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/boa
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard } from '../src/effects/board/collect';
-import { migrateDependencies } from '../src/effects/board/dependency-migration';
+import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
+import { applyDependencyMigration, planDependencyMigration } from '../src/effects/board/dependency-migration';
 import { boardHostPorts } from '../src/effects/terminal/herdr-core';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -267,7 +268,9 @@ function migrationStub(subIssues: readonly MigrationSubIssue[]) {
     const repository = Object.fromEntries([...query.matchAll(/b([0-9]+): issue/gu)].map(match => [`b${match[1]}`, { id: `I${match[1]}`, number: Number(match[1]) }]));
     return answer({ data: { repository } });
   };
-  return { runner, writes, migrate: () => migrateDependencies({ repo_root: '/nonexistent', parent: 1503, gh_runner: runner }) };
+  const input = { repo_root: '/nonexistent', parent: 1503, gh_runner: runner };
+  // `plan` is the default no-write run; `migrate` is the `--write` run: the plan, then exactly its writes.
+  return { runner, writes, plan: () => planDependencyMigration(input), migrate: () => applyDependencyMigration(input, planDependencyMigration(input)) };
 }
 
 const MIGRATION_SUB_ISSUES: readonly MigrationSubIssue[] = [
@@ -294,6 +297,21 @@ test('migrate-dependencies turns the dependency lines of open sub-issues into bl
   // Lines after a heading or `---` and the closed sub-issue #1490 give no link.
   expect(stub.writes).toEqual(['label tier:low', 'label tier:medium', 'label tier:high', '#1508 blocked by #1505',
     '#1509 blocked by #1505', '#1509 blocked by #1473', '#1509 blocked by #1476', '#1510 blocked by #1505', '#1512 blocked by #1505']);
+});
+
+test('migrate-dependencies without --write prints the whole plan and writes nothing', () => {
+  const stub = migrationStub(MIGRATION_SUB_ISSUES);
+  const text = renderDependencyMigrationPlan(stub.plan());
+  expect(stub.writes).toEqual([]);
+  for (const line of ['create label tier:low', 'create #1508 blocked by #1505 (line 5: Depends on #1505 board core)',
+    'create #1512 blocked by #1505 (line 1: Depends on #1505)', 'skip #1509 line 3: 风险：High（验收链路）。', '--write makes 9 writes']) {
+    expect(text).toContain(line);
+  }
+  const refused = migrationStub([...MIGRATION_SUB_ISSUES, { number: 1505, state: 'OPEN', body: '- Example:\n\n      Depends on #7\n' }]);
+  const stopped = renderDependencyMigrationPlan(refused.plan());
+  expect(refused.writes).toEqual([]);
+  expect(stopped).toContain('refuse #1505 line 3: Depends on #7');
+  expect(stopped).toContain('--write stops before any write: dependency_line_ambiguous');
 });
 
 test('a second migrate-dependencies run writes nothing and reports every link and label as existing', () => {

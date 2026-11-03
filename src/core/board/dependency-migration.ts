@@ -172,3 +172,62 @@ export function parseDependencyLines(issue: number, body: string): DependencyLin
   });
   return Object.freeze({ edges: Object.freeze(edges), skipped: Object.freeze(skipped), ambiguous: Object.freeze(ambiguous), unparsed: Object.freeze(unparsed) });
 }
+
+export interface PlannedLabelV1 {
+  readonly name: string;
+  readonly color: string;
+  readonly description: string;
+  readonly action: 'create' | 'exists';
+}
+
+export interface PlannedEdgeV1 extends DependencyLineV1 {
+  readonly action: 'create' | 'exists';
+  readonly issue_id: string;
+  readonly blocker_id: string;
+}
+
+/** The stop that a `--write` run raises before its first write. */
+export interface DependencyMigrationStopV1 {
+  readonly code: 'dependency_line_ambiguous' | 'dependency_line_unparsed';
+  readonly message: string;
+}
+
+/** Everything a `--write` run would write, read from GitHub with no write. A person checks it first. */
+export interface DependencyMigrationPlanV1 {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness.dependency-migration-plan';
+  readonly parent: number;
+  readonly repository: string;
+  readonly labels: readonly PlannedLabelV1[];
+  readonly edges: readonly PlannedEdgeV1[];
+  readonly skipped: readonly SkippedLineV1[];
+  readonly ambiguous: readonly AmbiguousLineV1[];
+  readonly unparsed: readonly UnparsedLineV1[];
+  readonly stop: DependencyMigrationStopV1 | null;
+}
+
+/** Refusals stop first and name every refused line; otherwise parse errors stop and name every line. */
+export function dependencyMigrationStop(ambiguous: readonly AmbiguousLineV1[], unparsed: readonly UnparsedLineV1[]): DependencyMigrationStopV1 | null {
+  if (ambiguous.length > 0) {
+    return Object.freeze({ code: 'dependency_line_ambiguous' as const, message: `dependency lines that may be code (a code or HTML marker in the body, leading whitespace or a wide list marker); edit the body or add the link by hand: ${
+      ambiguous.map(entry => `#${entry.issue} line ${entry.line_number}: ${entry.line.trim()}`).join('; ')}` });
+  }
+  if (unparsed.length > 0) {
+    return Object.freeze({ code: 'dependency_line_unparsed' as const, message: `lines that are not dependency lines: ${
+      unparsed.map(entry => `#${entry.issue} line ${entry.line_number} (${entry.reason}): ${entry.line.trim()}`).join('; ')}` });
+  }
+  return null;
+}
+
+/** The plan as text: one line per planned write, existing item, skip, refusal and parse error, then the `--write` outcome. */
+export function renderDependencyMigrationPlan(plan: DependencyMigrationPlanV1): string {
+  const writes = plan.labels.filter(label => label.action === 'create').length + plan.edges.filter(edge => edge.action === 'create').length;
+  return [
+    ...plan.labels.map(label => `${label.action} label ${label.name}`),
+    ...plan.edges.map(edge => `${edge.action} #${edge.issue} blocked by #${edge.blocker} (line ${edge.line_number}: ${edge.line.trim()})`),
+    ...plan.skipped.map(line => `skip #${line.issue} line ${line.line_number}: ${line.line.trim()}`),
+    ...plan.ambiguous.map(line => `refuse #${line.issue} line ${line.line_number}: ${line.line.trim()}`),
+    ...plan.unparsed.map(line => `unparsed #${line.issue} line ${line.line_number} (${line.reason}): ${line.line.trim()}`),
+    plan.stop === null ? `--write makes ${writes} writes` : `--write stops before any write: ${plan.stop.code}`,
+  ].join('\n') + '\n';
+}

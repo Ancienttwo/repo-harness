@@ -120,6 +120,18 @@ each dependency, set the milestone of the release window, and add one
 `tier:` label. Do not write `Depends on` lines. Nothing reads them. A
 dependency is done when its blocker issue is closed.
 
+A parent whose open children still hold old `Depends on` / `依赖` lines
+moves them once, in two steps:
+
+1. Run `repo-harness board migrate-dependencies --parent <n>`. It writes
+   nothing. It lists every planned label and every planned link as
+   `#X blocked by #Y (line N: <source line>)`, each existing item, each
+   skipped line, and the refused or unparsed lines that stop a write.
+2. A person checks every listed link against its source line. Then run the
+   same command with `--write`. It writes exactly the planned items. A body
+   with a code or HTML marker refuses all of its declarations; add those
+   links by hand.
+
 ## 5. Gap review
 
 Before you publish a set of three or more issues, or any set that crosses
