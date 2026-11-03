@@ -243,7 +243,12 @@ test("required Herdr skill comes from the binary, updates owned copies, and pres
     const claudeSkill = join(home, ".claude", "skills", "herdr", "SKILL.md");
     writeFileSync(claudeSkill, "# user change\n");
     writeFileSync(source, `${afterCleanupFailure}One more rule.\n`);
-    expect(configureRequiredHerdrSkill("both", env).status).toBe("failed");
+    const refusal = configureRequiredHerdrSkill("both", env);
+    expect(refusal.status).toBe("failed");
+    expect(refusal.detail).toBe(`refusing to replace unowned or changed Herdr skill: ${join(home, ".claude", "skills", "herdr")}; `
+      + `to keep it and install a fresh owned copy, move it out of ${join(home, ".claude", "skills")} `
+      + `(for example: mv "${join(home, ".claude", "skills", "herdr")}" "${join(home, ".claude", "herdr-skill.moved")}"), `
+      + "then run `repo-harness update` again");
     expect(readFileSync(claudeSkill, "utf8")).toBe("# user change\n");
     expect(readFileSync(join(home, ".codex", "skills", "herdr", "SKILL.md"), "utf8")).toBe(renderHerdrSkill(afterCleanupFailure));
     expect(existsSync(join(home, ".codex", "skills", "herdr", ".repo-harness-owner.json"))).toBe(true);
