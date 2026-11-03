@@ -61,6 +61,8 @@ export type MergeReadinessRollbackBoundary =
 
 /** The head refs that `publication merge --batch` accepts. */
 export const BATCH_REF = /^integration\/[1-9][0-9]*-batch-[1-9][0-9]*$/u;
+/** The most commits in base..head that `publication merge --batch` proves: one provider compare page. The builder refuses more. */
+export const BATCH_COMMIT_LIMIT = 100;
 
 export interface RollbackParentV1 {
   readonly before_sha: string;
