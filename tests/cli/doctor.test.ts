@@ -1,7 +1,7 @@
 import { CLI_PORTS, buildProgram } from '../../src/cli/index';
 import { PROFILE_COMPONENTS, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
 import { hashManagedTree } from '../../src/effects/managed-tree';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -126,6 +126,19 @@ function writeFakeBunx(fakeBin: string): void {
 
 afterEach(() => {
   clearRegisteredChecks();
+});
+
+// Doctor readiness runs `hc --version`; a fake hc first on PATH keeps the developer's hc out of every test.
+const fakeHcBin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-hc-')));
+const pathBeforeFakeHc = process.env.PATH;
+beforeAll(() => {
+  const policy = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '..', '..', '.ai/harness/policy.json'), 'utf8'));
+  writeExecutable(path.join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${policy.external_tooling.herdr_core.min_version}\\n'\n`);
+  process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
+});
+afterAll(() => {
+  process.env.PATH = pathBeforeFakeHc;
+  fs.rmSync(fakeHcBin, { recursive: true, force: true });
 });
 
 describe('doctor command (Phase 1C)', () => {

@@ -1,4 +1,4 @@
-import { describe, expect, test } from 'bun:test';
+import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -19,6 +19,19 @@ import { CLI_PORTS } from '../../src/cli/index';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+
+// Doctor readiness runs `hc --version`; a fake hc first on PATH keeps the developer's hc out of every test.
+const fakeHcBin = mkdtempSync(join(tmpdir(), 'repo-harness-init-hook-hc-'));
+const pathBeforeFakeHc = process.env.PATH;
+beforeAll(() => {
+  const policy = JSON.parse(readFileSync(join(ROOT, '.ai/harness/policy.json'), 'utf8'));
+  writeFileSync(join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${policy.external_tooling.herdr_core.min_version}\\n'\n`, { mode: 0o755 });
+  process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
+});
+afterAll(() => {
+  process.env.PATH = pathBeforeFakeHc;
+  rmSync(fakeHcBin, { recursive: true, force: true });
+});
 
 /** A managed block that matches the current template, so the rules check is ok. */
 function currentRulesBlock(): string {

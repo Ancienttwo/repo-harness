@@ -2001,8 +2001,10 @@ if (strictReadiness && report.runtime_capabilities.herdr_core.status !== "presen
 }
 if (strictReadiness && report.tools.herdr_skill.status !== "present") {
   // The skill source is `hc --skill`, so the update command cannot repair it until hc is present.
-  const installHcFirst = report.runtime_capabilities.herdr_core.status === "present" ? "" : "install hc first, then ";
-  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; ${installHcFirst}run ${report.tools.herdr_skill.install_command}`);
+  const hcStatus = report.runtime_capabilities.herdr_core.status;
+  const repairHcFirst = hcStatus === "configuration-error" ? "fix the herdr-core pin first, then "
+    : hcStatus === "present" ? "" : "install hc first, then ";
+  strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; ${repairHcFirst}run ${report.tools.herdr_skill.install_command}`);
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {
   strictFailures.push(`CodeGraph readiness is ${report.tools.codegraph.status}: ${report.tools.codegraph.reason}`);
