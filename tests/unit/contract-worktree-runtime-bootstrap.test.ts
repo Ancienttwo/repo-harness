@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { pluginSelectionEnv } from "../helpers/install-ownership";
 
 // A fresh linked worktree has none of the gitignored runtime artifacts the
 // verification gates read, and neither resulting failure names its cause: a
@@ -13,6 +14,7 @@ import { spawnSync } from "child_process";
 // tooling their primary worktree has not already adopted.
 
 const ROOT = join(import.meta.dir, "..", "..");
+const SELECTED_HOME = pluginSelectionEnv().HOME;
 const COPIES = [
   "scripts/contract-worktree.sh",
 ] as const;
@@ -29,12 +31,14 @@ function runBootstrap(
   repoRoot: string,
   pathPrefix: string | null,
 ): { status: number | null; stdout: string; stderr: string } {
-  const extract = `eval "$(sed -n '/^bootstrap_worktree_runtime() {/,/^}/p' "$1")"`;
-  const env: NodeJS.ProcessEnv = { ...process.env, REPO_ROOT: repoRoot };
+  // The CodeGraph step starts through the shared gate, so the extract also loads
+  // that library and its start function; the HOME selects the plugin.
+  const extract = `. "$3/scripts/lib/architecture-plugin.sh"; helper_dir="$3/scripts"; BUN_BIN=""; eval "$(sed -n -e '/^bootstrap_worktree_runtime() {/,/^}/p' -e '/^index_worktree_codegraph() {/,/^}/p' "$1")"`;
+  const env: NodeJS.ProcessEnv = { ...process.env, REPO_ROOT: repoRoot, HOME: SELECTED_HOME };
   if (pathPrefix !== null) env.PATH = pathPrefix;
   const result = spawnSync(
     "bash",
-    ["-c", `set -euo pipefail; ${extract}; bootstrap_worktree_runtime "$2"`, "bash", join(ROOT, scriptPath), worktreePath],
+    ["-c", `set -euo pipefail; ${extract}; bootstrap_worktree_runtime "$2"`, "bash", join(ROOT, scriptPath), worktreePath, ROOT],
     { env, encoding: "utf-8" },
   );
   return { status: result.status, stdout: result.stdout ?? "", stderr: result.stderr ?? "" };
