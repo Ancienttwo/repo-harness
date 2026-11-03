@@ -3,7 +3,6 @@ import { decodeDevActivitySnapshot } from '../core/dev-activity/decode';
 import {
   DEV_ACTIVITY_TRUNCATED_REASON_PREFIX,
   type DevActivityAttention,
-  type DevActivityColumn,
   type DevActivityItem,
   type DevActivityRepository,
   type DevActivitySnapshotV2,
@@ -14,8 +13,8 @@ import { useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET /api/v1/dev-activity`. The server owns every column,
- * attention row and authority join; this module only reads, filters and
- * orders what the snapshot already decided.
+ * attention row and authority join; this module only reads what the
+ * snapshot already decided.
  */
 export type DevActivityReader = (signal: AbortSignal) => Promise<DevActivitySnapshotV2>;
 
@@ -53,16 +52,6 @@ export function snapshotOf(view: DevActivityView): DevActivitySnapshotV2 | null 
   return view.kind === 'ready' ? view.snapshot : null;
 }
 
-export interface BoardFilters {
-  /** null is every repository. */
-  readonly repositoryId: string | null;
-  readonly query: string;
-  readonly onlyNeedsYou: boolean;
-  readonly showClosed: boolean;
-}
-
-export const DEFAULT_BOARD_FILTERS: BoardFilters = { repositoryId: null, query: '', onlyNeedsYou: false, showClosed: false };
-
 export function repositoryById(snapshot: DevActivitySnapshotV2, id: string): DevActivityRepository | null {
   return snapshot.repositories.find(repository => repository.repository_id === id) ?? null;
 }
@@ -79,52 +68,8 @@ export function repositoryLabel(repositories: readonly DevActivityRepository[], 
   return `${repository.display_name} · ${repository.github ?? repository.repository_id}`;
 }
 
-export function attentionSubjects(snapshot: DevActivitySnapshotV2): ReadonlySet<string> {
-  return new Set(snapshot.attention.map(row => row.subject_id));
-}
-
 export function attentionItem(snapshot: DevActivitySnapshotV2, row: DevActivityAttention): DevActivityItem | null {
   return snapshot.items.find(item => item.id === row.subject_id) ?? null;
-}
-
-function matchesQuery(item: DevActivityItem, repositories: readonly DevActivityRepository[], query: string): boolean {
-  const needle = query.trim().toLowerCase();
-  if (needle === '') return true;
-  const haystack = [item.title, item.branch, repositoryLabel(repositories, item.repository_id),
-    item.pull_request ? `#${item.pull_request.number}` : ''];
-  return haystack.some(value => value.toLowerCase().includes(needle));
-}
-
-export function filterItems(snapshot: DevActivitySnapshotV2, filters: BoardFilters): readonly DevActivityItem[] {
-  const subjects = attentionSubjects(snapshot);
-  return snapshot.items.filter(item =>
-    (filters.repositoryId === null || item.repository_id === filters.repositoryId)
-    && (item.hidden !== 'closed_unmerged' || filters.showClosed)
-    && (!filters.onlyNeedsYou || subjects.has(item.id))
-    && matchesQuery(item, snapshot.repositories, filters.query));
-}
-
-/** Unknown times sort last in both directions. */
-function time(value: string | null | undefined, missing: number): number {
-  const parsed = value ? Date.parse(value) : Number.NaN;
-  return Number.isNaN(parsed) ? missing : parsed;
-}
-
-/**
- * Within a column the longest wait comes first. Shipped
- * work reads newest first. Ties keep the id order so rows do not jump.
- */
-export function orderColumn(column: DevActivityColumn, items: readonly DevActivityItem[]): readonly DevActivityItem[] {
-  return items.slice().sort((left, right) => {
-    if (column === 'shipped') {
-      const l = time(left.pull_request?.merged_at, Number.NEGATIVE_INFINITY), r = time(right.pull_request?.merged_at, Number.NEGATIVE_INFINITY);
-      if (l !== r) return r > l ? 1 : -1;
-    } else {
-      const l = time(left.column_since, Number.POSITIVE_INFINITY), r = time(right.column_since, Number.POSITIVE_INFINITY);
-      if (l !== r) return l < r ? -1 : 1;
-    }
-    return left.id < right.id ? -1 : left.id > right.id ? 1 : 0;
-  });
 }
 
 export type SourceHealthCounts = Readonly<Record<DevActivitySourceStatus, number>>;

@@ -1,6 +1,6 @@
 import { useEffect, useState, type AnchorHTMLAttributes, type ReactNode } from 'react';
-import { CopyIcon, ArrowSquareOutIcon } from '@phosphor-icons/react';
-import { cn } from '@cloudflare/kumo';
+import { CircleDashedIcon, CopyIcon, ArrowSquareOutIcon } from '@phosphor-icons/react';
+import { Empty, Loader, cn } from '@cloudflare/kumo';
 import { copyOperatorIdentifier } from './clipboard';
 import { formatRelativeAge, relativeAge, type OperatorTranslate } from './i18n';
 import { workspaceHash, type WorkspaceLocation } from './workspace-location';
@@ -108,4 +108,9 @@ export function SectionTitle({ id, children, count, className }: { readonly id?:
       {count !== undefined && <span className="rounded-full bg-kumo-recessed px-1.5 text-xs font-medium tabular-nums text-kumo-subtle">{count}</span>}
     </h2>
   );
+}
+
+/** A page that has no rows to show: loading, unreachable or empty, with the command that changes it. */
+export function BoardState({ title, description, command, loading = false }: { readonly title: string; readonly description: string; readonly command?: string; readonly loading?: boolean }) {
+  return <Empty size="sm" icon={loading ? <Loader size={24} /> : <CircleDashedIcon size={32} />} title={title} description={description} commandLine={command} />;
 }

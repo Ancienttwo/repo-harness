@@ -12,9 +12,12 @@ import { cleanCommand } from '../../src/cli/commands/worktrees';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
-import { documentTitle, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
+import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
+import { evaluateBoardAttention } from '../../src/core/board/attention';
+import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
+import { fetchBoard, type BoardSubject } from '../../src/operator-web/board-view';
+import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
-import { filterItems, DEFAULT_BOARD_FILTERS, orderColumn } from '../../src/operator-web/dev-activity';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, itemOwner, type CiRepairsReader, type ExecutionReader } from '../../src/operator-web/repository-reads';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
@@ -68,6 +71,7 @@ function props(activity: DevActivitySnapshotV2, overrides: Partial<OperatorAppPr
     readNotifyStatus: () => new Promise(() => {}),
     initialWorktrees: worktrees, readWorktrees: async () => worktrees,
     readExecution: async id => emptyExecution(id, NOW),
+    readBoard: async () => ({ state: 'ok', board: BOARD }),
     ...overrides,
   };
 }
@@ -84,8 +88,12 @@ function rejudged(edits: Readonly<Record<string, Partial<WorktreeRow>>>): Worktr
 
 /** The busy fixture's sessions: Codex on the console redesign, Claude Code on the pipeline observer, operator-site still collecting. */
 const sessions: ExecutionReader = async id => busyExecution(id, NOW);
+/** The busy sessions with one branch renamed, so a session binds to a pull request of the recorded board. */
+const sessionsOn = (from: string, to: string): ExecutionReader => async id => JSON.parse(JSON.stringify(busyExecution(id, NOW)).replaceAll(`"branch":"${from}"`, `"branch":"${to}"`));
+/** The board of #1474 projected from the recorded GitHub and hc reads (tests/fixtures/board). */
+const BOARD = decodeBoard(board1474);
+const boardAt = (issue?: number) => installDom(`http://127.0.0.1:4318/#board/${HARNESS_ID}/1474${issue === undefined ? '' : `/${issue}`}`);
 const followUp = () => document.querySelector<HTMLElement>('[role="dialog"] section[aria-labelledby="drawer-follow-up"]')!;
-const drawerAt = (id: string) => installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
 
 async function mount(element: React.ReactElement): Promise<void> {
   const container = document.createElement('div');
@@ -97,8 +105,6 @@ async function mount(element: React.ReactElement): Promise<void> {
 /** Lets reads that resolve after the first render (CI repairs, the head commit) commit. */
 const settle = () => act(async () => { for (let turn = 0; turn < 5; turn++) await Promise.resolve(); });
 const key = (value: string) => act(async () => { document.dispatchEvent(new window.KeyboardEvent('keydown', { key: value, bubbles: true }) as unknown as Event); });
-const cards = () => Array.from(document.querySelectorAll<HTMLElement>('[data-board-column] [data-item-id]'));
-const card = (id: string) => cards().find(element => element.getAttribute('data-item-id') === id)!;
 const PRIVATE_LABEL = /repo_[0-9a-f]{16}|sha256:/u;
 
 beforeEach(() => { prefersDark = false; installDom(); });
@@ -115,19 +121,6 @@ describe('board data rules', () => {
     expect(degradedDevActivity(NOW).unreadable_registrations).toBe(2489);
     expect(emptyDevActivity(NOW).items).toHaveLength(0);
     expect(busyRuntimeOverlay(NOW).native_sources).toHaveLength(3);
-  });
-
-  test('closed PRs stay hidden until asked for, and shipped work reads newest first', () => {
-    const snapshot = busy();
-    const closed = snapshot.items.find(item => item.hidden === 'closed_unmerged')!;
-    expect(filterItems(snapshot, DEFAULT_BOARD_FILTERS).map(item => item.id)).not.toContain(closed.id);
-    expect(filterItems(snapshot, { ...DEFAULT_BOARD_FILTERS, showClosed: true }).map(item => item.id)).toContain(closed.id);
-    const shipped = orderColumn('shipped', snapshot.items.filter(item => item.column === 'shipped'));
-    const times = shipped.map(item => Date.parse(item.pull_request!.merged_at!));
-    expect(times).toEqual([...times].sort((left, right) => right - left));
-    const building = orderColumn('building', filterItems(snapshot, DEFAULT_BOARD_FILTERS).filter(item => item.column === 'building'));
-    expect(building[0]!.id).toBe(`${HARNESS_ID}:feat/runtime-capture-pi`);
-    expect(building.at(-1)!.column_since).toBeNull();
   });
 
   test('the tab title carries the needs-you count and nothing when it is zero', () => {
@@ -178,256 +171,187 @@ describe('board data rules', () => {
 });
 
 describe('board page', () => {
-  test('the needs-you count, the badge and the tab title are the same number', async () => {
-    const snapshot = busy();
-    await mount(<OperatorApp {...props(snapshot)} />);
-    const count = snapshot.attention.length;
-    expect(count).toBe(1);
-    expect(document.querySelector('.needs-you')?.getAttribute('data-attention-count')).toBe(String(count));
-    expect(document.querySelectorAll('[data-attention-kind]')).toHaveLength(count);
-    expect(document.querySelector('[data-needs-you]')?.getAttribute('data-needs-you')).toBe(String(count));
-    expect(document.title).toBe(`(${count}) repo-harness`);
-    expect(document.querySelector('[data-attention-kind="ready_to_merge"] a[href^="https://github.com/"]')).not.toBeNull();
-  });
+  const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
+  const dialog = () => document.querySelector<HTMLElement>('[role="dialog"]');
+  const button = (text: string) => rows('button').find(element => element.textContent?.includes(text))!;
 
-  test('decodes and labels the changes_requested, merge_conflict and checks_failed rows', async () => {
-    const base = busy();
-    const [ready] = base.attention;
-    const itemId = (branch: string) => `${HARNESS_ID}:${branch}`;
-    const rows = [
-      { ...ready!, kind: 'changes_requested' as const, subject_id: itemId('feat/pipeline-observer'), summary: 'Observe pipeline phases on the board', waiting_since: new Date(NOW - 3 * 3_600_000).toISOString() },
-      { ...ready!, kind: 'merge_conflict' as const, subject_id: itemId('feat/kanban-human-redesign'), summary: 'Rebuild the operator console for humans', waiting_since: new Date(NOW - 2 * 3_600_000).toISOString() },
-      { ...ready!, kind: 'checks_failed' as const, subject_id: itemId('feat/runtime-capture-pi'), summary: 'Capture Pi runtime status natively', waiting_since: new Date(NOW - 1 * 3_600_000).toISOString() },
-      ready!,
-    ];
-    const snapshot = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...base, attention: rows })));
-    for (const [locale, labels] of [['en', ['Changes requested', 'Conflicts with main', 'Checks failed']], ['zh', ['评审要求修改', '与 main 冲突', '检查失败']]] as const) {
-      await mount(<OperatorApp {...props(snapshot, { initialLocale: locale })} />);
-      expect(Array.from(document.querySelectorAll('[data-attention-kind]')).map(row => row.getAttribute('data-attention-kind')))
-        .toEqual(['changes_requested', 'merge_conflict', 'checks_failed', 'ready_to_merge']);
-      const text = document.querySelector('.needs-you')!.textContent!;
-      for (const label of labels) expect(text).toContain(label);
-      await act(async () => root?.unmount());
-      root = null;
-      document.body.innerHTML = '';
-    }
-  });
-
-  test('cards and rows lead with human labels, never registry ids or digests', async () => {
-    await mount(<OperatorApp {...props(busy(), { initialRuntimeOverlay: busyRuntimeOverlay(NOW), readRuntimeStatus: async () => busyRuntimeOverlay(NOW) })} />);
-    expect(cards().length).toBeGreaterThan(5);
-    for (const element of cards()) {
-      expect(element.querySelector('[data-card-open]')!.textContent).not.toMatch(PRIVATE_LABEL);
-      expect(element.textContent).not.toMatch(PRIVATE_LABEL);
-    }
-    for (const row of document.querySelectorAll('[data-attention-kind]')) expect(row.textContent).not.toMatch(PRIVATE_LABEL);
-    expect(document.querySelector('[data-roster="connected"]')?.textContent).not.toMatch(PRIVATE_LABEL);
-    await act(async () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!.click());
-    const menu = document.querySelector('[data-repository-switch] + [role="dialog"]')!;
-    expect(menu.querySelectorAll('[data-switch-option]').length).toBeGreaterThan(1);
-    expect(menu.textContent).not.toMatch(PRIVATE_LABEL);
-  });
-
-  test('offers no drag, write or form control anywhere on the board', async () => {
-    await mount(<OperatorApp {...props(busy())} />);
-    expect(document.querySelectorAll('[draggable="true"], form, [data-write-action], textarea')).toHaveLength(0);
-    const inputs = Array.from(document.querySelectorAll('input')).map(input => input.getAttribute('type') ?? 'text');
-    expect(inputs.every(type => type === 'search' || type === 'checkbox')).toBe(true);
-    const words = Array.from(document.querySelectorAll('button')).map(button => button.textContent ?? '').join(' | ');
-    for (const affordance of ['Approve', 'Merge now', 'Merge', 'Close PR', 'Start agent', 'Delete', 'Prune']) expect(words).not.toContain(affordance);
-  });
-
-  test('a merged or closed PR shows no checks state, and an open PR is aged from its creation', async () => {
-    await mount(<OperatorApp {...props(busy())} />);
-    for (const element of cards().filter(entry => entry.getAttribute('data-column') === 'shipped')) {
-      expect(element.querySelector('[data-ci]')).toBeNull();
-      expect(element.textContent).toContain('merged');
-    }
-    expect(card(`${HARNESS_ID}:chore/oar-0-45`).textContent).toContain('PR opened 50m ago');
-    expect(card(`${HARNESS_ID}:chore/oar-0-45`).querySelector('[data-ci="success"]')).not.toBeNull();
-  });
-
-  test('keeps all five columns, leaves Planned empty and folds Shipped to recent work', async () => {
-    await mount(<OperatorApp {...props(busy())} />);
-    expect(document.querySelectorAll('[data-board-column]')).toHaveLength(5);
-    const planned = document.querySelector('[data-board-column="planned"]')!;
-    expect(planned.querySelectorAll('[data-item-id]')).toHaveLength(0);
-    expect(planned.textContent).toContain('Nothing here');
-    const shipped = document.querySelector('[data-board-column="shipped"]')!;
-    expect(shipped.querySelector('[data-column-count]')?.textContent).toBe('8');
-    expect(shipped.querySelectorAll('[data-item-id]')).toHaveLength(6);
-    const more = Array.from(shipped.querySelectorAll('button')).find(button => button.textContent === 'Show 2 more')!;
-    await act(async () => more.click());
-    expect(shipped.querySelectorAll('[data-item-id]')).toHaveLength(8);
-  });
-
-  test('opens a card in a drawer with a deep link, moves with j/k and closes on Escape', async () => {
-    const snapshot = busy();
-    await mount(<OperatorApp {...props(snapshot)} />);
-    const id = `${HARNESS_ID}:feat/pipeline-observer`;
-    await act(async () => card(id).querySelector<HTMLButtonElement>('[data-card-open]')!.click());
-    expect(window.location.hash).toBe(`#board/${encodeURIComponent(id)}`);
-    const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.querySelector('#item-drawer-title')?.textContent).toBe('Observe pipeline phases on the board');
-    expect(dialog.textContent).not.toContain('Evidence & gates');
-    expect(dialog.textContent).toContain('Checks');
-    expect(dialog.textContent).toContain('Review');
-    expect(dialog.querySelector('details')?.hasAttribute('open')).toBe(false);
-    await key('j');
-    expect(window.location.hash).not.toBe(`#board/${encodeURIComponent(id)}`);
-    await key('k');
-    expect(window.location.hash).toBe(`#board/${encodeURIComponent(id)}`);
-    await key('Escape');
-    expect(document.querySelector('[role="dialog"]')).toBeNull();
-    expect(window.location.hash).toBe('#board');
-  });
-
-  test('shows native runtime blocks in the roster without assigning a card or drawer', async () => {
-    const id = `${HARNESS_ID}:feat/runtime-capture-pi`;
-    installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
-    const runtime = busyRuntimeOverlay(NOW);
-    await mount(<OperatorApp {...props(busy(), { initialRuntimeOverlay: runtime, readRuntimeStatus: async () => runtime })} />);
-    const roster = document.querySelector('[data-roster-source="codex-implementer"]')!;
-    expect(roster.textContent).toContain('Blocked');
-    expect(roster.textContent).toContain('Permission needed');
-    expect(roster.textContent).toContain('not linked to a task');
-    expect(card(id).querySelector('[data-blocked]')).toBeNull();
-    const dialog = document.querySelector('[role="dialog"]')!;
-    expect(dialog.querySelector('[data-blocked], [data-agent-source]')).toBeNull();
-    expect(dialog.querySelector('#drawer-now')).toBeNull();
-    expect(dialog.textContent).toContain('Capture Pi runtime status natively');
-    expect(dialog.textContent).toContain('Pull request');
-  });
-
-  test('a long command wraps in full and Copy copies all of it', async () => {
-    const copied: string[] = [];
-    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
-    await mount(<OperatorApp {...props(decodeDevActivitySnapshot(emptyDevActivity(NOW)))} />);
-    const line = document.querySelector('[data-roster="not-connected"] [data-command]')!;
-    const command = 'repo-harness operator serve --runtime-status-config <absolute-path>';
-    expect(line.querySelector('code')?.textContent).toBe(command);
-    expect(line.querySelector('code')?.className).not.toContain('truncate');
-    expect(line.querySelector('code')?.className).not.toContain('nowrap');
-    await act(async () => line.querySelector<HTMLButtonElement>('button')!.click());
-    expect(copied).toEqual([command]);
-  });
-
-  test('a deep link opens the drawer on load; a vanished item says so', async () => {
-    const id = `${HARNESS_ID}:chore/oar-0-45`;
-    installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
-    await mount(<OperatorApp {...props(busy())} />);
-    expect(document.querySelector('#item-drawer-title')?.textContent).toBe('Upgrade OAR to 0.45.1');
-    expect(document.querySelector('[role="dialog"]')?.textContent).not.toContain('Evidence & gates');
-    await act(async () => root?.unmount());
-    installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(`${HARNESS_ID}:gone`)}`);
-    await mount(<OperatorApp {...props(busy())} />);
-    expect(document.querySelector('[role="dialog"]')?.textContent).toContain('This item is no longer on the board');
-  });
-
-  test('1-TASK-P1 a verified session gives the owner row and a copyable hc terminal, Herdr.app command, resume command and task id', async () => {
-    drawerAt(`${HARNESS_ID}:feat/kanban-human-redesign`);
-    const copied: string[] = [];
-    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
-    await mount(<OperatorApp {...props(busy(), { readExecution: sessions })} />);
+  test('the board has no default subject: the form names the repository and the parent, then the board reads that subject', async () => {
+    const subjects: BoardSubject[] = [];
+    await mount(<OperatorApp {...props(busy(), { readBoard: async (subject) => { subjects.push(subject); return { state: 'ok', board: BOARD }; } })} />);
+    const form = document.querySelector('[data-board-subject]')!;
+    expect(subjects).toEqual([]);
+    expect(form.querySelector('select')?.value).toBe(HARNESS_ID);
+    const open = form.querySelector<HTMLButtonElement>('button[type="submit"]')!;
+    expect(open.disabled).toBe(true);
+    const parent = form.querySelector<HTMLInputElement>('input')!;
+    // react-dom loads before this DOM exists, so it watches text inputs through focus and keyup, not the input event.
+    await act(async () => {
+      parent.focus();
+      Object.getOwnPropertyDescriptor(window.HTMLInputElement.prototype, 'value')!.set!.call(parent, '1474');
+      parent.dispatchEvent(new window.KeyboardEvent('keyup', { key: '4', bubbles: true }) as unknown as Event);
+    });
+    expect(open.disabled).toBe(false);
+    await act(async () => open.click());
     await settle();
-    const owner = followUp().querySelector('[data-owner="verified"]')!;
-    for (const part of ['Codex', 'verified', 'implementer', 'Read-only observation']) expect(owner.textContent).toContain(part);
-    expect(owner.querySelector('[data-dot="active"]')).not.toBeNull();
-    expect(followUp().textContent).toContain('t12');
-    expect(followUp().textContent).toContain('task-1f0c2a9e4b7d3c5a8e61');
-    const open = `herdr-app do terminal.keep '{"terminal":"t12"}'`;
-    expect(Array.from(followUp().querySelectorAll('[data-command] code')).map(code => code.textContent))
-      .toEqual([open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f']);
-    // 1-TASK-N1: copy buttons only; nothing here can reach the session.
-    expect(followUp().querySelectorAll('input, textarea, select, form, [contenteditable], [data-write-action]')).toHaveLength(0);
-    const buttons = Array.from(followUp().querySelectorAll('button'));
-    expect(buttons.every(button => button.getAttribute('aria-label')?.startsWith('Copy '))).toBe(true);
-    for (const button of buttons) await act(async () => button.click());
-    expect(copied).toEqual(['t12', open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', 'kanban-redesign']);
+    expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474`);
+    expect(subjects).toEqual([{ repository_id: HARNESS_ID, parent: 1474 }]);
+    expect(document.querySelector('[data-board-parent]')?.getAttribute('data-board-parent')).toBe('1474');
+    expect(localStorage.getItem(OPERATOR_BOARD_REPOSITORY_STORAGE_KEY)).toBe(HARNESS_ID);
+    for (const hash of ['#board/repo/0', '#board/repo/1474/x', '#board//1474', '#board/repo/1474/1476/9']) expect(parseWorkspaceLocation(hash).workspace).toBe('home');
+    expect(workspaceHash(parseWorkspaceLocation(`#board/${HARNESS_ID}/1474/1476`))).toBe(`#board/${HARNESS_ID}/1474/1476`);
+  });
+
+  test('waiting for you lists the core attention findings; in progress lists the other open items by stage', async () => {
+    boardAt();
+    await mount(<OperatorApp {...props(busy())} />);
+    await settle();
+    // The core rules on the recorded board of #1474; the console runs them and never classifies again.
+    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(evaluateBoardAttention(BOARD).findings.map(finding => finding.rule));
+    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(['A1', 'A3', 'A7', 'R2']);
+    const ready = rows('[data-finding="A1"]')[0]!;
+    for (const part of ['herdr-core 迁移 1', '#1491 is accepted and ready', 'feat/1475-hc-transport', 'PR #1491', 'Ready to merge', 'w1475', 'CI passed']) expect(ready.textContent).toContain(part);
+    expect(ready.querySelector('a[href="https://github.com/Ancienttwo/repo-harness/pull/1491"]')).not.toBeNull();
+    expect(rows('[data-finding="A3"]')[0]!.textContent).toContain('Draft #1499');
+    // Rows show #1475 and #1476, so they are not in progress. R2 names pull requests only, so #1479 stays in progress.
+    expect(rows('[data-item]').map(row => row.getAttribute('data-item'))).toEqual(['1477', '1478', '1479', '1480']);
+    await act(async () => button('Show 3 more').click());
+    expect(rows('[data-item]').map(row => row.getAttribute('data-item'))).toEqual(['1477', '1478', '1479', '1480', '1481', '1482', '1483']);
+    expect(rows('[data-item="1479"]')[0]!.getAttribute('data-stage')).toBe('building');
+    expect(rows('[data-board-tab]').map(tab => `${tab.getAttribute('data-board-tab')} ${tab.textContent}`))
+      .toEqual(['all All9', 'attention Waiting for you4', 'building Building8', 'verifying Verifying0', 'ready Ready to merge1']);
+    await act(async () => rows('[data-board-tab="ready"]')[0]!.click());
+    expect(rows('[data-finding]').map(row => row.getAttribute('data-finding'))).toEqual(['A1']);
+    expect(rows('[data-item]')).toHaveLength(0);
+    // The plan comment of #1474 has no plan block, so R1 and R4 cannot run; the board says so and shows the rest.
+    expect(rows('[data-board-banner]').map(banner => banner.getAttribute('data-board-banner'))).toEqual(['plan', 'unevaluated']);
+    expect(document.body.textContent).not.toMatch(PRIVATE_LABEL);
+    expect(document.querySelector('[data-freshness-source="board"]')?.getAttribute('data-freshness')).toBe('ok');
+    expect(document.querySelectorAll('[draggable="true"], form, [data-write-action], textarea')).toHaveLength(0);
+    const words = rows('button').map(element => element.textContent ?? '').join(' | ');
+    for (const affordance of ['Approve', 'Merge now', 'Close PR', 'Start agent', 'Delete']) expect(words).not.toContain(affordance);
+  });
+
+  test('a deep link opens the Task drawer; j/k move through the board order and Escape returns to the board', async () => {
+    boardAt(1476);
+    await mount(<OperatorApp {...props(busy(), { initialLocale: 'zh' })} />);
+    await settle();
+    expect(dialog()!.querySelector('#task-drawer-title')?.textContent).toBe('herdr-core 迁移 2｜sessions：任务会话改到 herdr-app 和 hc');
+    expect(dialog()!.querySelector('[aria-current="step"]')?.getAttribute('data-step')).toBe('build');
+    for (const part of ['席位卡住', 'feat/1476-sessions-herdr-core', '23627c4f5a71', '没有 CI', '未验收', 'w1476', 'blocked']) expect(dialog()!.textContent).toContain(part);
+    expect(dialog()!.querySelector('[data-blocker="draft"]')?.textContent).toBe('PR 还是草稿');
+    const claim = BOARD.items.find(item => item.number === 1476)!.claim_status;
+    if (claim.status_kind !== 'observed') throw new Error('the recorded board has a claim status on #1476');
+    expect(dialog()!.querySelector('[data-claim="observed"] a')?.getAttribute('href')).toBe(claim.url);
+    // The merge command shows only for a pull request that core merge readiness calls ready.
+    expect(dialog()!.querySelector('[data-command]')).toBeNull();
+    await key('k');
+    expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1475`);
+    expect(dialog()!.querySelector('[data-merge-ready]')).not.toBeNull();
+    expect(dialog()!.querySelector('[data-command] code')?.textContent).toBe('gh pr merge 1491 --squash');
+    await key('j');
+    expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1476`);
+    await key('Escape');
+    expect(dialog()).toBeNull();
+    expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474`);
 
     await act(async () => root?.unmount());
     root = null;
-    drawerAt(`${HARNESS_ID}:feat/pipeline-observer`);
-    await mount(<OperatorApp {...props(busy(), { initialLocale: 'zh', readExecution: sessions })} />);
+    boardAt(1503);
+    await mount(<OperatorApp {...props(busy())} />);
     await settle();
-    expect(followUp().querySelector('[data-owner="verified"]')?.textContent).toContain('Claude Code');
-    expect(followUp().textContent).toContain('只读观测');
-    expect(followUp().querySelector('[data-command] code')?.textContent).toBe('claude --resume 5f0c1e2a-0000-4000-8000-000000000001');
-    // A terminal session has no Herdr pane to show.
-    expect(followUp().textContent).not.toContain('Herdr pane');
-    expect(followUp().textContent).toContain('pipeline-observer');
+    expect(dialog()?.querySelector('[data-task-missing]')?.textContent).toContain('#1503 is not on this board');
   });
 
-  test('1-TASK-F1 without a verified session on the item branch the drawer says so, with no agent name and no command', async () => {
-    // Dev Activity lists `feat/c++`, but the view leaves out a session whose branch is not public text.
-    const base = busy();
-    const plus = { id: `${HARNESS_ID}:feat/c++`, repository_id: HARNESS_ID, branch: 'feat/c++', title: 'Build on a branch with a plus sign', column: 'building',
-      hidden: null, column_since: null, worktrees: [], pull_request: null };
-    const snapshot = decodeDevActivitySnapshot(JSON.parse(JSON.stringify({ ...base, items: [...base.items, plus] })));
-    // chore/oar-0-45: its session's provider exited, so the view has it only as unverified.
-    for (const branch of ['chore/oar-0-45', 'feat/c++']) {
-      drawerAt(`${HARNESS_ID}:${branch}`);
-      await mount(<OperatorApp {...props(snapshot, { initialLocale: 'zh', readExecution: sessions })} />);
-      await settle();
-      const none = followUp().querySelector('[data-owner="none"]')!;
-      expect(none.textContent).toBe('没有已验证的会话');
-      expect(none.querySelector('[data-dot="unknown"]')).not.toBeNull();
-      for (const name of ['Codex', 'Claude Code', 'implementer']) expect(followUp().textContent).not.toContain(name);
-      expect(followUp().querySelectorAll('[data-command], button')).toHaveLength(0);
-      await act(async () => root?.unmount());
-      root = null;
-    }
+  test('1-TASK-P1 a verified session on the pull request branch gives the follow-up commands, copy buttons only', async () => {
+    boardAt(1476);
+    const copied: string[] = [];
+    Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
+    await mount(<OperatorApp {...props(busy(), { readExecution: sessionsOn('feat/kanban-human-redesign', 'feat/1476-sessions-herdr-core') })} />);
+    await settle();
+    const owner = followUp().querySelector('[data-owner="verified"]')!;
+    for (const part of ['Codex', 'verified', 'implementer', 'Read-only observation']) expect(owner.textContent).toContain(part);
+    const open = `herdr-app do terminal.keep '{"terminal":"t12"}'`;
+    expect(Array.from(followUp().querySelectorAll('[data-command] code')).map(code => code.textContent)).toEqual([open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f']);
+    // A long command wraps in full; it is never cut.
+    for (const code of followUp().querySelectorAll('[data-command] code')) expect(code.className).not.toMatch(/truncate|nowrap/u);
+    // 1-TASK-N1: copy buttons only; nothing here can reach the session.
+    expect(followUp().querySelectorAll('input, textarea, select, form, [contenteditable], [data-write-action]')).toHaveLength(0);
+    const buttons = Array.from(followUp().querySelectorAll('button'));
+    expect(buttons.every(element => element.getAttribute('aria-label')?.startsWith('Copy '))).toBe(true);
+    for (const element of buttons) await act(async () => element.click());
+    expect(copied).toEqual(['t12', open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', 'kanban-redesign']);
   });
 
-  test('the drawer states a read in flight, a pending collection and an unreadable route, never as no session', async () => {
-    const site = busy().repositories[1]!.repository_id;
-    const states: [string, ExecutionReader, string, string][] = [
-      [`${HARNESS_ID}:feat/kanban-human-redesign`, () => new Promise(() => {}), 'reading', 'Reading…'],
-      [`${site}:fix/csp-header`, sessions, 'pending', 'Task execution state is not collected yet'],
-      [`${HARNESS_ID}:feat/kanban-human-redesign`, async () => ({ state: 'unavailable', reason: 'execution_state_unavailable' }), 'unavailable',
-        'Task execution state unavailable · The task session records could not be read'],
+  test('1-TASK-F1 the follow-up states no session, a read in flight, a pending collection and an unreadable route, each as itself', async () => {
+    const states: [number, ExecutionReader, string, string][] = [
+      [1476, sessions, 'none', 'No verified session'],
+      // #1477 has no pull request, so no branch can bind a session.
+      [1477, sessionsOn('feat/kanban-human-redesign', 'feat/1476-sessions-herdr-core'), 'none', 'No verified session'],
+      [1476, () => new Promise(() => {}), 'reading', 'Reading…'],
+      [1476, async () => ({ state: 'unavailable', reason: 'execution_state_pending' }), 'pending', 'Task execution state is not collected yet'],
+      [1476, async () => ({ state: 'unavailable', reason: 'execution_state_unavailable' }), 'unavailable', 'Task execution state unavailable · The task session records could not be read'],
     ];
-    for (const [id, readExecution, state, text] of states) {
-      drawerAt(id);
+    for (const [issue, readExecution, state, text] of states) {
+      boardAt(issue);
       await mount(<OperatorApp {...props(busy(), { readExecution })} />);
       await settle();
       expect(followUp().querySelector(`[data-owner="${state}"]`)?.textContent).toBe(text);
-      expect(followUp().querySelectorAll('[data-owner="none"], [data-owner="verified"], [data-command], button')).toHaveLength(0);
-      // A card names no agent unless the route answered with a verified session.
-      expect(card(id).querySelector('[data-agent]')).toBeNull();
+      expect(followUp().querySelectorAll('[data-owner="verified"], [data-command], button')).toHaveLength(0);
       await act(async () => root?.unmount());
       root = null;
     }
   });
 
-  test('a card names the agent of its verified session, and no other card names one', async () => {
-    await mount(<OperatorApp {...props(busy(), { readExecution: sessions })} />);
+  test('a refusal names its reason and the command; a failed refresh keeps the last board; a lost source is one banner', async () => {
+    boardAt();
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'unavailable', reason: 'board_collect_failed' }) })} />);
     await settle();
-    expect(card(`${HARNESS_ID}:feat/kanban-human-redesign`).querySelector('[data-agent="verified"]')?.textContent).toBe('Codex');
-    expect(card(`${HARNESS_ID}:feat/pipeline-observer`).querySelector('[data-agent="verified"] [data-dot="active"]')).not.toBeNull();
-    const named = cards().filter(element => element.querySelector('[data-agent]') !== null).map(element => element.getAttribute('data-item-id'));
-    expect(named).toEqual([`${HARNESS_ID}:feat/kanban-human-redesign`, `${HARNESS_ID}:feat/pipeline-observer`]);
-  });
+    expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_collect_failed');
+    expect(document.querySelector('[data-board-reason]')?.textContent).toContain('repo-harness board --parent 1474 --json');
+    expect(document.querySelector('[data-freshness-source="board"]')?.getAttribute('data-freshness')).toBe('failed');
+    await act(async () => root?.unmount());
 
-  test('states an empty queue and an unconnected agent source in one line each, with the command', async () => {
-    await mount(<OperatorApp {...props(decodeDevActivitySnapshot(emptyDevActivity(NOW)))} />);
-    expect(document.querySelector('.needs-you')?.textContent).toContain('Nothing is waiting on you.');
-    expect(document.title).toBe('repo-harness');
-    const roster = document.querySelector('[data-roster="not-connected"]')!;
-    expect(roster.querySelector('[data-command]')?.textContent).toContain('repo-harness operator serve --runtime-status-config');
-    expect(document.body.textContent).toContain('No work in flight');
-  });
-
-  test('a failed refresh keeps the last board and says how old it is', async () => {
-    const snapshot = busy();
     let reads = 0;
-    await mount(<OperatorApp {...props(snapshot, { fetchDevActivity: async () => { reads++; throw new Error('down'); } })} />);
-    const before = cards().length;
-    await act(async () => Array.from(document.querySelectorAll('button')).find(button => button.textContent?.includes('Refresh'))!.click());
-    expect(reads).toBe(1);
-    expect(cards()).toHaveLength(before);
-    expect(document.body.textContent).toContain('Refresh failed');
-    expect(document.querySelector('[data-freshness]')?.textContent).toContain('showing data from');
+    const degraded: BoardV1 = { ...BOARD, execution: { status: 'unavailable', reason: 'hc_unavailable' } };
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => (reads++ === 0 ? { state: 'ok', board: degraded } : { state: 'unavailable', reason: 'board_timeout' }) })} />);
+    await settle();
+    expect(rows('[data-board-banner]').map(banner => banner.getAttribute('data-board-banner'))).toEqual(['execution', 'plan', 'unevaluated']);
+    expect(rows('[data-seat]').every(cell => cell.getAttribute('data-seat') === 'none')).toBe(true);
+    await act(async () => button('Refresh').click());
+    await settle();
+    expect(reads).toBe(2);
+    expect(rows('[data-finding]').length).toBeGreaterThan(0);
+    expect(rows('[data-board-banner]')[0]!.getAttribute('data-board-banner')).toBe('refresh');
+    expect(rows('[data-board-banner]')[0]!.textContent).toContain('The board read did not finish in time.');
+    expect(document.querySelector('[data-freshness-source="board"]')?.getAttribute('data-freshness')).toBe('refresh-failed');
+  });
+
+  test('the board reader decodes the body with the core decoder and keeps each route refusal; any other answer is unreachable', async () => {
+    const refusal = (code: string, status: number) => () => Response.json({ error: { code, message: 'refused', next_action: 'retry' } }, { status });
+    const answers: (() => Response)[] = [
+      () => Response.json(BOARD),
+      () => Response.json({ ...BOARD, protocol: 2 }),
+      refusal('board_parent_invalid', 400),
+      refusal('repository_not_found', 404),
+      refusal('board_collect_failed', 503),
+      refusal('board_timeout', 504),
+      refusal('a_code_from_a_newer_server', 503),
+      () => { throw new TypeError('connection refused'); },
+    ];
+    const original = globalThis.fetch;
+    const requests: string[] = [];
+    globalThis.fetch = (async (url: unknown) => {
+      requests.push(String(url));
+      return answers[requests.length - 1]!();
+    }) as typeof fetch;
+    try {
+      const results = [];
+      for (const _ of answers) results.push(await fetchBoard({ repository_id: HARNESS_ID, parent: 1474 }, new AbortController().signal));
+      expect(results.map(result => result.state === 'ok' ? result.board.parent.number : result.reason)).toEqual([
+        1474, 'board_invalid', 'board_parent_invalid', 'repository_not_found', 'board_collect_failed', 'board_timeout', 'unreachable', 'unreachable',
+      ]);
+      expect(new Set(requests)).toEqual(new Set([`/api/v1/repositories/${HARNESS_ID}/board?parent=1474`]));
+    } finally { globalThis.fetch = original; }
   });
 
   test('stale registrations fold into one row with the preview command', async () => {
@@ -439,53 +363,6 @@ describe('board page', () => {
     expect(stale.textContent).toContain('without a backup');
     expect(document.querySelectorAll('[data-repository]')).toHaveLength(2);
     expect(document.querySelector('[data-source-kind="github"]')?.getAttribute('data-source-status')).toBe('unavailable');
-  });
-
-  test('G23 the cleanup signal comes only from green worktrees of the same repository and branch', async () => {
-    const reclaimable = () => cards().filter(element => element.querySelector('[data-reclaimable]')).map(element => element.getAttribute('data-item-id')).sort();
-    await mount(<OperatorApp {...props(busy())} />);
-    // Green rows: feat/kanban-status and feat/pi-host in repo-harness, fix/footer in operator-site. Red, yellow and unassigned rows never join.
-    const site = busy().repositories[1]!.repository_id;
-    expect(reclaimable()).toEqual([`${HARNESS_ID}:feat/kanban-status`, `${HARNESS_ID}:feat/pi-host`, `${site}:fix/footer`].sort());
-    expect(card(`${HARNESS_ID}:feat/kanban-status`).textContent).toContain('worktree left over');
-
-    // The Dev Activity item still lists its worktree; a yellow verdict alone removes the signal.
-    await act(async () => root?.unmount());
-    const yellow = rejudged({ 'feat-kanban-status': { judgment: 'yellow', reasons: ['locked'] } });
-    await mount(<OperatorApp {...props(busy(), { initialWorktrees: yellow, readWorktrees: async () => yellow })} />);
-    expect(busy().items.find(item => item.id === `${HARNESS_ID}:feat/kanban-status`)!.worktrees).toHaveLength(1);
-    expect(card(`${HARNESS_ID}:feat/kanban-status`).querySelector('[data-reclaimable]')).toBeNull();
-
-    // A green row on the same branch name in another repository does not join.
-    await act(async () => root?.unmount());
-    const elsewhere = rejudged({ 'feat-kanban-status': { judgment: 'yellow', reasons: ['locked'] }, 'operator-site-wt-footer': { branch: 'feat/kanban-status' } });
-    await mount(<OperatorApp {...props(busy(), { initialWorktrees: elsewhere, readWorktrees: async () => elsewhere })} />);
-    expect(card(`${HARNESS_ID}:feat/kanban-status`).querySelector('[data-reclaimable]')).toBeNull();
-    expect(card(`${site}:fix/footer`).querySelector('[data-reclaimable]')).toBeNull();
-  });
-
-  test('G23 without worktree data no card claims a cleanup', async () => {
-    await mount(<OperatorApp {...props(busy(), { initialWorktrees: undefined, readWorktrees: async () => { throw new Error('down'); } })} />);
-    await settle();
-    expect(cards().length).toBeGreaterThan(5);
-    expect(document.querySelectorAll('[data-reclaimable]')).toHaveLength(0);
-    await act(async () => root?.unmount());
-    await mount(<OperatorApp {...props(busy(), { initialWorktrees: unavailableWorktrees(), readWorktrees: async () => unavailableWorktrees() })} />);
-    expect(document.querySelectorAll('[data-reclaimable]')).toHaveLength(0);
-  });
-
-  test('G23 the drawer names the green directories of its branch and nothing for a kept worktree', async () => {
-    const id = `${HARNESS_ID}:feat/kanban-status`;
-    installDom(`http://127.0.0.1:4318/#board/${encodeURIComponent(id)}`);
-    await mount(<OperatorApp {...props(busy())} />);
-    const note = document.querySelector('[role="dialog"] [data-reclaimable-worktrees]')!;
-    expect(note.getAttribute('data-reclaimable-worktrees')).toBe('1');
-    expect(note.textContent).toContain('(feat-kanban-status)');
-    expect(note.querySelector('[data-command] code')?.textContent).toBe('git worktree list');
-    await key('Escape');
-    await act(async () => card(`${HARNESS_ID}:feat/kanban-human-redesign`).querySelector<HTMLButtonElement>('[data-card-open]')!.click());
-    expect(document.querySelector('#item-drawer-title')?.textContent).toBe('Rebuild the operator console for humans');
-    expect(document.querySelector('[role="dialog"] [data-reclaimable-worktrees]')).toBeNull();
   });
 });
 
@@ -520,6 +397,17 @@ const noRepairs: CiRepairsReader = async () => ({ state: 'ok', issues: [] });
 const todayRow = (id: string) => document.querySelector(`[data-today="${id}"]`)!;
 
 describe('home page', () => {
+  test('the needs-you count, the badge and the tab title are the same number', async () => {
+    installDom(HOME_URL);
+    const snapshot = busy();
+    await mount(<OperatorApp {...props(snapshot, { readCiRepairs: noRepairs })} />);
+    const count = snapshot.attention.length;
+    expect(count).toBe(1);
+    expect(document.querySelectorAll('section[aria-labelledby="home-waiting"] [data-attention-kind]')).toHaveLength(count);
+    expect(document.querySelector('[data-needs-you]')?.getAttribute('data-needs-you')).toBe(String(count));
+    expect(document.title).toBe(`(${count}) repo-harness`);
+  });
+
   test('1-HOME-P1 greets with the waiting count and lists rows by wait with reason, repository, PR and an unknown agent', async () => {
     installDom(HOME_URL);
     const snapshot = waitingThree();
@@ -534,9 +422,10 @@ describe('home page', () => {
       for (const part of [reason, 'repo-harness', pr, 'agent 未知']) expect(row!.textContent).toContain(part);
       expect(row!.querySelector('[data-agent="unknown"] [data-dot="unknown"]')).not.toBeNull();
     }
-    await act(async () => rows[0]!.querySelector<HTMLAnchorElement>(`a[href="#board/${encodeURIComponent(snapshot.attention[0]!.subject_id)}"]`)!.click());
+    // A Dev Activity row names no parent issue, so it opens the board subject form.
+    await act(async () => rows[0]!.querySelector<HTMLAnchorElement>('a[href="#board"]')!.click());
     expect(document.querySelector('main')?.getAttribute('data-workspace')).toBe('board');
-    expect(document.querySelector('#item-drawer-title')?.textContent).toBe('Observe pipeline phases on the board');
+    expect(document.querySelector('[data-board-subject]')).not.toBeNull();
   });
 
   test('1-HOME-P1 a row whose item has a verified session names its agent; every other row stays agent unknown', async () => {
@@ -583,7 +472,7 @@ describe('home page', () => {
     expect(todayRow('reclaimable').querySelector('a[href="#worktrees"]')).not.toBeNull();
     expect(todayRow('merged').textContent).toContain('PRs merged: 1');
     expect(Array.from(todayRow('longest').querySelectorAll('ul a')).map(link => link.getAttribute('href')))
-      .toEqual(snapshot.attention.map(row => `#board/${encodeURIComponent(row.subject_id)}`));
+      .toEqual(snapshot.attention.map(() => '#board'));
     expect(todayRow('failed').textContent).toContain('Open PRs: 1');
     expect(todayRow('failed').querySelector('ul a')?.textContent).toBe('Rewrite billing copy');
     for (const id of ['merged', 'longest', 'failed']) expect(todayRow(id).querySelector('a[href="#board"]')).not.toBeNull();
@@ -788,7 +677,7 @@ describe('worktree page', () => {
     expect(document.querySelector('[data-freshness]')?.textContent).toBe('Worktrees collected 5m ago · repos unreadable: 1');
   });
 
-  test('the worktree cache is read only on Home, Board and Worktree, and a failed refresh keeps the last rows', async () => {
+  test('the worktree cache is read only on Home and Worktree, and a failed refresh keeps the last rows', async () => {
     installDom('http://127.0.0.1:4318/#repositories');
     const snapshot = trees();
     let reads = 0, fail = false;
@@ -986,8 +875,9 @@ describe('side rail', () => {
   const repositorySwitch = () => document.querySelector<HTMLButtonElement>('[data-repository-switch]')!;
   const go = (workspace: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!.click());
 
-  test('1-SHELL-P1 the switch sits under the logo; pages across repositories show All repositories, the task drawer its repository', async () => {
+  test('1-SHELL-P1 the switch sits under the logo; pages across repositories show All repositories, a board its repository', async () => {
     const heads: string[] = [];
+    installDom(WORKTREES_URL);
     await mount(<OperatorApp {...props(busy(), { readRepositoryHead: async id => { heads.push(id); return HEAD; } })} />);
     expect(rail().children[0]!.querySelector('img[src="/logos/repo-harness-carrot-mark-transparent.svg"]')).not.toBeNull();
     expect(rail().children[1]!.contains(repositorySwitch())).toBe(true);
@@ -1000,8 +890,7 @@ describe('side rail', () => {
     expect(bottom.querySelector('.locale-switch')).not.toBeNull();
     expect(bottom.querySelector('button[aria-label^="Theme:"]')).not.toBeNull();
 
-    const id = `${HARNESS_ID}:feat/pipeline-observer`;
-    await act(async () => card(id).querySelector<HTMLButtonElement>('[data-card-open]')!.click());
+    await act(async () => { window.location.hash = `#board/${HARNESS_ID}/1474`; window.dispatchEvent(new window.HashChangeEvent('hashchange')); });
     await settle();
     expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('current');
     expect(repositorySwitch().getAttribute('data-selected')).toBe(HARNESS_ID);
@@ -1009,15 +898,15 @@ describe('side rail', () => {
     expect(repositorySwitch().querySelector('[data-switch-detail]')?.textContent).toBe(`${owner} · main · ${HEAD.slice(0, 7)}`);
     expect(heads).toContain(HARNESS_ID);
 
-    // Picking another repository from the drawer closes it and scopes the board.
+    // A board names one parent issue, so another repository opens the subject form with that repository chosen.
     const site = busy().repositories[1]!.repository_id;
     await act(async () => repositorySwitch().click());
+    expect(document.querySelector('[data-repository-switch] + [role="dialog"]')!.textContent).not.toMatch(PRIVATE_LABEL);
     await act(async () => document.querySelector<HTMLButtonElement>(`[data-switch-option="${site}"]`)!.click());
     expect(window.location.hash).toBe('#board');
-    expect(document.querySelector('#item-drawer-title')).toBeNull();
-    expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('scope');
-    expect(repositorySwitch().getAttribute('data-selected')).toBe(site);
-    expect(cards().every(element => element.getAttribute('data-item-id')!.startsWith(`${site}:`))).toBe(true);
+    expect(repositorySwitch().getAttribute('data-repository-switch')).toBe('current');
+    expect(repositorySwitch().getAttribute('data-selected')).toBe('');
+    expect(document.querySelector<HTMLSelectElement>('[data-board-subject] select')?.value).toBe(site);
 
     await act(async () => root?.unmount());
     root = null;
@@ -1111,6 +1000,6 @@ describe('theme', () => {
     delete (globalThis as { window?: unknown }).window;
     const markup = renderToStaticMarkup(<OperatorApp {...props(busy())} initialPlace={{ workspace: 'board', module: null, item: null }} />);
     expect(markup).toContain('data-workspace="board"');
-    expect(markup).toContain('data-attention-count="1"');
+    expect(markup).toContain('data-board-subject');
   });
 });
