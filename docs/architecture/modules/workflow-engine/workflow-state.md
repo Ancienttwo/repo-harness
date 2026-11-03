@@ -1,13 +1,13 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f16f5cab977024c5edd005adc4fa2358a7baaa5311d61d3c1ccbf6f5aad0108c" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f2d56c61eb2420b887b4f5d54da1e4eca0a4f7f9e045fb80c0323769e324c519" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
 > **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Resolves deterministic Effective State, provider issue and admitted session board observations, worktree safety and the continuation ledger.
+Resolves deterministic Effective State, worktree safety and the continuation ledger.
 
 ## 1. P1:能力架構地圖
 
@@ -19,15 +19,15 @@ flowchart LR
   p1_capability_workflow_engine_workflow_state_c0df5f05["Workflow State"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c["Continuation Ledger"]:::component
   p1_component_workflow_state_continuation_ledger_effects_763fc01a["Continuation Ledger (effects)"]:::component
-  p1_component_workflow_state_coordination_plane_01b22a1b["Provider Board Observations and Historical Worktree Safety"]:::component
-  p1_component_workflow_state_coordination_plane_core_3d2e2fd5["Provider Board Observations and Historical Worktree Safety (core)"]:::component
+  p1_component_workflow_state_coordination_plane_01b22a1b["Task Session Admission and Historical Worktree Safety"]:::component
+  p1_component_workflow_state_coordination_plane_core_3d2e2fd5["Task Session Admission and Historical Worktree Safety (core)"]:::component
   p1_component_workflow_state_primary_d0fb4045["Effective State Resolver"]:::component
   p1_component_workflow_state_primary_cli_1f36a09d["Effective State Resolver (cli)"]:::component
   p1_component_workflow_state_primary_effects_8c542428["Effective State Resolver (effects)"]:::component
   p1_component_workflow_state_primary_scripts_401176d3["Effective State Resolver (scripts)"]:::component
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Serialize attempt ledger appends under a directory lock and write them durably"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_continuation_ledger_379dbd7c -->|"Project the continuation envelope from read-only Effective State"| p1_component_workflow_state_primary_d0fb4045
-  p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Project provider boards and retain explicit historical task parsing and exact worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
+  p1_capability_workflow_engine_workflow_state_c0df5f05 -->|"Observe task session admission and retain explicit historical task parsing and exact worktree safety"| p1_component_workflow_state_coordination_plane_01b22a1b
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Append claim attempt receipts and read owner ledgers as progress evidence"| p1_component_workflow_state_continuation_ledger_379dbd7c
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Take task and backlog locks#44; read the worktree topology#44; and write coordination records durably"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_workflow_state_coordination_plane_01b22a1b -->|"Read artifacts and owner Effective State through the shared resolver"| p1_component_workflow_state_primary_d0fb4045
@@ -39,7 +39,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:d41c590886236cd47e5a774b106a35f716d6b23fdb68ab9db8b0ce001609a578`).
+- Proof: `proven` (`sha256:b94d780940f56d13f0ad717fb382850ea802dfcc3a9b52962e2da8504f83a54e`).
 - Semantic nodes: `10`; declared relations: `8`.
 
 ### 1.2 模組職責表
@@ -51,7 +51,6 @@ flowchart LR
 | `entrypoint.workflow-state.primary` | `src/effects/state/resolve-effective-state.ts#resolveAndCommitEffectiveState` | `sink.workflow-state.version-commit` → `src/effects/state/git-state-version-store.ts#commitStateVersionAfter` |
 | `entrypoint.workflow-state.state-lock` | `src/effects/state/state-lock.ts#withStateLock` | `sink.workflow-state.directory-lock` → `src/effects/locking/exclusive-directory-lock.ts#withExclusiveDirectoryLock` |
 | `entrypoint.workflow-state.version-owner` | `src/effects/state/git-state-version-store.ts#commitStateVersionAfter` | `sink.workflow-state.git-common-dir` → `src/effects/git/common-directory.ts#resolveGitCommonDirectory` |
-| `entrypoint.workflow-state.board` | `src/effects/state/collect-provider-board-inputs.ts#resolveProviderBoard` | `sink.workflow-state.board-inputs` → `src/effects/state/collect-provider-board-inputs.ts#collectProviderBoardInputs`、`sink.workflow-state.board-projection` → `src/core/state/provider-board.ts#projectProviderBoard` |
 
 組件入口:
 
@@ -67,7 +66,7 @@ flowchart LR
 
 出向關係:
 
-- `calls` → `component.workflow-state.coordination-plane` — Project provider boards and retain explicit historical task parsing and exact worktree safety
+- `calls` → `component.workflow-state.coordination-plane` — Observe task session admission and retain explicit historical task parsing and exact worktree safety
 - `depends-on` → `capability.verification.acceptance-review` — Read the diff fingerprint for Effective State.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Resolve the helper platform for coordination worktrees.
 - `calls` → `component.workflow-state.primary` — Resolve Effective State under the state lock
@@ -79,13 +78,12 @@ flowchart LR
 - `calls` ← `component.contract-assets.contract-worktree-lifecycle` — Create and remove task worktrees and sweep merged managed worktrees at start under the worktree topology lock
 - `depends-on` ← `capability.verification.evals-checks` — Test Workflow State behavior through its source modules.
 - `depends-on` ← `capability.runtime-harness.evidence-ledger` — Read state artifacts and read-only observations for evidence.
-- `depends-on` ← `capability.runtime-harness.external-source-intake` — Validate source bindings with the shared closed admitted-session selector
 - `reads` ← `component.global-runtime-reconciliation.archctx-closure` — Read the capability ownership type for archctx resolve results
 - `calls` ← `component.global-runtime-reconciliation.cli-diagnostics` — Read the workflow policy and the capability registry authority for the doctor report
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the state command
 - `calls` ← `component.hook-adapters.edit-guards` — Canonicalize edit paths and resolve the owners of edited paths
 - `calls` ← `component.hook-adapters.primary` — Resolve effective state read-only at most once per hook event
-- `calls` ← `component.hook-adapters.session-lifecycle` — Read Effective State snapshots, capability ownership and stored provider board slices for session context
+- `calls` ← `component.hook-adapters.session-lifecycle` — Read Effective State snapshots and capability ownership for session context
 - `reads` ← `component.mcp-sidecar.primary` — Resolve effective state read-only for the state MCP tools
 - `depends-on` ← `component.operator.console-collectors` — Reuse inspectWorktree and the sweep merge predicates for the read-only worktree inventory.
 - `depends-on` ← `capability.runtime-harness.operator` — Read state types and artifacts for Operator projections.
@@ -103,7 +101,6 @@ flowchart LR
 - `component.workflow-state.coordination-plane`:
   - `calls` → `component.workflow-state.continuation-ledger` — Append claim attempt receipts and read owner ledgers as progress evidence
   - `calls` → `capability.workflow-engine.execution-primitives` — Take task and backlog locks, read the worktree topology, and write coordination records durably
-  - `calls` → `capability.runtime-harness.external-source-intake` — Read immutable provider issue observations and complete refresh receipts
   - `calls` → `component.workflow-state.primary` — Read artifacts and owner Effective State through the shared resolver
 - `component.workflow-state.coordination-plane-core`:
   - 無。
@@ -123,8 +120,8 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.workflow-state.continuation-ledger` | Continuation Ledger | `2–5` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.continuation-ledger-effects` | Continuation Ledger (effects) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane` | Provider Board Observations and Historical Worktree Safety | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.workflow-state.coordination-plane-core` | Provider Board Observations and Historical Worktree Safety (core) | `5–10` 個文件 / `100–200` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane` | Task Session Admission and Historical Worktree Safety | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.coordination-plane-core` | Task Session Admission and Historical Worktree Safety (core) | `5–10` 個文件 / `20–50` 行 | 未宣告 |
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
@@ -132,23 +129,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:d41c590886236cd47e5a774b106a35f716d6b23fdb68ab9db8b0ce001609a578`); selectors `7/7`.
-
-```mermaid
-%%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
-sequenceDiagram
-  autonumber
-  participant p2_capability_4262990f as Workflow State
-  participant p2_plane_fe9f6ceb as Provider Board Observations and Historical Worktree Safety
-  p2_capability_4262990f->>p2_plane_fe9f6ceb: Collect exact provider issue observations and all current admitted session associations
-  alt Board revisions match before and after the projection
-  p2_capability_4262990f->>p2_plane_fe9f6ceb: Project the complete provider and session observation for bounded revision comparison
-    Note over p2_capability_4262990f: Return a stable provider board after equal complete revisions
-  else Complete observations keep changing through the bounded retry
-  p2_capability_4262990f->>p2_plane_fe9f6ceb: Project the complete provider and session observation for bounded revision comparison
-    Note over p2_capability_4262990f: Return the final observation marked changed_during_read without mutation
-  end
-```
+> **Proof**: `proven` (`sha256:b94d780940f56d13f0ad717fb382850ea802dfcc3a9b52962e2da8504f83a54e`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -211,7 +192,7 @@ Effective State 的决定、冻结不变量与 P2 解析轨迹已并入本章。
 | 组件 | 文件 / 行 | 职责 | 主要出向关系 |
 | --- | ---: | --- | --- |
 | `component.workflow-state.primary`（Effective State Resolver） | 17 / 4,434 | 工件解析、风险 profile、稳定读取、版本发布、`state` CLI、`interfaces/**`、边界门禁 | execution-primitives（状态锁与版本锁）、contract-assets（能力注册表） |
-| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | worktree 安全、provider board 与 slice 投影 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
+| `component.workflow-state.coordination-plane`（Shared Coordination Plane） | 28 / 8,924 | worktree 安全与 task session admission 观察 | primary（工件读取与 owner 只读解析）、continuation-ledger（attempt 收据）、execution-primitives（任务锁、worktree 拓扑） |
 | `component.workflow-state.continuation-ledger`（Continuation Ledger） | 5 / 540 | continuation 路由表、attempt ledger、no-progress 断路器 | primary（只读 Effective State）、execution-primitives（ledger 追加锁） |
 
 coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/state/coordination-*.ts`）。新的 `coordination-*` 文件自动归入该组件。其他新文件只归入 capability，直到有人把它加入某个组件。
@@ -219,8 +200,7 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 ### 3.4 10x 规模下先垮的点
 
 1. **同步的 Git 与源收集。** 早期设计已记录：第一个 10x 压力点是重复的同步 Git 与源收集，不是纯投影。hook 侧现在走无锁的只读解析，剩余的重试边界记在 `hook-adapters.md` §3.4 第 5 条。
-2. **provider board 的全量读取。** `resolveProviderBoard` 最多采样三次。每次采样，`collectProviderBoardInputs` 读取该仓库的全部 observation 与 refresh receipt，并做一次 session 发现（`src/effects/state/collect-provider-board-inputs.ts:19-43`）。记录数增加时，读成本线性增长。
-3. **`coordination-identity.ts` 只保留 task-id 路径形状。** 任务身份由 GitHub issue/PR 提供。旧 Sprint 行解析、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds` 已删除。
+2. **`coordination-identity.ts` 只保留 task-id 路径形状。** 任务身份由 GitHub issue/PR 提供。旧 Sprint 行解析、`projectCanonicalTasks` 与 `assertUniqueCanonicalTaskIds` 已删除。
 
 锁的已知边界：PID reuse 可让 stale token 看起来仍 live；bounded timeout 与人工清理保持 mutual exclusion，且不引入 host-native 依赖。最终 identity check 之后的 hostile ancestor rename 需要 `openat`/dirfd，超出 portable Bun/Node boundary；静态与中间 symlink redirection 会被拒绝。
 
@@ -232,13 +212,18 @@ coordination-plane 用文件名通配符声明 footprint（例如 `src/effects/s
 - 共享协调面作为组件进入本 capability。早期协调面文档中“不 mint capability node”的记录已同步更新。
 - `src/effects/review/diff-fingerprint.ts` 不归本 capability。并行的 acceptance-review 分组整体认领了 `src/effects/review/**`。
 
+### 2026-11-03 删除 provider 看板、hook 看板切片与 session 发现链（#1507）
+
+- 删除 state 的 `board` 子命令、[src/core/state/provider-board.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/core/state/provider-board.ts)、[src/effects/state/collect-provider-board-inputs.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/state/collect-provider-board-inputs.ts) 与 [src/effects/state/collect-slice-inputs.ts](https://github.com/Ancienttwo/repo-harness/blob/a525f8716ecbda4dd1f0426ca0b2047a768ced58/src/effects/state/collect-slice-inputs.ts)。`flow.workflow-state.board` 与 `entrypoint.workflow-state.board` 一起删除。
+- 删除 `readAdmittedTaskSessions`、`observeAdmittedSessionSource` 与 admitted session selector。PR #1541 合并后它们没有读者。`TASK_SESSIONS_MAX_ENTRIES` 留在 `src/core/sessions/task-sessions.ts`，因为 `src/effects/operator/execution-state.ts` 用它限制会话目录数。
+- coordination-plane 改名为 Task Session Admission and Historical Worktree Safety。它保留 session 观察失败码与只读 git runner，operator 的 task diff 与 doc session 读取用它们。
+
 ## Optimization Backlog
 
 以下是回边与边界缺口。它们是重构证据，不是声明的关系。
 
-- **primary → coordination-plane 回边。** `src/core/state/types.ts:12` 导入 `coordination-identity.ts`。board DTO 类型因此住在 Effective State 的类型文件里。`src/cli/commands/state.ts:21-26` 还承载 `state board`。候选做法：把 board 类型移到协调面，或把 `state board` 适配器移到协调面。
 - **primary → continuation-ledger 回边。** `src/cli/commands/state.ts:15-20`、`:27` 承载 `state attempt`、`state attempt-repair` 与 `state next`。处理方式同上。
-- **coordination-plane 读取 task session 记录。** `src/effects/state/coordination-worktree-topology.ts:14` 从 `src/effects/terminal/task-session-record.ts`（execution-primitives）读取 `taskWorktreeRuntimeClosed`，在 prune 前确认 task runtime 已关闭。#1402 后 workflow-state 不导入 task-agent-host，模型也不再声明 coordination-plane → task-agent-host。coordination-plane 拥有 `src/effects/sessions/{task-sessions,admitted-source}.ts` 与 `src/effects/terminal/task-session-admission.ts`。inbox 与外部来源绑定调用 `observeCurrentTaskSession`，并传入各自的拒绝函数，所以错误类与消息不变。
+- **coordination-plane 读取 task session 记录。** `src/effects/state/coordination-worktree-topology.ts:14` 从 `src/effects/terminal/task-session-record.ts`（execution-primitives）读取 `taskWorktreeRuntimeClosed`，在 prune 前确认 task runtime 已关闭。#1402 后 workflow-state 不导入 task-agent-host，模型也不再声明 coordination-plane → task-agent-host。coordination-plane 拥有 `src/effects/sessions/admitted-source.ts` 与 `src/effects/terminal/task-session-admission.ts`。inbox 调用 `observeCurrentTaskSession`，并传入自己的拒绝函数，所以错误类与消息不变。
 - **`diff-fingerprint.ts` 的归属（after arch-context#296）。** 早期设计把 Git review-subject 观察记为 Effective State 的实现边界，`resolve-effective-state.ts:11` 导入它。现在它归 acceptance-review。exclude 可用后，再决定是否把这一个文件移回本 capability。
 - **primary 的跨 capability 依赖。** `resolve-effective-state.ts:6-7` 导入 `scripts/acceptance-receipt.ts` 与 `src/effects/evidence/verification-execution.ts`。集成按边数决定方向。acceptance-review → workflow-state 有 38 条边（主要是 `readonly-observation.ts`），反向只有 7 条。模型声明 acceptance-review → workflow-state。primary → acceptance-review 是回边，不声明。`verification-execution.ts` 归 evidence-ledger，所以没有 workflow-state → evals-checks 的边。模型声明 primary → evidence-ledger。
 - **workflow-state 不导入 publication（#907）。** `observeProviderBranchMergeCommit` 只被 worktree prune 调用，它在 `src/effects/state/coordination-provider-merge.ts`。模型中没有 `relation.workflow-state.imports.publication`。

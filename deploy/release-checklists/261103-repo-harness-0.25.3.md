@@ -20,13 +20,16 @@
 - Merged range: `801506036..7ed64f848`: 35 first-parent commits and
   54 commits in total (`git rev-list --count`). Batch merge #1517 keeps the
   member commits of #1491 and #1492.
-- The npm package goes from 0.25.2 to 0.25.3. `package.json`,
+- The npm package goes from 0.25.1 to 0.25.3. npm never published 0.25.2,
+  so 0.25.3 also carries every 0.25.2 change to npm users. `package.json`,
   `assets/skill-version.json` (version and template version), README and the
   operator bot fixture show 0.25.3.
 - `archctx` and `archctx-contracts` stay at the locked exact 0.11.1. The
   release-prep PR changes no dependency version.
-- Publish status: published 2026-11-03 by the owner (`npm publish`, dist-tag
-  `latest`). `bun run check:release-published` passed.
+- Publish status: published 2026-11-03 by the owner. The `prepublishOnly`
+  gate passed first. Then the registry upload ran with `--ignore-scripts`
+  after npm web authentication. dist-tag `latest`.
+  `bun run check:release-published` passed.
 - Hold reason: none.
 
 ### Owner decision
@@ -226,6 +229,10 @@ content. The owner accepts or repairs each flag before publish.
   `bun run check:release-published`.
 
   - Publish candidate: `77abe62d5b96f81d210fc3db4b0d60957aadea62` (main after #1576).
+    Its tree equals the release-prep PR head `189448212`. The `prepublishOnly`
+    gate passed on this candidate. The registry upload ran with
+    `--ignore-scripts` after npm web authentication. The upload tarball has the
+    same shasum as the gated tarball.
   - npm version: `repo-harness@0.25.3`, gitHead `77abe62d5b96`, published
     2026-11-03T09:17:08.433Z, 878 files. dist-tag `latest` is 0.25.3.
   - Git tag: annotated `v0.25.3`, tag object

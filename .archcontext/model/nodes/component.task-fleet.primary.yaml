@@ -1,14 +1,14 @@
 schemaVersion: "archcontext.node/v2"
 id: "component.task-fleet.primary"
 kind: "component"
-name: "Fleet Task Observations and Board"
+name: "Fleet Commands"
 status: "active"
 parent: "capability.organization.task-fleet"
 layer: "cli"
-summary: "Owns registry-scoped provider fleet commands and board projection with exact admitted session evidence."
+summary: "Owns the fleet command group: task messages, inbox, provider feedback and repository registration."
 responsibilities:
-  - "Build provider issue cards with zero or more exact admitted session associations; no Sprint, lease or plan-offer reader remains."
-  - "Join explicit provider PR readiness, admitted inbox, feedback and runtime evidence with bounded concurrency, cancellation, revision comparison and per-card failure containment."
+  - "Parse the admitted inbox and feedback context of each fleet command and refuse unknown fields before any store read."
+  - "Register and prune repository registry rows only through the registry effects; no command scans directories."
 source:
   include:
     - src/cli/commands/fleet.ts

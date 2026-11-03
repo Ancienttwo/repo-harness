@@ -21,7 +21,6 @@ import {
 import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import type { EffectiveStateResolution, StateInputCollector } from '../../effects/loop/state-input-collector';
 import { withExclusiveDirectoryLock } from '../../effects/locking/exclusive-directory-lock';
-import { resolveBoardSliceBlock } from './board-slice-context';
 import type { HookHandlerResult } from './handler-contract';
 import { payloadIdentityField, type HookIdentity, type HookPayload } from './hook-input';
 import { appendStandingOrders } from './standing-orders-context';
@@ -435,17 +434,12 @@ export function runSubagentContext(input: SubagentContextInput): HookHandlerResu
     };
   }
 
-  // Pure advisory, resolved before the guardrail so the block sits with the
-  // rest of the spawn context rather than after the standing footer.
-  const boardSlice = resolveBoardSliceBlock(input.collector);
-
   // Permission observation controls scope constraints. A parent brief needs
   // no workflow artifact; unknown routing never fabricates a writable grant.
   const scopeMode: SandboxMode | null = routing.status === 'verified' ? routing.sandbox_mode : null;
   const startContext = appendLongCommandGuardrail([
     appendStandingOrders(repoRoot, '[repo-harness:subagent-context]'),
     '',
-    ...(boardSlice ? [boardSlice, ''] : []),
     `[repo-harness:native-role-routing] ${routing.status}: ${routing.reason}`,
     routing.status === 'verified'
       ? 'Custom-agent model routing is verified for this child; reasoning-effort routing remains unverified because SubagentStart does not expose it.'

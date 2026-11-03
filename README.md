@@ -245,7 +245,7 @@ task queue.
 | --- | --- | --- |
 | Issue and PR | Scope, ownership, dependencies, status and review evidence | The assigned GitHub issue |
 | Session support | Repository context, hooks and handoffs | `repo-harness init` |
-| Existing observations | Read retained task and runtime records | `repo-harness fleet board --json` |
+| Board | Read the sub-issues, pull requests, plan block and seat terminals of one parent issue | `repo-harness board --parent <n> --json` |
 
 New work uses a bounded issue brief and the current repository rules. Historical
 Sprint, binding and Lease records remain readable for operator and closeout
@@ -323,15 +323,15 @@ Keep the issue, branch, verification result and next action in the handoff.
 Re-read the issue and PR before continuing. Use the approved OAR and Herdr host
 paths for an assigned agent. repo-harness has no PM or Engineer scheduling API.
 
-### Existing task observations
+### Board of a parent issue
 
 ```bash
-repo-harness fleet board --json
+repo-harness board --parent <n> --json
 ```
 
-The board reads retained task, Lease, publication, inbox and runtime evidence.
-It does not claim work or create an Engineer binding. Completion and cleanup
-helpers remain for existing records.
+The board reads the sub-issues, pull requests, plan block and hc seat terminals
+of one parent issue. It does not claim work or create an Engineer binding.
+Completion and cleanup helpers remain for existing records.
 
 Use [repo-harness](SKILL.md) for scope and worker ownership,
 [repo-harness-product](assets/skills/repo-harness-product/SKILL.md) for requested
@@ -350,20 +350,6 @@ ArchContext measures structural problems such as cycles and direction
 violations. repo-harness shows each suggestion with its metrics, bounded evidence
 and module statistics, and records the user decision. It never executes a refactor; an
 accepted suggestion goes through the normal plan and pull request workflow.
-
-### External source intake
-
-```bash
-repo-harness external-source refresh   # one bounded, explicitly enabled GitHub observation
-repo-harness external-source bind --repo <id> --source-revision <digest> --session <selector.json>
-repo-harness external-source bindings  # binding edges and current drift attention
-```
-
-Intake is inert by design. An observed Issue mints no execution authority and
-does not become a runnable task on its own; binding attaches an immutable source
-revision to an existing admitted session selected by its provider issue, immutable
-claim, approved grant and session binding digest. The selector comes from task
-session discovery. Binding never creates a claim or approval.
 
 ### Persistent acceptance review
 

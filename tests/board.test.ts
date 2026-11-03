@@ -1,14 +1,15 @@
 import { afterEach, expect, test } from 'bun:test';
 import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
-import { tmpWorkspace } from './helpers/repo-fixture';
+import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
 import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
-import { collectBoard } from '../src/effects/board/collect';
+import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
+import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
@@ -281,14 +282,16 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   const seat = (address: string, seatName: string, status: string | null) =>
     ({ address, name: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
   const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
-    seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked')];
+    seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked'),
+    seat('t11', 'orchestrator', 'blocked')];
   const watched = { ...board, execution: { status: 'observed', terminals } } as BoardV1;
   const hc = watchHc({
-    // `get` at the window end: t6 is still blocked, t10 became idle.
-    FAKE_TERMINALS: { t3: {}, t6: { status: { state: 'blocked' } }, t7: {}, t8: {}, t9: {}, t10: { status: { state: 'idle' } } },
+    // `get` at the window end: t6 is still blocked, t10 became idle, and the program of t11 ended with its last status blocked.
+    FAKE_TERMINALS: { t3: {}, t6: { status: { state: 'blocked' } }, t7: {}, t8: {}, t9: {}, t10: { status: { state: 'idle' } },
+      t11: { state: 'finished', status: { state: 'blocked' } } },
     // t7 became idle during the wait. t6 and t10: hc wait returns at once with the terminal still blocked.
     FAKE_WAITS: { t6: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t7: { ended: false, reason: 'idle', status: { state: 'idle' } },
-      t10: { ended: false, reason: 'blocked', status: { state: 'blocked' } } },
+      t10: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t11: { ended: false, reason: 'blocked', status: { state: 'blocked' } } },
   });
   const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
   expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));
@@ -314,6 +317,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['wait', '--json', '--timeout', '900', '--', 't7'],
     ['send', '--json', '--', 't7', orchestrator],
     ['wait', '--json', '--timeout', '900', '--', 't10'],
+    ['wait', '--json', '--timeout', '900', '--', 't11'],
     ['send', '--json', '--', 't10', orchestrator],
     ['send', '--json', '--', 't8', orchestrator],
   ]);
@@ -321,7 +325,7 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   expect(records().filter(record => record.kind === 'send').map(record => [record.terminal, record.outcome, record.at])).toEqual([
     ['t3', 'sent', REPLAY_NOW.toISOString()], ['t9', 'sent', REPLAY_NOW.toISOString()], ['t7', 'sent', REPLAY_NOW.toISOString()],
     ['t6', 'skipped_blocked', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t10', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
-    ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
+    ['t11', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
   expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
 
@@ -372,6 +376,15 @@ test('watch service: --watch refuses a terminal without the service labels; star
   expect(doctor({ t6: { labels: other, state: 'live' } })).toMatchObject({ status: 'na', detail: 'No attention watcher was started for repository 1186405141.' });
   expect(doctor({})).toMatchObject({ status: 'na', detail: 'No attention watcher was started.' });
   expect(attentionWatchDoctorCheck(attentionHostPorts({ env: { PATH: '/nonexistent' } }), () => 1186405141)).toMatchObject({ status: 'na', detail: 'hc is not installed.' });
+  // A checkout without a GitHub remote cannot have a watcher, and gh is not asked; a GitHub remote reads the id from gh.
+  const checkout = tmpWorkspace('board-remote'); roots.push(checkout);
+  initGitRepo(checkout);
+  expect(run('git', ['remote', 'add', 'mirror', 'https://example.com/repo-harness.git'], checkout).status).toBe(0);
+  const local = () => attentionWatchDoctorCheck(watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }], FAKE_TERMINALS: { t5: { labels } } }).host,
+    () => readLocalRepositoryId({ repo_root: checkout, gh_runner: () => ({ status: 0, stdout: JSON.stringify({ id: 1186405141 }) }) }, url => githubRemoteRepository(url) !== null));
+  expect(local()).toMatchObject({ status: 'na', detail: 'This checkout has no GitHub remote, so it has no attention watcher.' });
+  expect(run('git', ['remote', 'add', 'origin', 'git@github.com:Ancienttwo/repo-harness.git'], checkout).status).toBe(0);
+  expect(local()).toMatchObject({ status: 'ok' });
 });
 
 // One-shot dependency migration (#1504): a stateful gh stub answers the reads and records every write.

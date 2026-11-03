@@ -22,6 +22,8 @@ source:
     - "src/effects/admission/admission-source.ts"
     - "src/effects/admission/issue-goal.ts"
     - "src/effects/admission/control-admission.ts"
+    - "src/effects/github/issues.ts"
+    - "src/effects/github/policy.ts"
   exclude:
     - "src/core/review/module-review-prompt.ts"
     - "src/effects/review/docs-host-isolation.ts"

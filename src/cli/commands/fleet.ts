@@ -8,8 +8,7 @@ import { BotRegistryError, readBotRegistry, type BotRecordV1 } from '../../effec
 import { randomUUID } from 'crypto';
 import { readFileSync } from 'fs';
 
-import { MergeReadinessError, resolveFleetReadiness, validatePullRequestSelection } from '../../effects/publication/merge-readiness';
-import { collectFleetBoard, parseFleetBoardAdmissionAssociations, FleetBoardError, watchFleetBoard, type FleetBoardPullRequestSelection } from '../../effects/fleet/board';
+import { MergeReadinessError } from '../../effects/publication/merge-readiness';
 import { observeTaskInboxContext, type TaskInboxSessionSource, ackTaskInbox, deliverTaskInbox, listTaskInbox, sendTaskMessage, TaskInboxError } from '../../effects/fleet/task-inbox';
 import { buildTaskMessageEvent, type TaskMessageEventInput, type TaskMessageRecipient } from '../../core/fleet/admitted-task-message';
 import { prepareFeedbackSubject, FeedbackError, intakeGitHubFeedback, projectPendingFeedbackOffer, showGitHubFeedback, transitionFeedbackDelivery } from '../../effects/fleet/provider-feedback';
@@ -17,7 +16,6 @@ import { FeedbackStoreError, readFeedbackDeliveryReceipt } from '../../effects/p
 
 function outputError(error: unknown): void {
   const code = error instanceof MergeReadinessError
-    || error instanceof FleetBoardError
     || error instanceof FeedbackError
     || error instanceof FeedbackStoreError
     || error instanceof TaskInboxError
@@ -146,24 +144,6 @@ function feedbackContext(contextFile: string, publicationId?: string) {
   return { ...input, publication_id: subject.publication_id };
 }
 
-function integerOption(
-  value: string | undefined,
-  name: string,
-  minimum: number,
-  maximum: number | undefined = undefined,
-): number | undefined {
-  if (value === undefined) return undefined;
-  if (!/^\d+$/.test(value.trim())) {
-    throw new Error(`--${name} must be an integer`);
-  }
-  const parsed = Number(value);
-  if (!Number.isSafeInteger(parsed) || parsed < minimum || (maximum !== undefined && parsed > maximum)) {
-    const bound = maximum === undefined ? `at least ${minimum}` : `between ${minimum} and ${maximum}`;
-    throw new Error(`--${name} must be an integer ${bound}`);
-  }
-  return parsed;
-}
-
 export function buildFleetCommand(): Command {
   const fleet = new Command('fleet').description('Project fleet workflow views and task acquisition');
   fleet.command('register')
@@ -188,115 +168,6 @@ export function buildFleetCommand(): Command {
           expectedRevision: options.expectedRevision, repoIds: options.repoId });
         process.stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
       } catch (error) { outputFeedbackValidation(error); }
-    });
-  fleet
-    .command('ready')
-    .description('Observe an explicit ordered array of provider PR selections')
-    .requiredOption('--selections <path>', 'JSON array of canonical provider PR selections')
-    .requiredOption('--json', 'Output FleetReadinessV2')
-    .action((options: { selections: string }) => {
-      try {
-        const selections: unknown = JSON.parse(readFileSync(options.selections, 'utf8'));
-        if (!Array.isArray(selections)) throw new Error('selections must be an array');
-        const result = resolveFleetReadiness({ repo_root: process.cwd(), pull_requests: selections.map(validatePullRequestSelection),
-          gh_bin: process.env.REPO_HARNESS_GH_BIN });
-        process.stdout.write(`${JSON.stringify(result)}\n`);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-
-  fleet
-    .command('board')
-    .option('--admission-associations <path>', 'JSON explicit registered repository, provider issue and approved campaign associations')
-    .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
-    .description('Project every authorized repository as one deterministic fleet board snapshot')
-    .requiredOption('--json', 'Output the FleetBoardSnapshotV2 document as JSON')
-    .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
-    .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
-    .action(async (options: { readonly json?: boolean; readonly prAssociations?: string; readonly admissionAssociations?: string; readonly maxConcurrency?: string; readonly timeoutMs?: string }) => {
-      let maxConcurrency: number | undefined;
-      let timeoutMs: number | undefined;
-      try {
-        requireJson(options.json);
-        maxConcurrency = integerOption(options.maxConcurrency, 'max-concurrency', 1, 16);
-        timeoutMs = integerOption(options.timeoutMs, 'timeout-ms', 1_000, 30_000);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`${JSON.stringify({ ok: false, error: 'fleet_board_argument_invalid', message })}\n`);
-        process.exitCode = 2;
-        return;
-      }
-      try {
-        const snapshot = await collectFleetBoard({
-          pull_requests: readPrAssociations(options.prAssociations),
-          admission_associations: options.admissionAssociations === undefined ? []
-            : parseFleetBoardAdmissionAssociations(JSON.parse(readFileSync(options.admissionAssociations, 'utf8'))),
-          env: process.env,
-          max_concurrency: maxConcurrency,
-          timeout_ms: timeoutMs,
-        });
-        process.stdout.write(`${JSON.stringify(snapshot)}\n`);
-      } catch (error) {
-        outputError(error);
-      }
-    });
-
-  fleet
-    .command('watch')
-    .option('--admission-associations <path>', 'JSON explicit registered repository, provider issue and approved campaign associations')
-    .option('--pr-associations <path>', 'JSON provider selections with optional display task associations')
-    .description('Emit immediate, non-overlapping fleet board snapshots as JSONL')
-    .requiredOption('--format <format>', 'Output format (jsonl)')
-    .option('--interval-ms <milliseconds>', 'Delay after each completed round (1000-300000)', '30000')
-    .option('--max-concurrency <count>', 'Bounded repository collection concurrency (1-16)', '4')
-    .option('--timeout-ms <milliseconds>', 'Per-repository provider collection deadline (1000-30000)', '30000')
-    .action(async (options: {
-      readonly prAssociations?: string; readonly admissionAssociations?: string;
-      readonly format?: string;
-      readonly intervalMs?: string;
-      readonly maxConcurrency?: string;
-      readonly timeoutMs?: string;
-    }) => {
-      let intervalMs: number | undefined;
-      let maxConcurrency: number | undefined;
-      let timeoutMs: number | undefined;
-      try {
-        if (options.format !== 'jsonl') throw new Error('--format must be jsonl');
-        intervalMs = integerOption(options.intervalMs, 'interval-ms', 1_000, 300_000);
-        maxConcurrency = integerOption(options.maxConcurrency, 'max-concurrency', 1, 16);
-        timeoutMs = integerOption(options.timeoutMs, 'timeout-ms', 1_000, 30_000);
-      } catch (error) {
-        const message = error instanceof Error ? error.message : String(error);
-        process.stderr.write(`${JSON.stringify({ ok: false, error: 'fleet_board_argument_invalid', message })}\n`);
-        process.exitCode = 2;
-        return;
-      }
-      const controller = new AbortController();
-      const abort = () => controller.abort();
-      process.once('SIGINT', abort);
-      process.once('SIGTERM', abort);
-      let emitted = 0;
-      try {
-        for await (const snapshot of watchFleetBoard({
-          pull_requests: readPrAssociations(options.prAssociations),
-          admission_associations: options.admissionAssociations === undefined ? []
-            : parseFleetBoardAdmissionAssociations(JSON.parse(readFileSync(options.admissionAssociations, 'utf8'))),
-          env: process.env,
-          interval_ms: intervalMs,
-          max_concurrency: maxConcurrency,
-          timeout_ms: timeoutMs,
-          signal: controller.signal,
-        })) {
-          process.stdout.write(`${JSON.stringify(snapshot)}\n`);
-          emitted += 1;
-        }
-      } catch (error) {
-        if (!controller.signal.aborted || emitted === 0) outputError(error);
-      } finally {
-        process.removeListener('SIGINT', abort);
-        process.removeListener('SIGTERM', abort);
-      }
     });
 
   const feedback = fleet
@@ -577,17 +448,4 @@ export function buildFleetCommand(): Command {
       }
     });
   return fleet;
-}
-
-function readPrAssociations(path?: string): readonly FleetBoardPullRequestSelection[] {
-  if (path === undefined) return [];
-  const values: unknown = JSON.parse(readFileSync(path, 'utf8'));
-  if (!Array.isArray(values)) throw new Error('PR associations must be an array');
-  return values.map(value => {
-    if (!value || typeof value !== 'object' || Array.isArray(value) || typeof value.repository_id !== 'string'
-      || typeof value.provider_issue_id !== 'string' || !/^[1-9][0-9]*$/u.test(value.provider_issue_id)
-      || (value.task_id !== undefined && typeof value.task_id !== 'string')
-      || Object.keys(value).some(key => !['repository_id','provider_issue_id','task_id','pull_request'].includes(key))) throw new Error('invalid PR association');
-    return { repository_id: value.repository_id, provider_issue_id: value.provider_issue_id, ...(value.task_id === undefined ? {} : { task_id: value.task_id }), pull_request: validatePullRequestSelection(value.pull_request) };
-  });
 }

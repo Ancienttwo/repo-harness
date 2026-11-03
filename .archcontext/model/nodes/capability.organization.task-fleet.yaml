@@ -4,12 +4,9 @@ kind: "capability"
 name: "Task Fleet"
 status: "active"
 layer: "core"
-summary: "Projects registry-scoped provider issue and admitted session fleet boards, owns admitted task message storage and records admitted manual provider feedback."
+summary: "Owns admitted task message storage, records admitted manual provider feedback and registers repositories."
 responsibilities:
-  - "Join registered repositories to canonical provider issue observations and nullable exact admitted sessions; local task labels never establish provider identity."
-  - "Observe explicit provider PR readiness only after local repository binding and preserve independent issue state, runtime evidence and per-card failures."
   - "Store immutable admitted messages and separate receipts fenced by admission digest and exact claim reference and revision; preserve explicit historical reads."
-  - "Project columns and preparation display without persisting readiness, acquiring tasks, implicitly waking runtimes or changing provider claims."
   - "Record manual feedback against the exact admitted claim and provider PR evidence; the Publication feedback store keeps the feedback facts and separate delivery receipts."
 source:
   include:
@@ -36,5 +33,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun run test:files tests/effects/fleet-board.test.ts tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/effects/task-inbox.test.ts tests/effects/task-inbox-layout-migration.test.ts tests/cli/fleet-task-inbox.test.ts tests/unit/task-message-v1.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:type"

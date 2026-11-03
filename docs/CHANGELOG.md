@@ -17,6 +17,26 @@ All notable changes to this skill are documented here.
   Repositories row opens the board for that repository. The Windows Job
   controller is now `assets/operator/windows-job-controller.ps1`. Update the
   browser and the server together. (#1533)
+- The old fleet board stack is removed. `repo-harness board --parent <n> --json`
+  is the one board read model.
+  - `fleet board` with `--admission-associations`, `--pr-associations`,
+    `--max-concurrency` and `--timeout-ms`, its `fleet_board_snapshot`
+    document (protocol 6) and the `fleet_board_argument_invalid` error:
+    use `repo-harness board --parent <n> --json`.
+  - `fleet watch`: use `repo-harness board --parent <n> --json`.
+  - `fleet ready` and its `repo-harness-fleet-readiness` document: use
+    `publication readiness` or the MCP tool `publication_readiness`.
+  - `state board` and its `repo-harness-provider-board` document: no
+    replacement.
+  - `external-source refresh`, `list`, `bind`, `bindings` and `context`: no
+    replacement. Store data stays on disk at
+    `<git-common-dir>/repo-harness/external-sources/v1`; no code reads or
+    deletes it.
+  - The `[repo-harness:board-slice]` block in the Claude `Agent` prompt and
+    the Codex `SubagentStart` context: no replacement. The block was
+    advisory and granted no scope or permission.
+
+  No MCP tool is removed. (#1507)
 - The orchestrator is a seat, not a fleet role. `agents/fleet/orchestrator.md`
   and `claude --agent orchestrator` are removed. Start the seat with the argv
   that `repo-harness seats argv orchestrator` prints (#1473). The argv names

@@ -42,7 +42,8 @@ import { buildStateCommand } from './commands/state';
 import { buildPublicationCommand } from './commands/publication';
 import { buildBoardCommand } from './commands/board';
 import { attentionWatchDoctorCheck } from '../effects/board/attention-watch';
-import { readRepositoryId } from '../effects/board/collect';
+import { readLocalRepositoryId } from '../effects/board/collect';
+import { githubRemoteRepository } from '../core/operator/docs';
 import { attentionHostPorts, boardHostPorts } from '../effects/terminal/herdr-core';
 import { buildFleetCommand } from './commands/fleet';
 import { buildBotsCommand } from './commands/bots';
@@ -53,7 +54,6 @@ import { buildSeatsCommand } from './commands/seats';
 import { buildCatchUpCommand } from './commands/catch-up';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
-import { buildExternalSourceCommand } from './commands/external-source';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
 import { configureRequiredHerdrSkill } from './commands/herdr-skill';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from './mcp/audit';
@@ -132,7 +132,7 @@ export const CLI_PORTS: {
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readRepositoryId({ repo_root: cwd })) },
+  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
   retention: {
@@ -164,7 +164,6 @@ export const SUBCOMMANDS = [
   'fleet',
   'architecture-projection',
   'architecture-debt',
-  'external-source',
   'refactor',
   'seats',
 ] as const;
@@ -977,7 +976,6 @@ export function buildProgram(): Command {
   program.addCommand(buildArchitectureProjectionCommand());
   program.addCommand(buildArchitectureDebtCommand());
   program.addCommand(buildStrategyCommand());
-  program.addCommand(buildExternalSourceCommand());
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
   program.addCommand(buildSeatsCommand());
   program
