@@ -30,7 +30,7 @@ repo-harness review status --repository-id <repository-id> --issue-id <issue-id>
 repo-harness review close --repository-id <repository-id> --issue-id <issue-id> --campaign-id <campaign-id> --grant-sha256 <approved-grant-sha256> --policy-sha256 <policy-sha256> --actor <actor-id>
 ```
 
-Default selection uses an existing typed task binding for the parent pane and chooses
+Default selection uses an existing typed task binding for the parent terminal and chooses
 its opposite. Unknown identity requires `--harness claude|codex|pi`. Pi is selected
 only by explicit `--harness pi`. Explicit
 selection never falls back; only a missing opposite executable before start
@@ -49,10 +49,10 @@ Receipt writer/verifier. Receipt validity is launcher-independent.
 Close requires the current passing Receipt to equal the final accepted round.
 On failure use `repo-harness review cancel` with the same six admission selectors for identity-proven
 cleanup without acceptance. Preserve unknown delivery and cleanup evidence.
-The server and attached parent/workspace remain with their existing owner.
+The hc core and the parent terminal remain with their existing owner.
 Drain pre-cutover sessions with the prior version; archive old evidence read-only.
 
-The fixed Node >=24 OAR host runs inside a visible Herdr pane under macOS
+The fixed Node >=24 OAR host runs in an hc terminal under macOS
 Seatbelt: all filesystem writes outside the canonical output tree are denied, except the
 proved /dev/null device literal; TMPDIR is private inside output,
 including inherited descendant writes. The paired zero-model fixture proves
@@ -67,7 +67,7 @@ model still mints a Receipt with `model_relation: unknown`; only
 `different-family` counts as a cross-model review. Hooks,
 complete packet ingestion, forced host-loss cleanup and native isolation remain
 unverified. On normal cleanup SDK dispose acknowledgement and execution-owner
-exit precede pane close; missing proof remains pending.
+exit precede terminal close; missing proof remains pending.
 The independent direct Codex advisory runtime is retired. New acceptance
 requests use this generic domain; the removed command is not an alias or fallback.
 

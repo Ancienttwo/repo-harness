@@ -1,20 +1,22 @@
 ---
 name: repo-harness-herdr-portal
-description: Start or reuse a named Claude CLI worker in a visible Herdr pane from a Claude Code session (App Code tab first), return its portal record, then coordinate through Claude Code cross-session messaging.
+description: Start or reuse a named Claude CLI worker in a visible herdr-core terminal from a Claude Code session (App Code tab first), return its portal record, then coordinate through Claude Code cross-session messaging.
 when_to_use: "herdr portal, portal worker, start claude in herdr, spawn claude cli worker, App 开 herdr worker, 在 herdr 里起 claude"
 ---
 
 # repo-harness-herdr-portal
 
-Bot entrypoint. Explicit invoke only. Herdr owns pane and agent identity. Claude Code owns
-the message channel. The Skill owns no state, daemon, registry or transport.
+Bot entrypoint. Explicit invoke only. herdr-core (`hc`) owns the terminal and
+its name. Herdr.app shows it as a pane. Claude Code owns the message channel.
+The Skill owns no state, daemon, registry or transport.
 
 ## Outcome
 
-One live Claude CLI agent named `portal-<slug>` in a visible Herdr pane, with
-its cwd under `/private/tmp`. The caller gets one portal record (v1) copied from
-command output in the same run. After one bootstrap brief, all task traffic uses
-`SendMessage` or an @mention of `portal-<slug>`.
+One live Claude CLI agent in an hc terminal named `portal-<slug>`, shown in a
+Herdr.app pane, with its cwd under `/private/tmp`. The caller gets one portal
+record (v2) copied from command output in the same run. The start command
+carries the bootstrap brief. After it, all task traffic uses `SendMessage` or
+an @mention of `portal-<slug>`.
 
 ## Mode Selection
 
@@ -22,26 +24,30 @@ command output in the same run. After one bootstrap brief, all task traffic uses
 - Find the worker, send work, repair a missing row: `references/messaging.md`.
 - Not for review or acceptance: use `repo-harness-cross-review` or
   `repo-harness review round --launch app-terminal`.
-- Already inside a Herdr pane (`HERDR_ENV=1`) and only need pane control: use
-  the `herdr` skill.
-- Not for Codex or any second-model pane in v1.
+- Already in an hc terminal (`HC_TERMINAL_ID` set): use `hc` and `herdr-app`
+  directly ([Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch)).
+- Not for Codex or any second-model terminal in v2.
 
 ## Gates
 
-Stop with the failure code. Do not repair a gate.
+Run the gates in this order. Stop with the failure code. Do not repair a gate.
 
 | Gate | Check | Code |
 | --- | --- | --- |
 | Messaging | `ListAgents` and `SendMessage` are tools of this session | `messaging_unavailable` |
 | CLI | `claude --version` ≥ 2.1.224 | `claude_cli_too_old` |
-| Herdr version | `herdr --version` ≥ `HERDR_OBSERVATION_VERSION` (`src/effects/terminal/herdr-observation.ts`) | `herdr_too_old` |
-| Herdr server | `herdr status --json`: `server.status == "running"` and `server.endpoint_compatible == true` | `herdr_down` |
-| Socket | `herdr status --json` transport error | `herdr_unreachable` |
+| Caller | `HC_TERMINAL_ID` is not set | `portal_inside_hc` |
+| Herdr.app | `herdr-app status` reports a running window | `herdr_app_down` |
+| hc version | `hc --version` ≥ `external_tooling.herdr_core.min_version` in the repo-harness `.ai/harness/policy.json` | `hc_too_old` |
+| hc core | `hc server status --json` exits 0 and prints a `version` | `hc_unreachable` |
 | cwd | `realpath` under `/private/tmp/`, and it is the worktree top level | `cwd_outside_tmp`, `cwd_not_worktree` |
 
-`herdr_down`: tell the operator to start Herdr in a terminal (`herdr`). Never
-run `herdr server` headless. The App Bash sandbox can block the Herdr socket.
-Report that transport error as is; this path is not verified yet.
+`herdr_app_down`: tell the operator to open Herdr.app. Herdr.app runs the hc
+core. An hc call can start a stopped core, and that core keeps the caller's
+environment for every later terminal. So check the window before any hc call.
+Never start, stop or restart the core yourself. The App Bash sandbox can block
+the hc socket. Report that transport error as `hc_unreachable` with the
+message unchanged.
 
 ## Boundaries
 
@@ -52,11 +58,12 @@ The Skill and the bootstrap brief never:
 - drive the App UI, computer-use, Claude in Chrome or other browser automation;
 - pass `--dangerously-skip-permissions`, `--permission-mode` or other permission flags;
 - read, write or forward credentials, `.env` files or tokens;
-- send input to a pane it did not start, or to an agent not named `portal-*`;
-- answer an approval or question dialog in the worker pane;
-- close, kill or rename a pane, tab or workspace it did not create;
-- close a portal pane without an explicit operator request;
-- use a worktree outside `/private/tmp`, start a headless Herdr server or change Herdr config.
+- send input to a terminal it did not start, or to a terminal not named `portal-*`;
+- answer an approval or question dialog in the worker terminal;
+- close, kill or rename a pane, tab, space or terminal it did not create;
+- close or kill a portal terminal without an explicit operator request;
+- use a worktree outside `/private/tmp`, start, stop or restart the hc core or
+  Herdr.app, or change Herdr config.
 
 The real enforcement is the operator's Claude settings, the repo hooks and
 GitHub branch protection. This text is guidance.

@@ -2,7 +2,7 @@
 
 ## Herdr Dispatch
 
-- Claude, Codex and Pi peers run in visible Herdr panes through the herdr skill (`herdr agent start|prompt|wait|read`). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.
+- Claude, Codex and Pi peers run in herdr-core terminals that Herdr.app shows as panes. Start them with `herdr-app do` and talk to them with `hc` ([Runtime commands](#runtime-commands)). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.
 - Pi review uses an OAR RPC subprocess under Seatbelt. Its private agent directory links native model configuration and credentials for read-only access. An owner-written mode-0600 `settings.json` contains only native `defaultProvider`, `defaultModel` and `defaultThinkingLevel`; packages, proxy and trust policy are excluded. User extensions, skills, context files, prompt templates and MCP are disabled. The Pi reviewer uses the user's Pi default model. The Receipt's `actual_model` records OAR's actual `provider/model`. An unobserved model is `null`: the Receipt still records the verdict and grants no cross-model claim.
 - A cross-model review means Receipt `model_relation: different-family`. The OAR host records the reviewer model and the model of each ended turn of the one author task session bound to the caller pane, campaign and reviewed root. One closed family table in `src/core/review/acceptance-receipt.ts` compares vendor families, not routing providers. Harness kind does not prove a model difference. A shared family is `same-family`. A missing author binding, an unobserved or running turn, a Claude turn (its model is not observed) or a model outside the table is `unknown`. Interactive authors are not OAR-observed, so they give `unknown` and a High-tier cross-model review stays a manual Herdr peer review. The review runtime records identity; it adds no cross-model gate.
 - Exception: in the Claude desktop app, operator-attended acceptance review can use `repo-harness review round --launch app-terminal`. The CLI prints the fixed OAR host command. Claude runs that exact command once in an app Terminal tab, then repeats the same round. The same OAR host, Seatbelt profile and Receipt apply.
@@ -10,7 +10,7 @@
 
 ### Issue-flow topology
 
-This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-core (`hc` with Herdr.app) and on classic Herdr.
+This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-core (`hc` with Herdr.app).
 
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
 - Tab 1 holds two panes: the orchestrator on the left and its advisor on the right. Tab 1 may take one worker as its third pane.
@@ -22,14 +22,9 @@ This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-co
 
 ### Runtime commands
 
-Select the runtime from the caller environment:
+Use `hc` for terminals and `herdr-app do` for tabs and panes. In an hc terminal, `HC_TERMINAL_ID` is your address. `hc --help` and `herdr-app commands` are the syntax authority.
 
-- `HC_TERMINAL_ID` set: herdr-core. Use `hc` for terminals and `herdr-app do` for tabs and panes.
-- `HERDR_ENV=1` set: classic Herdr. Use the `herdr` commands of the herdr skill (`herdr agent start|prompt|wait|read`, `herdr pane close`).
-- Both set: the multiplexers are nested. Refuse and report.
-- Do not fall back from one runtime to the other.
-
-herdr-core commands for the topology steps:
+Commands for the topology steps:
 
 | Step | Command |
 |---|---|
@@ -49,7 +44,9 @@ Each start prints the new `terminal`. Label it in the next step, or the board sh
 
 ### Pane and tab names
 
-With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). A Claude seat gets the pane name as its session name (`-n`) in the argv. Use the same string for an hc `--name`. Do not type a name.
+With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). Do not type a name.
+
+`herdr-app do tab.new` and `pane.split` set no terminal name: the `--name` of `tab.new` is the tab name, and `pane.split` takes no name. So a seat terminal started by the launch rows has no hc name. Only a Claude seat carries the pane name, as its session name (`-n`) in the argv. A Codex seat has no session-name flag and carries no name. Find a seat terminal by its labels (`hc ls --label`), not by its name.
 
 The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters of `a-z 0-9 -`. Examples: `rh-orch`, `rh-adv`, `rh-w-1508`, `rh-w-rel0252`, `rh-rv-1536-codex`, `aip-w-485-device`.
 
@@ -62,7 +59,7 @@ The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters
 
 - Set `panePrefix` by hand in the entry of the repository in `registered-repos.json`. Every registry writer keeps it. The registry read refuses a malformed or duplicate prefix.
 - `seats argv` reads the entry of the primary checkout of the current directory; a linked worktree resolves to its primary checkout. No entry, or an entry without `panePrefix`, fails with `pane_name_invalid`. A name over 32 characters fails the same way.
-- One pane serves one item. Do not reuse a pane for another issue: close it and start a new one. hc refuses a second live terminal with the same name.
+- One pane serves one item. Do not reuse a pane for another issue: close it and start a new one. Only `hc run --name` sets an hc terminal name, and hc refuses a second live terminal with that name.
 - The name carries no state (round, status, PR state). The board reads those from GitHub and the labels.
 - Reserved names stay as they are: `rh-notify-relay` and `task-<uuid20>`.
 
@@ -74,8 +71,6 @@ The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters
 | Review tab | up to 3 reviewer panes | `review` |
 
 A new pane goes into the first tab of its kind with fewer than 3 panes. When every tab of that kind is full, add ` 2`, ` 3` to the base name, for example `#1000 2`. A tab closes with its last pane. The space name stays the repository name.
-
-Classic Herdr starts the advisor in two steps: `herdr pane split --pane <orchestrator pane> --direction right`, then `herdr agent start advisor --kind <kind> --pane <new pane>`. A second worker in a tab uses the same two steps with the worker's name.
 
 ### Test and Review Rules
 
@@ -120,7 +115,7 @@ The relay reads the config again on each event, so a new config takes effect wit
 Each read applies the install rules: HTTPS URLs without user information, a Bot URL and key, a complete Telegram target and done flags of `0` or `1`. An invalid config sends nothing, and the relay screen names the broken rule without its value.
 Last, the command writes `~/.repo-harness/herdr/notify-install.json` with file mode `600`. It names the relay terminal and its label.
 The operator console finds the relay only through that record and reads it on each collection.
-Without the record, the console shows `notify_session_missing`. A record from classic Herdr notify names a session and is refused as `notify_session_invalid`. Run install once to write a new record.
+Without the record, the console shows `notify_session_missing`. A record that names a session in place of a relay terminal is refused as `notify_session_invalid`. Run install once to write a new record.
 Run the command again to replace the config.
 Supply all values again. An omitted value removes that channel.
 
