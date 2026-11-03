@@ -16,15 +16,15 @@ seat is a process (`SKILL.md`, Seats, sub-agents and claim roles).
 |---|---|---|---|---|
 | Coordinator | Parent issue | Orchestrator | Parent body (child table), plan, plan data (sub-issues, blocked-by, milestone, `tier:` labels), dispatch, scope changes | Closing comment, or handoff |
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
-| Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this seat pushes | Merge, or a handoff that names the next head owner |
-| Acceptor | One review round of one PR | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its round |
-| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner seat), the batch branch and batch PR (`orchestrator.md` §9) | Merge done, or handoff |
+| Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this role pushes | Merge, or a handoff that names the next head owner |
+| Acceptor | One review in one round of one PR (`acceptor.md` §2.2 sets the reviews of a round) | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its review |
+| Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner role), the batch branch and batch PR (`orchestrator.md` §9) | Merge done, or handoff |
 
 Rules that keep the topology safe:
 
 - **One pusher per PR.** Only the head owner pushes to a PR branch. Another
   agent that needs a change in it (a reviewer's fix, a main sync, a repair)
-  either asks the head owner on the board, or takes the head-owner seat
+  either asks the head owner on the board, or takes the head-owner role
   through a handoff comment first. Two pushers on one branch lose work.
 - **Acceptor ≠ writer.** The acceptor of a round did not write the subject
   SHA. For the High tier, prefer an acceptor from a different model family.
@@ -39,30 +39,30 @@ Rules that keep the topology safe:
   `repo-harness publication merge`. When `publication.acceptance_merge` is
   `off` on the PR base, the executor does not merge. The integrator posts
   that the PR is ready, and the owner merges.
-- **One integrator.** Only the integrator seat merges into main, builds a
+- **One integrator.** Only the integrator merges into main, builds a
   batch or asks a head owner to sync. Main requires strict checks, so a
   merge by a second session makes every queued PR stale. Each one then
   needs a new sync and a new CI run.
-- **Earliest claim wins.** For two claims on one seat without an explicit
+- **Earliest claim wins.** For two claims on one role without an explicit
   handoff, the earliest comment wins. Break ties by comment ID. The later
   claimant posts a released status and stops.
 
 ## Claims
 
-One `issue claim` comment takes one seat. `issue claim` is seat-only:
+One `issue claim` comment takes one claim role. `issue claim` is seat-only:
 only the active coordinator holder posts it (see "Seat-only comment
 kinds"). A valid claim carries `Status`, `Role`, `Agent`, `Branch`,
-`Scope` and `Not in scope`. A claim that takes over a seat also carries
+`Scope` and `Not in scope`. A claim that takes over a role also carries
 `Prior claim`. Board rules 2, 3 and 8 apply: one identity, read back, and
 stop on an uncertain read or post.
 
 - **The coordinator posts every claim.** It claims its own coordinator
-  seat on the parent. For each worker it dispatches, it posts one writer
+  role on the parent. For each worker it dispatches, it posts one writer
   claim with `Agent:` set to that worker's identity and `Coordinator:`
   set to its own claim URL. The worker never posts a claim of its own.
   That claim is the identity that the worker uses in every later comment.
-- **Read the parent first.** Before the coordinator claims a seat, it
-  reads the parent seat table and the latest `plan` on the parent, every
+- **Read the parent first.** Before the coordinator claims a role, it
+  reads the parent child table and the latest `plan` on the parent, every
   comment on this issue, and every PR that links it. It does not claim a
   dependent issue while its dependency is open, unless the issue allows
   early start.
@@ -70,9 +70,9 @@ stop on an uncertain read or post.
   when the account that posts it has write access to the repository: its
   `author_association` is `OWNER`, `MEMBER` or `COLLABORATOR`. GitHub
   is the only source of that permission; do not keep a separate list. A
-  claim from any other account holds no seat.
+  claim from any other account holds no role.
 - **A claim from anyone else is a request.** An `issue claim` comment
-  from an agent without the coordinator seat is a request, not a claim.
+  from an agent without the coordinator role is a request, not a claim.
   The coordinator accepts it with one `issue claim` that names that
   agent, or rejects it with a `To: <agent>` comment. No work starts
   until the coordinator's claim is on the board.
@@ -89,21 +89,21 @@ stop on an uncertain read or post.
 ## Seat-only comment kinds
 
 `plan`, `decision`, `scope change`, `unblocked` and `issue claim`
-belong to the coordinator seat. Only the active coordinator holder posts
+belong to the coordinator role. Only the active coordinator holder posts
 them.
 
 - A comment of one of these kinds from an agent without the coordinator
-  seat is invalid. It takes effect only when the coordinator confirms it
+  role is invalid. It takes effect only when the coordinator confirms it
   in its own comment of the same kind. Until then no worker acts on it,
   and the parent table does not change.
 - An `issue claim` from another agent is a request. The coordinator
-  accepts or rejects it as `Claims` says. No seat changes until the
+  accepts or rejects it as `Claims` says. No claim role changes until the
   coordinator posts the claim.
 - An owner instruction becomes a board rule through the coordinator. The
   coordinator records it as a `decision`, or as a `scope change` when
   the issue body moves. The owner's message alone is not a board entry.
-- A seatless drafting session may create a parent issue and child issues
-  on the owner's instruction. It writes `unclaimed` in the parent seat
+- A drafting session without a claim may create a parent issue and child issues
+  on the owner's instruction. It writes `unclaimed` in the parent child
   table and posts no seat-only comment. The coordinator adopts or rewrites
   the drafts after it claims.
 
@@ -113,17 +113,17 @@ coordinator posts it on the owner's instruction.
 ## Topology
 
 ```text
-Parent issue ── coordinator seat
- ├─ Child A (module X) ── writer seat ── PR-A ── head owner = writer A
- │                                        └─ acceptance round 1, 2 ... (acceptor seats)
+Parent issue ── coordinator role
+ ├─ Child A (module X) ── writer role ── PR-A ── head owner = writer A
+ │                                        └─ acceptance rounds (acceptor roles, `acceptor.md` §2.2)
  ├─ Child B (module Y) ── PR slots named in the issue:
  │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
  │    └─ PR-B2 ── writer B2, base branch = PR-B1's branch
  └─ Child C (module Z) ── blocked by #A ── PR-C draft until PR-A merges
-Integrator seat (coordinator) merges in the plan block's merge order, one PR or one batch at a time.
+Integrator (coordinator) merges in the plan block's merge order, one PR or one batch at a time.
 ```
 
-**Parent table status.** The seat/status column of the parent child table
+**Parent table status.** The role/status column of the parent child table
 uses only these values: `unclaimed`, `unclaimed · waits for #n`,
 `writer <agent> · active`, `writer <agent> · PR #p`, `merged`. A
 Chinese-language repository writes `待认领`, `待认领 · 等待 #n 合并`,
@@ -195,20 +195,20 @@ lines, then at most a short free-text body. The exact shapes are in
 
 | Kind | Where | Posted by | Purpose |
 |---|---|---|---|
-| `issue claim` | Issue | Coordinator | Take a seat for a dispatched agent: the required fields, with an optional `Slot` |
-| `issue claim status` | Issue | Seat holder | ready for review, blocked, released, handed off, done |
+| `issue claim` | Issue | Coordinator | Take a claim role for a dispatched agent: the required fields, with an optional `Slot` |
+| `issue claim status` | Issue | Claim holder | ready for review, blocked, released, handed off, done |
 | `boundary question` | Issue | Writer | The issue boundary blocks the work. Stop and ask |
 | `scope change` | Issue | Coordinator | The issue body changed: what, why, who is affected |
 | `decision` | Issue (parent for cross-issue ones) | Coordinator | A decision that the body does not hold yet, with its reason |
 | `plan` | Parent issue | Coordinator | The plan block of a large parent: merge order, holds, batches, seat limit. A revision supersedes the previous plan |
-| `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a seat. Names prior claim, next holder, exact state |
-| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: role, round, subject SHA, tier (`acceptor.md`) |
-| `acceptance record` | PR | Acceptor or coordinator | One row per round: round, role, subject SHA, verdict; then the model relation and the findings. The same shape for every round (`templates.md`) |
+| `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a claim role. Names prior claim, next holder, exact state |
+| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take one review in a round: role, round, subject SHA, tier (`acceptor.md`) |
+| `acceptance record` | PR | Acceptor or coordinator | One row per review: round, role, subject SHA, verdict; then the model relation and the findings. The same shape for every review (`templates.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code; or a batch drop or batch closeout on a member PR |
 
 `plan`, `decision`, `scope change`, `unblocked` and `issue claim`
-are seat-only (see above). Every other kind may come from any seat holder
+are seat-only (see above). Every other kind may come from any claim holder
 it names.
 
 Board rules:
@@ -216,13 +216,13 @@ Board rules:
 1. **Append, do not rewrite.** Post a new comment for each state change. The
    thread is the log. Edit your own comment only to fix a typo. Never edit
    another agent's comment. The only edited snapshot is the issue body,
-   and only its seat holder edits it (the parent body by the coordinator,
+   and only its claim holder edits it (the parent body by the coordinator,
    a child body by the coordinator through a `scope change`).
 2. **Address and answer.** A comment that needs an answer has a `To:` line
-   that names a seat (`To: writer #1147`). The answer has a `Re: <comment
+   that names a claim role (`To: writer #1147`). The answer has a `Re: <comment
    URL>` line. A shared GitHub login is not an agent identity, so @mentions
-   do not route. Every seat holder uses the identity from its claim
-   (`Agent: <kind>, session <id>`) in every later comment. Seats route.
+   do not route. Every claim holder uses the identity from its claim
+   (`Agent: <kind>, session <id>`) in every later comment. Roles route.
 3. **Read before you act, read back after you post.** Read the full thread
    (`gh issue view <n> --comments`, `gh pr view <n> --comments`; paginate
    with `gh api` for long threads) before you act. After you post, read the
@@ -237,7 +237,8 @@ Board rules:
    (`acceptor.md` §3). The head owner replies with the fix SHA and does
    not resolve the thread. Only the acceptor of that round resolves it
    after the next round confirms the fix. The coordinator may resolve a
-   thread with a written rejection reason. See `acceptor.md`.
+   thread with a written rejection reason, or with the rule-4 follow-up
+   issue link (`acceptor.md` §2.2). See `acceptor.md`.
 6. **Nudge with a link.** To wake an agent, send it the comment URL
    through the host channel (a Herdr prompt, a session message). The
    comment is the instruction. A message that differs from the board loses.
@@ -260,7 +261,7 @@ Board rules:
 
 ## Waking up
 
-Agents do not watch the board continuously. A seat holder reads its threads
+Agents do not watch the board continuously. A claim holder reads its threads
 at these points: at the start of a turn, before a push, before posting a
 status, after CI finishes, and after any nudge. For the coordinator, the
 start-of-turn read is the thread that the queue item names when it takes

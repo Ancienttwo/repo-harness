@@ -3,7 +3,9 @@
 Acceptance runs in a persistent task session: an hc terminal or app-terminal
 host whose reviewer takes its instructions from the `deep-reasoner` role in
 `agents/fleet/`.
-Prepare verification, provide a dedicated linked reviewer checkout and a JSON
+Attach the CI status of the head and the recorded evidence
+(`repo-harness-issue-flow`, `references/acceptor.md` §2.1), provide a
+dedicated linked reviewer checkout and a JSON
 address file `{endpoint:{socket,home?},parent_pane}` (the hc core socket and the
 owner's hc terminal). Trust the exact
 checkout through the normal operator workflow before starting; never respond to
@@ -39,10 +41,12 @@ selection never falls back; only a missing opposite executable before start
 allows a reported fallback to a separate owner-harness reviewer. No launch or
 request is replayed after an ambiguous outcome.
 
-At most three changed-subject repair rounds retain the same task session. The
+Changed-subject repair rounds reuse the same task session, up to
+`REVIEW_MAX_ROUNDS` (`src/core/review/generic-review.ts`). The
 reviewer reads the current diff only; a defect outside the diff is a non-blocking
-note. From the second round, only hunks changed since the previous Result are in
-scope. Prior findings require stable IDs and open/resolved status. The reviewer may write
+note. From the second round, the scope follows the round rules
+(`repo-harness-issue-flow`, `references/acceptor.md` §2.2). Prior findings
+require stable IDs and open/resolved status. The reviewer may write
 only each exact Result file; terminal history/sentinel/idle are observation.
 The owner immutably collects the file, validates domain identity and findings,
 consumes OAR Session model observation and calls the existing generic-review
