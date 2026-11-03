@@ -2,20 +2,9 @@ import { createHash } from 'node:crypto';
 import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { readTaskAgent, type TaskPaneBinding } from './task-session-record';
+import { readTaskAgent, type NativeTaskSessionBinding, type TaskPaneBinding } from './task-session-record';
 import { readSessionArtifact, writeSessionArtifact } from './task-session-io';
 
-/** Native host attribution only. This record never grants current task authority. */
-export interface NativeTaskSessionBinding {
-  readonly protocol: 1;
-  readonly kind: 'repo-harness-native-task-session';
-  readonly host: 'claude' | 'codex' | 'pi';
-  readonly native_session_id: string;
-  readonly task: string;
-  readonly role: string;
-  readonly session_binding_sha256: string;
-  readonly provider: { readonly pid: number; readonly identity: string };
-}
 const canonical = (value: unknown) => canonicalize(JSON.parse(JSON.stringify(value)));
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonical(value)).digest('hex')}`;
 

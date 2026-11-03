@@ -141,7 +141,7 @@ test('publish posts the claim, one review thread per P1/P2, then the record', as
 
   const posts = fixture.gh.inputs().filter((entry) => entry.input !== '').map((entry) => JSON.parse(entry.input));
   expect(posts).toHaveLength(3);
-  expect(posts[0].body).toContain('repo-harness acceptance claim');
+  expect(posts[0].body).toContain('repo-harness acceptance claim\nRole: acceptor\n');
   expect(posts[0].body).toContain('Tier: high');
   expect(posts[0].body).toContain('Agent: codex (gpt-5.1-codex), read-only');
   expect(posts[1]).toMatchObject({ commit_id: PUBLISH_HEAD, event: 'COMMENT' });

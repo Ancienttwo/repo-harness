@@ -1,11 +1,12 @@
 /** Persisted task session records and their Node-safe reads. Terminal control and admission observation stay with their owners. */
-import { existsSync, lstatSync } from 'node:fs';
+import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { isAbsolute, join, relative } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { ProcessProof, TaskAgentSpec, TaskSessionAdmission, TerminalHostSpec } from '../../core/review/runner-port';
 import { taskSessionKey, taskWorkspaceKey } from '../git/repository-identity';
 import { taskRepository, type TaskRepository } from '../git/task-repository';
-import { readSessionArtifact } from './task-session-io';
+import { processIdentity, readSessionArtifact } from './task-session-io';
 
 /** One herdr-core core, addressed by its socket (`HC_SOCKET`). `home` is the directory that review
  * reads provider credentials from; repo-harness sets it as HOME for no program. */
@@ -40,6 +41,17 @@ export interface TerminalTaskBinding extends TaskBindingCommon {
   command: string[];
 }
 export type TaskPaneBinding = HerdrTaskBinding | TerminalTaskBinding;
+/** Native host attribution only. This record never grants current task authority. */
+export interface NativeTaskSessionBinding {
+  readonly protocol: 1;
+  readonly kind: 'repo-harness-native-task-session';
+  readonly host: 'claude' | 'codex' | 'pi';
+  readonly native_session_id: string;
+  readonly task: string;
+  readonly role: string;
+  readonly session_binding_sha256: string;
+  readonly provider: { readonly pid: number; readonly identity: string };
+}
 export type HerdrTaskAgentSpec = TaskAgentSpec<HerdrCoreEndpoint>;
 export interface StartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'herdr-core'; repository: TaskRepository; intent_id: string; terminal_name: string; spec: HerdrTaskAgentSpec }
 export interface TerminalStartIntent { task_admission?: TaskSessionAdmission; protocol: 2; runtime: 'terminal'; repository: TaskRepository; intent_id: string; spec: TerminalHostSpec; command: string[] }
@@ -83,9 +95,57 @@ export function assertCreated(ownership: ObjectOwnership): asserts ownership is 
   }
 }
 
+const TASK_SESSIONS_PATH = ['.ai', 'harness', 'runs', 'task-agents'] as const;
+const TASK_SESSIONS_MAX_ENTRIES = 200;
+
 export function taskSessionDirectory(root: string, task: string, role: string): string {
   const repository = taskRepository(root);
-  return join(repository.primary_root, '.ai/harness/runs/task-agents', taskSessionKey(repository.repository_id, task, role));
+  return join(repository.primary_root, ...TASK_SESSIONS_PATH, taskSessionKey(repository.repository_id, task, role));
+}
+/** Every task session directory of a primary checkout, sorted. A missing parent directory means no session. */
+export function taskSessionDirectories(primaryRoot: string): string[] {
+  let base = primaryRoot;
+  for (const component of TASK_SESSIONS_PATH) {
+    base = join(base, component);
+    if (!existsSync(base)) return [];
+    const stat = lstatSync(base);
+    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('execution_state_unsafe_directory');
+  }
+  const names = readdirSync(base, { withFileTypes: true })
+    .filter(entry => entry.isDirectory() && /^[0-9a-f]{64}$/u.test(entry.name)).map(entry => entry.name).sort();
+  if (names.length > TASK_SESSIONS_MAX_ENTRIES) throw new Error('execution_state_too_large');
+  return names.map(name => join(base, name));
+}
+
+export function assertProcessProof(proof: ProcessProof): void {
+  if (processIdentity(proof.pid) !== proof.identity) throw new Error('task_agent_process_identity_lost');
+}
+export function processProofAlive(proof: ProcessProof): boolean {
+  try { process.kill(proof.pid, 0); } catch (error) { if ((error as NodeJS.ErrnoException).code === 'ESRCH') return false; throw error; }
+  try {
+    let identityError: unknown;
+    try { assertProcessProof(proof); } catch (error) { identityError = error; }
+    // Read exit state after identity: macOS can discard argv before the parent
+    // reaps, while Linux zombies may keep comm unchanged. Never relax a live proof.
+    let snapshot: string[];
+    try {
+      snapshot = execFileSync('ps', ['-p', String(proof.pid), '-o', 'pid=,pgid=,lstart=,stat='], { encoding: 'utf8' }).trim().split(/\s+/);
+    } catch (error) { throw identityError ?? error; }
+    const recorded = proof.identity.split(/\s+/);
+    const stat = snapshot[7] ?? '';
+    if (snapshot.length < 8 || snapshot[0] !== String(proof.pid) || snapshot.slice(0, 7).join(' ') !== recorded.slice(0, 7).join(' ')) {
+      throw new Error('task_agent_process_identity_lost');
+    }
+    // Darwin E was observed as ?E+ during real Codex shutdown (before Z).
+    if (stat.startsWith('Z') || (process.platform === 'darwin' && stat.includes('E'))) return false;
+    if (identityError) throw identityError;
+  } catch (error) {
+    // Exit can occur between kill(0) and ps. Confirm absence; an extant reused
+    // PID or a permission/inspection failure remains a hard identity refusal.
+    try { process.kill(proof.pid, 0); } catch (gone) { if ((gone as NodeJS.ErrnoException).code === 'ESRCH') return false; throw gone; }
+    throw error;
+  }
+  return true;
 }
 
 export function sameSessionData(left: unknown, right: unknown): boolean {

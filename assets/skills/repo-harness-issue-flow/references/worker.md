@@ -36,7 +36,7 @@ board. Comment shapes are in `templates.md`. Seat and board rules are in
 1. The coordinator claims the seat for you before it dispatches you. Find
    the `issue claim` for your issue or slot. Its `Agent:` names you, and
    its `Branch:` matches the branch in your dispatch packet. Check the
-   fields: `Seat`, `Agent`, `Branch`, `Scope`, `Not in scope` and the
+   fields: `Role`, `Agent`, `Branch`, `Scope`, `Not in scope` and the
    `Coordinator:` link to the coordinator's own claim. Use the identity
    in that claim in all later comments. Do not post a claim of your own.
 2. Read the claim back. Confirm its URL and every field. A claim that

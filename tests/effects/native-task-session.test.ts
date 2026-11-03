@@ -2,7 +2,7 @@ import { afterEach, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
-import type { NativeTaskSessionBinding } from '../../src/effects/terminal/native-task-session';
+import type { NativeTaskSessionBinding } from '../../src/effects/terminal/task-session-record';
 import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
 import { tmpWorkspace, initGitRepo, commitAll, run } from '../helpers/repo-fixture';
 const roots: string[] = [];
