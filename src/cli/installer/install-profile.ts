@@ -550,6 +550,19 @@ export function retiredAgentFleetFile(env: NodeJS.ProcessEnv = process.env): str
   return join(env.HOME ?? homedir(), '.claude', 'agents', 'orchestrator.md');
 }
 
+export class InstallStateOwnershipError extends Error {
+  readonly code = 'install_state_invalid_ownership';
+  constructor(path: string) {
+    super(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <minimal|full>: ${path}`);
+    this.name = 'InstallStateOwnershipError';
+  }
+}
+
+/** The files that the update migration can delete or rewrite. Update adds them to its transaction snapshot. */
+export function retiredAgentFleetMigrationPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  return [retiredAgentFleetFile(env), agentFleetUserManagedReceiptPath(env)];
+}
+
 export class RetiredAgentFleetPathError extends Error {
   readonly code = 'install_state_retired_fleet_path';
   constructor(file: string, retiredPath: string) {
@@ -559,9 +572,11 @@ export class RetiredAgentFleetPathError extends Error {
 }
 
 /**
- * One-shot migration for `repo-harness update`. It removes the retired path from the install state, its `previous`
- * state and the user-managed receipt. It deletes the file only when the install state owns it and its hash is
- * current. It returns one line for each change and one line for a file that it keeps.
+ * One-shot migration for `repo-harness update`. It parses the install state with the strict reader's checks, with the
+ * retired path as the only exception, so an invalid ledger fails before any delete or rewrite. It removes the retired
+ * path from the install state, its `previous` state and the user-managed receipt. It deletes the file only when the
+ * install state owns it and its hash is current. It returns one line for each change and one line for a file that it
+ * keeps.
  */
 export function migrateRetiredAgentFleetFile(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const retired = retiredAgentFleetFile(env);
@@ -570,18 +585,20 @@ export function migrateRetiredAgentFleetFile(env: NodeJS.ProcessEnv = process.en
   const statePath = installProfileStatePath(env);
   if (existsSync(statePath)) {
     const raw = JSON.parse(readFileSync(statePath, 'utf-8')) as unknown;
-    if (isRecord(raw) && raw.protocol === 2 && Array.isArray(raw.ownership_manifest)) {
-      const owned = raw.ownership_manifest.find(isRetired) as ManagedInstallSurface | undefined;
-      const previous = isRecord(raw.previous) && Array.isArray(raw.previous.ownership_manifest)
-        ? { ...raw.previous, ownership_manifest: raw.previous.ownership_manifest.filter(entry => !isRetired(entry)) }
-        : raw.previous;
-      const migrated = { ...raw, ownership_manifest: raw.ownership_manifest.filter(entry => !isRetired(entry)), previous };
-      if (JSON.stringify(migrated) !== JSON.stringify(raw)) {
+    // A legacy protocol-1 state has its own explicit migration (`install --migrate-profile-state`).
+    if (!(isRecord(raw) && raw.protocol === 1)) {
+      const state = parseCurrentState(raw, statePath, env, true);
+      if (state.ownership_manifest.some(isRetired) || state.previous?.ownership_manifest.some(isRetired)) {
+        const owned = state.ownership_manifest.find(isRetired);
         if (owned?.type === 'managed-file' && surfaceIsCurrent(owned, env)) {
           rmSync(retired);
           lines.push(`removed ${retired}`);
         }
-        writeState(migrated as unknown as InstalledProfileState, env);
+        writeState({
+          ...state,
+          ownership_manifest: state.ownership_manifest.filter(entry => !isRetired(entry)),
+          previous: state.previous && { ...state.previous, ownership_manifest: state.previous.ownership_manifest.filter(entry => !isRetired(entry)) },
+        }, env);
         lines.push(`removed ${retired} from ${statePath}`);
       }
     }
@@ -756,13 +773,14 @@ export function recordUnresolvedPiOwnership(
 /** Candidate processes publish ownership into the same ledger as the parent. */
 export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
   const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
-  const readSurfaces = (path: string): readonly ManagedInstallSurface[] => {
+  const readSurfaces = (path: string, retiredPathAllowed = false): readonly ManagedInstallSurface[] => {
     const raw = JSON.parse(readFileSync(path, 'utf8'));
     return (raw.protocol === 1
       ? parseLegacyStateBase(raw, path, env, 'invalid transaction install state')
-      : parseCurrentStateBase(raw, path, env, 'invalid transaction install state')).ownership_manifest;
+      : parseCurrentStateBase(raw, path, env, 'invalid transaction install state', retiredPathAllowed)).ownership_manifest;
   };
-  const before = snapshot?.existed && snapshot.backup_path ? readSurfaces(snapshot.backup_path) : [];
+  // The update snapshot predates the retired fleet file migration, so it can still list that path.
+  const before = snapshot?.existed && snapshot.backup_path ? readSurfaces(snapshot.backup_path, true) : [];
   const sources = new Set(before.filter(surface => surface.type === 'pi-package').map(surface => surface.path));
   const state = installProfileStatePath(env);
   return (existsSync(state) ? readSurfaces(state) : []).filter(surface => surface.type === 'pi-package' && !sources.has(surface.path));
@@ -1138,6 +1156,7 @@ function componentsMatch(
 function validateManagedSurface(
   raw: unknown,
   env: NodeJS.ProcessEnv,
+  migrationPath?: string,
 ): raw is ManagedInstallSurface {
   if (!isRecord(raw) || !Array.isArray(raw.components)) return false;
   if (raw.type === 'pi-package') {
@@ -1152,7 +1171,7 @@ function validateManagedSurface(
     && raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
+    && (allowedPaths.has(raw.path) || raw.path === migrationPath || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
@@ -1168,6 +1187,7 @@ function parseCurrentStateBase(
   path: string,
   env: NodeJS.ProcessEnv,
   label: string,
+  retiredPathAllowed = false,
 ): Omit<InstalledProfileState, 'previous'> {
   if (!isRecord(raw) || raw.protocol !== 2 || !INSTALL_PROFILES.includes(raw.profile as InstallProfile)) {
     throw new Error(`${label}: ${path}`);
@@ -1176,11 +1196,13 @@ function parseCurrentStateBase(
   if (!Array.isArray(raw.components) || !componentsMatch(raw.components, PROFILE_COMPONENTS[profile])) {
     throw new Error(`installed profile state components do not match profile ${profile}: ${path}`);
   }
-  if (Array.isArray(raw.ownership_manifest) && raw.ownership_manifest.some((surface) => isRecord(surface) && surface.path === retiredAgentFleetFile(env))) {
-    throw new RetiredAgentFleetPathError(path, retiredAgentFleetFile(env));
+  const retired = retiredAgentFleetFile(env);
+  if (!retiredPathAllowed && Array.isArray(raw.ownership_manifest) && raw.ownership_manifest.some((surface) => isRecord(surface) && surface.path === retired)) {
+    throw new RetiredAgentFleetPathError(path, retired);
   }
-  if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env))) {
-    throw new Error(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <minimal|full>: ${path}`);
+  if (!Array.isArray(raw.ownership_manifest)
+    || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env, retiredPathAllowed ? retired : undefined))) {
+    throw new InstallStateOwnershipError(path);
   }
   if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') {
     throw new Error(`installed profile state has invalid metadata; rerun repo-harness install --profile <minimal|full>: ${path}`);
@@ -1237,7 +1259,11 @@ export function readInstalledProfile(env: NodeJS.ProcessEnv = process.env): Inst
       `legacy installed profile state requires explicit migration; run repo-harness install --migrate-profile-state --profile <minimal|full>: ${path}`,
     );
   }
-  const current = parseCurrentStateBase(raw, path, env, 'invalid installed profile state');
+  return parseCurrentState(raw, path, env);
+}
+
+function parseCurrentState(raw: unknown, path: string, env: NodeJS.ProcessEnv, retiredPathAllowed = false): InstalledProfileState {
+  const current = parseCurrentStateBase(raw, path, env, 'invalid installed profile state', retiredPathAllowed);
   const previousRaw = isRecord(raw) ? raw.previous : undefined;
   if (previousRaw !== null && previousRaw !== undefined) {
     return {
@@ -1247,6 +1273,7 @@ export function readInstalledProfile(env: NodeJS.ProcessEnv = process.env): Inst
         path,
         env,
         'installed profile state has invalid previous state',
+        retiredPathAllowed,
       ),
     };
   }

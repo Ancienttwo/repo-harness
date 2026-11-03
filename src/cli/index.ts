@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
-import { migrateRetiredAgentFleetFile, newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
+import { migrateRetiredAgentFleetFile, newPiPackagesSinceTransaction, retiredAgentFleetMigrationPaths, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit, type InitPorts } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -496,9 +496,25 @@ export function runTransactionalRuntimeRefresh(
   // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
   providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
-    if (options.updateMode === true) reportRetiredAgentFleetMigration(transactionEnv);
-    const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
-    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
+    const updateMode = options.updateMode === true;
+    // The update migration deletes or rewrites files that the current fleet no longer lists, so the snapshot names them
+    // and a failed update restores them.
+    const transaction = beginInstallHostTransaction(
+      [...runtimeHostMutationPaths(transactionEnv), ...(updateMode ? retiredAgentFleetMigrationPaths(transactionEnv) : [])],
+      transactionEnv,
+      { runtimeLock: lock },
+    );
+    let profile: InstallProfile;
+    try {
+      if (updateMode) reportRetiredAgentFleetMigration(transactionEnv);
+      profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
+    } catch (error) {
+      // Nothing outside the snapshot ran yet, so a restore is enough. A failed restore keeps both errors.
+      try { rollbackInstallHostTransaction(transaction); } catch (restoreError) {
+        throw new AggregateError([error, restoreError], `runtime transaction failed and its restore failed: ${[error, restoreError].map(item => (item instanceof Error ? item.message : String(item))).join('; ')}`);
+      }
+      throw error;
+    }
     let result: GlobalRuntimeResult;
     try {
       result = setup({ ...options, runtimeLock: lock, candidateHandoff: candidateHandoffContext(transaction, lock) });

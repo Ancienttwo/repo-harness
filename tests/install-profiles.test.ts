@@ -31,6 +31,7 @@ import {
   rollbackInstallHostTransaction,
   rollbackInstallProfile,
   RetiredAgentFleetPathError,
+  InstallStateOwnershipError,
 } from '../src/cli/installer/install-profile';
 import { checkRetiredFleetFile } from '../src/cli/commands/doctor';
 import { recordInstallOwnership } from './helpers/install-ownership';
@@ -1172,6 +1173,13 @@ describe('install profiles', () => {
     writePath(retired, '---\nname: orchestrator\n---\n');
     recordInstallOwnership([retired], env);
     const { previous: _previous, ...state } = JSON.parse(readFileSync(statePath, 'utf-8'));
+    // An entry without the install-transaction authority does not own the file: the ledger is refused and nothing changes.
+    const { authority: _authority, removal: _removal, ...unowned } = state.ownership_manifest[0];
+    const invalidLedger = JSON.stringify({ ...state, ownership_manifest: [unowned], previous: null });
+    writeFileSync(statePath, invalidLedger);
+    expect(() => migrateRetiredAgentFleetFile(env)).toThrow(InstallStateOwnershipError);
+    expect(existsSync(retired)).toBe(true);
+    expect(readFileSync(statePath, 'utf-8')).toBe(invalidLedger);
     writeFileSync(statePath, JSON.stringify({ ...state, previous: state }));
     writePath(receiptPath, JSON.stringify({ protocol: 1, authority: 'user-managed-agent-fleet', accepted_at: new Date(0).toISOString(),
       files: [{ path: retired, sha256: `sha256:${'0'.repeat(64)}` }] }));

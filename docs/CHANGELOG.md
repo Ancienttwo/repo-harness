@@ -17,9 +17,11 @@ All notable changes to this skill are documented here.
 
 ### Upgrade
 
-- Run `repo-harness update` first. Until then, each command that reads the
-  install state fails with `install_state_retired_fleet_path`, because the
-  state of an older install lists `~/.claude/agents/orchestrator.md`. Update
+- Run `repo-harness update` first. The install state of an older install
+  lists `~/.claude/agents/orchestrator.md`. Until the update, each command
+  that reads the install state fails with `<state file> lists the retired
+  fleet file <path>; run repo-harness update`, and `repo-harness status`
+  reports the install state as invalid (it exits 0). Update
   removes that entry from the install state, its previous state and the
   user-managed fleet receipt. It deletes the file only when the install state
   owns it and its hash did not change. It keeps a changed file and reports it,

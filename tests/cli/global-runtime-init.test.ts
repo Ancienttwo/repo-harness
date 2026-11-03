@@ -12,7 +12,7 @@ import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
 import { recordInstallOwnership } from '../helpers/install-ownership';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
-import { applyInstallProfile, beginInstallHostTransaction, installProfileHostMutationPaths, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
+import { applyInstallProfile, beginInstallHostTransaction, installProfileHostMutationPaths, installProfileStatePath, managedInstallSurfaceIsCurrent, readInstalledProfile, recordRefreshedInstallOwnership, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { encodeCandidateRequest, parseCandidateRequest } from '../../src/cli/commands/candidate-reconciliation';
@@ -2485,6 +2485,15 @@ test('update runs the retired fleet file migration before it reads the install s
     writeFileSync(retired, '---\nname: orchestrator\n---\n');
     recordInstallOwnership([retired], env);
     expect(() => readInstalledProfile(env)).toThrow('run repo-harness update');
+    const seededState = readFileSync(installProfileStatePath(env), 'utf-8');
+    // A failed update restores the migrated file and its ledger entry from the transaction snapshot.
+    const failed = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', updateMode: true, env }, () => {
+      expect(existsSync(retired)).toBe(false);
+      return { exitCode: 1, steps: [], lines: [], stdout: '', stderr: 'injected setup failure' };
+    });
+    expect(failed.exitCode).toBe(1);
+    expect(readFileSync(retired, 'utf-8')).toBe('---\nname: orchestrator\n---\n');
+    expect(readFileSync(installProfileStatePath(env), 'utf-8')).toBe(seededState);
     const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', updateMode: true, env }, () => {
       expect(readInstalledProfile(env)!.ownership_manifest).toEqual([]);
       return { exitCode: 0, steps: [], lines: [], stdout: '', stderr: '' };
