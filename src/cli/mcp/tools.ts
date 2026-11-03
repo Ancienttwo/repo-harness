@@ -2,7 +2,8 @@ import { createHash } from 'crypto';
 import { existsSync, readdirSync, readFileSync, realpathSync, statSync } from 'fs';
 import { homedir } from 'os';
 import { basename, isAbsolute, join, resolve } from 'path';
-import { CHANGE_ASSESSMENT_EVIDENCE_PATH, projectCheckRecords } from '../../core/review/check-records';
+import { projectCheckRecords, type CheckRecordsV1 } from '../../core/review/check-records';
+import { readChangeAssessmentRecord } from '../../effects/review/change-assessment';
 import { isRegisteredRepoHarnessRoot, readRegisteredRepoHarnessRepos } from '../../effects/repo-registry';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { loadMcpLocalConfig } from './auth';
@@ -105,6 +106,16 @@ function repoSummary(repoRoot: string): { repoRoot: string; adopted: boolean; br
     adopted: isRepoHarnessAdopted(repoRoot),
     branch: currentGitBranch(repoRoot),
     workflowRoots: roots.map((path) => ({ path, exists: existsSync(join(repoRoot, path)) })),
+  };
+}
+
+/** A failed run stores its error text, which can hold a credential. */
+function redactCheckRecords(records: CheckRecordsV1): CheckRecordsV1 {
+  return {
+    ...records,
+    records: records.records.map((record) => (record.state === 'present' && record.status === 'fail' && record.message !== null
+      ? { ...record, message: redactMcpText(record.message).text }
+      : record)),
   };
 }
 
@@ -787,10 +798,9 @@ export async function callMcpTool(ctx: McpToolContext, name: string, args: Recor
       case 'latest_checks': {
         const target = targetRepoRoot(ctx, args);
         if (!target.ok) return target.result;
-        const recordPath = join(target.repoRoot, CHANGE_ASSESSMENT_EVIDENCE_PATH);
-        const records = projectCheckRecords({ changeAssessment: existsSync(recordPath) ? readFileSync(recordPath, 'utf-8') : null });
+        const records = projectCheckRecords({ changeAssessment: readChangeAssessmentRecord(target.repoRoot, ctx.policy.maxFileBytes) });
         audit(ctx, name, 'ok', args);
-        return textResult(records);
+        return textResult(redactCheckRecords(records));
       }
       case 'list_prds': {
         const target = targetRepoRoot(ctx, args);

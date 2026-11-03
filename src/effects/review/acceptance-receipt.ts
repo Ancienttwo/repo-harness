@@ -297,13 +297,15 @@ export function inspectAcceptanceEvidence(args: {
   for (const path of subject.paths) if (!reviewAdmissionAllowsPath(allowed, path)) fail('admission Allowed Paths refuse reviewed path: ' + path);
   if (currentReadonlyObservation()) rejectObservation('Bounded acceptance assessment and benchmark adapters are not available');
   const records = requireFromHelper(join(PACKAGE_ROOT, 'src/core/review/check-records.ts')) as typeof import('../../core/review/check-records');
-  const assessmentFile = readRegular(root, records.CHANGE_ASSESSMENT_EVIDENCE_PATH, 'Change Assessment');
+  const core = requireFromHelper(join(PACKAGE_ROOT, 'src/core/review/change-assessment.ts')) as typeof import('../../core/review/change-assessment');
+  const effects = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/change-assessment.ts')) as typeof import('./change-assessment');
+  const assessmentFile = effects.readChangeAssessmentRecord(root, records.CHECK_RECORD_MAX_BYTES);
+  if (assessmentFile.state === 'absent') fail(`Change Assessment is missing: ${records.CHANGE_ASSESSMENT_EVIDENCE_PATH}`);
+  if (assessmentFile.state === 'unreadable') fail(`verification evidence change assessment ${assessmentFile.message}`);
   let evidence: import('../../core/review/check-records').ChangeAssessmentEvidence;
   try { evidence = records.decodeChangeAssessmentEvidence(assessmentFile.content); } catch (error) { fail('verification evidence change assessment is invalid: ' + (error as Error).message); }
   if (evidence.status !== 'pass') fail('verification evidence change assessment is not passing');
   const assessmentBasis = { schema: records.CHANGE_ASSESSMENT_EVIDENCE_SCHEMA, status: evidence.status, assessment: evidence.assessment, selection_packet: evidence.selection_packet };
-  const core = requireFromHelper(join(PACKAGE_ROOT, 'src/core/review/change-assessment.ts')) as typeof import('../../core/review/change-assessment');
-  const effects = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/change-assessment.ts')) as typeof import('./change-assessment');
   let packet: ReturnType<typeof core.validateReviewSelectionPacketAgainstAssessment>;
   try {
     const declared = evidence.assessment;

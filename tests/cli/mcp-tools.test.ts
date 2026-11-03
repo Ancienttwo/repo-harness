@@ -553,9 +553,24 @@ describe('mcp tools', () => {
         review_subject_sha256: `sha256:${'c'.repeat(64)}`,
       }]);
 
-      const failed = { schema, status: 'fail', message: 'review base is unavailable' };
+      const failed = { schema, status: 'fail', message: 'packet is missing: API_KEY=example-secret' };
       write(failed);
-      expect(await records()).toEqual([{ ...location, state: 'present', status: 'fail', evidence_sha256: sha256(stableJson(failed)), message: 'review base is unavailable' }]);
+      expect(await records()).toEqual([{ ...location, state: 'present', status: 'fail', evidence_sha256: sha256(stableJson(failed)), message: 'packet is missing: API_KEY=[REDACTED]' }]);
+      expect(JSON.stringify(await callMcpTool(ctx, 'latest_checks', {}))).not.toContain('example-secret');
+
+      const outside = mkdtempSync(join(tmpdir(), 'repo-harness-mcp-outside-'));
+      try {
+        writeFileSync(join(outside, 'record.json'), readFileSync(recordPath));
+        rmSync(recordPath);
+        symlinkSync(join(outside, 'record.json'), recordPath);
+        expect(await records()).toEqual([{ ...location, state: 'invalid', error: { code: 'check_record_invalid', message: 'Change Assessment evidence is a symbolic link' } }]);
+      } finally {
+        rmSync(outside, { recursive: true, force: true });
+      }
+
+      rmSync(recordPath);
+      mkdirSync(recordPath);
+      expect(await records()).toEqual([{ ...location, state: 'invalid', error: { code: 'check_record_invalid', message: 'Change Assessment evidence is not a regular file' } }]);
     });
   });
 });

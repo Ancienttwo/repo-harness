@@ -10,6 +10,14 @@ export const CHANGE_ASSESSMENT_EVIDENCE_SCHEMA = 'repo-harness-change-assessment
 export const CHANGE_ASSESSMENT_EVIDENCE_PATH = '.ai/harness/checks/change-assessment.latest.json' as const;
 export const CHECK_RECORDS_PROTOCOL = 1 as const;
 export const CHECK_RECORDS_KIND = 'repo-harness.check-records' as const;
+/** Upper bound for a record read outside a surface policy; an assessment envelope is a few KiB. */
+export const CHECK_RECORD_MAX_BYTES = 1024 * 1024;
+
+/** The result of reading one record file at its fixed path. */
+export type CheckRecordRead =
+  | { readonly state: 'absent' }
+  | { readonly state: 'read'; readonly content: string }
+  | { readonly state: 'unreadable'; readonly message: string };
 
 export type ChangeAssessmentEvidence =
   | {
@@ -91,15 +99,17 @@ export function decodeChangeAssessmentEvidence(content: string): ChangeAssessmen
   return invalid('status is invalid');
 }
 
-/** `changeAssessment` is the record file content, or null when the file is absent. */
-export function projectCheckRecords(input: { readonly changeAssessment: string | null }): CheckRecordsV1 {
+export function projectCheckRecords(input: { readonly changeAssessment: CheckRecordRead }): CheckRecordsV1 {
   const location: CheckRecordLocation = { id: 'change-assessment', path: CHANGE_ASSESSMENT_EVIDENCE_PATH };
+  const read = input.changeAssessment;
   let record: ChangeAssessmentCheckRecord;
-  if (input.changeAssessment === null) {
+  if (read.state === 'absent') {
     record = { ...location, state: 'absent' };
+  } else if (read.state === 'unreadable') {
+    record = { ...location, state: 'invalid', error: { code: 'check_record_invalid', message: `Change Assessment evidence ${read.message}` } };
   } else {
     try {
-      const evidence = decodeChangeAssessmentEvidence(input.changeAssessment);
+      const evidence = decodeChangeAssessmentEvidence(read.content);
       record = evidence.status === 'pass'
         ? {
           ...location,
