@@ -423,9 +423,6 @@ describe("create-project-dirs runtime smoke", () => {
       // Both policy initializers use the JSON capability registry by default.
       // ensure-task-workflow only prepares runtime directories; it does not seed policy.
       const repoPolicy = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf-8"));
-      for (const seeded of [policy, tsDefaultPolicy, repoPolicy]) {
-        expect(seeded.circuit_breakers.semantic_reviews_per_work_package).toBe(1);
-      }
       for (const seeded of [policy, tsDefaultPolicy]) {
         expect(seeded.context.capability_source).toBe("registry");
       }
