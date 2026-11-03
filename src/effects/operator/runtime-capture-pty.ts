@@ -1,4 +1,4 @@
-import { execFile, spawn } from 'node:child_process';
+import { execFile, spawn, type ChildProcess } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import type { Readable, Writable } from 'node:stream';
 import { OscRuntimeDecoder, OSC7501_QUERY } from '../../core/operator/runtime-capture-decoders';
@@ -51,7 +51,12 @@ function dimensions(): { cols: number; rows: number } {
 /** One owned relay. Python alone manages the provider PID and its fixed PTY buffers. */
 export async function captureRuntimePty(options: RuntimeCaptureOptions, io: RuntimeCaptureIO, cache: CaptureCache, prepared: PreparedRuntimePty): Promise<number> {
   const size = dimensions();
-  const child = spawn(prepared.python, ['-I', '-S', '-u', HELPER, '--cols', String(size.cols), '--rows', String(size.rows), '--', ...options.argv], { cwd: options.cwd, env: options.env, stdio: ['pipe', 'pipe', 'inherit', 'pipe', 'pipe'] });
+  // Listen before spawn: a signal while spawn() runs would take the default action and orphan the helper.
+  const interrupt = () => stop('SIGINT'), terminate = () => stop('SIGTERM');
+  process.on('SIGINT', interrupt); process.on('SIGTERM', terminate);
+  let child: ChildProcess;
+  try { child = spawn(prepared.python, ['-I', '-S', '-u', HELPER, '--cols', String(size.cols), '--rows', String(size.rows), '--', ...options.argv], { cwd: options.cwd, env: options.env, stdio: ['pipe', 'pipe', 'inherit', 'pipe', 'pipe'] }); }
+  catch (error) { process.removeListener('SIGINT', interrupt); process.removeListener('SIGTERM', terminate); throw error; }
   const commands = child.stdio[3] as Writable, events = child.stdio[4] as Readable;
   const abort = new AbortController();
   let retirement: ReturnType<typeof setTimeout> | undefined, forceStop: ReturnType<typeof setTimeout> | undefined;
@@ -77,12 +82,11 @@ export async function captureRuntimePty(options: RuntimeCaptureOptions, io: Runt
     pendingStop = signal; pumpControl();
     forceStop ??= setTimeout(() => { fail(); if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL'); }, 5000);
   };
-  const interrupt = () => stop('SIGINT'), terminate = () => stop('SIGTERM');
   const resize = () => { pendingResize = dimensions(); pumpControl(); };
   const onInputError = () => fail(), onOutputError = () => fail();
   const input = io.input as Readable & { isTTY?: boolean; isRaw?: boolean; setRawMode?: (raw: boolean) => void };
   const previousRaw = input.isRaw ?? false;
-  process.on('SIGINT', interrupt); process.on('SIGTERM', terminate); process.stdout.on('resize', resize);
+  process.stdout.on('resize', resize);
   io.input.on('error', onInputError); io.output.on('error', onOutputError); child.stdin!.on('error', fail); commands.on('error', fail);
   const exited = new Promise<void>((resolve, reject) => {
     child.once('error', () => { fail(); reject(new Error('runtime_capture_transport_unavailable')); });
