@@ -6,10 +6,9 @@ import type { NativeRuntimeSourceSummary, RuntimeOverlay } from '../../core/oper
 import { unavailableRuntimeOverlay } from '../../core/operator/runtime-status';
 import type { ExecutionRead } from '../repository-reads';
 
-/** The repo-harness registration shares its id with the repository snapshot fixture. */
 export const HARNESS_ID = 'repo_a5b76eee64af71c3';
-const SITE_ID = 'repo_1f2e3d4c5b6a7980';
-const DOCS_ID = 'repo_0a1b2c3d4e5f6071';
+export const SITE_ID = 'repo_1f2e3d4c5b6a7980';
+export const DOCS_ID = 'repo_0a1b2c3d4e5f6071';
 
 const MINUTE = 60_000;
 const HOUR = 60 * MINUTE;

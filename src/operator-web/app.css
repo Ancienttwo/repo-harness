@@ -28,9 +28,6 @@
   [hidden] { display: none !important; }
 }
 
-/* A failed Fleet read keeps its facts on screen, visibly muted. */
-.operator-app[data-state="stale"] [role="tabpanel"] { filter: saturate(.55); }
-
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation-duration: 1ms !important; animation-iteration-count: 1 !important; transition-duration: 1ms !important; }
 }
@@ -43,23 +40,13 @@
   .detail-eyebrow { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
   .detail-quiet, .automation-description, .automation-observed { @apply text-sm text-kumo-subtle; }
   .detail-description { @apply text-sm text-kumo-subtle; }
-  .detail-block { @apply flex flex-col gap-2; }
-  .detail-chips { @apply flex flex-wrap gap-1.5; }
   .detail-list { @apply grid gap-x-4 gap-y-1.5 text-sm; grid-template-columns: minmax(8rem, auto) minmax(0, 1fr); }
   .detail-list > div { display: contents; }
   .detail-list dt { @apply text-kumo-subtle; }
   .detail-list dd { @apply m-0 min-w-0 break-words text-kumo-default; }
   .detail-list dd > time + span { @apply ml-2; }
-  .detail-callout { @apply flex items-start gap-2 rounded-lg bg-kumo-recessed p-3 text-sm; }
-  .detail-callout > div { @apply flex flex-col gap-0.5; }
-  .detail-callout--warning { @apply bg-kumo-warning-tint text-kumo-default; }
-  .cause-list { @apply m-0 flex list-none flex-col gap-1.5 p-0; }
-  .cause-item { @apply flex flex-wrap items-baseline gap-x-2 gap-y-0.5 rounded-md border-l-2 border-kumo-line bg-kumo-recessed px-3 py-2 text-sm; }
-  .cause-owner { @apply text-xs text-kumo-subtle; }
-  .cause-code { @apply rounded bg-kumo-recessed px-1 text-xs text-kumo-subtle; overflow-wrap: anywhere; }
   .copy-value { @apply flex min-w-0 items-center gap-2 text-xs; }
   .copy-value > code { @apply min-w-0 truncate rounded bg-kumo-recessed px-1.5 py-0.5; }
-  .signal-grid { @apply flex flex-wrap gap-4 text-sm; }
 
   /* Docs page: a file tree beside a 672px reading column (design system container-prose). */
   .docs-tree { @apply flex min-w-0 flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-elevated max-lg:max-h-[45dvh] lg:sticky lg:top-16 lg:max-h-[calc(100dvh-6rem)]; }
@@ -119,38 +106,10 @@
 
   .tone-user { @apply text-kumo-warning; }
   .tone-agent { @apply text-kumo-info; }
-  .tone-external { color: var(--text-color-kumo-badge-purple, var(--text-color-kumo-info)); }
   .tone-danger { @apply text-kumo-danger; }
   .tone-ok { @apply text-kumo-success; }
   .tone-neutral, .tone-unknown { @apply text-kumo-subtle; }
   span.operator-badge, li.operator-badge { @apply inline-flex w-fit items-center gap-1 rounded-full bg-kumo-recessed px-2 py-0.5 text-xs font-medium; }
-  .cause-item.tone-user { @apply border-kumo-warning; }
-  .cause-item.tone-danger { @apply border-kumo-danger; }
-
-  .worklist-group { @apply overflow-hidden rounded-xl border border-kumo-line bg-kumo-base; }
-  .worklist-group__header { @apply flex w-full cursor-pointer items-center gap-2 px-4 py-2.5 text-left text-sm text-kumo-strong hover:bg-kumo-tint; }
-  .worklist-group__count { @apply ml-auto rounded-full bg-kumo-recessed px-2 text-xs tabular-nums text-kumo-subtle; }
-  .worklist-group--needs_you .worklist-group__header strong { @apply text-kumo-warning; }
-  .worklist-group__rows { @apply flex flex-col border-t border-kumo-hairline; }
-  .worklist-group__empty { @apply px-4 py-3 text-sm text-kumo-subtle; }
-  .worklist-row { @apply flex w-full cursor-pointer flex-col gap-1 border-b border-kumo-hairline bg-transparent px-4 py-3 text-left last:border-b-0 hover:bg-kumo-tint; }
-  .worklist-row.is-selected { @apply bg-kumo-tint; }
-  .worklist-row--repository { @apply cursor-default; }
-  .worklist-row__head { @apply flex flex-wrap items-center gap-2; }
-  .worklist-row__label { @apply min-w-0 text-sm font-medium text-kumo-strong; overflow-wrap: anywhere; }
-  .worklist-row__label--id { @apply font-mono; }
-  .worklist-row__meta, .worklist-row__signals { @apply flex flex-wrap gap-x-3 text-xs text-kumo-subtle; }
-  .worklist-row__changed { @apply text-kumo-warning; }
-  .worklist-row__cause { @apply flex flex-wrap items-center gap-1.5 text-xs; }
-  .worklist-row__cause--quiet { @apply text-kumo-subtle; }
-  .cause-text { @apply text-kumo-default; }
-
-  .delivery-columns { @apply grid grid-cols-1 gap-3 md:grid-cols-2 xl:grid-cols-5; }
-  .delivery-other { @apply mt-4 grid grid-cols-1 gap-3 md:grid-cols-2; }
-  .delivery-stage { @apply flex min-w-0 flex-col gap-1 rounded-xl bg-kumo-recessed p-2; }
-  .delivery-stage h3 { @apply flex items-center justify-between px-1 text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
-  .delivery-stage > p { @apply px-1 text-xs text-kumo-inactive; }
-  .delivery-stage .worklist-row { @apply rounded-lg border border-kumo-hairline bg-kumo-base last:border-b; }
 
   .notify-status, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
   .automation-heading h2, .notify-status h2, .architecture-workspace h2 { @apply text-base font-semibold text-kumo-strong; }
@@ -173,32 +132,9 @@
   .automation-fact dt { @apply text-kumo-subtle; }
   .automation-fact dd { @apply m-0 flex flex-wrap gap-1; overflow-wrap: anywhere; }
   .automation-table { @apply overflow-x-auto; }
-  .automation-table table, .stage-matrix { @apply w-full border-collapse text-xs; }
-  .automation-table th, .automation-table td, .stage-matrix th, .stage-matrix td { @apply border-b border-kumo-hairline px-2 py-1.5 text-left; }
-  .stage-matrix__scroll { @apply overflow-x-auto; }
-  .repository-overview { @apply rounded-xl border border-kumo-line bg-kumo-base p-4; }
-  .repository-overview[open] > summary { @apply mb-3; }
-  .repository-list { @apply flex flex-col divide-y divide-kumo-hairline; }
-  .repository-row { @apply flex flex-wrap items-center gap-x-4 gap-y-1 py-2 text-sm; }
-  .repository-row__main { @apply flex min-w-0 flex-1 flex-col; }
-  .repository-row__main span, .repository-row__error { @apply text-xs text-kumo-subtle; }
-  .repository-row__state { @apply inline-flex items-center gap-1.5 text-xs; }
+  .automation-table table { @apply w-full border-collapse text-xs; }
+  .automation-table th, .automation-table td { @apply border-b border-kumo-hairline px-2 py-1.5 text-left; }
 
-
-  .task-evidence { @apply flex flex-col gap-4; }
-  .task-evidence h3, .task-diff h3 { @apply text-xs font-semibold tracking-wide text-kumo-subtle uppercase; }
-  .task-evidence h4 { @apply text-sm font-medium text-kumo-strong; }
-  .task-evidence p, .task-evidence li { @apply text-sm; overflow-wrap: anywhere; }
-  .task-evidence ul { @apply m-0 flex list-none flex-col gap-1 p-0; }
-  .task-evidence__facts { @apply grid gap-x-4 gap-y-1 text-sm; grid-template-columns: minmax(7rem, auto) minmax(0, 1fr); }
-  .task-evidence__facts > div { display: contents; }
-  .task-evidence__facts dt { @apply text-kumo-subtle; }
-  .task-evidence__facts dd { @apply m-0; }
-  .task-evidence__message { @apply flex flex-col gap-1.5 rounded-lg border border-kumo-hairline p-3; }
-  .task-evidence__body { white-space: pre-wrap; }
-  .task-evidence__historical { @apply text-kumo-warning; }
-  .task-evidence button, .task-diff button { @apply inline-flex h-7 w-fit cursor-pointer items-center rounded-md border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium hover:bg-kumo-tint disabled:opacity-60; }
-  .task-diff__patch { max-height: 28rem; }
 
   .notify-status__heading p { @apply text-xs text-kumo-subtle; }
   .native-runtime-sources, .native-runtime-observations { @apply m-0 flex list-none flex-col gap-2 p-0; }

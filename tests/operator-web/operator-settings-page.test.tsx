@@ -13,7 +13,9 @@ import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { agentsSettingsFixture, seatsSettingsStore } from '../../src/operator-web/fixtures/settings';
 import type { SeatsSettingsRequestV1 } from '../../src/core/operator/seats-settings';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
+
+const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import {
   fetchAgentsSettings,
   postAgentsSettings,
@@ -91,7 +93,7 @@ function server(initial: AgentsSettingsV1, outcomes: AgentsSettingsWrite[]) {
 
 function props(route: ReturnType<typeof server>, locale: OperatorLocale = 'en'): OperatorAppProps {
   return {
-    initialLocale: locale, initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
+    initialLocale: locale, initialRepositories: REGISTRY, readRepositories: async () => REGISTRY,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),

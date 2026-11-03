@@ -24,7 +24,6 @@ function fixture() {
   const input={repository_id:repo,task_id:taskId,env:{REPO_HARNESS_HOME:home}};
   return {root,home,input,entry,registryPath};
 }
-// Current admitted context coverage shares the protected session fixture in operator-task-diff.test.ts.
 
 test('the retired task history selector is not routed',async()=>{
   const f=fixture();

@@ -2,17 +2,9 @@ import { isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsR
 import { readDocSessionFinalizationView } from './doc-session-finalization-view';
 import { readDocSessionList, readDocSessionDetail } from './doc-session-views';
 import { DocSessionEventsError, readDocSessionEvents } from './doc-session-events';
-import { isAdmittedTaskActivityRequest } from '../../core/operator/admitted-task-activity';
-import { OperatorTaskActivityError, readOperatorAdmittedTaskActivity } from './admitted-task-activity';
-import { isTaskSessionsRequest } from '../../core/sessions/task-sessions';
-import { readAdmittedTaskSessions } from '../sessions/task-sessions';
 import { Worker } from 'node:worker_threads';
 import { isArchitectureRequest } from '../../core/operator/architecture';
 import { createInterface } from 'node:readline';
-import { isAdmittedSessionSelector } from '../../core/sessions/session-selector';
-import { readOperatorTaskContext } from './task-context';
-import { SessionObservationError } from '../sessions/admitted-source';
-import { readOperatorTaskDiff } from './task-diff';
 import { isDocSessionReadRequest } from '../../core/operator/doc-session-changes';
 import { DocSessionReadError, readDocSessionDiff, readDocSessionLoss } from './doc-session-changes';
 
@@ -49,14 +41,6 @@ function run(): void {
         worker.once('message', finish);
         worker.once('error', () => finish({ ok: false, code: 'unavailable' }));
         worker.once('exit', () => { if (!settled) finish({ ok: false, code: 'unavailable' }); });
-      } else if (message.kind === 'context' && isAdmittedSessionSelector(message.request)) {
-        finish({ok:true,snapshot:readOperatorTaskContext({...message.request,env})});
-      } else if (message.kind === 'admitted_activity' && isAdmittedTaskActivityRequest(message.request)) {
-        finish({ok:true,snapshot:readOperatorAdmittedTaskActivity({...message.request,env})});
-      } else if (message.kind === 'sessions' && isTaskSessionsRequest(message.request)) {
-        finish({ok:true,snapshot:readAdmittedTaskSessions({...message.request,env})});
-      } else if (message.kind === 'diff' && isAdmittedSessionSelector(message.request)) {
-        finish({ok:true,snapshot:readOperatorTaskDiff({...message.request,env})});
       } else if (message.kind === 'doc_session_list' && isDocSessionListRequest(message.request)) {
         finish({ok:true,snapshot:readDocSessionList(env ?? process.env,message.request)});
       } else if (message.kind === 'doc_session_detail' && isDocSessionDetailRequest(message.request)) {
@@ -71,8 +55,7 @@ function run(): void {
         finish({ok:true,snapshot:readDocSessionLoss(env ?? process.env,message.request.session_id)});
       } else throw new Error('invalid reader');
     } catch (error) {
-      finish({ok:false,code:error instanceof OperatorTaskActivityError || error instanceof SessionObservationError
-        || error instanceof DocSessionReadError || error instanceof DocSessionEventsError ? error.code : 'unavailable'});
+      finish({ok:false,code:error instanceof DocSessionReadError || error instanceof DocSessionEventsError ? error.code : 'unavailable'});
     }
   });
 }

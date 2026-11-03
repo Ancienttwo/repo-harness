@@ -11,10 +11,12 @@
   the merge commit of that PR on `origin/main`. The owner records it below
   before publish.
 - Previous release: 0.25.2, from the release-prep merge
-  `801506036505c8f561723459466b4962557297e6` (#1511). The owner has not
-  published 0.25.2: npm shows 0.25.1, and no `v0.25.2` tag exists.
-  - Tag `v0.25.2`: pending the owner. Tag object: `<owner fills>`. Target:
-    `<owner fills>`.
+  `801506036505c8f561723459466b4962557297e6` (#1511). The owner tagged and
+  released 0.25.2 on GitHub and did not publish it to npm (owner choice,
+  superseded by 0.25.3).
+  - Tag `v0.25.2`: annotated. Tag object:
+    `f4fb79894f57cc54dbbb83bdeb3e9ebb03a58350`. Target:
+    `801506036505c8f561723459466b4962557297e6`.
 - Merged range: `801506036..7ed64f848`: 35 first-parent commits and
   54 commits in total (`git rev-list --count`). Batch merge #1517 keeps the
   member commits of #1491 and #1492.
@@ -23,9 +25,9 @@
   operator bot fixture show 0.25.3.
 - `archctx` and `archctx-contracts` stay at the locked exact 0.11.1. The
   release-prep PR changes no dependency version.
-- Publish status: pending owner publish.
-- Hold reason: 0.25.2 publish pending. Publish 0.25.2 from `801506036`
-  first, then 0.25.3.
+- Publish status: published 2026-11-03 by the owner (`npm publish`, dist-tag
+  `latest`). `bun run check:release-published` passed.
+- Hold reason: none.
 
 ### Owner decision
 
@@ -222,3 +224,22 @@ content. The owner accepts or repairs each flag before publish.
 - The owner records the publish candidate, the npm version, the Git tag and
   the published tarball digest here, then runs
   `bun run check:release-published`.
+
+  - Publish candidate: `77abe62d5b96f81d210fc3db4b0d60957aadea62` (main after #1576).
+  - npm version: `repo-harness@0.25.3`, gitHead `77abe62d5b96`, published
+    2026-11-03T09:17:08.433Z, 878 files. dist-tag `latest` is 0.25.3.
+  - Git tag: annotated `v0.25.3`, tag object
+    `8881a80d2ba97375a9a42a891daaeeb3690fd705`, on `77abe62d5`; GitHub Release
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.25.3, created
+    2026-11-03T09:13:07Z, published 2026-11-03T09:13:12Z.
+  - Published tarball digest: shasum `1ba984da59f8961adee83c2b5509cc8f0fb02c75`,
+    integrity `sha512-9rRlO+BMx7BRglMNRsmTXciwyarwzVa4hFYPmCrM4luBZ7P8bQm6QpbtKtzMVBxeQ1LZqDTjFJjjA/FXhpxN+Q==`.
+  - `bun run check:release-published`: exit 0 in 106 s, from
+    2026-11-03T09:26:48Z. Last lines: `runtime-evidence-receipt: valid
+    published_tarball, clean_install, installed_hook_readback` and
+    `[release-published] OK: registry, dist-tag, tarball, tag, and local
+    version files agree.`
+  - Environment: clean detached worktree at `77abe62d5` after
+    `bun install --frozen-lockfile` (540 packages); macOS 26.5 arm64,
+    Bun 1.4.3, Node 24.18.0, npm 11.16.0. Guard `hc` and `herdr-app` shims
+    (log, exit 97) are first on PATH; the guard log has 0 calls.

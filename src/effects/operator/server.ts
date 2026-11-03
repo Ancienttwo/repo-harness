@@ -1,8 +1,6 @@
 import { decodeOperatorDocSessionList, decodeOperatorDocSessionDetail, DOC_SESSION_VIEW_FAILURES, isDocSessionListRequest, isDocSessionDetailRequest, isDocSessionEventsRequest, OPERATOR_SESSION_LIST_PATH, OPERATOR_SESSION_DETAIL_ROUTE } from '../../core/operator/doc-session-views';
 import { decodeOperatorDocSessionEvents } from '../../core/operator/doc-session-events';
 import { decodeDocSessionFinalizationView, DOC_SESSION_FINALIZATION_FAILURES, OPERATOR_SESSION_FINALIZATION_ROUTE, type DocSessionFinalizationView } from '../../core/operator/doc-session-finalization-view';
-import { decodeAdmittedTaskActivity, parseAdmittedTaskActivityRequest, type AdmittedTaskActivityRequest, type AdmittedTaskActivity } from '../../core/operator/admitted-task-activity';
-import { decodeAdmittedTaskSessions, isTaskSessionsRequest, type AdmittedTaskSessionsRequest, type AdmittedTaskSessions } from '../../core/sessions/task-sessions';
 import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { startWorktreeCollector } from './worktree-collector';
@@ -38,19 +36,17 @@ import { decodeBoard } from '../../core/board/board';
 import { BoardReadError, readRepositoryBoard, type BoardReadInput } from './board-read';
 import type { BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
-import { createHash, randomUUID } from 'node:crypto';
-import { decodeAdmittedTaskContext, type AdmittedTaskContext } from '../../core/operator/admitted-task-context';
-import { TASK_ACTIVITY_FAILURES } from '../../core/operator/task-activity';
-import { decodeOperatorTaskDiff, parseTaskDiffRequest, type OperatorTaskDiff } from '../../core/operator/task-diff';
+import { readOperatorRepositories } from './repositories';
+import type { OperatorRepositoriesV1 } from '../../core/operator/repositories';
+import { createHash } from 'node:crypto';
 import { decodeOperatorDocSessionDiff, decodeOperatorDocSessionLoss, DOC_SESSION_READ_FAILURES, type DocSessionReadFailure } from '../../core/operator/doc-session-changes';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from './doc-session-changes';
-import { SESSION_OBSERVATION_FAILURES, type AdmittedSessionSelector } from '../../core/sessions/session-selector';
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http';
 import { lstatSync, readFileSync, realpathSync } from 'node:fs';
 import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process';
 import { reapOrphanedProcessGroups, spawnRegisteredProcessGroup } from '../process-group-registry';
 import { terminateProcessGroup, type ProcessGroupTermination } from '../process-group-termination';
-import { basename, dirname, extname, isAbsolute, resolve, sep } from 'node:path';
+import { dirname, extname, isAbsolute, resolve, sep } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { createOperatorWriteToken, handleOperatorWrite, operatorWriteTokenCookie, type OperatorWriteRoute } from './write-channel';
 import { AGENTS_CONFIGURATION_FAILURES, OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE, agentsSettingsWriteRoute, readAgentsSettings } from './agents-settings-route';
@@ -61,17 +57,6 @@ import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
 
-import {
-  projectOperatorFleetSnapshot,
-  type OperatorFleetSnapshotV1,
-} from '../../core/operator/fleet-snapshot';
-import {
-  FleetBoardError,
-  type FleetBoardFatalErrorCode,
-  type FleetBoardCollectorOptions,
-} from '../fleet/board';
-import type { FleetBoardSnapshotV2 } from '../../core/fleet/board';
-
 export const OPERATOR_SERVER_PROTOCOL = 1 as const;
 export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
 export const OPERATOR_DEFAULT_HOST = '127.0.0.1' as const;
@@ -79,11 +64,10 @@ export const OPERATOR_DEFAULT_PORT = 4318 as const;
 export const OPERATOR_DEFAULT_MAX_CONCURRENCY = 4 as const;
 export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
 const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
-const OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
+const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 
 const OPERATOR_DIAGNOSTIC_ACTION = 'Run `repo-harness fleet board --json` for diagnostics and retry.';
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
-const OPERATOR_REOBSERVE_ACTION = 'Refresh the board to re-observe the task, then retry.';
 const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, then refresh the board.';
 
 /**
@@ -92,14 +76,9 @@ const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, t
  * second copy of the same strings.
  */
 export const OPERATOR_HEALTH_PATH = '/healthz' as const;
-export const OPERATOR_FLEET_SNAPSHOT_PATH = '/api/v1/fleet/snapshot' as const;
 export const OPERATOR_API_PATH_PREFIX = '/api' as const;
 /** The static fallback has no path shape of its own; it is whatever is left. */
 export const OPERATOR_STATIC_ASSET_PATTERN = '/*' as const;
-export const OPERATOR_TASK_CONTEXT_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/context$/u;
-export const OPERATOR_TASK_ACTIVITY_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/activity$/u;
-export const OPERATOR_TASK_SESSIONS_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})$/u;
-export const OPERATOR_TASK_DIFF_ROUTE = /^\/api\/v1\/fleet\/task-sessions\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/diff$/u;
 /**
  * The repository id is matched loosely and resolved strictly: the registry is
  * the authority on which ids exist, and duplicating its shape here would be a
@@ -114,6 +93,8 @@ export const OPERATOR_DOCS_FILE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][
 export const OPERATOR_RUNTIME_STATUS_PATH = '/api/v1/runtime/status' as const;
 export const OPERATOR_NOTIFY_STATUS_PATH = '/api/v1/notify/status' as const;
 export const OPERATOR_DEV_ACTIVITY_PATH = '/api/v1/dev-activity' as const;
+/** The registered repositories: the one repository list of the console. */
+export const OPERATOR_REPOSITORIES_PATH = '/api/v1/repositories' as const;
 export const OPERATOR_WORKTREES_PATH = '/api/v1/worktrees' as const;
 export const OPERATOR_SETUP_PATH = '/api/v1/setup' as const;
 export const OPERATOR_BOT_ACCESS_PATH = '/api/v1/bot-access' as const;
@@ -138,14 +119,10 @@ export interface OperatorRouteV1 {
  */
 export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'health', method: 'GET', pattern: OPERATOR_HEALTH_PATH, write: false }),
-  Object.freeze({ id: 'fleet_snapshot', method: 'GET', pattern: OPERATOR_FLEET_SNAPSHOT_PATH, write: false }),
-  Object.freeze({ id: 'task_context', method: 'GET', pattern: OPERATOR_TASK_CONTEXT_ROUTE.source, write: false }),
-  Object.freeze({ id: 'task_activity', method: 'GET', pattern: OPERATOR_TASK_ACTIVITY_ROUTE.source, write: false }),
-  Object.freeze({ id: 'task_sessions', method: 'GET', pattern: OPERATOR_TASK_SESSIONS_ROUTE.source, write: false }),
-  Object.freeze({ id: 'task_diff', method: 'GET', pattern: OPERATOR_TASK_DIFF_ROUTE.source, write: false }),
   Object.freeze({ id: 'runtime_status', method: 'GET', pattern: OPERATOR_RUNTIME_STATUS_PATH, write: false }),
   Object.freeze({ id: 'notify_status', method: 'GET', pattern: OPERATOR_NOTIFY_STATUS_PATH, write: false }),
   Object.freeze({ id: 'dev_activity', method: 'GET', pattern: OPERATOR_DEV_ACTIVITY_PATH, write: false }),
+  Object.freeze({ id: 'repositories', method: 'GET', pattern: OPERATOR_REPOSITORIES_PATH, write: false }),
   Object.freeze({ id: 'worktrees', method: 'GET', pattern: OPERATOR_WORKTREES_PATH, write: false }),
   // Removes only green worktrees; the effect runs in a supervised child process.
   Object.freeze({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true }),
@@ -193,10 +170,6 @@ export interface OperatorServerOptions {
   /** Cache read only. Observation lifecycle runs outside the HTTP request. */
   readonly read_runtime_status?: () => RuntimeOverlay;
   readonly runtime_status_config?: string;
-  readonly read_task_context?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<AdmittedTaskContext>;
-  readonly read_admitted_task_activity?: (input: AdmittedTaskActivityRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskActivity>;
-  readonly read_task_sessions?: (input: AdmittedTaskSessionsRequest & { readonly signal: AbortSignal }) => Promise<AdmittedTaskSessions>;
-  readonly read_task_diff?: (input: AdmittedSessionSelector & { readonly signal: AbortSignal }) => Promise<OperatorTaskDiff>;
   /** Notify cache reader. GET notify_status and the Bot access collector read only this cache; neither runs Herdr. */
   readonly read_notify?: () => NotifyCacheV1;
   /**
@@ -258,9 +231,6 @@ export interface OperatorServerOptions {
   readonly static_root?: string;
   readonly max_concurrency?: number;
   readonly timeout_ms?: number;
-  readonly collect_fleet_board?: (
-    options?: FleetBoardCollectorOptions,
-  ) => Promise<FleetBoardSnapshotV2>;
   /**
    * Write routes admitted for POST in addition to the production ones. Each
    * one must match a `POST`, `write: true` entry of the route inventory, or the
@@ -504,51 +474,6 @@ function errorBody(
   });
 }
 
-function publicFleetError(error: unknown): {
-  readonly status: number;
-  readonly body: OperatorErrorResponseV1;
-} {
-  if (error instanceof OperatorFleetBusyError) return { status: 503, body: errorBody('fleet_snapshot_busy', 'Fleet observation queue is full.') };
-  if (error instanceof OperatorFleetTimeoutError) {
-    return {
-      status: 503,
-      body: errorBody(
-        'fleet_snapshot_timeout',
-        'The Fleet snapshot timed out.',
-        'Refresh the board and retry.',
-      ),
-    };
-  }
-  if (error instanceof FleetBoardError) {
-    const messageByCode: Readonly<Record<FleetBoardError['code'], string>> = {
-      fleet_registry_unavailable: 'Fleet registry cannot be read.',
-      fleet_registry_invalid: 'Fleet registry is invalid.',
-      fleet_repository_not_found: 'Repository is not registered.',
-      fleet_board_argument_invalid: 'Fleet snapshot request is invalid.',
-      fleet_watch_aborted_before_first_snapshot: 'Fleet snapshot collection was aborted.',
-    };
-    return {
-      status: error.code === 'fleet_repository_not_found' ? 404 : error.code === 'fleet_board_argument_invalid' ? 400 : 503,
-      body: errorBody(error.code, messageByCode[error.code]),
-    };
-  }
-  return {
-    status: 503,
-    body: errorBody('fleet_snapshot_unavailable', 'Fleet snapshot is unavailable.'),
-  };
-}
-
-class OperatorFleetBusyError extends Error {}
-
-class OperatorFleetTimeoutError extends Error {
-  readonly code = 'fleet_snapshot_timeout' as const;
-
-  constructor() {
-    super('fleet snapshot deadline exceeded');
-    this.name = 'OperatorFleetTimeoutError';
-  }
-}
-
 // Observation children are read-only. Git must not fetch promised objects,
 // take optional locks or prompt. Apply these last so caller values cannot reopen them.
 const OPERATOR_READ_ONLY_GIT_ENVIRONMENT = { GIT_NO_LAZY_FETCH: '1', GIT_OPTIONAL_LOCKS: '0', GIT_TERMINAL_PROMPT: '0' } as const;
@@ -560,49 +485,12 @@ function repositoryWorkerEnvironment(env: NodeJS.ProcessEnv | undefined): Record
   );
 }
 
-type OperatorFleetCollectorResponse =
-  | {
-      readonly ok: true;
-      readonly snapshot: FleetBoardSnapshotV2;
-    }
-  | {
-      readonly ok: false;
-      readonly code: FleetBoardFatalErrorCode | 'fleet_snapshot_unavailable';
-    }
-  | {
-      readonly ok: false;
-      readonly cancelled: true;
-    };
-
-function fleetCollectorResponse(value: unknown): OperatorFleetCollectorResponse | null {
-  if (typeof value !== 'object' || value === null || !('ok' in value)) return null;
-  if (value.ok === true && 'protocol' in value && value.protocol === 2 && 'snapshot' in value && typeof value.snapshot === 'object' && value.snapshot !== null) {
-    return { ok: true, snapshot: value.snapshot as FleetBoardSnapshotV2 };
-  }
-  if (
-    value.ok === false
-    && 'code' in value
-    && (value.code === 'fleet_snapshot_unavailable'
-      || value.code === 'fleet_registry_unavailable'
-      || value.code === 'fleet_registry_invalid'
-      || value.code === 'fleet_repository_not_found'
-      || value.code === 'fleet_board_argument_invalid'
-      || value.code === 'fleet_watch_aborted_before_first_snapshot')
-  ) {
-    return { ok: false, code: value.code };
-  }
-  if (value.ok === false && 'cancelled' in value && value.cancelled === true) {
-    return { ok: false, cancelled: true };
-  }
-  return null;
-}
-
-type WindowsFleetControllerResponse =
+type WindowsJobControllerResponse =
   | { readonly type: 'assigned' }
   | { readonly type: 'cleanup_ack' }
   | { readonly type: 'cleanup_failed' };
 
-function windowsFleetControllerResponse(value: unknown): WindowsFleetControllerResponse | null {
+function windowsJobControllerResponse(value: unknown): WindowsJobControllerResponse | null {
   if (typeof value !== 'object' || value === null || !('type' in value)) return null;
   const record = value as Record<string, unknown>;
   if (record.type === 'cleanup_ack' || record.type === 'cleanup_failed') return { type: record.type };
@@ -641,48 +529,17 @@ const UNCONFIRMED_COLLECTOR_TERMINATION: ProcessGroupTermination = { confirmed: 
 function terminateCollectorProcessGroup(pid: number | undefined): Promise<ProcessGroupTermination> {
   if (pid === undefined) return Promise.resolve(UNCONFIRMED_COLLECTOR_TERMINATION);
   return terminateProcessGroup(pid, OPERATOR_WORKER_CLEANUP_GRACE_MS, {
-    confirmMs: OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS,
+    confirmMs: OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS,
   }).catch(() => UNCONFIRMED_COLLECTOR_TERMINATION);
 }
 
-function fleetCollectorProcessPath(): string {
-  return fileURLToPath(new URL('./fleet-collector-process.ts', import.meta.url));
+function windowsJobControllerPath(): string {
+  return fileURLToPath(new URL('../../../assets/operator/windows-job-controller.ps1', import.meta.url));
 }
 
-function windowsFleetControllerPath(): string {
-  return fileURLToPath(new URL('../../../assets/operator/fleet-windows-job-controller.ps1', import.meta.url));
-}
-
-/**
- * POSIX collection runs in a server-owned, registered detached process group. Windows
- * collection is different: the server owns only the controller child, while
- * that Job owner creates the inert collector and assigns its exact handle
- * before forwarding the start payload. Provider descendants then inherit the
- * Job automatically.
- */
-function readDefaultFleetSnapshot(
-  input: Required<Pick<FleetBoardCollectorOptions, 'sequence' | 'max_concurrency' | 'timeout_ms'>> & {
-    readonly env?: NodeJS.ProcessEnv;
-    readonly signal: AbortSignal;
-  },
-): Promise<FleetBoardSnapshotV2> {
-  return readSupervisedOperatorProcess({
-    process_path: fleetCollectorProcessPath(), env: input.env, signal: input.signal,
-    start: { type:'start', protocol:2,
-      scope: {kind:'fleet'},
-      sequence:input.sequence, max_concurrency:input.max_concurrency, timeout_ms:input.timeout_ms,
-      ...(process.platform === 'win32' ? {} : {env:repositoryWorkerEnvironment(input.env)}),
-    },
-    response: value => {
-      const response = fleetCollectorResponse(value);
-      return response?.ok
-        ? { ok: true, snapshot: response.snapshot }
-        : response;
-    },
-    failure: code => code === 'fleet_snapshot_unavailable'
-      ? new Error('Fleet observation unavailable')
-      : new FleetBoardError(code as FleetBoardFatalErrorCode, `Fleet collector failed with ${code}`),
-  });
+/** A supervised read that was aborted or outlived its grace period; callers report it as unavailable. */
+class OperatorReadCancelledError extends Error {
+  constructor() { super('operator read cancelled'); }
 }
 
 export class OperatorTaskReadError extends Error {
@@ -716,6 +573,12 @@ type SupervisedReadResponse<T> =
   | { readonly ok: false; readonly code: string }
   | { readonly ok: false; readonly cancelled: true };
 
+/**
+ * POSIX reads run in a server-owned, registered detached process group. On
+ * Windows the server owns only the Job controller child; that Job owner
+ * creates the inert read process and assigns its exact handle before it
+ * forwards the start payload. Descendants then inherit the Job.
+ */
 function readSupervisedOperatorProcess<T>(input: {
   readonly process_path: string;
   readonly start: Readonly<Record<string, unknown>>;
@@ -724,7 +587,7 @@ function readSupervisedOperatorProcess<T>(input: {
   readonly env?: NodeJS.ProcessEnv;
   readonly signal: AbortSignal;
 }): Promise<T> {
-  if (input.signal.aborted) return Promise.reject(new OperatorFleetTimeoutError());
+  if (input.signal.aborted) return Promise.reject(new OperatorReadCancelledError());
   return new Promise((resolveRead, rejectRead) => {
     const workerEnvironment = { ...process.env, ...repositoryWorkerEnvironment(input.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT };
     const collector = process.platform === 'win32'
@@ -736,7 +599,7 @@ function readSupervisedOperatorProcess<T>(input: {
         windowsHide: true,
       }));
     const controller = process.platform === 'win32'
-      ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', windowsFleetControllerPath()], {
+      ? spawn('powershell.exe', ['-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File', windowsJobControllerPath()], {
         env: workerEnvironment,
         stdio: ['pipe', 'pipe', 'pipe'],
         windowsHide: true,
@@ -773,7 +636,7 @@ function readSupervisedOperatorProcess<T>(input: {
       if (outcome.ok) resolveRead(outcome.snapshot);
       else rejectRead(outcome.error);
     };
-    const unavailable = (message: string) => new FleetBoardError('fleet_registry_unavailable', message);
+    const unavailable = (message: string) => new Error(message);
     const failWindowsController = (message: string): void => {
       if (settled || controller === null || controllerFailed) return;
       controllerFailed = true;
@@ -797,19 +660,19 @@ function readSupervisedOperatorProcess<T>(input: {
         cleanupTimer = null;
       }
       if (!writeChildJsonLine(controller, { type: terminate ? 'terminate' : 'cleanup' })) {
-        failWindowsController('Fleet Windows Job controller is unavailable');
+        failWindowsController('Windows Job controller is unavailable');
         return;
       }
       acknowledgementTimer = setTimeout(() => {
-        failWindowsController('Fleet Windows Job controller did not acknowledge cleanup');
-      }, OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS);
+        failWindowsController('Windows Job controller did not acknowledge cleanup');
+      }, OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS);
     };
     const finalizePosix = (): void => {
       if (settled || collector === null || !collectorClosed || intended === null || posixFinalizing) return;
       posixFinalizing = true;
       const outcome = intended;
       void terminateCollectorProcessGroup(collector.pid).then((termination) => {
-        if (!termination.confirmed) finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
+        if (!termination.confirmed) finish({ ok: false, error: unavailable('Read process process group did not exit') });
         else finish(outcome);
       });
     };
@@ -821,7 +684,7 @@ function readSupervisedOperatorProcess<T>(input: {
         }
         if (intended === null) return;
         if (!controllerAssigned) {
-          failWindowsController('Fleet Windows Job controller returned a collector response before assignment');
+          failWindowsController('Windows Job controller returned a collector response before assignment');
           return;
         }
         if (!controllerCleanupRequested) requestWindowsCleanup(cancellationRequested);
@@ -829,22 +692,22 @@ function readSupervisedOperatorProcess<T>(input: {
         return;
       }
       if (collector === null || !collectorClosed) return;
-      if (intended === null) intended = { ok: false, error: unavailable('Fleet collector exited without a response') };
+      if (intended === null) intended = { ok: false, error: unavailable('Read process exited without a response') };
       if (posixCancellationPending) return;
       finalizePosix();
     };
     const recordCollectorResponse = (value: unknown): void => {
       const response = input.response(value);
       if (response === null) {
-        intended = { ok: false, error: unavailable('Fleet collector returned an invalid response') };
+        intended = { ok: false, error: unavailable('Read process returned an invalid response') };
       } else if (response.ok) {
         collectorResponse = response;
         intended = cancellationRequested
-          ? { ok: false, error: new OperatorFleetTimeoutError() }
+          ? { ok: false, error: new OperatorReadCancelledError() }
           : { ok: true, snapshot: response.snapshot };
       } else if ('cancelled' in response) {
         collectorResponse = response;
-        intended = { ok: false, error: new OperatorFleetTimeoutError() };
+        intended = { ok: false, error: new OperatorReadCancelledError() };
       } else {
         collectorResponse = response;
         intended = { ok: false, error: input.failure(response.code) };
@@ -856,18 +719,18 @@ function readSupervisedOperatorProcess<T>(input: {
       cancellationRequested = true;
       if (controller !== null) {
         if (!writeChildJsonLine(controller, { type: 'cancel' })) {
-          failWindowsController('Fleet Windows Job controller cannot accept cooperative cancellation');
+          failWindowsController('Windows Job controller cannot accept cooperative cancellation');
           return;
         }
         cleanupTimer = setTimeout(() => {
           cleanupTimer = null;
-          intended = { ok: false, error: new OperatorFleetTimeoutError() };
+          intended = { ok: false, error: new OperatorReadCancelledError() };
           requestWindowsCleanup(true);
         }, OPERATOR_WORKER_CLEANUP_GRACE_MS);
         return;
       }
       if (collector === null || !writeChildJsonLine(collector, { type: 'cancel' })) {
-        intended = { ok: false, error: unavailable('Fleet collector cannot accept cooperative cancellation') };
+        intended = { ok: false, error: unavailable('Read process cannot accept cooperative cancellation') };
       }
       if (collector === null) return;
       posixCancellationPending = true;
@@ -875,8 +738,8 @@ function readSupervisedOperatorProcess<T>(input: {
         posixCancellationPending = false;
         // A collector that outlives the cooperative grace period has timed out,
         // whatever it reported before the forced kill.
-        if (termination.forced) intended = { ok: false, error: new OperatorFleetTimeoutError() };
-        if (!termination.confirmed) finish({ ok: false, error: unavailable('Fleet collector process group did not exit') });
+        if (termination.forced) intended = { ok: false, error: new OperatorReadCancelledError() };
+        if (!termination.confirmed) finish({ ok: false, error: unavailable('Read process process group did not exit') });
         else finalize();
       });
     };
@@ -885,30 +748,30 @@ function readSupervisedOperatorProcess<T>(input: {
       childJsonLines(collector.stdout, recordCollectorResponse);
       collector.stderr.resume();
       collector.once('error', (error) => {
-        intended = { ok: false, error: unavailable(`Fleet collector failed: ${error.message}`) };
+        intended = { ok: false, error: unavailable(`Read process failed: ${error.message}`) };
       });
       collector.once('close', () => {
         collectorClosed = true;
-        if (collectorResponse === null && intended === null) intended = { ok: false, error: unavailable('Fleet collector exited without a response') };
+        if (collectorResponse === null && intended === null) intended = { ok: false, error: unavailable('Read process exited without a response') };
         finalize();
       });
     }
     if (controller !== null) {
       childJsonLines(controller.stdout, (value) => {
-        const response = windowsFleetControllerResponse(value);
+        const response = windowsJobControllerResponse(value);
         if (response === null) {
           recordCollectorResponse(value);
           return;
         }
         if (response.type === 'assigned') {
           if (controllerAssigned) {
-            failWindowsController('Fleet Windows Job controller assigned more than one collector');
+            failWindowsController('Windows Job controller assigned more than one collector');
             return;
           }
           controllerAssigned = true;
           if (cancellationRequested) return;
           if (!writeChildJsonLine(controller, input.start)) {
-            intended = { ok: false, error: unavailable('Fleet Windows Job controller cannot forward the assigned start payload') };
+            intended = { ok: false, error: unavailable('Windows Job controller cannot forward the assigned start payload') };
             requestWindowsCleanup(true);
           }
           return;
@@ -920,16 +783,16 @@ function readSupervisedOperatorProcess<T>(input: {
             acknowledgementTimer = null;
           }
           controllerCloseTimer = setTimeout(() => {
-            failWindowsController('Fleet Windows Job controller did not exit after cleanup acknowledgement');
-          }, OPERATOR_FLEET_CONTROLLER_ACK_TIMEOUT_MS);
+            failWindowsController('Windows Job controller did not exit after cleanup acknowledgement');
+          }, OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS);
           finalize();
           return;
         }
-        failWindowsController('Fleet Windows Job controller could not prove cleanup');
+        failWindowsController('Windows Job controller could not prove cleanup');
       });
       controller.stderr.resume();
       controller.once('error', (error) => {
-        failWindowsController(`Fleet Windows Job controller failed: ${error.message}`);
+        failWindowsController(`Windows Job controller failed: ${error.message}`);
       });
       controller.once('close', () => {
         controllerClosed = true;
@@ -938,7 +801,7 @@ function readSupervisedOperatorProcess<T>(input: {
           controllerCloseTimer = null;
         }
         if (!controllerCleanupAcknowledged && !settled) {
-          failWindowsController('Fleet Windows Job controller exited without cleanup acknowledgement');
+          failWindowsController('Windows Job controller exited without cleanup acknowledgement');
         }
         finalize();
       });
@@ -947,10 +810,10 @@ function readSupervisedOperatorProcess<T>(input: {
         executable: process.execPath,
         collector_path: input.process_path,
       })) {
-        failWindowsController('Fleet Windows Job controller cannot accept collector launch');
+        failWindowsController('Windows Job controller cannot accept collector launch');
       }
     } else if (collector !== null && !writeChildJsonLine(collector, input.start)) {
-      finish({ ok: false, error: unavailable('Fleet collector cannot accept start payload') });
+      finish({ ok: false, error: unavailable('Read process cannot accept start payload') });
     }
     if (input.signal.aborted) {
       onAbort();
@@ -1035,145 +898,16 @@ export async function startOperatorServer(
   const maxConcurrency = assertCollectionOption(options.max_concurrency, 'max_concurrency', 1, 16);
   const timeoutMs = assertCollectionOption(options.timeout_ms, 'timeout_ms', 1_000, 30_000);
   const staticRoot = safePathRoot(options.static_root ?? DEFAULT_STATIC_ROOT);
-  const collect = options.collect_fleet_board;
-  let nextSnapshotSequence = 1;
   const activeTaskReadCancellers = new Set<() => void>();
   const activeTaskReadCompletions = new Set<Promise<void>>();
   const activeBoardReads = new Set<AbortController>();
   const boardCompletions = new Set<Promise<void>>();
   const boardEnvironment: NodeJS.ProcessEnv = { ...process.env, ...repositoryWorkerEnvironment(options.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT, GH_PROMPT_DISABLED: '1' };
 
-  interface FleetObservation {
-    readonly key: string;
-    readonly sequence: number;
-    readonly controller: AbortController;
-    readonly promise: Promise<OperatorFleetSnapshotV1>;
-    readonly resolve: (snapshot: OperatorFleetSnapshotV1) => void;
-    readonly reject: (error: unknown) => void;
-    timer: ReturnType<typeof setTimeout> | null;
-    subscribers: number;
-    settled: boolean;
-  }
-  const fleetObservations = new Map<string, FleetObservation>();
-  const fleetQueue: FleetObservation[] = [];
-  const fleetCompletions = new Set<Promise<void>>();
-  const serviceEpoch = randomUUID();
-  let activeFleetObservation: FleetObservation | null = null;
-  let fleetClosing = false;
-
-  const settleFleetObservation = (observation: FleetObservation, outcome:
-    { readonly ok: true; readonly value: OperatorFleetSnapshotV1 } | { readonly ok: false; readonly error: unknown }): void => {
-    if (observation.settled) return;
-    observation.settled = true;
-    if (observation.timer !== null) clearTimeout(observation.timer);
-    if (fleetObservations.get(observation.key) === observation) fleetObservations.delete(observation.key);
-    const index = fleetQueue.indexOf(observation);
-    if (index >= 0) fleetQueue.splice(index, 1);
-    if (outcome.ok) observation.resolve(outcome.value);
-    else observation.reject(outcome.error);
-  };
-
-  const cancelFleetObservation = (observation: FleetObservation): void => {
-    observation.controller.abort();
-    settleFleetObservation(observation, { ok: false, error: new OperatorFleetTimeoutError() });
-    // Retirement changes subscription identity, never the active process slot.
-    drainFleetQueue();
-  };
-
-  const drainFleetQueue = (): void => {
-    if (fleetClosing || activeFleetObservation !== null) return;
-    const observation = fleetQueue.shift();
-    if (observation === undefined) return;
-    activeFleetObservation = observation;
-    const input = {
-      env: options.env,
-      sequence: observation.sequence,
-      max_concurrency: maxConcurrency,
-      timeout_ms: timeoutMs,
-      signal: observation.controller.signal,
-    };
-    const completion = Promise.resolve().then(() => {
-      if (observation.controller.signal.aborted) throw new OperatorFleetTimeoutError();
-      return collect === undefined ? readDefaultFleetSnapshot(input) : Promise.resolve(collect(input));
-    }).then((raw) => {
-      const value = projectOperatorFleetSnapshot(raw, serviceEpoch, basename);
-      if (value.sequence !== observation.sequence) throw new Error('Fleet generation mismatch');
-      settleFleetObservation(observation, { ok: true, value });
-    }).catch((error: unknown) => {
-      settleFleetObservation(observation, { ok: false, error });
-    }).finally(() => {
-      // The production promise settles only after process-group/Job cleanup.
-      // Injected readers are held to the same settlement boundary.
-      activeFleetObservation = null;
-      fleetCompletions.delete(completion);
-      drainFleetQueue();
-    });
-    fleetCompletions.add(completion);
-  };
-
-  const acquireFleetObservation = (): FleetObservation => {
-    if (fleetClosing) throw new OperatorFleetTimeoutError();
-    const key = 'fleet';
-    const current = fleetObservations.get(key);
-    if (current !== undefined) { current.subscribers += 1; return current; }
-    if (activeFleetObservation !== null && fleetQueue.length >= maxConcurrency * 2) throw new OperatorFleetBusyError();
-    let resolveObservation!: FleetObservation['resolve'];
-    let rejectObservation!: FleetObservation['reject'];
-    const observation: FleetObservation = {
-      key, sequence: nextSnapshotSequence++, controller: new AbortController(),
-      promise: new Promise((resolve, reject) => { resolveObservation = resolve; rejectObservation = reject; }),
-      resolve: (value) => resolveObservation(value), reject: (error) => rejectObservation(error),
-      timer: null, subscribers: 1, settled: false,
-    };
-    observation.timer = setTimeout(() => cancelFleetObservation(observation), timeoutMs);
-    fleetObservations.set(key, observation);
-    fleetQueue.push(observation);
-    drainFleetQueue();
-    return observation;
-  };
-
-  const handleFleetSnapshot = async (
-    request: IncomingMessage,
-    response: ServerResponse,
-    headOnly: boolean,
-  ): Promise<void> => {
-    let observation: FleetObservation;
-    try { observation = acquireFleetObservation(); }
-    catch (error) {
-      const failure = publicFleetError(error);
-      sendRefusal(request, response, failure.status, failure.body, headOnly);
-      return;
-    }
-    let released = false;
-    let clientDisconnected = false;
-    const release = (): void => {
-      if (released) return;
-      released = true;
-      observation.subscribers -= 1;
-      if (observation.subscribers === 0 && !observation.settled) cancelFleetObservation(observation);
-    };
-    const onClientDisconnect = (): void => { clientDisconnected = true; release(); };
-    request.once('aborted', onClientDisconnect);
-    response.once('close', onClientDisconnect);
-    try {
-      const current = await observation.promise;
-      if (clientDisconnected || response.destroyed) return;
-      sendJson(response, 200, current, headOnly);
-    } catch (error) {
-      if (clientDisconnected || response.destroyed) return;
-      const failure = publicFleetError(error);
-      sendRefusal(request, response, failure.status, failure.body, headOnly);
-    } finally {
-      release();
-      request.removeListener('aborted', onClientDisconnect);
-      response.removeListener('close', onClientDisconnect);
-    }
-  };
-
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
     response: ServerResponse, headOnly: boolean, input: TRequest,
     decode: (value: unknown, request: TRequest) => TSnapshot,
-    failures: readonly string[], kind: 'context' | 'activity' | 'admitted_activity' | 'diff' | 'sessions' | 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
+    failures: readonly string[], kind: 'architecture' | 'doc_session_diff' | 'doc_session_loss' | 'doc_session_list' | 'doc_session_detail' | 'doc_session_events' | 'doc_session_finalization',
     injected?: (request: TRequest & { readonly signal: AbortSignal }) => Promise<TSnapshot>,
     failureStatus: (failure: string) => number = failure => failure === 'history_unavailable' || failure === 'task_not_found' ? 404 : failure === 'stale' ? 409 : failure === 'too_large' ? 413 : 503,
     cacheRequest?: IncomingMessage,
@@ -1527,11 +1261,6 @@ export async function startOperatorServer(
       return;
     }
 
-    if (pathname === OPERATOR_FLEET_SNAPSHOT_PATH) {
-      await handleFleetSnapshot(request, response, headOnly);
-      return;
-    }
-
     if (pathname === OPERATOR_RUNTIME_STATUS_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Runtime status takes no query parameters.', 'Remove query parameters.'), headOnly);
@@ -1569,6 +1298,22 @@ export async function startOperatorServer(
         snapshot = unavailableDevActivitySnapshot();
       }
       sendJson(response, 200, snapshot, headOnly);
+      return;
+    }
+
+    if (pathname === OPERATOR_REPOSITORIES_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The repository list accepts no query selectors.'), headOnly);
+        return;
+      }
+      let repositories: OperatorRepositoriesV1;
+      try { repositories = readOperatorRepositories(options.env ?? process.env); }
+      catch {
+        sendRefusal(request, response, 503, errorBody('registry_unavailable', 'The repository registry is unreadable.',
+          'Run `repo-harness fleet board --json` for diagnostics.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, repositories, headOnly);
       return;
     }
 
@@ -1696,53 +1441,6 @@ export async function startOperatorServer(
       return;
     }
 
-    const contextRoute = OPERATOR_TASK_CONTEXT_ROUTE.exec(pathname);
-    if(contextRoute!==null){
-      let input:AdmittedSessionSelector;
-      try{input=parseTaskDiffRequest(contextRoute[1]!,url.searchParams);}
-      catch{sendRefusal(request,response,400,errorBody('invalid_request','Context requires an explicit admitted session selector.'),headOnly);return;}
-      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskContext,SESSION_OBSERVATION_FAILURES,'context',options.read_task_context);
-      return;
-    }
-    const admittedActivityRoute = OPERATOR_TASK_ACTIVITY_ROUTE.exec(pathname);
-    if (admittedActivityRoute !== null) {
-      let input: AdmittedTaskActivityRequest;
-      try { input = parseAdmittedTaskActivityRequest(admittedActivityRoute[1]!, url.searchParams); }
-      catch { sendRefusal(request,response,400,errorBody('invalid_request','Activity requires an explicit admitted session selector.'),headOnly); return; }
-      handleBoundedTaskRead(response,headOnly,input,decodeAdmittedTaskActivity,[...TASK_ACTIVITY_FAILURES,...SESSION_OBSERVATION_FAILURES],
-        'admitted_activity',options.read_admitted_task_activity);
-      return;
-    }
-    const sessionsRoute = OPERATOR_TASK_SESSIONS_ROUTE.exec(pathname);
-    if (sessionsRoute !== null) {
-      const input = { repository_id: sessionsRoute[1]! };
-      if (url.searchParams.size || !isTaskSessionsRequest(input)) {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'Session discovery accepts only a registered repository.'), headOnly);
-        return;
-      }
-      handleBoundedTaskRead(response, headOnly, input, decodeAdmittedTaskSessions, SESSION_OBSERVATION_FAILURES,
-        'sessions', options.read_task_sessions);
-      return;
-    }
-
-    const diffRoute = OPERATOR_TASK_DIFF_ROUTE.exec(pathname);
-    if (diffRoute !== null) {
-      if (closed) {
-        sendJson(response, 503, { code: 'unavailable' }, headOnly);
-        return;
-      }
-      let input: AdmittedSessionSelector;
-      try { input = parseTaskDiffRequest(diffRoute[1]!, url.searchParams); }
-      catch {
-        sendRefusal(request, response, 400, errorBody('invalid_request', 'A task diff requires an explicit admitted session selector.'), headOnly);
-        return;
-      }
-      handleBoundedTaskRead(response, headOnly, input, decodeOperatorTaskDiff, SESSION_OBSERVATION_FAILURES,
-        'diff', options.read_task_diff,
-        failure => failure === 'stale' ? 409 : 503);
-      return;
-    }
-
     const boardRoute = OPERATOR_BOARD_ROUTE.exec(pathname);
     if (boardRoute !== null) {
       // A board read runs the board CLI and about ten GitHub reads; HEAD gets no read.
@@ -1856,7 +1554,7 @@ export async function startOperatorServer(
     /**
      * The API prefix is claimed case-insensitively while the routes above stay
      * exact, because the static fallback resolves case-insensitively on macOS
-     * and Windows: `/API/v1/fleet/snapshot` matched no API route, fell through
+     * and Windows: `/API/v1/dev-activity` matched no API route, fell through
      * to the SPA shell, and answered a navigation with 200 HTML. Anything under
      * the API prefix that reached here is a missing API route and says so.
      */
@@ -1981,16 +1679,13 @@ export async function startOperatorServer(
     if (closeCompletion) return closeCompletion;
     closed = true;
     runtimeService?.close();
-    fleetClosing = true;
     closeCompletion = Promise.resolve().then(async () => {
       await Promise.all([devActivity?.close(), setup?.close(), botAccess?.close(), botReviews?.close(), notify?.close(), cliInventory?.close(), docs?.close(), tests?.close(), execution?.close(), worktrees?.close(), architectureMap?.close()]);
       // Close admission and cancel every owner before waiting for any one of
-      // them: a retiring Fleet read must not leave other queues launching work.
-      for (const observation of [...fleetObservations.values()]) cancelFleetObservation(observation);
+      // them: a retiring read must not leave other queues launching work.
       for (const cancel of activeTaskReadCancellers) cancel();
       for (const controller of activeBoardReads) controller.abort();
       await Promise.allSettled([
-        ...fleetCompletions,
         ...activeTaskReadCompletions,
         ...boardCompletions,
       ]);

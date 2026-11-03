@@ -29,8 +29,7 @@ export type NavWorkspace = typeof WORKSPACES[number]['id'];
 export type NavGroup = NonNullable<typeof WORKSPACES[number]['group']>;
 /** The three pages read from one `repo-harness setup check` result. */
 export const SETUP_WORKSPACES = ['agents', 'skills', 'hooks'] as const;
-/** `repository` is the detail page of one repository; it is reached from the list, not the nav. */
-export type Workspace = NavWorkspace | 'repository';
+export type Workspace = NavWorkspace;
 
 export interface WorkspaceLocation {
   readonly workspace: Workspace;
@@ -92,7 +91,7 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
     return place === null ? HOME : boardLocation(place);
   }
   if (rest.length > 0) return HOME;
-  if (name === 'home' || name === 'repositories' || name === 'repository' || name === 'worktrees' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'tests') {
+  if (name === 'home' || name === 'repositories' || name === 'worktrees' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'tests') {
     return parameter === undefined ? { workspace: name, module: null, item: null } : HOME;
   }
   if (name === 'settings') {

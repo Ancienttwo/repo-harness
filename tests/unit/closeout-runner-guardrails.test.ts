@@ -21,7 +21,10 @@ import {
 } from '../../src/effects/runtime/helper-runner';
 import { acquireExpensiveRunLock } from '../../src/effects/expensive-run-lock';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
-import { runProcess } from '../../src/effects/process-runner';
+import {
+  PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS,
+  runProcess,
+} from '../../src/effects/process-runner';
 import {
   runBoundedProviderProcess,
   withHarnessBenchmarkExecutionLock,
@@ -88,16 +91,33 @@ function isPositiveSafePid(pid: number): pid is number {
   return Number.isSafeInteger(pid) && pid > 0;
 }
 
-function readPositiveSafePid(path: string, label: string): number {
-  const raw = readFileSync(path, 'utf-8').trim();
-  if (!/^[1-9]\d*$/.test(raw)) {
-    throw new Error(`${label} did not contain a positive PID`);
+async function waitForSupervisorProcessGroup(runtimeTmp: string, timeoutMs: number): Promise<number> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    for (const entry of readdirSync(runtimeTmp)) {
+      try {
+        const receipt = JSON.parse(readFileSync(join(runtimeTmp, entry, 'receipt.json'), 'utf-8')) as {
+          processGroupPid?: unknown;
+        };
+        if (typeof receipt.processGroupPid === 'number' && isPositiveSafePid(receipt.processGroupPid)) {
+          return receipt.processGroupPid;
+        }
+      } catch {
+        // The receipt is absent or partly written.
+      }
+    }
+    if (Date.now() >= deadline) throw new Error(`timed out waiting for a supervisor receipt in ${runtimeTmp}`);
+    await Bun.sleep(10);
   }
-  const pid = Number(raw);
-  if (!isPositiveSafePid(pid)) {
-    throw new Error(`${label} did not contain a safe PID`);
+}
+
+function parentPidOf(pid: number): number {
+  const raw = spawnSync('ps', ['-o', 'ppid=', '-p', String(pid)], { encoding: 'utf-8' }).stdout.trim();
+  const parentPid = Number(raw);
+  if (!/^[1-9]\d*$/.test(raw) || !isPositiveSafePid(parentPid) || parentPid === 1) {
+    throw new Error(`ps did not report a parent PID for ${pid}: ${JSON.stringify(raw)}`);
   }
-  return pid;
+  return parentPid;
 }
 
 function killIfPresent(pid: number, signal: NodeJS.Signals): void {
@@ -247,47 +267,46 @@ describe('closeout runner guardrails', () => {
     expect(await new Response(worker.stdout).text()).toContain('target:barrier-safe');
   }, 30_000);
 
+  // The test must stop the supervisor inside the target window, which opens
+  // when the supervisor parses its arguments, before its cold start ends.
+  // Every wait below derives from this one value.
+  const stoppedSupervisorTargetTimeoutMs = 1_500;
+  // runProcess returns within this time after the target timeout: the parent
+  // hard timeout (target + 1500 ms) plus the backstop TERM/KILL grace.
+  const stoppedSupervisorCallMs = stoppedSupervisorTargetTimeoutMs + PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS;
+  const stoppedSupervisorExitMarginMs = 1_000;
+  const stoppedSupervisorWorkerExitMs = stoppedSupervisorCallMs + stoppedSupervisorExitMarginMs;
   test('the parent hard timeout returns even when the supervisor event loop is stopped', async () => {
     if (process.platform === 'win32') return;
     const root = temporaryRoot('repo-harness-supervisor-hard-timeout-');
-    const supervisorPidPath = join(root, 'supervisor-pid');
-    const processGroupPidPath = join(root, 'process-group-pid');
+    const runtimeTmp = join(root, 'tmp');
+    mkdirSync(runtimeTmp);
     const resultPath = join(root, 'result.json');
     const workerPath = join(root, 'hard-timeout-worker.ts');
-    // A redirect creates the file before its PID is written, and `ps` can print
-    // nothing under load. Retry `ps`, and publish each PID by rename so that a
-    // visible file always holds a complete, non-empty PID.
-    const command = [
-      `publish() { [ -n "$2" ] && printf '%s\\n' "$2" > "$1.tmp" && mv "$1.tmp" "$1"; }`,
-      `publish "${processGroupPidPath}" "$PPID"`,
-      'supervisor_pid=""',
-      `for _ in {1..100}; do supervisor_pid=$(ps -o ppid= -p "$PPID" | tr -d '[:space:]'); [ -n "$supervisor_pid" ] && break; sleep 0.01; done`,
-      `publish "${supervisorPidPath}" "$supervisor_pid"`,
-      'kill -STOP "$supervisor_pid"',
-      'sleep 60',
-    ].join('; ');
     writeFileSync(workerPath, [
       `import { runProcess } from ${JSON.stringify(join(ROOT, 'src/effects/process-runner.ts'))};`,
       "import { writeFileSync } from 'fs';",
-      `const command = ${JSON.stringify(command)};`,
-      `const result = runProcess('bash', ['-c', command], { cwd: ${JSON.stringify(root)}, timeoutMs: 500, processGroup: true });`,
+      `const result = runProcess('bash', ['-c', 'sleep 60'], { cwd: ${JSON.stringify(root)}, timeoutMs: ${stoppedSupervisorTargetTimeoutMs}, processGroup: true });`,
       `writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
       '',
     ].join('\n'));
 
     const worker = Bun.spawn([process.execPath, workerPath], {
-      cwd: root, detached: true, stdout: 'pipe', stderr: 'pipe',
+      cwd: root, detached: true, stdout: 'pipe', stderr: 'pipe', env: { ...process.env, TMPDIR: runtimeTmp },
     });
-    await waitForPath(supervisorPidPath);
-    await waitForPath(processGroupPidPath);
     let supervisorPid: number | null = null;
     let processGroupPid: number | null = null;
     try {
-      supervisorPid = readPositiveSafePid(supervisorPidPath, 'supervisor pid');
-      processGroupPid = readPositiveSafePid(processGroupPidPath, 'process group pid');
+      // The supervisor publishes the launcher PGID before it arms its target
+      // timer. Stop it from here at once: a stop sent by the target would race
+      // that timer against the launcher and target start-up. After the call
+      // budget the worker has returned, so no later receipt can be live.
+      processGroupPid = await waitForSupervisorProcessGroup(runtimeTmp, stoppedSupervisorCallMs);
+      supervisorPid = parentPidOf(processGroupPid);
+      process.kill(supervisorPid, 'SIGSTOP');
       const exitCode = await Promise.race([
         worker.exited,
-        Bun.sleep(4_000).then(() => null),
+        Bun.sleep(stoppedSupervisorWorkerExitMs).then(() => null),
       ]);
       expect(exitCode).toBe(0);
       const result = JSON.parse(readFileSync(resultPath, 'utf-8')) as {
@@ -305,7 +324,7 @@ describe('closeout runner guardrails', () => {
       if (supervisorPid !== null) killIfPresent(supervisorPid, 'SIGKILL');
       killIfPresent(worker.pid, 'SIGKILL');
     }
-  }, 6_000);
+  }, stoppedSupervisorCallMs + stoppedSupervisorWorkerExitMs + stoppedSupervisorExitMarginMs);
 
   test('expensive-lock wait consumes the command deadline and reports timeout before target start', async () => {
     const root = temporaryRoot('repo-harness-lock-wait-timeout-');
