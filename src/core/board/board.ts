@@ -7,6 +7,8 @@ import {
   parseAcceptanceRecord,
   parseClaimStatus,
   parseRefs,
+  protocolComments,
+  type BoardCommentV1,
   type BoardParentReadV1,
   type BoardPullRequestReadV1,
   type BoardSubIssueReadV1,
@@ -60,7 +62,7 @@ export type BoardRequiredCheckV1 =
   | { readonly status: 'pending' | 'missing' };
 
 export type BoardAcceptanceV1 =
-  /** `record`: the newest acceptance record has a PASS row for the head. `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
+  /** `record`: an acceptance record has a PASS row for the head, and no record has a FAIL row for it. `tier_low`: every closed issue is `tier:low` and `Required / CI` passed. */
   | { readonly status: 'accepted'; readonly via: 'record' | 'tier_low'; readonly accepted_at: string; readonly evidence_url: string }
   | { readonly status: 'not_accepted' }
   | { readonly status: 'unknown'; readonly reason: 'acceptance_record_unparsed' | 'comments_truncated'; readonly evidence_url: string | null };
@@ -208,16 +210,24 @@ function requiredCheck(read: BoardPullRequestReadV1): BoardRequiredCheckV1 {
 }
 
 function acceptance(read: BoardPullRequestReadV1, check: BoardRequiredCheckV1, closedTiers: readonly (BoardTier | null)[]): BoardAcceptanceV1 {
-  const record = newestProtocolComment(read.comments, ACCEPTANCE_RECORD_HEADER);
-  if (record !== null) {
+  // One round is one subject SHA, and a High round has two reviews of it (`acceptor.md`, section 2): every record counts.
+  const records = protocolComments(read.comments, ACCEPTANCE_RECORD_HEADER);
+  const passes: BoardCommentV1[] = [];
+  let failed = false;
+  for (const record of records) {
     const rows = parseAcceptanceRecord(record);
     if (rows === null) return { status: 'unknown', reason: 'acceptance_record_unparsed', evidence_url: record.url };
-    if (rows.some(row => row.verdict === 'PASS' && row.subject_sha === read.head_sha)) {
-      return { status: 'accepted', via: 'record', accepted_at: record.created_at, evidence_url: record.url };
-    }
-  } else if (read.comments.truncated) {
-    return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
+    const head = rows.filter(row => row.subject_sha === read.head_sha);
+    if (head.some(row => row.verdict === 'FAIL')) failed = true;
+    else if (head.length > 0) passes.push(record);
   }
+  if (!failed && passes.length > 0) {
+    // An older comment outside the read can hold a FAIL on the head.
+    if (read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
+    const newest = passes.reduce((latest, record) => (record.created_at >= latest.created_at ? record : latest));
+    return { status: 'accepted', via: 'record', accepted_at: newest.created_at, evidence_url: newest.url };
+  }
+  if (records.length === 0 && read.comments.truncated) return { status: 'unknown', reason: 'comments_truncated', evidence_url: null };
   // A Low pull request has no accept seat (`agentic-development-flow.md`, Review by risk).
   if (check.status === 'success' && closedTiers.length > 0 && closedTiers.every(tier => tier === 'low')) {
     return { status: 'accepted', via: 'tier_low', accepted_at: check.completed_at, evidence_url: read.url };

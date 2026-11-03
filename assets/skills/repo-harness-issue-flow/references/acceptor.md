@@ -28,10 +28,11 @@ return the result schema can accept.
 
 ## 2. Take one round
 
-One round has one subject SHA and one risk tier. Read the PR body, the
-diff, the issue and the recorded verification. From the second round, read
-only the hunks that changed after the previous round. Do not rerun a
-passing check. Use the recorded command, result, revision and environment.
+One round has one subject SHA and one risk tier. A High round has two
+reviews of that one subject SHA, and both take the same round number. Read
+the PR body, the diff, the issue and the recorded verification. From the
+second round, read only the hunks that changed after the previous round. Do
+not rerun a passing check. Use the recorded command, result, revision and environment.
 
 When the repository has `agents/fleet/known-gaps.md`, read the row for the
 PR's producer and run its named checks in addition to the tier's review.

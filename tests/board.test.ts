@@ -162,6 +162,27 @@ test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low 
   expect(evaluateBoardAttention(board).unevaluated.filter(entry => entry.subject === '#1491').map(entry => entry.rule)).toEqual(['A1', 'A2']);
 });
 
+// One round is one subject SHA: both reviews of a High round are rows of round 1 on one head (#1538).
+test('acceptance: every record on the head counts, and one FAIL withholds acceptance', () => {
+  const record = (sha: string, verdict: 'PASS' | 'FAIL') => `repo-harness acceptance record\n\n| Round | Seat | Subject | Verdict |\n|---|---|---|---|\n| 1 | acceptor | ${sha} | ${verdict} |\n`;
+  const board = replay({
+    pulls: (data) => {
+      const { pr1491, pr1494, pr1499 } = data.repository;
+      // #1491 keeps its PASS on the head, but older comments exist outside the read.
+      pr1491.comments.pageInfo.hasPreviousPage = true;
+      pr1494.headRefOid = pr1494.commits.nodes[0].commit.oid = 'a'.repeat(40);
+      pr1494.comments.nodes.push(comment(record('a'.repeat(40), 'PASS'), '2026-11-03T00:24:00Z'), comment(record('a'.repeat(40), 'PASS'), '2026-11-03T00:27:00Z'));
+      pr1499.headRefOid = pr1499.commits.nodes[0].commit.oid = 'b'.repeat(40);
+      pr1499.comments.nodes.push(comment(record('b'.repeat(40), 'FAIL'), '2026-11-03T00:24:00Z'), comment(record('b'.repeat(40), 'PASS'), '2026-11-03T00:27:00Z'));
+    },
+  });
+  expect(board.pull_requests.map(pr => [pr.number, pr.acceptance])).toEqual([
+    [1491, { status: 'unknown', reason: 'comments_truncated', evidence_url: null }],
+    [1494, { status: 'accepted', via: 'record', accepted_at: '2026-11-03T00:27:00Z', evidence_url: 'https://github.com/Ancienttwo/repo-harness/issues/1#issuecomment-1793665620000' }],
+    [1499, { status: 'not_accepted' }],
+  ]);
+});
+
 test('one hit for each rule that the recorded state does not trigger', () => {
   const later = new Date('2026-11-03T02:00:00Z');
   const plan = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476], holds: [], batches: [], seat_limits: { worker: 3 } };

@@ -260,11 +260,15 @@ export function decodePullRequestsRead(data: unknown, numbers: readonly number[]
 /** Only an account with write access holds a seat (`board.md`, Claims); other protocol comments are requests. */
 const WRITE_ACCESS = new Set(['OWNER', 'MEMBER', 'COLLABORATOR']);
 
+/** The comments of one protocol kind from accounts with write access. */
+export function protocolComments(page: BoardCommentPageV1, header: string): BoardCommentV1[] {
+  return page.comments.filter(comment => WRITE_ACCESS.has(comment.author_association)
+    && comment.body.replace(/\r\n/gu, '\n').split('\n', 1)[0]!.trim() === header);
+}
+
 /** The newest comment of one protocol kind from an account with write access. */
 export function newestProtocolComment(page: BoardCommentPageV1, header: string): BoardCommentV1 | null {
-  const matching = page.comments.filter(comment => WRITE_ACCESS.has(comment.author_association)
-    && comment.body.replace(/\r\n/gu, '\n').split('\n', 1)[0]!.trim() === header);
-  return matching.reduce<BoardCommentV1 | null>((newest, comment) => (newest === null || comment.created_at >= newest.created_at ? comment : newest), null);
+  return protocolComments(page, header).reduce<BoardCommentV1 | null>((newest, comment) => (newest === null || comment.created_at >= newest.created_at ? comment : newest), null);
 }
 
 function field(body: string, name: string): string | null {
