@@ -309,7 +309,7 @@ describe('seat settings routes', () => {
     expect(value.config.orchestrator).toEqual({ runtime: 'claude', model: 'opus', effort: 'high', tools: ['gh', 'mcp', 'net', 'read', 'shell', 'tasks'], fleet: [] });
     expect(value.config.advisor.fleet).toEqual(['deep-reasoner', 'explorer']);
     expect(value.ranges.seats.advisor.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper']);
-    expect(value.ranges.seats.orchestrator.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper', 'root-cause-prover']);
+    expect(value.ranges.seats.orchestrator.fleet).toEqual(['explorer', 'deep-reasoner', 'gatekeeper']);
     expect(value.ranges.seats.worker.fleet).not.toContain('orchestrator');
     // The core defaults stay inside the ranges that the fleet role profiles give.
     expect(value.defaults.worker.fleet).toEqual([...value.ranges.seats.worker.fleet].sort());
@@ -353,7 +353,7 @@ describe('seat settings routes', () => {
     expect(readFileSync(harness.configPath, 'utf8')).toBe(original);
   });
 
-  test('the orchestrator fleet takes the four read-only roles and refuses every writer', async () => {
+  test('the orchestrator fleet takes the three read-only roles and refuses every writer', async () => {
     const harness = await startHarness({ agents: PANE_AGENTS });
     const { revision, ...section } = (await seats(harness)).config;
     // The refused rows come first: a refusal writes nothing, so the revision stays valid for the accepted row.
@@ -361,7 +361,8 @@ describe('seat settings routes', () => {
       [['fast-worker'], 422],
       [['deep-worker'], 422],
       [['harness-evaluator'], 422],
-      [['deep-reasoner', 'explorer', 'gatekeeper', 'root-cause-prover'], 200],
+      [['root-cause-prover'], 422],
+      [['deep-reasoner', 'explorer', 'gatekeeper'], 200],
     ] as const) {
       const response = await post(harness, { expected_revision: revision, seats: { ...section, orchestrator: { ...section.orchestrator, fleet } } }, 'seats');
       const body = await response.json();

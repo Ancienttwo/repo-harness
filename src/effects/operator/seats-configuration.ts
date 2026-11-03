@@ -40,16 +40,17 @@ export class SeatsConfigurationError extends Error {
   }
 }
 
-// The advisor and worker ranges are projections of the fleet role profiles; the orchestrator range is the named M37 list.
+// Every seat range is a projection of the fleet role profiles.
 const READ_ONLY_SUB_AGENTS = MANAGED_AGENTS.filter(role => !WRITABLE_AGENTS.has(role));
 const without = (...excluded: SeatTool[]): readonly SeatTool[] => SEAT_TOOLS.filter(tool => !excluded.includes(tool));
 
 /**
- * Owner rules: the orchestrator calls only the four read-only roles of M37 by name (writers and the Codex review run in
- * Herdr seats); the orchestrator and the advisor do not edit (#1472); the advisor does not write GitHub (#1472).
+ * Owner rules: the orchestrator and the advisor call only the read-only roles (M40); the writers, root-cause-prover
+ * included, and the Codex review run in Herdr seats; the orchestrator and the advisor do not edit (#1472); the advisor
+ * does not write GitHub (#1472).
  */
 const SEAT_RANGES: SeatsRangesV1['seats'] = {
-  orchestrator: { fleet: ['explorer', 'deep-reasoner', 'gatekeeper', 'root-cause-prover'], tools: without('edit') },
+  orchestrator: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit') },
   advisor: { fleet: READ_ONLY_SUB_AGENTS, tools: without('edit', 'gh') },
   worker: { fleet: MANAGED_AGENTS, tools: SEAT_TOOLS },
 };
