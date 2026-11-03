@@ -319,14 +319,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
         ],
       },
     },
-    circuit_breakers: {
-      guard_repeat: 2,
-      review: { lite: 1, standard: 1, strict: 2 },
-      semantic_reviews_per_work_package: 1,
-      subagents: { default: 2, strict_explicit_contract: 3 },
-      repair_loops: 2,
-      cross_model_consults_default: 0,
-    },
     upgrade: {
       strategy_version: 1,
       remove_only_ownership: "known_generated",
@@ -625,6 +617,7 @@ const RETIRED_ADOPTION_POLICY_KEYS: ReadonlyArray<{ readonly path: readonly [str
   { path: ["guards", "edit_plan_gate"], label: "guards.edit_plan_gate" },
   { path: ["guards", "edit_plan_gate_modes"], label: "guards.edit_plan_gate_modes" },
   { path: ["agent_runtime"], label: "agent_runtime" },
+  { path: ["circuit_breakers"], label: "circuit_breakers" },
 ];
 
 function retireAdoptionPolicy(policy: Record<string, unknown>): string[] {
