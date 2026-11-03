@@ -8,7 +8,7 @@ summary: Installs and runs typed Claude, Codex and Pi host hook routes.
 responsibilities:
   - Own managed hook entries, route dispatch, edit path guarding, and Stop handling.
   - Own the Pi event adapter, capability probe and bounded same-package Bun hook bridge.
-  - Own native Pi package registration and the profile-owned skill projections for all three hosts.
+  - Own native Pi package registration and the skill projections that core and the selected plugins own for all three hosts.
   - Own the hook event log, its size-bounded archive and the one-release run summary cleanup module.
   - Own the install, status and security commands that project and inspect the host adapters.
 source:

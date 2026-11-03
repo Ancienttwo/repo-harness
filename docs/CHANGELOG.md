@@ -45,19 +45,93 @@ All notable changes to this skill are documented here.
   keeps its name when the seat restarts. The fleet has seven roles, and the
   installer projects each one to Claude and Codex. `CLAUDE_ONLY_AGENTS` is
   removed. (#1510)
+- Install state is protocol 3. It records core, the enabled plugins and the
+  plugin selection, not an install profile. The plugin ids are
+  `architecture`, `cross-review`, `dsh`, `peer-runtime`, `pi`, `platform`,
+  `product` and `strategy-memory`. Each ledger entry has one `owner`: `core`
+  or a plugin id. Every hook route, the agent fleet files, issue-flow, ship,
+  test, Waza and Mermaid are core.
+  - The `install` option `--profile` is removed. `install` with no flag
+    records the selection `"all"` and installs every plugin that the host
+    can run. `--plugins <ids>` records and installs exactly those plugins.
+    `--no-plugins` records `[]` and installs core only. A plugin is
+    unavailable when its host program is absent (`pi`, `dsh`) or when none of
+    its skills has a host in `--target` (for example `peer-runtime` with
+    `--target codex`). `install` skips an unavailable plugin with a
+    `[plugins] skipped` line, and an explicit `--plugins` list fails closed
+    with `install_plugin_unavailable`.
+  - `install --migrate-profile-state` and the protocol 1 to 2 migration are
+    removed. A protocol 1 state fails with `install_state_protocol_retired`.
+  - Readers other than `update` fail on a protocol 2 state with
+    `install_state_migration_required`. `update` with no state fails with
+    `install_state_missing`.
+  - The candidate reconciliation request and receipt are protocol 2. The
+    request has no `profile`. A candidate refuses a protocol 1 request with
+    `candidate_request_protocol_retired`.
+  - The skill manifest and catalog are version 4: `owner` and `explicitOnly`
+    replace `profiles`, `component` and `expectedProjections`. The tool
+    catalog field `install_profiles` is now `owner`.
+    `REPO_HARNESS_INSTALL_PROFILE` is now `REPO_HARNESS_INSTALL_PLUGINS`.
+    `skill-surface-select.ts profile-projection --profile` is now
+    `selection-projection --plugins <ids>|--all-plugins`. The routing eval
+    takes `--plugins <ids>` or `--no-plugins`.
+  - The #1510 update step and the `retired-fleet-file` doctor check are
+    removed. The protocol 2 to 3 migration does that cleanup. (#1601)
 
 ### Upgrade
 
-- Run `repo-harness update` first. The install state of an older install
-  lists `~/.claude/agents/orchestrator.md`. Until the update, each command
-  that reads the install state fails with `<state file> lists the retired
-  fleet file <path>; run repo-harness update`, and `repo-harness status`
-  reports the install state as invalid (it exits 0). Update
-  removes that entry from the install state, its previous state and the
-  user-managed fleet receipt. It deletes the file only when the install state
-  owns it and its hash did not change. It keeps a changed file and reports it,
-  and `repo-harness doctor` reports it as `retired-fleet-file` until you delete
-  it. (#1510)
+- Install the new CLI directly, then update. A 0.25.3 CLI cannot run the
+  cutover, because it cannot read protocol 3 after the candidate returns:
+
+  ```bash
+  bun add -g repo-harness@0.25.4 --no-cache
+  repo-harness update
+  ```
+
+  `update` migrates the protocol 2 state to protocol 3 once, under the install
+  transaction. `repo-harness update --check` prints the mapping first and
+  writes nothing. A `full` state becomes the selection `"all"`. A `minimal`
+  state becomes the explicit list `platform`, `strategy-memory`, plus the
+  owners of its recorded surfaces. Either one gets `dsh` only when a DSH
+  profile declares the repo-harness bundle. A `minimal` state that records a
+  Pi package maps to a list with `pi`; when `pi` is not on `PATH`, the
+  migration refuses before any write with `install_plugin_unavailable`.
+  Install Pi and run `repo-harness update` again, or use the rollback below. A former minimal install gains the
+  core surfaces, and the plan lists each one. Issue #1607 deletes this one-shot
+  in 0.26.0; after that, protocol 2 gets `install_state_protocol_retired`.
+  (#1601)
+- The selection `"all"` grows: `update` adds a plugin that a new version
+  ships, and adds `pi` or `dsh` when its host program appears. An explicit
+  list never grows, and an unavailable plugin in it fails closed with
+  `install_plugin_unavailable`. When a recorded plugin becomes unavailable,
+  `update` keeps it in the record and prints `[plugins] kept <id>: <reason>;
+  update keeps the recorded plugin; to remove it, run: repo-harness install
+  --plugins <ids>`. A partial refresh (`update --no-sync-skill` or
+  `--no-hooks`) never grows the set and prints `[plugins] not added <id> in a
+  partial refresh; run: repo-harness update`. `repo-harness status` prints a
+  `selection:` line. (#1601)
+- CodeGraph now follows the `architecture` plugin, not
+  `tooling.codegraph.enabled` in the current repository's policy. A repository
+  policy that enables CodeGraph while `architecture` is not selected fails
+  with the install command that adds it. A minimal state with a CodeGraph
+  surface migrates to a list with `architecture`, which also installs the
+  architecture skills. (#1601)
+- Only a Pi package registration selects `pi` in the migration. A `--target
+  both` install without Pi loses the unused Pi skill-root copies: the
+  migration deletes each owned, unchanged copy and keeps and reports each
+  changed one. Install Pi and run `repo-harness update` to bring them back,
+  because a fresh install and a migrated `full` state record `"all"`. (#1601)
+- Rollback after a committed migration: run
+  `bun add -g repo-harness@0.25.3 --no-cache`, delete
+  `~/.repo-harness/install-state.json`, then run
+  `repo-harness install --profile full|minimal` (the 0.25.3 command). The
+  fleet and CodeGraph files stay as user-managed files. A source `git revert`
+  does not restore a ledger. (#1601)
+- The protocol 2 to 3 migration in `update` removes the retired
+  `~/.claude/agents/orchestrator.md`. It deletes the file only when the install
+  state owns it and its hash did not change. It keeps a changed file and
+  reports it. It drops the file from the state and from the user-managed fleet
+  receipt. (#1510, #1601)
 - Run `repo-harness upgrade` in each repository. It removes `orchestrator`
   from `external_tooling.agent_fleet.managed_agents` in
   `.ai/harness/policy.json` and reports it under `retired-policy-keys`. Until

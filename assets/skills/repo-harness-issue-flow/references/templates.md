@@ -106,8 +106,8 @@ flowchart LR
   class p1_component_action_commands_skill_surface_catalog_a72c29bc target
 ```
 
-- Entry anchor: `entrypoint.action-commands.profile-projection` → `scripts/skill-surface-select.ts#main`.
-- Sink anchor: `sink.action-commands.facades-for-profile` → `src/core/skill-surface/catalog.ts#facadesForProfile`.
+- Entry anchor: `entrypoint.action-commands.selection-projection` → `scripts/skill-surface-select.ts#main`.
+- Sink anchor: `sink.action-commands.facades-for-selection` → `src/core/skill-surface/catalog.ts#facadesForSelection`.
 
 ## Boundaries
 - Do not change: <files, modules, public contracts>

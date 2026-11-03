@@ -433,7 +433,7 @@ describe("repo-harness action command skills", () => {
     expect(templates).toContain("flowchart LR");
     expect(templates).toMatch(/classDef target [^\n]*/);
     expect(templates).toMatch(/class p1_component_[a-z0-9_]+ target/);
-    expect(templates).toContain("entrypoint.action-commands.profile-projection");
+    expect(templates).toContain("entrypoint.action-commands.selection-projection");
     expect(templates).toMatch(/`[a-z0-9/.-]+\.ts#[A-Za-z][A-Za-z0-9]*`/);
     expect(templates).toMatch(/\/blob\/<sha>\/docs\/architecture\/modules\/<domain>\/<capability>\.md/);
     // The PR body rule: attach the changed slice, keep one line otherwise, and never commit a

@@ -127,11 +127,11 @@ sequenceDiagram
 
 ### 3.1 必须保持的不变量
 
-1. **manifest 是唯一的发现权威。** `assets/skill-commands/manifest.json` 声明全部 22 个 package、两个 profile 和三个 host（claude、codex、pi）的投影。其余表示都是投影。
-2. **声明的投影必须等于计算的投影。** `expectedProjections` 是声明。catalog 用同一个 selector 重新计算 facade、external skill 和 host placement。二者不等就报 `PROJECTION_MISMATCH`（`src/core/skill-surface/catalog.ts:760-790`）。selector 只有一份实现，导出的 selector 与内部自检共用（`catalog.ts:214-215` 的注释）。
-3. **catalog 是纯函数。** `catalog.ts` 没有 import，不碰文件系统和进程。调用方负责读取 `manifest.json`（`catalog.ts:1-6`）。`profile-components.ts` 是 profile 组件表的唯一来源，installer 只是再导出（`src/cli/installer/install-profile.ts:35`、`:76`）。
-4. **shell 不复制选择逻辑与根规则。** 同步脚本调用一次 `scripts/skill-surface-select.ts profile-projection`，用它的输出决定各 host 的 skill 根、copy 或 link 的默认方式、facade 与 host placement。根规则只在 `src/effects/host-skill-roots.ts`。
-5. **内部步骤永远不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 列在 `nonPublicInternalSteps`（`manifest.json:485-489`）。`tests/action-command-skills.test.ts:84`、`:267` 钉住这一点。
+1. **manifest 是唯一的发现权威。** `assets/skill-commands/manifest.json` 声明全部 24 个 package。每个 package 写明它的 `owner`（`core` 或一个插件 id）、`explicitOnly` 和 host（claude、codex、pi）。其余表示都是投影。
+2. **投影只从 package 字段计算。** catalog 不保存声明的投影表。选择规则只有一份：package 不是 `explicitOnly`，并且它的 owner 是 `core` 或已选插件（`src/core/skill-surface/catalog.ts:199-202` 的 `selected`）。`facadesForSelection`、`hostSkillPlacements` 和 `externalSkillsForSelection` 共用这条规则（`catalog.ts:654-685`）。未知 owner 报 `INVALID_OWNER`（`catalog.ts:278`）。
+3. **catalog 是纯函数。** `catalog.ts` 只 import 纯数据模块 `plugin-manifest.ts`，不碰文件系统和进程。调用方负责读取 `manifest.json`（`catalog.ts:1-7`）。`src/core/skill-surface/plugin-manifest.ts` 是插件 id 与 owner 词表的唯一来源。catalog、installer 和 shell adapter 都读它（`plugin-manifest.ts:1-6`）。
+4. **shell 不复制选择逻辑与根规则。** 同步脚本调用一次 `scripts/skill-surface-select.ts selection-projection`（`--plugins <ids>` 或 `--all-plugins`），用它的输出决定各 host 的 skill 根、copy 或 link 的默认方式、facade 与 host placement。根规则只在 `src/effects/host-skill-roots.ts`。
+5. **内部步骤永远不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 列在 `nonPublicInternalSteps`（`manifest.json:466-470`）。`tests/action-command-skills.test.ts:84`、`:267` 钉住这一点。
 6. **写 host skill 目录之前先证明归属。** 同步脚本只接受三种证明：指向包内目标的 symlink、三项全中的 owner marker（`owner`、`surface`、`content_hash`），或与包内源逐字节相同的目录。最后一种是 marker 引入前的一次性迁移分支（`scripts/sync-codex-installed-copies.sh:182-203`）。所选 host 根目录的 `preflight_skill_root` 在任何写入之前执行。未知或被改动的目录让整个同步以 exit 1 结束。
 7. **facade 必须编排多个 CLI 能力，或携带超出单个命令的领域规则。** 只给一个 CLI 子命令改名的 skill 不允许。每个 engine verb 一个 skill 也不允许。`repo-harness-chatgpt` 是 ChatGPT engine 唯一的 facade（`assets/skill-commands/CLAUDE.md:7-9`）。
 8. **退役是数据。** `retiredPackages` 有 20 条记录。每条指向替代者，或者是 `null`（`repo-harness-autoplan`、`codex-review`）。它不参与投影，只回答"这个名字去哪了"，并给出清理动作和历史指纹。
@@ -140,9 +140,9 @@ sequenceDiagram
 
 | 决策 | 权衡 |
 | --- | --- |
-| `expectedProjections` 手写并按顺序比较（`catalog.ts:202` 的 `arraysEqual`） | 新命令默认不可发现，必须显式加入投影表。代价是到 50 个以上 package 时，每次插入都要改三张表，`PROJECTION_MISMATCH` 会变成例行修补。 |
-| `kind: judge` 的 `merge-gate` 用空 `hosts` 和空 `profiles` 表示"不可选" | 所有 selector 已经按这两个字段过滤，不需要新增 `installable: false`。代价是读者要知道空数组的含义。 |
-| 只有 `minimal` 和 `full` 两个 profile | 默认发现面小而稳定。代价是出现第三类用户时，压力先落在 profile 词表上。 |
+| 每个 package 必须显式写 `owner` 和 `explicitOnly`（#1601 删除了 `expectedProjections`） | 新命令没有默认的可发现性，作者必须选择 owner。代价是 PR diff 不再显示投影表的变化；评审者要从 owner 字段推出投影。 |
+| `kind: judge` 的 `merge-gate` 用空 `hosts` 和 `explicitOnly: true` 表示"不可选" | 所有 selector 先检查 `explicitOnly`。空 `hosts` 使它在任何 host 都没有 placement。代价是读者要知道两个字段一起表达这个含义。 |
+| 安装面是 core 加 8 个插件（`PLUGIN_IDS`） | 用户可以只装 core（`--no-plugins`），也可以指定插件。代价是每个插件 id 必须拥有真实的安装面或 host 探测（`plugin-manifest.ts:8`），压力先落在插件词表上。 |
 | `tests/action-command-skills.test.ts` 用 `toContain` 钉住 facade 措辞 | boundary 不会被悄悄放宽。代价是每次改 prose 都要同步改测试。 |
 | 同步脚本对每个带 marker 的目标重算 `managed_tree_hash`（`sync-codex-installed-copies.sh:121`） | 归属证明不依赖时间戳。代价是 facade 数量增长时，每次 `init` 的哈希成本线性增长。 |
 
@@ -170,7 +170,7 @@ catalog 的消费者分布在多个 capability：`src/cli/commands/init.ts` 和 
 ### Pi skill placement (2026-10-29, #1099)
 
 The Skill Surface Catalog selects packages and placements for Claude, Codex
-and Pi from the same manifest and profile rules. It does not select filesystem
+and Pi from the same manifest and owner selection rule. It does not select filesystem
 roots or write host configuration. Host Installer computes the owned
 destinations in `src/cli/installer/skill-projection.ts`, using the catalog's
 `hostSkillPlacements` and Global Runtime's `hostSkillRoot`.
@@ -192,10 +192,15 @@ _（暂无条目）_
 - capability include 增加原本没有归属的路径：`assets/skills/**`、`src/core/skill-surface/**`、三个 skill 脚本和两个版本 pin 文件。没有删除任何条目。
 - 新增 flow `flow.action-commands.profile-projection`。它证明 `skill-surface-select.ts` 的 profile 投影路径和 manifest 无效时的拒绝路径。
 
+### 2026-11-03 #1601 core 加插件
+
+- install profile `minimal|full` 已删除。manifest 的 package 改为写 `owner` 和 `explicitOnly`，`expectedProjections` 与 `PROJECTION_MISMATCH` 已删除。
+- 选择器子命令 `profile-projection` 改名为 `selection-projection`，`facadesForProfile` 改名为 `facadesForSelection`。
+- flow `flow.action-commands.profile-projection` 改名为 `flow.action-commands.selection-projection`。entrypoint 改为 `entrypoint.action-commands.selection-projection`，sink 改为 `sink.action-commands.facades-for-selection`。上一条记录保留旧 id。
+
 ## 5. Optimization Backlog
 
 - Add an eval case whenever a new command changes routing behavior.
 - Keep command facades thin; move policy into scripts, manifests, or reference configs.
 - 集成步骤添加了到 skill-surface-catalog 的入向 relation：hook-adapters host-installer、global-runtime-reconciliation 的 primary、release-packaging 与 cli-root，以及 contract-assets template-projection。
 - 回边（不声明）：`scripts/skill-surface-select.ts:64-84` 动态导入 hook-adapters 的 `install-profile.ts` 与 global-runtime-reconciliation 的 `skill-tree-integrity.ts`。`scripts/check-skill-version.ts:15` 导入 contract-assets 的 `scripts/workflow-contract.ts`。入向边更多（hook-adapters 12 对 5，global-runtime-reconciliation 11 对 2，contract-assets 5 对 3）。
-- `expectedProjections` 超过约 50 个 package 时，评估从 package 条目派生投影表。派生会削弱"新命令默认不可发现"，需要一次显式决策。

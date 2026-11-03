@@ -20,12 +20,12 @@ steps:
 outcomes:
   - id: success
     kind: success
-    label: "One managed adapter entry exists per selected route in registry order"
+    label: "One managed adapter entry exists per host route in registry order"
     steps:
       - id: build-entries
         from: host-installer
         to: route-runtime
-        label: "Build one adapter entry per route that the install profile selects"
+        label: "Build one adapter entry per route that the host supports"
         evidence:
           entrypointId: entrypoint.hook-adapters.managed-entries
           sourceSymbol: "buildManagedHooks"

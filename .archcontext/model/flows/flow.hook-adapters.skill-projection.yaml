@@ -14,7 +14,7 @@ steps:
   - id: select-placements
     from: host-installer
     to: skill-catalog
-    label: Read the profile-selected host placements from the catalog
+    label: Read the host placements that the plugin selection projects from the catalog
     evidence:
       entrypointId: entrypoint.hook-adapters.skill-projection
       sourceSymbol: expectedSkillProjections
