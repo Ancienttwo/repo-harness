@@ -35,7 +35,7 @@ import {
   type InstallState,
 } from '../src/cli/installer/install-profile';
 import { migrateInstallState, parseProtocol2State } from '../src/cli/installer/install-state-migration';
-import { PLUGIN_IDS, type PluginId, type PluginSelection } from '../src/core/skill-surface/plugin-manifest';
+import { ownerEnabled, PLUGIN_IDS, type PluginId, type PluginSelection } from '../src/core/skill-surface/plugin-manifest';
 import { runTransactionalRuntimeRefresh } from '../src/cli/index';
 import { CANDIDATE_RECONCILE_STEP, type GlobalRuntimeOptions, type GlobalRuntimeResult } from '../src/cli/commands/global-runtime';
 import { CandidateRequestProtocolRetiredError, parseCandidateRequest } from '../src/cli/commands/candidate-reconciliation';
@@ -1284,43 +1284,76 @@ describe('install selection', () => {
     expect(existsSync(transaction.backup_root)).toBe(false);
   }));
 
-  test('install --plugins product from an all state removes only the owned surfaces of the dropped plugins', () => withHome((env) => {
-    const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    writeManagedHostSurfaces(env, ALL_PLUGINS);
-    const codexConfig = join(env.HOME!, '.codex', 'config.toml');
-    writePath(codexConfig, 'default_mode_request_user_input = true\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["mcp"]\n');
-    const lock = skillLock(env);
-    writePath(join(env.HOME!, '.agents', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# owned staging skill\n');
-    writePath(lock, `${JSON.stringify({ version: 3, skills: {
-      'repo-harness-cross-review': { source: 'repo-harness' },
-      'user-skill': { source: 'user/repo' },
-    } }, null, 2)}\n`);
-    const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
-    commitInstallHostTransaction(first);
-    const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
-    for (const owner of ['core', ...ALL_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
-    expect(all.state.ownership_manifest.some(({ managed_marker }) => managed_marker === 'codegraph-config-projection')).toBe(true);
+  test('dropping plugins from all removes only their owned surfaces and sections, and records nothing of them', () => {
+    // Each plugin alone, `install --plugins product` (five at once), and CodeGraph sections that a user wrote before the install.
+    const rows: readonly { readonly keep: readonly PluginId[]; readonly userSections?: true }[] = [
+      ...ALL_PLUGINS.map(dropped => ({ keep: ALL_PLUGINS.filter(id => id !== dropped) })),
+      { keep: ['product'] },
+      { keep: ALL_PLUGINS.filter(id => id !== 'architecture'), userSections: true },
+    ];
+    for (const { keep, userSections } of rows) withHome((env) => {
+      const name = `keep ${keep.join(',')}${userSections ? ', user sections' : ''}`;
+      const codexConfig = join(env.HOME!, '.codex', 'config.toml');
+      const claudeJson = join(env.HOME!, '.claude.json');
+      const claudeSettings = join(env.HOME!, '.claude', 'settings.json');
+      // The CodeGraph sections that `codegraph install` and the Claude allowed-tools step write, beside user content.
+      const writeConfigs = () => {
+        writePath(codexConfig, 'default_mode_request_user_input = true\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve", "--mcp"]\n\n[profiles.user]\nmodel = "user-model"\n');
+        writePath(claudeJson, `${JSON.stringify({ userSetting: true, mcpServers: {
+          'user-server': { type: 'stdio', command: 'user-mcp' },
+          codegraph: { type: 'stdio', command: 'codegraph', args: ['serve', '--mcp'], alwaysLoad: true },
+        } }, null, 2)}\n`);
+        writePath(claudeSettings, `${JSON.stringify({ hooks: buildManagedHooks('claude'), permissions: { allow: ['Bash(ls)'] }, allowedTools: ['Read', 'mcp__codegraph__*'] }, null, 2)}\n`);
+      };
+      if (userSections) writeConfigs();
+      const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+      writeManagedHostSurfaces(env, ALL_PLUGINS);
+      if (!userSections) writeConfigs();
+      const lock = skillLock(env);
+      writePath(join(env.HOME!, '.agents', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# owned staging skill\n');
+      writePath(lock, `${JSON.stringify({ version: 3, skills: {
+        'repo-harness-cross-review': { source: 'repo-harness' },
+        'user-skill': { source: 'user/repo' },
+      } }, null, 2)}\n`);
+      const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
+      commitInstallHostTransaction(first);
+      const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
+      for (const owner of ['core', ...ALL_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
+      const sections = all.state.ownership_manifest.filter(({ managed_marker }) => managed_marker === 'codegraph-config-projection').map(({ path }) => path);
+      expect(sections.sort(), name).toEqual(userSections ? [] : [claudeJson, claudeSettings, codexConfig].sort());
 
-    const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    const removed = prepareInstallSelectionSwitch(['product'], env);
-    const product = applyInstallSelection(['product'], ['product'], env, new Date('2026-01-02T00:00:00Z'), second);
-    commitInstallHostTransaction(second);
+      const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+      const removed = prepareInstallSelectionSwitch(keep, env);
+      applyInstallSelection(keep, keep, env, new Date('2026-01-02T00:00:00Z'), second);
+      commitInstallHostTransaction(second);
 
-    const dropped = all.state.ownership_manifest.filter(({ owner }) => owner !== 'core' && owner !== 'product').map(({ path }) => path);
-    expect([...new Set(removed)].sort()).toEqual([...new Set(dropped)].sort());
-    for (const path of dropped.filter(path => path !== codexConfig)) expect(existsSync(path), path).toBe(false);
-    for (const { path } of all.state.ownership_manifest.filter(({ owner }) => owner === 'core' || owner === 'product')) expect(existsSync(path), path).toBe(true);
-    expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(true);
-    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness-product'))).toBe(true);
-    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness-cross-review'))).toBe(false);
-    expect(readFileSync(codexConfig, 'utf-8')).toContain('default_mode_request_user_input = true');
-    expect(readFileSync(codexConfig, 'utf-8')).not.toContain('[mcp_servers.codegraph]');
-    const lockState = JSON.parse(readFileSync(lock, 'utf-8'));
-    expect(lockState.skills['repo-harness-cross-review']).toBeUndefined();
-    expect(lockState.skills['user-skill']).toEqual({ source: 'user/repo' });
-    expect(product.state.selection).toEqual(['product']);
-    expect(installStateStatus(product.state, env).drift.status).toBe('consistent');
-  }));
+      const state = readInstallState(env)!;
+      expect(state.selection, name).toEqual(keep);
+      expect(state.ownership_manifest.filter(({ owner }) => !ownerEnabled(owner, keep)), name).toEqual([]);
+      // A shared configuration file is never owned as a whole file.
+      expect(state.ownership_manifest.filter(({ path, managed_marker }) => (
+        [codexConfig, claudeJson, claudeSettings, join(env.HOME!, '.codex', 'hooks.json')].includes(path) && managed_marker === 'transaction-created-file'
+      )), name).toEqual([]);
+      const droppedSurfaces = all.state.ownership_manifest.filter(({ owner }) => !ownerEnabled(owner, keep));
+      expect([...new Set(removed)].sort(), name).toEqual([...new Set(droppedSurfaces.map(({ path }) => path))].sort());
+      for (const surface of droppedSurfaces) {
+        if (surface.managed_marker === 'codegraph-config-projection') expect(codegraphProjection(surface.path), `${name}: ${surface.path}`).toBeNull();
+        else expect(existsSync(surface.path), `${name}: ${surface.path}`).toBe(false);
+      }
+      for (const { path } of all.state.ownership_manifest.filter(({ owner }) => ownerEnabled(owner, keep))) expect(existsSync(path), `${name}: ${path}`).toBe(true);
+      // An owned section goes with architecture; a user's section stays.
+      for (const path of [claudeJson, claudeSettings, codexConfig]) expect(codegraphProjection(path) !== null, `${name}: ${path}`).toBe(keep.includes('architecture') || userSections === true);
+      expect(readFileSync(codexConfig, 'utf-8'), name).toContain('default_mode_request_user_input = true');
+      expect(readFileSync(codexConfig, 'utf-8'), name).toContain('[profiles.user]\nmodel = "user-model"');
+      expect(JSON.parse(readFileSync(claudeJson, 'utf-8')), name).toMatchObject({ userSetting: true, mcpServers: { 'user-server': { command: 'user-mcp' } } });
+      const settings = JSON.parse(readFileSync(claudeSettings, 'utf-8'));
+      expect([settings.permissions, settings.allowedTools.includes('Read'), settings.hooks], name).toEqual([{ allow: ['Bash(ls)'] }, true, buildManagedHooks('claude')]);
+      const lockState = JSON.parse(readFileSync(lock, 'utf-8'));
+      expect(lockState.skills['user-skill'], name).toEqual({ source: 'user/repo' });
+      expect(lockState.skills['repo-harness-cross-review'] !== undefined, name).toBe(keep.includes('cross-review'));
+      expect(installStateStatus(state, env).drift.status, name).toBe('consistent');
+    });
+  }, 60_000);
 
   test('a selection switch rejects ownership paths outside canonical managed surfaces', () => withHome((env) => {
     const external = join(env.HOME!, 'user-owned.txt');

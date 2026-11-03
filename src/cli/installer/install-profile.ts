@@ -217,6 +217,8 @@ export interface InstallPlan {
 }
 
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
+/** Markers of records that own one fragment of a shared host configuration file. */
+const SECTION_MARKERS: ReadonlySet<string> = new Set([MANAGED_TAG, CODEGRAPH_CONFIG_MARKER]);
 
 export function enabledPlugins(state: Pick<InstallState, 'plugins'>): readonly PluginId[] {
   return state.plugins.map(plugin => plugin.id);
@@ -609,6 +611,15 @@ function mergeOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInst
 }
 
 /**
+ * The ledger that a selection commits: every source (discovery, carried-over
+ * records, transaction captures, fleet and Pi package surfaces) passes this one
+ * filter, so no surface of a plugin outside `plugins` is recorded.
+ */
+function selectionOwnership(surfaces: readonly ManagedInstallSurface[], plugins: readonly PluginId[]): ManagedInstallSurface[] {
+  return mergeOwnership(surfaces.filter((surface) => ownerEnabled(surface.owner, plugins)));
+}
+
+/**
  * Update paths run the fleet helper but may never reach applyInstallSelection
  * (partial or in-process reconciliation), so the verified fleet surfaces are
  * merged into the existing ownership manifest right after the helper succeeds.
@@ -660,7 +671,9 @@ export function recordPiInstallOwnership(surfaces: readonly ManagedInstallSurfac
   }
   if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env, enabledPlugins(current)))) throw new Error('invalid Pi package ownership');
   const root = hostSkillRoot(env.HOME ?? homedir(), 'pi', env);
-  const skills = transaction ? transactionOwnedSurfaces(transaction, current, env).filter(surface => surface.path.startsWith(root + '/')) : [];
+  const skills = transaction
+    ? selectionOwnership(transactionOwnedSurfaces(transaction, current, env), enabledPlugins(current)).filter(surface => surface.path.startsWith(root + '/'))
+    : [];
   if (surfaces.length === 0 && skills.length === 0) return;
   const ownership = new Map(current.ownership_manifest.map(surface => [`${surface.path}\0${surface.type}`, surface]));
   for (const surface of [...surfaces, ...skills]) ownership.set(`${surface.path}\0${surface.type}`, surface);
@@ -979,7 +992,11 @@ function transactionOwnedSurfaces(
       }
     }
     if (snapshot.existed) {
-      const previousSurface = previous?.ownership_manifest.find((surface) => surface.path === snapshot.path);
+      // A section record (CodeGraph MCP config, managed hook entries) owns a fragment of a shared
+      // file, never the whole file. Only a whole-path record is recaptured.
+      const previousSurface = previous?.ownership_manifest.find((surface) => (
+        surface.path === snapshot.path && !SECTION_MARKERS.has(surface.managed_marker ?? '')
+      ));
       if (previousSurface === undefined) return [];
       const refreshed = captureOwnedPath(snapshot.path, previousSurface.owner);
       return refreshed ? [refreshed] : [];
@@ -1511,15 +1528,14 @@ export function applyInstallSelection(
   const plan = planInstallSelection(selection, { run: ran, record: plugins }, current, env);
   const discovered = discoverManagedSurfaces(ran, env);
   const preserved = (current?.ownership_manifest ?? []).filter((surface) => (
-    ownerEnabled(surface.owner, plugins)
-    && (surface.type === 'pi-package' || (kept as readonly SurfaceOwner[]).includes(surface.owner) || surfaceIsCurrent(surface, env))
+    surface.type === 'pi-package' || (kept as readonly SurfaceOwner[]).includes(surface.owner) || surfaceIsCurrent(surface, env)
   ));
   const transactionOwned = transaction ? transactionOwnedSurfaces(transaction, current, env) : [];
   const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(env) : [];
   // Current verified link projections own their classification. Historical
   // records must not restore a retired owner.
-  const ownershipManifest = mergeOwnership([...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
-    ...(options.additionalSurfaces ?? []), ...discovered.filter(surface => surface.type === 'symlink')]);
+  const ownershipManifest = selectionOwnership([...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
+    ...(options.additionalSurfaces ?? []), ...discovered.filter(surface => surface.type === 'symlink')], plugins);
   const recordedVersions = versions(plugins);
   const unchanged = current !== null
     && JSON.stringify({ core: current.core, plugins: current.plugins }) === JSON.stringify(recordedVersions)
@@ -1562,10 +1578,10 @@ export function rollbackInstallSelection(
     ...versions(plugins),
     transaction_id: randomUUID(),
     applied_at: new Date().toISOString(),
-    ownership_manifest: mergeOwnership([
+    ownership_manifest: selectionOwnership([
       ...discoverManagedSurfaces(plugins, env),
       ...(transaction ? transactionOwnedSurfaces(transaction, current.previous, env) : []),
-    ]),
+    ], plugins),
     previous: null,
   };
   const status = installStateStatus(restored, env);

@@ -277,7 +277,11 @@ registry entry only when this transaction owns the staging surface.
 CodeGraph configuration is a projected host-config surface with its
 owned-entry hash, owned by `architecture`. Reinstall refreshes that ownership
 only when the entry is new or already package-owned. An unrelated
-pre-existing MCP entry is never package-owned.
+pre-existing MCP entry is never package-owned. A selection that drops
+`architecture` removes only the owned CodeGraph entries from
+`~/.codex/config.toml`, `~/.claude.json` and `~/.claude/settings.json`; the
+rest of each file stays. The ledger never records a shared config file as a
+whole file.
 
 Install and benchmark transactions must bind `BUN_INSTALL` to the selected
 host home. `HOME` alone does not isolate the Bun global install when the
