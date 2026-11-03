@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.runtime-harness.operator",
   "target": "capability.workflow-engine.execution-primitives",
-  "intent": "Read Git topology for task diffs and development activity."
+  "intent": "Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state."
 }
