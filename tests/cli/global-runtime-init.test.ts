@@ -2476,6 +2476,24 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 
+test('update runs the retired fleet file migration before it reads the install state', () => {
+  const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-update-retired-fleet-'));
+  try {
+    const env = { ...sanitizedChildEnv(), HOME: join(tmp, 'home') };
+    const retired = join(env.HOME, '.claude', 'agents', 'orchestrator.md');
+    mkdirSync(dirname(retired), { recursive: true });
+    writeFileSync(retired, '---\nname: orchestrator\n---\n');
+    recordInstallOwnership([retired], env);
+    expect(() => readInstalledProfile(env)).toThrow('run repo-harness update');
+    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', updateMode: true, env }, () => {
+      expect(readInstalledProfile(env)!.ownership_manifest).toEqual([]);
+      return { exitCode: 0, steps: [], lines: [], stdout: '', stderr: '' };
+    });
+    expect(result.exitCode).toBe(0);
+    expect(existsSync(retired)).toBe(false);
+  } finally { rmSync(tmp, { recursive: true, force: true }); }
+});
+
 test('a fleet failure after the CLI install restores the predecessor hoisted archctx packages', () => {
   const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-update-archctx-rollback-'));
   try {

@@ -160,7 +160,7 @@ describe('settings seats page', () => {
     expect(document.querySelector('[data-seats-saved]')?.textContent).toContain('Running panes do not change');
 
     await click(pane('orchestrator'));
-    expect(document.querySelector('[data-fleet-locked]')?.textContent).toContain('agents/fleet/orchestrator.md');
+    expect(document.querySelector('[data-fleet-locked]')?.textContent).toContain('repo-harness seats argv orchestrator');
     expect(allow('Edit files').disabled).toBe(true);
   });
 

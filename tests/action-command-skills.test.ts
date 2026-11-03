@@ -367,7 +367,7 @@ describe("repo-harness action command skills", () => {
     const templates = readReference("repo-harness-issue-flow", "templates.md");
 
     for (const text of [skill, orchestrator, board]) expect(text).toContain("repo-harness publication merge");
-    expect(skill).toContain("claude --agent orchestrator");
+    expect(skill).toContain("repo-harness seats argv orchestrator");
     expect(skill).toContain("publication.acceptance_merge");
     for (const code of ["acceptance_merge_off", "base_protection_insufficient", "merge_outcome_unknown", "provider_rejected"]) {
       expect(orchestrator).toContain(code);
@@ -570,7 +570,7 @@ describe("repo-harness action command skills", () => {
     const acceptor = readReference("repo-harness-issue-flow", "acceptor.md");
 
     expect(orchestrator).toContain("any host");
-    expect(orchestrator).toContain("agents/fleet/orchestrator.md");
+    expect(orchestrator).toContain("repo-harness seats argv orchestrator");
     expect(orchestrator).toContain("more than two children");
     expect(orchestrator).toContain("Supersedes:");
     expect(orchestrator).toContain("Limit each artifact to two review rounds");
@@ -593,17 +593,14 @@ describe("repo-harness action command skills", () => {
     expect(acceptor).toContain("model_relation");
   });
 
-  test("issue-flow and fleet guidance requires no host or model", () => {
+  test("issue-flow guidance requires no host or model", () => {
     const paths = ["SKILL.md", "references/board.md", "references/orchestrator.md", "references/worker.md", "references/templates.md", "references/acceptor.md"];
     const sources = paths.map((path) => readFileSync(join(SKILLS_ROOT, "repo-harness-issue-flow", path), "utf-8"));
-    const fleet = readFileSync(join(ROOT, "agents", "fleet", "orchestrator.md"), "utf-8");
     const pattern = /claude (session|only)|must (use|run) (claude|codex)/i;
-    const offenders = [...sources, fleet].flatMap((text) => text.split("\n").filter((line) => pattern.test(line)));
+    const offenders = sources.flatMap((text) => text.split("\n").filter((line) => pattern.test(line)));
 
     expect(offenders).toEqual([]);
     expect(sources[0]).toContain("Suggested model");
     expect(sources[0]).toContain("Any host's long-lived top-level session");
-    expect(fleet).toContain("Suggested model: Opus");
-    expect(fleet).toContain("Any host may run this seat");
   });
 });

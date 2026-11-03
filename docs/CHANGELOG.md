@@ -2,6 +2,43 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Breaking
+
+- The orchestrator is a seat, not a fleet role. `agents/fleet/orchestrator.md`
+  and `claude --agent orchestrator` are removed. Start the seat with the argv
+  that `repo-harness seats argv orchestrator` prints (#1473). The argv names
+  the task tools, Glob and Grep, and sets
+  `CLAUDE_CODE_TASK_LIST_ID=repo-harness-orchestrator`, so the triage queue
+  keeps its name when the seat restarts. The fleet has seven roles, and the
+  installer projects each one to Claude and Codex. `CLAUDE_ONLY_AGENTS` is
+  removed. (#1510)
+
+### Upgrade
+
+- Run `repo-harness update` first. Until then, each command that reads the
+  install state fails with `install_state_retired_fleet_path`, because the
+  state of an older install lists `~/.claude/agents/orchestrator.md`. Update
+  removes that entry from the install state, its previous state and the
+  user-managed fleet receipt. It deletes the file only when the install state
+  owns it and its hash did not change. It keeps a changed file and reports it,
+  and `repo-harness doctor` reports it as `retired-fleet-file` until you delete
+  it. (#1510)
+- Run `repo-harness upgrade` in each repository. It removes `orchestrator`
+  from `external_tooling.agent_fleet.managed_agents` in
+  `.ai/harness/policy.json` and reports it under `retired-policy-keys`. Until
+  then, the agent tooling check lists `orchestrator` as a missing fleet role,
+  or as one without a packaged source. (#1510)
+- Restart an orchestrator pane that runs `claude --agent orchestrator` or a
+  plain `claude` with the argv of `repo-harness seats argv orchestrator`.
+  Before, a plain `claude` pane had no task tools, so the triage queue did not
+  work. (#1510)
+- The managed Global Working Rules describe the orchestrator seat, not a
+  fleet role. After the update, readiness shows the `global-rules.claude` and
+  `global-rules.codex` blocks as stale. Run `repo-harness update` to refresh
+  them. (#1510)
+
 ## [0.25.3] - 2026-11-03
 
 This release has breaking changes. It completes the herdr-core migration

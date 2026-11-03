@@ -1104,9 +1104,6 @@ describe("create-project-dirs runtime smoke", () => {
         expect(existsSync(join(home, ".claude", "agents", `${agent}.md`))).toBe(true);
         expect(existsSync(join(home, ".codex", "agents", `${agent}.toml`))).toBe(true);
       }
-      // A downstream list that omits the Claude-only orchestrator does not stop its install.
-      expect(existsSync(join(home, ".claude", "agents", "orchestrator.md"))).toBe(true);
-      expect(existsSync(join(home, ".codex", "agents", "orchestrator.toml"))).toBe(false);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

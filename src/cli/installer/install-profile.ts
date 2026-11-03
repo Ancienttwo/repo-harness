@@ -39,7 +39,7 @@ import {
 } from '../../core/skill-surface/catalog';
 import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
 import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
-import { CLAUDE_ONLY_AGENTS, MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
+import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
@@ -80,7 +80,7 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
 export const INSTALL_PROFILES = ['minimal', 'full'] as const;
 export const INSTALL_HOSTS = ['claude', 'codex', 'pi'] as const;
 const AGENT_FLEET_FILE = new RegExp(
-  `/(?:\\.claude/agents/(?:${MANAGED_AGENTS.join('|')})\\.md|\\.codex/agents/(?:${MANAGED_AGENTS.filter((agent) => !CLAUDE_ONLY_AGENTS.has(agent)).join('|')})\\.toml)$`,
+  `/(?:\\.claude/agents/(?:${MANAGED_AGENTS.join('|')})\\.md|\\.codex/agents/(?:${MANAGED_AGENTS.join('|')})\\.toml)$`,
 );
 export type InstallProfile = (typeof INSTALL_PROFILES)[number];
 export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
@@ -531,13 +531,75 @@ export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface, e
 export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   return MANAGED_AGENTS.flatMap((agent) => [
-    ...(CLAUDE_ONLY_AGENTS.has(agent) ? [] : [join(home, '.codex', 'agents', `${agent}.toml`)]),
+    join(home, '.codex', 'agents', `${agent}.toml`),
     join(home, '.claude', 'agents', `${agent}.md`),
   ]);
 }
 
 export function agentFleetUserManagedReceiptPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(env.HOME ?? homedir(), '.repo-harness', 'agent-fleet-user-managed.json');
+}
+
+/**
+ * The orchestrator left the fleet (#1510), but the install state, its `previous` state and the user-managed receipt
+ * of an older install can still list its Claude file. The strict readers refuse that path with
+ * `RetiredAgentFleetPathError`, and `repo-harness update` runs `migrateRetiredAgentFleetFile` before it reads the
+ * state. Delete the path, the error, the migration and the doctor check with install-state protocol 3 (#1287).
+ */
+export function retiredAgentFleetFile(env: NodeJS.ProcessEnv = process.env): string {
+  return join(env.HOME ?? homedir(), '.claude', 'agents', 'orchestrator.md');
+}
+
+export class RetiredAgentFleetPathError extends Error {
+  readonly code = 'install_state_retired_fleet_path';
+  constructor(file: string, retiredPath: string) {
+    super(`${file} lists the retired fleet file ${retiredPath}; run repo-harness update`);
+    this.name = 'RetiredAgentFleetPathError';
+  }
+}
+
+/**
+ * One-shot migration for `repo-harness update`. It removes the retired path from the install state, its `previous`
+ * state and the user-managed receipt. It deletes the file only when the install state owns it and its hash is
+ * current. It returns one line for each change and one line for a file that it keeps.
+ */
+export function migrateRetiredAgentFleetFile(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+  const retired = retiredAgentFleetFile(env);
+  const isRetired = (entry: unknown) => isRecord(entry) && entry.path === retired;
+  const lines: string[] = [];
+  const statePath = installProfileStatePath(env);
+  if (existsSync(statePath)) {
+    const raw = JSON.parse(readFileSync(statePath, 'utf-8')) as unknown;
+    if (isRecord(raw) && raw.protocol === 2 && Array.isArray(raw.ownership_manifest)) {
+      const owned = raw.ownership_manifest.find(isRetired) as ManagedInstallSurface | undefined;
+      const previous = isRecord(raw.previous) && Array.isArray(raw.previous.ownership_manifest)
+        ? { ...raw.previous, ownership_manifest: raw.previous.ownership_manifest.filter(entry => !isRetired(entry)) }
+        : raw.previous;
+      const migrated = { ...raw, ownership_manifest: raw.ownership_manifest.filter(entry => !isRetired(entry)), previous };
+      if (JSON.stringify(migrated) !== JSON.stringify(raw)) {
+        if (owned?.type === 'managed-file' && surfaceIsCurrent(owned, env)) {
+          rmSync(retired);
+          lines.push(`removed ${retired}`);
+        }
+        writeState(migrated as unknown as InstalledProfileState, env);
+        lines.push(`removed ${retired} from ${statePath}`);
+      }
+    }
+  }
+  const receiptPath = agentFleetUserManagedReceiptPath(env);
+  if (existsSync(receiptPath)) {
+    const receipt = JSON.parse(readFileSync(receiptPath, 'utf-8')) as unknown;
+    if (isRecord(receipt) && Array.isArray(receipt.files) && receipt.files.some(isRetired)) {
+      const temp = `${receiptPath}.tmp-${process.pid}-${Date.now()}`;
+      writeFileSync(temp, `${JSON.stringify({ ...receipt, files: receipt.files.filter(entry => !isRetired(entry)) }, null, 2)}\n`, { mode: 0o600 });
+      renameSync(temp, receiptPath);
+      lines.push(`removed ${retired} from ${receiptPath}`);
+    }
+  }
+  if (lstatExists(retired)) {
+    lines.push(`kept ${retired}: the install state does not own it unchanged. The orchestrator is a seat now (repo-harness seats argv orchestrator); review the file and delete it by hand.`);
+  }
+  return lines;
 }
 
 /**
@@ -559,6 +621,7 @@ export function readAgentFleetUserManagedReceipt(
     ) return { ok: false, hashes: new Map() };
     const hashes = new Map<string, string>();
     for (const entry of parsed.files) {
+      if (entry?.path === retiredAgentFleetFile(env)) throw new RetiredAgentFleetPathError(receiptPath, entry.path);
       if (
         !entry
         || typeof entry.path !== 'string'
@@ -570,7 +633,8 @@ export function readAgentFleetUserManagedReceipt(
       hashes.set(entry.path, entry.sha256);
     }
     return { ok: true, hashes };
-  } catch {
+  } catch (error) {
+    if (error instanceof RetiredAgentFleetPathError) throw error;
     return { ok: false, hashes: new Map() };
   }
 }
@@ -1112,6 +1176,9 @@ function parseCurrentStateBase(
   if (!Array.isArray(raw.components) || !componentsMatch(raw.components, PROFILE_COMPONENTS[profile])) {
     throw new Error(`installed profile state components do not match profile ${profile}: ${path}`);
   }
+  if (Array.isArray(raw.ownership_manifest) && raw.ownership_manifest.some((surface) => isRecord(surface) && surface.path === retiredAgentFleetFile(env))) {
+    throw new RetiredAgentFleetPathError(path, retiredAgentFleetFile(env));
+  }
   if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env))) {
     throw new Error(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <minimal|full>: ${path}`);
   }
@@ -1291,8 +1358,7 @@ function completeHostSkillSetEvidence(home: string, names: readonly string[]): s
 
 function completeAgentFleetEvidence(home: string): string[] {
   for (const [root, extension] of [[join(home, '.codex', 'agents'), '.toml'], [join(home, '.claude', 'agents'), '.md']] as const) {
-    const agents = extension === '.toml' ? MANAGED_AGENTS.filter((agent) => !CLAUDE_ONLY_AGENTS.has(agent)) : MANAGED_AGENTS;
-    const paths = agents.map((agent) => join(root, `${agent}${extension}`));
+    const paths = MANAGED_AGENTS.map((agent) => join(root, `${agent}${extension}`));
     if (paths.every(existsSync)) return paths;
   }
   return [];

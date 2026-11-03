@@ -20,7 +20,7 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
-import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
+import { migrateRetiredAgentFleetFile, newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit, type InitPorts } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
@@ -379,6 +379,8 @@ export function runCandidateRuntimeReconciliation(
   ) {
     throw new Error('candidate reconciliation package authority mismatch');
   }
+  // An older parent has no migration step, so the candidate runs it inside the parent transaction.
+  reportRetiredAgentFleetMigration(env);
 
   const runtime = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
     runtimeLock,
@@ -481,6 +483,11 @@ function candidateHandoffContext(
   return context;
 }
 
+/** Update's one-shot step before its first install-state read (#1510). Stdout stays free for `--json` and the candidate receipt. */
+function reportRetiredAgentFleetMigration(env: NodeJS.ProcessEnv): void {
+  for (const line of migrateRetiredAgentFleetFile(env)) console.error(`[runtime] retired fleet file: ${line}`);
+}
+
 export function runTransactionalRuntimeRefresh(
   options: GlobalRuntimeOptions,
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
@@ -489,6 +496,7 @@ export function runTransactionalRuntimeRefresh(
   // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
   providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
+    if (options.updateMode === true) reportRetiredAgentFleetMigration(transactionEnv);
     const profile = options.profile ?? readInstalledProfile(transactionEnv)?.profile ?? 'full';
     const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let result: GlobalRuntimeResult;

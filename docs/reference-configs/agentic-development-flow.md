@@ -108,10 +108,10 @@ that PM restriction. OAR owns coding-agent execution. herdr-core (`hc`) owns
 terminals, and Herdr.app owns panes and visibility. A new Bot host adapts to that path; it does not add a new coding
 runtime or task authority.
 
-The `orchestrator` fleet role is the long-lived coordinator and integrator seat
-of `repo-harness-issue-flow`. Start it with `claude --agent orchestrator`. The
-fleet projects it to Claude only. It dispatches work and follows PRs and CI. It
-edits no product code and dispatches no subagents.
+The orchestrator seat is the long-lived coordinator and integrator seat of
+`repo-harness-issue-flow`. Start it with the argv that
+`repo-harness seats argv orchestrator` prints. It dispatches work and follows
+PRs and CI. It edits no product code and dispatches no subagents.
 
 The bot selects scope, worker and verification by risk. Use independent gatekeeper/cross-model review for large changes, security/permissions or model uncertainty; do not rerun a passing check or require multiple re-gates.
 

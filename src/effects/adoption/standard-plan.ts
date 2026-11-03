@@ -672,6 +672,12 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   // Refactor execution is retired; recommendations read no repository refactor policy.
   delete policy.refactor;
   const externalTooling = isObject(policy.external_tooling) ? policy.external_tooling : {};
+  // The orchestrator left the fleet (#1510). Delete this step with install-state protocol 3 (#1287).
+  const agentFleet = isObject(externalTooling.agent_fleet) ? externalTooling.agent_fleet : null;
+  if (agentFleet && Array.isArray(agentFleet.managed_agents) && agentFleet.managed_agents.includes("orchestrator")) {
+    agentFleet.managed_agents = agentFleet.managed_agents.filter((role) => role !== "orchestrator");
+    retiredPolicyKeys.push("external_tooling.agent_fleet.managed_agents[orchestrator]");
+  }
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
   const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;
   delete externalRouting.complex;
