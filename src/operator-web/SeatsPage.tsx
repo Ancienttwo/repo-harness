@@ -16,11 +16,17 @@ const LEVEL_TONE: Readonly<Record<SeatLimitLevel, string>> = {
   instructions_only: 'bg-kumo-warning-tint text-kumo-warning',
 };
 
-// The plain command prints the argv alone, so `--argv "$(...)"` takes it as is.
+// The plain command prints the argv alone, so `--argv "$(...)"` takes it as is. `seats argv` also names the pane and
+// the tab (#1544), so no command types a name.
+const ARGV: Readonly<Record<SeatId, string>> = {
+  orchestrator: 'repo-harness seats argv orchestrator --repository-id <repository-id>',
+  advisor: 'repo-harness seats argv advisor --repository-id <repository-id>',
+  worker: 'repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n>',
+};
 const LAUNCH: Readonly<Record<SeatId, string>> = {
-  orchestrator: 'herdr-app do tab.new --name orchestrator --space <id> --folder <repo> --argv "$(repo-harness seats argv orchestrator)"',
-  advisor: 'herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(repo-harness seats argv advisor)"',
-  worker: 'herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker)" --task <packet>',
+  orchestrator: `herdr-app do tab.new --name "$(${ARGV.orchestrator} --json | jq -r .tab)" --space <id> --folder <repo> --argv "$(${ARGV.orchestrator})"`,
+  advisor: `herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(${ARGV.advisor})"`,
+  worker: `herdr-app do tab.new --name "$(${ARGV.worker} --json | jq -r .tab)" --space <id> --folder <worktree> --argv "$(${ARGV.worker})" --task <packet>`,
 };
 
 /** The pane layout rule: Tab 1 holds the orchestrator, the advisor and one worker; later tabs hold workers only. */
@@ -70,7 +76,7 @@ function ToggleRow({ name, mono, badge, detail, why, on, locked, aria, onToggle 
     <li className={cn('flex flex-wrap items-center gap-3 border-t border-kumo-hairline px-4 py-2.5 sm:px-5', locked && 'opacity-70')}>
       <span className={cn('w-36 shrink-0 text-sm text-kumo-strong', mono && 'font-mono')}>{name}</span>
       {badge}
-      <span className="min-w-0 flex-[1_1_220px] truncate font-mono text-xs text-kumo-subtle" title={detail}>{detail}</span>
+      <span className="min-w-0 flex-[1_1_220px] truncate text-xs text-kumo-subtle" title={detail}>{detail}</span>
       {why !== null && <span className="text-xs text-kumo-subtle">{why}</span>}
       <Switch checked={on} disabled={locked} aria-label={aria} onCheckedChange={onToggle} />
     </li>
