@@ -148,24 +148,6 @@ export interface TaskInboxSendResult {
   readonly created: boolean;
 }
 
-/**
- * The fleet board's deliberately narrow inbox projection.  It is not a
- * delivery API: it has no recipient worktree, does not take a task lock, and
- * cannot expose (or render) an untrusted message body.
- */
-export interface TaskInboxFleetSummaryInput {
-  readonly repo_root: string;
-  readonly task_id: string;
-  readonly admission_sha256: string;
-  readonly current_claim: TaskMessageClaim | null;
-}
-
-export interface TaskInboxFleetSummaryV1 {
-  readonly unread_count: number;
-  readonly addressed_to_current_claim: boolean;
-  readonly snapshot_consistency: 'stable' | 'changed_during_read';
-}
-
 function asInboxError(error: unknown, fallback: TaskInboxErrorCode, context: string): TaskInboxError {
   if (error instanceof TaskInboxError) return error;
   if (error instanceof TaskMessageError) return new TaskInboxError(error.code, error.message, error);
@@ -626,82 +608,6 @@ function receiptFor(
       admission_sha256: event.admission_sha256,
       delivery_channel: channel,
     });
-}
-
-interface TaskInboxFleetObservation {
-  readonly unread_count: number;
-  readonly addressed_to_current_claim: boolean;
-  readonly revision: string;
-}
-
-/**
- * Validate one immutable inbox observation without acquiring a task lock.
- * Event canonicalization necessarily checks the stored record, but no event
- * object escapes this function and no body is rendered or copied into the
- * result.  The digest fences both events and mutable receipt facts so the
- * caller can honestly report a torn observation rather than patching states.
- */
-function observeTaskInboxFleetSummary(input: TaskInboxFleetSummaryInput): TaskInboxFleetObservation {
-  assertTaskId(input.task_id);
-  if (!/^sha256:[0-9a-f]{64}$/u.test(input.admission_sha256)) {
-    fail('task_revision_mismatch', `task revision is invalid for ${input.task_id}`);
-  }
-  const scope = taskInboxTaskScope(input.repo_root, input.task_id);
-  const events = listEvents(scope);
-  const revisionParts: string[] = [];
-  let unreadCount = 0;
-  for (const event of events) {
-    if (!isCurrentRevisionEvent(event, input.task_id, input.admission_sha256)) continue;
-    revisionParts.push(canonicalTaskMessageEventBytes(event));
-    const receipts = listReceipts(scope, event.message_id);
-    for (const receipt of receipts) revisionParts.push(canonicalTaskMessageDeliveryReceiptBytes(receipt));
-    if (event.audience !== 'owner' || input.current_claim === null) continue;
-    if (event.scope === 'claim' && (!sameTaskMessageClaim(event.target_claim, input.current_claim))) continue;
-    if (event.scope === 'task' && receipts.some((receipt) => receipt.delivery_state === 'acknowledged')) continue;
-    const recipient: TaskMessageRecipient = {
-      kind: 'claim', claim: input.current_claim,
-    };
-    // listReceipts already read and identity-checked this recipient's receipt.
-    const recipientKey = deriveTaskMessageRecipientKey(recipient);
-    const receipt = receipts.find((entry) => deriveTaskMessageRecipientKey(recipientFromReceipt(entry)) === recipientKey);
-    if (receipt?.delivery_state === 'acknowledged' || receipt?.delivery_state === 'superseded') continue;
-    unreadCount += 1;
-  }
-  return Object.freeze({
-    unread_count: unreadCount,
-    addressed_to_current_claim: unreadCount > 0,
-    revision: JSON.stringify(revisionParts),
-  });
-}
-
-/**
- * Lock-free A/B summary for fleet projection.  A writer may race either the
- * immutable event list or delivery receipts; retrying the whole read once
- * keeps output bounded and never manufactures a mixed generation.
- */
-export function summarizeTaskInboxForFleet(input: TaskInboxFleetSummaryInput): TaskInboxFleetSummaryV1 {
-  const layoutCommon = resolveGitCommonDirectory(input.repo_root);
-  const layoutIdentity = inspectTaskInboxLayout(layoutCommon);
-  const result = (() => {
-  const first = observeTaskInboxFleetSummary(input);
-  const second = observeTaskInboxFleetSummary(input);
-  if (first.revision === second.revision) {
-    return Object.freeze({
-      unread_count: first.unread_count,
-      addressed_to_current_claim: first.addressed_to_current_claim,
-      snapshot_consistency: 'stable',
-    });
-  }
-  const retryBefore = observeTaskInboxFleetSummary(input);
-  const retryAfter = observeTaskInboxFleetSummary(input);
-  return Object.freeze({
-    unread_count: retryBefore.unread_count,
-    addressed_to_current_claim: retryBefore.addressed_to_current_claim,
-    snapshot_consistency: retryBefore.revision === retryAfter.revision ? 'stable' : 'changed_during_read',
-  });
-  })();
-  assertTaskInboxLayoutUnchanged(layoutCommon, layoutIdentity);
-  return result;
 }
 
 /** Persist a producer-authorized event after canonical task and claim checks. */

@@ -17,7 +17,6 @@ import {
   deliverTaskInbox,
   listTaskInbox,
   sendTaskMessage,
-  summarizeTaskInboxForFleet,
   readTaskMessageDelivery,
 } from '../../src/effects/fleet/task-inbox';
 
@@ -69,28 +68,6 @@ async function withFixture(run: (value: Fixture) => Promise<void>): Promise<void
 }
 
 describe('Admitted Task Inbox common-directory effects', () => {
-  test('projects a lock-free body-free fleet summary without creating delivery receipts or changing the session binding', () => withFixture(async (value) => {
-    const event = message(value, '123e4567-e89b-42d3-a456-426614174009', 'claim', 'never expose this body');
-    sendTaskMessage({ repo_root: value.root, source: value.source, event });
-    const bindingBefore = bindingBytes(value);
-    const summary = summarizeTaskInboxForFleet({
-      repo_root: value.root,
-      task_id: value.task_id,
-      admission_sha256: value.event.admission_sha256,
-      current_claim: CLAIM_ONE,
-    });
-    expect(summary).toEqual({ unread_count: 1, addressed_to_current_claim: true, snapshot_consistency: 'stable' });
-    expect(JSON.stringify(summary)).not.toContain(event.body);
-    expect(bindingBytes(value)).toBe(bindingBefore);
-    expect(listTaskInbox({
-      repo_root: value.root,
-      task_id: value.task_id,
-      source: value.source,
-      recipient: { kind: 'claim', claim: CLAIM_ONE },
-      execution_worktree: realpathSync(value.root),
-    }).entries[0]?.receipt).toBeNull();
-  }));
-
   test('creates immutable messages idempotently without writing the session binding', () => withFixture(async (value) => {
     const event = message(value, '123e4567-e89b-42d3-a456-426614174010', 'claim', 'private for C1');
     const before = bindingBytes(value);
@@ -123,28 +100,18 @@ describe('Admitted Task Inbox common-directory effects', () => {
     sendTaskMessage({ repo_root: value.root, source: value.source, event: claim });
     sendTaskMessage({ repo_root: value.root, source: value.source, event: task });
     sendTaskMessage({ repo_root: value.root, source: value.source, event: acknowledgedByC1 });
-    // The fleet summary counts what each claim has not acknowledged, from that
-    // claim's own receipt among every receipt the message holds.
-    const unreadFor = (claim: typeof CLAIM_ONE) => summarizeTaskInboxForFleet({
-      repo_root: value.root, task_id: value.task_id, admission_sha256: value.event.admission_sha256, current_claim: claim,
-    });
-    const unread = (count: number) => ({ unread_count: count, addressed_to_current_claim: count > 0, snapshot_consistency: 'stable' as const });
-    expect(unreadFor(CLAIM_ONE)).toEqual(unread(3));
     const c1 = { kind: 'claim' as const, claim: CLAIM_ONE };
     expect(deliverTaskInbox({
       repo_root: value.root, task_id: value.task_id, source: value.source, recipient: c1,
       execution_worktree: realpathSync(value.root), delivery_channel: 'hook_session', delivered_at: '2026-08-23T05:05:00Z',
     }).deliveries).toHaveLength(3);
-    expect(unreadFor(CLAIM_ONE)).toEqual(unread(3));
     acknowledgeTaskInbox({
       repo_root: value.root, task_id: value.task_id, source: value.source, message_id: acknowledgedByC1.message_id,
       recipient: c1, execution_worktree: realpathSync(value.root), acknowledged_at: '2026-08-23T05:06:00Z',
     });
-    expect(unreadFor(CLAIM_ONE)).toEqual(unread(2));
     // bind selects C2 in the fixture; C1's distinct role binding still exists.
     const c1Source = { ...value.source };
     await value.bind(CLAIM_TWO, 'replacement-owner');
-    expect(unreadFor(CLAIM_TWO)).toEqual(unread(1));
     const beforeDelivery = bindingBytes(value);
     const delivered = deliverTaskInbox({
       repo_root: value.root,
@@ -167,9 +134,6 @@ describe('Admitted Task Inbox common-directory effects', () => {
       repo_root: value.root, task_id: value.task_id, source: c1Source, message_id: claim.message_id, recipient: c1,
       execution_worktree: realpathSync(value.root),
     }).receipt?.delivery_state).toBe('superseded');
-    // The task message now holds a delivered receipt for C1 and for C2.
-    expect(unreadFor(CLAIM_TWO)).toEqual(unread(1));
-    expect(unreadFor(CLAIM_ONE)).toEqual(unread(1));
     const beforeAck = bindingBytes(value);
     const receipt = acknowledgeTaskInbox({
       repo_root: value.root,
@@ -182,8 +146,6 @@ describe('Admitted Task Inbox common-directory effects', () => {
     });
     expect(receipt.delivery_state).toBe('acknowledged');
     expect(bindingBytes(value)).toBe(beforeAck);
-    expect(unreadFor(CLAIM_TWO)).toEqual(unread(0));
-    expect(unreadFor(CLAIM_ONE)).toEqual(unread(0));
     const listing = listTaskInbox({
       repo_root: value.root,
       task_id: value.task_id,
@@ -223,10 +185,6 @@ describe('Admitted Task Inbox common-directory effects', () => {
       repo_root: value.root, task_id: value.task_id, source: value.source, recipient,
       delivery_channel: 'manual', delivered_at: '2026-08-23T06:00:00Z',
     }).deliveries).toEqual([]);
-
-    expect(summarizeTaskInboxForFleet({
-      repo_root: value.root, task_id: value.task_id, admission_sha256: nextRevision, current_claim: null,
-    })).toEqual({ unread_count: 0, addressed_to_current_claim: false, snapshot_consistency: 'stable' });
 
     const current = buildTaskMessageEvent({
       message_id: '123e4567-e89b-42d3-a456-426614174021',
