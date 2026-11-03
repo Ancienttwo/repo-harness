@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.execution-primitives.notify-read.view-projections
-kind: reads
-source: component.execution-primitives.notify-read
-target: component.operator.view-projections
-intent: "Decode the relay delivery record with the operator delivery-status decoder, and give its empty record when no file exists"

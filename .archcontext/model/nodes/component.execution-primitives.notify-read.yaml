@@ -11,7 +11,7 @@ responsibilities:
   - Read a notify file only when it is a regular file within a size limit. Refuse a symlink, a FIFO and an oversized file.
   - Decode the install record against the relay name and labels of this version. Report a missing record as missing and any other shape as invalid. Report the relay as live when a live hc terminal carries the recorded name.
   - Own the notify config shape, its done flags and its one decoder. Refuse plain HTTP, user information in a URL, an incomplete Telegram target and unsupported characters with a message that names the key, never the value.
-  - Read the relay delivery record with the operator delivery-status decoder. No file gives the empty record.
+  - Own the relay delivery record shape, its channel names and its one decoder in the core-layer file. The relay writes the record; the operator and the relay read it through this contract. No file gives the empty record.
 source:
   include:
     - src/effects/terminal/notify-read.ts
