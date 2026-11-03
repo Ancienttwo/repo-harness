@@ -36,7 +36,8 @@ hc ls --json
 #   no row with name == "portal-<slug>"                → step 2
 hc get portal-<slug> --json
 #   status.state == "blocked"                          → report the record; no message; stop
-#   state == "live", foreground.cwd == <cwd>           → reused: true, step 4
+#   state == "live", foreground.name == "claude",
+#     foreground.cwd == <cwd>                          → reused: true, step 4
 #   any other result                                   → portal_name_conflict; stop
 
 # 2. Space: the space of the repository in Herdr.app
