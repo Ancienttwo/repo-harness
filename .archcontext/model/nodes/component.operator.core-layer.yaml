@@ -47,6 +47,7 @@ source:
     - src/core/operator/seats-settings.ts
     - src/core/operator/slack-review.ts
     - src/core/operator/task-history.ts
+    - src/core/operator/task-messages.ts
     - src/core/operator/tests.ts
     - src/core/operator/worktree-cleanup-plan.ts
     - src/core/operator/worktree-cleanup.ts
