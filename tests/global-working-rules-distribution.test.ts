@@ -276,7 +276,7 @@ describe("root rule invariants", () => {
       expect(content).not.toContain("docs/issue-flow.md");
       expect(content.split(ISSUE_FLOW_SKILL).length - 1, file).toBe(1);
     }
-    expect(skill).toContain("## Roles and seats");
+    expect(skill).toContain("## Seats, sub-agents and claim roles");
     expect(skill).toContain("## Where each fact lives");
     expect(skill).toContain("## Hard rules");
   });

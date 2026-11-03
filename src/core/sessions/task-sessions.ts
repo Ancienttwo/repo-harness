@@ -1,1 +1,0 @@
-export const TASK_SESSIONS_MAX_ENTRIES = 200;

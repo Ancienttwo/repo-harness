@@ -348,7 +348,13 @@ describe('standing-orders register', () => {
         expect(occurrences(text, STANDING_ORDERS_MARKER)).toBe(content?.startsWith('1.') ? 1 : 0);
         if (content?.startsWith('1.')) expect(text).toContain(`${STANDING_ORDERS_MARKER}\n${content}`);
       }
-      if (content?.startsWith('1.')) expect(prompt.indexOf('[repo-harness:return-channel]')).toBeLessThan(prompt.indexOf(STANDING_ORDERS_MARKER));
+      if (content?.startsWith('1.')) {
+        const returnChannel = prompt.indexOf('[repo-harness:return-channel]');
+        const standingOrders = prompt.indexOf(STANDING_ORDERS_MARKER);
+        expect(returnChannel).toBeGreaterThanOrEqual(0);
+        expect(standingOrders).toBeGreaterThanOrEqual(0);
+        expect(returnChannel).toBeLessThan(standingOrders);
+      }
       expect(invokeSubagent({
         event: 'PreToolUse', repoRoot: root,
         payload: { tool_name: 'Agent', tool_input: { prompt } },

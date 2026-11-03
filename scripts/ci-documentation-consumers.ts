@@ -10,18 +10,23 @@ import { createPathEvaluator, walk } from './lib/path-values';
 
 const launchers = new Set(['spawn', 'spawnSync', 'execFile', 'execFileSync', 'execSync', 'exec']);
 const readers = new Set(['readFileSync', 'readFile', 'readdirSync', 'readdir', 'existsSync', 'statSync', 'lstatSync', 'copyFileSync', 'cpSync', 'file']);
+/** Documents a test names (literal path or glob). A consumer with no named document may read any document. */
+export type DocumentationReads = { consumer: boolean; documents: string[] };
+
 /** Bounded lexical path flow, not arbitrary execution: unresolved rooted reads are conservative. */
-export function sourceConsumesDocumentation(source: SourceFile, repoRoot: string, file: string, trackedDocuments: ReadonlySet<string>, exists: (path: string) => boolean = existsSync): boolean {
+export function documentationReads(source: SourceFile, repoRoot: string, file: string, trackedDocuments: ReadonlySet<string>, exists: (path: string) => boolean = existsSync): DocumentationReads {
   const { nodes, calls, declarations, op, values } = createPathEvaluator(source, repoRoot, file);
   const family = (path: string) => isDocumentationPath(path.replace(/\*/g, 'document.md')) || isDocumentationPath(`${path.replace(/\/$/, '')}/document.md`);
   const literals = nodes.filter(isStringLiteralLikeNode).some(node => family(node.text));
+  const documents = new Set<string>();
+  let consumer = false;
   for (const call of calls) {
     if (!readers.has(op(call.expression))) continue;
     for (const value of values(call.arguments[0])) {
       const path = isAbsolute(value) ? relative(repoRoot, value) : value;
       if (path.startsWith('../')) continue;
-      if (family(path)) return true;
-      if (isAbsolute(value) && (path === '*' || path === '') && literals) return true;
+      if (family(path)) documents.add(path);
+      if (isAbsolute(value) && (path === '*' || path === '') && literals) consumer = true;
     }
   }
   // checkout-root-process: a child process that runs in, or targets, the checkout root
@@ -32,7 +37,7 @@ export function sourceConsumesDocumentation(source: SourceFile, repoRoot: string
     const rooted = (node: Node): boolean => isObjectLiteralExpression(node)
       ? node.properties.some(property => isPropertyAssignment(property) ? rooted(property.initializer) : isShorthandPropertyAssignment(property) && rooted(property.name))
       : values(node).some(value => isAbsolute(value) && relative(repoRoot, value) === '');
-    if (call.arguments.some(rooted)) return true;
+    if (call.arguments.some(rooted)) consumer = true;
   }
   // named-checkout-document-reference: fixture/generated reads can assert a named
   // tracked docs/ guide's contract. Fixture tasks/plans ledgers do not establish
@@ -50,17 +55,32 @@ export function sourceConsumesDocumentation(source: SourceFile, repoRoot: string
     }
     for (const call of calls) {
       if (!readers.has(op(call.expression)) || !call.arguments[0]) continue;
-      let named = false;
       walk(call.arguments[0], node => {
-        if (isStringLiteralLikeNode(node) && node.text.startsWith('docs/') && trackedDocuments.has(node.text) && !authoredGuides.has(node.text)) named = true;
+        if (isStringLiteralLikeNode(node) && node.text.startsWith('docs/') && trackedDocuments.has(node.text) && !authoredGuides.has(node.text)) documents.add(node.text);
       });
-      if (named) return true;
     }
   }
-  return false;
+  return { consumer: consumer || documents.size > 0, documents: [...documents].sort() };
+}
+
+/** A named document matches itself, a path under it, or its glob; `*` spans directories. */
+export function namesDocument(name: string, path: string): boolean {
+  const literal = name.replace(/\/$/, '');
+  if (!literal.includes('*')) return path === literal || path.startsWith(`${literal}/`);
+  return new RegExp(`^${literal.split('*').map(part => part.replace(/[.+?^${}()|[\]\\]/g, '\\$&')).join('.*')}(?:/.*)?$`).test(path);
+}
+
+/** The consumer tests that name one of these documents. Tests that only may read any document are not named readers. */
+export function namedDocumentReaders(readers: ReadonlyMap<string, readonly string[]>, paths: readonly string[]): string[] {
+  return [...readers].filter(([, documents]) => documents.some(name => paths.some(path => namesDocument(name, path)))).map(([test]) => test).sort();
 }
 
 export async function discoverDocumentationConsumers(repoRoot = resolve(import.meta.dir, '..'), trackedDocuments?: ReadonlySet<string>, historical?: ReadonlyMap<string, string>): Promise<string[]> {
+  return [...(await discoverDocumentationReaders(repoRoot, trackedDocuments, historical)).keys()];
+}
+
+/** Every documentation consumer test, with the documents it names. */
+export async function discoverDocumentationReaders(repoRoot = resolve(import.meta.dir, '..'), trackedDocuments?: ReadonlySet<string>, historical?: ReadonlyMap<string, string>): Promise<Map<string, string[]>> {
   if (historical) trackedDocuments = new Set([...historical.keys()].filter(isDocumentationPath));
   if (!trackedDocuments) {
     const result = spawnSync('git', ['ls-files', '-z'], { cwd: repoRoot, encoding: 'utf8' });
@@ -92,20 +112,29 @@ export async function discoverDocumentationConsumers(repoRoot = resolve(import.m
       if (!source) throw new Error(`Documentation discovery could not parse ${file}`);
       sources.set(file, source);
     }
-    const consumers = new Set([...sources].filter(([file, source]) => sourceConsumesDocumentation(source, repoRoot, file, trackedDocuments!, exists)).map(([file]) => file));
-    // Propagate local test-helper dependencies without executing imports.
+    const consumers = new Map<string, Set<string>>();
+    for (const [file, source] of sources) {
+      const reads = documentationReads(source, repoRoot, file, trackedDocuments!, exists);
+      if (reads.consumer) consumers.set(file, new Set(reads.documents));
+    }
+    // Propagate local test-helper dependencies and their named documents without executing imports.
     for (let changed = true; changed;) {
       changed = false;
       for (const [file, source] of sources) {
-        if (consumers.has(file)) continue;
         for (const statement of source.statements) {
           if (!isImportDeclaration(statement) || !isStringLiteralLikeNode(statement.moduleSpecifier) || !statement.moduleSpecifier.text.startsWith('.')) continue;
           const target = relative(repoRoot, resolve(repoRoot, dirname(file), statement.moduleSpecifier.text));
-          if ([target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`].some(path => consumers.has(path))) { consumers.add(file); changed = true; }
+          const helper = [target, `${target}.ts`, `${target}.tsx`, `${target}/index.ts`].find(path => path !== file && consumers.has(path));
+          if (!helper) continue;
+          const documents = consumers.get(file) ?? new Set<string>();
+          const before = consumers.has(file) ? documents.size : -1;
+          for (const document of consumers.get(helper)!) documents.add(document);
+          consumers.set(file, documents);
+          if (documents.size !== before) changed = true;
         }
       }
     }
-    return [...consumers].filter(file => /\.test\.tsx?$/.test(file)).sort();
+    return new Map([...consumers].filter(([file]) => /\.test\.tsx?$/.test(file)).sort(([a], [b]) => (a < b ? -1 : a > b ? 1 : 0)).map(([file, documents]) => [file, [...documents].sort()]));
   } finally { await snapshot.dispose(); await api.close(); }
 }
 

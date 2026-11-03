@@ -1,6 +1,8 @@
 # Generic acceptance review
 
-Acceptance uses the existing fleet `deep-reasoner` role and task-agent runtime.
+Acceptance runs in a persistent task session: an hc terminal or app-terminal
+host whose reviewer takes its instructions from the `deep-reasoner` role in
+`agents/fleet/`.
 Prepare verification, provide a dedicated linked reviewer checkout and a JSON
 address file `{endpoint:{socket,home?},parent_pane}` (the hc core socket and the
 owner's hc terminal). Trust the exact
@@ -37,7 +39,7 @@ selection never falls back; only a missing opposite executable before start
 allows a reported fallback to a separate owner-harness reviewer. No launch or
 request is replayed after an ambiguous outcome.
 
-At most three changed-subject repair rounds retain the same task-agent. The
+At most three changed-subject repair rounds retain the same task session. The
 reviewer reads the current diff only; a defect outside the diff is a non-blocking
 note. From the second round, only hunks changed since the previous Result are in
 scope. Prior findings require stable IDs and open/resolved status. The reviewer may write
