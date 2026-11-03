@@ -24,6 +24,12 @@ All notable changes to this skill are documented here.
   its idle or working status to hc with OSC 7501 (`app=repo-harness`).
   (#1477)
 
+### Fixed
+
+- `repo-harness update` refuses a relative `XDG_STATE_HOME` before it takes
+  the runtime lock. Before, the refused update created `~/.repo-harness`.
+  (#1502)
+
 ## [0.25.2] - 2026-11-03
 
 ### Upgrade
