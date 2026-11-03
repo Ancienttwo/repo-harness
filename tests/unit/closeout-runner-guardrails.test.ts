@@ -21,7 +21,10 @@ import {
 } from '../../src/effects/runtime/helper-runner';
 import { acquireExpensiveRunLock } from '../../src/effects/expensive-run-lock';
 import { acquireExclusiveDirectoryLock } from '../../src/effects/locking/exclusive-directory-lock';
-import { runProcess } from '../../src/effects/process-runner';
+import {
+  PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS,
+  runProcess,
+} from '../../src/effects/process-runner';
 import {
   runBoundedProviderProcess,
   withHarnessBenchmarkExecutionLock,
@@ -88,7 +91,7 @@ function isPositiveSafePid(pid: number): pid is number {
   return Number.isSafeInteger(pid) && pid > 0;
 }
 
-async function waitForSupervisorProcessGroup(runtimeTmp: string, timeoutMs = 2_000): Promise<number> {
+async function waitForSupervisorProcessGroup(runtimeTmp: string, timeoutMs: number): Promise<number> {
   const deadline = Date.now() + timeoutMs;
   for (;;) {
     for (const entry of readdirSync(runtimeTmp)) {
@@ -264,6 +267,15 @@ describe('closeout runner guardrails', () => {
     expect(await new Response(worker.stdout).text()).toContain('target:barrier-safe');
   }, 30_000);
 
+  // The test must stop the supervisor inside the target window, which opens
+  // when the supervisor parses its arguments, before its cold start ends.
+  // Every wait below derives from this one value.
+  const stoppedSupervisorTargetTimeoutMs = 1_500;
+  // runProcess returns within this time after the target timeout: the parent
+  // hard timeout (target + 1500 ms) plus the backstop TERM/KILL grace.
+  const stoppedSupervisorCallMs = stoppedSupervisorTargetTimeoutMs + PROCESS_GROUP_CALL_TIMEOUT_OVERHEAD_MS;
+  const stoppedSupervisorExitMarginMs = 1_000;
+  const stoppedSupervisorWorkerExitMs = stoppedSupervisorCallMs + stoppedSupervisorExitMarginMs;
   test('the parent hard timeout returns even when the supervisor event loop is stopped', async () => {
     if (process.platform === 'win32') return;
     const root = temporaryRoot('repo-harness-supervisor-hard-timeout-');
@@ -274,7 +286,7 @@ describe('closeout runner guardrails', () => {
     writeFileSync(workerPath, [
       `import { runProcess } from ${JSON.stringify(join(ROOT, 'src/effects/process-runner.ts'))};`,
       "import { writeFileSync } from 'fs';",
-      `const result = runProcess('bash', ['-c', 'sleep 60'], { cwd: ${JSON.stringify(root)}, timeoutMs: 500, processGroup: true });`,
+      `const result = runProcess('bash', ['-c', 'sleep 60'], { cwd: ${JSON.stringify(root)}, timeoutMs: ${stoppedSupervisorTargetTimeoutMs}, processGroup: true });`,
       `writeFileSync(${JSON.stringify(resultPath)}, JSON.stringify(result));`,
       '',
     ].join('\n'));
@@ -285,15 +297,16 @@ describe('closeout runner guardrails', () => {
     let supervisorPid: number | null = null;
     let processGroupPid: number | null = null;
     try {
-      // The supervisor publishes the launcher PGID before it arms its own 500 ms
+      // The supervisor publishes the launcher PGID before it arms its target
       // timer. Stop it from here at once: a stop sent by the target would race
-      // that timer against the launcher and target start-up.
-      processGroupPid = await waitForSupervisorProcessGroup(runtimeTmp);
+      // that timer against the launcher and target start-up. After the call
+      // budget the worker has returned, so no later receipt can be live.
+      processGroupPid = await waitForSupervisorProcessGroup(runtimeTmp, stoppedSupervisorCallMs);
       supervisorPid = parentPidOf(processGroupPid);
       process.kill(supervisorPid, 'SIGSTOP');
       const exitCode = await Promise.race([
         worker.exited,
-        Bun.sleep(4_000).then(() => null),
+        Bun.sleep(stoppedSupervisorWorkerExitMs).then(() => null),
       ]);
       expect(exitCode).toBe(0);
       const result = JSON.parse(readFileSync(resultPath, 'utf-8')) as {
@@ -311,7 +324,7 @@ describe('closeout runner guardrails', () => {
       if (supervisorPid !== null) killIfPresent(supervisorPid, 'SIGKILL');
       killIfPresent(worker.pid, 'SIGKILL');
     }
-  }, 6_000);
+  }, stoppedSupervisorCallMs + stoppedSupervisorWorkerExitMs + stoppedSupervisorExitMarginMs);
 
   test('expensive-lock wait consumes the command deadline and reports timeout before target start', async () => {
     const root = temporaryRoot('repo-harness-lock-wait-timeout-');
