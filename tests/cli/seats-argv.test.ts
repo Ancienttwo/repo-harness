@@ -107,7 +107,7 @@ describe("repo-harness seats argv", () => {
     });
   });
 
-  test("without net, Codex disables web search; MCP keeps net partial, and the fleet is always instructions only", () => {
+  test("without net, Codex disables web search; an MCP path keeps edit and net partial, and the fleet is always instructions only", () => {
     const seats = {
       ...DEFAULT_SEATS_CONFIG,
       advisor: { runtime: "codex", model: null, effort: null, tools: ["mcp", "read", "shell"], fleet: [] },
@@ -116,11 +116,32 @@ describe("repo-harness seats argv", () => {
     withHome(seats, (home) => {
       const worker = launch(home, "worker");
       expect(worker.argv).toEqual(expect.arrayContaining(["sandbox_workspace_write.network_access=false", 'web_search="disabled"']));
-      expect(worker.limits).toContainEqual({ subject: "net", level: "enforced" });
+      // No argv flag disables every inherited MCP server, so net stays partial even when the mcp group is off.
+      expect(worker.limits).toContainEqual({ subject: "net", level: "common_commands" });
+      expect(worker.brief).toContain("The host refuses only common commands for these limits. Keep them yourself. Do not use the network.");
       const advisor = launch(home, "advisor");
       expect(advisor.argv.slice(0, 5)).toEqual(["codex", "-s", "read-only", "-c", 'web_search="disabled"']);
       expect(advisor.limits).toContainEqual({ subject: "net", level: "common_commands" });
+      expect(advisor.limits).toContainEqual({ subject: "edit", level: "common_commands" });
       expect(advisor.limits).toContainEqual({ subject: "fleet", level: "instructions_only" });
+    });
+  });
+
+  test("on Claude, edit is enforced only when the shell and MCP groups are both off", () => {
+    const seats = {
+      ...DEFAULT_SEATS_CONFIG,
+      advisor: { runtime: "claude", model: null, effort: null, tools: ["read"], fleet: [] },
+      worker: { runtime: "claude", model: null, effort: null, tools: ["mcp", "read"], fleet: [] },
+    };
+    withHome(seats, (home) => {
+      const worker = launch(home, "worker");
+      expect(denied(worker.argv)).not.toContain("mcp__*");
+      expect(worker.limits).toContainEqual({ subject: "edit", level: "common_commands" });
+      expect(worker.brief).toContain("Keep them yourself. Do not edit files.");
+      const advisor = launch(home, "advisor");
+      expect(denied(advisor.argv)).toEqual(expect.arrayContaining(["Bash", "mcp__*"]));
+      expect(advisor.limits).toContainEqual({ subject: "edit", level: "enforced" });
+      expect(advisor.limits).toContainEqual({ subject: "net", level: "enforced" });
     });
   });
 

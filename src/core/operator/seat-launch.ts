@@ -7,13 +7,12 @@ import type { SeatConfigV1, SeatId, SeatTool } from './seats-settings';
 export type SeatLaunchSource = 'seats' | 'defaults';
 
 /**
- * - `enforced`: the host refuses the tool.
+ * - `enforced`: the argv blocks every path to the effect.
  * - `named_types_only`: the host refuses the agent types that the argv names; other types are not refused.
- * - `common_commands`: the host refuses the named tools and command prefixes; another tool (a shell, or an MCP tool) can still reach the same effect.
+ * - `common_commands`: the argv blocks the direct tools, but a shell command or an MCP tool can still reach the same effect.
  * - `instructions_only`: written into the launch instructions only; the host does not refuse it.
- * - `unavailable`: the seat has the group, but the host sandbox removes it.
  */
-export type SeatLimitLevel = 'enforced' | 'named_types_only' | 'common_commands' | 'instructions_only' | 'unavailable';
+export type SeatLimitLevel = 'enforced' | 'named_types_only' | 'common_commands' | 'instructions_only';
 
 /** A tool group that a seat can turn off. `read` is always on. */
 type SeatGroup = Exclude<SeatTool, 'read'>;
@@ -49,15 +48,26 @@ const GITHUB_WRITE_COMMANDS = [
   'gh release create', 'git push',
 ];
 
-/** `edit` is `enforced` only without a shell: Bash can write files too. */
-const CLAUDE_DENIED_TOOLS: Readonly<Record<SeatGroup, { readonly rules: readonly string[]; readonly level: SeatLimitLevel }>> = {
-  edit: { rules: ['Edit', 'NotebookEdit', 'Write'], level: 'enforced' },
-  shell: { rules: ['Bash'], level: 'enforced' },
-  net: { rules: ['WebFetch', 'WebSearch'], level: 'common_commands' },
-  tasks: { rules: CLAUDE_TASK_TOOLS, level: 'enforced' },
-  mcp: { rules: ['ListMcpResourcesTool', 'ReadMcpResourceDirTool', 'ReadMcpResourceTool', 'mcp__*'], level: 'enforced' },
-  gh: { rules: GITHUB_WRITE_COMMANDS.map(command => `Bash(${command} *)`), level: 'common_commands' },
+/** The deny rules that block the direct tools of each group. */
+const CLAUDE_DENIED_TOOLS: Readonly<Record<SeatGroup, readonly string[]>> = {
+  edit: ['Edit', 'NotebookEdit', 'Write'],
+  shell: ['Bash'],
+  net: ['WebFetch', 'WebSearch'],
+  tasks: CLAUDE_TASK_TOOLS,
+  mcp: ['ListMcpResourcesTool', 'ReadMcpResourceDirTool', 'ReadMcpResourceTool', 'mcp__*'],
+  gh: GITHUB_WRITE_COMMANDS.map(command => `Bash(${command} *)`),
 };
+
+/** Groups whose effect a shell command or an MCP tool can also reach. */
+const SIDE_PATH_GROUPS: ReadonlySet<SeatGroup> = new Set(['edit', 'gh', 'net']);
+
+/**
+ * The one level rule for every runtime: a group is `enforced` only when the argv blocks every path to it. When the
+ * argv blocks the direct tools of `edit`, `gh` or `net` and a shell or MCP path stays open, it is `common_commands`.
+ */
+function pathLevel(group: SeatGroup, direct: SeatLimitLevel, sidePathOpen: boolean): SeatLimitLevel {
+  return direct === 'enforced' && sidePathOpen && SIDE_PATH_GROUPS.has(group) ? 'common_commands' : direct;
+}
 
 const GROUP_TEXT: Readonly<Record<SeatGroup, string>> = {
   edit: 'Do not edit files.',
@@ -127,11 +137,12 @@ function claudeLaunch(seat: SeatId, config: SeatConfigV1, agentTypes: readonly s
   const fleetRules = config.fleet.length === 0
     ? ['Agent', 'Workflow']
     : [...[...new Set(agentTypes)].filter(type => !config.fleet.includes(type)).sort().map(type => `Agent(${type})`), 'Workflow'];
-  const denied = [...off.flatMap(group => CLAUDE_DENIED_TOOLS[group].rules), ...fleetRules];
+  const denied = [...off.flatMap(group => CLAUDE_DENIED_TOOLS[group]), ...fleetRules];
   // A plain session has no Glob, Grep or task tools; naming one of each in --allowedTools turns its set on.
   const allowed = ['Glob', 'Grep', ...(config.tools.includes('tasks') ? CLAUDE_TASK_TOOLS : [])];
   const limits: SeatLimitV1[] = [
-    ...off.map(group => ({ subject: group, level: group === 'edit' && config.tools.includes('shell') ? 'common_commands' as const : CLAUDE_DENIED_TOOLS[group].level })),
+    // Without the shell and MCP groups, the argv denies Bash and `mcp__*`, so no side path stays open.
+    ...off.map(group => ({ subject: group, level: pathLevel(group, 'enforced', config.tools.includes('shell') || config.tools.includes('mcp')) })),
     { subject: 'fleet', level: config.fleet.length === 0 ? 'enforced' : 'named_types_only' },
   ];
   const text = brief(seat, config, config.fleet, limits);
@@ -154,14 +165,14 @@ function codexLaunch(seat: SeatId, config: SeatConfigV1): Omit<SeatLaunchV1, 'pr
   const off = OFF_GROUPS(config);
   const writable = config.tools.includes('edit');
   const network = config.tools.includes('net');
-  // The sandbox mode enforces `edit`. Without `net`, the sandbox blocks shell network access and
-  // `web_search="disabled"` removes web search, but an MCP tool can still reach the network.
-  const level = (group: SeatGroup): SeatLimitLevel => group === 'edit' ? 'enforced'
-    : group === 'net' ? (config.tools.includes('mcp') ? 'common_commands' : 'enforced') : 'instructions_only';
-  const limits: SeatLimitV1[] = off.map(group => ({ subject: group, level: level(group) }));
-  // The read-only sandbox has no network access, whatever the seat's net group says (codex sandbox probe, #1473).
-  if (!writable && network) limits.push({ subject: 'net', level: 'unavailable' });
-  limits.push({ subject: 'fleet', level: 'instructions_only' });
+  // The sandbox blocks shell writes (`edit`) and shell network access, and `web_search="disabled"` removes web search.
+  // No `-c` override disables every inherited MCP server (probe, #1473): `mcp_servers={}` merges into the table, and
+  // `mcp_servers.<name>.enabled=false` needs every server name. So an MCP path to `edit` and `net` always stays open.
+  const direct = (group: SeatGroup): SeatLimitLevel => (group === 'edit' || group === 'net' ? 'enforced' : 'instructions_only');
+  const limits: SeatLimitV1[] = [
+    ...off.map(group => ({ subject: group, level: pathLevel(group, direct(group), true) })),
+    { subject: 'fleet', level: 'instructions_only' },
+  ];
   const text = brief(seat, config, config.fleet, limits);
   return {
     argv: [
