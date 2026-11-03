@@ -173,7 +173,7 @@
    "status": "active",
    "layer": "effects",
    "parent": null,
-   "summary": "Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas. Records pane-status shadow decisions and blind Bot labels without applying model output."
+   "summary": "Hosts persistent task-agent participants in hc terminals with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the notify relay and the agent fleet personas."
   },
   {
    "id": "capability.runtime-mcp.chatgpt-browser",
@@ -1517,13 +1517,22 @@
    "summary": "Provider of issues, pull requests, checks, releases and CI runs; reached through the gh CLI and the REST API."
   },
   {
-   "id": "external.herdr",
+   "id": "external.herdr-app",
    "kind": "external-system",
-   "name": "Herdr",
+   "name": "Herdr.app",
    "status": "active",
    "layer": "external",
    "parent": null,
-   "summary": "Terminal multiplexer server that hosts task-agent and review panes."
+   "summary": "Desktop window that shows hc terminals in tabs and panes. herdr-app do tab.new, pane.split, pane.close and terminal.keep place them."
+  },
+  {
+   "id": "external.herdr-core",
+   "kind": "external-system",
+   "name": "herdr-core (hc)",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "Persistent terminal server and its hc CLI. hc runs, lists, sends to, kills and removes labeled terminals, reports the server status and streams terminal events as JSON. It has no session, pane, workspace or plugin."
   },
   {
    "id": "external.npm-registry",
@@ -1571,13 +1580,22 @@
    "summary": "One short bun process per repo-harness command from a user shell or Bot."
   },
   {
-   "id": "process.herdr-server",
+   "id": "process.herdr-app",
    "kind": "process",
-   "name": "Herdr server",
+   "name": "Herdr.app",
    "status": "active",
    "layer": "external",
    "parent": null,
-   "summary": "External Herdr server that owns panes and runs pane commands."
+   "summary": "Herdr.app process that shows the terminals of an hc core in its tabs and panes."
+  },
+  {
+   "id": "process.herdr-core-server",
+   "kind": "process",
+   "name": "herdr-core server",
+   "status": "active",
+   "layer": "external",
+   "parent": null,
+   "summary": "hc core server that owns the persistent terminals and runs the argv of each one: the OAR host of each task-agent and review session, and the notify relay. Any hc CLI call starts a stopped core."
   },
   {
    "id": "process.hook",
@@ -1613,7 +1631,7 @@
    "status": "active",
    "layer": "effects",
    "parent": null,
-   "summary": "Node process in a Herdr pane that runs one review session for at most three rounds."
+   "summary": "Node process in an hc terminal that runs one review session for at most three rounds."
   },
   {
    "id": "process.operator-collector",
@@ -1622,7 +1640,7 @@
    "status": "active",
    "layer": "effects",
    "parent": null,
-   "summary": "Detached fleet, task-read and setup-check child processes, the resident git cat-file worker of each registered repository that resolves to one GitHub remote and a valid default-branch ref, and the gh, herdr, MCP doctor and package-manager probes of the background collectors; GET handlers read only their cached results."
+   "summary": "Detached fleet, task-read and setup-check child processes, the resident git cat-file worker of each registered repository that resolves to one GitHub remote and a valid default-branch ref, and the gh, hc, MCP doctor and package-manager probes of the background collectors; GET handlers read only their cached results."
   },
   {
    "id": "process.operator-server",
@@ -1864,13 +1882,6 @@
    "source": "capability.runtime-harness.agent-runtime-effects",
    "target": "capability.runtime-harness.engineer-scheduling",
    "intent": "Validate the whole offers document with the scheduling validator before a wake is armed"
-  },
-  {
-   "id": "relation.agent-runtime-effects.herdr",
-   "kind": "calls",
-   "source": "capability.runtime-harness.agent-runtime-effects",
-   "target": "external.herdr",
-   "intent": "Start Herdr CLI agents for agent runtime effects."
   },
   {
    "id": "relation.agent-runtime-effects.journal",
@@ -2881,18 +2892,25 @@
    "intent": "Run installed binaries to read back runtime evidence"
   },
   {
-   "id": "relation.herdr-server.runs-in.host",
+   "id": "relation.herdr-app.runs-in.host",
    "kind": "runs-in",
-   "source": "process.herdr-server",
+   "source": "process.herdr-app",
    "target": "namespace.host.developer",
    "intent": "Runs on the developer host."
   },
   {
-   "id": "relation.herdr-server.spawns.oar-review-host",
+   "id": "relation.herdr-core-server.runs-in.host",
+   "kind": "runs-in",
+   "source": "process.herdr-core-server",
+   "target": "namespace.host.developer",
+   "intent": "Runs on the developer host."
+  },
+  {
+   "id": "relation.herdr-core-server.spawns.oar-review-host",
    "kind": "spawns",
-   "source": "process.herdr-server",
+   "source": "process.herdr-core-server",
    "target": "process.oar-review-host",
-   "intent": "Run the review host bundle in a pane."
+   "intent": "Run the OAR host bundle in an hc terminal."
   },
   {
    "id": "relation.hook-adapters.deployed-on.hook",
@@ -3448,18 +3466,18 @@
    "intent": "Read the newest daily CI run, download its JUnit and test projection artifacts, and list open CI repair issues with gh."
   },
   {
-   "id": "relation.operator.console-collectors.herdr",
+   "id": "relation.operator.console-collectors.herdr-core",
    "kind": "reads",
    "source": "component.operator.console-collectors",
-   "target": "external.herdr",
-   "intent": "Run herdr status, the session snapshot and the notify plugin list, config-dir and log list probes on collector cycles."
+   "target": "external.herdr-core",
+   "intent": "Run hc ls for the notify relay terminal on each notify cycle, and hc server status for the core id of each execution cycle and terminal socket."
   },
   {
    "id": "relation.operator.console-collectors.http-reader",
    "kind": "calls",
    "source": "component.operator.console-collectors",
    "target": "component.operator.primary",
-   "intent": "Check the herdr status version and request session.snapshot through the Herdr observation transport."
+   "intent": "Check the hc core version against the pin with hc server status and read the task-session hc events snapshot through the hc runtime transport."
   },
   {
    "id": "relation.operator.console-collectors.mcp-sidecar",
@@ -3473,7 +3491,7 @@
    "kind": "reads",
    "source": "component.operator.console-collectors",
    "target": "component.task-agent-host.primary",
-   "intent": "Read the Herdr session from the notify install record at the start of each notify, Bot access and execution cycle, and read the task agent binding, native session and closed records."
+   "intent": "Read the notify install record, notify.env and the relay delivery record on each notify cycle, and read the task agent binding, native session and closed records."
   },
   {
    "id": "relation.operator.console-collectors.view-projections",
@@ -3621,6 +3639,13 @@
    "source": "component.operator.primary",
    "target": "component.execution-primitives.primary",
    "intent": "Read the managed worktree root and its naming rule for a doc session worktree."
+  },
+  {
+   "id": "relation.operator.primary.herdr-core",
+   "kind": "reads",
+   "source": "component.operator.primary",
+   "target": "external.herdr-core",
+   "intent": "Run hc server status and read the task-session hc events snapshot for the hc runtime transport, and follow the task-session hc events stream for runtime capture."
   },
   {
    "id": "relation.operator.primary.task-fleet",
@@ -3833,11 +3858,18 @@
    "intent": "Hash request context and result bytes with the evidence canonical JSON"
   },
   {
-   "id": "relation.task-agent-host.herdr",
+   "id": "relation.task-agent-host.herdr-app",
+   "kind": "depends-on",
+   "source": "capability.runtime-harness.task-agent-host",
+   "target": "external.herdr-app",
+   "intent": "Own the one herdr-app do argv for tab.new, pane.split, pane.close and terminal.keep. The console prints the terminal.keep command for the person to run."
+  },
+  {
+   "id": "relation.task-agent-host.herdr-core",
    "kind": "calls",
    "source": "capability.runtime-harness.task-agent-host",
-   "target": "external.herdr",
-   "intent": "Split and run Herdr panes for task agents and review hosts."
+   "target": "external.herdr-core",
+   "intent": "Run labeled task-agent, review-host and notify relay terminals with hc run, and get, list, send to, kill and remove them. Follow hc events in the notify relay. List seat terminals and read the hc version for the board."
   },
   {
    "id": "relation.task-agent-host.imports.hook-adapters",
