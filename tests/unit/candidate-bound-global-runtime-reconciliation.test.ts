@@ -1,14 +1,15 @@
 import { afterAll, beforeAll, describe, expect, test } from 'bun:test';
 import { chmodSync, existsSync, mkdtempSync, mkdirSync, readFileSync, realpathSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
-import { join } from 'path';
+import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { writeFakeHc } from '../helpers/fake-hc';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
-import { beginInstallHostTransaction, PROFILE_COMPONENTS, readInstalledProfile, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
+import { beginInstallHostTransaction, installProfileStatePath, PROFILE_COMPONENTS, readInstalledProfile, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
+import { recordInstallOwnership } from '../helpers/install-ownership';
 import {
   assertCandidateReconciliationReceipt,
   candidatePackageIdentity,
@@ -481,6 +482,13 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(cwd, { recursive: true });
       mkdirSync(join(home, '.bun', 'bin'), { recursive: true });
       writeExecutable(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\nexit 0\n');
+      // An older parent has no migration step, so the candidate removes the retired fleet file it owns (#1510).
+      const retired = join(home, '.claude', 'agents', 'orchestrator.md');
+      mkdirSync(dirname(retired), { recursive: true });
+      writeFileSync(retired, '---\nname: orchestrator\n---\n');
+      recordInstallOwnership([retired], env);
+      const seeded = JSON.parse(readFileSync(installProfileStatePath(env), 'utf-8'));
+      writeFileSync(installProfileStatePath(env), JSON.stringify({ ...seeded, profile: 'minimal', components: PROFILE_COMPONENTS.minimal }));
       const transaction = beginInstallHostTransaction([], env);
       const request: CandidateReconciliationRequest = {
         protocol: 1,
@@ -507,6 +515,9 @@ describe('candidate-bound global runtime reconciliation', () => {
       expect(receipt.ownership_manifest_digest).toBe(`sha256:${createHash('sha256').update(JSON.stringify(installed?.ownership_manifest)).digest('hex')}`);
       expect(installed?.profile).toBe('minimal');
       expect(installed?.ownership_manifest.some((surface) => surface.path === join(home, '.codex', 'hooks.json'))).toBe(true);
+      expect(String(result.stderr)).toContain(`[runtime] retired fleet file: removed ${retired}`);
+      expect(existsSync(retired)).toBe(false);
+      expect(installed?.ownership_manifest.some((surface) => surface.path === retired)).toBe(false);
       rollbackInstallHostTransaction(transaction);
     } finally {
       rmSync(root, { recursive: true, force: true });
