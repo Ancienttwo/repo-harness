@@ -3,4 +3,4 @@ id: relation.operator.console-collectors.task-agent-host
 kind: reads
 source: component.operator.console-collectors
 target: component.task-agent-host.primary
-intent: "Read the notify install record, notify.env and the relay delivery record on each notify cycle."
+intent: "Read the notify install record, notify.env and the relay delivery record on each notify cycle. Call the hc client for hc ls of the relay terminal and for hc server status, and use its herdr-app command and its error type."

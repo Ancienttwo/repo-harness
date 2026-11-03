@@ -1,4 +1,4 @@
-import { assertProcessProof, assertSessionDirectory, assertCreated, classicRecordRetired, taskSessionDirectory, sameSessionData, readStartIntent, readTaskAgent, readTaskBinding, readWorkspaceBinding, workspaceDirectory, processProofAlive,
+import { assertProcessProof, assertSessionDirectory, assertCreated, classicRecordRetired, taskSessionDirectory, TASK_SESSIONS_PATH, sameSessionData, readStartIntent, readTaskAgent, readTaskBinding, readWorkspaceBinding, workspaceDirectory, processProofAlive,
   type CreatedTerminal, type HerdrCoreEndpoint, type HerdrTaskAgentSpec, type HerdrTaskBinding, type ObjectOwnership, type StartIntent,
   type TaskPaneBinding, type TaskWorkspaceBinding, type TerminalStartIntent, type TerminalTaskBinding } from './task-session-record';
 import { observeTaskSessionAdmission, taskBindingSha256 } from './task-session-admission';
@@ -652,7 +652,7 @@ export async function cleanupTaskWorktree(repoRoot: string, checkoutPath: string
     if (!existsSync(join(dir, 'binding.json'))) return { status: 'not_registered', pids: [] };
     const workspace = readWorkspaceBinding(join(dir, 'binding.json'));
     if (workspace.repository.repository_id !== repository.repository_id || workspace.repository.execution_root !== checkoutPath) throw new Error('task_agent_workspace_identity_lost');
-    const rolesRoot = join(repository.primary_root, '.ai/harness/runs/task-agents');
+    const rolesRoot = join(repository.primary_root, TASK_SESSIONS_PATH);
     if (existsSync(rolesRoot)) {
       assertSessionDirectory(repository.primary_root, rolesRoot);
       for (const entry of readdirSync(rolesRoot, { withFileTypes: true })) {

@@ -14,7 +14,7 @@ import type { TaskSessionAuthority } from '../admission/admission-source';
 import { taskRepository } from '../git/task-repository';
 import { piExecutable } from '../pi-executable';
 import { reviewHostCommand } from '../review/review-isolation';
-import { processProofAlive, readTaskAgent, taskSessionDirectory, type HerdrCoreEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
+import { processProofAlive, readTaskAgent, taskSessionDirectory, TASK_SESSIONS_PATH, type HerdrCoreEndpoint, type TaskPaneBinding } from '../terminal/task-session-record';
 import { bindNativeTaskSession } from '../terminal/native-task-session';
 import { parseFrontmatter, validateFrontmatter, AGENT_TARGET_OVERRIDES } from '../terminal/task-role-profiles';
 import { assertTaskBinding, assertTerminalHostCommand, bindTerminalApplicationHost, cancelTaskAgent, closeTaskAgent, collectTaskResult,
@@ -29,7 +29,7 @@ type HostClaim = ProcessProof | { pid: null; closed: true };
 
 /** Task bindings whose own hc terminal is the review caller's terminal. */
 function paneBindings(repo: string, endpoint: HerdrCoreEndpoint, terminal: string): { dir: string; binding: TaskPaneBinding }[] {
-  const base = join(taskRepository(repo).primary_root, '.ai/harness/runs/task-agents');
+  const base = join(taskRepository(repo).primary_root, TASK_SESSIONS_PATH);
   if (!existsSync(base)) return [];
   const bound: { dir: string; binding: TaskPaneBinding }[] = [];
   for (const entry of readdirSync(base, { withFileTypes: true })) {
