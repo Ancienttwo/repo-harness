@@ -3,84 +3,27 @@
 // done turn to the Bot webhook and the selected human channels.
 
 import { hostname } from 'node:os';
-import { NOTIFY_CHANNEL_SECRET_KEYS, type NotifyChannelSecretKey } from '../../core/decision/notify-secret-keys';
-import { parseEnv } from 'node:util';
+import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../core/decision/notify-secret-keys';
 import { NAME_PATTERN, botEvent } from '../../../assets/herdr/github-events/bot-event.mjs';
+import { NOTIFY_INSTALL_COMMAND } from '../../core/operator/notify-status';
 import {
   EMPTY_RELAY_DELIVERIES,
-  NOTIFY_INSTALL_COMMAND,
   NOTIFY_CHANNELS,
-  decodeRelayDeliveries,
   type NotifyChannel,
   type RelayAttemptV1,
   type RelayDeliveriesV1,
-} from '../../core/operator/notify-status';
+} from '../../core/decision/notify-relay-record';
 import { RH_LABEL, RH_NOTIFY_LABELS, hcEvents, type HcEventStream, type HcLabels, type HcStreamItem } from './herdr-core';
-import { notifyConfigPath, notifyDeliveriesPath, readPrivateFile, writePrivateFile } from './herdr-notify-install';
-
-export const NOTIFY_DONE_KEYS = ['WEBHOOK_NOTIFY_DONE', 'SLACK_NOTIFY_DONE', 'DISCORD_NOTIFY_DONE', 'TELEGRAM_NOTIFY_DONE'] as const;
-export type NotifyConfig = Readonly<Record<NotifyChannelSecretKey | typeof NOTIFY_DONE_KEYS[number], string>>;
+import { writePrivateFile } from './herdr-notify-install';
+import { NOTIFY_DONE_KEYS, NotifyConfigError, notifyDeliveriesPath, readNotifyConfig, readRelayDeliveries, type NotifyConfig } from './notify-read';
 
 const TIMEOUT_MS = 5_000;
-const CONFIG_MAX_BYTES = 64 * 1024;
-const DELIVERIES_MAX_BYTES = 64 * 1024;
 const ID_PATTERN = /^[\w.:@/-]{1,128}$/;
 const CHANNEL_NAMES: Readonly<Record<NotifyChannel, string>> = { webhook: 'WEBHOOK', slack: 'SLACK', discord: 'DISCORD', telegram: 'TELEGRAM' };
 
 /** The one serializer of the config file; install writes it and the relay reads it per event. */
 export function renderNotifyConfig(config: NotifyConfig): string {
   return [...NOTIFY_CHANNEL_SECRET_KEYS, ...NOTIFY_DONE_KEYS].map(key => `${key}='${config[key]}'`).join('\n') + '\n';
-}
-
-/** A config value breaks a rule. The message names the key and the rule, never the value. */
-export class NotifyConfigError extends Error {
-  constructor(message: string) {
-    super(message);
-    this.name = 'NotifyConfigError';
-  }
-}
-
-const URL_KEYS = ['WEBHOOK_URL', 'SLACK_WEBHOOK_URL', 'DISCORD_WEBHOOK_URL'] as const satisfies readonly NotifyChannelSecretKey[];
-
-/**
- * The one config decoder. Install input and each relay reload pass through it, so a changed file
- * cannot send to plain HTTP or with half a Telegram target. An absent key is an empty value; an
- * absent done flag is off.
- */
-export function decodeNotifyConfig(values: Readonly<Record<string, string | undefined>>): NotifyConfig {
-  const config: Record<string, string> = {};
-  for (const key of NOTIFY_CHANNEL_SECRET_KEYS) {
-    const value = values[key] ?? '';
-    if (/[\x00-\x1f\x7f'"\\]/.test(value)) throw new NotifyConfigError(`${key} contains an unsupported character.`);
-    config[key] = value;
-  }
-  for (const key of NOTIFY_DONE_KEYS) {
-    const value = values[key] ?? '0';
-    if (value !== '0' && value !== '1') throw new NotifyConfigError(`${key} must be 0 or 1.`);
-    config[key] = value;
-  }
-  if (!config.WEBHOOK_URL || !config.WEBHOOK_KEY) throw new NotifyConfigError('WEBHOOK_URL and WEBHOOK_KEY are required.');
-  if (Boolean(config.TELEGRAM_BOT_TOKEN) !== Boolean(config.TELEGRAM_CHAT_ID)) throw new NotifyConfigError('Telegram needs a bot token and a chat id.');
-  for (const key of URL_KEYS) {
-    if (!config[key]) continue;
-    let url: URL;
-    try { url = new URL(config[key]!); } catch { throw new NotifyConfigError(`${key} must be an HTTPS URL.`); }
-    if (url.protocol !== 'https:' || url.username || url.password) throw new NotifyConfigError(`${key} must be an HTTPS URL without user information.`);
-  }
-  if (config.TELEGRAM_BOT_TOKEN && !/^\d+:[A-Za-z0-9_-]+$/.test(config.TELEGRAM_BOT_TOKEN)) throw new NotifyConfigError('TELEGRAM_BOT_TOKEN is invalid.');
-  if (config.TELEGRAM_CHAT_ID && !/^(?:-?\d+|@[A-Za-z0-9_]+)$/.test(config.TELEGRAM_CHAT_ID)) throw new NotifyConfigError('TELEGRAM_CHAT_ID is invalid.');
-  return config as NotifyConfig;
-}
-
-/** The decoded config, or `null` when no file exists. A config that breaks a rule throws NotifyConfigError. */
-export function readNotifyConfig(env: NodeJS.ProcessEnv): NotifyConfig | null {
-  const text = readPrivateFile(notifyConfigPath(env), CONFIG_MAX_BYTES);
-  return text === null ? null : decodeNotifyConfig(parseEnv(text));
-}
-
-export function readRelayDeliveries(env: NodeJS.ProcessEnv): RelayDeliveriesV1 {
-  const text = readPrivateFile(notifyDeliveriesPath(env), DELIVERIES_MAX_BYTES);
-  return text === null ? EMPTY_RELAY_DELIVERIES : decodeRelayDeliveries(JSON.parse(text));
 }
 
 interface TerminalFacts {

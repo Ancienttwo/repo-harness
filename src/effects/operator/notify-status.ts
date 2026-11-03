@@ -1,16 +1,14 @@
 import {
   readDeliveries,
-  type NotifyChannel,
   type NotifyChannelDeliveriesV1,
   type NotifyConfigKey,
   type NotifyPresence,
   type NotifyStatusV1,
   type NotifyUnavailableReason,
-  type RelayDeliveriesV1,
 } from '../../core/operator/notify-status';
+import type { NotifyChannel, RelayDeliveriesV1 } from '../../core/decision/notify-relay-record';
 import { hcListAsync } from '../terminal/herdr-core';
-import { readNotifyInstallRecord, relayIsLive } from '../terminal/herdr-notify-install';
-import { readNotifyConfig, readRelayDeliveries, type NotifyConfig } from '../terminal/notify-relay';
+import { readNotifyConfig, readNotifyInstallRecord, readRelayDeliveries, relayIsLive, type NotifyConfig } from '../terminal/notify-read';
 
 /** A probe failed, so the status is unknown. The code is public; the cause stays here. */
 export class NotifyStatusUnavailableError extends Error {

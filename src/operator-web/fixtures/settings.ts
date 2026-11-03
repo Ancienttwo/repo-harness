@@ -120,7 +120,7 @@ function seatsRanges(enabled: readonly string[]) {
     efforts: ['low', 'medium', 'high', 'xhigh', 'max'],
     roles: SUB_AGENTS,
     seats: {
-      orchestrator: { fleet: ['explorer', 'deep-reasoner', 'gatekeeper', 'root-cause-prover'], tools: all.filter(tool => tool !== 'edit') },
+      orchestrator: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit') },
       advisor: { fleet: SUB_AGENTS.filter(role => !role.writable).map(role => role.name), tools: all.filter(tool => tool !== 'edit' && tool !== 'gh') },
       worker: { fleet: SUB_AGENTS.map(role => role.name), tools: all },
     },

@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.task-agent-host.imports.board
-kind: depends-on
-source: capability.runtime-harness.task-agent-host
-target: capability.organization.board
-intent: "Implement the board host port: seat terminals by parent label and the hc version"

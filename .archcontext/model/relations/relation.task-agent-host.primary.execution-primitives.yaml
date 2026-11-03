@@ -3,4 +3,4 @@ id: relation.task-agent-host.primary.execution-primitives
 kind: calls
 source: component.task-agent-host.primary
 target: capability.workflow-engine.execution-primitives
-intent: "Run Git through the process runner, hold task session locks, and read and write immutable session artifacts"
+intent: "Run Git through the process runner, hold task session locks, read and write immutable session artifacts, run hc through the hc client, read the notify secret key names, read the notify config, the delivery record and the notify file paths through the notify read contract, and build the next delivery record with its channel names, record types and empty record"

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.global-configuration.execution-primitives
+kind: calls
+source: component.global-runtime-reconciliation.global-configuration
+target: capability.workflow-engine.execution-primitives
+intent: "Hold the global runtime transaction lock and sync the configuration directory durably"
