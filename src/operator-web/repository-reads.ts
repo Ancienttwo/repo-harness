@@ -8,6 +8,13 @@ import {
   type TaskExecutionViewV1,
 } from '../core/operator/execution-state';
 import {
+  decodeTaskMessagesView,
+  type TaskMessagesFailure,
+  type TaskMessagesRefusal,
+  type TaskMessagesRequest,
+  type TaskMessagesViewV1,
+} from '../core/operator/task-messages';
+import {
   decodeTestsSnapshot,
   TESTS_UNAVAILABLE_REASONS,
   type TestsSnapshotV1,
@@ -155,6 +162,53 @@ export function itemOwner(executions: readonly ExecutionResult[] | null, item: P
   if (read.state === 'unavailable') return { state: 'unavailable', reason: read.reason };
   const tasks = read.view.tasks.filter((task): task is VerifiedTask => task.state === 'verified' && task.branch === item.branch);
   return tasks.length > 0 ? { state: 'verified', tasks } : { state: 'none' };
+}
+
+/** `unreachable` covers a request with no typed answer: no response, or a code this bundle does not know. */
+export type TaskMessagesReason = TaskMessagesRefusal | TaskMessagesFailure | ExecutionReason | 'task_messages_invalid';
+export type TaskMessagesRead =
+  | { readonly state: 'ok'; readonly view: TaskMessagesViewV1 }
+  | { readonly state: 'unavailable'; readonly reason: TaskMessagesReason };
+export type TaskMessagesReader = (request: TaskMessagesRequest, signal: AbortSignal) => Promise<TaskMessagesRead>;
+export type TaskMessagesResult = TaskMessagesRead & { readonly task_id: string };
+
+// Every refusal the task messages route sends: the execution-state refusals, the task checks and the read failures.
+const TASK_MESSAGES_REASONS: Readonly<Record<Exclude<TaskMessagesReason, 'unreachable'>, true>> = {
+  ...EXECUTION_REASONS, task_not_found: true, task_unverified: true, unavailable: true, busy: true, timeout: true, task_messages_invalid: true,
+};
+
+export async function fetchTaskMessages(request: TaskMessagesRequest, signal: AbortSignal): Promise<TaskMessagesRead> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/repositories/${encodeURIComponent(request.repository_id)}/tasks/${encodeURIComponent(request.task_id)}/messages`,
+      { signal, cache: 'no-store', headers: { Accept: 'application/json' } });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { state: 'unavailable', reason: 'unreachable' };
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    // A refusal before the read is `{error}`; a failure of the read itself is `{code}`.
+    const bare = (body as { readonly code?: unknown } | null)?.code;
+    const code = typeof bare === 'string' ? bare : asApiError(body).code;
+    return { state: 'unavailable', reason: Object.hasOwn(TASK_MESSAGES_REASONS, code) ? code as TaskMessagesReason : 'unreachable' };
+  }
+  try { return { state: 'ok', view: decodeTaskMessagesView(body, request) }; } catch { return { state: 'unavailable', reason: 'task_messages_invalid' }; }
+}
+
+/** One read per task id, in the order given; null until the first read settles. */
+export function useTaskMessages(read: TaskMessagesReader, repositoryId: string, taskIds: readonly string[], generation: number, enabled: boolean): readonly TaskMessagesResult[] | null {
+  const [results, setResults] = useState<{ readonly key: string; readonly rows: readonly TaskMessagesResult[] } | null>(null);
+  const key = JSON.stringify([repositoryId, taskIds]);
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    const [repository_id, ids] = JSON.parse(key) as [string, string[]];
+    const rows = await Promise.all(ids.map(async (task_id): Promise<TaskMessagesResult> => ({ task_id, ...await read({ repository_id, task_id }, signal) })));
+    if (signal.aborted) return false;
+    setResults({ key, rows });
+    return rows.every(row => row.state === 'ok' || row.reason !== 'unreachable');
+  }, [read, key]);
+  useObservationRefresh(observe, JSON.stringify(['task-messages', key, generation]), { enabled: enabled && taskIds.length > 0 });
+  return results !== null && results.key === key ? results.rows : null;
 }
 
 /** The tests page's read of one repository: a decoded snapshot or its route refusal. */

@@ -36,6 +36,7 @@ import {
   fetchDocsTree,
   fetchExecution,
   fetchRepositoryHead,
+  fetchTaskMessages,
   fetchTestsSnapshot,
   useRepositoryHead,
   type CiRepairsReader,
@@ -43,6 +44,7 @@ import {
   type DocsTreeReader,
   type ExecutionReader,
   type RepositoryHeadReader,
+  type TaskMessagesReader,
   type TestsReader,
 } from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
@@ -96,6 +98,8 @@ export interface OperatorAppProps {
   readonly readCiRepairs?: CiRepairsReader;
   /** The execution route's verified task sessions: the agent on Home and the Board, and the task drawer's follow-up. */
   readonly readExecution?: ExecutionReader;
+  /** The task messages route: the stored inbox of a verified task in the task drawer. */
+  readonly readTaskMessages?: TaskMessagesReader;
   /** The architecture map route; the Architecture workspace reads it from the server when absent. */
   readonly readArchitectureMap?: ArchitectureMapReader;
   /** The Bot access collector's cached snapshot behind the Bots page. */
@@ -239,6 +243,7 @@ export function OperatorApp({
   readRepositoryHead = fetchRepositoryHead,
   readCiRepairs = fetchCiRepairs,
   readExecution = fetchExecution,
+  readTaskMessages = fetchTaskMessages,
   readArchitectureMap,
   readBotAccess = fetchBotAccess,
   readBotReviews = fetchBotReviews,
@@ -390,7 +395,7 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <BoardPage place={boardSubject} view={board} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+          {workspace === 'board' && <BoardPage place={boardSubject} view={board} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={registered.map(row => ({ id: row.repository_id, label: registeredLabel(registered, row.repository_id) }))}
             chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}

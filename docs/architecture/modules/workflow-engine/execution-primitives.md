@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e8b74ca81aafd99ca2b6f3edeaad3710d396450f130c142c4d3c2515b67269cd" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:931e3860473da7471cc808bb197d5f5fb2e7b76c7ac8130390dc0a3bcf344d2d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -70,7 +70,6 @@ flowchart LR
 - `calls` ← `component.contract-assets.template-projection` — Run init steps as bounded child processes
 - `calls` ← `component.evals-checks.evals-and-benchmarks` — Take the expensive-run lock before a costly benchmark profile runs
 - `calls` ← `component.evidence-ledger.primary` — Hold exclusive directory locks under the Git common directory and read the virtual tree
-- `calls` ← `component.external-source-intake.immutable-evidence` — Hold exclusive directory locks under the Git common directory
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Run the archctx binary through the process runner
 - `calls` ← `component.global-runtime-reconciliation.primary` — Run processes and read lock owners during runtime reconciliation
 - `calls` ← `component.global-runtime-reconciliation.release-packaging` — Run installed binaries to read back runtime evidence
@@ -218,6 +217,11 @@ sequenceDiagram
 
 - `src/core/messages/{task-message-claim,task-message-error,mechanics}.ts` 从 task-fleet 移到 `component.execution-primitives.task-message-claim`。`src/effects/terminal/task-session-io.ts` 从 task-agent-host 移到 `component.execution-primitives.session-artifact-io`。只改模型，源码与 import 不变。
 - 原因：publication 与 acceptance-review 导入这些文件。#1352 要求它们不经过 task-fleet 或 task-agent-host。
+
+### 2026-11-03 Native session record, process proof and session directory scan moved in (#1594)
+
+- `NativeTaskSessionBinding`（原在 `src/effects/terminal/native-task-session.ts`）、`assertProcessProof` 与 `processProofAlive`（原在 `src/effects/terminal/task-session.ts`）原样移到 `src/effects/terminal/task-session-record.ts`。operator 的会话目录扫描移到同一文件，名为 `taskSessionDirectories`。它与 `taskSessionDirectory` 共用一个 `.ai/harness/runs/task-agents` 路径常量，上限仍是 200 个目录。[src/core/sessions/task-sessions.ts](https://github.com/Ancienttwo/repo-harness/blob/65e8c8c6cee08416c6ebd16c4c0ff8bf766b50dc/src/core/sessions/task-sessions.ts) 已删除。
+- 原因：#1353 S4 决定（[decision](https://github.com/Ancienttwo/repo-harness/issues/1353#issuecomment-6602539432)）。operator 的 task execution state 只经过本 capability 读取会话记录，不再导入 task-agent-host 的内部文件（ADR-0002 规则 5）。写入方 `bindNativeTaskSession` 留在 task-agent-host。
 
 ## Optimization Backlog
 

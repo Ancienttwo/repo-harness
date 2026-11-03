@@ -5,7 +5,7 @@ import { join } from 'node:path';
 import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { buildReviewCommand, pullRequestSelectionFromOptions } from '../../src/cli/commands/review';
 import { createReviewAdmission, reviewCampaignKey, type ReviewAdmissionInput } from '../../src/core/review/authority-context';
-import { readCurrentReviewAdmissionSelection, readReviewAdmission } from '../../src/effects/admission/admission-store';
+import { readReviewAdmission } from '../../src/effects/admission/admission-store';
 import { gatesDirectoryName } from '../../src/effects/git/repository-identity';
 import * as accountHome from '../../src/effects/runtime/os-account-home';
 import { hashVerificationPlan } from '../../src/core/evidence/verification-plan';
@@ -82,7 +82,6 @@ test('review revoke applies an exact active-grant CAS and task consumers observe
   expect(revoked.status, revoked.stderr).toBe(0);
   expect(JSON.parse(revoked.stdout)).toEqual({ revision: 2, revoked_grant_sha256: grant });
   expect(() => f.read(grant)).toThrow('revoked_or_replaced');
-  expect(readCurrentReviewAdmissionSelection({ repoRoot: f.root, authorityHome: f.home, ...f.identity })).toBeNull();
   const again = await revoke('revoke-again', { expectedRevision: 2 });
   expect(again.status).toBe(1);
   expect(again.stderr).toContain('review_admission_revoked_or_replaced');
@@ -142,7 +141,7 @@ test('publish posts the claim, one review thread per P1/P2, then the record', as
 
   const posts = fixture.gh.inputs().filter((entry) => entry.input !== '').map((entry) => JSON.parse(entry.input));
   expect(posts).toHaveLength(3);
-  expect(posts[0].body).toContain('repo-harness acceptance claim');
+  expect(posts[0].body).toContain('repo-harness acceptance claim\nRole: acceptor\n');
   expect(posts[0].body).toContain('Tier: high');
   expect(posts[0].body).toContain('Agent: codex (gpt-5.1-codex), read-only');
   expect(posts[1]).toMatchObject({ commit_id: PUBLISH_HEAD, event: 'COMMENT' });

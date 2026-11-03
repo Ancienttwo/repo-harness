@@ -123,3 +123,28 @@ projection is the same type. PR #1541 removed the Fleet snapshot, and #1507
 removed `collectFleetBoard`, `FleetBoardSnapshotV2` and
 `decodeFleetBoardSnapshot`. The Context and Consequences text above describes
 the state at the decision date.
+
+## Amendment 2026-11-03 (#1594)
+
+#1353 S4 is resolved
+([decision](https://github.com/Ancienttwo/repo-harness/issues/1353#issuecomment-6602539432)).
+Operator task execution state (`src/effects/operator/execution-state.ts`)
+reads the session records only through the core-tier primitive
+`component.execution-primitives.task-session-record`
+(`src/effects/terminal/task-session-record.ts`). That primitive now owns
+`NativeTaskSessionBinding`, `assertProcessProof`, `processProofAlive` and the
+scan of the task session directories with its entry bound.
+`src/core/sessions/task-sessions.ts` is deleted. The writer
+`bindNativeTaskSession` stays in task-agent-host. Rule 5 names a plugin by its
+owner in the architecture model, not by its directory, so a read of this
+primitive does not break it.
+
+Known operator imports of task-agent-host that still break rule 5, for #1287
+step 1e:
+
+- The hc client `src/effects/terminal/herdr-core.ts`, from
+  `execution-collector.ts`, `execution-state-worker.ts`,
+  `herdr-runtime-transport.ts`, `notify-status.ts` and `bot-access.ts`.
+- The notify records, from `notify-status.ts`:
+  `src/effects/terminal/herdr-notify-install.ts` and
+  `src/effects/terminal/notify-relay.ts`.

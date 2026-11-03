@@ -319,7 +319,7 @@ describe("issue-flow facade: board protocol surface ships with the package", () 
     for (const field of ["repo-harness plan", "Baseline: main@<sha>", "Supersedes:", "src/core/board/plan-block.ts"]) {
       expect(templates).toContain(field);
     }
-    for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {
+    for (const field of ["Status:", "Role:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {
       expect(templates).toContain(field);
     }
     for (const status of ["unclaimed", "unclaimed · waits for #n", "writer <agent> · active", "writer <agent> · PR #p", "merged"]) {

@@ -5,11 +5,14 @@ name: Task Session Record
 status: active
 parent: capability.workflow-engine.execution-primitives
 layer: effects
-summary: Holds the persisted task session and task workspace record types, their Node-safe reader and the closed-runtime check that the worktree sweep reads.
+summary: Holds the persisted task session, native session and task workspace record types, their Node-safe reader, the task session directory scan, the process proof check and the closed-runtime check that the worktree sweep reads.
 responsibilities:
   - Own the binding, start intent, created pane and task workspace record types, and the Herdr endpoint record field.
   - Read and check a task session binding against its intent and creation records without contacting Herdr.
   - Report whether the recorded runtime of a task worktree is closed.
+  - Own the native task session record type. Its writer stays in task-agent-host.
+  - Own the task session directory path. List the task session directories of a primary checkout; refuse an unsafe parent directory and more than 200 entries.
+  - Check a recorded process proof: report whether the process is alive, and refuse a lost process identity.
 source:
   include:
     - src/effects/terminal/task-session-record.ts

@@ -369,13 +369,14 @@ describe("canonical adoption plan", () => {
           lessons_file: "custom/lessons.md",
         },
         agent_runtime: { mode: "off", adapters: { "herdr-cli-agent": { enabled: false } } },
+        circuit_breakers: { guard_repeat: 2, review: { lite: 1 } },
         external_tooling: { agent_fleet: { managed_agents: ["explorer", "orchestrator"] } },
         custom_key: { keep: true },
       }, null, 2));
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
       expect(plan.warnings).toContainEqual(expect.objectContaining({
         code: "retired-policy-keys",
-        message: "Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir, agent_runtime, external_tooling.agent_fleet.managed_agents[orchestrator]",
+        message: "Removed retired harness policy keys: active_plan, tasks.current_status_file, tasks.workstreams_dir, agent_runtime, circuit_breakers, external_tooling.agent_fleet.managed_agents[orchestrator]",
       }));
       expect(applyAdoptionPlan(plan).ok).toBe(true);
       const policy = JSON.parse(readFileSync(join(repo, ".ai", "harness", "policy.json"), "utf-8"));

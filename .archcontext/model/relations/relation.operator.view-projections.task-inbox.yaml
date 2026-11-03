@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.view-projections.task-inbox
+kind: reads
+source: component.operator.view-projections
+target: component.task-fleet.task-inbox
+intent: "Project stored task message events and delivery receipts into the public task messages view"

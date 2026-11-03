@@ -1,5 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { copyFileSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
+import { copyFileSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { execFileSync, spawnSync } from 'node:child_process';
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
@@ -71,6 +71,9 @@ describe('capability-resolver archcontext-nodes-v2 export', () => {
   });
 
   test('CLI exports every self-host capability node as v2 without v1 compatibility output', () => {
+    // The export rejects an orphan module document; this named read also makes a
+    // docs-only diff under docs/architecture/modules select this test.
+    expect(readdirSync(join(ROOT, 'docs/architecture/modules'), { recursive: true }).some(file => String(file).endsWith('.md'))).toBe(true);
     const result = spawnSync('bun', ['scripts/capability-resolver.ts', 'export', '--format', 'archcontext-nodes-v2', '--repo', '.'], { cwd: ROOT, encoding: 'utf8' });
     expect(result.status, result.stderr).toBe(0);
     const nodes = JSON.parse(result.stdout) as ArchContextNodeV2[];
