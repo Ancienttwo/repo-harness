@@ -375,8 +375,8 @@ function listEvents(scope: TaskInboxTaskScope): TaskMessageEventV2[] {
     }
     events.push(event);
   }
-  return events.sort((left, right) => (left.created_at < right.created_at ? -1 : left.created_at > right.created_at ? 1
-    : left.message_id < right.message_id ? -1 : left.message_id > right.message_id ? 1 : 0));
+  // Oldest first: the inbox order, reversed.
+  return events.sort((left, right) => newestTaskMessageFirst(right, left));
 }
 
 function listReceipts(scope: TaskInboxTaskScope, messageId: string): TaskMessageDeliveryReceiptV2[] {
@@ -898,11 +898,13 @@ export function readAdmittedTaskActivity(input: {
     });
     return receipts.sort((a,b) => deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(a)).localeCompare(deriveTaskMessageRecipientKey(recipientFromTaskMessageReceipt(b))));
   };
-  // A record is one event with all its receipts; a budget stop keeps the complete records already read.
-  const read: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
+  // The walk reads events only; receipts are read only for the returned page.
+  // A record is one event with all its receipts; a budget stop keeps the complete records, in order.
+  const walked: TaskMessageEventV2[] = [];
+  const entries: { event: TaskMessageEventV2; receipts: TaskMessageDeliveryReceiptV2[] }[] = [];
   let cursor: TaskMessageEventV2 | null = null;
   const keep = (event: TaskMessageEventV2) => {
-    if (cursor === null || newestTaskMessageFirst(cursor, event) < 0) read.push({ event, receipts: receiptsAt(event) });
+    if (cursor === null || newestTaskMessageFirst(cursor, event) < 0) walked.push(event);
   };
   let historyExists = inspectSafeDirectoryChain(common, directory, false, 'historical event directory');
   try {
@@ -913,8 +915,11 @@ export function readAdmittedTaskActivity(input: {
     if (input.message_id !== null) { count(); const event = eventAt(input.message_id); historyExists = event !== null; if (event) keep(event); }
     else if (historyExists) each(directory, name => { const event = eventAt(name.slice(0,-5)); if (!event) fail('task_message_unreadable', 'historical event disappeared'); keep(event); });
   } catch (error) { if (!exhausted) throw error; }
-  const entries = read.sort((a,b) => newestTaskMessageFirst(a.event, b.event)).slice(0, input.limit);
-  const reason = exhausted ?? (read.length > entries.length ? 'page' as const : null);
+  const page = walked.sort(newestTaskMessageFirst).slice(0, input.limit);
+  try {
+    for (const event of page) entries.push({ event, receipts: receiptsAt(event) });
+  } catch (error) { if (!exhausted) throw error; }
+  const reason = exhausted ?? (walked.length > page.length ? 'page' as const : null);
   const coverage: TaskActivityCoverage = { complete: reason === null, reason, scanned, bytes };
   return { history_exists: historyExists, entries, coverage,
     next_cursor: reason === 'page' ? entries.at(-1)?.event.message_id ?? null : null };
