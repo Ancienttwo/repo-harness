@@ -1,0 +1,13 @@
+schemaVersion: "archcontext.node/v2"
+id: "component.board.effects"
+kind: "component"
+name: "Board (effects)"
+status: "active"
+parent: "capability.organization.board"
+layer: "effects"
+summary: "The effects-layer files of Board. Responsibilities stay with the parent node."
+responsibilities:
+  - "Hold the effects-layer source files of Board so layer direction is checked per directory."
+source:
+  include:
+    - "src/effects/board/**"
