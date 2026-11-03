@@ -87,6 +87,9 @@ export class ArchctxClientError extends Error {
   }
 }
 
+/** The archctx model entry. archctx 0.9.1 checkpoint refuses a repository without it. */
+export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
+
 export type NativeContextSource = { readonly kind: 'worktree' } | { readonly kind: 'ref'; readonly commit: string };
 
 export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }

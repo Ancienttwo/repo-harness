@@ -9,6 +9,7 @@ import { NATIVE_CONTEXT_PROFILE, decodeArchitectureHistory, type ArchContextErro
 import { capabilityRegistryFromNativeContext, type ArchcontextPathOwner } from '../../core/capabilities/registry';
 import {
   ARCHCTX_REQUIRED_VERSION,
+  ARCHCONTEXT_MANIFEST,
   ArchctxClientError,
   decodeArchitectureHandEdits,
   decodeNativeContextExport,
@@ -17,9 +18,6 @@ import {
 } from '../../core/architecture/projection';
 import { ArchctxClient } from './archctx-provider';
 import { loadArchitectureProjectionPolicy } from './projection-config';
-
-/** The archctx model entry. archctx 0.9.1 checkpoint refuses a repository without it. */
-export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
 
 /** A cold `archctx history` derives every model revision (10.9 s for 50 milestones), so it has its own limit. */
 export const ARCHITECTURE_HISTORY_TIMEOUT_MS = 120_000;
