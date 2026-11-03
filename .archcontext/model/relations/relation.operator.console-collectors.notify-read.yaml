@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.operator.console-collectors.notify-read
+kind: reads
+source: component.operator.console-collectors
+target: component.execution-primitives.notify-read
+intent: "Read the notify install record, notify.env and the relay delivery record through the notify read contract on each notify cycle."

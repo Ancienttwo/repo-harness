@@ -1,6 +1,0 @@
-schemaVersion: archcontext.relation/v1
-id: relation.operator.console-collectors.task-agent-host
-kind: reads
-source: component.operator.console-collectors
-target: component.task-agent-host.primary
-intent: "Read the notify install record, notify.env and the relay delivery record on each notify cycle."

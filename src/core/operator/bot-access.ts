@@ -4,7 +4,8 @@
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
 import { HC_VERSION_TEXT, type HcVersionCheck } from './herdr-pin';
-import { NOTIFY_CHANNELS, NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
+import { NOTIFY_CHANNELS } from '../decision/notify-relay-record';
+import { NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 

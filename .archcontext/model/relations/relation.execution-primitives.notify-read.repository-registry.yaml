@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.notify-read.repository-registry
+kind: reads
+source: component.execution-primitives.notify-read
+target: component.execution-primitives.repository-registry
+intent: "Root the notify install record, notify.env and the relay delivery record in the account-level repo-harness home."

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.notify-read.notify-read-core
+kind: reads
+source: component.execution-primitives.notify-read
+target: component.execution-primitives.notify-read-core
+intent: "Decode the relay delivery record with its one decoder, and give the empty record when no file exists"
