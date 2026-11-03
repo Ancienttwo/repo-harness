@@ -33,19 +33,27 @@ jobs:
           ref: ${{ github.sha }}
           fetch-depth: 0
           persist-credentials: false
-      # The core/plugin rule in check:state-boundaries runs package-local archctx, which needs Node.
-      - uses: actions/setup-node@v4
-        with:
-          node-version: '24'
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
+      - uses: actions/cache@v4
+        with:
+          path: ~/.bun/install/cache
+          key: bun-install-${{ runner.os }}-${{ hashFiles('bun.lock') }}
       # The documentation consumer scanner parses tests with the installed TypeScript API.
       - run: bun install --frozen-lockfile
-      - run: bun run check:state-boundaries
       - name: Reject protected Git paths
         run: bun scripts/check-protected-paths.ts --tracked
+      # Entries are keyed by the analyzer fingerprint and by file content; the selector
+      # parses each file that has no valid entry. A push to main saves the main entries.
+      - uses: actions/cache@v4
+        with:
+          path: ${{ runner.temp }}/ci-path-references.json
+          key: ci-path-references-${{ github.sha }}
+          restore-keys: ci-path-references-
       - id: select
+        env:
+          CI_PATH_REFERENCE_CACHE: ${{ runner.temp }}/ci-path-references.json
         run: bun scripts/select-ci-coverage.ts
       - uses: actions/upload-artifact@v4
         if: steps.select.outputs.mode == 'affected'
@@ -54,6 +62,26 @@ jobs:
           path: .ci-affected-tests.json
           include-hidden-files: true
           if-no-files-found: error
+
+  # Runs beside selection, so it does not delay the selected jobs.
+  state-boundaries:
+    name: State boundaries
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      # The core/plugin rule runs package-local archctx, which needs Node.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: 1.4.3
+      - run: bun install --frozen-lockfile
+      - run: bun run check:state-boundaries
 
   home-isolation:
     name: Test HOME isolation (${{ matrix.os }})
@@ -221,7 +249,7 @@ jobs:
   architecture-advisory:
     name: PR architecture freshness (advisory)
     needs: selection
-    if: needs.selection.outputs.mode == 'affected'
+    if: needs.selection.outputs.mode == 'affected' || needs.selection.outputs.mode == 'documentation'
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -415,12 +443,13 @@ jobs:
   required:
     name: Required / CI
     if: always() && github.event_name == 'pull_request'
-    needs: [selection, verify, home-isolation, native-oar]
+    needs: [selection, state-boundaries, verify, home-isolation, native-oar]
     runs-on: ubuntu-latest
     steps:
       - name: Consume the single candidate verification
         env:
           SELECTION_RESULT: ${{ needs.selection.result }}
+          STATE_BOUNDARIES_RESULT: ${{ needs.state-boundaries.result }}
           COVERAGE_MODE: ${{ needs.selection.outputs.mode }}
           VERIFY_RESULT: ${{ needs.verify.result }}
           HOME_ISOLATION_RESULT: ${{ needs.home-isolation.result }}
@@ -428,6 +457,8 @@ jobs:
           NATIVE_OAR_RESULT: ${{ needs.native-oar.result }}
           NATIVE_OAR: ${{ needs.selection.outputs.native_oar }}
         run: |
-          [ "$SELECTION_RESULT" = success ] && [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ] \
+          # A documentation-only diff selects no build or test job.
+          [ "$SELECTION_RESULT" = success ] && [ "$STATE_BOUNDARIES_RESULT" = success ] \
+            && { { [ "$COVERAGE_MODE" = affected ] && [ "$VERIFY_RESULT" = success ]; } || { [ "$COVERAGE_MODE" = documentation ] && [ "$VERIFY_RESULT" = skipped ]; }; } \
             && { [ "$HOME_ISOLATION_RESULT" = success ] || { [ "$HOME_ISOLATION" = false ] && [ "$HOME_ISOLATION_RESULT" = skipped ]; }; } \
             && { [ "$NATIVE_OAR_RESULT" = success ] || { [ "$NATIVE_OAR" = false ] && [ "$NATIVE_OAR_RESULT" = skipped ]; }; }

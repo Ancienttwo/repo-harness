@@ -471,6 +471,51 @@ describe('single affected verification and daily fallback', () => {
     await expect(selectAffectedTests(['scripts/after.sh'], sources, [])).rejects.toThrow('coverage is unknown');
   });
 
+  test('persisted path references give the full-parse result on hit, partial hit, miss and corrupt input', () => {
+    const directory = mkdtempSync(join(tmpdir(), 'rh-ci-path-cache-'));
+    const sources = [
+      ['tests/guide.test.ts', "import { readFileSync } from 'node:fs'; readFileSync('docs/guide.md'); // comment"],
+      ['scripts/run.ts', "import { spawnSync } from 'node:child_process'; spawnSync('bash', ['scripts/tool.sh'], { cwd: '/repo' });"],
+      ['src/data.ts', "import { join } from 'node:path'; export const data = join(import.meta.dir, '../templates/data.json');"],
+    ];
+    // A fresh process per row, so only the persisted file can supply an entry.
+    const parse = (cache: string, save = false) => {
+      const result = spawnSync(process.execPath, ['-e', `
+        const { discoverPathReferences, loadPathReferences, savePathReferences, sourceEvidence, sourceKey } = await import(${JSON.stringify(join(ROOT, 'scripts/ci-path-consumers.ts'))});
+        const sources = JSON.parse(process.env.SOURCES);
+        const loaded = loadPathReferences(process.env.CACHE, 'analyzer-1');
+        const references = await discoverPathReferences(sources);
+        if (process.env.SAVE) savePathReferences(process.env.CACHE, 'analyzer-1', sources);
+        console.log(JSON.stringify({ loaded, entries: sources.map(([file, source]) => [references.get(sourceKey(file, source)), sourceEvidence.get(sourceKey(file, source))]) }));
+      `], { encoding: 'utf8', env: { ...process.env, SOURCES: JSON.stringify(sources), CACHE: cache, SAVE: save ? '1' : '' } });
+      expect(result.status, result.stderr).toBe(0);
+      return JSON.parse(result.stdout) as { loaded: number; entries: unknown[] };
+    };
+    try {
+      const full = join(directory, 'full.json');
+      const baseline = parse(full, true);
+      expect(baseline.loaded).toBe(0);
+      expect(baseline.entries.every(entry => Array.isArray((entry as unknown[])[0]))).toBe(true);
+      const saved = JSON.parse(readFileSync(full, 'utf8'));
+      const keys = Object.keys(saved.entries);
+      expect(keys).toHaveLength(sources.length);
+      const variant = (name: string, content: string) => { const file = join(directory, name); writeFileSync(file, content); return file; };
+      const rows: [string, string, number][] = [
+        ['hit', full, sources.length],
+        ['partial hit', variant('partial.json', JSON.stringify({ ...saved, entries: { [keys[0]!]: saved.entries[keys[0]!] } })), 1],
+        ['miss: no file', join(directory, 'absent.json'), 0],
+        ['miss: another analyzer', variant('analyzer.json', JSON.stringify({ ...saved, analyzer: 'analyzer-2' })), 0],
+        ['corrupt file', variant('corrupt.json', '{"analyzer":'), 0],
+        ['corrupt entry', variant('entry.json', JSON.stringify({ ...saved, entries: { ...saved.entries, [keys[1]!]: { references: [{ path: 1 }], evidence: [] } } })), sources.length - 1],
+      ];
+      for (const [name, cache, loaded] of rows) {
+        const result = parse(cache);
+        expect({ name, loaded: result.loaded }).toEqual({ name, loaded });
+        expect({ name, entries: result.entries }).toEqual({ name, entries: baseline.entries });
+      }
+    } finally { rmSync(directory, { recursive: true, force: true }); }
+  }, 60_000);
+
   test('exact complete diff is required, including draft candidates', () => {
     expect(selectCoverage({ ...input, diffRaw: record })).toEqual({ mode: 'affected', reason: 'complete-diff', paths: ['src/feature.ts'] });
     for (const diffRaw of [null, '', record.slice(0, -1), record + '\0', record.replace(' M\0', ' R100\0'), record.replace(sha, 'bad'), record.replace('src/feature.ts', 'src/../feature.ts')]) {

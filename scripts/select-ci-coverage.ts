@@ -2,12 +2,13 @@ import { appendFileSync, existsSync, mkdtempSync, readFileSync, rmSync, writeFil
 import { spawnSync } from 'node:child_process';
 import { dirname, join, posix } from 'node:path';
 import { tmpdir } from 'node:os';
-import { discoverPathReferences, sourceKey } from './ci-path-consumers';
+import { createHash } from 'node:crypto';
+import { discoverPathReferences, loadPathReferences, savePathReferences, sourceKey } from './ci-path-consumers';
 
 export type CoverageInput = {
   eventName: string; event: unknown; headSha: string; actualHead: string; diffRaw: string | null;
 };
-export type CoverageSelection = { mode: 'affected' | 'daily' | 'report' | 'invalid'; reason: string; paths: string[] };
+export type CoverageSelection = { mode: 'affected' | 'documentation' | 'daily' | 'report' | 'invalid'; reason: string; paths: string[] };
 export function validSha(value: unknown): value is string {
   return typeof value === 'string' && /^[0-9a-f]{40}$/.test(value) && value !== '0'.repeat(40);
 }
@@ -19,6 +20,10 @@ export function isDocumentationPath(path: string): boolean {
     || (path.startsWith('examples/') && path.endsWith('.md'))
     || path === 'tasks/lessons.md'
     || (path.startsWith('docs/') && path.endsWith('.md'));
+}
+/** A PR diff of documentation paths only runs no build or test job. */
+export function documentationOnly(paths: readonly string[]): boolean {
+  return paths.length > 0 && paths.every(isDocumentationPath);
 }
 export function diffBase(eventName: string, event: unknown): unknown {
   const payload = event as any;
@@ -255,6 +260,17 @@ export async function discoverPlatformInputs(sources: ReadonlyMap<string, string
   return { native, home };
 }
 
+/** Every input of the path parse: the analyzer's local import closure and the lockfile that pins the TypeScript parser. */
+export function pathAnalyzerFingerprint(sources: ReadonlyMap<string, string>): string {
+  const hash = createHash('sha256');
+  for (const file of [...platformImportClosure(['scripts/ci-path-consumers.ts'], sources), 'bun.lock'].sort()) {
+    const source = sources.get(file);
+    if (source === undefined) throw new Error(`Path reference cache requires source: ${file}`);
+    hash.update(`${file}\0${source}\0`);
+  }
+  return hash.digest('hex');
+}
+
 function git(args: string[]): string {
   const result = spawnSync('git', args, { encoding: 'utf8' });
   if (result.status !== 0) throw new Error(result.stderr || `git ${args[0]} failed`);
@@ -277,30 +293,39 @@ if (import.meta.main) {
   if (selection.mode === 'invalid') throw new Error(selection.reason);
   if (selection.mode === 'daily' && process.env.GITHUB_REF !== 'refs/heads/main') throw new Error('Daily validation requires the fixed main snapshot');
   let platforms = { native_oar: selection.mode === 'daily', home_isolation: selection.mode === 'daily' };
-  if (selection.mode === 'affected') {
-    if (local) {
-      const untracked = git(['ls-files', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json', '-z']).split('\0').filter(Boolean);
-      if (untracked.some(path => !validPath(path))) throw new Error('invalid-diff');
-      selection.paths = [...new Set([...selection.paths, ...untracked])];
-    }
+  if (selection.mode === 'affected' && local) {
+    const untracked = git(['ls-files', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json', '-z']).split('\0').filter(Boolean);
+    if (untracked.some(path => !validPath(path))) throw new Error('invalid-diff');
+    selection.paths = [...new Set([...selection.paths, ...untracked])];
+  }
+  if (selection.mode === 'affected' && documentationOnly(selection.paths)) selection.mode = 'documentation';
+  // The push-to-main run fills the cache that PR runs restore; it runs no test.
+  const referenceCache = process.env.CI_PATH_REFERENCE_CACHE;
+  if (selection.mode === 'affected' || (selection.mode === 'report' && referenceCache)) {
     const sources = new Map<string, string>();
     for (const file of git(['ls-files', ...(local ? ['--cached', '--others', '--exclude-standard', '--exclude=.ci-affected-tests.json'] : []), '-z']).split('\0').filter(Boolean)) if (existsSync(file)) {
       try { sources.set(file, readFileSync(file, 'utf8')); } catch { /* directories/submodules are validated by their consumer */ }
     }
     const previousSources = new Map<string, string>();
-    for (const file of selection.paths) {
-      const old = spawnSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' });
-      if (old.status === 0) previousSources.set(file, old.stdout);
+    const analyzer = referenceCache ? pathAnalyzerFingerprint(sources) : '';
+    if (referenceCache) console.log(`Loaded ${loadPathReferences(referenceCache, analyzer)} cached path-reference entries`);
+    if (selection.mode === 'report') await discoverPathReferences([...sources]);
+    else {
+      for (const file of selection.paths) {
+        const old = spawnSync('git', ['show', `${base}:${file}`], { encoding: 'utf8' });
+        if (old.status === 0) previousSources.set(file, old.stdout);
+      }
+      const documentationConsumers = selection.paths.some(isDocumentationPath)
+        ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
+      platforms = selectPlatformCoverage(selection.paths, await discoverPlatformInputs(sources));
+      const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
+      if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
+      for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
+      const tests = coverage.tests;
+      writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
+      console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
     }
-    const documentationConsumers = selection.paths.some(isDocumentationPath)
-      ? await (await import('./ci-documentation-consumers')).discoverDocumentationConsumers(process.cwd()) : [];
-    platforms = selectPlatformCoverage(selection.paths, await discoverPlatformInputs(sources));
-    const coverage = await analyzeAffectedTests(selection.paths, sources, documentationConsumers, previousSources);
-    if (coverage.uncovered.length) throw new Error(`Affected coverage is unknown for: ${coverage.uncovered.join(', ')}`);
-    for (const path of coverage.dailyOnly) console.log(`daily-only=${path}; not verified by this PR`);
-    const tests = coverage.tests;
-    writeFileSync('.ci-affected-tests.json', JSON.stringify(tests));
-    console.log(`Selected ${tests.length} affected tests for ${selection.paths.length} changed paths`);
+    if (referenceCache) savePathReferences(referenceCache, analyzer, [...sources, ...previousSources]);
   }
   console.log(`mode=${selection.mode}\nreason=${selection.reason}\nhead=${headSha}\nbase=${base ?? headSha}\nnative_oar=${platforms.native_oar}\nhome_isolation=${platforms.home_isolation}`);
   if (!local) appendFileSync(process.env.GITHUB_OUTPUT!, `mode=${selection.mode}\nsha=${headSha}\nnative_oar=${platforms.native_oar}\nhome_isolation=${platforms.home_isolation}\n`);
