@@ -7,6 +7,7 @@ import { createHash, randomUUID } from 'crypto';
 
 import { copyPackageRuntimeFixture } from '../helpers/repo-fixture';
 import { writeFakeHc } from '../helpers/fake-hc';
+import { recordPluginSelection } from '../helpers/install-ownership';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { beginInstallHostTransaction, readInstallState, versions, rollbackInstallHostTransaction } from '../../src/cli/installer/install-profile';
 import {
@@ -608,7 +609,8 @@ describe('candidate-bound global runtime reconciliation', () => {
         const globalPackage = join(globalRoot, 'node_modules', 'repo-harness');
         mkdirSync(join(globalRoot, 'node_modules'), { recursive: true });
         symlinkSync(parentRoot, globalPackage, 'dir');
-        writeCoreOnlyInstallState(home);
+        // The renderer and daemon checks belong to the architecture plugin.
+        recordPluginSelection({ HOME: home });
         const globalManifest = join(globalRoot, 'package.json');
         const oldManifest = JSON.stringify({ dependencies: { 'repo-harness': '^0.21.2' } });
         writeFileSync(globalManifest, oldManifest);

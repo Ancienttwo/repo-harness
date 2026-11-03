@@ -54,6 +54,8 @@ function copyHelpers(cwd: string) {
   mkdirSync(join(cwd, "src"), { recursive: true });
   symlinkSync(join(ROOT, "src/effects"), join(cwd, "src/effects"), "dir");
   symlinkSync(join(ROOT, "src/core"), join(cwd, "src/core"), "dir");
+  // The worktree runtime reads the recorded install selection through src/cli/installer.
+  symlinkSync(join(ROOT, "src/cli"), join(cwd, "src/cli"), "dir");
 
   for (const file of listHelperFiles({ REPO_HARNESS_SOURCE_ROOT: ROOT })) {
     copyFileSync(join(HELPER_DIR, file), join(scriptsDir, file));

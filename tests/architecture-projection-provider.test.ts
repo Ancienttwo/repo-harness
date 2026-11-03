@@ -43,6 +43,7 @@ import { buildArchitectureProjectionCommand } from '../src/cli/commands/architec
 import { architectureProjectionExitCode, humanActionLine } from '../src/cli/commands/architecture-projection-actions';
 import { applyArchitectureProjection } from '../src/effects/architecture/projection-apply';
 import { architectureWriterArgs } from '../src/effects/architecture/projection-writer';
+import { recordPluginSelection } from './helpers/install-ownership';
 
 const PACKAGE_ROOT = join(import.meta.dir, '..');
 const CLI_ENTRY = join(PACKAGE_ROOT, 'src', 'cli', 'index.ts');
@@ -1038,6 +1039,7 @@ describe('package-local ArchContext projection provider', () => {
     const [home, stateDir] = ['home', 'state'].map((name) => join(root, name));
     for (const dir of [home, stateDir]) mkdirSync(dir);
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, ARCHCONTEXT_STATE_DIR: stateDir };
+    recordPluginSelection(env);
     const git = (cwd: string, args: string[]) => execFileSync('git', ['-c', 'user.name=Test', '-c', 'user.email=test@example.invalid', ...args], { cwd, env, stdio: 'ignore' });
     const repository = (name: string) => {
       const repo = join(root, name);
@@ -1079,6 +1081,7 @@ describe('package-local ArchContext projection provider', () => {
     execFileSync('git', ['init', '-q', '-b', 'main'], { cwd, stdio: 'ignore' });
     const env: NodeJS.ProcessEnv = { ...process.env, HOME: cwd };
     delete env.ARCHCONTEXT_STATE_DIR;
+    recordPluginSelection(env);
     if (stateDir) env.ARCHCONTEXT_STATE_DIR = stateDir === 'absolute' ? join(cwd, 'writer-state') : stateDir;
     const result = spawnSync(process.execPath, [CLI_ENTRY, 'architecture-projection', 'publish', mode], { cwd, env, encoding: 'utf8', timeout: 60_000 });
     expect(result.status).toBe(1);
@@ -1173,6 +1176,7 @@ describe('package-local ArchContext projection provider', () => {
     writeFileSync(join(home, '.repo-harness', 'config.json'), JSON.stringify({
       architecture: { projection_provider: 'archctx', projection_apply: 'manual' },
     }));
+    recordPluginSelection({ HOME: home });
     const output = execFileSync(process.execPath, [
       join(import.meta.dir, '..', 'src', 'cli', 'index.ts'), 'architecture-projection', 'status', '--json',
     ], { cwd: f.repoRoot, env: { ...process.env, HOME: home }, encoding: 'utf8', timeout: 10_000 });

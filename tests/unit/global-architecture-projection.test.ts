@@ -3,6 +3,7 @@ import { execFileSync, spawnSync } from 'node:child_process';
 import { mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, resolve } from 'node:path';
+import { recordPluginSelection } from '../helpers/install-ownership';
 
 const roots: string[] = [];
 const cli = resolve(import.meta.dir, '../../src/cli/index.ts');
@@ -16,6 +17,8 @@ test('one global configuration controls two repos without repository projection 
   writeFileSync(join(home, '.repo-harness/config.json'), JSON.stringify({ architecture: {
     projection_provider: 'archctx', projection_apply: 'manual',
   } }));
+  // architecture-projection is a guarded command of the architecture plugin.
+  recordPluginSelection({ HOME: home });
   for (const name of ['first', 'second']) {
     const repo = join(root, name);
     mkdirSync(join(repo, '.ai/harness'), { recursive: true });

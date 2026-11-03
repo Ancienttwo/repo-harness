@@ -14,6 +14,7 @@ import {
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { recordPluginSelection } from "./helpers/install-ownership";
 import { createHash } from "crypto";
 import { runSubagentContext } from "../src/cli/hook/subagent-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
@@ -1799,6 +1800,7 @@ describe("check-agent-tooling", () => {
       writeArchctxRepo(envRoot.root, "registry");
       writeExecutable(join(envRoot.fakeBin, "archctx"), "#!/bin/sh\necho 0.5.13\n");
 
+      recordPluginSelection({ HOME: envRoot.home });
       const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",
@@ -1841,6 +1843,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(archctxRoot, { recursive: true });
       writeFileSync(join(archctxRoot, "package.json"), JSON.stringify({ name: "archctx", version: packaged.version, engines: packaged.engines, bin: { archctx: "./bin/archctx.mjs" } }));
 
+      recordPluginSelection({ HOME: envRoot.home });
       const res = spawnSync("bash", [join(packageRoot, "scripts", "check-agent-tooling.sh"), "--json", "--host", "claude"], {
         cwd: envRoot.root,
         encoding: "utf-8",

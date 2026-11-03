@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { execFileSync, spawnSync } from "child_process";
+import { recordPluginSelection } from "./helpers/install-ownership";
 
 const ROOT = join(import.meta.dir, "..");
 const SCRIPT = join(ROOT, "scripts/check-context-map.ts");
@@ -167,6 +168,8 @@ function makeFixture(): string {
 
 function runCheck(repo: string, args: string[] = []) {
   const home = mkdtempSync(join(tmpdir(), "check-context-map-home-"));
+  // The context map reads the archcontext registry through the architecture plugin.
+  recordPluginSelection({ HOME: home });
   try {
     const result = spawnSync("bun", [SCRIPT, "--repo", repo, ...args], {
       cwd: repo,

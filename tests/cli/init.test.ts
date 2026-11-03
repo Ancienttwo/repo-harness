@@ -231,6 +231,19 @@ describe("init command", () => {
       writeFileSync(configPath, disabled);
       expect(runSelectedInit(options).exitCode).toBe(0);
       expect(readFileSync(configPath, "utf8")).toBe(disabled);
+
+      // Without the plugin, init skips the readiness read; a policy that needs the plugin fails closed before any write.
+      const unselected = runInit(CLI_PORTS.init, { ...options, plugins: ["product"] });
+      expect(unselected.exitCode).toBe(0);
+      expect(unselected.steps.find((step) => step.step === "architecture projection readiness")).toEqual({
+        step: "architecture projection readiness", status: "skipped", detail: "architecture plugin not selected",
+      });
+      const policyPath = join(repo, ".ai/harness/policy.json");
+      const policy = { ...JSON.parse(readFileSync(policyPath, "utf8")), context: { capability_source: "archcontext" } };
+      writeFileSync(policyPath, JSON.stringify(policy));
+      expect(() => runInit(CLI_PORTS.init, { ...options, plugins: ["product"] }))
+        .toThrow(`${policyPath} sets context.capability_source: archcontext, which needs the architecture plugin; run: repo-harness install --plugins architecture,product`);
+      expect(readFileSync(policyPath, "utf8")).toBe(JSON.stringify(policy));
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

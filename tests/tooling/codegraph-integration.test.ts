@@ -2,14 +2,16 @@ import { describe, expect, test } from "bun:test";
 import { readFileSync } from "fs";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { pluginSelectionEnv } from "../helpers/install-ownership";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
 const SCRIPT = join(ROOT, "scripts/ensure-codegraph.sh");
 
-function runJson(command: string, args: string[]) {
+function runJson(command: string, args: string[], env: NodeJS.ProcessEnv) {
   const res = spawnSync(command, args, {
     cwd: ROOT,
+    env,
     encoding: "utf-8",
   });
   expect(res.status).toBe(0);
@@ -33,8 +35,9 @@ describe("CodeGraph tooling integration", () => {
   }, 30_000);
 
   test("shell adapter and CLI tools command share the same readiness model", () => {
-    const viaScript = runJson("bash", [SCRIPT, "--check", "--json"]);
-    const viaCli = runJson("bun", [CLI, "tools", "ensure", "codegraph", "--check", "--json"]);
+    const env = pluginSelectionEnv();
+    const viaScript = runJson("bash", [SCRIPT, "--check", "--json"], env);
+    const viaCli = runJson("bun", [CLI, "tools", "ensure", "codegraph", "--check", "--json"], env);
 
     expect(viaScript.read_only).toBe(true);
     expect(viaCli.read_only).toBe(true);

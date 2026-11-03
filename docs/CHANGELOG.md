@@ -16,6 +16,24 @@ All notable changes to this skill are documented here.
   `~/.repo-harness/install-state.json` (and `dsh` from an explicit
   `selection`), or delete the file and run `repo-harness install`. No known
   machine records `dsh`. (#1653)
+- archctx and CodeGraph are the `architecture` plugin. A process loads them
+  only when the recorded install selection includes `architecture`. No
+  install state means not selected. With the plugin not selected, SessionStart,
+  the inbox and Stop hooks, `status`, `init`, `doctor`, `setup check` and
+  `update` start no archctx or CodeGraph process and write no architecture
+  configuration. `status` and `doctor` report `not selected` with the repair
+  command, and the hooks give no architecture notice.
+  `repo-harness architecture-projection`, `architecture-debt`, `refactor`,
+  `tools ensure codegraph` and `tools configure codegraph` fail closed with
+  `install_plugin_unavailable` before they start a process.
+  A repository policy that sets `context.capability_source: archcontext` or
+  `tooling.codegraph.enabled: true` needs the plugin: `install`, `update` and
+  `init` (apply) on that repository fail closed with
+  `install_plugin_unavailable`. Fix: run the command in the error. For a
+  recorded selection it is `repo-harness install --plugins architecture,<your
+  plugins>`; without an install state it is `repo-harness install`. Known gap
+  until #1670: with the plugin not selected, the operator module diff path
+  still reaches archctx through `archcontext-owners.ts`. (#1656)
 
 ### Changed
 

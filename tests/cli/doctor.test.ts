@@ -1,4 +1,4 @@
-import { CLI_PORTS } from '../../src/cli/index';
+import { CLI_PORTS, registerArchitecturePlugin } from '../../src/cli/index';
 import { installProfileStatePath, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
 import { installSelectionCommand, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
@@ -18,6 +18,7 @@ import {
   runDoctor,
 } from '../../src/cli/commands/doctor';
 import { writeShellExecutableFixture } from '../helpers/repo-fixture';
+import { recordPluginSelection } from '../helpers/install-ownership';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
@@ -161,6 +162,7 @@ describe('doctor command (Phase 1C)', () => {
   }
 
   test('runDoctor emits the built-in checks (path/version/hosts/trust)', () => {
+    registerArchitecturePlugin();
     withTempHome((home) => {
       const r = runDoctor(CLI_PORTS.doctor);
       const ids = r.checks.map((c) => c.id);
@@ -609,6 +611,7 @@ describe('doctor command (Phase 1C)', () => {
         PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ''}`,
         AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
       };
+      recordPluginSelection(env);
       const doctor = () => spawnSync('bun', [path.join(root, 'src/cli/index.ts'), 'doctor', '--json'], { cwd: envRoot.root, encoding: 'utf-8', env });
       const res = doctor();
 
@@ -636,17 +639,17 @@ describe('doctor command (Phase 1C)', () => {
       expect(log).not.toContain('codegraph sync');
       expect(log).not.toContain('codegraph install');
 
-      // A selection without architecture has no CodeGraph: each check is na and doctor probes nothing.
+      // A selection without architecture has no CodeGraph: one na row replaces the CodeGraph checks and doctor probes nothing.
       fs.rmSync(logFile);
       const statePath = installProfileStatePath(env);
       fs.mkdirSync(path.dirname(statePath), { recursive: true });
       fs.writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['product']), selection: ['product'], transaction_id: 'doctor',
         applied_at: '2026-11-01T00:00:00.000Z', ownership_manifest: [], previous: null }));
       const unselected = JSON.parse(doctor().stdout).checks
-        .filter((entry: { id: string }) => ['codegraph-readiness', 'codex-codegraph-mcp', 'claude-codegraph-mcp', 'codegraph-index'].includes(entry.id))
+        .filter((entry: { id: string }) => ['codegraph', 'codegraph-readiness', 'codex-codegraph-mcp', 'claude-codegraph-mcp', 'codegraph-index'].includes(entry.id))
         .map(({ id, status, detail }: { id: string; status: string; detail: string }) => ({ id, status, detail }));
-      expect(unselected).toEqual(['codegraph-readiness', 'codex-codegraph-mcp', 'claude-codegraph-mcp', 'codegraph-index']
-        .map(id => ({ id, status: 'na', detail: 'architecture plugin not selected' })));
+      expect(unselected).toEqual([{ id: 'codegraph', status: 'na',
+        detail: 'the architecture plugin is not selected; run: repo-harness install --plugins architecture,product' }]);
       expect(fs.existsSync(logFile)).toBe(false);
     } finally {
       fs.rmSync(envRoot.root, { recursive: true, force: true });

@@ -10,6 +10,7 @@ import { execFileSync } from "child_process";
 
 import { copyHelpers } from "./helpers/helper-script-fixture";
 import { run, tmpWorkspace } from "./helpers/repo-fixture";
+import { pluginSelectionEnv } from "./helpers/install-ownership";
 
 setDefaultTimeout(30000);
 
@@ -45,6 +46,8 @@ describe("select-agent-context-blocks helper integration", () => {
 
   test("select-agent-context-blocks fails closed with the resolver error under archcontext", () => {
     const cwd = tmpWorkspace("helper-select-context-archcontext-broken");
+    // The archcontext resolver runs only when the architecture plugin is selected.
+    const home = pluginSelectionEnv().HOME!;
     try {
       copyHelpers(cwd);
       mkdirSync(join(cwd, "legacy-dir"), { recursive: true });
@@ -56,12 +59,13 @@ describe("select-agent-context-blocks helper integration", () => {
       writeFileSync(join(cwd, ".archcontext", "model", "nodes", "broken.yaml"), "schemaVersion: [\n");
 
       commitModel(cwd);
-      const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd);
+      const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd, { HOME: home });
 
       expect(res.status).not.toBe(0);
       expect(res.stdout).toBe("");
       expect(res.stderr).toContain("AC_SCHEMA_INVALID");
     } finally {
+      rmSync(home, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);
@@ -88,6 +92,8 @@ describe("select-agent-context-blocks helper integration", () => {
 
   test("select-agent-context-blocks lists archcontext anchors from the resolver", () => {
     const cwd = tmpWorkspace("helper-select-context-archcontext");
+    // The archcontext resolver runs only when the architecture plugin is selected.
+    const home = pluginSelectionEnv().HOME!;
     try {
       copyHelpers(cwd);
       mkdirSync(join(cwd, "apps", "web"), { recursive: true });
@@ -115,11 +121,12 @@ describe("select-agent-context-blocks helper integration", () => {
       ].join("\n"));
 
       commitModel(cwd);
-      const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd);
+      const res = run("bash", ["scripts/select-agent-context-blocks.sh"], cwd, { HOME: home });
 
       expect(res.status, res.stderr).toBe(0);
       expect(res.stdout.trim()).toBe("apps/web");
     } finally {
+      rmSync(home, { recursive: true, force: true });
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 30_000);

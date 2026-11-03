@@ -577,7 +577,7 @@ function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): 
  * the CodeGraph doctor port. CodeGraph follows the architecture plugin, so
  * without it one `na` row stands for them and nothing runs.
  */
-function codegraphDoctorChecks(cwd: string): readonly ArchitectureDoctorCheck[] {
+export function codegraphDoctorChecks(cwd: string): readonly ArchitectureDoctorCheck[] {
   const port = architecturePort('codegraphDoctor');
   if (isArchitectureUnavailable(port)) {
     return [{ id: 'codegraph', describe: 'CodeGraph checks', status: port.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED' ? 'na' : 'fail', detail: port.message }];
@@ -586,7 +586,7 @@ function codegraphDoctorChecks(cwd: string): readonly ArchitectureDoctorCheck[] 
 }
 
 /** Only an unselected plugin has this row: the host projection section stays inert, and the row says whether it exists. */
-function checkArchitectureProjectionSelection(env: NodeJS.ProcessEnv): DoctorCheckResult[] {
+export function checkArchitectureProjectionSelection(env: NodeJS.ProcessEnv): DoctorCheckResult[] {
   const setup = architecturePort('setup');
   if (!isArchitectureUnavailable(setup) || setup.code !== 'ARCHITECTURE_PLUGIN_NOT_SELECTED') return [];
   const id = 'architecture-projection';

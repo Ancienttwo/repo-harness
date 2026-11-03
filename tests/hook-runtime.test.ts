@@ -12,6 +12,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { fixtureWrite } from './helpers/module-repository';
+import { recordPluginSelection } from './helpers/install-ownership';
 import { registryNoticeFixture, registryProjectedFixture, unignoreNoticeState } from './helpers/agent-notice';
 import { tmpdir } from 'os';
 import { join } from 'path';
@@ -264,6 +265,8 @@ describe('host envelopes on the real hook entry (#678)', () => {
 
   /** The bytes the host reads from fd 1 and fd 2 of `repo-harness-hook`. */
   function host(root: string, hostName: 'claude' | 'codex', event: string, route: string, input: unknown, extraEnv: NodeJS.ProcessEnv = {}) {
+    // These hosts exercise the architecture notices, so the fixture HOME selects the architecture plugin.
+    recordPluginSelection({ HOME: join(root, 'home') });
     const result = spawnSync(process.execPath, [HOOK_ENTRY, event, '--route', route], {
       cwd: root,
       input: JSON.stringify(input),

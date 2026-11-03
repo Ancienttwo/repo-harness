@@ -8,6 +8,7 @@ import {
   runCapabilityContextSync,
 } from '../../src/cli/commands/capability-context';
 import type { Capability } from '../../src/core/capabilities/registry';
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 
 function tmpWorkspace(prefix: string): string {
   return fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), `${prefix}-`)));
@@ -284,7 +285,7 @@ describe('capability-context command', () => {
       const res = spawnSync(
         'bun',
         [path.join(import.meta.dir, '../../src/cli/index.ts'), 'capability-context', 'sync', '--repo', cwd, '--capability', 'runtime-operator', '--apply'],
-        { cwd, encoding: 'utf-8' },
+        { cwd, env: pluginSelectionEnv(), encoding: 'utf-8' },
       );
       expect(res.status).toBe(2);
       expect(res.stderr).toContain('declares shared contract files AGENTS.md, CLAUDE.md');
@@ -335,7 +336,7 @@ describe('capability-context command', () => {
       const res = spawnSync(
         'bun',
         [path.join(import.meta.dir, '../../src/cli/index.ts'), 'capability-context', 'status', '--repo', cwd],
-        { cwd, encoding: 'utf-8' },
+        { cwd, env: pluginSelectionEnv(), encoding: 'utf-8' },
       );
       expect(res.status).toBe(2);
       expect(res.stderr).toContain('AC_SCHEMA_INVALID');

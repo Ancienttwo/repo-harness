@@ -5,6 +5,7 @@ import * as os from 'os';
 import { execSync } from 'child_process';
 import { runStatus, formatStatus } from '../../src/cli/commands/status';
 import { runInstall } from '../../src/cli/commands/install';
+import { registerArchitecturePlugin } from '../../src/cli/index';
 import { installProfileStatePath, versions } from '../../src/cli/installer/install-profile';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
@@ -218,6 +219,7 @@ describe('status command (Phase 1C)', () => {
   }, 30_000);
 
   test('reports model authority, projection provider, code facts, and apply independently', () => {
+    registerArchitecturePlugin();
     withTempHome(() => {
       const repo = fs.realpathSync(
         fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-status-architecture-')),

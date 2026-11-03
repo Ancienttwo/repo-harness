@@ -33,6 +33,7 @@ import {
   withRepo,
   writeFixture as write,
 } from './state/effective-state-fixture';
+import { pluginSelectionEnv } from './helpers/install-ownership';
 
 describe('effective state ignores the retired task chain', () => {
   test('contract, review, sprint and check records cannot change task authority', () => {
@@ -779,7 +780,8 @@ describe('effective state resolver', () => {
 
       function expectCause(cwd: string, targetPath: string, cause: { key: string; reason: string; code: string; fix: string; message: string }): void {
         const risk = { targetPaths: [targetPath], operationKind: 'edit' as const };
-        const cli = runStateCli(cwd, ['state', 'resolve', '--json', ...effectiveStateCliRiskArgs(risk)]);
+        // The archcontext owners resolve only for a selected architecture plugin.
+        const cli = runStateCli(cwd, ['state', 'resolve', '--json', ...effectiveStateCliRiskArgs(risk)], pluginSelectionEnv());
         expect(cli.status, cli.stderr).toBe(1);
         const state = JSON.parse(cli.stdout) as EffectiveState;
         expect(state.blockers).toEqual([cause.key]);

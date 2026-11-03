@@ -165,7 +165,7 @@ function execution(input: BoardCollectInput, repositoryId: number): BoardExecuti
  * entry. A failed run, a rejected model or an owner that is no capability
  * node makes every owner unavailable, because it does not name its path.
  */
-function pathOwners(input: BoardCollectInput, reads: readonly BoardPullRequestReadV1[]): BoardPathOwnersV1 {
+export function pathOwners(input: Pick<BoardCollectInput, 'repo_root' | 'archctx'>, reads: readonly BoardPullRequestReadV1[]): BoardPathOwnersV1 {
   const paths = [...new Set(reads.filter(read => read.state === 'open').flatMap(read => read.files ?? []))].sort();
   if (paths.length === 0) return { status: 'observed', owners: [] };
   const display = architecturePort('display');
