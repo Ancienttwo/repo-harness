@@ -294,8 +294,21 @@ The owner accepts or repairs each flag before publish.
   the published tarball digest here, then runs
   `bun run check:release-published`.
 
-  - Publish candidate: pending.
-  - npm version: pending.
-  - Git tag: pending.
-  - Published tarball digest: pending.
-  - `bun run check:release-published`: pending.
+  - Publish candidate: `7a85940dd768459086d2cbbab84f0eb7863fccd3` (main after #1646).
+    The prepublish gate (`bash scripts/check-npm-release.sh --prepublish`)
+    ran at 2026-11-03T17:56:18Z. Then `npm publish --ignore-scripts` ran
+    with npm web authentication.
+  - npm version: `repo-harness@0.25.4`, dist-tag `latest`. Upload at
+    2026-11-03T17:57:49Z. `npm view` showed the version at
+    2026-11-03T18:01:58Z.
+  - Git tag: annotated `v0.25.4`, tag object
+    `6e144f5e1a9da0b786bed369f42e551c11f4c5f2`, on `7a85940dd`; GitHub Release
+    https://github.com/Ancienttwo/repo-harness/releases/tag/v0.25.4, created
+    2026-11-03T18:03:27Z, published 2026-11-03T18:03:40Z.
+  - Published tarball digest: shasum `c995c8e4e85dd2fbecc202ee550714d39a9a0f84`,
+    integrity `sha512-wBm9zXOqktj6NyFJQY6Dd8Mq3q+BqSgZxOkGY1f25JHFift/3iuDHVv44opbVajjtlLEH2u1TZYK+hOIGzElqg==`.
+  - `bun run check:release-published`: OK, including the runtime-evidence
+    receipt.
+
+- Yellow flag for the next release: the npm registry read-back took about
+  4 minutes after the upload. A 3-minute read-back wait is too short.
