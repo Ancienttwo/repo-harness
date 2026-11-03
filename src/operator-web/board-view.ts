@@ -1,7 +1,8 @@
 import { useCallback, useState } from 'react';
 import { evaluateBoardAttention, type BoardAttentionV1, type BoardFindingV1 } from '../core/board/attention';
 import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../core/board/board';
-import { BOARD_READ_FAILURES, type BoardReadFailure } from '../core/operator/board-read';
+import { decodeBoardParents, type BoardParentsV1 } from '../core/board/parents';
+import { BOARD_PARENTS_READ_FAILURES, BOARD_READ_FAILURES, type BoardParentsReadFailure, type BoardReadFailure } from '../core/operator/board-read';
 import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -80,6 +81,53 @@ export function useBoard(read: BoardReader, subject: BoardSubject | null, genera
   useObservationRefresh(observe, JSON.stringify(['board', key, generation]), { enabled: subject !== null });
   if (subject === null) return null;
   return state !== null && state.key === key ? state.view : { kind: 'loading' };
+}
+
+/** `unreachable` as for the board: no response, or a code this bundle does not know. */
+export type BoardParentsReason = BoardParentsReadFailure | 'unreachable';
+export type BoardParentsRead =
+  | { readonly state: 'ok'; readonly list: BoardParentsV1 }
+  | { readonly state: 'unavailable'; readonly reason: BoardParentsReason };
+export type BoardParentsReader = (repositoryId: string, signal: AbortSignal) => Promise<BoardParentsRead>;
+
+/** Browser side of `GET /api/v1/repositories/<id>/board/parents`: the parent list of the Board page. */
+export async function fetchBoardParents(repositoryId: string, signal: AbortSignal): Promise<BoardParentsRead> {
+  let response: Response;
+  try {
+    response = await fetch(`/api/v1/repositories/${encodeURIComponent(repositoryId)}/board/parents`, {
+      signal, cache: 'no-store', headers: { Accept: 'application/json' },
+    });
+  } catch (error) {
+    if (signal.aborted) throw error;
+    return { state: 'unavailable', reason: 'unreachable' };
+  }
+  const body: unknown = await response.json().catch(() => null);
+  if (!response.ok) {
+    const code = asApiError(body).code;
+    return { state: 'unavailable', reason: (BOARD_PARENTS_READ_FAILURES as readonly string[]).includes(code) ? code as BoardParentsReadFailure : 'unreachable' };
+  }
+  try { return { state: 'ok', list: decodeBoardParents(body) }; } catch { return { state: 'unavailable', reason: 'parents_invalid' }; }
+}
+
+/** A failed read shows its reason, never an empty list and never the list of an earlier read. */
+export type BoardParentsView =
+  | { readonly kind: 'loading' }
+  | { readonly kind: 'failed'; readonly reason: BoardParentsReason }
+  | { readonly kind: 'ready'; readonly list: BoardParentsV1 };
+
+/** Null without a repository; otherwise loading until the first read of this repository settles. */
+export function useBoardParents(read: BoardParentsReader, repositoryId: string | null, generation: number): BoardParentsView | null {
+  const [state, setState] = useState<{ readonly key: string; readonly view: BoardParentsView } | null>(null);
+  const observe = useCallback(async (signal: AbortSignal): Promise<boolean> => {
+    if (repositoryId === null) return false;
+    const result = await read(repositoryId, signal);
+    if (signal.aborted) return false;
+    setState({ key: repositoryId, view: result.state === 'ok' ? { kind: 'ready', list: result.list } : { kind: 'failed', reason: result.reason } });
+    return result.state === 'ok';
+  }, [read, repositoryId]);
+  useObservationRefresh(observe, JSON.stringify(['board-parents', repositoryId, generation]), { enabled: repositoryId !== null });
+  if (repositoryId === null) return null;
+  return state !== null && state.key === repositoryId ? state.view : { kind: 'loading' };
 }
 
 export type BoardStage = 'building' | 'verifying' | 'ready' | 'closed';

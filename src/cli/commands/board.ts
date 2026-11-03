@@ -8,6 +8,7 @@ import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard, readRepositoryId } from '../../effects/board/collect';
 import { renderDependencyMigrationPlan } from '../../core/board/dependency-migration';
 import { DependencyMigrationError, runDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
+import { BoardParentsError, collectBoardParents } from '../../effects/board/parents';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -93,6 +94,19 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
       const result = startAttentionWatch({ parent, repository_id: readRepositoryId({ repo_root: process.cwd() }), repo_root: process.cwd(), cli: [process.execPath, CLI_ENTRY], host: attentionHost });
       process.stdout.write(`${result.started ? 'Started' : 'Already live:'} the attention watcher of #${parent} in hc terminal ${result.address}.\n`);
     })(command.optsWithGlobals<BoardOptions>()));
+  board.command('parents')
+    .description('List the open parent issues of this repository: open issues with sub-issues, their progress and live hc seat count (takes --json)')
+    .action((_options: BoardOptions, command: Command) => {
+      try {
+        if (command.optsWithGlobals<BoardOptions>().json !== true) throw new BoardCollectError('board parents prints JSON only; pass --json');
+        process.stdout.write(`${JSON.stringify(collectBoardParents({ repo_root: process.cwd(), host }))}\n`);
+      } catch (error) {
+        if (!(error instanceof BoardParentsError || error instanceof BoardSourceError || error instanceof BoardCollectError)) throw error;
+        const code = error instanceof BoardParentsError ? { code: error.code } : {};
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
   board.command('migrate-dependencies')
     .description('One-shot operator migration: plan the blocked-by links for the Depends on / 依赖 lines of the open sub-issues of one parent and the tier labels, with no write; --write applies the plan (takes --parent and --json)')
     .option('--write', 'Apply the plan: create the planned labels and blocked-by links (requires --plan)')

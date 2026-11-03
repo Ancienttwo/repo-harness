@@ -234,6 +234,7 @@ task queue.
 | Issue and PR | Scope, ownership, dependencies, status and review evidence | The assigned GitHub issue |
 | Session support | Repository context, hooks and handoffs | `repo-harness init` |
 | Board | Read the sub-issues, pull requests, plan block and seat terminals of one parent issue | `repo-harness board --parent <n> --json` |
+| Board parents | List the open parent issues with sub-issue progress and live seat counts | `repo-harness board parents --json` |
 
 New work uses a bounded issue brief and the current repository rules. Historical
 Sprint, binding and Lease records remain readable for operator and closeout

@@ -16,6 +16,10 @@ import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
+import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
+import { BoardSourceError } from '../src/core/board/source';
+import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
+import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
 // scheduled ci.yml run (cut to the fields the collector reads), and `hc ls --json` / `hc get --json` of five seat
@@ -163,6 +167,48 @@ test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodePlanBlock(block({ ...valid, protocol: 2 }))).toThrow(new PlanBlockError('unsupported protocol 2'));
   expect(() => decodePlanBlock(block({ ...valid, kind: 'plan' }))).toThrow(new PlanBlockError('unsupported kind "plan"'));
   expect(() => decodePlanBlock(block({ ...valid, waves: [] }))).toThrow(PlanBlockError);
+});
+
+type GhAnswer = { readonly status: number; readonly stdout: string; readonly stderr?: string };
+
+/** The parent list collector on the recorded hc core; `hc: false` leaves hc off PATH. */
+function replayParents(gh: (args: readonly string[]) => GhAnswer, hc = true): BoardParentsV1 {
+  const root = tmpWorkspace('board-parents'); roots.push(root);
+  mkdirSync(join(root, 'bin'));
+  if (hc) { writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755); }
+  return collectBoardParents({ repo_root: root, now: () => REPLAY_NOW, gh_runner: gh, host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES } }) });
+}
+
+test('parent list: one paginated issue read and one hc list give the open parents with progress and live seats, seats first', () => {
+  // Recorded on 2026-11-04: `gh api graphql --paginate --slurp` with OPEN_ISSUES_QUERY on Ancienttwo/repo-harness, one page
+  // of twelve open issues; #1651 is the only one with sub-issues. #1474 is closed now, so the replay adds it as an older
+  // open parent, because the recorded seat terminals name it.
+  const pages = JSON.parse(fixture('open-issues.graphql.json'));
+  const repository = pages[0].data.repository;
+  repository.issues.nodes.push({ number: 1474, title: 'herdr-core 迁移：退役 classic herdr CLI（G37）', url: 'https://github.com/Ancienttwo/repo-harness/issues/1474', updatedAt: '2026-11-02T23:00:00Z', subIssuesSummary: { total: 9, completed: 2 } });
+  const calls: (readonly string[])[] = [];
+  const answer = (value: unknown) => (args: readonly string[]): GhAnswer => { calls.push(args); return { status: 0, stdout: JSON.stringify(value) }; };
+  const list = replayParents(answer(pages));
+  expect(decodeBoardParents(JSON.parse(JSON.stringify(list)))).toEqual(list);
+  // The operator-web fixture is this list.
+  expect(list).toEqual(decodeBoardParents(boardParentsFixture));
+  expect(list.repository).toBe('Ancienttwo/repo-harness');
+  // t1-t3 have a seat label; t4 has none, and t5 is a seat of another repository with the same parent.
+  expect(list.parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
+  expect(calls).toHaveLength(1);
+  expect(calls[0]!.filter(arg => !arg.startsWith('query='))).toEqual(['api', 'graphql', '--hostname', 'github.com', '--paginate', '--slurp', '-f', '-F', 'owner={owner}', '-F', 'name={repo}']);
+  // Two pages give the same list as one.
+  const page = (nodes: unknown[], hasNextPage: boolean) => ({ data: { repository: { ...repository, issues: { pageInfo: { hasNextPage, endCursor: 'c' }, nodes } } } });
+  const split = [page(repository.issues.nodes.slice(0, 6), true), page(repository.issues.nodes.slice(6), false)];
+  expect(replayParents(answer(split)).parents).toEqual(list.parents);
+
+  // Each failed read is the whole result: no empty list and no partial list.
+  const failure = (run: () => unknown) => { try { run(); return 'no error'; } catch (error) { return error instanceof BoardParentsError ? error.code : (error as Error).name; } };
+  expect([
+    failure(() => replayParents(() => ({ status: 1, stdout: '', stderr: 'HTTP 502' }))),
+    failure(() => replayParents(answer([split[0]]))),
+    failure(() => replayParents(answer(pages), false)),
+  ]).toEqual(['parents_github_failed', new BoardSourceError('').name, 'parents_hc_failed']);
 });
 
 // The round-4 records of #1499 (PASS) and #1494 (FAIL) as posted: bare SHAs in the subject cell.

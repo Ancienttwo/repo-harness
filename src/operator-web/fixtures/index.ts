@@ -28,8 +28,11 @@ import type { ArchitectureMapRead } from '../ArchitectureMap';
 import architectureMap from './architecture-map.json';
 // The board of #1474 projected from the recorded GitHub and hc reads in tests/fixtures/board.
 import board1474 from './board-1474.json';
+// The parent list projected from the recorded GitHub read and the same hc reads (tests/board.test.ts, parent list).
+import boardParents from './board-parents.json';
 import { decodeBoard } from '../../core/board/board';
-import type { BoardRead } from '../board-view';
+import { decodeBoardParents } from '../../core/board/parents';
+import type { BoardParentsRead, BoardRead } from '../board-view';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
@@ -128,8 +131,13 @@ export function fixtureProps(name: string): OperatorAppProps {
   const board = (repositoryId: string, parent: number): BoardRead => fixture === 'empty' || repositoryId !== HARNESS_ID || parent !== recorded.parent.number
     ? { state: 'unavailable', reason: 'board_collect_failed' }
     : { state: 'ok', board: fixture === 'busy' ? recorded : { ...recorded, execution: { status: 'unavailable', reason: 'hc_unavailable' } } };
+  // busy: the recorded parents of repo-harness, none elsewhere; empty: no open parent issue; degraded: hc could not list the seats.
+  const recordedParents = decodeBoardParents(boardParents);
+  const parents = (repositoryId: string): BoardParentsRead => fixture === 'degraded' ? { state: 'unavailable', reason: 'parents_hc_failed' }
+    : { state: 'ok', list: fixture === 'busy' && repositoryId === HARNESS_ID ? recordedParents : { ...recordedParents, parents: [] } };
   return {
     readBoard: subject => Promise.resolve(board(subject.repository_id, subject.parent)),
+    readBoardParents: repositoryId => Promise.resolve(parents(repositoryId)),
     fetchDevActivity: () => Promise.resolve(activity),
     initialDevActivity: activity,
     readRuntimeStatus: fixture === 'degraded' ? unavailable('runtime') : () => Promise.resolve(runtime),

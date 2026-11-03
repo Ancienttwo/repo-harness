@@ -29,8 +29,10 @@ import type { DocsTreeV1 } from '../../src/core/operator/docs';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
 import { decodeBoard } from '../../src/core/board/board';
-import { BoardReadError, readRepositoryBoard, type BoardReadInput } from '../../src/effects/operator/board-read';
+import { BoardReadError, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from '../../src/effects/operator/board-read';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
+import boardParents from '../../src/operator-web/fixtures/board-parents.json';
+import { decodeBoardParents } from '../../src/core/board/parents';
 
 import {
   architectureStatus,
@@ -542,6 +544,46 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('board parents route takes no query, decodes the board parents CLI JSON once, maps each refusal and shares the board read cap', async () => {
+    const list = decodeBoardParents(boardParents);
+    let result: () => Promise<unknown> = async () => list;
+    const inputs: BoardParentsReadInput[] = [];
+    let hold: () => void = () => {};
+    let started: () => void = () => {};
+    const boardStarted = new Promise<void>(resolve => { started = resolve; });
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1, read_board_parents: input => { inputs.push(input); return result(); },
+      read_board: () => new Promise(resolve => { hold = () => resolve(decodeBoard(board1474)); started(); }) });
+    const get = (path: string, init: RequestInit = {}) => fetch(`${server.url}${path}`, init);
+    const code = async (response: Response) => ((await response.json()) as { error: { code: string } }).error.code;
+    const path = '/api/v1/repositories/repo-a/board/parents';
+    try {
+      expect([(await get(`${path}?all=1`)).status, inputs]).toEqual([400, []]);
+      const ready = await get(path);
+      expect([ready.status, await ready.json()]).toEqual([200, list]);
+      expect(inputs[0]).toMatchObject({ repository_id: 'repo-a', env: { GH_PROMPT_DISABLED: '1' } });
+      for (const [failure, status] of [['repository_not_found', 404], ['parents_github_failed', 503], ['parents_hc_failed', 503], ['parents_timeout', 504]] as const) {
+        result = async () => { throw new BoardReadError(failure); };
+        const response = await get(path);
+        expect([response.status, await code(response)]).toEqual([status, failure]);
+      }
+      result = async () => ({ ...list, protocol: 2 });
+      const invalid = await get(path);
+      expect([invalid.status, await code(invalid)]).toEqual([503, 'parents_invalid']);
+      const head = await get(path, { method: 'HEAD' });
+      expect([head.status, head.headers.get('allow')]).toEqual([405, 'GET']);
+      // A board read in flight holds the one slot of the shared cap.
+      const board = get('/api/v1/repositories/repo-a/board?parent=1474');
+      await boardStarted;
+      const busy = await get(path);
+      expect([busy.status, await code(busy)]).toEqual([503, 'parents_busy']);
+      hold();
+      expect((await board).status).toBe(200);
+      expect(inputs).toHaveLength(6);
+    } finally {
+      await server.close();
+    }
+  });
+
   test('board reader runs the board CLI in the registered repository, without its bunfig, .env or a GH_REPO override', async () => {
     const repository = mkdtempSync(join(tmpdir(), 'repo-harness-board-'));
     const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-board-gh-'));
@@ -566,6 +608,10 @@ describe('operator serve command and HTTP boundary', () => {
       expect(existsSync(marker)).toBe(false);
       expect(readFileSync(join(scratch, 'calls'), 'utf8')).toBe('operator-gh GH_REPO= GIT_DIR=\n');
       await expect(readRepositoryBoard({ repository_id: 'repo-missing', parent: 1474, env, signal })).rejects.toMatchObject({ code: 'repository_not_found' });
+      // The parent list mode runs the same way; its failed GitHub read keeps its own code.
+      await expect(readRepositoryBoardParents({ repository_id: registry.ids[0]!, env, signal })).rejects.toMatchObject({ code: 'parents_github_failed' });
+      expect(existsSync(marker)).toBe(false);
+      expect(readFileSync(join(scratch, 'calls'), 'utf8')).toBe('operator-gh GH_REPO= GIT_DIR=\n'.repeat(2));
     } finally {
       rmSync(repository, { recursive: true, force: true });
       rmSync(scratch, { recursive: true, force: true });

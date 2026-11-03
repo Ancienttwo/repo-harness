@@ -128,6 +128,14 @@ export interface BoardHostPortsV1 {
   readonly seatTerminals: (repositoryId: string, parent: number) =>
     | { readonly status: 'observed'; readonly terminals: readonly BoardSeatTerminalReadV1[] }
     | { readonly status: 'unavailable'; readonly reason: string };
+  /**
+   * The live terminals that carry the repository label, with their parent
+   * and seat label values; watcher terminals are left out. The parent list
+   * counts the seats of each parent from this one list.
+   */
+  readonly repositorySeats: (repositoryId: string) =>
+    | { readonly status: 'observed'; readonly terminals: readonly { readonly parent?: string; readonly seat?: string }[] }
+    | { readonly status: 'unavailable'; readonly reason: string };
   /** The installed hc client version, `x.y.z`. */
   readonly hcVersion: () => { readonly status: 'observed'; readonly version: string } | { readonly status: 'unavailable'; readonly reason: string };
 }
