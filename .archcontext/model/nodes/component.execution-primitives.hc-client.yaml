@@ -9,8 +9,8 @@ summary: Holds the typed client of the external hc CLI, the repo-harness termina
 responsibilities:
   - Run the hc CLI with a timeout and parse its JSON output. Read the server status, the version, terminals, terminal lists and the event stream, and give a typed error for an hc failure.
   - Own the repo-harness terminal label names and roles, and build the hc label argv and the herdr-app do command.
-  - Implement the board host port with hc seat terminal and version reads, and the attention host port with watcher terminal reads and send and wait on seat terminals.
-  - Hold the six hc acts hcRun, hcSend, hcKill, hcRm, hcLabel and herdrAppDo for task-agent-host callers only. ADR-0002 requires that an operator act calls a core command; this stays a review rule until an operator act appears.
+  - Implement the board host port with hc seat terminal and version reads. Implement the attention host port: start watcher terminals with hc run, read watcher terminals, and send to and wait on seat terminals.
+  - Hold the six hc acts hcRun, hcSend, hcKill, hcRm, hcLabel and herdrAppDo for direct callers in task-agent-host only. The attention host port in this file also runs hc run and hc send for the board command. ADR-0002 requires that an operator act calls a core command; this stays a review rule until an operator act appears.
 source:
   include:
     - src/effects/terminal/herdr-core.ts
