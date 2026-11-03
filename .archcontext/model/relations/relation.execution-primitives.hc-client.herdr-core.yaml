@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.hc-client.herdr-core
+kind: calls
+source: component.execution-primitives.hc-client
+target: external.herdr-core
+intent: "Run the hc CLI for its callers and parse its JSON output. For the board and attention host ports, list seat and watcher terminals, read the hc version, start watcher terminals with hc run, and send to and wait on seat terminals."

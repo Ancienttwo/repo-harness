@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.execution-primitives.hc-client.board
+kind: depends-on
+source: component.execution-primitives.hc-client
+target: capability.organization.board
+intent: "Implement the board host port (seat terminals by parent label and the hc version) and the attention host port (start watcher terminals with hc run, read watcher terminals, and send to and wait on seat terminals)"

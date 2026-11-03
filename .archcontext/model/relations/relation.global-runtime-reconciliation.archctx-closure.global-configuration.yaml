@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.archctx-closure.global-configuration
+kind: calls
+source: component.global-runtime-reconciliation.archctx-closure
+target: component.global-runtime-reconciliation.global-configuration
+intent: "Read the architecture section through the global configuration store"
