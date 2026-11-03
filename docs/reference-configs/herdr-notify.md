@@ -2,7 +2,7 @@
 
 ## Herdr Dispatch
 
-- Claude, Codex and Pi peers run in visible Herdr panes through the herdr skill (`herdr agent start|prompt|wait|read`). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.
+- Claude, Codex and Pi peers run in herdr-core terminals that Herdr.app shows as panes. Start them with `herdr-app do` and talk to them with `hc` ([Runtime commands](#runtime-commands)). Receipt-bearing acceptance uses `repo-harness review round`; its OAR host runs the reviewer. Select Pi with `--harness pi`. Never call a vendor CLI directly for acceptance.
 - Pi review uses an OAR RPC subprocess under Seatbelt. Its private agent directory links native model configuration and credentials for read-only access. An owner-written mode-0600 `settings.json` contains only native `defaultProvider`, `defaultModel` and `defaultThinkingLevel`; packages, proxy and trust policy are excluded. User extensions, skills, context files, prompt templates and MCP are disabled. The Pi reviewer uses the user's Pi default model. The Receipt's `actual_model` records OAR's actual `provider/model`. An unobserved model is `null`: the Receipt still records the verdict and grants no cross-model claim.
 - A cross-model review means Receipt `model_relation: different-family`. The OAR host records the reviewer model and the model of each ended turn of the one author task session bound to the caller pane, campaign and reviewed root. One closed family table in `src/core/review/acceptance-receipt.ts` compares vendor families, not routing providers. Harness kind does not prove a model difference. A shared family is `same-family`. A missing author binding, an unobserved or running turn, a Claude turn (its model is not observed) or a model outside the table is `unknown`. Interactive authors are not OAR-observed, so they give `unknown` and a High-tier cross-model review stays a manual Herdr peer review. The review runtime records identity; it adds no cross-model gate.
 - Exception: in the Claude desktop app, operator-attended acceptance review can use `repo-harness review round --launch app-terminal`. The CLI prints the fixed OAR host command. Claude runs that exact command once in an app Terminal tab, then repeats the same round. The same OAR host, Seatbelt profile and Receipt apply.
@@ -10,7 +10,7 @@
 
 ### Issue-flow topology
 
-This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-core (`hc` with Herdr.app) and on classic Herdr.
+This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-core (`hc` with Herdr.app).
 
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
 - Tab 1 holds two panes: the orchestrator on the left and its advisor on the right. Tab 1 may take one worker as its third pane.
@@ -22,21 +22,16 @@ This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-co
 
 ### Runtime commands
 
-Select the runtime from the caller environment:
+Use `hc` for terminals and `herdr-app do` for tabs and panes. In an hc terminal, `HC_TERMINAL_ID` is your address. `hc --help` and `herdr-app commands` are the syntax authority.
 
-- `HC_TERMINAL_ID` set: herdr-core. Use `hc` for terminals and `herdr-app do` for tabs and panes.
-- `HERDR_ENV=1` set: classic Herdr. Use the `herdr` commands of the herdr skill (`herdr agent start|prompt|wait|read`, `herdr pane close`).
-- Both set: the multiplexers are nested. Refuse and report.
-- Do not fall back from one runtime to the other.
-
-herdr-core commands for the topology steps:
+Commands for the topology steps:
 
 | Step | Command |
 |---|---|
-| Start the orchestrator | `herdr-app do tab.new --name 1 --space <id> --folder <repository> --argv "$(repo-harness seats argv orchestrator)"` |
-| New worker tab | `herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker)" --task <packet>` |
-| Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "$(repo-harness seats argv advisor)"` |
-| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker)"` |
+| Start the orchestrator | `herdr-app do tab.new --name "$(repo-harness seats argv orchestrator --repository-id <repository-id> --json \| jq -r .tab)" --space <id> --folder <repository> --argv "$(repo-harness seats argv orchestrator --repository-id <repository-id>)"` |
+| New worker tab | `herdr-app do tab.new --name "$(repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n> --json \| jq -r .tab)" --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --issue <n>)" --task <packet>` |
+| Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"` |
+| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --issue <n>)"` |
 | Label a seat | `hc label <t> $(repo-harness seats argv <seat> --repository-id <repository-id> --parent <n> --issue <n> --pr <n> --json \| jq -r '.labels[]')` |
 | Message a worker | `hc send <t> <comment URL>` |
 | Read a worker | `hc read <t>` |
@@ -47,7 +42,35 @@ herdr-core commands for the topology steps:
 
 Each start prints the new `terminal`. Label it in the next step, or the board shows the execution axis as `unavailable` (`no_seat_terminals`). `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
 
-Classic Herdr starts the advisor in two steps: `herdr pane split --pane <orchestrator pane> --direction right`, then `herdr agent start advisor --kind <kind> --pane <new pane>`. A second worker in a tab uses the same two steps with the worker's name.
+### Pane and tab names
+
+With `--repository-id`, `seats argv` also prints the pane name (`name`) and the base tab name (`tab`). Do not type a name.
+
+`herdr-app do tab.new` and `pane.split` set no terminal name: the `--name` of `tab.new` is the tab name, and `pane.split` takes no name. So a seat terminal started by the launch rows has no hc name. Only a Claude seat carries the pane name, as its session name (`-n`) in the argv. A Codex seat has no session-name flag and carries no name. Find a seat terminal by its labels (`hc ls --label`), not by its name.
+
+The pane name is `<prefix>-<role>[-<item>][-<qualifier>]`: at most 32 characters of `a-z 0-9 -`. Examples: `rh-orch`, `rh-adv`, `rh-w-1508`, `rh-w-rel0252`, `rh-rv-1536-codex`, `aip-w-485-device`.
+
+| Part | Values | Source |
+|---|---|---|
+| `prefix` | 2-6 characters, `[a-z][a-z0-9]{1,5}`, one per registered repository, unique on the machine | `panePrefix` of the repository entry in `~/.repo-harness/registered-repos.json` |
+| `role` | `orch`, `adv`, `w`; `rv` for a reviewer pane started by hand | the seat |
+| `item` | worker: the issue number (`--issue`) or `rel<digits>` for release prep (`--release`); reviewer: the PR number. None for `orch` and `adv` | the dispatch |
+| `qualifier` | worker: a slice word when one issue has two live worker panes (`--qualifier`); reviewer: the review runtime id (`claude`, `codex`) | the dispatch |
+
+- Set `panePrefix` by hand in the entry of the repository in `registered-repos.json`. Every registry writer keeps it. The registry read refuses a malformed or duplicate prefix.
+- `seats argv` reads the entry of the primary checkout of the current directory; a linked worktree resolves to its primary checkout. No entry, or an entry without `panePrefix`, fails with `pane_name_invalid`. A name over 32 characters fails the same way.
+- One pane serves one item. Do not reuse a pane for another issue: close it and start a new one. Only `hc run --name` sets an hc terminal name, and hc refuses a second live terminal with that name.
+- The name carries no state (round, status, PR state). The board reads those from GitHub and the labels.
+- Reserved names stay as they are: `rh-notify-relay` and `task-<uuid20>`.
+
+| Tab | Holds | Name |
+|---|---|---|
+| Tab 1 | the orchestrator (left), the advisor (right), one optional worker | `orch` |
+| Worker tab | up to 3 worker panes whose issues have the same parent | `#<parent>` |
+| Worker tab, no parent | up to 3 worker panes of issues without a parent | `other` |
+| Review tab | up to 3 reviewer panes | `review` |
+
+A new pane goes into the first tab of its kind with fewer than 3 panes. When every tab of that kind is full, add ` 2`, ` 3` to the base name, for example `#1000 2`. A tab closes with its last pane. The space name stays the repository name.
 
 ### Test and Review Rules
 
@@ -65,34 +88,40 @@ Classic Herdr starts the advisor in two steps: `herdr pane split --pane <orchest
 
 ## Notify setup
 
-Use this command to send Herdr agent events to a Bot and selected human channels.
+The notify relay sends herdr-core agent events to a Bot and selected human channels.
 The Bot routine webhook is required. Human channels are optional.
 The default event is `blocked`. Each channel can also receive `done`.
 
 ## Install
 
-Use macOS or Linux. Install repo-harness, Node 24, and Herdr 0.9.5 or later.
+Use macOS or Linux. Install repo-harness, Bun, and herdr-core (`hc`).
 Windows is not supported because this command requires POSIX file permissions.
-Run this command in a terminal. Replace `default` with your Herdr session name.
+Run this command in a terminal. The hc core must run.
 
 ```sh
-repo-harness herdr notify install --session default
+repo-harness herdr notify install
 ```
 
 Enter the required Bot URL and key. Then enter each optional channel value.
 Press Enter to skip an optional value. Input is hidden.
 Each active channel has an “also notify on done” question. Its default is no.
 
-The command asks Herdr for `plugin config-dir aimpact.webhook-notify`.
-It copies the shipped plugin to `source/` in that directory.
-It links that copy with `herdr plugin link --disabled`.
-It writes `.env` with file mode `600`. Then it enables the plugin.
-Last, it writes the session name to `~/.repo-harness/herdr/notify-install.json` with file mode `600`.
-The operator console takes the Herdr session only from that record and reads it on each collection.
-Without the record, the console shows `notify_session_missing`. Run install once to write it.
-The source copy stays in place when a package cache is removed.
-Run the command again to replace the config and update the source copy.
+The command writes the config to `~/.repo-harness/herdr/notify.env` with file mode `600`.
+Then it starts the relay with `hc run --bg --no-parent` in an hc terminal named `rh-notify-relay` with the label `repo-harness.role=notify-relay`.
+The relay terminal has no parent, so it stays when the install terminal ends.
+An hc terminal starts with the core's environment, so install passes the repo-harness home to the relay as `--home <absolute path>`.
+When a live relay terminal already exists, install starts no second one.
+The relay reads the config again on each event, so a new config takes effect without a restart.
+Each read applies the install rules: HTTPS URLs without user information, a Bot URL and key, a complete Telegram target and done flags of `0` or `1`. An invalid config sends nothing, and the relay screen names the broken rule without its value.
+Last, the command writes `~/.repo-harness/herdr/notify-install.json` with file mode `600`. It names the relay terminal and its label.
+The operator console finds the relay only through that record and reads it on each collection.
+Without the record, the console shows `notify_session_missing`. A record that names a session in place of a relay terminal is refused as `notify_session_invalid`. Run install once to write a new record.
+Run the command again to replace the config.
 Supply all values again. An omitted value removes that channel.
+
+To stop delivery, run `repo-harness herdr notify uninstall`.
+It ends and removes the relay terminal with `hc kill` and `hc rm`. Then it removes the config, the install record and the delivery record.
+When hc fails, uninstall keeps the files.
 
 ## Bot routine webhook
 
@@ -102,7 +131,7 @@ Supply all values again. An omitted value removes that channel.
 4. Enter `WEBHOOK_URL` and `WEBHOOK_KEY` during install.
 
 The Bot needs this webhook to receive pushes.
-The plugin sends one bot event envelope as JSON. `assets/herdr/webhook-notify/bot-event.mjs` is the one source of its shape.
+The relay sends one bot event envelope as JSON. `assets/herdr/github-events/bot-event.mjs` is the one source of its shape.
 The GitHub event Worker sends the same envelope.
 It sends the key in `Authorization: Bearer` and `x-webhook-key` headers.
 The receiving routine must check the key before it acts on an event.
@@ -114,28 +143,27 @@ The receiving routine must check the key before it acts on an event.
   "repository": "repo-harness",
   "kind": "agent.blocked",
   "ts": "2026-11-01T08:00:00.000Z",
-  "data": { "host": "mac", "session": "default", "pane_id": "p1", "workspace_id": "w1", "agent": "codex", "display_agent": "Codex", "title": "Needs input", "state_labels": null, "workspace_label": "repo-harness", "tab_label": null, "task": "1310", "request_id": "r1" }
+  "data": { "host": "mac", "terminal": "t7", "name": "rh-d26-1479", "agent": "codex", "blocked_kind": "permission", "task": "1479", "request_id": "r1" }
 }
 ```
 
 | Field | Rule |
 |---|---|
 | `protocol` | Exactly `repo-harness.bot-event/v1`. |
-| `source` | `herdr` or `github`. Herdr notify sends `herdr`. |
-| `repository` | The repository name from the Herdr workspace context, or `null` when Herdr gives no valid name. It never holds a path. |
-| `kind` | Lowercase dotted name. Herdr notify sends `agent.done` or `agent.blocked`. |
+| `source` | `herdr` or `github`. The notify relay sends `herdr`. |
+| `repository` | The `repo-harness.repository` label value, or `null` when the terminal has no valid label. It never holds a path. |
+| `kind` | Lowercase dotted name. The relay sends `agent.done` or `agent.blocked`. |
 | `ts` | ISO-8601 UTC time in `Date.prototype.toISOString` form. |
-| `data` | A plain object. Herdr notify puts `host`, `session`, `pane_id`, `workspace_id`, `agent`, `display_agent`, `title`, `state_labels`, `workspace_label` and `tab_label` in it, and `task` and `request_id` when known. |
+| `data` | A plain object. The relay puts `host`, `terminal` (the hc address), `name`, `agent` (the 7501 `app`), and `blocked_kind` (the 7501 `kind` of a blocked turn) in it, and `task` and `request_id` when the labels give them. |
 
 `assertBotEvent` checks a received body against these rules. It throws `invalid bot event: <field>` for the first invalid field.
 
-`data` names the task and the latest request id when the pane belongs to a repo-harness task agent.
-The plugin reads them from that agent's session files in the repository.
-Without exactly one readable open session for the pane, `data` leaves out `task` and `request_id`. The plugin never guesses them.
+`data` names the task and the request id only from the terminal's `repo-harness.task` and `repo-harness.request` labels.
+A label value that is not a valid id is left out. The relay never reads them from the working directory or the screen.
 The event does not name the branch.
 On `done`, the Bot assesses the worker's checks with `repo-harness-check`.
 When the branch changed source files, the Bot also reads the architecture evidence in that skill.
-On `blocked`, the Bot reads the pane and resolves the blocker.
+On `blocked`, the Bot reads the terminal with `hc read` and resolves the blocker.
 
 ## Slack incoming webhook
 
@@ -154,7 +182,7 @@ See [Slack's setup steps](https://api.slack.com/messaging/webhooks).
 4. Enter it as `DISCORD_WEBHOOK_URL`.
 
 See [Discord's webhook guide](https://support.discord.com/hc/en-us/articles/228383668-Intro-to-Webhooks).
-The plugin disables mentions in its messages.
+The relay disables mentions in its messages.
 
 ## Telegram bot
 
@@ -176,7 +204,7 @@ Pass secrets through your CI secret environment. Shell arguments can enter shell
 
 ```sh
 # Set WEBHOOK_URL and WEBHOOK_KEY through your secret store first.
-repo-harness herdr notify install --session default --non-interactive
+repo-harness herdr notify install --non-interactive
 ```
 
 | Value | Flag | Environment variable |
@@ -192,66 +220,38 @@ Use `--webhook-notify-done`, `--slack-notify-done`, `--discord-notify-done`,
 or `--telegram-notify-done` to add `done` for that channel.
 Telegram needs both its token and chat id. URLs must use HTTPS.
 Config values cannot contain quotes, backslashes, or control characters.
-The command prints no config values. Do not add `.env` to version control.
+The command prints no config values. The relay terminal's environment and argv carry no config value.
 
 ## Filters and delivery
 
-The plugin selects only the session named by `--session`.
-It skips temporary workspace and pane paths under `/tmp`, `/private/tmp`,
-`/var/folders`, `/private/var/folders`, and the system temporary directory.
-It also skips workspace labels that start with `rh-herdr-`.
-Missing or relative workspace paths and missing required config stop delivery.
+The relay runs `repo-harness herdr notify relay --home <path>`. It follows `hc events --json --label repo-harness.notify=on`.
+Only terminals that carry `repo-harness.notify=on` reach it. repo-harness sets this label when it starts or labels an agent terminal.
+A terminal that gets the label after it starts is followed from that point.
+The relay sends on each hc `turn` event whose state is `blocked` or `done`. hc raises a turn when the program's OSC 7501 status leaves `working`.
+A terminal without 7501 reports has no turns and sends nothing.
+Missing Bot config stops delivery for the event.
 
 Each request has a five-second timeout. Redirects stop delivery.
-A successful channel suppresses the same pane and status for two minutes.
-A failed channel can retry on the next matching event.
-There is no background retry queue. Concurrent events can send duplicates.
-Runtime state is in `HERDR_PLUGIN_STATE_DIR`.
+Channels are independent: a failure or an exception in one channel does not stop or hide another channel.
+A turn is sent at most once per channel: a successful channel does not send the same terminal, hc turn and state again.
+The next hc turn is a new notice and is sent at once.
+A failed channel can retry on the next event of the same turn.
+There is no background retry queue.
 
-Inspect delivery results with `herdr plugin log list --plugin aimpact.webhook-notify`.
-Each attempt writes one log line that names its channel.
-The operator console reads the newest result for each channel from those lines.
-A failed channel does not change the result of another channel.
+The relay writes the newest result of each channel, and the result of the newest event, to `~/.repo-harness/herdr/notify-deliveries.json` with file mode `600`.
+The operator console reads each channel's result from that record. A failed channel does not change the result of another channel.
+The relay terminal screen shows one line per attempt, for example `[notify-relay] SLACK: HTTP 200`. Read it with `hc read rh-notify-relay`.
 Slack, Discord, and Telegram messages end with the same repository name, task, and request id when known.
 HTTP success shows that the endpoint accepted a request.
 Check the Bot routine or human channel to confirm receipt.
-To stop delivery, run `herdr plugin disable aimpact.webhook-notify`.
-If install fails, check the reported stage and run install again.
-A failure after linking can leave the plugin disabled.
 
-The command and environment contract come from the [Herdr plugin guide](https://github.com/herdrdev/herdr/blob/master/docs/next/website/src/content/docs/plugins.mdx).
+The relay does not restart itself. When the relay terminal ends, the operator console and `repo-harness doctor` show `relay_stopped`.
+Each hc call starts a stopped hc core, and the console status read is an hc call. After the hc core stops, the next status read starts a new core without the relay, so the console shows `relay_stopped`, not `hc_unavailable`.
+`hc_unavailable` means that hc did not answer in time. Start a new relay with the written config:
 
+```bash
+repo-harness herdr notify start
+```
 
-## Clef shadow mode
-
-The candidate supports `CLEF_MODE=off|shadow`. The default is `off`.
-Supply `CLOUDFLARE_API_TOKEN` through the secret environment or masked prompt.
-There is no token flag. Set the account with `--cloudflare-account-id` or
-`CLOUDFLARE_ACCOUNT_ID`. Use `--clef-mode shadow` to select shadow at install.
-Copilot and Autopilot are not accepted in this phase.
-
-Shadow processing starts after all channel delivery attempts. It reads only
-`claude` and `codex` done panes. It redacts the last 120 lines, caps the tail at
-16 KiB, and calls Clef-flash and Clef with separate three-second deadlines.
-It saves records in `HERDR_PLUGIN_STATE_DIR/decision-shadow.jsonl`, with mode
-`600`, a 14-day retention window and a 20 MiB cap. A shared UTC counter limits
-all event processes to 2,000 reserved calls per day. Invalid answers, timeouts
-and cap skips never alter the notification payload or routing.
-
-The Bot reads one blind record with `repo-harness herdr decision label --next`.
-It writes a label with `repo-harness herdr decision label <event_id> <option>`.
-Options are `done`, `stuck`, `model_error`, `quota` and `unclear`.
-Labels have `labeler: bot` in a separate private `decision-labels.jsonl` file.
-Neither command changes the shadow log. An existing label cannot be replaced.
-The CLI finds the runtime directory through private `decision-state.json` in
-the plugin config directory. The plugin writes that pointer with its first
-shadow record. `--state-dir <absolute-path>` supplies a known directory directly.
-
-The manifest subscribes to `pane.agent_status_changed`. Herdr emits the JSON
-body field `event: "pane_agent_status_changed"`. The handler accepts that exact
-body name and rejects the dotted subscription name in the body. The Phase 0
-probe verified both names in one real plugin invocation. See
-[the runtime evidence](../../docs/researches/clef-shadow-phase0.notes.md).
-The approved follow-up fixes this event contract in both off and shadow modes.
-The default stays off. Live provider acceptance and the shadow window remain
-separate verification steps.
+`start` starts nothing when a relay is live. Without a config it stops and names the install command.
+`repo-harness herdr notify uninstall` stops a live relay and removes every relay terminal, also finished ones, then the notify files.

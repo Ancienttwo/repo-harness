@@ -1,0 +1,6 @@
+schemaVersion: "archcontext.relation/v1"
+id: "relation.task-agent-host.deployed-on.notify-relay"
+kind: "deployed-on"
+source: "capability.runtime-harness.task-agent-host"
+target: "process.notify-relay"
+intent: "The notify relay process runs the task-agent-host relay code."

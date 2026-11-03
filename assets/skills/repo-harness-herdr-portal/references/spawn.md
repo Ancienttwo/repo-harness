@@ -1,17 +1,18 @@
 # Spawn or reuse a portal
 
-Parse every Herdr output as one JSON envelope: `{"id":…,"result":…}` or
-`{"id":…,"error":{"code":…,"message":…}}`. A non-zero exit or an `error`
-envelope stops the sequence. Report that `code` and `message` unchanged.
+Run `hc` with `--json` and parse each output as one JSON object. A non-zero
+exit stops the sequence. Report the exit code and the stderr text unchanged.
+`herdr-app do` prints the created IDs or `{"error": …}` with exit 1; an error
+stops the sequence the same way.
 
 ## Inputs
 
 | Input | Rule |
 | --- | --- |
 | `slug` | `^[a-z0-9][a-z0-9-]{0,23}[a-z0-9]$`. The operator gives it, or the Skill derives it from repo and task and shows it before use. |
-| `name` | Always `portal-<slug>`. Herdr agent names match `[a-z][a-z0-9_-]{0,31}`, so the slug has at most 25 characters. |
+| `name` | Always `portal-<slug>`. hc terminal names are 1-32 characters of `a-z 0-9 - _`, so the slug has at most 25 characters. |
 | `cwd` | Existing directory. `realpath` starts with `/private/tmp/`. `git -C <cwd> rev-parse --show-toplevel` equals that path. |
-| `repo` | `basename` of the main worktree from `git -C <cwd> rev-parse --git-common-dir`. Used only for the workspace label. |
+| `repo` | `basename` of the main worktree from `git -C <cwd> rev-parse --git-common-dir`. Used only to find the Herdr.app space. |
 
 Repo but no worktree: create one with
 `git -C <repo> worktree add /tmp/<repo>-wt-<slug> -b portal/<slug> origin/main`.
@@ -31,57 +32,42 @@ This records the end state and does not delete the checkout. Manually created wo
 # 0. Gates: see SKILL.md.
 
 # 1. Reuse check
-herdr agent get portal-<slug>
-#   error.code == agent_not_found                     → step 2
-#   result.agent.agent == "claude", result.agent.cwd == <cwd>,
-#   result.agent.interactive_ready == true            → reused: true, step 5
-#   result.agent.agent_status == "blocked"            → report the record; no prompt; stop
-#   any other found record                            → portal_name_conflict; stop
+hc ls --json
+#   no row with name == "portal-<slug>"                → step 2
+hc get portal-<slug> --json
+#   status.state == "blocked"                          → report the record; no message; stop
+#   state == "live", basename(foreground.argv[0]) == "claude",
+#     foreground.cwd == <cwd>                          → reused: true, step 4
+#   any other result                                   → portal_name_conflict; stop
 
-# 2. Workspace: one per repo, label portal-<repo>
-herdr workspace list
-#   result.workspaces[] with label == "portal-<repo>":
-#     exactly one → use its workspace_id and active_tab_id; step 3b
-#     more than one → portal_workspace_ambiguous; stop
-#     none → step 3a
+# 2. Space: the space of the repository in Herdr.app
+herdr-app ls
+#   spaces named <repo>:
+#     exactly one → use its ID
+#     more than one → portal_space_ambiguous; stop
+#     none → portal_space_missing; stop
 
-# 3a. New workspace: use its root pane
-herdr workspace create --cwd <cwd> --label portal-<repo> --no-focus
-#   pane_id = result.root_pane.pane_id
+# 3. Start, with the bootstrap brief as the first message
+hc run --bg --json --no-parent --name portal-<slug> --cwd <cwd> \
+  --label herdr.space=<space ID> --label repo-harness.notify=on \
+  -- claude -n portal-<slug> "<brief>"
 
-# 3b. Existing workspace: max 3 panes side by side per tab, never split down
-herdr tab list --workspace <workspace_id>
-#   the row in result.tabs[] with tab_id == active_tab_id; read pane_count
-#   pane_count < 3:
-herdr pane list --workspace <workspace_id>
-#     split the last row in result.panes[] with tab_id == active_tab_id
-herdr pane split <that pane_id> --direction right --cwd <cwd> --no-focus
-#     pane_id = result.pane.pane_id
-#   pane_count >= 3:
-herdr tab create --workspace <workspace_id> --cwd <cwd> --label portal --no-focus
-#     pane_id = result.root_pane.pane_id
-
-herdr pane rename <pane_id> portal-<slug>
-
-# 4. Start
-herdr agent start portal-<slug> --kind claude --pane <pane_id> --timeout 60000 -- --name portal-<slug>
-
-# 5. Identity
-herdr agent get portal-<slug>
-
-# 6. Bootstrap brief: new portal only
-herdr agent prompt portal-<slug> "<brief>" --wait --timeout 30000
+# 4. Identity
+hc get portal-<slug> --json
 ```
 
-`agent prompt --wait` already waits for the first settled `idle`, `done` or
-`blocked` state. Do not add `--until` for those defaults.
+The `herdr.space` label shows the terminal in that space. Without a
+`herdr.tab` label, Herdr.app opens a new tab for it, so the 3-pane cap of a
+tab holds. `--no-parent` keeps the portal alive after the caller's command
+ends. `repo-harness.notify=on` lets the notify relay report `blocked` and
+`done`.
 
-The pane order in `pane list` is not a verified spatial order. Herdr keeps the
-3-pane cap correct either way; only the position of the new pane can differ.
+The brief goes in the start argv. A message sent to a booting agent can be
+dropped, so do not send the brief later with `hc send`.
 
-`agent start` returns `agent_not_ready` when the Claude CLI opens a dialog, for
-example the folder trust question in a new worktree. Report it. The operator
-answers the dialog in the pane. Then run step 1 again.
+When the Claude CLI opens a dialog, for example the folder trust question in
+a new worktree, step 4 shows it in `status`. Report it. The operator answers
+the dialog in the pane. Do not answer it with `hc keys`. Then run step 4 again.
 
 Pass no permission flags. The CLI uses the operator's Claude settings and hooks
 in that worktree.
@@ -102,7 +88,7 @@ Do not read, write or forward credentials, .env files or tokens.
 Work only inside <cwd>. Wait for a task message.
 ```
 
-## Portal record (v1)
+## Portal record (v2)
 
 Copy every value from a command output in the same run. If a command did not
 return a field, leave the field out and report the gap. Never fill a value from
@@ -110,20 +96,17 @@ memory or from an earlier run.
 
 ```json
 {
-  "portal": "v1",
+  "portal": "v2",
   "name": "portal-<slug>",
   "reused": false,
-  "cwd": "<result.agent.cwd>",
-  "herdr": {
-    "workspace_id": "<result.agent.workspace_id>",
-    "tab_id": "<result.agent.tab_id>",
-    "pane_id": "<result.agent.pane_id>",
-    "terminal_id": "<result.agent.terminal_id>",
-    "agent_status": "<result.agent.agent_status>",
-    "interactive_ready": "<result.agent.interactive_ready>"
+  "cwd": "<foreground.cwd>",
+  "hc": {
+    "address": "<address>",
+    "state": "<state>",
+    "status": "<status.state>",
+    "space": "<labels[\"herdr.space\"]>"
   },
   "claude": {
-    "session_id": "<result.agent.agent_session.value>",
     "cli_version": "<claude --version>"
   },
   "messaging": {
@@ -133,18 +116,18 @@ memory or from an earlier run.
 }
 ```
 
-The `herdr` and `claude.session_id` values come from step 5. `messaging.listed`
-comes from `references/messaging.md`.
+The `cwd` and `hc` values come from step 4. `messaging.listed` comes from
+`references/messaging.md`.
 
 ## Error codes
 
 | Code | Source | Behavior |
 | --- | --- | --- |
-| `messaging_unavailable`, `claude_cli_too_old`, `herdr_too_old`, `herdr_down`, `herdr_unreachable`, `cwd_outside_tmp`, `cwd_not_worktree` | gates | stop; create nothing |
+| `messaging_unavailable`, `claude_cli_too_old`, `portal_inside_hc`, `herdr_app_down`, `hc_too_old`, `hc_unreachable`, `cwd_outside_tmp`, `cwd_not_worktree` | gates | stop; create nothing |
 | `worktree_exists` | input | stop; do not touch the path or branch |
 | `portal_name_conflict` | step 1 | stop; no takeover |
-| `portal_workspace_ambiguous` | step 2 | stop; the operator picks or renames a workspace |
-| Herdr `error.code` | any step | stop; report it; leave the pane as is |
+| `portal_space_ambiguous`, `portal_space_missing` | step 2 | stop; the operator opens, picks or renames the space |
+| hc or `herdr-app` error | any step | stop; report it; leave the terminal as is |
 | `portal_not_listed` | messaging | report the record; manual repair |
 
 The Skill deletes nothing. Normal repo closeout and sweep rules own a worktree

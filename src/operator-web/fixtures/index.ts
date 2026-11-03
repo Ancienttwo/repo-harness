@@ -5,7 +5,6 @@ import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../core/operator/repositories';
 import type { NotifyStatusV1 } from '../../core/operator/notify-status';
-import { NOTIFY_PLUGIN_ID } from '../../core/operator/notify-status';
 import { unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import type { OperatorAppProps } from '../App';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
@@ -62,8 +61,7 @@ function registry(fixture: FixtureName): OperatorRepositoriesV1 {
 
 function notify(now: number, healthy: boolean): NotifyStatusV1 {
   return {
-    protocol: 1, kind: 'operator_notify_status', plugin_id: NOTIFY_PLUGIN_ID,
-    linked: healthy ? 'linked' : 'missing', enabled: healthy ? 'enabled' : 'missing',
+    protocol: 2, kind: 'operator_notify_status', relay: 'live',
     config: { WEBHOOK_URL: healthy ? 'configured' : 'missing', WEBHOOK_KEY: healthy ? 'configured' : 'missing', SLACK_WEBHOOK_URL: 'missing' },
     last_delivery: healthy ? { at: new Date(now - 40 * 60_000).toISOString(), result: 'succeeded' } : { at: null, result: 'missing' },
     observed_at: new Date(now - 30_000).toISOString(),

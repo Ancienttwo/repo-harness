@@ -1,7 +1,7 @@
 // Bot access fixtures. Each passes the strict decoder. Like the collector's
 // projection, none holds a token, passphrase, webhook URL or local path.
 import type { BotAccessSnapshotV1 } from '../../core/operator/bot-access';
-import { NOTIFY_PLUGIN_ID, type NotifyDeliveryV1, type NotifyStatusV1 } from '../../core/operator/notify-status';
+import type { NotifyDeliveryV1, NotifyStatusV1 } from '../../core/operator/notify-status';
 import { slackTsToIso, type SlackReviewsSnapshotV1, type SlackReviewThreadV1 } from '../../core/operator/slack-review';
 import { HARNESS_ID } from './dev-activity';
 
@@ -17,9 +17,9 @@ const at = (time: number) => new Date(time).toISOString();
 const PIN = { min_version: '0.1.17' };
 const REGISTRY_REVISION = `sha256:${'4c'.repeat(32)}`;
 
-function notifyStatus(now: number, enabled: NotifyStatusV1['enabled'], last: NotifyDeliveryV1): NotifyStatusV1 {
+function notifyStatus(now: number, last: NotifyDeliveryV1): NotifyStatusV1 {
   return {
-    protocol: 1, kind: 'operator_notify_status', plugin_id: NOTIFY_PLUGIN_ID, linked: 'linked', enabled,
+    protocol: 2, kind: 'operator_notify_status', relay: 'live',
     config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'configured' },
     last_delivery: last, observed_at: at(now - 30_000),
   };
@@ -35,7 +35,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
       { bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B07HERMES1', herdr_agent: 'hermes' },
     ] },
     mcp: { state: 'ok', doctor: {
-      status: 'ready_user', package_version: '0.25.2', config_version_ok: true,
+      status: 'ready_user', package_version: '0.25.3', config_version_ok: true,
       capabilities: { workspace_reader: true, workflow_planner: true, workflow_executor: true },
       registered_repo_count: 3, allowed_root_count: 1, unsafe_allowed_root_count: 0, legacy_full_disk_read: false,
     } },
@@ -55,7 +55,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
       ] },
     },
     notify: {
-      state: 'ok', status: notifyStatus(now, 'enabled', { at: sent, result: 'failed' }),
+      state: 'ok', status: notifyStatus(now, { at: sent, result: 'failed' }),
       channels: { webhook: 'configured', slack: 'configured', discord: 'missing', telegram: 'missing' },
       deliveries: { webhook: { at: sent, result: 'succeeded' }, slack: { at: sent, result: 'failed' }, discord: { at: null, result: 'missing' }, telegram: { at: null, result: 'missing' } },
     },
@@ -64,7 +64,7 @@ export function busyBotAccess(now: number): BotAccessSnapshotV1 {
 
 /**
  * The Bot registry and `mcp doctor` fail, one audit log is unreadable, the
- * notify plugin is disabled, and the hc core is 0.1.15, below the pin (1-BOTS-F1).
+ * notify relay is stopped, and the hc core is 0.1.15, below the pin (1-BOTS-F1).
  */
 export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
   return {
@@ -80,11 +80,8 @@ export function degradedBotAccess(now: number): BotAccessSnapshotV1 {
       state: 'ok', version: { state: 'ok', value: { state: 'mismatch', expected: PIN, actual: { version: '0.1.15' } } }, herdr_app: { state: 'not_pinned' },
       terminals: { state: 'unavailable', reason: 'hc_version_mismatch' },
     },
-    notify: {
-      state: 'ok', status: notifyStatus(now, 'disabled', { at: at(now - 2 * DAY), result: 'failed' }),
-      channels: { webhook: 'configured', slack: 'configured', discord: 'missing', telegram: 'missing' },
-      deliveries: { webhook: { at: at(now - 2 * DAY), result: 'failed' }, slack: { at: at(now - 3 * DAY), result: 'unsupported' }, discord: { at: null, result: 'missing' }, telegram: { at: null, result: 'missing' } },
-    },
+    // The relay terminal has ended: notices are paused until the manual restart command runs.
+    notify: { state: 'unavailable', reason: 'relay_stopped' },
   };
 }
 

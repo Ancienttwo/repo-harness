@@ -36,6 +36,7 @@ source:
     - src/core/operator/execution-state.ts
     - src/core/operator/herdr-pin.ts
     - src/core/operator/notify-status.ts
+    - src/core/operator/pane-prefix.ts
     - src/core/operator/public-text.ts
     - src/core/operator/pull-request-files.ts
     - src/core/operator/repositories.ts

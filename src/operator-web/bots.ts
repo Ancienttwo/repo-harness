@@ -6,7 +6,7 @@ import { useObservationRefresh } from './useObservationRefresh';
 
 /**
  * Browser side of `GET /api/v1/bot-access`. The server collects MCP, the
- * notify plugin and Herdr in the background and caches one snapshot. Its notify
+ * notify relay and Herdr in the background and caches one snapshot. Its notify
  * section is the notify collector's own cache, so the Bots page reads this one
  * route. Nothing here runs a command or writes.
  */
@@ -110,5 +110,3 @@ export function botLabel(snapshot: BotAccessSnapshotV1, bot: BotAttribution): Bo
 export const MCP_DOCTOR_COMMAND = 'repo-harness mcp doctor';
 /** `--repo` takes the repository's local path, which the page never shows, so the path stays a placeholder. */
 export const MCP_ACCESS_COMMAND = 'repo-harness mcp access set --repo <repo-path> --mode read_only|read_write';
-/** `herdr notify install` needs the session; without an install record the session is unknown. */
-export const notifyInstallCommand = (session: string | null): string => `repo-harness herdr notify install --session ${session ?? '<session>'}`;

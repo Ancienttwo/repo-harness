@@ -1,7 +1,7 @@
 import { CLI_PORTS, buildProgram } from '../../src/cli/index';
 import { PROFILE_COMPONENTS, profileEnablesExternalSkills } from '../../src/cli/installer/install-profile';
 import { hashManagedTree } from '../../src/effects/managed-tree';
-import { afterEach, describe, expect, test } from 'bun:test';
+import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
@@ -20,6 +20,8 @@ import { writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { expectedSkillProjections, type SkillProjection } from '../../src/cli/installer/skill-projection';
 import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-entries';
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
+import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
+import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 
@@ -126,6 +128,19 @@ afterEach(() => {
   clearRegisteredChecks();
 });
 
+// Doctor readiness runs `hc --version`; a fake hc first on PATH keeps the developer's hc out of every test.
+const fakeHcBin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-hc-')));
+const pathBeforeFakeHc = process.env.PATH;
+beforeAll(() => {
+  const policy = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '..', '..', '.ai/harness/policy.json'), 'utf8'));
+  writeExecutable(path.join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${policy.external_tooling.herdr_core.min_version}\\n'\n`);
+  process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
+});
+afterAll(() => {
+  process.env.PATH = pathBeforeFakeHc;
+  fs.rmSync(fakeHcBin, { recursive: true, force: true });
+});
+
 describe('doctor command (Phase 1C)', () => {
   for (const target of ['claude', 'codex'] as const) {
     test(`${target} diagnostics do not run or inherit a failed Pi integration check`, () => {
@@ -133,7 +148,6 @@ describe('doctor command (Phase 1C)', () => {
       const log = path.join(f.root, 'host-probes');
       try {
         writeExecutable(path.join(f.fakeBin, 'pi'), `#!/bin/sh\necho pi >> '${log}'\nexit 99\n`);
-        writeExecutable(path.join(f.fakeBin, 'herdr'), `#!/bin/sh\necho herdr >> '${log}'\necho 'pi: not installed (/fixture/pi)'\n`);
         withEnv({ HOME: f.home, PATH: f.fakeBin }, () => {
           const report = runDoctor(CLI_PORTS.doctor, f.root, target);
           expect(report.checks.some(check => check.id.startsWith('pi-'))).toBe(false);
@@ -145,9 +159,34 @@ describe('doctor command (Phase 1C)', () => {
   }
 
   test('runDoctor emits the built-in checks (path/version/hosts/trust)', () => {
-    withTempHome(() => {
+    withTempHome((home) => {
       const r = runDoctor(CLI_PORTS.doctor);
       const ids = r.checks.map((c) => c.id);
+      expect(r.checks.find((c) => c.id === 'herdr-notify-relay')).toMatchObject({ status: 'na', detail: 'Herdr notify is not installed.' });
+      // With an install record, the relay check reads one `hc ls` and names the start command when no relay is live.
+      const rhHome = path.join(home, '.repo-harness');
+      writeNotifyInstallRecord({ REPO_HARNESS_HOME: rhHome });
+      const bin = path.join(home, 'bin');
+      fs.mkdirSync(bin);
+      writeExecutable(path.join(bin, 'hc'), [
+        '#!/bin/sh',
+        `env | grep -E '^(WEBHOOK|SLACK|DISCORD|TELEGRAM)_' >> '${path.join(home, 'hc-env')}'`,
+        'case "$FIXTURE_HC" in',
+        `  live) echo '{"terminals":[{"address":"t5","name":"rh-notify-relay","state":"live"}]}' ;;`,
+        `  stopped) echo '{"terminals":[]}' ;;`,
+        '  *) exit 1 ;;',
+        'esac',
+        '',
+      ].join('\n'));
+      // Notify values exported in the caller's shell never reach the hc child: hc can keep them in a core it starts.
+      const exported = { WEBHOOK_URL: 'https://bot.example/x', WEBHOOK_KEY: 'k', SLACK_WEBHOOK_URL: 'https://slack.example/x',
+        DISCORD_WEBHOOK_URL: 'https://discord.example/x', TELEGRAM_BOT_TOKEN: '1:t', TELEGRAM_CHAT_ID: '-1' };
+      const relay = (mode: string) => { let result; withEnv({ ...exported, PATH: `${bin}:${process.env.PATH}`, REPO_HARNESS_HOME: rhHome, FIXTURE_HC: mode }, () => { result = notifyRelayDoctorCheck(); }); return result; };
+      expect(relay('live')).toMatchObject({ status: 'ok', detail: 'Relay terminal rh-notify-relay is live.' });
+      expect(relay('stopped')).toMatchObject({ status: 'warn',
+        detail: 'Relay terminal rh-notify-relay is not live (relay_stopped). Notifications are paused. Run: repo-harness herdr notify start' });
+      expect(relay('fail')).toMatchObject({ status: 'warn', detail: 'hc did not answer, so the relay state is unknown (hc_unavailable).' });
+      expect(fs.readFileSync(path.join(home, 'hc-env'), 'utf8')).toBe('');
       expect(ids).toContain('cli-on-path');
       expect(ids).toContain('cli-version');
       expect(ids).toContain('codex-cli-version');
@@ -557,9 +596,6 @@ describe('doctor command (Phase 1C)', () => {
       );
       writeFakeCodeGraph(envRoot.fakeBin, logFile);
       writeFakeBunx(envRoot.fakeBin);
-      // Bun's PATH can include the pinned Pi CLI. Keep its new integration
-      // diagnostic ready while this case checks CodeGraph's read-only path.
-      writeExecutable(path.join(envRoot.fakeBin, 'herdr'), '#!/bin/sh\n[ "$*" = "integration status" ] || exit 99\nprintf "pi: current (v9) (/fixture/pi)\\n"\n');
 
       const root = path.join(import.meta.dir, '..', '..');
       fs.mkdirSync(path.join(envRoot.root, '.codegraph'));

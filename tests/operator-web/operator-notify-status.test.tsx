@@ -10,11 +10,9 @@ const SECRET = 'super-secret-webhook-key';
 const URL = 'https://hooks.slack.example/services/SECRETPATH';
 
 const status: NotifyStatusV1 = {
-  protocol: 1,
+  protocol: 2,
   kind: 'operator_notify_status',
-  plugin_id: 'aimpact.webhook-notify',
-  linked: 'linked',
-  enabled: 'enabled',
+  relay: 'live',
   config: { WEBHOOK_URL: 'configured', WEBHOOK_KEY: 'configured', SLACK_WEBHOOK_URL: 'missing' },
   last_delivery: { at: '2026-10-04T01:02:03.000Z', result: 'succeeded' },
   observed_at: '2026-10-04T01:03:00.000Z',
@@ -27,12 +25,9 @@ beforeEach(() => {
 });
 
 describe('notify plugin status panel', () => {
-  test('renders link, enable, presence, and the last delivery', () => {
+  test('renders presence and the last delivery', () => {
     const markup = renderToStaticMarkup(<NotifyStatusPanel initialStatus={status} t={t} />);
-    expect(markup).toContain('Notify plugin');
-    expect(markup).toContain('aimpact.webhook-notify');
-    expect(markup).toContain('linked');
-    expect(markup).toContain('enabled');
+    expect(markup).toContain('Notify relay');
     expect(markup).toContain('WEBHOOK_URL');
     expect(markup).toContain('configured');
     expect(markup).toContain('SLACK_WEBHOOK_URL');
@@ -62,11 +57,10 @@ describe('notify plugin status panel', () => {
         initialLocale="en"
         initialPlace={{ workspace: 'system', module: null, item: null }}
         initialRepositories={registryOf(['repo-harness'])}
-        initialNotifyStatus={{ ...status, last_delivery: { at: null, result: 'missing' }, enabled: 'disabled' }}
+        initialNotifyStatus={{ ...status, last_delivery: { at: null, result: 'missing' } }}
       />,
     );
     expect(markup).toContain('data-notify-state="ready"');
-    expect(markup).toContain('disabled');
     expect(markup).toContain('no delivery recorded');
     expect(markup).not.toContain(SECRET);
     expect(markup).toContain('read-only except Settings');

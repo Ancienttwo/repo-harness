@@ -111,8 +111,6 @@ jobs:
       - uses: oven-sh/setup-bun@v2
         with:
           bun-version: 1.4.3
-      - name: Install pinned Herdr runtime
-        uses: ./.github/actions/install-pinned-herdr
       - name: Install pinned herdr-core runtime
         uses: ./.github/actions/install-pinned-herdr-core
       - name: Run native OAR acceptance tests
@@ -172,8 +170,6 @@ jobs:
         env:
           EXPECTED_SHA: ${{ needs.selection.outputs.sha }}
         run: test "$(git rev-parse HEAD)" = "$EXPECTED_SHA"
-      - name: Install pinned Herdr runtime
-        uses: ./.github/actions/install-pinned-herdr
       - name: Install pinned herdr-core runtime
         uses: ./.github/actions/install-pinned-herdr-core
       - run: bash scripts/check-ci.sh affected
@@ -326,8 +322,6 @@ jobs:
       - run: |
           git config --global user.name 'github-actions[bot]'
           git config --global user.email '41898282+github-actions[bot]@users.noreply.github.com'
-      - name: Install pinned Herdr runtime
-        uses: ./.github/actions/install-pinned-herdr
       - name: Install pinned herdr-core runtime
         uses: ./.github/actions/install-pinned-herdr-core
       - run: bash scripts/check-ci.sh functional

@@ -15,7 +15,6 @@ import { stagedSkillRoot } from '../../effects/host-skill-roots';
 import { MIN_PI_VERSION, piVersionSupported, type PiCapability, type PiHostUnavailableCode } from '../../pi/compat';
 import { piPackagePresent } from '../installer/pi-package';
 import { piExecutable, piExecutableIssue } from '../../effects/pi-executable';
-import { probePiHerdrIntegration } from '../../effects/setup/pi-herdr-integration';
 import { probeInstalledPi } from '../../effects/setup/pi-host-probe';
 
 import * as fs from 'fs';
@@ -74,6 +73,8 @@ export interface DoctorCheck {
 export interface DoctorPorts {
   /** The CodeGraph readiness, MCP host and index checks, in report order. */
   readonly codegraphChecks: (cwd: string) => DoctorCheckResult[];
+  /** The Herdr notify relay check (read-only, one `hc ls`). */
+  readonly notifyRelayCheck: () => DoctorCheckResult;
 }
 
 export interface DoctorReport {
@@ -140,7 +141,7 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   const resolutionError = executable ? null : piExecutableIssue(env);
   const checks: DoctorCheckResult[] = [{ id: 'pi-path', describe: 'Pi on PATH', status: resolutionError ? 'fail' : executable ? 'ok' : 'na', detail: resolutionError ?? executable ?? 'pi not found on PATH' }];
   if (!executable) {
-    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package', 'pi-herdr-integration']) checks.push({ id, describe: id, status: 'na', detail: resolutionError ?? 'pi not found on PATH' });
+    for (const id of ['pi-cli-version', 'pi-capability', 'pi-package']) checks.push({ id, describe: id, status: 'na', detail: resolutionError ?? 'pi not found on PATH' });
     return checks;
   }
   try {
@@ -163,9 +164,6 @@ export function checkPiHost(env: NodeJS.ProcessEnv = process.env): DoctorCheckRe
   } catch (error) {
     checks.push({ id: 'pi-package', describe: 'Pi repo-harness package entry', status: 'fail', detail: String((error as Error).message) });
   }
-  const integration = probePiHerdrIntegration(env);
-  checks.push({ id: 'pi-herdr-integration', describe: 'Herdr native Pi integration',
-    status: integration.state === 'current' ? 'ok' : 'fail', detail: integration.detail });
   return checks;
 }
 
@@ -647,6 +645,7 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));
   checks.push(checkLegacyWorkflowState(cwd));
+  checks.push(ports.notifyRelayCheck());
   for (const plugin of REGISTERED_CHECKS) {
     const r = plugin.run();
     checks.push({ id: plugin.id, describe: plugin.describe, ...r });

@@ -21,7 +21,6 @@ function ownedSkillIsIntact(directory: string): boolean {
   try {
     const marker = JSON.parse(readFileSync(join(directory, MARKER), "utf8"));
     return marker.owner === "repo-harness"
-      && marker.source === "herdr --skill"
       && marker.sha256 === digest(readFileSync(join(directory, "SKILL.md"), "utf8"))
       && readdirSync(directory).sort().join(",") === `${MARKER},SKILL.md`;
   } catch {
@@ -79,15 +78,18 @@ function cleanupStaleStages(root: string, remove: BackupCleanup): string[] {
   return notes;
 }
 
-/** Project binary CLI instructions with the managed caller-context policy. */
+/** Project the hc manual with the managed caller-context policy. */
 export function configureRequiredHerdrSkill(
   target: InstallTargetSpec,
   env: NodeJS.ProcessEnv = process.env,
   removeBackup: BackupCleanup = (path) => rmSync(path, { recursive: true, force: true }),
 ): Step {
-  const result = spawnSync("herdr", ["--skill"], { env, encoding: "utf8", timeout: 5_000 });
-  if (result.status !== 0 || !result.stdout?.startsWith("---\nname: herdr\n") || !result.stdout.includes("HERDR_ENV")) {
-    return { step: STEP, status: "failed", detail: "herdr --skill did not return the expected Herdr skill" };
+  // `hc --skill` prints its manual and starts no hc core.
+  const result = spawnSync("hc", ["--skill"], { env, encoding: "utf8", timeout: 5_000 });
+  if (result.status !== 0) {
+    const why = result.error?.message
+      ?? (result.stderr?.trim() || (result.signal ? `signal ${result.signal}` : `exit ${result.status}`));
+    return { step: STEP, status: "failed", detail: `hc --skill failed: ${why}` };
   }
   let content: string;
   try { content = renderHerdrSkill(result.stdout); }
@@ -136,7 +138,7 @@ export function configureRequiredHerdrSkill(
       mkdirSync(root, { recursive: true });
       plan.staged = mkdtempSync(join(root, ".herdr-stage-"));
       writeFileSync(join(plan.staged, "SKILL.md"), content);
-      writeFileSync(join(plan.staged, MARKER), `${JSON.stringify({ owner: "repo-harness", source: "herdr --skill", sha256: digest(content) })}\n`);
+      writeFileSync(join(plan.staged, MARKER), `${JSON.stringify({ owner: "repo-harness", sha256: digest(content) })}\n`);
     }
     for (const plan of plans) {
       if (plan.current) continue;

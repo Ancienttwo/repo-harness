@@ -138,6 +138,7 @@ describe('settings seats page', () => {
   }
   const allow = (label: string) => document.querySelector<HTMLButtonElement>(`[aria-label="Allow ${label}"]`)!;
   const pane = (seat: string) => document.querySelector<HTMLButtonElement>(`[data-pane="${seat}"]`)!;
+  const levels = () => [...document.querySelectorAll('[data-seat-card] [data-limit]')].map(node => node.getAttribute('data-limit'));
 
   test('the advisor cannot take a writable role, edit or GitHub writes; save sends the whole section and leaves running panes alone', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
@@ -145,6 +146,9 @@ describe('settings seats page', () => {
     expect(document.querySelector('[data-settings-section="seats"]')?.getAttribute('aria-current')).toBe('page');
     expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('advisor');
     for (const label of ['fast-worker', 'deep-worker', 'Edit files', 'GitHub writes']) expect([label, allow(label).disabled]).toEqual([label, true]);
+    // The levels are those of buildSeatLaunch (#1531): Claude advisor with shell on, tasks, edit and gh off.
+    expect(levels()).toEqual(['common_commands', 'enforced', 'common_commands', 'named_types_only']);
+    expect(document.querySelector('[data-seat-launch]')?.textContent).toContain('--argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"');
     // The page shows no running pane count: the operator cannot read hc (#1413).
     expect(document.querySelector('[data-seats-page]')?.textContent).not.toMatch(/running \d|\d+ running/u);
     await click(allow('gatekeeper'));
@@ -178,7 +182,11 @@ describe('settings seats page', () => {
   test('moving a seat to Pi clears its fleet and model, and locks its effort and fleet', async () => {
     const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
     await mount(seatsProps(posts), '#settings/seats');
+    // Codex: the sandbox blocks edit, but an MCP path stays open; tasks, gh and the fleet are instructions only.
+    await click(buttonWithText('Codex'));
+    expect(levels()).toEqual(['common_commands', 'instructions_only', 'instructions_only', 'instructions_only']);
     await click(buttonWithText('Pi'));
+    expect(levels()).toEqual(['instructions_only', 'instructions_only', 'instructions_only']);
     expect(allow('explorer').disabled).toBe(true);
     expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(true);
     await click(saveButton());

@@ -73,7 +73,7 @@ reads plugin state only through the contract of the plugin that owns it.
   plugin on a mismatch.
 
 The Event contract (`repo-harness.bot-event/v1`,
-`assets/herdr/webhook-notify/bot-event.mjs`) is the sibling contract. An
+`assets/herdr/github-events/bot-event.mjs`) is the sibling contract. An
 event is a pushed notice that the reader checks again at the source. A
 projection is pulled state. Both use a versioned envelope and one decoder in
 core that refuses the first invalid field.

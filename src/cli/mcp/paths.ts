@@ -1,5 +1,5 @@
 import { existsSync, lstatSync, realpathSync } from 'fs';
-import { dirname, isAbsolute, relative, resolve, sep } from 'path';
+import { dirname, isAbsolute, join, relative, resolve, sep } from 'path';
 import type { McpPathDecision, McpPathIntent, McpPolicy } from './types';
 
 function toPosixPath(value: string): string {
@@ -72,14 +72,28 @@ export function isPathInside(parent: string, child: string): boolean {
   );
 }
 
+function hasEntry(path: string): boolean {
+  try {
+    return lstatSync(path, { throwIfNoEntry: false }) !== undefined;
+  } catch (error) {
+    // A path below a regular file or a link loop has no entry. The walk
+    // continues to that file or loop link; a loop link has no real path.
+    const code = (error as NodeJS.ErrnoException).code;
+    if (code === 'ENOTDIR' || code === 'ELOOP') return false;
+    throw error;
+  }
+}
+
+// lstatSync does not follow links, so a dangling parent link is the nearest
+// entry. It has no real path, so the caller refuses the path.
 function nearestExistingPath(path: string): string | undefined {
   let current = path;
-  while (!existsSync(current)) {
+  while (!hasEntry(current)) {
     const parent = dirname(current);
     if (parent === current) return undefined;
     current = parent;
   }
-  return current;
+  return existsSync(current) ? current : undefined;
 }
 
 export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpPolicy, intent: McpPathIntent): McpPathDecision {
@@ -121,16 +135,18 @@ export function resolveMcpPath(repoRoot: string, inputPath: string, policy: McpP
     return { ok: false, relativePath, reason: `path cannot be resolved: ${relativePath}` };
   }
 
-  const realExistingPath = realpathSync(existingPath);
-  if (!isPathInside(repoRealpath, realExistingPath)) {
+  // A link inside an allowed root can point into a denied or unlisted root,
+  // so the policy also applies to the path that the filesystem resolves.
+  const realPath = join(realpathSync(existingPath), relative(existingPath, absolutePath));
+  if (!isPathInside(repoRealpath, realPath)) {
     return { ok: false, relativePath, reason: `path escapes repository root: ${relativePath}` };
   }
-
-  if (existsSync(absolutePath) && lstatSync(absolutePath).isSymbolicLink()) {
-    const realTarget = realpathSync(absolutePath);
-    if (!isPathInside(repoRealpath, realTarget)) {
-      return { ok: false, relativePath, reason: `symlink escapes repository root: ${relativePath}` };
-    }
+  const realRelativePath = toPosixPath(relative(repoRealpath, realPath));
+  if (anyDenyGlobMatches(policy.denyGlobs, realRelativePath)) {
+    return { ok: false, relativePath, reason: `path resolves to a path denied by MCP policy: ${relativePath}` };
+  }
+  if (!anyGlobMatches(allowGlobs, realRelativePath)) {
+    return { ok: false, relativePath, reason: `path resolves to a path not allowed for ${intent}: ${relativePath}` };
   }
 
   return { ok: true, relativePath, absolutePath };

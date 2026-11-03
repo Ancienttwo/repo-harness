@@ -4,16 +4,16 @@ kind: "capability"
 name: "Task Agent Host"
 status: "active"
 layer: "effects"
-summary: "Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas. Records pane-status shadow decisions and blind Bot labels without applying model output."
+summary: "Hosts persistent task-agent participants in hc terminals with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the notify relay and the agent fleet personas."
 responsibilities:
   - "Start one persistent task agent per repository, task and role, binding immutable source root, live review admission and exact current claim."
   - "Save each request before delivery and treat a lost response as unknown delivery that is never replayed."
   - "Collect only a request-bound TaskResult validated by the owner and keep history as observation only."
   - "Fold OAR records in the owned hosts with the SDK reducer and expose bounded request-bound snapshots without task acceptance."
-  - "Close Herdr workspaces and panes without removing Git checkouts. Run the task worktree register, merge notice and cleanup actions as a process entry for the contract worktree runtime."
-  - "Install the shipped Herdr notify plugin, the release-matched Herdr skill and the fleet persona definitions."
-  - "Record bounded, redacted Clef shadow decisions after Herdr notification delivery and store blind Bot labels without changing notification routing or agent status."
-  - "Treat pane and request state as runtime evidence; it never determines canonical GitHub issue status or task acceptance."
+  - "Kill and remove hc terminals without removing Git checkouts. Run the task worktree register, merge notice and cleanup actions as a process entry for the contract worktree runtime."
+  - "Install and start the notify relay, and install the release-matched Herdr skill and the fleet persona definitions."
+  - "Send the blocked and done turns of terminals labeled for notify from hc events to the configured channels through the notify relay."
+  - "Treat terminal and request state as runtime evidence; it never determines canonical GitHub issue status or task acceptance."
   - "Bind native host session attribution to the exact immutable task binding; native attribution never grants admission."
   - "Provide the one reviewer runner for acceptance review and its OAR review host. Apply the review isolation policy that review passes as data, and refuse a session that the host cannot isolate."
   - "Reserve bounded pre-prompt inbox companions without delivery. The Node-safe host consumer validates and reads context; only exact accepted OAR proof permits the owner to commit existing inbox delivery receipts."
@@ -27,7 +27,6 @@ source:
     - agents/fleet/**
     - .codex/agents/**
     - scripts/install-agent-fleet.sh
-    - src/effects/terminal/herdr-decision.ts
     - src/effects/terminal/native-task-session.ts
     - src/effects/review-runner/**
   entrypoints:
@@ -108,5 +107,5 @@ extensions:
     claude: "CLAUDE.md"
   lspProfile: "typescript-lsp"
   verification:
-    - "bun run test:files tests/herdr-transport.test.ts tests/herdr-task-lifecycle.test.ts tests/herdr-runtime-pin.test.ts tests/install-agent-fleet.test.ts tests/effects/native-task-session.test.ts tests/effects/oar-host-node-import.test.ts --timeout 60000 --max-concurrency 1"
+    - "bun run test:files tests/effects/herdr-core-transport.test.ts tests/herdr-task-lifecycle.test.ts tests/herdr-runtime-pin.test.ts tests/install-agent-fleet.test.ts tests/effects/native-task-session.test.ts tests/effects/oar-host-node-import.test.ts --timeout 60000 --max-concurrency 1"
     - "bun run check:type"

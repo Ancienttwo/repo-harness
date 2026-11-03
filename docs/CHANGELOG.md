@@ -6,35 +6,6 @@ All notable changes to this skill are documented here.
 
 ### Breaking
 
-- Task sessions run in herdr-core terminals, not in classic Herdr panes.
-  `hc run --no-parent` starts each session with the `repo-harness.role=task-session`
-  labels. hc `get`, `send`, `kill` and `rm` observe, message and end it. An
-  endpoint is now `{"socket":"<hc core socket>","home":"<review credential home>"}`.
-  `contract-worktree start --herdr-endpoint` takes `{"endpoint":...}` only, and
-  `review round --herdr-endpoint` takes `{"endpoint":...,"parent_pane":"<owner hc terminal>"}`.
-  `contract-worktree notify-merged` reaches only an owner terminal with a
-  repo-harness label; it reports `owner_unowned` for any other owner. A
-  classic task binding, start intent, workspace record or endpoint file
-  fails with `task_agent_classic_herdr_record_retired`.
-  Archive the record and start the session again. No migration command
-  exists. (#1476)
-- `review round --launch herdr` is now `--launch herdr-app`, and
-  `herdr-app` is the default. The value `herdr` fails with
-  `review_launch_unsupported`; no alias exists. The OAR review host reports
-  its idle or working status to hc with OSC 7501 (`app=repo-harness`).
-  (#1477)
-- The operator console reads herdr-core, not classic Herdr. A runtime config
-  with `"kind": "herdr"` fails with `runtime_config_classic_herdr_retired`;
-  write `{"protocol":"repo-harness.runtime-config.v2","kind":"herdr-core","source_host":"<host>","deadline_ms":<ms>}`.
-  The core must answer at or above the highest
-  `external_tooling.herdr_core.min_version` of the registered repositories;
-  otherwise the console shows the expected and the actual version. The
-  runtime overlay is `repo-harness.runtime-overlay.v7` and its identity is
-  the hc `core.id`. Bot access is protocol 2: its `herdr` section is now
-  `hc`, with the core version, the task-session terminals and Herdr.app as
-  `not_pinned`. The Task drawer shows the hc terminal and the
-  `herdr-app do terminal.keep` command that opens it in Herdr.app. Update the
-  browser and the server together. (#1478)
 - The operator server no longer serves `GET /api/v1/fleet/snapshot` or the
   task-session routes `/api/v1/fleet/task-sessions/<id>` and its `/context`,
   `/activity` and `/diff` reads. They now answer 404. The new
@@ -47,11 +18,200 @@ All notable changes to this skill are documented here.
   controller is now `assets/operator/windows-job-controller.ps1`. Update the
   browser and the server together. (#1533)
 
+## [0.25.3] - 2026-11-03
+
+This release has breaking changes. It completes the herdr-core migration
+(G37, #1474): task sessions, review hosts, notify, the operator console,
+readiness and the herdr skill use `hc` and Herdr.app, and repo-harness no
+longer calls the classic `herdr` CLI.
+
+### Upgrade
+
+- Install herdr-core `hc` 0.1.17 or later before you upgrade, and check it
+  with `hc --version`. Readiness requires `hc` at or above
+  `external_tooling.herdr_core.min_version`. The classic `external_tooling.herdr`
+  pin is removed; delete that key from a downstream policy. (#1492, #1555)
+- Run `repo-harness update`, then `repo-harness doctor`. The update builds the
+  herdr skill from `hc --skill` and refreshes the managed Global Working Rules
+  blocks, which now name only herdr-core. Until the update, readiness shows
+  `global-rules.claude` and `global-rules.codex` as stale. (#1559, #1560)
+- Herdr notify: run `repo-harness herdr notify install` again. Remove the old
+  classic plugin with `herdr plugin unlink aimpact.webhook-notify` while
+  classic Herdr is still installed. (#1494)
+- A task session that started on classic Herdr fails with
+  `task_agent_classic_herdr_record_retired`. Archive the record and start the
+  session again. (#1499)
+- The operator runtime config needs `"kind": "herdr-core"`. Update the
+  browser and the server together. (#1529)
+
+### Breaking
+
+- Task sessions run in herdr-core terminals, not in classic Herdr panes.
+  `hc run --no-parent` starts each session with the `repo-harness.role=task-session`
+  labels. hc `get`, `send`, `kill` and `rm` observe, message and end it. An
+  endpoint is now `{"socket":"<hc core socket>","home":"<review credential home>"}`.
+  `contract-worktree start --herdr-endpoint` takes `{"endpoint":...}` only, and
+  `review round --herdr-endpoint` takes `{"endpoint":...,"parent_pane":"<owner hc terminal>"}`.
+  `contract-worktree notify-merged` reaches only an owner terminal with a
+  repo-harness label; it reports `owner_unowned` for any other owner. A
+  classic task binding, start intent, workspace record or endpoint file
+  fails with `task_agent_classic_herdr_record_retired`.
+  Archive the record and start the session again. No migration command
+  exists. (#1499)
+- `review round --launch herdr` is now `--launch herdr-app`, and
+  `herdr-app` is the default. The value `herdr` fails with
+  `review_launch_unsupported`; no alias exists. The OAR review host reports
+  its idle or working status to hc with OSC 7501 (`app=repo-harness`).
+  (#1525)
+- The operator console reads herdr-core, not classic Herdr. A runtime config
+  with `"kind": "herdr"` fails with `runtime_config_classic_herdr_retired`;
+  write `{"protocol":"repo-harness.runtime-config.v2","kind":"herdr-core","source_host":"<host>","deadline_ms":<ms>}`.
+  The core must answer at or above the highest
+  `external_tooling.herdr_core.min_version` of the registered repositories;
+  otherwise the console shows the expected and the actual version. The
+  runtime overlay is `repo-harness.runtime-overlay.v7` and its identity is
+  the hc `core.id`. Bot access is protocol 2: its `herdr` section is now
+  `hc`, with the core version, the task-session terminals and Herdr.app as
+  `not_pinned`. The Task drawer shows the hc terminal and the
+  `herdr-app do terminal.keep` command that opens it in Herdr.app. Update the
+  browser and the server together. (#1529)
+- MCP `latest_checks` returns the typed check records
+  `{"protocol":1,"kind":"repo-harness.check-records","records":[...]}`, not
+  a list of files ordered by modification time. The one record is the Change
+  Assessment, with `state` `present`, `absent` or `invalid`. An invalid record
+  carries `check_record_invalid` and the decoder message. A record that is a
+  link, is not a regular file, is too large or resolves outside the
+  repository is `invalid`. On win32 there is no `O_NOFOLLOW`, so a record
+  that is a link to another file in the repository is read. The `message` of
+  a `fail` record is redacted. The planner profile can no longer list or
+  read `.ai/harness/handoff/**` and `.ai/harness/checks/**` through
+  `list_workflow_files` and `read_workflow_file`; `read_workflow_file` returns `POLICY_DENIED` for them.
+  `harness_status` adds `protocol: 1` and
+  `kind: "repo-harness.mcp-harness-status"`, and `workflowRoots` lists only
+  `docs/spec.md` and `docs/prds`. (#1548)
+- The MCP executor profile no longer grants writes under
+  `.ai/harness/checks/**` or `.ai/harness/handoff/**`. No MCP tool writes
+  those files. (#1562)
+- Readiness requires herdr-core, not classic Herdr. `check-agent-tooling.sh
+  --strict-readiness` fails when `hc` is missing, unusable or below
+  `external_tooling.herdr_core.min_version`; a missing or malformed pin is a
+  `configuration-error`. `setup check` reports `runtime.herdr_core` as
+  required. The `external_tooling.herdr` pin, `runtime.herdr` and the
+  doctor check `pi-herdr-integration` are removed, and CI no longer
+  installs classic Herdr. Pi reports its status to hc natively. An
+  `external_tooling.herdr` key in a downstream policy has no reader;
+  delete it. Herdr.app is not a readiness requirement. (#1555)
+- Herdr notify runs on herdr-core. `repo-harness herdr notify install` takes
+  no `--session` and installs no classic Herdr plugin. It writes the config to
+  `~/.repo-harness/herdr/notify.env` and starts the relay in an hc terminal
+  named `rh-notify-relay`. The relay follows `hc events --json --label
+  repo-harness.notify=on` and sends the same `repo-harness.bot-event/v1`
+  envelope protocol on each blocked or done turn. The envelope `data` drops
+  `session`, `pane_id`, `workspace_id`, `display_agent`, `title`,
+  `state_labels`, `workspace_label` and `tab_label`, and adds `terminal`,
+  `name` and `blocked_kind`. Each hc turn is sent once per channel; the 120 s
+  debounce is removed. The relay does not restart itself;
+  `repo-harness herdr notify start` starts it again, and `repo-harness doctor`
+  reports a stopped relay. `repo-harness herdr notify
+  uninstall` stops the relay and removes its files. A classic notify install
+  record fails closed as `notify_session_invalid`: run install again. Remove
+  the old plugin with `herdr plugin unlink aimpact.webhook-notify` before
+  classic Herdr is removed. (#1494)
+- The operator notify status is protocol 2: `relay: 'live'` replaces
+  `plugin_id`, `linked` and `enabled`. A relay that is not live is
+  `relay_stopped`, and an hc that does not answer is `hc_unavailable`. The
+  delivery state `unsupported` is removed. (#1494)
+- The Clef shadow decision is removed: `repo-harness herdr decision label`,
+  the `CLEF_MODE` and Cloudflare install options, and the shadow records. It
+  read the pane tail through classic Herdr and had no recorded use. (#1494)
+- `repo-harness install` and `update` build the herdr skill from
+  `hc --skill`, not `herdr --skill`. Without a working `hc`, the step fails
+  with `hc --skill failed: <reason>`. The installed skill is the
+  repo-harness hc context, then the hc manual verbatim. The readiness row
+  `tools.herdr_skill` reads `hc --skill` too. (#1559)
+
+### Added
+
+- `repo-harness board --parent <n> --json` prints the board of one parent
+  issue (`repo-harness.board` protocol 1). `repo-harness board attention`
+  prints the attention findings. The board reads the `repo-harness plan`
+  block, the acceptance records, the linked PRs, the daily CI run and the
+  labelled hc seat terminals. (#1518)
+- `GET /api/v1/repositories/<id>/board?parent=<n>` serves that board. The
+  console Main board and the Task drawer read it. The Dev Activity board and
+  its drawer are removed. (#1536)
+- `repo-harness publication batch build` builds an integration batch branch
+  from 1 to 6 accepted PRs and opens the batch PR. A batch number is never
+  reused. (#1515)
+- The `seats` section of `~/.repo-harness/config.json`,
+  `GET` and `POST /api/v1/settings/seats`, and the Settings Seats page. (#1513)
+- `repo-harness seats argv <seat> [--json]` prints the argv that starts the
+  orchestrator, advisor or worker seat, with the seat brief and the level of
+  each tool and fleet limit. `--repository-id` adds the `hc label` pairs.
+  (#1521)
+- The Seats page shows the `repo-harness seats argv` launch command and the
+  limit level of each tool group and fleet. (#1547)
+- Seat pane and tab names come from the `panePrefix` of the registry entry:
+  `<prefix>-<role>[-<item>][-<qualifier>]`. `seats argv --repository-id`
+  fails with `pane_name_invalid` until `panePrefix` is set. (#1554)
+
+### Changed
+
+- Every repo-harness call to herdr-core goes through one typed transport.
+  It refuses a nested multiplexer (`nested`) and a terminal without a
+  repo-harness label (`unowned`) before any write. (#1491)
+- The herdr-core pin is `min_version` 0.1.17 with checksum-pinned
+  `release_assets`. CI installs that exact `hc`. The downstream seed has the
+  same block. (#1492)
+- The orchestrator fleet role runs at Opus high effort. (#1513)
+- The daily CI run starts at 19:17 UTC, not at minute 0. (#1545)
+
 ### Fixed
 
+- MCP path policy also applies to the path that a link resolves to. A link
+  inside an allowed root that points into a denied or unlisted root, for
+  example `.ai/context/link.md -> ../harness/handoff/secret.md`, is not listed
+  by `list_workflow_files`, and `read_workflow_file` returns `POLICY_DENIED`
+  for it. (#1562)
 - `repo-harness update` refuses a relative `XDG_STATE_HOME` before it takes
   the runtime lock. Before, the refused update created `~/.repo-harness`.
-  (#1502)
+  (#1526)
+- MCP path policy refuses a write path whose parent is a dangling link or a
+  link loop. (#1566)
+- A failed `repo-harness update` restores the hoisted `archctx` and
+  `archctx-contracts` packages too. Before, the restored CLI failed every
+  command with `mandatory dependency mismatch`. (#1522)
+- No notify secret key reaches an `hc` or `herdr-app` child process. A core
+  that is already running keeps its old environment; restart it to drop old
+  values. (#1524)
+- `repo-harness operator capture` adds its SIGINT and SIGTERM listeners
+  before it starts the provider child. Before, a signal in that gap left an
+  orphan child and a `connected` snapshot. (#1551)
+- `seatPaneName` refuses a pane prefix outside the registry format
+  `[a-z][a-z0-9]{1,5}`. (#1567)
+- CI selects `tests/unit/herdr-peer-harness.test.ts` when only the global
+  working rules change. (#1520)
+- The README describes `hc` readiness. With a missing herdr-core pin, the
+  Herdr skill hint says "fix the herdr-core pin first", not "install hc
+  first". (#1574)
+
+### Tests
+
+- The task-inbox staging marker is published atomically. (#1528)
+- The fleet-board fake `gh` lock is atomic on uutils `mkdir`
+  (Ubuntu 26.04). (#1569)
+- The operator herdr-core runtime tests wait on service signals, and the fake
+  `hc events` subscribes before it prints the snapshot. (#1572)
+
+### Documentation
+
+- The distributed skills, the fleet orchestrator and the reference configs
+  name only herdr-core. The herdr-portal skill starts and reuses its worker
+  in an hc terminal (portal record v2); reuse needs a `claude` foreground
+  process. (#1560, #1563)
+- The architecture model shows herdr-core and Herdr.app, with no classic
+  Herdr node, and gives one owner to each contested `src/core/operator`
+  file. `evals-checks.md` cites current owners. (#1530, #1557, #1570)
 
 ## [0.25.2] - 2026-11-03
 

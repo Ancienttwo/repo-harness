@@ -276,23 +276,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
     },
     external_tooling: {
       // Projection of the canonical repository pin; herdr-runtime-pin tests guard drift.
-      herdr: {
-        "min_version": "0.9.5",
-        "release_assets": {
-          "linux-x86_64": {
-            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-linux-x86_64",
-            "sha256": "14d9e8bc8b4a9e0118d77c32266f76d461f09b40342eb23752960bd89f59929d"
-          },
-          "macos-aarch64": {
-            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-macos-aarch64",
-            "sha256": "fb77c2232a05a8035421382c894392f4174e4e38a18e48af3dd0290157c3a7e2"
-          },
-          "macos-x86_64": {
-            "url": "https://github.com/herdrdev/herdr/releases/download/v0.9.5/herdr-macos-x86_64",
-            "sha256": "5fb0a908ec7f6745e3e245738b06bfad56c46391c391ab3c0955fbead01f1369"
-          }
-        }
-      },
       herdr_core: {
         "min_version": "0.1.17",
         "release_assets": {

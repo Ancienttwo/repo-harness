@@ -176,6 +176,34 @@ describe('repo registration persistence', () => {
     }
   });
 
+  test('registry writers keep a hand-set pane prefix, and the strict reader refuses a duplicate prefix', () => {
+    const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-pane-prefix-'));
+    const home = join(fixtureRoot, 'home');
+    const env = { ...process.env, REPO_HARNESS_HOME: home };
+    const registryPath = join(home, 'registered-repos.json');
+    try {
+      const [first, second] = ['first', 'second'].map((name) => {
+        const repo = join(fixtureRoot, name);
+        mkdirSync(join(repo, '.ai', 'harness'), { recursive: true });
+        writeFileSync(join(repo, '.ai', 'harness', 'policy.json'), '{}\n');
+        return realpathSync(repo);
+      });
+      const entry = (path: string, panePrefix: string) => ({
+        id: repoHarnessRepoIdFor(path), path, accessMode: 'read_only', source: 'manual',
+        registeredAt: '2026-11-03T00:00:00.000Z', lastSeenAt: '2026-11-03T00:00:00.000Z', panePrefix,
+      });
+      mkdirSync(home, { recursive: true });
+      writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 0, repos: [entry(first!, 'rh')] }));
+      applyRepoHarnessRegistryBatch([{ repoRoot: first!, source: 'manual', accessMode: 'read_write' }], { env });
+      expect(readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false }).repos[0]).toEqual(expect.objectContaining({ accessMode: 'read_write', panePrefix: 'rh' }));
+
+      writeFileSync(registryPath, JSON.stringify({ version: 1, authorizationRevision: 0, repos: [entry(first!, 'rh'), entry(second!, 'rh')] }));
+      expect(() => readRepoHarnessRegistryStrictSnapshot({ env, adoptedOnly: false })).toThrow('duplicate pane prefix rh');
+    } finally {
+      rmSync(fixtureRoot, { recursive: true, force: true });
+    }
+  });
+
   test('fleet strict registry reader rejects a symlinked registry authority file', () => {
     const fixtureRoot = mkdtempSync(join(tmpdir(), 'repo-harness-registry-fleet-symlink-'));
     const home = join(fixtureRoot, 'home');

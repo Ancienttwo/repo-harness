@@ -281,6 +281,9 @@ describe('ChangeAssessment v1', () => {
     expect(evidence.selection_packet.status).toBe('ready');
     const validate = await runCli(['validate', '--packet', output]);
     expect(validate.status, validate.stderr).toBe(0);
+    const forgedPath = '.ai/harness/checks/change-assessment.forged.json';
+    writeFileSync(join(root, forgedPath), JSON.stringify({ ...evidence, selection_packet: { ...evidence.selection_packet, selected_paths: [] } }));
+    await expect(runCli(['validate', '--packet', forgedPath])).rejects.toThrow('Change Assessment evidence fingerprint is stale');
 
     const escalate = await runCli(['escalate-disagreement',
       '--packet', output, '--paths', 'src/adapter.ts', '--summary', 'independent reviewer requires human review',
