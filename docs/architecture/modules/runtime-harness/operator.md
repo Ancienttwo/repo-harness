@@ -310,7 +310,7 @@ with an instruction to use the shared setting. Existing paths remain readable.
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**`、`src/effects/terminal/herdr-observation.ts` | 24 / 4726 | 路由、身份检查、worker 监督、collector 启动、Herdr 观测 |
+| `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**` | 23 / 4599 | 路由、身份检查、worker 监督、collector 启动、herdr-core 观测 |
 | `component.operator.console-collectors`（2026-10-27） | `src/effects/operator/` 下的 `bot-access.ts`、`notify-collector.ts`、`notify-status.ts`、`docs-collector.ts`、`docs-reader.ts`、`tests-collector.ts`；primary 用 `source.exclude` 排除这 6 个文件 | 6 / 1488 | Bot access、notify、docs 和 tests collector；仓库解析到唯一 GitHub remote 和有效 ref 后，才有一个常驻 `git cat-file` 进程 |
 | `component.operator.view-projections` | `src/core/operator/**` | 16 / 2112 | 纯投影、请求解析、严格 decoder |
 | `component.operator.activity-feeds` | `src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**` | 10 / 1948 | 开发活动和 setup 的 collector 与投影 |

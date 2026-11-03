@@ -18,6 +18,18 @@ All notable changes to this skill are documented here.
   fails with `task_agent_classic_herdr_record_retired`.
   Archive the record and start the session again. No migration command
   exists. (#1476)
+- The operator console reads herdr-core, not classic Herdr. A runtime config
+  with `"kind": "herdr"` fails with `runtime_config_classic_herdr_retired`;
+  write `{"protocol":"repo-harness.runtime-config.v2","kind":"herdr-core","source_host":"<host>","deadline_ms":<ms>}`.
+  The core must answer at or above the highest
+  `external_tooling.herdr_core.min_version` of the registered repositories;
+  otherwise the console shows the expected and the actual version. The
+  runtime overlay is `repo-harness.runtime-overlay.v7` and its identity is
+  the hc `core.id`. Bot access is protocol 2: its `herdr` section is now
+  `hc`, with the core version, the task-session terminals and Herdr.app as
+  `not_pinned`. The Task drawer shows the hc terminal and the
+  `herdr-app do terminal.keep` command that opens it in Herdr.app. Update the
+  browser and the server together. (#1478)
 
 ## [0.25.2] - 2026-11-03
 
