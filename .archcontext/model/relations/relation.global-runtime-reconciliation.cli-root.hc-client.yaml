@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.global-runtime-reconciliation.cli-root.hc-client
+kind: calls
+source: component.global-runtime-reconciliation.cli-root
+target: component.execution-primitives.hc-client
+intent: "Give the hc board and attention host ports to the board command and to the attention watch doctor check"

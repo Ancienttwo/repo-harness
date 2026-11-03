@@ -4,5 +4,5 @@
   "kind": "depends-on",
   "source": "capability.runtime-harness.operator",
   "target": "capability.workflow-engine.execution-primitives",
-  "intent": "Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state."
+  "intent": "Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state. Use the hc client for hc server status, hc ls, hc events, the terminal labels, the herdr-app command and its error type."
 }

@@ -111,7 +111,6 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
   const limits = buildSeatLaunch(seat, draft, 'seats', []).limits;
   const levelOf = (subject: string) => limits.find(limit => limit.subject === subject)?.level ?? null;
   const fleetLevel = levelOf('fleet');
-  const noFleet = range.fleet.length === 0;
   // A stored role the server no longer lists stays visible, as a stored model does, so it can be switched off.
   const roles: readonly { readonly name: string; readonly writable: boolean | null }[] = [
     ...ranges.roles,
@@ -188,12 +187,10 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
           <span className="flex-1 text-sm font-medium text-kumo-strong">{t('seats.fleet.title')}</span>
           {fleetLevel === null ? <span className="text-xs text-kumo-subtle">{t('seats.fleet.why.pi')}</span> : <LimitBadge level={fleetLevel} t={t} />}
         </li>
-        {noFleet && <li className="m-4 rounded-lg bg-kumo-recessed px-3.5 py-3 text-sm sm:mx-5" data-fleet-locked>{t('seats.fleet.orchestratorLocked')}</li>}
-        {/* With no allowed role, only stored roles show, so they can be switched off. */}
-        {roles.filter(role => !noFleet || draft.fleet.includes(role.name)).map((role) => {
+        {roles.map((role) => {
           const on = draft.fleet.includes(role.name);
           const why = role.writable === null ? t('seats.fleet.why.unknown') : !runtime.fleet ? t('seats.fleet.why.pi')
-            : !range.fleet.includes(role.name) ? t(noFleet ? 'seats.fleet.why.none' : 'seats.fleet.why.writable') : null;
+            : !range.fleet.includes(role.name) ? t('seats.fleet.why.writable') : null;
           return (
             <ToggleRow key={role.name} name={role.name} mono detail={fleetDetail(setup, role.name)}
               badge={role.writable === null ? null

@@ -1,0 +1,15 @@
+schemaVersion: archcontext.node/v2
+id: component.global-runtime-reconciliation.global-configuration
+kind: component
+name: Global Configuration Store
+status: active
+parent: capability.runtime-harness.global-runtime-reconciliation
+layer: effects
+summary: Holds the store of the host configuration file ~/.repo-harness/config.json. It holds no section logic; each typed consumer validates its own section.
+responsibilities:
+  - Read the configuration document with its revision. Apply a caller change under the global runtime transaction lock with an optional revision check, and refuse a symbolic link or an invalid file.
+  - Write the file atomically and durably, and restore the exact installer preimage while the original runtime transaction is held.
+  - Leave each section to its typed owner. Operator core decodes the seats and agents sections, and archctx-closure reads and migrates the architecture section.
+source:
+  include:
+    - src/effects/configuration/global-configuration.ts
