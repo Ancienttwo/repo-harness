@@ -239,7 +239,7 @@ function Detail({ board, attention, item, owner, inbox, now, t }: {
       {findings.length > 0 && (
         <Section id="task-findings" title={t('board.attention.title')}>
           <ul className="overflow-hidden rounded-lg border border-kumo-line">
-            {findings.map((finding, index) => <Row key={`${finding.rule}:${index}`}><Badge variant="warning">{t(`board.rule.${finding.rule}` as OperatorMessageKey)}</Badge><span className="min-w-0 flex-1 text-xs">{finding.message}</span></Row>)}
+            {findings.map((finding, index) => <Row key={`${finding.rule}:${index}`}><Badge variant="warning">{t(`board.rule.${finding.rule}`)}</Badge><span className="min-w-0 flex-1 text-xs">{finding.message}</span></Row>)}
           </ul>
         </Section>
       )}
@@ -319,7 +319,7 @@ export function TaskDrawer({ board, attention, item, owner, inbox, issue, order,
   return (
     <DrawerFrame dialogRef={dialogRef} labelledBy="task-drawer-title" closeLabel={t('drawer.close')} onClose={close} header={(
       <div className="flex min-h-14 items-center gap-2.5 border-b border-kumo-hairline px-5 sm:px-6">
-        {findings[0] ? <Badge variant="warning">{t(`board.rule.${findings[0].rule}` as OperatorMessageKey)}</Badge>
+        {findings[0] ? <Badge variant="warning">{t(`board.rule.${findings[0].rule}`)}</Badge>
           : stage !== null ? <Badge variant="secondary">{t(`board.stage.${stage}` as OperatorMessageKey)}</Badge> : null}
         <span className="font-mono text-xs text-kumo-subtle">{board.repository}#{issue}</span>
         <button ref={closeRef} type="button" aria-label={t('drawer.close')} onClick={close}

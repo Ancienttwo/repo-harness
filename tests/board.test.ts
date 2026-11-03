@@ -7,7 +7,7 @@ import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliver
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
-import { pathHazardHits } from '../src/core/board/hazards';
+import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
 import { githubRemoteRepository } from '../src/core/operator/docs';
@@ -123,8 +123,8 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['A3', 'seat_label_missing', 't4'],
     ['A4', 'seat_label_missing', 't4'],
     ['R1', 'plan_unavailable', 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-6588782468'],
-    ['R3', 'tier_label_missing', '#1479'],
-    ['R3', 'tier_label_missing', '#1476'],
+    ['R3', 'tier_label_missing', '#1494 #1479'],
+    ['R3', 'tier_label_missing', '#1499 #1476'],
     ['R4', 'plan_unavailable', null],
   ]);
 });
@@ -226,6 +226,23 @@ test('one hit for each rule that the recorded state does not trigger', () => {
   expect(findings.filter(finding => finding.rule === 'R3').map(finding => [finding.pull_requests, finding.issues])).toEqual([[[1494], [1479]]]);
   const high = { ...board, items: board.items.map(item => (item.number === 1479 ? { ...item, tier: 'high' as const } : item)) };
   expect(rules(high)).not.toContain('R3');
+  // A pull request without a complete file list is unevaluated, never a miss.
+  const partial = evaluateBoardAttention({ ...board, pull_requests: board.pull_requests.map(pr => (pr.number === 1494 ? { ...pr, files: null } : pr)) });
+  expect(partial.findings.map(finding => finding.rule)).not.toContain('R3');
+  expect(partial.unevaluated.filter(entry => entry.rule === 'R3').map(entry => [entry.reason, entry.subject])).toEqual([['files_incomplete', '#1494']]);
+  // A malformed hazard list fails at decode.
+  const row = { id: 'ci-config', text: 'Changes CI.', path_visible: true, paths: ['.github/**'] };
+  const list = (...hazards: object[]) => ({ hazards_version: 'repo-harness.review-hazards.v1', hazards });
+  for (const [value, error] of [
+    [{ ...list(row), hazards_version: 'repo-harness.review-hazards.v2' }, 'hazards_version'],
+    [list(), 'hazards'],
+    [list({ ...row, paths: undefined }), 'hazard fields'],
+    [list({ ...row, path_visible: false }), 'hazard fields'],
+    [list({ ...row, paths: [] }), 'ci-config paths'],
+    [list({ ...row, paths: ['../x'] }), 'ci-config paths'],
+    [list({ ...row, text: 'a | b' }), 'ci-config text'],
+    [list(row, row), 'duplicate hazard id ci-config'],
+  ] as const) expect(() => decodeReviewHazards(JSON.parse(JSON.stringify(value)))).toThrow(`review hazards invalid: ${error}`);
   // `**` matches zero or more whole segments, `*` stays inside one segment; the other hazards need a reviewer.
   expect(pathHazardHits(['.github/workflows/ci.yml', 'docs/.github/x', 'Dockerfile', 'ops/web/Dockerfile.dev', 'ops/api.Dockerfile', 'bun.lock', 'pkg/a/yarn.lock', 'bun.lock.bak', 'install.sh']))
     .toEqual([

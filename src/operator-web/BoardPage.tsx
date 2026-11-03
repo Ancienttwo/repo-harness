@@ -121,7 +121,7 @@ function AttentionRow({ board, finding, place, onOpen, now, t }: {
         <RowMeta board={board} item={item} pr={pr} t={t} />
       </div>
       <div className="flex shrink-0 flex-wrap items-center gap-x-4 gap-y-1 text-xs md:justify-end">
-        <span className="w-28"><span className="inline-flex rounded-full bg-(--rh-accent-tint) px-2 py-0.5 font-mono text-[11px] text-kumo-brand" data-rule={finding.rule}>{t(`board.rule.${finding.rule}` as OperatorMessageKey)}</span></span>
+        <span className="w-28"><span className="inline-flex rounded-full bg-(--rh-accent-tint) px-2 py-0.5 font-mono text-[11px] text-kumo-brand" data-rule={finding.rule}>{t(`board.rule.${finding.rule}`)}</span></span>
         <span className="w-32 min-w-0">{item ? <SeatCell board={board} item={item} t={t} /> : null}</span>
         <span className="w-20"><ChecksCell pr={pr} t={t} /></span>
         <span className="w-16 text-right text-kumo-subtle">{at ? <Age at={at} now={now} t={t} bare /> : null}</span>

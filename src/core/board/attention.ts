@@ -302,7 +302,7 @@ function r3(context: Context): void {
     const hits = pathHazardHits(pr.files);
     if (hits.length === 0) continue;
     const items = itemsOf(context.board, pr).map(number => context.board.items.find(item => item.number === number)!);
-    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R3', 'tier_label_missing', `#${item.number}`);
+    for (const item of items.filter(entry => entry.tier === null)) skip(context, 'R3', 'tier_label_missing', `#${pr.number} #${item.number}`);
     const below = items.filter(item => item.tier === 'low' || item.tier === 'medium');
     if (below.length > 0) {
       find(context, 'R3', { issues: below.map(item => item.number), pull_requests: [pr.number] },
