@@ -1,9 +1,9 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:25d3822ace65ad67ec02e93c98a2d23daed822ffd806162c15698135082442aa" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2a78fa82274436f53ed77ce058970b68bf284294dfd747f1a7732fcd92af2655" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -58,7 +58,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -69,6 +69,7 @@ flowchart LR
 - `deployed-on` → `process.oar-review-host` — The reviewer runner builds and runs the OAR review host bundle.
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
 - `calls` → `external.herdr` — Split and run Herdr panes for task agents and review hosts.
+- `depends-on` → `capability.organization.board` — Implement the board host port: seat terminals by parent label and the hc version
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host installation commands for Herdr skill setup.
 - `depends-on` → `capability.workflow-engine.workflow-state` — Read admitted sessions and task session lists through the shared core selector and session types
 - `calls` → `component.task-agent-host.primary` — Start send and collect persistent Herdr task agents
@@ -112,7 +113,7 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.task-agent-host.cli-layer` | Task Agent Host (cli) | `2–5` 個文件 / `10–20` 行 | 未宣告 |
-| `component.task-agent-host.core-layer` | Task Agent Host (core) | `0` 個文件 / `0` 行 | 未宣告 |
+| `component.task-agent-host.core-layer` | Task Agent Host (core) | `1–2` 個文件 / `5–10` 行 | 未宣告 |
 | `component.task-agent-host.events-cli` | Bot Events Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `500–1000` 行 | 未宣告 |

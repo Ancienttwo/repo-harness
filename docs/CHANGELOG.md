@@ -36,6 +36,12 @@ All notable changes to this skill are documented here.
   `herdr-app do terminal.keep` command that opens it in Herdr.app. Update the
   browser and the server together. (#1478)
 
+### Fixed
+
+- `repo-harness update` refuses a relative `XDG_STATE_HOME` before it takes
+  the runtime lock. Before, the refused update created `~/.repo-harness`.
+  (#1502)
+
 ## [0.25.2] - 2026-11-03
 
 ### Upgrade
