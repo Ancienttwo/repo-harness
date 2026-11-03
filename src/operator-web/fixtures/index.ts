@@ -3,17 +3,11 @@
 // through the same decoder the browser applies to served snapshots.
 import { decodeDevActivitySnapshot } from '../../core/dev-activity/decode';
 import type { DevActivitySnapshotV2 } from '../../core/dev-activity/types';
-import type { OperatorFleetSnapshotV1 } from '../../core/operator/fleet-snapshot';
+import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../core/operator/repositories';
 import type { NotifyStatusV1 } from '../../core/operator/notify-status';
 import { NOTIFY_PLUGIN_ID } from '../../core/operator/notify-status';
 import { unavailableRuntimeOverlay, type RuntimeOverlay } from '../../core/operator/runtime-status';
 import type { OperatorAppProps } from '../App';
-import {
-  degradedSnapshot,
-  emptySnapshot,
-  stableSnapshot,
-  admittedTaskContextFixture,
-} from '../fixture';
 import { decodeSetupSnapshot } from '../../core/setup/decode';
 import { decodeWorktrees } from '../../core/operator/worktrees';
 import { decodeBotAccessSnapshot } from '../../core/operator/bot-access';
@@ -24,7 +18,7 @@ import { decodeTestsSnapshot } from '../../core/operator/tests';
 import { docsAnswer, type CiRepairsRead, type ExecutionRead, type TestsRead } from '../repository-reads';
 import { decodeDocsFile, decodeDocsTree } from '../../core/operator/docs';
 import { docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from './docs';
-import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, emptyDevActivity, emptyExecution, HARNESS_ID } from './dev-activity';
+import { busyDevActivity, busyExecution, busyRuntimeOverlay, degradedDevActivity, DOCS_ID, emptyDevActivity, emptyExecution, HARNESS_ID, SITE_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
@@ -41,16 +35,29 @@ import type { BoardRead } from '../board-view';
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
 
-/** The Fleet fixtures name their repository `repo-harness`; the board fixtures use a registry id. */
-function retarget<T>(value: T): T {
-  const text = JSON.stringify(value).replaceAll('"repo-harness"', `"${HARNESS_ID}"`);
-  const result = JSON.parse(text) as T;
-  return result;
+const registered = (repository_id: string, display_name: string, access_mode: 'read_only' | 'read_write' = 'read_write') =>
+  ({ repository_id, display_name, access_mode });
+
+/** A registry list whose display names are the ids, for page tests that need only the repository choice. */
+export function registryOf(ids: readonly string[], stale = 0): OperatorRepositoriesV1 {
+  return decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories', repositories: ids.map(id => registered(id, id)), stale_registrations: stale });
 }
 
-function fleet(snapshot: OperatorFleetSnapshotV1): OperatorFleetSnapshotV1 {
-  const moved = retarget(snapshot);
-  return { ...moved, repositories: moved.repositories.map(row => row.repository_id === HARNESS_ID ? { ...row, display_name: 'repo-harness' } : row) };
+/**
+ * busy: the three Dev Activity repositories and four that Dev Activity has not
+ * collected yet, so the page folds rows and says "not collected"; empty: one
+ * repository; degraded: two repositories and many registrations whose root is gone.
+ */
+function registry(fixture: FixtureName): OperatorRepositoriesV1 {
+  const harness = registered(HARNESS_ID, 'repo-harness');
+  const site = registered(SITE_ID, 'operator-site');
+  const repositories = fixture === 'busy' ? [harness, site, registered(DOCS_ID, 'field-notes', 'read_only'),
+    registered('repo_2b3c4d5e6f708192', 'service-api'), registered('repo_3c4d5e6f70819203', 'web-app'),
+    registered('repo_4d5e6f7081920314', 'infra', 'read_only'), registered('repo_5e6f708192031425', 'docs-site', 'read_only')]
+    : fixture === 'empty' ? [harness] : [harness, site];
+  return decodeOperatorRepositories({ protocol: 1, kind: 'operator_repositories',
+    repositories: repositories.sort((left, right) => left.display_name.localeCompare(right.display_name)),
+    stale_registrations: fixture === 'degraded' ? 2489 : 0 });
 }
 
 function notify(now: number, healthy: boolean): NotifyStatusV1 {
@@ -77,7 +84,7 @@ export function fixtureProps(name: string): OperatorAppProps {
   // degraded: the hc core is below the pin, as in the Bots fixture.
   const runtime: RuntimeOverlay = fixture === 'busy' ? busyRuntimeOverlay(now) : fixture === 'empty' ? unavailableRuntimeOverlay()
     : unavailableRuntimeOverlay(0, { code: 'hc_version_mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } });
-  const snapshot = fleet(fixture === 'busy' ? stableSnapshot : fixture === 'empty' ? emptySnapshot : degradedSnapshot);
+  const repositories = registry(fixture);
   const notifyStatus = notify(now, fixture !== 'degraded');
   // busy: a ready setup check; empty: the first run has not finished; degraded: a timed-out run over drifted data.
   const setup = decodeSetupSnapshot(fixture === 'busy' ? readySetup(now) : fixture === 'empty' ? loadingSetup() : degradedSetup(now));
@@ -130,9 +137,8 @@ export function fixtureProps(name: string): OperatorAppProps {
     initialDevActivity: activity,
     readRuntimeStatus: fixture === 'degraded' ? unavailable('runtime') : () => Promise.resolve(runtime),
     initialRuntimeOverlay: runtime,
-    fetchSnapshot: () => Promise.resolve(snapshot),
-    initialSnapshot: snapshot,
-    readTaskContext: request => Promise.resolve(admittedTaskContextFixture(request)),
+    readRepositories: () => Promise.resolve(repositories),
+    initialRepositories: repositories,
     readNotifyStatus: () => Promise.resolve(notifyStatus),
     initialNotifyStatus: notifyStatus,
     readSetup: () => Promise.resolve(setup),

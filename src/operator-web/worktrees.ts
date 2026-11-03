@@ -8,9 +8,9 @@ import {
   type WorktreeCleanupResult,
 } from '../core/operator/worktree-cleanup';
 import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../core/operator/worktrees';
-import { asApiError } from './fleet-api';
+import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
-import type { OperatorApiErrorV1 } from './types';
+import type { OperatorApiErrorV1 } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**

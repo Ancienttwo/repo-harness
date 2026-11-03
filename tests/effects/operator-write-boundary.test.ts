@@ -14,22 +14,18 @@ import {
   OPERATOR_BOARD_ROUTE,
   OPERATOR_EXECUTION_STATE_ROUTE,
   OPERATOR_DEV_ACTIVITY_PATH,
+  OPERATOR_REPOSITORIES_PATH,
   OPERATOR_SETUP_PATH,
   OPERATOR_BOT_ACCESS_PATH,
   OPERATOR_BOT_REVIEWS_PATH,
   OPERATOR_CLI_INVENTORY_PATH,
   OPERATOR_DOCS_TREE_ROUTE,
   OPERATOR_DOCS_FILE_ROUTE,
-  OPERATOR_FLEET_SNAPSHOT_PATH,
   OPERATOR_HEALTH_PATH,
   OPERATOR_NOTIFY_STATUS_PATH,
   OPERATOR_RUNTIME_STATUS_PATH,
   OPERATOR_ROUTES,
   OPERATOR_STATIC_ASSET_PATTERN,
-  OPERATOR_TASK_SESSIONS_ROUTE,
-  OPERATOR_TASK_DIFF_ROUTE,
-  OPERATOR_TASK_ACTIVITY_ROUTE,
-  OPERATOR_TASK_CONTEXT_ROUTE,
   type OperatorRouteV1,
 } from '../../src/effects/operator/server';
 import { OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE } from '../../src/effects/operator/agents-settings-route';
@@ -74,14 +70,10 @@ describe('operator structural write boundary', () => {
     expect(patterns.size).toBe(OPERATOR_ROUTES.length);
     expect([...patterns.keys()]).toEqual([
       'health',
-      'fleet_snapshot',
-      'task_context',
-      'task_activity',
-      'task_sessions',
-      'task_diff',
       'runtime_status',
       'notify_status',
       'dev_activity',
+      'repositories',
       'worktrees',
       'worktrees_cleanup',
       'setup',
@@ -112,15 +104,12 @@ describe('operator structural write boundary', () => {
       'static_asset',
     ]);
     expect(patterns.get('health')).toBe(OPERATOR_HEALTH_PATH);
-    expect(patterns.get('fleet_snapshot')).toBe(OPERATOR_FLEET_SNAPSHOT_PATH);
-    expect(patterns.get('task_context')).toBe(OPERATOR_TASK_CONTEXT_ROUTE.source);
-    expect(patterns.get('task_activity')).toBe(OPERATOR_TASK_ACTIVITY_ROUTE.source);
-    expect(patterns.get('task_sessions')).toBe(OPERATOR_TASK_SESSIONS_ROUTE.source);
-    expect(patterns.get('task_diff')).toBe(OPERATOR_TASK_DIFF_ROUTE.source);
     expect(patterns.get('runtime_status')).toBe(OPERATOR_RUNTIME_STATUS_PATH);
     expect(patterns.get('notify_status')).toBe(OPERATOR_NOTIFY_STATUS_PATH);
     expect(patterns.get('dev_activity')).toBe(OPERATOR_DEV_ACTIVITY_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'dev_activity')).toEqual({ id: 'dev_activity', method: 'GET', pattern: '/api/v1/dev-activity', write: false });
+    expect(patterns.get('repositories')).toBe(OPERATOR_REPOSITORIES_PATH);
+    expect(OPERATOR_ROUTES.find(route => route.id === 'repositories')).toEqual({ id: 'repositories', method: 'GET', pattern: '/api/v1/repositories', write: false });
     expect(patterns.get('setup')).toBe(OPERATOR_SETUP_PATH);
     expect(OPERATOR_ROUTES.find(route => route.id === 'setup')).toEqual({ id: 'setup', method: 'GET', pattern: '/api/v1/setup', write: false });
     expect(patterns.get('bot_access')).toBe(OPERATOR_BOT_ACCESS_PATH);
@@ -154,6 +143,6 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'architecture_map')).toEqual({ id: 'architecture_map', method: 'GET', pattern: OPERATOR_ARCHITECTURE_MAP_ROUTE.source, write: false });
     expect(patterns.get('static_asset')).toBe(OPERATOR_STATIC_ASSET_PATTERN);
 
-    expect(OPERATOR_FLEET_SNAPSHOT_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
+    expect(OPERATOR_REPOSITORIES_PATH.startsWith(OPERATOR_API_PATH_PREFIX)).toBe(true);
   });
 });

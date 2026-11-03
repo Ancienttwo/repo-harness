@@ -1,6 +1,6 @@
 import { createHash } from "crypto";
 import { existsSync, lstatSync, mkdirSync, readFileSync, realpathSync, renameSync, statSync, writeFileSync } from "fs";
-import { basename, dirname, isAbsolute, join, resolve } from "path";
+import { basename, dirname, isAbsolute, join, resolve, sep } from "path";
 import {
   acquireExclusiveDirectoryLock,
   exclusiveDirectoryLockOwnerLiveness,
@@ -438,6 +438,20 @@ function strictRegistryEntry(value: unknown, index: number): RepoHarnessRegister
  * is a repository-local fleet result, while malformed enumeration authority is
  * fatal before a collector can claim it saw all authorized repositories.
  */
+/** A registered root counts only when it names a real directory, not a symlink. */
+export function registeredRootReadable(repo: RepoHarnessRegisteredRepo): boolean {
+  let path = repo.path;
+  while (path.length > 1 && (path.endsWith(sep) || path.endsWith("/"))) path = path.slice(0, -1);
+  try {
+    const stat = lstatSync(path);
+    if (stat.isSymbolicLink() || !stat.isDirectory()) return false;
+    realpathSync(path);
+    return true;
+  } catch {
+    return false;
+  }
+}
+
 export function readRepoHarnessRegistryStrictSnapshot(opts: {
   readonly env?: NodeJS.ProcessEnv;
   readonly adoptedOnly?: false;

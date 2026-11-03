@@ -19,8 +19,6 @@ source:
     - src/core/dev-activity/decode.ts
     - src/core/dev-activity/projection.ts
     - src/core/dev-activity/types.ts
-    - src/core/operator/admitted-task-activity.ts
-    - src/core/operator/admitted-task-context.ts
     - src/core/operator/agent-config.ts
     - src/core/operator/agents-settings.ts
     - src/core/operator/architecture-map.ts
@@ -36,19 +34,16 @@ source:
     - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts
     - src/core/operator/execution-state.ts
-    - src/core/operator/fleet-snapshot.ts
     - src/core/operator/herdr-pin.ts
     - src/core/operator/notify-status.ts
-    - src/core/operator/observation-identity.ts
     - src/core/operator/public-text.ts
     - src/core/operator/pull-request-files.ts
+    - src/core/operator/repositories.ts
     - src/core/operator/runtime-capture-decoders.ts
     - src/core/operator/runtime-capture.ts
     - src/core/operator/runtime-status.ts
     - src/core/operator/seats-settings.ts
     - src/core/operator/slack-review.ts
-    - src/core/operator/task-activity.ts
-    - src/core/operator/task-diff.ts
     - src/core/operator/task-history.ts
     - src/core/operator/tests.ts
     - src/core/operator/worktree-cleanup-plan.ts

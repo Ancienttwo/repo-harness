@@ -1,4 +1,4 @@
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react';
+import { lazy, Suspense, useCallback, useEffect, useState } from 'react';
 import { Button, Loader, cn } from '@cloudflare/kumo';
 import { ArrowClockwiseIcon } from '@phosphor-icons/react';
 import type { SetupSnapshotV2 } from '../core/setup/types';
@@ -17,17 +17,12 @@ import { fetchSeatsSettings, postSeatsSettings, useSeatsSettingsForm, type Seats
 import {
   fetchDevActivity,
   repositoryById,
-  repositoryLabel,
   snapshotOf,
   sourceHealth,
   useDevActivity,
   type DevActivityReader,
   type DevActivityView,
 } from './dev-activity';
-import {
-  asApiError,
-  fetchOperatorSnapshot,
-} from './fleet-api';
 import { Home } from './Home';
 import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
@@ -52,45 +47,27 @@ import {
 } from './repository-reads';
 import { fetchSetup, setupPageState, useSetup, type SetupReader, type SetupView } from './setup';
 import { AgentsPage, HooksPage, SkillsPage } from './SetupPages';
-import {
-  RepositoryWorkspace,
-  snapshotForState,
-  staleErrorForState,
-  type ObservationView,
-} from './RepositoryWorkspace';
 import { fetchRuntimeOverlay, type RuntimeOverlayReader } from './RuntimeBadges';
 import { SystemPage } from './SystemPage';
 import { TestsPage } from './TestsPage';
 import { ToolsPage } from './ToolsPage';
 import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } from './CliPage';
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
-import type { TaskContextReader } from './AdmittedTaskContext';
-import { parseTaskLocation, taskLocationSearch, type TaskLocation } from './task-location';
 import { useTheme } from './theme';
-import {
-  OPERATOR_PAYLOAD_INVALID_ERROR,
-  projectSnapshotViewState,
-  type OperatorFleetCardV1,
-  type OperatorFleetRepositoryV1,
-  type OperatorFleetSnapshotV1,
-  type OperatorSnapshotViewState,
-} from './types';
 import { useNow } from './ui';
-import { useObservationRefresh } from './useObservationRefresh';
 import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
 import {
   fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
   type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
 } from './worktrees';
 import { WorktreesPage } from './WorktreesPage';
-import { taskKey } from './worklist';
+import { fetchRepositories, registeredLabel, repositoriesOf, useRepositories, type RepositoriesReader } from './repositories';
+import type { OperatorRepositoriesV1 } from '../core/operator/repositories';
 
 export interface OperatorAppProps {
-  /** A deterministic state injection used by browser fixtures and SSR checks. */
-  readonly initialState?: OperatorSnapshotViewState;
-  /** A deterministic initial response; production uses the same-origin API. */
-  readonly initialSnapshot?: OperatorFleetSnapshotV1;
-  readonly fetchSnapshot?: (signal?: AbortSignal) => Promise<OperatorFleetSnapshotV1>;
+  /** The registered repositories: the switcher, the single-repository pages, the board form and the Repositories page. */
+  readonly readRepositories?: RepositoriesReader;
+  readonly initialRepositories?: OperatorRepositoriesV1;
   /** Tests pin the locale; the browser resolves it from storage or navigator. */
   readonly initialLocale?: OperatorLocale;
   /** Server renders have no URL; they name the page to render. The browser reads the fragment. */
@@ -101,7 +78,6 @@ export interface OperatorAppProps {
   readonly initialRuntimeOverlay?: RuntimeOverlay;
   /** The board route of one repository and parent issue, behind the Board and its Task drawer. */
   readonly readBoard?: BoardReader;
-  readonly readTaskContext?: TaskContextReader;
   readonly readNotifyStatus?: NotifyStatusReader;
   readonly initialNotifyStatus?: NotifyStatusV1;
   /** The cached `repo-harness setup check` result behind the Agents, Skills and Hooks pages. */
@@ -148,14 +124,6 @@ export function documentTitle(attention: number | null): string {
   return attention !== null && attention > 0 ? `(${attention}) ${OPERATOR_TITLE}` : OPERATOR_TITLE;
 }
 
-type Selection = NonNullable<TaskLocation['selection']>;
-
-/** A Task link without a fragment, valid or refused, belongs to its repository page. */
-function routeFor(hash: string, location: TaskLocation): WorkspaceLocation {
-  if (hash.replace(/^#/u, '') === '' && (location.selection !== null || location.invalid)) return { workspace: 'repository', module: null, item: null };
-  return parseWorkspaceLocation(hash);
-}
-
 function readStorage(key: string): string | null {
   try { return typeof window === 'undefined' ? null : localStorage.getItem(key); } catch { return null; }
 }
@@ -171,12 +139,6 @@ function writeStorage(key: string, value: string | null): void {
 const ArchitectureWorkspace = lazy(() => import('./ArchitectureWorkspace').then(module => ({ default: module.ArchitectureWorkspace })));
 // The markdown renderer and Mermaid load only with the docs page.
 const DocsPage = lazy(() => import('./DocsPage').then(module => ({ default: module.DocsPage })));
-
-/** Fleet names a duplicate display name by its registry id, so two rows never look the same. */
-function fleetLabel(repositories: readonly OperatorFleetRepositoryV1[], repository: OperatorFleetRepositoryV1): string {
-  return repositories.filter(other => other.display_name === repository.display_name).length > 1
-    ? `${repository.display_name} · ${repository.repository_id}` : repository.display_name;
-}
 
 /** `owner · branch · short SHA`; a part with no source is left out, never guessed. */
 function repositoryDetail(snapshot: DevActivitySnapshotV2 | null, id: string, head: string | null): string | null {
@@ -256,9 +218,8 @@ function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly n
 }
 
 export function OperatorApp({
-  initialState,
-  initialSnapshot,
-  fetchSnapshot = fetchOperatorSnapshot,
+  readRepositories = fetchRepositories,
+  initialRepositories,
   initialLocale,
   initialPlace,
   fetchDevActivity: readDevActivity = fetchDevActivity,
@@ -266,7 +227,6 @@ export function OperatorApp({
   readRuntimeStatus = fetchRuntimeOverlay,
   initialRuntimeOverlay,
   readBoard = fetchBoard,
-  readTaskContext,
   readNotifyStatus,
   initialNotifyStatus,
   readSetup = fetchSetup,
@@ -290,34 +250,22 @@ export function OperatorApp({
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
 }: OperatorAppProps) {
-  const initial = initialState ?? (initialSnapshot ? projectSnapshotViewState(initialSnapshot) : { kind: 'loading', previous: null } as const);
-  const [state, setState] = useState<OperatorSnapshotViewState>(initial);
-  const [location, setLocation] = useState(() => parseTaskLocation(typeof window === 'undefined' ? '' : window.location.search));
-  const [repositoryId, setRepositoryId] = useState<string | null>(() => location.repositoryId ?? readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
-  const [view, setView] = useState<ObservationView>('attention');
-  const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? routeFor(typeof window === 'undefined' ? '' : window.location.hash, location));
-  const searchRef = useRef(typeof window === 'undefined' ? '' : window.location.search);
-  const [selection, setSelection] = useState<Selection | null>(location.selection);
+  const [repositoryId, setRepositoryId] = useState<string | null>(() => readStorage(OPERATOR_REPOSITORY_STORAGE_KEY));
+  const [place, setPlace] = useState<WorkspaceLocation>(() => initialPlace ?? parseWorkspaceLocation(typeof window === 'undefined' ? '' : window.location.hash));
   const [refreshGeneration, setRefreshGeneration] = useState(0);
   const { locale, setLocale, t } = useLocale(initialLocale);
   const theme = useTheme();
   const now = useNow(15_000);
-  const stateRef = useRef<OperatorSnapshotViewState>(initial);
   const workspace = place.workspace;
   const [systemMounted, setSystemMounted] = useState(workspace === 'system');
   if (workspace === 'system' && !systemMounted) setSystemMounted(true);
-  // Pages that name one repository: they activate the Fleet read and own the
-  // repository switch and docs-tree head.
-  const singleRepository = workspace === 'repository' || workspace === 'architecture' || workspace === 'tests' || workspace === 'docs';
+  // Pages that name one repository: they own the repository switch and docs-tree head.
+  const singleRepository = workspace === 'architecture' || workspace === 'tests' || workspace === 'docs';
 
-  const snapshot = snapshotForState(state);
-  const activeRepositoryId = repositoryId ?? snapshot?.repositories[0]?.repository_id ?? '';
-  const activeRepository = snapshot?.repositories.find((repo) => repo.repository_id === activeRepositoryId) ?? null;
-  useEffect(() => {
-    if (!activeRepository) return;
-    setRepositoryId(activeRepository.repository_id);
-    writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, activeRepository.repository_id);
-  }, [activeRepository]);
+  const repositories = useRepositories(readRepositories, initialRepositories, refreshGeneration);
+  const registered = repositoriesOf(repositories);
+  const activeRepositoryId = repositoryId ?? registered[0]?.repository_id ?? null;
+  const activeRepository = registered.find(repo => repo.repository_id === activeRepositoryId) ?? null;
 
   const devActivity = useDevActivity(readDevActivity, initialDevActivity, refreshGeneration);
   const devSnapshot = snapshotOf(devActivity);
@@ -350,113 +298,47 @@ export function OperatorApp({
   }, [boardSubject?.repository_id, chooseBoardRepository]);
 
   useEffect(() => {
-    const restore = () => {
-      const next = parseTaskLocation(window.location.search);
-      setPlace(routeFor(window.location.hash, next));
-      // A fragment-only change moves between pages; the Task location is unchanged.
-      if (window.location.search === searchRef.current) return;
-      searchRef.current = window.location.search;
-      setLocation(next); setRepositoryId(next.repositoryId); setSelection(next.selection);
-    };
+    const restore = () => setPlace(parseWorkspaceLocation(window.location.hash));
     window.addEventListener('popstate', restore);
     window.addEventListener('hashchange', restore);
     return () => { window.removeEventListener('popstate', restore); window.removeEventListener('hashchange', restore); };
   }, []);
-  const navigate = (id: string | null, next: Selection | null, hash = window.location.hash) => {
-    const search = taskLocationSearch(id, next);
-    searchRef.current = search;
-    window.history.pushState(null, '', window.location.pathname + search + hash);
-    setLocation({ repositoryId: id, selection: next, invalid: false });
-    setSelection(next);
-  };
-  const closeSelection = () => navigate(activeRepositoryId || null, null);
   const openPlace = useCallback((next: WorkspaceLocation) => {
     window.history.pushState(null, '', window.location.pathname + window.location.search + workspaceHash(next));
     setPlace(next);
   }, []);
   const switchRepository = (id: string) => {
+    writeStorage(OPERATOR_REPOSITORY_STORAGE_KEY, id);
     setRepositoryId(id);
-    navigate(id, null);
   };
-  const openRepository = (id: string) => {
-    setRepositoryId(id);
-    const next: WorkspaceLocation = { workspace: 'repository', module: null, item: null };
-    navigate(id, null, workspaceHash(next));
-    setPlace(next);
+  const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
+  // A Repositories row opens the board form of that repository.
+  const openRepositoryBoard = (id: string) => {
+    chooseBoardRepository(id);
+    openPlace(boardHome);
   };
-  const busy = state.kind === 'loading' && singleRepository;
-
-  const readFleet = useCallback(async (signal: AbortSignal): Promise<boolean> => {
-    const previous = snapshotForState(stateRef.current);
-    const staleError = staleErrorForState(stateRef.current);
-    const loading: OperatorSnapshotViewState = { kind: 'loading', previous, ...(staleError ? { staleError } : {}) };
-    stateRef.current = loading;
-    setState(loading);
-    try {
-      const nextSnapshot = await fetchSnapshot(signal);
-      if (signal.aborted) return false;
-      if (previous?.service_epoch === nextSnapshot.service_epoch && nextSnapshot.sequence < previous.sequence) throw OPERATOR_PAYLOAD_INVALID_ERROR;
-      if (previous && previous.service_epoch !== nextSnapshot.service_epoch) setRefreshGeneration(current => current + 1);
-      const nextState = projectSnapshotViewState(nextSnapshot);
-      stateRef.current = nextState; setState(nextState);
-      return true;
-    } catch (error) {
-      if (signal.aborted) return false;
-      const apiError = asApiError(error);
-      const nextState: OperatorSnapshotViewState = previous
-        ? { kind: 'stale', snapshot: previous, error: apiError }
-        : { kind: 'fatal', error: apiError };
-      stateRef.current = nextState; setState(nextState);
-      return false;
-    }
-  }, [fetchSnapshot]);
-  // Fleet feeds the pages that name one repository; the Board reads development activity.
-  const requestFleet = useObservationRefresh(readFleet, 'fleet', { immediate: !initialState && !initialSnapshot, enabled: singleRepository });
-  const refresh = () => {
-    // Explicit refresh supersedes every scoped observation.
-    setRefreshGeneration(current => current + 1);
-    requestFleet();
-  };
-
-  const selectedCard = selection && !selection.historical && snapshot
-    ? activeRepository?.cards.find((card) => taskKey(card) === selection.key) ?? null
-    : null;
-  // A current URL carries no revision, so the first snapshot that resolves the
-  // selection supplies the comparison baseline. Capturing it into the selection
-  // puts URL-opened and restored panes under the same changed-definition
-  // warning as clicked cards; later snapshots never move a stored baseline.
-  useEffect(() => {
-    if (!selection || selection.historical || selection.revision !== null || !selectedCard) return;
-    const baseline = selectedCard.issue_revision;
-    setSelection((current) => current !== null && !current.historical && current.revision === null && current.key === selection.key
-      ? { ...current, revision: baseline }
-      : current);
-  }, [selection, selectedCard]);
-  const revisionChangedFrom = selectedCard && selection && selectedCard.issue_revision !== selection.revision ? selection.revision : null;
-  const selectCard = (card: OperatorFleetCardV1) => navigate(card.repository_id, { key: taskKey(card), providerRepositoryId: card.provider_repository_id, issueId: card.provider_issue_id, sessionBinding: card.execution?.selector.session_binding_sha256 ?? null, revision: card.issue_revision, historical: false });
+  const refresh = () => setRefreshGeneration(current => current + 1);
 
   const [railCollapsed, toggleRail] = useRailCollapsed(workspace);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const openDrawer = useCallback(() => setDrawerOpen(true), []);
   const closeDrawer = useCallback(() => setDrawerOpen(false), []);
   const head = useRepositoryHead(readRepositoryHead, singleRepository ? activeRepository?.repository_id ?? null : boardSubject?.repository_id ?? null, refreshGeneration);
-  const devRepositories = devSnapshot?.repositories ?? [];
-  const activityOptions = devRepositories.map(row => switchOption(devSnapshot, row.repository_id, repositoryLabel(devRepositories, row.repository_id), t));
-  const boardHome: WorkspaceLocation = { workspace: 'board', module: null, item: null };
+  const options = registered.map(row => switchOption(devSnapshot, row.repository_id, registeredLabel(registered, row.repository_id), t));
   const repositorySwitch: RepositorySwitchModel = singleRepository ? {
     mode: 'current',
-    selected: activeRepository && snapshot ? {
-      id: activeRepository.repository_id, label: fleetLabel(snapshot.repositories, activeRepository),
+    selected: activeRepository ? {
+      id: activeRepository.repository_id, label: registeredLabel(registered, activeRepository.repository_id),
       detail: repositoryDetail(devSnapshot, activeRepository.repository_id, head),
     } : null,
-    options: (snapshot?.repositories ?? []).map(row => switchOption(devSnapshot, row.repository_id, fleetLabel(snapshot!.repositories, row), t)),
+    options,
     allowAll: false,
     onSelect: id => { if (id !== null) switchRepository(id); },
   } : workspace === 'board' ? {
     // A board names one repository; another repository needs its own parent issue.
     mode: 'current',
-    selected: boardSubject === null ? null : { id: boardSubject.repository_id, label: repositoryLabel(devRepositories, boardSubject.repository_id), detail: repositoryDetail(devSnapshot, boardSubject.repository_id, head) },
-    options: activityOptions,
+    selected: boardSubject === null ? null : { id: boardSubject.repository_id, label: registeredLabel(registered, boardSubject.repository_id), detail: repositoryDetail(devSnapshot, boardSubject.repository_id, head) },
+    options,
     allowAll: false,
     onSelect: id => {
       if (id === null || id === boardSubject?.repository_id) return;
@@ -466,16 +348,20 @@ export function OperatorApp({
   } : {
     mode: 'scope',
     selected: null,
-    options: activityOptions,
+    options,
     allowAll: true,
-    // From a page across repositories, one repository opens its own page.
-    onSelect: id => { if (id !== null) openRepository(id); },
+    // From a page across repositories, one repository opens its docs, its first single-repository page.
+    onSelect: id => {
+      if (id === null) return;
+      switchRepository(id);
+      openPlace({ workspace: 'docs', module: null, item: null });
+    },
   };
 
   return (
     <div
       className="operator-app min-h-dvh bg-kumo-canvas text-kumo-default rail:flex"
-      data-state={state.kind}
+      data-repositories={repositories.kind}
       data-locale={locale}
       data-workspace={workspace}
       lang={locale}
@@ -495,16 +381,16 @@ export function OperatorApp({
               : workspace === 'board' ? <BoardFreshness view={board} now={now} t={t} />
               : <Freshness view={devActivity} now={now} t={t} />}
           </span>
-          <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} disabled={busy} className="shrink-0">
-            <span className="max-sm:sr-only">{busy ? t('status.refreshing') : t('status.refresh')}</span>
+          <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={refresh} className="shrink-0">
+            <span className="max-sm:sr-only">{t('status.refresh')}</span>
           </Button>
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage place={boardSubject} view={board} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
-            repositories={devRepositories.map(row => ({ id: row.repository_id, label: repositoryLabel(devRepositories, row.repository_id) }))}
+            repositories={registered.map(row => ({ id: row.repository_id, label: registeredLabel(registered, row.repository_id) }))}
             chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
-          {workspace === 'repositories' && <RepositoriesPage view={devActivity} onOpen={openRepository} t={t} />}
+          {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} now={now} t={t} />}
           {workspace === 'agents' && <AgentsPage view={setup} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
@@ -516,14 +402,7 @@ export function OperatorApp({
             <DocsPage repositoryId={activeRepository?.repository_id ?? null} path={place.item} readTree={readDocsTree} readFile={readDocsFile}
               generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
-          {workspace === 'tests' && <TestsPage repositoryId={activeRepositoryId || null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
-          {workspace === 'repository' && <RepositoryWorkspace
-            state={state} activeRepository={activeRepository} activeRepositoryId={activeRepositoryId}
-            location={location} selection={selection} selectedCard={selectedCard} revisionChangedFrom={revisionChangedFrom}
-            view={view} onView={setView}
-            refreshGeneration={refreshGeneration} onRefresh={refresh} onSelect={selectCard} onCloseSelection={closeSelection}
-            readTaskContext={readTaskContext}
-            onBack={() => openPlace({ workspace: 'repositories', module: null, item: null })} now={now} t={t} />}
+          {workspace === 'tests' && <TestsPage repositoryId={activeRepository?.repository_id ?? null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
           {workspace === 'architecture' && <>
             <header className="border-b border-kumo-hairline pb-4">
               <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.architecture')}</h1>

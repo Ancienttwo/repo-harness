@@ -2,7 +2,7 @@ import { useCallback, useState } from 'react';
 import { evaluateBoardAttention, type BoardAttentionV1, type BoardFindingV1 } from '../core/board/attention';
 import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../core/board/board';
 import { BOARD_READ_FAILURES, type BoardReadFailure } from '../core/operator/board-read';
-import { asApiError } from './fleet-api';
+import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**

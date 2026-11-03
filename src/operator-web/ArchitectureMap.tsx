@@ -37,7 +37,7 @@ import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } fr
 import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
 import { ArchitectureSequence } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
-import { asApiError } from './fleet-api';
+import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
 

@@ -35,6 +35,17 @@ All notable changes to this skill are documented here.
   `not_pinned`. The Task drawer shows the hc terminal and the
   `herdr-app do terminal.keep` command that opens it in Herdr.app. Update the
   browser and the server together. (#1478)
+- The operator server no longer serves `GET /api/v1/fleet/snapshot` or the
+  task-session routes `/api/v1/fleet/task-sessions/<id>` and its `/context`,
+  `/activity` and `/diff` reads. They now answer 404. The new
+  `GET /api/v1/repositories` (protocol 1, kind `operator_repositories`) lists
+  the registered repositories from the registry: id, display name, access
+  mode and the count of stale registrations. The repository switcher, the
+  Docs, Tests and Architecture pages, the board form and the Repositories
+  page read only this list. The `#repository` workspace is removed; a
+  Repositories row opens the board for that repository. The Windows Job
+  controller is now `assets/operator/windows-job-controller.ps1`. Update the
+  browser and the server together. (#1533)
 
 ### Fixed
 

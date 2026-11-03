@@ -9,8 +9,8 @@ import {
   type AgentsSettingsRequestV1,
   type AgentsSettingsV1,
 } from '../core/operator/agents-settings';
-import { asApiError } from './fleet-api';
-import type { OperatorApiErrorV1 } from './types';
+import { asApiError } from './operator-api-error';
+import type { OperatorApiErrorV1 } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**

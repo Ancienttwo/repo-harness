@@ -4,15 +4,13 @@ kind: "capability"
 name: "Operator Board"
 status: "active"
 layer: "web"
-summary: "Provides bounded read-only HTTP views of registered provider issues, admitted sessions and explicit task history."
+summary: "Provides bounded read-only HTTP views of the registered repositories, provider issues and doc sessions."
 responsibilities:
   - "Serve public observations through GET and HEAD routes."
   - "Read architecture facts through the shared model reader in a bounded worker."
   - "Collect setup, development activity, CLI inventory, Bot access, notify status, docs and daily test results in bounded background collectors; GET reads only their cache, except that a docs file GET asks the resident cat-file worker of the docs collector for one object."
   - "Keep commands in the Bot and CLI channel."
-  - "Expose bounded shared admitted-session discovery over HTTP; closed, revoked or unavailable selections never become implicit current tasks. Task Agent Host owns the shared selector and discovery effects."
-  - "Serve exact-selector diff, activity and protected goal/verification context with live admission reobservation and closed response decoding."
-  - "Project provider fleet cards; retain explicit historical routes without current-to-history fallback."
+  - "List the registered repositories from the registry as the one repository source of the console; per-repository health and counts stay with Dev Activity."
 source:
   include:
     - docs/kanban-runtime-status.md

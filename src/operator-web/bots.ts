@@ -1,7 +1,7 @@
 import { useCallback, useState } from 'react';
 import { decodeBotAccessSnapshot, type BotAccessSnapshotV1, type BotAttribution } from '../core/operator/bot-access';
 import { decodeSlackReviews, type SlackReviewsSnapshotV1 } from '../core/operator/slack-review';
-import { asApiError } from './fleet-api';
+import { asApiError } from './operator-api-error';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**

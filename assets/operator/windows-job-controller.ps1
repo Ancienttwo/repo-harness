@@ -6,7 +6,7 @@ using System.Diagnostics;
 using System.Runtime.InteropServices;
 using System.Text;
 
-public static class RepoHarnessFleetJob {
+public static class RepoHarnessOperatorJob {
   [StructLayout(LayoutKind.Sequential)]
   public struct BasicLimitInformation {
     public long PerProcessUserTimeLimit;
@@ -137,9 +137,9 @@ public static class RepoHarnessFleetJob {
 }
 '@
 
-$job = [RepoHarnessFleetJob]::CreateJobObject([IntPtr]::Zero, $null)
+$job = [RepoHarnessOperatorJob]::CreateJobObject([IntPtr]::Zero, $null)
 if ($job -eq [IntPtr]::Zero) { throw 'CreateJobObject failed' }
-[RepoHarnessFleetJob]::ConfigureKillOnClose($job)
+[RepoHarnessOperatorJob]::ConfigureKillOnClose($job)
 
 function Write-Response([string]$type) {
   [Console]::Out.WriteLine((@{ type = $type } | ConvertTo-Json -Compress))
@@ -149,26 +149,26 @@ function Write-Response([string]$type) {
 function Wait-ForZeroActiveProcesses([IntPtr]$handle) {
   $deadline = [DateTime]::UtcNow.AddSeconds(5)
   while ([DateTime]::UtcNow -lt $deadline) {
-    if ([RepoHarnessFleetJob]::ActiveProcesses($handle) -eq 0) { return $true }
+    if ([RepoHarnessOperatorJob]::ActiveProcesses($handle) -eq 0) { return $true }
     Start-Sleep -Milliseconds 10
   }
-  return ([RepoHarnessFleetJob]::ActiveProcesses($handle) -eq 0)
+  return ([RepoHarnessOperatorJob]::ActiveProcesses($handle) -eq 0)
 }
 
 function Close-CleanJob([IntPtr]$handle, [bool]$terminate) {
-  if ($terminate -and -not [RepoHarnessFleetJob]::TerminateJobObject($handle, 1)) {
+  if ($terminate -and -not [RepoHarnessOperatorJob]::TerminateJobObject($handle, 1)) {
     throw 'TerminateJobObject failed'
   }
   if (-not (Wait-ForZeroActiveProcesses $handle)) { return $false }
-  if (-not [RepoHarnessFleetJob]::CloseHandle($handle)) { throw 'CloseHandle failed' }
+  if (-not [RepoHarnessOperatorJob]::CloseHandle($handle)) { throw 'CloseHandle failed' }
   return $true
 }
 
 function Close-FailedJob([IntPtr]$handle) {
   if ($handle -eq [IntPtr]::Zero) { return }
-  try { [void][RepoHarnessFleetJob]::TerminateJobObject($handle, 1) } catch { }
+  try { [void][RepoHarnessOperatorJob]::TerminateJobObject($handle, 1) } catch { }
   try { [void](Wait-ForZeroActiveProcesses $handle) } catch { }
-  try { [void][RepoHarnessFleetJob]::CloseHandle($handle) } catch { }
+  try { [void][RepoHarnessOperatorJob]::CloseHandle($handle) } catch { }
 }
 
 function Stop-ExactCollector([System.Diagnostics.Process]$process) {
@@ -207,7 +207,7 @@ try {
       }
       $startInfo = New-Object System.Diagnostics.ProcessStartInfo
       $startInfo.FileName = [string]$request.executable
-      $startInfo.Arguments = [RepoHarnessFleetJob]::QuoteArgument([string]$request.collector_path)
+      $startInfo.Arguments = [RepoHarnessOperatorJob]::QuoteArgument([string]$request.collector_path)
       $startInfo.UseShellExecute = $false
       $startInfo.RedirectStandardInput = $true
       $startInfo.RedirectStandardOutput = $true
@@ -228,12 +228,12 @@ try {
       }
       # This is the exact kernel handle returned for the child this controller
       # created. No PID is ever accepted or reopened across this boundary.
-      if (-not [RepoHarnessFleetJob]::AssignProcessToJobObject($job, $collector.Handle)) {
+      if (-not [RepoHarnessOperatorJob]::AssignProcessToJobObject($job, $collector.Handle)) {
         if (-not (Stop-ExactCollector $collector)) { throw 'collector assignment failed and exact collector did not exit' }
         Write-Response 'cleanup_failed'
         break
       }
-      [RepoHarnessFleetJob]::BeginForwarding($collector)
+      [RepoHarnessOperatorJob]::BeginForwarding($collector)
       $assigned = $true
       Write-Response 'assigned'
       continue

@@ -11,7 +11,9 @@ import type { TestsRead, TestsReader } from '../../src/operator-web/repository-r
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { readyRepairIssue, readyTests } from '../../src/operator-web/fixtures/tests';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
-import { stableSnapshot } from '../../src/operator-web/fixture';
+import { registryOf } from '../../src/operator-web/fixtures';
+
+const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
@@ -39,7 +41,7 @@ function testsReader(read: TestsRead): TestsReader {
 
 function props(read: TestsRead, overrides: Partial<OperatorAppProps> = {}): OperatorAppProps {
   return {
-    initialLocale: 'en', initialSnapshot: stableSnapshot, fetchSnapshot: async () => stableSnapshot,
+    initialLocale: 'en', initialRepositories: REGISTRY, readRepositories: async () => REGISTRY,
     initialDevActivity: activity, fetchDevActivity: async () => activity,
     initialRuntimeOverlay: unavailableRuntimeOverlay(), readRuntimeStatus: async () => unavailableRuntimeOverlay(),
     readNotifyStatus: () => new Promise(() => {}),
@@ -102,16 +104,16 @@ describe('tests page', () => {
   });
 
   test('first entry loads repository inventory before showing its test results', async () => {
-    let fleetReads = 0;
+    let registryReads = 0;
     const requested: string[] = [];
-    const fleet = fixtureProps('busy').initialSnapshot!;
+    const registry = fixtureProps('busy').initialRepositories!;
     await mount('#tests', props(okRead(), {
-      initialSnapshot: undefined,
-      fetchSnapshot: async () => { fleetReads++; return fleet; },
+      initialRepositories: undefined,
+      readRepositories: async () => { registryReads++; return registry; },
       readTests: async id => { requested.push(id); return okRead(); },
     }));
-    expect(fleetReads).toBe(1);
-    expect(requested).toEqual(['repo_a5b76eee64af71c3']);
+    expect(registryReads).toBe(1);
+    expect(requested).toEqual([registry.repositories[0]!.repository_id]);
     expect(all('[data-test-file]')).toHaveLength(4);
   });
 

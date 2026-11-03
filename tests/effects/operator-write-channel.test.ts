@@ -170,7 +170,7 @@ describe('operator write channel', () => {
 
   test('admits POST only on a write route and GET never reaches a write route', async () => {
     const harness = await startHarness();
-    const readRoute = await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v' }, {}, '/api/v1/fleet/snapshot');
+    const readRoute = await post(harness, { request_id: randomUUID(), mode: 'ok', value: 'v' }, {}, '/api/v1/dev-activity');
     expect(readRoute.status).toBe(405);
     expect(readRoute.headers.get('allow')).toBe('GET, HEAD');
     const get = await fetch(`${harness.server.url}/api/v1/test-echo/alpha`);
