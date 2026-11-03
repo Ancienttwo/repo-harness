@@ -1,13 +1,13 @@
 # runtime-harness/task-agent-host 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:2a78fa82274436f53ed77ce058970b68bf284294dfd747f1a7732fcd92af2655" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-task-agent-host" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:639e6edff0de683611c9f59fa0e1928d998c0959c6a56b1e9541b8e4c859da5a" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.task-agent-host`(kind `capability`)
-> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
+> **Matched Prefixes**:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
-Hosts persistent task-agent participants in Herdr panes with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the Herdr notify plugin and the agent fleet personas. Records pane-status shadow decisions and blind Bot labels without applying model output.
+Hosts persistent task-agent participants in hc terminals with role profiles, task worktrees, request send, request-bound result collection and OAR runtime observation, and installs the notify relay and the agent fleet personas.
 
 ## 1. P1:能力架構地圖
 
@@ -17,7 +17,6 @@ Hosts persistent task-agent participants in Herdr panes with role profiles, task
 flowchart LR
   p1_capability_runtime_harness_task_agent_host_d81dadb6["Task Agent Host"]:::component
   p1_component_task_agent_host_cli_layer_209be438["Task Agent Host (cli)"]:::component
-  p1_component_task_agent_host_core_layer_b57e2a37["Task Agent Host (core)"]:::component
   p1_component_task_agent_host_events_cli_05ad084f["Bot Events Command (cli)"]:::component
   p1_component_task_agent_host_primary_d8453f09["Herdr Task Session Host"]:::component
   p1_component_task_agent_host_primary_assets_5212098e["Herdr Task Session Host (assets)"]:::component
@@ -34,8 +33,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:a5d296a5b60a70bf641001e6f5324c16508c2ef2528a43a6af79c89771185f94`).
-- Semantic nodes: `10`; declared relations: `3`.
+- Proof: `proven` (`sha256:5d77e345e5d1fc8a598f0d400a2f86f9e775c9e6783ed9ef431de29868c35c9c`).
+- Semantic nodes: `9`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
@@ -58,7 +57,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `2000–5000` 行
-- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/herdr-decision.ts`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
+- 匹配前綴:`src/effects/terminal/herdr.ts`、`src/effects/terminal/herdr-core.ts`、`src/effects/terminal/task-session.ts`、`src/effects/terminal/task-runtime-observation.ts`、`assets/herdr/**`、`agents/fleet/**`、`.codex/agents/**`、`scripts/install-agent-fleet.sh`、`src/effects/terminal/native-task-session.ts`、`src/effects/review-runner/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -68,7 +67,8 @@ flowchart LR
 - `calls` → `capability.verification.acceptance-review` — Plugin → core: bind task sessions to the active review admission and its source, resolve the policy review base of the diff fingerprint, implement the reviewer runner port, and apply the review isolation policy in the OAR review host
 - `deployed-on` → `process.oar-review-host` — The reviewer runner builds and runs the OAR review host bundle.
 - `calls` → `capability.runtime-harness.evidence-ledger` — Hash request context and result bytes with the evidence canonical JSON
-- `calls` → `external.herdr` — Split and run Herdr panes for task agents and review hosts.
+- `depends-on` → `external.herdr-app` — Own the one herdr-app do argv for tab.new, pane.split, pane.close and terminal.keep. The console prints the terminal.keep command for the person to run.
+- `calls` → `external.herdr-core` — Run labeled task-agent, review-host and notify relay terminals with hc run, and get, list, send to, kill and remove them. Follow hc events in the notify relay. List seat terminals and read the hc version for the board.
 - `depends-on` → `capability.organization.board` — Implement the board host port: seat terminals by parent label and the hc version
 - `depends-on` → `capability.runtime-harness.hook-adapters` — Use host installation commands for Herdr skill setup.
 - `depends-on` → `capability.workflow-engine.workflow-state` — Read admitted sessions and task session lists through the shared core selector and session types
@@ -86,8 +86,6 @@ flowchart LR
 組件出向關係:
 
 - `component.task-agent-host.cli-layer`:
-  - 無。
-- `component.task-agent-host.core-layer`:
   - 無。
 - `component.task-agent-host.events-cli`:
   - 無。
@@ -113,18 +111,17 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.task-agent-host.cli-layer` | Task Agent Host (cli) | `2–5` 個文件 / `10–20` 行 | 未宣告 |
-| `component.task-agent-host.core-layer` | Task Agent Host (core) | `1–2` 個文件 / `5–10` 行 | 未宣告 |
 | `component.task-agent-host.events-cli` | Bot Events Command (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.task-agent-host.primary` | Herdr Task Session Host | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.task-agent-host.primary-assets` | Herdr Task Session Host (assets) | `10–20` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.primary-cli` | Herdr Task Session Host (cli) | `2–5` 個文件 / `200–500` 行 | 未宣告 |
-| `component.task-agent-host.primary-core` | Herdr Task Session Host (core) | `2–5` 個文件 / `50–100` 行 | 未宣告 |
+| `component.task-agent-host.primary-core` | Herdr Task Session Host (core) | `1–2` 個文件 / `5–10` 行 | 未宣告 |
 | `component.task-agent-host.primary-scripts` | Herdr Task Session Host (scripts) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.task-agent-host.review-runner` | Reviewer Runner | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:a5d296a5b60a70bf641001e6f5324c16508c2ef2528a43a6af79c89771185f94`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:5d77e345e5d1fc8a598f0d400a2f86f9e775c9e6783ed9ef431de29868c35c9c`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -132,7 +129,7 @@ sequenceDiagram
   autonumber
   participant p2_host_e62c1c09 as Task Agent Host
   participant p2_session_d4cd9053 as Herdr Task Session Host
-  p2_host_e62c1c09->>p2_session_d4cd9053: Start the task agent pane for one task and role and record its binding
+  p2_host_e62c1c09->>p2_session_d4cd9053: Start the task agent hc terminal for one task and role and record its binding
   p2_host_e62c1c09->>p2_session_d4cd9053: Save the numbered request and its round marker before the prompt is delivered
   alt The provider writes the exact request result
   p2_host_e62c1c09->>p2_session_d4cd9053: Validate and ingest only the request-bound TaskResult

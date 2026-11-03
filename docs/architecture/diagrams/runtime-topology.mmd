@@ -3,7 +3,8 @@ flowchart TB
   subgraph namespace_host_developer["Developer host (host)"]
     process_agent_host["Agent host"]
     process_cli["CLI process"]
-    process_herdr_server["Herdr server"]
+    process_herdr_app["Herdr.app"]
+    process_herdr_core_server["herdr-core server"]
     process_hook["Hook process"]
     process_mcp_coding_shell["MCP coding shell"]
     process_mcp_server["MCP server"]
@@ -27,7 +28,7 @@ flowchart TB
   component_global_runtime_reconciliation_cli_root -->|"deployed-on"| process_cli
   process_cli -->|"spawns"| process_process_supervisor
   capability_workflow_engine_execution_primitives -->|"deployed-on"| process_process_supervisor
-  process_herdr_server -->|"spawns"| process_oar_review_host
+  process_herdr_core_server -->|"spawns"| process_oar_review_host
   capability_runtime_harness_hook_adapters -->|"deployed-on"| process_hook
   process_hook -->|"spawns"| process_process_supervisor
   process_mcp_server -->|"spawns"| process_mcp_coding_shell
