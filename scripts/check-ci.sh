@@ -28,6 +28,7 @@ BUN_TEST_SCHEDULE_FILES=1
 BUN_TEST_SUITE=full
 
 source "$ROOT/scripts/lib/ci-run-tests.sh"
+source "$ROOT/scripts/lib/architecture-plugin.sh"
 
 # Records an install selection with the architecture plugin in the private
 # HOME $1. The repository policy sets capability_source archcontext, which
@@ -57,9 +58,9 @@ with_architecture_home() {
   record_architecture_selection "$arch_home"
   printf '%s\n' '{"architecture":{"projection_provider":"archctx","projection_apply":"manual","projection_timeout_ms":600000}}' > "$arch_home/.repo-harness/config.json"
   if [[ -d .codegraph ]]; then
-    HOME="$arch_home" npm exec --no -- codegraph sync -q . </dev/null >/dev/null || status=$?
+    HOME="$arch_home" repo_harness_architecture_start "$ROOT" "" "CodeGraph sync" npm exec --no -- codegraph sync -q . </dev/null >/dev/null || status=$?
   else
-    HOME="$arch_home" npm exec --no -- codegraph init -y . </dev/null >/dev/null || status=$?
+    HOME="$arch_home" repo_harness_architecture_start "$ROOT" "" "CodeGraph init" npm exec --no -- codegraph init -y . </dev/null >/dev/null || status=$?
   fi
   if [[ "$status" -eq 0 ]]; then
     HOME="$arch_home" "$@" || status=$?
@@ -126,7 +127,7 @@ if [[ "$lane" == architecture-advisory ]]; then
   echo "[ci] plugin-internals constraint"
   constraint_json="$(mktemp /tmp/rh-arch-constraints-XXXXXX)"
   constraint_status=0
-  with_architecture_home npm exec --no -- archctx constraints check --json > "$constraint_json" || true
+  with_architecture_home repo_harness_architecture_start "$ROOT" "" "plugin-internals constraint" npm exec --no -- archctx constraints check --json > "$constraint_json" || true
   constraint_failures="$(bun -e 'const { decodeConstraintEvaluation } = await import("./src/core/architecture/projection.ts"); const id = "constraint.surface.plugin-internals"; const envelope = JSON.parse(await Bun.file(process.argv[1]).text()); if (envelope.ok !== true) throw new Error(`archctx constraints check failed: ${JSON.stringify(envelope.error ?? null)}`); const r = decodeConstraintEvaluation(envelope.data); const failures = []; if (!r.constraintIds.includes(id)) failures.push(`${id} was not evaluated`); if (r.coverage !== "complete") failures.push(`coverage is ${r.coverage}`); if (r.reasonCodes.length > 0) failures.push(`reason codes: ${r.reasonCodes.join(", ")}`); for (const u of r.unresolvedImports) failures.push(`unresolved import ${u.specifier} from ${u.from}`); for (const v of r.violations) if (v.constraintId === id) failures.push(`${v.fromPath} imports ${v.toPath} (${v.fromNode} -> ${v.toNode})`); console.log(failures.map(f => f.replace(/\s+/g, " ")).join("\n"));' "$constraint_json")" || constraint_status=$?
   if [[ "$constraint_status" -ne 0 ]]; then
     echo "::error title=Plugin internals constraint::archctx constraints check --json gave no valid report. Read the job log."

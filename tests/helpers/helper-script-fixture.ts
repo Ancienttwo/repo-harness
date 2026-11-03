@@ -72,6 +72,8 @@ export function copyHelpers(cwd: string, { linkDependencies = true } = {}) {
     symlinkSync(join(ROOT, "src", "cli"), join(cwd, "src", "cli"), "dir");
   }
 
+  // The helpers start archctx and CodeGraph only through the shared gate in scripts/lib.
+  if (!existsSync(join(scriptsDir, "lib"))) symlinkSync(join(HELPER_DIR, "lib"), join(scriptsDir, "lib"), "dir");
   for (const file of listHelperFiles({ REPO_HARNESS_SOURCE_ROOT: ROOT })) {
     copyFileSync(join(HELPER_DIR, file), join(scriptsDir, file));
     copyFileSync(join(HELPER_DIR, file), join(harnessScriptsDir, file));

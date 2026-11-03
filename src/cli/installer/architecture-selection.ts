@@ -36,13 +36,22 @@ function notSelectedMessage(selection: RecordedSelection): string {
   return `the architecture plugin is not selected; run: ${architectureRepair(selection.status === 'recorded' ? selection.plugins : null)}`;
 }
 
+export type ArchitectureSelectionReport =
+  | { readonly status: 'selected'; readonly message: '' }
+  | { readonly status: 'not-selected' | 'unreadable'; readonly message: string };
+
+/** The gate outcome with its reason; the shell gate (scripts/lib/architecture-plugin.sh) prints this. */
+export function architectureSelectionReport(selection: RecordedSelection): ArchitectureSelectionReport {
+  if (architectureSelected(selection)) return { status: 'selected', message: '' };
+  if (selection.status === 'unreadable') return { status: 'unreadable', message: `the install selection cannot be read: ${selection.error.message}` };
+  return { status: 'not-selected', message: notSelectedMessage(selection) };
+}
+
 /** A root that registers no architecture provider records why, so each port reports it. */
 export function declareArchitectureSelection(selection: RecordedSelection): void {
-  if (selection.status === 'unreadable') {
-    declareArchitectureAbsent('ARCHITECTURE_PROVIDER_UNAVAILABLE', `the install selection cannot be read: ${selection.error.message}`);
-  } else {
-    declareArchitectureAbsent('ARCHITECTURE_PLUGIN_NOT_SELECTED', notSelectedMessage(selection));
-  }
+  const report = architectureSelectionReport(selection);
+  if (report.status === 'selected') return;
+  declareArchitectureAbsent(report.status === 'unreadable' ? 'ARCHITECTURE_PROVIDER_UNAVAILABLE' : 'ARCHITECTURE_PLUGIN_NOT_SELECTED', report.message);
 }
 
 /**

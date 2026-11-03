@@ -51,6 +51,10 @@ worktree_merge_lib="$helper_dir/worktree-merge-lib.sh"
 [[ -f "$worktree_merge_lib" ]] || { echo "contract-worktree: worktree merge library is unavailable: $worktree_merge_lib" >&2; exit 1; }
 # shellcheck source=worktree-merge-lib.sh
 . "$worktree_merge_lib"
+architecture_plugin_lib="$helper_dir/lib/architecture-plugin.sh"
+[[ -f "$architecture_plugin_lib" ]] || { echo "contract-worktree: architecture plugin library is unavailable: $architecture_plugin_lib" >&2; exit 1; }
+# shellcheck source=lib/architecture-plugin.sh
+. "$architecture_plugin_lib"
 
 usage() {
   cat <<'USAGE_EOF'
@@ -251,19 +255,26 @@ bootstrap_worktree_runtime() {
 
   # Mirror only an adoption the primary worktree already made. No .codegraph
   # directory means the operator did not opt into indexing, and start has no
-  # business opting in on their behalf.
-  if [[ -d "$REPO_ROOT/.codegraph" ]] \
-    && command -v codegraph >/dev/null 2>&1 \
-    && [[ ! -f "$worktree_path/.codegraph/codegraph.db" ]]; then
-    [[ "${contract_worktree_start_json:-0}" -eq 1 ]] \
-      || printf '%s\n' "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
-    if ! (cd "$worktree_path" && codegraph init >/dev/null 2>&1); then
-      echo "[ContractWorktree] codegraph init failed; architecture projection will report unresolved-major-change for every capability" >&2
-      return 1
-    fi
+  # business opting in on their behalf. CodeGraph belongs to the architecture
+  # plugin: without it in the recorded selection the index step is skipped
+  # with one line, and the worktree is still created.
+  if [[ -d "$REPO_ROOT/.codegraph" ]] && [[ ! -f "$worktree_path/.codegraph/codegraph.db" ]]; then
+    repo_harness_architecture_start "$(cd "$helper_dir/.." && pwd)" "$BUN_BIN" "CodeGraph index of the worktree" \
+      index_worktree_codegraph "$worktree_path" || return 1
   fi
 
   return 0
+}
+
+index_worktree_codegraph() {
+  local worktree_path="$1"
+  command -v codegraph >/dev/null 2>&1 || return 0
+  [[ "${contract_worktree_start_json:-0}" -eq 1 ]] \
+    || printf '%s\n' "[ContractWorktree] Indexing CodeGraph (architecture projection requires code facts)"
+  if ! (cd "$worktree_path" && codegraph init >/dev/null 2>&1); then
+    echo "[ContractWorktree] codegraph init failed; architecture projection will report unresolved-major-change for every capability" >&2
+    return 1
+  fi
 }
 
 run_contract_runtime() {

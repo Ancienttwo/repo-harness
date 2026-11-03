@@ -878,7 +878,7 @@ describe('single affected verification and daily fallback', () => {
         expect({ name, tests: existsSync(selected) ? JSON.parse(readFileSync(selected, 'utf8')) : null }).toEqual({ name, tests });
       }
       // The local affected lane stops after a documentation selection; an affected selection goes on to typecheck.
-      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) write(file, readFileSync(join(ROOT, file), 'utf8'));
+      for (const file of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh']) write(file, readFileSync(join(ROOT, file), 'utf8'));
       write('bin/bun', '#!/bin/bash\necho "bun $*" >> "$BUN_LOG"\nif [ "$1" = scripts/select-ci-coverage.ts ]; then echo "mode=$SELECTED_MODE"; fi\n');
       spawnSync('chmod', ['+x', join(repo, 'bin/bun')]);
       for (const [mode, typecheck] of [['documentation', false], ['affected', true]] as const) {
@@ -1009,9 +1009,11 @@ describe('architecture lanes', () => {
     const bin = join(root, 'bin');
     try {
       mkdirSync(join(root, 'repo/scripts/lib'), { recursive: true }); mkdirSync(bin);
-      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
+      for (const path of ['scripts/check-ci.sh', 'scripts/lib/ci-run-tests.sh', 'scripts/lib/architecture-plugin.sh']) writeFileSync(join(root, 'repo', path), readFileSync(join(ROOT, path)));
       // The advisory imports the action map from the real source tree.
       symlinkSync(join(ROOT, 'src'), join(root, 'repo/src'));
+      // The lane records its architecture selection with the package version.
+      writeFileSync(join(root, 'repo/package.json'), readFileSync(join(ROOT, 'package.json')));
       writeFileSync(join(root, 'debt.json'), fixture.debt ?? '');
       writeFileSync(join(root, 'check.json'), fixture.check ?? '');
       writeFileSync(join(root, 'constraints.json'), fixture.constraints ?? constraints());

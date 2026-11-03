@@ -1,16 +1,20 @@
-import { afterEach, expect, test } from 'bun:test';
+import { afterAll, afterEach, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { sha256 } from '../../src/core/review/module-review-prompt';
 import { MODULE_DOC, MODULE_ID, fixtureCommit, fixtureGit, fixtureWrite, isNativeExportGitRead, moduleRepository, projectionCheckResult } from '../helpers/module-repository';
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 
 const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
 const roots: string[] = [];
 afterEach(() => roots.splice(0).forEach(root => rmSync(root, { recursive: true, force: true })));
 function repo(): string { const root = moduleRepository(); roots.push(root); return root; }
+// `module` is an architecture command: each run uses a HOME that selects the plugin.
+const SELECTED_HOME = pluginSelectionEnv().HOME;
+afterAll(() => rmSync(SELECTED_HOME!, { recursive: true, force: true }));
 function run(root: string, args: string[], env: NodeJS.ProcessEnv = process.env) {
-  return spawnSync(process.execPath, [cli, 'module', ...args], { cwd: root, env, encoding: 'utf8', timeout: 20_000 });
+  return spawnSync(process.execPath, [cli, 'module', ...args], { cwd: root, env: { ...env, HOME: SELECTED_HOME }, encoding: 'utf8', timeout: 20_000 });
 }
 function snapshot(root: string, path = ''): Record<string, string> {
   const result: Record<string, string> = {};

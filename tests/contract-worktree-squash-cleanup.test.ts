@@ -56,6 +56,8 @@ function copyHelpers(cwd: string) {
   symlinkSync(join(ROOT, "src/core"), join(cwd, "src/core"), "dir");
   // The worktree runtime reads the recorded install selection through src/cli/installer.
   symlinkSync(join(ROOT, "src/cli"), join(cwd, "src/cli"), "dir");
+  // The helpers start archctx and CodeGraph only through the shared gate in scripts/lib.
+  symlinkSync(join(HELPER_DIR, "lib"), join(scriptsDir, "lib"), "dir");
 
   for (const file of listHelperFiles({ REPO_HARNESS_SOURCE_ROOT: ROOT })) {
     copyFileSync(join(HELPER_DIR, file), join(scriptsDir, file));

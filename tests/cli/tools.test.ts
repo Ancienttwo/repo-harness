@@ -271,6 +271,8 @@ describe("architecture plugin guard", () => {
         ["refactor", "recommendations", "--repo", ROOT, "--json"],
         ["tools", "ensure", "codegraph", "--repo", ROOT],
         ["tools", "configure", "codegraph", "--target", "codex", "--location", "global", "--repo", ROOT],
+        ["module", "list", "--json"],
+        ["module", "review-prompt", "capability.runtime-harness.architecture", "--json"],
       ];
       // No install state, then a recorded selection without the plugin.
       for (const [selection, repair] of [

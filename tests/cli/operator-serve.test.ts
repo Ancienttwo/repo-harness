@@ -1,3 +1,4 @@
+import { pluginSelectionEnv } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
 import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
@@ -921,7 +922,9 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {
     const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
-    const list = spawnSync(process.execPath, [cli, 'module', 'list', '--json'], { cwd: root, env, encoding: 'utf8' });
+    // `module` is an architecture command: the CLI comparison runs with a HOME that selects the plugin.
+    const cliEnv = { ...env, HOME: pluginSelectionEnv().HOME };
+    const list = spawnSync(process.execPath, [cli, 'module', 'list', '--json'], { cwd: root, env: cliEnv, encoding: 'utf8' });
     expect(list.status).toBe(0);
     for (const method of ['GET', 'HEAD']) {
       for (const suffix of ['', `/${MODULE_ID}`, `/${MODULE_ID}/review-prompt?shard=1`, `/${MODULE_ID}/review-prompt?shard=1&mode=diff&base=${base}&head=${head}`]) {
@@ -937,7 +940,7 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
           if (!suffix) expect(JSON.parse(body)).toEqual(JSON.parse(list.stdout));
           if (suffix.includes('review-prompt')) {
             const args = ['module', 'review-prompt', MODULE_ID, '--json', '--shard', '1', ...(suffix.includes('mode=diff') ? ['--base', base, '--head', head] : [])];
-            const packet = spawnSync(process.execPath, [cli, ...args], { cwd: root, env, encoding: 'utf8' });
+            const packet = spawnSync(process.execPath, [cli, ...args], { cwd: root, env: cliEnv, encoding: 'utf8' });
             expect(packet.status).toBe(0); expect(JSON.parse(body).digest).toBe(JSON.parse(packet.stdout).digest);
           }
         }
@@ -1059,7 +1062,7 @@ test('architecture prompt keeps public absolute-path examples in CLI digest pari
   const server = await startOperatorServer({ port: 0, env });
   try {
     const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
-    const expected = spawnSync(process.execPath, [cli, 'module', 'review-prompt', MODULE_ID, '--json'], { cwd: root, env, encoding: 'utf8' });
+    const expected = spawnSync(process.execPath, [cli, 'module', 'review-prompt', MODULE_ID, '--json'], { cwd: root, env: { ...env, HOME: pluginSelectionEnv().HOME }, encoding: 'utf8' });
     expect(expected.status).toBe(0);
     const response = await fetch(`${server.url}/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt?shard=1`);
     expect(response.status).toBe(200); expect((await response.json()).digest).toBe(JSON.parse(expected.stdout).digest);

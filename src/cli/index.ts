@@ -1024,7 +1024,7 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand(CLI_PORTS.doctor));
   program.addCommand(buildReviewCommand(taskReviewRunner));
-  program.addCommand(buildModuleCommand());
+  program.addCommand(architectureCommand(buildModuleCommand()));
   program.addCommand(buildSetupCommand(CLI_PORTS.doctor));
   program.addCommand(buildUpgradeCommand());
 

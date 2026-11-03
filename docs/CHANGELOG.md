@@ -24,12 +24,18 @@ All notable changes to this skill are documented here.
   configuration. `status` and `doctor` report `not selected` with the repair
   command, and the hooks give no architecture notice. The MCP repo tools run
   no CodeGraph read and report the absence in their `codegraph` summary.
-  The worktree closeout stops no archctx daemon either: a daemon that
+  `repo-harness run contract-worktree start` still creates the worktree and
+  skips only its CodeGraph index, with one
+  `[architecture] skipped CodeGraph index of the worktree: <reason>` line.
+  A shell script starts archctx or CodeGraph only through
+  `scripts/lib/architecture-plugin.sh`, which reads the selection through the
+  same reader. The worktree closeout stops no archctx daemon either: a daemon that
   started while the plugin was selected keeps running after a deselection.
   Stop it before you remove the plugin, or select the plugin again and run
   the closeout.
   `repo-harness architecture-projection`, `architecture-debt`, `refactor`,
-  `tools ensure codegraph` and `tools configure codegraph` fail closed with
+  `module`, `tools ensure codegraph` and `tools configure codegraph` fail
+  closed with
   `install_plugin_unavailable` before they start a process or load the
   plugin code.
   A repository policy that sets `context.capability_source: archcontext` or
@@ -38,8 +44,10 @@ All notable changes to this skill are documented here.
   `install_plugin_unavailable`. Fix: run the command in the error. For a
   recorded selection it is `repo-harness install --plugins architecture,<your
   plugins>`; without an install state it is `repo-harness install`. Known gap
-  until #1670: with the plugin not selected, the operator module diff path
-  still reaches archctx through `archcontext-owners.ts`. (#1656)
+  until #1670: with the plugin not selected, `repo-harness operator serve`
+  still starts archctx in its architecture history and module routes and in
+  its architecture map collector, through `model-reader.ts` and
+  `architecture-read.ts`. (#1656)
 
 ### Changed
 

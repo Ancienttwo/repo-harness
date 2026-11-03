@@ -1884,6 +1884,7 @@ describe("check-agent-tooling", () => {
       mkdirSync(join(packageRoot, "scripts"), { recursive: true });
       copyFileSync(SCRIPT, join(packageRoot, "scripts", "check-agent-tooling.sh"));
       for (const dir of ["agents", "assets", "src"]) symlinkSync(join(ROOT, dir), join(packageRoot, dir));
+      symlinkSync(join(ROOT, "scripts", "lib"), join(packageRoot, "scripts", "lib"));
       writeFileSync(join(packageRoot, "package.json"), JSON.stringify({ name: "repo-harness" }));
       const packaged = JSON.parse(readFileSync(join(ROOT, "node_modules", "archctx", "package.json"), "utf-8"));
       const archctxRoot = join(packageRoot, "node_modules", "archctx");

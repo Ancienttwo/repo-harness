@@ -26,6 +26,26 @@ if [[ ! -d "$AGENT_FLEET_SOURCE_DIR" ]]; then
 fi
 export REPO_HARNESS_AGENT_FLEET_SOURCE_DIR="$AGENT_FLEET_SOURCE_DIR"
 
+# CodeGraph and archctx belong to the architecture plugin. The selection comes
+# from the shared shell gate, once; the report below starts their binaries only
+# for `selected`. The plugin code that runs this probe (src/cli/tools/codegraph.ts)
+# passes --architecture-selected: its process already registered the plugin,
+# also while an install applies a selection that it records only after this run.
+# shellcheck source=lib/architecture-plugin.sh
+. "$package_root/scripts/lib/architecture-plugin.sh"
+probe_args=()
+architecture_selected_by_caller=0
+for arg in "$@"; do
+  if [[ "$arg" == --architecture-selected ]]; then architecture_selected_by_caller=1; else probe_args+=("$arg"); fi
+done
+if [[ "$architecture_selected_by_caller" -eq 1 ]]; then
+  REPO_HARNESS_ARCHITECTURE_SELECTION=selected
+  REPO_HARNESS_ARCHITECTURE_SELECTION_REASON=""
+else
+  repo_harness_architecture_selection "$package_root"
+fi
+export REPO_HARNESS_ARCHITECTURE_SELECTION REPO_HARNESS_ARCHITECTURE_SELECTION_REASON
+
 if command -v node >/dev/null 2>&1; then
   RUNTIME_BIN="$(command -v node)"
 elif command -v bun >/dev/null 2>&1; then
@@ -37,7 +57,7 @@ else
   exit 1
 fi
 
-exec "$RUNTIME_BIN" - "$@" <<'NODE_EOF'
+exec "$RUNTIME_BIN" - ${probe_args[@]+"${probe_args[@]}"} <<'NODE_EOF'
 const fs = require("fs");
 const crypto = require("crypto");
 const os = require("os");
@@ -49,10 +69,6 @@ let jsonOutput = false;
 let checkUpdates = false;
 let strictReadiness = false;
 let probeSkillsCli = false;
-// The plugin code that runs this probe (src/cli/tools/codegraph.ts) passes
-// --architecture-selected: its process already registered the plugin, also
-// while an install applies a selection that it records only after this run.
-let architectureSelectedByCaller = false;
 let hostMode = "both";
 
 function usage() {
@@ -75,10 +91,6 @@ for (let index = 0; index < argv.length; index += 1) {
   }
   if (arg === "--probe-skills-cli") {
     probeSkillsCli = true;
-    continue;
-  }
-  if (arg === "--architecture-selected") {
-    architectureSelectedByCaller = true;
     continue;
   }
   if (arg === "--host") {
@@ -1910,49 +1922,43 @@ function bunExecutable() {
 }
 
 /**
- * The recorded architecture selection and the package-local archctx that
- * repo-harness runs. The provider's resolvePackageLocalArchctx() is the only
- * rule: it checks the version, the Node engine contract, bin.archctx and the
- * binary. This probe runs that function under Bun from the repo-harness
- * package root and reports its answer. The runnable command, with the
- * resolved Node path, comes from
- * `repo-harness architecture-projection status --json`. Without the
- * architecture plugin in the recorded selection the probe loads no provider,
- * and `selected` is false: the CodeGraph and archctx detectors then resolve
- * and run no binary. A selection that cannot be read is not selected either,
- * and its status is `selection-unreadable` with the read error. With
- * --architecture-selected the probe reads no install state and loads the
- * providers.
+ * The package-local archctx that repo-harness runs. The provider's
+ * resolvePackageLocalArchctx() is the only rule: it checks the version, the
+ * Node engine contract, bin.archctx and the binary. This probe runs that
+ * function under Bun from the repo-harness package root and reports its
+ * answer. The runnable command, with the resolved Node path, comes from
+ * `repo-harness architecture-projection status --json`. The selection is the
+ * one that the shell gate read above: without `selected` the probe loads no
+ * provider, `selected` is false, and the CodeGraph and archctx detectors
+ * resolve and run no binary.
  */
 function detectManagedArchctx() {
-  const unusable = (reason) => ({ status: "invalid", selected: architectureSelectedByCaller, version: null, required_version: null, bin_path: null, node_range: null, reason, command_source: ARCHCTX_STATUS_COMMAND });
+  const selection = process.env.REPO_HARNESS_ARCHITECTURE_SELECTION;
+  const unusable = (reason) => ({ status: "invalid", selected: selection === "selected", version: null, required_version: null, bin_path: null, node_range: null, reason, command_source: ARCHCTX_STATUS_COMMAND });
+  if (selection !== "selected") {
+    return { ...unusable(process.env.REPO_HARNESS_ARCHITECTURE_SELECTION_REASON || "the install selection cannot be read"), status: selection === "not-selected" ? "not-selected" : "selection-unreadable" };
+  }
   const bun = bunExecutable();
-  if (!bun) return unusable("bun is not available, so the recorded selection and the managed archctx cannot be read");
+  if (!bun) return unusable("bun is not available, so the managed archctx cannot be resolved");
   const script = [
-    "const [selection, contracts, providers, consumerRoot, source] = process.argv.slice(1);",
-    "const { readRecordedSelection, registerSelectedArchitecturePorts } = await import(selection);",
-    "const { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } = await import(contracts);",
-    "const load = async () => (await import(providers)).ARCHITECTURE_PROVIDERS;",
-    "if (source === 'caller') registerArchitecturePorts(await load()); else await registerSelectedArchitecturePorts(readRecordedSelection(), load);",
+    "const [contracts, providers, consumerRoot] = process.argv.slice(1);",
+    "const { architecturePort, registerArchitecturePorts } = await import(contracts);",
+    "registerArchitecturePorts((await import(providers)).ARCHITECTURE_PROVIDERS);",
     "const runtime = architecturePort('runtime');",
-    "if (isArchitectureUnavailable(runtime)) { console.log(JSON.stringify({ ok: false, inactive: runtime.code, reason: runtime.message })); process.exit(0); }",
     "try { console.log(JSON.stringify({ ok: true, required: runtime.requiredArchctxVersion, resolved: runtime.resolvePackageLocalArchctx(consumerRoot) })); }",
     "catch (error) { console.log(JSON.stringify({ ok: false, required: runtime.requiredArchctxVersion, reason: error instanceof Error ? error.message : String(error) })); }",
   ].join("\n");
   const result = run(bun, [
     "-e", script,
-    path.join(PACKAGE_ROOT, "src", "cli", "installer", "architecture-selection.ts"),
     path.join(PACKAGE_ROOT, "src", "core", "architecture", "contracts.ts"),
     path.join(PACKAGE_ROOT, "src", "effects", "architecture", "providers.ts"),
     PACKAGE_ROOT,
-    architectureSelectedByCaller ? "caller" : "recorded",
   ], { cwd: PACKAGE_ROOT, timeoutMs: 15000 });
   const answer = result.ok ? parseJson(result.stdout.trim()) : null;
   if (!answer || typeof answer !== "object") {
     return unusable(`the provider resolution did not run: ${(result.error || result.stderr || result.stdout).trim().slice(0, 300) || `exit ${result.status}`}`);
   }
-  if (answer.inactive) return { ...unusable(answer.reason), status: answer.inactive === "ARCHITECTURE_PLUGIN_NOT_SELECTED" ? "not-selected" : "selection-unreadable" };
-  if (!answer.ok) return { ...unusable(answer.reason), selected: true, required_version: answer.required };
+  if (!answer.ok) return { ...unusable(answer.reason), required_version: answer.required };
   return {
     status: "present",
     selected: true,
