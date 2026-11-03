@@ -1,6 +1,6 @@
 ---
 name: repo-harness-issue-flow
-description: Run GitHub issue and PR driven development with several agents. Use it to turn a PRD or feature into a backlog of requirement issues split by architecture module, with Depends on lines and boundaries; to dispatch workers and follow their PRs and CI to merge as coordinator; or, as a worker, to deliver a dispatched issue's PR, raise a boundary question, hand off or take over a stalled claim, or sync a PR stacked on another agent's PR. Exclude PRD drafting, code review, and small changes that need no issue.
+description: Run GitHub issue and PR driven development with several agents. Use it to turn a PRD or feature into a backlog of requirement issues split by architecture module, with sub-issue and blocked-by links and boundaries; to dispatch workers and follow their PRs and CI to merge as coordinator; or, as a worker, to deliver a dispatched issue's PR, raise a boundary question, hand off or take over a stalled claim, or sync a PR stacked on another agent's PR. Exclude PRD drafting, code review, and small changes that need no issue.
 when_to_use: "repo-harness-issue-flow"
 ---
 
@@ -51,7 +51,9 @@ the issue, credentials and releases keep their own approval rules.
 |---|---|
 | Module map and boundaries | `docs/architecture/archimap.html` (skill `repo-harness-archimap`), backed by the architecture model |
 | Product intent | PRD or source document named in the parent issue |
-| Requirement, scope, boundaries, dependencies, acceptance | Child issue body |
+| Requirement, scope, boundaries, acceptance | Child issue body |
+| Parent membership, dependencies, release window, plan tier | GitHub sub-issue, blocked-by link, milestone, `tier:` label (`references/templates.md`, Plan data) |
+| Merge order, holds, batches, seat limit | The plan block in the parent's newest `plan` comment |
 | Claim, status, handoff, scope changes, decisions | Issue comments |
 | Change, verification, risk, rollback | PR body |
 | Verification result | CI checks on the PR head |

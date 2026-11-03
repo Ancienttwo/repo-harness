@@ -28,10 +28,11 @@ return the result schema can accept.
 
 ## 2. Take one round
 
-One round has one subject SHA and one risk tier. Read the PR body, the
-diff, the issue and the recorded verification. From the second round, read
-only the hunks that changed after the previous round. Do not rerun a
-passing check. Use the recorded command, result, revision and environment.
+One round has one subject SHA and one risk tier. A High round has two
+reviews of that one subject SHA, and both take the same round number. Read
+the PR body, the diff, the issue and the recorded verification. From the
+second round, read only the hunks that changed after the previous round. Do
+not rerun a passing check. Use the recorded command, result, revision and environment.
 
 When the repository has `agents/fleet/known-gaps.md`, read the row for the
 PR's producer and run its named checks in addition to the tier's review.
@@ -66,6 +67,15 @@ posts in this order:
 It posts no APPROVE review and no REQUEST_CHANGES review. A gatekeeper
 has no network, so the session that runs the round publishes its receipt.
 A reviewer with network access may publish its own round.
+
+`review publish` accepts rounds 1 to 3 only. For a round above 3, the
+session that runs the round posts the `acceptance record` by hand, in the
+same shape (`templates.md`, acceptance record): one row with the fields
+`Round`, `Seat`, `Subject` (the full head SHA), `Verdict` (`PASS` or
+`FAIL` with the finding counts), then the `Model relation` line and the
+findings. Post line findings as review threads (`board.md` rule 5). Do not
+write the verdict in free prose: the board cannot read it, and the PR does
+not count as accepted.
 
 Act on the exit code:
 
