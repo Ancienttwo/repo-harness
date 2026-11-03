@@ -3,13 +3,15 @@ import { chmodSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { join } from 'path';
 import { tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
+import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries } from '../src/core/board/attention-delivery';
+import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
 import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard } from '../src/effects/board/collect';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
-import { boardHostPorts } from '../src/effects/terminal/herdr-core';
+import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
 // scheduled ci.yml run (cut to the fields the collector reads), and `hc ls --json` / `hc get --json` of five seat
@@ -245,6 +247,131 @@ test('A2 finds a batch behind an overlapping pull request, and a plan hold remov
   })).findings.filter(finding => ['A1', 'A2', 'R4'].includes(finding.rule)).map(finding => [finding.rule, finding.pull_requests]);
   expect(findings([])).toEqual([['A1', [1491]], ['A2', [1494, 1499]], ['R4', [1491]], ['R4', [1494]], ['R4', [1499]]]);
   expect(findings([1475, 1479])).toEqual([['R4', [1499]]]);
+});
+
+// A fake hc for the watcher: every call is logged; `get` answers from FAKE_TERMINALS, `wait` from FAKE_WAITS by address.
+const WATCH_HC = `#!${process.execPath}
+const { appendFileSync } = require('fs');
+const args = process.argv.slice(2);
+appendFileSync(process.env.HC_LOG, JSON.stringify(args) + '\\n');
+const terminals = JSON.parse(process.env.FAKE_TERMINALS);
+const address = args.at(-1);
+const out = value => console.log(JSON.stringify(value));
+if (args[0] === 'get') out({ address, state: 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+else if (args[0] === 'send') out({ started: true, turn: 2 });
+else if (args[0] === 'wait') out({ terminal: address, turn: 2, ...JSON.parse(process.env.FAKE_WAITS)[address] });
+else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS) });
+else if (args[0] === 'run') out({ address: 't20', state: 'live' });
+else process.exit(2);
+`;
+
+function watchHc(env: Json = {}) {
+  const root = tmpWorkspace('board-watch'); roots.push(root);
+  mkdirSync(join(root, 'bin'));
+  writeFileSync(join(root, 'bin/hc'), WATCH_HC); chmodSync(join(root, 'bin/hc'), 0o755);
+  const log = join(root, 'hc.log');
+  writeFileSync(log, '');
+  const options = { env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, HC_LOG: log, FAKE_TERMINALS: '{}', FAKE_WAITS: '{}', FAKE_LS: '[]',
+    ...Object.fromEntries(Object.entries(env).map(([key, value]) => [key, typeof value === 'string' ? value : JSON.stringify(value)])) } };
+  return { root, options, host: attentionHostPorts(options), calls: () => readFileSync(log, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]) };
+}
+
+test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads the log', async () => {
+  const board = replay();
+  const seat = (address: string, seatName: string, status: string | null) =>
+    ({ address, name: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+  const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
+    seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked')];
+  const watched = { ...board, execution: { status: 'observed', terminals } } as BoardV1;
+  const hc = watchHc({
+    // `get` at the window end: t6 is still blocked, t10 became idle.
+    FAKE_TERMINALS: { t3: {}, t6: { status: { state: 'blocked' } }, t7: {}, t8: {}, t9: {}, t10: { status: { state: 'idle' } } },
+    // t7 became idle during the wait. t6 and t10: hc wait returns at once with the terminal still blocked.
+    FAKE_WAITS: { t6: { ended: false, reason: 'blocked', status: { state: 'blocked' } }, t7: { ended: false, reason: 'idle', status: { state: 'idle' } },
+      t10: { ended: false, reason: 'blocked', status: { state: 'blocked' } } },
+  });
+  const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
+  expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));
+  // Seven advisor wakes in the last 24 hours, one 25 hours ago.
+  const start = REPLAY_NOW.getTime();
+  mkdirSync(join(hc.root, 'board'));
+  writeFileSync(logPath, [...Array.from({ length: 7 }, (_, at) => start - (at + 1) * 3_600_000), start - 25 * 3_600_000].map(time => JSON.stringify({
+    at: new Date(time).toISOString(), window: String(time), parent: 1474, kind: 'send', route: 'advisor', terminal: 't9', rules: ['R2'], outcome: 'sent', detail: null,
+  })).join('\n') + '\n');
+  let clock = start;
+  const slept: number[] = [];
+  const window = () => runAttentionWindow({ parent: 1474, deliver: true, log_path: logPath, collect: () => watched, host: hc.host,
+    now: () => new Date(clock), sleep: async (ms) => { slept.push(ms); clock += ms; } });
+
+  await window();
+  expect(slept).toEqual([WINDOW_WITH_WORKERS_MS]);
+  // One line per seat terminal: all findings of its route in this window.
+  const orchestrator = '[rh-attention] #1474 A1: #1491 is accepted and ready, unmerged for 137 min; A7: the daily full run is failure (https://github.com/Ancienttwo/repo-harness/actions/runs/41358255043) and no CI repair issue is open';
+  expect(hc.calls().filter(args => args[0] !== 'get')).toEqual([
+    ['send', '--json', '--', 't3', orchestrator],
+    ['send', '--json', '--', 't9', expect.stringMatching(/^\[rh-attention\] #1474 R2: #1494 and #1499 both change .+ with no dependency edge$/u)],
+    ['wait', '--json', '--timeout', '900', '--', 't6'],
+    ['wait', '--json', '--timeout', '900', '--', 't7'],
+    ['send', '--json', '--', 't7', orchestrator],
+    ['wait', '--json', '--timeout', '900', '--', 't10'],
+    ['send', '--json', '--', 't10', orchestrator],
+    ['send', '--json', '--', 't8', orchestrator],
+  ]);
+  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(8).map(line => JSON.parse(line));
+  expect(records().filter(record => record.kind === 'send').map(record => [record.terminal, record.outcome, record.at])).toEqual([
+    ['t3', 'sent', REPLAY_NOW.toISOString()], ['t9', 'sent', REPLAY_NOW.toISOString()], ['t7', 'sent', REPLAY_NOW.toISOString()],
+    ['t6', 'skipped_blocked', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t10', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
+    ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
+  ]);
+  expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
+
+  // The next window: the advisor has eight wakes in 24 hours, and no worker runs, so the window is 60 minutes.
+  terminals[0] = { ...terminals[0]!, state: 'finished' };
+  await window();
+  expect(slept.at(-1)).toBe(WINDOW_WITHOUT_WORKERS_MS);
+  expect(records().filter(record => record.kind === 'skip').map(record => [record.route, record.reason])).toEqual([['advisor', 'advisor_daily_cap']]);
+  // Without observed seat terminals, the skip names the board's execution reason.
+  expect(planAttentionDeliveries({ ...board, execution: { status: 'unavailable', reason: 'no_seat_terminals' } }, evaluateBoardAttention(watched), 0).skipped)
+    .toEqual([{ route: 'orchestrator', reason: 'no_seat_terminals' }, { route: 'advisor', reason: 'no_seat_terminals' }]);
+});
+
+test('watch service: --watch refuses a terminal without the service labels; start runs one watcher; doctor reads the labels', () => {
+  const labels = { 'repo-harness.service': 'attention', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' };
+  const inside = watchHc({ HC_TERMINAL_ID: 't5', FAKE_TERMINALS: { t5: { labels } } });
+  expect(serviceTerminalRepository(1503, inside.host)).toBe(1186405141);
+  expect(() => serviceTerminalRepository(1504, inside.host)).toThrow('does not carry the repository and parent #1504 labels');
+  expect(() => serviceTerminalRepository(1503, watchHc({ HC_TERMINAL_ID: 't5' }).host)).toThrow('terminal t5 has no attention service label');
+  expect(() => serviceTerminalRepository(1503, watchHc().host)).toThrow('HC_TERMINAL_ID is not set');
+
+  const start = (ls: Json[]) => {
+    const hc = watchHc({ FAKE_LS: ls, FAKE_TERMINALS: { t5: { labels } } });
+    return [startAttentionWatch({ parent: 1503, repository_id: 1186405141, repo_root: '/repo', cli: ['bun', 'cli.ts'], host: hc.host }), hc.calls()];
+  };
+  expect(start([])).toEqual([{ address: 't20', started: true }, [
+    ['ls', '--json', '--label', 'repo-harness.service=attention', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503', '--all'],
+    ['run', '--json', '--bg', '--label', 'repo-harness.service=attention', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503',
+      '--cwd', '/repo', '--no-parent', '--', 'bun', 'cli.ts', 'board', 'attention', '--parent', '1503', '--watch', '--deliver'],
+  ]]);
+  expect(start([{ address: 't5', state: 'live' }])[0]).toEqual({ address: 't5', started: false });
+
+  // The board of the same parent in hc: the watcher is not a seat terminal.
+  const seats = watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }, { address: 't3', state: 'live' }],
+    FAKE_TERMINALS: { t5: { labels }, t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' } } } });
+  const read = boardHostPorts(seats.options).seatTerminals('1186405141', 1503);
+  expect(read.status === 'observed' && read.terminals.map(terminal => terminal.address)).toEqual(['t3']);
+
+  // Doctor runs in repository 1186405141. t6 is the watcher of another repository with the same parent.
+  const other = { ...labels, 'repo-harness.repository': '987654321' };
+  const doctor = (watchers: Record<string, Json>) => attentionWatchDoctorCheck(watchHc({
+    FAKE_LS: Object.entries(watchers).map(([address, terminal]) => ({ address, state: terminal.state })), FAKE_TERMINALS: watchers,
+  }).host, () => 1186405141);
+  expect(doctor({ t5: { labels, state: 'live' } })).toMatchObject({ status: 'ok', detail: 'The attention watcher of repository 1186405141 #1503 is live.' });
+  const stopped = { status: 'warn', detail: 'The attention watcher of repository 1186405141 #1503 is not live (attention_stopped). Run in the checkout of repository 1186405141: repo-harness board attention start --parent 1503' };
+  expect(doctor({ t5: { labels, state: 'finished' } })).toMatchObject(stopped);
+  expect(doctor({ t5: { labels, state: 'finished' }, t6: { labels: other, state: 'live' } })).toMatchObject(stopped);
+  expect(doctor({ t6: { labels: other, state: 'live' } })).toMatchObject({ status: 'na', detail: 'No attention watcher was started for repository 1186405141.' });
+  expect(doctor({})).toMatchObject({ status: 'na', detail: 'No attention watcher was started.' });
+  expect(attentionWatchDoctorCheck(attentionHostPorts({ env: { PATH: '/nonexistent' } }), () => 1186405141)).toMatchObject({ status: 'na', detail: 'hc is not installed.' });
 });
 
 // One-shot dependency migration (#1504): a stateful gh stub answers the reads and records every write.
