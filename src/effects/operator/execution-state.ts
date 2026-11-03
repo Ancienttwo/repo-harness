@@ -1,32 +1,15 @@
 import { createHash } from 'node:crypto';
-import { existsSync, lstatSync, readdirSync } from 'node:fs';
+import { existsSync } from 'node:fs';
 import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { TaskExecution, TaskExecutionSnapshot, UnverifiedExecutionReason } from '../../core/operator/execution-state';
-import { TASK_SESSIONS_MAX_ENTRIES } from '../../core/sessions/task-sessions';
 import { taskRepository } from '../git/task-repository';
-import type { NativeTaskSessionBinding } from '../terminal/native-task-session';
-import { processProofAlive } from '../terminal/task-session';
 import { readSessionArtifact } from '../terminal/task-session-io';
-import { readTaskAgent, taskSessionDirectory, type TaskPaneBinding } from '../terminal/task-session-record';
+import { processProofAlive, readTaskAgent, taskSessionDirectory, taskSessionDirectories, type NativeTaskSessionBinding, type TaskPaneBinding } from '../terminal/task-session-record';
 
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
 // Admission records the full ref; Dev Activity names a branch without this prefix.
 const BRANCH_REF = 'refs/heads/';
-
-function sessionDirectories(primaryRoot: string): string[] {
-  let base = primaryRoot;
-  for (const component of ['.ai', 'harness', 'runs', 'task-agents']) {
-    base = join(base, component);
-    if (!existsSync(base)) return [];
-    const stat = lstatSync(base);
-    if (!stat.isDirectory() || stat.isSymbolicLink()) throw new Error('execution_state_unsafe_directory');
-  }
-  const names = readdirSync(base, { withFileTypes: true })
-    .filter(entry => entry.isDirectory() && /^[0-9a-f]{64}$/u.test(entry.name)).map(entry => entry.name).sort();
-  if (names.length > TASK_SESSIONS_MAX_ENTRIES) throw new Error('execution_state_too_large');
-  return names.map(name => join(base, name));
-}
 
 /** The core of a live hc task session, by its socket; null when the core does not answer. */
 export type HcCoreIdOf = (socket: string) => Promise<string | null>;
@@ -70,7 +53,7 @@ function verify(primaryRoot: string, dir: string, task: string, role: string): V
 export async function collectTaskExecutionStates(repoRoot: string, coreIdOf: HcCoreIdOf): Promise<TaskExecutionSnapshot> {
   const primaryRoot = taskRepository(repoRoot).primary_root;
   const executions: TaskExecution[] = [];
-  for (const dir of sessionDirectories(primaryRoot)) {
+  for (const dir of taskSessionDirectories(primaryRoot)) {
     if (!existsSync(join(dir, 'binding.json'))) continue; // Start in progress: no session yet.
     let stored: { task?: unknown; role?: unknown };
     try { stored = readSessionArtifact(join(dir, 'binding.json')); } catch { continue; }
