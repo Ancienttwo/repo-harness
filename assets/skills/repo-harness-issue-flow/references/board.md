@@ -17,7 +17,7 @@ seat is a process (`SKILL.md`, Seats, sub-agents and claim roles).
 | Coordinator | Parent issue | Orchestrator | Parent body (child table), plan, plan data (sub-issues, blocked-by, milestone, `tier:` labels), dispatch, scope changes | Closing comment, or handoff |
 | Writer | Child issue, or one PR slot of it | Worker | Its branch, its PR body, status comments | PR merged, or released or handed-off status |
 | Head owner | One PR | The writer of that PR | Pushes to the PR branch. Only this role pushes | Merge, or a handoff that names the next head owner |
-| Acceptor | One review round of one PR | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its round |
+| Acceptor | One review in one round of one PR (`acceptor.md` §2.2 sets the reviews of a round) | A read-only reviewer; the gatekeeper is the default (`acceptor.md`) | Its review threads and the acceptance record row, through the review-round runner | The acceptance record row for its review |
 | Integrator | Main branch publication | Orchestrator | Merge with `repo-harness publication merge` only, main sync of a PR (only with the head-owner role), the batch branch and batch PR (`orchestrator.md` §9) | Merge done, or handoff |
 
 Rules that keep the topology safe:
@@ -115,7 +115,7 @@ coordinator posts it on the owner's instruction.
 ```text
 Parent issue ── coordinator role
  ├─ Child A (module X) ── writer role ── PR-A ── head owner = writer A
- │                                        └─ acceptance round 1, 2 ... (acceptor roles)
+ │                                        └─ acceptance rounds (acceptor roles, `acceptor.md` §2.2)
  ├─ Child B (module Y) ── PR slots named in the issue:
  │    ├─ PR-B1 ── writer B1 (slot claim by coordinator)
  │    └─ PR-B2 ── writer B2, base branch = PR-B1's branch
@@ -202,8 +202,8 @@ lines, then at most a short free-text body. The exact shapes are in
 | `decision` | Issue (parent for cross-issue ones) | Coordinator | A decision that the body does not hold yet, with its reason |
 | `plan` | Parent issue | Coordinator | The plan block of a large parent: merge order, holds, batches, seat limit. A revision supersedes the previous plan |
 | `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a claim role. Names prior claim, next holder, exact state |
-| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: role, round, subject SHA, tier (`acceptor.md`) |
-| `acceptance record` | PR | Acceptor or coordinator | One row per round: round, role, subject SHA, verdict; then the model relation and the findings. The same shape for every round (`templates.md`) |
+| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take one review in a round: role, round, subject SHA, tier (`acceptor.md`) |
+| `acceptance record` | PR | Acceptor or coordinator | One row per review: round, role, subject SHA, verdict; then the model relation and the findings. The same shape for every review (`templates.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code; or a batch drop or batch closeout on a member PR |
 

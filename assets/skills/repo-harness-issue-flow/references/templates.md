@@ -377,12 +377,12 @@ Findings:
 - <none when the round has no finding>
 ```
 
-Every round writes this record, one row per round. The fields are `Round`,
+Every review writes this record, one row per review. The fields are `Round`,
 `Role`, `Subject` (the full 40-hex head SHA in backticks), `Verdict`
 (`PASS` or `FAIL`, a colon, then the finding counts) and the
-`Model relation` line. `repo-harness review publish` writes it for rounds
-1 to 3. The session that runs a round above 3 posts the same text by hand
-(`acceptor.md` §4). The board reads only this shape. A record that it cannot
+`Model relation` line. `repo-harness review publish` writes it. For a
+round that the command does not accept, the session posts the same text
+by hand (`acceptor.md` §4). The board reads only this shape. A record that it cannot
 read makes the PR state unknown, not accepted.
 
 ### review reply (in the PR review thread)

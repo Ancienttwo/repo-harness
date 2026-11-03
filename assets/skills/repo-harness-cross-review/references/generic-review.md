@@ -41,7 +41,8 @@ selection never falls back; only a missing opposite executable before start
 allows a reported fallback to a separate owner-harness reviewer. No launch or
 request is replayed after an ambiguous outcome.
 
-At most three changed-subject repair rounds retain the same task session. The
+Changed-subject repair rounds reuse the same task session, up to
+`REVIEW_MAX_ROUNDS` (`src/core/review/generic-review.ts`). The
 reviewer reads the current diff only; a defect outside the diff is a non-blocking
 note. From the second round, the scope follows the round rules
 (`repo-harness-issue-flow`, `references/acceptor.md` §2.2). Prior findings

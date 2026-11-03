@@ -608,7 +608,7 @@ describe("repo-harness action command skills", () => {
       ["references/board.md", "or with the rule-4 follow-up issue link (`acceptor.md` §2.2)"],
       ["references/templates.md", "| deferred #<follow-up issue>"],
       ["references/orchestrator.md", "For a rule-4 merge, you resolve the remaining P2 threads first (`acceptor.md` §6)"],
-      ["references/orchestrator.md", "or rule 4 of `acceptor.md` §2.2 applies after round 3"],
+      ["references/orchestrator.md", "or rule 4 of `acceptor.md` §2.2 applies."],
     ];
     for (const [path, text] of ruleFourThreadSites) {
       expect(flat(readFileSync(join(SKILLS_ROOT, "repo-harness-issue-flow", path), "utf-8"))).toContain(text);

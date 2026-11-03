@@ -243,10 +243,9 @@ host's PR events or check when the worker reports.
   that meets the Low accept-seat skip gets no Codex, Herdr or OAR accept
   seat (`docs/reference-configs/agentic-development-flow.md`, Review by
   risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
-  reviewer posts an `acceptance claim` for its round and subject SHA before
-  it reads, so that two reviewers do not take the same round. Findings
-  take the severities of `acceptor.md` §3, and rounds follow
-  `acceptor.md` §2.2. A P3 becomes a follow-up issue, not a PR blocker.
+  reviewer posts an `acceptance claim` before it reads. Who reviews each
+  round, and how many claims a round has, follow `acceptor.md` §2.2.
+  Findings take the severities of `acceptor.md` §3. A P3 becomes a follow-up issue, not a PR blocker.
   Send the findings to the worker that wrote the PR. You make the
   second-finding choice of the class rule (`worker.md` §7). Record
   the result in one acceptance record comment on the PR, in the row shape
@@ -357,7 +356,7 @@ A PR is eligible when all of these are true:
 - It is open and not draft.
 - Its required checks are SUCCESS on its own head.
 - Its tier review passed on a subject SHA, or rule 4 of `acceptor.md`
-  §2.2 applies after round 3. A Low PR needs no review, but
+  §2.2 applies. A Low PR needs no review, but
   its PR body must hold the author verification evidence
   (`docs/reference-configs/agentic-development-flow.md`, Review by risk).
 - Its head equals the reviewed subject, or adds only conflict-free merges

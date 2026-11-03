@@ -198,7 +198,7 @@ You are the head owner. Only you push to this branch.
   thread with the fix SHA. Do not resolve another reviewer's thread. For a
   P3 or a finding that you dispute, reply with your reason and leave the
   disposition to the coordinator. Rule 4 of `acceptor.md` §2.2 can move a
-  P2 family to a follow-up issue after round 3.
+  P2 family to a follow-up issue.
 - **Fix the class.** For each finding, list the sibling inputs: the other
   inputs that reach the same defect. Cover the finding and its siblings in
   one table-driven case, and name the siblings in the fix commit. After a

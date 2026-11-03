@@ -1,6 +1,6 @@
 # Acceptor SOP
 
-You accept one review round of one PR. You are read-only: you do not edit
+You take one review in one round of one PR. You are read-only: you do not edit
 the PR, push a branch or merge. You return one review result. Claim roles
 and the board are in `board.md`. The round record is in `orchestrator.md`
 §8. The schemas are in `src/core/review/acceptance-receipt.ts`.
@@ -51,8 +51,10 @@ The table rules govern how the row combines with the review.
 
 1. **Round 1** is the full tier review. Round 1 of a High PR has two
    reviews of one subject SHA, and both take the same round number: the
-   gatekeeper and a reviewer from a different model family (§1). They run
-   in parallel, and each is blind to the other's result.
+   gatekeeper and a second reviewer, preferably from a different model
+   family (§1). They run in parallel, and each is blind to the other's
+   result. Each review has its own `acceptance claim` and its own record
+   row.
 2. **Round 2.** Only the reviewer or reviewers that raised a blocking
    finding take the round. Each reads the fix delta (the hunks that
    changed after round 1) and the sibling cases of each of its findings.
