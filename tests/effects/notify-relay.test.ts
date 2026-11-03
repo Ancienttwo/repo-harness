@@ -7,7 +7,7 @@ import { assertBotEvent } from '../../assets/herdr/github-events/bot-event.mjs';
 import { askMasked } from '../../src/cli/commands/herdr';
 import type { HcEventStream, HcStreamItem, HcTerminal } from '../../src/effects/terminal/herdr-core';
 import { NOTIFY_CHANNEL_SECRET_KEYS } from '../../src/core/decision/notify-secret-keys';
-import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath } from '../../src/effects/terminal/herdr-notify-install';
+import { notifyConfigPath, notifyDeliveriesPath, notifyInstallRecordPath } from '../../src/effects/terminal/notify-read';
 import { createNotifyRelay, runNotifyRelay } from '../../src/effects/terminal/notify-relay';
 import { tmpWorkspace } from '../helpers/repo-fixture';
 
