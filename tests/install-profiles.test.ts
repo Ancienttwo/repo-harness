@@ -7,66 +7,119 @@ import { tmpdir } from 'os';
 import { basename, dirname, join } from 'path';
 import {
   agentFleetUserManagedReceiptPath,
-  applyInstallProfile,
-  assertInstallProfile,
+  applyInstallSelection,
+  assertCodegraphPolicySelection,
   beginInstallHostTransaction,
+  codegraphProjection,
   commitInstallHostTransaction,
-  INSTALL_PROFILES,
+  effectiveSkillRoots,
+  enabledPlugins,
   installProfileHostMutationPaths,
   installProfileStatePath,
   installProfileTransactionPaths,
-  effectiveSkillRoots,
-  installedProfileStatus,
-  migrateRetiredAgentFleetFile,
-  planInstallProfile,
-  PROFILE_COMPONENTS,
-  profileEnablesCodegraph,
-  prepareLegacyInstallProfileMigration,
-  prepareInstallProfileSwitch,
-  readLegacyInstalledProfileForMigration,
+  installStateStatus,
+  InstallStateError,
+  loadSkillSurfaceCatalog,
+  piPackageSurface,
+  planInstallSelection,
+  prepareInstallSelectionSwitch,
   readAgentFleetUserManagedReceipt,
-  readInstalledProfile,
-  recordVerifiedAgentFleetOwnership,
+  readInstallState,
   recordRefreshedInstallOwnership,
+  recordVerifiedAgentFleetOwnership,
+  resolveRecordedSelection,
   rollbackInstallHostTransaction,
-  rollbackInstallProfile,
-  RetiredAgentFleetPathError,
-  InstallStateOwnershipError,
+  rollbackInstallSelection,
+  versions,
+  type InstallState,
 } from '../src/cli/installer/install-profile';
-import { checkRetiredFleetFile } from '../src/cli/commands/doctor';
+import { migrateInstallState, parseProtocol2State } from '../src/cli/installer/install-state-migration';
+import { PLUGIN_IDS, type PluginId, type PluginSelection } from '../src/core/skill-surface/plugin-manifest';
+import { runTransactionalRuntimeRefresh } from '../src/cli/index';
+import { CANDIDATE_RECONCILE_STEP, type GlobalRuntimeOptions, type GlobalRuntimeResult } from '../src/cli/commands/global-runtime';
+import { CandidateRequestProtocolRetiredError, parseCandidateRequest } from '../src/cli/commands/candidate-reconciliation';
+import { installPiPackage } from '../src/cli/installer/pi-package';
+import { bunGlobalPackageRoot } from '../src/cli/installer/skill-projection';
+import { hostSkillRoot, providerSkillLock } from '../src/effects/host-skill-roots';
+import { MANAGED_AGENTS } from '../src/effects/terminal/task-role-profiles';
 import { recordInstallOwnership } from './helpers/install-ownership';
 import { hashManagedTree } from '../src/effects/managed-tree';
 import { buildManagedHooks } from '../src/cli/installer/managed-entries';
 import { runUserUninstall } from '../src/cli/installer/uninstall';
-import { parseSkillSurfaceCatalog, probeExpectations } from '../src/core/skill-surface/catalog';
 import { copyUpgradeFixture } from './helpers/upgrade-fixtures';
 
 const ROOT = join(import.meta.dir, '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
 
-// probeInstalledComponents() derives the planning-integrations evidence set
-// from the catalog, so a fixture that hard-codes one facade's SKILL.md goes
-// stale the moment a second planning facade is declared. Read the same
-// catalog the probe reads.
-const PLANNING_CAPABILITY_PATHS = (() => {
-  const resolution = parseSkillSurfaceCatalog(
-    readFileSync(join(ROOT, 'assets/skill-commands/manifest.json'), 'utf-8'),
-    { declared: true, profileComponents: PROFILE_COMPONENTS },
-  );
-  if (resolution.status !== 'valid') throw new Error('skill-surface manifest is invalid');
-  return probeExpectations(resolution.catalog).planningCapabilityPaths;
-})();
+/** What `all` resolves to on a host without `pi` on PATH and without DSH. */
+const ALL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+const ALL_WITH_PI = ['architecture', 'cross-review', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory'] as const satisfies readonly PluginId[];
+const CORE_FACADES = ['repo-harness-check', 'repo-harness-issue-flow', 'repo-harness-ship', 'repo-harness-test'];
+const WAZA_SKILLS = ['think', 'hunt', 'check', 'health', 'mermaid'];
+/** The host root and skill that each plugin probe requires (the herdr portal ships for Claude only). */
+const PLUGIN_SKILLS: Readonly<Partial<Record<PluginId, readonly (readonly ['codex' | 'claude', string])[]>>> = {
+  architecture: [['codex', 'repo-harness-architecture'], ['codex', 'repo-harness-archimap']],
+  'cross-review': [['codex', 'repo-harness-cross-review']],
+  'peer-runtime': [['claude', 'repo-harness-herdr-portal']],
+  platform: [['codex', 'windows-python-first']],
+  product: [['codex', 'repo-harness-product']],
+  'strategy-memory': [['codex', 'obsidian-memory']],
+};
+const PROVIDER_SKILLS = ['repo-harness-cross-review', 'repo-harness-herdr-portal'];
+const FACADE_SOURCES = new Map(loadSkillSurfaceCatalog().packages.flatMap(pkg => (pkg.kind === 'facade' && pkg.source ? [[pkg.name, pkg.source] as const] : [])));
+const P2_MINIMAL = ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters', 'adaptive-workflow', 'codegraph-conditional'];
+const P2_FULL = [...P2_MINIMAL, 'planning-integrations', 'agent-fleet', 'verifier', 'cross-model-acceptance', 'release-deployment-gates'];
 
+/**
+ * A scratch HOME, provider lock, runtime home and Bun root. PATH holds Bun and
+ * the system tools only, so neither a real `pi` nor a global repo-harness
+ * leaks into a probe.
+ */
 function withHome(run: (env: NodeJS.ProcessEnv) => void): void {
   const home = mkdtempSync(join(tmpdir(), 'repo-harness-profile-'));
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun') };
-  delete env.XDG_STATE_HOME;
+  const tools = join(home, 'tool-bin');
+  mkdirSync(tools);
+  symlinkSync(process.execPath, join(tools, 'bun'));
+  const env: NodeJS.ProcessEnv = {
+    ...process.env, HOME: home, BUN_INSTALL: join(home, '.bun'), XDG_STATE_HOME: join(home, '.local', 'state'),
+    REPO_HARNESS_HOME: join(home, '.repo-harness'), PATH: `${tools}:/usr/bin:/bin`,
+  };
+  for (const key of ['CODEX_SKILLS_ROOT', 'CLAUDE_SKILLS_ROOT', 'PI_CODING_AGENT_DIR', 'DSH_HOME', 'REPO_HARNESS_INSTALL_PLUGINS', 'REPO_HARNESS_INCLUDE_PI']) delete env[key];
   try { run(env); } finally { rmSync(home, { recursive: true, force: true }); }
+}
+
+/** A fake `pi` on a PATH of explicit directories. It keeps its user package list in $HOME/pi-packages. */
+function withPi(env: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
+  const bin = join(env.HOME!, 'pi-bin');
+  if (!existsSync(join(bin, 'pi'))) {
+    writePath(join(bin, 'pi'), [
+      '#!/bin/sh',
+      'f="$HOME/pi-packages"; touch "$f"',
+      'case "$1" in',
+      '  list) if [ -s "$f" ]; then echo "User packages:"; sed "s/^/  /" "$f"; else echo "No packages installed."; fi ;;',
+      '  install) echo "$2" >> "$f" ;;',
+      '  remove) grep -vxF "$2" "$f" > "$f.next"; mv "$f.next" "$f" ;;',
+      '  --version) echo 1.4.0 ;;',
+      'esac',
+      '',
+    ].join('\n'));
+    chmodSync(join(bin, 'pi'), 0o755);
+    writePath(join(bunGlobalPackageRoot(env)!, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.0.0', pi: { extensions: ['./extension.ts'] } }));
+  }
+  return { ...env, PATH: `${bin}:${env.PATH}` };
+}
+
+function skillLock(env: NodeJS.ProcessEnv): string {
+  return providerSkillLock(env.HOME!, env).path;
 }
 
 function writePath(path: string, content = ''): void {
   mkdirSync(join(path, '..'), { recursive: true });
   writeFileSync(path, content);
+}
+
+function sha256File(path: string): string {
+  return `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
 }
 
 // Mirrors effects/managed-tree.ts hashManagedTree for a
@@ -120,49 +173,89 @@ function treeSnapshot(root: string): Record<string, string> {
   return entries;
 }
 
+/** Write the probe evidence of core and of each given plugin. */
 function writeManagedHostSurfaces(
   env: NodeJS.ProcessEnv,
-  profile: 'minimal' | 'full' = 'minimal',
+  plugins: readonly PluginId[] = [],
 ): { canonical: string; source: string } {
   const home = env.HOME!;
   const source = join(home, 'package-source');
   const canonical = join(home, '.codex', 'skills', 'repo-harness');
   mkdirSync(source, { recursive: true });
   mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
-  mkdirSync(join(home, '.codex'), { recursive: true });
   writePath(join(source, 'SKILL.md'), '# managed\n');
   for (const relative of [
     'src/cli/commands/state.ts',
     'src/cli/hook/mutation-guard.ts',
     'scripts/contract-worktree.sh',
     'references/handoff.md',
+    'scripts/verify-sprint.sh',
+    'scripts/ship-worktrees.sh',
   ]) writePath(join(source, relative), '# managed\n');
   writePath(join(source, 'src/core/workflow/profile.ts'), '// managed\n');
-  writePath(join(source, 'src/cli/tools/codegraph.ts'), '// managed\n');
-  if (profile === 'full') {
-    for (const relative of PLANNING_CAPABILITY_PATHS) writePath(join(source, relative), '# managed\n');
-    for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
-      writePath(join(home, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
+  writePath(join(source, 'src/effects/review-runner/task-oar-host.ts'), '// managed\n');
+  // Owner-marked copies of facades that the canonical source ships, as an install leaves them.
+  const markedFacade = (dest: string) => {
+    writePath(join(source, FACADE_SOURCES.get(basename(dest))!, 'SKILL.md'), '# managed\n');
+    writeMarkedFacade(dest, '# managed\n');
+  };
+  for (const facade of CORE_FACADES) markedFacade(join(home, '.codex', 'skills', facade));
+  for (const skill of WAZA_SKILLS) writePath(join(home, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
+  for (const agent of MANAGED_AGENTS) writePath(join(home, '.codex', 'agents', `${agent}.toml`), '# managed\n');
+  for (const id of plugins) {
+    // Provider skills sync without an owner marker; facades carry one.
+    for (const [host, skill] of PLUGIN_SKILLS[id] ?? []) {
+      if (PROVIDER_SKILLS.includes(skill)) writePath(join(home, `.${host}`, 'skills', skill, 'SKILL.md'), '# managed\n');
+      else markedFacade(join(home, `.${host}`, 'skills', skill));
     }
-    writePath(join(source, 'src/effects/review-runner/task-oar-host.ts'), '// managed\n');
-    writePath(join(source, 'scripts/verify-sprint.sh'), '# managed\n');
-    writePath(join(source, 'scripts/ship-worktrees.sh'), '# managed\n');
-    writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
-    for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
-      writePath(join(home, '.codex', 'agents', `${agent}.toml`), '# managed\n');
-    }
-    writePath(join(home, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# external\n');
   }
+  if (plugins.includes('architecture')) writePath(join(home, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
   writePath(join(home, '.bun', 'bin', 'repo-harness'), '#!/bin/sh\n');
   symlinkSync(source, canonical);
   writeFileSync(join(home, '.codex', 'hooks.json'), JSON.stringify({
     theme: 'user-owned',
-    hooks: buildManagedHooks('codex', profile),
+    hooks: buildManagedHooks('codex'),
   }));
   return { canonical, source };
 }
 
-describe('install profiles', () => {
+type Protocol2Profile = 'minimal' | 'full';
+const OWNED = { authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only', symlink_target: null } as const;
+
+function p2File(path: string, components: readonly string[]) {
+  return { ...OWNED, components, path, type: 'managed-file', content_hash: sha256File(path), managed_marker: 'transaction-created-file' };
+}
+
+function p2Directory(path: string, components: readonly string[]) {
+  return { ...OWNED, components, path, type: 'directory-copy', content_hash: hashManagedTree(path), managed_marker: 'transaction-created-directory' };
+}
+
+function writeProtocol2State(env: NodeJS.ProcessEnv, profile: Protocol2Profile, ownership: readonly object[]): string {
+  const path = installProfileStatePath(env);
+  writePath(path, `${JSON.stringify({
+    protocol: 2, profile, components: profile === 'full' ? P2_FULL : P2_MINIMAL, package_version: '0.25.3',
+    transaction_id: `protocol-2-${profile}`, applied_at: '2026-10-01T00:00:00.000Z', ownership_manifest: ownership, previous: null,
+  }, null, 2)}\n`);
+  return path;
+}
+
+function writeFleetReceipt(env: NodeJS.ProcessEnv, paths: readonly string[]): string {
+  const path = agentFleetUserManagedReceiptPath(env);
+  writePath(path, `${JSON.stringify({ protocol: 1, authority: 'user-managed-agent-fleet', accepted_at: new Date(0).toISOString(),
+    files: paths.map(file => ({ path: file, sha256: sha256File(file) })) }, null, 2)}\n`);
+  return path;
+}
+
+function seededState(plugins: readonly PluginId[], selection: PluginSelection, ownership: readonly object[] = []): object {
+  return { protocol: 3, ...versions(plugins), selection, transaction_id: 'seeded', applied_at: '2026-11-01T00:00:00.000Z', ownership_manifest: ownership, previous: null };
+}
+
+function installStateCode(run: () => unknown): string | undefined {
+  try { run(); } catch (error) { if (error instanceof InstallStateError) return error.code; throw error; }
+  return undefined;
+}
+
+describe('install selection', () => {
   test('one managed tree hash matches the actual copy projection with embedded Git metadata', () => withHome((env) => {
     const source = join(env.HOME!, 'release-skill');
     const copied = join(env.HOME!, 'copied-skill');
@@ -217,223 +310,290 @@ describe('install profiles', () => {
     } finally { rmSync(home, { recursive: true, force: true }); }
   });
 
-  test('refresh retains a markerless owned directory receipt with no selected components', () => withHome((env) => {
+  test('refresh retains a markerless owned directory receipt under its owner and writes the ledger in canonical order', () => withHome((env) => {
     const path = join(env.HOME!, '.codex/skills/repo-harness-cross-review');
+    const fleet = join(env.HOME!, '.codex/agents/explorer.toml');
     copyUpgradeFixture('upgrade-v0.19.5-home', '.codex/skills/repo-harness-cross-review', path);
+    writePath(fleet, '# managed\n');
     const previousHash = hashManagedTree(path);
-    writePath(join(env.HOME!, '.repo-harness/install-state.json'), JSON.stringify({
-      protocol: 2, profile: 'full', components: PROFILE_COMPONENTS.full,
-      transaction_id: 'owned-before-refresh', applied_at: '2026-09-30T00:00:00Z', previous: null,
-      ownership_manifest: [{ components: [], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
-        path, type: 'directory-copy', content_hash: previousHash, managed_marker: 'transaction-created-directory', symlink_target: null }],
-    }));
+    // The helper keeps the given order, so this ledger is not in canonical order.
+    recordInstallOwnership([path, fleet], env);
+    const statePath = installProfileStatePath(env);
+    const unsorted = readFileSync(statePath);
+    // A refresh that changes nothing rewrites no bytes, whatever the stored order.
+    recordRefreshedInstallOwnership([path, fleet], env);
+    expect(readFileSync(statePath)).toEqual(unsorted);
+
     rmSync(path, { recursive: true });
     cpSync(join(ROOT, 'assets/skills/repo-harness-cross-review'), path, { recursive: true });
     expect(existsSync(join(path, '.repo-harness-owner.json'))).toBe(false);
     expect(() => recordRefreshedInstallOwnership([path], env)).not.toThrow();
-    const refreshed = readInstalledProfile(env)!.ownership_manifest.find((surface) => surface.path === path)!;
-    expect(refreshed.components).toEqual([]);
-    expect(refreshed.content_hash).toBe(hashManagedTree(path));
-    expect(refreshed.content_hash).not.toBe(previousHash);
-    expect(refreshed.managed_marker).toBe('transaction-created-directory');
-  }));
-  test('steady-state vocabulary is minimal/full with protocol 2 and exact Claude 5/6 and Codex 4/5 hook projections', () => withHome((env) => {
-    expect(INSTALL_PROFILES).toEqual(['minimal', 'full']);
-    expect(Object.keys(PROFILE_COMPONENTS)).toEqual(['minimal', 'full']);
-    const minimal = assertInstallProfile('minimal');
-    const full = assertInstallProfile('full');
-    expect(Object.values(buildManagedHooks('codex', minimal)).flat()).toHaveLength(4);
-    expect(Object.values(buildManagedHooks('codex', full)).flat()).toHaveLength(5);
-    expect(Object.values(buildManagedHooks('claude', minimal)).flat()).toHaveLength(5);
-    expect(Object.values(buildManagedHooks('claude', full)).flat()).toHaveLength(6);
-    expect(planInstallProfile(full, null, env).protocol).toBe(2);
+    const refreshed = readInstallState(env)!;
+    const receipt = refreshed.ownership_manifest.find((surface) => surface.path === path)!;
+    expect(receipt.owner).toBe('cross-review');
+    expect(receipt.content_hash).toBe(hashManagedTree(path));
+    expect(receipt.content_hash).not.toBe(previousHash);
+    expect(receipt.managed_marker).toBe('transaction-created-directory');
+    expect(refreshed.ownership_manifest.map(surface => surface.path)).toEqual([fleet, path]);
   }));
 
-  test('normal state read rejects protocol 1 with an explicit migration instruction', () => withHome((env) => {
-    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
+  test('install state protocol 3 names the plugins, and every hook route is core', () => withHome((env) => {
+    expect(PLUGIN_IDS).toEqual(['architecture', 'cross-review', 'dsh', 'peer-runtime', 'pi', 'platform', 'product', 'strategy-memory']);
+    expect(Object.values(buildManagedHooks('codex')).flat()).toHaveLength(5);
+    expect(Object.values(buildManagedHooks('claude')).flat()).toHaveLength(6);
+    expect(planInstallSelection('all', { run: ALL_PLUGINS, record: ALL_PLUGINS }, null, env).protocol).toBe(3);
+  }));
+
+  test('protocol 1 refuses a state and a candidate request before any write, and names the bridge', () => withHome((env) => {
+    const statePath = installProfileStatePath(env);
+    writePath(statePath, `${JSON.stringify({
       protocol: 1,
       profile: 'standard',
-      components: [
-        'cli',
-        'effective-state',
-        'scope-worktree-check-guards',
-        'handoff',
-        'host-adapters',
-        'adaptive-workflow',
-        'codegraph-conditional',
-      ],
+      components: ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters', 'adaptive-workflow', 'codegraph-conditional'],
       transaction_id: 'legacy-standard',
       applied_at: '2026-07-14T00:00:00.000Z',
       ownership_manifest: [],
       previous: null,
     })}\n`);
-    expect(() => readInstalledProfile(env)).toThrow('--migrate-profile-state');
-  }));
+    const before = readFileSync(statePath);
+    expect(installStateCode(() => readInstallState(env))).toBe('install_state_protocol_retired');
+    expect(() => readInstallState(env)).toThrow('bun add -g repo-harness@0.25.3 --no-cache');
+    const update = spawnSync(process.execPath, [CLI, 'update', '--no-cli', '--json'], { cwd: ROOT, encoding: 'utf-8', env });
+    expect(update.status).not.toBe(0);
+    expect(update.stderr).toContain('is protocol 1');
+    expect(readFileSync(statePath)).toEqual(before);
 
-  test('fresh install dry-run defaults to full', () => withHome((env) => {
+    const request = Buffer.from(JSON.stringify({ protocol: 1, profile: 'full' }), 'utf-8').toString('base64url');
+    expect(() => parseCandidateRequest(request, '0.26.0')).toThrow(CandidateRequestProtocolRetiredError);
+    expect(() => parseCandidateRequest(request, '0.26.0')).toThrow('bun add -g repo-harness@0.26.0 --no-cache && repo-harness update');
+  }), 30_000);
+
+  test('fresh install dry-run selects all and skips the host plugins this host cannot run', () => withHome((env) => {
     const result = spawnSync(process.execPath, [CLI, 'install', '--dry-run', '--json'], {
       cwd: ROOT,
       encoding: 'utf-8',
       env,
     });
-    expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout).requested_profile).toBe('full');
+    expect(result.status, result.stderr).toBe(0);
+    const plan = JSON.parse(result.stdout);
+    expect(plan.selection).toBe('all');
+    expect(plan.requested_plugins).toEqual([...ALL_PLUGINS]);
+    expect(plan.skipped.map(({ id, command }: { id: string; command: string }) => [id, command])).toEqual([
+      ['dsh', 'repo-harness update'], ['pi', 'repo-harness update'],
+    ]);
   }), 30_000);
 
-  test('explicit legacy migration dry-run targets full by default without mutating state', () => withHome((env) => {
-    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
-    const legacy = {
-      protocol: 1,
-      profile: 'minimal',
-      components: ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters'],
-      transaction_id: 'legacy-minimal',
-      applied_at: '2026-07-14T00:00:00.000Z',
-      ownership_manifest: [],
-      previous: null,
-    };
-    writePath(statePath, `${JSON.stringify(legacy)}\n`);
-    const result = spawnSync(process.execPath, [
-      CLI,
-      'install',
-      '--migrate-profile-state',
-      '--dry-run',
-      '--json',
-    ], {
-      cwd: ROOT,
-      encoding: 'utf-8',
-      env,
+  test('the protocol 2 -> 3 one-shot maps each recorded set and ledger owner', () => {
+    interface Row {
+      readonly name: string;
+      readonly profile: Protocol2Profile;
+      readonly pi?: boolean;
+      readonly arrange: (env: NodeJS.ProcessEnv) => readonly object[];
+      readonly selection: PluginSelection;
+      readonly plugins: readonly PluginId[];
+      readonly fromLedger?: readonly PluginId[];
+      readonly fromHost?: readonly PluginId[];
+      readonly skipped?: readonly PluginId[];
+      readonly check?: (env: NodeJS.ProcessEnv, plan: NonNullable<ReturnType<typeof migrateInstallState>>, state: InstallState) => void;
+    }
+    const home = (env: NodeJS.ProcessEnv, ...parts: string[]) => join(env.HOME!, ...parts);
+    const retired = (env: NodeJS.ProcessEnv) => home(env, '.claude', 'agents', 'orchestrator.md');
+    const piRoot = (env: NodeJS.ProcessEnv) => hostSkillRoot(env.HOME!, 'pi', env);
+    const rows: readonly Row[] = [
+      {
+        name: 'minimal with a core-only ledger',
+        profile: 'minimal',
+        arrange: env => { writePath(home(env, '.codex', 'agents', 'explorer.toml'), '# managed\n'); return [p2File(home(env, '.codex', 'agents', 'explorer.toml'), ['agent-fleet'])]; },
+        selection: ['platform', 'strategy-memory'],
+        plugins: ['platform', 'strategy-memory'],
+        fromLedger: [],
+        check: (env, _plan, state) => {
+          expect(state.ownership_manifest.map(({ owner, path }) => [owner, path])).toEqual([['core', home(env, '.codex', 'agents', 'explorer.toml')]]);
+          expect(state.plugins.map(({ id }) => id)).not.toContain('architecture');
+        },
+      },
+      {
+        name: 'minimal with one ledger path per plugin owner',
+        profile: 'minimal',
+        arrange: env => [
+          ['.codex', 'repo-harness-archimap'], ['.codex', 'repo-harness-cross-review'], ['.claude', 'repo-harness-herdr-portal'],
+          ['.codex', 'repo-harness-product'], ['.codex', 'windows-python-first'], ['.codex', 'obsidian-memory'],
+        ].map(([host, skill]) => {
+          writePath(home(env, host!, 'skills', skill!, 'SKILL.md'), `# ${skill}\n`);
+          return p2Directory(home(env, host!, 'skills', skill!), ['adaptive-workflow']);
+        }),
+        selection: ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'],
+        plugins: ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'],
+        fromLedger: ['architecture', 'cross-review', 'peer-runtime', 'product'],
+        check: (env, _plan, state) => {
+          expect(Object.fromEntries(state.ownership_manifest.map(({ owner, path }) => [basename(path), owner]))).toEqual({
+            'repo-harness-archimap': 'architecture', 'repo-harness-cross-review': 'cross-review', 'repo-harness-herdr-portal': 'peer-runtime',
+            'repo-harness-product': 'product', 'windows-python-first': 'platform', 'obsidian-memory': 'strategy-memory',
+          });
+        },
+      },
+      {
+        name: 'full maps to all',
+        profile: 'full',
+        arrange: () => [],
+        selection: 'all',
+        plugins: ALL_PLUGINS,
+        skipped: ['pi', 'dsh'],
+        check: (_env, plan) => expect(plan.skipped.every(({ command }) => command === 'repo-harness update')).toBe(true),
+      },
+      {
+        name: 'minimal with an owned CodeGraph surface adds architecture, whose skills then install',
+        profile: 'minimal',
+        arrange: env => {
+          const config = home(env, '.codex', 'config.toml');
+          writePath(config, '[mcp_servers.codegraph]\ncommand = "codegraph"\n');
+          return [{ ...OWNED, components: ['codegraph-conditional'], path: config, type: 'managed-file', content_hash: codegraphProjection(config), managed_marker: 'codegraph-config-projection' }];
+        },
+        selection: ['architecture', 'platform', 'strategy-memory'],
+        plugins: ['architecture', 'platform', 'strategy-memory'],
+        fromLedger: ['architecture'],
+        check: (env, plan) => {
+          const source = home(env, 'package-source');
+          seedSyncRuntime(source);
+          writePath(join(source, 'SKILL.md'), '# managed\n');
+          for (const facade of ['skill-commands/repo-harness-architecture', 'skills/repo-harness-archimap']) {
+            cpSync(join(ROOT, 'assets', facade), join(source, 'assets', facade), { recursive: true });
+          }
+          const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: plan.plugins.join(',') });
+          expect(sync.status, sync.stderr).toBe(0);
+          expect(readlinkSync(home(env, '.codex', 'skills', 'repo-harness-architecture'))).toBe(join(source, 'assets', 'skill-commands', 'repo-harness-architecture'));
+          expect(readlinkSync(home(env, '.codex', 'skills', 'repo-harness-archimap'))).toBe(join(source, 'assets', 'skills', 'repo-harness-archimap'));
+        },
+      },
+      {
+        name: 'minimal with an owned Pi package entry adds pi',
+        profile: 'minimal',
+        pi: true,
+        arrange: env => [{ ...OWNED, components: ['host-adapters'], path: bunGlobalPackageRoot(env), type: 'pi-package', content_hash: null, managed_marker: 'pi-package-source' }],
+        selection: ['pi', 'platform', 'strategy-memory'],
+        plugins: ['pi', 'platform', 'strategy-memory'],
+        fromLedger: ['pi'],
+        check: (env, _plan, state) => expect(state.ownership_manifest).toEqual([piPackageSurface(bunGlobalPackageRoot(env)!)]),
+      },
+      {
+        name: 'full with Pi skill-root copies and pi absent',
+        profile: 'full',
+        arrange: env => {
+          for (const skill of ['repo-harness-check', 'repo-harness-test']) writePath(join(piRoot(env), skill, 'SKILL.md'), `# ${skill}\n`);
+          const ledger = ['repo-harness-check', 'repo-harness-test'].map(skill => p2Directory(join(piRoot(env), skill), ['adaptive-workflow']));
+          writeFileSync(join(piRoot(env), 'repo-harness-test', 'SKILL.md'), '# owner edit\n');
+          return ledger;
+        },
+        selection: 'all',
+        plugins: ALL_PLUGINS,
+        skipped: ['pi', 'dsh'],
+        check: (env, plan, state) => {
+          const [unchanged, changed] = ['repo-harness-check', 'repo-harness-test'].map(skill => join(piRoot(env), skill));
+          expect(plan.remove).toEqual([unchanged!]);
+          expect(plan.keep.map(({ path }) => path)).toEqual([changed!]);
+          expect(existsSync(unchanged!)).toBe(false);
+          expect(readFileSync(join(changed!, 'SKILL.md'), 'utf-8')).toBe('# owner edit\n');
+          expect(state.ownership_manifest).toEqual([]);
+        },
+      },
+      {
+        name: '0.25.3 full with an owned unchanged orchestrator.md and a fleet receipt',
+        profile: 'full',
+        arrange: env => {
+          writePath(retired(env), '---\nname: orchestrator\n---\n');
+          writePath(home(env, '.claude', 'agents', 'explorer.md'), '# user explorer\n');
+          writeFleetReceipt(env, [retired(env), home(env, '.claude', 'agents', 'explorer.md')]);
+          return [p2File(retired(env), ['agent-fleet'])];
+        },
+        selection: 'all',
+        plugins: ALL_PLUGINS,
+        skipped: ['pi', 'dsh'],
+        check: (env, plan, state) => {
+          expect(plan.remove).toEqual([retired(env)]);
+          expect(existsSync(retired(env))).toBe(false);
+          expect(state.ownership_manifest).toEqual([]);
+          const receipt = JSON.parse(readFileSync(agentFleetUserManagedReceiptPath(env), 'utf-8'));
+          expect(receipt.files.map(({ path }: { path: string }) => path)).toEqual([home(env, '.claude', 'agents', 'explorer.md')]);
+          expect(readAgentFleetUserManagedReceipt(env).ok).toBe(true);
+        },
+      },
+      {
+        name: '0.25.3 full with a changed orchestrator.md',
+        profile: 'full',
+        arrange: env => {
+          writePath(retired(env), '---\nname: orchestrator\n---\n');
+          const surface = p2File(retired(env), ['agent-fleet']);
+          writeFileSync(retired(env), '# owner edit\n');
+          return [surface];
+        },
+        selection: 'all',
+        plugins: ALL_PLUGINS,
+        skipped: ['pi', 'dsh'],
+        check: (env, plan, state) => {
+          expect(plan.remove).toEqual([]);
+          expect(plan.keep).toEqual([{ path: retired(env), reason: expect.stringContaining('repo-harness seats argv orchestrator') }]);
+          expect(readFileSync(retired(env), 'utf-8')).toBe('# owner edit\n');
+          expect(state.ownership_manifest).toEqual([]);
+        },
+      },
+      {
+        name: 'full with a DSH profile that declares the bundle adds dsh',
+        profile: 'full',
+        arrange: env => { writePath(home(env, '.dsh', 'profiles', 'main', 'package.json'), JSON.stringify({ dependencies: { 'repo-harness': '*' } })); return []; },
+        selection: 'all',
+        plugins: ['architecture', 'cross-review', 'dsh', 'peer-runtime', 'platform', 'product', 'strategy-memory'],
+        fromHost: ['dsh'],
+        skipped: ['pi'],
+      },
+    ];
+    for (const row of rows) withHome((base) => {
+      const env = row.pi === true ? withPi(base) : base;
+      writeProtocol2State(env, row.profile, row.arrange(env));
+      const plan = migrateInstallState(env, new Date('2026-11-03T00:00:00.000Z'));
+      expect(plan, row.name).not.toBeNull();
+      const state = readInstallState(env)!;
+      expect({ name: row.name, selection: plan!.selection, plugins: plan!.plugins, state: [state.selection, enabledPlugins(state)] }).toEqual({
+        name: row.name, selection: row.selection, plugins: [...row.plugins], state: [row.selection, [...row.plugins]],
+      });
+      if (row.fromLedger) expect(plan!.from_ledger_plugins, row.name).toEqual([...row.fromLedger]);
+      expect(plan!.from_host_plugins, row.name).toEqual([...(row.fromHost ?? [])]);
+      expect(plan!.skipped.map(({ id }) => id), row.name).toEqual([...(row.skipped ?? [])]);
+      expect(state.previous, row.name).toBeNull();
+      row.check?.(env, plan!, state);
     });
-    expect(result.status).toBe(0);
-    expect(JSON.parse(result.stdout)).toMatchObject({
-      migration: { from_protocol: 1, from_profile: 'minimal', to_protocol: 2, to_profile: 'full' },
-      requested_profile: 'full',
-    });
-    expect(JSON.parse(readFileSync(statePath, 'utf-8'))).toEqual(legacy);
-  }), 30_000);
+  }, 60_000);
 
-  test('explicit migration replaces protocol 1 atomically and carries forward current owned surfaces without legacy rollback history', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'full');
-    const agentPath = join(env.HOME!, '.codex', 'agents', 'explorer.toml');
-    const agentHash = `sha256:${createHash('sha256').update(readFileSync(agentPath)).digest('hex')}`;
-    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
-    writePath(statePath, `${JSON.stringify({
-      protocol: 1,
-      profile: 'strict',
-      components: [
-        'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-        'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
-        'cross-model-acceptance', 'release-deployment-gates',
-      ],
-      transaction_id: 'legacy-strict',
-      applied_at: '2026-07-14T00:00:00.000Z',
-      ownership_manifest: [{
-        components: ['agent-fleet'],
-        authority: 'repo-harness-install-transaction',
-        removal: 'managed-surfaces-only',
-        path: agentPath,
-        type: 'managed-file',
-        content_hash: agentHash,
-        managed_marker: 'transaction-created-file',
-        symlink_target: null,
-      }],
-      previous: null,
-    }, null, 2)}\n`);
-
-    const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    const legacy = prepareLegacyInstallProfileMigration('full', env);
-    const migrated = applyInstallProfile(
-      'full',
-      env,
-      new Date('2026-07-24T00:00:00.000Z'),
-      transaction,
-      legacy,
-    ).state;
-    commitInstallHostTransaction(transaction);
-
-    expect(migrated.protocol).toBe(2);
-    expect(migrated.profile).toBe('full');
-    expect(migrated.previous).toBeNull();
-    expect(migrated.ownership_manifest.some(({ path }) => path === agentPath)).toBe(true);
-    expect(readInstalledProfile(env)).toEqual(migrated);
-    expect(installedProfileStatus(migrated, env).drift.status).toBe('consistent');
+  test('the one-shot refuses a minimal state with a Pi package while pi is absent, and names both ways out', () => withHome((env) => {
+    const statePath = writeProtocol2State(env, 'minimal', [{ ...OWNED, components: ['host-adapters'], path: bunGlobalPackageRoot(env), type: 'pi-package', content_hash: null, managed_marker: 'pi-package-source' }]);
+    const before = readFileSync(statePath);
+    expect(installStateCode(() => migrateInstallState(env))).toBe('install_plugin_unavailable');
+    expect(() => migrateInstallState(env)).toThrow('Install pi, then run: repo-harness update');
+    expect(() => migrateInstallState(env)).toThrow(`or roll back: bun add -g repo-harness@0.25.3 --no-cache, delete ${statePath}, and reinstall with 0.25.3`);
+    expect(readFileSync(statePath)).toEqual(before);
   }));
 
-  test('failed strict-to-minimal migration restores state, optional surfaces, skill lock, and hooks byte-for-byte', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'full');
+  test('a failed update after the one-shot restores the state, receipt, orchestrator.md and a removed Pi copy byte for byte', () => withHome((env) => {
     const home = env.HOME!;
-    const statePath = join(home, '.repo-harness', 'install-state.json');
-    const hooksPath = join(home, '.codex', 'hooks.json');
-    const agentPath = join(home, '.codex', 'agents', 'explorer.toml');
-    const stagingSkill = join(home, '.agents', 'skills', 'repo-harness-cross-review');
-    const stagingSkillPath = join(stagingSkill, 'SKILL.md');
-    const stagingMarkerPath = join(stagingSkill, '.repo-harness-owner.json');
-    const lockPath = join(home, '.agents', '.skill-lock.json');
-
-    writeMarkedFacade(stagingSkill, '# owned staging skill\n');
-    writePath(lockPath, `${JSON.stringify({
-      version: 3,
-      skills: {
-        'repo-harness-cross-review': { source: 'repo-harness' },
-        'user-skill': { source: 'user/repo' },
-      },
-    }, null, 2)}\n`);
-
-    const agentHash = `sha256:${createHash('sha256').update(readFileSync(agentPath)).digest('hex')}`;
-    const stagingHash = JSON.parse(readFileSync(stagingMarkerPath, 'utf-8')).content_hash as string;
-    writePath(statePath, `${JSON.stringify({
-      protocol: 1,
-      profile: 'strict',
-      components: [
-        'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-        'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
-        'cross-model-acceptance', 'release-deployment-gates',
-      ],
-      transaction_id: 'legacy-strict-rollback',
-      applied_at: '2026-07-14T00:00:00.000Z',
-      ownership_manifest: [
-        {
-          components: ['agent-fleet'],
-          authority: 'repo-harness-install-transaction',
-          removal: 'managed-surfaces-only',
-          path: agentPath,
-          type: 'managed-file',
-          content_hash: agentHash,
-          managed_marker: 'transaction-created-file',
-          symlink_target: null,
-        },
-        {
-          components: ['cross-model-acceptance'],
-          authority: 'repo-harness-install-transaction',
-          removal: 'managed-surfaces-only',
-          path: stagingSkill,
-          type: 'directory-copy',
-          content_hash: stagingHash,
-          managed_marker: '.repo-harness-owner.json:owner=repo-harness;surface=command-facade',
-          symlink_target: null,
-        },
-      ],
-      previous: null,
-    }, null, 2)}\n`);
-
+    const retired = join(home, '.claude', 'agents', 'orchestrator.md');
+    const explorer = join(home, '.claude', 'agents', 'explorer.md');
+    const piCopy = join(hostSkillRoot(home, 'pi', env), 'repo-harness-check');
+    writePath(retired, '---\nname: orchestrator\n---\n');
+    writePath(explorer, '# user explorer\n');
+    writePath(join(piCopy, 'SKILL.md'), '# pi copy\n');
+    const receiptPath = writeFleetReceipt(env, [retired, explorer]);
+    const statePath = writeProtocol2State(env, 'full', [p2File(retired, ['agent-fleet']), p2Directory(piCopy, ['adaptive-workflow'])]);
     const before = {
-      state: readFileSync(statePath),
-      hooks: readFileSync(hooksPath),
-      agent: readFileSync(agentPath),
-      stagingSkill: readFileSync(stagingSkillPath),
-      stagingMarker: readFileSync(stagingMarkerPath),
-      lock: readFileSync(lockPath),
+      state: readFileSync(statePath), receipt: readFileSync(receiptPath), retired: readFileSync(retired), piCopy: readFileSync(join(piCopy, 'SKILL.md')),
     };
     const managedBin = join(home, 'managed-bin');
     const oldBun = join(managedBin, 'bun');
     const prepareObserved = join(home, 'prepare-observed');
-    mkdirSync(managedBin, { recursive: true });
-    writeFileSync(oldBun, [
+    writePath(oldBun, [
       '#!/bin/sh',
       'if [ "$1" = "--version" ]; then',
-      '  if [ ! -e "$HOME/.repo-harness/install-state.json" ] \\',
-      '    && [ ! -e "$HOME/.codex/agents/explorer.toml" ] \\',
-      '    && [ ! -e "$HOME/.agents/skills/repo-harness-cross-review" ] \\',
-      '    && ! grep -q repo-harness-cross-review "$HOME/.agents/.skill-lock.json"; then',
+      `  if grep -q '"protocol": 3' "$HOME/.repo-harness/install-state.json" \\`,
+      `    && [ ! -e "${retired}" ] && [ ! -e "${piCopy}" ] \\`,
+      `    && ! grep -q orchestrator "${receiptPath}"; then`,
       '    printf "prepared\\n" > "$HOME/prepare-observed"',
       '  fi',
       '  echo 1.1.34',
@@ -441,146 +601,141 @@ describe('install profiles', () => {
       'fi',
       'exit 0',
       '',
-    ].join('\n'), { mode: 0o755 });
+    ].join('\n'));
+    chmodSync(oldBun, 0o755);
 
-    const failed = spawnSync(process.execPath, [
-      CLI,
-      'install',
-      '--migrate-profile-state',
-      '--profile',
-      'minimal',
-      '--target',
-      'codex',
-      '--json',
-    ], {
+    const failed = spawnSync(process.execPath, [CLI, 'update', '--no-cli', '--target', 'codex', '--json'], {
       cwd: ROOT,
       encoding: 'utf-8',
-      env: {
-        ...env,
-        PATH: `${managedBin}:${env.PATH ?? ''}`,
-        REPO_HARNESS_BUN_EXECUTABLE: oldBun,
-      },
+      env: { ...env, PATH: `${managedBin}:${env.PATH}`, REPO_HARNESS_BUN_EXECUTABLE: oldBun },
     });
 
     expect(failed.status).not.toBe(0);
+    expect(failed.stderr).toContain('install state protocol 2 -> 3');
     expect(readFileSync(prepareObserved, 'utf-8')).toBe('prepared\n');
     expect(readFileSync(statePath)).toEqual(before.state);
-    expect(readFileSync(hooksPath)).toEqual(before.hooks);
-    expect(readFileSync(agentPath)).toEqual(before.agent);
-    expect(readFileSync(stagingSkillPath)).toEqual(before.stagingSkill);
-    expect(readFileSync(stagingMarkerPath)).toEqual(before.stagingMarker);
-    expect(readFileSync(lockPath)).toEqual(before.lock);
+    expect(readFileSync(receiptPath)).toEqual(before.receipt);
+    expect(readFileSync(retired)).toEqual(before.retired);
+    expect(readFileSync(join(piCopy, 'SKILL.md'))).toEqual(before.piCopy);
   }), 30_000);
 
   test('dry-run plan is explicit and has no side effects', () => withHome((env) => {
-    const plan = planInstallProfile('minimal', null, env);
-    expect(plan.install).toContain('effective-state');
+    const plan = planInstallSelection('all', { run: ALL_PLUGINS, record: ALL_PLUGINS }, null, env);
+    expect(plan.selection).toBe('all');
+    expect(plan.install).toContain('architecture');
     expect(plan.remove).toEqual([]);
-    expect(readInstalledProfile(env)).toBeNull();
+    expect(readInstallState(env)).toBeNull();
   }));
 
   test('apply is idempotent', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
-    const first = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
-    const second = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'));
+    writeManagedHostSurfaces(env);
+    const first = applyInstallSelection([], [], env, new Date('2026-01-01T00:00:00Z'));
+    const second = applyInstallSelection([], [], env, new Date('2026-01-02T00:00:00Z'));
     expect(second.plan.install).toEqual([]);
     expect(second.plan.remove).toEqual([]);
     expect(second.state.transaction_id).toBe(first.state.transaction_id);
     expect(second.state.applied_at).toBe(first.state.applied_at);
   }));
 
-  test('switch lists removals and rollback restores the previous profile', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'full');
-    applyInstallProfile('full', env, new Date('2026-01-01T00:00:00Z'));
-    const switched = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'));
-    expect(switched.plan.remove).toContain('agent-fleet');
-    expect(switched.plan.remove).toContain('cross-model-acceptance');
-    expect(rollbackInstallProfile(env).profile).toBe('full');
+  test('switch lists removals and rollback restores the previous selection', () => withHome((env) => {
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
+    applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'));
+    const switched = applyInstallSelection([], [], env, new Date('2026-01-02T00:00:00Z'));
+    expect(switched.plan.remove).toContain('architecture');
+    expect(switched.plan.remove).toContain('cross-review');
+    const restored = rollbackInstallSelection(env);
+    expect(restored.selection).toBe('all');
+    expect(enabledPlugins(restored)).toEqual([...ALL_PLUGINS]);
   }));
 
-  test('state is machine readable and rejects implicit legacy defaults', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'full');
-    const applied = applyInstallProfile('full', env);
+  test('a rollback that cannot complete its projection names the missing owner', () => withHome((env) => {
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
+    applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'));
+    applyInstallSelection([], [], env, new Date('2026-01-02T00:00:00Z'));
+    rmSync(join(env.HOME!, '.codex', 'skills', 'repo-harness-product'), { recursive: true });
+    expect(() => rollbackInstallSelection(env)).toThrow('rollback projection is incomplete: missing=product(skills)');
+  }));
+
+  test('state is machine readable: protocol 3 with versions, selection and owned surfaces', () => withHome((env) => {
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
+    const applied = applyInstallSelection('all', ALL_PLUGINS, env);
     const persisted = JSON.parse(readFileSync(applied.plan.state_path, 'utf-8'));
-    expect(persisted.protocol).toBe(2);
-    expect(persisted.profile).toBe('full');
-    expect(persisted.components).toContain('planning-integrations');
-    expect(persisted.components).toContain('agent-fleet');
-    expect(persisted.ownership_manifest.every((entry: { authority: string; path: string; type: string; content_hash: string | null }) => (
-      entry.authority === 'repo-harness-install-transaction'
+    const { version } = JSON.parse(readFileSync(join(ROOT, 'package.json'), 'utf-8'));
+    expect(persisted.protocol).toBe(3);
+    expect(persisted.core).toEqual({ version });
+    expect(persisted.plugins).toEqual(ALL_PLUGINS.map(id => ({ id, version })));
+    expect(persisted.selection).toBe('all');
+    expect(persisted.ownership_manifest.every((entry: { owner: string; authority: string; path: string; type: string; content_hash: string | null }) => (
+      ['core', ...ALL_PLUGINS].includes(entry.owner)
+      && entry.authority === 'repo-harness-install-transaction'
       && entry.path.startsWith(env.HOME!)
       && ['symlink', 'managed-file', 'directory-copy'].includes(entry.type)
       && (entry.type === 'symlink' || entry.content_hash?.startsWith('sha256:') === true)
     ))).toBe(true);
     expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.bun', 'bin', 'repo-harness'))).toBe(false);
     expect(persisted.ownership_manifest.some((entry: { path: string }) => entry.path === join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
-    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+    expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
   }));
 
-  test('state rejects a component projection that conflicts with its profile authority', () => withHome((env) => {
-    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-      protocol: 2,
-      profile: 'full',
-      components: ['cli'],
-      transaction_id: 'conflicting-state',
-      applied_at: '2026-07-14T00:00:00.000Z',
-      ownership_manifest: [],
-      previous: null,
-    })}\n`);
-    expect(() => readInstalledProfile(env)).toThrow('components do not match profile full');
+  test('the strict reader rejects a selection that differs from its plugins, a missing selection and an unknown plugin', () => withHome((env) => {
+    const statePath = installProfileStatePath(env);
+    const { selection: _selection, ...withoutSelection } = seededState(['platform'], ['platform']) as Record<string, unknown>;
+    const { previous: _previous, ...snapshotWithoutSelection } = withoutSelection;
+    const plugin = (id: string) => ({ id, version: versions([]).core.version });
+    for (const [state, message] of [
+      [seededState(['platform'], ['platform', 'product']), 'does not equal its plugins'],
+      [seededState(['platform', 'product'], ['product', 'platform']), 'does not equal its plugins'],
+      [withoutSelection, 'has no valid selection'],
+      [seededState(['platform'], 'full' as PluginSelection), 'has no valid selection'],
+      [{ ...seededState(['platform'], 'all'), plugins: [plugin('platform'), plugin('future-plugin')] }, 'names unknown plugin "future-plugin"'],
+      [{ ...seededState([], []), previous: snapshotWithoutSelection }, 'previous state has no valid selection'],
+    ] as const) {
+      writePath(statePath, `${JSON.stringify(state)}\n`);
+      expect(installStateCode(() => readInstallState(env))).toBe('install_state_invalid');
+      expect(() => readInstallState(env)).toThrow(message);
+    }
+    writePath(statePath, `${JSON.stringify({ protocol: 2, profile: 'full', components: P2_FULL, transaction_id: 'p2', applied_at: 'x', ownership_manifest: [], previous: null })}\n`);
+    expect(installStateCode(() => readInstallState(env))).toBe('install_state_migration_required');
   }));
 
-  test('legacy ownership migration rejects malformed rollback history', () => withHome((env) => {
-    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-      protocol: 1,
-      profile: 'strict',
-      components: [
-        'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-        'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
-        'cross-model-acceptance', 'release-deployment-gates',
-      ],
-      transaction_id: 'legacy-current',
-      applied_at: '2026-07-14T00:00:00.000Z',
-      ownership_manifest: [],
-      previous: {},
-    })}\n`);
-    expect(() => readLegacyInstalledProfileForMigration(env)).toThrow('invalid previous state');
+  test('the one-shot reader rejects malformed rollback history', () => withHome((env) => {
+    const raw = { protocol: 2, profile: 'full', components: P2_FULL, transaction_id: 'p2', applied_at: '2026-07-14T00:00:00.000Z', ownership_manifest: [], previous: [] };
+    expect(() => parseProtocol2State(raw, installProfileStatePath(env), env)).toThrow('invalid previous state');
   }));
 
-  test('discoverManagedSurfaces empties the component set for a facade retired from the canonical package', () => withHome((env) => {
-    const { source } = writeManagedHostSurfaces(env, 'minimal');
+  test('discovery keeps a facade retired from the canonical package under core', () => withHome((env) => {
+    const { source } = writeManagedHostSurfaces(env, ['product']);
     const codexSkills = join(env.HOME!, '.codex', 'skills');
 
-    // Canonical control: repo-harness-check is still shipped by the package
-    // (source gets it here, at its post-cutover assets/skills/ location), so
-    // it keeps the existing scope-worktree-check-guards bucket.
-    writePath(join(source, 'assets', 'skill-commands', 'repo-harness-check', 'SKILL.md'), '# managed\n');
-    writeMarkedFacade(join(codexSkills, 'repo-harness-check'), '# managed\n');
+    // Canonical control: repo-harness-product is still shipped by the package
+    // (source gets it at its assets/skills/ location), so it keeps its plugin owner.
+    writePath(join(source, 'assets', 'skills', 'repo-harness-product', 'SKILL.md'), '# managed\n');
+    writeMarkedFacade(join(codexSkills, 'repo-harness-product'), '# managed\n');
 
     // Retired: physically present on host (e.g. left over from a broader
     // sync), but the package no longer ships its source directory at all.
     const retiredDest = join(codexSkills, 'repo-harness-retired-demo');
     writeMarkedFacade(retiredDest, '---\nname: repo-harness-retired-demo\n---\n');
 
-    const applied = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
-    const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-check'));
+    const applied = applyInstallSelection(['product'], ['product'], env, new Date('2026-01-01T00:00:00Z'));
+    const planSurface = applied.state.ownership_manifest.find(({ path }) => path === join(codexSkills, 'repo-harness-product'));
     const retiredSurface = applied.state.ownership_manifest.find(({ path }) => path === retiredDest);
-    expect(planSurface?.components).toEqual(['scope-worktree-check-guards']);
+    expect(planSurface?.owner).toBe('product');
     expect(retiredSurface).toBeDefined();
-    expect(retiredSurface?.components).toEqual([]);
-    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
-    expect(readInstalledProfile(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
+    expect(retiredSurface?.owner).toBe('core');
+    expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
+    expect(readInstallState(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
   }));
 
   test('state keeps a formerly managed facade receipt readable after its catalog retirement', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
+    writeManagedHostSurfaces(env);
     const retired = join(env.HOME!, '.claude', 'skills', 'repo-harness-handoff');
     const oldSource = join(env.HOME!, 'old-package', 'assets', 'skill-commands', 'repo-harness-handoff');
     writePath(join(oldSource, 'SKILL.md'), '# old\n');
     mkdirSync(join(retired, '..'), { recursive: true });
     symlinkSync(oldSource, retired);
     const receipt = {
-      components: [],
+      owner: 'core',
       authority: 'repo-harness-install-transaction',
       removal: 'managed-surfaces-only',
       path: retired,
@@ -589,40 +744,33 @@ describe('install profiles', () => {
       managed_marker: null,
       symlink_target: oldSource,
     } as const;
-    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
-    const state = {
-      protocol: 2,
-      profile: 'minimal',
-      components: PROFILE_COMPONENTS.minimal,
-      transaction_id: 'older-package',
-      applied_at: '2026-01-01T00:00:00.000Z',
-      ownership_manifest: [receipt],
-      previous: null,
-    };
+    const statePath = installProfileStatePath(env);
+    const state = seededState([], [], [receipt]);
     writePath(statePath, `${JSON.stringify(state)}\n`);
-    expect(readInstalledProfile(env)?.ownership_manifest).toEqual([receipt]);
+    expect(readInstallState(env)?.ownership_manifest).toEqual([receipt]);
 
-    const applied = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'));
+    const applied = applyInstallSelection([], [], env, new Date('2026-01-02T00:00:00Z'));
     expect(applied.state.ownership_manifest).toContainEqual(receipt);
-    expect(readInstalledProfile(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
+    expect(readInstallState(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
 
     for (const path of [join(env.HOME!, 'elsewhere', 'repo-harness-handoff'), join(env.HOME!, '.claude', 'skills', 'foreign-skill')]) {
       writePath(statePath, `${JSON.stringify({ ...state, ownership_manifest: [{ ...receipt, path }] })}\n`);
-      expect(() => readInstalledProfile(env)).toThrow('invalid ownership surface');
+      expect(() => readInstallState(env)).toThrow('invalid ownership surface');
     }
   }));
 
-  for (const profile of ['minimal', 'full'] as const) {
+  for (const plugins of ['platform', undefined] as const) {
     for (const mode of ['0', '1'] as const) {
-      test(`${profile} sync projects windows-python-first to both hosts in ${mode === '0' ? 'copy' : 'link'} mode`, () => withHome((env) => {
-        const { source } = writeManagedHostSurfaces(env, profile);
+      test(`${plugins === undefined ? 'all' : plugins} sync projects windows-python-first to both hosts in ${mode === '0' ? 'copy' : 'link'} mode`, () => withHome((env) => {
+        const { source } = writeManagedHostSurfaces(env, plugins === undefined ? ALL_PLUGINS : [plugins]);
+        rmSync(join(env.HOME!, '.codex', 'skills', 'windows-python-first'), { recursive: true });
         seedSyncRuntime(source);
         const skillSource = join(source, 'assets', 'skills', 'windows-python-first');
         cpSync(join(ROOT, 'assets', 'skills', 'windows-python-first'), skillSource, { recursive: true });
         const sync = runSkillSync(env, {
           AGENTIC_DEV_SOURCE_ROOT: source,
           AGENTIC_DEV_LINK_INSTALLED_COPIES: mode,
-          REPO_HARNESS_INSTALL_PROFILE: profile,
+          ...(plugins === undefined ? {} : { REPO_HARNESS_INSTALL_PLUGINS: plugins }),
         });
         expect(sync.status, sync.stderr).toBe(0);
         for (const host of ['.codex', '.claude']) {
@@ -643,24 +791,24 @@ describe('install profiles', () => {
     }
   }
 
-  test('copy-mode sync gives a non-prefixed profile facade an ownership receipt that uninstall honors', () => withHome((env) => {
-    const { source } = writeManagedHostSurfaces(env, 'minimal');
+  test('copy-mode sync gives a non-prefixed plugin facade an ownership receipt that uninstall honors', () => withHome((env) => {
+    const { source } = writeManagedHostSurfaces(env);
     seedSyncRuntime(source);
     cpSync(join(ROOT, 'assets', 'skills', 'obsidian-memory'), join(source, 'assets', 'skills', 'obsidian-memory'), { recursive: true });
-    const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '0', REPO_HARNESS_INSTALL_PLUGINS: 'strategy-memory' });
     expect(sync.status, sync.stderr).toBe(0);
     const copies = ['.codex', '.claude'].map((host) => join(env.HOME!, host, 'skills', 'obsidian-memory'));
     for (const copy of copies) expect(existsSync(join(copy, '.repo-harness-owner.json'))).toBe(true);
 
-    const applied = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
+    const applied = applyInstallSelection(['strategy-memory'], ['strategy-memory'], env, new Date('2026-01-01T00:00:00Z'));
     for (const copy of copies) {
       expect(applied.state.ownership_manifest.find(({ path }) => path === copy)).toMatchObject({
-        components: ['adaptive-workflow'],
+        owner: 'strategy-memory',
         type: 'directory-copy',
         managed_marker: '.repo-harness-owner.json:owner=repo-harness;surface=command-facade',
       });
     }
-    expect(readInstalledProfile(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
+    expect(readInstallState(env)?.ownership_manifest).toEqual(applied.state.ownership_manifest);
 
     const [unchanged, edited] = copies;
     writeFileSync(join(edited!, 'SKILL.md'), '# user edit\n');
@@ -668,7 +816,7 @@ describe('install profiles', () => {
     expect(uninstall.status).toBe('partial');
     expect(existsSync(unchanged!)).toBe(false);
     expect(readFileSync(join(edited!, 'SKILL.md'), 'utf-8')).toBe('# user edit\n');
-    expect(readInstalledProfile(env)?.ownership_manifest.some(({ path }) => path === edited)).toBe(true);
+    expect(readInstallState(env)?.ownership_manifest.some(({ path }) => path === edited)).toBe(true);
   }));
 
   for (const linkedRoot of [false, true]) {
@@ -690,7 +838,7 @@ describe('install profiles', () => {
       const before = realRoots.map(treeSnapshot);
 
       const transaction = beginInstallHostTransaction(installProfileTransactionPaths(env), env);
-      const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+      const sync = runSkillSync(env, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' });
       expect(sync.status, sync.stderr).toBe(0);
       expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots(env)]);
       for (const root of roots) expect(existsSync(join(root, 'repo-harness-retired-demo'))).toBe(false);
@@ -716,7 +864,7 @@ describe('install profiles', () => {
       const before = [codexRoot, claudeRoot].map(treeSnapshot);
 
       const transaction = beginInstallHostTransaction(installProfileTransactionPaths(custom), custom);
-      const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+      const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' });
       expect(sync.status, sync.stderr).toBe(0);
       expect(syncedSkillRoots(sync.stdout)).toEqual([...effectiveSkillRoots(custom)]);
       expect(readlinkSync(join(codexRoot, 'repo-harness'))).toBe(source);
@@ -738,13 +886,13 @@ describe('install profiles', () => {
     const codexRoot = join(env.HOME!, 'custom', 'codex-skills');
     const claudeRoot = join(env.HOME!, 'custom', 'claude-skills');
     const custom = { ...env, CODEX_SKILLS_ROOT: `${codexRoot}/`, CLAUDE_SKILLS_ROOT: `${claudeRoot}/` };
-    const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    const sync = runSkillSync(custom, { AGENTIC_DEV_SOURCE_ROOT: source, AGENTIC_DEV_LINK_INSTALLED_COPIES: '1', REPO_HARNESS_INSTALL_PLUGINS: '' });
     expect(sync.status, sync.stderr).toBe(0);
     expect(syncedSkillRoots(sync.stdout)).toEqual([codexRoot, claudeRoot]);
     expect(effectiveSkillRoots(custom)).toEqual([codexRoot, claudeRoot]);
 
     const { HOME: _home, CODEX_SKILLS_ROOT: _codex, ...homeless } = env;
-    const rejected = runSkillSync(homeless, { AGENTIC_DEV_SOURCE_ROOT: source, REPO_HARNESS_INSTALL_PROFILE: 'minimal' });
+    const rejected = runSkillSync(homeless, { AGENTIC_DEV_SOURCE_ROOT: source, REPO_HARNESS_INSTALL_PLUGINS: '' });
     expect(rejected.status).not.toBe(0);
     expect(rejected.stderr).toContain('HOME is required when CODEX_SKILLS_ROOT is not set.');
     expect(rejected.stdout).not.toContain('command facades');
@@ -752,27 +900,28 @@ describe('install profiles', () => {
 
   test('status detects actual managed host surface drift', () => withHome((env) => {
     const { canonical } = writeManagedHostSurfaces(env);
-    const applied = applyInstallProfile('minimal', env);
-    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+    const applied = applyInstallSelection([], [], env);
+    expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
 
     rmSync(canonical);
     const foreign = join(env.HOME!, 'foreign-source');
     mkdirSync(foreign);
     symlinkSync(foreign, canonical);
 
-    const drift = installedProfileStatus(applied.state, env).drift;
-    expect(drift.status).toBe('drift');
-    expect(drift.missing_components).toContain('effective-state');
+    const status = installStateStatus(applied.state, env);
+    expect(status.drift.status).toBe('drift');
+    expect(status.drift.missing_owners).toContain('core');
+    expect(status.probes.core?.missing).toContain('effective-state');
   }));
 
   test('managed adapter ownership hashes only package entries and preserves sibling edits', () => withHome((env) => {
     writeManagedHostSurfaces(env);
-    const applied = applyInstallProfile('minimal', env);
+    const applied = applyInstallSelection([], [], env);
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
     const config = JSON.parse(readFileSync(adapter, 'utf-8'));
     config.theme = 'changed-by-user';
     writeFileSync(adapter, JSON.stringify(config));
-    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+    expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
 
     config.hooks.SessionStart[0].hooks.push({
       type: 'command',
@@ -780,78 +929,90 @@ describe('install profiles', () => {
       timeout: 30,
     });
     writeFileSync(adapter, JSON.stringify(config));
-    expect(installedProfileStatus(applied.state, env).drift.status).toBe('consistent');
+    expect(installStateStatus(applied.state, env).drift.status).toBe('consistent');
 
     config.hooks.SessionStart[0].hooks[0].command = ': repo-harness-managed-hook-v1; changed';
     writeFileSync(adapter, JSON.stringify(config));
-    expect(installedProfileStatus(applied.state, env).drift.surface_drift).toContain(adapter);
+    expect(installStateStatus(applied.state, env).drift.surface_drift).toContain(adapter);
   }));
 
-  test('adapter probe requires the complete profile route projection', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
-    const applied = applyInstallProfile('minimal', env);
+  test('adapter probe requires the complete core route projection', () => withHome((env) => {
+    writeManagedHostSurfaces(env);
+    const applied = applyInstallSelection([], [], env);
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
     const config = JSON.parse(readFileSync(adapter, 'utf-8'));
     delete config.hooks.PreToolUse;
     writeFileSync(adapter, JSON.stringify(config));
-    const status = installedProfileStatus(applied.state, env);
-    expect(status.component_probes['host-adapters'].status).toBe('missing');
-    expect(status.drift.missing_components).toContain('host-adapters');
+    const status = installStateStatus(applied.state, env);
+    expect(status.probes.core?.missing).toContain('host-adapters');
+    expect(status.drift.missing_owners).toContain('core');
   }));
 
-  test('profile state is not committed without a complete host projection', () => withHome((env) => {
-    expect(() => applyInstallProfile('minimal', env)).toThrow('install profile projection is incomplete');
-    expect(existsSync(join(env.HOME!, '.repo-harness', 'install-state.json'))).toBe(false);
+  test('install state is not committed without a complete host projection', () => withHome((env) => {
+    expect(() => applyInstallSelection([], [], env)).toThrow('install projection is incomplete');
+    expect(existsSync(installProfileStatePath(env))).toBe(false);
   }));
 
-  test('explicit migration rejects component-only ownership with no filesystem proof', () => withHome((env) => {
-    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
-    mkdirSync(join(env.HOME!, '.repo-harness'), { recursive: true });
-    writeFileSync(statePath, JSON.stringify({
-      protocol: 1,
-      profile: 'minimal',
-      components: ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters'],
-      transaction_id: 'legacy',
-      applied_at: '2026-01-01T00:00:00.000Z',
-      ownership_manifest: [{
-        component: 'cli',
-        authority: 'repo-harness-install-transaction',
-        removal: 'managed-surfaces-only',
-      }],
+  test('the one-shot reader rejects an ownership entry with no filesystem proof', () => withHome((env) => {
+    const raw = {
+      protocol: 2, profile: 'minimal', components: P2_MINIMAL, transaction_id: 'p2', applied_at: '2026-01-01T00:00:00.000Z',
+      ownership_manifest: [{ components: ['cli'], authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only' }],
       previous: null,
-    }));
-
-    expect(() => readLegacyInstalledProfileForMigration(env)).toThrow('invalid ownership surface');
+    };
+    expect(() => parseProtocol2State(raw, installProfileStatePath(env), env)).toThrow('invalid ownership surface');
   }));
 
-  test('component probes do not infer full capabilities from the minimal canonical skill alone', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
-    const minimal = applyInstallProfile('minimal', env).state;
-    const forged = { ...minimal, profile: 'full' as const, components: PROFILE_COMPONENTS.full };
-    const status = installedProfileStatus(forged, env);
-    expect(status.component_probes['agent-fleet'].status).toBe('missing');
-    expect(status.component_probes['verifier'].status).toBe('missing');
-    expect(status.component_probes['cross-model-acceptance'].status).toBe('missing');
-    expect(status.component_probes['release-deployment-gates'].status).toBe('missing');
+  test('plugin probes do not infer plugin skills from the core projection alone', () => withHome((env) => {
+    writeManagedHostSurfaces(env);
+    const core = applyInstallSelection([], [], env).state;
+    const forged: InstallState = { ...core, ...versions(ALL_PLUGINS), selection: 'all' };
+    const status = installStateStatus(forged, env);
+    for (const id of ALL_PLUGINS) expect(status.probes[id]?.status, id).toBe('missing');
+    expect(status.probes.core?.status).toBe('present');
     expect(status.drift.status).toBe('drift');
   }));
 
-  test('planning probe does not treat staging-only skills as host discovery', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
-    const minimal = applyInstallProfile('minimal', env).state;
-    for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
-      writePath(join(env.HOME!, '.agents', 'skills', skill, 'SKILL.md'), '# staging only\n');
-    }
-    const status = installedProfileStatus({
-      ...minimal,
-      profile: 'full',
-      components: PROFILE_COMPONENTS.full,
-    }, env);
-    expect(status.component_probes['planning-integrations'].status).toBe('missing');
-    expect(status.drift.missing_components).toContain('planning-integrations');
+  test('a plugin probe does not treat staging-only skills as host discovery', () => withHome((env) => {
+    writeManagedHostSurfaces(env);
+    const core = applyInstallSelection([], [], env).state;
+    writePath(join(env.HOME!, '.agents', 'skills', 'repo-harness-product', 'SKILL.md'), '# staging only\n');
+    const status = installStateStatus({ ...core, ...versions(['product']), selection: ['product'] }, env);
+    expect(status.probes.product?.status).toBe('missing');
+    expect(status.drift.missing_owners).toContain('product');
   }));
 
-  test('mutation-path rollback coverage includes all four profile-gated facades on both hosts', () => withHome((env) => {
+  test('a target without a host for a plugin skips it under all, fails an explicit list and probes per host root', () => withHome((base) => {
+    const env = withPi(base);
+    const rows: readonly { readonly id: PluginId; readonly target: 'claude' | 'codex'; readonly reason: string | null }[] = [
+      { id: 'peer-runtime', target: 'codex', reason: '--target codex has no host for its skills' },
+      { id: 'pi', target: 'claude', reason: '--target claude does not include the Pi host' },
+      { id: 'pi', target: 'codex', reason: '--target codex does not include the Pi host' },
+      { id: 'product', target: 'claude', reason: null },
+      { id: 'cross-review', target: 'codex', reason: null },
+    ];
+    writeManagedHostSurfaces(env);
+    const core = applyInstallSelection([], [], env).state;
+    for (const { id, target, reason } of rows) {
+      const label = `${id}/${target}`;
+      const all = resolveRecordedSelection({ selection: 'all', plugins: [] }, target, env);
+      expect(all.run.includes(id), label).toBe(reason === null);
+      expect(all.skipped.find(entry => entry.id === id), label)
+        .toEqual(reason === null ? undefined : { id, reason, command: 'repo-harness install --target both' });
+      // A recorded plugin that the target cannot run stays in the record.
+      const recorded = resolveRecordedSelection({ selection: 'all', plugins: versions([id]).plugins }, target, env);
+      expect(recorded.record.includes(id), label).toBe(true);
+      expect(recorded.kept.map(entry => entry.id), label).toEqual(reason === null ? [] : [id]);
+      expect(installStateCode(() => resolveRecordedSelection({ selection: [id], plugins: versions([id]).plugins }, target, env)), label)
+        .toBe(reason === null ? undefined : 'install_plugin_unavailable');
+      if (reason === null) {
+        // The probe of a skill plugin needs only the root of the target's host.
+        writePath(join(env.HOME!, `.${target}`, 'skills', PLUGIN_SKILLS[id]![0]![1], 'SKILL.md'), '# managed\n');
+        expect(installStateStatus({ ...core, ...versions([id]), selection: [id] }, env).probes[id]?.status, label).toBe('present');
+      }
+    }
+  }));
+
+  test('mutation-path rollback coverage includes the plugin-owned and explicit facades on both hosts', () => withHome((env) => {
     const paths = installProfileHostMutationPaths(env);
     for (const host of ['.codex', '.claude']) {
       for (const facade of ['repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
@@ -867,7 +1028,7 @@ describe('install profiles', () => {
   }));
 
   test('explicit Obsidian companion projections become transaction-owned receipts and roll back atomically', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
+    writeManagedHostSurfaces(env, ['strategy-memory']);
     const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     const receiptPaths: string[] = [];
     for (const skill of ['obsidian-markdown', 'obsidian-cli']) {
@@ -882,30 +1043,31 @@ describe('install profiles', () => {
       }
     }
 
-    const installed = applyInstallProfile(
-      'minimal',
+    const installed = applyInstallSelection(
+      ['strategy-memory'],
+      ['strategy-memory'],
       env,
       new Date('2026-08-21T00:00:00.000Z'),
       transaction,
     ).state;
     for (const path of receiptPaths) {
       expect(installed.ownership_manifest.some((surface) => (
-        surface.path === path && surface.components.includes('adaptive-workflow')
+        surface.path === path && surface.owner === 'strategy-memory'
       ))).toBe(true);
     }
-    expect(installedProfileStatus(installed, env).drift.status).toBe('consistent');
+    expect(installStateStatus(installed, env).drift.status).toBe('consistent');
 
     writeFileSync(join(env.HOME!, '.agents', 'skills', 'obsidian-cli', 'SKILL.md'), '# drift\n');
-    expect(installedProfileStatus(installed, env).drift.surface_drift)
+    expect(installStateStatus(installed, env).drift.surface_drift)
       .toContain(join(env.HOME!, '.agents', 'skills', 'obsidian-cli'));
 
     rollbackInstallHostTransaction(transaction);
     for (const path of receiptPaths) expect(existsSync(path)).toBe(false);
-    expect(readInstalledProfile(env)).toBeNull();
+    expect(readInstallState(env)).toBeNull();
   }));
 
   test('managed Obsidian refresh recaptures the changed tree hash in the existing install-state receipt', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'minimal');
+    writeManagedHostSurfaces(env, ['strategy-memory']);
     const staging = join(env.HOME!, '.agents', 'skills', 'obsidian-cli');
     const projected = join(env.HOME!, '.codex', 'skills', 'obsidian-cli');
 
@@ -913,34 +1075,34 @@ describe('install profiles', () => {
     writePath(join(staging, 'SKILL.md'), '# old\n');
     mkdirSync(join(projected, '..'), { recursive: true });
     symlinkSync(staging, projected, 'dir');
-    const initial = applyInstallProfile('minimal', env, new Date('2026-08-21T00:00:00.000Z'), first).state;
+    const initial = applyInstallSelection(['strategy-memory'], ['strategy-memory'], env, new Date('2026-08-21T00:00:00.000Z'), first).state;
     commitInstallHostTransaction(first);
     const before = initial.ownership_manifest.find((surface) => surface.path === staging)?.content_hash;
     expect(before).toBeDefined();
 
     const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     writeFileSync(join(staging, 'SKILL.md'), '# refreshed\n');
-    const refreshed = applyInstallProfile('minimal', env, new Date('2026-08-21T00:01:00.000Z'), second).state;
+    const refreshed = applyInstallSelection(['strategy-memory'], ['strategy-memory'], env, new Date('2026-08-21T00:01:00.000Z'), second).state;
     commitInstallHostTransaction(second);
     const after = refreshed.ownership_manifest.find((surface) => surface.path === staging)?.content_hash;
     expect(after).toBeDefined();
     expect(after).not.toBe(before);
-    expect(installedProfileStatus(refreshed, env).drift.status).toBe('consistent');
+    expect(installStateStatus(refreshed, env).drift.status).toBe('consistent');
   }));
 
   test('host transaction restores prior bytes and removes later mutations', () => withHome((env) => {
     writeManagedHostSurfaces(env);
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
     const before = readFileSync(adapter);
-    const statePath = join(env.HOME!, '.repo-harness', 'install-state.json');
-    const lockPath = join(env.HOME!, '.agents', '.skill-lock.json');
+    const statePath = installProfileStatePath(env);
+    const lockPath = skillLock(env);
     writePath(statePath, '{"previous":"state"}\n');
     writePath(lockPath, '{"previous":"lock"}\n');
     const transaction = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     writeFileSync(adapter, '{"partially":"mutated"}\n');
     writeFileSync(statePath, '{"next":"state"}\n');
     writeFileSync(lockPath, '{"next":"lock"}\n');
-    const created = join(env.HOME!, '.codex', 'skills', 'repo-harness-check');
+    const created = join(env.HOME!, '.codex', 'skills', 'repo-harness-product');
     mkdirSync(created, { recursive: true });
     writeFileSync(join(created, 'SKILL.md'), '# partial\n');
     rollbackInstallHostTransaction(transaction);
@@ -954,17 +1116,16 @@ describe('install profiles', () => {
     const bin = join(env.HOME!, 'fake-bin');
     mkdirSync(bin, { recursive: true });
     writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.2.0; exit 0; fi\nexit 0\n', { mode: 0o755 });
-    writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nmkdir -p "$HOME/.agents"\nprintf "{\\"partial\\":true}\\n" > "$HOME/.agents/.skill-lock.json"\nexit 19\n', { mode: 0o755 });
+    writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nmkdir -p "$XDG_STATE_HOME/skills"\nprintf "{\\"partial\\":true}\\n" > "$XDG_STATE_HOME/skills/.skill-lock.json"\nexit 19\n', { mode: 0o755 });
     const adapter = join(env.HOME!, '.codex', 'hooks.json');
     mkdirSync(join(env.HOME!, '.codex'), { recursive: true });
     const before = '{"theme":"user-owned"}\n';
     writeFileSync(adapter, before);
-    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--json'], {
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--target', 'codex', '--json'], {
       cwd: ROOT,
       env: {
         ...env,
         PATH: `${bin}:/bin:/usr/bin`,
-        BUN_INSTALL: join(env.HOME!, '.bun'),
         REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun'),
       },
       encoding: 'utf-8',
@@ -972,8 +1133,8 @@ describe('install profiles', () => {
     expect(failed.status).not.toBe(0);
     expect(readFileSync(adapter, 'utf-8')).toBe(before);
     expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness'))).toBe(false);
-    expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
-    expect(readInstalledProfile(env)).toBeNull();
+    expect(existsSync(skillLock(env))).toBe(false);
+    expect(readInstallState(env)).toBeNull();
   }), 30_000);
 
   test('failed install restores the provider lock under XDG_STATE_HOME', () => withHome((env) => {
@@ -981,11 +1142,11 @@ describe('install profiles', () => {
     mkdirSync(bin, { recursive: true });
     writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; exit 0; fi\nexit 0\n', { mode: 0o755 });
     writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nprintf "{\\"skills\\":{\\"think\\":{}}}\\n" > "$XDG_STATE_HOME/skills/.skill-lock.json"\nexit 19\n', { mode: 0o755 });
-    const stateHome = join(env.HOME!, '.local', 'state');
+    const stateHome = join(env.HOME!, 'custom-state');
     const lock = join(stateHome, 'skills', '.skill-lock.json');
     const before = '{"skills":{"user-skill":{}}}\n';
     writePath(lock, before);
-    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--json'], {
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--target', 'codex', '--json'], {
       cwd: ROOT,
       env: { ...env, PATH: `${bin}:/bin:/usr/bin`, XDG_STATE_HOME: stateHome, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') },
       encoding: 'utf-8',
@@ -995,19 +1156,19 @@ describe('install profiles', () => {
     expect(existsSync(join(env.HOME!, '.agents', '.skill-lock.json'))).toBe(false);
   }), 30_000);
 
-  // A full-profile CLI install whose only live step is the Waza rule refresh. FAKE_CURL_FAIL makes the fetch fail.
+  // An all-plugins CLI install whose only live step is the Waza rule refresh. FAKE_CURL_FAIL makes the fetch fail.
   function installWithFreshRules(env: NodeJS.ProcessEnv, extraEnv: NodeJS.ProcessEnv = {}) {
     const bin = join(env.HOME!, 'fake-bin');
     if (!existsSync(bin)) {
-      writeManagedHostSurfaces(env, 'full');
-      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid', 'repo-harness-cross-review']) rmSync(join(env.HOME!, '.codex', 'skills', skill), { recursive: true });
+      writeManagedHostSurfaces(env, ALL_PLUGINS);
+      for (const skill of [...WAZA_SKILLS, 'repo-harness-cross-review']) rmSync(join(env.HOME!, '.codex', 'skills', skill), { recursive: true });
       mkdirSync(bin, { recursive: true });
       writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
       writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
       writeFileSync(join(bin, 'curl'), '#!/bin/sh\n[ -n "$FAKE_CURL_FAIL" ] && { echo "fixture HTTP 503" >&2; exit 22; }\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
       writeFileSync(join(bin, 'hc'), '#!/bin/sh\nprintf "%s\\n" "# hc manual (herdr-core)" "" "\\`\\$HC_TERMINAL_ID\\` is your address."\n', { mode: 0o755 });
     }
-    const run = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
+    const run = spawnSync(process.execPath, [CLI, 'install', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
       cwd: ROOT, env: { ...env, ...extraEnv, PATH: `${bin}:/bin:/usr/bin`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') }, encoding: 'utf-8',
     });
     return { status: run.status, rules: JSON.parse(run.stdout).steps.find(({ step }: { step: string }) => step === 'sync Waza shared rules') };
@@ -1017,7 +1178,7 @@ describe('install profiles', () => {
     const failed = installWithFreshRules(env, { FAKE_CURL_FAIL: '1' });
     expect(failed.status).not.toBe(0);
     expect(failed.rules).toMatchObject({ status: 'failed', detail: expect.stringContaining('fixture HTTP 503') });
-    expect(readInstalledProfile(env)).toBeNull();
+    expect(readInstallState(env)).toBeNull();
     for (const root of ['.agents', '.codex']) expect(existsSync(join(env.HOME!, root, 'rules'))).toBe(false);
   }), 30_000);
 
@@ -1028,19 +1189,22 @@ describe('install profiles', () => {
     expect(failed.status).not.toBe(0);
     expect(failed.rules).toMatchObject({ status: 'failed', detail: expect.stringContaining('ENOTDIR') });
     expect(readFileSync(staging, 'utf-8')).toBe('not a directory\n');
-    expect(readInstalledProfile(env)).toBeNull();
+    expect(readInstallState(env)).toBeNull();
     expect(existsSync(join(env.HOME!, '.codex', 'rules'))).toBe(false);
   }), 30_000);
 
-  test('a fresh rule refresh keeps a locally edited owned host rule', () => withHome((env) => {
+  test('a fresh rule refresh keeps a locally edited owned host rule and the state bytes', () => withHome((env) => {
     expect(installWithFreshRules(env).status).toBe(0);
     const english = join(env.HOME!, '.codex', 'rules', 'english.md');
+    const statePath = installProfileStatePath(env);
+    const stateBefore = readFileSync(statePath);
     rmSync(join(env.HOME!, '.agents', 'rules'), { recursive: true });
     writeFileSync(english, '# local edit\n');
     const refused = installWithFreshRules(env);
     expect(refused.status).not.toBe(0);
     expect(refused.rules).toMatchObject({ status: 'failed', detail: `refusing to overwrite unowned rule ${english}` });
     expect(readFileSync(english, 'utf-8')).toBe('# local edit\n');
+    expect(readFileSync(statePath)).toEqual(stateBefore);
   }), 60_000);
 
   test.skipIf(process.platform === 'win32' || process.getuid?.() === 0)('an install retries the fresh rules after a rolled-back host write', () => withHome((env) => {
@@ -1057,7 +1221,7 @@ describe('install profiles', () => {
   }), 60_000);
 
   test('a relative XDG_STATE_HOME fails before the install takes its runtime lock', () => withHome((env) => {
-    const failed = spawnSync(process.execPath, [CLI, 'install', '--profile', 'minimal', '--json'], { cwd: ROOT, env: { ...env, XDG_STATE_HOME: 'state' }, encoding: 'utf-8' });
+    const failed = spawnSync(process.execPath, [CLI, 'install', '--no-plugins', '--json'], { cwd: env.HOME, env: { ...env, XDG_STATE_HOME: 'state' }, encoding: 'utf-8' });
     expect(failed.status).not.toBe(0);
     expect(failed.stderr).toContain('XDG_STATE_HOME must be an absolute path: state');
     expect(existsSync(join(env.HOME!, '.repo-harness'))).toBe(false);
@@ -1080,142 +1244,173 @@ describe('install profiles', () => {
     expect(existsSync(transaction.backup_root)).toBe(false);
   }));
 
-  test('profile switch removes only transaction-owned optional surfaces and skill lock entries', () => withHome((env) => {
+  test('install --plugins product from an all state removes only the owned surfaces of the dropped plugins', () => withHome((env) => {
     const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    writeManagedHostSurfaces(env, 'full');
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
     const codexConfig = join(env.HOME!, '.codex', 'config.toml');
     writePath(codexConfig, 'default_mode_request_user_input = true\n\n[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["mcp"]\n');
-    const lock = join(env.HOME!, '.agents', '.skill-lock.json');
+    const lock = skillLock(env);
     writePath(join(env.HOME!, '.agents', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# owned staging skill\n');
     writePath(lock, `${JSON.stringify({ version: 3, skills: {
       'repo-harness-cross-review': { source: 'repo-harness' },
       'user-skill': { source: 'user/repo' },
     } }, null, 2)}\n`);
-    const full = applyInstallProfile('full', env, new Date('2026-01-01T00:00:00Z'), first);
+    const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
     commitInstallHostTransaction(first);
-    expect(full.state.ownership_manifest.some(({ components }) => components.includes('agent-fleet'))).toBe(true);
-    expect(full.state.ownership_manifest.some(({ components }) => components.includes('cross-model-acceptance'))).toBe(true);
-    expect(full.state.ownership_manifest.some(({ managed_marker }) => managed_marker === 'codegraph-config-projection')).toBe(true);
+    const owners = new Set(all.state.ownership_manifest.map(({ owner }) => owner));
+    for (const owner of ['core', ...ALL_PLUGINS]) expect(owners.has(owner as PluginId), owner).toBe(true);
+    expect(all.state.ownership_manifest.some(({ managed_marker }) => managed_marker === 'codegraph-config-projection')).toBe(true);
 
     const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    prepareInstallProfileSwitch('minimal', env);
-    writeFileSync(join(env.HOME!, '.codex', 'hooks.json'), JSON.stringify({
-      hooks: buildManagedHooks('codex', 'minimal'),
-    }));
-    const minimal = applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'), second);
+    const removed = prepareInstallSelectionSwitch(['product'], env);
+    const product = applyInstallSelection(['product'], ['product'], env, new Date('2026-01-02T00:00:00Z'), second);
     commitInstallHostTransaction(second);
 
-    expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(false);
+    const dropped = all.state.ownership_manifest.filter(({ owner }) => owner !== 'core' && owner !== 'product').map(({ path }) => path);
+    expect([...new Set(removed)].sort()).toEqual([...new Set(dropped)].sort());
+    for (const path of dropped.filter(path => path !== codexConfig)) expect(existsSync(path), path).toBe(false);
+    for (const { path } of all.state.ownership_manifest.filter(({ owner }) => owner === 'core' || owner === 'product')) expect(existsSync(path), path).toBe(true);
+    expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(true);
+    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness-product'))).toBe(true);
     expect(existsSync(join(env.HOME!, '.codex', 'skills', 'repo-harness-cross-review'))).toBe(false);
     expect(readFileSync(codexConfig, 'utf-8')).toContain('default_mode_request_user_input = true');
-    expect(readFileSync(codexConfig, 'utf-8')).toContain('[mcp_servers.codegraph]');
+    expect(readFileSync(codexConfig, 'utf-8')).not.toContain('[mcp_servers.codegraph]');
     const lockState = JSON.parse(readFileSync(lock, 'utf-8'));
     expect(lockState.skills['repo-harness-cross-review']).toBeUndefined();
     expect(lockState.skills['user-skill']).toEqual({ source: 'user/repo' });
-    expect(installedProfileStatus(minimal.state, env).drift.status).toBe('consistent');
+    expect(product.state.selection).toEqual(['product']);
+    expect(installStateStatus(product.state, env).drift.status).toBe('consistent');
   }));
 
-  test('profile switch rejects ownership paths outside canonical managed surfaces', () => withHome((env) => {
+  test('a selection switch rejects ownership paths outside canonical managed surfaces', () => withHome((env) => {
     const external = join(env.HOME!, 'user-owned.txt');
     const content = 'must survive';
     writeFileSync(external, content);
-    writePath(join(env.HOME!, '.repo-harness', 'install-state.json'), `${JSON.stringify({
-      protocol: 2,
-      profile: 'full',
-      components: PROFILE_COMPONENTS.full,
-      transaction_id: 'crafted-state',
-      applied_at: '2026-07-14T00:00:00.000Z',
-      ownership_manifest: [{
-        components: ['agent-fleet'],
-        authority: 'repo-harness-install-transaction',
-        removal: 'managed-surfaces-only',
-        path: external,
-        type: 'managed-file',
-        content_hash: `sha256:${createHash('sha256').update(content).digest('hex')}`,
-        managed_marker: 'transaction-created-file',
-        symlink_target: null,
-      }],
-      previous: null,
-    }, null, 2)}\n`);
+    writePath(installProfileStatePath(env), `${JSON.stringify(seededState(ALL_PLUGINS, 'all', [{
+      owner: 'core',
+      authority: 'repo-harness-install-transaction',
+      removal: 'managed-surfaces-only',
+      path: external,
+      type: 'managed-file',
+      content_hash: `sha256:${createHash('sha256').update(content).digest('hex')}`,
+      managed_marker: 'transaction-created-file',
+      symlink_target: null,
+    }]), null, 2)}\n`);
 
-    expect(() => prepareInstallProfileSwitch('minimal', env)).toThrow('invalid ownership surface');
+    expect(() => prepareInstallSelectionSwitch([], env)).toThrow('invalid ownership surface');
     expect(readFileSync(external, 'utf-8')).toBe(content);
   }));
 
   test('reinstall refreshes ownership for an already-owned CodeGraph projection', () => withHome((env) => {
     const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    writeManagedHostSurfaces(env, 'full');
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
     const config = join(env.HOME!, '.codex', 'config.toml');
     writePath(config, '[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve"]\n');
-    const initial = applyInstallProfile('full', env, new Date('2026-01-01T00:00:00Z'), first);
+    const initial = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
     commitInstallHostTransaction(first);
     const original = initial.state.ownership_manifest.find(({ managed_marker }) => (
       managed_marker === 'codegraph-config-projection'
     ));
-    expect(original).toBeDefined();
+    expect(original?.owner).toBe('architecture');
 
     const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     writeFileSync(config, '[mcp_servers.codegraph]\ncommand = "codegraph"\nargs = ["serve", "--mcp"]\n');
-    const refreshed = applyInstallProfile('full', env, new Date('2026-01-02T00:00:00Z'), second);
+    const refreshed = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-02T00:00:00Z'), second);
     commitInstallHostTransaction(second);
     const next = refreshed.state.ownership_manifest.find(({ managed_marker }) => (
       managed_marker === 'codegraph-config-projection'
     ));
     expect(next).toBeDefined();
     expect(next?.content_hash).not.toBe(original?.content_hash);
-    expect(installedProfileStatus(refreshed.state, env).drift.status).toBe('consistent');
+    expect(installStateStatus(refreshed.state, env).drift.status).toBe('consistent');
   }));
 
-  test('the update migration deletes an owned unchanged orchestrator file and its state and receipt entries', () => withHome((env) => {
-    const retired = join(env.HOME!, '.claude', 'agents', 'orchestrator.md');
+  test('update resolves the recorded selection on this host', () => {
+    interface Row {
+      readonly name: string;
+      readonly selection: PluginSelection;
+      readonly recorded: readonly PluginId[];
+      /** pi on PATH while the state is seeded, and during the update. */
+      readonly pi: readonly [boolean, boolean];
+      readonly options?: Partial<GlobalRuntimeOptions>;
+      readonly ran: readonly PluginId[];
+      readonly lines?: readonly string[];
+      /** Null: the state bytes stay as they were. */
+      readonly committed: readonly PluginId[] | null;
+    }
+    const keptCommand = `repo-harness install --plugins ${ALL_PLUGINS.join(',')}`;
+    const rows: readonly Row[] = [
+      {
+        name: 'all, pi appears: update installs and records pi', selection: 'all', recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_WITH_PI,
+        lines: ['[plugins] skipped dsh: DSH is not installed'], committed: ALL_WITH_PI,
+      },
+      { name: 'explicit list, pi appears: the list does not grow', selection: ALL_PLUGINS, recorded: ALL_PLUGINS, pi: [false, true], ran: ALL_PLUGINS, committed: null },
+      {
+        name: 'all, recorded pi disappears: kept with its line', selection: 'all', recorded: ALL_WITH_PI, pi: [true, false], ran: ALL_PLUGINS,
+        lines: [`[plugins] kept pi: pi is not on PATH; update keeps the recorded plugin; to remove it, run: ${keptCommand}`], committed: null,
+      },
+      {
+        name: 'all, pi appears in a partial refresh: not added', selection: 'all', recorded: ALL_PLUGINS, pi: [false, true], options: { syncSkill: false }, ran: ALL_PLUGINS,
+        lines: ['[plugins] not added pi in a partial refresh; run: repo-harness update'], committed: null,
+      },
+    ];
+    for (const row of rows) withHome((base) => {
+      const seedEnv = row.pi[0] ? withPi(base) : base;
+      const env = row.pi[1] ? withPi(base) : base;
+      writeManagedHostSurfaces(seedEnv, row.recorded);
+      const source = bunGlobalPackageRoot(seedEnv)!;
+      const seededPi = row.recorded.includes('pi') ? [installPiPackage(source, true, seedEnv)] : [];
+      expect(seededPi.every(step => step.created), row.name).toBe(true);
+      applyInstallSelection(row.selection, row.recorded, seedEnv, new Date('2026-11-01T00:00:00Z'), undefined,
+        { additionalSurfaces: seededPi.map(step => piPackageSurface(step.source)) });
+      const statePath = installProfileStatePath(env);
+      const before = readFileSync(statePath);
+      const ran: PluginId[][] = [];
+      const result = runTransactionalRuntimeRefresh({ env, cwd: env.HOME, target: 'both', ...row.options }, (options): GlobalRuntimeResult => {
+        ran.push([...options.plugins!]);
+        const pi = installPiPackage(source, options.plugins!.includes('pi'), options.env!);
+        return { exitCode: 0, steps: [{ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) }], lines: [], stdout: '', stderr: '' };
+      });
+      expect({ name: row.name, exitCode: result.exitCode, ran }).toEqual({ name: row.name, exitCode: 0, ran: [[...row.ran]] });
+      for (const line of row.lines ?? []) expect(result.lines.some(entry => entry.startsWith(line)), `${row.name}: ${line}`).toBe(true);
+      if (row.committed === null) {
+        expect(readFileSync(statePath), row.name).toEqual(before);
+        return;
+      }
+      const state = readInstallState(env)!;
+      expect([state.selection, enabledPlugins(state), enabledPlugins(state.previous!)], row.name)
+        .toEqual([row.selection, [...row.committed], [...row.recorded]]);
+      expect(state.ownership_manifest.filter(({ type }) => type === 'pi-package'), row.name).toEqual([piPackageSurface(source)]);
+    });
+  }, 60_000);
+
+  test('after a candidate handoff the parent leaves the install state to the candidate', () => withHome((env) => {
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
+    applyInstallSelection('all', ALL_PLUGINS, env);
     const statePath = installProfileStatePath(env);
-    const receiptPath = agentFleetUserManagedReceiptPath(env);
-    writePath(retired, '---\nname: orchestrator\n---\n');
-    recordInstallOwnership([retired], env);
-    const { previous: _previous, ...state } = JSON.parse(readFileSync(statePath, 'utf-8'));
-    // An entry without the install-transaction authority does not own the file: the ledger is refused and nothing changes.
-    const { authority: _authority, removal: _removal, ...unowned } = state.ownership_manifest[0];
-    const invalidLedger = JSON.stringify({ ...state, ownership_manifest: [unowned], previous: null });
-    writeFileSync(statePath, invalidLedger);
-    expect(() => migrateRetiredAgentFleetFile(env)).toThrow(InstallStateOwnershipError);
-    expect(existsSync(retired)).toBe(true);
-    expect(readFileSync(statePath, 'utf-8')).toBe(invalidLedger);
-    writeFileSync(statePath, JSON.stringify({ ...state, previous: state }));
-    writePath(receiptPath, JSON.stringify({ protocol: 1, authority: 'user-managed-agent-fleet', accepted_at: new Date(0).toISOString(),
-      files: [{ path: retired, sha256: `sha256:${'0'.repeat(64)}` }] }));
-    expect(() => readInstalledProfile(env)).toThrow(RetiredAgentFleetPathError);
-    expect(() => readAgentFleetUserManagedReceipt(env)).toThrow('run repo-harness update');
-
-    expect(migrateRetiredAgentFleetFile(env)).toEqual([
-      `removed ${retired}`, `removed ${retired} from ${statePath}`, `removed ${retired} from ${receiptPath}`,
-    ]);
-    expect(existsSync(retired)).toBe(false);
-    const migrated = readInstalledProfile(env)!;
-    expect(migrated.ownership_manifest).toEqual([]);
-    expect(migrated.previous?.ownership_manifest).toEqual([]);
-    expect(readAgentFleetUserManagedReceipt(env)).toEqual({ ok: true, hashes: new Map() });
-    expect(migrateRetiredAgentFleetFile(env)).toEqual([]);
-    expect(checkRetiredFleetFile(env).status).toBe('ok');
+    // A newer candidate records a plugin that this version does not know.
+    const candidateState = `${JSON.stringify({ ...seededState(ALL_PLUGINS, 'all'), plugins: [...versions(ALL_PLUGINS).plugins, { id: 'future-plugin', version: versions([]).core.version }] })}\n`;
+    const result = runTransactionalRuntimeRefresh({ env, cwd: env.HOME, target: 'both' }, (): GlobalRuntimeResult => {
+      writeFileSync(statePath, candidateState);
+      return { exitCode: 0, steps: [{ step: CANDIDATE_RECONCILE_STEP, status: 'ok' }], lines: [], stdout: '', stderr: '' };
+    });
+    expect(result.exitCode).toBe(0);
+    expect(readFileSync(statePath, 'utf-8')).toBe(candidateState);
   }));
 
-  test('the update migration keeps a changed orchestrator file, and doctor reports it', () => withHome((env) => {
-    const retired = join(env.HOME!, '.claude', 'agents', 'orchestrator.md');
-    writePath(retired, '---\nname: orchestrator\n---\n');
-    recordInstallOwnership([retired], env);
-    writeFileSync(retired, '# owner edit\n');
-
-    const lines = migrateRetiredAgentFleetFile(env);
-    expect(lines[0]).toBe(`removed ${retired} from ${installProfileStatePath(env)}`);
-    expect(lines[1]).toStartWith(`kept ${retired}`);
-    expect(lines).toHaveLength(2);
-    expect(readFileSync(retired, 'utf-8')).toBe('# owner edit\n');
-    expect(readInstalledProfile(env)!.ownership_manifest).toEqual([]);
-    expect(checkRetiredFleetFile(env)).toMatchObject({ status: 'warn', detail: expect.stringContaining('repo-harness seats argv orchestrator') });
+  test('update with no install state fails with install_state_missing before setup', () => withHome((env) => {
+    let setupRan = false;
+    expect(installStateCode(() => runTransactionalRuntimeRefresh({ env, cwd: env.HOME, updateMode: true }, () => {
+      setupRan = true;
+      throw new Error('unreachable');
+    }))).toBe('install_state_missing');
+    expect(setupRan).toBe(false);
+    expect(existsSync(installProfileStatePath(env))).toBe(false);
   }));
 
   test('a verified fleet run adopts pristine agents so a fleet projection change upgrades past a user-managed agent', () => withHome((env) => {
     const home = env.HOME!;
-    writeManagedHostSurfaces(env, 'full');
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
     rmSync(join(home, '.codex', 'agents'), { recursive: true, force: true });
     const packageRoot = join(home, 'fleet-package');
     const script = join(packageRoot, 'scripts', 'install-agent-fleet.sh');
@@ -1232,24 +1427,24 @@ describe('install profiles', () => {
     expect(runFleet('--accept-user-managed').status).toBe(0);
 
     const pristine = join(home, '.codex', 'agents', 'deep-worker.toml');
-    const unverified = applyInstallProfile('full', env).state;
+    const unverified = applyInstallSelection('all', ALL_PLUGINS, env).state;
     expect(unverified.ownership_manifest.some(({ path }) => path === pristine)).toBe(false);
 
-    // Update paths record into the existing manifest without re-applying the profile.
-    recordVerifiedAgentFleetOwnership('full', env);
-    const recorded = readInstalledProfile(env)!;
+    // Update paths record into the existing manifest without re-applying the selection.
+    recordVerifiedAgentFleetOwnership(env);
+    const recorded = readInstallState(env)!;
     const recordedPaths = recorded.ownership_manifest.map(({ path }) => path);
     expect(recordedPaths).toContain(pristine);
     expect(recordedPaths).toContain(join(home, '.claude', 'agents', 'explorer.md'));
     expect(recordedPaths).not.toContain(custom);
-    expect(installedProfileStatus(recorded, env).drift.status).toBe('consistent');
+    expect(installStateStatus(recorded, env).drift.status).toBe('consistent');
 
-    // Bootstrap has no prior manifest, so applyInstallProfile adopts directly.
-    rmSync(join(home, '.repo-harness', 'install-state.json'));
-    const adopted = applyInstallProfile('full', env, new Date(), undefined, undefined, { agentFleetVerified: true }).state;
+    // Bootstrap has no prior manifest, so applyInstallSelection adopts directly.
+    rmSync(installProfileStatePath(env));
+    const adopted = applyInstallSelection('all', ALL_PLUGINS, env, new Date(), undefined, { agentFleetVerified: true }).state;
     expect(adopted.ownership_manifest.map(({ path }) => path).sort()).toEqual(recordedPaths.sort());
 
-    for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
+    for (const agent of MANAGED_AGENTS) {
       const source = join(packageRoot, 'agents', 'fleet', `${agent}.md`);
       writeFileSync(source, `${readFileSync(source, 'utf-8')}\nUpdated role instruction.\n`);
     }
@@ -1261,109 +1456,82 @@ describe('install profiles', () => {
     expect(readFileSync(custom, 'utf-8')).toBe(customContent);
   }), 60_000);
 
-  test('downgrade preserves a user-owned staging skill registry when only host links are transaction-owned', () => withHome((env) => {
-    writeManagedHostSurfaces(env, 'full');
-    const names = ['think', 'hunt', 'check', 'health', 'mermaid', 'reverse-skill-router'];
+  test('dropping a plugin preserves a user-owned staging skill registry when only host links are transaction-owned', () => withHome((env) => {
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
+    const names = ['obsidian-markdown', 'obsidian-cli', 'reverse-skill-router'];
     for (const name of names) writePath(join(env.HOME!, '.agents', 'skills', name, 'SKILL.md'), `# ${name}\n`);
-    const lock = join(env.HOME!, '.agents', '.skill-lock.json');
+    const lock = skillLock(env);
     writePath(lock, `${JSON.stringify({ version: 3, skills: {
-      think: { source: 'user/waza' },
-      mermaid: { source: 'user/mermaid' },
+      'obsidian-markdown': { source: 'user/obsidian' },
+      'reverse-skill-router': { source: 'user/reverse' },
     } }, null, 2)}\n`);
 
-    for (const name of names) {
-      rmSync(join(env.HOME!, '.codex', 'skills', name), { recursive: true, force: true });
-    }
     const first = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
     for (const name of names) {
       const destination = join(env.HOME!, '.codex', 'skills', name);
       symlinkSync(join(env.HOME!, '.agents', 'skills', name), destination);
     }
-    const planning = applyInstallProfile('full', env, new Date('2026-01-01T00:00:00Z'), first);
+    const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'), first);
     commitInstallHostTransaction(first);
-    expect(planning.state.ownership_manifest.some(({ path }) => path.endsWith('/.codex/skills/think'))).toBe(true);
-    expect(planning.state.ownership_manifest.some(({ path }) => path.includes('/reverse-skill-router'))).toBe(false);
+    expect(all.state.ownership_manifest.find(({ path }) => path.endsWith('/.codex/skills/obsidian-markdown'))?.owner).toBe('strategy-memory');
+    expect(all.state.ownership_manifest.some(({ path }) => path.includes('/reverse-skill-router'))).toBe(false);
 
     const second = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
-    prepareInstallProfileSwitch('minimal', env);
-    writeFileSync(join(env.HOME!, '.codex', 'hooks.json'), JSON.stringify({ hooks: buildManagedHooks('codex', 'minimal') }));
-    applyInstallProfile('minimal', env, new Date('2026-01-02T00:00:00Z'), second);
+    prepareInstallSelectionSwitch([], env);
+    applyInstallSelection([], [], env, new Date('2026-01-02T00:00:00Z'), second);
     commitInstallHostTransaction(second);
 
-    expect(existsSync(join(env.HOME!, '.agents', 'skills', 'think', 'SKILL.md'))).toBe(true);
+    expect(existsSync(join(env.HOME!, '.codex', 'skills', 'obsidian-markdown'))).toBe(false);
+    expect(existsSync(join(env.HOME!, '.agents', 'skills', 'obsidian-markdown', 'SKILL.md'))).toBe(true);
     expect(existsSync(join(env.HOME!, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(true);
     expect(JSON.parse(readFileSync(lock, 'utf-8')).skills).toEqual({
-      think: { source: 'user/waza' },
-      mermaid: { source: 'user/mermaid' },
+      'obsidian-markdown': { source: 'user/obsidian' },
+      'reverse-skill-router': { source: 'user/reverse' },
     });
   }));
 
-  // SSD-07 phase A (D2 coverage map): every other multi-call profile-transition
-  // test in this file goes full -> minimal (downgrade) or
-  // reapplies the same profile (reinstall); none goes ascending. This closes
-  // that genuinely uncovered lifecycle cell (minimal -> full upgrade).
-  test('profile upgrade adds ownership for newly required components without disturbing prior ones', () => withHome((env) => {
-    const { source } = writeManagedHostSurfaces(env, 'minimal');
-    const minimal = applyInstallProfile('minimal', env, new Date('2026-01-01T00:00:00Z'));
-    expect(minimal.state.components).not.toContain('agent-fleet');
-    expect(minimal.state.components).not.toContain('cross-model-acceptance');
-    expect(installedProfileStatus(minimal.state, env).drift.status).toBe('consistent');
+  // Every other multi-call selection test in this file drops plugins or
+  // reapplies the same selection; this one goes from core only to all.
+  test('a selection upgrade adds ownership for newly selected plugins without disturbing prior ones', () => withHome((env) => {
+    writeManagedHostSurfaces(env);
+    const core = applyInstallSelection([], [], env, new Date('2026-01-01T00:00:00Z'));
+    expect(enabledPlugins(core.state)).toEqual([]);
+    expect(installStateStatus(core.state, env).drift.status).toBe('consistent');
     const canonicalSkillBefore = readFileSync(join(env.HOME!, '.codex', 'skills', 'repo-harness', 'src/cli/commands/state.ts'), 'utf-8');
 
-    // Materialize the additional full-only host surfaces on top of the
-    // still-present minimal ones (writeManagedHostSurfaces itself is not
-    // re-callable on the same env -- it always (re)creates the canonical
-    // symlink -- so the full-only delta is added directly here, mirroring
-    // exactly the profile==='full' branch of that
-    // fixture helper), then upgrade in place without a prior removal step.
-    writePath(join(source, 'src/core/workflow/profile.ts'), '// managed\n');
-    writePath(join(source, 'src/cli/tools/codegraph.ts'), '// managed\n');
-    for (const relative of PLANNING_CAPABILITY_PATHS) writePath(join(source, relative), '# managed\n');
-    for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
-      writePath(join(env.HOME!, '.codex', 'skills', skill, 'SKILL.md'), '# external\n');
+    // Materialize the plugin skills on top of the still-present core ones,
+    // then upgrade in place without a prior removal step.
+    for (const id of ALL_PLUGINS) {
+      for (const [host, skill] of PLUGIN_SKILLS[id] ?? []) writePath(join(env.HOME!, `.${host}`, 'skills', skill, 'SKILL.md'), '# managed\n');
     }
-    writePath(join(source, 'src/effects/review-runner/task-oar-host.ts'), '// managed\n');
-    writePath(join(source, 'scripts/verify-sprint.sh'), '# managed\n');
-    writePath(join(source, 'scripts/ship-worktrees.sh'), '# managed\n');
-    writePath(join(env.HOME!, '.bun', 'bin', 'codegraph'), '#!/bin/sh\n');
-    for (const agent of ['explorer', 'deep-reasoner', 'fast-worker', 'deep-worker', 'gatekeeper', 'root-cause-prover', 'harness-evaluator']) {
-      writePath(join(env.HOME!, '.codex', 'agents', `${agent}.toml`), '# managed\n');
-    }
-    writePath(join(env.HOME!, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'), '# external\n');
-    writeFileSync(join(env.HOME!, '.codex', 'hooks.json'), JSON.stringify({
-      theme: 'user-owned',
-      hooks: buildManagedHooks('codex', 'full'),
-    }));
 
-    const full = applyInstallProfile('full', env, new Date('2026-01-02T00:00:00Z'));
-    expect(full.state.components).toContain('agent-fleet');
-    expect(full.state.components).toContain('planning-integrations');
-    expect(full.state.components).toContain('cross-model-acceptance');
-    expect(full.state.components).toContain('effective-state');
-    expect(full.plan.current_profile).toBe('minimal');
-    expect(full.plan.remove).toEqual([]);
-    expect(installedProfileStatus(full.state, env).drift.status).toBe('consistent');
+    const all = applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-02T00:00:00Z'));
+    expect(enabledPlugins(all.state)).toEqual([...ALL_PLUGINS]);
+    expect(all.plan.current_plugins).toEqual([]);
+    expect(all.plan.install).toEqual([...ALL_PLUGINS]);
+    expect(all.plan.remove).toEqual([]);
+    expect(installStateStatus(all.state, env).drift.status).toBe('consistent');
     expect(existsSync(join(env.HOME!, '.codex', 'agents', 'explorer.toml'))).toBe(true);
-    // The prior minimal-profile projection is untouched by the upgrade.
+    // The prior core projection is untouched by the upgrade.
     expect(readFileSync(join(env.HOME!, '.codex', 'skills', 'repo-harness', 'src/cli/commands/state.ts'), 'utf-8')).toBe(canonicalSkillBefore);
-    expect(rollbackInstallProfile(env).profile).toBe('minimal');
+    expect(rollbackInstallSelection(env).selection).toEqual([]);
   }));
 
-  test('CodeGraph enablement is explicit: full profile or policy opt-in, never repo size', () => withHome((env) => {
+  test('CodeGraph follows the architecture plugin: a policy opt-in without it fails closed, never repo size', () => withHome((env) => {
     const cwd = env.HOME!;
-    expect(profileEnablesCodegraph('minimal', cwd)).toBe(false);
-    expect(profileEnablesCodegraph('full', cwd)).toBe(true);
+    expect(() => assertCodegraphPolicySelection(cwd, [], env)).not.toThrow();
 
-    // Explicit local policy opt-in enables CodeGraph even on the minimal profile.
     const optIn = mkdtempSync(join(tmpdir(), 'repo-harness-codegraph-optin-'));
     try {
       writePath(join(optIn, '.ai/harness/policy.json'), JSON.stringify({ tooling: { codegraph: { enabled: true } } }));
-      expect(profileEnablesCodegraph('minimal', optIn)).toBe(true);
+      expect(installStateCode(() => assertCodegraphPolicySelection(optIn, ['product'], env))).toBe('install_plugin_unavailable');
+      expect(() => assertCodegraphPolicySelection(optIn, ['product'], env)).toThrow('run: repo-harness install --plugins architecture,product');
+      expect(() => assertCodegraphPolicySelection(optIn, ['architecture'], env)).not.toThrow();
     } finally {
       rmSync(optIn, { recursive: true, force: true });
     }
 
-    // A large tracked-file count is not an opt-in signal: no policy entry, no CodeGraph.
+    // A large tracked-file count is not an opt-in signal: no policy entry, no CodeGraph requirement.
     const large = mkdtempSync(join(tmpdir(), 'repo-harness-codegraph-large-'));
     try {
       expect(spawnSync('git', ['init', '-q'], { cwd: large, encoding: 'utf-8' }).status).toBe(0);
@@ -1372,27 +1540,34 @@ describe('install profiles', () => {
       expect(spawnSync('git', ['add', '-A'], { cwd: large, encoding: 'utf-8' }).status).toBe(0);
       const tracked = spawnSync('git', ['ls-files'], { cwd: large, encoding: 'utf-8' });
       expect(tracked.stdout.split('\n').filter(Boolean).length).toBeGreaterThanOrEqual(2_000);
-      expect(profileEnablesCodegraph('minimal', large)).toBe(false);
+      expect(() => assertCodegraphPolicySelection(large, [], env)).not.toThrow();
     } finally {
       rmSync(large, { recursive: true, force: true });
     }
   }), 30_000);
 
-  test('CLI dry-run and state query expose machine-readable profile authority', () => withHome((env) => {
-    const dryRun = spawnSync(process.execPath, [CLI, 'install', '--profile', 'full', '--dry-run', '--json'], {
-      cwd: ROOT, env, encoding: 'utf-8',
+  test('CLI dry-run and state query expose the machine-readable selection', () => withHome((env) => {
+    // The checkout's own policy enables CodeGraph, so these runs start outside it.
+    const dryRun = spawnSync(process.execPath, [CLI, 'install', '--plugins', 'product', '--dry-run', '--json'], {
+      cwd: env.HOME, env, encoding: 'utf-8',
     });
-    expect(dryRun.status).toBe(0);
-    expect(JSON.parse(dryRun.stdout).requested_profile).toBe('full');
-    expect(readInstalledProfile(env)).toBeNull();
+    expect(dryRun.status, dryRun.stderr).toBe(0);
+    expect(JSON.parse(dryRun.stdout)).toMatchObject({ selection: ['product'], requested_plugins: ['product'] });
+    expect(readInstallState(env)).toBeNull();
+
+    const unknown = spawnSync(process.execPath, [CLI, 'install', '--plugins', 'product,future-plugin', '--dry-run', '--json'], {
+      cwd: env.HOME, env, encoding: 'utf-8',
+    });
+    expect(unknown.status).not.toBe(0);
+    expect(unknown.stderr).toContain('unknown plugin "future-plugin"');
 
     writeManagedHostSurfaces(env);
-    applyInstallProfile('minimal', env);
+    applyInstallSelection([], [], env);
     const state = spawnSync(process.execPath, [CLI, 'install', '--state', '--json'], {
       cwd: ROOT, env, encoding: 'utf-8',
     });
     expect(state.status).toBe(0);
-    expect(JSON.parse(state.stdout).profile).toBe('minimal');
+    expect(JSON.parse(state.stdout)).toMatchObject({ selection: [], plugins: [] });
   }), 30_000);
 });
 
@@ -1411,7 +1586,7 @@ describe('skill projection ownership', () => {
 
   for (const mode of ['global', 'global-alias', 'checkout', 'npx', 'explicit-copy'] as const) {
     test(`${mode} provider projection records the on-disk type`, () => withHome(env => {
-      const { canonical, source } = writeManagedHostSurfaces(env, 'full');
+      const { canonical, source } = writeManagedHostSurfaces(env, ALL_PLUGINS);
       const packageRoot = packageAt(env.HOME!, source);
       let selectedSource = packageRoot;
       if (mode === 'checkout' || mode === 'npx') {
@@ -1426,11 +1601,11 @@ describe('skill projection ownership', () => {
       const activeEnv = { ...env, AGENTIC_DEV_LINK_INSTALLED_COPIES: mode === 'explicit-copy' ? '0' : '1' };
       rmSync(canonical); symlinkSync(packageRoot, canonical);
       const paths = ['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review'));
-      for (const dest of paths) rmSync(dest, { recursive: true, force: true });
+      for (const dest of [...paths, join(env.HOME!, '.claude/skills/repo-harness-herdr-portal')]) rmSync(dest, { recursive: true, force: true });
       const transaction = beginInstallHostTransaction(paths, activeEnv);
       try {
         expect(syncCrossReviewSkills(selectedSource, 'both', activeEnv).every(step => step.status === 'ok')).toBe(true);
-        const state = applyInstallProfile('full', activeEnv, new Date(), transaction).state;
+        const state = applyInstallSelection('all', ALL_PLUGINS, activeEnv, new Date(), transaction).state;
         for (const dest of paths) {
           const record = state.ownership_manifest.find(surface => surface.path === dest);
           expect(record?.type).toBe(linked ? 'symlink' : 'directory-copy');
@@ -1438,15 +1613,20 @@ describe('skill projection ownership', () => {
           if (linked) expect(readlinkSync(dest)).toBe(join(packageRoot, 'assets/skills/repo-harness-cross-review'));
           expect(readFileSync(join(dest, 'SKILL.md'), 'utf8')).toBe(readFileSync(join(packageRoot, 'assets/skills/repo-harness-cross-review/SKILL.md'), 'utf8'));
         }
-        expect(installedProfileStatus(state, activeEnv).drift.surface_drift).toEqual([]);
-        expect(readInstalledProfile(activeEnv)?.ownership_manifest).toEqual(state.ownership_manifest);
+        expect(installStateStatus(state, activeEnv).drift.surface_drift).toEqual([]);
+        expect(readInstallState(activeEnv)?.ownership_manifest).toEqual(state.ownership_manifest);
       } finally { commitInstallHostTransaction(transaction); }
     }));
   }
 
-  test('global projection is idempotent and keeps current link ownership', () => withHome(env => {
-    const { canonical, source } = writeManagedHostSurfaces(env, 'full');
+  test('global projection is idempotent and keeps current link ownership', () => withHome(base => {
+    // The Pi skill root belongs to the pi plugin, so this selection runs with a fake pi.
+    const env = withPi(base);
+    const { canonical, source } = writeManagedHostSurfaces(env, ALL_WITH_PI);
     const packageRoot = packageAt(env.HOME!, source);
+    writePath(join(packageRoot, 'package.json'), JSON.stringify({ name: 'repo-harness', version: '0.20.0', pi: { extensions: ['./extension.ts'] } }));
+    const pi = installPiPackage(packageRoot, true, env);
+    expect(pi.created).toBe(true);
     rmSync(canonical); symlinkSync(packageRoot, canonical);
     const paths = [
       ...['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review')),
@@ -1456,23 +1636,23 @@ describe('skill projection ownership', () => {
     for (const dest of paths) rmSync(dest, { recursive: true, force: true });
     mkdirSync(join(env.HOME!, '.pi/agent/skills'), { recursive: true });
     expect(syncCrossReviewSkills(packageRoot, 'both', env).every(step => step.status === 'ok')).toBe(true);
-    const first = applyInstallProfile('full', env).state;
+    const first = applyInstallSelection('all', ALL_WITH_PI, env, new Date(), undefined, { additionalSurfaces: [piPackageSurface(pi.source)] }).state;
     const links = paths.map(dest => ({ inode: lstatSync(dest).ino, target: readlinkSync(dest) }));
     const steps = syncCrossReviewSkills(packageRoot, 'both', env);
     expect(steps).toHaveLength(paths.length);
     expect(steps.every(step => step.status === 'ok' && step.detail === 'already present')).toBe(true);
-    const second = applyInstallProfile('full', env).state;
+    const second = applyInstallSelection('all', ALL_WITH_PI, env).state;
     for (const [index, dest] of paths.entries()) {
       expect(lstatSync(dest).ino).toBe(links[index]!.inode);
       expect(readlinkSync(dest)).toBe(links[index]!.target);
       expect(second.ownership_manifest.find(surface => surface.path === dest)?.type).toBe('symlink');
     }
     expect(second.transaction_id).toBe(first.transaction_id);
-    expect(installedProfileStatus(second, env).drift.surface_drift).toEqual([]);
+    expect(installStateStatus(second, env).drift.surface_drift).toEqual([]);
   }));
 
   test('review regression: existing checkout links stay user-owned and accepted', () => withHome(env => {
-    const { source } = writeManagedHostSurfaces(env, 'full');
+    const { source } = writeManagedHostSurfaces(env, ALL_PLUGINS);
     mkdirSync(join(source, 'assets/skill-commands'), { recursive: true });
     cpSync(join(ROOT, 'assets/skill-commands/manifest.json'), join(source, 'assets/skill-commands/manifest.json'));
     const links = [
@@ -1494,15 +1674,15 @@ describe('skill projection ownership', () => {
       const steps = syncCrossReviewSkills(source, 'both', env);
       expect(steps).toHaveLength(paths.length);
       expect(steps.every(step => step.status === 'ok' && step.detail === 'already present')).toBe(true);
-      const state = applyInstallProfile('full', env, new Date(), transaction).state;
+      const state = applyInstallSelection('all', ALL_PLUGINS, env, new Date(), transaction).state;
       expect(state.ownership_manifest.filter(surface => paths.includes(surface.path))).toEqual([]);
       for (const { dest, bundled } of links) expect(readlinkSync(dest)).toBe(bundled);
     } finally { commitInstallHostTransaction(transaction); }
   }));
 
-  for (const acquisition of ['discovered', 'transaction-created', 'recorded-as-adaptive'] as const) {
-    test(`review regression: ${acquisition} Waza links retire on full to minimal`, () => withHome(env => {
-      writeManagedHostSurfaces(env, 'full');
+  for (const acquisition of ['discovered', 'transaction-created', 'recorded-under-another-owner'] as const) {
+    test(`review regression: ${acquisition} Waza links are core-owned and survive a switch to core only`, () => withHome(env => {
+      writeManagedHostSurfaces(env, ALL_PLUGINS);
       const names = ['think', 'hunt', 'check', 'health'];
       const paths = ['.codex', '.claude'].flatMap(host => names.map(name => join(env.HOME!, host, 'skills', name)));
       for (const dest of paths) rmSync(dest, { recursive: true, force: true });
@@ -1517,28 +1697,28 @@ describe('skill projection ownership', () => {
             symlinkSync(source, dest);
           }
         }
-        const state = applyInstallProfile('full', env, new Date(), transaction).state;
+        const state = applyInstallSelection('all', ALL_PLUGINS, env, new Date(), transaction).state;
         for (const dest of paths) {
-          expect(state.ownership_manifest.find(surface => surface.path === dest)?.components).toEqual(['planning-integrations']);
+          expect(state.ownership_manifest.find(surface => surface.path === dest)?.owner).toBe('core');
         }
-        if (acquisition === 'recorded-as-adaptive') {
-          const ledgerPath = join(env.HOME!, '.repo-harness/install-state.json');
-          const legacy = JSON.parse(readFileSync(ledgerPath, 'utf8'));
-          for (const surface of legacy.ownership_manifest) {
-            if (paths.includes(surface.path)) surface.components = ['adaptive-workflow'];
+        if (acquisition === 'recorded-under-another-owner') {
+          const ledgerPath = installProfileStatePath(env);
+          const recorded = JSON.parse(readFileSync(ledgerPath, 'utf8'));
+          for (const surface of recorded.ownership_manifest) {
+            if (paths.includes(surface.path)) surface.owner = 'product';
           }
-          writeFileSync(ledgerPath, JSON.stringify(legacy));
-          const refreshed = applyInstallProfile('full', env).state;
+          writeFileSync(ledgerPath, JSON.stringify(recorded));
+          const refreshed = applyInstallSelection('all', ALL_PLUGINS, env).state;
           for (const dest of paths) {
-            expect(refreshed.ownership_manifest.find(surface => surface.path === dest)?.components).toEqual(['planning-integrations']);
+            expect(refreshed.ownership_manifest.find(surface => surface.path === dest)?.owner).toBe('core');
           }
         }
-        const removed = prepareInstallProfileSwitch('minimal', env);
-        const minimal = applyInstallProfile('minimal', env).state;
+        const removed = prepareInstallSelectionSwitch([], env);
+        const core = applyInstallSelection([], [], env).state;
         for (const dest of paths) {
-          expect(removed).toContain(dest);
-          expect(existsSync(dest)).toBe(false);
-          expect(minimal.ownership_manifest.some(surface => surface.path === dest)).toBe(false);
+          expect(removed).not.toContain(dest);
+          expect(existsSync(dest)).toBe(true);
+          expect(core.ownership_manifest.find(surface => surface.path === dest)?.owner).toBe('core');
         }
         for (const name of names) {
           expect(readFileSync(join(env.HOME!, '.agents/skills', name, 'SKILL.md'), 'utf8')).toBe(`# user-staged ${name}\n`);
@@ -1548,7 +1728,7 @@ describe('skill projection ownership', () => {
   }
 
   test('correct pre-existing package links repair stale ledger ownership and work from a checkout', () => withHome(env => {
-    const { canonical, source } = writeManagedHostSurfaces(env, 'full');
+    const { canonical, source } = writeManagedHostSurfaces(env, ALL_PLUGINS);
     const packageRoot = packageAt(env.HOME!, source);
     rmSync(canonical); symlinkSync(packageRoot, canonical);
     const paths = ['.claude', '.codex'].map(host => join(env.HOME!, host, 'skills/repo-harness-cross-review'));
@@ -1556,19 +1736,21 @@ describe('skill projection ownership', () => {
     // Record the real copied tree, then reproduce the audit's hand-made conversion.
     const transaction = beginInstallHostTransaction(paths, env);
     for (const dest of paths) cpSync(join(packageRoot, 'assets/skills/repo-harness-cross-review'), dest, { recursive: true });
-    const previous = applyInstallProfile('full', env, new Date(), transaction).state;
+    const previous = applyInstallSelection('all', ALL_PLUGINS, env, new Date(), transaction).state;
     commitInstallHostTransaction(transaction);
     for (const dest of paths) { rmSync(dest, { recursive: true }); symlinkSync(join(packageRoot, 'assets/skills/repo-harness-cross-review'), dest); }
-    expect(installedProfileStatus(previous, env).drift.surface_drift).toEqual(expect.arrayContaining(paths));
+    expect(installStateStatus(previous, env).drift.surface_drift).toEqual(expect.arrayContaining(paths));
+    // The unowned fixture portal would block the checkout sync, which projects its own.
+    rmSync(join(env.HOME!, '.claude/skills/repo-harness-herdr-portal'), { recursive: true });
     expect(syncCrossReviewSkills(ROOT, 'both', env).every(step => step.status === 'ok')).toBe(true);
-    const state = applyInstallProfile('full', env).state;
+    const state = applyInstallSelection('all', ALL_PLUGINS, env).state;
     for (const dest of paths) expect(state.ownership_manifest.find(surface => surface.path === dest)?.type).toBe('symlink');
     expect(state.ownership_manifest.find(surface => surface.path === canonical)?.type).toBe('symlink');
-    expect(installedProfileStatus(state, env).drift.surface_drift).toEqual([]);
+    expect(installStateStatus(state, env).drift.surface_drift).toEqual([]);
   }));
 
   test('correct Codex relative Waza links gain ownership; unrelated links do not', () => withHome(env => {
-    writeManagedHostSurfaces(env, 'full');
+    writeManagedHostSurfaces(env, ALL_PLUGINS);
     for (const name of ['think', 'hunt', 'check', 'health']) {
       const stage = join(env.HOME!, '.agents/skills', name);
       writePath(join(stage, 'SKILL.md'), `# ${name}\n`);
@@ -1576,17 +1758,17 @@ describe('skill projection ownership', () => {
       rmSync(dest, { recursive: true });
       symlinkSync(`../../.agents/skills/${name}`, dest);
     }
-    const state = applyInstallProfile('full', env).state;
+    const state = applyInstallSelection('all', ALL_PLUGINS, env).state;
     for (const name of ['think', 'hunt', 'check', 'health']) {
       const record = state.ownership_manifest.find(surface => surface.path === join(env.HOME!, '.codex/skills', name));
       expect(record?.type).toBe('symlink');
       expect(record?.symlink_target).toBe(`../../.agents/skills/${name}`);
     }
-    expect(installedProfileStatus(state, env).drift.surface_drift).toEqual([]);
+    expect(installStateStatus(state, env).drift.surface_drift).toEqual([]);
     const dest = join(env.HOME!, '.codex/skills/think');
     rmSync(dest); symlinkSync(join(env.HOME!, '.codex/skills/mermaid'), dest);
-    expect(installedProfileStatus(state, env).drift.surface_drift).toContain(dest);
-    const refreshed = applyInstallProfile('full', env).state;
+    expect(installStateStatus(state, env).drift.surface_drift).toContain(dest);
+    const refreshed = applyInstallSelection('all', ALL_PLUGINS, env).state;
     expect(refreshed.ownership_manifest.some(surface => surface.path === dest)).toBe(false);
     expect(readlinkSync(dest)).toBe(join(env.HOME!, '.codex/skills/mermaid'));
   }));

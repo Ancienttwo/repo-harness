@@ -163,7 +163,7 @@ describe("canonical adoption plan", () => {
       refresh();
       expect(untracked()).toBe("");
       // A file that a retirement action already lists keeps that item; every other file gets a runtime-rule item.
-      const leftovers = planLegacyLeftovers({ scope: "project", cwd: repo, home: join(repo, "no-home"), packageRoot: ROOT }).items;
+      const leftovers = planLegacyLeftovers({ scope: "project", cwd: repo, home: join(repo, "no-home"), packageRoot: ROOT, installOwnership: () => [] }).items;
       for (const path of retired) {
         expect(leftovers.find((item) => item.path === join(repo, path))).toEqual(expect.objectContaining({ action: "report", ownership: "unowned" }));
       }

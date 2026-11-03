@@ -27,22 +27,32 @@ import {
   canonicalManagedHookProjection,
   compareManagedHookProjection,
   type HookHost,
-  type HooksByEvent,
 } from './managed-entries';
 import {
   mutationPathSkillNames as catalogMutationPathSkillNames,
   requiredExplicitExternalDependencyInstallGroups,
   parseSkillSurfaceCatalog,
-  probeExpectations as catalogProbeExpectations,
-  profileOwnedSkillNames as catalogProfileOwnedSkillNames,
+  selectionOwnedSkillNames,
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
-import { PROFILE_COMPONENTS, type InstallComponent } from '../../core/skill-surface/profile-components';
+import {
+  HOST_PROGRAM_PLUGINS,
+  installSelectionCommand,
+  isHostProgramPlugin,
+  isPluginId,
+  isSurfaceOwner,
+  ownerEnabled,
+  PLUGIN_IDS,
+  type PluginId,
+  type PluginSelection,
+  type SurfaceOwner,
+} from '../../core/skill-surface/plugin-manifest';
 import { hostSkillRoot, providerSkillLock, stagedSkillRoot, syncSkillRoots, type SkillHost } from '../../effects/host-skill-roots';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
-import { piPackagePresent, planPiPackage, type PiPackageStep } from './pi-package';
+import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
+import { readDshPluginState } from '../../effects/dsh-plugin-state';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -56,20 +66,15 @@ const SKILL_SURFACE_MANIFEST_PATH = join(
  * state at the user's HOME, not a foreign source tree, so its manifest is
  * always the currently-running package's own file, resolved relative to this
  * module's own location. Fails closed before any caller mutates host state.
- * Deliberately does not pass an `exists` callback for package sources (this
- * call site's pre-catalog behavior never checked package source paths on
- * disk either), so behavior stays byte-identical to the literals it
- * replaces. Called lazily (never at module load) so importing this module
- * never has a filesystem side effect on its own.
+ * Deliberately does not pass an `exists` callback for package sources.
+ * Called lazily (never at module load) so importing this module never has a
+ * filesystem side effect on its own.
  */
-function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
+export function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
   const source = existsSync(SKILL_SURFACE_MANIFEST_PATH)
     ? readFileSync(SKILL_SURFACE_MANIFEST_PATH, 'utf-8')
     : null;
-  const resolution = parseSkillSurfaceCatalog(source, {
-    declared: true,
-    profileComponents: PROFILE_COMPONENTS,
-  });
+  const resolution = parseSkillSurfaceCatalog(source, { declared: true });
   if (resolution.status !== 'valid') {
     const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join('; ');
     throw new Error(`invalid skill-surface catalog at ${SKILL_SURFACE_MANIFEST_PATH}: ${detail}`);
@@ -77,69 +82,109 @@ function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
   return resolution.catalog;
 }
 
-export const INSTALL_PROFILES = ['minimal', 'full'] as const;
+export const INSTALL_STATE_PROTOCOL = 3 as const;
 export const INSTALL_HOSTS = ['claude', 'codex', 'pi'] as const;
 const AGENT_FLEET_FILE = new RegExp(
   `/(?:\\.claude/agents/(?:${MANAGED_AGENTS.join('|')})\\.md|\\.codex/agents/(?:${MANAGED_AGENTS.join('|')})\\.toml)$`,
 );
-export type InstallProfile = (typeof INSTALL_PROFILES)[number];
-export const LEGACY_INSTALL_PROFILES = ['minimal', 'standard', 'product-planning', 'strict'] as const;
-export type LegacyInstallProfile = (typeof LEGACY_INSTALL_PROFILES)[number];
-
-// InstallComponent and PROFILE_COMPONENTS now live in
-// src/core/skill-surface/profile-components.ts (the pure catalog core owns
-// the single source of truth for the crossref mapping); re-exported here
-// unchanged, at their former definition site, so every existing
-// `from '../installer/install-profile'` import keeps working.
-export type { InstallComponent };
-export { PROFILE_COMPONENTS };
-
-export interface InstalledProfileState {
-  readonly protocol: 2;
-  /** Older protocol-2 records did not include the package version. */
-  readonly package_version?: string;
-  readonly profile: InstallProfile;
-  readonly components: readonly InstallComponent[];
-  readonly transaction_id: string;
-  readonly applied_at: string;
-  readonly ownership_manifest: readonly ManagedInstallSurface[];
-  readonly previous: Omit<InstalledProfileState, 'previous'> | null;
-}
-
-export interface LegacyInstalledProfileState {
-  readonly protocol: 1;
-  readonly profile: LegacyInstallProfile;
-  readonly components: readonly InstallComponent[];
-  readonly transaction_id: string;
-  readonly applied_at: string;
-  readonly ownership_manifest: readonly ManagedInstallSurface[];
-  readonly previous: Omit<LegacyInstalledProfileState, 'previous'> | null;
-}
 
 export interface ManagedInstallSurface {
-  readonly components: readonly InstallComponent[];
-  readonly authority: 'repo-harness-install-transaction';
-  readonly removal: 'managed-surfaces-only';
+  /** `core`, or the enabled plugin whose selection owns this surface. */
+  readonly owner: SurfaceOwner;
   readonly path: string;
   readonly type: 'directory-copy' | 'symlink' | 'managed-file' | 'pi-package';
+  readonly authority: 'repo-harness-install-transaction';
+  readonly removal: 'managed-surfaces-only';
   readonly content_hash: string | null;
   readonly managed_marker: string | null;
   readonly symlink_target: string | null;
 }
 
-export interface InstalledProfileStatus extends InstalledProfileState {
-  readonly component_probes: Readonly<Record<InstallComponent, {
-    readonly status: 'present' | 'missing';
-    readonly evidence: readonly string[];
-  }>>;
+export interface InstalledPlugin {
+  readonly id: PluginId;
+  readonly version: string;
+}
+
+export interface InstallState {
+  readonly protocol: typeof INSTALL_STATE_PROTOCOL;
+  /** Core records only its version. The package manifest owns the plugin-to-surface map. */
+  readonly core: { readonly version: string };
+  /** Enabled plugins only: sorted, unique. Absence means disabled. */
+  readonly plugins: readonly InstalledPlugin[];
+  /** How the plugin set was chosen. An explicit list equals the plugin ids; `all` holds any subset. */
+  readonly selection: PluginSelection;
+  readonly transaction_id: string;
+  readonly applied_at: string;
+  readonly ownership_manifest: readonly ManagedInstallSurface[];
+  readonly previous: InstallStateSnapshot | null;
+}
+
+export type InstallStateSnapshot = Omit<InstallState, 'previous'>;
+
+export type InstallStateErrorCode =
+  | 'install_state_missing'
+  | 'install_state_migration_required'
+  | 'install_state_protocol_retired'
+  | 'install_state_invalid'
+  | 'install_state_invalid_ownership'
+  | 'install_plugin_unavailable';
+
+/** Typed failure of the install state or of a requested selection. Nothing is written before it is thrown. */
+export class InstallStateError extends Error {
+  constructor(readonly code: InstallStateErrorCode, readonly path: string, message: string) {
+    super(message);
+    this.name = 'InstallStateError';
+  }
+}
+
+export interface OwnerProbe {
+  readonly status: 'present' | 'missing';
+  readonly evidence: readonly string[];
+  /** The named checks that found no evidence. */
+  readonly missing: readonly string[];
+}
+
+export interface InstallStateStatus extends InstallState {
+  /** `core` and each enabled plugin. */
+  readonly probes: Readonly<Partial<Record<SurfaceOwner, OwnerProbe>>>;
   readonly drift: {
     readonly status: 'consistent' | 'drift';
-    readonly missing_components: readonly InstallComponent[];
-    readonly unexpected_components: readonly InstallComponent[];
-    readonly ownership_gaps: readonly InstallComponent[];
+    readonly missing_owners: readonly SurfaceOwner[];
     readonly surface_drift: readonly string[];
   };
 }
+
+/** A host plugin that the `all` selection does not run or record, because its host program or target is absent. */
+export interface SkippedPlugin {
+  readonly id: PluginId;
+  readonly reason: string;
+  /** The command that adds the plugin after the host program is installed. */
+  readonly command: string;
+}
+
+/** A recorded host plugin of the `all` selection whose host program or target is now absent. */
+export interface KeptPlugin {
+  readonly id: PluginId;
+  readonly reason: string;
+  /** The explicit selection that removes the plugin. */
+  readonly command: string;
+}
+
+/**
+ * The plugin set of a selection on this host. `run` drives the setup steps;
+ * `record` is the set that the install state stores. They differ only by the
+ * `kept` plugins, whose ledger surfaces stay untouched.
+ */
+export interface SelectionResolution {
+  readonly run: readonly PluginId[];
+  readonly record: readonly PluginId[];
+  readonly skipped: readonly SkippedPlugin[];
+  readonly kept: readonly KeptPlugin[];
+  /** Plugins that a complete refresh would add; a partial refresh never grows the recorded set. */
+  readonly notAdded: readonly PluginId[];
+}
+
+export const UPDATE_COMMAND = 'repo-harness update';
 
 interface HostSurfaceSnapshot {
   readonly path: string;
@@ -153,46 +198,29 @@ export interface InstallHostTransaction {
   readonly snapshots: readonly HostSurfaceSnapshot[];
 }
 
-export interface InstallProfilePlan {
+/** What ownership capture reads from a transaction: which paths existed before it, and their backups. */
+export type HostSurfaceSnapshots = Pick<InstallHostTransaction, 'snapshots'>;
+
+export interface InstallPlan {
   readonly hosts: typeof INSTALL_HOSTS;
   readonly pi_package: PiPackageStep;
   readonly skill_projections: ReturnType<typeof expectedSkillProjections>;
-  readonly protocol: 2;
-  readonly requested_profile: InstallProfile;
-  readonly current_profile: InstallProfile | null;
-  readonly install: readonly InstallComponent[];
-  readonly skip: readonly InstallComponent[];
-  readonly remove: readonly InstallComponent[];
+  readonly protocol: typeof INSTALL_STATE_PROTOCOL;
+  readonly selection: PluginSelection;
+  readonly requested_plugins: readonly PluginId[];
+  readonly current_plugins: readonly PluginId[] | null;
+  readonly install: readonly PluginId[];
+  readonly keep: readonly PluginId[];
+  readonly remove: readonly PluginId[];
+  readonly skipped: readonly SkippedPlugin[];
   readonly state_path: string;
 }
 
-export interface InstallProfileMigrationPlan extends InstallProfilePlan {
-  readonly migration: {
-    readonly from_protocol: 1;
-    readonly from_profile: LegacyInstallProfile;
-    readonly to_protocol: 2;
-    readonly to_profile: InstallProfile;
-  };
-}
-
-const ALL_COMPONENTS = [...new Set(Object.values(PROFILE_COMPONENTS).flat())] as InstallComponent[];
-const LEGACY_PROFILE_COMPONENTS: Readonly<Record<LegacyInstallProfile, readonly InstallComponent[]>> = Object.freeze({
-  minimal: ['cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters'],
-  standard: [
-    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-    'adaptive-workflow', 'codegraph-conditional',
-  ],
-  'product-planning': [
-    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-    'adaptive-workflow', 'codegraph-conditional', 'planning-integrations',
-  ],
-  strict: [
-    'cli', 'effective-state', 'scope-worktree-check-guards', 'handoff', 'host-adapters',
-    'adaptive-workflow', 'codegraph-conditional', 'agent-fleet', 'verifier',
-    'cross-model-acceptance', 'release-deployment-gates',
-  ],
-});
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
+
+export function enabledPlugins(state: Pick<InstallState, 'plugins'>): readonly PluginId[] {
+  return state.plugins.map(plugin => plugin.id);
+}
 
 function managedAdapterHash(path: string): string | null {
   try {
@@ -207,7 +235,7 @@ function managedAdapterHash(path: string): string | null {
   }
 }
 
-function codegraphProjection(configPath: string, readPath = configPath): string | null {
+export function codegraphProjection(configPath: string, readPath = configPath): string | null {
   try {
     const raw = readFileSync(readPath, 'utf-8');
     if (configPath.endsWith('.toml')) {
@@ -262,24 +290,21 @@ function removeCodegraphProjection(path: string): void {
   renameSync(temp, path);
 }
 
-function adapterHasRequiredProjection(path: string, host: HookHost, profile: InstallProfile): boolean {
+function adapterHasRequiredProjection(path: string, host: HookHost): boolean {
   try {
-    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { hooks?: HooksByEvent };
-    const projection = compareManagedHookProjection(parsed.hooks ?? {}, host, profile);
-    // A profile transition may probe the previous profile's still-present
-    // managed routes before the target installer rewrites the adapter. Extra
-    // routes are therefore tolerated by this component-presence probe, but
-    // any required route field drift, duplicate, or missing route is not.
+    const parsed = JSON.parse(readFileSync(path, 'utf-8')) as { hooks?: unknown };
+    const projection = compareManagedHookProjection(parsed.hooks ?? {}, host);
+    // A selection transition may probe still-present managed routes before the
+    // installer rewrites the adapter. Extra routes are tolerated by this
+    // presence probe, but any required route field drift, duplicate, or
+    // missing route is not.
     return projection.mismatches.every((mismatch) => mismatch.kind === 'unexpected');
   } catch {
     return false;
   }
 }
 
-function captureDirectoryOrLink(
-  path: string,
-  components: readonly InstallComponent[],
-): ManagedInstallSurface | null {
+function captureDirectoryOrLink(path: string, owner: SurfaceOwner): ManagedInstallSurface | null {
   if (!existsSync(path)) return null;
   const stat = lstatSync(path);
   if (stat.isSymbolicLink()) {
@@ -303,11 +328,11 @@ function captureDirectoryOrLink(
       typeof marker.content_hash !== 'string'
     ) return null;
     return {
-      components,
-      authority: 'repo-harness-install-transaction',
-      removal: 'managed-surfaces-only',
+      owner,
       path,
       type: 'directory-copy',
+      authority: 'repo-harness-install-transaction',
+      removal: 'managed-surfaces-only',
       content_hash: marker.content_hash,
       managed_marker: `${OWNER_MARKER}:owner=repo-harness;surface=${marker.surface}`,
       symlink_target: null,
@@ -317,62 +342,35 @@ function captureDirectoryOrLink(
   }
 }
 
-function captureManagedFile(
-  path: string,
-  components: readonly InstallComponent[],
-): ManagedInstallSurface | null {
+function captureManagedFile(path: string): ManagedInstallSurface | null {
   if (!existsSync(path)) return null;
   const contentHash = managedAdapterHash(path);
   if (contentHash === null) return null;
   return {
-    components,
-    authority: 'repo-harness-install-transaction',
-    removal: 'managed-surfaces-only',
+    owner: 'core',
     path,
     type: 'managed-file',
+    authority: 'repo-harness-install-transaction',
+    removal: 'managed-surfaces-only',
     content_hash: contentHash,
     managed_marker: MANAGED_TAG,
     symlink_target: null,
   };
 }
 
-function captureOwnedPath(
-  path: string,
-  components: readonly InstallComponent[],
-  options: { readonly allowEmptyComponents?: boolean } = {},
-): ManagedInstallSurface | null {
-  if ((components.length === 0 && !options.allowEmptyComponents) || (!existsSync(path) && !lstatExists(path))) return null;
+function captureOwnedPath(path: string, owner: SurfaceOwner): ManagedInstallSurface | null {
+  if (!existsSync(path) && !lstatExists(path)) return null;
   const stat = lstatSync(path);
+  const base = { owner, path, authority: 'repo-harness-install-transaction' as const, removal: 'managed-surfaces-only' as const };
   if (stat.isSymbolicLink()) {
-    return {
-      components,
-      authority: 'repo-harness-install-transaction',
-      removal: 'managed-surfaces-only',
-      path,
-      type: 'symlink',
-      content_hash: null,
-      managed_marker: null,
-      symlink_target: readlinkSync(path),
-    };
+    return { ...base, type: 'symlink', content_hash: null, managed_marker: null, symlink_target: readlinkSync(path) };
   }
   if (stat.isDirectory()) {
-    return {
-      components,
-      authority: 'repo-harness-install-transaction',
-      removal: 'managed-surfaces-only',
-      path,
-      type: 'directory-copy',
-      content_hash: hashManagedTree(path),
-      managed_marker: 'transaction-created-directory',
-      symlink_target: null,
-    };
+    return { ...base, type: 'directory-copy', content_hash: hashManagedTree(path), managed_marker: 'transaction-created-directory', symlink_target: null };
   }
   if (!stat.isFile()) return null;
   return {
-    components,
-    authority: 'repo-harness-install-transaction',
-    removal: 'managed-surfaces-only',
-    path,
+    ...base,
     type: 'managed-file',
     content_hash: `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`,
     managed_marker: 'transaction-created-file',
@@ -383,20 +381,8 @@ function captureOwnedPath(
 /**
  * A facade is canonical when the package still ships its source directory,
  * checked through the host's already-synced canonical `repo-harness` skill
- * copy (the same evidence source `canonicalEvidence` uses elsewhere in this
- * file). A host-present, owner-marked facade whose canonical source has
- * been retired from the package gets an empty component set in
- * discoverManagedSurfaces below instead of being folded into the generic
- * adaptive-workflow/planning-integrations bucket, so the ownership manifest
- * stops representing a retired facade as a profile-desired surface.
- *
- * Resolves the expected source path from the manifest-derived catalog
- * (facade-kind packages no longer all live under one fixed
- * assets/skill-commands/<name> parent -- e.g. repo-harness-product sources from
- * assets/skills/repo-harness-product) rather than assuming a fixed parent
- * directory. A name absent from the catalog's facade-kind packages (a fully
- * retired name, e.g. a stale repo-harness-handoff left over from an older
- * install) is never canonical.
+ * copy. A name absent from the catalog's facade-kind packages (a fully
+ * retired name) is never canonical.
  */
 function facadeIsCanonical(root: string, name: string, catalog: SkillSurfaceCatalog): boolean {
   const source = catalog.packages.find((pkg) => pkg.kind === 'facade' && pkg.name === name)?.source;
@@ -421,45 +407,59 @@ function isDiscoveredFacadePath(path: string, home: string, env: NodeJS.ProcessE
   return name.startsWith(FACADE_NAME_PREFIX) && hostSkillRoots(home, env).some((root) => join(root, name) === path);
 }
 
+/**
+ * The plugin manifest's surface map for paths outside the skill catalog, and
+ * the catalog owner for skill paths. The Pi skill root is the `pi` plugin's
+ * surface, whatever package it holds. Null means that no selection owns the path.
+ */
+export function ownerForInstallPath(path: string, env: NodeJS.ProcessEnv = process.env): SurfaceOwner | null {
+  const normalized = path.replaceAll('\\', '/');
+  const name = normalized.split('/').at(-1) ?? '';
+  const home = env.HOME ?? homedir();
+  const inSkills = normalized.includes('/skills/');
+  if (inSkills && normalized.startsWith(`${hostSkillRoot(home, 'pi', env).replaceAll('\\', '/')}/`)) return 'pi';
+  if (name === 'repo-harness' && inSkills) return 'core';
+  if (inSkills) {
+    const catalog = loadSkillSurfaceCatalog();
+    const pkg = catalog.packages.find(entry => entry.name === name);
+    if (pkg?.kind === 'facade' || pkg?.kind === 'provider-skill') return pkg.owner;
+    if (selectionOwnedSkillNames(catalog).includes(name)) return pkg!.owner;
+    const obsidianSelection = requiredExplicitExternalDependencyInstallGroups(catalog, 'obsidian-memory', ['claude', 'codex']);
+    if (obsidianSelection.status !== 'selected') {
+      throw new Error(`invalid Obsidian dependency selection: ${obsidianSelection.status}:${obsidianSelection.name}`);
+    }
+    if (obsidianSelection.groups.some(({ skills }) => skills.includes(name))) return pkg!.owner;
+  }
+  if (AGENT_FLEET_FILE.test(normalized)) return 'core';
+  if (wazaRules.files.includes(name) && /\/(?:\.agents|\.codex|\.claude)\/rules\/[^/]+$/.test(normalized)) return 'core';
+  if (normalized.endsWith('/bin/codegraph')) return 'architecture';
+  if (normalized.endsWith('/bin/repo-harness')) return 'core';
+  return null;
+}
+
 function discoverManagedSurfaces(
-  profile: InstallProfile,
+  plugins: readonly PluginId[],
   env: NodeJS.ProcessEnv,
 ): readonly ManagedInstallSurface[] {
   const home = env.HOME ?? homedir();
-  const desired = PROFILE_COMPONENTS[profile];
   const catalog = loadSkillSurfaceCatalog();
-  const runtimeComponents = desired.filter((component) => [
-    'effective-state',
-    'scope-worktree-check-guards',
-    'handoff',
-    'adaptive-workflow',
-    'codegraph-conditional',
-    'release-deployment-gates',
-  ].includes(component));
   const surfaces: ManagedInstallSurface[] = [];
+  const enabled = (owner: SurfaceOwner | null): owner is SurfaceOwner => owner !== null && ownerEnabled(owner, plugins);
   // A catalog facade can lack the prefix (obsidian-memory). Its copy needs
   // the same marker-based receipt as a prefixed facade copy.
   const facadeNames = new Set(catalog.packages.filter((pkg) => pkg.kind === 'facade').map((pkg) => pkg.name));
   for (const root of hostSkillRoots(home, env)) {
-    const canonical = captureDirectoryOrLink(join(root, 'repo-harness'), runtimeComponents);
-    if (canonical) surfaces.push(canonical);
+    const canonicalOwner = ownerForInstallPath(join(root, 'repo-harness'), env);
+    if (enabled(canonicalOwner)) {
+      const canonical = captureDirectoryOrLink(join(root, 'repo-harness'), canonicalOwner);
+      if (canonical) surfaces.push(canonical);
+    }
     if (!existsSync(root)) continue;
     for (const name of readdirSync(root).filter((entry) => entry.startsWith(FACADE_NAME_PREFIX) || facadeNames.has(entry)).sort()) {
-      // repo-harness-handoff retired as a facade (SSD-06): 'handoff' is now
-      // fulfilled by the root router's own references/handoff.md rather than
-      // a separately discoverable Skill. A stale repo-harness-handoff dir
-      // left over from an older install falls through to the generic
-      // canonical check below, which correctly reports it uncanonical (its
-      // assets/skill-commands/repo-harness-handoff source no longer exists)
-      // and empties its component set.
-      const facadeComponents = name === 'repo-harness-check'
-        ? desired.filter((component) => component === 'scope-worktree-check-guards' || component === 'verifier')
-        : name === 'repo-harness-ship'
-          ? desired.filter((component) => component === 'release-deployment-gates')
-          : facadeIsCanonical(root, name, catalog)
-            ? desired.filter((component) => component === 'adaptive-workflow' || component === 'planning-integrations')
-            : [];
-      const facade = captureDirectoryOrLink(join(root, name), facadeComponents);
+      // A retired facade keeps its receipt under `core` until skill sync removes it.
+      const owner = facadeIsCanonical(root, name, catalog) ? ownerForInstallPath(join(root, name), env) : 'core';
+      if (!enabled(owner)) continue;
+      const facade = captureDirectoryOrLink(join(root, name), owner);
       if (facade) surfaces.push(facade);
     }
   }
@@ -467,22 +467,16 @@ function discoverManagedSurfaces(
   // A matching stable package or staging link is ownership proof. Never
   // acquire an arbitrary link merely because the transaction found it.
   if (sourceRoot !== null) {
-    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, profile, env)) {
+    for (const projection of expectedSkillProjections(catalog, sourceRoot, home, plugins, env)) {
       if (!skillLinkMatches(projection.destination, projection.source)) continue;
-      const pkg = catalog.packages.find(pkg => pkg.name === projection.name);
-      const components = projection.staged
-        ? componentsForTransactionPath(projection.destination)
-        : projection.name === 'repo-harness'
-        ? runtimeComponents
-        : projection.name === 'repo-harness-check'
-          ? desired.filter(component => component === 'scope-worktree-check-guards' || component === 'verifier')
-          : desired.filter(component => component === pkg?.component);
-      const surface = captureOwnedPath(projection.destination, components);
+      const owner = ownerForInstallPath(projection.destination, env);
+      if (!enabled(owner)) continue;
+      const surface = captureOwnedPath(projection.destination, owner);
       if (surface) surfaces.push(surface);
     }
   }
   for (const file of [join(home, '.codex', 'hooks.json'), join(home, '.claude', 'settings.json')]) {
-    const adapter = captureManagedFile(file, desired.filter((component) => component === 'host-adapters'));
+    const adapter = captureManagedFile(file);
     if (adapter) surfaces.push(adapter);
   }
   return surfaces;
@@ -522,9 +516,9 @@ function surfaceIsCurrent(surface: ManagedInstallSurface, env: NodeJS.ProcessEnv
   }
 }
 
-/** Verify one recorded managed surface without requiring unrelated profile probes. */
-export function managedInstallSurfaceIsCurrent(surface: ManagedInstallSurface, env: NodeJS.ProcessEnv = process.env): boolean {
-  return surfaceIsCurrent(surface, env);
+/** Verify one recorded managed surface without requiring unrelated owner probes. */
+export function managedInstallSurfaceIsCurrent(surface: Pick<ManagedInstallSurface, 'path' | 'type' | 'content_hash' | 'managed_marker' | 'symlink_target'>, env: NodeJS.ProcessEnv = process.env): boolean {
+  return surfaceIsCurrent(surface as ManagedInstallSurface, env);
 }
 
 /** Generated agent fleet targets written by scripts/install-agent-fleet.sh. */
@@ -538,85 +532,6 @@ export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): rea
 
 export function agentFleetUserManagedReceiptPath(env: NodeJS.ProcessEnv = process.env): string {
   return join(env.HOME ?? homedir(), '.repo-harness', 'agent-fleet-user-managed.json');
-}
-
-/**
- * The orchestrator left the fleet (#1510), but the install state, its `previous` state and the user-managed receipt
- * of an older install can still list its Claude file. The strict readers refuse that path with
- * `RetiredAgentFleetPathError`, and `repo-harness update` runs `migrateRetiredAgentFleetFile` before it reads the
- * state. Delete the path, the error, the migration and the doctor check with install-state protocol 3 (#1287).
- */
-export function retiredAgentFleetFile(env: NodeJS.ProcessEnv = process.env): string {
-  return join(env.HOME ?? homedir(), '.claude', 'agents', 'orchestrator.md');
-}
-
-export class InstallStateOwnershipError extends Error {
-  readonly code = 'install_state_invalid_ownership';
-  constructor(path: string) {
-    super(`installed profile state has an invalid ownership surface; rerun repo-harness install --profile <minimal|full>: ${path}`);
-    this.name = 'InstallStateOwnershipError';
-  }
-}
-
-/** The files that the update migration can delete or rewrite. Update adds them to its transaction snapshot. */
-export function retiredAgentFleetMigrationPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  return [retiredAgentFleetFile(env), agentFleetUserManagedReceiptPath(env)];
-}
-
-export class RetiredAgentFleetPathError extends Error {
-  readonly code = 'install_state_retired_fleet_path';
-  constructor(file: string, retiredPath: string) {
-    super(`${file} lists the retired fleet file ${retiredPath}; run repo-harness update`);
-    this.name = 'RetiredAgentFleetPathError';
-  }
-}
-
-/**
- * One-shot migration for `repo-harness update`. It parses the install state with the strict reader's checks, with the
- * retired path as the only exception, so an invalid ledger fails before any delete or rewrite. It removes the retired
- * path from the install state, its `previous` state and the user-managed receipt. It deletes the file only when the
- * install state owns it and its hash is current. It returns one line for each change and one line for a file that it
- * keeps.
- */
-export function migrateRetiredAgentFleetFile(env: NodeJS.ProcessEnv = process.env): readonly string[] {
-  const retired = retiredAgentFleetFile(env);
-  const isRetired = (entry: unknown) => isRecord(entry) && entry.path === retired;
-  const lines: string[] = [];
-  const statePath = installProfileStatePath(env);
-  if (existsSync(statePath)) {
-    const raw = JSON.parse(readFileSync(statePath, 'utf-8')) as unknown;
-    // A legacy protocol-1 state has its own explicit migration (`install --migrate-profile-state`).
-    if (!(isRecord(raw) && raw.protocol === 1)) {
-      const state = parseCurrentState(raw, statePath, env, true);
-      if (state.ownership_manifest.some(isRetired) || state.previous?.ownership_manifest.some(isRetired)) {
-        const owned = state.ownership_manifest.find(isRetired);
-        if (owned?.type === 'managed-file' && surfaceIsCurrent(owned, env)) {
-          rmSync(retired);
-          lines.push(`removed ${retired}`);
-        }
-        writeState({
-          ...state,
-          ownership_manifest: state.ownership_manifest.filter(entry => !isRetired(entry)),
-          previous: state.previous && { ...state.previous, ownership_manifest: state.previous.ownership_manifest.filter(entry => !isRetired(entry)) },
-        }, env);
-        lines.push(`removed ${retired} from ${statePath}`);
-      }
-    }
-  }
-  const receiptPath = agentFleetUserManagedReceiptPath(env);
-  if (existsSync(receiptPath)) {
-    const receipt = JSON.parse(readFileSync(receiptPath, 'utf-8')) as unknown;
-    if (isRecord(receipt) && Array.isArray(receipt.files) && receipt.files.some(isRetired)) {
-      const temp = `${receiptPath}.tmp-${process.pid}-${Date.now()}`;
-      writeFileSync(temp, `${JSON.stringify({ ...receipt, files: receipt.files.filter(entry => !isRetired(entry)) }, null, 2)}\n`, { mode: 0o600 });
-      renameSync(temp, receiptPath);
-      lines.push(`removed ${retired} from ${receiptPath}`);
-    }
-  }
-  if (lstatExists(retired)) {
-    lines.push(`kept ${retired}: the install state does not own it unchanged. The orchestrator is a seat now (repo-harness seats argv orchestrator); review the file and delete it by hand.`);
-  }
-  return lines;
 }
 
 /**
@@ -638,7 +553,6 @@ export function readAgentFleetUserManagedReceipt(
     ) return { ok: false, hashes: new Map() };
     const hashes = new Map<string, string>();
     for (const entry of parsed.files) {
-      if (entry?.path === retiredAgentFleetFile(env)) throw new RetiredAgentFleetPathError(receiptPath, entry.path);
       if (
         !entry
         || typeof entry.path !== 'string'
@@ -650,8 +564,7 @@ export function readAgentFleetUserManagedReceipt(
       hashes.set(entry.path, entry.sha256);
     }
     return { ok: true, hashes };
-  } catch (error) {
-    if (error instanceof RetiredAgentFleetPathError) throw error;
+  } catch {
     return { ok: false, hashes: new Map() };
   }
 }
@@ -662,41 +575,50 @@ export function readAgentFleetUserManagedReceipt(
  * drift. Right after a successful fleet run every target is either the generated
  * projection or receipt-accepted user-managed content; only the former is adopted.
  */
-function verifiedAgentFleetSurfaces(
-  profile: InstallProfile,
-  env: NodeJS.ProcessEnv,
-): readonly ManagedInstallSurface[] {
-  if (!PROFILE_COMPONENTS[profile].includes('agent-fleet')) return [];
+function verifiedAgentFleetSurfaces(env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
   const receipt = readAgentFleetUserManagedReceipt(env);
   if (!receipt.ok) return [];
   return agentFleetTargetPaths(env).flatMap((path) => {
     if (!lstatExists(path) || !lstatSync(path).isFile()) return [];
     const hash = `sha256:${createHash('sha256').update(readFileSync(path)).digest('hex')}`;
     if (receipt.hashes.get(path) === hash) return [];
-    const surface = captureOwnedPath(path, componentsForTransactionPath(path));
+    const surface = captureOwnedPath(path, 'core');
     return surface ? [surface] : [];
   });
 }
 
 /**
- * Update paths run the fleet helper but may never reach applyInstallProfile
+ * The one order of every written ownership manifest, so a writer that changes
+ * nothing rewrites no bytes and an unchanged check compares like with like.
+ */
+export function canonicalOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInstallSurface[] {
+  return [...surfaces].sort((left, right) => left.path.localeCompare(right.path)
+    || left.type.localeCompare(right.type)
+    || (left.managed_marker ?? '').localeCompare(right.managed_marker ?? ''));
+}
+
+function sameOwnership(left: readonly ManagedInstallSurface[], right: readonly ManagedInstallSurface[]): boolean {
+  return JSON.stringify(canonicalOwnership(left)) === JSON.stringify(canonicalOwnership(right));
+}
+
+function mergeOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInstallSurface[] {
+  return canonicalOwnership([...new Map(surfaces.map((surface) => [
+    `${surface.path}\0${surface.managed_marker ?? surface.type}`,
+    surface,
+  ])).values()]);
+}
+
+/**
+ * Update paths run the fleet helper but may never reach applyInstallSelection
  * (partial or in-process reconciliation), so the verified fleet surfaces are
  * merged into the existing ownership manifest right after the helper succeeds.
  * Without installed state there is no manifest to extend.
  */
-export function recordVerifiedAgentFleetOwnership(
-  profile: InstallProfile,
-  env: NodeJS.ProcessEnv = process.env,
-): void {
-  const current = readInstalledProfile(env);
-  if (current === null || current.profile !== profile) return;
-  const ownershipManifest = [...new Map(
-    [...current.ownership_manifest, ...verifiedAgentFleetSurfaces(profile, env)].map((surface) => [
-      `${surface.path}\0${surface.managed_marker ?? surface.type}`,
-      surface,
-    ]),
-  ).values()].sort((left, right) => left.path.localeCompare(right.path));
-  if (JSON.stringify(ownershipManifest) === JSON.stringify(current.ownership_manifest)) return;
+export function recordVerifiedAgentFleetOwnership(env: NodeJS.ProcessEnv = process.env): void {
+  const current = readInstallState(env);
+  if (current === null) return;
+  const ownershipManifest = mergeOwnership([...current.ownership_manifest, ...verifiedAgentFleetSurfaces(env)]);
+  if (sameOwnership(ownershipManifest, current.ownership_manifest)) return;
   writeState({ ...current, ownership_manifest: ownershipManifest }, env);
 }
 
@@ -706,91 +628,93 @@ export function recordRefreshedInstallOwnership(
   env: NodeJS.ProcessEnv = process.env,
   newlyOwnedPaths: readonly string[] = [],
 ): void {
-  const current = readInstalledProfile(env);
+  const current = readInstallState(env);
   if (current === null) return;
   const selected = new Set(paths);
+  const plugins = enabledPlugins(current);
   const ownershipManifest = current.ownership_manifest.map((surface) => {
     if (!selected.has(surface.path)) return surface;
-    // Existing receipts keep ownership even when no component is selected.
     // Recapture bytes without requiring or inventing a new owner marker.
-    const refreshed = captureOwnedPath(surface.path, surface.components, { allowEmptyComponents: true });
+    const refreshed = captureOwnedPath(surface.path, surface.owner);
     if (!refreshed || refreshed.type !== surface.type) throw new Error(`cannot refresh install ownership: ${surface.path}`);
     return { ...surface, content_hash: refreshed.content_hash, symlink_target: refreshed.symlink_target };
   });
   for (const path of new Set(newlyOwnedPaths)) {
     if (!selected.has(path)) throw new Error(`new install ownership path is outside this refresh: ${path}`);
     if (ownershipManifest.some((surface) => surface.path === path)) continue;
-    const components = componentsForTransactionPath(path).filter((component) => current.components.includes(component));
-    const created = captureOwnedPath(path, components, { allowEmptyComponents: true });
+    const owner = ownerForInstallPath(path, env);
+    if (owner === null || !ownerEnabled(owner, plugins)) throw new Error(`no enabled owner for new install ownership: ${path}`);
+    const created = captureOwnedPath(path, owner);
     if (!created) throw new Error(`cannot record new install ownership: ${path}`);
     ownershipManifest.push(created);
   }
-  if (JSON.stringify(ownershipManifest) === JSON.stringify(current.ownership_manifest)) return;
-  writeState({ ...current, package_version: installedPackageVersion(), ownership_manifest: ownershipManifest }, env);
+  if (sameOwnership(ownershipManifest, current.ownership_manifest)) return;
+  writeState({ ...current, ...versions(plugins), ownership_manifest: canonicalOwnership(ownershipManifest) }, env);
 }
 
-export function recordPiInstallOwnership(surfaces: readonly ManagedInstallSurface[], env: NodeJS.ProcessEnv = process.env, transaction?: InstallHostTransaction): void {
-  if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env))) throw new Error('invalid Pi package ownership');
-  const current = readInstalledProfile(env);
+export function recordPiInstallOwnership(surfaces: readonly ManagedInstallSurface[], env: NodeJS.ProcessEnv = process.env, transaction?: HostSurfaceSnapshots): void {
+  const current = readInstallState(env);
   if (current === null) {
     if (surfaces.length === 0) return;
-    throw new Error('Pi package ownership requires an installed profile');
+    throw new Error('Pi package ownership requires an install state');
   }
+  if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env, enabledPlugins(current)))) throw new Error('invalid Pi package ownership');
   const root = hostSkillRoot(env.HOME ?? homedir(), 'pi', env);
-  const skills = transaction ? transactionOwnedSurfaces(transaction, current).filter(surface => surface.path.startsWith(root + '/')) : [];
+  const skills = transaction ? transactionOwnedSurfaces(transaction, current, env).filter(surface => surface.path.startsWith(root + '/')) : [];
   if (surfaces.length === 0 && skills.length === 0) return;
   const ownership = new Map(current.ownership_manifest.map(surface => [`${surface.path}\0${surface.type}`, surface]));
   for (const surface of [...surfaces, ...skills]) ownership.set(`${surface.path}\0${surface.type}`, surface);
-  writeState({ ...current, ownership_manifest: [...ownership.values()] }, env);
+  if (sameOwnership([...ownership.values()], current.ownership_manifest)) return;
+  writeState({ ...current, ownership_manifest: canonicalOwnership([...ownership.values()]) }, env);
+}
+
+/** The Pi package surface that a new registration owns. */
+export function piPackageSurface(path: string): ManagedInstallSurface {
+  return {
+    owner: 'pi', path, type: 'pi-package', authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+    content_hash: null, managed_marker: 'pi-package-source', symlink_target: null,
+  };
 }
 
 /** Preserve only the external resources that rollback could not remove. */
 export function recordUnresolvedPiOwnership(
-  profile: InstallProfile,
+  selection: PluginSelection,
+  plugins: readonly PluginId[],
   surfaces: readonly ManagedInstallSurface[],
   env: NodeJS.ProcessEnv,
   transactionId: string,
 ): void {
   if (surfaces.length === 0) return;
-  if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env))) throw new Error('invalid Pi rollback ownership');
-  const path = installProfileStatePath(env);
-  let current: InstalledProfileState | LegacyInstalledProfileState | null = null;
-  if (existsSync(path)) {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    current = isRecord(raw) && raw.protocol === 1 ? readLegacyInstalledProfileForMigration(env) : readInstalledProfile(env);
-  }
-  // Components record the selected profile. Presence probes still report the
+  const current = readInstallState(env);
+  // The state records the attempted selection. Probes still report the
   // missing filesystem surfaces of an incomplete, rolled-back installation.
-  const state = current ?? {
-    protocol: 2 as const, profile, components: PROFILE_COMPONENTS[profile],
+  const state: InstallState = current ?? {
+    protocol: INSTALL_STATE_PROTOCOL, ...versions(plugins), selection,
     transaction_id: transactionId, applied_at: new Date().toISOString(), ownership_manifest: [], previous: null,
   };
+  if (surfaces.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env, enabledPlugins(state)))) throw new Error('invalid Pi rollback ownership');
   const pending = new Map(surfaces.map(surface => [surface.path, surface]));
   const retained = state.ownership_manifest.filter(surface => surface.type !== 'pi-package' || !pending.has(surface.path));
-  writeState({ ...state, ownership_manifest: [...retained, ...pending.values()] }, env);
+  writeState({ ...state, ownership_manifest: canonicalOwnership([...retained, ...pending.values()]) }, env);
 }
 
-/** Candidate processes publish ownership into the same ledger as the parent. */
-export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
+/**
+ * Candidate processes publish ownership into the same ledger as the parent.
+ * `readSnapshot` reads the pre-transaction state file; the protocol 2 -> 3
+ * update passes the one-shot reader, because its snapshot predates the migration.
+ */
+export function newPiPackagesSinceTransaction(
+  transaction: InstallHostTransaction,
+  env: NodeJS.ProcessEnv,
+  readSnapshotSurfaces: (raw: unknown, path: string) => readonly Pick<ManagedInstallSurface, 'path' | 'type'>[] = (raw, path) => parseState(raw, path, env).ownership_manifest,
+): readonly ManagedInstallSurface[] {
   const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
-  const readSurfaces = (path: string, retiredPathAllowed = false): readonly ManagedInstallSurface[] => {
-    const raw = JSON.parse(readFileSync(path, 'utf8'));
-    return (raw.protocol === 1
-      ? parseLegacyStateBase(raw, path, env, 'invalid transaction install state')
-      : parseCurrentStateBase(raw, path, env, 'invalid transaction install state', retiredPathAllowed)).ownership_manifest;
-  };
-  // The update snapshot predates the retired fleet file migration, so it can still list that path.
-  const before = snapshot?.existed && snapshot.backup_path ? readSurfaces(snapshot.backup_path, true) : [];
+  const before = snapshot?.existed && snapshot.backup_path
+    ? readSnapshotSurfaces(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path)
+    : [];
   const sources = new Set(before.filter(surface => surface.type === 'pi-package').map(surface => surface.path));
-  const state = installProfileStatePath(env);
-  return (existsSync(state) ? readSurfaces(state) : []).filter(surface => surface.type === 'pi-package' && !sources.has(surface.path));
-}
-
-export function assertInstallProfile(value: string): InstallProfile {
-  if (!INSTALL_PROFILES.includes(value as InstallProfile)) {
-    throw new Error(`invalid install profile ${value}; expected ${INSTALL_PROFILES.join('|')}`);
-  }
-  return value as InstallProfile;
+  const current = readInstallState(env);
+  return (current?.ownership_manifest ?? []).filter(surface => surface.type === 'pi-package' && !sources.has(surface.path));
 }
 
 export function installProfileStatePath(env: NodeJS.ProcessEnv = process.env): string {
@@ -949,7 +873,7 @@ function lstatExists(path: string): boolean {
 export function rollbackInstallHostTransaction(
   transaction: InstallHostTransaction,
   options: { readonly retainBackup?: boolean; readonly runtimeLock?: RuntimeTransactionContext;
-    readonly unresolvedPi?: { readonly profile: InstallProfile; readonly surfaces: readonly ManagedInstallSurface[]; readonly env: NodeJS.ProcessEnv } } = {},
+    readonly unresolvedPi?: { readonly selection: PluginSelection; readonly plugins: readonly PluginId[]; readonly surfaces: readonly ManagedInstallSurface[]; readonly env: NodeJS.ProcessEnv } } = {},
 ): void {
   assertTransactionLock(transaction, options.runtimeLock);
   try {
@@ -958,7 +882,7 @@ export function rollbackInstallHostTransaction(
     if (unresolved?.surfaces.length) {
       try {
         writeFileSync(join(transaction.backup_root, 'pi-ownership.json'), JSON.stringify({ protocol: 1,
-          transaction_id: basename(transaction.backup_root), profile: unresolved.profile, ownership_manifest: unresolved.surfaces }), { mode: 0o600 });
+          transaction_id: basename(transaction.backup_root), plugins: unresolved.plugins, ownership_manifest: unresolved.surfaces }), { mode: 0o600 });
       } catch (error) { failures.push(`Pi recovery record: ${String((error as Error).message ?? error)}`); }
     }
     for (const snapshot of [...transaction.snapshots].reverse()) {
@@ -986,7 +910,7 @@ export function rollbackInstallHostTransaction(
       }
     }
     if (unresolved?.surfaces.length) {
-      try { recordUnresolvedPiOwnership(unresolved.profile, unresolved.surfaces, unresolved.env, basename(transaction.backup_root)); }
+      try { recordUnresolvedPiOwnership(unresolved.selection, unresolved.plugins, unresolved.surfaces, unresolved.env, basename(transaction.backup_root)); }
       catch (error) { failures.push(`Pi ownership could not be restored to the ledger; recovery transaction ${transaction.backup_root}: ${String((error as Error).message ?? error)}`); }
     }
     if (failures.length === 0 && options.retainBackup !== true) {
@@ -1006,49 +930,24 @@ export function commitInstallHostTransaction(transaction: InstallHostTransaction
   transactionLocks.delete(transaction);
 }
 
-/** Lazy (never evaluated at module load) so importing this module has no filesystem side effect. */
-function profileOwnedSkillsSet(): ReadonlySet<string> {
-  return new Set(catalogProfileOwnedSkillNames(loadSkillSurfaceCatalog()));
-}
-
-function componentsForTransactionPath(path: string): readonly InstallComponent[] {
-  const normalized = path.replaceAll('\\', '/');
-  const name = normalized.split('/').at(-1) ?? '';
-  if (name === 'repo-harness' && normalized.includes('/skills/')) return ['effective-state', 'scope-worktree-check-guards', 'handoff'];
-  const catalog = loadSkillSurfaceCatalog();
-  const facade = catalog.packages.find(pkg => pkg.kind === 'facade' && pkg.name === name);
-  if (facade && normalized.includes('/skills/')) return [facade.component as InstallComponent];
-  const ownedSkills = new Set(catalogProfileOwnedSkillNames(catalog));
-  const obsidianSelection = requiredExplicitExternalDependencyInstallGroups(
-    catalog,
-    'obsidian-memory',
-    ['claude', 'codex'],
-  );
-  if (obsidianSelection.status !== 'selected') {
-    throw new Error(`invalid Obsidian dependency selection: ${obsidianSelection.status}:${obsidianSelection.name}`);
-  }
-  const obsidianSkills = new Set(obsidianSelection.groups.flatMap(({ skills }) => skills));
-  if (obsidianSkills.has(name) && normalized.includes('/skills/')) return ['adaptive-workflow'];
-  if (ownedSkills.has(name) && normalized.includes('/skills/')) {
-    const crossModelSkills = catalogProbeExpectations(catalog).crossModel;
-    return crossModelSkills.includes(name)
-      ? ['cross-model-acceptance']
-      : ['planning-integrations'];
-  }
-  if (AGENT_FLEET_FILE.test(normalized)) {
-    return name.startsWith('gatekeeper.') ? ['agent-fleet', 'verifier'] : ['agent-fleet'];
-  }
-  if (wazaRules.files.includes(name) && /\/(?:\.agents|\.codex|\.claude)\/rules\/[^/]+$/.test(normalized)) {
-    return ['planning-integrations'];
-  }
-  if (normalized.endsWith('/bin/codegraph')) return ['codegraph-conditional'];
-  if (normalized.endsWith('/bin/repo-harness')) return ['cli'];
-  return [];
+/**
+ * The Pi skill-root paths of a refresh, with their existence before it. The
+ * candidate process takes them before its setup and records the Pi skill-root
+ * receipts itself; it has no backups, and none of these paths needs one.
+ */
+export function piSkillRootSnapshots(env: NodeJS.ProcessEnv = process.env): HostSurfaceSnapshots {
+  const root = `${hostSkillRoot(env.HOME ?? homedir(), 'pi', env)}/`;
+  return {
+    snapshots: installProfileTransactionPaths(env)
+      .filter(path => path.startsWith(root))
+      .map(path => ({ path, existed: existsSync(path) || lstatExists(path), backup_path: null })),
+  };
 }
 
 function transactionOwnedSurfaces(
-  transaction: InstallHostTransaction,
-  previous: Pick<InstalledProfileState, 'ownership_manifest'> | null = null,
+  transaction: HostSurfaceSnapshots,
+  previous: Pick<InstallState, 'ownership_manifest'> | null,
+  env: NodeJS.ProcessEnv,
 ): readonly ManagedInstallSurface[] {
   return transaction.snapshots.flatMap((snapshot) => {
     const normalized = snapshot.path.replaceAll('\\', '/');
@@ -1068,11 +967,11 @@ function transactionOwnedSurfaces(
       ));
       if ((before === null || previouslyOwned) && after !== null) {
         return [{
-          components: ['codegraph-conditional'],
-          authority: 'repo-harness-install-transaction' as const,
-          removal: 'managed-surfaces-only' as const,
+          owner: 'architecture' as const,
           path: snapshot.path,
           type: 'managed-file' as const,
+          authority: 'repo-harness-install-transaction' as const,
+          removal: 'managed-surfaces-only' as const,
           content_hash: after,
           managed_marker: CODEGRAPH_CONFIG_MARKER,
           symlink_target: null,
@@ -1082,10 +981,12 @@ function transactionOwnedSurfaces(
     if (snapshot.existed) {
       const previousSurface = previous?.ownership_manifest.find((surface) => surface.path === snapshot.path);
       if (previousSurface === undefined) return [];
-      const refreshed = captureOwnedPath(snapshot.path, previousSurface.components);
+      const refreshed = captureOwnedPath(snapshot.path, previousSurface.owner);
       return refreshed ? [refreshed] : [];
     }
-    const surface = captureOwnedPath(snapshot.path, componentsForTransactionPath(snapshot.path));
+    const owner = ownerForInstallPath(snapshot.path, env);
+    if (owner === null) return [];
+    const surface = captureOwnedPath(snapshot.path, owner);
     return surface ? [surface] : [];
   });
 }
@@ -1104,24 +1005,27 @@ function removeOwnedSkillLockEntries(env: NodeJS.ProcessEnv, skillNames: Readonl
   renameSync(temp, lockPath);
 }
 
+/** Remove the owned surfaces of each plugin that the target selection drops. A changed surface stops the switch. */
 function removeRetiredOwnedSurfaces(
-  profile: InstallProfile,
-  current: Pick<InstalledProfileState, 'ownership_manifest'> | Pick<LegacyInstalledProfileState, 'ownership_manifest'>,
+  plugins: readonly PluginId[],
+  current: Pick<InstallState, 'ownership_manifest'>,
   env: NodeJS.ProcessEnv,
 ): readonly string[] {
-  const desired = new Set(PROFILE_COMPONENTS[profile]);
-  const retired = current.ownership_manifest.filter((surface) => (
-    surface.components.length > 0 && surface.components.every((component) => !desired.has(component))
-  ));
+  const retired = current.ownership_manifest.filter((surface) => !ownerEnabled(surface.owner, plugins));
   const unique = [...new Map(retired.map((surface) => [surface.path, surface])).values()];
   for (const surface of unique) {
-    if (!surfaceIsCurrent(surface)) {
-      throw new Error(`refusing profile switch because managed surface drifted: ${surface.path}`);
+    if (surface.type !== 'pi-package' && !surfaceIsCurrent(surface, env)) {
+      throw new Error(`refusing plugin switch because managed surface drifted: ${surface.path}`);
     }
   }
-  const ownedSkills = profileOwnedSkillsSet();
+  const ownedSkills = new Set(selectionOwnedSkillNames(loadSkillSurfaceCatalog()));
   const removedSkills = new Set<string>();
   for (const surface of unique) {
+    if (surface.type === 'pi-package') {
+      // Only a registration that this install created is in the ledger.
+      removePiPackage(surface.path, env);
+      continue;
+    }
     const normalized = surface.path.replaceAll('\\', '/');
     const name = normalized.split('/').at(-1) ?? '';
     if (ownedSkills.has(name) && normalized.includes('/.agents/skills/')) removedSkills.add(name);
@@ -1132,46 +1036,36 @@ function removeRetiredOwnedSurfaces(
   return unique.map(({ path }) => path);
 }
 
-export function prepareInstallProfileSwitch(
-  profile: InstallProfile,
+export function prepareInstallSelectionSwitch(
+  plugins: readonly PluginId[],
   env: NodeJS.ProcessEnv = process.env,
 ): readonly string[] {
-  const current = readInstalledProfile(env);
-  if (!current || current.profile === profile) return [];
-  return removeRetiredOwnedSurfaces(profile, current, env);
+  const current = readInstallState(env);
+  if (!current) return [];
+  return removeRetiredOwnedSurfaces(plugins, current, env);
 }
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-function componentsMatch(
-  actual: readonly unknown[],
-  expected: readonly InstallComponent[],
-): boolean {
-  return actual.length === expected.length
-    && actual.every((component, index) => component === expected[index]);
-}
-
-function validateManagedSurface(
-  raw: unknown,
-  env: NodeJS.ProcessEnv,
-  migrationPath?: string,
-): raw is ManagedInstallSurface {
-  if (!isRecord(raw) || !Array.isArray(raw.components)) return false;
+/**
+ * The surface fields shared by every protocol that records ownership: path
+ * allowlist, type and hash shape. The protocol 2 -> 3 one-shot reuses it for
+ * its source ledger, so both protocols accept the same set of paths.
+ */
+export function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.ProcessEnv, extraPath?: string): boolean {
   if (raw.type === 'pi-package') {
     return raw.authority === 'repo-harness-install-transaction' && raw.removal === 'managed-surfaces-only'
       && raw.path === bunGlobalPackageRoot(env) && raw.managed_marker === 'pi-package-source'
-      && raw.content_hash === null && raw.symlink_target === null
-      && raw.components.length === 1 && raw.components[0] === 'host-adapters';
+      && raw.content_hash === null && raw.symlink_target === null;
   }
   const allowedPaths = new Set(installProfileHostMutationPaths(env));
   return (
-    raw.components.every((component) => ALL_COMPONENTS.includes(component as InstallComponent))
-    && raw.authority === 'repo-harness-install-transaction'
+    raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && (allowedPaths.has(raw.path) || raw.path === migrationPath || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
+    && (allowedPaths.has(raw.path) || raw.path === extraPath || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
@@ -1182,183 +1076,121 @@ function validateManagedSurface(
   );
 }
 
-function parseCurrentStateBase(
-  raw: unknown,
-  path: string,
-  env: NodeJS.ProcessEnv,
-  label: string,
-  retiredPathAllowed = false,
-): Omit<InstalledProfileState, 'previous'> {
-  if (!isRecord(raw) || raw.protocol !== 2 || !INSTALL_PROFILES.includes(raw.profile as InstallProfile)) {
-    throw new Error(`${label}: ${path}`);
+const SURFACE_KEYS = ['authority', 'content_hash', 'managed_marker', 'owner', 'path', 'removal', 'symlink_target', 'type'].join(',');
+
+function validateManagedSurface(raw: unknown, env: NodeJS.ProcessEnv, plugins: readonly PluginId[]): raw is ManagedInstallSurface {
+  if (!isRecord(raw) || Object.keys(raw).sort().join(',') !== SURFACE_KEYS) return false;
+  if (!isSurfaceOwner(raw.owner) || !ownerEnabled(raw.owner, plugins)) return false;
+  if (raw.type === 'pi-package' && raw.owner !== 'pi') return false;
+  return validSurfaceShape(raw, env);
+}
+
+function invalid(path: string, detail: string): InstallStateError {
+  return new InstallStateError('install_state_invalid', path, `install state ${detail}; inspect: repo-harness install --state: ${path}`);
+}
+
+function parsePlugins(raw: unknown, coreVersion: string, path: string): readonly InstalledPlugin[] {
+  if (!Array.isArray(raw)) throw invalid(path, 'has no plugins array');
+  const plugins = raw.map((entry): InstalledPlugin => {
+    if (!isRecord(entry) || Object.keys(entry).sort().join(',') !== 'id,version') throw invalid(path, 'has a malformed plugin entry');
+    if (!isPluginId(entry.id)) {
+      throw new InstallStateError('install_state_invalid', path, `install state names unknown plugin ${JSON.stringify(entry.id)}; expected one of ${PLUGIN_IDS.join(', ')}: ${path}`);
+    }
+    // Plugin versions equal the core version until plugins ship separately (#1287 step 4).
+    if (entry.version !== coreVersion) throw invalid(path, `records plugin ${entry.id} at version ${String(entry.version)}, not ${coreVersion}`);
+    return { id: entry.id, version: entry.version };
+  });
+  const ids = plugins.map(plugin => plugin.id);
+  if (ids.join(',') !== PLUGIN_IDS.filter(id => ids.includes(id)).join(',')) throw invalid(path, 'plugins are not sorted and unique');
+  return plugins;
+}
+
+/** `all`, or the explicit list, which must equal the recorded plugin ids. Nothing is inferred from the plugin entries. */
+function parseSelection(raw: unknown, ids: readonly PluginId[], path: string, label: string): PluginSelection {
+  if (raw === 'all') return 'all';
+  if (!Array.isArray(raw) || !raw.every(isPluginId)) throw invalid(path, `${label} has no valid selection ("all" or a list of plugin ids)`);
+  if (raw.join(',') !== ids.join(',')) {
+    throw invalid(path, `${label} selection ${JSON.stringify(raw)} does not equal its plugins ${JSON.stringify(ids)}`);
   }
-  const profile = raw.profile as InstallProfile;
-  if (!Array.isArray(raw.components) || !componentsMatch(raw.components, PROFILE_COMPONENTS[profile])) {
-    throw new Error(`installed profile state components do not match profile ${profile}: ${path}`);
+  return ids;
+}
+
+function parseStateBase(raw: unknown, path: string, env: NodeJS.ProcessEnv, label: string): InstallStateSnapshot {
+  if (!isRecord(raw)) throw invalid(path, `${label} is not an object`);
+  if (raw.protocol === 1) {
+    throw new InstallStateError('install_state_protocol_retired', path,
+      `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.x bridge first: `
+      + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (repo-harness install --help in 0.25.3 names it); '
+      + `then: bun add -g repo-harness@${installedPackageVersion()} --no-cache && repo-harness update`);
   }
-  const retired = retiredAgentFleetFile(env);
-  if (!retiredPathAllowed && Array.isArray(raw.ownership_manifest) && raw.ownership_manifest.some((surface) => isRecord(surface) && surface.path === retired)) {
-    throw new RetiredAgentFleetPathError(path, retired);
+  if (raw.protocol === 2) {
+    throw new InstallStateError('install_state_migration_required', path,
+      `install state ${path} is protocol 2; run: repo-harness update (it migrates the state to protocol 3 under the install transaction)`);
   }
-  if (!Array.isArray(raw.ownership_manifest)
-    || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env, retiredPathAllowed ? retired : undefined))) {
-    throw new InstallStateOwnershipError(path);
+  if (raw.protocol !== INSTALL_STATE_PROTOCOL) throw invalid(path, `${label} has unsupported protocol ${String(raw.protocol)}`);
+  if (!isRecord(raw.core) || Object.keys(raw.core).join(',') !== 'version' || typeof raw.core.version !== 'string' || !raw.core.version.trim()) {
+    throw invalid(path, `${label} has an invalid core version`);
   }
-  if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') {
-    throw new Error(`installed profile state has invalid metadata; rerun repo-harness install --profile <minimal|full>: ${path}`);
+  const plugins = parsePlugins(raw.plugins, raw.core.version, path);
+  const ids = plugins.map(plugin => plugin.id);
+  const selection = parseSelection(raw.selection, ids, path, label);
+  if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env, ids))) {
+    throw new InstallStateError('install_state_invalid_ownership', path,
+      `install state has an invalid ownership surface (unknown path, malformed entry, or an owner that is not enabled); inspect: repo-harness install --state: ${path}`);
   }
-  if (raw.package_version !== undefined && (typeof raw.package_version !== 'string' || !raw.package_version.trim())) {
-    throw new Error(`installed profile state has an invalid package version: ${path}`);
-  }
+  if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') throw invalid(path, `${label} has invalid metadata`);
   return {
-    protocol: 2,
-    ...(raw.package_version === undefined ? {} : { package_version: raw.package_version }),
-    profile,
-    components: PROFILE_COMPONENTS[profile],
+    protocol: INSTALL_STATE_PROTOCOL,
+    core: { version: raw.core.version },
+    plugins,
+    selection,
     transaction_id: raw.transaction_id,
     applied_at: raw.applied_at,
     ownership_manifest: raw.ownership_manifest,
   };
 }
 
-function parseLegacyStateBase(
-  raw: unknown,
-  path: string,
-  env: NodeJS.ProcessEnv,
-  label: string,
-): Omit<LegacyInstalledProfileState, 'previous'> {
-  if (!isRecord(raw) || raw.protocol !== 1 || !LEGACY_INSTALL_PROFILES.includes(raw.profile as LegacyInstallProfile)) {
-    throw new Error(`${label}: ${path}`);
-  }
-  const profile = raw.profile as LegacyInstallProfile;
-  if (!Array.isArray(raw.components) || !componentsMatch(raw.components, LEGACY_PROFILE_COMPONENTS[profile])) {
-    throw new Error(`legacy installed profile state components do not match profile ${profile}: ${path}`);
-  }
-  if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env))) {
-    throw new Error(`legacy installed profile state has an invalid ownership surface: ${path}`);
-  }
-  if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') {
-    throw new Error(`legacy installed profile state has invalid metadata: ${path}`);
-  }
-  return {
-    protocol: 1,
-    profile,
-    components: LEGACY_PROFILE_COMPONENTS[profile],
-    transaction_id: raw.transaction_id,
-    applied_at: raw.applied_at,
-    ownership_manifest: raw.ownership_manifest,
-  };
+/** The strict protocol 3 reader. Protocol 1 and 2 fail closed with their typed codes. */
+export function parseState(raw: unknown, path: string, env: NodeJS.ProcessEnv): InstallState {
+  const current = parseStateBase(raw, path, env, 'state');
+  const previousRaw = isRecord(raw) ? raw.previous : undefined;
+  if (previousRaw === null) return { ...current, previous: null };
+  if (!isRecord(previousRaw) || 'previous' in previousRaw) throw invalid(path, 'has an invalid previous state');
+  return { ...current, previous: parseStateBase(previousRaw, path, env, 'previous state') };
 }
 
-export function readInstalledProfile(env: NodeJS.ProcessEnv = process.env): InstalledProfileState | null {
+/** Read the raw state file, or null when it is absent. */
+export function readRawInstallState(env: NodeJS.ProcessEnv = process.env): unknown {
   const path = installProfileStatePath(env);
   if (!existsSync(path)) return null;
-  const raw = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
-  if (isRecord(raw) && raw.protocol === 1) {
-    throw new Error(
-      `legacy installed profile state requires explicit migration; run repo-harness install --migrate-profile-state --profile <minimal|full>: ${path}`,
-    );
+  try {
+    return JSON.parse(readFileSync(path, 'utf-8')) as unknown;
+  } catch (error) {
+    throw invalid(path, `is not valid JSON (${(error as Error).message})`);
   }
-  return parseCurrentState(raw, path, env);
 }
 
-function parseCurrentState(raw: unknown, path: string, env: NodeJS.ProcessEnv, retiredPathAllowed = false): InstalledProfileState {
-  const current = parseCurrentStateBase(raw, path, env, 'invalid installed profile state', retiredPathAllowed);
-  const previousRaw = isRecord(raw) ? raw.previous : undefined;
-  if (previousRaw !== null && previousRaw !== undefined) {
-    return {
-      ...current,
-      previous: parseCurrentStateBase(
-        previousRaw,
-        path,
-        env,
-        'installed profile state has invalid previous state',
-        retiredPathAllowed,
-      ),
-    };
-  }
-  if (previousRaw !== null) {
-    throw new Error(`installed profile state has invalid previous state: ${path}`);
-  }
-  return { ...current, previous: null };
+export function readInstallState(env: NodeJS.ProcessEnv = process.env): InstallState | null {
+  const raw = readRawInstallState(env);
+  return raw === null ? null : parseState(raw, installProfileStatePath(env), env);
 }
 
-export function readLegacyInstalledProfileForMigration(
-  env: NodeJS.ProcessEnv = process.env,
-): LegacyInstalledProfileState {
-  const path = installProfileStatePath(env);
-  if (!existsSync(path)) {
-    throw new Error(`no legacy installed profile state to migrate: ${path}`);
+/** `update` resolves the recorded selection; without a state it has none. */
+export function requireInstallState(env: NodeJS.ProcessEnv = process.env): InstallState {
+  const state = readInstallState(env);
+  if (state === null) {
+    const path = installProfileStatePath(env);
+    throw new InstallStateError('install_state_missing', path, `no install state at ${path}; run: repo-harness install`);
   }
-  const raw = JSON.parse(readFileSync(path, 'utf-8')) as unknown;
-  if (isRecord(raw) && raw.protocol === 2) {
-    throw new Error(`installed profile state is already protocol 2; --migrate-profile-state is not applicable: ${path}`);
-  }
-  const current = parseLegacyStateBase(raw, path, env, 'invalid legacy installed profile state');
-  const previousRaw = isRecord(raw) ? raw.previous : undefined;
-  if (previousRaw !== null && previousRaw !== undefined) {
-    return {
-      ...current,
-      previous: parseLegacyStateBase(
-        previousRaw,
-        path,
-        env,
-        'legacy installed profile state has invalid previous state',
-      ),
-    };
-  }
-  if (previousRaw !== null) {
-    throw new Error(`legacy installed profile state has invalid previous state: ${path}`);
-  }
-  return { ...current, previous: null };
-}
-
-export function planLegacyInstallProfileMigration(
-  profile: InstallProfile,
-  env: NodeJS.ProcessEnv = process.env,
-): InstallProfileMigrationPlan {
-  const legacy = readLegacyInstalledProfileForMigration(env);
-  const desired = PROFILE_COMPONENTS[profile];
-  const installed = new Set(legacy.components);
-  const desiredSet = new Set(desired);
-  return {
-    ...planInstallProfile(profile, null, env),
-    protocol: 2,
-    requested_profile: profile,
-    current_profile: null,
-    install: desired.filter((component) => !installed.has(component)),
-    skip: desired.filter((component) => installed.has(component)),
-    remove: ALL_COMPONENTS.filter((component) => installed.has(component) && !desiredSet.has(component)),
-    state_path: installProfileStatePath(env),
-    migration: {
-      from_protocol: 1,
-      from_profile: legacy.profile,
-      to_protocol: 2,
-      to_profile: profile,
-    },
-  };
-}
-
-export function prepareLegacyInstallProfileMigration(
-  profile: InstallProfile,
-  env: NodeJS.ProcessEnv = process.env,
-): LegacyInstalledProfileState {
-  const legacy = readLegacyInstalledProfileForMigration(env);
-  removeRetiredOwnedSurfaces(profile, legacy, env);
-  rmSync(installProfileStatePath(env), { force: false });
-  return legacy;
+  return state;
 }
 
 function existing(paths: readonly string[]): string[] {
   return paths.filter((path) => existsSync(path));
 }
 
-function canonicalRoots(home: string): string[] {
-  return hostSkillRoots(home).map((root) => join(root, 'repo-harness'));
-}
-
-function canonicalEvidence(home: string, relativePaths: readonly string[]): string[] {
-  return existing(canonicalRoots(home).flatMap((root) => relativePaths.map((relative) => join(root, relative))));
+function canonicalEvidence(home: string, relativePaths: readonly string[], env: NodeJS.ProcessEnv): string[] {
+  return existing(hostSkillRoots(home, env).flatMap((root) => relativePaths.map((relative) => join(root, 'repo-harness', relative))));
 }
 
 function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
@@ -1369,16 +1201,20 @@ function executableEvidence(name: string, env: NodeJS.ProcessEnv): string[] {
   return existing([...new Set(candidates)]);
 }
 
-function skillEvidence(home: string, names: readonly string[]): string[] {
-  return existing(hostSkillRoots(home).flatMap((root) => (
-    names.map((name) => join(root, name, 'SKILL.md'))
-  )));
+/** The facades and provider skills that an owner's probe requires. */
+function ownedProbeSkills(catalog: SkillSurfaceCatalog, owner: SurfaceOwner) {
+  return catalog.packages.filter(pkg => (pkg.kind === 'facade' || pkg.kind === 'provider-skill') && pkg.owner === owner && !pkg.explicitOnly);
 }
 
-function completeHostSkillSetEvidence(home: string, names: readonly string[]): string[] {
-  for (const root of hostSkillRoots(home)) {
-    const paths = names.map((name) => join(root, name, 'SKILL.md'));
-    if (paths.every(existsSync)) return paths;
+/**
+ * Each host root requires the owned skills that list its host. The set is
+ * present when one root holds its non-empty required set completely.
+ */
+function completeHostSkillSetEvidence(home: string, packages: ReturnType<typeof ownedProbeSkills>, env: NodeJS.ProcessEnv): string[] {
+  for (const host of SKILL_HOSTS) {
+    const root = hostSkillRoot(home, host, env);
+    const paths = packages.filter(pkg => pkg.hosts.includes(host)).map(pkg => join(root, pkg.name, 'SKILL.md'));
+    if (paths.length > 0 && paths.every(existsSync)) return paths;
   }
   return [];
 }
@@ -1391,133 +1227,238 @@ function completeAgentFleetEvidence(home: string): string[] {
   return [];
 }
 
-function probeInstalledComponents(
-  state: InstalledProfileState,
-  env: NodeJS.ProcessEnv,
-): InstalledProfileStatus['component_probes'] {
-  const home = env.HOME ?? homedir();
-  const adapterCandidates: ReadonlyArray<{ path: string; host: HookHost }> = [
-    { path: join(home, '.codex', 'hooks.json'), host: 'codex' },
-    { path: join(home, '.claude', 'settings.json'), host: 'claude' },
-  ];
-  const adapterEvidence = adapterCandidates
-    .filter(({ path, host }) => existsSync(path) && adapterHasRequiredProjection(path, host, state.profile))
-    .map(({ path }) => path);
-  const cliEvidence = executableEvidence('repo-harness', env);
-  const effectiveStateEvidence = canonicalEvidence(home, ['src/cli/commands/state.ts']);
-  // HRD-03 retired assets/hooks/pre-edit-guard.sh: the `scope-worktree-check-guards`
-  // capability it used to prove now lives in the in-process
-  // src/cli/hook/mutation-guard.ts handler (bundled straight into the CLI
-  // source tree, so it is vendored the same way every other canonicalEvidence
-  // path here is -- see effectiveStateEvidence / adaptiveEvidence / releaseEvidence
-  // above for the same pattern). scripts/contract-worktree.sh is untouched by
-  // this cutover and stays.
-  const guardPaths = ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'];
-  const guardEvidence = canonicalEvidence(home, guardPaths);
-  // SSD-06: repo-harness-handoff retired as a standalone facade. 'handoff' is
-  // now fulfilled by the root router's own progressive reference
-  // (references/handoff.md), bundled into the canonical repo-harness skill
-  // copy itself, so its evidence is that reference file's presence there --
-  // same canonicalEvidence idiom as effectiveStateEvidence/adaptiveEvidence
-  // below, not a separate host-installed Skill directory.
-  const handoffEvidence = canonicalEvidence(home, ['references/handoff.md']);
-  const adaptiveEvidence = canonicalEvidence(home, ['src/core/workflow/profile.ts']);
-  const codegraphEvidence = state.profile === 'full'
-    ? executableEvidence('codegraph', env)
-    : canonicalEvidence(home, ['src/cli/tools/codegraph.ts']);
-  const probeExpectations = catalogProbeExpectations(loadSkillSurfaceCatalog());
-  const planningSkillNames = probeExpectations.planningSkillNames;
-  const planningSkills = completeHostSkillSetEvidence(home, planningSkillNames);
-  const planningCapabilityPaths = probeExpectations.planningCapabilityPaths;
-  const planningCapabilities = canonicalEvidence(home, planningCapabilityPaths);
-  const planningEvidence = planningSkills.length === planningSkillNames.length
-    && planningCapabilityPaths.every((relative) => planningCapabilities.some((path) => path.endsWith(relative)))
-    ? [...planningSkills, ...planningCapabilities]
-    : [];
-  const fleetEvidence = completeAgentFleetEvidence(home);
-  const verifierEvidence = fleetEvidence.some((path) => /\/gatekeeper\.(?:toml|md)$/.test(path))
-    ? canonicalEvidence(home, ['src/effects/review-runner/task-oar-host.ts'])
-    : [];
-  const crossModelEvidence = skillEvidence(home, probeExpectations.crossModel);
-  const releasePaths = ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'];
-  const releaseEvidence = canonicalEvidence(home, releasePaths);
-  const evidence: Record<InstallComponent, readonly string[]> = {
-    'cli': cliEvidence,
-    'effective-state': effectiveStateEvidence,
-    'scope-worktree-check-guards': guardPaths.every((relative) => guardEvidence.some((path) => path.endsWith(relative))) ? guardEvidence : [],
-    'handoff': handoffEvidence,
-    'host-adapters': adapterEvidence,
-    'adaptive-workflow': adaptiveEvidence,
-    'codegraph-conditional': codegraphEvidence,
-    'planning-integrations': planningEvidence,
-    'agent-fleet': fleetEvidence,
-    'verifier': verifierEvidence,
-    'cross-model-acceptance': crossModelEvidence,
-    'release-deployment-gates': releasePaths.every((relative) => releaseEvidence.some((path) => path.endsWith(relative))) ? releaseEvidence : [],
-  };
-  return Object.fromEntries(ALL_COMPONENTS.map((component) => [component, {
-    status: evidence[component].length > 0 ? 'present' : 'missing',
-    evidence: evidence[component],
-  }])) as InstalledProfileStatus['component_probes'];
+function probe(checks: Readonly<Record<string, readonly string[]>>): OwnerProbe {
+  const missing = Object.entries(checks).filter(([, evidence]) => evidence.length === 0).map(([name]) => name);
+  return { status: missing.length === 0 ? 'present' : 'missing', evidence: Object.values(checks).flat(), missing };
 }
 
-export function installedProfileStatus(
-  state: InstalledProfileState,
+function allOrNone(home: string, relativePaths: readonly string[], env: NodeJS.ProcessEnv): string[] {
+  const evidence = canonicalEvidence(home, relativePaths, env);
+  return relativePaths.every((relative) => evidence.some((path) => path.endsWith(relative))) ? evidence : [];
+}
+
+function probeCore(env: NodeJS.ProcessEnv, catalog: SkillSurfaceCatalog): OwnerProbe {
+  const home = env.HOME ?? homedir();
+  const adapters = ([
+    { path: join(home, '.codex', 'hooks.json'), host: 'codex' },
+    { path: join(home, '.claude', 'settings.json'), host: 'claude' },
+  ] as const).filter(({ path, host }) => existsSync(path) && adapterHasRequiredProjection(path, host)).map(({ path }) => path);
+  const fleet = completeAgentFleetEvidence(home);
+  const coreFacades = ownedProbeSkills(catalog, 'core').filter(pkg => pkg.kind === 'facade');
+  return probe({
+    'cli': executableEvidence('repo-harness', env),
+    'effective-state': canonicalEvidence(home, ['src/cli/commands/state.ts'], env),
+    // The mutation guard is an in-process handler bundled in the canonical copy.
+    'guards': allOrNone(home, ['src/cli/hook/mutation-guard.ts', 'scripts/contract-worktree.sh'], env),
+    'handoff': canonicalEvidence(home, ['references/handoff.md'], env),
+    'host-adapters': adapters,
+    'workflow': canonicalEvidence(home, ['src/core/workflow/profile.ts'], env),
+    'core-skills': completeHostSkillSetEvidence(home, coreFacades, env),
+    'agent-fleet': fleet,
+    'verifier': fleet.some((path) => /\/gatekeeper\.(?:toml|md)$/.test(path))
+      ? canonicalEvidence(home, ['src/effects/review-runner/task-oar-host.ts'], env)
+      : [],
+    'release-gates': allOrNone(home, ['scripts/verify-sprint.sh', 'scripts/ship-worktrees.sh'], env),
+  });
+}
+
+/** The Pi plugin's real state: the `pi` executable and its user package entry for this package. A failed `pi list` throws. */
+function probePi(env: NodeJS.ProcessEnv): OwnerProbe {
+  const source = bunGlobalPackageRoot(env);
+  if (piExecutable(env) === null || source === null) return { status: 'missing', evidence: [], missing: ['pi-executable'] };
+  return probe({ 'pi-package': piPackagePresent(source, env) ? [source] : [] });
+}
+
+/** The DSH plugin's real state: a DSH profile that declares the repo-harness bundle. An unreadable DSH home throws. */
+function probeDsh(env: NodeJS.ProcessEnv): OwnerProbe {
+  const state = readDshPluginState(env);
+  return probe({ 'dsh-profile': state.status === 'declared' ? state.profiles.map(profile => join(state.profilesDir, profile)) : [] });
+}
+
+function probeOwners(plugins: readonly PluginId[], env: NodeJS.ProcessEnv): Partial<Record<SurfaceOwner, OwnerProbe>> {
+  const home = env.HOME ?? homedir();
+  const catalog = loadSkillSurfaceCatalog();
+  const probes: Partial<Record<SurfaceOwner, OwnerProbe>> = { core: probeCore(env, catalog) };
+  for (const id of plugins) {
+    if (id === 'pi') probes.pi = probePi(env);
+    else if (id === 'dsh') probes.dsh = probeDsh(env);
+    else probes[id] = probe({ skills: completeHostSkillSetEvidence(home, ownedProbeSkills(catalog, id), env) });
+  }
+  return probes;
+}
+
+export function installStateStatus(
+  state: InstallState,
   env: NodeJS.ProcessEnv = process.env,
-): InstalledProfileStatus {
-  const desired = PROFILE_COMPONENTS[state.profile];
-  const active = new Set(state.components);
-  const componentProbes = probeInstalledComponents(state, env);
-  const missing = desired.filter((component) => !active.has(component) || componentProbes[component].status === 'missing');
-  const unexpected = state.components.filter((component) => !desired.includes(component));
-  // A valid profile may intentionally consume a pre-existing user-managed CLI,
-  // skill, or CodeGraph installation. Ownership is required before removal,
-  // not before truthful presence can be reported.
-  const ownershipGaps: InstallComponent[] = [];
+): InstallStateStatus {
+  const probes = probeOwners(enabledPlugins(state), env);
+  const missing = (Object.entries(probes) as [SurfaceOwner, OwnerProbe][])
+    .filter(([, result]) => result.status === 'missing')
+    .map(([owner]) => owner);
+  // A valid selection may consume a pre-existing user-managed CLI, skill, or
+  // CodeGraph installation. Ownership is required before removal, not before
+  // truthful presence can be reported.
   const surfaceDrift = state.ownership_manifest
     .filter(surface => surface.type !== 'pi-package' || piExecutable(env) !== null)
     .filter((surface) => !surfaceIsCurrent(surface, env))
     .map((surface) => surface.path);
   return {
     ...state,
-    component_probes: componentProbes,
+    probes,
     drift: {
-      status: missing.length === 0 && unexpected.length === 0 && ownershipGaps.length === 0 && surfaceDrift.length === 0
-        ? 'consistent'
-        : 'drift',
-      missing_components: missing,
-      unexpected_components: unexpected,
-      ownership_gaps: ownershipGaps,
+      status: missing.length === 0 && surfaceDrift.length === 0 ? 'consistent' : 'drift',
+      missing_owners: missing,
       surface_drift: surfaceDrift,
     },
   };
 }
 
-export function planInstallProfile(
-  profile: InstallProfile,
-  current: InstalledProfileState | null,
+/** Why a host plugin cannot be selected now, or null when its host program is present. Other read errors throw. */
+export function hostPluginAbsence(id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
+  if (id === 'pi') return piExecutable(env) === null ? 'pi is not on PATH' : null;
+  const dsh = readDshPluginState(env);
+  if (dsh.status === 'absent') return `DSH is not installed (no ${dsh.profilesDir})`;
+  if (dsh.status === 'undeclared') return `no DSH profile under ${dsh.profilesDir} declares the repo-harness bundle`;
+  return null;
+}
+
+type InstallTarget = 'claude' | 'codex' | 'both';
+
+const TARGET_HOSTS: Readonly<Record<InstallTarget, readonly SkillHost[]>> = { claude: ['claude'], codex: ['codex'], both: ['claude', 'codex', 'pi'] };
+const TARGET_BOTH_COMMAND = 'repo-harness install --target both';
+
+/**
+ * Why this target cannot run a plugin now, and the command that adds it, or
+ * null. The target must hold a host of one of the plugin's skills (for `pi`,
+ * the Pi host), and a host plugin needs its program. A read error other than
+ * a definite absence throws.
+ */
+function pluginUnavailable(id: PluginId, target: InstallTarget, env: NodeJS.ProcessEnv): { readonly reason: string; readonly command: string } | null {
+  if (id === 'pi' && target !== 'both') return { reason: `--target ${target} does not include the Pi host`, command: TARGET_BOTH_COMMAND };
+  const skills = ownedProbeSkills(loadSkillSurfaceCatalog(), id);
+  if (skills.length > 0 && !skills.some(pkg => pkg.hosts.some(host => (TARGET_HOSTS[target] as readonly string[]).includes(host)))) {
+    return { reason: `--target ${target} has no host for its skills`, command: TARGET_BOTH_COMMAND };
+  }
+  const absence = isHostProgramPlugin(id) ? hostPluginAbsence(id, env) : null;
+  return absence === null ? null : { reason: absence, command: UPDATE_COMMAND };
+}
+
+/** An explicit plugin fails closed before any write when its host program or a host of its skills is absent. */
+export function assertExplicitSelectionRunnable(plugins: readonly PluginId[], target: InstallTarget, env: NodeJS.ProcessEnv = process.env): void {
+  const unavailable = plugins.flatMap((id) => {
+    const absent = pluginUnavailable(id, target, env);
+    return absent === null ? [] : [`${id} (${absent.reason})`];
+  });
+  if (unavailable.length > 0) {
+    throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),
+      `cannot select ${unavailable.join(', ')}; install the host program or choose a target with its host, or drop the plugin from --plugins`);
+  }
+}
+
+/**
+ * The one resolver of a selection on this host, for install, update and the
+ * candidate process. An explicit list runs and records exactly its ids or
+ * fails closed. `all` runs and records every plugin of this version; a host
+ * plugin whose program or target is absent is skipped, or kept in the record
+ * when the state already records it (removal needs an explicit selection).
+ */
+export function resolveRecordedSelection(
+  state: Pick<InstallState, 'selection' | 'plugins'>,
+  target: InstallTarget,
   env: NodeJS.ProcessEnv = process.env,
-): InstallProfilePlan {
+  options: { readonly partial?: boolean } = {},
+): SelectionResolution {
+  if (state.selection !== 'all') {
+    assertExplicitSelectionRunnable(state.selection, target, env);
+    return { run: state.selection, record: state.selection, skipped: [], kept: [], notAdded: [] };
+  }
+  const recorded = enabledPlugins(state);
+  const run: PluginId[] = [];
+  const keptReasons = new Map<PluginId, string>();
+  const skipped: SkippedPlugin[] = [];
+  for (const id of PLUGIN_IDS) {
+    const absent = pluginUnavailable(id, target, env);
+    if (absent === null) run.push(id);
+    else if (recorded.includes(id)) keptReasons.set(id, absent.reason);
+    else skipped.push({ id, ...absent });
+  }
+  const grown = PLUGIN_IDS.filter(id => run.includes(id) || keptReasons.has(id));
+  // A partial refresh (--no-sync-skill or --no-hooks) runs and records only the recorded set.
+  const record = options.partial === true ? grown.filter(id => recorded.includes(id)) : grown;
+  const kept = [...keptReasons].map(([id, reason]) => ({ id, reason, command: installSelectionCommand(record.filter(other => other !== id)) }));
+  return {
+    run: run.filter(id => record.includes(id)), record, skipped, kept,
+    notAdded: grown.filter(id => !record.includes(id)),
+  };
+}
+
+/** A fresh `all` selection: every plugin that the host can run. */
+export function defaultPluginSelection(target: InstallTarget, env: NodeJS.ProcessEnv = process.env): { readonly plugins: readonly PluginId[]; readonly skipped: readonly SkippedPlugin[] } {
+  const { run, skipped } = resolveRecordedSelection({ selection: 'all', plugins: [] }, target, env);
+  return { plugins: run, skipped };
+}
+
+export function skippedPluginLine(entry: SkippedPlugin): string {
+  const after = entry.command === UPDATE_COMMAND ? 'install the host program, then run' : 'run';
+  return `skipped ${entry.id}: ${entry.reason}; to add it later, ${after}: ${entry.command}`;
+}
+
+export function keptPluginLine(entry: KeptPlugin): string {
+  return `kept ${entry.id}: ${entry.reason}; update keeps the recorded plugin; to remove it, run: ${entry.command}`;
+}
+
+export function notAddedPluginLine(id: PluginId): string {
+  return `not added ${id} in a partial refresh; run: ${UPDATE_COMMAND}`;
+}
+
+/**
+ * CodeGraph follows the architecture plugin. A repository whose policy enables
+ * CodeGraph while the selection lacks `architecture` stops before any write.
+ */
+export function assertCodegraphPolicySelection(cwd: string, plugins: readonly PluginId[], env: NodeJS.ProcessEnv = process.env): void {
+  if (plugins.includes('architecture')) return;
+  const policyPath = join(cwd, '.ai/harness/policy.json');
+  let raw: string;
+  try {
+    raw = readFileSync(policyPath, 'utf-8');
+  } catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return;
+    throw error;
+  }
+  const policy = JSON.parse(raw) as { tooling?: { codegraph?: { enabled?: unknown } } };
+  if (policy.tooling?.codegraph?.enabled !== true) return;
+  throw new InstallStateError('install_plugin_unavailable', installProfileStatePath(env),
+    `${policyPath} enables CodeGraph (tooling.codegraph.enabled), and CodeGraph needs the architecture plugin; run: ${installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === 'architecture'))}`);
+}
+
+/** `run` drives the Pi package and skill projections; `record` is the plugin set that the plan installs, keeps and removes. */
+export function planInstallSelection(
+  selection: PluginSelection,
+  resolved: Pick<SelectionResolution, 'run' | 'record'> & { readonly skipped?: readonly SkippedPlugin[] },
+  current: InstallState | null,
+  env: NodeJS.ProcessEnv = process.env,
+): InstallPlan {
   const packageRoot = bunGlobalPackageRoot(env);
   if (packageRoot === null) throw new Error('Bun global package root unavailable: set HOME, USERPROFILE or BUN_INSTALL');
-  const desired = PROFILE_COMPONENTS[profile];
-  const installed = new Set(current?.components ?? []);
-  const desiredSet = new Set(desired);
+  const installed = current === null ? [] : enabledPlugins(current);
+  const plugins = resolved.record;
   return {
     hosts: INSTALL_HOSTS,
-    pi_package: planPiPackage(packageRoot, true, env),
-    skill_projections: expectedSkillProjections(loadSkillSurfaceCatalog(), packageRoot, env.HOME ?? env.USERPROFILE ?? homedir(), profile, env),
-    protocol: 2,
-    requested_profile: profile,
-    current_profile: current?.profile ?? null,
-    install: desired.filter((component) => !installed.has(component)),
-    skip: desired.filter((component) => installed.has(component)),
-    remove: ALL_COMPONENTS.filter((component) => installed.has(component) && !desiredSet.has(component)),
+    pi_package: planPiPackage(packageRoot, resolved.run.includes('pi'), env),
+    skill_projections: expectedSkillProjections(loadSkillSurfaceCatalog(), packageRoot, env.HOME ?? env.USERPROFILE ?? homedir(), resolved.run, env),
+    protocol: INSTALL_STATE_PROTOCOL,
+    selection,
+    requested_plugins: plugins,
+    current_plugins: current === null ? null : installed,
+    install: plugins.filter((id) => !installed.includes(id)),
+    keep: plugins.filter((id) => installed.includes(id)),
+    remove: installed.filter((id) => !plugins.includes(id)),
+    skipped: resolved.skipped ?? [],
     state_path: installProfileStatePath(env),
   };
 }
 
-function writeState(state: InstalledProfileState | LegacyInstalledProfileState, env: NodeJS.ProcessEnv): void {
+export function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
   const target = installProfileStatePath(env);
   mkdirSync(dirname(target), { recursive: true });
   const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
@@ -1525,114 +1466,111 @@ function writeState(state: InstalledProfileState | LegacyInstalledProfileState, 
   renameSync(temp, target);
 }
 
-function installedPackageVersion(): string {
+export function installedPackageVersion(): string {
   const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
   const raw = JSON.parse(readFileSync(path, 'utf-8')) as { version?: unknown };
   if (typeof raw.version !== 'string' || !raw.version.trim()) throw new Error(`invalid package version: ${path}`);
   return raw.version;
 }
 
-export function applyInstallProfile(
-  profile: InstallProfile,
+/** Core and every enabled plugin record the running package version until plugins ship separately (#1287 step 4). */
+export function versions(plugins: readonly PluginId[]): Pick<InstallState, 'core' | 'plugins'> {
+  const version = installedPackageVersion();
+  return { core: { version }, plugins: plugins.map(id => ({ id, version })) };
+}
+
+function snapshot(state: InstallState): InstallStateSnapshot {
+  const { previous: _previous, ...rest } = state;
+  return rest;
+}
+
+/**
+ * Commit a selection. `plugins` is the recorded set (`record` of the resolver).
+ * A `kept` plugin is recorded but did not run: its ledger surfaces stay as
+ * they are, and neither its probe nor its surfaces gate this commit.
+ */
+export function applyInstallSelection(
+  selection: PluginSelection,
+  plugins: readonly PluginId[],
   env: NodeJS.ProcessEnv = process.env,
   now = new Date(),
-  transaction?: InstallHostTransaction,
-  migrationSource?: LegacyInstalledProfileState,
-  options: { readonly agentFleetVerified?: boolean; readonly additionalSurfaces?: readonly ManagedInstallSurface[] } = {},
-): { readonly plan: InstallProfilePlan; readonly state: InstalledProfileState } {
-  const current = readInstalledProfile(env);
-  if (options.additionalSurfaces?.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env))) throw new Error('invalid Pi package ownership');
-  const plan = planInstallProfile(profile, current, env);
-  const desired = new Set(PROFILE_COMPONENTS[profile]);
-  const discovered = discoverManagedSurfaces(profile, env);
-  const previousOwnership = migrationSource?.ownership_manifest ?? current?.ownership_manifest ?? [];
-  const preserved = previousOwnership.filter((surface) => (
-    surface.components.every((component) => desired.has(component)) && (surface.type === 'pi-package' || surfaceIsCurrent(surface, env))
+  transaction?: HostSurfaceSnapshots,
+  options: {
+    readonly agentFleetVerified?: boolean;
+    readonly additionalSurfaces?: readonly ManagedInstallSurface[];
+    readonly kept?: readonly PluginId[];
+  } = {},
+): { readonly plan: InstallPlan; readonly state: InstallState } {
+  if (selection !== 'all' && selection.join(',') !== plugins.join(',')) {
+    throw new Error(`explicit selection ${selection.join(',')} does not equal the recorded plugins ${plugins.join(',')}`);
+  }
+  const kept = options.kept ?? [];
+  const ran = plugins.filter(id => !kept.includes(id));
+  const current = readInstallState(env);
+  if (options.additionalSurfaces?.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env, plugins))) throw new Error('invalid Pi package ownership');
+  const plan = planInstallSelection(selection, { run: ran, record: plugins }, current, env);
+  const discovered = discoverManagedSurfaces(ran, env);
+  const preserved = (current?.ownership_manifest ?? []).filter((surface) => (
+    ownerEnabled(surface.owner, plugins)
+    && (surface.type === 'pi-package' || (kept as readonly SurfaceOwner[]).includes(surface.owner) || surfaceIsCurrent(surface, env))
   ));
-  const transactionOwned = transaction
-    ? transactionOwnedSurfaces(transaction, migrationSource ?? current)
-    : [];
-  const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(profile, env) : [];
-  const ownershipManifest = [...new Map(
-    // Current verified link projections own their component classification.
-    // Historical records must not restore a retired or wrong component.
-    [...discovered, ...preserved, ...transactionOwned, ...fleetOwned, ...(options.additionalSurfaces ?? []),
-      ...discovered.filter(surface => surface.type === 'symlink')].map((surface) => [
-      `${surface.path}\0${surface.managed_marker ?? surface.type}`,
-      surface,
-    ]),
-  ).values()].sort((left, right) => left.path.localeCompare(right.path));
-  const sameOwnership = current !== null
-    && JSON.stringify(current.ownership_manifest) === JSON.stringify(ownershipManifest);
-  const state: InstalledProfileState = {
-    protocol: 2,
-    package_version: installedPackageVersion(),
-    profile,
-    components: PROFILE_COMPONENTS[profile],
-    transaction_id: current?.profile === profile && plan.install.length === 0 && plan.remove.length === 0 && sameOwnership
-      ? current.transaction_id
-      : randomUUID(),
-    applied_at: current?.profile === profile && plan.install.length === 0 && plan.remove.length === 0 && sameOwnership
-      ? current.applied_at
-      : now.toISOString(),
+  const transactionOwned = transaction ? transactionOwnedSurfaces(transaction, current, env) : [];
+  const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(env) : [];
+  // Current verified link projections own their classification. Historical
+  // records must not restore a retired owner.
+  const ownershipManifest = mergeOwnership([...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
+    ...(options.additionalSurfaces ?? []), ...discovered.filter(surface => surface.type === 'symlink')]);
+  const unchanged = current !== null
+    && enabledPlugins(current).join(',') === plugins.join(',')
+    && JSON.stringify(current.selection) === JSON.stringify(selection)
+    && sameOwnership(current.ownership_manifest, ownershipManifest);
+  const state: InstallState = {
+    protocol: INSTALL_STATE_PROTOCOL,
+    ...versions(plugins),
+    selection,
+    transaction_id: unchanged ? current.transaction_id : randomUUID(),
+    applied_at: unchanged ? current.applied_at : now.toISOString(),
     ownership_manifest: ownershipManifest,
-    previous: current && migrationSource === undefined ? {
-      protocol: current.protocol,
-      ...(current.package_version === undefined ? {} : { package_version: current.package_version }),
-      profile: current.profile,
-      components: current.components,
-      transaction_id: current.transaction_id,
-      applied_at: current.applied_at,
-      ownership_manifest: current.ownership_manifest,
-    } : null,
+    previous: current === null ? null : snapshot(current),
   };
-  const status = installedProfileStatus(state, env);
+  const status = installStateStatus({
+    ...state,
+    plugins: state.plugins.filter(plugin => !kept.includes(plugin.id)),
+    ownership_manifest: ownershipManifest.filter(surface => !(kept as readonly SurfaceOwner[]).includes(surface.owner)),
+  }, env);
   if (status.drift.status !== 'consistent') {
     throw new Error(
-      `install profile projection is incomplete for ${profile}: missing=${status.drift.missing_components.join(',') || '(none)'}; ownership_gaps=${status.drift.ownership_gaps.join(',') || '(none)'}; surface_drift=${status.drift.surface_drift.join(',') || '(none)'}`,
+      `install projection is incomplete: missing=${status.drift.missing_owners.map(owner => `${owner}(${status.probes[owner]?.missing.join('+')})`).join(',') || '(none)'}; surface_drift=${status.drift.surface_drift.join(',') || '(none)'}`,
     );
   }
   writeState(state, env);
   return { plan, state };
 }
 
-export function rollbackInstallProfile(
+export function rollbackInstallSelection(
   env: NodeJS.ProcessEnv = process.env,
   transaction?: InstallHostTransaction,
-): InstalledProfileState {
-  const current = readInstalledProfile(env);
-  if (!current?.previous) throw new Error('no previous install profile transaction to roll back');
-  const restored: InstalledProfileState = {
+): InstallState {
+  const current = readInstallState(env);
+  if (!current?.previous) throw new Error('no previous install transaction to roll back');
+  const plugins = enabledPlugins(current.previous);
+  const restored: InstallState = {
     ...current.previous,
+    ...versions(plugins),
     transaction_id: randomUUID(),
     applied_at: new Date().toISOString(),
-    ownership_manifest: [
-      ...discoverManagedSurfaces(current.previous.profile, env),
-      ...(transaction ? transactionOwnedSurfaces(transaction, current.previous) : []),
-    ],
+    ownership_manifest: mergeOwnership([
+      ...discoverManagedSurfaces(plugins, env),
+      ...(transaction ? transactionOwnedSurfaces(transaction, current.previous, env) : []),
+    ]),
     previous: null,
   };
-  const status = installedProfileStatus(restored, env);
+  const status = installStateStatus(restored, env);
   if (status.drift.status !== 'consistent') {
     throw new Error(
-      `rollback profile projection is incomplete for ${restored.profile}: missing=${status.drift.missing_components.join(',') || '(none)'}; ownership_gaps=${status.drift.ownership_gaps.join(',') || '(none)'}; surface_drift=${status.drift.surface_drift.join(',') || '(none)'}`,
+      `rollback projection is incomplete: missing=${status.drift.missing_owners.map(owner => `${owner}(${status.probes[owner]?.missing.join('+')})`).join(',') || '(none)'}; surface_drift=${status.drift.surface_drift.join(',') || '(none)'}`,
     );
   }
   writeState(restored, env);
   return restored;
-}
-
-export function profileEnablesExternalSkills(profile: InstallProfile): boolean {
-  return profile === 'full';
-}
-
-export function profileEnablesCodegraph(profile: InstallProfile, cwd = process.cwd()): boolean {
-  if (profile === 'full') return true;
-  try {
-    const policy = JSON.parse(readFileSync(join(cwd, '.ai/harness/policy.json'), 'utf-8')) as {
-      tooling?: { codegraph?: { enabled?: unknown } };
-    };
-    if (policy.tooling?.codegraph?.enabled === true) return true;
-  } catch { /* policy opt-in absent */ }
-  return false;
 }
