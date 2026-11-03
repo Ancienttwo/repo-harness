@@ -473,16 +473,20 @@ describe("ship-worktrees closeout journal", () => {
   // Claim paths: acquire creates only the claims parent; the recovery lane never
   // creates a parent; release, cancel and failed writes rename before rm.
   // Recovery acts only on the owner generation that it checked, and refuses a
-  // record without a generation. Each row seeds the claim records and starts its
-  // actors in order. A paused actor stops at its pause point (after the command
-  // when `after` is set) before the next actor starts; an unpaused actor runs to
-  // the end. Paused actors then resume one at a time in start order. `error` ""
-  // means exit 0; an absent `error` also accepts a lost election.
-  type SeedRecord = "dead" | "empty" | "pre-generation";
-  interface Actor { readonly args: string[]; readonly pause?: { cmd: string; glob: string; after?: boolean }; readonly error?: string }
+  // record without a generation. Seeded "none" and "empty" records are the
+  // states that a kill leaves after a claim or lane mkdir and after its O_EXCL
+  // create. Each row seeds the claim records and starts its actors in order. A
+  // paused actor stops at its pause point (after the command when `after` is
+  // set, or SIGKILLed there when `kill` is set) before the next actor starts; an
+  // unpaused actor runs to the end. Paused actors then resume one at a time in
+  // start order. `error` "" means exit 0; an absent `error` also accepts a lost
+  // election.
+  type SeedRecord = "dead" | "empty" | "none" | "pre-generation";
+  interface Actor { readonly args: string[]; readonly pause?: { cmd: string; glob: string; after?: boolean; kill?: boolean }; readonly error?: string }
   const SHIP = ["--target", "main", "--remote", "origin"];
   const ABORT = ["--recover", "abort"];
   const NO_GENERATION = "ship ownership record has no generation";
+  const RECLAIM_MARKER = "ship recovery lane has a reclaim marker";
   test.each<{ name: string; seed: { claim?: SeedRecord; lane?: SeedRecord; journal?: boolean }; actors: Actor[]; kept?: string }>([
     { name: "recovery resumes after another recovery removed the claim", seed: { claim: "dead" }, actors: [
       { args: ABORT, pause: { cmd: "mkdir", glob: "*/recovery.lock" }, error: "another recovery already owns this ship closeout" },
@@ -500,6 +504,12 @@ describe("ship-worktrees closeout journal", () => {
     { name: "an empty claim record", seed: { claim: "empty" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "owner.json" },
     { name: "a claim record from before generations", seed: { claim: "pre-generation" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "owner.json" },
     { name: "a lane record from before generations", seed: { claim: "dead", lane: "pre-generation" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "recovery.lock/owner.json" },
+    { name: "a claim killed before its record create", seed: { claim: "none" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "." },
+    { name: "a lane killed before its record create", seed: { claim: "dead", lane: "none" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "recovery.lock" },
+    { name: "a lane killed before its record write", seed: { claim: "dead", lane: "empty" }, actors: [{ args: ABORT, error: NO_GENERATION }], kept: "recovery.lock/owner.json" },
+    { name: "a reclaimer killed after its marker create", seed: { claim: "dead", lane: "dead" }, actors: [
+      { args: ABORT, pause: { cmd: "mv", glob: "*/recovery.lock */recovery.lock.retired.*", kill: true } },
+      { args: ABORT, error: RECLAIM_MARKER }], kept: "recovery.lock/owner.json" },
   ])("a claim is never recreated, shared or taken from another generation: $name", async ({ seed, actors, kept }) => {
     await withTempRepoAsync("closeout-claim-paths", async (container) => {
       const fixture = installShipFixture(container);
@@ -507,17 +517,17 @@ describe("ship-worktrees closeout journal", () => {
       const worktree = realpathSync(fixture.linked);
       const key = spawnSync(REAL_GIT, ["hash-object", "--stdin"], { input: `operation=ship\nworktree=${worktree}\n`, encoding: "utf-8" }).stdout.trim();
       const claim = join(fixture.journalRoot, "claims/ship", `${key}.lock`);
-      const record = (kind: SeedRecord, journalKey: string) => kind === "empty" ? ""
+      const record = (kind: SeedRecord, journalKey: string) => kind === "empty" || kind === "none" ? ""
         : `{\n  "version": 1,\n  "operation": "ship",\n  "worktree": "${worktree}",\n  "pid": "${spawnSync("true").pid}",\n`
           + (kind === "dead" ? `  "generation": "${randomBytes(16).toString("hex")}",\n` : "") + `  "journal_key": "${journalKey}"\n}\n`;
       if (seed.claim) {
         mkdirSync(claim, { recursive: true });
-        writeFileSync(join(claim, "owner.json"), record(seed.claim, seed.journal ? "orphan-journal" : ""));
+        if (seed.claim !== "none") writeFileSync(join(claim, "owner.json"), record(seed.claim, seed.journal ? "orphan-journal" : ""));
       }
       if (seed.journal) mkdirSync(join(fixture.journalRoot, "ship/orphan-journal"), { recursive: true });
       if (seed.lane) {
         mkdirSync(join(claim, "recovery.lock"));
-        writeFileSync(join(claim, "recovery.lock/owner.json"), record(seed.lane, ""));
+        if (seed.lane !== "none") writeFileSync(join(claim, "recovery.lock/owner.json"), record(seed.lane, ""));
       }
       const shimDir = join(container, "pause-shim");
       mkdirSync(shimDir);
@@ -528,10 +538,11 @@ describe("ship-worktrees closeout journal", () => {
         'real=""; for dir in /bin /usr/bin; do [[ -x "$dir/$name" ]] && { real="$dir/$name"; break; }; done',
         'wait_go() { touch "$PAUSE_DIR/reached"; for _ in $(seq 1 3000); do [[ -f "$PAUSE_DIR/go" ]] && break; sleep 0.01; done; }',
         'if [[ "$name" == "$PAUSE_CMD" && "$*" == $PAUSE_GLOB && ! -e "$PAUSE_DIR/reached" ]]; then',
+        '  if [[ -n "$PAUSE_KILL" ]]; then touch "$PAUSE_DIR/reached"; kill -9 "$PPID"; exit 137; fi',
         '  if [[ -n "$PAUSE_AFTER" ]]; then "$real" "$@"; status=$?; wait_go; exit "$status"; fi',
         '  [[ "$name" == rm ]] && { /bin/rm -f "$target/owner.json"; real=/bin/rmdir; set -- "$target"; }',
         "  wait_go", "fi", 'exec "$real" "$@"', ""].join("\n");
-      for (const name of ["mkdir", "rm", "sed"]) writeExecutable(join(shimDir, name), shim);
+      for (const name of ["mkdir", "mv", "rm", "sed"]) writeExecutable(join(shimDir, name), shim);
       const runs: Promise<{ status: number | null; stdout: string; stderr: string }>[] = [];
       const pauseDirs: string[] = [];
       for (const [index, actor] of actors.entries()) {
@@ -543,7 +554,7 @@ describe("ship-worktrees closeout journal", () => {
         mkdirSync(pauseDir);
         pauseDirs.push(pauseDir);
         runs.push(runHelperAsync("scripts/ship-worktrees.sh", actor.args, fixture.linked, { ...env, PATH: `${shimDir}:${process.env.PATH ?? ""}`,
-          PAUSE_CMD: actor.pause.cmd, PAUSE_GLOB: actor.pause.glob, PAUSE_AFTER: actor.pause.after ? "1" : "", PAUSE_DIR: pauseDir }));
+          PAUSE_CMD: actor.pause.cmd, PAUSE_GLOB: actor.pause.glob, PAUSE_AFTER: actor.pause.after ? "1" : "", PAUSE_KILL: actor.pause.kill ? "1" : "", PAUSE_DIR: pauseDir }));
         for (let i = 0; i < 3000 && !existsSync(join(pauseDir, "reached")); i++) await Bun.sleep(10);
         expect(existsSync(join(pauseDir, "reached")), `actor ${index} never reached its pause`).toBe(true);
       }
@@ -553,10 +564,12 @@ describe("ship-worktrees closeout journal", () => {
         await runs[index];
       }
       const results = await Promise.all(runs);
-      for (const [index, { error }] of actors.entries()) {
+      for (const [index, { error, pause }] of actors.entries()) {
         const result = results[index]!;
         const log = `actor ${index}: exit ${result.status}\n${result.stderr}`;
-        if (error === undefined) {
+        if (pause?.kill) {
+          expect(result.status, log).not.toBe(0);
+        } else if (error === undefined) {
           expect(result.status === 0 || result.stderr.includes("closeout already owned"), log).toBe(true);
         } else {
           expect(result.status === 0, log).toBe(!error);

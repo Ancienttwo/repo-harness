@@ -267,10 +267,19 @@ closeout_claim_on_exit() {
 # A dead lane is reclaimed by the O_EXCL create of a marker named after the
 # lane generation that was proved dead, so one recovery wins it. The winner
 # removes the lane only while the path still holds that generation; a lane
-# elected after the check has a new generation and stays.
+# elected after the check has a new generation and stays. A marker that already
+# exists in that lane belongs to a reclaimer that runs now or was killed before
+# the lane removal. The two cannot be told apart, so it fails closed (status 6)
+# and names the marker for a manual removal.
 closeout_claim_reclaim_lane() {
   local recovery="$1" generation="$2" marker="$1/reclaim.$2"
-  (set -C; : >"$marker") 2>/dev/null || return 1
+  if ! (set -C; : >"$marker") 2>/dev/null; then
+    if [[ -e "$marker" && "$(closeout_claim_record_generation "$recovery/owner.json")" == "$generation" ]]; then
+      closeout_claim_conflict_dir="$marker"
+      return 6
+    fi
+    return 1
+  fi
   if [[ "$(closeout_claim_record_generation "$recovery/owner.json")" != "$generation" ]]; then
     rm -f "$marker"
     return 1
@@ -286,8 +295,16 @@ closeout_claim_reclaim_lane() {
 # between its O_EXCL create and its record write, or a record from before
 # generations) cannot be proved dead, so recovery refuses it (status 5) and
 # names the path for a manual removal.
+#
+# Kill points. Claim: after its mkdir (no record) or its O_EXCL create (empty
+# record) -> recovery status 5; after the record write -> `recover abort`
+# clears it. Lane: after its mkdir or O_EXCL create -> status 5; after its
+# record write -> the next recovery reclaims it. Marker: after its create ->
+# status 6; after a lost check -> a stray marker in a newer lane, which no
+# reclaimer of that lane's generation uses. A kill between a rename and its
+# rm leaves only a `.retired.<pid>` directory off the claim path.
 closeout_claim_takeover_for_recovery() {
-  local operation="$1" claim recovery generation lane_generation
+  local operation="$1" claim recovery generation lane_generation reclaim_result
   claim="$(closeout_claim_path "$operation")" || return 1
   [[ -d "$claim" ]] || return 1
   # The generation is read before the PID: a PID from a later record is live
@@ -300,7 +317,13 @@ closeout_claim_takeover_for_recovery() {
     lane_generation="$(closeout_claim_record_generation "$recovery/owner.json")"
     [[ -n "$lane_generation" ]] || { closeout_claim_conflict_dir="$recovery"; return 5; }
     closeout_claim_owner_live "$recovery/owner.json" && return 3
-    closeout_claim_reclaim_lane "$recovery" "$lane_generation" || return 3
+    reclaim_result=0
+    closeout_claim_reclaim_lane "$recovery" "$lane_generation" || reclaim_result=$?
+    case "$reclaim_result" in
+      0) ;;
+      6) return 6 ;;
+      *) return 3 ;;
+    esac
   fi
   closeout_claim_elect "$recovery" || return 3
   closeout_claim_dir="$claim"
@@ -616,7 +639,7 @@ ship_transaction_begin() {
   fi
   if ! closeout_claim_acquire "ship"; then
     echo "ship-worktrees: closeout already owned for this worktree and operation: $closeout_claim_conflict_dir" >&2
-    fail "run 'ship-worktrees --recover inspect', then '--recover abort' or '--recover reconcile'; '--recover abort' also clears a claim with no recorded journal phase"
+    fail "run 'ship-worktrees --recover inspect', then '--recover abort' or '--recover reconcile'; '--recover abort' also clears a dead owner's claim with no recorded journal phase, and names the path to remove by hand for a claim with no generation"
   fi
   branch="$(current_branch)"
   gate_base_ref="refs/remotes/$REMOTE_NAME/$TARGET_BRANCH"
@@ -942,6 +965,17 @@ closeout_ship_select() {
   printf '%s' "${found[0]}"
 }
 
+closeout_claim_takeover_fail() {
+  local result="$1" fallback="$2"
+  case "$result" in
+    2) fail "ship closeout is still owned by a live process" ;;
+    3) fail "another recovery already owns this ship closeout" ;;
+    5) fail "ship ownership record has no generation: $closeout_claim_conflict_dir; remove it by hand only after you confirm that no ship or recovery runs" ;;
+    6) fail "ship recovery lane has a reclaim marker: $closeout_claim_conflict_dir; remove the marker and its lane ${closeout_claim_conflict_dir%/*} by hand only after you confirm that no ship and no recovery runs" ;;
+    *) fail "$fallback" ;;
+  esac
+}
+
 recover_ship() {
   local action="$RECOVER_ACTION" key="$RECOVER_KEY" dir status last_phase branch verified reported=0 claim claim_result=0
 
@@ -969,13 +1003,10 @@ recover_ship() {
     claim="$(closeout_claim_path "ship")" || fail "cannot resolve ship ownership claim"
     if [[ -d "$claim" && -z "$(closeout_journal_list "ship" "in_progress" | head -1)" ]]; then
       closeout_claim_abort_orphan "ship" || claim_result=$?
-      case "$claim_result" in
-        0) echo "[Ship] Aborted orphan ship ownership claim before journal preparation: $claim"; return 0 ;;
-        2) fail "ship closeout is still owned by a live process" ;;
-        3) fail "another recovery already owns this ship closeout" ;;
-        5) fail "ship ownership record has no generation: $closeout_claim_conflict_dir; remove it by hand only after you confirm that no ship or recovery runs" ;;
-        *) fail "ship ownership claim is not an abortable pre-journal orphan" ;;
-      esac
+      [[ "$claim_result" -eq 0 ]] \
+        || closeout_claim_takeover_fail "$claim_result" "ship ownership claim is not an abortable pre-journal orphan"
+      echo "[Ship] Aborted orphan ship ownership claim before journal preparation: $claim"
+      return 0
     fi
   fi
 
@@ -1002,13 +1033,8 @@ recover_ship() {
       [[ "$status" == "in_progress" ]] || fail "refusing abort of a $status ship journal: $dir"
       claim_result=0
       closeout_claim_takeover_for_recovery "ship" || claim_result=$?
-      case "$claim_result" in
-        0) ;;
-        2) fail "ship closeout is still owned by a live process" ;;
-        3) fail "another recovery already owns this ship closeout" ;;
-        5) fail "ship ownership record has no generation: $closeout_claim_conflict_dir; remove it by hand only after you confirm that no ship or recovery runs" ;;
-        *) fail "ship closeout ownership claim is missing or unreadable" ;;
-      esac
+      [[ "$claim_result" -eq 0 ]] \
+        || closeout_claim_takeover_fail "$claim_result" "ship closeout ownership claim is missing or unreadable"
       ! closeout_ship_effect_landed "$dir" \
         || fail "refusing abort after the push landed; run '--recover reconcile' instead: $dir"
       closeout_journal_restore_snapshot "$dir" || fail "ship journal has no restorable snapshot: $dir"
@@ -1021,13 +1047,8 @@ recover_ship() {
       [[ "$status" == "in_progress" ]] || fail "refusing reconcile of a $status ship journal: $dir"
       claim_result=0
       closeout_claim_takeover_for_recovery "ship" || claim_result=$?
-      case "$claim_result" in
-        0) ;;
-        2) fail "ship closeout is still owned by a live process" ;;
-        3) fail "another recovery already owns this ship closeout" ;;
-        5) fail "ship ownership record has no generation: $closeout_claim_conflict_dir; remove it by hand only after you confirm that no ship or recovery runs" ;;
-        *) fail "ship closeout ownership claim is missing or unreadable" ;;
-      esac
+      [[ "$claim_result" -eq 0 ]] \
+        || closeout_claim_takeover_fail "$claim_result" "ship closeout ownership claim is missing or unreadable"
       # Reconcile exists for an already-landed external effect. Without one the
       # correct recovery is a local rollback, so it refuses instead of guessing
       # -- and it never rolls the remote back.
