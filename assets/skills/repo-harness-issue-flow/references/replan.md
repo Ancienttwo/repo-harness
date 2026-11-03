@@ -22,7 +22,7 @@ Ask for a replan when any one of these is true:
 - The lowest unmerged PR in the merge order is blocked.
 - The triage queue (`orchestrator.md` §8.1) holds more P1 and P2 items
   than active writer seats.
-- No PR merged to main for 4 hours while the parent's merge order holds
+- No PR merged to main for 4 hours while the plan block's merge order holds
   an accepted PR or a PR that is ready for review.
 
 The orchestrator itself cannot see the last trigger when it is stuck: an
@@ -67,7 +67,7 @@ The file has these sections, in this order:
    |---|---|---|
    | `#<n>` | `valid`, `fix body`, `close`, `duplicate of #<m>`, `blocked by #<m>` or `owner hold` | `<file:line or URL>` |
 
-2. **Edges.** The dependency edges (`Depends on`) and the file-overlap
+2. **Edges.** The blocked-by edges and the file-overlap
    edges between open items. Two items that write one file cannot run in
    parallel.
 3. **Lanes and merge batches.** The proposed parallel lanes, the merge

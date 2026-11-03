@@ -6,6 +6,8 @@ import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard, readRepositoryId } from '../../effects/board/collect';
+import { renderDependencyMigrationPlan } from '../../core/board/dependency-migration';
+import { DependencyMigrationError, runDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -18,6 +20,11 @@ interface AttentionOptions extends BoardOptions {
 }
 
 const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
+
+interface MigrateDependenciesOptions extends BoardOptions {
+  readonly write?: boolean;
+  readonly plan?: string;
+}
 
 function parentNumber(options: BoardOptions): number {
   if (options.parent === undefined || !/^[1-9][0-9]*$/u.test(options.parent)) throw new BoardCollectError('--parent <issue number> is required');
@@ -35,6 +42,12 @@ function guarded(action: (options: BoardOptions) => void): (options: BoardOption
       process.exitCode = 1;
     }
   };
+}
+
+function migrationText(result: DependencyMigrationResultV1): string {
+  return [...result.labels.map(label => `label ${label.name}: ${label.result}`),
+    ...result.edges.map(edge => `#${edge.issue} blocked by #${edge.blocker}: ${edge.result} (line ${edge.line_number}: ${edge.line.trim()})`),
+    ...result.skipped.map(line => `#${line.issue} line ${line.line_number}: skipped (${line.line.trim()})`)].join('\n') + '\n';
 }
 
 function attentionText(attention: BoardAttentionV1): string {
@@ -80,6 +93,23 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
       const result = startAttentionWatch({ parent, repository_id: readRepositoryId({ repo_root: process.cwd() }), repo_root: process.cwd(), cli: [process.execPath, CLI_ENTRY], host: attentionHost });
       process.stdout.write(`${result.started ? 'Started' : 'Already live:'} the attention watcher of #${parent} in hc terminal ${result.address}.\n`);
     })(command.optsWithGlobals<BoardOptions>()));
+  board.command('migrate-dependencies')
+    .description('One-shot operator migration: plan the blocked-by links for the Depends on / 依赖 lines of the open sub-issues of one parent and the tier labels, with no write; --write applies the plan (takes --parent and --json)')
+    .option('--write', 'Apply the plan: create the planned labels and blocked-by links (requires --plan)')
+    .option('--plan <digest>', 'The plan digest that the checked run without --write printed')
+    .action((_options: MigrateDependenciesOptions, command: Command) => {
+      const options = command.optsWithGlobals<MigrateDependenciesOptions>();
+      try {
+        const outcome = runDependencyMigration({ repo_root: process.cwd(), parent: parentNumber(options) }, { write: options.write === true, plan: options.plan });
+        if (options.json === true) process.stdout.write(`${JSON.stringify(outcome)}\n`);
+        else process.stdout.write(outcome.kind === 'repo-harness.dependency-migration-plan' ? renderDependencyMigrationPlan(outcome) : migrationText(outcome));
+      } catch (error) {
+        if (!(error instanceof DependencyMigrationError || error instanceof BoardCollectError)) throw error;
+        const done = error instanceof DependencyMigrationError ? { code: error.code, labels: error.labels, edges: error.edges } : {};
+        process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...done, message: error.message })}\n`);
+        process.exitCode = 1;
+      }
+    });
   return board;
 }
 

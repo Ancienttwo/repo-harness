@@ -67,6 +67,15 @@ It posts no APPROVE review and no REQUEST_CHANGES review. A gatekeeper
 has no network, so the session that runs the round publishes its receipt.
 A reviewer with network access may publish its own round.
 
+`review publish` accepts rounds 1 to 3 only. For a round above 3, the
+session that runs the round posts the `acceptance record` by hand, in the
+same shape (`templates.md`, acceptance record): one row with the fields
+`Round`, `Seat`, `Subject` (the full head SHA), `Verdict` (`PASS` or
+`FAIL` with the finding counts), then the `Model relation` line and the
+findings. Post line findings as review threads (`board.md` rule 5). Do not
+write the verdict in free prose: the board cannot read it, and the PR does
+not count as accepted.
+
 Act on the exit code:
 
 | Exit | Error | Action |
