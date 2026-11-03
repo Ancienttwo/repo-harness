@@ -48,8 +48,8 @@ The `architecture` lane runs `repo-harness architecture-projection check --json`
 and fails when the status is not `noop`. When `ARCHITECTURE_SUMMARY` names a
 file, the lane writes the JSON summary there. The daily report puts it in the
 repair issue. `architecture-advisory --base <ref>` is the PR lane, and
-`Required / CI` reads its job. It first runs `archctx constraints check --json`
-and fails unless `constraint.surface.plugin-internals` (ADR-0002 rule 5) was
+`Required / CI` reads its job. It first runs the package-local archctx
+`constraints check --json` and fails unless `constraint.surface.plugin-internals` (ADR-0002 rule 5) was
 evaluated with 0 violations, `coverage: complete`, no reason codes and no
 unresolved imports. It does not read the archctx exit code or the global status.
 Then it runs `repo-harness architecture-debt --json --base <ref>` and prints one
