@@ -10,7 +10,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard, readLocalRepositoryId } from '../src/effects/board/collect';
-import type { RunArchctxProcess } from '../src/effects/architecture/archctx-provider';
+import type { RunArchctxProcess } from '../src/core/architecture/projection';
 import { errorEnvelope } from 'archctx-contracts';
 import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
@@ -344,7 +344,7 @@ test('R5: two owning capabilities among the counted paths are a High signal; an 
     [[task, operator], {}, ['files_incomplete: #1499'], 'tier:low', true],
     // Tests, docs, the model and root Markdown do not count; each has another recorded owner.
     [[task, 'src/effects/terminal/herdr.ts', 'tests/herdr-task-lifecycle.test.ts', 'docs/spec.md', '.archcontext/model/nodes/capability.runtime-harness.task-agent-host.yaml', 'README.md'],
-      { owners: edit('README.md', { matched: true, owningCapabilityId: 'capability.public-surface.root-router' }) }, []],
+      { owners: edit('README.md', { matched: true, stableId: 'capability.public-surface.root-router', owningCapabilityId: 'capability.public-surface.root-router' }) }, []],
     [[task, operator], { archctx: timedOut }, ['RH_ARCHCTX_TIMEOUT: null']],
     [[task, operator], { archctx: rejected }, ['ARCHCONTEXT_MODEL_REJECTED: null']],
   ] as const) expect(r5([...files], options, tier, incomplete)).toEqual([...expected]);
