@@ -87,9 +87,11 @@ of a deleted test before it can be retired without a live test.
 Dependency manifests select every test. The configured test preloads, their imports and `scripts/lib/ci-run-tests.sh` also select every test. They do not hide other unknown paths.
 Daily script exceptions come from commands in `check-ci.sh`, not a skip list.
 They report deferred coverage; a PR consumer test does not prove daily execution.
-An unknown path without a consumer fails selection. A path that passes
-`isDocumentationPath` selects only the tests that
-`scripts/ci-documentation-consumers.ts` finds. Platform jobs have separate outputs: `home_isolation` and `native_oar`.
+An unknown path without a consumer fails selection. In a mixed diff, a path that
+passes `isDocumentationPath` selects every test that
+`scripts/ci-documentation-consumers.ts` finds. A documentation-only diff selects
+only the tests that name a changed document; with none, selection outputs mode
+`documentation` and no build or test job runs. Platform jobs have separate outputs: `home_isolation` and `native_oar`.
 The HOME matrix uses its workflow test imports and the configured test preloads.
 The macOS native OAR job uses the full local import closure of its workflow
 tests (tests, src and scripts), configured preloads, shell scripts, and the OAR host bundle inputs. Selection builds the

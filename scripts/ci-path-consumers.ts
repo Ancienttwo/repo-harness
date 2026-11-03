@@ -1,3 +1,4 @@
+import { readFileSync, writeFileSync } from 'node:fs';
 import { resolve, dirname } from 'node:path';
 import { createHash } from 'node:crypto';
 import { API } from 'typescript/unstable/async';
@@ -16,6 +17,44 @@ const pathInspections = new Set(['basename', 'isAbsolute', 'extname']);
 const readers = new Set(['readFileSync', 'readFile', 'readdirSync', 'readdir', 'existsSync', 'statSync', 'lstatSync', 'copyFileSync', 'cpSync', 'file']);
 const launchers = new Set(['spawn', 'spawnSync', 'execFile', 'execFileSync', 'execSync', 'exec']);
 export const sourceKey = (file: string, source: string) => file + ':' + createHash('sha256').update(source).digest('hex');
+
+type CacheFile = { analyzer: string; entries: Record<string, { references: PathReference[]; evidence: SourceEvidence[] }> };
+const range = (value: any) => Number.isInteger(value?.start) && Number.isInteger(value?.end);
+const validReference = (value: any) => range(value) && typeof value.path === 'string' && typeof value.rooted === 'boolean'
+  && ['data', 'execute', 'literal', 'constructed'].includes(value.operation);
+const validEvidence = (value: any) => range(value) && typeof value.reason === 'string'
+  && (value.paths === undefined || (Array.isArray(value.paths) && value.paths.every((path: unknown) => typeof path === 'string')));
+
+/**
+ * The persisted file is a projection of full parses, keyed by the analyzer fingerprint and by
+ * file path plus content SHA-256. A missing file, another analyzer or a malformed entry is a miss,
+ * so that file parses in full. Returns the number of entries loaded.
+ */
+export function loadPathReferences(file: string, analyzer: string): number {
+  let parsed: CacheFile;
+  try { parsed = JSON.parse(readFileSync(file, 'utf8')); } catch { return 0; }
+  if (parsed?.analyzer !== analyzer || !parsed.entries || typeof parsed.entries !== 'object') return 0;
+  let loaded = 0;
+  for (const [key, entry] of Object.entries(parsed.entries)) {
+    if (!/:[0-9a-f]{64}$/.test(key) || !Array.isArray(entry?.references) || !Array.isArray(entry.evidence)
+      || !entry.references.every(validReference) || !entry.evidence.every(validEvidence)) continue;
+    cache.set(key, entry.references);
+    sourceEvidence.set(key, entry.evidence);
+    loaded++;
+  }
+  return loaded;
+}
+
+/** Saves only the entries of these sources, so the file does not keep old file versions. */
+export function savePathReferences(file: string, analyzer: string, entries: readonly (readonly [string, string])[]): void {
+  const saved: CacheFile = { analyzer, entries: {} };
+  for (const [path, source] of entries) {
+    const key = sourceKey(path, source);
+    const references = cache.get(key);
+    if (references) saved.entries[key] = { references, evidence: sourceEvidence.get(key)! };
+  }
+  writeFileSync(file, JSON.stringify(saved));
+}
 
 /** Parse immutable source strings, including deleted versions, without running repository code. */
 export async function discoverPathReferences(entries: readonly (readonly [string, string])[]): Promise<ReadonlyMap<string, PathReference[]>> {
