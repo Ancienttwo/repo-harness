@@ -1,6 +1,8 @@
 import { describe, test, expect } from "bun:test";
 import { existsSync, readdirSync, readFileSync } from "fs";
 import { join } from "path";
+import { renderHazardRegion } from "../scripts/sync-reference-configs";
+import { REVIEW_HAZARDS } from "../src/core/board/hazards";
 
 const ROOT = join(import.meta.dir, "..");
 const SOURCE_DIR = join(ROOT, "assets/reference-configs");
@@ -107,6 +109,17 @@ describe("change hazard list", () => {
         expect(hazards, marker).toContain(marker);
       }
     }
+  });
+
+  test("assets/review-hazards.v1.json owns the hazard table: a hand edit or a list change is drift", () => {
+    const doc = readFileSync(join(SOURCE_DIR, FLOW_DOC), "utf-8");
+    expect(renderHazardRegion(doc, REVIEW_HAZARDS)).toBe(doc);
+    const edited = doc.replace("| `.github/**` |", "| None (`path_visible: false`) |");
+    expect(edited).not.toBe(doc);
+    expect(renderHazardRegion(edited, REVIEW_HAZARDS)).not.toBe(edited);
+    const changed = { ...REVIEW_HAZARDS, hazards: REVIEW_HAZARDS.hazards.map((hazard) => ({ id: hazard.id, text: hazard.text, path_visible: false as const })) };
+    expect(renderHazardRegion(doc, changed)).not.toBe(doc);
+    expect(() => renderHazardRegion(doc.replace("<!-- review-hazards:list:end -->", ""), REVIEW_HAZARDS)).toThrow("exactly one");
   });
 
   test("Review by risk and the external protocol link the shared list", () => {

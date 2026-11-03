@@ -1,0 +1,57 @@
+{
+  "hazards_version": "repo-harness.review-hazards.v1",
+  "hazards": [
+    {
+      "id": "ci-config",
+      "text": "Changes a workflow or other CI configuration under `.github/`.",
+      "path_visible": true,
+      "paths": [".github/**"]
+    },
+    {
+      "id": "release-install-script",
+      "text": "Changes a release, publish, update or install script, or a package script that runs at install or release.",
+      "path_visible": false
+    },
+    {
+      "id": "container-build",
+      "text": "Changes a `Dockerfile` or another container build file.",
+      "path_visible": true,
+      "paths": ["**/Dockerfile", "**/Dockerfile.*", "**/*.Dockerfile", "**/Containerfile", "**/Containerfile.*"]
+    },
+    {
+      "id": "network",
+      "text": "Adds a network address, endpoint or telemetry.",
+      "path_visible": false
+    },
+    {
+      "id": "credentials",
+      "text": "Reads credentials, such as tokens, keys, `~/.ssh`, `~/.npmrc` or credential environment variables.",
+      "path_visible": false
+    },
+    {
+      "id": "dependency",
+      "text": "Adds or changes a dependency or a lockfile entry. A lockfile-only bump is still a hit; its source does not lower the tier.",
+      "path_visible": true,
+      "paths": [
+        "**/bun.lock",
+        "**/bun.lockb",
+        "**/package-lock.json",
+        "**/npm-shrinkwrap.json",
+        "**/yarn.lock",
+        "**/pnpm-lock.yaml",
+        "**/Cargo.lock",
+        "**/go.sum",
+        "**/poetry.lock",
+        "**/uv.lock",
+        "**/Pipfile.lock",
+        "**/Gemfile.lock",
+        "**/composer.lock"
+      ]
+    },
+    {
+      "id": "opaque-content",
+      "text": "Adds a binary, or an encoded or opaque blob, such as base64, long hex, minified or otherwise unreadable content.",
+      "path_visible": false
+    }
+  ]
+}
