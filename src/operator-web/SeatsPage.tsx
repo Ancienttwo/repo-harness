@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from 'react';
 import { Banner, Button, Empty, Loader, Switch, cn } from '@cloudflare/kumo';
-import { SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1, type SeatTool } from '../core/operator/seats-settings';
+import { buildSeatLaunch, type SeatLimitLevel } from '../core/operator/seat-launch';
+import { SEAT_TOOLS, type SeatId, type SeatRuntime, type SeatsSettingsV1 } from '../core/operator/seats-settings';
 import type { SetupSnapshotV2 } from '../core/setup/types';
 import type { OperatorTranslate } from './i18n';
 import { seatChanges, setSeatEffort, setSeatModel, setSeatRole, setSeatRuntime, setSeatTool, type SeatsSettingsForm } from './seats';
@@ -8,45 +9,18 @@ import { SaveResult } from './SettingsPage';
 import { saveNeedsReload } from './settings';
 import { CommandLine, SectionTitle } from './ui';
 
-type Enforcement = 'hard' | 'blocks_common' | 'brief_only' | 'none';
-
-/**
- * How each host applies a tool group at launch, as the canvas states it. The
- * argv itself comes from `repo-harness seats argv` (#1473); this table only
- * labels the switches.
- */
-const HOST_TOOLS: Readonly<Record<Exclude<SeatRuntime, 'pi'>, Readonly<Record<SeatTool, { readonly map: string; readonly enforcement: Enforcement }>>>> = {
-  claude: {
-    read: { map: 'Read · Grep · Glob', enforcement: 'hard' },
-    edit: { map: 'Edit · Write · NotebookEdit', enforcement: 'hard' },
-    shell: { map: 'Bash', enforcement: 'hard' },
-    net: { map: 'WebFetch · WebSearch', enforcement: 'hard' },
-    tasks: { map: 'TaskCreate · TaskUpdate · TaskList · TaskGet', enforcement: 'hard' },
-    mcp: { map: 'mcp__repo-harness__*', enforcement: 'hard' },
-    gh: { map: 'Bash(gh pr create:*) · Bash(gh pr merge:*) · Bash(gh issue create:*) · Bash(git push:*)', enforcement: 'blocks_common' },
-  },
-  codex: {
-    read: { map: 'sandbox read-only', enforcement: 'hard' },
-    edit: { map: 'sandbox workspace-write', enforcement: 'hard' },
-    shell: { map: 'sandbox exec', enforcement: 'hard' },
-    net: { map: 'sandbox_workspace_write.network_access', enforcement: 'hard' },
-    tasks: { map: '—', enforcement: 'none' },
-    mcp: { map: 'mcp_servers.repo-harness', enforcement: 'brief_only' },
-    gh: { map: 'gh · git push', enforcement: 'blocks_common' },
-  },
+const LEVEL_TONE: Readonly<Record<SeatLimitLevel, string>> = {
+  enforced: 'bg-kumo-success-tint text-kumo-success',
+  named_types_only: 'bg-kumo-warning-tint text-kumo-warning',
+  common_commands: 'bg-kumo-warning-tint text-kumo-warning',
+  instructions_only: 'bg-kumo-warning-tint text-kumo-warning',
 };
 
-const ENFORCEMENT_TONE: Readonly<Record<Enforcement, string>> = {
-  hard: 'bg-kumo-success-tint text-kumo-success',
-  blocks_common: 'bg-kumo-warning-tint text-kumo-warning',
-  brief_only: 'bg-kumo-warning-tint text-kumo-warning',
-  none: 'bg-kumo-fill text-kumo-subtle',
-};
-
+// The plain command prints the argv alone, so `--argv "$(...)"` takes it as is.
 const LAUNCH: Readonly<Record<SeatId, string>> = {
-  orchestrator: 'herdr-app do tab.new --name orchestrator --space <id> --folder <repo> --argv "$(repo-harness seats argv orchestrator --json)"',
-  advisor: 'herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(repo-harness seats argv advisor --json)"',
-  worker: 'herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker --json)" --task <packet>',
+  orchestrator: 'herdr-app do tab.new --name orchestrator --space <id> --folder <repo> --argv "$(repo-harness seats argv orchestrator)"',
+  advisor: 'herdr-app do pane.split --direction right --pane <orchestrator-pane> --argv "$(repo-harness seats argv advisor)"',
+  worker: 'herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker)" --task <packet>',
 };
 
 /** The pane layout rule: Tab 1 holds the orchestrator, the advisor and one worker; later tabs hold workers only. */
@@ -54,6 +28,10 @@ const LAYOUT: readonly (readonly SeatId[])[] = [['orchestrator', 'advisor', 'wor
 
 function Badge({ className, children }: { readonly className: string; readonly children: ReactNode }) {
   return <span className={cn('inline-flex h-5 shrink-0 items-center rounded-full px-2 text-xs font-medium whitespace-nowrap', className)}>{children}</span>;
+}
+
+function LimitBadge({ level, t }: { readonly level: SeatLimitLevel; readonly t: OperatorTranslate }) {
+  return <span data-limit={level}><Badge className={LEVEL_TONE[level]}>{t(`seats.limit.${level}`)}</Badge></span>;
 }
 
 function Segmented<T extends string | null>({ label, options, value, onPick, disabled }: {
@@ -123,7 +101,10 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
     ...(draft.model !== null && !runtime.models.includes(draft.model) ? [{ value: draft.model as string | null, label: draft.model }] : []),
   ];
   const efforts = [{ value: null, label: t('seats.effort.default') }, ...ranges.efforts.map(effort => ({ value: effort as string | null, label: effort, off: !runtime.effort }))];
-  const host = draft.runtime === 'pi' ? null : HOST_TOOLS[draft.runtime];
+  // The host agent types change only the argv; the limit levels do not depend on them, so the page passes none.
+  const limits = buildSeatLaunch(seat, draft, 'seats', []).limits;
+  const levelOf = (subject: string) => limits.find(limit => limit.subject === subject)?.level ?? null;
+  const fleetLevel = levelOf('fleet');
   const noFleet = range.fleet.length === 0;
   // A stored role the server no longer lists stays visible, as a stored model does, so it can be switched off.
   const roles: readonly { readonly name: string; readonly writable: boolean | null }[] = [
@@ -173,7 +154,6 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
       <ul aria-label={t('seats.tools.title')} data-seat-tools>
         <li className="flex flex-wrap items-center gap-3 bg-kumo-recessed px-4 py-2.5 sm:px-5">
           <span className="flex-1 text-sm font-medium text-kumo-strong">{t('seats.tools.title')}</span>
-          <span className="text-xs text-kumo-subtle">{t(`seats.tools.host.${draft.runtime}`)}</span>
         </li>
         {SEAT_TOOLS.map((tool) => {
           const on = draft.tools.includes(tool);
@@ -184,10 +164,11 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
               : draft.runtime === 'codex' && tool === 'shell' && on ? t('seats.tools.why.codexShell')
                 : draft.runtime === 'codex' && tool === 'tasks' ? t('seats.tools.why.codexTasks') : null;
           const why = ruled ? t(tool === 'edit' || tool === 'gh' ? `seats.tools.rule.${tool}` : 'seats.tools.rule.other') : hostWhy;
-          const enforcement = host === null ? 'none' : host[tool].enforcement;
+          // A group that is on has no limit; an off group shows how the host applies the limit.
+          const level = levelOf(tool);
           return (
-            <ToggleRow key={tool} name={t(`seats.tool.${tool}`)} mono={false} detail={host === null ? t('seats.tools.hostDefault') : host[tool].map}
-              badge={<Badge className={ENFORCEMENT_TONE[enforcement]}>{t(`seats.enforcement.${enforcement}`)}</Badge>}
+            <ToggleRow key={tool} name={t(`seats.tool.${tool}`)} mono={false} detail={level === null ? '' : t(`seats.limit.${level}.detail`)}
+              badge={level === null ? null : <LimitBadge level={level} t={t} />}
               // An out-of-range group that the draft holds can only be switched off; the server refuses the section while it stays.
               why={why} locked={locked || (why !== null && !(ruled && on))} on={on}
               aria={t('seats.tools.allow', { tool: t(`seats.tool.${tool}`) })}
@@ -199,9 +180,7 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
       <ul aria-label={t('seats.fleet.title')} data-seat-fleet>
         <li className="flex flex-wrap items-center gap-3 bg-kumo-recessed px-4 py-2.5 sm:px-5">
           <span className="flex-1 text-sm font-medium text-kumo-strong">{t('seats.fleet.title')}</span>
-          <Badge className={!noFleet && draft.runtime === 'claude' ? ENFORCEMENT_TONE.hard : !noFleet && draft.runtime === 'codex' ? ENFORCEMENT_TONE.brief_only : ENFORCEMENT_TONE.none}>
-            {noFleet ? t('seats.fleet.fixedEmpty') : t(`seats.fleet.enforce.${draft.runtime}`)}
-          </Badge>
+          {fleetLevel === null ? <span className="text-xs text-kumo-subtle">{t('seats.fleet.why.pi')}</span> : <LimitBadge level={fleetLevel} t={t} />}
         </li>
         {noFleet && <li className="m-4 rounded-lg bg-kumo-recessed px-3.5 py-3 text-sm sm:mx-5" data-fleet-locked>{t('seats.fleet.orchestratorLocked')}</li>}
         {/* With no allowed role, only stored roles show, so they can be switched off. */}
@@ -223,9 +202,7 @@ function SeatCard({ seat, form, settings, setup, locked, t }: {
       <div className="flex flex-col gap-2 border-t border-kumo-hairline px-4 py-4 sm:px-5" data-seat-launch>
         <span className="text-sm font-medium text-kumo-strong">{t('seats.launch.title')}</span>
         <CommandLine command={LAUNCH[seat]} t={t} />
-        <Badge className="self-start bg-kumo-fill text-kumo-subtle">{t('seats.launch.configOnly')}</Badge>
         <pre aria-label={t('seats.launch.config')} className="m-0 rounded-md bg-kumo-recessed px-3 py-2 font-mono text-xs whitespace-pre-wrap [overflow-wrap:anywhere]">{JSON.stringify(draft)}</pre>
-        <span className="text-xs text-kumo-subtle">{t('seats.launch.note')}</span>
       </div>
     </section>
   );
