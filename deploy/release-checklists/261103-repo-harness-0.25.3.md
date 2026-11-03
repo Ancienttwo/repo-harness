@@ -95,7 +95,7 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
   that render. The last green Daily run is 41503838293 on `0765762aa`
   (before 0.25.2).
 - Push CI run 41601998066 on `240f56153` passed. Push CI run 41603308041
-  on `7ed64f848` passed. Every push CI run on main from `c1c727052` to
+  on `7ed64f848` passed. Every push CI run on main from `4660e4b86` to
   `7ed64f848` passed. The Daily run did not run after #1575.
 - The release-prep PR needs green `Required / CI` on its head before merge.
 
@@ -139,6 +139,11 @@ merged before this PR). The 0.25.4 work is held and is not in this release:
 
 ## Release readiness items
 
+- Consumer architecture smoke: `bun run test:files tests/hook-runtime.test.ts
+  -t "#850" --timeout 60000 --max-concurrency 1`: 2 pass, 0 fail. This
+  includes the test "a registry consumer without code facts or a projection
+  manifest gets one architecture line (#850)". Final-subject run at head
+  `7d9809b4a` (`a9491c3d9` plus filing commits only). Guard calls: 0.
 - Skill eval evidence: unavailable for 0.25.3. The only report,
   `evals/benchmark.md`, is from 2026-06-14 (0.5.1): `full_test_count` 4,
   `dry_run_ratio` 0.0%, `grader_pass_rate` 56.3% (9/16),
