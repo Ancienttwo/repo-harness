@@ -7,7 +7,8 @@ import { itemFindings, itemPullRequests, itemStage, itemTerminals, primaryPullRe
 import { DrawerFrame, useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import type { ItemOwner, TaskMessagesResult, VerifiedTask } from './repository-reads';
-import { newestFirst, type TaskMessageView } from '../core/operator/task-messages';
+import type { TaskMessageView } from '../core/operator/task-messages';
+import { newestTaskMessageFirst } from '../core/fleet/task-message-order';
 import { Age, CommandLine, CopyButton, ExternalLink, StatusDot } from './ui';
 import { boardLocation, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 
@@ -167,7 +168,7 @@ function Inbox({ inbox, now, t }: { readonly inbox: readonly TaskMessagesResult[
   const failed = inbox?.flatMap(read => read.state === 'unavailable' ? [read] : []) ?? [];
   const views = inbox?.flatMap(read => read.state === 'ok' ? [read.view] : []) ?? [];
   // A second verified task interleaves by the order of each view.
-  const messages = views.flatMap(view => view.messages).sort(newestFirst);
+  const messages = views.flatMap(view => view.messages).sort(newestTaskMessageFirst);
   const complete = views.every(view => view.complete);
   return (
     <section aria-labelledby="task-inbox" className="flex flex-col gap-2">

@@ -245,11 +245,12 @@ host's PR events or check when the worker reports.
   risk). Send each reviewer the review packet of `acceptor.md` §2.1. Each
   reviewer posts an `acceptance claim` before it reads. Who reviews each
   round, and how many claims a round has, follow `acceptor.md` §2.2.
-  Findings take the severities of `acceptor.md` §3. A P3 becomes a follow-up issue, not a PR blocker.
-  Send the findings to the worker that wrote the PR. You make the
-  second-finding choice of the class rule (`worker.md` §7). Record
-  the result in one acceptance record comment on the PR, in the row shape
-  of `templates.md`: round, role, subject, verdict and model relation.
+  Findings take the severities of `acceptor.md` §3. A P3 becomes a
+  follow-up issue, not a PR blocker. Send the findings to the worker that
+  wrote the PR. You make the second-finding choice of the class rule
+  (`worker.md` §7). Record the result in one acceptance record comment on
+  the PR, in the row shape of `templates.md`: round, role, subject,
+  verdict and model relation.
 - **Defensive code.** Reject compatibility branches, fallbacks and
   speculative guards that the issue did not ask for, even when the tests
   pass. Quote the boundary line. This is the most common reason to send a
