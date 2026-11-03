@@ -233,7 +233,7 @@ table.matrix { border-collapse: separate; border-spacing: 4px; font-size: 13px; 
   </div>
   <div class="panel" style="left:1392px;top:608px;width:224px;height:320px">
     <h3 style="margin:0 0 8px;font-size:15px">Who guards these directions</h3>
-    <p style="margin:0 0 6px;font-size:13px;color:#4A4F57">Checked by <span class="mono">scripts/check-state-boundaries.ts</span> for the pure core and the harness tiers, and by the model's <span class="mono">layer-direction</span> constraint (warning) through archctx.</p>
+    <p style="margin:0 0 6px;font-size:13px;color:#4A4F57">Checked by <span class="mono">scripts/check-state-boundaries.ts</span> for the pure core and the harness tiers, and by the model's <span class="mono">layer-direction</span> constraint (warning) through archctx. The <span class="mono">plugin-internals</span> constraint (error, ADR-0002 rule 5) fails Required / CI.</p>
     <p style="margin:0;font-size:13px;color:#4A4F57">Not checked: runtime calls, dynamic imports and process entry strings. Board 1 omits those edges.</p>
   </div>
   <div class="foot" style="left:88px;top:872px;width:1264px">The matrix is the only measured dependency view. A model relation that the code satisfies with type-only imports has no count here.</div>
