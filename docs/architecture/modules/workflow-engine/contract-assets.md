@@ -1,5 +1,5 @@
 # workflow-engine/contract-assets 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:69d8096c0eb5be9dab961f6e2905da14f4a74c32d0b7fd2e91c858843864ae00" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-contract-assets" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f1bf3272596742484f6f984112dd6d726bb1e074796c8701f5c617dc131e9dba" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.contract-assets`(kind `capability`)
 > **Matched Prefixes**:`assets/workflow-contract.v1.json`、`.ai/context/**`、`.archcontext/model/nodes/**`、`scripts/capability-resolver.ts`、`scripts/capability-config.ts`、`scripts/contract-worktree.sh`、`scripts/merge-gate.ts`、`scripts/ship-worktrees.sh`、`assets/templates/**`、`assets/reference-configs/**`、`docs/reference-configs/**`、`assets/AGENTS.md`、`assets/CLAUDE.md`、`.archcontext/**`、`docs/adr/**`、`src/core/capabilities/**`、`assets/project-structures/**`、`assets/plan-map.json`、`assets/versions.json`、`.claude/templates/**`、`scripts/workflow-contract.ts`、`scripts/check-context-map.ts`、`scripts/check-context-files.sh`、`scripts/select-agent-context-blocks.sh`、`scripts/sync-helper-sources.ts`、`scripts/sync-reference-configs.ts`、`scripts/contract-worktree-runtime.ts`、`scripts/worktree-merge-lib.sh`、`scripts/cutover-closure.ts`、`scripts/new-spec.sh`、`scripts/summarize-failures.sh`、`scripts/maintenance-triage.sh`、`scripts/heartbeat-triage.sh`、`scripts/check-deploy-sql-order.sh`、`scripts/factor-lab-new.sh`、`scripts/factor-lab-promote.sh`、`scripts/factor-lab-reject.sh`、`scripts/factor-lab-check.sh`
@@ -86,7 +86,7 @@ flowchart LR
 - `calls` ← `component.global-runtime-reconciliation.cli-diagnostics` — Read the ArchContext capability authority for the doctor report
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the init and capability-context commands
 - `calls` ← `component.global-runtime-reconciliation.primary` — Sync the cross-review skills through the init command
-- `reads` ← `component.hook-adapters.host-installer` — Resolve the managed and Claude-only fleet role lists during host installation
+- `reads` ← `component.hook-adapters.host-installer` — Resolve the managed fleet role list during host installation
 - `reads` ← `component.inspection-migration.primary` — Read directory and legacy path inventory from the package workflow contract
 - `depends-on` ← `capability.runtime-harness.mcp-sidecar` — Run declared helpers from MCP tools.
 - `reads` ← `component.operator.architecture-reader` — Plugin → core: decode the capability registry from the native context and resolve changed paths to capability owners

@@ -1,6 +1,6 @@
 # runtime-harness/operator 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:9ee5842e95b3d2fa0a719e87256e2f2788f0e68c6e05c9ad12957c79936a29c7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-operator" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ed72720bc1e079b1cddcbcf94409b389597deedcfb4229a8397bfc0efa84d5a7" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.operator`(kind `capability`)
 > **Matched Prefixes**:`docs/kanban-runtime-status.md`、`src/effects/operator/**`、`src/operator-web/**`、`src/effects/setup/**`、`src/effects/dev-activity/**`、`vite.operator.config.ts`
@@ -161,13 +161,11 @@ flowchart LR
   - `calls` → `component.workflow-state.coordination-plane` — Create a doc session worktree under the worktree topology lock of its clone.
   - `reads` → `component.execution-primitives.primary` — Read the managed worktree root and its naming rule for a doc session worktree.
   - `reads` → `external.herdr-core` — Run hc server status and read the task-session hc events snapshot for the hc runtime transport, and follow the task-session hc events stream for runtime capture.
-  - `reads` → `capability.organization.task-fleet` — Read retained per-repository task observations and the fleet board for the console
 - `component.operator.primary-cli`:
   - 無。
 - `component.operator.view-projections`:
   - `depends-on` → `component.operator.architecture-view` — Decode the module index and module detail shapes that the architecture view declares
   - `reads` → `component.execution-primitives.secret-patterns` — Read the shared secret token rules that redact doc session events.
-  - `reads` → `capability.organization.task-fleet` — Render fleet board errors and task message shapes
 - `component.operator.web-console`:
   - `calls` → `component.operator.activity-feeds` — Decode the development activity and setup snapshots with the decoders the server uses
   - `calls` → `component.operator.primary` — Fetch public JSON observations through GET and HEAD routes only

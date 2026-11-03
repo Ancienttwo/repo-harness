@@ -1,5 +1,5 @@
 # runtime-harness/hook-adapters 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5c3ff0ac650936113180f317e52f5a998988f8869aae53bcaefb5d6c37b69daf" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-hook-adapters" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:bb78947e24a09cb69b90d1326c8b4aa65d7e9b24b0fa920a3f2e9524f2d10e31" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.hook-adapters`(kind `capability`)
 > **Matched Prefixes**:`src/cli/hook/**`、`src/cli/installer/**`、`src/pi/**`、`src/effects/managed-tree.ts`、`src/cli/hook-entry.ts`、`src/effects/loop/**`、`src/effects/segmented-log.ts`、`src/effects/run-summary-retention.ts`、`src/cli/commands/install.ts`、`src/cli/commands/status.ts`、`src/cli/commands/security.ts`
@@ -103,7 +103,7 @@ flowchart LR
   - `calls` → `capability.workflow-engine.workflow-state` — Canonicalize edit paths and resolve the owners of edited paths
 - `component.hook-adapters.host-installer`:
   - `calls` → `capability.public-surface.adoption` — Share the managed hook command fingerprints with the adoption migration
-  - `reads` → `capability.workflow-engine.contract-assets` — Resolve the managed and Claude-only fleet role lists during host installation
+  - `reads` → `capability.workflow-engine.contract-assets` — Resolve the managed fleet role list during host installation
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold the runtime host transaction lock and resolve the Pi opt-in repository through the bounded shared Git runner
   - `calls` → `capability.runtime-harness.global-runtime-reconciliation` — Read the shared host skill roots for install projections and report architecture projection readiness in status
   - `calls` → `external.pi` — Use Pi list, install and remove for the exact package source, without writing Pi settings or bypassing trust.
@@ -125,7 +125,7 @@ flowchart LR
   - `calls` → `capability.workflow-engine.execution-primitives` — Hold the native role evidence lock
   - `depends-on` → `component.hook-adapters.primary` — Implement the typed handler contract and read state through the event-scoped collector
   - `calls` → `capability.organization.task-fleet` — Render task inbox messages as untrusted session context
-  - `calls` → `capability.workflow-engine.workflow-state` — Read Effective State snapshots, capability ownership and stored provider board slices for session context
+  - `calls` → `capability.workflow-engine.workflow-state` — Read Effective State snapshots and capability ownership for session context
 - `component.hook-adapters.session-lifecycle-effects`:
   - 無。
 

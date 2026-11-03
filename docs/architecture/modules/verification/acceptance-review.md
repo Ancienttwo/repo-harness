@@ -1,9 +1,9 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4c3855ba35c2509f6530104cbc8a6615f4c88c5e5d15b8e97b1c7e6c22dbeee4" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4b261cdf1e2f2ebc8bf028af048ca048ef65a601acd911fdf5b99aa33a988315" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
-> **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
+> **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -63,7 +63,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`
+- 匹配前綴:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
 - 排除前綴:`src/core/review/module-review-prompt.ts`、`src/effects/review/docs-host-isolation.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -74,6 +74,7 @@ flowchart LR
 - `calls` → `external.claude-code` — Run Claude Code as a sandboxed reviewer in the OAR review host.
 - `calls` → `external.codex` — Run Codex as a sandboxed reviewer in the OAR review host.
 - `deployed-on` → `process.oar-review-host` — Acceptance review runs review sessions in the OAR review host.
+- `reads` → `external.github` — Read the GitHub repository identity and the admitted issue goal through gh under the manual external_sources policy
 - `calls` → `capability.runtime-harness.hook-adapters` — Admit at most one persistent semantic review session per work package through the circuit breaker
 - `depends-on` → `capability.runtime-harness.operator` — Use the architecture module view in review prompts.
 - `calls` → `component.acceptance-review.primary` — Run one generic acceptance review round for an admitted review campaign
@@ -84,7 +85,6 @@ flowchart LR
 - `calls` ← `component.contract-assets.planning-helpers` — Read the acceptance policy for planning helpers
 - `depends-on` ← `capability.verification.evals-checks` — Test Acceptance Review behavior through its source modules.
 - `reads` ← `component.execution-primitives.task-session-record` — Type the task session record fields with the review runner port types: process proof, task agent spec and task session admission
-- `depends-on` ← `capability.runtime-harness.external-source-intake` — Read protected review admission sources for current source-binding validation
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the review command
 - `depends-on` ← `capability.runtime-harness.hook-adapters` — Read the diff fingerprint for mutation guards.
 - `depends-on` ← `capability.runtime-harness.operator` — Read and reobserve protected current review admission for exact session discovery and current goal context
