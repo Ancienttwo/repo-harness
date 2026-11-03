@@ -4,7 +4,7 @@ import type { BoardHostPortsV1 } from '../../core/board/board';
 import { BoardSourceError } from '../../core/board/source';
 import { BoardCollectError, collectBoard } from '../../effects/board/collect';
 import { renderDependencyMigrationPlan } from '../../core/board/dependency-migration';
-import { applyDependencyMigration, DependencyMigrationError, planDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
+import { DependencyMigrationError, runDependencyMigration, type DependencyMigrationResultV1 } from '../../effects/board/dependency-migration';
 
 interface BoardOptions {
   readonly parent?: string;
@@ -76,14 +76,9 @@ export function buildBoardCommand(host: BoardHostPortsV1): Command {
     .action((_options: MigrateDependenciesOptions, command: Command) => {
       const options = command.optsWithGlobals<MigrateDependenciesOptions>();
       try {
-        const input = { repo_root: process.cwd(), parent: parentNumber(options) };
-        const plan = planDependencyMigration(input);
-        if (options.write !== true) {
-          process.stdout.write(options.json === true ? `${JSON.stringify(plan)}\n` : renderDependencyMigrationPlan(plan));
-          return;
-        }
-        const result = applyDependencyMigration(input, plan, options.plan);
-        process.stdout.write(options.json === true ? `${JSON.stringify(result)}\n` : migrationText(result));
+        const outcome = runDependencyMigration({ repo_root: process.cwd(), parent: parentNumber(options) }, { write: options.write === true, plan: options.plan });
+        if (options.json === true) process.stdout.write(`${JSON.stringify(outcome)}\n`);
+        else process.stdout.write(outcome.kind === 'repo-harness.dependency-migration-plan' ? renderDependencyMigrationPlan(outcome) : migrationText(outcome));
       } catch (error) {
         if (!(error instanceof DependencyMigrationError || error instanceof BoardCollectError)) throw error;
         const done = error instanceof DependencyMigrationError ? { code: error.code, labels: error.labels, edges: error.edges } : {};

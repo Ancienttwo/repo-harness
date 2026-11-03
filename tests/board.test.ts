@@ -8,7 +8,7 @@ import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
 import { collectBoard } from '../src/effects/board/collect';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
-import { applyDependencyMigration, planDependencyMigration } from '../src/effects/board/dependency-migration';
+import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { boardHostPorts } from '../src/effects/terminal/herdr-core';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -240,11 +240,13 @@ function migrationStub(initial: readonly MigrationSubIssue[], missing: readonly 
   const subIssues = [...initial];
   const labels = new Set<string>();
   let blockerReads = 0;
+  let calls = 0;
   const edges = new Set(subIssues.flatMap(node => (node.blocked_by ?? []).map(blocker => `I${node.number}:${blocker}`)));
   const writes: string[] = [];
   const answer = (value: unknown) => ({ status: 0, stdout: JSON.stringify(value) });
   const number = (id: string) => Number(id.replace(/^[A-Z]+/u, ''));
   const runner = (args: readonly string[]) => {
+    calls += 1;
     if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
     if (args.includes('POST')) {
       const name = args.find(arg => arg.startsWith('name='))!.slice(5);
@@ -276,7 +278,8 @@ function migrationStub(initial: readonly MigrationSubIssue[], missing: readonly 
   // `plan` is the run without --write. `migrate` is `--write --plan <digest>`: a fresh plan, the digest check, then exactly its writes;
   // without a digest it uses the fresh plan's own, as a person who checked that same list would.
   return {
-    runner, writes, blockerReads: () => blockerReads, plan: () => planDependencyMigration(input),
+    runner, writes, blockerReads: () => blockerReads, calls: () => calls, plan: () => planDependencyMigration(input),
+    command: (flags: { readonly write: boolean; readonly plan: string | undefined }) => runDependencyMigration(input, flags),
     edit: (number: number, body: string) => { subIssues.splice(subIssues.findIndex(node => node.number === number), 1, { ...subIssues.find(node => node.number === number)!, body }); },
     migrate: (digest?: string) => { const plan = planDependencyMigration(input); return applyDependencyMigration(input, plan, digest ?? plan.digest); },
     apply: (digest: string | undefined) => applyDependencyMigration(input, planDependencyMigration(input), digest),
@@ -393,7 +396,12 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
   drift.edit(1510, 'Watcher.\n依赖：#1473\n');
   expect(stopOf(() => drift.migrate(checked.digest))).toMatchObject({ code: 'dependency_plan_changed' });
   expect(drift.writes).toEqual([]);
-  // --write without --plan <digest> is refused.
+  // --write without --plan <digest> is refused, and the command refuses it before any GitHub call.
   expect(stopOf(() => drift.apply(undefined))).toMatchObject({ code: 'plan_digest_required' });
   expect(drift.writes).toEqual([]);
+  const flags = migrationStub(MIGRATION_SUB_ISSUES);
+  expect(stopOf(() => flags.command({ write: true, plan: undefined }))).toMatchObject({ code: 'plan_digest_required' });
+  // --plan <digest> without --write is refused too.
+  expect(stopOf(() => flags.command({ write: false, plan: checked.digest }))).toMatchObject({ code: 'plan_without_write' });
+  expect([flags.calls(), flags.writes]).toEqual([0, []]);
 });

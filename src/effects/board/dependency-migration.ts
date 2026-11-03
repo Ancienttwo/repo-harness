@@ -10,6 +10,7 @@ export type DependencyMigrationErrorCode =
   | 'parent_not_found'
   | 'foreign_sub_issue'
   | 'plan_digest_required'
+  | 'plan_without_write'
   | 'dependency_plan_changed'
   | 'sub_issues_truncated'
   | 'blocked_by_truncated'
@@ -170,6 +171,17 @@ export function planDependencyMigration(input: DependencyMigrationInput): Depend
     ambiguous: Object.freeze(ambiguous), unparsed: Object.freeze(unparsed), stop,
   };
   return Object.freeze({ ...plan, digest: dependencyPlanDigest(plan) });
+}
+
+/**
+ * The command: the flags are checked before any GitHub read, then a run
+ * without `write` returns the plan and a run with `write` applies a fresh one.
+ */
+export function runDependencyMigration(input: DependencyMigrationInput, flags: { readonly write: boolean; readonly plan: string | undefined }): DependencyMigrationPlanV1 | DependencyMigrationResultV1 {
+  if (flags.write && flags.plan === undefined) throw new DependencyMigrationError('plan_digest_required', '--write requires --plan <digest> from a run without --write');
+  if (!flags.write && flags.plan !== undefined) throw new DependencyMigrationError('plan_without_write', '--plan <digest> is used only with --write');
+  const plan = planDependencyMigration(input);
+  return flags.write ? applyDependencyMigration(input, plan, flags.plan) : plan;
 }
 
 /**

@@ -233,7 +233,7 @@ export function dependencyPlanDigest(plan: Omit<DependencyMigrationPlanV1, 'dige
 /** Refusals stop first and name every refused line; otherwise parse errors stop and name every line. */
 export function dependencyMigrationStop(ambiguous: readonly AmbiguousLineV1[], unparsed: readonly UnparsedLineV1[]): DependencyMigrationStopV1 | null {
   if (ambiguous.length > 0) {
-    return Object.freeze({ code: 'dependency_line_ambiguous' as const, message: `dependency lines that may be code (a code or HTML marker in the body, leading whitespace or a wide list marker); delete each refused line from the body (add the link by hand if it is needed), then run again: ${
+    return Object.freeze({ code: 'dependency_line_ambiguous' as const, message: `dependency lines that are not a template form (a code or HTML marker in the body, leading whitespace, or a list marker other than "- #n" in a section); delete each refused line from the body (add the link by hand if it is needed), then run again: ${
       ambiguous.map(entry => `#${entry.issue} line ${entry.line_number}: ${entry.line.trim()}`).join('; ')}` });
   }
   if (unparsed.length > 0) {
