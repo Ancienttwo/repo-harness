@@ -539,7 +539,7 @@ describe('single affected verification and daily fallback', () => {
 
   test('workflow confines full and matrix jobs to fixed main daily snapshots', () => {
     const { jobs } = workflow;
-    expect(workflow.on.schedule).toEqual([{ cron: '0 19 * * *' }]);
+    expect(workflow.on.schedule).toEqual([{ cron: '17 19 * * *' }]);
     expect(jobs.required.name).toBe('Required / CI');
     expect(jobs.required.needs).toEqual(['selection', 'verify', 'home-isolation', 'native-oar']);
     const boundarySteps = jobs.selection.steps.filter((step: any) => step.run === 'bun run check:state-boundaries');
