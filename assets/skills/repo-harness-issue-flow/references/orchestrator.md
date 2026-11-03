@@ -10,7 +10,7 @@ access, in this skill's orchestrator mode. Start the seat with the argv
 that `repo-harness seats argv orchestrator` prints. Any host and any
 capable model may hold the seat.
 
-Post your own `issue claim` with `Seat: coordinator` on the parent before
+Post your own `issue claim` with `Role: coordinator` on the parent before
 you dispatch. Only you post `issue claim` comments: the claim for each
 worker is yours, and it names the worker. Every later instruction to a
 worker is a comment on its issue or PR.
@@ -178,7 +178,7 @@ module is in the title so that a list view shows the write scopes.
   report channel. Do not restate the requirement in chat. A second copy
   becomes a second authority.
 - Post the claim, then the packet. Post one `issue claim` on the child
-  issue for the worker: `Seat: writer`, `Agent:` the worker identity,
+  issue for the worker: `Role: writer`, `Agent:` the worker identity,
   `Branch:` the branch that the packet names, `Scope` and `Not in scope`
   from the issue, and `Coordinator:` the URL of your own parent claim. The
   claim is the worker's identity on the board, and the worker never posts
@@ -204,8 +204,10 @@ module is in the title so that a list view shows the write scopes.
 - Limit each artifact to two review rounds. Ask the owner to decide before
   a third round. One reviewer takes each artifact.
 - Use the host's dispatch mechanism (an hc terminal in a Herdr.app pane,
-  a top-level host session, a hosted subagent). A dispatch does not grant
-  publication, deletion or credential authority. For the Herdr pane topology, follow
+  or a top-level host session). A dispatched agent has its own process. A
+  sub-agent runs inside a seat process and is not a dispatch target. A
+  dispatch does not grant publication, deletion or credential authority.
+  For the Herdr pane topology, follow
   [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
 ## 8. Follow up

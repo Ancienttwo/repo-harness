@@ -201,8 +201,8 @@ lines, then at most a short free-text body. The exact shapes are in
 | `decision` | Issue (parent for cross-issue ones) | Coordinator | A decision that the body does not hold yet, with its reason |
 | `plan` | Parent issue | Coordinator | The plan block of a large parent: merge order, holds, batches, seat limit. A revision supersedes the previous plan |
 | `handoff` | Issue and PR | Current holder, or coordinator on the owner's instruction | Move a seat. Names prior claim, next holder, exact state |
-| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: seat, round, subject SHA, tier (`acceptor.md`) |
-| `acceptance record` | PR | Acceptor or coordinator | One row per round: round, seat, subject SHA, verdict; then the model relation and the findings. The same shape for every round (`templates.md`) |
+| `acceptance claim` | PR | Acceptor, or the coordinator for a gatekeeper round | Take a review round: role, round, subject SHA, tier (`acceptor.md`) |
+| `acceptance record` | PR | Acceptor or coordinator | One row per round: round, role, subject SHA, verdict; then the model relation and the findings. The same shape for every round (`templates.md`) |
 | `unblocked` | PR or issue | Coordinator | A dependency merged. Sync and continue |
 | `integration status` | PR | Head owner or integrator | Main sync result, delta, new head, CI; a merge result with the executor exit code; or a batch drop or batch closeout on a member PR |
 

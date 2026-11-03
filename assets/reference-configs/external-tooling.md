@@ -221,12 +221,13 @@ number of registered repos that have pending project upgrade work.
 
 The cross-review skill is **harness-owned**; its routing source lives in
 `assets/skills/repo-harness-cross-review/`. Explicit independent review uses
-the persistent fleet deep-reasoner task-agent and existing OAR host in Herdr.
+a persistent task session in Herdr: the existing OAR host runs a reviewer with
+the `deep-reasoner` role.
 The full profile installs this Skill on both hosts; generic-review file Result
 and typed Receipt own acceptance. The direct advisory runtime is retired.
 Plugin install/discovery/readiness is not a repo-harness runtime dependency;
 user-managed plugins remain untouched. Plan consultation uses persistent
-task-agent collaborators in Herdr. Review Markdown remains projection only.
+collaborator sessions in Herdr. Review Markdown remains projection only.
 
 Reverse Skill is registered from `zhaoxuya520/reverse-skill` as the recommended
 but explicit-only `reverse-skill-router`. It is not part of either install

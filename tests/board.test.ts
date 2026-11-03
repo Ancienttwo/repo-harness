@@ -166,7 +166,7 @@ test('acceptance: round-4 records with bare SHAs, an unparsed record, and a Low 
 
 // One round is one subject SHA: both reviews of a High round are rows of round 1 on one head (#1538).
 test('acceptance: every record on the head counts, and one FAIL withholds acceptance', () => {
-  const record = (sha: string, verdict: 'PASS' | 'FAIL') => `repo-harness acceptance record\n\n| Round | Seat | Subject | Verdict |\n|---|---|---|---|\n| 1 | acceptor | ${sha} | ${verdict} |\n`;
+  const record = (sha: string, verdict: 'PASS' | 'FAIL') => `repo-harness acceptance record\n\n| Round | Role | Subject | Verdict |\n|---|---|---|---|\n| 1 | acceptor | ${sha} | ${verdict} |\n`;
   const board = replay({
     pulls: (data) => {
       const { pr1491, pr1494, pr1499 } = data.repository;

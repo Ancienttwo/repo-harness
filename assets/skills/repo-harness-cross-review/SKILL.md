@@ -1,6 +1,6 @@
 ---
 name: repo-harness-cross-review
-description: Independent acceptance review through the persistent fleet deep-reasoner task-agent in Herdr. Generic review owns scope, request-bound Result validation and typed Receipt.
+description: Independent acceptance review through a persistent Herdr task session that runs the deep-reasoner role. Generic review owns scope, request-bound Result validation and typed Receipt.
 when_to_use: "cross review, second opinion, outside voice, codex review, independent review, 让 codex 审, 找外部意见, 二审"
 ---
 
@@ -12,16 +12,17 @@ ownership lives in `src/effects/review/generic-review.ts`, the OAR host and
 
 ## Mode Selection
 
-- Acceptance through persistent Herdr task-agent: `references/generic-review.md`.
+- Acceptance through a persistent Herdr task session: `references/generic-review.md`.
 - Operator-attended acceptance in the Claude desktop app without Herdr:
   `references/generic-review.md`, section "App terminal launch".
 - Explicit harness selection belongs to `repo-harness review round --harness`.
 
 ## Boundaries
 
-Prepare verification and the contract before review. The existing fleet
-`deep-reasoner` role, addressed hc terminal or app-terminal host, isolated
-reviewer checkout and OAR Session own the run. History/idle are observations; the request-bound file Result
+Prepare verification and the contract before review. The task session owns
+the run: the addressed hc terminal or app-terminal host, the isolated reviewer
+checkout and the OAR Session. The reviewer takes its instructions from the
+`deep-reasoner` role in `agents/fleet/`. History/idle are observations; the request-bound file Result
 and generic-review Receipt own acceptance. Unknown model, delivery or cleanup
 stays unverified or pending. Never synthesize PASS, alias the retired command,
 replay an ambiguous request or bypass a frozen reviewer policy. Review does not

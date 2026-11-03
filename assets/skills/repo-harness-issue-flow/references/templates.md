@@ -241,7 +241,7 @@ at most a short body.
 ```text
 repo-harness issue claim
 Status: active                  # required: active
-Seat: writer                    # required: coordinator | writer | integrator
+Role: writer                    # required: coordinator | writer | integrator
 Slot: PR-1b                     # only for a named PR slot
 Agent: <kind>, session <id>     # required
 Branch: <type>/<issue>-<slug>   # required
@@ -337,7 +337,7 @@ edit the old plan.
 
 ```text
 repo-harness handoff
-Seat: writer | head owner | coordinator | integrator
+Role: writer | head owner | coordinator | integrator
 From: <agent identity>, claim <URL>
 To: <agent identity>
 Authority: <the owner's instruction, quoted, or the prior holder's release>
@@ -352,7 +352,7 @@ The coordinator then posts the receiver's `issue claim` with
 
 ```text
 repo-harness acceptance claim
-Seat: acceptor
+Role: acceptor
 Round: <n>
 Subject: <head sha>
 Tier: low | medium | high
@@ -365,7 +365,7 @@ Agent: <kind and model>, read-only
 repo-harness acceptance record
 Claim: <acceptance claim URL>
 
-| Round | Seat | Subject | Verdict |
+| Round | Role | Subject | Verdict |
 |---|---|---|---|
 | <n> | <harness> (<model> or unobserved), read-only | `<40-hex subject sha>` | <PASS or FAIL>: <finding counts, for example 1 P2, 2 P3, or none> |
 

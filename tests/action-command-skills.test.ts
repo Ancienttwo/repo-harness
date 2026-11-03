@@ -551,7 +551,7 @@ describe("repo-harness action command skills", () => {
     for (const field of ["repo-harness plan", "Coordinator:", "Baseline: main@<sha>", "Supersedes:", "src/core/board/plan-block.ts"]) {
       expect(templates).toContain(field);
     }
-    for (const field of ["Status:", "Seat:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {
+    for (const field of ["Status:", "Role:", "Agent:", "Branch:", "Scope:", "Not in scope:", "Prior claim:"]) {
       expect(templates).toContain(field);
     }
     // The claim note now names the coordinator as the only poster and
