@@ -16,7 +16,7 @@ import { canonicalize } from '../src/core/evidence/canonical-json';
 import type { JsonValue } from '../src/core/evidence/types';
 import { prepareChangeAssessment } from '../src/effects/review/change-assessment';
 import { executeAdmittedVerification, evaluateAdmittedVerification } from '../src/effects/evidence/verification-execution';
-import { taskSessionDirectory, type HerdrEndpoint, type HerdrTaskAgentSpec, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
+import { taskSessionDirectory, type HerdrCoreEndpoint, type HerdrTaskAgentSpec, type TaskPaneBinding } from '../src/effects/terminal/task-session-record';
 import { observeTaskSessionAdmission } from '../src/effects/terminal/task-session-admission';
 import { readSessionArtifact, writeSessionArtifact } from '../src/effects/terminal/task-session-io';
 import { ensureSessionDirectory, nextSessionRound } from '../src/effects/terminal/task-session-io';
@@ -24,12 +24,12 @@ import type { ReviewHostSpec, TaskRequest } from '../src/core/review/runner-port
 import type { TaskSessionAuthority } from '../src/effects/admission/admission-source';
 import { tmpWorkspace, tmpWorkspaceIn } from './helpers/repo-fixture';
 import { randomUUID } from 'crypto';
-import { mockOfflineHerdr, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
+import { mockOfflineHerdr, offlineTerminalAddress, startOfflineTaskAgent } from './helpers/engineer-runtime-fixture';
 import { buildTaskMessageEvent } from '../src/core/fleet/admitted-task-message';
 import { readTaskMessageDelivery, sendTaskMessage } from '../src/effects/fleet/task-inbox';
 import { recordPrePromptInboxAccepted } from '../src/effects/review-runner/task-pre-prompt-inbox-consumer';
 import { OAR_OBSERVATION_PROTOCOL, oarObservationFile, type OarObservationSnapshot } from '../src/effects/terminal/task-runtime-observation';
-type TaskReviewEffects = ReviewEffects<TaskPaneBinding, HerdrEndpoint>;
+type TaskReviewEffects = ReviewEffects<TaskPaneBinding, HerdrCoreEndpoint>;
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 
@@ -72,7 +72,7 @@ test('generic review refuses tampered empty and missing approved plans before an
       start: async () => { calls.push('start'); throw new Error('provider start must not run'); },
     };
     await expect(runReviewRound({ repoRoot: root, authority, verification, reviewerRepo, authorityHome: home,
-      endpoint: { session: 'private-gp', home }, parentPane: 'fixture-owner-pane',
+      endpoint: { socket: join(home, 'hc.sock'), home }, parentPane: 'fixture-owner-pane',
       taskClaim: { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) }, admitSession: () => { calls.push('admit'); } }, effects)).rejects.toThrow('grant_digest');
     expect(calls).toEqual([]);
     expect(existsSync(acceptanceReceiptPath(root, home))).toBe(false);
@@ -123,13 +123,13 @@ for (const selection of [
     const reviewerRepo = join(f.home, 'reviewer');
     execFileSync('git', ['-C', f.root, 'worktree', 'add', '-qb', 'selected-issue-reviewer', reviewerRepo]);
     const taskClaim = { reference: 'https://github.com/acme/widgets/issues/903#issuecomment-1', revision: 'sha256:' + 'c'.repeat(64) };
-    const session = observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr', { source: authority, claim: taskClaim });
+    const session = observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr-core', { source: authority, claim: taskClaim });
     expect(session.identity.issue_id).toBe(admission.issue_id);
     expect(session.identity.execution_root).toBe(reviewerRepo);
     expect(session.approval.grant_sha256).toBe(f.admissionFixture.grant);
     let ownerCalls = 0;
     await expect(runReviewRound({ repoRoot: f.root, authority, verification: f.verification, reviewerRepo, authorityHome: f.home,
-      endpoint: { session: 's', home: f.home }, parentPane: 'fixture-owner', taskClaim,
+      endpoint: { socket: join(f.home, 'hc.sock'), home: f.home }, parentPane: 'fixture-owner', taskClaim,
       admitSession: () => { throw new Error('must not launch'); } }, { ...taskReviewRunner,
       owner: () => { ownerCalls++; throw new Error('offline-runtime-boundary-reached'); },
     })).rejects.toThrow('offline-runtime-boundary-reached');
@@ -140,7 +140,7 @@ for (const selection of [
         ? { stdout: JSON.stringify({ ...f.admissionFixture.issue, ...patch }) } : runner(args, options)) as typeof runner };
       const refusal = 'id' in patch ? 'review_goal_identity_changed' : 'review_admission_goal_or_actor_changed';
       expect(() => evaluateAdmittedVerification({ repoRoot: f.root, authority: changed })).toThrow(refusal);
-      expect(() => observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr', { source: changed, claim: taskClaim })).toThrow(refusal);
+      expect(() => observeTaskSessionAdmission(reviewerRepo, { task: 'selected-issue', role: 'deep-reasoner', harness_kind: 'codex' }, 'herdr-core', { source: changed, claim: taskClaim })).toThrow(refusal);
     }
   }, 60_000);
 }
@@ -181,15 +181,10 @@ test('review packet enforces the existing 10 MiB limit in UTF-8 bytes without tr
 function packetRoundFixture() {
   const fixture = seedAcceptanceFixture('review-packet');
   roots.push(fixture.root, fixture.home);
-  // Match the acceptance fixture's short, private endpoint HOME. TMPDIR can be
-  // long on macOS; Herdr also needs room for the longer client socket name.
+  // Match the acceptance fixture's short, private endpoint HOME.
   const endpointHome = tmpWorkspaceIn('/tmp', 'rp');
   roots.push(endpointHome);
-  const endpoint = { session: 'packet-fixture', home: endpointHome };
-  for (const socket of ['herdr.sock', 'herdr-client.sock']) {
-    const path = join(endpoint.home, '.config/herdr/sessions', endpoint.session, socket);
-    expect(Buffer.byteLength(path, 'utf8')).toBeLessThanOrEqual(103);
-  }
+  const endpoint = { socket: join(endpointHome, 'hc.sock'), home: endpointHome };
   const reviewerRepo = join(fixture.home, 'reviewer');
   execFileSync('git', ['-C', fixture.root, 'worktree', 'add', '-qb', 'packet-reviewer', reviewerRepo]);
   const location = reviewLocation(fixture.root, fixture.authority);
@@ -693,12 +688,12 @@ async function scriptedSeamHost(kind: SeamHarness, model: string | null, cwd: st
 }
 
 const AUTHOR_ROLE = 'implementer';
-const AUTHOR_PANE = `fixture-${AUTHOR_ROLE}`;
+const AUTHOR_PANE = offlineTerminalAddress(AUTHOR_ROLE);
 /** A bound author task session. Every turn runs through the host seam, which writes its observation file. */
 async function authorSession(f: ReturnType<typeof packetRoundFixture>, kind: SeamHarness, models: (string | null)[],
   options: { root?: string; task?: string; authority?: ReviewRoundAuthority } = {}) {
   const spec = { task: options.task ?? 'fixture-author', role: AUTHOR_ROLE, harness_kind: kind, endpoint: f.options.endpoint,
-    parent_pane: 'fixture-coordinator', args: [], max_requests: 3 };
+    args: [], max_requests: 3 };
   const repo = options.root ?? f.root;
   const binding = await startOfflineTaskAgent(repo, spec, { source: options.authority ?? f.authority, claim: f.options.taskClaim });
   const dir = taskSessionDirectory(repo, spec.task, spec.role);
@@ -800,7 +795,7 @@ type AcceptanceReceiptFields = Pick<Awaited<ReturnType<typeof seamReview>>['rece
 darwinTest('author identity is unknown without a binding on the caller pane', async () => {
   const f = packetRoundFixture();
   const author = await authorSession(f, 'codex', ['gpt-6.1-sol']);
-  expect(author.binding.pane_id).toBe(AUTHOR_PANE);
+  expect(author.binding.terminal_id).toBe(AUTHOR_PANE);
   expect(f.options.parentPane).not.toBe(AUTHOR_PANE);
   expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER)).receipt)).toEqual([null, null, 'unknown']);
 }, 90_000);
@@ -809,7 +804,7 @@ darwinTest('author identity is unknown with two bindings on the caller pane', as
   const f = packetRoundFixture();
   const first = await authorSession(f, 'codex', ['gpt-6.1-sol']);
   const second = await authorSession(f, 'codex', ['gpt-6.1-sol'], { task: 'fixture-second-author' });
-  expect([first.binding.pane_id, second.binding.pane_id]).toEqual([AUTHOR_PANE, AUTHOR_PANE]);
+  expect([first.binding.terminal_id, second.binding.terminal_id]).toEqual([AUTHOR_PANE, AUTHOR_PANE]);
   expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([null, null, 'unknown']);
 }, 90_000);
 
@@ -818,7 +813,7 @@ darwinTest('author identity is unknown when the only binding works in another ex
   const other = join(f.home, 'other-root');
   execFileSync('git', ['-C', f.root, 'worktree', 'add', '-qb', 'other-author-root', other]);
   const author = await authorSession(f, 'codex', ['gpt-6.1-sol'], { root: realpathSync(other) });
-  expect([author.binding.pane_id, author.binding.task_admission?.identity.campaign_sha256]).toEqual([AUTHOR_PANE, f.admissionFixture.admission.campaign_sha256]);
+  expect([author.binding.terminal_id, author.binding.task_admission?.identity.campaign_sha256]).toEqual([AUTHOR_PANE, f.admissionFixture.admission.campaign_sha256]);
   expect(author.binding.execution_root).toBe(realpathSync(other));
   expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([null, null, 'unknown']);
 }, 90_000);
@@ -829,7 +824,7 @@ darwinTest('author identity is unknown when the only binding belongs to another 
   const other = seedReviewAdmissionFixture(f.root, f.home, { reviewer: admission.policy.reviewer, userWaiver: 'forbidden', actor: admission.actor_id,
     allowedPaths: [...admission.allowed_paths], oracles: [...admission.oracles], plan: JSON.parse(JSON.stringify(admission.verification_plan)), campaignId: 'other-campaign' });
   const author = await authorSession(f, 'codex', ['gpt-6.1-sol'], { authority: { ...f.authority, ...other.source } });
-  expect([author.binding.pane_id, author.binding.execution_root]).toEqual([AUTHOR_PANE, realpathSync(f.root)]);
+  expect([author.binding.terminal_id, author.binding.execution_root]).toEqual([AUTHOR_PANE, realpathSync(f.root)]);
   expect(author.binding.task_admission?.identity.campaign_sha256).toBe(other.admission.campaign_sha256);
   expect(other.admission.campaign_sha256).not.toBe(f.admissionFixture.admission.campaign_sha256);
   expect(authorFields((await seamReview(f, 'pi', UNKNOWN_AUTHOR_REVIEWER, AUTHOR_PANE)).receipt)).toEqual([null, null, 'unknown']);
@@ -1059,7 +1054,7 @@ let closing;const close=()=>closing??=host.dispose();
 try{const content='pending turn';writeFileSync(join(output,'context-1.txt'),content);
 const request={protocol:2,task:'fixture',role:'deep-reasoner',round:1,request_id:'11111111-1111-4111-8111-111111111111',context_ref:join(output,'context-1.txt'),source_ref:'fixture',result_ref:join(output,'result-1.json'),context_sha256:'sha256:'+createHash('sha256').update(content).digest('hex'),result_contract:{required_fields:['request_id','context_sha256','value'],atomic_write:'temp_rename'}};
 writeFileSync(join(output,'request-1.json'),JSON.stringify(request));writeFileSync(join(output,'started-1.json'),JSON.stringify({request_id:request.request_id,provider:{pid:process.pid,identity:'fixture-host'}}));
-const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined);
+const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined,()=>{});
 while(!existsSync(join(output,'turn-started')))await new Promise(resolve=>setTimeout(resolve,10));
 writeFileSync(join(output,'close.request'),JSON.stringify({close:true}));
 await served;await close();
@@ -1076,7 +1071,7 @@ const host=await openScriptedReviewHost(spec.options,()=>{},async({say})=>{calls
 let closing,thrown;const close=()=>closing??=host.dispose();const sleep=ms=>new Promise(resolve=>setTimeout(resolve,ms));
 try{
 const ack=join(output,'ack-1.json'),started=join(output,'started-1.json'),observed=join(output,'observed-1.json');
-const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined).catch(error=>{thrown=error});
+const served=serveHostFileRequests(host,spec,close,()=>closing!==undefined,()=>{}).catch(error=>{thrown=error});
 writeFileSync(join(output,'serving'),'1');
 let partialChecks=0;
 for(const end=Date.now()+8000;!existsSync(observed)&&thrown===undefined&&Date.now()<end;await sleep(10)){

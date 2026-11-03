@@ -11,7 +11,8 @@ import { OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import type { OperatorLocale } from '../../src/operator-web/i18n';
 import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
-import { agentsSettingsFixture } from '../../src/operator-web/fixtures/settings';
+import { agentsSettingsFixture, seatsSettingsStore } from '../../src/operator-web/fixtures/settings';
+import type { SeatsSettingsRequestV1 } from '../../src/core/operator/seats-settings';
 import { stableSnapshot } from '../../src/operator-web/fixture';
 import {
   fetchAgentsSettings,
@@ -122,6 +123,65 @@ afterEach(async () => {
   if (root) await act(async () => root?.unmount());
   root = null;
   window.happyDOM.abort();
+});
+
+describe('settings seats page', () => {
+  /** The busy fixture's read; writes are recorded and answered as saved. */
+  function seatsProps(posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[]): OperatorAppProps {
+    return {
+      ...props(server(settings(), [])), readSetup: () => new Promise(() => {}),
+      readSeatsSettings: seatsSettingsStore('busy').read,
+      writeSeatsSettings: async (body) => { posts.push(body); return { state: 'saved', result: { config_revision: REVISION_B, changed_keys: ['seats.advisor.fleet'] } }; },
+    };
+  }
+  const allow = (label: string) => document.querySelector<HTMLButtonElement>(`[aria-label="Allow ${label}"]`)!;
+  const pane = (seat: string) => document.querySelector<HTMLButtonElement>(`[data-pane="${seat}"]`)!;
+
+  test('the advisor cannot take a writable role, edit or GitHub writes; save sends the whole section and leaves running panes alone', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    await mount(seatsProps(posts), '#settings/seats');
+    expect(document.querySelector('[data-settings-section="seats"]')?.getAttribute('aria-current')).toBe('page');
+    expect(document.querySelector('[data-seat-card]')?.getAttribute('data-seat-card')).toBe('advisor');
+    for (const label of ['fast-worker', 'deep-worker', 'Edit files', 'GitHub writes']) expect([label, allow(label).disabled]).toEqual([label, true]);
+    // The page shows no running pane count: the operator cannot read hc (#1413).
+    expect(document.querySelector('[data-seats-page]')?.textContent).not.toMatch(/running \d|\d+ running/u);
+    await click(allow('gatekeeper'));
+    await click(saveButton());
+    expect(posts).toHaveLength(1);
+    const { request_id, expected_revision, seats } = posts[0]!;
+    expect(request_id).toMatch(UUID);
+    expect(expected_revision).toMatch(/^sha256:/u);
+    expect(seats.advisor.fleet).toEqual(['deep-reasoner', 'explorer', 'gatekeeper']);
+    expect(Object.keys(seats)).toEqual(['orchestrator', 'advisor', 'worker']);
+    expect(document.querySelector('[data-seats-saved]')?.textContent).toContain('Running panes do not change');
+
+    await click(pane('orchestrator'));
+    expect(document.querySelector('[data-fleet-locked]')?.textContent).toContain('agents/fleet/orchestrator.md');
+    expect(allow('Edit files').disabled).toBe(true);
+  });
+
+  test('a stored advisor role outside the range can be switched off and saved, and cannot be switched back on', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    const read = await seatsSettingsStore('busy').read();
+    if (read.state !== 'ok') throw new Error('fixture read failed');
+    const stored = { ...read.settings, config: { ...read.settings.config, advisor: { ...read.settings.config.advisor, fleet: ['explorer', 'fast-worker'] } } };
+    await mount({ ...seatsProps(posts), readSeatsSettings: async () => ({ state: 'ok', settings: stored }) }, '#settings/seats');
+    expect([allow('fast-worker').disabled, allow('fast-worker').getAttribute('aria-checked')]).toEqual([false, 'true']);
+    await click(allow('fast-worker'));
+    expect(allow('fast-worker').disabled).toBe(true);
+    await click(saveButton());
+    expect(posts[0]!.seats.advisor.fleet).toEqual(['explorer']);
+  });
+
+  test('moving a seat to Pi clears its fleet and model, and locks its effort and fleet', async () => {
+    const posts: (SeatsSettingsRequestV1 & { readonly request_id: string })[] = [];
+    await mount(seatsProps(posts), '#settings/seats');
+    await click(buttonWithText('Pi'));
+    expect(allow('explorer').disabled).toBe(true);
+    expect((buttonWithText('max') as HTMLButtonElement).disabled).toBe(true);
+    await click(saveButton());
+    expect(posts[0]!.seats.advisor).toMatchObject({ runtime: 'pi', model: null, effort: null, fleet: [] });
+  });
 });
 
 describe('settings page', () => {

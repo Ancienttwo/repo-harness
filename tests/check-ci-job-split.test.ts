@@ -288,6 +288,16 @@ describe('single affected verification and daily fallback', () => {
     expect(await selectAffectedTests(['agents/fleet/example.md'], sources, [])).toEqual(['tests/default.test.ts', 'tests/export.test.ts', 'tests/fleet.test.ts']);
   });
 
+  test('a root parameter of an exported entry with no local caller keeps the real global rules consumer', async () => {
+    const rules = 'assets/reference-configs/global-working-rules.md';
+    const sources = new Map([
+      [rules, '# Rules'],
+      ['src/cli/installer/global-context.ts', readFileSync(join(ROOT, 'src/cli/installer/global-context.ts'), 'utf8')],
+      ['tests/unit/herdr-peer-harness.test.ts', readFileSync(join(ROOT, 'tests/unit/herdr-peer-harness.test.ts'), 'utf8')],
+    ]);
+    expect(await selectAffectedTests([rules], sources, [])).toEqual(['tests/unit/herdr-peer-harness.test.ts']);
+  });
+
   test('retains directories returned through a named constant and an environment branch', async () => {
     const source = [
       "import { dirname, isAbsolute, join, resolve } from 'path';",

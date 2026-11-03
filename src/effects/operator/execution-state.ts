@@ -51,8 +51,8 @@ function verify(primaryRoot: string, dir: string, task: string, role: string): T
   const admitted = binding.task_admission?.identity.branch ?? null;
   return { state: 'verified', task, role, issue_id: binding.task_admission?.identity.issue_id ?? null,
     branch: admitted?.startsWith(BRANCH_REF) ? admitted.slice(BRANCH_REF.length) : null, agent: native.host, runtime: binding.runtime, native_session_id: native.native_session_id,
-    herdr_pane: binding.runtime === 'herdr' ? { session: binding.endpoint.session, workspace_id: binding.workspace_id,
-      pane_id: binding.pane_id, agent_name: binding.agent_name } : null };
+    // #1476: an hc task session has no classic Herdr pane; #1478 projects its hc location.
+    herdr_pane: null };
 }
 
 /**

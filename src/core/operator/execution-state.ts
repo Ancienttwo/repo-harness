@@ -10,7 +10,7 @@ export interface VerifiedTaskExecution {
   readonly state: 'verified'; readonly task: string; readonly role: string; readonly issue_id: string | null;
   /** The admitted branch, named as Dev Activity names it; null for a session without admission. */
   readonly branch: string | null;
-  readonly agent: ExecutionHost; readonly runtime: 'herdr' | 'terminal'; readonly native_session_id: string;
+  readonly agent: ExecutionHost; readonly runtime: 'herdr-core' | 'terminal'; readonly native_session_id: string;
   readonly herdr_pane: HerdrPaneLocation | null;
 }
 /** The operator shows this as "no verified session"; the reason is for diagnosis only. */
@@ -49,7 +49,7 @@ export type ExecutionStateUnavailableReason =
 /** One task of the public execution view. The session id appears only inside the resume command. */
 export type TaskExecutionViewEntry =
   | { readonly state: 'verified'; readonly task: string; readonly role: string; readonly issue_id: string | null;
-    readonly branch: string | null; readonly agent: ExecutionHost; readonly runtime: 'herdr' | 'terminal'; readonly follow_up: TaskFollowUp }
+    readonly branch: string | null; readonly agent: ExecutionHost; readonly runtime: 'herdr-core' | 'terminal'; readonly follow_up: TaskFollowUp }
   | { readonly state: 'unverified'; readonly task: string; readonly role: string; readonly reason: UnverifiedExecutionReason;
     readonly follow_up: TaskFollowUp };
 
@@ -139,7 +139,7 @@ export function decodeTaskExecutionView(value: unknown): TaskExecutionViewV1 {
     if (entry.issue_id !== null) text(entry.issue_id, ISSUE_TEXT, 'issue_id');
     if (entry.branch !== null) text(entry.branch, BRANCH_TEXT, 'branch');
     if (entry.agent !== 'claude' && entry.agent !== 'codex' && entry.agent !== 'pi') fail('agent');
-    if (entry.runtime !== 'herdr' && entry.runtime !== 'terminal') fail('runtime');
+    if (entry.runtime !== 'herdr-core' && entry.runtime !== 'terminal') fail('runtime');
     if (follow.resume !== null) {
       const resume = obj(follow.resume, ['host', 'command'], 'resume');
       if (resume.host !== entry.agent) fail('resume host');
@@ -147,7 +147,7 @@ export function decodeTaskExecutionView(value: unknown): TaskExecutionViewV1 {
       if (!SHELL_WORD.test(id) || resume.command !== RESUME[entry.agent](id)) fail('resume command');
     }
     if (follow.herdr_pane !== null) {
-      if (entry.runtime !== 'herdr') fail('herdr_pane runtime');
+      if (entry.runtime !== 'herdr-core') fail('herdr_pane runtime');
       const pane = obj(follow.herdr_pane, ['session', 'workspace_id', 'pane_id', 'agent_name'], 'herdr_pane');
       if (!publicPane(pane)) fail('herdr_pane');
     }

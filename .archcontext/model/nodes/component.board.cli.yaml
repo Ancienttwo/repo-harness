@@ -1,0 +1,13 @@
+schemaVersion: "archcontext.node/v2"
+id: "component.board.cli"
+kind: "component"
+name: "Board (cli)"
+status: "active"
+parent: "capability.organization.board"
+layer: "cli"
+summary: "The cli-layer files of Board. Responsibilities stay with the parent node."
+responsibilities:
+  - "Hold the cli-layer source files of Board so layer direction is checked per directory."
+source:
+  include:
+    - "src/cli/commands/board.ts"
