@@ -15,7 +15,7 @@ This topology applies to issue-flow work (`repo-harness-issue-flow`) on herdr-co
 - Pane layout: put at most 3 panes side by side in one tab. Do not stack panes vertically. When the tab is full, open a new tab.
 - Tab 1 holds two panes: the orchestrator on the left and its advisor on the right. Tab 1 may take one worker as its third pane.
 - The orchestrator holds the issue-flow coordinator and integrator seats. It only dispatches, accepts and merges. It does not implement a child issue.
-- The advisor serves only the orchestrator. It does research and writes proposals. It does not edit code, commit or write to GitHub. It may use read-only probe sub-agents, for example `explorer`, for research. The orchestrator asks it for a board replan by [Replan](https://github.com/Ancienttwo/repo-harness/blob/main/assets/skills/repo-harness-issue-flow/references/replan.md).
+- The advisor serves only the orchestrator. It does research and writes proposals. It does not edit code, commit or write to GitHub. It collects evidence through the sub-agents of its seat (`seats.advisor.fleet`) and keeps judgment, synthesis and the proposal. The orchestrator asks it for a board replan by [Replan](https://github.com/Ancienttwo/repo-harness/blob/main/assets/skills/repo-harness-issue-flow/references/replan.md).
 - One PR has one pane and one worker agent. Each further worker gets its own pane, as the right split of a tab that is not full or in a new tab. The worker may use the agent-fleet sub-agents (`agents/fleet/`) inside its own pane.
 - Recommended models for a Claude-only setup: the orchestrator runs Opus at high effort, and the advisor runs Opus at max effort. This is a recommendation, not a requirement. No seat requires a specific model (issue-flow D7).
 - Cleanup: after a PR is accepted and merged, the orchestrator closes the worker's pane, which ends the worker process. It then removes the worker's worktree with `git worktree remove <path>` and deletes the merged branch. A pane or worktree with unmerged or dirty work stays, and the orchestrator reports it.
@@ -33,15 +33,19 @@ herdr-core commands for the topology steps:
 
 | Step | Command |
 |---|---|
-| New worker tab | `herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv '[...]' --task <packet>` |
-| Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv '[...]'` |
-| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv '[...]'` |
+| Start the orchestrator | `herdr-app do tab.new --name 1 --space <id> --folder <repository> --argv "$(repo-harness seats argv orchestrator)"` |
+| New worker tab | `herdr-app do tab.new --name <PR> --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker)" --task <packet>` |
+| Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "$(repo-harness seats argv advisor)"` |
+| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker)"` |
+| Label a seat | `hc label <t> $(repo-harness seats argv <seat> --repository-id <repository-id> --parent <n> --issue <n> --pr <n> --json \| jq -r '.labels[]')` |
 | Message a worker | `hc send <t> <comment URL>` |
 | Read a worker | `hc read <t>` |
 | Wait for a worker | `hc wait <t>` |
 | Close a worker pane | `herdr-app do pane.close --pane <pane>` |
 
-The `argv` starts the agent in the new pane, for example `'["claude"]'`. Without it, the pane opens a shell.
+`repo-harness seats argv <seat>` prints the argv of the seat from the `seats` section of `~/.repo-harness/config.json`, or from the seat defaults when the section is absent. The argv holds the model, the effort, the tool limits and the seat brief. Its stderr names the source and each limit. A limit marked `instructions_only` is written into the launch instructions only; the host does not enforce it. Without `--argv`, the pane opens a shell.
+
+Each start prints the new `terminal`. Label it in the next step, or the board shows the execution axis as `unavailable` (`no_seat_terminals`). `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
 
 Classic Herdr starts the advisor in two steps: `herdr pane split --pane <orchestrator pane> --direction right`, then `herdr agent start advisor --kind <kind> --pane <new pane>`. A second worker in a tab uses the same two steps with the worker's name.
 
