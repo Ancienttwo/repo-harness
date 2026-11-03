@@ -28,7 +28,7 @@ import { runSecurityScan, type SecurityScanReport } from './security';
 import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
 import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
-import { readArchcontextCapabilityAuthority } from '../../effects/architecture/archcontext-owners';
+import { architecturePort, isArchitectureUnavailable, type ArchitectureDoctorCheck } from '../../core/architecture/contracts';
 import { capabilitySourceMode, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { readText } from '../../effects/state/collect-state-inputs';
 
@@ -71,8 +71,6 @@ export interface DoctorCheck {
 
 /** Plugin checks that the composition root (src/cli/index.ts) passes in. */
 export interface DoctorPorts {
-  /** The CodeGraph readiness, MCP host and index checks, in report order, for the plugins the doctor judges. */
-  readonly codegraphChecks: (cwd: string, plugins: readonly PluginId[] | Error) => DoctorCheckResult[];
   /** The Herdr notify relay check (read-only, one `hc ls`). */
   readonly notifyRelayCheck: () => DoctorCheckResult;
   /** The board attention watcher check of the repository at `cwd` (read-only: `hc ls` and `hc get` of the watcher terminals, then `gh api` for the repository id only when a watcher terminal exists). */
@@ -533,8 +531,10 @@ function checkCapabilityRegistry(cwd: string): DoctorCheckResult {
     const policy = readWorkflowPolicy(repoRoot);
     const mode = capabilitySourceMode(policy);
     const readSource = (relPath: string) => readText(repoRoot, relPath);
-    const resolution = mode === 'archcontext'
-      ? readArchcontextCapabilityAuthority(repoRoot)
+    const ownership = mode === 'archcontext' ? architecturePort('ownership') : null;
+    if (ownership && isArchitectureUnavailable(ownership)) return { id, describe, status: 'fail', detail: `${mode} authority does not load: ${ownership.message}. ${next}` };
+    const resolution = ownership
+      ? ownership.readAuthority(repoRoot)
       : loadRegistryAuthority(repoRoot, policy, readSource);
     if (resolution.status === 'absent') return { id, describe, status: 'na', detail: 'no capability registry is declared' };
     if (resolution.status === 'invalid') {
@@ -571,11 +571,18 @@ function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): 
   return installed ? enabledPlugins(installed) : defaultPluginSelection('both', env).plugins;
 }
 
+/** The CodeGraph readiness, MCP host and index checks, in report order, from the CodeGraph doctor port. */
+function codegraphDoctorChecks(cwd: string, plugins: readonly PluginId[] | Error): readonly ArchitectureDoctorCheck[] {
+  const port = architecturePort('codegraphDoctor');
+  if (isArchitectureUnavailable(port)) return [{ id: 'codegraph', describe: 'CodeGraph checks', status: 'fail', detail: port.message }];
+  return port.checks(cwd, plugins);
+}
+
 export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
   let plugins: readonly PluginId[] | Error;
   try { plugins = judgedPlugins(readInstallState(process.env), process.env); } catch (error) { plugins = error as Error; }
-  const codegraphChecks = ports.codegraphChecks(cwd, plugins);
+  const codegraphChecks = codegraphDoctorChecks(cwd, plugins);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());

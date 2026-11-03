@@ -429,19 +429,20 @@ describe('mutation boundaries', () => {
       writeFileSync(join(cwd, 'src/owned/a.ts'), 'export const a = 2;\n');
 
       // Each hook call is one process, so each payload runs in its own child.
-      // The stand-in for `archctx resolve` records each batch and owns every path it gets.
+      // The child registers an ownership provider whose stand-in for `archctx resolve`
+      // records each batch and owns every path it gets.
       const worker = `
-        import { mock } from 'bun:test';
         const calls = [];
-        const real = await import(process.env.OWNERS_MODULE);
-        mock.module(process.env.OWNERS_MODULE, () => ({
-          ...real,
-          resolveArchcontextCapabilityPaths(_root, owners, paths) {
+        const { registerArchitecturePorts } = await import(process.env.CONTRACTS_MODULE);
+        const { ARCHITECTURE_PROVIDERS } = await import(process.env.PROVIDERS_MODULE);
+        registerArchitecturePorts({ ownership: {
+          ...ARCHITECTURE_PROVIDERS.ownership,
+          resolvePaths(_root, owners, paths) {
             calls.push([...paths]);
             const capability = owners.get('capability.core.owned');
             return { status: 'valid', capabilityIds: [capability.id], matches: paths.map((filePath) => ({ capability, prefix: capability.id, filePath })), unmappedPaths: [], diagnostics: [] };
           },
-        }));
+        } });
         const { runMutationGuard } = await import(process.env.GUARD_MODULE);
         const identity = { host: 'codex', sessionId: null, runId: null, turnId: null };
         const { stdout } = runMutationGuard({ repoRoot: process.env.FIXTURE_ROOT, payload: JSON.parse(process.env.FIXTURE_PAYLOAD), identity });
@@ -456,7 +457,8 @@ describe('mutation boundaries', () => {
             FIXTURE_ROOT: cwd,
             FIXTURE_PAYLOAD: JSON.stringify(payload),
             GUARD_MODULE: join(import.meta.dir, '../src/cli/hook/mutation-guard.ts'),
-            OWNERS_MODULE: join(import.meta.dir, '../src/effects/architecture/archcontext-owners.ts'),
+            CONTRACTS_MODULE: join(import.meta.dir, '../src/core/architecture/contracts.ts'),
+            PROVIDERS_MODULE: join(import.meta.dir, '../src/effects/architecture/providers.ts'),
           },
         });
         expect(child.status, child.stderr).toBe(0);

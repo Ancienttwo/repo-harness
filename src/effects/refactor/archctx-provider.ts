@@ -1,5 +1,6 @@
 import type { RecommendationV3 } from "archctx-contracts";
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, type ArchctxProviderOptions } from "../../core/architecture/projection";
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError } from "../../core/architecture/projection";
+import type { ArchctxProviderOptions } from "../../core/architecture/contracts";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
   refactorEnvelopeData,

@@ -1,7 +1,7 @@
 import { spawnSync } from 'child_process';
 import { readFileSync } from 'fs';
 import { join } from 'path';
-import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
+import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
   linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
   type BoardPathOwnersV1, type BoardSeatTerminalReadV1, type BoardTerminalV1, type BoardToolingV1, type BoardV1,
@@ -9,7 +9,6 @@ import {
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
-import { ARCHCONTEXT_IDENTITY_OWNERS, resolveArchcontextCapabilityPaths } from '../architecture/archcontext-owners';
 import { gitSpawnSync } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 
@@ -169,13 +168,11 @@ function execution(input: BoardCollectInput, repositoryId: number): BoardExecuti
 function pathOwners(input: BoardCollectInput, reads: readonly BoardPullRequestReadV1[]): BoardPathOwnersV1 {
   const paths = [...new Set(reads.filter(read => read.state === 'open').flatMap(read => read.files ?? []))].sort();
   if (paths.length === 0) return { status: 'observed', owners: [] };
-  let resolution;
-  try {
-    resolution = resolveArchcontextCapabilityPaths(input.repo_root, ARCHCONTEXT_IDENTITY_OWNERS, paths, input.archctx);
-  } catch (error) {
-    if (!(error instanceof ArchctxClientError)) throw error;
-    return { status: 'unavailable', reason: error.code };
-  }
+  const display = architecturePort('display');
+  if (isArchitectureUnavailable(display)) return { status: 'unavailable', reason: display.code };
+  const read = display.pathOwners(input.repo_root, paths, input.archctx);
+  if (read.status === 'failed') return { status: 'unavailable', reason: read.code };
+  const { resolution } = read;
   const fault = resolution.diagnostics.find(diagnostic => diagnostic.code !== 'AMBIGUOUS_MATCH');
   if (fault !== undefined) return { status: 'unavailable', reason: fault.code };
   const owners = new Map<string, BoardPathOwnerV1>();

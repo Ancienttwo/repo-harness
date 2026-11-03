@@ -1897,16 +1897,18 @@ function detectManagedArchctx() {
   const bun = bunExecutable();
   if (!bun) return unusable("bun is not available, so the managed archctx cannot be resolved");
   const script = [
-    "const [provider, projection, consumerRoot] = process.argv.slice(1);",
-    "const { resolvePackageLocalArchctx } = await import(provider);",
-    "const { ARCHCTX_REQUIRED_VERSION } = await import(projection);",
-    "try { console.log(JSON.stringify({ ok: true, required: ARCHCTX_REQUIRED_VERSION, resolved: resolvePackageLocalArchctx(consumerRoot) })); }",
-    "catch (error) { console.log(JSON.stringify({ ok: false, required: ARCHCTX_REQUIRED_VERSION, reason: error instanceof Error ? error.message : String(error) })); }",
+    "const [contracts, providers, consumerRoot] = process.argv.slice(1);",
+    "const { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } = await import(contracts);",
+    "registerArchitecturePorts((await import(providers)).ARCHITECTURE_PROVIDERS);",
+    "const runtime = architecturePort('runtime');",
+    "if (isArchitectureUnavailable(runtime)) throw new Error(runtime.message);",
+    "try { console.log(JSON.stringify({ ok: true, required: runtime.requiredArchctxVersion, resolved: runtime.resolvePackageLocalArchctx(consumerRoot) })); }",
+    "catch (error) { console.log(JSON.stringify({ ok: false, required: runtime.requiredArchctxVersion, reason: error instanceof Error ? error.message : String(error) })); }",
   ].join("\n");
   const result = run(bun, [
     "-e", script,
-    path.join(PACKAGE_ROOT, "src", "effects", "architecture", "archctx-provider.ts"),
-    path.join(PACKAGE_ROOT, "src", "core", "architecture", "projection.ts"),
+    path.join(PACKAGE_ROOT, "src", "core", "architecture", "contracts.ts"),
+    path.join(PACKAGE_ROOT, "src", "effects", "architecture", "providers.ts"),
     PACKAGE_ROOT,
   ], { cwd: PACKAGE_ROOT, timeoutMs: 15000 });
   const answer = result.ok ? parseJson(result.stdout.trim()) : null;

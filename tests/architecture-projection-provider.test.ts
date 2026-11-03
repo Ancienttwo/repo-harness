@@ -22,7 +22,8 @@ import {
   type ProjectionRequestV1,
   type ProjectionResultV2,
 } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type ArchctxProcessResult, type NativeContextSource, type ArchitectureProjectionPolicy, type RunArchctxProcess } from '../src/core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeNativeContextExport, summarizeArchitectureRender, decodeArchitectureHandEdits, type NativeContextSource } from '../src/core/architecture/projection';
+import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
 import {
   archctxCapabilities,
   architectureProjectionRequest,

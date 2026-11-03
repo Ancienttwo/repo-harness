@@ -1,7 +1,6 @@
 import { existsSync, readdirSync, readFileSync, statSync } from "fs";
 import { relative, resolve } from "path";
 import { gitSpawnSync } from "../git/runner";
-import { createRequire } from "node:module";
 import {
   archcontextNodeId,
   normalizeCapabilityPath,
@@ -9,7 +8,6 @@ import {
   type ArchcontextCapabilityOwners,
   type ArchcontextCapabilityResolution,
   type Capability,
-  type CapabilityPathResolution,
   type CapabilityRegistry,
   type CapabilityRegistryDiagnostic,
   type CapabilityRegistryResolution,
@@ -25,6 +23,7 @@ import {
   type ArchContextNodeV2,
   type MatchAuthority,
 } from "../../core/capabilities/resolver";
+import { architecturePort, isArchitectureUnavailable, type ArchitectureOwnershipPort } from "../../core/architecture/contracts";
 
 export { CapabilitySourceError, findMatch } from "../../core/capabilities/resolver";
 export type { ArchContextNodeV2, MatchAuthority } from "../../core/capabilities/resolver";
@@ -148,16 +147,16 @@ function capabilityAuthorityPath(mode: CapabilitySourceMode): string {
 // the JSON registry never falls back to archcontext nodes.
 function loadRegistry(repo: string, mode: CapabilitySourceMode): CapabilityRegistryResolution | ArchcontextCapabilityResolution {
   if (mode === "archcontext") {
-    const native = archcontextModule();
+    const native = archcontextOwnership();
     try {
-      const resolution = native.readArchcontextCapabilityAuthority(repo);
+      const resolution = native.readAuthority(repo);
       if (resolution.status === "invalid") {
         throw new CapabilitySourceError(resolution.diagnostics.map((item) => item.message).join("; "));
       }
       return resolution;
     } catch (error) {
       if (error instanceof CapabilitySourceError) throw error;
-      throw new CapabilitySourceError(native.formatArchcontextCapabilityError(error));
+      throw new CapabilitySourceError(native.formatError(error));
     }
   }
   const registryPath = resolve(repo, DEFAULT_REGISTRY);
@@ -231,25 +230,16 @@ function validateRegistryEffects(
 }
 
 
-type ArchcontextPathResolver = (repo: string, owners: ArchcontextCapabilityOwners, paths: readonly string[]) => CapabilityPathResolution;
-
-// The standalone projection of this helper has no package-local archctx, so the
-// import fails there and archcontext mode fails closed instead of guessing. The
-// specifier is not a literal, so the projection type-checks without that module.
-const ARCHCONTEXT_OWNERS_MODULE = "./archcontext-owners";
-
-function archcontextModule(): {
-  readArchcontextCapabilityAuthority(repo: string): ArchcontextCapabilityResolution;
-  formatArchcontextCapabilityError(error: unknown): string;
-  resolveArchcontextCapabilityPaths: ArchcontextPathResolver;
-} {
-  try {
-    return createRequire(import.meta.url)(ARCHCONTEXT_OWNERS_MODULE);
-  } catch {
+// The standalone projection of this helper registers no provider, so archcontext
+// mode fails closed there instead of guessing.
+function archcontextOwnership(): ArchitectureOwnershipPort {
+  const port = architecturePort("ownership");
+  if (isArchitectureUnavailable(port)) {
     throw new CapabilitySourceError(
       'capability_source "archcontext" needs the packaged resolver; run repo-harness run capability-resolver'
     );
   }
+  return port;
 }
 
 
@@ -259,7 +249,7 @@ function archcontextModule(): {
  */
 export async function findMatches(authority: MatchAuthority, repo: string, paths: readonly string[]) {
   if (authority.mode === "registry") return paths.map((path) => findMatch(authority.registry, repo, path));
-  const resolution = archcontextModule().resolveArchcontextCapabilityPaths(repo, authority.owners, paths);
+  const resolution = archcontextOwnership().resolvePaths(repo, authority.owners, paths);
   if (resolution.status !== "valid") {
     throw new Error(resolution.diagnostics.map((item) => item.message).join("; "));
   }

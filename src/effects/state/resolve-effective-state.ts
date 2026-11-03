@@ -14,14 +14,19 @@ import {
   type CapabilityPathResolution,
   type CapabilityRegistryDiagnostic,
   type CapabilityRegistryResolution,
+  type CapabilityOwnership,
   type CapabilitySourceMode,
 } from '../../core/capabilities/registry';
 import { capabilityOwnershipBlocker, type CapabilityOwnershipBlocker } from '../../core/capabilities/ownership-blocker';
-import { ARCHCONTEXT_IDENTITY_OWNERS, archcontextResolveQueries, resolveArchcontextCapabilityPaths, type ArchcontextOwnerLookup, type ArchcontextResolveCache } from '../architecture/archcontext-owners';
-import { archcontextResolveFileCache } from '../architecture/archcontext-resolve-cache';
-import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
+import {
+  ARCHCONTEXT_IDENTITY_OWNERS,
+  architecturePort,
+  isArchitectureUnavailable,
+  type ArchcontextOwnerLookup,
+  type ArchcontextResolveCache,
+  type ArchctxProviderOptions,
+} from '../../core/architecture/contracts';
 import type {
-  CapabilityOwnership,
   EffectiveState,
   EffectiveStateRiskInput,
   StateSnapshot,
@@ -340,38 +345,26 @@ function resolveArchcontextPaths(
   options?: ArchctxProviderOptions,
   cache?: ArchcontextResolveCache,
 ): CapabilityPathResolution<CapabilityIdentity> {
+  const ownership = architecturePort('ownership');
+  // No provider: the ownership blocker names it. The registry is never a fallback.
+  if (isArchitectureUnavailable(ownership)) {
+    return { status: 'unavailable', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [{ code: 'ARCHCONTEXT_RESOLVE_UNAVAILABLE', path: CAPABILITY_NODES_DIR, message: ownership.message }] };
+  }
   const nodes = archcontextNodePaths(cwd).map((path) => [path, readSource(path)]);
   // The queries carry each path's directory state, which changes what archctx answers.
-  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, archcontextResolveQueries(cwd, paths)]));
+  const key = sha256(JSON.stringify([safeRealpath(cwd), nodes, paths, ownership.resolveQueries(cwd, paths)]));
   // Scoped transport options can select another environment or deadline.
   // Only ordinary state passes share the default transport's memo.
   if (!options && archcontextResolutionMemo?.key === key) return archcontextResolutionMemo.resolution;
   try {
-    const resolution = resolveArchcontextCapabilityPaths(cwd, owners, paths, options, cache);
+    const resolution = ownership.resolvePaths(cwd, owners, paths, options, cache);
     // An unavailable answer is not memoized: a later pass outside observation computes it.
     if (!options && resolution.status !== 'unavailable') archcontextResolutionMemo = { key, resolution };
     return resolution;
   } catch (error) {
     // A process failure is not memoized: the next resolve tries archctx again.
-    return { status: 'unavailable', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [archcontextResolveFailure(error)] };
+    return { status: 'unavailable', capabilityIds: [], matches: [], unmappedPaths: [], diagnostics: [ownership.resolveFailure(error)] };
   }
-}
-
-/**
- * A model rejection never reaches this mapping: archctx answers it with an
- * error envelope, which the resolve returns as ARCHCONTEXT_MODEL_REJECTED.
- */
-function archcontextResolveFailure(error: unknown): CapabilityRegistryDiagnostic {
-  const archctxErrorCode = error instanceof ArchctxClientError ? error.code : undefined;
-  if (archctxErrorCode === 'RH_ARCHCTX_TIMEOUT') {
-    return { code: 'ARCHCONTEXT_RESOLVE_TIMEOUT', path: CAPABILITY_NODES_DIR, message: 'archctx resolve timed out; the architecture notice is skipped for this turn' };
-  }
-  return {
-    code: 'ARCHCONTEXT_RESOLVE_FAILED',
-    path: CAPABILITY_NODES_DIR,
-    message: (error as Error).message,
-    ...(archctxErrorCode ? { archctxErrorCode } : {}),
-  };
 }
 
 /** Resolve one union, then keep each subject's owners and path errors separate. */
@@ -574,7 +567,9 @@ export function capabilityOwnersForPaths(
   const owners = new Map<string, CapabilityPathOwner>();
   const surfaces = paths.filter(isImplementationSurfacePath);
   if (surfaces.length === 0) return owners;
-  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select, undefined, archcontextResolveFileCache(cwd));
+  const ownership = architecturePort('ownership');
+  const cache = isArchitectureUnavailable(ownership) ? undefined : ownership.resolveCache(cwd);
+  const resolution = capabilityIdsForPaths(cwd, surfaces, readWorkflowPolicy(cwd), undefined, select, undefined, cache);
   if (resolution.blocker) {
     throw new Error(`${resolution.blocker.key} ${resolution.blocker.code}: ${resolution.blocker.message}; fix: ${resolution.blocker.fix}`);
   }

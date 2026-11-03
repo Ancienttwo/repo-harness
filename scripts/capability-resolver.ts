@@ -18,6 +18,8 @@ import {
   type ArchContextNodeV2,
   type MatchAuthority,
 } from "../src/effects/architecture/capability-resolver";
+import { registerArchitecturePorts } from "../src/core/architecture/contracts";
+import { ARCHITECTURE_PROVIDERS } from "../src/effects/architecture/providers";
 
 export {
   CapabilitySourceError,
@@ -33,6 +35,9 @@ export {
 };
 
 export type { ArchContextNodeV2, MatchAuthority };
+
+// The package entry registers the archctx providers; the standalone projection has none.
+registerArchitecturePorts(ARCHITECTURE_PROVIDERS);
 
 if (import.meta.main) {
   try {

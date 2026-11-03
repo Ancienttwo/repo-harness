@@ -32,7 +32,9 @@ import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
-import { buildToolsCommand, CODEGRAPH_INIT_STEP, codegraphDoctorChecks, configureCodegraphMcpStep } from './commands/tools';
+import { buildToolsCommand, CODEGRAPH_DOCTOR_PROVIDER, CODEGRAPH_INIT_STEP, configureCodegraphMcpStep } from './commands/tools';
+import { registerArchitecturePorts } from '../core/architecture/contracts';
+import { ARCHITECTURE_PROVIDERS } from '../effects/architecture/providers';
 import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
@@ -127,6 +129,9 @@ import {
 } from './commands/validators';
 import type { Location } from './installer/types';
 
+// Core reaches the architecture code only through these ports; registration checks the contract version.
+registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, codegraphDoctor: CODEGRAPH_DOCTOR_PROVIDER });
+
 /**
  * The plugin checks, setup steps and storage roots that core commands take as
  * parameters. This root is the only importer of their implementations. Tests
@@ -138,7 +143,7 @@ export const CLI_PORTS: {
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
-  doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
+  doctor: { notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: {
     configureCodegraphMcp: configureCodegraphMcpStep,

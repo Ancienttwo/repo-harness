@@ -3,7 +3,7 @@ import { mkdirSync, readdirSync, readFileSync, realpathSync, renameSync, writeFi
 import { join } from 'node:path';
 import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
 import { gitExecFileSync } from '../git/runner';
-import type { ArchcontextResolveCache, ArchctxResolveResult } from './archcontext-owners';
+import type { ArchcontextResolveCache, ArchctxResolveResult } from '../../core/architecture/contracts';
 
 const MODEL_NODES_DIR = '.archcontext/model/nodes';
 const MANIFEST_PATH = '.archcontext/manifest.yaml';

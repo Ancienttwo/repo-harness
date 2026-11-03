@@ -126,8 +126,12 @@ try {
     }, { closeout: true });
   } else if (action === 'stop-architecture-daemons') {
     const { checkoutPath } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
-    const { stopWorkspaceArchitectureDaemons } = await import(pathToFileURL(join(packageRoot, 'src/effects/architecture/archctx-provider.ts')).href) as typeof import('../src/effects/architecture/archctx-provider');
-    const report = stopWorkspaceArchitectureDaemons(value('--repo'), checkoutPath(value('--worktree')));
+    const { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } = await import(pathToFileURL(join(packageRoot, 'src/core/architecture/contracts.ts')).href) as typeof import('../src/core/architecture/contracts');
+    const { ARCHITECTURE_PROVIDERS } = await import(pathToFileURL(join(packageRoot, 'src/effects/architecture/providers.ts')).href) as typeof import('../src/effects/architecture/providers');
+    registerArchitecturePorts(ARCHITECTURE_PROVIDERS);
+    const runtime = architecturePort('runtime');
+    if (isArchitectureUnavailable(runtime)) throw new Error(runtime.message);
+    const report = runtime.stopWorkspaceDaemons(value('--repo'), checkoutPath(value('--worktree')));
     console.log(JSON.stringify(report));
     if (report.failures.length > 0) process.exitCode = 1;
   } else throw new Error('unknown worktree runtime action');

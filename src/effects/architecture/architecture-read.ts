@@ -7,15 +7,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { NATIVE_CONTEXT_PROFILE, decodeArchitectureHistory, type ArchContextError, type ArchitectureHistory, type NativeContextExportV1 } from 'archctx-contracts';
 import { capabilityRegistryFromNativeContext, type ArchcontextPathOwner } from '../../core/capabilities/registry';
-import {
-  ARCHCTX_REQUIRED_VERSION,
-  ARCHCONTEXT_MANIFEST,
-  ArchctxClientError,
-  decodeArchitectureHandEdits,
-  decodeNativeContextExport,
-  type ArchctxProviderOptions,
-  type NativeContextSource,
-} from '../../core/architecture/projection';
+import { ARCHCTX_REQUIRED_VERSION, ARCHCONTEXT_MANIFEST, ArchctxClientError, decodeArchitectureHandEdits, decodeNativeContextExport, type NativeContextSource } from '../../core/architecture/projection';
+import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { ArchctxClient } from './archctx-provider';
 import { loadArchitectureProjectionPolicy } from './projection-config';
 

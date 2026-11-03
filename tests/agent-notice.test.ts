@@ -5,7 +5,7 @@ import { createHash } from 'node:crypto';
 import { ERROR_CATALOG } from 'archctx-contracts';
 import { collectAgentNotice, renderAgentNotice } from '../src/cli/hook/agent-notice';
 import { checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
-import type { ArchctxProviderOptions } from '../src/core/architecture/projection';
+import type { ArchctxProviderOptions } from '../src/core/architecture/contracts';
 import { resolveCapabilityOwnership } from '../src/effects/state/resolve-effective-state';
 import { agentNoticeFixture, noticeOwnership, noticeEnv, registryNoticeFixture, registryProjectedFixture, unignoreNoticeState, writeNoticeRegistry, NOTICE_CAPABILITY } from './helpers/agent-notice';
 import { fixtureCommit, fixtureGit, fixtureWrite } from './helpers/module-repository';

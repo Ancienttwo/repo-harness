@@ -1,10 +1,27 @@
 import type { HookPermission } from './handler-contract';
 import type { HookEvent, RouteHost, RouteId } from './route-registry';
+import { architecturePort, isArchitectureUnavailable, type AgentNotice, type AgentNoticePoint, type ArchctxProviderOptions } from '../../core/architecture/contracts';
+import type { CapabilityOwnership } from '../../core/capabilities/registry';
 
 export const HOOK_DIAGNOSTIC_BYTES = 8 * 1024;
 
 export function boundedHookDiagnostic(text: string): string {
   return Buffer.from(text).subarray(0, HOOK_DIAGNOSTIC_BYTES).toString('utf8').replace(/�$/u, '');
+}
+
+/**
+ * The architecture notice at SessionStart, `inbox` and Stop. Without a
+ * provider the hook gives no notice and one visible diagnostic.
+ */
+export function collectArchitectureNotice(
+  repoRoot: string,
+  ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null,
+  options: ArchctxProviderOptions,
+  point?: AgentNoticePoint,
+): AgentNotice {
+  const notice = architecturePort('notice');
+  if (isArchitectureUnavailable(notice)) return { diagnostics: `${boundedHookDiagnostic(`repo-harness: architecture notice unavailable: ${notice.message}`)}\n` };
+  return notice.collect(repoRoot, ownership, options, point);
 }
 
 /** One finished hook event, ready for the host renderer. */

@@ -2,8 +2,9 @@ import { createHash } from 'node:crypto';
 import { existsSync, readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import type { ArchitectureDebtReportV1 } from 'archctx-contracts';
-import { ARCHCONTEXT_MANIFEST, ARCHITECTURE_DEBT_COMMAND, ArchctxClientError, managedArchctxAction, type ArchctxProviderOptions } from '../../core/architecture/projection';
-import type { CapabilityOwnership } from '../../core/state/types';
+import { ARCHCONTEXT_MANIFEST, ARCHITECTURE_DEBT_COMMAND, ArchctxClientError, managedArchctxAction } from '../../core/architecture/projection';
+import { ARCHITECTURE_CONTRACT_VERSION, type AgentNotice, type AgentNoticePoint, type ArchctxProviderOptions, type ArchitectureNoticePort } from '../../core/architecture/contracts';
+import type { CapabilityOwnership } from '../../core/capabilities/registry';
 import { capabilitySource, changedSinceReviewBase, checkpointArchitectureDebt } from '../../effects/architecture/archctx-provider';
 import { readGlobalArchitectureConfiguration } from '../../effects/architecture/projection-config';
 import { assertSafeRepoWritePath, writeHookStateFile } from '../../effects/hook-state-file';
@@ -31,12 +32,6 @@ const clip = (text: string, bytes: number) => Buffer.from(text).subarray(0, byte
 const digest = (value: unknown) => createHash('sha256').update(JSON.stringify(value)).digest('hex');
 const errorText = (error: unknown) => singleLine(error instanceof Error ? error.message : String(error));
 const noticeItems = (report: ArchitectureDebtReportV1) => report.items.filter(item => ['unowned-path', 'ambiguous-owner', 'stale-anchor'].includes(item.kind));
-
-export interface AgentNotice {
-  readonly content?: string;
-  readonly systemMessage?: string;
-  readonly diagnostics?: string;
-}
 
 export interface NoticeBlock {
   readonly content: string;
@@ -330,7 +325,7 @@ function archimapNotice(repoRoot: string, env: NodeJS.ProcessEnv | undefined, ob
  * it writes none: a current marker or a quiet loop does not hide a removed rule.
  * A Claude Stop line would start one more turn at each stop.
  */
-export function collectAgentNotice(repoRoot: string, ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null, options: ArchctxProviderOptions = {}, point: 'session-start' | 'turn' = 'turn'): AgentNotice {
+export function collectAgentNotice(repoRoot: string, ownership: (options: ArchctxProviderOptions) => CapabilityOwnership | null, options: ArchctxProviderOptions = {}, point: AgentNoticePoint = 'turn'): AgentNotice {
   const observation = observe(repoRoot, ownership, options);
   if (!observation) return {};
   const blocks: NoticeBlock[] = [];
@@ -358,3 +353,5 @@ export function collectAgentNotice(repoRoot: string, ownership: (options: Archct
     ...(problems.length > 0 ? { diagnostics: `${boundedHookDiagnostic(`repo-harness: architecture notice unavailable: ${problems.join('; ')}`)}\n` } : {}),
   };
 }
+
+export const AGENT_NOTICE_PROVIDER: ArchitectureNoticePort = { contractVersion: ARCHITECTURE_CONTRACT_VERSION, collect: collectAgentNotice };

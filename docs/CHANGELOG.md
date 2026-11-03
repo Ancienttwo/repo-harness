@@ -42,6 +42,10 @@ All notable changes to this skill are documented here.
   section reads again, and an edited draft moves to the new revision when its
   own stored section did not change. The Settings page and its rail entry are
   removed. `#settings` and `#settings/seats` open Home. (#1658)
+- `repo-harness run <helper>` selects a trusted Node runtime that satisfies
+  the package `engines.node` range (`>=24 <26`). Before, it used the archctx
+  range (`>=22.22 <26`), so a Node 22.22 to 23.x runtime outside the package
+  engine range could run helpers. (#1655)
 
 ## [0.25.4] - 2026-11-04
 

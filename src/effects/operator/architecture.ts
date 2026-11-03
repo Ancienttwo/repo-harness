@@ -1,7 +1,8 @@
 import { isMainThread, parentPort, workerData } from 'node:worker_threads';
 import { ArchitectureModelReader } from '../architecture/model-reader';
 import { readArchitectureHistory } from '../architecture/architecture-read';
-import { ArchctxClientError, type ArchctxProviderOptions } from '../../core/architecture/projection';
+import { ArchctxClientError } from '../../core/architecture/projection';
+import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { ModuleReadError } from '../../core/architecture/module-view';
 import { SECRET_TOKEN_PATTERNS, containsSecret } from '../../core/security/secret-patterns';

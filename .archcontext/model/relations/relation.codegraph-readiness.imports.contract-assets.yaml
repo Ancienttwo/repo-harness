@@ -3,4 +3,4 @@ id: relation.codegraph-readiness.imports.contract-assets
 kind: depends-on
 source: capability.verification.codegraph-readiness
 target: capability.workflow-engine.contract-assets
-intent: "Type the CodeGraph init step with the core init port type"
+intent: "Type the CodeGraph init step with the core init port type and the CodeGraph doctor provider with the core architecture contract"

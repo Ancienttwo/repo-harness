@@ -33,6 +33,7 @@ import nodeSchema from 'archctx-contracts/schemas/repo/architecture-node.schema.
 import relationSchema from 'archctx-contracts/schemas/repo/architecture-relation.schema.json';
 import flowSchema from 'archctx-contracts/schemas/repo/architecture-flow.schema.json';
 import { dependencies } from '../../../package.json';
+import type { ArchitectureProjectionPolicy, ProjectionApplyMode, ProjectionProvider } from './contracts';
 
 export const ARCHCTX_REQUIRED_VERSION = dependencies.archctx;
 
@@ -92,19 +93,6 @@ export const ARCHCONTEXT_MANIFEST = '.archcontext/manifest.yaml';
 
 export type NativeContextSource = { readonly kind: 'worktree' } | { readonly kind: 'ref'; readonly commit: string };
 
-export interface ArchctxProcessResult { status: number | null; signal: NodeJS.Signals | null; stdout: string; stderr: string; error?: string; timedOut?: boolean }
-export type RunArchctxProcess = (binary: string, args: readonly string[], options: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }) => ArchctxProcessResult;
-
-export interface ArchctxProviderOptions {
-  consumerRoot?: string;
-  policy?: ArchitectureProjectionPolicy;
-  env?: NodeJS.ProcessEnv;
-  run?: RunArchctxProcess;
-  trustedNodeCandidateSource?: () => readonly string[];
-  deadlineMs?: number;
-  nowMs?: () => number;
-}
-
 /** Validate the provider contract and bind its snapshot to the requested source. */
 export function decodeNativeContextExport(value: unknown, source: NativeContextSource): NativeContextExportV1 {
   try {
@@ -122,16 +110,6 @@ export function decodeNativeContextExport(value: unknown, source: NativeContextS
   } catch (error) {
     throw new ArchctxClientError({ code: 'RH_ARCHCTX_NATIVE_CONTEXT_INVALID', action: 'update-repo-harness', message: `native context invalid: ${error instanceof Error ? error.message : String(error)}` });
   }
-}
-
-export type ProjectionProvider = 'disabled' | 'archctx';
-export type ProjectionApplyMode = 'disabled' | 'manual';
-
-export interface ArchitectureProjectionPolicy {
-  provider: ProjectionProvider;
-  applyMode: ProjectionApplyMode;
-  requiredVersion: string;
-  timeoutMs: number;
 }
 
 export interface ArchitectureProjectionReadinessV1 {

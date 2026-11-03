@@ -1,5 +1,6 @@
 import { readGlobalConfiguration } from '../configuration/global-configuration';
-import { readArchitectureProjectionPolicy, type ArchitectureProjectionPolicy } from '../../core/architecture/projection';
+import { readArchitectureProjectionPolicy } from '../../core/architecture/projection';
+import type { ArchitectureProjectionPolicy } from '../../core/architecture/contracts';
 
 export const DEFAULT_GLOBAL_ARCHITECTURE = {
   projection_provider: 'archctx',
