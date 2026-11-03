@@ -20,7 +20,6 @@ source:
     - src/operator-web/**
     - src/effects/setup/**
     - src/effects/dev-activity/**
-    - src/effects/terminal/herdr-observation.ts
     - vite.operator.config.ts
   exclude:
     - src/effects/setup/pi-host-probe.ts

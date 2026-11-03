@@ -21,7 +21,6 @@ source:
   include:
     - src/effects/operator/**
     - assets/operator/**
-    - src/effects/terminal/herdr-observation.ts
   exclude:
     - src/effects/operator/bot-access.ts
     - src/effects/operator/notify-collector.ts

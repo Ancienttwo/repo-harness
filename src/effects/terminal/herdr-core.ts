@@ -65,9 +65,16 @@ export type HcStreamItem =
   /** A fact change. `data` is null for a `foreground` change when no process is in the foreground. */
   | { readonly type: 'event'; readonly seq: number; readonly terminal: string; readonly event: string; readonly data: Readonly<Record<string, unknown>> | null };
 export interface HcEventStream { close(): void; readonly done: Promise<void> }
+/** `hc server status`: the core that answers. `core.id` is permanent until the core state is wiped. */
+export interface HcServerStatus {
+  readonly version: string; readonly core: { readonly id: string; readonly name: string }; readonly live: number; readonly finished: number;
+}
 
-/** The Herdr.app commands that place panes; every other path goes through hc. */
-export type HerdrAppPlacement = 'tab.new' | 'pane.split' | 'pane.close';
+/**
+ * The Herdr.app commands that place panes; every other path goes through hc. `terminal.keep` gives a running
+ * terminal without a pane a pane in the person's window (a new tab, or `place` "right" / "down").
+ */
+export type HerdrAppPlacement = 'tab.new' | 'pane.split' | 'pane.close' | 'terminal.keep';
 
 /** The repo-harness label keys; the only source for every surface that writes or filters hc labels. */
 export const RH_LABEL = {
@@ -326,6 +333,22 @@ function listResult(result: Record<string, unknown>): HcTerminalSummary[] {
   return result.terminals.map(terminalSummary);
 }
 
+const VERSION = /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/u;
+const isCount = (value: unknown): value is number => Number.isSafeInteger(value) && (value as number) >= 0;
+
+/**
+ * `hc server status` without blocking the event loop: the version and identity of the core that answers. It reads
+ * no terminal. Like every hc call, it starts the core when it is stopped.
+ */
+export async function hcServerStatusAsync(options: HerdrCoreOptions = {}): Promise<HcServerStatus> {
+  const result = await invokeAsync('hc', ['server', 'status', '--json'], options);
+  const { core } = result;
+  if (!isString(result.version) || !VERSION.test(result.version)) throw invalidResponse('server status has an invalid version');
+  if (!isRecord(core) || !isString(core.id) || !core.id || !isString(core.name)) throw invalidResponse('server status has an invalid core');
+  if (!isCount(result.live) || !isCount(result.finished)) throw invalidResponse('server status has invalid terminal counts');
+  return { version: result.version, core: { id: core.id, name: core.name }, live: result.live, finished: result.finished };
+}
+
 /** The `k=v` arguments of `hc label`, checked with the label rules. */
 export function hcLabelPairs(labels: HcLabels): string[] {
   return labelArgs(labels).filter((_, index) => index % 2 === 1);
@@ -435,9 +458,15 @@ export function hcEvents(labels: HcLabels, onItem: (item: HcStreamItem) => void,
   return { close: () => stop(), done };
 }
 
+/** The argv of `herdr-app do <command> <json>`: the one source for the call below and for a command the console shows to copy. */
+export function herdrAppCommand(command: HerdrAppPlacement, args: Readonly<Record<string, unknown>>): readonly ['herdr-app', 'do', HerdrAppPlacement, string] {
+  return ['herdr-app', 'do', command, JSON.stringify(args)];
+}
+
 /** `herdr-app do <command> <json>`: place a tab or pane in the person's window. Returns the created IDs. */
 export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<string, unknown>>, options: HerdrCoreOptions = {}): Record<string, unknown> {
-  return invoke('herdr-app', ['do', command, JSON.stringify(args)], options);
+  const [program, ...rest] = herdrAppCommand(command, args);
+  return invoke(program, rest, options);
 }
 
 /** The board host port (#1505): seat terminals of one parent issue by its parent label, and the hc version. */

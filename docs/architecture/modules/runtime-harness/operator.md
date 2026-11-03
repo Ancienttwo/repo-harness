@@ -310,14 +310,14 @@ with an instruction to use the shared setting. Existing paths remain readable.
 
 | 组件 | footprint | 文件 / 行 | 职责 |
 | --- | --- | --- | --- |
-| `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**`、`src/effects/terminal/herdr-observation.ts` | 24 / 4726 | 路由、身份检查、worker 监督、collector 启动、Herdr 观测 |
+| `component.operator.primary`（HTTP Reader） | `src/effects/operator/**`、`src/cli/commands/operator.ts`、`assets/operator/**` | 23 / 4599 | 路由、身份检查、worker 监督、collector 启动、herdr-core 观测 |
 | `component.operator.console-collectors`（2026-10-27） | `src/effects/operator/` 下的 `bot-access.ts`、`notify-collector.ts`、`notify-status.ts`、`docs-collector.ts`、`docs-reader.ts`、`tests-collector.ts`；primary 用 `source.exclude` 排除这 6 个文件 | 6 / 1488 | Bot access、notify、docs 和 tests collector；仓库解析到唯一 GitHub remote 和有效 ref 后，才有一个常驻 `git cat-file` 进程 |
 | `component.operator.view-projections` | `src/core/operator/**` | 16 / 2112 | 纯投影、请求解析、严格 decoder |
 | `component.operator.activity-feeds` | `src/core/setup/**`、`src/effects/setup/**`、`src/cli/commands/setup-snapshot.ts`、`src/cli/commands/setup-check-child.ts`、`src/core/dev-activity/**`、`src/effects/dev-activity/**` | 10 / 1948 | 开发活动和 setup 的 collector 与投影 |
 | `component.operator.architecture-view` | `module-view.ts`、`src/cli/commands/module.ts` | 2 / 182 | 模块视图、module CLI |
 | `component.operator.web-console` | `src/operator-web/**`、`vite.operator.config.ts` | 45 / 9902 | 只读浏览器控制台 |
 
-依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用 view-projections、activity-feeds 和 console-collectors，不调用 architecture-view。console-collectors 读 activity-feeds 的开发活动缓存，用 view-projections 的 decoder 构建缓存值，并通过 primary 的 Herdr 观测传输（`src/effects/terminal/herdr-observation.ts`）检查 herdr status 版本、请求 session.snapshot；所以 primary 和 console-collectors 互相依赖，传输归 primary 是设计选择。CLI 清单 collector 在 activity-feeds 里（`src/effects/setup/cli-inventory.ts`）。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
+依赖方向：web-console 通过 HTTP 调用 primary，并直接使用 view-projections 和 activity-feeds 的 decoder。primary 调用 view-projections、activity-feeds 和 console-collectors，不调用 architecture-view。console-collectors 读 activity-feeds 的开发活动缓存，用 view-projections 的 decoder 构建缓存值，并通过 primary 的 herdr-core 读取（`src/effects/operator/herdr-runtime-transport.ts`）对照 hc pin 检查 `hc server status` 版本、读取带 task-session 标签的终端快照；执行状态 collector 直接用 `src/effects/terminal/herdr-core.ts` 的 `hcServerStatusAsync` 和 `herdrAppCommand`。所以 primary 和 console-collectors 互相依赖，hc 读取归 primary 是设计选择。CLI 清单 collector 在 activity-feeds 里（`src/effects/setup/cli-inventory.ts`）。view-projections 不调用 primary。scan 中 `view-projections` 的入向模块边是 73，`primary` 的出向模块边是 69。
 
 ### 3.4 开放问题
 

@@ -1823,7 +1823,7 @@ export async function startOperatorServer(
   if (options.runtime_status_config && options.read_runtime_status) throw new OperatorServerError('invalid_argument', 'Select runtime config or cache reader.', 400);
   // Collector groups of a server that died with SIGKILL have no other owner.
   reapOrphanedProcessGroups();
-  const runtimeService = options.runtime_status_config ? await startRuntimeService(options.runtime_status_config) : null;
+  const runtimeService = options.runtime_status_config ? await startRuntimeService(options.runtime_status_config, { ...process.env, ...options.env }) : null;
   const devActivity = options.dev_activity_collector && !options.read_dev_activity
     ? startDevActivityCollector({
       env: options.env,

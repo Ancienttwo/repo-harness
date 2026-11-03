@@ -3,8 +3,7 @@ import { Badge, Banner, Empty, Loader, cn } from '@cloudflare/kumo';
 import { BellIcon, ChatsIcon, PlugIcon, SquaresFourIcon, WarningCircleIcon, WarningIcon } from '@phosphor-icons/react';
 import type {
   BotAccessSnapshotV1,
-  HerdrAgentStatus,
-  HerdrStatusProjection,
+  HcTerminalStatus,
   McpAuditProjection,
   RegistryRepoProjection,
 } from '../core/operator/bot-access';
@@ -25,9 +24,9 @@ import { ageWords } from './labels';
 import { CommandLine, ExternalLink, SectionTitle, StatusDot, type DotTone } from './ui';
 
 type Snapshot = BotAccessSnapshotV1;
-type HerdrReady = Extract<Snapshot['herdr'], { readonly state: 'ok' }>;
+type HcReady = Extract<Snapshot['hc'], { readonly state: 'ok' }>;
 
-function Card({ section, children }: { readonly section: 'mcp' | 'notify' | 'herdr' | 'reviews'; readonly children: ReactNode }) {
+function Card({ section, children }: { readonly section: 'mcp' | 'notify' | 'hc' | 'reviews'; readonly children: ReactNode }) {
   return (
     <section aria-labelledby={`bots-${section}-heading`} data-bots-section={section}
       className="flex min-w-0 flex-col gap-4 rounded-xl border border-kumo-line bg-kumo-base p-4 sm:p-5">{children}</section>
@@ -166,7 +165,6 @@ function Delivery({ delivery, now, t }: { readonly delivery: NotifyDeliveryV1; r
 
 function NotifySection({ snapshot, now, t }: { readonly snapshot: Snapshot; readonly now: number; readonly t: OperatorTranslate }) {
   const { notify } = snapshot;
-  const session = snapshot.herdr.state === 'ok' ? snapshot.herdr.session : null;
   const enabled = notify.state === 'ok' && notify.status.linked === 'linked' && notify.status.enabled === 'enabled';
   const install = notify.state === 'ok' ? !enabled : notify.reason === 'notify_session_missing' || notify.reason === 'notify_session_invalid';
   return (
@@ -195,68 +193,44 @@ function NotifySection({ snapshot, now, t }: { readonly snapshot: Snapshot; read
             })}
           </ul>
         </>}
-      {install && <CommandLine command={notifyInstallCommand(session)} t={t} className="max-w-full md:max-w-3xl" />}
+      {install && <CommandLine command={notifyInstallCommand(null)} t={t} className="max-w-full md:max-w-3xl" />}
     </Card>
   );
 }
 
-// --- Herdr ---
+// --- hc ---
 
-const SERVER_TONE: Readonly<Record<HerdrStatusProjection['server']['status'], DotTone>> = { running: 'ok', not_running: 'danger', unknown: 'unknown' };
-const AGENT_TONE: Readonly<Record<HerdrAgentStatus, DotTone>> = { idle: 'neutral', working: 'active', blocked: 'warn', done: 'ok', unknown: 'unknown' };
+const STATUS_TONE: Readonly<Record<HcTerminalStatus, DotTone>> = { idle: 'neutral', working: 'active', blocked: 'warn', done: 'ok', error: 'danger', unknown: 'unknown' };
 
-/** Equal version names with a protocol mismatch would read as equal, so the protocols join them then. */
-function versionWords(status: HerdrStatusProjection, t: OperatorTranslate): string | null {
-  const version = status.server.version;
-  if (version === null) return null;
-  const schema = version.expected.revision.slice(0, 8);
-  if (version.state === 'aligned') return t('bots.herdr.aligned', { version: version.expected.version });
-  const actualName = version.actual.version ?? t('bots.herdr.unknownVersion');
-  if (version.expected.version !== version.actual.version) return t('bots.herdr.mismatch', { expected: version.expected.version, schema, actual: actualName });
-  return t('bots.herdr.mismatch', {
-    expected: `${version.expected.version} protocol ${version.expected.protocol}`, schema, actual: `${actualName} protocol ${version.actual.protocol ?? '?'}`,
-  });
+/** A core below the pin answered: both versions show, so it never reads as a missing core. */
+function HcVersion({ version, t }: { readonly version: HcReady['version']; readonly t: OperatorTranslate }) {
+  if (version.state !== 'ok') return <Line tone="warn" data-hc-version={version.reason}>{t(`bots.hc.reason.${version.reason}`)}</Line>;
+  const { state, expected, actual } = version.value;
+  const words = { version: actual.version, min: expected.min_version };
+  return state === 'aligned'
+    ? <Line tone="ok" data-hc-version="aligned">{t('bots.hc.aligned', words)}</Line>
+    : <Line tone="warn" data-hc-version="mismatch" className="font-medium text-kumo-strong">{t('bots.hc.mismatch', words)}</Line>;
 }
 
-function HerdrServer({ session, status, t }: { readonly session: string; readonly status: HerdrReady['status']; readonly t: OperatorTranslate }) {
-  if (status.state !== 'ok') return <Line tone="danger" data-herdr-server={status.reason}>{t(`bots.herdr.reason.${status.reason}`)}</Line>;
-  const { server } = status.value;
-  const words = versionWords(status.value, t);
-  const aligned = server.version?.state === 'aligned';
+function HcTerminals({ terminals, t }: { readonly terminals: HcReady['terminals']; readonly t: OperatorTranslate }) {
+  // A version mismatch already has its line above; the other reasons are read failures.
+  if (terminals.state !== 'ok') {
+    return terminals.reason === 'hc_terminals_failed'
+      ? <Line tone="danger" data-hc-terminals={terminals.reason}>{t('bots.hc.reason.hc_terminals_failed')}</Line> : null;
+  }
   return (
-    <div className="flex min-w-0 flex-col gap-1.5">
-      <Line tone={SERVER_TONE[server.status]} data-herdr-server={server.status}>
-        <span className="font-medium text-kumo-strong">{t(`bots.herdr.server.${server.status}`)}</span>
-        <span className="text-kumo-subtle"> · {t('bots.herdr.session', { session })}</span>
-      </Line>
-      {words && <Line tone={aligned ? 'ok' : 'warn'} data-herdr-version={server.version?.state ?? ''} className={aligned ? undefined : 'font-medium text-kumo-strong'}>{words}</Line>}
-      {server.restart_needed && <Line tone="warn" data-herdr-restart="">{t('bots.herdr.restartNeeded')}</Line>}
-    </div>
-  );
-}
-
-const agentName = (agent: string, t: OperatorTranslate) => agent === 'claude' || agent === 'codex' ? t(`setup.host.${agent}`) : agent;
-
-function HerdrPanes({ snapshot, panes, t }: { readonly snapshot: Snapshot; readonly panes: HerdrReady['snapshot']; readonly t: OperatorTranslate }) {
-  // A version mismatch is not "not connected": the server answered, and only its pane state is not read.
-  if (panes.state !== 'ok') return <Line tone={panes.reason === 'herdr_version_mismatch' ? 'warn' : 'danger'} data-herdr-panes={panes.reason}>{t(`bots.herdr.reason.${panes.reason}`)}</Line>;
-  const { value } = panes;
-  return (
-    <div className="flex min-w-0 flex-col gap-2" data-herdr-panes="ok">
-      <p className="text-sm text-kumo-subtle">{t('bots.herdr.counts', { workspaces: value.workspaces, tabs: value.tabs, panes: value.panes })}</p>
-      <Subheading count={value.agents.length}>{t('bots.herdr.agents')}</Subheading>
-      {value.agents.length === 0 ? <p className="text-sm text-kumo-subtle">{t('bots.herdr.agentsEmpty')}</p> : (
+    <div className="flex min-w-0 flex-col gap-2" data-hc-terminals="ok">
+      <Subheading count={terminals.value.length}>{t('bots.hc.terminals')}</Subheading>
+      {terminals.value.length === 0 ? <p className="text-sm text-kumo-subtle">{t('bots.hc.terminalsEmpty')}</p> : (
         <ul className={ROWS}>
-          {value.agents.map(agent => (
-            <li key={agent.pane_id} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm" data-herdr-agent={agent.pane_id} data-agent-status={agent.agent_status}>
+          {terminals.value.map(terminal => (
+            <li key={terminal.address} className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-1 px-3 py-2.5 text-sm" data-hc-terminal={terminal.address} data-terminal-status={terminal.status}>
               <span className="inline-flex items-center gap-1.5 md:w-28 md:shrink-0">
-                <StatusDot tone={AGENT_TONE[agent.agent_status]} pulse={agent.agent_status === 'working'} />
-                {t(`bots.herdr.agentStatus.${agent.agent_status}`)}
+                <StatusDot tone={STATUS_TONE[terminal.status]} pulse={terminal.status === 'working'} />
+                {t(`bots.hc.status.${terminal.status}`)}
               </span>
-              <code className="font-mono text-xs text-kumo-subtle">{agent.pane_id}</code>
-              {agent.agent && <span>{agentName(agent.agent, t)}</span>}
-              {agent.name && <code className="font-mono text-xs">{agent.name}</code>}
-              <BotName label={botLabel(snapshot, agent.bot)} t={t} />
+              <code className="font-mono text-xs text-kumo-subtle">{terminal.address}</code>
+              {terminal.name && <code className="font-mono text-xs">{terminal.name}</code>}
             </li>
           ))}
         </ul>
@@ -265,17 +239,15 @@ function HerdrPanes({ snapshot, panes, t }: { readonly snapshot: Snapshot; reado
   );
 }
 
-function HerdrSection({ snapshot, t }: { readonly snapshot: Snapshot; readonly t: OperatorTranslate }) {
-  const { herdr } = snapshot;
+function HcSection({ snapshot, t }: { readonly snapshot: Snapshot; readonly t: OperatorTranslate }) {
+  const { hc } = snapshot;
   return (
-    <Card section="herdr">
-      <SectionTitle id="bots-herdr-heading"><SquaresFourIcon size={16} aria-hidden="true" />{t('bots.herdr.title')}</SectionTitle>
-      {herdr.state === 'unavailable' ? <>
-        <Line tone="warn" data-herdr-server={herdr.reason}>{t(`bots.herdr.reason.${herdr.reason}`)}</Line>
-        <CommandLine command={notifyInstallCommand(null)} t={t} className="max-w-full md:max-w-3xl" />
-      </> : <>
-        <HerdrServer session={herdr.session} status={herdr.status} t={t} />
-        <HerdrPanes snapshot={snapshot} panes={herdr.snapshot} t={t} />
+    <Card section="hc">
+      <SectionTitle id="bots-hc-heading"><SquaresFourIcon size={16} aria-hidden="true" />{t('bots.hc.title')}</SectionTitle>
+      {hc.state === 'unavailable' ? <Line tone={hc.reason === 'hc_missing' ? 'danger' : 'warn'} data-hc={hc.reason}>{t(`bots.hc.reason.${hc.reason}`)}</Line> : <>
+        <HcVersion version={hc.version} t={t} />
+        <Line tone="neutral" data-herdr-app={hc.herdr_app.state}>{t('bots.hc.herdrApp')}</Line>
+        <HcTerminals terminals={hc.terminals} t={t} />
       </>}
     </Card>
   );
@@ -395,7 +367,7 @@ export function BotsPage({ view, reviews, now, t }: { readonly view: BotAccessVi
         )}
         <McpSection snapshot={state.snapshot} now={now} t={t} />
         <NotifySection snapshot={state.snapshot} now={now} t={t} />
-        <HerdrSection snapshot={state.snapshot} t={t} />
+        <HcSection snapshot={state.snapshot} t={t} />
       </>}
       <ReviewsSection view={reviews} now={now} t={t} />
     </div>
