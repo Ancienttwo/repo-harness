@@ -652,6 +652,41 @@ describe('install selection', () => {
     expect(enabledPlugins(restored)).toEqual([...ALL_PLUGINS]);
   }));
 
+  test('a rebuilt ledger keeps each current surface whose owner stays selected, and uninstall still plans it', () => {
+    for (const writer of ['rollback', 'apply'] as const) withHome((env) => {
+      writeManagedHostSurfaces(env, ['platform', 'product']);
+      applyInstallSelection(['platform'], ['platform'], env, new Date('2026-01-01T00:00:00Z'));
+      // `install --plugins product` adds core Waza surfaces that discovery does not find: a staging copy and a rule.
+      const forward = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+      prepareInstallSelectionSwitch(['product'], env);
+      const rule = join(env.HOME!, '.agents', 'rules', 'english.md');
+      const staged = join(env.HOME!, '.agents', 'skills', 'think');
+      writePath(rule, '# rule\n');
+      writePath(join(staged, 'SKILL.md'), '# think\n');
+      applyInstallSelection(['product'], ['product'], env, new Date('2026-01-02T00:00:00Z'), forward);
+      commitInstallHostTransaction(forward);
+      const productSurfaces = readInstallState(env)!.ownership_manifest.filter(({ owner }) => owner === 'product').map(({ path }) => path);
+      expect(productSurfaces.length, writer).toBeGreaterThan(0);
+
+      // Back to platform: the switch removes product, and the projection writes the platform facade again.
+      const back = beginInstallHostTransaction(installProfileHostMutationPaths(env), env);
+      prepareInstallSelectionSwitch(['platform'], env);
+      for (const [host, skill] of PLUGIN_SKILLS.platform!) writeMarkedFacade(join(env.HOME!, `.${host}`, 'skills', skill), '# managed\n');
+      if (writer === 'rollback') rollbackInstallSelection(env, back);
+      else applyInstallSelection(['platform'], ['platform'], env, new Date('2026-01-03T00:00:00Z'), back);
+      commitInstallHostTransaction(back);
+
+      const state = readInstallState(env)!;
+      expect(state.selection, writer).toEqual(['platform']);
+      const owned = state.ownership_manifest.map(({ path }) => path);
+      expect([owned.includes(rule), owned.includes(staged)], writer).toEqual([true, true]);
+      expect(state.ownership_manifest.filter(({ owner }) => owner === 'product'), writer).toEqual([]);
+      for (const path of productSurfaces) expect(existsSync(path), `${writer}: ${path}`).toBe(false);
+      const planned = new Set(runUserUninstall({ target: 'both', dryRun: true, env }).items.map(({ path }) => path));
+      expect(owned.filter(path => !planned.has(path)), writer).toEqual([]);
+    });
+  });
+
   test('a rollback that cannot complete its projection names the missing owner', () => withHome((env) => {
     writeManagedHostSurfaces(env, ALL_PLUGINS);
     applyInstallSelection('all', ALL_PLUGINS, env, new Date('2026-01-01T00:00:00Z'));

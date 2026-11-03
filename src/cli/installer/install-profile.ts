@@ -620,6 +620,22 @@ function selectionOwnership(surfaces: readonly ManagedInstallSurface[], plugins:
 }
 
 /**
+ * The current records that a rebuilt ledger carries: each surface still on
+ * disk unchanged, a Pi package registration, and every surface of a kept
+ * plugin. A record leaves the ledger only when the projection removed or
+ * changed its surface, or `selectionOwnership` drops its owner.
+ */
+function carriedOwnership(
+  current: Pick<InstallState, 'ownership_manifest'> | null,
+  env: NodeJS.ProcessEnv,
+  kept: readonly PluginId[] = [],
+): readonly ManagedInstallSurface[] {
+  return (current?.ownership_manifest ?? []).filter((surface) => (
+    surface.type === 'pi-package' || (kept as readonly SurfaceOwner[]).includes(surface.owner) || surfaceIsCurrent(surface, env)
+  ));
+}
+
+/**
  * Update paths run the fleet helper but may never reach applyInstallSelection
  * (partial or in-process reconciliation), so the verified fleet surfaces are
  * merged into the existing ownership manifest right after the helper succeeds.
@@ -1527,9 +1543,7 @@ export function applyInstallSelection(
   if (options.additionalSurfaces?.some(surface => surface.type !== 'pi-package' || !validateManagedSurface(surface, env, plugins))) throw new Error('invalid Pi package ownership');
   const plan = planInstallSelection(selection, { run: ran, record: plugins }, current, env);
   const discovered = discoverManagedSurfaces(ran, env);
-  const preserved = (current?.ownership_manifest ?? []).filter((surface) => (
-    surface.type === 'pi-package' || (kept as readonly SurfaceOwner[]).includes(surface.owner) || surfaceIsCurrent(surface, env)
-  ));
+  const preserved = carriedOwnership(current, env, kept);
   const transactionOwned = transaction ? transactionOwnedSurfaces(transaction, current, env) : [];
   const fleetOwned = options.agentFleetVerified === true ? verifiedAgentFleetSurfaces(env) : [];
   // Current verified link projections own their classification. Historical
@@ -1580,6 +1594,7 @@ export function rollbackInstallSelection(
     applied_at: new Date().toISOString(),
     ownership_manifest: selectionOwnership([
       ...discoverManagedSurfaces(plugins, env),
+      ...carriedOwnership(current, env),
       ...(transaction ? transactionOwnedSurfaces(transaction, current.previous, env) : []),
     ], plugins),
     previous: null,
