@@ -1520,16 +1520,17 @@ export function applyInstallSelection(
   // records must not restore a retired owner.
   const ownershipManifest = mergeOwnership([...discovered, ...preserved, ...transactionOwned, ...fleetOwned,
     ...(options.additionalSurfaces ?? []), ...discovered.filter(surface => surface.type === 'symlink')]);
+  const recordedVersions = versions(plugins);
   const unchanged = current !== null
-    && enabledPlugins(current).join(',') === plugins.join(',')
+    && JSON.stringify({ core: current.core, plugins: current.plugins }) === JSON.stringify(recordedVersions)
     && JSON.stringify(current.selection) === JSON.stringify(selection)
     && sameOwnership(current.ownership_manifest, ownershipManifest);
   const state: InstallState = {
     protocol: INSTALL_STATE_PROTOCOL,
-    ...versions(plugins),
+    ...recordedVersions,
     selection,
-    transaction_id: unchanged ? current.transaction_id : randomUUID(),
-    applied_at: unchanged ? current.applied_at : now.toISOString(),
+    transaction_id: randomUUID(),
+    applied_at: now.toISOString(),
     ownership_manifest: ownershipManifest,
     previous: current === null ? null : snapshot(current),
   };
@@ -1543,6 +1544,8 @@ export function applyInstallSelection(
       `install projection is incomplete: missing=${status.drift.missing_owners.map(owner => `${owner}(${status.probes[owner]?.missing.join('+')})`).join(',') || '(none)'}; surface_drift=${status.drift.surface_drift.join(',') || '(none)'}`,
     );
   }
+  // A no-change apply writes nothing, so `previous` keeps the last real change for a rollback.
+  if (unchanged) return { plan, state: current };
   writeState(state, env);
   return { plan, state };
 }

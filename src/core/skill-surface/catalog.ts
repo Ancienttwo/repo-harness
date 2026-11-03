@@ -4,7 +4,7 @@
 // a closed diagnostic-code union. This module never touches fs/process;
 // callers own reading manifest.json and (optionally) proving a package's
 // source path exists on disk.
-import { isSurfaceOwner, ownerEnabled, SURFACE_OWNERS, type PluginId, type SurfaceOwner } from "./plugin-manifest";
+import { HOST_PROGRAM_PLUGINS, isSurfaceOwner, ownerEnabled, SURFACE_OWNERS, type PluginId, type SurfaceOwner } from "./plugin-manifest";
 
 export const SKILL_SURFACE_CATALOG_VERSION = 4 as const;
 
@@ -658,7 +658,9 @@ export function facadesForSelection(catalog: SkillSurfaceCatalog, plugins: reado
 /**
  * Provider-skill host placement. Pass `plugins` for the placements that a
  * selection projects; omit it for the unconditional bundle (init.ts's
- * `repo-harness init` flow, which has no install-state concept).
+ * `repo-harness init` flow, which has no install-state concept). A selection
+ * places nothing in a host-program root (`pi`, `dsh`) unless it selects that
+ * host's plugin: the ledger records each path there under that plugin.
  */
 export function hostSkillPlacements(
   catalog: SkillSurfaceCatalog,
@@ -668,7 +670,10 @@ export function hostSkillPlacements(
   for (const pkg of catalog.packages) {
     if (pkg.kind !== "provider-skill") continue;
     if (plugins !== undefined && !selected(pkg, plugins)) continue;
-    for (const host of pkg.hosts) placements[host].push(pkg.name);
+    for (const host of pkg.hosts) {
+      if (plugins !== undefined && (HOST_PROGRAM_PLUGINS as readonly string[]).includes(host) && !(plugins as readonly string[]).includes(host)) continue;
+      placements[host].push(pkg.name);
+    }
   }
   return placements;
 }

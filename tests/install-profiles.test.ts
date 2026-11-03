@@ -1,4 +1,5 @@
 import { syncCrossReviewSkills } from '../src/cli/commands/init';
+import { configureRequiredHerdrSkill } from '../src/cli/commands/herdr-skill';
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
 import { spawnSync, type SpawnSyncReturns } from 'child_process';
@@ -627,14 +628,17 @@ describe('install selection', () => {
     expect(readInstallState(env)).toBeNull();
   }));
 
-  test('apply is idempotent', () => withHome((env) => {
-    writeManagedHostSurfaces(env);
+  test('apply is idempotent: a no-change apply keeps the state bytes and previous', () => withHome((env) => {
+    writeManagedHostSurfaces(env, ['product']);
     const first = applyInstallSelection([], [], env, new Date('2026-01-01T00:00:00Z'));
-    const second = applyInstallSelection([], [], env, new Date('2026-01-02T00:00:00Z'));
-    expect(second.plan.install).toEqual([]);
-    expect(second.plan.remove).toEqual([]);
-    expect(second.state.transaction_id).toBe(first.state.transaction_id);
-    expect(second.state.applied_at).toBe(first.state.applied_at);
+    const second = applyInstallSelection(['product'], ['product'], env, new Date('2026-01-02T00:00:00Z'));
+    const bytes = readFileSync(installProfileStatePath(env));
+    const third = applyInstallSelection(['product'], ['product'], env, new Date('2026-01-03T00:00:00Z'));
+    expect(third.plan.install).toEqual([]);
+    expect(third.plan.remove).toEqual([]);
+    expect(readFileSync(installProfileStatePath(env))).toEqual(bytes);
+    expect(third.state).toEqual(second.state);
+    expect(third.state.previous?.transaction_id).toBe(first.state.transaction_id);
   }));
 
   test('switch lists removals and rollback restores the previous selection', () => withHome((env) => {
@@ -1219,6 +1223,42 @@ describe('install selection', () => {
     expect(retried.rules).toMatchObject({ status: 'ok' });
     expect(readFileSync(join(hostRules, 'english.md'), 'utf-8')).toBe('# upstream english.md\n');
   }), 60_000);
+
+  test('a writer reaches the Pi skill root only when pi is selected', () => {
+    const rows = [
+      { name: 'pi absent: the old Herdr copy stays the only Pi entry', pi: false, entries: ['herdr'] },
+      { name: 'pi selected: Waza, Mermaid, cross-review and Herdr project into the Pi root', pi: true,
+        entries: ['check', 'health', 'herdr', 'hunt', 'mermaid', 'repo-harness-cross-review', 'think'] },
+    ];
+    for (const row of rows) withHome((base) => {
+      const env = row.pi ? withPi(base) : base;
+      writeManagedHostSurfaces(env, row.pi ? ALL_WITH_PI : ALL_PLUGINS);
+      for (const skill of [...WAZA_SKILLS, 'repo-harness-cross-review']) rmSync(join(env.HOME!, '.codex', 'skills', skill), { recursive: true });
+      rmSync(join(env.HOME!, '.claude', 'skills', 'repo-harness-herdr-portal'), { recursive: true });
+      const bin = join(env.HOME!, 'fake-bin');
+      mkdirSync(bin, { recursive: true });
+      writeFileSync(join(bin, 'bun'), '#!/bin/sh\nif [ "$1" = "--version" ]; then echo 1.4.0; fi\nexit 0\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'bunx'), '#!/bin/sh\nfor s in think hunt check health mermaid; do mkdir -p "$HOME/.agents/skills/$s"; echo "# $s" > "$HOME/.agents/skills/$s/SKILL.md"; done\n', { mode: 0o755 });
+      writeFileSync(join(bin, 'curl'), '#!/bin/sh\nwhile [ $# -gt 0 ]; do case "$1" in --output) out="$2"; shift;; https://*) url="$1";; esac; shift; done\necho "# upstream ${url##*/}" > "$out"\n', { mode: 0o755 });
+      const hc = (manual: string) => writeFileSync(join(bin, 'hc'), `#!/bin/sh\nprintf "%s\\n" "# hc manual (herdr-core)" "${manual}" "\\\`\\$HC_TERMINAL_ID\\\` is your address."\n`, { mode: 0o755 });
+      const runEnv = { ...env, PATH: `${bin}:${env.PATH}`, REPO_HARNESS_BUN_EXECUTABLE: join(bin, 'bun') };
+      // The 0.25.x Herdr step created the Pi root and its herdr copy; the install then refreshes a newer manual.
+      hc('old manual');
+      expect(configureRequiredHerdrSkill('both', runEnv).status).toBe('ok');
+      hc('new manual');
+      const piRoot = hostSkillRoot(env.HOME!, 'pi', env);
+      const run = spawnSync(process.execPath, [CLI, 'install', '--target', 'both', '--no-cli', '--no-sync-skill', '--no-codegraph', '--json'], {
+        cwd: ROOT, env: runEnv, encoding: 'utf-8',
+      });
+      expect(run.status, `${row.name}\n${run.stdout}\n${run.stderr}`).toBe(0);
+      expect(readdirSync(piRoot).sort(), row.name).toEqual(row.entries);
+      expect(readFileSync(join(piRoot, 'herdr', 'SKILL.md'), 'utf-8'), row.name).toContain(row.pi ? 'new manual' : 'old manual');
+      // The strict reader accepts the state; the pre-existing Herdr copy stays unrecorded.
+      const recorded = readInstallState(env)!.ownership_manifest.filter(surface => surface.path.startsWith(`${piRoot}/`));
+      expect(recorded.map(surface => `${surface.owner}:${basename(surface.path)}`), row.name)
+        .toEqual(row.pi ? row.entries.filter(name => name !== 'herdr').map(name => `pi:${name}`) : []);
+    });
+  }, 60_000);
 
   test('a relative XDG_STATE_HOME fails before the install takes its runtime lock', () => withHome((env) => {
     const failed = spawnSync(process.execPath, [CLI, 'install', '--no-plugins', '--json'], { cwd: env.HOME, env: { ...env, XDG_STATE_HOME: 'state' }, encoding: 'utf-8' });

@@ -140,7 +140,10 @@ export const CLI_PORTS: {
 } = {
   doctor: { codegraphChecks: codegraphDoctorChecks, notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
   init: { codegraphStep: CODEGRAPH_INIT_STEP },
-  globalRuntime: { configureCodegraphMcp: configureCodegraphMcpStep, configureHerdrSkill: configureRequiredHerdrSkill },
+  globalRuntime: {
+    configureCodegraphMcp: configureCodegraphMcpStep,
+    configureHerdrSkill: (target, env, piSelected) => configureRequiredHerdrSkill(target, env, undefined, piSelected),
+  },
   retention: {
     rotatingLogs: [MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH, MCP_AUDIT_LOG_RELATIVE_PATH],
     commonProtocolRoots: [TASK_INBOX_V2_RELATIVE_PATH],

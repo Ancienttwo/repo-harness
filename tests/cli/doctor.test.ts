@@ -1,5 +1,5 @@
 import { CLI_PORTS, buildProgram } from '../../src/cli/index';
-import { defaultPluginSelection, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
+import { defaultPluginSelection, installProfileStatePath, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
 import { installSelectionCommand, parsePluginList, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
@@ -604,16 +604,15 @@ describe('doctor command (Phase 1C)', () => {
       const root = path.join(import.meta.dir, '..', '..');
       fs.mkdirSync(path.join(envRoot.root, '.codegraph'));
       fs.copyFileSync(path.join(root, 'package.json'), path.join(envRoot.root, 'package.json'));
-      const res = spawnSync('bun', [path.join(root, 'src/cli/index.ts'), 'doctor', '--json'], {
-        cwd: envRoot.root,
-        encoding: 'utf-8',
-        env: {
-          ...process.env,
-          HOME: envRoot.home,
-          PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ''}`,
-          AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
-        },
-      });
+      const env = {
+        ...process.env,
+        HOME: envRoot.home,
+        REPO_HARNESS_HOME: path.join(envRoot.home, '.repo-harness'),
+        PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ''}`,
+        AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
+      };
+      const doctor = () => spawnSync('bun', [path.join(root, 'src/cli/index.ts'), 'doctor', '--json'], { cwd: envRoot.root, encoding: 'utf-8', env });
+      const res = doctor();
 
       expect(res.status, `${res.stdout}\n${res.stderr}`).toBe(0);
       const report = JSON.parse(res.stdout);
@@ -638,6 +637,19 @@ describe('doctor command (Phase 1C)', () => {
       expect(log).not.toContain('codegraph init');
       expect(log).not.toContain('codegraph sync');
       expect(log).not.toContain('codegraph install');
+
+      // A selection without architecture has no CodeGraph: each check is na and doctor probes nothing.
+      fs.rmSync(logFile);
+      const statePath = installProfileStatePath(env);
+      fs.mkdirSync(path.dirname(statePath), { recursive: true });
+      fs.writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions(['product']), selection: ['product'], transaction_id: 'doctor',
+        applied_at: '2026-11-01T00:00:00.000Z', ownership_manifest: [], previous: null }));
+      const unselected = JSON.parse(doctor().stdout).checks
+        .filter((entry: { id: string }) => ['codegraph-readiness', 'codex-codegraph-mcp', 'claude-codegraph-mcp', 'codegraph-index'].includes(entry.id))
+        .map(({ id, status, detail }: { id: string; status: string; detail: string }) => ({ id, status, detail }));
+      expect(unselected).toEqual(['codegraph-readiness', 'codex-codegraph-mcp', 'claude-codegraph-mcp', 'codegraph-index']
+        .map(id => ({ id, status: 'na', detail: 'architecture plugin not selected' })));
+      expect(fs.existsSync(logFile)).toBe(false);
     } finally {
       fs.rmSync(envRoot.root, { recursive: true, force: true });
     }

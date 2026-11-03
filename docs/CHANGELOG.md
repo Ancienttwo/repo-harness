@@ -99,7 +99,11 @@ All notable changes to this skill are documented here.
   Install Pi and run `repo-harness update` again, or use the rollback below. A former minimal install gains the
   core surfaces, and the plan lists each one. Issue #1607 deletes this one-shot
   in 0.26.0; after that, protocol 2 gets `install_state_protocol_retired`.
-  (#1601)
+  The one-shot commits `previous: null`. When the refresh in the same update
+  changes the state, it records the migrated state as `previous`, so
+  `repo-harness install --rollback` restores the migrated selection. An install
+  or update that changes nothing writes nothing: the state bytes and
+  `previous` stay. (#1601)
 - The selection `"all"` grows: `update` adds a plugin that a new version
   ships, and adds `pi` or `dsh` when its host program appears. An explicit
   list never grows, and an unavailable plugin in it fails closed with

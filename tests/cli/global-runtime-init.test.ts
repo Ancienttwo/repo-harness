@@ -18,6 +18,7 @@ import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 import { MANAGED_AGENTS } from '../../src/effects/terminal/task-role-profiles';
 import { applyGlobalContextRefresh, inspectGlobalContext, preflightGlobalContextRefresh, renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { CandidateRequestProtocolRetiredError, encodeCandidateRequest, parseCandidateRequest, type CandidateReconciliationRequest } from '../../src/cli/commands/candidate-reconciliation';
+import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
 const ROOT = join(import.meta.dir, '..', '..');
 // The fake managed install follows the repository pins, so an upgrade needs no fixture edit.
@@ -854,16 +855,16 @@ done
 if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else printf '# refreshed rule\\n'; fi
 `);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      const update = (options: { plugins: readonly PluginId[]; codegraph?: boolean }) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        plugins: FULL_PLUGINS,
         installSpec: 'repo-harness@9.9.9',
         updateMode: true,
         externalSkills: true,
         syncSkill: false,
         hostAdapters: false,
+        ...options,
         env: {
           ...sanitizedChildEnv(),
           HOME: home,
@@ -873,6 +874,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
           AGENTIC_DEV_CODEGRAPH_ALLOW_REPO_LOCAL: '0',
         },
       });
+      const result = update({ plugins: FULL_PLUGINS });
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'verify managed runtime dependencies')).toMatchObject({ status: 'ok' });
@@ -882,6 +884,16 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       expect(result.steps.find((step) => step.step === 'ensure CodeGraph CLI')?.detail).toBe(`updated=${CODEGRAPH_PIN}`);
       expect(readFileSync(join(home, '.codex', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
       expect(readFileSync(join(home, '.agents', 'rules', 'chinese.md'), 'utf-8')).toBe('# refreshed rule\n');
+
+      // A plain update's candidate request allows CodeGraph (codegraph: true); without architecture it runs no CodeGraph step.
+      rmSync(bunLog);
+      const withoutArchitecture = update({ plugins: FULL_PLUGINS.filter(id => id !== 'architecture'), codegraph: true });
+      expect(withoutArchitecture.exitCode).toBe(0);
+      expect(withoutArchitecture.steps.filter(step => step.step.includes('CodeGraph'))).toEqual([
+        { step: 'ensure CodeGraph CLI', status: 'skipped', detail: 'architecture plugin not selected' },
+        { step: 'configure CodeGraph MCP', status: 'skipped', detail: 'architecture plugin not selected' },
+      ]);
+      expect(readFileSync(bunLog, 'utf-8')).not.toContain('@colbymchenry/codegraph');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }

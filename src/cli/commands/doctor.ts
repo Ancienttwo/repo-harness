@@ -7,7 +7,7 @@
  */
 
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
-import { defaultPluginSelection, enabledPlugins, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState } from '../installer/install-profile';
+import { defaultPluginSelection, enabledPlugins, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState, type InstallState } from '../installer/install-profile';
 import { installSelectionCommand, type PluginId } from '../../core/skill-surface/plugin-manifest';
 import { readDshPluginState } from '../../effects/dsh-plugin-state';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
@@ -73,8 +73,8 @@ export interface DoctorCheck {
 
 /** Plugin checks that the composition root (src/cli/index.ts) passes in. */
 export interface DoctorPorts {
-  /** The CodeGraph readiness, MCP host and index checks, in report order. */
-  readonly codegraphChecks: (cwd: string) => DoctorCheckResult[];
+  /** The CodeGraph readiness, MCP host and index checks, in report order, for the plugins the doctor judges. */
+  readonly codegraphChecks: (cwd: string, plugins: readonly PluginId[] | Error) => DoctorCheckResult[];
   /** The Herdr notify relay check (read-only, one `hc ls`). */
   readonly notifyRelayCheck: () => DoctorCheckResult;
   /** The board attention watcher check of the repository at `cwd` (read-only: `hc ls` and `hc get` of the watcher terminals, then `gh api` for the repository id only when a watcher terminal exists). */
@@ -472,8 +472,7 @@ export function checkSkillProjection(target: DoctorTarget = 'both', env: NodeJS.
   try {
     const home = env.HOME ?? env.USERPROFILE ?? os.homedir();
     const installed = readInstallState(env);
-    // Without a ledger no install chose a selection, so the check judges the install default.
-    const plugins = installed ? enabledPlugins(installed) : defaultPluginSelection('both', env).plugins;
+    const plugins = judgedPlugins(installed, env);
     const sourceRoot = skillProjectionSourceRoot(env);
     const contractPath = path.join(sourceRoot, 'assets', 'workflow-contract.v1.json');
     const contract = JSON.parse(fs.readFileSync(contractPath, 'utf8'));
@@ -609,9 +608,16 @@ function checkDshPlugin(env: NodeJS.ProcessEnv = process.env): DoctorCheckResult
   return { id, describe, status: 'ok', detail: `repo-harness bundle declared in profile ${state.profiles.join(', ')}` };
 }
 
+/** The ledger's plugins; without a ledger no install chose a selection, so the install default. */
+function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): readonly PluginId[] {
+  return installed ? enabledPlugins(installed) : defaultPluginSelection('both', env).plugins;
+}
+
 export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
-  const codegraphChecks = ports.codegraphChecks(cwd);
+  let plugins: readonly PluginId[] | Error;
+  try { plugins = judgedPlugins(readInstallState(process.env), process.env); } catch (error) { plugins = error as Error; }
+  const codegraphChecks = ports.codegraphChecks(cwd, plugins);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());

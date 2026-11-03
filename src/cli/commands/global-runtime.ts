@@ -991,6 +991,7 @@ function externalSkillStepName(provider: string): string {
 function installExternalSkillGroup(
   sourceRoot: string,
   target: InstallTargetSpec,
+  piSelected: boolean,
   provider: string,
   skills: readonly string[],
   integrityBySkill: Readonly<Record<string, string | null>>,
@@ -1024,7 +1025,7 @@ function installExternalSkillGroup(
     rmSync(replacementBackupRoot, { recursive: true, force: true });
     return result;
   };
-  const preflight = preflightStagedSkillProjection(skills, target, env, stepName);
+  const preflight = preflightStagedSkillProjection(skills, target, piSelected, env, stepName);
   if (preflight) return fail(preflight);
   const missing = skills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
   const selected = refresh ? skills : missing;
@@ -1185,17 +1186,17 @@ function installExternalSkillGroup(
       });
     }
   }
-  const projection = projectStagedSkills(skills, target, env, stepName);
+  const projection = projectStagedSkills(skills, target, piSelected, env, stepName);
   if (projection.status === "failed") return fail(projection);
   rmSync(replacementBackupRoot, { recursive: true, force: true });
   return projection;
 }
 
-function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
+function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, piSelected: boolean, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const wazaSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("tw93/Waza") ?? [];
   const skillsRoot = stagedSkillRoot(homeDir(env));
   const selected = refresh ? wazaSkills : wazaSkills.filter((skill) => !existsSync(join(skillsRoot, skill, 'SKILL.md')));
-  const preflight = preflightStagedSkillProjection(wazaSkills, target, env, 'configure Waza skills');
+  const preflight = preflightStagedSkillProjection(wazaSkills, target, piSelected, env, 'configure Waza skills');
   if (preflight) return preflight;
   if (selected.length > 0) {
     const step = runProcess(
@@ -1218,24 +1219,29 @@ function installWazaSkills(sourceRoot: string, target: InstallTargetSpec, env?: 
       return withStepName(step, "configure Waza skills", `target=${target}; selected=${selected.join(',')}`);
     }
   }
-  return projectStagedSkills(wazaSkills, target, env, 'configure Waza skills');
+  return projectStagedSkills(wazaSkills, target, piSelected, env, 'configure Waza skills');
 }
 
-/** Each selected host skill root, with the canonical path it must resolve to. */
-function stagedProjectionRoots(home: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv | undefined): Array<{ path: string; expected: string }> {
+/**
+ * Each selected host skill root, with the canonical path it must resolve to.
+ * The ledger owns every Pi-root path under the `pi` plugin, so the Pi root is
+ * a projection root only when `pi` runs.
+ */
+function stagedProjectionRoots(home: string, target: InstallTargetSpec, piSelected: boolean, env: NodeJS.ProcessEnv | undefined): Array<{ path: string; expected: string }> {
   const canonicalHome = realpathSync(home);
-  const hosts = target === 'both' ? [...hostIds(target), 'pi' as const] : hostIds(target);
+  const hosts = target === 'both' && piSelected ? [...hostIds(target), 'pi' as const] : hostIds(target);
   return hosts.map((host) => ({ path: hostSkillRoot(home, host, env), expected: hostSkillRoot(canonicalHome, host, env) }));
 }
 
 function preflightStagedSkillProjection(
   skills: readonly string[],
   target: InstallTargetSpec,
+  piSelected: boolean,
   env: NodeJS.ProcessEnv | undefined,
   step: string,
 ): GlobalRuntimeStep | null {
   const home = homeDir(env);
-  const roots = stagedProjectionRoots(home, target, env);
+  const roots = stagedProjectionRoots(home, target, piSelected, env);
   for (const root of roots) {
     const invalid = invalidProjectionRoot(root.path, root.expected);
     if (invalid) return { step, status: 'failed', detail: invalid };
@@ -1255,11 +1261,12 @@ function preflightStagedSkillProjection(
 function projectStagedSkills(
   skills: readonly string[],
   target: InstallTargetSpec,
+  piSelected: boolean,
   env: NodeJS.ProcessEnv | undefined,
   step: string,
 ): GlobalRuntimeStep {
   const home = homeDir(env);
-  const roots = stagedProjectionRoots(home, target, env);
+  const roots = stagedProjectionRoots(home, target, piSelected, env);
   const projected: string[] = [];
   const created: string[] = [];
   const fail = (detail: string): GlobalRuntimeStep => {
@@ -1334,10 +1341,10 @@ function invalidProjectionRoot(root: string, expected: string): string | null {
     : `refusing non-directory host skill root ${root}`;
 }
 
-function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
+function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, piSelected: boolean, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
   const mermaidSkills = externalSkillGroupsFromCatalog(loadSkillSurfaceCatalog(sourceRoot)).get("BfdCampos/dotfiles") ?? [];
   const installed = join(stagedSkillRoot(homeDir(env)), 'mermaid', 'SKILL.md');
-  const preflight = preflightStagedSkillProjection(mermaidSkills, target, env, 'configure Mermaid skill');
+  const preflight = preflightStagedSkillProjection(mermaidSkills, target, piSelected, env, 'configure Mermaid skill');
   if (preflight) return preflight;
   if (refresh || !existsSync(installed)) {
     const step = runProcess(
@@ -1358,7 +1365,7 @@ function installMermaidSkill(sourceRoot: string, target: InstallTargetSpec, env?
     );
     if (step.status === 'failed') return withStepName(step, "configure Mermaid skill", `target=${target}`);
   }
-  return projectStagedSkills(mermaidSkills, target, env, 'configure Mermaid skill');
+  return projectStagedSkills(mermaidSkills, target, piSelected, env, 'configure Mermaid skill');
 }
 function configureBrain(root: string | undefined, env?: NodeJS.ProcessEnv, runtimeLock?: RuntimeTransactionContext): GlobalRuntimeStep {
   try {
@@ -1495,7 +1502,8 @@ function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly Plugin
 /** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
 export interface GlobalRuntimePorts {
   readonly configureCodegraphMcp: (cwd: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv) => GlobalRuntimeStep;
-  readonly configureHerdrSkill: (target: InstallTargetSpec, env: NodeJS.ProcessEnv) => GlobalRuntimeStep;
+  /** `piSelected` false: Herdr stays core on Claude and Codex, and its Pi copy is not written. */
+  readonly configureHerdrSkill: (target: InstallTargetSpec, env: NodeJS.ProcessEnv, piSelected: boolean) => GlobalRuntimeStep;
 }
 
 export function runGlobalRuntimeSetup(
@@ -1509,6 +1517,7 @@ export function runGlobalRuntimeSetup(
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
   const plugins = opts.plugins ?? enabledPlugins(requireInstallState(env));
+  const piSelected = plugins.includes('pi');
   const updateMode = opts.updateMode === true;
   const steps: GlobalRuntimeStep[] = [];
 
@@ -1577,14 +1586,14 @@ export function runGlobalRuntimeSetup(
 
   const refreshExternalSkills = opts.externalSkills === true;
   if (refreshExternalSkills) {
-    const waza = installWazaSkills(sourceRoot, target, env, updateMode);
+    const waza = installWazaSkills(sourceRoot, target, piSelected, env, updateMode);
     steps.push(waza);
     if (waza.status === "failed") return finalizeRuntimeResult(steps);
     steps.push(waza.status === "ok"
       ? { step: WAZA_RULES_STEP, ...syncWazaSharedRules(homeDir(env), hostIds(target), env, updateMode) }
       : { step: WAZA_RULES_STEP, status: "skipped", detail: "Waza install failed" });
     if (steps.at(-1)?.status === "failed") return finalizeRuntimeResult(steps);
-    const mermaid = installMermaidSkill(sourceRoot, target, env, updateMode);
+    const mermaid = installMermaidSkill(sourceRoot, target, piSelected, env, updateMode);
     steps.push(mermaid);
     if (mermaid.status === "failed") return finalizeRuntimeResult(steps);
   } else {
@@ -1614,6 +1623,7 @@ export function runGlobalRuntimeSetup(
       steps.push(installExternalSkillGroup(
         sourceRoot,
         targetFromHostIds(hosts.filter(isInstallSkillHost)),
+        piSelected,
         provider,
         skills,
         integrityBySkill,
@@ -1656,6 +1666,7 @@ export function runGlobalRuntimeSetup(
         steps.push(installExternalSkillGroup(
           sourceRoot,
           targetFromHostIds(hosts.filter(isInstallSkillHost)),
+          piSelected,
           provider,
           skills,
           integrityBySkill,
@@ -1682,13 +1693,11 @@ export function runGlobalRuntimeSetup(
   if (opts.brainRoot || plugins.includes('strategy-memory')) steps.push(configureBrain(opts.brainRoot, env, opts.runtimeLock));
   else steps.push({ step: "configure brain root", status: "skipped", detail: "strategy-memory plugin not selected" });
 
-  // CodeGraph follows the architecture plugin.
-  const refreshCodegraph = (opts.codegraph ?? updateMode) && plugins.includes('architecture');
-  if (opts.codegraph === true && !plugins.includes('architecture')) {
-    steps.push({ step: "ensure CodeGraph CLI", status: "failed", detail: `CodeGraph needs the architecture plugin; run: ${installSelectionCommand(withPlugin(plugins, 'architecture'))}` });
-    return finalizeRuntimeResult(steps);
-  }
-  if (refreshCodegraph) {
+  // CodeGraph follows the architecture plugin; `codegraph` only allows it.
+  if (!plugins.includes('architecture')) {
+    steps.push({ step: "ensure CodeGraph CLI", status: "skipped", detail: "architecture plugin not selected" });
+    steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "architecture plugin not selected" });
+  } else if (opts.codegraph ?? updateMode) {
     const ensure = ensureCodegraphCli(cwd, bunExecutable, env, updateMode);
     steps.push(ensure);
     if (ensure.status === "ok") steps.push(ports.configureCodegraphMcp(cwd, target, env));
@@ -1698,7 +1707,7 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "disabled" });
   }
 
-  if (steps.every((step) => step.status !== "failed")) steps.push(ports.configureHerdrSkill(target, env));
+  if (steps.every((step) => step.status !== "failed")) steps.push(ports.configureHerdrSkill(target, env, piSelected));
   if (steps.every((step) => step.status !== 'failed')) {
     const pi = installPiPackage(bunGlobalPackageRoot(env)!, plugins.includes('pi') && target === 'both' && opts.hostAdapters !== false, env);
     steps.push({ ...pi, ...(pi.created ? { owned_surface: piPackageSurface(pi.source) } : {}) });

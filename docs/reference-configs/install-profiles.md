@@ -129,7 +129,9 @@ which names each missing owner.
 
 When the set to record changes, update commits a new state, with the old
 state as `previous`, under the same install transaction. A failure restores
-every byte.
+every byte. An install or update that changes nothing writes nothing: the
+state bytes and `previous` stay, so `--rollback` still restores the last real
+change.
 
 With no install state, update fails before any write with
 `install_state_missing`. Run `repo-harness install` first. Adapter-only
@@ -313,7 +315,9 @@ repo-harness update
 migration runs under the global runtime lock and inside the host transaction.
 It validates the protocol 2 state, its previous state and the user-managed
 fleet receipt before any host change. It commits protocol 3 by atomic rename
-with `previous: null`. A later failure restores the protocol 2 file and every
+with `previous: null`. When the refresh in the same update changes the state,
+it records the migrated state as `previous`; a refresh that changes nothing
+leaves `previous: null`. A later failure restores the protocol 2 file and every
 deleted byte.
 
 | Protocol 2 profile | Protocol 3 selection |
