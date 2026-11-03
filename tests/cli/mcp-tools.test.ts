@@ -4,6 +4,8 @@ import { tmpdir } from 'os';
 import { join } from 'path';
 import { registerRepoHarnessRepo, repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
+import { sha256, stableJson } from '../../src/core/review/acceptance-receipt';
+import { assessChange, buildReviewSelectionPacket, type ChangeAssessment } from '../../src/core/review/change-assessment';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
 
@@ -90,8 +92,14 @@ async function withRegistryHome<T>(fn: (home: string) => Promise<T>): Promise<T>
 describe('mcp tools', () => {
   test('lists and reads allowed workflow files with redaction', async () => {
     await withRepo(async (repoRoot, ctx) => {
+      writeFileSync(join(repoRoot, '.ai/harness/handoff/task-goal.md'), '# Task Goal\n');
+      writeFileSync(join(repoRoot, '.ai/harness/checks/change-assessment.latest.json'), '{}\n');
       const listed = await jsonTool(ctx, 'list_workflow_files');
       expect(listed.files.some((entry: { path: string }) => entry.path === 'tasks/lessons.md')).toBe(true);
+      expect(listed.files.filter((entry: { path: string }) => entry.path.startsWith('.ai/harness/'))).toEqual([]);
+      for (const path of ['.ai/harness/handoff/task-goal.md', '.ai/harness/checks/change-assessment.latest.json']) {
+        expect((await jsonTool(ctx, 'read_workflow_file', { path })).error.code).toBe('POLICY_DENIED');
+      }
 
       const read = await jsonTool(ctx, 'read_workflow_file', { path: 'tasks/lessons.md' });
       expect(read.path).toBe('tasks/lessons.md');
@@ -230,7 +238,8 @@ describe('mcp tools', () => {
         )).toBe(true);
 
         const status = await jsonTool(ctx, 'harness_status');
-        expect(status.repoRoot).toBe(scanRoot);
+        expect(status).toMatchObject({ protocol: 1, kind: 'repo-harness.mcp-harness-status', repoRoot: scanRoot });
+        expect(status.workflowRoots.map((root: { path: string }) => root.path)).toEqual(['docs/spec.md', 'docs/prds']);
         expect(status.adopted).toBe(false);
 
         const targetedStatus = await jsonTool(ctx, 'harness_status', { repo_path: repoRoot });
@@ -507,15 +516,46 @@ describe('mcp tools', () => {
     });
   });
 
-  test('latest_checks is not starved by large earlier workflow roots', async () => {
+  test('latest_checks projects the Change Assessment record as absent, invalid or present', async () => {
     await withRepo(async (repoRoot, ctx) => {
-      for (let index = 0; index < 720; index += 1) {
-        writeFileSync(join(repoRoot, 'docs/prds', `bulk-${String(index).padStart(3, '0')}.prd.md`), '# Bulk\n');
-      }
-      writeFileSync(join(repoRoot, '.ai/harness/checks/change-assessment.latest.json'), '{"ok":true}\n');
+      const recordPath = join(repoRoot, '.ai/harness/checks/change-assessment.latest.json');
+      const write = (basis: Record<string, unknown>) => writeFileSync(recordPath, `${JSON.stringify({ ...basis, evidence_sha256: sha256(stableJson(basis)) })}\n`);
+      const location = { id: 'change-assessment', path: '.ai/harness/checks/change-assessment.latest.json' };
+      const records = async () => {
+        const result = await jsonTool(ctx, 'latest_checks');
+        expect(result).toMatchObject({ protocol: 1, kind: 'repo-harness.check-records' });
+        return result.records;
+      };
 
-      const result = await jsonTool(ctx, 'latest_checks');
-      expect(result.files.some((entry: { path: string }) => entry.path === '.ai/harness/checks/change-assessment.latest.json')).toBe(true);
+      expect(await records()).toEqual([{ ...location, state: 'absent' }]);
+
+      writeFileSync(recordPath, '{"ok":true}\n');
+      expect(await records()).toEqual([{ ...location, state: 'invalid', error: { code: 'check_record_invalid', message: 'Change Assessment evidence schema is unsupported' } }]);
+
+      const assessment = assessChange({
+        subject: { status: 'ok', target_ref: 'main', target_rev: 'a'.repeat(40), head_rev: 'b'.repeat(40), paths: ['src/a.ts'], review_subject_sha256: `sha256:${'c'.repeat(64)}` },
+        workflowProfile: 'routine',
+        strictCategories: [],
+        patternNoveltyPaths: [],
+        declaredOracles: [],
+      }) as ChangeAssessment;
+      expect(assessment.status).toBe('ready');
+      const schema = 'repo-harness-change-assessment-evidence.v1';
+      const pass = { schema, status: 'pass', assessment, selection_packet: buildReviewSelectionPacket(assessment) };
+      write(pass);
+      expect(await records()).toEqual([{
+        ...location,
+        state: 'present',
+        status: 'pass',
+        evidence_sha256: sha256(stableJson(pass)),
+        target_ref: 'main',
+        target_revision: 'a'.repeat(40),
+        review_subject_sha256: `sha256:${'c'.repeat(64)}`,
+      }]);
+
+      const failed = { schema, status: 'fail', message: 'review base is unavailable' };
+      write(failed);
+      expect(await records()).toEqual([{ ...location, state: 'present', status: 'fail', evidence_sha256: sha256(stableJson(failed)), message: 'review base is unavailable' }]);
     });
   });
 });

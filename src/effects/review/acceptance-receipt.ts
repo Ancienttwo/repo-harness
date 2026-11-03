@@ -296,24 +296,24 @@ export function inspectAcceptanceEvidence(args: {
   if (subject.status !== 'ok') fail('current normalized review subject is unavailable');
   for (const path of subject.paths) if (!reviewAdmissionAllowsPath(allowed, path)) fail('admission Allowed Paths refuse reviewed path: ' + path);
   if (currentReadonlyObservation()) rejectObservation('Bounded acceptance assessment and benchmark adapters are not available');
-  const assessmentFile = readRegular(root, '.ai/harness/checks/change-assessment.latest.json', 'Change Assessment');
-  let assessment: unknown;
-  try { assessment = JSON.parse(assessmentFile.content); } catch { fail('verification evidence Change Assessment is invalid JSON'); }
-  if (!isRecord(assessment) || assessment.schema !== 'repo-harness-change-assessment-evidence.v1' || assessment.status !== 'pass') fail('verification evidence change assessment is not passing');
-  const assessmentBasis = { schema: assessment.schema, status: assessment.status, assessment: assessment.assessment, selection_packet: assessment.selection_packet };
-  if (assessment.evidence_sha256 !== sha256(stableJson(assessmentBasis))) fail('verification evidence change assessment fingerprint is stale');
+  const records = requireFromHelper(join(PACKAGE_ROOT, 'src/core/review/check-records.ts')) as typeof import('../../core/review/check-records');
+  const assessmentFile = readRegular(root, records.CHANGE_ASSESSMENT_EVIDENCE_PATH, 'Change Assessment');
+  let evidence: import('../../core/review/check-records').ChangeAssessmentEvidence;
+  try { evidence = records.decodeChangeAssessmentEvidence(assessmentFile.content); } catch (error) { fail('verification evidence change assessment is invalid: ' + (error as Error).message); }
+  if (evidence.status !== 'pass') fail('verification evidence change assessment is not passing');
+  const assessmentBasis = { schema: records.CHANGE_ASSESSMENT_EVIDENCE_SCHEMA, status: evidence.status, assessment: evidence.assessment, selection_packet: evidence.selection_packet };
   const core = requireFromHelper(join(PACKAGE_ROOT, 'src/core/review/change-assessment.ts')) as typeof import('../../core/review/change-assessment');
   const effects = requireFromHelper(join(PACKAGE_ROOT, 'src/effects/review/change-assessment.ts')) as typeof import('./change-assessment');
   let packet: ReturnType<typeof core.validateReviewSelectionPacketAgainstAssessment>;
   try {
-    const declared = core.validateChangeAssessment(assessment.assessment);
-    const selfBoundPacket = core.validateReviewSelectionPacket(assessment.selection_packet);
+    const declared = evidence.assessment;
+    const selfBoundPacket = evidence.selection_packet;
     if (selfBoundPacket.review_subject_sha256 !== subject.review_subject_sha256 || selfBoundPacket.target_ref !== subject.target_ref
       || selfBoundPacket.target_revision !== subject.target_rev) fail('verification evidence change assessment packet is stale for the current subject');
     const recomputed = effects.prepareChangeAssessment({ repoRoot: root, authority: args.authority, targetRevision: subject.target_rev });
     if (recomputed.assessment.status === 'degraded') fail('verification evidence Change Assessment base is unavailable');
     if (declared.assessment_sha256 !== recomputed.assessment.assessment_sha256) fail('verification evidence Change Assessment does not match current base assessment');
-    packet = core.validateReviewSelectionPacketAgainstAssessment(assessment.selection_packet, recomputed.assessment);
+    packet = core.validateReviewSelectionPacketAgainstAssessment(evidence.selection_packet, recomputed.assessment);
   } catch (error) { fail('verification evidence change assessment is invalid: ' + (error as Error).message); }
   if (packet.status !== 'ready') fail('verification evidence change assessment packet is blocked');
   let benchmark = 'not-applicable';
