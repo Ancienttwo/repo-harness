@@ -15,10 +15,11 @@ export type MapMarkTone = 'change' | 'danger' | 'success' | 'muted';
 export interface MapMark { readonly tone: MapMarkTone; readonly label: string }
 
 export interface MapLayerView {
-  /** The layer marks at least one node. False when the collector has no data for any part of the layer, or its data marks no node. */
+  /** The layer lights at least one node of the map. False when the collector has no data for any part of the layer, or its data marks no current node. */
   readonly available: boolean;
+  /** Every mark, also one on a node that today's changes removed from the model. */
   readonly marks: ReadonlyMap<string, MapMark>;
-  /** Nodes that hold a mark or contain one; the canvas dims the rest only while `available` is true, so a layer that marks nothing dims nothing. */
+  /** Map nodes that hold a mark or contain one; the canvas dims the rest only while `available` is true, so a layer that lights nothing dims nothing. */
   readonly lit: ReadonlySet<string>;
   /** Imports that archctx marks undeclared, drawn over the model's relations. */
   readonly edges: readonly ArchitectureMapImportV1[];
@@ -26,11 +27,13 @@ export interface MapLayerView {
 
 const EMPTY: MapLayerView = { available: false, marks: new Map(), lit: new Set(), edges: [] };
 
+/** The marked map nodes and their groups. A mark on a removed node has no node on the map, so it lights nothing. */
 function withAncestors(map: ArchitectureMapV1, marked: Iterable<string>): Set<string> {
   const parents = new Map(map.nodes.map(node => [node.id, node.parent]));
   const lit = new Set<string>();
   for (const id of marked) {
-    for (let cursor: string | null = id; cursor !== null && !lit.has(cursor); cursor = parents.get(cursor) ?? null) lit.add(cursor);
+    if (!parents.has(id)) continue;
+    for (let cursor: string | null = id; cursor !== null && !lit.has(cursor); cursor = parents.get(cursor)!) lit.add(cursor);
   }
   return lit;
 }
@@ -89,8 +92,10 @@ function impactMarks(impact: ArchitectureImpactV1, label: (entry: ArchitectureIm
 
 /** `pullRequest` picks the PR that the PR impact layer marks; the other layers ignore it. */
 export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: number | null = null): MapLayerView {
-  const view = (marks: Map<string, MapMark>, edges: readonly ArchitectureMapImportV1[] = []): MapLayerView =>
-    ({ available: marks.size > 0, marks, lit: withAncestors(map, marks.keys()), edges });
+  const view = (marks: Map<string, MapMark>, edges: readonly ArchitectureMapImportV1[] = []): MapLayerView => {
+    const lit = withAncestors(map, marks.keys());
+    return { available: lit.size > 0, marks, lit, edges };
+  };
   if (layer === 'changes') {
     const { changes } = map.layers;
     if (changes.state !== 'ok') return EMPTY;

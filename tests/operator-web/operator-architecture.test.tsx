@@ -676,6 +676,26 @@ describe('architecture map', () => {
       seen.push([button.getAttribute('data-layer')!, button.getAttribute('data-state'), document.querySelectorAll('[data-quiet]').length]);
     }
     expect(seen).toEqual(['changes', 'violations', 'pull_requests', 'tests', 'decisions'].map(layer => [layer, 'ok', 0]));
+
+    // Today's changes may mark a node that they removed from the model: that mark lights no map node.
+    // A mark on a current member lights it and its group, and the rest stays dimmed.
+    const GONE = 'capability.gone';
+    const changed = (ids: string[]): ArchitectureMapLayersInput => ({ ...unlit, changes: {
+      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
+      model: ids.includes(GONE) ? [{ kind: 'nodes', id: GONE, change: 'removed', fields: [] }] : [],
+      ...emptyImpact, paths: ids.map(id => ({ path: `src/${id}.ts`, added: 1, deleted: 0, owners: [id], reason_codes: [] })), nodes: ids.map(id => ({ id, files: 1 })),
+    } });
+    const quiet: [string[], string[], boolean][] = [];
+    for (const ids of [[GONE], [GONE, PART], [PART]]) {
+      await act(async () => root?.render(workspace({ repositoryId: `repo-${ids.join('-')}`, readMap: reader({ state: 'ok', map: mapFor(true, changed(ids)) }) })));
+      await settle();
+      await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="changes"]')!.click());
+      await settle();
+      quiet.push([ids, [...document.querySelectorAll('[data-quiet]')].map(item => item.closest('.react-flow__node')!.getAttribute('data-id')!).sort(),
+        document.querySelector('[data-layer-summary="changes"]')!.textContent!.includes('Model: 0 nodes added, 1 removed')]);
+    }
+    // The last column: the layer summary still counts the removed node.
+    expect(quiet).toEqual([[[GONE], [], true], [[GONE, PART], [CALLER, EXTERNAL].sort(), true], [[PART], [CALLER, EXTERNAL].sort(), false]]);
   });
 
   test('a layer without data is still listed and says why', async () => {
