@@ -1,0 +1,17 @@
+schemaVersion: archcontext.node/v2
+id: component.execution-primitives.notify-read
+kind: component
+name: Notify Read Contract
+status: active
+parent: capability.workflow-engine.execution-primitives
+layer: effects
+summary: Holds the read contract of the notify relay files under the repo-harness home. It reads the install record, the notify config and the relay delivery record. Their writers stay in task-agent-host.
+responsibilities:
+  - Own the paths of the notify install record, notify.env and the relay delivery record under the account-level repo-harness home.
+  - Read a notify file only when it is a regular file within a size limit. Refuse a symlink, a FIFO and an oversized file.
+  - Decode the install record against the relay name and labels of this version. Report a missing record as missing and any other shape as invalid. Report the relay as live when a live hc terminal carries the recorded name.
+  - Own the notify config shape, its done flags and its one decoder. Refuse plain HTTP, user information in a URL, an incomplete Telegram target and unsupported characters with a message that names the key, never the value.
+  - Read the relay delivery record with the operator delivery-status decoder. No file gives the empty record.
+source:
+  include:
+    - src/effects/terminal/notify-read.ts
