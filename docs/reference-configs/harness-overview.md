@@ -20,7 +20,7 @@ task state.
 - An orchestrator splits the goal into issues, dispatches work and
   integrates the results.
 - A worker claims one issue and delivers one PR.
-- An acceptor reviews one round of the PR.
+- An acceptor takes one review in one round of the PR.
 - An integrator merges. Only `repo-harness publication merge` runs this
   step.
 
