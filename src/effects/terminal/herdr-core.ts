@@ -484,15 +484,18 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
   return {
     seatTerminals: (repositoryId, parent) => {
       try {
-        const terminals = hcList({ [RH_LABEL.repository]: repositoryId, [RH_LABEL.parent]: String(parent) }, options).map(({ address }) => {
-          const terminal = hcGet(address, options);
-          const label = (key: string) => terminal.labels[key];
-          return {
-            address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
-            status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
-            labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr) },
-          };
-        });
+        // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
+        const terminals = hcList({ [RH_LABEL.repository]: repositoryId, [RH_LABEL.parent]: String(parent) }, options)
+          .map(({ address }) => hcGet(address, options))
+          .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
+          .map((terminal) => {
+            const label = (key: string) => terminal.labels[key];
+            return {
+              address: terminal.address, name: terminal.name, state: terminal.state, status: terminal.status?.state ?? null,
+              status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
+              labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr) },
+            };
+          });
         return { status: 'observed', terminals };
       } catch (error) {
         return unavailable(error);
@@ -545,6 +548,9 @@ export function attentionHostPorts(options: HerdrCoreOptions = {}): AttentionHos
     },
     send: (terminal, text) => {
       try { hcSend(terminal, text, options); return { status: 'sent' }; } catch (error) { return failed(error); }
+    },
+    state: (terminal) => {
+      try { return { status: 'observed', state: hcGet(terminal, options).status?.state ?? null }; } catch (error) { return failed(error); }
     },
     wait: (terminal, seconds) => {
       try {

@@ -27,10 +27,10 @@ export interface AttentionDeliveryV1 {
   readonly text: string;
 }
 
-/** A route with findings that gets no send in this window, and why. */
+/** A route with findings that gets no send in this window, and why: the cap, no live seat terminal, or the board's execution reason. */
 export interface AttentionSkipV1 {
   readonly route: BoardAttentionRoute;
-  readonly reason: 'no_seat_terminal' | 'advisor_daily_cap';
+  readonly reason: string;
 }
 
 export interface AttentionDeliveryPlanV1 {
@@ -76,6 +76,10 @@ export function planAttentionDeliveries(board: BoardV1, attention: BoardAttentio
       skipped.push({ route, reason: 'advisor_daily_cap' });
       continue;
     }
+    if (board.execution.status === 'unavailable') {
+      skipped.push({ route, reason: board.execution.reason });
+      continue;
+    }
     const terminals = liveSeatTerminals(board, route);
     if (terminals.length === 0) skipped.push({ route, reason: 'no_seat_terminal' });
     const text = deliveryText(attention.parent, findings);
@@ -111,6 +115,8 @@ export interface AttentionHostPortsV1 {
   readonly startWatcher: (scope: { readonly repository: number; readonly parent: number }, cwd: string, argv: readonly [string, ...string[]]) =>
     { readonly status: 'started'; readonly address: string } | AttentionHostFailureV1;
   readonly send: (terminal: string, text: string) => { readonly status: 'sent' } | AttentionHostFailureV1;
+  /** The status word of a seat terminal now; null when it never reported one. */
+  readonly state: (terminal: string) => { readonly status: 'observed'; readonly state: string | null } | AttentionHostFailureV1;
   /** Wait at most `seconds` until the terminal stops working. `ended`: its program ended. `state`: its status word when the wait ended. */
   readonly wait: (terminal: string, seconds: number) =>
     { readonly status: 'observed'; readonly ended: boolean; readonly reason: string; readonly state: string | null } | AttentionHostFailureV1;
