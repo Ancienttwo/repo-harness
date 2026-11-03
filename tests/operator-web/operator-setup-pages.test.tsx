@@ -232,7 +232,7 @@ describe('Agents page', () => {
     expect(all('[data-host-row]').map(row => row.getAttribute('data-host-row'))).toEqual(['claude', 'codex', 'pi', 'dsh']);
     expect(text('[data-host-row="claude"] [data-host-sentence]')).toBe('Connected · 5/5 managed hooks');
     expect(text('[data-host-row="codex"]')).toContain('v0.162.0');
-    expect(all('[data-fleet-role]')).toHaveLength(8);
+    expect(all('[data-fleet-role]')).toHaveLength(7);
   });
 
   test('a stale read keeps its data, shows its age and reason, and lists failures first', async () => {

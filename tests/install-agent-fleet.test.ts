@@ -4,7 +4,7 @@ import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
 
-import { CLAUDE_ONLY_AGENTS, MANAGED_AGENTS, WRITABLE_AGENTS } from '../src/effects/terminal/task-role-profiles';
+import { MANAGED_AGENTS, WRITABLE_AGENTS } from '../src/effects/terminal/task-role-profiles';
 import { installProfileHostMutationPaths } from "../src/cli/installer/install-profile";
 
 import { recordInstallOwnership } from "./helpers/install-ownership";
@@ -14,8 +14,6 @@ const SCRIPT = join(ROOT, "scripts/install-agent-fleet.sh");
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
 const GOLDEN_CODEX_DIR = join(ROOT, ".codex/agents");
 const AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
-// Claude-only roles install `.claude/agents/<name>.md` and never a Codex TOML.
-const CLAUDE_ONLY = ["orchestrator"];
 const CODEX_EXPECTATIONS: Record<
   string,
   { model: string; effort: string; descriptionLabel: string; sourceDescription: string; sandboxMode: string }
@@ -132,13 +130,9 @@ describe("install-agent-fleet", () => {
     const env = { ...process.env, HOME: home };
     try {
       expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
-      const paths = [
-        ...AGENTS.flatMap(agent => [join(home, ".claude/agents", `${agent}.md`), join(home, ".codex/agents", `${agent}.toml`)]),
-        ...CLAUDE_ONLY.map(agent => join(home, ".claude/agents", `${agent}.md`)),
-      ];
+      const paths = AGENTS.flatMap(agent => [join(home, ".claude/agents", `${agent}.md`), join(home, ".codex/agents", `${agent}.toml`)]);
       recordInstallOwnership(paths, env);
       for (const path of paths) expect(installProfileHostMutationPaths(env)).toContain(path);
-      expect(installProfileHostMutationPaths(env)).not.toContain(join(home, ".codex/agents/orchestrator.toml"));
       const next = join(root, "next");
       cpSync(FLEET_SOURCE_DIR, next, { recursive: true });
       for (const agent of AGENTS) {
@@ -186,20 +180,16 @@ describe("install-agent-fleet", () => {
         expect(installedCodex).not.toMatch(/\b(?:fable|opus|sonnet|haiku)\b/i);
       }
 
-      for (const agent of CLAUDE_ONLY) {
-        expect(res.stdout).toContain(`[fleet] claude/${agent}.md: installed`);
-        expect(res.stdout).not.toContain(`codex/${agent}.toml`);
-        expect(readFileSync(join(home, ".claude/agents", `${agent}.md`), "utf-8"))
-          .toBe(readFileSync(join(FLEET_SOURCE_DIR, `${agent}.md`), "utf-8"));
-        expect(existsSync(join(home, ".codex/agents", `${agent}.toml`))).toBe(false);
-        expect(existsSync(join(GOLDEN_CODEX_DIR, `${agent}.toml`))).toBe(false);
-      }
+      // The orchestrator is a seat (`repo-harness seats argv orchestrator`), not a fleet role.
+      expect(res.stdout).not.toContain("orchestrator");
+      expect(existsSync(join(home, ".claude/agents/orchestrator.md"))).toBe(false);
+      expect(existsSync(join(home, ".codex/agents/orchestrator.toml"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
   }, 30_000);
 
-  test("idempotent re-run reports up-to-date for all 15 files", () => {
+  test("idempotent re-run reports up-to-date for all 14 files", () => {
     const { root, home } = setupFakeHome("install-agent-fleet-idempotent");
     try {
       expect(runInstaller(home, FLEET_SOURCE_DIR).status).toBe(0);
@@ -208,10 +198,6 @@ describe("install-agent-fleet", () => {
       for (const agent of AGENTS) {
         expect(second.stdout).toContain(`[fleet] claude/${agent}.md: up-to-date`);
         expect(second.stdout).toContain(`[fleet] codex/${agent}.toml: up-to-date`);
-      }
-      for (const agent of CLAUDE_ONLY) {
-        expect(second.stdout).toContain(`[fleet] claude/${agent}.md: up-to-date`);
-        expect(second.stdout).not.toContain(`codex/${agent}.toml`);
       }
     } finally {
       rmSync(root, { recursive: true, force: true });
@@ -540,29 +526,8 @@ describe("install-agent-fleet", () => {
     }
   }, 30_000);
 
-  test("a Claude-only role whose description effort disagrees with its frontmatter fails closed without a Codex line", () => {
-    const { root, home } = setupFakeHome("install-agent-fleet-claude-only-mismatch");
-    const badSourceDir = join(root, "bad-source");
-    try {
-      cpSync(FLEET_SOURCE_DIR, badSourceDir, { recursive: true });
-      const source = readFileSync(join(badSourceDir, "orchestrator.md"), "utf-8");
-      expect(source).toContain("Opus at high effort");
-      writeFileSync(join(badSourceDir, "orchestrator.md"), source.replace("Opus at high effort", "Opus at xhigh effort"));
-
-      const res = runInstaller(home, badSourceDir);
-      expect(res.status).not.toBe(0);
-      expect(res.stdout).toContain("[fleet] claude/orchestrator.md: source-invalid");
-      expect(res.stdout).not.toContain("codex/orchestrator.toml");
-      expect(existsSync(join(home, ".claude/agents/orchestrator.md"))).toBe(false);
-    } finally {
-      rmSync(root, { recursive: true, force: true });
-    }
-  }, 30_000);
-
-  test("the Claude-only role set is MANAGED_AGENTS minus the Codex projections", () => {
-    expect([...CLAUDE_ONLY_AGENTS]).toEqual(CLAUDE_ONLY);
-    expect(MANAGED_AGENTS).toEqual([...AGENTS, ...CLAUDE_ONLY]);
-    expect(CLAUDE_ONLY.some(agent => WRITABLE_AGENTS.has(agent))).toBe(false);
+  test("every managed role projects to both hosts", () => {
+    expect(MANAGED_AGENTS).toEqual(AGENTS);
   });
 
   test("a missing packaged source fails the whole preflight before any target mutation", () => {

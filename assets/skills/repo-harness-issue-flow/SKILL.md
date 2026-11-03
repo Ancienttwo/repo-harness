@@ -27,7 +27,7 @@ executes them or stops and asks.
 
 | Role | Suggested model | Seats it holds | Never does |
 |---|---|---|---|
-| Orchestrator | Any host's long-lived top-level session with network access. On Claude, it may use `claude --agent orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
+| Orchestrator | Any host's long-lived top-level session with network access, started from `repo-harness seats argv orchestrator` | Coordinator of the parent issue; integrator | Implements a child issue in its own sub-tree |
 | Gap reviewer | A different model family from the orchestrator, when one is available | None. Comments on the drafts | Rewrites the split or decides scope |
 | Worker | Any capable coding model | Writer of one issue or PR slot, dispatched by the coordinator; head owner of its PR | Claims its own seat, widens scope, merges, pushes to another owner's branch |
 | Acceptor | Gatekeeper by default. For the High tier, a different model family when available; otherwise a fresh same-family context | Acceptor of one review round | Reviews its own code, pushes code |
