@@ -28,7 +28,6 @@ import {
   type ManagedInstallSurface,
   type SkippedPlugin,
 } from './install-profile';
-import { readDshPluginState } from '../../effects/dsh-plugin-state';
 import { hostSkillRoot } from '../../effects/host-skill-roots';
 import { PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection, type SurfaceOwner } from '../../core/skill-surface/plugin-manifest';
 
@@ -42,7 +41,7 @@ const PROTOCOL_2_COMPONENTS: Readonly<Record<Protocol2Profile, readonly string[]
 /** M35 mapping. `full` also selects `pi` when the host runs Pi (owner decision on #1601). */
 const PROFILE_PLUGINS: Readonly<Record<Protocol2Profile, readonly PluginId[]>> = {
   minimal: ['platform', 'strategy-memory'],
-  full: PLUGIN_IDS.filter(id => id !== 'dsh'),
+  full: PLUGIN_IDS,
 };
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
 const SURFACE_KEYS = ['authority', 'components', 'content_hash', 'managed_marker', 'path', 'removal', 'symlink_target', 'type'].join(',');
@@ -66,7 +65,6 @@ export interface InstallStateMigrationPlan {
   readonly from_profile_plugins: readonly PluginId[];
   /** Owners of recorded surfaces that the profile mapping does not select. */
   readonly from_ledger_plugins: readonly PluginId[];
-  readonly from_host_plugins: readonly PluginId[];
   /** Host plugins that the `all` selection skips now; an explicit list has none. */
   readonly skipped: readonly SkippedPlugin[];
   /** The core surfaces that a former minimal install gains. */
@@ -185,8 +183,7 @@ function prepare(env: NodeJS.ProcessEnv): Prepared | null {
   const fromLedger = [...new Set(owned
     .filter(({ surface, owner }) => owner !== 'core' && (owner !== 'pi' || surface.type === 'pi-package'))
     .map(({ owner }) => owner as PluginId))].filter(id => !fromProfile.includes(id));
-  const fromHost: PluginId[] = readDshPluginState(env).status === 'declared' ? ['dsh'] : [];
-  const plugins = PLUGIN_IDS.filter(id => fromProfile.includes(id) || fromLedger.includes(id) || fromHost.includes(id));
+  const plugins = PLUGIN_IDS.filter(id => fromProfile.includes(id) || fromLedger.includes(id));
   const selection: PluginSelection = state.profile === 'full' ? 'all' : plugins;
   // An explicit list fails closed on an absent host program. Update cannot select without it,
   // and install refuses protocol 2, so the message names both ways out.
@@ -200,7 +197,6 @@ function prepare(env: NodeJS.ProcessEnv): Prepared | null {
   const skipped: SkippedPlugin[] = [];
   if (selection === 'all') {
     if (!plugins.includes('pi') && piAbsence !== null) skipped.push({ id: 'pi', reason: piAbsence, command: UPDATE_COMMAND });
-    if (!plugins.includes('dsh')) skipped.push({ id: 'dsh', reason: hostPluginAbsence('dsh', env) ?? 'DSH declares no repo-harness bundle', command: UPDATE_COMMAND });
   }
 
   const remove: string[] = [];
@@ -225,7 +221,7 @@ function prepare(env: NodeJS.ProcessEnv): Prepared | null {
   return {
     plan: {
       from_protocol: 2, from_profile: state.profile, to_protocol: INSTALL_STATE_PROTOCOL, selection, plugins,
-      from_profile_plugins: fromProfile, from_ledger_plugins: fromLedger, from_host_plugins: fromHost, skipped,
+      from_profile_plugins: fromProfile, from_ledger_plugins: fromLedger, skipped,
       added_core_surfaces: state.profile === 'minimal' ? minimalAddedCoreSurfaces(env) : [],
       remove, keep, state_path: statePath,
     },
@@ -252,7 +248,7 @@ export function formatInstallStateMigrationPlan(plan: InstallStateMigrationPlan)
   const list = (values: readonly string[]) => values.join(',') || '(none)';
   return [
     `install state protocol 2 -> 3: protocol 2 set "${plan.from_profile}" -> selection ${selectionLabel(plan.selection)}; plugins ${list(plan.plugins)}`,
-    `  from the protocol 2 set: ${list(plan.from_profile_plugins)}; from the ledger: ${list(plan.from_ledger_plugins)}; from the host: ${list(plan.from_host_plugins)}`,
+    `  from the protocol 2 set: ${list(plan.from_profile_plugins)}; from the ledger: ${list(plan.from_ledger_plugins)}`,
     ...plan.skipped.map(entry => `  ${skippedPluginLine(entry)}`),
     ...plan.added_core_surfaces.map(surface => `  adds core ${surface}`),
     ...plan.remove.map(path => `  removes ${path}`),

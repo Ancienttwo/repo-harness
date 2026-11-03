@@ -57,8 +57,7 @@ function renderCodexOutput(outcome: HookOutcome): HostOutput {
 
 /**
  * Version of the single JSON object that a direct package host bridge reads
- * from stdout. Pi and DSH share this wire format; each bridge supplies `host`
- * through its child environment.
+ * from stdout. The Pi bridge supplies `host` through its child environment.
  */
 export const BRIDGE_HOOK_PROTOCOL = 1 as const;
 
@@ -102,5 +101,4 @@ export const HOST_RENDERERS: Readonly<Record<RouteHost, (outcome: HookOutcome) =
   claude: (outcome) => renderHookSpecificOutput(outcome, outcome.systemMessage),
   codex: renderCodexOutput,
   pi: renderBridgeOutput,
-  dsh: renderBridgeOutput,
 });

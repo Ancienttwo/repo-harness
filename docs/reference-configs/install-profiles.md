@@ -17,7 +17,6 @@ plugin id. The installer maps the other surfaces through
 | `core` | The CLI, the Claude and Codex hook adapters with every hook route, the agent fleet files, the root router `repo-harness`, `repo-harness-check`, `repo-harness-test`, `repo-harness-issue-flow`, `repo-harness-ship`, the Herdr skill, Waza (`think`, `hunt`, `check`, `health` and the Waza rules files), and Mermaid. `repo-harness-setup`, `merge-gate`, `herdr` and `reverse-skill-router` are explicit-only. |
 | `architecture` | `repo-harness-architecture`, `repo-harness-archimap`, and the CodeGraph CLI and MCP projection. |
 | `cross-review` | `repo-harness-cross-review`. |
-| `dsh` | The DSH host integration. It has no file surface. Its probe reads the DSH profiles under `$DSH_HOME/profiles` or `~/.dsh/profiles`. repo-harness never writes a DSH profile. |
 | `peer-runtime` | `repo-harness-herdr-portal` (Claude host only). |
 | `pi` | The Pi package registration and the Pi skill root (`~/.pi/agent/skills/`), for `--target both` only. |
 | `platform` | `windows-python-first`. |
@@ -32,11 +31,9 @@ configured when the selection includes `strategy-memory` or the command has
 
 A plugin is unavailable on this host in three cases:
 
-- Its host program is absent. `pi` and `dsh` are host plugins, and
-  repo-harness does not install their host program. The program is absent
-  when `pi` is not on `PATH`, when the DSH profiles directory does not exist,
-  or when no DSH profile declares the repo-harness bundle. Any other read
-  error fails closed.
+- Its host program is absent. `pi` is a host plugin, and repo-harness does
+  not install its host program. The program is absent when `pi` is not on
+  `PATH`. Any other read error fails closed.
 - The target has no host for its skills: none of the plugin's owned skills
   lists a host in `--target`. For example, `peer-runtime` with
   `--target codex` gives `--target codex has no host for its skills`.
@@ -326,12 +323,10 @@ deleted byte.
 
 | Protocol 2 profile | Protocol 3 selection |
 |---|---|
-| `full` | `"all"`: every plugin except `dsh`, and `pi` only when `pi` is on `PATH`. |
+| `full` | `"all"`: every plugin, and `pi` only when `pi` is on `PATH`. |
 | `minimal` | The explicit list `platform`, `strategy-memory`, plus the owners of the recorded ledger surfaces. |
 
-For both profiles, the migration adds `dsh` only when a DSH profile declares
-the repo-harness bundle. It never installs or changes a DSH setup. Each
-ledger entry gets its owner from its path through the protocol 3 manifest:
+Each ledger entry gets its owner from its path through the protocol 3 manifest:
 
 - A Pi package registration (`pi-package`) adds `pi`.
 - A CodeGraph projection adds `architecture`, so a former minimal install

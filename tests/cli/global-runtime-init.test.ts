@@ -31,7 +31,7 @@ const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb0
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 const FULL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
-// An explicit list never grows, so a host `pi` or DSH on the developer PATH cannot change the recorded selection.
+// An explicit list never grows, so a host `pi` on the developer PATH cannot change the recorded selection.
 function recordExplicitFullSelection(home: string): void {
   recordInstallOwnership([], { HOME: home });
   const path = installProfileStatePath({ HOME: home });

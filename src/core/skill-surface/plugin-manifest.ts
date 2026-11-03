@@ -9,7 +9,6 @@
 export const PLUGIN_IDS = [
   "architecture",
   "cross-review",
-  "dsh",
   "peer-runtime",
   "pi",
   "platform",
@@ -34,7 +33,7 @@ export type SurfaceOwner = (typeof SURFACE_OWNERS)[number];
  * adds it on a later `update` once the program is present; an explicit
  * selection fails closed instead.
  */
-export const HOST_PROGRAM_PLUGINS = ["dsh", "pi"] as const satisfies readonly PluginId[];
+export const HOST_PROGRAM_PLUGINS = ["pi"] as const satisfies readonly PluginId[];
 
 export function isHostProgramPlugin(id: PluginId): id is (typeof HOST_PROGRAM_PLUGINS)[number] {
   return (HOST_PROGRAM_PLUGINS as readonly PluginId[]).includes(id);

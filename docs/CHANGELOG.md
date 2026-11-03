@@ -2,6 +2,21 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Breaking
+
+- The DSH plugin and the `dsh` plugin id are removed (owner decision M45).
+  The package no longer ships `dist/dsh/` or `cordis.patch.yml`, and has no
+  `dsh` package key or `@deepseek-ai/cordis` peer dependency. `repo-harness
+  doctor` has no `dsh-plugin` check, the setup report and console have no DSH
+  host row, and the hook runtime accepts no `HOOK_HOST=dsh`. An install state
+  that records `dsh` fails closed with `install_state_invalid` (unknown
+  plugin `"dsh"`). Fix: delete that plugin entry from
+  `~/.repo-harness/install-state.json` (and `dsh` from an explicit
+  `selection`), or delete the file and run `repo-harness install`. No known
+  machine records `dsh`. (#1653)
+
 ## [0.25.4] - 2026-11-04
 
 This release has breaking changes. Install state is protocol 3 (core plus

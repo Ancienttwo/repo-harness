@@ -52,7 +52,6 @@ import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
-import { readDshPluginState } from '../../effects/dsh-plugin-state';
 
 const SKILL_SURFACE_MANIFEST_PATH = join(
   dirname(fileURLToPath(import.meta.url)),
@@ -1313,12 +1312,6 @@ function probePi(env: NodeJS.ProcessEnv): OwnerProbe {
   return probe({ 'pi-package': piPackagePresent(source, env) ? [source] : [] });
 }
 
-/** The DSH plugin's real state: a DSH profile that declares the repo-harness bundle. An unreadable DSH home throws. */
-function probeDsh(env: NodeJS.ProcessEnv): OwnerProbe {
-  const state = readDshPluginState(env);
-  return probe({ 'dsh-profile': state.status === 'declared' ? state.profiles.map(profile => join(state.profilesDir, profile)) : [] });
-}
-
 function probeOwners(plugins: readonly PluginId[], env: NodeJS.ProcessEnv): Partial<Record<SurfaceOwner, OwnerProbe>> {
   const home = env.HOME ?? homedir();
   const catalog = loadSkillSurfaceCatalog();
@@ -1326,7 +1319,6 @@ function probeOwners(plugins: readonly PluginId[], env: NodeJS.ProcessEnv): Part
   const probes: Partial<Record<SurfaceOwner, OwnerProbe>> = { core: probeCore(env, catalog, hosts) };
   for (const id of plugins) {
     if (id === 'pi') probes.pi = probePi(env);
-    else if (id === 'dsh') probes.dsh = probeDsh(env);
     else probes[id] = probe({ skills: completeHostSkillSetEvidence(home, hosts, ownedProbeSkills(catalog, id), env) });
   }
   return probes;
@@ -1359,12 +1351,8 @@ export function installStateStatus(
 }
 
 /** Why a host plugin cannot be selected now, or null when its host program is present. Other read errors throw. */
-export function hostPluginAbsence(id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
-  if (id === 'pi') return piExecutable(env) === null ? 'pi is not on PATH' : null;
-  const dsh = readDshPluginState(env);
-  if (dsh.status === 'absent') return `DSH is not installed (no ${dsh.profilesDir})`;
-  if (dsh.status === 'undeclared') return `no DSH profile under ${dsh.profilesDir} declares the repo-harness bundle`;
-  return null;
+export function hostPluginAbsence(_id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
+  return piExecutable(env) === null ? 'pi is not on PATH' : null;
 }
 
 type InstallTarget = 'claude' | 'codex' | 'both';

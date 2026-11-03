@@ -4,7 +4,7 @@ import { BRIDGE_HOOK_PROTOCOL, type BridgeHookOutput } from './hook-protocol';
 import { withoutRepositorySelectingGitEnv } from '../../effects/git/runner';
 
 /**
- * Shared client for the direct package hosts (Pi, DSH). Both hosts load a
+ * Client for the direct package host (Pi). Pi loads a
  * repo-harness package entry that runs `dist/hook-entry.js` as a child process
  * and reads one JSON object from stdout. The adapter hosts (Claude, Codex)
  * never use this client: they bind the route registry through their own config
@@ -64,8 +64,8 @@ function parseOutput(
 
 export interface HookBridgeOptions {
   readonly host: BridgeHost;
-  /** Error-code prefix; each host keeps its own stable vocabulary (`PI_HOOK_*`, `DSH_HOOK_*`). */
-  readonly codePrefix: 'PI' | 'DSH';
+  /** Error-code prefix of the host's stable vocabulary (`PI_HOOK_*`). */
+  readonly codePrefix: 'PI';
   /** Absolute path to the packaged `dist/hook-entry.js`. */
   readonly entry: string;
   readonly bun?: string;

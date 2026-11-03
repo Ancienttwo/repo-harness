@@ -10,7 +10,7 @@ import type { SkillProjectionState } from '../skill-surface/projection-state';
 export const SETUP_PROJECTION = 'repo-harness.setup.v2' as const;
 
 /** Same members and order as `RouteHost` (src/cli/hook/route-registry.ts). */
-export const SETUP_HOSTS = ['claude', 'codex', 'pi', 'dsh'] as const;
+export const SETUP_HOSTS = ['claude', 'codex', 'pi'] as const;
 export type SetupHost = typeof SETUP_HOSTS[number];
 /** One value per declared setup host. */
 export type SetupPerHost<T> = { readonly [H in SetupHost]: T };

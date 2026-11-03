@@ -407,21 +407,19 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
   });
 
   test("hostSkillPlacements: cross-review places repo-harness-cross-review on every host and peer-runtime places repo-harness-herdr-portal on claude only", () => {
-    expect(hostSkillPlacements(catalog, [])).toEqual({ claude: [], codex: [], pi: [], dsh: [] });
+    expect(hostSkillPlacements(catalog, [])).toEqual({ claude: [], codex: [], pi: [] });
     // The Pi skill root belongs to the pi plugin, so cross-review reaches Pi only with it.
     expect(hostSkillPlacements(catalog, ["cross-review"])).toEqual({
       claude: ["repo-harness-cross-review"],
       codex: ["repo-harness-cross-review"],
       pi: [],
-      dsh: [],
     });
     expect(hostSkillPlacements(catalog, ["cross-review", "pi"]).pi).toEqual(["repo-harness-cross-review"]);
-    expect(hostSkillPlacements(catalog, ["peer-runtime"])).toEqual({ claude: ["repo-harness-herdr-portal"], codex: [], pi: [], dsh: [] });
+    expect(hostSkillPlacements(catalog, ["peer-runtime"])).toEqual({ claude: ["repo-harness-herdr-portal"], codex: [], pi: [] });
     expect(hostSkillPlacements(catalog, PLUGIN_IDS)).toEqual({
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
-      dsh: [],
     });
   });
 
@@ -431,7 +429,6 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       claude: ["repo-harness-cross-review", "repo-harness-herdr-portal"],
       codex: ["repo-harness-cross-review"],
       pi: ["repo-harness-cross-review"],
-      dsh: [],
     });
   });
 
