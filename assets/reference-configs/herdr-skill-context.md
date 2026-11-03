@@ -20,7 +20,7 @@ reopen an already identified Herdr terminal merely because `HC_TERMINAL_ID` is
 absent.
 
 - With `HC_TERMINAL_ID`, that value is your address. Terminals that you start
-  are your children, and children report to you with `hc send $HC_TERMINAL_ID`.
+  report to you with `hc send $HC_TERMINAL_ID`.
 - Without `HC_TERMINAL_ID`, `hc` still reaches the user's core. Start with
   `hc ls --json`. It lists all live terminals of the user, not only yours.
   Read-only discovery does not require prior task ownership.
@@ -32,7 +32,8 @@ absent.
   task and meets the requested independence requirement. A matching path or an
   idle agent alone does not authorize repurposing another task's terminal.
 - If no suitable reviewer exists, start one at the task path with
-  `hc run --bg --name <name> --cwd <task path> <template-or-agent> "<task>"`. Record the returned address.
+  `hc run --bg --no-parent --name <name> --cwd <task path> <template-or-agent> "<task>"`. Record the returned address.
+  `--no-parent` keeps the reviewer running when your program ends.
   Do not send input to terminals of another task.
 - For a visible pane, use `herdr-app do`. Split right; keep at most three
   panes per tab and create a new tab when full. `herdr-app --skill` gives the
