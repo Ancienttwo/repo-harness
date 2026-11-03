@@ -50,7 +50,7 @@ export interface ReviewOptions<Endpoint> {
   /** Launch addressing that the runner validates. An app-terminal launch has neither field. */
   endpoint?: Endpoint;
   parentPane?: string;
-  launch?: 'herdr' | 'app-terminal';
+  launch?: 'herdr-app' | 'app-terminal';
   harness?: Harness;
   timeoutMs?: number;
   authorityHome?: string;
@@ -113,7 +113,7 @@ export interface ReviewRoundResult {
   requested_harness: Harness; actual_harness: Harness; fallback_reason: string | null;
 }
 /** Only an app-terminal launch can end a call before delivery, with the host command to run. */
-export function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint> & { launch?: 'herdr' }, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult>;
+export function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint> & { launch?: 'herdr-app' }, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult>;
 export function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint>, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult | ReviewLaunchRequired>;
 export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<Endpoint>, effects: ReviewEffects<Session, Endpoint>): Promise<ReviewRoundResult | ReviewLaunchRequired> {
   const taskClaim = validateTaskClaimReference(options.taskClaim);
@@ -160,9 +160,9 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
         actual = owner; reason = `${requested} executable missing before start`;
         console.error(`Review fallback: ${reason}; actual harness=${actual}.`);
       }
-      // The Herdr start requires the PATH Pi to meet MIN_PI_VERSION (#1100 Option C). The Herdr Pi
-      // integration is not checked: the reviewer Pi uses an isolated PI_CODING_AGENT_DIR that never
-      // loads that extension, and pane state comes from `pane report-agent`.
+      // The hc start requires the PATH Pi to meet MIN_PI_VERSION (#1100 Option C). No Pi status
+      // integration is checked: the reviewer Pi uses an isolated PI_CODING_AGENT_DIR, and the
+      // terminal status comes from the OAR host's own OSC 7501 report.
       if (actual === 'pi' && !terminal) {
         const blocker = client.piReviewLaunchBlocker(client.piExecutable()!);
         if (blocker) throw new Error(`review_pi_launch_not_ready: ${blocker}`);
@@ -247,7 +247,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
       binding = bound;
     } else {
       binding = await client.start(reviewerRepo, { task: session.task, role: GENERIC_REVIEW_ROLE, harness_kind: session.actual_harness,
-        endpoint: session.endpoint, parent_pane: session.parent_pane!, args: [], max_requests: REVIEW_MAX_ROUNDS },
+        endpoint: session.endpoint, args: [], max_requests: REVIEW_MAX_ROUNDS },
         command, () => client.ready(join(dir, 'ready.json')), undefined, taskAuthority);
     }
     client.assertBinding(binding);

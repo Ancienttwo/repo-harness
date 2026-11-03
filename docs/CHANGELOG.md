@@ -2,6 +2,28 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Breaking
+
+- Task sessions run in herdr-core terminals, not in classic Herdr panes.
+  `hc run --no-parent` starts each session with the `repo-harness.role=task-session`
+  labels. hc `get`, `send`, `kill` and `rm` observe, message and end it. An
+  endpoint is now `{"socket":"<hc core socket>","home":"<review credential home>"}`.
+  `contract-worktree start --herdr-endpoint` takes `{"endpoint":...}` only, and
+  `review round --herdr-endpoint` takes `{"endpoint":...,"parent_pane":"<owner hc terminal>"}`.
+  `contract-worktree notify-merged` reaches only an owner terminal with a
+  repo-harness label; it reports `owner_unowned` for any other owner. A
+  classic task binding, start intent, workspace record or endpoint file
+  fails with `task_agent_classic_herdr_record_retired`.
+  Archive the record and start the session again. No migration command
+  exists. (#1476)
+- `review round --launch herdr` is now `--launch herdr-app`, and
+  `herdr-app` is the default. The value `herdr` fails with
+  `review_launch_unsupported`; no alias exists. The OAR review host reports
+  its idle or working status to hc with OSC 7501 (`app=repo-harness`).
+  (#1477)
+
 ## [0.25.2] - 2026-11-03
 
 ### Upgrade

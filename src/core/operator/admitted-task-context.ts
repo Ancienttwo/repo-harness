@@ -9,7 +9,7 @@ export interface AdmittedTaskContext {
   readonly verification: { readonly plan_sha256: string; readonly plan_json: string };
   readonly scope: { readonly allowed_paths: readonly string[]; readonly benchmark: 'required' | 'not_required'; readonly oracles_json: string };
   readonly approval: { readonly admission_sha256: string; readonly grant_sha256: string; readonly revision: number; readonly goal_revision: string; readonly scope_sha256: string };
-  readonly execution: { readonly branch: string; readonly runtime: 'terminal' | 'herdr'; readonly harness_kind: string };
+  readonly execution: { readonly branch: string; readonly runtime: 'terminal' | 'herdr-core'; readonly harness_kind: string };
   readonly observed_at: string;
 }
 const exact = (v: unknown, keys: readonly string[]): v is Record<string, unknown> => !!v && typeof v === 'object' && !Array.isArray(v) && Object.keys(v).length === keys.length && Object.keys(v).every(key=>keys.includes(key));
@@ -29,7 +29,7 @@ export function decodeAdmittedTaskContext(value: unknown, request: AdmittedSessi
     ||!['required','not_required'].includes(scope.benchmark as string)||!text(scope.oracles_json))return invalid();
   if(!exact(approval,['admission_sha256','grant_sha256','revision','goal_revision','scope_sha256'])||!hash(approval.admission_sha256)||approval.grant_sha256!==request.grant_sha256
     ||!Number.isSafeInteger(approval.revision)||(approval.revision as number)<1||approval.goal_revision!==goal.revision||!hash(approval.scope_sha256))return invalid();
-  if(!exact(execution,['branch','runtime','harness_kind'])||!text(execution.branch)||!['terminal','herdr'].includes(execution.runtime as string)||!text(execution.harness_kind)
+  if(!exact(execution,['branch','runtime','harness_kind'])||!text(execution.branch)||!['terminal','herdr-core'].includes(execution.runtime as string)||!text(execution.harness_kind)
     ||!text(value.observed_at)||!Number.isFinite(Date.parse(value.observed_at)))return invalid();
   return value as unknown as AdmittedTaskContext;
 }
