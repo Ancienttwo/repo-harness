@@ -142,7 +142,7 @@ describe("repo-harness seats argv", () => {
     for (const [fleet, review, dispatch] of [
       [[], seatReview, "You do not dispatch sub-agents (the Agent tool) for execution. Dispatch work only to seats through Herdr."],
       [["explorer"], seatReview, seatsOnly("`explorer`")],
-      [["deep-reasoner", "explorer", "gatekeeper", "root-cause-prover"], gatekeeperReview, seatsOnly("`deep-reasoner`, `explorer`, `gatekeeper`, `root-cause-prover`")],
+      [["deep-reasoner", "explorer", "gatekeeper"], gatekeeperReview, seatsOnly("`deep-reasoner`, `explorer`, `gatekeeper`")],
     ] as const) {
       withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
         const orchestrator = launch(home, "orchestrator");
