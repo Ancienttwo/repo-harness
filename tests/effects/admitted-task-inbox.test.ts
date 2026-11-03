@@ -63,6 +63,12 @@ test('bounded admitted activity pages stored events newest first and keeps the r
     expect(stopped.entries).toHaveLength(1);
     expect(stopped.coverage).toMatchObject({ complete: false, reason: 'scan', scanned: 2 });
     expect(stopped.next_cursor).toBeNull();
+    const events = join(taskInboxTaskDirectory(f.root, f.task), 'events'), largest = Math.max(...readdirSync(events).map(name => readFileSync(join(events, name)).length));
+    // A walk stop returns no records and keeps the walk's reason; with bytes, the spent scan budget would stop a receipt read too.
+    for (const [walkBudget, reason] of [[{ max_scan: 1 }, 'scan'], [{ max_scan: 2, max_bytes: largest }, 'bytes']] as const) {
+      expect(readAdmittedTaskActivity({ ...query, limit: 2, budget: { ...budget, ...walkBudget } }))
+        .toMatchObject({ entries: [], next_cursor: null, coverage: { complete: false, reason, scanned: walkBudget.max_scan } });
+    }
   } finally { rmSync(f.directory, { recursive: true, force: true }); }
 });
 
