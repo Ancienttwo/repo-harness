@@ -556,7 +556,8 @@ test('Pi execution fixture projects and validates its native resume identity', a
   const { projectTaskExecutionView, decodeTaskExecutionView } = await import('../src/core/operator/execution-state');
   const view = projectTaskExecutionView({ protocol: 1, kind: 'operator_task_execution', observed_at: '2026-10-28T00:00:00.000Z',
     executions: [{ state: 'verified', task: 'fixture-pi', role: 'deep-reasoner', issue_id: '1100', branch: 'fixture-pi',
-      agent: 'pi', runtime: 'terminal', native_session_id: 'fixture-native-id', herdr_pane: null }] }, 'fixture-repo', null);
+      agent: 'pi', runtime: 'terminal', native_session_id: 'fixture-native-id', hc_terminal: null }] }, 'fixture-repo', null,
+    () => { throw new Error('a terminal session has no hc terminal'); });
   expect(decodeTaskExecutionView(view)).toEqual(view);
   expect(view.tasks[0]!.follow_up.resume).toEqual({ host: 'pi', command: 'pi --session fixture-native-id' });
   const first = view.tasks[0]!;

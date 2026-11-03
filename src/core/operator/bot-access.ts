@@ -3,7 +3,8 @@
 // absolute path, stderr or environment value can pass through. A field that
 // does not match its grammar becomes null or drops the row; it is never echoed.
 
-import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_SESSION_REASONS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifySessionReason, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
+import { HC_VERSION_TEXT, type HcVersionCheck } from './herdr-pin';
+import { NOTIFY_CHANNELS, NOTIFY_PLUGIN_ID, NOTIFY_STATUS_KEYS, NOTIFY_UNAVAILABLE_REASONS, type NotifyChannelDeliveriesV1, type NotifyDeliveryState, type NotifyPresence, type NotifyStatusV1, type NotifyUnavailableReason } from './notify-status';
 
 export type BotAccessUnavailable<Reason extends string> = { readonly state: 'unavailable'; readonly reason: Reason };
 
@@ -24,7 +25,7 @@ export interface McpDoctorProjection {
 
 /**
  * The registered Bots that attribution reads (PRD G30). A record attributes
- * a Herdr agent name or an audit row to a Bot; it never grants access.
+ * an audit row to a Bot; it never grants access.
  */
 export interface BotIdentity {
   readonly bot_id: string;
@@ -55,44 +56,30 @@ export interface RegistryRepoProjection {
   readonly last_audit: { readonly state: 'ok'; readonly entry: McpAuditProjection } | { readonly state: 'missing' } | BotAccessUnavailable<'audit_unreadable'>;
 }
 
-export interface HerdrVersionProjection {
-  readonly state: 'aligned' | 'mismatch';
-  readonly expected: { readonly version: string; readonly protocol: number; readonly revision: string };
-  readonly actual: { readonly version: string | null; readonly protocol: number | null };
-}
+export type HcTerminalStatus = 'idle' | 'working' | 'blocked' | 'done' | 'error' | 'unknown';
 
-export interface HerdrStatusProjection {
-  readonly client: { readonly version: string | null; readonly protocol: number | null };
-  readonly server: {
-    readonly status: 'running' | 'not_running' | 'unknown';
-    readonly version: HerdrVersionProjection | null;
-    readonly restart_needed: boolean;
-  };
-}
+/** One repo-harness task-session terminal: its hc address, name and status word. No cwd, title, argv or terminal text. */
+export interface HcTerminalProjection { readonly address: string; readonly name: string | null; readonly status: HcTerminalStatus }
 
-export type HerdrAgentStatus = 'idle' | 'working' | 'blocked' | 'done' | 'unknown';
-
-export interface HerdrSnapshotProjection {
-  readonly workspaces: number;
-  readonly tabs: number;
-  readonly panes: number;
-  readonly agents: readonly { readonly pane_id: string; readonly agent: string | null; readonly name: string | null; readonly agent_status: HerdrAgentStatus; readonly bot: BotAttribution }[];
-}
+export type HcSectionReason = 'hc_missing' | 'hc_unreachable';
 
 export interface BotAccessSnapshotV1 {
-  readonly protocol: 1;
+  readonly protocol: 2;
   readonly kind: 'operator_bot_access';
   readonly observed_at: string;
   readonly bots: { readonly state: 'ok'; readonly bots: readonly BotProjection[] } | BotAccessUnavailable<'bot_registry_invalid'>;
   readonly mcp: { readonly state: 'ok'; readonly doctor: McpDoctorProjection } | BotAccessUnavailable<'mcp_doctor_failed' | 'mcp_doctor_timeout' | 'mcp_doctor_invalid'>;
   readonly registry: { readonly state: 'ok'; readonly authorization_revision: number; readonly registry_revision: string; readonly repos: readonly RegistryRepoProjection[] }
     | BotAccessUnavailable<'registry_unavailable' | 'registry_invalid'>;
-  readonly herdr: {
+  /** The core that the server's environment selects. A core below the pin answers, but its terminals are not read. */
+  readonly hc: {
     readonly state: 'ok';
-    readonly session: string;
-    readonly status: { readonly state: 'ok'; readonly value: HerdrStatusProjection } | BotAccessUnavailable<'herdr_status_failed' | 'herdr_status_invalid'>;
-    readonly snapshot: { readonly state: 'ok'; readonly value: HerdrSnapshotProjection } | BotAccessUnavailable<'herdr_not_running' | 'herdr_version_mismatch' | 'herdr_snapshot_failed'>;
-  } | BotAccessUnavailable<NotifySessionReason>;
+    readonly version: { readonly state: 'ok'; readonly value: HcVersionCheck } | BotAccessUnavailable<'hc_pin_unavailable'>;
+    /** Herdr.app has no pin yet. */
+    readonly herdr_app: { readonly state: 'not_pinned' };
+    readonly terminals: { readonly state: 'ok'; readonly value: readonly HcTerminalProjection[] }
+      | BotAccessUnavailable<'hc_version_mismatch' | 'hc_pin_unavailable' | 'hc_terminals_failed'>;
+  } | BotAccessUnavailable<HcSectionReason>;
   readonly notify: {
     readonly state: 'ok';
     readonly status: NotifyStatusV1;
@@ -106,7 +93,9 @@ const NAME_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/;
 const TOOL_TEXT = /^[a-z][a-z0-9_.-]{0,63}$/;
 const BOT_ID_TEXT = /^[a-z][a-z0-9-]{0,62}$/;
 const HERDR_AGENT_TEXT = /^[a-z][a-z0-9_-]{0,31}$/;
-const HERDR_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$/;
+/** hc's terminal address on one core (see `herdr-core.ts`). */
+const HC_ADDRESS_TEXT = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/;
+const HC_STATUSES: readonly HcTerminalStatus[] = ['idle', 'working', 'blocked', 'done', 'error', 'unknown'];
 
 type Json = Record<string, unknown>;
 const object = (value: unknown): Json | null => value && typeof value === 'object' && !Array.isArray(value) ? value as Json : null;
@@ -117,7 +106,7 @@ const integer = (value: unknown): number | null => typeof value === 'number' && 
 const one = <T extends string>(value: unknown, allowed: readonly T[]): T | null => allowed.includes(value as T) ? value as T : null;
 
 /** The Bot whose `field` equals `value`. The registry keeps each identity on at most one Bot. */
-export function attributeBot(directory: BotDirectory, field: 'bot_id' | 'herdr_agent', value: string | null): BotAttribution {
+export function attributeBot(directory: BotDirectory, field: 'bot_id', value: string | null): BotAttribution {
   if (directory.state !== 'ok') return { state: 'unavailable' };
   const bot = value === null ? undefined : directory.bots.find(entry => entry[field] === value);
   return bot ? { state: 'registered', bot_id: bot.bot_id } : { state: 'unregistered' };
@@ -177,39 +166,13 @@ export function projectRegistryRepo(repo: { readonly id: string; readonly path: 
   return { repo_id: repo.id, label: text(segment, NAME_TEXT), access_mode: repo.accessMode, last_audit };
 }
 
-/** `herdr status --json`. The binary path, socket path and session echo are dropped. */
-export function projectHerdrStatus(value: unknown, check: (server: Json) => HerdrVersionProjection): HerdrStatusProjection {
-  const status = object(value), client = object(status?.client), server = object(status?.server);
-  if (!client || !server) throw new Error('herdr_status_invalid');
-  const state = one(server.status, ['running', 'not_running'] as const) ?? 'unknown';
-  return {
-    client: { version: text(client.version, VERSION_TEXT), protocol: integer(client.protocol) },
-    server: { status: state, version: state === 'running' ? check(server) : null, restart_needed: flag(server.restart_needed) || flag(object(status?.update)?.restart_needed) },
-  };
-}
-
-/** `session.snapshot`. Only counts, agent pane states and the Bot that owns each agent name remain: no cwd, title, label or terminal text. */
-export function projectHerdrSnapshot(value: unknown, directory: BotDirectory): HerdrSnapshotProjection {
-  const snapshot = object(value);
-  if (!snapshot || !['workspaces', 'tabs', 'panes', 'agents'].every(key => Array.isArray(snapshot[key]))) throw new Error('herdr_snapshot_invalid');
-  const agents = (snapshot.agents as unknown[]).flatMap(raw => {
-    const agent = object(raw), pane_id = text(agent?.pane_id, HERDR_ID_TEXT);
-    if (pane_id === null) return [];
-    // `agent` is the detected kind (claude, codex); `name` is the alias `herdr agent rename` set, which a Bot record names.
-    const name = text(agent?.name, HERDR_AGENT_TEXT);
-    return [{ pane_id, agent: text(agent?.agent, NAME_TEXT), name, agent_status: one(agent?.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const) ?? 'unknown',
-      bot: attributeBot(directory, 'herdr_agent', name) }];
-  });
-  return {
-    workspaces: (snapshot.workspaces as unknown[]).length,
-    tabs: (snapshot.tabs as unknown[]).length,
-    panes: (snapshot.panes as unknown[]).length,
-    agents: agents.sort((a, b) => a.pane_id.localeCompare(b.pane_id)),
-  };
+/** A task-session terminal from hc. A status word outside hc's five, or no status report, is unknown. */
+export function projectHcTerminal(terminal: { readonly address: string; readonly name: string | null; readonly status: { readonly state: string } | null }): HcTerminalProjection {
+  return { address: terminal.address, name: text(terminal.name, NAME_TEXT),
+    status: one(terminal.status?.state, ['idle', 'working', 'blocked', 'done', 'error'] as const) ?? 'unknown' };
 }
 
 const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u;
-const HERDR_REVISION_TEXT = /^[0-9a-f]{40}$/u;
 const SLACK_BOT_ID_TEXT = /^[A-Z][A-Z0-9]{2,31}$/u;
 const BOT_HOST_TEXT = /^[A-Za-z][A-Za-z0-9._-]{0,31}$/u;
 const REPO_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
@@ -248,8 +211,8 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
     else fail(what);
   };
 
-  const v = obj(value, ['protocol', 'kind', 'observed_at', 'bots', 'mcp', 'registry', 'herdr', 'notify'], 'snapshot');
-  if (v.protocol !== 1 || v.kind !== 'operator_bot_access') fail('protocol');
+  const v = obj(value, ['protocol', 'kind', 'observed_at', 'bots', 'mcp', 'registry', 'hc', 'notify'], 'snapshot');
+  if (v.protocol !== 2 || v.kind !== 'operator_bot_access') fail('protocol');
   match(v.observed_at, ISO_TIME, 'observed_at');
 
   const bots = section(v.bots, 'bots', ['bots'], ['bot_registry_invalid']);
@@ -296,44 +259,27 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
     }
   }
 
-  // Without an install record there is no session to ask, so the section is unavailable as a whole.
-  const herdr = section(v.herdr, 'herdr', ['session', 'status', 'snapshot'], NOTIFY_SESSION_REASONS);
-  if (herdr.session !== undefined) {
-    match(herdr.session, NAME_TEXT, 'herdr session');
-    const status = section(herdr.status, 'herdr status', ['value'], ['herdr_status_failed', 'herdr_status_invalid']);
-    if (status.value !== undefined) {
-      const value = obj(status.value, ['client', 'server'], 'herdr status value');
-      const client = obj(value.client, ['version', 'protocol'], 'herdr client');
-      nullable(client.version, x => match(x, VERSION_TEXT, 'herdr client version'));
-      nullable(client.protocol, x => whole(x, 'herdr client protocol'));
-      const server = obj(value.server, ['status', 'version', 'restart_needed'], 'herdr server');
-      const running = oneOf(server.status, ['running', 'not_running', 'unknown'] as const, 'herdr server status') === 'running';
-      bool(server.restart_needed, 'herdr restart_needed');
-      if ((server.version === null) === running) fail('herdr server version');
-      nullable(server.version, x => {
-        const version = obj(x, ['state', 'expected', 'actual'], 'herdr version');
-        oneOf(version.state, ['aligned', 'mismatch'] as const, 'herdr version state');
-        const expected = obj(version.expected, ['version', 'protocol', 'revision'], 'herdr expected');
-        match(expected.version, VERSION_TEXT, 'herdr expected version');
-        whole(expected.protocol, 'herdr expected protocol');
-        match(expected.revision, HERDR_REVISION_TEXT, 'herdr expected revision');
-        const actual = obj(version.actual, ['version', 'protocol'], 'herdr actual');
-        nullable(actual.version, y => match(y, VERSION_TEXT, 'herdr actual version'));
-        nullable(actual.protocol, y => whole(y, 'herdr actual protocol'));
-        return version;
-      });
+  const hc = section(v.hc, 'hc', ['version', 'herdr_app', 'terminals'], ['hc_missing', 'hc_unreachable']);
+  if (hc.version !== undefined) {
+    const version = section(hc.version, 'hc version', ['value'], ['hc_pin_unavailable']);
+    let aligned = false;
+    if (version.value !== undefined) {
+      const check = obj(version.value, ['state', 'expected', 'actual'], 'hc version value');
+      aligned = oneOf(check.state, ['aligned', 'mismatch'] as const, 'hc version state') === 'aligned';
+      match(obj(check.expected, ['min_version'], 'hc expected').min_version, HC_VERSION_TEXT, 'hc min_version');
+      match(obj(check.actual, ['version'], 'hc actual').version, HC_VERSION_TEXT, 'hc actual version');
     }
-    const snapshot = section(herdr.snapshot, 'herdr snapshot', ['value'], ['herdr_not_running', 'herdr_version_mismatch', 'herdr_snapshot_failed']);
-    if (snapshot.value !== undefined) {
-      const value = obj(snapshot.value, ['workspaces', 'tabs', 'panes', 'agents'], 'herdr snapshot value');
-      for (const key of ['workspaces', 'tabs', 'panes'] as const) whole(value[key], `herdr ${key}`);
-      for (const raw of array(value.agents, 'herdr agents')) {
-        const agent = obj(raw, ['pane_id', 'agent', 'name', 'agent_status', 'bot'], 'herdr agent');
-        match(agent.pane_id, HERDR_ID_TEXT, 'herdr pane_id');
-        nullable(agent.agent, x => match(x, NAME_TEXT, 'herdr agent kind'));
-        nullable(agent.name, x => match(x, HERDR_AGENT_TEXT, 'herdr agent name'));
-        oneOf(agent.agent_status, ['idle', 'working', 'blocked', 'done', 'unknown'] as const, 'herdr agent_status');
-        attribution(agent.bot, 'herdr agent bot');
+    if (obj(hc.herdr_app, ['state'], 'herdr_app').state !== 'not_pinned') fail('herdr_app state');
+    const terminals = section(hc.terminals, 'hc terminals', ['value'], ['hc_version_mismatch', 'hc_pin_unavailable', 'hc_terminals_failed']);
+    // Terminals are read only from a core at or above the pin.
+    const failed = object(hc.terminals)?.reason === 'hc_terminals_failed';
+    if (terminals.value !== undefined ? !aligned : aligned && !failed) fail('hc terminals state');
+    if (terminals.value !== undefined) {
+      for (const raw of array(terminals.value, 'hc terminals value')) {
+        const terminal = obj(raw, ['address', 'name', 'status'], 'hc terminal');
+        match(terminal.address, HC_ADDRESS_TEXT, 'hc terminal address');
+        nullable(terminal.name, x => match(x, NAME_TEXT, 'hc terminal name'));
+        oneOf(terminal.status, HC_STATUSES, 'hc terminal status');
       }
     }
   }

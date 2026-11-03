@@ -1,7 +1,5 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, mkdtempSync, readdirSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
-import { createServer } from 'node:net';
-import { tmpdir } from 'node:os';
+import { mkdirSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join, parse } from 'node:path';
 import {
   BOT_ACCESS_CWD,
@@ -18,7 +16,7 @@ import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { decodeBotAccessSnapshot, projectMcpAuditEntry, projectMcpDoctor, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
-import { notifyInstallRecordPath, writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
+import { fakeHc } from '../helpers/fake-hc';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
 const SLACK_URL = 'https://hooks.slack.example/services/T0/B0/webhook-secret-0006';
@@ -38,11 +36,11 @@ const notifyStatus: NotifyChannelDeliveryStatus = {
 };
 const notifyOk = (): NotifyCacheV1 => ({ state: 'ok', value: notifyStatus });
 
+/** The collector reads hc through a fake on PATH, so no test reaches a real core. */
 function fixture() {
-  const root = realpathSync(mkdtempSync(join(tmpdir(), 'rh-bot-access-')));
-  const home = join(root, 'home', '.repo-harness');
-  const repo = join(root, 'repos', 'demo-repo');
-  mkdirSync(home, { recursive: true });
+  const hc = fakeHc('rh-bot-access', 'demo-repo');
+  const { root, repo } = hc;
+  const home = hc.env.REPO_HARNESS_HOME!;
   mkdirSync(join(repo, '.ai', 'harness', 'mcp'), { recursive: true });
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 3, repos: [{
     id: repoHarnessRepoIdFor(repo), path: repo, accessMode: 'read_write', source: 'manual', registeredAt: NOW.toISOString(), lastSeenAt: NOW.toISOString(),
@@ -52,15 +50,13 @@ function fixture() {
     { timestamp: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', actor: 'mcp:executor', botId: 'hermes', targetPath: join(repo, 'plans/x.md'), error: 'stderr-secret' },
   ].map(row => JSON.stringify(row)).join('\n') + '\n{"torn":');
   registerBot({ bot_id: 'hermes', name: 'Hermes', host: 'Hermes', slack_bot_id: 'B012ABC', herdr_agent: 'hermes', now: NOW }, { REPO_HARNESS_HOME: home });
-  const env: NodeJS.ProcessEnv = { ...process.env, HOME: join(root, 'home'), REPO_HARNESS_HOME: home, HERDR_SESSION: 'pane-session', HERDR_SOCKET_PATH: join(root, 'pane.sock') };
-  // The session comes from the install record; the server's HERDR_SESSION names another one.
-  writeNotifyInstallRecord('bots', env);
-  return { root, home, repo, env, cleanup: () => rmSync(root, { recursive: true, force: true }) };
+  const env: NodeJS.ProcessEnv = { ...process.env, ...hc.env };
+  return { root, home, repo, env, hc, cleanup: hc.cleanup };
 }
 
-function herdrOk(snapshot: BotAccessSnapshotV1): Extract<BotAccessSnapshotV1['herdr'], { state: 'ok' }> {
-  if (snapshot.herdr.state !== 'ok') throw new Error(`herdr section ${snapshot.herdr.reason}`);
-  return snapshot.herdr;
+function hcOk(snapshot: BotAccessSnapshotV1): Extract<BotAccessSnapshotV1['hc'], { state: 'ok' }> {
+  if (snapshot.hc.state !== 'ok') throw new Error(`hc section ${snapshot.hc.reason}`);
+  return snapshot.hc;
 }
 
 function doctorReport(root: string) {
@@ -71,14 +67,6 @@ function doctorReport(root: string) {
       permissions: { fullDiskRead: false, allowedRootCount: 1, allowedRoots: [{ path: join(root, 'repos'), exists: true, readable: true }], unsafeAllowedRoots: [root], registeredRepoCount: 1, legacyFullDiskReadDetected: false },
       capabilities: { workspaceReader: true, workflowPlanner: true, workflowExecutor: false },
     },
-  };
-}
-
-function herdrStatus(root: string, server: { status: string; version: string | null; protocol: number | null; socket: string }) {
-  return {
-    client: { version: '0.9.3', protocol: 23, binary: join(root, 'bin', 'herdr'), session: 'bots' },
-    server: { ...server, running: server.status === 'running', compatible: true, session: 'bots', restart_needed: false },
-    update: { restart_needed: false },
   };
 }
 
@@ -96,13 +84,15 @@ function expectNoLeak(snapshot: unknown, root: string) {
 }
 
 describe('Bot access collector', () => {
-  test('projects MCP, registry, audit, Herdr and notify without secrets or absolute paths', async () => {
+  test('projects MCP, registry, audit, hc and notify without secrets, absolute paths or terminal text', async () => {
     const f = fixture();
     try {
-      const socket = join(f.root, 'herdr.sock');
-      const { calls, run } = recorder(async (file, args) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.3', protocol: 23, socket })) }
-        : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
+      f.hc.setSnapshot(4, [
+        { address: 't1b', name: 'task-7a3e9c1d5b2f4e6a8c90', status: { state: 'blocked', kind: 'permission', msg: 'cHJpdmF0ZQ==', title: 'private title' } },
+        { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', status: { state: 'working', app: 'claude' } },
+        { address: 't7', name: '/private/name', status: null },
+      ]);
+      const { calls, run } = recorder(async () => ({ ok: true, stdout: JSON.stringify(doctorReport(f.root)) }));
       const notifyCalls: unknown[] = [];
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run,
         read_notify: () => { notifyCalls.push('read'); return notifyOk(); } });
@@ -115,24 +105,26 @@ describe('Bot access collector', () => {
         repo_id: repoHarnessRepoIdFor(f.repo), label: 'demo-repo', access_mode: 'read_write',
         last_audit: { state: 'ok', entry: { at: '2026-10-26T00:00:00.000Z', tool: 'write_plan', status: 'failed', bot: { state: 'registered', bot_id: 'hermes' } } },
       }] });
-      expect(snapshot.herdr).toEqual({
+      expect(snapshot.hc).toEqual({
         state: 'ok',
-        session: 'bots',
-        status: { state: 'ok', value: { client: { version: '0.9.3', protocol: 23 }, server: { status: 'running', restart_needed: false, version: {
-          state: 'mismatch', expected: { version: '0.9.5', protocol: 22, revision: '2ecf19a92fc3a7fff75b6ce3655ef04f4625ec01' }, actual: { version: '0.9.3', protocol: 23 },
-        } } } },
-        snapshot: { state: 'unavailable', reason: 'herdr_version_mismatch' },
+        version: { state: 'ok', value: { state: 'aligned', expected: { min_version: '0.1.17' }, actual: { version: '0.1.17' } } },
+        herdr_app: { state: 'not_pinned' },
+        terminals: { state: 'ok', value: [
+          { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', status: 'working' },
+          { address: 't1b', name: 'task-7a3e9c1d5b2f4e6a8c90', status: 'blocked' },
+          { address: 't7', name: null, status: 'unknown' },
+        ] },
       });
       expect(snapshot.notify).toEqual({ state: 'ok', ...notifyStatus });
       // One cache read per cycle; the notify probes belong to the notify collector.
       expect(notifyCalls).toEqual(['read']);
       expect(calls.some(call => call.args.includes('plugin'))).toBe(false);
       expectNoLeak(snapshot, f.root);
+      expect(JSON.stringify(snapshot)).not.toMatch(/private|fixture-repo|screen|argv|cHJpdmF0ZQ/);
       expect(decodeBotAccessSnapshot(snapshot)).toEqual(snapshot);
 
-      const herdr = calls.find(call => call.file === 'herdr')!;
-      expect(herdr.args).toEqual(['--session', 'bots', 'status', '--json']);
-      expect(Object.keys(herdr.env).filter(name => name.startsWith('HERDR_'))).toEqual([]);
+      // The task-session label filters the snapshot, so no unlabeled terminal is read.
+      expect(f.hc.argv()).toEqual(['server status --json', 'events --json --label repo-harness.role=task-session']);
       const doctor = calls.find(call => call.file === process.execPath)!;
       expect(doctor.args).toEqual([...MCP_DOCTOR_ARGV]);
     } finally { f.cleanup(); }
@@ -148,6 +140,8 @@ describe('Bot access collector', () => {
   test('the real mcp doctor --json output projects without paths or endpoints, and the store stays unwritten', async () => {
     const f = fixture();
     try {
+      // The doctor counts a repository with a policy as adopted; this case keeps the repository unadopted.
+      f.hc.setPin(null);
       const before = readdirSync(f.home).sort();
       const result = await runBotAccessCommand(process.execPath, MCP_DOCTOR_ARGV, { cwd: BOT_ACCESS_CWD, env: { ...f.env, NO_COLOR: '1' }, timeout_ms: 60_000 });
       expect(result.ok).toBe(true);
@@ -159,43 +153,33 @@ describe('Bot access collector', () => {
     } finally { f.cleanup(); }
   }, 90_000);
 
-  test('an aligned server snapshot keeps counts and agent states, never cwd, titles or labels', async () => {
+  test('a core below the pin shows both versions and reads no terminal; a missing hc, a stopped core and a missing pin are named', async () => {
     const f = fixture();
-    const socket = join(f.root, 'h.sock');
-    const server = createServer(connection => {
-      connection.on('data', chunk => {
-        const request = JSON.parse(chunk.toString().trim());
-        connection.write(JSON.stringify({ id: request.id, result: { type: 'session_snapshot', snapshot: {
-          version: '0.9.5', protocol: 22, layouts: [],
-          workspaces: [{ workspace_id: 'w1', label: 'private-workspace-label' }],
-          tabs: [{ tab_id: 't1', label: 'private-tab-label' }, { tab_id: 't2', label: 'x' }],
-          panes: [{ pane_id: 'w1:p1', cwd: join(f.root, 'cwd') }, { pane_id: 'w1:p2', cwd: join(f.root, 'cwd') }],
-          agents: [
-            { pane_id: 'w1:p2', agent: 'codex', name: 'hermes', agent_status: 'working', cwd: join(f.root, 'cwd'), terminal_title: 'private-terminal-title', agent_session: { value: 'session-secret' } },
-            { pane_id: 'w1:p1', agent: 'claude', agent_status: 'blocked', foreground_cwd: join(f.root, 'fg') },
-          ],
-        } } }) + '\n');
-      });
-    });
-    await new Promise<void>(resolve => server.listen(socket, resolve));
+    const collect = () => collectBotAccess({ env: f.env, now: () => NOW, run_command: async () => ({ ok: false, code: 'failed' }), read_notify: notifyOk });
     try {
-      const { run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'running', version: '0.9.5', protocol: 22, socket })) }
-        : { ok: false, code: 'timeout' });
-      const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: () => ({ state: 'unavailable', reason: 'herdr_unavailable' }) });
-      expect(herdrOk(snapshot).snapshot).toEqual({ state: 'ok', value: { workspaces: 1, tabs: 2, panes: 2, agents: [
-        { pane_id: 'w1:p1', agent: 'claude', name: null, agent_status: 'blocked', bot: { state: 'unregistered' } },
-        { pane_id: 'w1:p2', agent: 'codex', name: 'hermes', agent_status: 'working', bot: { state: 'registered', bot_id: 'hermes' } },
-      ] } });
-      expect(snapshot.mcp).toEqual({ state: 'unavailable', reason: 'mcp_doctor_timeout' });
-      expect(snapshot.notify).toEqual({ state: 'unavailable', reason: 'herdr_unavailable' });
-      const text = JSON.stringify(snapshot);
-      for (const hidden of ['private-workspace-label', 'private-tab-label', 'private-terminal-title', 'session-secret']) expect(text).not.toContain(hidden);
-      expectNoLeak(snapshot, f.root);
-    } finally {
-      await new Promise<void>(resolve => server.close(() => resolve()));
-      f.cleanup();
-    }
+      f.hc.setVersion('0.1.15');
+      const mismatch = await collect();
+      expect(mismatch.hc).toEqual({
+        state: 'ok', version: { state: 'ok', value: { state: 'mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } } },
+        herdr_app: { state: 'not_pinned' }, terminals: { state: 'unavailable', reason: 'hc_version_mismatch' },
+      });
+      expect(f.hc.argv().some(line => line.startsWith('events'))).toBe(false);
+      expect(decodeBotAccessSnapshot(mismatch)).toEqual(mismatch);
+
+      f.hc.setVersion(null);
+      expect((await collect()).hc).toEqual({ state: 'unavailable', reason: 'hc_unreachable' });
+      f.hc.setVersion('0.1.17');
+      const missing = await collectBotAccess({ env: { ...f.env, PATH: '/bin:/usr/bin' }, now: () => NOW, run_command: async () => ({ ok: false, code: 'failed' }), read_notify: notifyOk });
+      // Only a fake hc is ever on PATH here; the system directories hold none.
+      expect(missing.hc).toEqual({ state: 'unavailable', reason: 'hc_missing' });
+      f.hc.failEvents(true);
+      expect(hcOk(await collect()).terminals).toEqual({ state: 'unavailable', reason: 'hc_terminals_failed' });
+      f.hc.setPin(null);
+      const unpinned = await collect();
+      expect(unpinned.hc).toEqual({ state: 'ok', version: { state: 'unavailable', reason: 'hc_pin_unavailable' }, herdr_app: { state: 'not_pinned' },
+        terminals: { state: 'unavailable', reason: 'hc_pin_unavailable' } });
+      expect(decodeBotAccessSnapshot(unpinned)).toEqual(unpinned);
+    } finally { f.cleanup(); }
   });
 
   test('missing, unreadable and symlinked sources stay explicit and are never followed', async () => {
@@ -206,14 +190,10 @@ describe('Bot access collector', () => {
       writeFileSync(join(f.root, 'elsewhere', 'mcp', 'audit.log'), JSON.stringify({ timestamp: '2026-10-26T00:00:00.000Z', tool: 'outside_tool', status: 'ok' }) + '\n');
       mkdirSync(join(f.repo, '.ai'));
       (await import('node:fs')).symlinkSync(join(f.root, 'elsewhere'), join(f.repo, '.ai', 'harness'));
-      const { run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'not_running', version: null, protocol: null, socket: join(f.root, 'x.sock') })) }
-        : { ok: true, stdout: 'not json stderr-secret' });
+      const { run } = recorder(async () => ({ ok: true, stdout: 'not json stderr-secret' }));
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
       expect(snapshot.mcp).toEqual({ state: 'unavailable', reason: 'mcp_doctor_invalid' });
       expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toEqual({ state: 'unavailable', reason: 'audit_unreadable' });
-      expect(herdrOk(snapshot).status).toMatchObject({ state: 'ok', value: { server: { status: 'not_running', version: null } } });
-      expect(herdrOk(snapshot).snapshot).toEqual({ state: 'unavailable', reason: 'herdr_not_running' });
       expect(JSON.stringify(snapshot)).not.toContain('outside_tool');
       expectNoLeak(snapshot, f.root);
 
@@ -235,7 +215,6 @@ describe('Bot access collector', () => {
       const snapshot = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
       // A Bot id that is no longer registered shows as unregistered.
       expect(snapshot.registry.state === 'ok' && snapshot.registry.repos[0]!.last_audit).toEqual({ state: 'ok', entry: { at: '2026-10-02T00:00:00.000Z', tool: 'new_tool', status: 'blocked', bot: { state: 'unregistered' } } });
-      expect(herdrOk(snapshot).status).toEqual({ state: 'unavailable', reason: 'herdr_status_failed' });
     } finally { f.cleanup(); }
   });
 
@@ -296,71 +275,20 @@ describe('Bot access collector', () => {
       const first = handle.read();
       expect(first.state === 'ok' && first.snapshot.kind).toBe('operator_bot_access');
       handle.read(); handle.read();
-      expect(runs).toBe(2);
+      // One cycle runs one command, the doctor; hc goes through its own transport.
+      expect(runs).toBe(1);
       await handle.close();
     } finally { f.cleanup(); }
   });
 
-  test('without an install record only the herdr section is unavailable, and no Herdr call runs', async () => {
-    const f = fixture();
-    try {
-      const record = notifyInstallRecordPath(f.env);
-      rmSync(record);
-      const { calls, run } = recorder(async (file) => file === 'herdr'
-        ? { ok: false, code: 'failed' }
-        : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
-      const missing = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
-      expect(missing.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
-      expect(missing.bots.state).toBe('ok');
-      expect(missing.mcp.state).toBe('ok');
-      expect(missing.registry.state).toBe('ok');
-      expect(missing.notify).toEqual({ state: 'ok', ...notifyStatus });
-      expect(decodeBotAccessSnapshot(missing)).toEqual(missing);
-
-      writeFileSync(record, JSON.stringify({ protocol: 1, kind: 'herdr_notify_install', session: 'bots', extra: true }), { mode: 0o600 });
-      const invalid = await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
-      expect(invalid.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_invalid' });
-      expect(decodeBotAccessSnapshot(invalid)).toEqual(invalid);
-      expect(calls.some(call => call.file === 'herdr')).toBe(false);
-
-      // The collector still publishes a snapshot; its first state is pending, not failed.
-      const handle = startBotAccessCollector({ env: f.env, now: () => NOW, interval_ms: 60_000, run_command: run, read_notify: notifyOk });
-      expect(handle.read()).toEqual({ state: 'pending' });
-      await handle.settled();
-      const cache = handle.read();
-      expect(cache.state === 'ok' && cache.snapshot.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_invalid' });
-      await handle.close();
-    } finally { f.cleanup(); }
-  });
-
-  test('a record written while the collector runs selects its session on the next cycle', async () => {
-    const f = fixture();
-    try {
-      rmSync(notifyInstallRecordPath(f.env));
-      const { calls, run } = recorder(async (file) => file === 'herdr'
-        ? { ok: true, stdout: JSON.stringify(herdrStatus(f.root, { status: 'not_running', version: null, protocol: null, socket: join(f.root, 'x.sock') })) }
-        : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) });
-      const handle = startBotAccessCollector({ env: f.env, now: () => NOW, interval_ms: 20, run_command: run, read_notify: notifyOk });
-      await handle.settled();
-      const first = handle.read();
-      expect(first.state === 'ok' && first.snapshot.herdr).toEqual({ state: 'unavailable', reason: 'notify_session_missing' });
-      writeNotifyInstallRecord('installed-later', f.env);
-      const session = () => { const cache = handle.read(); return cache.state === 'ok' && cache.snapshot.herdr.state === 'ok' ? cache.snapshot.herdr.session : null; };
-      for (let attempt = 0; attempt < 250 && session() === null; attempt++) { await Bun.sleep(20); await handle.settled(); }
-      expect(session()).toBe('installed-later');
-      expect(calls.find(call => call.file === 'herdr')!.args).toEqual(['--session', 'installed-later', 'status', '--json']);
-      await handle.close();
-    } finally { f.cleanup(); }
-  });
-
-  test('the doctor and Herdr run in the file system root, never the server working directory', async () => {
+  test('the doctor runs in the file system root, never the server working directory', async () => {
     const f = fixture();
     const previous = process.cwd();
     try {
       process.chdir(f.repo);
       const { calls, run } = recorder(async () => ({ ok: false, code: 'failed' }));
       await collectBotAccess({ env: f.env, now: () => NOW, run_command: run, read_notify: notifyOk });
-      expect(calls.map(call => call.file).sort()).toEqual(['herdr', process.execPath].sort());
+      expect(calls.map(call => call.file)).toEqual([process.execPath]);
       for (const call of calls) expect(call.cwd).toBe(BOT_ACCESS_CWD);
       expect(BOT_ACCESS_CWD).toBe(parse(process.cwd()).root);
     } finally {
@@ -380,7 +308,7 @@ describe('Bot access collector', () => {
       expect(pending.notify).toEqual({ state: 'unavailable', reason: 'notify_status_pending' });
       expect(decodeBotAccessSnapshot(pending)).toEqual(pending);
       const ok = await collectBotAccess({ env: f.env, now: () => NOW,
-        run_command: async (file) => file === 'herdr' ? { ok: false, code: 'failed' } : { ok: true, stdout: JSON.stringify(doctorReport(f.root)) },
+        run_command: async () => ({ ok: true, stdout: JSON.stringify(doctorReport(f.root)) }),
         read_notify: notifyOk });
       expect(ok.notify.state).toBe('ok');
       expect(decodeBotAccessSnapshot(ok)).toEqual(ok);
@@ -389,6 +317,12 @@ describe('Bot access collector', () => {
         value => ({ ...value, observed_at: 'yesterday' }),
         value => ({ ...value, registry: value.registry.state === 'ok' ? { ...value.registry, repos: [{ ...value.registry.repos[0]!, label: f.repo }] } : null }),
         value => ({ ...value, mcp: { state: 'unavailable', reason: 'stderr-secret' } }),
+        // hc rows carry only an address, a name and a status word.
+        value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, terminals: { state: 'ok', value: [{ address: 't12', name: null, status: 'idle', cwd: '/private/x' }] } } : null }),
+        value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, terminals: { state: 'ok', value: [{ address: 'pane-1', name: null, status: 'idle' }] } } : null }),
+        value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'ok', value: { state: 'aligned', expected: { min_version: '0.1.17' }, actual: { version: '/usr/bin/hc' } } } } : null }),
+        value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, herdr_app: { state: 'aligned' } } : null }),
+        value => ({ ...value, protocol: 1 }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, deliveries: { ...value.notify.deliveries, slack: { at: null, result: 'sent' } } } : null }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, channels: { ...value.notify.channels, email: 'configured' } } : null }),
         // The notify status is checked in place: an extra key at any level or a path-shaped time never reaches the response.

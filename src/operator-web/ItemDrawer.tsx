@@ -29,7 +29,7 @@ function Fact({ label, children }: { readonly label: string; readonly children: 
 
 /** Copyable locations and commands only: the console never writes to the session (1-TASK-N1). */
 function VerifiedSession({ task, t }: { readonly task: VerifiedTask; readonly t: OperatorTranslate }) {
-  const { herdr_pane: pane, resume, task_id } = task.follow_up;
+  const { hc_terminal: terminal, resume, task_id } = task.follow_up;
   return (
     <div className="flex flex-col gap-2" data-owner="verified">
       <p className="flex flex-wrap items-center gap-x-2 gap-y-1 text-sm">
@@ -39,11 +39,17 @@ function VerifiedSession({ task, t }: { readonly task: VerifiedTask; readonly t:
         <Badge variant="secondary">{t('drawer.followUp.readOnly')}</Badge>
       </p>
       <Facts>
-        {pane && <Fact label={t('drawer.followUp.pane')}>
+        {terminal && <Fact label={t('drawer.followUp.terminal')}>
           <span className="flex flex-wrap items-center gap-x-2">
-            <code className="break-all font-mono text-xs">{pane.pane_id}</code>
-            <span className="text-xs text-kumo-subtle">{pane.session} · {pane.workspace_id}</span>
-            <CopyButton label={t('drawer.followUp.pane')} value={pane.pane_id} t={t} />
+            <code className="break-all font-mono text-xs">{terminal.address}</code>
+            <span className="text-xs text-kumo-subtle">{terminal.name}</span>
+            <CopyButton label={t('drawer.followUp.terminal')} value={terminal.address} t={t} />
+          </span>
+        </Fact>}
+        {terminal && <Fact label={t('drawer.followUp.openInHerdrApp')}>
+          <span className="flex flex-col gap-1">
+            <CommandLine command={terminal.open_command} t={t} />
+            <span className="text-xs text-kumo-subtle">{t('drawer.followUp.openNote')}</span>
           </span>
         </Fact>}
         {resume && <Fact label={t('drawer.followUp.resume')}><CommandLine command={resume.command} t={t} /></Fact>}

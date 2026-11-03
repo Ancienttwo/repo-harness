@@ -1,78 +1,123 @@
-import { HERDR_OBSERVATION_REVISION, herdrAgentSessionKey, herdrObject, requestHerdrObservation, subscribeHerdrObservation, verifyHerdrVersion,
-  type HerdrObservationEndpoint } from '../terminal/herdr-observation';
+// The operator's herdr-core reads: the hc pin, the core check and the runtime
+// transport. Every read goes through the typed helpers of `herdr-core.ts`, on
+// the core that the server's environment selects (`HC_SESSION` / `HC_SOCKET`).
+// Terminal text, titles and working directories never leave this file.
+
+import { readFileSync } from 'node:fs';
+import { join } from 'node:path';
+import { HC_VERSION_TEXT, HcPinUnavailableError, HcVersionMismatchError, compareHcVersions, hcVersionCheck, type HcVersionCheck } from '../../core/operator/herdr-pin';
+import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { RH_LABEL, RH_ROLE, hcEvents, hcServerStatusAsync, type HcLabels, type HcTerminal } from '../terminal/herdr-core';
 import type { StructuredRuntimeTransport } from './runtime-source';
 import { RUNTIME_SOURCE_PROTOCOL } from './runtime-source';
 
-/** Uses the pinned schema and exact 0.9.5/protocol-22 read methods. */
-export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, source_host: string, herdr_session: string) {
-  let connections = new AbortController();
-  let active = false, ready = false, generation = 0;
-  let globalClose: (() => void) | null = null, statusClose: (() => void) | null = null;
-  let statusKey = '', retry: ReturnType<typeof setTimeout> | null = null;
+/** The operator observes task-session terminals only; it never lists unlabeled terminals. */
+export const TASK_SESSION_LABELS: HcLabels = { [RH_LABEL.role]: RH_ROLE.taskSession };
+const POLICY_SEGMENTS = ['.ai', 'harness', 'policy.json'] as const;
+const RECONNECT_MS = 1000;
+
+/**
+ * The highest `external_tooling.herdr_core.min_version` over the registered
+ * repository policies: one hc core serves all of them. Null when none is readable.
+ */
+export function readHcPin(env: NodeJS.ProcessEnv): string | null {
+  let pin: string | null = null, repos;
+  // An unreadable registry names no policy, so no pin is known.
+  try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; } catch { return null; }
+  for (const repo of repos) {
+    let value: unknown;
+    try {
+      const policy = JSON.parse(readFileSync(join(repo.path, ...POLICY_SEGMENTS), 'utf8')) as { external_tooling?: { herdr_core?: { min_version?: unknown } } };
+      value = policy.external_tooling?.herdr_core?.min_version;
+    } catch { continue; /* an unreadable policy pins nothing */ }
+    if (typeof value === 'string' && HC_VERSION_TEXT.test(value) && (pin === null || compareHcVersions(value, pin) > 0)) pin = value;
+  }
+  return pin;
+}
+
+export interface HcCoreObservation { readonly core_id: string; readonly check: HcVersionCheck }
+
+/** The answering core and its version against the pin. Throws `HcPinUnavailableError` or a `HerdrCoreError`. */
+export async function observeHcCore(env: NodeJS.ProcessEnv, timeoutMs?: number): Promise<HcCoreObservation> {
+  const pin = readHcPin(env);
+  if (pin === null) throw new HcPinUnavailableError();
+  const status = await hcServerStatusAsync({ env, timeoutMs });
+  return { core_id: status.core.id, check: hcVersionCheck(status.version, pin) };
+}
+
+export interface HcSnapshot { readonly seq: number; readonly terminals: readonly HcTerminal[] }
+
+/** One snapshot: `hc events` sends the matching terminals first, then the stream is closed. */
+export function readHcSnapshot(labels: HcLabels, env: NodeJS.ProcessEnv, signal?: AbortSignal): Promise<HcSnapshot> {
+  return new Promise((resolve, reject) => {
+    let snapshot: HcSnapshot | null = null;
+    const stream = hcEvents(labels, item => {
+      if (snapshot === null && item.type !== 'event') { snapshot = { seq: item.seq, terminals: item.terminals }; stream.close(); }
+    }, { env });
+    const abort = () => stream.close();
+    signal?.addEventListener('abort', abort, { once: true });
+    if (signal?.aborted) abort();
+    stream.done.then(() => (snapshot ? resolve(snapshot) : reject(new Error(signal?.aborted ? 'hc_snapshot_aborted' : 'hc_snapshot_missing'))), reject)
+      .finally(() => signal?.removeEventListener('abort', abort));
+  });
+}
+
+/**
+ * The runtime source on herdr-core. The subscription is one `hc events` stream of the task-session terminals;
+ * a snapshot is a fresh `hc events` snapshot, with the snapshot `seq` as the revision of every terminal in it.
+ * The core must answer at or above the pin before anything is read, and again after each reconnect.
+ */
+export function createHerdrCoreRuntimeTransport(source_host: string, env: NodeJS.ProcessEnv) {
+  let active = false, ready = false, generation = 0, core = '';
+  let stream: ReturnType<typeof hcEvents> | null = null, retry: ReturnType<typeof setTimeout> | null = null;
   let invalidate: (event: string, error?: unknown) => void = () => {};
-  const metadata = { source_host, herdr_session, source_revision: HERDR_OBSERVATION_REVISION };
-  const globalSubscriptions = ['pane.created','pane.updated','pane.moved','pane.exited','pane.closed'].map(type => ({ type }));
-  const lifecycleEvents: Record<string, string> = { pane_created: 'pane.created', pane_updated: 'pane.updated', pane_moved: 'pane.moved', pane_exited: 'pane.exited', pane_closed: 'pane.closed' };
-  function closeConnections() {
-    generation++; ready = false; statusKey = '';
-    connections.abort(); connections = new AbortController();
-    globalClose?.(); statusClose?.(); globalClose = null; statusClose = null;
+  async function identify(): Promise<string> {
+    const observed = await observeHcCore(env);
+    if (observed.check.state !== 'aligned') throw new HcVersionMismatchError(observed.check);
+    return observed.core_id;
   }
-  function close() {
-    active = false; if (retry) clearTimeout(retry); retry = null; closeConnections();
-  }
-  async function ping(signal?: AbortSignal) {
-    const result = await requestHerdrObservation(endpoint, 'ping', signal ? AbortSignal.any([signal, connections.signal]) : connections.signal);
-    if (result.type !== 'pong') throw new Error('herdr_runtime_ping');
-    verifyHerdrVersion(result);
-  }
-  function lost(code: string, connectionGeneration: number) {
-    if (!active || connectionGeneration !== generation) return;
-    closeConnections(); invalidate(code === 'events_lost' ? 'events_lost' : 'disconnected');
+  function closeStream() { generation++; ready = false; stream?.close(); stream = null; }
+  function close() { active = false; if (retry) clearTimeout(retry); retry = null; closeStream(); }
+  function lost(current: number, error?: unknown) {
+    if (!active || current !== generation) return;
+    closeStream(); invalidate('disconnected', error);
     const reconnect = async () => {
       retry = null; if (!active) return;
-      const current = generation;
+      const attempt = generation;
       try {
-        await ping(); if (!active || current !== generation) return;
-        await connectGlobal(); if (active && current === generation) invalidate('reconnect');
-      } catch (error) {
-        if (active && current === generation) { invalidate('disconnected', error); retry = setTimeout(reconnect, 1000); }
+        core = await identify(); if (!active || attempt !== generation) return;
+        await connect(); if (active && attempt === generation) invalidate('reconnect');
+      } catch (failure) {
+        if (active && attempt === generation) { invalidate('disconnected', failure); retry = setTimeout(reconnect, RECONNECT_MS); }
       }
     };
-    retry = setTimeout(reconnect, 1000);
+    retry = setTimeout(reconnect, RECONNECT_MS);
   }
-  async function connectGlobal() {
-    if (!active) throw new Error('herdr_runtime_stopped');
+  /** Resolves on the stream's first snapshot, so the subscription exists before the first read. */
+  function connect(): Promise<void> {
     const current = generation;
-    const stop = await subscribeHerdrObservation(endpoint, globalSubscriptions, event => {
-      if (active && current === generation && lifecycleEvents[event]) invalidate(lifecycleEvents[event]);
-    }, code => lost(code, current), connections.signal);
-    if (!active || current !== generation) { stop(); throw new Error('herdr_runtime_stopped'); }
-    globalClose = stop; ready = true;
-  }
-  async function subscribeStatuses(paneIds: string[], signal: AbortSignal) {
-    if (!active || signal.aborted) throw new Error('herdr_runtime_stopped');
-    const key = JSON.stringify([...new Set(paneIds)].sort());
-    if (key === statusKey) return;
-    const current = generation;
-    const stop = paneIds.length ? await subscribeHerdrObservation(endpoint,
-      [...new Set(paneIds)].map(pane_id => ({ type: 'pane.agent_status_changed', pane_id })),
-      event => { if (active && current === generation && event === 'pane.agent_status_changed') invalidate(event); }, code => lost(code, current), AbortSignal.any([signal, connections.signal])) : null;
-    if (!active || current !== generation || signal.aborted) { stop?.(); throw new Error('herdr_runtime_stopped'); }
-    statusClose?.(); statusClose = stop; statusKey = key;
-    // The global subscription preceded bootstrap. Read again after exact status IDs are subscribed.
-    invalidate('pane.updated');
+    return new Promise((resolve, reject) => {
+      let started = false;
+      const next = hcEvents(TASK_SESSION_LABELS, item => {
+        if (!active || current !== generation) return;
+        if (!started) { started = true; ready = true; resolve(); return; }
+        invalidate(item.type === 'missed' ? 'events_lost' : 'terminal.changed');
+      }, { env });
+      stream = next;
+      next.done.then(() => { if (!started) reject(new Error('hc_events_ended')); else lost(current); },
+        error => { if (!started) reject(error); else lost(current, error); });
+    });
   }
   const transport: StructuredRuntimeTransport = {
-    async capabilities(signal) {
-      await ping(signal);
-      return { protocol: RUNTIME_SOURCE_PROTOCOL, ...metadata, agent_status: true };
+    async capabilities() {
+      core = await identify();
+      return { protocol: RUNTIME_SOURCE_PROTOCOL, source_host, hc_core: core, agent_status: true };
     },
     async subscribe(_events, callback, signal) {
       if (active) throw new Error('herdr_runtime_subscribed');
       active = true; invalidate = callback;
       const abort = () => close(); signal.addEventListener('abort', abort, { once: true });
-      try { if (signal.aborted) throw new Error('herdr_runtime_aborted'); await connectGlobal(); }
+      try { if (signal.aborted) throw new Error('herdr_runtime_aborted'); await connect(); }
       catch (error) { close(); throw error; }
       finally { signal.removeEventListener('abort', abort); }
       return close;
@@ -80,20 +125,10 @@ export function createHerdrRuntimeTransport(endpoint: HerdrObservationEndpoint, 
     async snapshot(signal) {
       if (!active || !ready) throw new Error('herdr_runtime_disconnected');
       const current = generation;
-      const result = await requestHerdrObservation(endpoint, 'session.snapshot', AbortSignal.any([signal, connections.signal]));
-      if (result.type !== 'session_snapshot') throw new Error('herdr_runtime_snapshot');
-      const snapshot = herdrObject(result.snapshot); verifyHerdrVersion(snapshot);
-      if (!Array.isArray(snapshot.panes) || snapshot.panes.length > 512 || !['workspaces','tabs','layouts','agents'].every(key => Array.isArray(snapshot[key]))) throw new Error('herdr_runtime_snapshot');
-      const panes = snapshot.panes.map(raw => {
-        const p = herdrObject(raw);
-        if (typeof p.pane_id !== 'string' || typeof p.terminal_id !== 'string' || !Number.isSafeInteger(p.revision) || (p.revision as number) < 0 || !['idle','working','blocked','done','unknown'].includes(p.agent_status as string)) throw new Error('herdr_runtime_pane');
-        return { pane_id: p.pane_id, terminal_id: p.terminal_id, agent_status: p.agent_status, revision: p.revision, agent_session: herdrAgentSessionKey(p.agent_session) };
-      });
-      if (new Set(panes.map(p => p.pane_id)).size !== panes.length) throw new Error('herdr_runtime_duplicate_pane');
+      const { seq, terminals } = await readHcSnapshot(TASK_SESSION_LABELS, env, signal);
       if (current !== generation || !active || signal.aborted) throw new Error('herdr_runtime_disconnected');
-      await subscribeStatuses(panes.map(p => p.pane_id), signal);
-      if (current !== generation || !ready || signal.aborted) throw new Error('herdr_runtime_disconnected');
-      return { protocol: 'repo-harness.runtime-source.snapshot.v1', ...metadata, panes };
+      return { protocol: 'repo-harness.runtime-source.snapshot.v2', source_host, hc_core: core,
+        terminals: terminals.map(terminal => ({ terminal_id: terminal.address, status: terminal.status?.state ?? null, revision: seq })) };
     },
   };
   return { transport, close };

@@ -324,7 +324,7 @@ describe('board page', () => {
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('This item is no longer on the board');
   });
 
-  test('1-TASK-P1 a verified session gives the owner row and a copyable pane, resume command and task id', async () => {
+  test('1-TASK-P1 a verified session gives the owner row and a copyable hc terminal, Herdr.app command, resume command and task id', async () => {
     drawerAt(`${HARNESS_ID}:feat/kanban-human-redesign`);
     const copied: string[] = [];
     Object.defineProperty(window.navigator, 'clipboard', { configurable: true, value: { writeText: async (value: string) => { copied.push(value); } } });
@@ -333,15 +333,17 @@ describe('board page', () => {
     const owner = followUp().querySelector('[data-owner="verified"]')!;
     for (const part of ['Codex', 'verified', 'implementer', 'Read-only observation']) expect(owner.textContent).toContain(part);
     expect(owner.querySelector('[data-dot="active"]')).not.toBeNull();
-    expect(followUp().textContent).toContain('w2:p1');
-    expect(followUp().textContent).toContain('main · w2');
-    expect(followUp().querySelector('[data-command] code')?.textContent).toBe('codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f');
+    expect(followUp().textContent).toContain('t12');
+    expect(followUp().textContent).toContain('task-1f0c2a9e4b7d3c5a8e61');
+    const open = `herdr-app do terminal.keep '{"terminal":"t12"}'`;
+    expect(Array.from(followUp().querySelectorAll('[data-command] code')).map(code => code.textContent))
+      .toEqual([open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f']);
     // 1-TASK-N1: copy buttons only; nothing here can reach the session.
     expect(followUp().querySelectorAll('input, textarea, select, form, [contenteditable], [data-write-action]')).toHaveLength(0);
     const buttons = Array.from(followUp().querySelectorAll('button'));
     expect(buttons.every(button => button.getAttribute('aria-label')?.startsWith('Copy '))).toBe(true);
     for (const button of buttons) await act(async () => button.click());
-    expect(copied).toEqual(['w2:p1', 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', 'kanban-redesign']);
+    expect(copied).toEqual(['t12', open, 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f', 'kanban-redesign']);
 
     await act(async () => root?.unmount());
     root = null;

@@ -6,19 +6,23 @@ import { join } from 'node:path';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
 import { buildTaskFollowUp, decodeTaskExecutionView, projectTaskExecutionView, type TaskExecutionViewV1, type UnverifiedExecutionReason } from '../../src/core/operator/execution-state';
 import { collectTaskExecutionStates } from '../../src/effects/operator/execution-state';
-import { executionChildEnvironment, startExecutionCollector, type ExecutionRepositoryCache } from '../../src/effects/operator/execution-collector';
+import { executionChildEnvironment, herdrAppOpenCommand, startExecutionCollector, type ExecutionRepositoryCache } from '../../src/effects/operator/execution-collector';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { runSetupProcess, type SetupProcessRunner } from '../../src/effects/setup/collector';
-import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
 import { bindNativeTaskSession } from '../../src/effects/terminal/native-task-session';
 import { bindTaskRuntimeFixture } from '../helpers/engineer-runtime-fixture';
+import { fakeHc } from '../helpers/fake-hc';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
 const roots: string[] = [];
 afterEach(() => { for (const root of roots.splice(0)) rmSync(root, { recursive: true, force: true }); });
 const digest = (value: unknown) => `sha256:${createHash('sha256').update(canonicalize(JSON.parse(JSON.stringify(value)))).digest('hex')}`;
 const readJson = (path: string) => JSON.parse(readFileSync(path, 'utf8'));
+/** Every live session's core answers as `core-1`. */
+const sameCore = async () => 'core-1';
+const collect = (root: string) => collectTaskExecutionStates(root, sameCore);
+const open = (address: string) => `herdr-app do terminal.keep '{"terminal":"${address}"}'`;
 
 async function fixture(options: { native?: boolean } = {}) {
   const root = tmpWorkspace('operator-execution-state'); roots.push(root); initGitRepo(root);
@@ -59,31 +63,38 @@ function dropAdmission(dir: string) {
 
 test('a fully consistent live session gives the agent and the follow-up commands', async () => {
   const f = await fixture();
-  const snapshot = collectTaskExecutionStates(f.root);
+  const sockets: string[] = [];
+  const snapshot = await collectTaskExecutionStates(f.root, async socket => { sockets.push(socket); return 'core-1'; });
   expect(snapshot).toMatchObject({ protocol: 1, kind: 'operator_task_execution' });
   expect(snapshot.executions).toEqual([{
     state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main',
     agent: 'codex', runtime: 'herdr-core', native_session_id: '0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f',
-    herdr_pane: null,
+    hc_terminal: { address: f.bound.binding.terminal_id, name: f.bound.binding.terminal_name, core_id: 'core-1' },
   }]);
+  // The core is asked through the binding's own socket, and the socket stays out of the snapshot.
+  expect(sockets).toEqual([f.bound.binding.endpoint.socket]);
+  expect(JSON.stringify(snapshot)).not.toContain(f.bound.binding.endpoint.socket);
+  // A core that does not answer leaves the session verified without a location.
+  expect((await collectTaskExecutionStates(f.root, async () => null)).executions).toMatchObject([{ state: 'verified', hc_terminal: null }]);
   const wire = JSON.stringify(snapshot);
   expect(wire).not.toContain(f.root);
   expect(wire).not.toContain(f.home);
   expect(wire).not.toContain('/tmp');
-  expect(buildTaskFollowUp(snapshot.executions[0]!)).toEqual({
+  expect(buildTaskFollowUp(snapshot.executions[0]!, open)).toEqual({
     task_id: f.bound.binding.task,
     resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
-    herdr_pane: snapshot.executions[0]!.state === 'verified' ? snapshot.executions[0]!.herdr_pane : null,
+    hc_terminal: { address: f.bound.binding.terminal_id, name: f.bound.binding.terminal_name, open_command: open(f.bound.binding.terminal_id) },
   });
+  expect(herdrAppOpenCommand('t1b')).toBe(`herdr-app do terminal.keep '{"terminal":"t1b"}'`);
 });
 
 test('a forged binding has no verified session', async () => {
   const f = await fixture();
   const path = join(f.bound.dir, 'binding.json');
   writeFileSync(path, JSON.stringify({ ...readJson(path), agent_name: 'forged-agent' }));
-  const [execution] = collectTaskExecutionStates(f.root).executions;
+  const [execution] = (await collect(f.root)).executions;
   expect(execution).toEqual({ state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason: 'binding_mismatch' });
-  expect(buildTaskFollowUp(execution!)).toEqual({ task_id: f.bound.binding.task, resume: null, herdr_pane: null });
+  expect(buildTaskFollowUp(execution!, open)).toEqual({ task_id: f.bound.binding.task, resume: null, hc_terminal: null });
 });
 
 test('a binding in a directory that its task and role do not select is not reported', async () => {
@@ -91,7 +102,7 @@ test('a binding in a directory that its task and role do not select is not repor
   const foreign = join(f.bound.dir, '..', 'f'.repeat(64));
   mkdirSync(foreign, { mode: 0o700 });
   for (const name of ['binding.json', 'native-session.json']) writeFileSync(join(foreign, name), readFileSync(join(f.bound.dir, name)));
-  const executions = collectTaskExecutionStates(f.root).executions;
+  const executions = (await collect(f.root)).executions;
   expect(executions).toHaveLength(1);
   expect(executions[0]).toMatchObject({ state: 'verified' });
 });
@@ -101,7 +112,7 @@ test('a dead provider process has no verified session', async () => {
   const exited = spawnSync('/bin/sh', ['-c', 'echo $$'], { encoding: 'utf8' });
   const pid = Number(exited.stdout.trim());
   replaceProvider(f.bound.dir, { pid, identity: `${pid} ${pid} Mon Oct 26 10:00:00 2026 sh` });
-  expect(collectTaskExecutionStates(f.root).executions).toEqual([
+  expect((await collect(f.root)).executions).toEqual([
     { state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason: 'provider_exited' },
   ]);
 });
@@ -111,7 +122,7 @@ test('a live PID with another start time is a reused PID and has no verified ses
   const recorded = f.bound.binding.provider.identity.split(/\s+/);
   const reused = [...recorded.slice(0, 2), 'Thu', 'Jan', '1', '00:00:00', '2015', ...recorded.slice(7)].join(' ');
   replaceProvider(f.bound.dir, { pid: f.bound.binding.provider.pid, identity: reused });
-  expect(collectTaskExecutionStates(f.root).executions).toEqual([
+  expect((await collect(f.root)).executions).toEqual([
     { state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason: 'provider_identity_lost' },
   ]);
 });
@@ -119,58 +130,61 @@ test('a live PID with another start time is a reused PID and has no verified ses
 test('a closed session has no verified session', async () => {
   const f = await fixture();
   writeFileSync(join(f.bound.dir, 'closed.json'), '{}');
-  expect(collectTaskExecutionStates(f.root).executions).toEqual([
+  expect((await collect(f.root)).executions).toEqual([
     { state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason: 'closed' },
   ]);
 });
 
 test('a session without a native session record, or with one for another binding, has no verified session', async () => {
   const f = await fixture({ native: false });
-  const expectReason = (reason: UnverifiedExecutionReason) => expect(collectTaskExecutionStates(f.root).executions).toEqual([
+  const expectReason = async (reason: UnverifiedExecutionReason) => expect((await collect(f.root)).executions).toEqual([
     { state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason },
   ]);
-  expectReason('native_session_missing');
+  await expectReason('native_session_missing');
   const ready = join(f.root, 'controlled-ready.json');
   writeFileSync(ready, JSON.stringify({ pid: f.bound.binding.provider.pid, session_id: 'thread-1', fixture: false }));
   bindNativeTaskSession({ repo_root: f.root, binding: f.bound.binding, ready_path: ready });
   const path = join(f.bound.dir, 'native-session.json');
   writeFileSync(path, JSON.stringify({ ...readJson(path), role: 'another-role' }));
-  expectReason('native_session_mismatch');
+  await expectReason('native_session_mismatch');
 });
 
 test('a verified session names its admitted branch, and a session without admission names none', async () => {
   const f = await fixture();
-  expect(collectTaskExecutionStates(f.root).executions).toMatchObject([{ state: 'verified', issue_id: '987654', branch: 'main' }]);
+  expect((await collect(f.root)).executions).toMatchObject([{ state: 'verified', issue_id: '987654', branch: 'main' }]);
   dropAdmission(f.bound.dir);
-  expect(collectTaskExecutionStates(f.root).executions).toMatchObject([{ state: 'verified', issue_id: null, branch: null }]);
+  expect((await collect(f.root)).executions).toMatchObject([{ state: 'verified', issue_id: null, branch: null }]);
 });
 
-test('a repository without task sessions has an empty snapshot', () => {
+test('a repository without task sessions has an empty snapshot', async () => {
   const root = tmpWorkspace('operator-execution-state-empty'); roots.push(root); initGitRepo(root);
   writeFileSync(join(root, 'README.md'), 'fixture'); commitAll(root, 'initial');
-  expect(collectTaskExecutionStates(root).executions).toEqual([]);
+  expect((await collect(root)).executions).toEqual([]);
 });
 
 test('follow-up gives each host its own resume command and refuses an id that is not one shell word', () => {
-  const base = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: null, branch: null, runtime: 'terminal' as const, herdr_pane: null };
-  expect(buildTaskFollowUp({ ...base, agent: 'claude', native_session_id: '5f0c1e2a-0000-4000-8000-000000000001' }).resume)
+  const base = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: null, branch: null, runtime: 'terminal' as const, hc_terminal: null };
+  expect(buildTaskFollowUp({ ...base, agent: 'claude', native_session_id: '5f0c1e2a-0000-4000-8000-000000000001' }, open).resume)
     .toEqual({ host: 'claude', command: 'claude --resume 5f0c1e2a-0000-4000-8000-000000000001' });
-  expect(buildTaskFollowUp({ ...base, agent: 'pi', native_session_id: 'fixture-native-id' }).resume)
+  expect(buildTaskFollowUp({ ...base, agent: 'pi', native_session_id: 'fixture-native-id' }, open).resume)
     .toEqual({ host: 'pi', command: 'pi --session fixture-native-id' });
-  expect(buildTaskFollowUp({ ...base, agent: 'codex', native_session_id: 'thread; rm -rf ~' }))
-    .toEqual({ task_id: 'a'.repeat(64), resume: null, herdr_pane: null });
+  expect(buildTaskFollowUp({ ...base, agent: 'codex', native_session_id: 'thread; rm -rf ~' }, open))
+    .toEqual({ task_id: 'a'.repeat(64), resume: null, hc_terminal: null });
 });
 
-/** A repo-harness home that registers the fixture repository, so the collector reads it. */
-function collectorHome(root: string, session: string | null = 'fixture') {
+/**
+ * A repo-harness home that registers the fixture repository, so the collector reads it. A fake hc comes first on
+ * PATH, so the collector and its child never reach a real core.
+ */
+function collectorHome(root: string) {
   const home = tmpWorkspace('operator-execution-collector-home'); roots.push(home);
   const at = new Date().toISOString();
   writeFileSync(join(home, 'registered-repos.json'), JSON.stringify({ version: 1, authorizationRevision: 1, repos: [{
     id: repoHarnessRepoIdFor(root), path: root, accessMode: 'read_only', source: 'manual', registeredAt: at, lastSeenAt: at,
   }] }));
-  const env = { ...process.env, REPO_HARNESS_HOME: home };
-  if (session !== null) writeNotifyInstallRecord(session, env);
-  return { id: repoHarnessRepoIdFor(root), env };
+  const hc = fakeHc('operator-execution-hc'); roots.push(hc.root);
+  const env = { ...process.env, REPO_HARNESS_HOME: home, FAKE_HC: hc.env.FAKE_HC, PATH: `${hc.env.PATH}:${process.env.PATH}` };
+  return { id: repoHarnessRepoIdFor(root), env, hc };
 }
 
 async function served(env: NodeJS.ProcessEnv, id: string) {
@@ -196,7 +210,7 @@ test('the route shows the agent of a verified session with its follow-up, and no
   expect(view).toMatchObject({ protocol: 1, kind: 'operator_task_execution', repository_id: c.id, unlisted_tasks: 0 });
   expect(view.tasks).toEqual([{ state: 'verified', task: f.bound.binding.task, role: f.bound.binding.role, issue_id: '987654', branch: 'main', agent: 'codex', runtime: 'herdr-core',
     follow_up: { task_id: f.bound.binding.task, resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' },
-      herdr_pane: null } }]);
+      hc_terminal: { address: f.bound.binding.terminal_id, name: f.bound.binding.terminal_name, open_command: open(f.bound.binding.terminal_id) } } }]);
   for (const hidden of [f.root, f.home, '/tmp', '/private']) expect(text).not.toContain(hidden);
 });
 
@@ -216,23 +230,28 @@ test('through the route, a forged binding, a dead process or closed.json is "no 
     const { status, text } = await served(c.env, c.id);
     expect(status).toBe(200);
     expect(decodeTaskExecutionView(JSON.parse(text)).tasks).toEqual([{ state: 'unverified', task: f.bound.binding.task, role: f.bound.binding.role, reason,
-      follow_up: { task_id: f.bound.binding.task, resume: null, herdr_pane: null } }]);
+      follow_up: { task_id: f.bound.binding.task, resume: null, hc_terminal: null } }]);
     expect(text).not.toContain('codex resume');
   }
 });
 
-test('a Herdr pane location needs the session that the notify install record names', async () => {
+test('an hc terminal location needs the core that the operator reads', async () => {
   const f = await fixture();
-  for (const session of [null, 'other-session']) {
-    const c = collectorHome(f.root, session);
-    const collector = startExecutionCollector({ env: { ...c.env, HERDR_SESSION: 'fixture' }, interval_ms: 60_000 });
-    try {
-      await collector.settled();
-      const cache = collector.read(c.id);
-      expect(cache.state === 'ready' && cache.view.tasks[0]?.follow_up).toEqual({ task_id: f.bound.binding.task,
-        resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' }, herdr_pane: null });
-    } finally { await collector.close(); }
-  }
+  const c = collectorHome(f.root);
+  const followUp = async (env: NodeJS.ProcessEnv) => {
+    const collector = startExecutionCollector({ env, interval_ms: 60_000 });
+    try { await collector.settled(); const cache = collector.read(c.id); return cache.state === 'ready' ? cache.view.tasks[0]?.follow_up : null; }
+    finally { await collector.close(); }
+  };
+  // The operator's core does not answer: the session stays verified, without a location.
+  c.hc.setVersion(null);
+  expect(await followUp(c.env)).toEqual({ task_id: f.bound.binding.task,
+    resume: { host: 'codex', command: 'codex resume 0199a2b4-7c3e-7d10-9f00-3a5b6c7d8e9f' }, hc_terminal: null });
+  c.hc.setVersion('0.1.17', 'core-1');
+  expect((await followUp(c.env))?.hc_terminal).toEqual({ address: f.bound.binding.terminal_id, name: f.bound.binding.terminal_name, open_command: open(f.bound.binding.terminal_id) });
+  // The fake answers every socket as the same core; the projection keeps a location only for a matching core.
+  const view = projectTaskExecutionView((await collectTaskExecutionStates(f.root, async () => 'core-2')), c.id, 'core-1', herdrAppOpenCommand);
+  expect(view.tasks[0]?.follow_up.hc_terminal).toBeNull();
 });
 
 test('the collector is pending before its first cycle and unavailable when the registry or the child process fails', async () => {
@@ -334,7 +353,7 @@ test('the route reads only the injected cache and maps each unavailable state to
       [{ state: 'unavailable', reason: 'execution_state_unavailable' }, 503, 'execution_state_unavailable'],
       // A cached view that fails the decoder is refused, not sent.
       [{ state: 'ready', view: { ...view, tasks: [{ state: 'unverified', task: '/Users/someone/task', role: 'deep-reasoner', reason: 'closed',
-        follow_up: { task_id: '/Users/someone/task', resume: null, herdr_pane: null } }] } }, 503, 'execution_state_invalid'],
+        follow_up: { task_id: '/Users/someone/task', resume: null, hc_terminal: null } }] } }, 503, 'execution_state_invalid'],
     ] as const) {
       cache = next as ExecutionRepositoryCache;
       const answer = await get();
@@ -352,10 +371,10 @@ test('the route reads only the injected cache and maps each unavailable state to
 
 test('the public view leaves out a session whose task is not public text, and the decoder refuses forged follow-ups', () => {
   const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', branch: 'main', agent: 'codex' as const, runtime: 'herdr-core' as const,
-    native_session_id: 'thread-1', herdr_pane: { session: 'main', workspace_id: 'w1', pane_id: 'w1:p1', agent_name: 'deep-reasoner' } };
+    native_session_id: 'thread-1', hc_terminal: { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', core_id: 'core-1' } };
   const snapshot = { protocol: 1 as const, kind: 'operator_task_execution' as const, observed_at: '2026-10-27T00:00:00.000Z',
-    executions: [verified, { ...verified, task: '/Users/someone/private task' }, { ...verified, herdr_pane: { ...verified.herdr_pane, pane_id: '../x' } }] };
-  const view = projectTaskExecutionView(snapshot, 'repo-a', 'main');
+    executions: [verified, { ...verified, task: '/Users/someone/private task' }, { ...verified, hc_terminal: { ...verified.hc_terminal, address: '../x' } }] };
+  const view = projectTaskExecutionView(snapshot, 'repo-a', 'core-1', open);
   expect(view.unlisted_tasks).toBe(2);
   expect(view.tasks).toHaveLength(1);
   expect(decodeTaskExecutionView(view)).toEqual(view);
@@ -367,6 +386,8 @@ test('the public view leaves out a session whose task is not public text, and th
     { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, resume: { host: 'claude', command: 'claude --resume thread-1' } } }] },
     { ...view, tasks: [{ ...entry, runtime: 'terminal' }] },
     { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, task_id: 'b'.repeat(64) } }] },
+    { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, hc_terminal: { ...entry.follow_up.hc_terminal!, core_id: 'core-1' } } }] },
+    { ...view, tasks: [{ ...entry, follow_up: { ...entry.follow_up, hc_terminal: { ...entry.follow_up.hc_terminal!, open_command: 'herdr-app do terminal.keep\n rm -rf ~' } } }] },
     { ...view, tasks: [{ state: 'unverified', task: entry.task, role: entry.role, reason: 'closed', follow_up: entry.follow_up }] },
     { ...view, unlisted_tasks: -1 },
   ]) expect(() => decodeTaskExecutionView(forged)).toThrow('execution view invalid');
@@ -374,10 +395,10 @@ test('the public view leaves out a session whose task is not public text, and th
 
 test('the public view names the branch of a verified task, leaves out a branch that is not public text, and the decoder checks it', () => {
   const verified = { state: 'verified' as const, task: 'a'.repeat(64), role: 'deep-reasoner', issue_id: '42', branch: 'feat/1007-drawer', agent: 'codex' as const,
-    runtime: 'terminal' as const, native_session_id: 'thread-1', herdr_pane: null };
+    runtime: 'terminal' as const, native_session_id: 'thread-1', hc_terminal: null };
   const snapshot = { protocol: 1 as const, kind: 'operator_task_execution' as const, observed_at: '2026-10-27T00:00:00.000Z',
     executions: [verified, { ...verified, task: 'b'.repeat(64), branch: null }, { ...verified, task: 'c'.repeat(64), branch: '/Users/someone/repo' }] };
-  const view = projectTaskExecutionView(snapshot, 'repo-a', null);
+  const view = projectTaskExecutionView(snapshot, 'repo-a', null, open);
   expect(view.unlisted_tasks).toBe(1);
   expect(view.tasks.map(task => task.state === 'verified' ? task.branch : task.state)).toEqual(['feat/1007-drawer', null]);
   expect(decodeTaskExecutionView(view)).toEqual(view);
@@ -387,6 +408,6 @@ test('the public view names the branch of a verified task, leaves out a branch t
     { ...view, tasks: [{ ...entry, branch: 'feat/x y' }] },
     { ...view, tasks: [{ ...entry, branch: '-x' }] },
     { ...view, tasks: [{ state: 'unverified', task: entry.task, role: entry.role, reason: 'closed', branch: 'main',
-      follow_up: { task_id: entry.task, resume: null, herdr_pane: null } }] },
+      follow_up: { task_id: entry.task, resume: null, hc_terminal: null } }] },
   ]) expect(() => decodeTaskExecutionView(forged)).toThrow('execution view invalid');
 });

@@ -3,15 +3,16 @@ export type ExecutionHost = 'claude' | 'codex' | 'pi';
 export type UnverifiedExecutionReason =
   | 'closed' | 'binding_invalid' | 'binding_mismatch' | 'native_session_missing' | 'native_session_mismatch'
   | 'provider_exited' | 'provider_identity_lost';
-export interface HerdrPaneLocation {
-  readonly session: string; readonly workspace_id: string; readonly pane_id: string; readonly agent_name: string;
-}
+/** The hc terminal of a task session. `core_id` names its core (hc `server.status`); the public view drops it. */
+export interface HcTerminalLocation { readonly address: string; readonly name: string; readonly core_id: string }
+/** The public location: the address, the name, and the command that opens the terminal in Herdr.app. */
+export interface HcTerminalFollowUp { readonly address: string; readonly name: string; readonly open_command: string }
 export interface VerifiedTaskExecution {
   readonly state: 'verified'; readonly task: string; readonly role: string; readonly issue_id: string | null;
   /** The admitted branch, named as Dev Activity names it; null for a session without admission. */
   readonly branch: string | null;
   readonly agent: ExecutionHost; readonly runtime: 'herdr-core' | 'terminal'; readonly native_session_id: string;
-  readonly herdr_pane: HerdrPaneLocation | null;
+  readonly hc_terminal: HcTerminalLocation | null;
 }
 /** The operator shows this as "no verified session"; the reason is for diagnosis only. */
 export interface UnverifiedTaskExecution {
@@ -27,7 +28,7 @@ export interface TaskExecutionSnapshot {
 export interface TaskFollowUp {
   readonly task_id: string;
   readonly resume: { readonly host: ExecutionHost; readonly command: string } | null;
-  readonly herdr_pane: HerdrPaneLocation | null;
+  readonly hc_terminal: HcTerminalFollowUp | null;
 }
 
 // A pasted command must stay one argv word, whatever the host wrote as its session id.
@@ -35,11 +36,16 @@ const SHELL_WORD = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const RESUME = { claude: (id: string) => `claude --resume ${id}`, codex: (id: string) => `codex resume ${id}`,
   pi: (id: string) => `pi --session ${id}` } as const;
 
-export function buildTaskFollowUp(execution: TaskExecution): TaskFollowUp {
-  if (execution.state !== 'verified') return { task_id: execution.task, resume: null, herdr_pane: null };
+/** The shell text of the command that gives an hc terminal a pane in Herdr.app; `herdr-core.ts` owns its argv. */
+export type HerdrAppOpenCommand = (address: string) => string;
+
+export function buildTaskFollowUp(execution: TaskExecution, openCommand: HerdrAppOpenCommand): TaskFollowUp {
+  if (execution.state !== 'verified') return { task_id: execution.task, resume: null, hc_terminal: null };
   const resume = SHELL_WORD.test(execution.native_session_id)
     ? { host: execution.agent, command: RESUME[execution.agent](execution.native_session_id) } : null;
-  return { task_id: execution.task, resume, herdr_pane: execution.herdr_pane };
+  const terminal = execution.hc_terminal;
+  return { task_id: execution.task, resume,
+    hc_terminal: terminal === null ? null : { address: terminal.address, name: terminal.name, open_command: openCommand(terminal.address) } };
 }
 
 /** Why GET has no execution view for a repository. */
@@ -67,37 +73,39 @@ const TASK_TEXT = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 const ROLE_TEXT = /^[a-z][a-z0-9_-]{0,31}$/u;
 const ISSUE_TEXT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
 const BRANCH_TEXT = /^[A-Za-z0-9][A-Za-z0-9._/-]{0,254}$/u;
-const HERDR_SESSION_TEXT = /^[A-Za-z0-9][A-Za-z0-9_-]{0,63}$/u;
-const HERDR_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9:_.-]{0,63}$/u;
-const HERDR_AGENT_TEXT = /^[a-z][a-z0-9_-]{0,31}$/u;
+/** hc's terminal address on one core (see `herdr-core.ts`). */
+const HC_ADDRESS_TEXT = /^t[1-9][0-9bcdfghjkmnpqrstvwxyz]{0,6}$/u;
+const HC_NAME_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$/u;
+const COMMAND_TEXT = /^[\x20-\x7e]{1,256}$/u;
 const REPO_ID_TEXT = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const ISO_TIME = /^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/u;
 
 // RegExp.test coerces its argument, so each field is checked to be a string first.
 const matches = (value: unknown, pattern: RegExp): boolean => typeof value === 'string' && pattern.test(value);
-const publicPane = (pane: Readonly<Partial<Record<keyof HerdrPaneLocation, unknown>>>): boolean => matches(pane.session, HERDR_SESSION_TEXT)
-  && matches(pane.workspace_id, HERDR_ID_TEXT) && matches(pane.pane_id, HERDR_ID_TEXT) && matches(pane.agent_name, HERDR_AGENT_TEXT);
+const publicTerminal = (terminal: Readonly<Partial<Record<keyof HcTerminalFollowUp, unknown>>>): boolean =>
+  matches(terminal.address, HC_ADDRESS_TEXT) && matches(terminal.name, HC_NAME_TEXT);
 
 /**
- * The public view. A Herdr pane location stays only when its session is the
- * one `herdr notify install` recorded; with no record, no pane is shown.
+ * The public view. An hc terminal location stays only when its core is the one
+ * the operator reads (`hc_core`, its `core.id`); without a core, none is shown.
  */
-export function projectTaskExecutionView(snapshot: TaskExecutionSnapshot, repository_id: string, herdr_session: string | null): TaskExecutionViewV1 {
+export function projectTaskExecutionView(snapshot: TaskExecutionSnapshot, repository_id: string, hc_core: string | null,
+  openCommand: HerdrAppOpenCommand): TaskExecutionViewV1 {
   const tasks: TaskExecutionViewEntry[] = [];
   let unlisted = 0;
   for (const execution of snapshot.executions) {
     const ids = TASK_TEXT.test(execution.task) && ROLE_TEXT.test(execution.role)
       && (execution.state !== 'verified' || ((execution.issue_id === null || ISSUE_TEXT.test(execution.issue_id))
         && (execution.branch === null || BRANCH_TEXT.test(execution.branch))));
-    const pane = execution.state === 'verified' ? execution.herdr_pane : null;
-    if (!ids || (pane !== null && !publicPane(pane))) { unlisted++; continue; }
+    const terminal = execution.state === 'verified' ? execution.hc_terminal : null;
+    if (!ids || (terminal !== null && !publicTerminal(terminal))) { unlisted++; continue; }
     if (execution.state !== 'verified') {
-      tasks.push({ state: 'unverified', task: execution.task, role: execution.role, reason: execution.reason, follow_up: buildTaskFollowUp(execution) });
+      tasks.push({ state: 'unverified', task: execution.task, role: execution.role, reason: execution.reason, follow_up: buildTaskFollowUp(execution, openCommand) });
       continue;
     }
-    const located = pane !== null && pane.session === herdr_session ? execution : { ...execution, herdr_pane: null };
+    const located = terminal !== null && terminal.core_id === hc_core ? execution : { ...execution, hc_terminal: null };
     tasks.push({ state: 'verified', task: execution.task, role: execution.role, issue_id: execution.issue_id, branch: execution.branch,
-      agent: execution.agent, runtime: execution.runtime, follow_up: buildTaskFollowUp(located) });
+      agent: execution.agent, runtime: execution.runtime, follow_up: buildTaskFollowUp(located, openCommand) });
   }
   return { protocol: 1, kind: 'operator_task_execution', repository_id, observed_at: snapshot.observed_at, tasks, unlisted_tasks: unlisted };
 }
@@ -129,11 +137,11 @@ export function decodeTaskExecutionView(value: unknown): TaskExecutionViewV1 {
       : state === 'unverified' ? obj(raw, ['state', 'task', 'role', 'reason', 'follow_up'], 'unverified task') : fail('task state');
     const task = text(entry.task, TASK_TEXT, 'task');
     text(entry.role, ROLE_TEXT, 'role');
-    const follow = obj(entry.follow_up, ['task_id', 'resume', 'herdr_pane'], 'follow_up');
+    const follow = obj(entry.follow_up, ['task_id', 'resume', 'hc_terminal'], 'follow_up');
     if (follow.task_id !== task) fail('follow_up task_id');
     if (state === 'unverified') {
       if (!UNVERIFIED_REASONS.includes(entry.reason as UnverifiedExecutionReason)) fail('reason');
-      if (follow.resume !== null || follow.herdr_pane !== null) fail('unverified follow_up');
+      if (follow.resume !== null || follow.hc_terminal !== null) fail('unverified follow_up');
       continue;
     }
     if (entry.issue_id !== null) text(entry.issue_id, ISSUE_TEXT, 'issue_id');
@@ -146,10 +154,10 @@ export function decodeTaskExecutionView(value: unknown): TaskExecutionViewV1 {
       const id = typeof resume.command === 'string' ? resume.command.slice(RESUME[entry.agent]('').length) : '';
       if (!SHELL_WORD.test(id) || resume.command !== RESUME[entry.agent](id)) fail('resume command');
     }
-    if (follow.herdr_pane !== null) {
-      if (entry.runtime !== 'herdr-core') fail('herdr_pane runtime');
-      const pane = obj(follow.herdr_pane, ['session', 'workspace_id', 'pane_id', 'agent_name'], 'herdr_pane');
-      if (!publicPane(pane)) fail('herdr_pane');
+    if (follow.hc_terminal !== null) {
+      if (entry.runtime !== 'herdr-core') fail('hc_terminal runtime');
+      const terminal = obj(follow.hc_terminal, ['address', 'name', 'open_command'], 'hc_terminal');
+      if (!publicTerminal(terminal) || !matches(terminal.open_command, COMMAND_TEXT)) fail('hc_terminal');
     }
   }
   return value as TaskExecutionViewV1;
