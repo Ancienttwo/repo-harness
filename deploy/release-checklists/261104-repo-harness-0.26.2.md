@@ -31,7 +31,7 @@
 - The release-prep PR changes no product code and no dependency version.
   `archctx` and `archctx-contracts` stay at the locked exact 0.11.2.
 - Milestone: 0.26.2 (number 4).
-- Publish status: pending owner.
+- Publish status: published 2026-11-04 (see Publication).
 - Hold reason: none.
 
 ### Owner decision
@@ -239,6 +239,37 @@ The owner accepts or repairs each flag before publish.
 
 ## Publication
 
-Pending owner. The owner records the publish candidate, the npm version and
-dist-tag, the tag object, the GitHub release, the tarball digest and the
-`check-release-published.sh` result here after the publish.
+- Publish candidate: `4572d8acdd37575213d7c8b6227ea657621eb5ab` (the #1744
+  merge commit). It is on `origin/main`, and its tree `799b73282` equals the
+  tree of the PR head `ae4e71cd5`. `Required / CI` on the PR head passed (run
+  41813214800).
+- Runner: the advisor script `publish-0.26.2.sh` was not on the machine. The
+  coordinator ran the steps of "Publication steps for the owner" by hand, in
+  a detached worktree of `4572d8acd`, on the owner's instruction; the owner
+  approved the npm web authentication. `npm whoami`: `ancienttwo`. The
+  prepublish gate passed: `[release] OK: prepublish fast gate passed`.
+- Run 1 stopped at authentication: the publish ran without a TTY, so npm
+  exited at once with `EOTP` and masked the authentication link. Nothing was
+  published (`npm view repo-harness@0.26.2`: E404). Run 2 ran
+  `npm publish ./repo-harness-0.26.2.tgz --auth-type=web` under `script`
+  (a pseudo-TTY); npm printed the link and waited, and the owner approved.
+- npm version: `repo-harness@0.26.2`, dist-tag `latest`, published
+  2026-11-04T11:39:45Z. The registry shasum matched the local tarball on the
+  first read-back.
+- Git tag: annotated `v0.26.2`, tag object
+  `7ffa4ae8877329117b2def1ba1e363aa127e0462`, on `4572d8acd`; GitHub Release
+  https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.2, notes from
+  the `[0.26.2]` CHANGELOG section, published 2026-11-04T11:40:37Z.
+- Published tarball digest: 888 files, shasum
+  `2f7f915086296f3eeae2a5907a32bef10eba5bf8`, integrity
+  `sha512-bIyoT+PKD3zIe/k7SATwLnGYEQPFmb+dZgUS2Gg5lBvm08W5r/kLPf1tydNOcniXzs60Xv+yIxz5qFw8F0l5SA==`.
+- `bash scripts/check-release-published.sh 0.26.2`: coordinator-run in the
+  detached worktree of `4572d8acd`: `runtime-evidence-receipt: valid
+  published_tarball, clean_install, installed_hook_readback`;
+  `[release-published] OK: registry, dist-tag, tarball, tag, and local
+  version files agree.`
+- Owner machine upgrade and the post-upgrade probe: not run yet. Advisor t11
+  owns the probe.
+
+- Yellow flag for the next release: run `npm publish --auth-type=web` in a
+  TTY. Without one, npm fails with `EOTP` and does not print a usable link.
