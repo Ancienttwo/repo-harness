@@ -22,7 +22,8 @@ import { counted, Gap, Note } from './architecture-map-parts';
 import { ArchitectureLayers } from './ArchitectureLayers';
 import { ArchitectureModules } from './ArchitectureModules';
 import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence';
-import { ArchitectureTopology } from './ArchitectureTopology';
+import { ArchitectureTopology, TopologyLensTools } from './ArchitectureTopology';
+import type { TopologyBase } from './architecture-topology-layout';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
 
@@ -285,6 +286,9 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const [layer, setLayer] = useState<MapLayerId>('changes');
   const [picked, setPicked] = useState<number | null>(null);
   const [flow, setFlow] = useState<string | null>(null);
+  // The ArchTopology artboard opens on the namespace segment with the legacy stores shown.
+  const [topologyBase, setTopologyBase] = useState<TopologyBase>('namespace');
+  const [legacy, setLegacy] = useState(true);
   // The last good map stays on screen through a failed refresh; a new repository starts empty.
   const shown = useRef<{ repositoryId: string; map: ArchitectureMapV1 } | null>(null);
   if (result?.state === 'ok') shown.current = { repositoryId, map: result.map };
@@ -313,11 +317,12 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
         <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>
         <LayerBar map={map} layer={layer} pullRequest={pullRequest} onLayer={setLayer} t={t} />
         {view === 'sequence' ? <SequenceLensTools map={map} layer={layer} pullRequest={pullRequest} flowId={flow} t={t} />
+          : view === 'topology' ? <TopologyLensTools map={map} base={topologyBase} onBase={setTopologyBase} legacy={legacy} onLegacy={setLegacy} t={t} />
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
       {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
       {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
-      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
+      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} base={topologyBase} legacy={legacy} side={side} onModule={onModule} t={t} />}
     </>}
   </div>;
 }
