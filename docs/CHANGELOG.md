@@ -26,7 +26,7 @@ bridge release.
   list keeps that list; when it does not hold `architecture`, the
   architecture tools report `not selected` with the repair command
   `repo-harness install --plugins architecture,<your plugins>`. (#1671)
-- From 0.25.3 or earlier (install-state protocol 2), use the 0.25.4 bridge
+- From 0.11.1 to 0.25.3 (install-state protocol 2), use the 0.25.4 bridge
   first, then install 0.26.0:
 
   ```bash
@@ -37,7 +37,9 @@ bridge release.
   ```
 
   `docs/CHANGELOG.md` `[0.25.4]` (Upgrade) gives the protocol 2 to 3
-  mapping. (#1676)
+  mapping. A protocol 1 state (before 0.11.1) runs the 0.25.3 step first:
+  `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1
+  migration, then this bridge. (#1676)
 - The 0.25.4 workaround for #1650 ends: `repo-harness migrate --apply`
   outside a repository now refuses before any write. (#1652)
 - A Herdr skill copy with a stale owner marker no longer stops `update`.

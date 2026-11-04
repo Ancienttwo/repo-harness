@@ -96,7 +96,7 @@ sequenceDiagram
 4. **`AGENTS.md` 与 `CLAUDE.md` 是两份独立的普通文件，共享规则逐字相同。** 两个文件在 host 专属章节（`## Codex` 与 `## Claude Code`）之前的部分必须相等（`tests/bootstrap-files.test.ts:160-162`）。两者不能是 symlink，也不能用 `@` 引用对方（`:153-155`）。PR #486 恢复了这个形状。
 5. **内部步骤不是公共命令。** `hooks-init`、`docs-init`、`create-project-dirs` 永远不公开。
 6. **专用 skill 不进入隐式发现。** `repo-harness-setup`、`repo-harness-strategy` 的 `explicitOnly: true` 加上 `cli-reference` 或 `explicit-setup` 的 discoverability，使任何插件选择都不投影它们。它们只能经 router 或显式安装到达。
-7. **没有兼容回落。** install state 只读 protocol 3。protocol 2 只有一条一次性迁移路径：`repo-harness update` 在 install 事务内运行 `src/cli/installer/install-state-migration.ts`。protocol 1 必须先用 0.25.x 桥接版本迁移。越界一律失败。
+7. **没有兼容回落。** install state 只读 protocol 3。0.26.0 起，protocol 1 与 protocol 2 都以 `install_state_protocol_retired` 失败，写入前停止。protocol 2（0.11.1 到 0.25.3）先经 0.25.4 桥接：`bun add -g repo-harness@0.25.4 --no-cache`，再 `repo-harness update --version 0.25.4`，然后装回当前版本：`bun add -g repo-harness@<version> --no-cache && repo-harness update`。protocol 1 先走 0.25.3 的 protocol 1 迁移，再走 0.25.4 桥接。越界一律失败。
 
 ### 3.2 关键权衡
 

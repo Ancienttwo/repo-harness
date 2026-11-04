@@ -109,8 +109,8 @@ plugin selection. With no flag it installs core and every plugin that the host
 can run; `--plugins <ids>` selects exactly those plugins, and `--no-plugins`
 installs core only. It is idempotent and does not apply repo-local workflow
 files to the current directory. `--dry-run --json` lists the plugins to install,
-keep, remove and skip first. Plugins, the protocol 2 to 3 migration, native
-Codex delegation authority, refresh commands, and the read-only `setup check`
+keep, remove and skip first. Plugins, the retired install-state protocols
+and their bridge releases, native Codex delegation authority, refresh commands, and the read-only `setup check`
 audit:
 [`install-profiles.md`](docs/reference-configs/install-profiles.md).
 

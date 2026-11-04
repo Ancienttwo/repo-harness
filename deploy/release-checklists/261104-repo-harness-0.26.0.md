@@ -139,7 +139,7 @@ protocol 3, selection `"all"` and 7 plugins (`architecture`, `cross-review`,
    ```
 
    The owner's state does not record `dsh`.
-4. From 0.25.3 or earlier (protocol 2): 0.26.0 refuses the state with
+4. From 0.11.1 to 0.25.3 (protocol 2): 0.26.0 refuses the state with
    `install_state_protocol_retired` (`install-profile.ts:1164`). Use the
    0.25.4 bridge first:
 
@@ -150,6 +150,10 @@ protocol 3, selection `"all"` and 7 plugins (`architecture`, `cross-review`,
    repo-harness update --version 0.26.0
    ```
 
+   A protocol 1 state (before 0.11.1) runs the 0.25.3 step first:
+   `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1
+   migration (`repo-harness install --help` in 0.25.3 names it), then the
+   bridge above.
 5. The M41 workaround ends: after the update, `repo-harness migrate --apply`
    outside a repository fails with `repo-harness migrate: cwd is not in a git
    repository: <cwd>` before any write (#1652).
@@ -234,6 +238,17 @@ repo-harness setup check --target both --check-updates --json | jq -r '[.agent_a
 - `grep -rln "0\.25\.4" tests` finds the three #1607 test files (the
   0.25.4 bridge command) and the board fixture title "Post-0.25.4 wave". No
   test pins the old package version.
+- Consumer architecture smoke (review round 1, gk1676-r1-01), at the
+  round 2 head: `bun run test:files tests/hook-runtime.test.ts -t "#850"
+  --timeout 60000 --max-concurrency 1`: 2 pass, 0 fail. Guard calls: 0. No
+  archctx daemon started.
+- `bash scripts/check-ci.sh architecture` (the render freshness lane) did
+  not run locally. The scheduled "Daily architecture freshness" job runs it;
+  its last run fails with `unresolved-major-change` (yellow flag 1), the
+  same result the 0.25.4 record shows. The PR job `PR architecture
+  constraint and freshness` runs `check-ci.sh architecture-advisory` on
+  each head and is part of `Required / CI` since #1647; it passed on
+  `0d02366d5` (run 41747686174).
 
 ## Readiness check
 
