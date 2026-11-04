@@ -1500,16 +1500,60 @@ function hcVersionOf(hc: string, cwd: string, env: NodeJS.ProcessEnv): { version
  * copies, and the hc link. Windows extracts the zip with its own tar.exe;
  * the Git Bash tar cannot open a zip.
  */
-function hcInstallLayout(assetName: string, env: NodeJS.ProcessEnv): { dir: string; binary: string; members: readonly string[]; link: string; linkKind: "symlink" | "hardlink"; tar: string } | { failure: string } {
+interface HcInstallLayout {
+  readonly dir: string;
+  readonly binary: string;
+  readonly members: readonly string[];
+  readonly link: string;
+  readonly linkKind: "symlink" | "hardlink";
+  readonly tar: string;
+  /** Windows only: the PowerShell that adds `dir` to the user PATH (owner M62). Unix edits no shell profile. */
+  readonly powershell: string | null;
+}
+
+function hcInstallLayout(assetName: string, env: NodeJS.ProcessEnv): HcInstallLayout | { failure: string } {
   if (assetName !== "windows-x86_64") {
     const dir = join(homeDir(env), ".local", "bin");
-    return { dir, binary: "herdr-core", members: ["herdr-core"], link: "hc", linkKind: "symlink", tar: "tar" };
+    return { dir, binary: "herdr-core", members: ["herdr-core"], link: "hc", linkKind: "symlink", tar: "tar", powershell: null };
   }
   if (!env.LOCALAPPDATA) return { failure: "LOCALAPPDATA is not set; it names the herdr-core install directory" };
   if (!env.SystemRoot) return { failure: "SystemRoot is not set; it names the Windows tar.exe that opens the herdr-core zip" };
   const tar = join(env.SystemRoot, "System32", "tar.exe");
   if (!existsSync(tar)) return { failure: `${tar} is missing; it opens the herdr-core zip (Windows 10 1803 or newer)` };
-  return { dir: join(env.LOCALAPPDATA, "Programs", "herdr-core"), binary: "herdr-core.exe", members: ["herdr-core.exe", "conpty"], link: "hc.exe", linkKind: "hardlink", tar };
+  const powershell = join(env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  if (!existsSync(powershell)) return { failure: `${powershell} is missing; it adds the herdr-core directory to the user PATH` };
+  return { dir: join(env.LOCALAPPDATA, "Programs", "herdr-core"), binary: "herdr-core.exe", members: ["herdr-core.exe", "conpty"], link: "hc.exe", linkKind: "hardlink", tar, powershell };
+}
+
+/**
+ * The user PATH step of install.ps1: read the raw `HKCU\Environment` `Path`
+ * (unexpanded), keep its value kind, append `dir` only when no entry matches
+ * (no case, trailing backslash ignored), then set and clear a user variable so
+ * running programs reread the environment. Not `setx`: it cuts the value at
+ * 1024 characters. Prints `listed` or `added`.
+ */
+function addToWindowsUserPath(powershell: string, dir: string, cwd: string, env: NodeJS.ProcessEnv): { outcome: "listed" | "added" } | { failure: string } {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$dir = '${dir.replaceAll("'", "''")}'`,
+    "$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)",
+    "try {",
+    "  $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
+    "  if ($raw -split ';' | Where-Object { $_.Trim().TrimEnd('\\') -ieq $dir.TrimEnd('\\') }) { 'listed' } else {",
+    "    $kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }",
+    "    $key.SetValue('Path', $(if ($raw) { \"$($raw.TrimEnd(';'));$dir\" } else { $dir }), $kind)",
+    "    [Environment]::SetEnvironmentVariable('HC_INSTALLING', '1', 'User')",
+    "    [Environment]::SetEnvironmentVariable('HC_INSTALLING', $null, 'User')",
+    "    'added'",
+    "  }",
+    "} finally { $key.Close() }",
+  ].join("\n");
+  // UTF-16LE base64: Windows PowerShell 5.1 splits the quotes of a -Command argument.
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  const result = runBoundedProcess(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], { cwd, env, timeoutMs: 30_000 });
+  const outcome = result.stdout.trim();
+  if (result.ok && (outcome === "listed" || outcome === "added")) return { outcome };
+  return { failure: `adding ${dir} to the user PATH failed: ${processFailure(result)}` };
 }
 
 export interface HerdrCoreInstallResult {
@@ -1580,14 +1624,18 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
     chmodSync(binary, 0o755);
     if (layout.linkKind === "symlink") symlinkSync(layout.binary, link);
     else linkSync(binary, link);
+    const installed = `installed hc ${downloaded.version} (sha256 verified) into ${layout.dir}: ${[...layout.members, layout.link].join(", ")}`;
+    let pathNote: string | null = null;
+    if (layout.powershell !== null) {
+      const userPath = addToWindowsUserPath(layout.powershell, layout.dir, cwd, env);
+      if ("failure" in userPath) return fail(`${installed}; ${userPath.failure}`);
+      pathNote = userPath.outcome === "added" ? `added ${layout.dir} to the user PATH: new terminals have hc` : `${layout.dir} is already on the user PATH`;
+    }
     // Windows paths compare without case, as install.ps1 does.
     const samePath = (left: string) => process.platform === "win32" ? resolve(left).toLowerCase() === resolve(layout.dir).toLowerCase() : resolve(left) === resolve(layout.dir);
     const onPath = (env.PATH ?? "").split(delimiter).some(entry => entry !== "" && samePath(entry));
-    return done({
-      status: "ok",
-      detail: `installed hc ${downloaded.version} (sha256 verified) into ${layout.dir}: ${[...layout.members, layout.link].join(", ")}`
-        + (onPath ? "" : `; add ${layout.dir} to PATH to use hc (this run uses it for its later steps)`),
-    }, onPath ? null : layout.dir);
+    const runNote = onPath ? null : `${pathNote === null ? `add ${layout.dir} to PATH to use hc; ` : ""}this run uses it for its later steps`;
+    return done({ status: "ok", detail: [installed, pathNote, runNote].filter(note => note !== null).join("; ") }, onPath ? null : layout.dir);
   } finally {
     rmSync(scratch, { recursive: true, force: true });
   }

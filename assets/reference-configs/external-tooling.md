@@ -336,11 +336,17 @@ The install layout follows the official installers at
 symlink in `~/.local/bin`. Windows x64: `herdr-core.exe`, the `conpty`
 directory beside it and the `hc.exe` hard link in
 `%LOCALAPPDATA%\Programs\herdr-core`; `%SystemRoot%\System32\tar.exe` opens
-the zip, because the Git Bash tar cannot. When the install directory is not on
-PATH, the step reports a hint and puts that directory first on the PATH of the
-later steps of the same run, so the Herdr skill step reads the new hc. The user
-PATH does not change, and `setup check` reports hc missing until the user adds
-the directory.
+the zip, because the Git Bash tar cannot. On Windows the step also adds the
+directory to the user PATH as `install.ps1` does: it reads the raw
+`HKCU\Environment` `Path`, keeps its value kind, appends the directory only
+when no entry matches (no case, trailing backslash ignored), then sets and
+clears a user variable so running programs reread the environment. It does not
+use `setx`, which cuts the value at 1024 characters. On macOS and Linux the
+step edits no shell profile: it prints a hint when `~/.local/bin` is not on
+PATH, and `setup check` reports hc missing until the user adds it. On every
+platform, when the directory is not on the PATH of the run, the run puts it
+first on the PATH of its later steps, so the Herdr skill step reads the new hc.
+`repo-harness uninstall` keeps hc and its PATH entry.
 
 The step never overwrites an existing install file. A sha256 mismatch, a failed
 download, an archive without a complete hc (on Windows, `conpty\conpty.dll`), a

@@ -392,6 +392,10 @@ interface HcStepRow {
   readonly existing?: "herdr-core" | "hc";
   readonly updateFails?: boolean;
   readonly installDirOnPath?: boolean;
+  /** Windows: the fake powershell.exe fails its user PATH write. */
+  readonly userPathFails?: boolean;
+  /** Windows: user PATH writes through powershell.exe. */
+  readonly userPathCalls?: number;
   readonly status: "ok" | "failed";
   readonly requests: number;
   readonly installed: boolean;
@@ -407,8 +411,11 @@ const HC_STEP_ROWS: readonly HcStepRow[] = [
   { label: "missing: an hc of another version installs nothing", before: null, platform: "darwin-arm64", served: "wrong-version", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "the downloaded hc reports 0.0.1" },
   { label: "missing: an existing herdr-core file is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "herdr-core", status: "failed", requests: 0, installed: false, hcCalls: [], detail: "refusing to overwrite" },
   { label: "missing: a dangling hc link is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "hc", status: "failed", requests: 0, installed: false, hcCalls: [], detail: "refusing to overwrite" },
-  { label: "missing on Windows: installs herdr-core.exe, conpty and the hc.exe hard link", before: null, platform: "win32-x64", served: "pinned", status: "ok", requests: 1, installed: true, hcCalls: [], detail: "to PATH to use hc" },
-  { label: "missing on Windows: a zip without conpty installs nothing", before: null, platform: "win32-x64", served: "no-conpty", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "holds no complete hc (missing conpty, conpty/conpty.dll)" },
+  { label: "missing on Windows: installs herdr-core.exe, conpty and the hc.exe hard link, and adds the dir to the user PATH", before: null, platform: "win32-x64", served: "pinned", status: "ok", requests: 1, installed: true, hcCalls: [],
+    userPathCalls: 1, detail: "to the user PATH: new terminals have hc; this run uses it for its later steps" },
+  { label: "missing on Windows: a failed user PATH write fails the step", before: null, platform: "win32-x64", served: "pinned", userPathFails: true, status: "failed", requests: 1, installed: true, hcCalls: [],
+    userPathCalls: 1, detail: "to the user PATH failed: registry access denied" },
+  { label: "missing on Windows: a zip without conpty installs nothing", before: null, platform: "win32-x64", served: "no-conpty", status: "failed", requests: 1, installed: false, hcCalls: [], userPathCalls: 0, detail: "holds no complete hc (missing conpty, conpty/conpty.dll)" },
   { label: "missing: no pin target for the platform", before: null, platform: "win32-arm64", served: "pinned", status: "failed", requests: 0, installed: false, hcCalls: [],
     detail: `no herdr-core release asset for win32-arm64; install hc >=${HC_MIN_VERSION} manually (Herdr.app or a herdr-core release), then run repo-harness update` },
   { label: "below the floor: hc update --version", before: "0.1.15", platform: "darwin-arm64", served: "pinned", status: "ok", requests: 0, installed: false,
@@ -435,6 +442,10 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
     writeFileSync(join(pkg, binary), `#!/bin/sh\necho "hc ${row.served === "wrong-version" ? "0.0.1" : HC_MIN_VERSION}"\n`, { mode: 0o755 });
     if (windows && row.served !== "no-conpty") { mkdirSync(join(pkg, "conpty")); writeFileSync(join(pkg, "conpty", "conpty.dll"), "dll\n"); }
     writeFileSync(join(systemRoot, "System32", "tar.exe"), '#!/bin/sh\nexec tar "$@"\n', { mode: 0o755 });
+    // A fake powershell.exe: it logs the encoded command and prints what the registry script prints.
+    mkdirSync(join(systemRoot, "System32", "WindowsPowerShell", "v1.0"), { recursive: true });
+    writeFileSync(join(systemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe"), `#!/bin/sh\nprintf '%s\\n' "$4" >> "${root}/powershell.log"\n`
+      + (row.userPathFails ? "echo 'registry access denied' >&2; exit 1\n" : "echo added\n"), { mode: 0o755 });
     expect(spawnSync("tar", ["-czf", join(root, "asset"), "-C", pkg, "."]).status).toBe(0);
     const archive = readFileSync(join(root, "asset"));
     const assetFile = windows ? "herdr-core-windows-x86_64.zip" : "herdr-core-macos-aarch64.tar.gz";
@@ -459,9 +470,16 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
     expect(step.status, step.detail).toBe(row.status);
     if (row.detail !== undefined) expect(step.detail).toContain(row.detail);
     if (row.installDirOnPath) expect(step.detail).not.toContain("to PATH");
-    expect(pathEntry).toBe(row.installed && !row.installDirOnPath ? installDir : null);
+    expect(pathEntry).toBe(row.status === "ok" && row.installed && !row.installDirOnPath ? installDir : null);
     expect(readFileSync(join(root, "requests.log"), "utf8").split("\n").filter(Boolean)).toHaveLength(row.requests);
     expect(existsSync(join(root, "hc-argv.log")) ? readFileSync(join(root, "hc-argv.log"), "utf8").split("\n").filter(Boolean) : []).toEqual([...row.hcCalls]);
+    const userPathCommands = existsSync(join(root, "powershell.log")) ? readFileSync(join(root, "powershell.log"), "utf8").split("\n").filter(Boolean) : [];
+    expect(userPathCommands).toHaveLength(row.userPathCalls ?? 0);
+    for (const command of userPathCommands) {
+      const script = Buffer.from(command, "base64").toString("utf16le");
+      expect(script).toContain(`$dir = '${installDir}'`);
+      expect(script).toContain("DoNotExpandEnvironmentNames");
+    }
     if (row.existing === "herdr-core") expect(readFileSync(join(installDir, "herdr-core"), "utf8")).toBe("user file\n");
     if (row.existing === "hc") expect(readlinkSync(join(installDir, "hc"))).toBe("removed-herdr-core");
     if (!row.installed) {
