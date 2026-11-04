@@ -55,6 +55,7 @@ import { buildOperatorCommand } from './commands/operator';
 import { buildWorktreesCommand } from './commands/worktrees';
 import { buildSeatsCommand } from './commands/seats';
 import { buildCatchUpCommand } from './commands/catch-up';
+import { buildQuotaCommand } from './commands/quota';
 import { buildArchitectureDebtCommand } from './commands/architecture-debt';
 import { buildArchitectureProjectionCommand } from './commands/architecture-projection';
 import { buildRetentionCommand, type RetentionPorts } from './commands/retention';
@@ -1047,6 +1048,7 @@ export function buildProgram(): Command {
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
+  program.addCommand(buildQuotaCommand());
   program.addCommand(architectureCommand(buildRefactorCommand()));
   program.addCommand(architectureCommand(buildArchitectureProjectionCommand()));
   program.addCommand(architectureCommand(buildArchitectureDebtCommand()));
