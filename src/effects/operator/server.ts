@@ -35,6 +35,8 @@ import { ARCHITECTURE_HISTORY_TIMEOUT_MS, decodeArchitectureHistoryPage } from '
 export { OPERATOR_ARCHITECTURE_HISTORY_ROUTE, OPERATOR_ARCHITECTURE_MODULES_ROUTE, OPERATOR_ARCHITECTURE_MODULE_ROUTE, OPERATOR_ARCHITECTURE_REVIEW_PROMPT_ROUTE } from '../../core/operator/architecture';
 import { decodeNotifyStatus, NOTIFY_INSTALL_COMMAND, NOTIFY_START_COMMAND, type NotifyUnavailableReason } from '../../core/operator/notify-status';
 import { decodeBoard } from '../../core/board/board';
+import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/operator/quota';
+import { readQuotaReport } from './quota';
 import { decodeBoardParents } from '../../core/board/parents';
 import { BoardReadError, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
 import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
@@ -159,6 +161,7 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   // The first write route: it changes only the host config's `agents` section.
   Object.freeze({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true }),
   Object.freeze({ id: 'settings_seats', method: 'GET', pattern: OPERATOR_SETTINGS_SEATS_PATH, write: false }),
+  Object.freeze({ id: 'quota', method: 'GET', pattern: OPERATOR_QUOTA_PATH, write: false }),
   // It changes only the host config's `seats` section; running panes keep their launch arguments.
   Object.freeze({ id: 'settings_seats_write', method: 'POST', pattern: OPERATOR_SETTINGS_SEATS_ROUTE.source, write: true }),
   // The second write route: it verifies citations, then creates the doc session's worktree in the managed root.
@@ -237,6 +240,7 @@ export interface OperatorServerOptions {
   readonly architecture_map_collector?: boolean;
   /** The board read: the board CLI's JSON for one repository and parent. Production runs the CLI; only tests inject another. */
   readonly read_board?: (input: BoardReadInput) => Promise<unknown>;
+  readonly read_quota?: () => Promise<unknown>;
   /** The parent list read: the `board parents` CLI's JSON for one repository. Production runs the CLI; only tests inject another. */
   readonly read_board_parents?: (input: BoardParentsReadInput) => Promise<unknown>;
   readonly host?: string;
@@ -945,6 +949,7 @@ export async function startOperatorServer(
   const activeTaskReadCompletions = new Set<Promise<void>>();
   const activeBoardReads = new Set<AbortController>();
   const boardCompletions = new Set<Promise<void>>();
+  let quotaBusy = false;
   const boardEnvironment: NodeJS.ProcessEnv = { ...process.env, ...repositoryWorkerEnvironment(options.env), ...OPERATOR_READ_ONLY_GIT_ENVIRONMENT, GH_PROMPT_DISABLED: '1' };
 
   const handleBoundedTaskRead = <TRequest extends object, TSnapshot>(
@@ -1394,6 +1399,28 @@ export async function startOperatorServer(
         sendRefusal(request, response, AGENTS_CONFIGURATION_FAILURES[error.code].status,
           errorBody(error.code, error.message, AGENTS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
       }
+      return;
+    }
+
+    if (pathname === OPERATOR_QUOTA_PATH) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'Quota accepts no query selectors.'), headOnly);
+        return;
+      }
+      if (quotaBusy) {
+        sendRefusal(request, response, 503, errorBody('quota_busy', 'A quota read is in progress.'), headOnly);
+        return;
+      }
+      quotaBusy = true;
+      try {
+        const value = await (options.read_quota ?? (() => readQuotaReport(options.env ?? process.env)))();
+        let report;
+        try { report = decodeQuotaReport(value); } catch {
+          sendRefusal(request, response, 502, errorBody('quota_invalid', 'The quota report failed validation.'), headOnly);
+          return;
+        }
+        sendJson(response, 200, report, headOnly);
+      } finally { quotaBusy = false; }
       return;
     }
 
