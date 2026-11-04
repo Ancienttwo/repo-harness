@@ -266,7 +266,9 @@ acceptance; **Worker** skills carry out assigned steps.
 | `windows-python-first` | Worker | Native Windows file and shell work through Python |
 
 The manifest at `assets/skill-commands/manifest.json` is the source of truth.
-More in the [usage guide](docs/usage.md#skills).
+`merge-gate` is a CLI judge and has no packaged SKILL.md. `hooks-init`,
+`docs-init` and `create-project-dirs` are internal init steps, not public
+commands. More in the [usage guide](docs/usage.md#skills).
 
 ## Supported hosts
 
