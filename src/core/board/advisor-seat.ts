@@ -221,27 +221,39 @@ export function decodeAdvisorSeatTranscript(value: unknown): AdvisorSeatTranscri
 }
 
 // Bounded quantifiers keep the marker search linear on a line of any length.
-const KEY_BEGIN = /-----BEGIN [A-Z0-9 ]{0,64}PRIVATE KEY-----/u;
-const KEY_END = /-----END [A-Z0-9 ]{0,64}PRIVATE KEY-----/u;
+const KEY_BEGIN = /-----BEGIN [A-Z0-9 ]{0,64}PRIVATE KEY-----/gu;
+const KEY_END = /-----END [A-Z0-9 ]{0,64}PRIVATE KEY-----/gu;
+
+/** The positions of the first and the last marker on one line; -1 when the line has none. */
+function markers(line: string, marker: RegExp): { readonly first: number; readonly last: number } {
+  let first = -1, last = -1;
+  for (const match of line.matchAll(marker)) {
+    if (first < 0) first = match.index;
+    last = match.index;
+  }
+  return { first, last };
+}
 
 /**
  * One linear pass that marks every line of a private key block: BEGIN through
  * END, BEGIN to the last line when no END follows, and the first line to END
  * when no BEGIN precedes it, because the window or the hc read cut the block.
+ * An open block keeps its earliest BEGIN, so a second BEGIN never releases the
+ * lines before it.
  */
 function privateKeyLines(lines: readonly string[]): readonly boolean[] {
   const marked = lines.map(() => false);
   const mark = (from: number, to: number) => { for (let at = from; at <= to; at += 1) marked[at] = true; };
   let open: number | null = null;
   lines.forEach((line, at) => {
-    const begin = line.search(KEY_BEGIN), end = line.search(KEY_END);
-    if (end >= 0 && (open !== null || begin < 0 || end < begin)) {
-      mark(open ?? 0, at);
-      open = begin > end ? at : null;
-    } else if (begin >= 0) {
-      open = at;
-      if (end > begin) { mark(at, at); open = null; }
+    const begin = markers(line, KEY_BEGIN), end = markers(line, KEY_END);
+    if (end.last >= 0) {
+      // An END closes the open block; with none open, an END before every BEGIN of its line closes a block that began above the window.
+      mark(open ?? (begin.first < 0 || end.first < begin.first ? 0 : at), at);
+      open = null;
     }
+    // A BEGIN after the last END of its line leaves a block open.
+    if (begin.last > end.last) open ??= at;
   });
   if (open !== null) mark(open, lines.length - 1);
   return marked;

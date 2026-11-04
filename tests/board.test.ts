@@ -792,10 +792,16 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
     ['hc read starts inside the key', [body, end, 'after'], [W, W, 'after']],
     ['window start cuts the key', [begin, ...Array.from({ length: 199 }, () => body), end, 'after'], [...Array.from({ length: 199 }, () => W), 'after']],
     ['window end cuts the key', ['before', begin, body], ['before', W, W]],
+    ['an open key followed by another key', ['x', begin, 'K1', 'K2', begin, 'K3', end, 'y'], ['x', W, W, W, W, W, W, 'y']],
+    ['a line that ends one key and opens another', [`${begin} K ${end} ${begin}`, 'Kz', 'y'], [W, W, W]],
     ['line over the limit', ['a'.repeat(1001), 'a'.repeat(1000)], [W, 'a'.repeat(1000)]],
     ['redaction grows a line over the limit', [`${'a'.repeat(976)} Authorization: Bearer x`, `${'a'.repeat(900)} Authorization: Bearer x`], [W, `${'a'.repeat(900)} Authorization: Bearer [REDACTED]`]],
   ];
-  for (const [name, input, lines] of cases) expect([name, advisorTranscriptLines(input.join('\n'))]).toEqual([name, lines]);
+  // The projection and the response decoder return the same lines, with no key line.
+  for (const [name, input, lines] of cases) {
+    const projected = advisorTranscriptLines(input.join('\n'));
+    expect([name, projected, decodeAdvisorSeatTranscript({ ...transcript, lines: projected }).lines]).toEqual([name, lines, lines]);
+  }
   // Each line alone passes; the joined text holds a whole key.
   for (const lines of [['API_KEY=hunter2'], [begin, body, end]]) expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines })).toThrow('advisor seat transcript is invalid');
 
