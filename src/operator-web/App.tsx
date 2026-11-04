@@ -309,6 +309,8 @@ export function OperatorApp({
   const workspace = place.workspace;
   const [systemMounted, setSystemMounted] = useState(workspace === 'system');
   if (workspace === 'system' && !systemMounted) setSystemMounted(true);
+  const [worktreesMounted, setWorktreesMounted] = useState(workspace === 'worktrees');
+  if (workspace === 'worktrees' && !worktreesMounted) setWorktreesMounted(true);
   // Pages that name one repository: they own the repository switch and docs-tree head.
   const singleRepository = workspace === 'architecture' || workspace === 'tests' || workspace === 'docs';
 
@@ -450,7 +452,10 @@ export function OperatorApp({
           {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} view={board} readBoardParents={readBoardParents} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
-          {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} plan={worktreeCleanupPlan} now={now} t={t} />}
+          {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}
+          {worktreesMounted && <div hidden={workspace !== 'worktrees'}>
+            <WorktreesPage view={worktrees} cleanup={worktreeCleanup} plan={worktreeCleanupPlan} now={now} t={t} />
+          </div>}
           {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} quota={quota} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
