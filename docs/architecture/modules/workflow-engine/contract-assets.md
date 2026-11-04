@@ -425,7 +425,7 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 ### 2026-05-29 Cleanup Script Policy Closeout
 
 - `worktree_strategy.cleanup_script` is part of the policy contract surface. It advertises the terminal cleanup command generated repos can call after `finish` has already archived and merged a contract worktree.
-- The runtime owner remains `scripts/contract-worktree.sh`; `.ai/harness/policy.json`, `scripts/ensure-task-workflow.sh`, and `scripts/lib/project-init-lib.sh` only publish the command shape for self-host and generated repos.
+- The runtime owner remains `scripts/contract-worktree.sh`; `.ai/harness/policy.json` and `scripts/lib/project-init-lib.sh` only publish the command shape for self-host and generated repos.
 - File-prefix capability requests such as `.ai/harness/policy.json` still belong to `workflow-engine-contract-assets`; local capability context is projected to `assets/AGENTS.md` and `assets/CLAUDE.md`.
 - No new architecture snapshot or semantic diagram is required because the module boundary, entrypoints, and dependency direction are unchanged.
 
@@ -617,12 +617,6 @@ template-projection 标记为可扩展。`assets/templates/helpers/` 现在只�
 ---
 
 ## Workstream Ledger
-
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/cleanup-script-policy.md`
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/20260712-contract-assets.md`
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/agent-fleet-specialists.md`
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/20260714-merge-gate-enforcement.md`
-- `tasks/archive/gate-audit-20261003/workstreams/workflow-engine/contract-assets/github-issues-158-159.md`
 
 ## Optimization Backlog
 
