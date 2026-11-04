@@ -5,6 +5,7 @@ import { dirname, join } from "path";
 import { run, withTempRepo } from "./helpers/repo-fixture";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
 import { ensureHerdrCore } from "../src/cli/commands/global-runtime";
+import { startFakeHcRelease } from "./helpers/fake-hc";
 import { HC_MIN_VERSION } from "../src/core/operator/herdr-pin";
 
 /**
@@ -372,17 +373,6 @@ test.each(["claude", "codex"] as const)("%s skill cleanup recovers old stages an
   } finally { rmSync(root, { recursive: true, force: true }); }
 });
 
-// A release server in its own process: the install step downloads synchronously.
-const RELEASE_SERVER = `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
-const [dir, log] = process.argv.slice(2);
-const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
-  const path = new URL(request.url).pathname;
-  appendFileSync(log, path + '\\n');
-  return existsSync(dir + path) ? new Response(readFileSync(dir + path)) : new Response('not found', { status: 404 });
-} });
-console.log(server.port);
-`;
-
 interface HcStepRow {
   readonly label: string;
   /** The hc version on PATH before the step; null: no hc on PATH. */
@@ -400,7 +390,8 @@ interface HcStepRow {
   readonly requests: number;
   readonly installed: boolean;
   readonly hcCalls: readonly string[];
-  readonly detail?: string;
+  /** Text that the step detail contains; a function gets the install dir. */
+  readonly detail?: string | ((installDir: string) => string);
 }
 
 const HC_STEP_ROWS: readonly HcStepRow[] = [
@@ -409,8 +400,10 @@ const HC_STEP_ROWS: readonly HcStepRow[] = [
   { label: "missing: a sha256 mismatch installs nothing", before: null, platform: "darwin-arm64", served: "tampered", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "sha256 mismatch" },
   { label: "missing: a failed download installs nothing", before: null, platform: "darwin-arm64", served: "absent", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "download of" },
   { label: "missing: an hc of another version installs nothing", before: null, platform: "darwin-arm64", served: "wrong-version", status: "failed", requests: 1, installed: false, hcCalls: [], detail: "the downloaded hc reports 0.0.1" },
-  { label: "missing: an existing herdr-core file is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "herdr-core", status: "failed", requests: 0, installed: false, hcCalls: [], detail: "refusing to overwrite" },
-  { label: "missing: a dangling hc link is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "hc", status: "failed", requests: 0, installed: false, hcCalls: [], detail: "refusing to overwrite" },
+  { label: "missing: an existing herdr-core file is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "herdr-core", status: "failed", requests: 0, installed: false, hcCalls: [],
+    detail: dir => `refusing to overwrite it; add ${dir} to PATH, then rerun repo-harness update` },
+  { label: "missing: a dangling hc link is not overwritten", before: null, platform: "darwin-arm64", served: "pinned", existing: "hc", status: "failed", requests: 0, installed: false, hcCalls: [],
+    detail: dir => `refusing to overwrite it; add ${dir} to PATH, then rerun repo-harness update` },
   { label: "missing on Windows: installs herdr-core.exe, conpty and the hc.exe hard link, and adds the dir to the user PATH", before: null, platform: "win32-x64", served: "pinned", status: "ok", requests: 1, installed: true, hcCalls: [],
     userPathCalls: 1, detail: "to the user PATH: new terminals have hc; this run uses it for its later steps" },
   { label: "missing on Windows: a failed user PATH write fails the step", before: null, platform: "win32-x64", served: "pinned", userPathFails: true, status: "failed", requests: 1, installed: true, hcCalls: [],
@@ -433,9 +426,7 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
   const localAppData = join(root, "LocalAppData"), systemRoot = join(root, "Windows");
   const installDir = windows ? join(localAppData, "Programs", "herdr-core") : join(home, ".local", "bin");
   for (const dir of [release, pkg, fakeBin, installDir, join(systemRoot, "System32")]) mkdirSync(dir, { recursive: true });
-  writeFileSync(join(root, "server.ts"), RELEASE_SERVER);
-  writeFileSync(join(root, "requests.log"), "");
-  const server = Bun.spawn([process.execPath, join(root, "server.ts"), release, join(root, "requests.log")], { stdout: "pipe" });
+  const server = startFakeHcRelease(root, release);
   try {
     // The official archive layout. The Windows zip is a tar.gz here: the fake tar.exe is the host tar.
     const binary = windows ? "herdr-core.exe" : "herdr-core";
@@ -460,7 +451,7 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
         + `if [ "$1" = update ]; then ${row.updateFails ? `echo 'hc: managed install; update it with its package manager' >&2; exit 1` : `printf '%s' "$3" > "${root}/hc-version"; exit 0`}; fi\n`
         + `printf 'hc %s\\n' "$(cat "${root}/hc-version")"\n`, { mode: 0o755 });
     }
-    const port = Number(new TextDecoder().decode((await server.stdout.getReader().read()).value).trim());
+    const port = await server.port;
     const sha256 = createHash("sha256").update(archive).digest("hex");
     const { step, pathEntry } = ensureHerdrCore({
       cwd: root, command: "update", platform: row.platform, minVersion: HC_MIN_VERSION,
@@ -468,10 +459,10 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
       env: { HOME: home, LOCALAPPDATA: localAppData, SystemRoot: systemRoot, PATH: `${row.installDirOnPath ? `${installDir}:` : ""}${fakeBin}:/usr/bin:/bin` },
     });
     expect(step.status, step.detail).toBe(row.status);
-    if (row.detail !== undefined) expect(step.detail).toContain(row.detail);
+    if (row.detail !== undefined) expect(step.detail).toContain(typeof row.detail === "string" ? row.detail : row.detail(installDir));
     if (row.installDirOnPath) expect(step.detail).not.toContain("to PATH");
     expect(pathEntry).toBe(row.status === "ok" && row.installed && !row.installDirOnPath ? installDir : null);
-    expect(readFileSync(join(root, "requests.log"), "utf8").split("\n").filter(Boolean)).toHaveLength(row.requests);
+    expect(server.requests()).toHaveLength(row.requests);
     expect(existsSync(join(root, "hc-argv.log")) ? readFileSync(join(root, "hc-argv.log"), "utf8").split("\n").filter(Boolean) : []).toEqual([...row.hcCalls]);
     const userPathCommands = existsSync(join(root, "powershell.log")) ? readFileSync(join(root, "powershell.log"), "utf8").split("\n").filter(Boolean) : [];
     expect(userPathCommands).toHaveLength(row.userPathCalls ?? 0);
@@ -494,7 +485,7 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
       expect(spawnSync(join(installDir, "hc"), ["--version"], { encoding: "utf8" }).stdout).toBe(`hc ${HC_MIN_VERSION}\n`);
     }
   } finally {
-    server.kill();
+    server.stop();
     rmSync(root, { recursive: true, force: true });
   }
 }, 30_000);

@@ -1593,7 +1593,8 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
   if ("failure" in layout) return fail(layout.failure);
   for (const name of [...layout.members, layout.link]) {
     const path = join(layout.dir, name);
-    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it`);
+    // An earlier run may have installed it into a dir that is still off PATH.
+    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it; add ${layout.dir} to PATH, then rerun repo-harness ${input.command}`);
   }
   const scratch = mkdtempSync(join(tmpdir(), "repo-harness-hc-"));
   try {
