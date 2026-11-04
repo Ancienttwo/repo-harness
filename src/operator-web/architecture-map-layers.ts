@@ -90,6 +90,92 @@ function impactMarks(impact: ArchitectureImpactV1, label: (entry: ArchitectureIm
   return marks;
 }
 
+/** Each node inside a capability, the capability included, mapped to that capability. Other nodes have no entry. */
+export function capabilityOwners(map: ArchitectureMapV1): Map<string, string> {
+  const nodes = new Map(map.nodes.map(node => [node.id, node]));
+  const owners = new Map<string, string>();
+  for (const node of map.nodes) {
+    for (let cursor: typeof node | undefined = node; cursor !== undefined; cursor = cursor.parent === null ? undefined : nodes.get(cursor.parent)) {
+      if (cursor.kind === 'capability') { owners.set(node.id, cursor.id); break; }
+    }
+  }
+  return owners;
+}
+
+/** A capability's mark on the module map. `count`: commits today, violations, files in the PR or decisions; null for a dependent or a test result. */
+export interface ModuleMark { readonly tone: MapMarkTone; readonly count: number | null }
+export interface ModulesLayerView {
+  readonly available: boolean;
+  readonly marks: ReadonlyMap<string, ModuleMark>;
+  readonly edges: readonly ArchitectureMapImportV1[];
+}
+
+const NO_MODULES: ModulesLayerView = { available: false, marks: new Map(), edges: [] };
+
+/**
+ * What the active layer marks on the module map, which draws only capabilities: a fact on a
+ * component marks the capability that holds it. A fact on a removed node or on a node outside
+ * every capability marks nothing.
+ */
+export function modulesLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: number | null = null): ModulesLayerView {
+  const owners = capabilityOwners(map);
+  const view = (marks: Map<string, ModuleMark>, edges: readonly ArchitectureMapImportV1[] = []): ModulesLayerView => ({ available: marks.size > 0, marks, edges });
+  // Sums `count` per capability.
+  const sum = (entries: Iterable<readonly [string, number]>, tone: MapMarkTone): Map<string, ModuleMark> => {
+    const marks = new Map<string, ModuleMark>();
+    for (const [id, count] of entries) {
+      const owner = owners.get(id);
+      if (owner !== undefined) marks.set(owner, { tone, count: (marks.get(owner)?.count ?? 0) + count });
+    }
+    return marks;
+  };
+  const withDependents = (marks: Map<string, ModuleMark>, impact: ArchitectureImpactV1) => {
+    for (const entry of impact.dependents) {
+      const owner = owners.get(entry.id);
+      if (owner !== undefined && !marks.has(owner)) marks.set(owner, { tone: 'muted', count: null });
+    }
+    return marks;
+  };
+  if (layer === 'changes') {
+    const { changes } = map.layers;
+    if (changes.state !== 'ok') return NO_MODULES;
+    const changed = new Set(changes.nodes.flatMap(entry => owners.get(entry.id) ?? []));
+    const commits = changes.commits.flatMap(commit => [...new Set(commit.nodes.flatMap(id => owners.get(id) ?? []))].map(id => [id, 1] as const));
+    const marks = new Map([...changed].map(id => [id, { tone: 'change', count: 0 } as ModuleMark]));
+    for (const [id, mark] of sum(commits, 'change')) if (changed.has(id)) marks.set(id, mark);
+    return view(withDependents(marks, changes));
+  }
+  // An item that names two nodes of one capability counts once for it.
+  const once = (items: readonly { readonly ids: readonly string[]; readonly count: number }[]) =>
+    items.flatMap(item => [...new Set(item.ids.flatMap(id => owners.get(id) ?? []))].map(id => [id, item.count] as const));
+  if (layer === 'violations') {
+    const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = map.layers.violations;
+    if (Object.values(map.layers.violations).every(part => part.state !== 'ok')) return NO_MODULES;
+    const edges = dependencies.state === 'ok' ? dependencies.edges.filter(edge => owners.get(edge.source) === edge.source && owners.get(edge.target) === edge.target) : [];
+    return view(sum(once([
+      ...(debt.state === 'ok' ? debt.items.map(item => ({ ids: item.nodes, count: 1 })) : []),
+      ...(flows.state === 'ok' ? flows.unprovable.map(entry => ({ ids: [entry.id], count: 1 })) : []),
+      ...(anchors.state === 'ok' ? anchors.nodes.map(entry => ({ ids: [entry.id], count: entry.findings.length })) : []),
+      ...(dependencies.state === 'ok' ? dependencies.edges.map(edge => ({ ids: [edge.source], count: 1 })) : []),
+      ...(layerDirection.state === 'ok' ? layerDirection.edges.map(edge => ({ ids: [edge.source], count: 1 })) : []),
+    ]), 'danger'), edges);
+  }
+  if (layer === 'tests') {
+    const { tests } = map.layers;
+    if (tests.state !== 'ok') return NO_MODULES;
+    return view(new Map(tests.capabilities.map(entry => [entry.id, {
+      tone: entry.failed > 0 ? 'danger' : entry.passed > 0 && entry.passed + entry.skipped === entry.files ? 'success' : 'muted', count: null,
+    }])));
+  }
+  if (layer === 'pull_requests') {
+    const { pull_requests: pullRequests } = map.layers;
+    const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(entry => entry.number === pullRequest)?.impact : undefined;
+    if (impact?.state !== 'ok') return NO_MODULES;
+    return view(withDependents(sum(impact.nodes.map(entry => [entry.id, entry.files]), 'change'), impact));
+  }
+  return view(sum(once(map.layers.decisions.items.map(item => ({ ids: item.applies_to, count: 1 }))), 'muted'));
+}
+
 /** `pullRequest` picks the PR that the PR impact layer marks; the other layers ignore it. */
 export function mapLayerView(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: number | null = null): MapLayerView {
   const view = (marks: Map<string, MapMark>, edges: readonly ArchitectureMapImportV1[] = []): MapLayerView => {

@@ -8,6 +8,7 @@ import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
+import { layoutModules, type ModulesBox } from '../../src/operator-web/architecture-modules-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
@@ -505,7 +506,7 @@ describe('architecture map', () => {
     for (const [index, band] of real.bands.slice(1).entries()) expect(below(real.bands[index]!, band)).toBe(true);
   });
 
-  test('the map is the default view and selecting a node lists its relations with import counts', async () => {
+  test('the map is the default view: capabilities in domain groups, external systems, one summed edge per domain pair; selecting a node lists its relations with import counts', async () => {
     const opened: (string | null)[] = [];
     const sources: unknown[] = [];
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id), onSource: source => sources.push(source) }));
@@ -513,14 +514,24 @@ describe('architecture map', () => {
     expect(calls).toEqual([]);
     const canvas = document.querySelector('.architecture-map')!;
     expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-relation-count')]).toEqual(['4', '3']);
-    expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort()).toEqual([CALLER, CENTER, PART, EXTERNAL].sort());
-    expect(document.querySelector(`.react-flow__node[data-id="${PART}"]`)?.textContent).toContain('900 lines');
-    // Every node is in the model's one declared layer, so the canvas draws one labelled band.
-    expect([...document.querySelectorAll('.architecture-map__band')].map(item => item.textContent)).toEqual(['core']);
-    // A banded map opens at a readable zoom on its top band, not fitted to the whole map.
-    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toContain('scale(0.85)');
-    // The header row gets the map's commit and collection time.
-    expect(sources.at(-1)).toEqual({ commit: COMMIT, collectedAt: '2026-10-27T09:00:00.000Z' });
+    // The capabilities sit in their domain groups and the external system above them; a component is not on this map.
+    expect([...document.querySelectorAll('.react-flow__node')].map(item => item.getAttribute('data-id')).sort())
+      .toEqual([CALLER, CENTER, EXTERNAL, 'domain:public-surface', 'domain:workflow-engine'].sort());
+    expect([...document.querySelectorAll('.architecture-modules__domain > b')].map(item => item.textContent)).toEqual(['public-surface', 'workflow-engine']);
+    expect(document.querySelector(`.react-flow__node[data-id="${CENTER}"] .architecture-modules__lines`)?.textContent).toBe('900');
+    // One edge per domain pair with the imports of both directions summed; every capability once, inside its domain; no two boxes overlap.
+    expect(layoutModules(mapFor()).edges.map(edge => [edge.source, edge.target, edge.imports])).toEqual([['public-surface', 'workflow-engine', 7]]);
+    const recorded = decodeArchitectureMap(recordedMap);
+    const real = layoutModules(recorded);
+    const pair = (a: string, b: string) => real.edges.find(edge => [edge.source, edge.target].sort().join() === [a, b].sort().join())?.imports;
+    expect([real.edges.length, pair('runtime-harness', 'workflow-engine'), pair('runtime-harness', 'verification')]).toEqual([12, 342, 676]);
+    expect(real.capabilities.map(item => item.node.id).sort()).toEqual(recorded.nodes.filter(node => node.kind === 'capability').map(node => node.id).sort());
+    const inside = (a: ModulesBox, b: ModulesBox) => a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
+    const apart = (a: ModulesBox, b: ModulesBox) => a.x + a.width <= b.x || b.x + b.width <= a.x || a.y + a.height <= b.y || b.y + b.height <= a.y;
+    for (const item of real.capabilities) expect(inside(item, real.domains.find(domain => domain.domain === item.node.domain)!)).toBe(true);
+    for (const group of [[...real.externals, ...real.domains], real.capabilities]) for (const [index, a] of group.entries()) for (const b of group.slice(index + 1)) expect(apart(a, b)).toBe(true);
+    // The header row gets the map's commit, collection time, branch and archctx version.
+    expect(sources.at(-1)).toEqual({ commit: COMMIT, map: { collectedAt: '2026-10-27T09:00:00.000Z', headRef: 'main', archctxVersion: '0.11.2' } });
     // The base map has every source, so the side panel states no gap. The flow steps that archctx
     // reports as unknown concern only the sequence map, so the module map does not state them.
     expect(document.querySelectorAll('[data-map-side] > .architecture-map__gap')).toHaveLength(0);
@@ -545,13 +556,11 @@ describe('architecture map', () => {
     // Only the base-map gaps, in the side panel; the open layer's flow-step gap belongs to the sequence map.
     expect([...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
-    // A model without ordered layers keeps the unbanded layout and states why.
+    // No base map draws the layer order, so a model without ordered layers states no map gap.
     await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, mapLayers, undeclaredLayers) }) })));
     await settle();
     const sideGaps = () => [...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')]);
-    expect(sideGaps()).toEqual([['layer_order', 'model_layers_undeclared']]);
-    expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
-    // Only the module map draws layer bands, so the other base maps do not state the layer-order gap.
+    expect(sideGaps()).toEqual([]);
     for (const view of ['sequence', 'topology']) {
       await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${view}`)!.click());
       await settle();
@@ -604,10 +613,12 @@ describe('architecture map', () => {
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('changes');
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => `${item.getAttribute('data-layer')}:${item.getAttribute('data-state')}`))
       .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:ok']);
-    // One file has no line count, so the label says the sum is partial.
-    expect([box(PART).getAttribute('data-tone'), box(PART).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '+5 −2 ?']);
-    // archctx says the group depends on the changed component; nodes with nothing on the layer fade.
-    expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', true, true]);
+    // Each chip with data counts what its layer covers.
+    expect([...document.querySelectorAll('.architecture-layers button')].map(item => item.querySelector('.architecture-layers__count')?.textContent ?? null))
+      .toEqual(['1 module · 1 commit', '3', null, '2 / 2', '2 decisions']);
+    // The changed component marks its capability with the commits that touch it; capabilities with nothing on the layer fade, external systems do not.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '1 commit']);
+    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
     expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('≥2 files changed in 1 commit, ≥0 without an owner');
     expect([gaps(), notes()]).toEqual([[], ['changes.truncated:paths']]);
     // The sequence map states the flow steps that archctx cannot tie to the change, in its side panel.
@@ -617,12 +628,13 @@ describe('architecture map', () => {
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click());
     await settle();
     expect(document.querySelector('[data-note="changes.truncated"]')?.textContent).toBe('archctx stopped at its limits for changed paths. File and line counts are lower bounds.');
-    await act(async () => box(PART).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="changes"]')?.textContent).toBe('2 files changed, +5 −2 lines (1 without a line count)assets/ledger.pngsrc/ledger.ts');
+    expect(document.querySelector('[data-module-commits]')?.textContent).toBe('ccccccc Ledger rows');
 
     await choose('violations');
-    expect([box(PART).getAttribute('data-tone'), box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', 'danger', true]);
+    // The stale anchor on the component, the unprovable flow and the undeclared import: three items on the capability.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent, box(CALLER).hasAttribute('data-quiet')]).toEqual(['danger', '3', true]);
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('src/orphan.ts');
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Flow proofs: 1 of 2 selectors proven; 1 capabilities cannot prove their flow.');
     expect(gaps()).toEqual(['violations.anchors:code_facts_unavailable']);
@@ -631,9 +643,7 @@ describe('architecture map', () => {
 
     await choose('tests');
     expect([box(CENTER).getAttribute('data-tone'), box(CALLER).getAttribute('data-tone')]).toEqual(['danger', 'muted']);
-    await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
-    await settle();
-    expect(document.querySelector('[data-layer-facts="tests"]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
+    expect(document.querySelector('[data-module-tests]')?.textContent).toBe('2 test files: 1 passed, 1 failed, 0 skipped, 0 no result');
 
     await choose('pull_requests');
     expect([gaps(), notes()]).toEqual([['pull_requests:dev_activity_unavailable'], []]);
@@ -641,10 +651,10 @@ describe('architecture map', () => {
     await choose('decisions');
     expect([gaps(), notes()]).toEqual([[], []]);
     expect(document.querySelector('[data-layer-summary="decisions"]')?.textContent).toBe('2 decisions; 1 apply to model nodes.Decisions that apply to no node (1)Name things plainly · docs/adr/ADR-0002-naming.md');
-    expect([box(CALLER).getAttribute('data-tone'), box(CALLER).querySelector('.architecture-map__mark')?.textContent, box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', '1', true]);
+    expect([box(CALLER).getAttribute('data-tone'), box(CALLER).querySelector('.architecture-map__mark')?.textContent, box(CENTER).hasAttribute('data-quiet')]).toEqual(['muted', '1', true]);
     await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="decisions"]')?.textContent).toBe('Route through one router (accepted)docs/adr/ADR-0001-router.md');
+    expect(document.querySelector('[data-module-decisions]')?.textContent).toBe('Route through one router (accepted) · docs/adr/ADR-0001-router.md');
   });
 
   test('PR impact marks the nodes the chosen PR changes and the nodes that depend on them, and a PR without a complete list says why', async () => {
@@ -678,10 +688,10 @@ describe('architecture map', () => {
     const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
     expect(summary).toContain(head.slice(0, 12));
     expect(summary).toContain('2 files changed in 1 node, 1 without an owner');
-    // archctx marks only the changed component and the group that calls it; the caller is two hops away.
-    const mark = (id: string) => [box(id).getAttribute('data-tone'), box(id).querySelector('.architecture-map__mark')?.textContent ?? null];
-    expect([PART, CENTER].map(mark)).toEqual([['change', '1'], ['muted', '↳']]);
-    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, true]);
+    // The changed component marks its capability with the PR's files there; the caller is two hops away.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '1 file']);
+    expect(document.querySelector('.architecture-layers [data-layer="pull_requests"] .architecture-layers__count')?.textContent).toBe('#21 · 1 module');
+    expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
     expect([gaps(), notes()]).toEqual([[], []]);
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-sequence')!.click());
     await settle();
@@ -690,7 +700,7 @@ describe('architecture map', () => {
     await settle();
     await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
-    expect(document.querySelector('[data-layer-facts="pull_requests"]')?.textContent).toBe(`Depends on changed Name ${PART}`);
+    expect(document.querySelector('[data-module-impact="21"]')?.textContent).toBe('Changes 1 file here.');
 
     await act(async () => {
       select().value = '22';
@@ -732,7 +742,7 @@ describe('architecture map', () => {
     expect(seen).toEqual(['changes', 'violations', 'pull_requests', 'tests', 'decisions'].map(layer => [layer, 'ok', 0]));
 
     // Today's changes may mark a node that they removed from the model: that mark lights no map node.
-    // A mark on a current member lights it and its group, and the rest stays dimmed.
+    // A mark on a current component lights its capability, and the other capabilities stay dimmed.
     const GONE = 'capability.gone';
     const changed = (ids: string[]): ArchitectureMapLayersInput => ({ ...unlit, changes: {
       state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: ids }],
@@ -749,7 +759,7 @@ describe('architecture map', () => {
         document.querySelector('[data-layer-summary="changes"]')!.textContent!.includes('Model: 0 nodes added, 1 removed')]);
     }
     // The last column: the layer summary still counts the removed node.
-    expect(quiet).toEqual([[[GONE], [], true], [[GONE, PART], [CALLER, EXTERNAL].sort(), true], [[PART], [CALLER, EXTERNAL].sort(), false]]);
+    expect(quiet).toEqual([[[GONE], [], true], [[GONE, PART], [CALLER], true], [[PART], [CALLER], false]]);
   });
 
   test('a layer without data is still listed and says why', async () => {
@@ -917,17 +927,19 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
   });
 
-  test('2-ARCH-P2 on the module map, which holds the layered view: a node shows its size, dependency edges, violations and the command that lists them', async () => {
+  test('2-ARCH-P2 on the module map: a capability shows its domain, size, violations with their source, PR impact with the flow step, and the command that lists them', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await click(`.react-flow__node[data-id="${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
-    expect(inspector().querySelector('[data-node-size]')?.textContent).toBe('900 lines in 1 files');
+    expect([inspector().querySelector('[data-module-domain]')?.textContent, inspector().querySelector('[data-node-size]')?.textContent]).toEqual(['workflow-engine', '900 lines in 1 files']);
     expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`calls Name ${CALLER} · 7 imports`);
-    expect(inspector().querySelector('[data-layer-facts="violations"]')?.textContent).toContain(`Imports Name ${CALLER} with no declared relation (3 imports)`);
+    expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
+      'Flow proof cannot be proven (2 diagnostics)flows check', `Imports Name ${CALLER} with no declared relation (3 imports)deps`]);
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.textContent)).toEqual([architectureViolationCommand('flows'), architectureViolationCommand('dependencies')]);
     expect(architectureViolationCommand('flows')).toBe('archctx flows check --no-sync --json');
-    await click(`.react-flow__node[data-id="${PART}"]`);
-    expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows · changes 1 file');
+    // The PR changes the capability's component, and its flow step ends there: the third step, the first of an outcome.
+    expect([...inspector().querySelectorAll('[data-module-impact="21"] > li')].map(item => item.textContent))
+      .toEqual(['Changes 1 file here.', 'Reaches step 3 of the flow "Append a ledger row".']);
   });
 
   test('a node lists each stale doc citation with its origin and location; the violations count and summary count the findings', async () => {
@@ -940,8 +952,8 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Doc citations: 2 of 3 out of date.');
     await click(`.react-flow__node[data-id="${CALLER}"]`);
     expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
-      'Out-of-date citation in the doc: src/router.ts:40 (line-moved)docs/architecture/modules/public-surface/root-router.md:12',
-      'Out-of-date citation in the node summary: route (missing-symbol)',
+      'Out-of-date citation in the doc: src/router.ts:40 (line-moved)docs/architecture/modules/public-surface/root-router.md:12docs anchors',
+      'Out-of-date citation in the node summary: route (missing-symbol)docs anchors',
     ]);
   });
 
@@ -1360,13 +1372,17 @@ describe('workspace navigation', () => {
       window.history.pushState(null, '', '#architecture');
       let next: ArchitectureMapRead | null = { state: 'ok', map: recorded };
       await mount(app(async () => next ?? new Promise<ArchitectureMapRead>(() => {})));
-      expect([view, source()]).toEqual([view, expect.stringMatching(new RegExp(`^Map collected .+ · ${recorded.commit.slice(0, 7)}$`))]);
+      expect([view, source()]).toEqual([view, expect.stringMatching(new RegExp(`^Map collected .+ · ${recorded.commit.slice(0, 7)} · ${recorded.head_ref} · archctx ${recorded.archctx_version}$`))]);
       next = later;
       await away[view]!();
       expect([view, source()]).toEqual([view, view === 'history' ? null : `Committed model · ${COMMIT.slice(0, 7)}`]);
       await back[view]!();
       expect([view, document.querySelector('.react-flow'), source()]).toEqual([view, null, null]);
     }
+    // A map of a detached HEAD names no branch.
+    await act(async () => root?.unmount());
+    await mount(app(async () => ({ state: 'ok', map: { ...recorded, head_ref: null } })));
+    expect(source()).toMatch(new RegExp(` · ${recorded.commit.slice(0, 7)} · detached HEAD · archctx ${recorded.archctx_version}$`));
   });
 });
 
