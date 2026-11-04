@@ -226,8 +226,9 @@ function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly n
 }
 
 /**
- * The architecture page's line: the model commit on screen and, for a map, when the server collected it;
- * for History, the head that pins the pages and the milestones read of archctx's total.
+ * The architecture page's line: the model commit on screen and, for a map, when the server collected it,
+ * the branch it follows and the archctx version that read it; for History, the head that pins the pages
+ * and the milestones read of archctx's total.
  */
 function ArchitectureFreshness({ source, now, t }: { readonly source: ArchitectureSource | null; readonly now: number; readonly t: OperatorTranslate }) {
   if (source === null) return null;
@@ -238,8 +239,12 @@ function ArchitectureFreshness({ source, now, t }: { readonly source: Architectu
   }
   return (
     <span data-freshness="ok" data-freshness-source="architecture">
-      {source.collectedAt === null ? t('freshness.architecture.model') : t('freshness.architecture.collected', { age: ageWords(source.collectedAt, now, t) })}
+      {source.map === null ? t('freshness.architecture.model') : t('freshness.architecture.collected', { age: ageWords(source.map.collectedAt, now, t) })}
       {' · '}<code className="mono-value" title={source.commit}>{source.commit.slice(0, 7)}</code>
+      {source.map !== null && <>
+        {' · '}<span data-head-ref>{source.map.headRef ?? t('architecture.header.detached')}</span>
+        {' · '}<span data-archctx-version>{t('architecture.header.archctx', { version: source.map.archctxVersion })}</span>
+      </>}
     </span>
   );
 }

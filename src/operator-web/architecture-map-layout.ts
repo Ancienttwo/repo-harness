@@ -1,4 +1,4 @@
-// Automatic layout of the architecture base map. A capability with components
+// Automatic layout of a whole-model map (History draws its milestones with it). A capability with components
 // is a group that holds them on a grid; dagre then places the groups and every
 // other top-level node, with each relation counted on its top-level ends. With
 // the model's layer order, each top-level node sits in its own layer's band,
