@@ -22,11 +22,11 @@ export interface McpToolContext {
   repoRoot: string;
   policy: McpPolicy;
   workspaceManager?: WorkspaceManager;
-  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+  codeGraphAdapter: GeneralRepoCodeGraphAdapter;
 }
 
 function readerContext(ctx: McpToolContext) {
-  const reader = createReaderToolContext(ctx.repoRoot, ctx.policy, ctx.workspaceManager, ctx.codeGraphAdapter);
+  const reader = createReaderToolContext(ctx.repoRoot, ctx.policy, ctx.codeGraphAdapter, ctx.workspaceManager);
   ctx.workspaceManager = reader.workspaceManager;
   return reader;
 }

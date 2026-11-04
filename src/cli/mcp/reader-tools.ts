@@ -24,7 +24,7 @@ export interface ReaderToolContext {
   repoRoot: string;
   policy: McpPolicy;
   workspaceManager: WorkspaceManager;
-  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+  codeGraphAdapter: GeneralRepoCodeGraphAdapter;
   testHooks?: GeneralRepoToolContext['testHooks'];
 }
 
@@ -457,7 +457,7 @@ export async function callReaderTool(ctx: ReaderToolContext, name: string, args:
   }
 }
 
-export function createReaderToolContext(repoRoot: string, policy: McpPolicy, workspaceManager?: WorkspaceManager, codeGraphAdapter?: GeneralRepoCodeGraphAdapter, testHooks?: GeneralRepoToolContext['testHooks']): ReaderToolContext {
+export function createReaderToolContext(repoRoot: string, policy: McpPolicy, codeGraphAdapter: GeneralRepoCodeGraphAdapter, workspaceManager?: WorkspaceManager, testHooks?: GeneralRepoToolContext['testHooks']): ReaderToolContext {
   return {
     repoRoot,
     policy,

@@ -5,6 +5,7 @@ import { tmpdir } from 'os';
 import { join, resolve } from 'path';
 import { RETIRED_CHATGPT_STATE_FINDING, runMcpDoctor } from '../../src/cli/mcp/doctor';
 import { createMcpToolContext } from '../../src/cli/mcp/server';
+import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
 import { callMcpTool } from '../../src/cli/mcp/tools';
 
 const CLI = join(import.meta.dir, '../..', 'src/cli/index.ts');
@@ -59,7 +60,7 @@ describe('mcp doctor and local config', () => {
     withTmpRepo((repoRoot, userHome) => {
       writeFileSync(join(userHome, 'mcp.local.json'), '{not-json\n');
 
-      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'planner' })).toThrow(
+      expect(() => createMcpToolContext({ repo: repoRoot, profile: 'planner', codeGraphAdapter: createCodeGraphCliAdapter() })).toThrow(
         'invalid MCP local config',
       );
     });
@@ -74,7 +75,7 @@ describe('mcp doctor and local config', () => {
         profile: 'orchestrator',
       });
       for (const action of [
-        () => createMcpToolContext({ repo: repoRoot, profile: 'planner' }),
+        () => createMcpToolContext({ repo: repoRoot, profile: 'planner', codeGraphAdapter: createCodeGraphCliAdapter() }),
         () => runMcpDoctor({ repo: repoRoot, json: true }),
       ]) {
         expect(action).toThrow('MCP_CONFIG_RETIRED_FIELD: server, chatgpt, capabilities.publicationMerge, profile=orchestrator;');
@@ -90,7 +91,7 @@ describe('mcp doctor and local config', () => {
 
       for (const action of [
         () => runMcpDoctor({ repo: repoRoot, json: true }),
-        () => createMcpToolContext({ repo: repoRoot, profile: 'planner' }),
+        () => createMcpToolContext({ repo: repoRoot, profile: 'planner', codeGraphAdapter: createCodeGraphCliAdapter() }),
       ]) {
         expect(action).toThrow('legacy repo-scope MCP config detected');
       }
@@ -109,7 +110,7 @@ describe('mcp doctor and local config', () => {
 
   test('harness_doctor and runMcpDoctor agree on mcp.localConfig from the single storage authority', async () => {
     const harnessDoctorLocalConfig = async (repoRoot: string): Promise<boolean> => {
-      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner', codeGraphAdapter: createCodeGraphCliAdapter() });
       const result = await callMcpTool(ctx, 'harness_doctor', {});
       return JSON.parse(result.content[0].text).mcp.localConfig;
     };
@@ -127,7 +128,7 @@ describe('mcp doctor and local config', () => {
 
     // A legacy repo-scope file that appears after startup must not fabricate a true.
     await withTmpRepoAsync(async (repoRoot) => {
-      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner' });
+      const ctx = createMcpToolContext({ repo: repoRoot, profile: 'planner', codeGraphAdapter: createCodeGraphCliAdapter() });
       mkdirSync(join(repoRoot, '.repo-harness'), { recursive: true });
       writeFileSync(join(repoRoot, '.repo-harness', 'mcp.local.json'), '{"version":3}\n');
       const payload = JSON.parse((await callMcpTool(ctx, 'harness_doctor', {})).content[0].text);
@@ -139,7 +140,7 @@ describe('mcp doctor and local config', () => {
     withTmpRepo((repoRoot) => {
       const sensitiveRoot = join(repoRoot, 'node_modules/pkg');
       mkdirSync(sensitiveRoot, { recursive: true });
-      expect(() => createMcpToolContext({ repo: repoRoot, enableReader: true, allowedRoots: [sensitiveRoot] })).toThrow(
+      expect(() => createMcpToolContext({ repo: repoRoot, enableReader: true, allowedRoots: [sensitiveRoot], codeGraphAdapter: createCodeGraphCliAdapter() })).toThrow(
         'MCP allowed root is denied by policy',
       );
     });
