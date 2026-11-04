@@ -241,10 +241,10 @@ function ModulePage({ detail, base, generation, onModule, t }: {
  * Read-only view of the committed architecture model. Every action is a command
  * for the Bot to copy; the board sends no request that acts on it.
  */
-/** Design order: the module base map (capabilities in domain groups), sequence, topology, the module list, then history. */
-type ArchitectureView = 'map' | 'sequence' | 'topology' | 'modules' | 'history';
-const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'sequence', 'topology', 'modules', 'history'];
-const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules' | 'history'>, ArchitectureBaseMap>> = { map: 'modules', sequence: 'sequence', topology: 'topology' };
+/** Design order: the module base map (capabilities in domain groups), layers, sequence, topology, the module list, then history. */
+type ArchitectureView = 'map' | 'layers' | 'sequence' | 'topology' | 'modules' | 'history';
+const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'layers', 'sequence', 'topology', 'modules', 'history'];
+const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules' | 'history'>, ArchitectureBaseMap>> = { map: 'modules', layers: 'layers', sequence: 'sequence', topology: 'topology' };
 
 /**
  * The source of the view on screen, for the header row: the model commit (a map also has its
