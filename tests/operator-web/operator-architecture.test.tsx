@@ -1122,9 +1122,9 @@ describe('architecture history', () => {
 
 describe('workspace navigation', () => {
   const repositoryId = REGISTRY.repositories[0]!.repository_id;
-  function app(): ReactElement {
+  function app(readArchitectureMap?: ArchitectureMapReader): ReactElement {
     return <OperatorApp initialRepositories={REGISTRY} readRepositories={async () => REGISTRY} initialLocale="en"
-      readNotifyStatus={() => new Promise(() => {})} />;
+      readNotifyStatus={() => new Promise(() => {})} {...(readArchitectureMap ? { readArchitectureMap } : {})} />;
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
@@ -1167,6 +1167,42 @@ describe('workspace navigation', () => {
     expect(window.location.hash).toBe(`#architecture/${CALLER}`);
     expect(calls.some(call => call.path === `/api/v1/repositories/${repositoryId}/architecture/modules/${CALLER}`)).toBe(true);
     expect(document.querySelector('#module-page-title')?.textContent).toBe(detailFor(CALLER).module.name);
+
+    // The header names a map only while that map is on screen. A base map that opens again after
+    // History, the module list or a module page shows no map until its read answers, so the header
+    // has no map source while the read is pending or unavailable.
+    Object.assign(globalThis, {
+      ResizeObserver: window.ResizeObserver, SVGElement: window.SVGElement, DOMMatrixReadOnly: window.DOMMatrixReadOnly,
+      requestAnimationFrame: window.requestAnimationFrame.bind(window), cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    });
+    const recorded = decodeArchitectureMap(recordedMap);
+    const source = () => document.querySelector('.operator-header [data-freshness-source="architecture"]')?.textContent ?? null;
+    const away: Record<string, () => Promise<void>> = {
+      history: async () => { await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click()); await settle(); },
+      modules: openModules,
+      detail: async () => {
+        await act(async () => { window.history.pushState(null, '', `#architecture/${CENTER}`); window.dispatchEvent(new window.Event('hashchange')); });
+        await settle();
+      },
+    };
+    const back: Record<string, () => Promise<void>> = {
+      history: async () => { await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click()); await settle(); },
+      modules: async () => { await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click()); await settle(); },
+      detail: async () => { await act(async () => [...document.querySelectorAll('button')].find(item => item.textContent === 'All modules')!.click()); await settle(); },
+    };
+    const pending: ArchitectureMapRead | null = null;
+    for (const [view, later] of [['history', pending], ['modules', { state: 'unavailable', reason: 'architecture_map_timeout' }], ['detail', pending]] as const) {
+      await act(async () => root?.unmount());
+      window.history.pushState(null, '', '#architecture');
+      let next: ArchitectureMapRead | null = { state: 'ok', map: recorded };
+      await mount(app(async () => next ?? new Promise<ArchitectureMapRead>(() => {})));
+      expect([view, source()]).toEqual([view, expect.stringMatching(new RegExp(`^Map collected .+ · ${recorded.commit.slice(0, 7)}$`))]);
+      next = later;
+      await away[view]!();
+      expect([view, source()]).toEqual([view, view === 'history' ? null : `Committed model · ${COMMIT.slice(0, 7)}`]);
+      await back[view]!();
+      expect([view, document.querySelector('.react-flow'), source()]).toEqual([view, null, null]);
+    }
   });
 });
 

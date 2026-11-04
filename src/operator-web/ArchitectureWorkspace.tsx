@@ -290,18 +290,21 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   const modulePath = moduleId === null ? null : `${root}/${moduleId}`;
   const index = useArchitectureRead(moduleId === null && view === 'modules' ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
   const detail = useArchitectureRead(modulePath, decodeArchitectureModuleDetail, refreshGeneration);
-  // The last map summary stays for the tab counts while another view shows; a new repository starts without one.
-  const [summary, setSummary] = useState<{ readonly repositoryId: string; readonly value: ArchitectureMapSummary } | null>(null);
-  const onSummary = useCallback((value: ArchitectureMapSummary) => setSummary({ repositoryId, value }), [repositoryId]);
-  const mapSummary = summary?.repositoryId === repositoryId ? summary.value : null;
-  const counts = mapSummary === null ? {} : { map: mapSummary.modules, sequence: mapSummary.flows };
-  const commit = moduleId !== null ? detail.value?.commit : view === 'modules' ? index.value?.commit : view === 'history' ? undefined : mapSummary?.commit;
-  const collectedAt = moduleId === null && view !== 'modules' && view !== 'history' ? mapSummary?.collectedAt ?? null : null;
+  // The tab counts of the last map stay while another view shows; a new repository starts without them.
+  // The map source is only the map on screen: the base map clears it when it shows no map or closes.
+  const [counts, setCounts] = useState<{ readonly repositoryId: string; readonly value: Partial<Record<ArchitectureView, number>> } | null>(null);
+  const [mapSource, setMapSource] = useState<ArchitectureSource | null>(null);
+  const onSummary = useCallback((summary: ArchitectureMapSummary | null) => {
+    setMapSource(summary === null ? null : { commit: summary.commit, collectedAt: summary.collectedAt });
+    if (summary !== null) setCounts({ repositoryId, value: { map: summary.modules, sequence: summary.flows } });
+  }, [repositoryId]);
+  const commit = moduleId !== null ? detail.value?.commit : view === 'modules' ? index.value?.commit : view === 'history' ? undefined : mapSource?.commit;
+  const collectedAt = moduleId === null && view !== 'modules' && view !== 'history' ? mapSource?.collectedAt ?? null : null;
   useEffect(() => { onSource(commit === undefined ? null : { commit, collectedAt }); }, [commit, collectedAt, onSource]);
   useEffect(() => () => onSource(null), [onSource]);
   return <section className="architecture-workspace" aria-label={t('nav.architecture')}>
     {moduleId === null ? <>
-      <ViewTabs view={view} counts={counts} onChange={setView} t={t} />
+      <ViewTabs view={view} counts={counts?.repositoryId === repositoryId ? counts.value : {}} onChange={setView} t={t} />
       <div id="architecture-view" className="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
         {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} t={t} />
           : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} onSummary={onSummary} t={t} /> : <>

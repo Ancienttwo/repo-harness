@@ -452,7 +452,8 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   readonly read?: ArchitectureMapReader;
   readonly refreshGeneration: number;
   readonly onModule: (id: string) => void;
-  readonly onSummary: (summary: ArchitectureMapSummary) => void;
+  /** Receives the summary of the map on screen: `null` while no map shows and when the view closes. A failed refresh keeps the shown map, so it keeps the summary. */
+  readonly onSummary: (summary: ArchitectureMapSummary | null) => void;
   readonly t: OperatorTranslate;
 }) {
   const result = useArchitectureMap(read, repositoryId, refreshGeneration);
@@ -468,8 +469,9 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const listed = map !== null && map.layers.pull_requests.state === 'ok' && map.layers.pull_requests.pull_requests.some(item => item.number === picked);
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   useEffect(() => {
-    if (map !== null) onSummary({ commit: map.commit, collectedAt: map.collected_at, modules: map.nodes.filter(node => node.kind === 'capability').length, flows: map.flows.length });
+    onSummary(map === null ? null : { commit: map.commit, collectedAt: map.collected_at, modules: map.nodes.filter(node => node.kind === 'capability').length, flows: map.flows.length });
   }, [map, onSummary]);
+  useEffect(() => () => onSummary(null), [onSummary]);
   // The active layer's summary and the gaps of this view go to the side panel, so the canvas starts below the lens row.
   const side = map && <div className="architecture-map__side" data-map-side>
     <MapGaps map={map} view={view} t={t} />
