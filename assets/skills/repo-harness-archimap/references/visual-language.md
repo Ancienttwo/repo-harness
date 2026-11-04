@@ -61,6 +61,16 @@ footnote.
 | `sev-high` `#B42318` | High severity, violated rules |
 | `dark` `#16181D`, chips `#262A31` | Life-cycle strip, file tree |
 
+Behavior board classes reuse these tokens and add no color:
+
+| Class | Look | Use |
+|---|---|---|
+| `region` | `--panel` fill, 1.5 px dashed `#9AA0A8` | One actor kind or the shared state; regions run at the same time |
+| `state` | `--panel` fill, 1.5 px `#4B5563`, pill corners, mono 13 px | One spec state value |
+| `state-compound` | `--canvas` fill, 1.5 px `#9AA0A8` | A compound state; its mono label names the spec value it holds |
+| `initial` | 16 px dot, `#16181D` | The initial state of a region or compound state |
+| `cx-marker` | 24 px dot, `sev-high` `#B42318`, white mono number | The state where a fix-off counterexample ends |
+
 Map layers to these kinds by role, not by name. Use one kind per layer.
 When a project has more layers than kinds, reuse `k-app` for the outer
 layers and keep `k-kernel` for the single authority layer.
@@ -79,6 +89,7 @@ and end each path 4 px before the target border.
 | `e-host` | 2 px `#5B21B6` | Call from the host or caller side (sequence) |
 | `e-dash` modifier | `6 6` dash | Process or network boundary, return, delivery |
 | `lifeline` | 1.5 px `#C4C6BF`, `4 6` dash | Sequence lifeline |
+| `e-transition` | 2 px `#4A4F57` | Statechart transition; the label is a spec action name |
 
 A count badge is a small mono label on white next to the edge midpoint. An
 edge label is 13 px text above a horizontal edge, or to the right of a

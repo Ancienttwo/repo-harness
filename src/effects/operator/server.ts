@@ -5,6 +5,7 @@ import { startRuntimeService } from './runtime-service';
 import { startDevActivityCollector } from '../dev-activity/collector';
 import { startWorktreeCollector } from './worktree-collector';
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE, worktreeCleanupWriteRoute } from './worktree-cleanup';
+import { OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE, OPERATOR_WORKTREES_CLEANUP_PLAN_ROUTE, worktreeCleanupExecuteWriteRoute, worktreeCleanupPlanWriteRoute } from './worktree-cleanup-route';
 import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { architecturePullRequestsSource } from '../../core/dev-activity/architecture';
@@ -133,6 +134,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'worktrees', method: 'GET', pattern: OPERATOR_WORKTREES_PATH, write: false }),
   // Removes only green worktrees; the effect runs in a supervised child process.
   Object.freeze({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true }),
+  // Plans and runs the authorized removal of non-green worktrees; both effects run in a supervised child process.
+  Object.freeze({ id: 'worktrees_cleanup_plan', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_PLAN_ROUTE.source, write: true }),
+  Object.freeze({ id: 'worktrees_cleanup_execute', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE.source, write: true }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
   Object.freeze({ id: 'bot_reviews', method: 'GET', pattern: OPERATOR_BOT_REVIEWS_PATH, write: false }),
@@ -1111,6 +1115,8 @@ export async function startOperatorServer(
       },
     }),
     worktreeCleanupWriteRoute(options.env),
+    worktreeCleanupPlanWriteRoute({ env: options.env }),
+    worktreeCleanupExecuteWriteRoute({ env: options.env }),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
     .concat(injectedWriteRoutes);
   // The inventory is the one write authority: a handler it does not declare
