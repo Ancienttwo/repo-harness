@@ -1947,13 +1947,15 @@ describe("check-agent-tooling", () => {
 });
 
 test.each([
-  ["present", `hc ${HC_MIN_VERSION}`, null],
-  ["unavailable", "hc 0.1.15", null],
-  ["missing", null, null],
+  // [status, hc --version output, retired policy pin, repair command]
+  ["present", `hc ${HC_MIN_VERSION}`, null, undefined],
+  ["unavailable", "hc 0.1.15", null, `hc update --version ${HC_MIN_VERSION}`],
+  ["unavailable", "not a version", null, undefined],
+  ["missing", null, null, "repo-harness update"],
   // The retired repository key is never read: the package pin decides.
-  ["present", `hc ${HC_MIN_VERSION}`, "99.0.0"],
-  ["unavailable", "hc 0.1.15", "0.1.0"],
-])("herdr-core is the required herdr runtime capability: %s (hc %s, retired policy pin %s)", (status, hcVersion, retiredPin) => {
+  ["present", `hc ${HC_MIN_VERSION}`, "99.0.0", undefined],
+  ["unavailable", "hc 0.1.15", "0.1.0", `hc update --version ${HC_MIN_VERSION}`],
+])("herdr-core is the required herdr runtime capability: %s (hc %s, retired policy pin %s)", (status, hcVersion, retiredPin, command) => {
   const fixture = setupFakeEnvironment("herdr-core-runtime");
   try {
     rmSync(join(fixture.fakeBin, "hc"));
@@ -1975,6 +1977,7 @@ test.each([
     expect(herdrCore.min_version).toBe(HC_MIN_VERSION);
     expect(herdrCore.min_version_source).toBe("package:src/core/operator/herdr-core-pin.json");
     if (hcVersion) expect(herdrCore.version).toBe(hcVersion);
+    expect(herdrCore.command).toBe(command);
     if (status === "present") {
       expect(result.stderr).not.toContain("herdr-core");
     } else {

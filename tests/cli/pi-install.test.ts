@@ -17,6 +17,7 @@ import { piAgentDir } from '../../src/effects/pi-agent-dir';
 import { piExecutable } from '../../src/effects/pi-executable';
 import { configureRequiredHerdrSkill } from '../../src/cli/commands/herdr-skill';
 import { piReviewLaunchBlocker } from '../../src/effects/setup/pi-host-probe';
+import { writeFakeHc } from '../helpers/fake-hc';
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -88,8 +89,7 @@ default: process.exit(99);
   mkdirSync(bin, { recursive: true });
   symlinkSync(process.execPath, join(bin, 'bun'));
   symlinkSync(join(host, 'pi'), join(bin, 'pi'));
-  write(join(bin, 'hc'), '#!/bin/sh\n[ "$1" = --skill ] && printf \'# hc manual (herdr-core)\\n\\n`$HC_TERMINAL_ID` is your address.\\n\'\n');
-  chmodSync(join(bin, 'hc'), 0o755);
+  writeFakeHc(bin);
   write(join(home, '.bun/bin/repo-harness'), '#!/bin/sh\nexit 0\n');
   chmodSync(join(home, '.bun/bin/repo-harness'), 0o755);
   const argv = () => existsSync(join(root, 'argv.jsonl')) ? readFileSync(join(root, 'argv.jsonl'), 'utf8').trim().split('\n').map(line => JSON.parse(line) as string[]) : [];
