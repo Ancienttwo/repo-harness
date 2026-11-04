@@ -374,14 +374,17 @@ async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): 
   const scanLimit = ctx.policy.maxFileBytes;
   const size = statSync(target.absolutePath).size;
   if (size > scanLimit) {
-    return errorResult('FILE_TOO_LARGE', `file exceeds the ${scanLimit} byte redaction scan limit`, { size, scan_limit_bytes: scanLimit });
+    return errorResult('FILE_TOO_LARGE', `file exceeds the ${scanLimit} byte redaction scan limit; read_text serves only a whole file within the limit, and a smaller line range or max_bytes does not change that`, { size, scan_limit_bytes: scanLimit });
   }
   // Redact the whole file before the range cut: a rule such as private_key
   // needs both markers in one string. Redaction keeps line breaks, so the
-  // line numbers below are source line numbers.
-  const redacted = redactMcpText(readFileSync(target.absolutePath, 'utf-8'));
+  // line numbers below are source line numbers. Only a terminator at the end
+  // of the source text ends the last line; a redaction at EOF can leave an
+  // empty last source line.
+  const source = readFileSync(target.absolutePath, 'utf-8');
+  const redacted = redactMcpText(source);
   const lines = redacted.text.split(/\r\n|\r|\n/);
-  if (lines.at(-1) === '') lines.pop();
+  if (source === '' || /[\r\n]$/.test(source)) lines.pop();
   const selected: string[] = [];
   let bytesReturned = 0;
   let hasMore = lines.length > endLine;

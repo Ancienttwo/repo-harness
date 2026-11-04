@@ -1978,16 +1978,22 @@ describe('MCP reader tools', () => {
         'spannedvalue123',
         'tail',
       ].join('\n'));
-      const ranges: Array<{ start: number; end: number; expected: string[] }> = [
-        { start: 3, end: 6, expected: ['3: ', '4: ', '5: ', '6: after'] },
-        { start: 1, end: 3, expected: ['1: header', '2: [PRIVATE KEY REDACTED]', '3: '] },
-        { start: 4, end: 4, expected: ['4: '] },
-        { start: 8, end: 9, expected: ['8: ', '9: tail'] },
+      // A multi-line match at EOF without a final newline keeps its last source line.
+      writeFileSync(join(repoRoot, 'docs', 'key-at-eof.md'), ['header', '-----BEGIN RSA PRIVATE KEY-----', 'MIIEkeybodyline1', 'keybodyline2', '-----END RSA PRIVATE KEY-----'].join('\n'));
+      writeFileSync(join(repoRoot, 'docs', 'assignment-at-eof.md'), ['header', 'API_TOKEN=', 'spannedvalue123'].join('\n'));
+      const ranges: Array<{ path: string; start: number; end: number; expected: string[]; hasMore: boolean }> = [
+        { path: 'docs/key-note.md', start: 3, end: 6, expected: ['3: ', '4: ', '5: ', '6: after'], hasMore: true },
+        { path: 'docs/key-note.md', start: 1, end: 3, expected: ['1: header', '2: [PRIVATE KEY REDACTED]', '3: '], hasMore: true },
+        { path: 'docs/key-note.md', start: 4, end: 4, expected: ['4: '], hasMore: true },
+        { path: 'docs/key-note.md', start: 8, end: 9, expected: ['8: ', '9: tail'], hasMore: false },
+        { path: 'docs/key-at-eof.md', start: 5, end: 5, expected: ['5: '], hasMore: false },
+        { path: 'docs/assignment-at-eof.md', start: 2, end: 3, expected: ['2: API_TOKEN=[REDACTED]', '3: '], hasMore: false },
       ];
-      for (const { start, end, expected } of ranges) {
-        const cut = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path: 'docs/key-note.md', start_line: start, end_line: end });
+      for (const { path, start, end, expected, hasMore } of ranges) {
+        const cut = await jsonTool(ctx, 'read_text', { workspace_id: opened.workspace_id, path, start_line: start, end_line: end });
         expect(cut.text).toBe(expected.join('\n'));
         expect(cut.end_line).toBe(end);
+        expect(cut.has_more).toBe(hasMore);
         expect(cut.text).not.toMatch(/keybody|spannedvalue/);
       }
 
