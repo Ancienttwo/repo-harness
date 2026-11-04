@@ -53,14 +53,14 @@ export class OperatorWriteRefusal extends Error {
 
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const OPERATION = /^[a-z][a-z0-9_]{0,63}$/u;
-// A target is a logical name plus an optional id; the shape keeps paths out of the audit log.
-const TARGET = /^[a-z][a-z0-9_]{0,63}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127})?$/u;
+// A target is a logical name plus at most two ids (`advisor_seat:<repository_id>:<parent>`); the shape keeps paths out of the audit log.
+const TARGET = /^[a-z][a-z0-9_]{0,63}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127}){0,2}$/u;
 // The directory lock waits with a blocking sleep. In-process contention is
 // refused before it, so this bound only covers a short CLI critical section.
 const TARGET_LOCK_WAIT_MS = 50;
 const AUDIT_LOCK_WAIT_MS = 1_000;
 
-const OPERATOR_RECONCILE_ACTION = 'Check the target state before you retry. Do not send the request again with a new request_id.';
+export const OPERATOR_RECONCILE_ACTION = 'Check the target state before you retry. Do not send the request again with a new request_id.';
 
 export function operatorWriteError(code: string, message: string, nextAction: string): OperatorWriteErrorBodyV1 {
   return { error: { code, message, next_action: nextAction } };
