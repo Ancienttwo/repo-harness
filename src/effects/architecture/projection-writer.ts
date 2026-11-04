@@ -1,8 +1,7 @@
 import { spawn } from 'node:child_process';
 import { isAbsolute } from 'node:path';
 import { PROJECTION_WRITER_DEFAULT_BRANCH } from 'archctx-contracts';
-import { ARCHCTX_REQUIRED_VERSION } from '../../core/architecture/projection';
-import { findConsumerRoot, resolveCompatibleNodeRuntime, resolvePackageLocalArchctx } from './archctx-provider';
+import { resolveCompatibleNodeRuntime, resolvePackageLocalArchctx } from './archctx-provider';
 
 /**
  * Repository policy only. archctx owns locking, rendering, Git writes and PR publication.
@@ -25,7 +24,7 @@ export function architectureWriterArgs(mode: string, stateDir: string | undefine
  */
 export async function runArchitectureWriter(repoRoot: string, mode: string, env: NodeJS.ProcessEnv): Promise<number> {
   const args = architectureWriterArgs(mode, env.ARCHCONTEXT_STATE_DIR);
-  const provider = resolvePackageLocalArchctx(findConsumerRoot(), ARCHCTX_REQUIRED_VERSION);
+  const provider = resolvePackageLocalArchctx();
   const node = resolveCompatibleNodeRuntime(env);
   const child = spawn(node, [provider.binaryPath, ...args], { cwd: repoRoot, env, stdio: 'inherit' });
   const interrupt = () => child.kill('SIGINT');
