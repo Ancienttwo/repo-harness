@@ -6,7 +6,7 @@ import { spawnSync } from 'child_process';
 import { runInstall, runUninstall } from '../../src/cli/commands/install';
 import { CLAUDE_STATUS_LINE_PIPE, claudeTarget } from '../../src/cli/installer/targets/claude';
 import type { Location } from '../../src/cli/installer/types';
-import { readConfigurationReceipt } from '../../src/cli/installer/configuration-ownership';
+import { readConfigurationReceipt, withConfigurationMutation } from '../../src/cli/installer/configuration-ownership';
 import { isRepoHarnessManagedHookCommand } from '../../src/core/adoption/managed-hook-config';
 import { buildManagedHooks } from '../../src/cli/installer/managed-entries';
 
@@ -471,34 +471,35 @@ describe('install command (Phase 1B)', () => {
   });
 
   test.each([
-    // [case, statusLine before install, statusLine the user sets after install, uninstall exit, statusLine after uninstall]
-    ['none exists', undefined, undefined, 0, undefined],
-    ['a user status line exists', { type: 'command', command: 'my-line' }, undefined, 0, { type: 'command', command: 'my-line' }],
-    ['the user replaced the installed one', undefined, { type: 'command', command: 'my-line' }, 1, { type: 'command', command: 'my-line' }],
-  ] as const)('claude statusLine install and uninstall when %s: install writes it only into an empty slot, uninstall removes only the installed value', (_name, existing, replacement, uninstallExit, remaining) => {
+    // [case, statusLine before install, statusLine the user sets after install, statusLine after uninstall]
+    ['none exists', undefined, undefined, undefined],
+    ['an older tagged entry exists', { type: 'command', command: ': repo-harness-managed-hook-v1; exec repo-harness-hook old' }, undefined, undefined],
+    ['a user status line exists', { type: 'command', command: 'my-line' }, undefined, { type: 'command', command: 'my-line' }],
+    ['the user edits the installed one', undefined, { type: 'command', command: 'my-line' }, { type: 'command', command: 'my-line' }],
+  ] as const)('claude statusLine when %s: install writes the tagged entry only into an empty or tagged slot, uninstall removes only a tagged one', (_name, existing, edit, remaining) => {
     withTempHome((home) => {
       const filePath = path.join(home, '.claude/settings.json');
+      const userLine = existing !== undefined && !existing.command.startsWith(': repo-harness-managed-hook-v1; ');
       if (existing) {
         fs.mkdirSync(path.dirname(filePath), { recursive: true });
         fs.writeFileSync(filePath, `${JSON.stringify({ statusLine: existing }, null, 2)}\n`);
       }
-      const owned = { type: 'command', command: 'repo-harness-hook statusline' };
+      const owned = { type: 'command', command: ': repo-harness-managed-hook-v1; exec repo-harness-hook statusline' };
       const pipeNote = `[claude] note: statusLine exists and is not changed. To capture Claude quota, set its command to: ${CLAUDE_STATUS_LINE_PIPE}`;
       const first = runInstall({ target: 'claude', location: 'global' });
       expect(first.exitCode).toBe(0);
-      expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).statusLine).toEqual(existing ?? owned);
-      expect(first.lines.includes(pipeNote)).toBe(existing !== undefined);
-      expect(readConfigurationReceipt(home).changes.filter((entry) => entry.selector === 'statusLine')).toEqual(existing ? [] : [
-        { path: filePath, selector: 'statusLine', before: null, installed: JSON.stringify(owned), active: true },
-      ]);
-      expect(runInstall({ target: 'claude', location: 'global' }).lines).toEqual([`[claude] unchanged: ${filePath}`, ...(existing ? [pipeNote] : [])]);
-      if (replacement) {
+      expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).statusLine).toEqual(userLine ? existing : owned);
+      expect(first.lines.includes(pipeNote)).toBe(userLine);
+      expect(runInstall({ target: 'claude', location: 'global' }).lines).toEqual([`[claude] unchanged: ${filePath}`, ...(userLine ? [pipeNote] : [])]);
+      if (edit) {
         const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
-        fs.writeFileSync(filePath, `${JSON.stringify({ ...data, statusLine: replacement }, null, 2)}\n`);
+        fs.writeFileSync(filePath, `${JSON.stringify({ ...data, statusLine: edit }, null, 2)}\n`);
+        // The edited entry is the user's: a later install keeps it, and a receipt mutation of the file does not fail.
+        expect(runInstall({ target: 'claude', location: 'global' }).lines).toContain(pipeNote);
+        expect(() => withConfigurationMutation([filePath], home, () => undefined)).not.toThrow();
       }
       const uninstall = runUninstall({ target: 'claude', location: 'global' });
-      expect(uninstall.exitCode, uninstall.lines.join('\n')).toBe(uninstallExit);
-      if (replacement) expect(uninstall.lines).toContain(`[unresolved] ${filePath}: user changed statusLine; preserved`);
+      expect(uninstall.exitCode, uninstall.lines.join('\n')).toBe(0);
       const after = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : {};
       expect(after.statusLine).toEqual(remaining);
       expect(after.hooks).toBeUndefined();

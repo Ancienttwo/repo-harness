@@ -3,7 +3,7 @@ import { globalRuntimeScope, withRuntimeTransactionContext, type RuntimeTransact
 import { existsSync, lstatSync, readFileSync, readdirSync, readlinkSync, rmSync, rmdirSync, unlinkSync } from 'fs';
 import { dirname, join } from 'path';
 import { createHash } from 'crypto';
-import { MANAGED_TAG, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
+import { MANAGED_TAG, isRepoHarnessManagedHookCommand, stripRepoHarnessManagedHooks } from '../../core/adoption/managed-hook-config';
 import { stagedSkillRoot, hostSkillRoot, providerSkillLock, type ProviderSkillLock } from '../../effects/host-skill-roots';
 import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
@@ -128,9 +128,12 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
       if (read(path)) {
         const data = object(read(path));
         const cleaned = stripRepoHarnessManagedHooks(data.hooks).hooks;
-        if (!deepEqual(cleaned, data.hooks ?? {})) {
+        // The Claude status line is owned like a hook command: only while its command carries the managed tag.
+        const ownedStatusLine = host === 'claude' && isRepoHarnessManagedHookCommand(data.statusLine?.command);
+        if (!deepEqual(cleaned, data.hooks ?? {}) || ownedStatusLine) {
           if (Object.keys(cleaned).length) data.hooks = cleaned; else delete data.hooks;
-          change(path, Object.keys(data).length ? `${JSON.stringify(data, null, 2)}\n` : null, `${host} managed hooks`);
+          if (ownedStatusLine) delete data.statusLine;
+          change(path, Object.keys(data).length ? `${JSON.stringify(data, null, 2)}\n` : null, ownedStatusLine ? `${host} managed hooks and status line` : `${host} managed hooks`);
         }
       }
     } catch (error) { unresolved(path, String((error as Error).message)); }
@@ -167,11 +170,8 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
     }
     if (configurationPaths(home).includes(surface.path)) {
       // A restoration receipt owns these fragments; never also delete the projection.
-      // `default_mode_request_user_input` and `statusLine` are receipt-only entries, not projection fragments.
-      const projectionFragment = (entry: (typeof receipt.changes)[number]) => entry.active && entry.path === surface.path
-        && entry.selector !== 'default_mode_request_user_input' && entry.selector !== 'statusLine';
-      if (receipt.changes.some(projectionFragment)) {
-        if (!remaining.some(projectionFragment)) removedSurfaces.add(surface);
+      if (receipt.changes.some((entry) => entry.active && entry.path === surface.path && entry.selector !== 'default_mode_request_user_input')) {
+        if (!remaining.some((entry) => entry.active && entry.path === surface.path && entry.selector !== 'default_mode_request_user_input')) removedSurfaces.add(surface);
         continue;
       }
     }

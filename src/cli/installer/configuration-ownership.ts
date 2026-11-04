@@ -68,19 +68,13 @@ function jsonObject(raw: string): Record<string, any> {
  * The repository receipts that the removed `mcp setup codex` wrote have no
  * reader; `mcp doctor` names them as retired state (#1354).
  */
-/** The Claude status line is a setting of `settings.json` only, not of `.claude.json`. */
-function isClaudeSettings(path: string): boolean {
-  return path.endsWith(join('.claude', 'settings.json'));
-}
-
 function validSelector(path: string, selector: string): boolean {
   if (path.endsWith('.toml')) return selector === 'default_mode_request_user_input' || selector === 'mcp_servers.codegraph' || selector === 'mcp_servers.repo_harness';
-  return selector === 'mcpServers.codegraph' || selector === 'allowedTools.codegraph' || (selector === 'statusLine' && isClaudeSettings(path));
+  return selector === 'mcpServers.codegraph' || selector === 'allowedTools.codegraph';
 }
 
 function recordedSelectors(path: string): string[] {
-  if (path.endsWith('.toml')) return ['default_mode_request_user_input', 'mcp_servers.codegraph'];
-  return isClaudeSettings(path) ? ['mcpServers.codegraph', 'allowedTools.codegraph', 'statusLine'] : ['mcpServers.codegraph', 'allowedTools.codegraph'];
+  return path.endsWith('.toml') ? ['default_mode_request_user_input', 'mcp_servers.codegraph'] : ['mcpServers.codegraph', 'allowedTools.codegraph'];
 }
 
 function tomlValue(raw: string, selector: string): unknown {
@@ -116,7 +110,6 @@ export function readConfigurationFragment(path: string, raw: string, selector: s
     return span ? raw.slice(span.start, span.end) : null;
   }
   const value = jsonObject(raw);
-  if (selector === 'statusLine') return value.statusLine === undefined ? null : JSON.stringify(value.statusLine);
   if (selector === 'mcpServers.codegraph') return value.mcpServers?.codegraph === undefined ? null : JSON.stringify(value.mcpServers.codegraph);
   if (value.allowedTools !== undefined && !Array.isArray(value.allowedTools)) throw new Error('allowedTools must be an array');
   return value.allowedTools?.includes('mcp__codegraph__*') ? JSON.stringify('mcp__codegraph__*') : null;
@@ -132,10 +125,7 @@ export function replaceConfigurationFragment(path: string, raw: string, selector
     return next;
   }
   const parsed = jsonObject(raw);
-  if (selector === 'statusLine') {
-    if (value === null) delete parsed.statusLine;
-    else parsed.statusLine = JSON.parse(value);
-  } else if (selector === 'mcpServers.codegraph') {
+  if (selector === 'mcpServers.codegraph') {
     if (value === null) { if (parsed.mcpServers) { delete parsed.mcpServers.codegraph; if (!Object.keys(parsed.mcpServers).length) delete parsed.mcpServers; } }
     else { parsed.mcpServers ??= {}; parsed.mcpServers.codegraph = JSON.parse(value); }
   } else {

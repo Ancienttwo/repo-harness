@@ -158,12 +158,14 @@ marks a capture older than 30 minutes `unknown`.
 `~/.claude/settings.json` has no `statusLine`:
 
 ```json
-"statusLine": { "type": "command", "command": "repo-harness-hook statusline" }
+"statusLine": { "type": "command", "command": ": repo-harness-managed-hook-v1; exec repo-harness-hook statusline" }
 ```
 
-`~/.repo-harness/configuration-restore.json` records the entry. Uninstall
-removes it only while it equals the installed value. Install does not change
-an existing status line. To keep it and also capture quota, set its command to:
+The managed tag is the ownership proof, as for the managed hook commands.
+Install refreshes the entry only while its command has the tag, and uninstall
+removes it only then. A user edit removes the tag, so the entry is then the
+user's. Install does not change an existing status line. To keep it and also
+capture quota, set its command to:
 
 ```sh
 input=$(cat); printf '%s' "$input" | repo-harness-hook statusline >/dev/null; printf '%s' "$input" | <your status line command>

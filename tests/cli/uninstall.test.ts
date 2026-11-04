@@ -138,12 +138,10 @@ test('managed context block cleanup keeps user prose',()=>fixture((home,env)=>{
  expect(runUserUninstall({target:'codex',env}).status).toBe('complete');expect(readFileSync(join(home,'.codex/AGENTS.md'),'utf8')).toBe('user-before\n\nuser-after\n');
 }));
 
-// An owned statusLine receipt entry is not a CodeGraph projection fragment, so the projection is still removed.
-for (const statusLine of [false,true]) test(`old transaction-owned MCP projection composes with hook removal${statusLine?' and an owned statusLine':''}`,()=>fixture((home,env)=>{
+test('old transaction-owned MCP projection composes with hook removal',()=>fixture((home,env)=>{
  const path=join(home,'.claude/settings.json');
  const server={command:'cg'};const allowedTools=['user-tool','mcp__codegraph__*'];
  put(home,'.claude/settings.json',JSON.stringify({mcpServers:{codegraph:server,user:{command:'keep'}},allowedTools,hooks:buildManagedHooks('claude')}));
- if (statusLine) writeOwnedConfiguration(path,JSON.stringify({...JSON.parse(readFileSync(path,'utf8')),statusLine:{type:'command',command:'repo-harness-hook statusline'}}),home);
  const projection=JSON.stringify({server,allowedTools:['mcp__codegraph__*']});
  profile(home,[{...ownedFile(path,''),owner:'architecture',managed_marker:'codegraph-config-projection',content_hash:`sha256:${createHash('sha256').update(projection).digest('hex')}`}]);
  const result=runUserUninstall({target:'both',env});expect(result.status,result.lines.join('\n')).toBe('complete');
