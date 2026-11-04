@@ -3230,6 +3230,9 @@ describe('Global Working Rules refresh during install and update', () => {
       expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, protocol, reverse_skill: false } as unknown as CandidateReconciliationRequest), '9.9.9'))
         .toThrow(new CandidateRequestProtocolRetiredError(protocol, '9.9.9'));
     }
-    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, profile: 'full' } as unknown as CandidateReconciliationRequest), '9.9.9')).toThrow('invalid shape');
+    // A protocol 3 request that still carries a retired field is refused, not silently ignored.
+    for (const retired of [{ profile: 'full' }, { reverse_skill: true }, { reverse_skill: false }]) {
+      expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, ...retired } as unknown as CandidateReconciliationRequest), '9.9.9')).toThrow('invalid shape');
+    }
   });
 });

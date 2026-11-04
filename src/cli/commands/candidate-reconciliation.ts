@@ -497,6 +497,8 @@ export function parseCandidateRequest(encoded: string, candidateVersion: string)
   const booleans = [
     'sync_skill', 'host_adapters', 'external_skills', 'obsidian_skills', 'codegraph',
   ];
+  // Fields that earlier request shapes carried; the runtime no longer reads them.
+  const retiredFields = ['profile', 'reverse_skill'];
   if (
     request.protocol !== CANDIDATE_RECONCILIATION_PROTOCOL
     || requiredStrings.some((key) => typeof request[key] !== 'string' || !(request[key] as string).length)
@@ -504,7 +506,7 @@ export function parseCandidateRequest(encoded: string, candidateVersion: string)
     || request.candidate === null
     || Array.isArray(request.candidate)
     || !['codex', 'claude', 'both'].includes(String(request.target))
-    || 'profile' in request
+    || retiredFields.some((key) => key in request)
     || booleans.some((key) => typeof request[key] !== 'boolean')
     || (request.brain_root !== undefined && typeof request.brain_root !== 'string')
     || (request.report_language !== undefined
