@@ -498,6 +498,10 @@ describe("ship-worktrees closeout journal", () => {
       { args: ABORT, pause: { cmd: "mkdir", glob: "*/recovery.lock" }, error: "ship closeout is still owned by a live process" },
       { args: ABORT, error: "" },
       { args: SHIP, pause: { cmd: "mkdir", glob: "*/snapshot" }, error: "" }] },
+    { name: "a paused recovery leaves a new ship's unwritten claim alone", seed: { claim: "dead" }, actors: [
+      { args: ABORT, pause: { cmd: "mkdir", glob: "*/recovery.lock" }, error: "ship closeout is still owned by a live process" },
+      { args: ABORT, error: "" },
+      { args: SHIP, pause: { cmd: "mkdir", glob: "*/claims/ship/*.lock", after: true }, error: "" }] },
     { name: "two recoveries that read one dead lane never both own it", seed: { claim: "dead", lane: "dead", journal: true }, actors: [
       { args: ABORT, pause: { cmd: "sed", glob: "*pid*/recovery.lock/owner.json", after: true }, error: "another recovery already owns this ship closeout" },
       { args: ABORT, pause: { cmd: "rm", glob: "*/transactions/ship/*" }, error: "" }] },
