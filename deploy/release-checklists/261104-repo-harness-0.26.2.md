@@ -53,9 +53,9 @@ release.
   PATH hint and uses the directory for the rest of the run.
 - Quota (#1716): `repo-harness quota [--json]` (#1723), the Claude status
   line capture and the managed `statusLine` entry (#1733), the coordinator
-  quota read in the issue-flow skill (#1732). The account state comes from
-  the weekly window, and an absent non-weekly window is `absent` (#1741,
-  #1742).
+  quota read in the issue-flow skill (#1732). `repo-harness quota` requires a
+  valid weekly reading. The worst window state across all windows sets the
+  account state. An absent non-weekly window is `absent` (#1741, #1742).
 - hc pin (#1712): one package pin file; the policy key
   `external_tooling.herdr_core` is retired.
 - Operator: architecture map contract v7 (#1729), Sequence view (#1734),

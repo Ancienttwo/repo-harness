@@ -151,8 +151,9 @@ quota. The install state stays protocol 3: no migration.
 
 ### Fixed
 
-- `repo-harness quota` gives the account state from the weekly window
-  (Claude `seven_day`, Codex the 10080-min window). An absent non-weekly
+- `repo-harness quota` requires a valid weekly reading (Claude `seven_day`,
+  Codex the 10080-min window). The worst window state across all windows sets
+  the account state. An absent non-weekly
   window (Codex `secondary`, Claude `five_hour`) reports `absent` and does not
   make the account `unknown`. A missing weekly window still makes the account
   `unknown`, unless another window is `exhausted` or `tight`. (#1741, #1742)
