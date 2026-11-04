@@ -1,0 +1,33 @@
+export const en = {
+  'system.collector': 'Collector',
+  'system.collectedAt': 'Collected {age} ago',
+  'system.neverCollected': 'Nothing collected yet',
+  'system.sourceCounts': '{ok} ok · {stale} stale · {unavailable} unavailable · {off} off',
+  'system.snapshot.ready': 'Ready',
+  'system.snapshot.partial': 'Partial',
+  'system.snapshot.unavailable': 'Unavailable',
+  'system.boundaries': 'What this console can and cannot do',
+  'system.boundary.readOnly': 'It is read-only except the Agents page, which saves the agents and seats sections of ~/.repo-harness/config.json, and the Worktrees page, which removes only the green worktrees you select. Every other action is a link out or a command you copy and run yourself.',
+  'system.boundary.authority': 'GitHub decides PR state, checks and review; Git decides branches and worktrees. The console only shows them.',
+  'system.boundary.agents': 'Agent status comes from runtime sources. These sources have no verified link to board items.',
+  'system.boundary.runtime': 'Agent status is an observation. A heartbeat is not progress, idle is not cancellation, and an ended turn is not acceptance.',
+  'system.boundary.evidence': 'Checks and reviews come from GitHub. A green check here is not a merge approval.',
+  'system.boundary.privacy': 'Absolute paths and raw subprocess text never leave the server.',
+} as const;
+
+export const zh: Readonly<Record<keyof typeof en, string>> = {
+  'system.collector': '采集器',
+  'system.collectedAt': '{age}前采集',
+  'system.neverCollected': '还没有采集',
+  'system.sourceCounts': '{ok} 正常 · {stale} 过期 · {unavailable} 不可用 · {off} 未开启',
+  'system.snapshot.ready': '就绪',
+  'system.snapshot.partial': '部分可用',
+  'system.snapshot.unavailable': '不可用',
+  'system.boundaries': '这个控制台能做什么、不能做什么',
+  'system.boundary.readOnly': '除了 Agents 页和 Worktree 页，它是只读的。Agents 页只保存 ~/.repo-harness/config.json 的 agents 段和 seats 段；Worktree 页只删除你勾选的绿色 worktree。其余每个操作都是外链，或者一条由你复制后自己执行的命令。',
+  'system.boundary.authority': 'PR 状态、检查和评审以 GitHub 为准；分支和 worktree 以 Git 为准。控制台只负责展示。',
+  'system.boundary.agents': 'Agent 状态来自 runtime 来源。这些来源没有与卡片关联的已验证身份。',
+  'system.boundary.runtime': 'Agent 状态只是观测。心跳不代表进度，空闲不代表取消，一轮结束也不代表验收。',
+  'system.boundary.evidence': '检查和评审结果来自 GitHub。这里的绿色检查不等于批准合并。',
+  'system.boundary.privacy': '绝对路径和子进程原始输出不会离开服务端。',
+};
