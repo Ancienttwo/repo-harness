@@ -308,7 +308,7 @@ boundary explicit:
 
 | Capability | Owner | Required for |
 |---|---|---|
-| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | required, at least the version pinned in the package file `src/core/operator/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
+| `herdr_core` (`hc`) | user tool; `repo-harness install` and `update` install a missing hc from the pin | required, at least the version pinned in the package file `src/core/operator/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
@@ -320,13 +320,44 @@ The package file `src/core/operator/herdr-core-pin.json` is the single herdr pin
 The release owns it, because the floor protects the package's hc client code: a
 global install, a local install and a source checkout each read the pin of their
 own code. The file owns the `min_version` floor and the checksum-verified
-`release_assets` entry that CI installs. Install hc through Herdr.app or a
-herdr-core release and verify `hc --version` reports at least that `min_version`.
+`release_assets` entry of each platform. CI and `repo-harness install` and
+`update` install from these entries. When the selected plugins need hc (the
+owner of the `herdr` package in `assets/skill-commands/manifest.json` is
+enabled; today that is core), `install` and `update` do one of these:
+
+| hc on PATH | Action |
+|---|---|
+| Missing | Download the platform asset, check its sha256 and the downloaded `hc --version`, then install it in the layout of the official `install.sh` and `install.ps1` |
+| Below the floor | Run `hc update --version <min_version>` |
+| At or above the floor | No change |
+
+The install layout follows the official installers at
+`https://releases.herdr.dev/core/`. macOS and Linux: `herdr-core` and the `hc`
+symlink in `~/.local/bin`. Windows x64: `herdr-core.exe`, the `conpty`
+directory beside it and the `hc.exe` hard link in
+`%LOCALAPPDATA%\Programs\herdr-core`; `%SystemRoot%\System32\tar.exe` opens
+the zip, because the Git Bash tar cannot. When the install directory is not on
+PATH, the step reports a hint and puts that directory first on the PATH of the
+later steps of the same run, so the Herdr skill step reads the new hc. The user
+PATH does not change, and `setup check` reports hc missing until the user adds
+the directory.
+
+The step never overwrites an existing install file. A sha256 mismatch, a failed
+download, an archive without a complete hc (on Windows, `conpty\conpty.dll`), a
+downloaded hc of another version, or a failed `hc update` (for example, an hc
+that Herdr.app or a package manager manages) stops the command and installs
+nothing. A platform with no pin target (for example Windows arm64) stops with
+the platform name and the manual install: Herdr.app or a herdr-core release.
+The install ledger has no hc entry: after install, hc is a user tool, and
+`repo-harness uninstall` keeps it. The download is outside the install
+transaction, so a later failed step does not remove a new hc.
 `check-agent-tooling.sh --strict-readiness` reads the same file and fails if hc is
 missing, unusable, or older than the pin. A repository policy has no hc pin:
 `init` and adoption delete the retired policy key and report it. `setup check`
-projects `runtime.herdr_core`. Repo-harness does not install hc or edit user
-Herdr config. Herdr.app is not a readiness
+projects `runtime.herdr_core` with the repair command: `repo-harness update`
+for a missing hc, `hc update --version <min_version>` below the floor. The
+console shows that state and command, with no install action. Repo-harness does
+not edit user Herdr config. Herdr.app is not a readiness
 requirement: it has no Intel macOS build.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
 `repo-harness install` and `repo-harness update` put the caller-context policy in
