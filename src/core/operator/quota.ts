@@ -9,13 +9,18 @@ export const QUOTA_PROTOCOL = 'repo-harness.quota.v1' as const;
 export const CLAUDE_QUOTA_CAPTURE_PATH = ['.repo-harness', 'quota', 'claude.json'] as const;
 export const QUOTA_STALE_MS = 30 * 60_000;
 const SURPLUS_RESET_MS = 24 * 3_600_000;
+/** The weekly window decides the account. Codex marks it only by this duration. */
+const WEEKLY_WINDOW_MINUTES = 10_080;
 
 export type QuotaAccount = 'claude' | 'chatgpt';
 export type QuotaState = 'exhausted' | 'tight' | 'normal' | 'surplus' | 'unknown';
+/** An absent non-weekly window is `absent`; it does not change the account state (#1741). */
+export type QuotaWindowState = QuotaState | 'absent';
 /**
  * Worst first: the account takes the first state in this order that one of
  * its windows has. A window without a reading cannot prove headroom, so it
- * outranks normal and surplus (decision 6625256198).
+ * outranks normal and surplus (decision 6625256198). The weekly window is
+ * required: without it the account is `unknown`.
  */
 export const QUOTA_STATE_ORDER: readonly QuotaState[] = ['exhausted', 'tight', 'unknown', 'normal', 'surplus'];
 
@@ -23,7 +28,8 @@ export const QUOTA_STATE_ORDER: readonly QuotaState[] = ['exhausted', 'tight', '
 export interface ClaudeRateLimitWindow { used_percentage: number; resets_at: number }
 /**
  * The Claude capture file. `rate_limits` is the status line stdin object,
- * unchanged. A window can be absent; that window is `unknown`.
+ * unchanged. A window can be absent: an absent `seven_day` is `unknown`, an
+ * absent `five_hour` is `absent`.
  */
 export interface ClaudeQuotaCapture {
   observed_at: string;
@@ -38,6 +44,8 @@ interface WindowSample {
   used_percent: number | null;
   /** Unix seconds. */
   resets_at: number | null;
+  /** The source has no value (`undefined` or `null`) for this window. */
+  absent: boolean;
   reason: string | null;
 }
 
@@ -58,7 +66,7 @@ export interface QuotaWindowReport {
   resets_at: string | null;
   elapsed_percent: number | null;
   pace: number | null;
-  state: QuotaState;
+  state: QuotaWindowState;
   reason: string | null;
 }
 
@@ -85,8 +93,8 @@ export function unknownQuotaReading(account: QuotaAccount, reason: string): Quot
 }
 
 function claudeWindow(rateLimits: Record<string, unknown>, window: 'five_hour' | 'seven_day', minutes: number): WindowSample {
-  const sample: WindowSample = { window, window_minutes: minutes, used_percent: null, resets_at: null, reason: null };
-  if (rateLimits[window] === undefined) return { ...sample, reason: `${window} absent` };
+  const sample: WindowSample = { window, window_minutes: minutes, used_percent: null, resets_at: null, absent: false, reason: null };
+  if (rateLimits[window] === undefined || rateLimits[window] === null) return { ...sample, absent: true, reason: `${window} absent` };
   const value = record(rateLimits[window]);
   if (!value) return { ...sample, reason: `${window} is not an object` };
   const used = value.used_percentage, resets = value.resets_at;
@@ -114,8 +122,8 @@ function positiveInteger(value: unknown): value is number {
 }
 
 function codexWindow(snapshot: Record<string, unknown>, window: 'primary' | 'secondary'): WindowSample {
-  const sample: WindowSample = { window, window_minutes: null, used_percent: null, resets_at: null, reason: null };
-  if (snapshot[window] === undefined || snapshot[window] === null) return { ...sample, reason: `${window} absent` };
+  const sample: WindowSample = { window, window_minutes: null, used_percent: null, resets_at: null, absent: false, reason: null };
+  if (snapshot[window] === undefined || snapshot[window] === null) return { ...sample, absent: true, reason: `${window} absent` };
   const value = record(snapshot[window]);
   if (!value) return { ...sample, reason: `${window} is not an object` };
   const minutes = value.windowDurationMins, used = value.usedPercent, resets = value.resetsAt;
@@ -159,6 +167,8 @@ function classifyWindow(sample: WindowSample, nowMs: number, readingReason: stri
     resets_at: sample.resets_at === null ? null : new Date(sample.resets_at * 1000).toISOString(),
     elapsed_percent: null, pace: null, state: 'unknown', reason: readingReason ?? sample.reason,
   };
+  // An absent Codex window has no duration, so it is never the weekly window.
+  if (readingReason === null && sample.absent && sample.window_minutes !== WEEKLY_WINDOW_MINUTES) return { ...report, state: 'absent' };
   if (report.reason !== null || sample.used_percent === null || sample.resets_at === null || sample.window_minutes === null) return report;
   const remainingMs = sample.resets_at * 1000 - nowMs, windowMs = sample.window_minutes * 60_000;
   if (remainingMs <= 0) return { ...report, reason: 'window reset after the reading' };
@@ -172,18 +182,24 @@ function classifyWindow(sample: WindowSample, nowMs: number, readingReason: stri
   return { ...report, elapsed_percent: round(elapsed), pace: round(pace), state };
 }
 
-/** Applies the #1716 decision table to each window. The worst window state wins; `rate_limit_reached_type` set means exhausted. */
+/**
+ * Applies the #1716 decision table to each window. The worst window state wins; `rate_limit_reached_type` set means exhausted.
+ * No window of 10080 min means no weekly reading, so the account is unknown.
+ */
 export function classifyQuotaReading(reading: QuotaReading, nowMs: number): QuotaAccountReport {
   const stale = reading.reason === null && reading.observed_at !== null && nowMs - Date.parse(reading.observed_at) > QUOTA_STALE_MS;
   const reason = stale ? 'reading older than 30 min' : reading.reason;
   const windows = reading.windows.map(sample => classifyWindow(sample, nowMs, reason));
   const reached = reason === null ? reading.codex?.rate_limit_reached_type ?? null : null;
+  const weekly = reading.windows.some(sample => sample.window_minutes === WEEKLY_WINDOW_MINUTES);
   const state: QuotaState = reason !== null ? 'unknown'
     : reached !== null ? 'exhausted'
-      : QUOTA_STATE_ORDER.find(candidate => windows.some(window => window.state === candidate)) ?? 'unknown';
+      : !weekly ? 'unknown'
+        : QUOTA_STATE_ORDER.find(candidate => windows.some(window => window.state === candidate)) ?? 'unknown';
+  const accountReason = reason ?? (reached !== null ? `rate_limit_reached_type ${reached}` : !weekly ? `no window of ${WEEKLY_WINDOW_MINUTES} min` : null);
   return {
     account: reading.account, source: reading.source, observed_at: reading.observed_at, state,
-    reason: reason ?? (reached !== null ? `rate_limit_reached_type ${reached}` : null), windows,
+    reason: accountReason, windows,
     ...(reading.codex ? { codex: reading.codex } : {}),
   };
 }
@@ -193,6 +209,7 @@ export function buildQuotaReport(readings: readonly QuotaReading[], nowMs: numbe
 }
 
 function formatWindow(window: QuotaWindowReport, nowMs: number): string {
+  if (window.state === 'absent') return `${window.window} absent`;
   if (window.state === 'unknown') return `${window.window} unknown (${window.reason})`;
   const hours = round((Date.parse(window.resets_at!) - nowMs) / 3_600_000);
   return `${window.window} ${window.state} ${window.used_percent}% used, pace ${window.pace! > 0 ? '+' : ''}${window.pace}, resets ${window.resets_at} (${hours} h)`;
