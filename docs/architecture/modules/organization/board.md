@@ -1,6 +1,6 @@
 # organization/board 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:3b34b4bc51552c1d8df54058acb174e5884ab53de5cc4c28f84126e31d34f861" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-organization-board" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e7fde67faf2cf8555629a7a2ef2f320b4f0ae6f12fae30770a327bea5cc67855" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.organization.board`(kind `capability`)
 > **Matched Prefixes**:`src/core/board/**`、`src/effects/board/**`、`src/cli/commands/board.ts`
@@ -16,6 +16,7 @@ Projects the board of one parent issue from GitHub plan data, linked pull reques
 ```mermaid
 flowchart LR
   p1_capability_organization_board_a5242ad5["Board"]:::component
+  p1_component_board_assets_layer_2608d92b["Board (assets)"]:::component
   p1_component_board_cli_d6117ee8["Board (cli)"]:::component
   p1_component_board_core_94e5aae2["Board (core)"]:::component
   p1_component_board_effects_c9450ac3["Board (effects)"]:::component
@@ -29,8 +30,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:cdb6100a6352993ed13c9e2953f7772d21f4f22c0f0c7870c34ef5ee550f4ba4`).
-- Semantic nodes: `4`; declared relations: `4`.
+- Proof: `proven` (`sha256:f2b20e0404ab5359f53c49b7bb0f5d412c753dc8d1cda3deb2cbcaa0e2d1a5b3`).
+- Semantic nodes: `5`; declared relations: `4`.
 
 ### 1.2 模組職責表
 
@@ -58,13 +59,16 @@ flowchart LR
 
 入向關係:
 
+- `depends-on` ← `capability.workflow-engine.contract-assets` — Render the change hazard table in agentic-development-flow.md from the board hazard list reader.
 - `depends-on` ← `capability.verification.evals-checks` — Test Board behavior through its source modules
+- `depends-on` ← `component.execution-primitives.hc-client` — Implement the board host port (seat terminals by parent label and the hc version) and the attention host port (start watcher terminals with hc run, read watcher terminals, and send to and wait on seat terminals)
 - `calls` ← `component.global-runtime-reconciliation.cli-root` — Register the board command
 - `depends-on` ← `capability.runtime-harness.operator` — Serve and show the board of one parent issue: decode the board CLI output and evaluate the attention rules in the browser.
-- `depends-on` ← `capability.runtime-harness.task-agent-host` — Implement the board host port: seat terminals by parent label and the hc version
 
 組件出向關係:
 
+- `component.board.assets-layer`:
+  - 無。
 - `component.board.cli`:
   - `calls` → `component.board.core` — Run the attention rules on the collected board
   - `calls` → `component.board.effects` — Collect the board of one parent issue
@@ -77,13 +81,14 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
+| `component.board.assets-layer` | Board (assets) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.board.cli` | Board (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 | `component.board.core` | Board (core) | `5–10` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.board.effects` | Board (effects) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:cdb6100a6352993ed13c9e2953f7772d21f4f22c0f0c7870c34ef5ee550f4ba4`); selectors `2/2`.
+> **Proof**: `proven` (`sha256:f2b20e0404ab5359f53c49b7bb0f5d412c753dc8d1cda3deb2cbcaa0e2d1a5b3`); selectors `2/2`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
