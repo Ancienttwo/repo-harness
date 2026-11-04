@@ -1,5 +1,5 @@
 import type { AdvisorBossCommand } from '../core/board/advisor-seat';
-import type { DeskState } from './board-office';
+import type { DeskState } from '../core/board/desk';
 import {
   agentBody, agentPalette, agentTagColor, BOSS, BOSS_PALETTE, CARROT, CARROT_PALETTE, CHAIR, CHAIR_PALETTE, glyph, miniAgent, PX_COLORS, SHADE_DARK, SHADE_LIGHT, SHADE_SUN, textWidth,
   type BossPose, type FrontPose, type Outfit, type Pose, type PxColor, type PxMap, type SceneAgent, type Sprite, type SpritePalette,
