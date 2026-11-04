@@ -27,22 +27,18 @@ export function cleanupLossSha256(observed: CleanupObservation): string | null {
 
 /**
  * Loss paths that archive staging can take. A worktree entry decides when one
- * exists, because staging reads it first: only a regular file qualifies. A path
- * without a worktree entry qualifies only through index versions that are all
- * regular-file modes; the observation accepts 100644, 100755 and 120000. A staged
- * deletion, a directory and a symlink therefore never qualify, and an unchanged
- * tracked file is not a loss.
+ * exists, because staging reads it first: only a regular file qualifies, never a
+ * directory or a symlink. A path without a worktree entry qualifies through any
+ * index version; staging saves each blob with its mode, including 120000. A
+ * staged deletion has neither, and an unchanged tracked file is not a loss.
  */
 function archivablePaths(loss: CleanupLossEvidence): string[] {
   const entries = new Map(loss.files.map(file => [file.path, file]));
-  const modes = new Map<string, string[]>();
-  for (const entry of loss.index) modes.set(entry.path, [...modes.get(entry.path) ?? [], entry.mode]);
+  const staged = new Set(loss.index.map(entry => entry.path));
   return [...new Set([...loss.changed_paths, ...loss.ignored])].filter(path => {
     if (path === '.git') return false;
     const entry = entries.get(path);
-    if (entry) return entry.kind === 'file';
-    const staged = modes.get(path) ?? [];
-    return staged.length > 0 && staged.every(mode => mode === '100644' || mode === '100755');
+    return entry ? entry.kind === 'file' : staged.has(path);
   }).sort();
 }
 
