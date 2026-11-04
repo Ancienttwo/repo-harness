@@ -994,6 +994,27 @@ describe('sequence and topology base maps', () => {
     await click('[data-flow-id="flow.router.none"]');
     expect([notes(), flows()[1]![1], document.querySelector<HTMLButtonElement>('[data-sequence-export]')?.disabled])
       .toEqual([expect.arrayContaining(['sequence.not_applicable:flow_not_applicable']), 'true', true]);
+
+    // The flow list stays one mounted control across each kind of flow change, so focus and its scroll position stay;
+    // a selection belongs to its flow and does not come back on a return.
+    const second = { ...flow, id: 'flow.pipeline.second', name: 'Second ledger flow' };
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-three-flows', readMap: reader(runtimeMap({ flows: [flow, second, runtimeMap().flows[1]!],
+      // Custom flows declare no code, so the map carries no proof either.
+      layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
+    await settle();
+    await tab('sequence');
+    await click(`[data-flow-id="${FLOW}"]`);
+    await click('.react-flow__node[data-id="message::route"]');
+    const list = document.querySelector<HTMLElement>('.architecture-sequence__flow-list')!;
+    for (const [target, view] of [[second.id, 'diagram'], ['flow.router.none', 'note'], [FLOW, 'diagram']] as const) {
+      const button = list.querySelector<HTMLButtonElement>(`[data-flow-id="${target}"]`)!;
+      list.scrollTop = 40;
+      button.focus();
+      await click(`[data-flow-id="${target}"]`);
+      expect([document.querySelector('[data-view="sequence"]')?.getAttribute('data-flow'), document.querySelector('.architecture-map__canvas') === null ? 'note' : 'diagram',
+        list.isConnected, list.scrollTop, button.isConnected, document.activeElement === button, button.getAttribute('aria-pressed'), inspector().hasAttribute('data-step-id')])
+        .toEqual([target, view, true, 40, true, true, 'true', false]);
+    }
   });
 
   test('the lens row counts the steps that have code evidence and exports the flow on screen as one SVG file', async () => {
@@ -1014,6 +1035,10 @@ describe('sequence and topology base maps', () => {
       const svg = await files[0]!.blob.text();
       expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
       expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
+      // A terminal label is centred on its participant's lifeline, as on the canvas, so a rightmost participant keeps it inside the file.
+      const layout = layoutSequence(flow, runtimePlacement(runtimeMap()));
+      expect([...svg.matchAll(/<text class="(success|error)" x="([\d.]+)" y="[\d.]+" text-anchor="middle">/gu)].map(match => [match[1], Number(match[2])]))
+        .toEqual(layout.terminals.map(terminal => [terminal.outcome === 'kept' ? 'success' : 'error', terminal.x]));
     } finally {
       Object.assign(URL, { createObjectURL, revokeObjectURL });
       anchor.click = anchorClick;

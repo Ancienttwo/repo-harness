@@ -171,13 +171,14 @@ function Legend({ t }: { readonly t: OperatorTranslate }) {
 
 type Selection = { readonly kind: 'participant'; readonly id: string } | { readonly kind: 'message'; readonly outcome: string | null; readonly step: string } | null;
 
-function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
+/** The diagram of one flow. It owns no state: the selection lives with the side panel, which stays mounted across flow changes. */
+function SequenceCanvas({ map, flow, layer, pullRequest, selection, onSelect, t }: {
   readonly map: ArchitectureMapV1;
   readonly flow: RequiredFlow;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
-  readonly side: ReactNode;
-  readonly onModule: (id: string) => void;
+  readonly selection: Selection;
+  readonly onSelect: (flowId: string, selection: Selection) => void;
   readonly t: OperatorTranslate;
 }) {
   const placement = useMemo(() => runtimePlacement(map), [map]);
@@ -187,8 +188,6 @@ function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
   const names = useMemo(() => new Map(map.nodes.map(node => [node.id, node.name])), [map]);
-  const [selection, setSelection] = useState<Selection>(null);
-  const participants = new Map(flow.participants.map(participant => [participant.id, participant.node]));
 
   const nodes = useMemo<SequenceNode[]>(() => {
     const kinds = new Map(map.nodes.map(node => [node.id, node.kind]));
@@ -239,16 +238,12 @@ function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
     const chosen = changes.find(change => change.type === 'select' && change.selected);
     if (chosen && 'id' in chosen) {
       const [kind, ...rest] = chosen.id.split(':');
-      if (kind === 'participant') setSelection({ kind: 'participant', id: rest.join(':') });
-      if (kind === 'message') setSelection({ kind: 'message', outcome: rest[0] === '' ? null : rest[0]!, step: rest.slice(1).join(':') });
-    } else if (changes.some(change => change.type === 'select')) setSelection(null);
-  }, []);
+      if (kind === 'participant') onSelect(flow.id, { kind: 'participant', id: rest.join(':') });
+      if (kind === 'message') onSelect(flow.id, { kind: 'message', outcome: rest[0] === '' ? null : rest[0]!, step: rest.slice(1).join(':') });
+    } else if (changes.some(change => change.type === 'select')) onSelect(flow.id, null);
+  }, [flow.id, onSelect]);
 
-  const message = selection?.kind === 'message'
-    ? flowSteps(flow).find(entry => entry.outcome === selection.outcome && entry.step.id === selection.step) ?? null : null;
-  const participant = selection?.kind === 'participant' ? participants.get(selection.id) ?? null : null;
-  return <div className="architecture-map" data-view="sequence" data-flow={flow.id} data-layer={layer}>
-    <div className="architecture-map__canvas" aria-label={t('architecture.sequence.label')} role="region">
+  return <div className="architecture-map__canvas" aria-label={t('architecture.sequence.label')} role="region">
       <ReactFlow<SequenceNode>
         nodes={nodes}
         edges={[]}
@@ -265,17 +260,34 @@ function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
         <Panel position="bottom-left"><Legend t={t} /></Panel>
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
-    </div>
-    <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}
-      data-node-id={participant ?? undefined} data-step-id={message ? `${message.outcome ?? ''}:${message.step.id}` : undefined}>
-      {side}
-      {message ? <StepDetails map={map} flow={flow} outcome={message.outcome} step={message.step} t={t} />
-        : participant ? <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={participant} onModule={onModule} t={t}>
-          <p data-runtime={placement(participant).kind}>{t('architecture.sequence.runsIn', { place: placementText(placement(participant), names, t) })}</p>
-        </NodeDetails>
-          : <p className="detail-quiet">{t('architecture.sequence.pick')}</p>}
-    </aside>
   </div>;
+}
+
+/** The side panel: `lead` (the flow list and the layer facts), then the selected message or participant of the flow on screen. */
+function SequenceInspector({ map, flow, layer, pullRequest, selection, lead, onModule, t }: {
+  readonly map: ArchitectureMapV1;
+  readonly flow: ArchitectureMapFlowV1;
+  readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
+  readonly selection: Selection;
+  readonly lead: ReactNode;
+  readonly onModule: (id: string) => void;
+  readonly t: OperatorTranslate;
+}) {
+  const required = flow.applicability === 'required' ? flow : null;
+  const message = required !== null && selection?.kind === 'message'
+    ? flowSteps(required).find(entry => entry.outcome === selection.outcome && entry.step.id === selection.step) ?? null : null;
+  const node = required !== null && selection?.kind === 'participant' ? required.participants.find(entry => entry.id === selection.id)?.node ?? null : null;
+  const participant = node === null ? null : { node, place: runtimePlacement(map)(node) };
+  return <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}
+    data-node-id={node ?? undefined} data-step-id={message ? `${message.outcome ?? ''}:${message.step.id}` : undefined}>
+    {lead}
+    {required !== null && (message ? <StepDetails map={map} flow={required} outcome={message.outcome} step={message.step} t={t} />
+      : participant !== null ? <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={participant.node} onModule={onModule} t={t}>
+        <p data-runtime={participant.place.kind}>{t('architecture.sequence.runsIn', { place: placementText(participant.place, new Map(map.nodes.map(entry => [entry.id, entry.name])), t) })}</p>
+      </NodeDetails>
+        : <p className="detail-quiet">{t('architecture.sequence.pick')}</p>)}
+  </aside>;
 }
 
 /** Why a layer marks only part of the sequence map. */
@@ -367,9 +379,11 @@ export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, 
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
   const lit = useMemo(() => litFlows(map, layer, reached, proven), [map, layer, reached, proven]);
-  const sideNote = (note: ReactNode) => <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}>{note}</aside>;
+  const [chosen, setChosen] = useState<{ readonly flow: string; readonly selection: Selection }>({ flow: '', selection: null });
+  const onSelect = useCallback((flow: string, selection: Selection) => setChosen({ flow, selection }), []);
   if (map.flows.length === 0) {
-    return <div className="architecture-map"><Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>{sideNote(side)}</div>;
+    return <div className="architecture-map"><Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>
+      <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}>{side}</aside></div>;
   }
   const flow = shownFlow(map, layer, reached, proven, flowId);
   const note = LAYER_NOTES[layer];
@@ -378,9 +392,16 @@ export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, 
     {side}
     {note && <Note part={`sequence.${layer}`} reason={note}>{t(`architecture.sequence.note.${note}`)}</Note>}
   </>;
+  // A selection belongs to the flow it was made on: a change of flow clears it, also for a later return to that flow.
+  if (chosen.flow !== flow.id) setChosen({ flow: flow.id, selection: null });
+  const selection = chosen.flow === flow.id ? chosen.selection : null;
+  // The side panel is the second child in every case, so React keeps it, and the flow list in it, across flow changes.
   return <div className="architecture-sequence">
-    {flow.applicability === 'not-applicable'
-      ? <div className="architecture-map"><Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>{sideNote(lead)}</div>
-      : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} side={lead} onModule={onModule} t={t} /></ReactFlowProvider>}
+    <div className="architecture-map" data-view="sequence" data-flow={flow.id} data-layer={layer}>
+      {flow.applicability === 'not-applicable'
+        ? <Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>
+        : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} selection={selection} onSelect={onSelect} t={t} /></ReactFlowProvider>}
+      <SequenceInspector map={map} flow={flow} layer={layer} pullRequest={pullRequest} selection={selection} lead={lead} onModule={onModule} t={t} />
+    </div>
   </div>;
 }

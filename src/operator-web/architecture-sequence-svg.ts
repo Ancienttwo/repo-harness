@@ -22,9 +22,17 @@ const STYLE = [
 
 const escape = (value: string) => value.replace(/[&<>"]/gu, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;' })[char]!);
 
-/** Shortens a label to the width it has; the full label stays in the element's `<title>`. */
-function fit(label: string, width: number): string {
-  const room = Math.max(4, Math.floor((width - 12) / 6));
+/** Width of the terminal label on the canvas, centred on the participant's lifeline. */
+const TERMINAL_WIDTH = 180;
+/** Text inset from the edge of its shape. */
+const INSET = 8;
+
+/**
+ * Shortens a label to `width` pixels at `size` px, counting 0.6 em per character; the full label
+ * stays in the element's `<title>`. Every caller passes the width between the label's own bounds.
+ */
+function fit(label: string, width: number, size = 11): string {
+  const room = Math.max(1, Math.floor(width / (size * 0.6)));
   return label.length <= room ? label : `${label.slice(0, room - 1)}…`;
 }
 
@@ -32,32 +40,35 @@ export function sequenceSvg(layout: SequenceLayout, text: SequenceSvgText): stri
   const parts: string[] = [];
   for (const box of layout.boxes) {
     parts.push(`<rect class="box ${box.placement.kind}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="12"/>`,
-      `<text class="title" x="${box.x + 12}" y="${box.y + box.height - layout.boxTitle / 2 + 4}">${escape(fit(text.box(box), box.width))}</text>`);
+      `<text class="title" x="${box.x + 12}" y="${box.y + box.height - layout.boxTitle / 2 + 4}">${escape(fit(text.box(box), box.width - 24))}</text>`);
   }
   for (const fragment of layout.fragments) {
     const kind = fragment.outcome.kind;
+    const tag = fragment.index === 0 ? 'alt' : 'else';
     parts.push(`<rect class="fragment ${kind}" x="${fragment.x}" y="${fragment.y}" width="${fragment.width}" height="${fragment.height}" rx="8"/>`,
-      `<text x="${fragment.x + 8}" y="${fragment.y + 16}"><tspan class="${kind}">${fragment.index === 0 ? 'alt' : 'else'}</tspan> ${escape(fit(fragment.outcome.label, fragment.width - 40))}</text>`);
+      `<text x="${fragment.x + INSET}" y="${fragment.y + 16}"><title>${escape(fragment.outcome.label)}</title><tspan class="${kind}">${tag}</tspan> ${escape(fit(fragment.outcome.label, fragment.width - 2 * INSET - (tag.length + 1) * 11 * 0.6))}</text>`);
   }
   const width = SEQUENCE_COLUMN - 24;
   for (const column of layout.columns) {
     const { name, kind } = text.participant(column.participant.node);
     parts.push(`<line class="lifeline" x1="${column.x}" y1="${layout.headerY + SEQUENCE_HEADER - 8}" x2="${column.x}" y2="${layout.bottom}"/>`,
       `<rect class="header ${escape(kind)}" x="${column.x - width / 2}" y="${layout.headerY}" width="${width}" height="${SEQUENCE_HEADER - 8}" rx="8"/>`,
-      `<text class="name" x="${column.x}" y="${layout.headerY + (SEQUENCE_HEADER - 8) / 2 + 4}" text-anchor="middle"><title>${escape(name)}</title>${escape(fit(name, width))}</text>`);
+      `<text class="name" x="${column.x}" y="${layout.headerY + (SEQUENCE_HEADER - 8) / 2 + 4}" text-anchor="middle"><title>${escape(name)}</title>${escape(fit(name, width - 2 * INSET, 12))}</text>`);
   }
   for (const message of layout.messages) {
     const self = message.from === message.to;
     const line = self
       ? `<path class="message" d="M${message.from} ${message.y - 8}h${SEQUENCE_COLUMN / 4}v12h-${SEQUENCE_COLUMN / 4 - 6}" marker-end="url(#arrow)"/>`
       : `<line class="message" x1="${message.from}" y1="${message.y}" x2="${message.to}" y2="${message.y}" marker-end="url(#arrow)"/>`;
-    const span = self ? SEQUENCE_COLUMN / 2 : Math.abs(message.to - message.from);
+    // A self message's label starts at its lifeline and keeps to the right half of the column.
+    const span = self ? SEQUENCE_COLUMN / 2 - 6 - INSET : Math.abs(message.to - message.from) - 2 * INSET;
     const x = self ? message.from + 6 : (message.from + message.to) / 2;
     parts.push(line, `<text x="${x}" y="${message.y - 6}"${self ? '' : ' text-anchor="middle"'}><title>${escape(message.step.label)}</title>${escape(fit(message.step.label, span))}</text>`);
   }
   for (const terminal of layout.terminals) {
     const kind = layout.fragments.find(fragment => fragment.outcome.id === terminal.outcome)!.outcome.kind;
-    parts.push(`<text class="${kind}" x="${terminal.x + 6}" y="${terminal.y + 4}"><title>${escape(terminal.label)}</title>${escape(fit(terminal.label, SEQUENCE_COLUMN))}</text>`);
+    // Centred on the participant as on the canvas, so the rightmost column keeps the label inside the file.
+    parts.push(`<text class="${kind}" x="${terminal.x}" y="${terminal.y + 4}" text-anchor="middle"><title>${escape(terminal.label)}</title>${escape(fit(terminal.label, TERMINAL_WIDTH - 2 * INSET))}</text>`);
   }
   return [
     `<svg xmlns="http://www.w3.org/2000/svg" width="${layout.width}" height="${layout.height}" viewBox="0 0 ${layout.width} ${layout.height}">`,
