@@ -28,7 +28,6 @@
   --office-ok: #1F8A5B;
   --office-warn: #D9870A;
   --office-danger: #DC2626;
-  --office-accent: #E8742C;
 }
 :root[data-mode="dark"] .board-office {
   --office-wall: #1B2D40;
@@ -52,7 +51,6 @@
   --office-ok: #4CC38A;
   --office-warn: #E0B25C;
   --office-danger: #F87171;
-  --office-accent: #F08A3C;
 }
 
 @keyframes office-bob { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(-2px); } }
@@ -78,7 +76,7 @@
 .board-office__cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
 .board-office__card { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 12px; text-align: left; border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); color: var(--text-color-kumo-default); font: inherit; }
 button.board-office__card { cursor: pointer; }
-button.board-office__card:hover { border-color: var(--office-accent); }
+button.board-office__card:hover { border-color: var(--office-info); }
 .board-office__card-name { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
 .board-office__card-name strong { font-family: var(--font-mono); font-size: 13px; color: var(--text-color-kumo-strong); }
 .board-office__card-name span { min-width: 0; overflow: hidden; font-size: 12px; color: var(--text-color-kumo-subtle); text-overflow: ellipsis; white-space: nowrap; }
@@ -95,7 +93,7 @@ button.board-office__card:hover { border-color: var(--office-accent); }
 .board-office__scene::before { position: absolute; inset: 0 0 auto; height: 112px; content: ""; background: var(--office-wall); border-bottom: 4px solid var(--office-wall-dk); }
 .board-office__layout { position: relative; display: grid; gap: 20px; padding: 16px 20px 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); grid-template-areas: "plate board door" "tray stage cart" "queue queue queue" "desks desks desks"; }
 .board-office__plate { grid-area: plate; align-self: start; justify-self: start; padding: 8px 12px; border: 3px solid var(--office-desk-dk); background: var(--office-ink); color: #FFFFFF; font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
-.board-office__plate span { display: block; color: var(--office-accent); letter-spacing: 0; }
+.board-office__plate span { display: block; color: var(--office-warn); letter-spacing: 0; }
 .board-office__whiteboard { grid-area: board; justify-self: center; min-width: 0; max-width: 360px; padding: 8px 12px; border: 3px solid var(--office-ink); background: var(--office-board); color: #14202E; font-family: var(--font-mono); font-size: 12px; line-height: 1.4; }
 .board-office__whiteboard strong { display: block; letter-spacing: .08em; text-transform: uppercase; }
 .board-office__whiteboard p { margin: 0; overflow-wrap: anywhere; }
@@ -103,8 +101,8 @@ button.board-office__card:hover { border-color: var(--office-accent); }
 .board-office__door { grid-area: door; position: relative; justify-self: end; width: 64px; height: 84px; border: 4px solid var(--office-ink); background: var(--office-door); }
 .board-office__door::before { position: absolute; top: 6px; left: 6px; right: 6px; padding: 1px 0; content: attr(data-sign); background: var(--office-ink); color: #FFFFFF; font: 700 9px/1.2 var(--font-mono); letter-spacing: .1em; text-align: center; }
 .board-office__door::after { position: absolute; right: 6px; top: 46px; width: 5px; height: 5px; content: ""; background: var(--office-warn); }
-.board-office__door[data-marks] { box-shadow: 0 0 0 3px var(--office-accent); }
-.board-office__door-mark { position: absolute; top: -12px; right: -12px; display: grid; min-width: 20px; height: 20px; place-items: center; padding: 0 4px; background: var(--office-accent); color: var(--office-ink); font: 700 12px/1 var(--font-mono); }
+.board-office__door[data-marks] { box-shadow: 0 0 0 3px var(--rh-accent); }
+.board-office__door-mark { position: absolute; top: -12px; right: -12px; display: grid; min-width: 20px; height: 20px; place-items: center; padding: 0 4px; background: var(--rh-accent); color: var(--rh-on-accent); font: 700 12px/1 var(--font-mono); }
 
 .board-office__tray { grid-area: tray; display: flex; min-width: 0; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-color-kumo-default); }
 .board-office__tray-desk { width: 120px; height: 20px; border-bottom: 4px solid var(--office-desk-dk); background: var(--office-desk); }
@@ -128,7 +126,7 @@ button.board-office__card:hover { border-color: var(--office-accent); }
 .board-office__desks { grid-area: desks; display: grid; gap: 20px 16px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
 .board-office__desk { position: relative; display: flex; min-width: 0; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; text-align: left; border: 2px solid transparent; background: transparent; color: var(--text-color-kumo-default); font: inherit; font-size: 12px; }
 button.board-office__desk:not(:disabled) { cursor: pointer; }
-button.board-office__desk:not(:disabled):hover { border-color: var(--office-accent); }
+button.board-office__desk:not(:disabled):hover { border-color: var(--office-info); }
 .board-office__desk[data-roped] { border: 2px dashed var(--office-danger); }
 .board-office__desk[data-free] .board-office__furniture { opacity: .6; }
 .board-office__furniture { position: relative; height: 74px; }
@@ -160,7 +158,7 @@ button.board-office__desk:not(:disabled):hover { border-color: var(--office-acce
 .board-office__badge { position: absolute; display: grid; min-width: 16px; height: 12px; place-items: center; padding: 0 2px; border: 1px dashed #51647B; background: var(--office-agent-unknown); color: #51647B; font: 700 8px/1 var(--font-mono); }
 .board-office__queued { display: flex; cursor: pointer; flex-direction: column; align-items: center; gap: 2px; padding: 2px; border: 2px solid transparent; background: transparent; color: var(--text-color-kumo-default); font: 700 10px/1.2 var(--font-mono); }
 .board-office__queued:disabled { cursor: default; }
-.board-office__queued:not(:disabled):hover { border-color: var(--office-accent); }
+.board-office__queued:not(:disabled):hover { border-color: var(--office-info); }
 .board-office__queued > span:first-child { padding: 0 3px; border: 2px solid var(--office-ink); background: #FFFFFF; color: #14202E; }
 
 /* Legend dialog. */
