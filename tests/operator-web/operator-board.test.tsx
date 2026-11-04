@@ -15,6 +15,7 @@ import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
 import { createCleanupPlan, type CleanupObservation } from '../../src/effects/operator/worktree-cleanup-plan';
 import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { evaluateBoardAttention } from '../../src/core/board/attention';
+import { ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../src/core/board/advisor-seat';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
 import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
@@ -48,6 +49,7 @@ import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLoc
 import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
 import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
+import { fetchAdvisorTranscript, postAdvisorMessage, type AdvisorMessagePost, type AdvisorMessageWrite, type AdvisorTranscriptRead } from '../../src/operator-web/OfficeAdvisorDialog';
 import { composeMiniRoom, composeRoom, sceneEffect, type SceneMiniRoom, type SceneRoom } from '../../src/operator-web/office-scene';
 import { sceneAgent } from '../../src/operator-web/office-sprites';
 
@@ -1356,6 +1358,294 @@ describe('board office (#1755)', () => {
       expect(await postBossCommand(body)).toEqual({ state: 'reload_required' });
       answer(500, { nope: true });
       expect(await postBossCommand(body)).toEqual({ state: 'unreachable' });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  const readBack = (status: string | null, fields: Partial<{ readonly turn: number; readonly complete: boolean; readonly why: string | null; readonly lines: readonly string[] }> = {}): AdvisorTranscriptRead => ({
+    state: 'ok',
+    transcript: decodeAdvisorSeatTranscript({ protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1, parent: 1474, terminal: 't9', status, status_kind: null, turn: 4, complete: true, why: null, lines: ['first', 'ghp_[REDACTED]'], ...fields }),
+  });
+  const delivered = (turn: number): AdvisorMessageWrite => ({ state: 'ok', value: decodeAdvisorSeatSend({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1, parent: 1474, terminal: 't9', started: true, turn }) });
+  const advisorRoom = async (overrides: Partial<OperatorAppProps>, list: BoardParentsV1 = advisorList('idle')) => {
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list }), ...overrides })} />);
+    await settle();
+  };
+  const openAdvisor = async () => {
+    await act(async () => rows('[data-office-hit="advisor"]')[0]!.click());
+    await settle();
+  };
+  const draftAdvisor = (text: string) => act(async () => {
+    const field = document.querySelector<HTMLTextAreaElement>('[data-advisor-text]')!;
+    // As in the parent filter test: react-dom watches a text field through focus and keyup here.
+    field.focus();
+    Object.getOwnPropertyDescriptor(window.HTMLTextAreaElement.prototype, 'value')!.set!.call(field, text);
+    field.dispatchEvent(new window.KeyboardEvent('keyup', { key: 'a', bubbles: true }) as unknown as Event);
+  });
+  const sendAdvisor = async () => {
+    await act(async () => rows('[data-advisor-send]')[0]!.click());
+    await settle();
+  };
+  const dialogText = () => document.querySelector('[data-advisor-dialog]')?.textContent ?? null;
+  const readBackText = () => document.querySelector('[data-advisor-readback]')?.textContent ?? null;
+
+  test('the advisor seat opens the dialog with the read-back and sends each message once with a new request_id, then reads again', async () => {
+    const reads: string[] = [];
+    const posts: AdvisorMessagePost[] = [];
+    await advisorRoom({
+      readAdvisorTranscript: async (subject) => { reads.push(`${subject.repository_id}:${subject.parent}`); return readBack('idle', { turn: 3 + posts.length, lines: ['first', ...posts.flatMap(post => post.text.split('\n'))] }); },
+      writeAdvisorMessage: async (body) => { posts.push(body); return delivered(3 + posts.length); },
+    });
+    expect(reads).toEqual([]);
+    await openAdvisor();
+    expect(reads).toEqual([`${HARNESS_ID}:1474`]);
+    expect(document.querySelector('[data-advisor-dialog]')?.getAttribute('role')).toBe('dialog');
+    expect(readBackText()).toBe('first');
+    expect(document.querySelector('[data-advisor-seat]')?.textContent).toBe('hc t9 · Agent unknown · idle · turn 3');
+
+    await sendAdvisor();
+    expect(posts).toHaveLength(0);
+    await draftAdvisor('  re-check the order\nof #1316  ');
+    await sendAdvisor();
+    await draftAdvisor('second');
+    await sendAdvisor();
+    expect(posts.map(({ repository_id, parent, text }) => ({ repository_id, parent, text }))).toEqual([
+      { repository_id: HARNESS_ID, parent: 1474, text: 're-check the order\nof #1316' },
+      { repository_id: HARNESS_ID, parent: 1474, text: 'second' },
+    ]);
+    expect(posts[0]!.request_id).not.toBe(posts[1]!.request_id);
+    expect(reads).toHaveLength(3);
+    expect(readBackText()).toBe('first\nre-check the order\nof #1316\nsecond');
+    expect(document.querySelector('[data-advisor-sent]')?.textContent).toBe('Sent to t9 · turn 5');
+    expect(document.querySelector<HTMLTextAreaElement>('[data-advisor-text]')?.value).toBe('');
+  });
+
+  test('each send refusal shows its own notice, keeps the text and never retries; an unconfirmed send asks for a read, not a resend', async () => {
+    const refused = (code: string): AdvisorMessageWrite => ({ state: 'refused', status: 409, error: { code, message: `server ${code}.`, next_action: 'Server next.' } });
+    const notSent = 'Nothing was sent.';
+    const reread = 'before you send again';
+    const text = 'The server refused the text: use at most 4000 characters';
+    for (const [answer, notice, says, avoids] of [
+      [refused('text_invalid'), 'text_invalid', text, reread],
+      [refused('invalid_body'), 'invalid_body', text, reread],
+      [refused('body_too_large'), 'body_too_large', text, reread],
+      [refused('repository_read_only'), 'repository_read_only', 'read-only in the registry', reread],
+      [refused('repository_not_found'), 'repository_not_found', 'No registered repository', reread],
+      [refused('registry_unavailable'), 'registry_unavailable', 'registry could not be read', reread],
+      [refused('github_unavailable'), 'github_unavailable', 'GitHub did not return', reread],
+      [refused('hc_unavailable'), 'hc_unavailable', 'hc did not list', reread],
+      [refused('advisor_seat_absent'), 'advisor_seat_absent', 'No live advisor seat', reread],
+      [refused('advisor_seat_ambiguous'), 'advisor_seat_ambiguous', 'More than one live', reread],
+      [refused('advisor_busy'), 'advisor_busy', 'Too many board reads', reread],
+      [refused('audit_unavailable'), 'audit_unavailable', 'server audit_unavailable. Server next.', reread],
+      [refused('reconcile_required'), 'reconcile_required', reread, notSent],
+      [{ state: 'unreachable' }, 'unreachable', reread, notSent],
+      [{ state: 'unreadable' }, 'unreadable', reread, notSent],
+    ] as const) {
+      const posts: AdvisorMessagePost[] = [];
+      let reads = 0;
+      await advisorRoom({
+        readAdvisorTranscript: async () => { reads += 1; return readBack('idle'); },
+        writeAdvisorMessage: async (body) => { posts.push(body); return answer; },
+      });
+      await openAdvisor();
+      await draftAdvisor('hello');
+      await sendAdvisor();
+      const shown = document.querySelector(`[data-advisor-notice="${notice}"]`);
+      expect(shown?.textContent).toContain(says);
+      expect(shown?.textContent).not.toContain(avoids);
+      if (avoids === reread) expect(shown?.textContent).toContain(notSent);
+      expect([posts.length, reads, document.querySelector<HTMLTextAreaElement>('[data-advisor-text]')?.value]).toEqual([1, 2, 'hello']);
+      expect(document.querySelector('[data-advisor-sent]')).toBeNull();
+      await act(async () => root?.unmount());
+    }
+
+    await advisorRoom({ readAdvisorTranscript: async () => readBack('idle'), writeAdvisorMessage: async () => ({ state: 'reload_required' }) });
+    await openAdvisor();
+    await draftAdvisor('hello');
+    await sendAdvisor();
+    expect(document.querySelector('[data-advisor-dialog] [data-write-reload]')).not.toBeNull();
+    expect(document.querySelector('[data-advisor-notice]')).toBeNull();
+  });
+
+  test('the read-back shows the decoder output as it is: a read failure names itself, and no text is added or removed', async () => {
+    const refusedRead = (code: string): AdvisorTranscriptRead => ({ state: 'refused', error: { code, message: `server ${code}.`, next_action: 'Server next.' } });
+    for (const [read, failure, says] of [
+      [refusedRead('advisor_seat_absent'), 'advisor_seat_absent', 'No live advisor seat'],
+      [refusedRead('advisor_read_failed'), 'advisor_read_failed', 'hc did not read'],
+      [refusedRead('advisor_timeout'), 'advisor_timeout', 'did not finish in time'],
+      [refusedRead('advisor_unavailable'), 'advisor_unavailable', 'did not return a result'],
+      [refusedRead('advisor_invalid'), 'advisor_invalid', 'failed validation'],
+      [refusedRead('invalid_request'), 'invalid_request', 'server invalid_request. Server next.'],
+      [{ state: 'unreachable' }, 'unreachable', 'was not read'],
+      [{ state: 'unreadable' }, 'unreadable', 'does not show it'],
+    ] as const) {
+      await advisorRoom({ readAdvisorTranscript: async () => read });
+      await openAdvisor();
+      expect(document.querySelector(`[data-advisor-read-failure="${failure}"]`)?.textContent).toContain(says);
+      expect(document.querySelector('[data-advisor-turn]')).toBeNull();
+      expect(document.querySelector('[data-advisor-seat]')?.textContent).toBe('Agent unknown');
+      await act(async () => root?.unmount());
+    }
+
+    await advisorRoom({ readAdvisorTranscript: async () => readBack('idle', { complete: false, why: 'trimmed by hc', lines: ['ghp_[REDACTED]', ADVISOR_TRANSCRIPT_LINE_WITHHELD] }) });
+    await openAdvisor();
+    expect(readBackText()).toBe(`ghp_[REDACTED]\n${ADVISOR_TRANSCRIPT_LINE_WITHHELD}`);
+    expect(document.querySelector('[data-advisor-incomplete]')?.textContent).toBe('hc says that part of this text may be missing. trimmed by hc');
+    await act(async () => root?.unmount());
+
+    await advisorRoom({ readAdvisorTranscript: async () => readBack('idle', { lines: [] }) });
+    await openAdvisor();
+    expect(document.querySelector('[data-advisor-empty]')).not.toBeNull();
+    expect(readBackText()).toBeNull();
+  });
+
+  test('the dialog shows the turn from the status word and a busy turn does not lock the send', async () => {
+    for (const [status, turn, chip, word] of [
+      ['idle', 'over', 'Turn over', 'idle'], ['done', 'over', 'Turn over', 'done'],
+      ['working', 'running', 'Running a turn', 'working'], ['blocked', 'running', 'Running a turn', 'blocked'],
+      [null, 'unknown', 'Status unknown', '—'], ['thinking', 'unknown', 'Status unknown', 'thinking'],
+    ] as const) {
+      const posts: AdvisorMessagePost[] = [];
+      await advisorRoom({ readAdvisorTranscript: async () => readBack(status), writeAdvisorMessage: async (body) => { posts.push(body); return delivered(5); } });
+      await openAdvisor();
+      const shown = document.querySelector(`[data-advisor-turn="${turn}"]`);
+      expect(shown?.textContent).toBe(chip);
+      expect(document.querySelector('[data-advisor-seat]')?.textContent).toBe(`hc t9 · Agent unknown · ${word} · turn 4`);
+      await draftAdvisor('hello');
+      expect(rows('[data-advisor-send]')[0]!.getAttribute('aria-disabled')).toBe('false');
+      await sendAdvisor();
+      expect(posts).toHaveLength(1);
+      await act(async () => root?.unmount());
+    }
+  });
+
+  test('the dialog needs an advisor and a parent, the white board does not open it, and a close waits for the answer of a send', async () => {
+    const noParent = { ...advisorList('idle'), parents: [] };
+    officeAt(`/${HARNESS_ID}`);
+    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: noParent }) })} />);
+    await settle();
+    await openAdvisor();
+    expect(document.querySelector('[data-office-panel]')?.getAttribute('data-office-panel')).toBe('ADVISOR');
+    expect([document.querySelector('[data-advisor-dialog]'), document.querySelector('[data-advisor-chat]')]).toEqual([null, null]);
+    await act(async () => root?.unmount());
+
+    let answer: (value: AdvisorMessageWrite) => void = () => {};
+    await advisorRoom({
+      readAdvisorTranscript: async () => readBack('idle'),
+      writeAdvisorMessage: () => new Promise((resolve) => { answer = resolve; }),
+      initialLocale: 'zh',
+    });
+    await act(async () => rows('[data-office-hit="board"]')[0]!.click());
+    expect(document.querySelector('[data-advisor-dialog]')).toBeNull();
+    await act(async () => rows('[data-advisor-chat]')[0]!.click());
+    await settle();
+    expect(dialogText()).toContain('这一轮已结束');
+    await draftAdvisor('hello');
+    await sendAdvisor();
+    expect(rows('[data-advisor-send]')[0]!.textContent).toBe('发送中');
+    await key('Escape');
+    await act(async () => rows('[data-advisor-close]')[0]!.click());
+    expect(document.querySelector('[data-advisor-dialog]')).not.toBeNull();
+    await act(async () => answer({ state: 'refused', status: 409, error: { code: 'reconcile_required', message: 'm.', next_action: 'n.' } }));
+    await settle();
+    expect(document.querySelector('[data-advisor-notice="reconcile_required"]')?.textContent).toBe('发送没有得到确认，消息可能已经到达顾问席。再次发送前先读上面的回读。');
+    await key('Escape');
+    expect(document.querySelector('[data-advisor-dialog]')).toBeNull();
+  });
+
+  test('a pending send or read shows no old read-back or status, and the text box stays read-only during the send', async () => {
+    const refusedWith = (code: string): AdvisorMessageWrite => ({ state: 'refused', status: 409, error: { code, message: 'm.', next_action: 'n.' } });
+    const failedRead: AdvisorTranscriptRead = { state: 'refused', error: { code: 'advisor_timeout', message: 'm.', next_action: 'n.' } };
+    const fresh = readBack('working', { turn: 5, lines: ['new'] });
+    const pending = (waiting: string) => {
+      expect([document.querySelector('[data-advisor-loading]')?.textContent, readBackText(), document.querySelector('[data-advisor-turn]'), document.querySelector('[data-advisor-seat]')?.textContent])
+        .toEqual([waiting, null, null, 'Agent unknown']);
+    };
+    const field = () => document.querySelector<HTMLTextAreaElement>('[data-advisor-text]')!;
+    for (const [answer, second, notice, text] of [
+      [delivered(5), fresh, null, ''],
+      [refusedWith('advisor_seat_absent'), fresh, 'advisor_seat_absent', 'hello'],
+      [refusedWith('reconcile_required'), fresh, 'reconcile_required', 'hello'],
+      [{ state: 'unreachable' }, fresh, 'unreachable', 'hello'],
+      [{ state: 'unreadable' }, fresh, 'unreadable', 'hello'],
+      [delivered(5), failedRead, null, ''],
+      [refusedWith('reconcile_required'), failedRead, 'reconcile_required', 'hello'],
+    ] as const) {
+      const reads: ((value: AdvisorTranscriptRead) => void)[] = [];
+      let answerSend: (value: AdvisorMessageWrite) => void = () => {};
+      await advisorRoom({
+        readAdvisorTranscript: () => new Promise((resolve) => { reads.push(resolve); }),
+        writeAdvisorMessage: () => new Promise((resolve) => { answerSend = resolve; }),
+      });
+      await openAdvisor();
+      pending('Reading the advisor terminal');
+      await act(async () => reads[0]!(readBack('idle', { lines: ['old'] })));
+      await settle();
+      expect(readBackText()).toBe('old');
+      await draftAdvisor('hello');
+      await sendAdvisor();
+      pending('Sending');
+      expect([field().readOnly, reads.length]).toEqual([true, 1]);
+      await act(async () => answerSend(answer));
+      await settle();
+      pending('Reading the advisor terminal');
+      expect([field().readOnly, field().value, reads.length, document.querySelector('[data-advisor-notice]')?.getAttribute('data-advisor-notice') ?? null]).toEqual([false, text, 2, notice]);
+      expect(rows('[data-advisor-send]')[0]!.getAttribute('aria-disabled')).toBe('true');
+      await act(async () => reads[1]!(second));
+      await settle();
+      expect(document.querySelector('[data-advisor-loading]')).toBeNull();
+      if (second === fresh) {
+        expect([readBackText(), document.querySelector('[data-advisor-turn]')?.textContent]).toEqual(['new', 'Running a turn']);
+      } else {
+        expect([readBackText(), document.querySelector('[data-advisor-turn]'), document.querySelector('[data-advisor-seat]')?.textContent]).toEqual([null, null, 'Agent unknown']);
+        expect(document.querySelector('[data-advisor-read-failure="advisor_timeout"]')).not.toBeNull();
+      }
+      await act(async () => root?.unmount());
+    }
+
+    const reads: { readonly resolve: (value: AdvisorTranscriptRead) => void; readonly signal: AbortSignal }[] = [];
+    await advisorRoom({ readAdvisorTranscript: (_subject, signal) => new Promise((resolve) => { reads.push({ resolve, signal }); }) });
+    await openAdvisor();
+    await act(async () => rows('[data-advisor-close]')[0]!.click());
+    expect([document.querySelector('[data-advisor-dialog]'), reads[0]!.signal.aborted]).toEqual([null, true]);
+    await openAdvisor();
+    await act(async () => reads[0]!.resolve(readBack('idle', { lines: ['old'] })));
+    await settle();
+    pending('Reading the advisor terminal');
+    await act(async () => reads[1]!.resolve(fresh));
+    await settle();
+    expect(readBackText()).toBe('new');
+  });
+
+  test('the advisor route clients name the subject, decode the answer and keep a typed refusal', async () => {
+    const realFetch = globalThis.fetch;
+    const calls: { readonly url: string; readonly method: string | undefined }[] = [];
+    const answer = (status: number, value: unknown) => {
+      globalThis.fetch = Object.assign(async (url: string | URL | Request, init?: RequestInit) => { calls.push({ url: String(url), method: init?.method }); return new Response(JSON.stringify(value), { status }); }, { preconnect: realFetch.preconnect });
+    };
+    const subject = { repository_id: HARNESS_ID, parent: 1474 };
+    const read = () => fetchAdvisorTranscript(subject, new AbortController().signal);
+    const error = { code: 'advisor_seat_absent', message: 'Absent.', next_action: 'Start it.' };
+    try {
+      const body = { protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1, parent: 1474, terminal: 't9', status: 'idle', status_kind: null, turn: 4, complete: true, why: null, lines: [] };
+      answer(200, body);
+      expect(await read()).toEqual({ state: 'ok', transcript: decodeAdvisorSeatTranscript(body) });
+      expect(calls.at(-1)).toEqual({ url: `/api/v1/seats/advisor/transcript?repository_id=${HARNESS_ID}&parent=1474`, method: undefined });
+      answer(200, { ...body, kind: 'other' });
+      expect(await read()).toEqual({ state: 'unreadable' });
+      answer(409, { error });
+      expect(await read()).toEqual({ state: 'refused', error });
+      answer(500, { nope: true });
+      expect(await read()).toEqual({ state: 'unreachable' });
+      globalThis.fetch = Object.assign(async () => { throw new TypeError('down'); }, { preconnect: realFetch.preconnect });
+      expect(await read()).toEqual({ state: 'unreachable' });
+
+      answer(200, { protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1, parent: 1474, terminal: 't9', started: true, turn: 5 });
+      expect(await postAdvisorMessage({ ...subject, request_id: 'r1', text: 'hello' })).toEqual(delivered(5));
+      expect(calls.at(-1)).toEqual({ url: '/api/v1/seats/advisor/messages', method: 'POST' });
     } finally {
       globalThis.fetch = realFetch;
     }

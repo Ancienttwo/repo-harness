@@ -160,6 +160,31 @@ button.board-office__card:focus-visible { outline: 3px solid var(--color-kumo-br
 .board-office__confirm-actions button { height: 40px; padding: 0 16px; cursor: pointer; border: 1px solid var(--color-kumo-line); border-radius: 8px; background: var(--color-kumo-base); color: var(--text-color-kumo-strong); font-size: 14px; font-weight: 500; }
 .board-office__confirm-actions button[data-boss-confirm-send] { border-color: transparent; background: var(--color-kumo-brand); color: #FFFFFF; font-weight: 600; }
 
+/* Advisor seat dialog (#1809): text only, so it has no motion to reduce. */
+.board-office__chat { height: 40px; cursor: pointer; border: 1px solid var(--color-kumo-line); border-radius: 8px; background: var(--color-kumo-base); color: var(--text-color-kumo-strong); font-size: 14px; font-weight: 600; }
+.board-office__chat:hover { background: var(--color-kumo-tint); }
+.board-office__advisor { display: flex; width: 100%; max-width: 520px; max-height: calc(100dvh - 64px); flex-direction: column; overflow: hidden; border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); box-shadow: 0 12px 28px rgb(20 32 46 / .12), 0 4px 8px rgb(20 32 46 / .06); }
+.board-office__advisor > header { display: flex; flex: none; align-items: center; gap: 12px; padding: 14px 16px; border-bottom: 1px solid var(--color-kumo-line); }
+.board-office__advisor > header > div { display: flex; min-width: 0; flex: 1; flex-direction: column; }
+.board-office__advisor h2 { margin: 0; font-size: 18px; font-weight: 600; line-height: 1.3; color: var(--text-color-kumo-strong); }
+.board-office__advisor [data-advisor-seat] { font: 12px/1.4 var(--font-mono); color: var(--text-color-kumo-subtle); overflow-wrap: anywhere; }
+.board-office__advisor-turn { flex: none; padding: 2px 8px; border-radius: 999px; background: var(--color-kumo-recessed); color: var(--text-color-kumo-default); font-size: 12px; white-space: nowrap; }
+.board-office__advisor-turn[data-advisor-turn="running"] { background: var(--color-kumo-info-tint); color: var(--text-color-kumo-info); }
+.board-office__advisor-close { display: grid; width: 36px; height: 36px; flex: none; cursor: pointer; place-items: center; border: 0; border-radius: 8px; background: transparent; color: var(--text-color-kumo-subtle); }
+.board-office__advisor-close:hover { background: var(--color-kumo-tint); }
+.board-office__advisor-close[aria-disabled="true"] { cursor: default; opacity: .55; }
+.board-office__advisor-log { min-height: 120px; flex: 1 1 320px; margin: 0; padding: 12px 16px; overflow-y: auto; background: var(--color-kumo-recessed); color: var(--text-color-kumo-strong); font: 12.5px/1.5 var(--font-mono); white-space: pre-wrap; overflow-wrap: anywhere; }
+.board-office__advisor-log:focus-visible { outline: 3px solid var(--color-kumo-brand); outline-offset: -3px; }
+.board-office__advisor-state { flex: none; margin: 12px 16px 0; font-size: 13px; color: var(--text-color-kumo-subtle); }
+.board-office__notice.board-office__advisor-state { color: var(--text-color-kumo-warning); }
+.board-office__advisor-state[data-advisor-loading] { flex: 1 1 320px; }
+.board-office__advisor-sent { flex: none; margin: 10px 16px 0; font: 12px/1.4 var(--font-mono); color: var(--text-color-kumo-subtle); }
+.board-office__advisor form { display: flex; flex: none; align-items: flex-end; gap: 8px; margin-top: 12px; padding: 12px 16px; border-top: 1px solid var(--color-kumo-line); }
+.board-office__advisor textarea { min-width: 0; flex: 1; resize: none; padding: 8px 10px; border: 1px solid var(--color-kumo-line); border-radius: 8px; background: var(--color-kumo-base); color: var(--text-color-kumo-strong); font-size: 14px; line-height: 1.5; }
+.board-office__advisor textarea:focus-visible, .board-office__advisor-close:focus-visible, .board-office__advisor form button:focus-visible, .board-office__chat:focus-visible { outline: 3px solid var(--color-kumo-brand); outline-offset: 2px; }
+.board-office__advisor form button { height: 44px; flex: none; padding: 0 18px; cursor: pointer; border: 0; border-radius: 8px; background: var(--color-kumo-brand); color: #FFFFFF; font-size: 14px; font-weight: 600; }
+.board-office__advisor form button[aria-disabled="true"] { cursor: default; opacity: .55; }
+
 /* Legend dialog. */
 .board-office__legend { position: fixed; top: 50%; left: 50%; z-index: 50; display: flex; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); flex-direction: column; transform: translate(-50%, -50%); border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); box-shadow: 0 24px 48px rgb(0 0 0 / .2); }
 .board-office__legend > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--color-kumo-hairline); }
@@ -172,4 +197,7 @@ button.board-office__card:focus-visible { outline: 3px solid var(--color-kumo-br
 
 @media (max-width: 1100px) {
   .board-office__scene { --s: 2; }
+}
+@media (max-width: 480px) {
+  .board-office__advisor .board-office__portrait { display: none; }
 }
