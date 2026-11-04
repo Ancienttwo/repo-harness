@@ -268,8 +268,13 @@ The owner accepts or repairs each flag before publish.
   published_tarball, clean_install, installed_hook_readback`;
   `[release-published] OK: registry, dist-tag, tarball, tag, and local
   version files agree.`
-- Owner machine upgrade and the post-upgrade probe: not run yet. Advisor t11
-  owns the probe.
+- Owner machine: `bun add -g repo-harness@0.26.2 --no-cache`, then
+  `repo-harness update --version 0.26.2`: all steps ok. The managed status
+  line is installed; `hc` 0.1.17 is unchanged. The post-upgrade probe passes
+  (hooks 2/0/0, 0 install-profile sections). The operator server on port 4318
+  restarted on 0.26.2. `repo-harness quota` is live: claude `normal`
+  (seven_day 22%, pace -13, five_hour `absent`); chatgpt `normal` (weekly 7%,
+  pace +3.9, secondary `absent`).
 
 - Yellow flag for the next release: run `npm publish --auth-type=web` in a
   TTY. Without one, npm fails with `EOTP` and does not print a usable link.
