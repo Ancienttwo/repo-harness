@@ -60,9 +60,9 @@ const sameDraft = (left: Draft, right: Draft) => left.recommendation === right.r
 /** The server names the loss paths an archive can take; the page infers nothing from a path. */
 const archivable = (item: CleanupPlanItem): readonly string[] => item.loss?.archivable ?? [];
 
-/** The server refuses a Git destination for a path that Git storage refuses by name or size. */
+/** The server refuses every destination for a path that staging cannot read, and a Git destination for a path that Git storage refuses by name or size. */
 const destinationsOf = (item: CleanupPlanItem, path: string): readonly ('none' | Destination)[] =>
-  item.loss?.private_only.includes(path) ? ['none', 'private'] : ['none', 'git', 'private'];
+  item.loss?.no_destination.includes(path) ? ['none'] : item.loss?.private_only.includes(path) ? ['none', 'private'] : ['none', 'git', 'private'];
 
 const hasCommits = (item: CleanupPlanItem) => (item.loss?.commits.length ?? 0) > 0;
 

@@ -1,5 +1,6 @@
 import { canonicalize } from '../evidence/canonical-json';
 import type { JsonValue } from '../evidence/types';
+import { DOC_SESSION_PATCH_MAX_BYTES } from './doc-session-changes';
 import { isRepositoryRelativePath } from './doc-session-events';
 import { containsSecret } from '../security/secret-patterns';
 import { decodeWorktreeCleanupRequest, WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupRequest } from './worktree-cleanup';
@@ -25,6 +26,8 @@ export interface CleanupLossSummary {
   readonly archivable: readonly string[];
   /** Sorted subset of `archivable` that the Git archive refuses by name or size (`gitArchiveRefuses`); only private storage takes them. */
   readonly private_only: readonly string[];
+  /** Sorted subset of `archivable`, disjoint from `private_only`, that every archive storage refuses (`archiveStagingRefuses`). */
+  readonly no_destination: readonly string[];
 }
 export interface CleanupPlanItem {
   readonly worktree: WorktreeView;
@@ -85,6 +88,10 @@ const GIT_FILE_MAX = 16 * 1024 * 1024;
  */
 export function gitArchiveRefuses(path: string, size: number | null): boolean {
   return PRIVATE_FILE.test(path) || (size !== null && size > GIT_FILE_MAX);
+}
+/** Staging reads each index version through the doc session Git runner, which refuses output above this limit in every storage. */
+export function archiveStagingRefuses(indexSize: number): boolean {
+  return indexSize > DOC_SESSION_PATCH_MAX_BYTES;
 }
 export const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
   && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);
@@ -150,11 +157,13 @@ export function decodeCleanupPlan(value: unknown): CleanupPlan {
     decodeCleanupAdvice(item.advice);
     if ((item.loss === null) !== (item.loss_sha256 === null)) fail();
     if (item.loss !== null) {
-      const loss = exact(item.loss, 'archivable,commits,files,ignored,private_only');
-      paths(loss.files); paths(loss.ignored, true); paths(loss.archivable); paths(loss.private_only);
+      const loss = exact(item.loss, 'archivable,commits,files,ignored,no_destination,private_only');
+      paths(loss.files); paths(loss.ignored, true); paths(loss.archivable); paths(loss.private_only); paths(loss.no_destination);
       const sorted = (list: string[]) => list.every((path, index) => index === 0 || list[index - 1]! < path);
-      const archivable = new Set(loss.archivable as string[]);
-      if (!sorted(loss.archivable as string[]) || !sorted(loss.private_only as string[]) || !(loss.private_only as string[]).every(path => archivable.has(path))) fail();
+      const archivable = new Set(loss.archivable as string[]), privateOnly = new Set(loss.private_only as string[]);
+      if (!sorted(loss.archivable as string[]) || !sorted(loss.private_only as string[]) || !sorted(loss.no_destination as string[])
+        || ![...privateOnly].every(path => archivable.has(path))
+        || !(loss.no_destination as string[]).every(path => archivable.has(path) && !privateOnly.has(path))) fail();
       if (!Array.isArray(loss.commits) || loss.commits.length > CLEANUP_PLAN_MAX_PATHS || new Set(loss.commits).size !== loss.commits.length
         || !loss.commits.every(oid => typeof oid === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(oid))) fail();
     }
