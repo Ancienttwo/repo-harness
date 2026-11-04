@@ -1222,6 +1222,8 @@ describe('worktree page', () => {
 const CLEANUP_PATH = '/api/v1/worktrees/cleanup';
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const GREEN = ['feat-kanban-status', 'repo-harness-wt-pi-host', 'operator-site-wt-footer'];
+/** The registered non-green rows the plan review can take: no primary checkout, no orphan. */
+const REVIEWABLE = ['repo-harness-wt-kanban-redesign', 'repo-harness-wt-oar', 'codex-7f3a', 'repo-harness-wt-docs-cleanup', 'operator-site-csp'];
 const rowOf = (directory: string) => [...trees().repositories.flatMap(repository => repository.worktrees), ...trees().unassigned].find(tree => tree.directory === directory)!;
 const checkbox = (directory: string) => worktreeRow(directory).querySelector<HTMLInputElement>('input[data-select]')!;
 const cleanButton = () => document.querySelector<HTMLButtonElement>('button[data-clean]')!;
@@ -1324,12 +1326,13 @@ describe('worktree cleanup (5.1)', () => {
       () => Response.json({ error: { code: 'a_code_from_a_newer_server', message: 'Server sentence.', next_action: 'Server next step.' } }, { status: 503 })]);
     try {
       await mount(<OperatorApp {...props(busy())} />);
-      // A registered non-green row is checked for the plan review instead; the clean request carries only green ids (5-WT-P1).
-      const reviewable = new Set(['repo-harness-wt-kanban-redesign', 'repo-harness-wt-oar', 'codex-7f3a', 'repo-harness-wt-docs-cleanup', 'operator-site-csp']);
+      // A registered non-green row can be checked for the plan review instead, and starts unchecked; the clean request carries only green ids (5-WT-P1).
+      const reviewable = new Set(REVIEWABLE);
       for (const row of document.querySelectorAll<HTMLElement>('[data-worktree]')) {
         const box = row.querySelector<HTMLInputElement>('input[data-select]')!;
-        const on = row.getAttribute('data-judgment') === 'green' || reviewable.has(row.querySelector('[data-directory]')!.textContent!);
-        expect([box.disabled, box.checked]).toEqual([!on, on]);
+        const green = row.getAttribute('data-judgment') === 'green';
+        const on = green || reviewable.has(row.querySelector('[data-directory]')!.textContent!);
+        expect([box.disabled, box.checked]).toEqual([!on, green]);
       }
       const expected: [string, string][] = [
         ['not_approved', 'A selected worktree is not green. Nothing was removed.'],
@@ -1419,6 +1422,7 @@ const planButton = (name: 'choose' | 'execute') => document.querySelector<HTMLBu
 async function openReview(ports: CleanupPlanPorts): Promise<void> {
   installDom(WORKTREES_URL);
   await mount(<OperatorApp {...props(busy(), { worktreeCleanupPlan: ports })} />);
+  for (const directory of REVIEWABLE) await act(async () => checkbox(directory).click());
   await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!.click());
   await until(() => document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review') !== 'loading');
 }
@@ -1431,8 +1435,7 @@ describe('worktree cleanup plan review (#1720)', () => {
     await openReview(record.ports);
     expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('ready');
     // Pass 1 asks for the registered non-green rows of the list: no primary checkout, no orphan.
-    expect(record.opened).toEqual([['repo-harness-wt-kanban-redesign', 'repo-harness-wt-oar', 'codex-7f3a', 'repo-harness-wt-docs-cleanup', 'operator-site-csp']
-      .map(directory => rowOf(directory).id)]);
+    expect(record.opened).toEqual([REVIEWABLE.map(directory => rowOf(directory).id)]);
     // One item of each judgment; green keeps the one-click clean, red and an unread loss cannot be selected.
     expect(planItem('feat-kanban-status').querySelector('[data-plan-green]')).not.toBeNull();
     for (const directory of ['feat-kanban-status', 'repo-harness-wt-kanban-redesign', 'repo-harness-wt-old-spike']) {
@@ -1686,30 +1689,65 @@ describe('worktree cleanup plan review (#1720)', () => {
     } finally { globalThis.fetch = original; }
   });
 
-  test('above the plan limit the user checks a batch, so every non-green row is reachable', async () => {
+  test('plan rows start unchecked, a review takes 1 to 16 of them, and the review and the selection survive a page change', async () => {
     const base = trees(), yellow = rowOf('repo-harness-wt-oar');
-    const extra = Array.from({ length: 12 }, (_, index) => ({ ...yellow, id: `wt_${'9'.repeat(62)}${index.toString(16).padStart(2, '0')}`, directory: `repo-harness-wt-extra-${index}` }));
-    const snapshot = decodeWorktrees({ ...base, repositories: base.repositories.map((group, index) => index === 0 ? { ...group, worktrees: [...group.worktrees, ...extra] } : group) });
+    const extraRow = (index: number) => ({ ...yellow, id: `wt_${'9'.repeat(62)}${index.toString(16).padStart(2, '0')}`, directory: `repo-harness-wt-extra-${index}` });
+    const withExtra = (count: number) => decodeWorktrees({ ...base, repositories: base.repositories.map((group, index) => index === 0
+      ? { ...group, worktrees: [...group.worktrees, ...Array.from({ length: count }, (_, row) => extraRow(row))] } : group) });
+    // 17 plan rows: one more than a review takes.
+    let snapshot = withExtra(12);
     const record = recordPlan();
     installDom(WORKTREES_URL);
     await mount(<OperatorApp {...props(busy(), { initialWorktrees: snapshot, readWorktrees: async () => snapshot, worktreeCleanupPlan: record.ports })} />);
     await settle();
+    const go = (workspace: string) => act(async () => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!.click());
     const open = () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!;
-    expect([open().disabled, open().getAttribute('data-plan-review-open'), document.querySelector('[data-plan-limit]') !== null]).toEqual([true, '17', true]);
-    const batch = async (cleared: string) => {
-      await act(async () => checkbox(cleared).click());
-      expect([open().disabled, open().getAttribute('data-plan-review-open'), document.querySelector('[data-plan-limit]') !== null]).toEqual([false, '16', false]);
-      await act(async () => open().click());
-      await until(() => document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review') === 'ready');
-      await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-back]')!.click());
-      await settle();
+    const openState = () => [open().disabled, open().getAttribute('data-plan-review-open'), document.querySelector('[data-plan-limit]') !== null];
+    const planRows = [...REVIEWABLE, ...Array.from({ length: 12 }, (_, index) => `repo-harness-wt-extra-${index}`)];
+    const greenUnchanged = () => {
+      for (const directory of GREEN) expect(checkbox(directory).checked).toBe(true);
+      expect(cleanButton().textContent).toBe('Clean 3 selected');
     };
-    // Two batches of 16 reach all 17 rows; going back restores the full selection.
-    await batch('repo-harness-wt-oar');
-    await batch('codex-7f3a');
-    expect(record.opened.map(ids => ids.length)).toEqual([16, 16]);
-    expect([record.opened[0]!.includes(rowOf('repo-harness-wt-oar').id), record.opened[1]!.includes(rowOf('repo-harness-wt-oar').id)]).toEqual([false, true]);
-    expect(new Set(record.opened.flat()).size).toBe(17);
+    for (const directory of planRows) expect([checkbox(directory).disabled, checkbox(directory).checked]).toEqual([false, false]);
+    expect(openState()).toEqual([true, '0', false]);
+    greenUnchanged();
+    await act(async () => checkbox(planRows[0]!).click());
+    expect(openState()).toEqual([false, '1', false]);
+    for (const directory of planRows.slice(1, 16)) await act(async () => checkbox(directory).click());
+    expect(openState()).toEqual([false, '16', false]);
+    await act(async () => checkbox(planRows[16]!).click());
+    expect(openState()).toEqual([true, '17', true]);
+    await act(async () => checkbox(planRows[0]!).click());
+    expect(openState()).toEqual([false, '16', false]);
+    greenUnchanged();
+
+    // A row the collector adds while the owner selects starts unchecked, and the selection survives a page change.
+    snapshot = withExtra(13);
+    await go('repositories');
+    expect(document.querySelector('[data-worktrees-page]')!.closest('[hidden]')).not.toBeNull();
+    await go('worktrees');
+    await until(() => worktreeRow('repo-harness-wt-extra-12') !== undefined);
+    expect(checkbox('repo-harness-wt-extra-12').checked).toBe(false);
+    expect(planRows.map(directory => checkbox(directory).checked)).toEqual(planRows.map((_, index) => index > 0));
+    expect(openState()).toEqual([false, '16', false]);
+    greenUnchanged();
+
+    await act(async () => open().click());
+    await until(() => document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review') === 'ready');
+    const idOf = (directory: string) => snapshot.repositories.flatMap(group => group.worktrees).find(tree => tree.directory === directory)!.id;
+    expect(record.opened.map(ids => [...ids].sort())).toEqual([planRows.slice(1).map(idOf).sort()]);
+    // The open review survives a page change without a new plan.
+    await go('repositories');
+    await go('worktrees');
+    await settle();
+    expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('ready');
+    expect(record.opened).toHaveLength(1);
+    // Back restores the default selection: no plan row checked.
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-back]')!.click());
+    await settle();
+    expect([...planRows, 'repo-harness-wt-extra-12'].some(directory => checkbox(directory).checked)).toBe(false);
+    expect(openState()).toEqual([true, '0', false]);
+    greenUnchanged();
   });
 
   test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {
