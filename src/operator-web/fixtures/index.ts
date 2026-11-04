@@ -22,6 +22,7 @@ import { degradedSetup, loadingSetup, readySetup } from './setup';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
 import { settingsStores } from './settings';
+import { officeProps } from './office';
 import { busyQuota, degradedQuota } from './quota';
 import type { QuotaReader } from '../quota';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
@@ -38,6 +39,8 @@ import type { BoardParentsRead, BoardRead } from '../board-view';
 
 export const FIXTURE_NAMES = ['busy', 'empty', 'degraded'] as const;
 export type FixtureName = typeof FIXTURE_NAMES[number];
+/** `busy` with the board reads of the S0 mockup sample state. The other pages have no separate state in it. */
+export const OFFICE_FIXTURE = 'office';
 
 const registered = (repository_id: string, display_name: string, access_mode: 'read_only' | 'read_write' = 'read_write') =>
   ({ repository_id, display_name, access_mode });
@@ -79,7 +82,8 @@ const answer = ({ status, body }: DocsWireAnswer) => new Response(JSON.stringify
 const unavailable = (what: string) => () => Promise.reject(new Error(`fixture ${what} unavailable`));
 
 export function fixtureProps(name: string): OperatorAppProps {
-  if (!(FIXTURE_NAMES as readonly string[]).includes(name)) throw new Error(`unknown operator fixture "${name}"; use one of ${FIXTURE_NAMES.join(', ')}`);
+  if (name === OFFICE_FIXTURE) return officeProps(fixtureProps('busy'));
+  if (!(FIXTURE_NAMES as readonly string[]).includes(name)) throw new Error(`unknown operator fixture "${name}"; use one of ${[...FIXTURE_NAMES, OFFICE_FIXTURE].join(', ')}`);
   const now = Date.now();
   const fixture = name as FixtureName;
   const activity: DevActivitySnapshotV2 = decodeDevActivitySnapshot(
