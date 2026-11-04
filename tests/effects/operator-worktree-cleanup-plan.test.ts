@@ -129,12 +129,12 @@ describe('cleanup plan contract and execution boundary', () => {
       files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, directory('cache'), file, symlink('docs/link.md'), symlink('docs/staged-link.md'),
         symlink('docs/tracked-link.md'), { ...file, path: 'docs/was-link.md' }, directory('empty')] };
     const plan = (paths: string[]) => createCleanupPlan(SID, [{ observation: { ...o, loss }, advice: { ...advice(), archive: { git: null, private: { directory: 'fixture-repo', paths } } } }]);
-    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: loss.changed_paths, archivable: ['.env', 'bin/run.sh', 'docs/guide.md', 'docs/staged.md', 'docs/was-link.md'] });
+    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: loss.changed_paths, archivable: ['.env', 'bin/run.sh', 'docs/guide.md', 'docs/index-link.md', 'docs/staged.md', 'docs/was-link.md'] });
     // A worktree entry decides when present: only a regular file (changed, ignored, or a former symlink now a file) qualifies.
-    // Without one, every index version must be a regular-file mode (100644, 100755); 120000 is a symlink.
+    // Without one, any index version qualifies (100644, 100755, 120000): staging saves each blob with its mode.
     for (const [path, accepted] of [['docs/guide.md', true], ['.env', true], ['docs/was-link.md', true], ['docs/staged.md', true], ['bin/run.sh', true],
-      ['docs/removed.md', false], ['empty', false], ['cache', false], ['docs/link.md', false], ['docs/staged-link.md', false], ['docs/tracked-link.md', false],
-      ['docs/index-link.md', false], ['README.md', false]] as const) {
+      ['docs/index-link.md', true], ['docs/removed.md', false], ['empty', false], ['cache', false], ['docs/link.md', false], ['docs/staged-link.md', false],
+      ['docs/tracked-link.md', false], ['README.md', false]] as const) {
       if (accepted) expect(plan([path]).items[0]!.advice.archive.private!.paths).toEqual([path]);
       else expect(() => plan([path])).toThrow('archive_paths_invalid');
     }
