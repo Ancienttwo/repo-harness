@@ -19,6 +19,7 @@ import {
   type MapLayerId,
 } from './architecture-map-layers';
 import { counted, Gap, Note } from './architecture-map-parts';
+import { ArchitectureLayers } from './ArchitectureLayers';
 import { ArchitectureModules } from './ArchitectureModules';
 import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
@@ -241,8 +242,8 @@ function MapUnavailable({ read, kept, t }: {
   </p>;
 }
 
-/** The base maps that read the map route: modules (capabilities in domain groups), sequence and topology. */
-export type ArchitectureBaseMap = 'modules' | 'sequence' | 'topology';
+/** The base maps that read the map route: modules (capabilities in domain groups), layers, sequence and topology. */
+export type ArchitectureBaseMap = 'modules' | 'layers' | 'sequence' | 'topology';
 
 /**
  * What the page shows about the map outside the map view: the header row's commit, collection time,
@@ -257,7 +258,7 @@ export interface ArchitectureMapSummary {
   readonly flows: number;
 }
 
-/** The map-wide gaps. No base map draws the layer order, so its gap is not one. */
+/** The map-wide gaps of the module, sequence and topology maps. The Layers view states its own gaps, the layer order's included. */
 function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: OperatorTranslate }) {
   return <>
     {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
@@ -306,7 +307,8 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   return <div className="architecture-map-view">
     {result === null && <p role="status">{t('architecture.map.loading')}</p>}
     {result?.state === 'unavailable' && <MapUnavailable read={result} kept={map !== null} t={t} />}
-    {map && <>
+    {map && view === 'layers' && <ArchitectureLayers key={`${repositoryId}:${map.commit}`} map={map} t={t} />}
+    {map && view !== 'layers' && <>
       <div className="architecture-lens">
         <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>
         <LayerBar map={map} layer={layer} pullRequest={pullRequest} onLayer={setLayer} t={t} />
