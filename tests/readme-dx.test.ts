@@ -94,6 +94,12 @@ describe("README DX contract", () => {
     expect(hits).toEqual([]);
   });
 
+  test("README does not promise a Stop-hook handoff", () => {
+    const readme = read("README.md");
+    expect(readme).toContain("No local handoff file is written");
+    expect(readme).not.toMatch(/Stop hook writes handoff|Stop hook \.-> Handoff/);
+  });
+
   test("README languages do not advertise retired goal, plan skill or plugin names", () => {
     const readmes = ["README.md", ...LOCALIZED_READMES].map(read).join("\n");
     expect(readmes).not.toMatch(/prepare_codex_goal_from_sprint|write_codex_goal|codex-goal\.md|codex@openai-codex|claude-plan|Codex goal handoff/);
