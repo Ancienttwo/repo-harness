@@ -7,6 +7,7 @@ import { unavailableSetupSnapshot } from '../../core/setup/decode';
 import type {
   SetupFleetRole,
   SetupHookEvent,
+  SetupHostSkillRoot,
   SetupSkill,
   SetupSkillHostRow,
   SetupSnapshotV2,
@@ -42,8 +43,15 @@ const SUMMARY: Readonly<Record<string, string>> = {
 };
 
 function skill(name: string, claude: SetupSkillHostRow | null, codex: SetupSkillHostRow | null): SetupSkill {
-  return { name, summary: SUMMARY[name] ?? null, hosts: { claude, codex, pi: null } };
+  return { name, summary: SUMMARY[name] ?? null, catalog_hosts: ['claude', 'codex', 'pi'], hosts: { claude, codex, pi: null } };
 }
+
+/** Pi is not installed, so its root does not exist. */
+const SKILL_ROOTS: SetupHostSkillRoot[] = [
+  { host: 'claude', root: '~/.claude/skills', other_skills: ['frontend-design', 'pdf'] },
+  { host: 'codex', root: '~/.codex/skills', other_skills: [] },
+  { host: 'pi', root: '~/.pi/agent/skills', other_skills: null },
+];
 
 function readySkills(): SetupSkill[] {
   return [
@@ -97,6 +105,8 @@ export function readySetup(now: number): SetupSnapshotV2 {
       { host: 'pi', reported: true, adapter_check: null, detected: false, cli_version: null, adapter: null, package_check: 'na' },
     ],
     skills: readySkills(),
+    skill_roots: SKILL_ROOTS,
+    install_selection: 'all',
     hooks: HOOKS,
     hook_usage: null,
     fleet: FLEET.map(role => ({ ...role, hosts: { claude: 'installed', codex: 'installed', pi: null } })),
@@ -152,6 +162,8 @@ export function degradedSetup(now: number): SetupSnapshotV2 {
       { host: 'pi', reported: true, adapter_check: null, detected: false, cli_version: null, adapter: null, package_check: 'na' },
     ],
     skills,
+    skill_roots: SKILL_ROOTS,
+    install_selection: ['architecture', 'product'],
     hooks: HOOKS,
     hook_usage: null,
     fleet: FLEET.map(role => ({

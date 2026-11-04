@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import { Background, BackgroundVariant, Panel, ReactFlow, ReactFlowProvider, type Node, type NodeChange, type NodeProps } from '@xyflow/react';
 import '@xyflow/react/dist/base.css';
 import {
@@ -164,11 +164,12 @@ function Legend({ t }: { readonly t: OperatorTranslate }) {
 
 type Selection = { readonly kind: 'participant'; readonly id: string } | { readonly kind: 'message'; readonly outcome: string | null; readonly step: string } | null;
 
-function SequenceCanvas({ map, flow, layer, pullRequest, onModule, t }: {
+function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly flow: RequiredFlow;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
+  readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
@@ -260,6 +261,7 @@ function SequenceCanvas({ map, flow, layer, pullRequest, onModule, t }: {
     </div>
     <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}
       data-node-id={participant ?? undefined} data-step-id={message ? `${message.outcome ?? ''}:${message.step.id}` : undefined}>
+      {side}
       {message ? <StepDetails map={map} flow={flow} outcome={message.outcome} step={message.step} t={t} />
         : participant ? <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={participant} onModule={onModule} t={t}>
           <p data-runtime={placement(participant).kind}>{t('architecture.sequence.runsIn', { place: placementText(placement(participant), names, t) })}</p>
@@ -272,32 +274,56 @@ function SequenceCanvas({ map, flow, layer, pullRequest, onModule, t }: {
 /** Why a layer marks only part of the sequence map. */
 const LAYER_NOTES: Partial<Record<MapLayerId, 'imports_on_module_map' | 'tests_by_capability' | 'decisions_by_node'>> = { violations: 'imports_on_module_map', tests: 'tests_by_capability', decisions: 'decisions_by_node' };
 
-/** The sequence base map: one model flow per diagram, one light box per OS process. */
-export function ArchitectureSequence({ map, layer, pullRequest, onModule, t }: {
+/** The flow on screen: the picked flow while the model lists it, else the first flow that the layer reaches. */
+function shownFlow(map: ArchitectureMapV1, layer: MapLayerId, reached: ReadonlySet<string>, proven: ReadonlyMap<string, string> | null, picked: string | null): ArchitectureMapFlowV1 {
+  const flowId = picked !== null && map.flows.some(flow => flow.id === picked) ? picked : firstFlow(map, layer, reached, proven)!;
+  return map.flows.find(entry => entry.id === flowId)!;
+}
+
+/** The flow choice of the sequence map, for the lens row. A lit flow has a step that the active layer marks. */
+export function SequenceFlowPicker({ map, layer, pullRequest, flowId, onFlow, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
+  readonly flowId: string | null;
+  readonly onFlow: (flowId: string) => void;
+  readonly t: OperatorTranslate;
+}) {
+  const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
+  const proven = useMemo(() => proofs(map), [map]);
+  if (map.flows.length === 0) return null;
+  const flow = shownFlow(map, layer, reached, proven, flowId);
+  const lit = (entry: ArchitectureMapFlowV1) => flowSteps(entry).some(({ outcome, step }) => messageTone(layer, reached, proven, entry.id, outcome, step) !== null);
+  return <label className="architecture-lens__pick">
+    <span>{t('architecture.sequence.flow')}</span>
+    <select value={flow.id} onChange={event => onFlow(event.target.value)}>
+      {map.flows.map(entry => <option key={entry.id} value={entry.id} data-lit={lit(entry) || undefined}>{lit(entry) ? '● ' : ''}{entry.name} · {entry.id}</option>)}
+    </select>
+  </label>;
+}
+
+/** The sequence base map: one model flow per diagram, one light box per OS process. `side` leads the side panel. */
+export function ArchitectureSequence({ map, layer, pullRequest, flowId, side, onModule, t }: {
+  readonly map: ArchitectureMapV1;
+  readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
+  readonly flowId: string | null;
+  readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
-  const [picked, setPicked] = useState<string | null>(null);
-  if (map.flows.length === 0) return <Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>;
-  const flowId = picked !== null && map.flows.some(flow => flow.id === picked) ? picked : firstFlow(map, layer, reached, proven)!;
-  const flow = map.flows.find(entry => entry.id === flowId)!;
-  const lit = (entry: ArchitectureMapFlowV1) => flowSteps(entry).some(({ outcome, step }) => messageTone(layer, reached, proven, entry.id, outcome, step) !== null);
+  const sideNote = (note: ReactNode) => <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}>{side}{note}</aside>;
+  if (map.flows.length === 0) {
+    return <div className="architecture-map"><Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>{sideNote(null)}</div>;
+  }
+  const flow = shownFlow(map, layer, reached, proven, flowId);
   const note = LAYER_NOTES[layer];
+  const layerNote = note && <Note part={`sequence.${layer}`} reason={note}>{t(`architecture.sequence.note.${note}`)}</Note>;
   return <div className="architecture-sequence">
-    <label className="architecture-layer-summary__pick">
-      <span>{t('architecture.sequence.flow')}</span>
-      <select value={flow.id} onChange={event => setPicked(event.target.value)}>
-        {map.flows.map(entry => <option key={entry.id} value={entry.id} data-lit={lit(entry) || undefined}>{lit(entry) ? '● ' : ''}{entry.name} · {entry.id}</option>)}
-      </select>
-    </label>
-    {note && <Note part={`sequence.${layer}`} reason={note}>{t(`architecture.sequence.note.${note}`)}</Note>}
     {flow.applicability === 'not-applicable'
-      ? <Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>
-      : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>}
+      ? <div className="architecture-map"><Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>{sideNote(layerNote)}</div>
+      : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} side={<>{side}{layerNote}</>} onModule={onModule} t={t} /></ReactFlowProvider>}
   </div>;
 }

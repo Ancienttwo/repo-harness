@@ -1,8 +1,8 @@
 # verification/evals-checks 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:6736709d5a520187e01ddf96a827747f7e1d890d41ac764bed8a9d88fc338210" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-evals-checks" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:054ffd2cf4fe61abc3d693068aad3fd301bf33f679642b45036cacbe38ca9b93" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.evals-checks`(kind `capability`)
-> **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
+> **Matched Prefixes**:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -48,7 +48,7 @@ flowchart LR
 ### 1.3 規模信號
 
 - 規模量級:`500–1000` 個文件 / `100k–200k` 行
-- 匹配前綴:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/project-test-capabilities.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
+- 匹配前綴:`tests/**`、`evals/**`、`scripts/run-skill-evals.ts`、`scripts/run-harness-profile-benchmark.ts`、`scripts/validate-harness-profile-benchmark.ts`、`scripts/verify-sprint.sh`、`scripts/check-agent-tooling.sh`、`bunfig.toml`、`.github/**`、`scripts/test-file-durations.json`、`scripts/verification-plan.ts`、`scripts/check-ci.sh`、`scripts/check-protected-paths.ts`、`scripts/select-ci-coverage.ts`、`scripts/replay-ci-coverage.ts`、`scripts/report-ci.ts`、`scripts/select-test-suite.ts`、`scripts/ci-documentation-consumers.ts`、`scripts/harness-trace-grade.sh`
 - 排除前綴:`tests/cli/adoption-plan.test.ts`、`tests/fixtures/adoption/**`、`tests/architecture-projection-provider.test.ts`、`tests/cli/global-runtime-init.test.ts`、`tests/cli/global-runtime.test.ts`、`tests/cli/mcp-codegraph-contract.test.ts`、`tests/cli/mcp-policy.test.ts`、`tests/cli/mcp-reader-tools.test.ts`、`tests/cli/mcp-tools.test.ts`、`tests/cli/codegraph-resolver.test.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
@@ -62,7 +62,6 @@ flowchart LR
 - `depends-on` → `capability.public-surface.adoption` — Test Adoption behavior through its source modules.
 - `depends-on` → `capability.organization.board` — Test Board behavior through its source modules
 - `depends-on` → `capability.verification.codegraph-readiness` — Test CodeGraph Readiness behavior through its source modules.
-- `depends-on` → `capability.runtime-harness.dsh-host` — Test DSH Host Plugin behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Test Global Runtime Reconciliation behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.mcp-sidecar` — Test MCP Sidecar behavior through its source modules.
 - `depends-on` → `capability.runtime-harness.operator` — Test Operator Board behavior through its source modules; the CI report builds and finds repair issues, and the test projection script names its schema, with the operator tests contract.

@@ -36,7 +36,6 @@ import { installSelectionCommand, type PluginId } from "../../core/skill-surface
 import {
   parseSkillSurfaceCatalog,
   requiredExplicitExternalDependencyInstallGroups,
-  requiredExplicitExternalSkillInstallGroup,
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
@@ -72,7 +71,6 @@ export interface GlobalRuntimeOptions {
   hostAdapters?: boolean;
   externalSkills?: boolean;
   obsidianSkills?: boolean;
-  reverseSkill?: boolean;
   codegraph?: boolean;
   brainRoot?: string;
   /** The plugin selection to project. Omitted, the recorded selection of the install state. */
@@ -760,7 +758,6 @@ function reconcileWithInstalledCandidate(
     sync_skill: opts.syncSkill !== false,
     host_adapters: opts.hostAdapters !== false,
     external_skills: opts.externalSkills === true,
-    reverse_skill: opts.reverseSkill === true,
     obsidian_skills: opts.obsidianSkills === true,
     codegraph: opts.codegraph ?? true,
     brain_root: opts.brainRoot,
@@ -942,7 +939,6 @@ function recordAgentFleetOwnership(env: NodeJS.ProcessEnv): GlobalRuntimeStep {
 function externalSkillStepName(provider: string): string {
   if (provider === "tw93/Waza") return "configure Waza skills";
   if (provider === "BfdCampos/dotfiles") return "configure Mermaid skill";
-  if (provider.startsWith("zhaoxuya520/reverse-skill#")) return "configure Reverse Skill";
   if (provider.startsWith("kepano/obsidian-skills#")) return "configure Obsidian companion Skills";
   return `configure external skills ${provider}`;
 }
@@ -1558,43 +1554,6 @@ export function runGlobalRuntimeSetup(
   } else {
     steps.push({ step: "configure Waza skills", status: "skipped", detail: "disabled" });
     steps.push({ step: "configure Mermaid skill", status: "skipped", detail: "disabled" });
-  }
-
-  if (opts.reverseSkill === true) {
-    const catalog = loadSkillSurfaceCatalog(sourceRoot);
-    const selection = requiredExplicitExternalSkillInstallGroup(
-      catalog,
-      "reverse-skill-router",
-      hostIds(target),
-    );
-    if (selection.status !== "selected") {
-      steps.push({
-        step: "configure Reverse Skill",
-        status: "failed",
-        detail: selection.status === "missing"
-          ? "required explicit catalog package reverse-skill-router is missing for the selected host target"
-          : selection.status === "not_explicit_only"
-            ? "catalog package reverse-skill-router must remain explicit-only"
-            : "catalog package reverse-skill-router requires a pinned tree integrity digest",
-      });
-    } else {
-      const { provider, hosts, skills, integrityBySkill } = selection.group;
-      steps.push(installExternalSkillGroup(
-        sourceRoot,
-        targetFromHostIds(hosts),
-        piSelected,
-        provider,
-        skills,
-        integrityBySkill,
-        env,
-      ));
-    }
-  } else {
-    steps.push({
-      step: "configure Reverse Skill",
-      status: "skipped",
-      detail: "requires explicit --with-reverse-skill opt-in",
-    });
   }
 
   if (opts.obsidianSkills === true && !plugins.includes('strategy-memory')) {

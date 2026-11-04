@@ -139,7 +139,7 @@ function fixtureCandidate(ownerRoot?: string): CandidatePackageIdentity {
 
 function candidateReceipt(identity: CandidatePackageIdentity, adapterDigest: string): CandidateReconciliationReceipt {
   return {
-    protocol: 2,
+    protocol: 3,
     transaction_id: 'transaction-fixture',
     candidate_package_root: identity.root,
     candidate_version: identity.version,
@@ -280,7 +280,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       }, null, 2));
 
       const request: CandidateReconciliationRequest = {
-        protocol: 2,
+        protocol: 3,
         transaction_id: sha256(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
         parent_token: token,
@@ -290,7 +290,6 @@ describe('candidate-bound global runtime reconciliation', () => {
         sync_skill: false,
         host_adapters: true,
         external_skills: false,
-        reverse_skill: false,
         obsidian_skills: false,
         codegraph: false,
       };
@@ -330,7 +329,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(hookPath, JSON.stringify({ hooks: predecessor }, null, 2));
       const requestBase = {
-        protocol: 2 as const,
+        protocol: 3 as const,
         parent_token: token,
         candidate,
         cwd,
@@ -338,7 +337,6 @@ describe('candidate-bound global runtime reconciliation', () => {
         sync_skill: false,
         host_adapters: true,
         external_skills: false,
-        reverse_skill: false,
         obsidian_skills: false,
         codegraph: false,
       };
@@ -407,7 +405,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(hookPath, JSON.stringify({ hooks: predecessor }, null, 2));
       const requestFor = (backupRoot: string): CandidateReconciliationRequest => ({
-        protocol: 2,
+        protocol: 3,
         parent_token: token,
         transaction_id: sha256(backupRoot),
         transaction_backup_root: backupRoot,
@@ -417,7 +415,6 @@ describe('candidate-bound global runtime reconciliation', () => {
         sync_skill: false,
         host_adapters: true,
         external_skills: false,
-        reverse_skill: false,
         obsidian_skills: false,
         codegraph: false,
       });
@@ -484,7 +481,7 @@ describe('candidate-bound global runtime reconciliation', () => {
       writeCoreOnlyInstallState(home);
       const transaction = beginInstallHostTransaction([], env);
       const request: CandidateReconciliationRequest = {
-        protocol: 2,
+        protocol: 3,
         transaction_id: sha256(transaction.backup_root),
         transaction_backup_root: transaction.backup_root,
         parent_token: token,
@@ -494,7 +491,6 @@ describe('candidate-bound global runtime reconciliation', () => {
         sync_skill: true,
         host_adapters: true,
         external_skills: false,
-        reverse_skill: false,
         obsidian_skills: false,
         codegraph: false,
       };

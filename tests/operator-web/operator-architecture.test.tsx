@@ -140,7 +140,7 @@ async function mount(element: ReactElement): Promise<void> {
 const pendingMap: ArchitectureMapReader = async () => ({ state: 'unavailable', reason: 'architecture_map_pending' });
 
 function workspace(props: Partial<Parameters<typeof ArchitectureWorkspace>[0]> = {}): ReactElement {
-  return <ArchitectureWorkspace repositoryId={REPO} github={null} moduleId={null} onModule={() => {}} refreshGeneration={0} readMap={pendingMap} t={t} {...props} />;
+  return <ArchitectureWorkspace repositoryId={REPO} github={null} moduleId={null} onModule={() => {}} onSource={() => {}} refreshGeneration={0} readMap={pendingMap} t={t} {...props} />;
 }
 
 /** The workspace opens on the map; the module list is the second view. */
@@ -504,7 +504,8 @@ describe('architecture map', () => {
 
   test('the map is the default view and selecting a node lists its relations with import counts', async () => {
     const opened: (string | null)[] = [];
-    await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id) }));
+    const sources: unknown[] = [];
+    await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor() }), onModule: id => opened.push(id), onSource: source => sources.push(source) }));
     expect(document.querySelector('#architecture-tab-map')?.getAttribute('aria-selected')).toBe('true');
     expect(calls).toEqual([]);
     const canvas = document.querySelector('.architecture-map')!;
@@ -515,11 +516,12 @@ describe('architecture map', () => {
     expect([...document.querySelectorAll('.architecture-map__band')].map(item => item.textContent)).toEqual(['core']);
     // A banded map opens at a readable zoom on its top band, not fitted to the whole map.
     expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toContain('scale(0.85)');
-    expect(document.querySelector('.architecture-map-view')?.textContent).toContain(COMMIT);
-    // The base map has every source, so it states no gap. A part of the open layer that archctx
-    // reports as unknown is stated inside that layer's summary, not as a base-map gap.
-    expect(document.querySelectorAll('.architecture-map-view > .architecture-map__gap')).toHaveLength(0);
-    expect(document.querySelector('[data-layer-summary="changes"] .architecture-map__gap')?.getAttribute('data-reason')).toBe('ref-code-facts-unavailable');
+    // The header row gets the map's commit and collection time.
+    expect(sources.at(-1)).toEqual({ commit: COMMIT, collectedAt: '2026-10-27T09:00:00.000Z' });
+    // The base map has every source, so the side panel states no gap. The flow steps that archctx
+    // reports as unknown concern only the sequence map, so the module map does not state them.
+    expect(document.querySelectorAll('[data-map-side] > .architecture-map__gap')).toHaveLength(0);
+    expect(document.querySelector('[data-layer-summary="changes"] .architecture-map__gap')).toBeNull();
 
     await act(async () => document.querySelector(`.react-flow__node[data-id="${CALLER}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
@@ -537,19 +539,28 @@ describe('architecture map', () => {
 
   test('a missing line or import source is stated with its reason, and a failed read names its state and next step', async () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor(false) }) }));
-    // Only the base-map gaps; the open layer's own flow-step gap stays in its summary.
-    expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
+    // Only the base-map gaps, in the side panel; the open layer's flow-step gap belongs to the sequence map.
+    expect([...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
     // A model without ordered layers keeps the unbanded layout and states why.
     await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, mapLayers, undeclaredLayers) }) })));
     await settle();
-    expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')])).toEqual([['layer_order', 'model_layers_undeclared']]);
+    const sideGaps = () => [...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')]);
+    expect(sideGaps()).toEqual([['layer_order', 'model_layers_undeclared']]);
     expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
+    // Only the module map draws layer bands, so the other base maps do not state the layer-order gap.
+    for (const view of ['sequence', 'topology']) {
+      await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${view}`)!.click());
+      await settle();
+      expect(sideGaps()).toEqual([]);
+    }
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click());
+    await settle();
     // Each reason names its state and its next step; archctx's codes stay visible; a pending map is a status, not an alert.
     for (const [read, role, message, next] of [
       [{ state: 'unavailable', reason: 'architecture_map_pending' }, 'status', 'The server has not collected the architecture map yet.', 'The page reads the map again on its own.'],
       [{ state: 'unavailable', reason: 'registry_unavailable' }, 'alert', 'The repository registry is unreadable.', 'Run `repo-harness fleet prune` to show the registry error.'],
-      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `repo-harness adopt`, then refresh the board.'],
+      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `repo-harness init`, then refresh the board.'],
       [{ state: 'unavailable', reason: 'model_unavailable' }, 'alert', 'The committed architecture model could not be read, and archctx gave no error code.', 'Check that the registered path is a git checkout with a commit. `repo-harness fleet prune` lists registrations whose path is gone.'],
       [{ state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }, 'alert',
         'archctx refused to read the committed architecture model: AC_MODEL_ADOPTION_REQUIRED native-context-model-missing.', 'Run `archctx export native --ref HEAD --json` in the repository. The archctx error gives its action and details.'],
@@ -595,7 +606,13 @@ describe('architecture map', () => {
     // archctx says the group depends on the changed component; nodes with nothing on the layer fade.
     expect([box(CENTER).getAttribute('data-tone'), box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual(['muted', true, true]);
     expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('≥2 files changed in 1 commit, ≥0 without an owner');
-    expect([gaps(), notes()]).toEqual([['changes.flow_steps:ref-code-facts-unavailable'], ['changes.truncated:paths']]);
+    expect([gaps(), notes()]).toEqual([[], ['changes.truncated:paths']]);
+    // The sequence map states the flow steps that archctx cannot tie to the change, in its side panel.
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-sequence')!.click());
+    await settle();
+    expect([...document.querySelectorAll('[data-map-side] .architecture-map__gap')].map(item => `${item.getAttribute('data-gap')}:${item.getAttribute('data-reason')}`)).toEqual(['changes.flow_steps:ref-code-facts-unavailable']);
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click());
+    await settle();
     expect(document.querySelector('[data-note="changes.truncated"]')?.textContent).toBe('archctx stopped at its limits for changed paths. File and line counts are lower bounds.');
     await act(async () => box(PART).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
@@ -652,8 +669,9 @@ describe('architecture map', () => {
     await settle();
 
     expect(document.querySelector('.architecture-layers [data-layer="pull_requests"]')?.getAttribute('data-state')).toBe('ok');
-    const select = document.querySelector<HTMLSelectElement>('[data-layer-summary="pull_requests"] select')!;
-    expect([select.value, [...select.options].map(option => option.textContent)]).toEqual(['21', ['#21 Ledger rows', '#22 Big rewrite', '#23 Odd path']]);
+    // The side panel remounts with the base map, so each step reads the select again.
+    const select = () => document.querySelector<HTMLSelectElement>('[data-layer-summary="pull_requests"] select')!;
+    expect([select().value, [...select().options].map(option => option.textContent)]).toEqual(['21', ['#21 Ledger rows', '#22 Big rewrite', '#23 Odd path']]);
     const summary = document.querySelector('[data-pull-request="21"]')!.textContent;
     expect(summary).toContain(head.slice(0, 12));
     expect(summary).toContain('2 files changed in 1 node, 1 without an owner');
@@ -661,22 +679,27 @@ describe('architecture map', () => {
     const mark = (id: string) => [box(id).getAttribute('data-tone'), box(id).querySelector('.architecture-map__mark')?.textContent ?? null];
     expect([PART, CENTER].map(mark)).toEqual([['change', '1'], ['muted', '↳']]);
     expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, true]);
-    expect([gaps(), notes()]).toEqual([['pull_request.flow_steps:line-impact-unavailable ref-code-facts-unavailable'], []]);
+    expect([gaps(), notes()]).toEqual([[], []]);
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-sequence')!.click());
+    await settle();
+    expect([gaps(), notes()]).toEqual([['pull_request.flow_steps:line-impact-unavailable ref-code-facts-unavailable'], ['sequence.flows:flows_undeclared']]);
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click());
+    await settle();
     await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
     expect(document.querySelector('[data-layer-facts="pull_requests"]')?.textContent).toBe(`Depends on changed Name ${PART}`);
 
     await act(async () => {
-      select.value = '22';
-      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
+      select().value = '22';
+      select().dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
     });
     await settle();
     expect(gaps()).toEqual(['pull_request:files_truncated']);
     expect(document.querySelectorAll('[data-tone], [data-quiet]')).toHaveLength(0);
 
     await act(async () => {
-      select.value = '23';
-      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
+      select().value = '23';
+      select().dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
     });
     await settle();
     const refused = document.querySelector('.architecture-map__gap[data-gap="pull_request"]')!;
@@ -875,7 +898,9 @@ describe('sequence and topology base maps', () => {
 
   test('the tabs follow the design order and the layer stays when the base map changes', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
-    expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => item.textContent)).toEqual(['Modules', 'Sequence', 'Topology', 'Module list', 'History']);
+    // The module map tab counts capabilities and the sequence tab counts flows.
+    expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => [item.firstChild?.textContent, item.querySelector('.architecture-tabs__count')?.textContent ?? null]))
+      .toEqual([['Modules', '2'], ['Sequence', '2'], ['Topology', null], ['Module list', null], ['History', null]]);
     await chooseLayer('violations');
     await tab('sequence');
     expect(document.querySelector('#architecture-tab-sequence')?.getAttribute('aria-selected')).toBe('true');
@@ -938,7 +963,7 @@ describe('sequence and topology base maps', () => {
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
     // A not-applicable flow states its rationale instead of a diagram.
     await act(async () => {
-      const select = document.querySelector<HTMLSelectElement>('.architecture-sequence select')!;
+      const select = document.querySelector<HTMLSelectElement>('.architecture-lens select')!;
       select.value = 'flow.router.none';
       select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
     });
@@ -1097,9 +1122,9 @@ describe('architecture history', () => {
 
 describe('workspace navigation', () => {
   const repositoryId = REGISTRY.repositories[0]!.repository_id;
-  function app(): ReactElement {
+  function app(readArchitectureMap?: ArchitectureMapReader): ReactElement {
     return <OperatorApp initialRepositories={REGISTRY} readRepositories={async () => REGISTRY} initialLocale="en"
-      readNotifyStatus={() => new Promise(() => {})} />;
+      readNotifyStatus={() => new Promise(() => {})} {...(readArchitectureMap ? { readArchitectureMap } : {})} />;
   }
   const link = (workspace: string) => document.querySelector<HTMLAnchorElement>(`.workspace-nav a[data-workspace="${workspace}"]`)!;
 
@@ -1128,6 +1153,10 @@ describe('workspace navigation', () => {
     await settle();
     await openModules();
     expect(window.location.hash).toBe('#architecture');
+    // The header row holds the page title once and the commit of the module list on screen.
+    expect(document.querySelector('.operator-crumb')?.textContent).toBe('Observe/Architecture');
+    expect([...document.querySelectorAll('main h1, main h2')].map(item => item.textContent)).not.toContain('Architecture');
+    expect(document.querySelector('.operator-header [data-freshness-source="architecture"]')?.textContent).toBe(`Committed model · ${COMMIT.slice(0, 7)}`);
     expect(calls.at(-1)?.path).toBe(`/api/v1/repositories/${repositoryId}/architecture/modules`);
     await act(async () => document.querySelector<HTMLButtonElement>(`[data-module-id="${CENTER}"] button`)!.click());
     await settle();
@@ -1138,6 +1167,42 @@ describe('workspace navigation', () => {
     expect(window.location.hash).toBe(`#architecture/${CALLER}`);
     expect(calls.some(call => call.path === `/api/v1/repositories/${repositoryId}/architecture/modules/${CALLER}`)).toBe(true);
     expect(document.querySelector('#module-page-title')?.textContent).toBe(detailFor(CALLER).module.name);
+
+    // The header names a map only while that map is on screen. A base map that opens again after
+    // History, the module list or a module page shows no map until its read answers, so the header
+    // has no map source while the read is pending or unavailable.
+    Object.assign(globalThis, {
+      ResizeObserver: window.ResizeObserver, SVGElement: window.SVGElement, DOMMatrixReadOnly: window.DOMMatrixReadOnly,
+      requestAnimationFrame: window.requestAnimationFrame.bind(window), cancelAnimationFrame: window.cancelAnimationFrame.bind(window),
+    });
+    const recorded = decodeArchitectureMap(recordedMap);
+    const source = () => document.querySelector('.operator-header [data-freshness-source="architecture"]')?.textContent ?? null;
+    const away: Record<string, () => Promise<void>> = {
+      history: async () => { await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click()); await settle(); },
+      modules: openModules,
+      detail: async () => {
+        await act(async () => { window.history.pushState(null, '', `#architecture/${CENTER}`); window.dispatchEvent(new window.Event('hashchange')); });
+        await settle();
+      },
+    };
+    const back: Record<string, () => Promise<void>> = {
+      history: async () => { await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click()); await settle(); },
+      modules: async () => { await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-map')!.click()); await settle(); },
+      detail: async () => { await act(async () => [...document.querySelectorAll('button')].find(item => item.textContent === 'All modules')!.click()); await settle(); },
+    };
+    const pending: ArchitectureMapRead | null = null;
+    for (const [view, later] of [['history', pending], ['modules', { state: 'unavailable', reason: 'architecture_map_timeout' }], ['detail', pending]] as const) {
+      await act(async () => root?.unmount());
+      window.history.pushState(null, '', '#architecture');
+      let next: ArchitectureMapRead | null = { state: 'ok', map: recorded };
+      await mount(app(async () => next ?? new Promise<ArchitectureMapRead>(() => {})));
+      expect([view, source()]).toEqual([view, expect.stringMatching(new RegExp(`^Map collected .+ · ${recorded.commit.slice(0, 7)}$`))]);
+      next = later;
+      await away[view]!();
+      expect([view, source()]).toEqual([view, view === 'history' ? null : `Committed model · ${COMMIT.slice(0, 7)}`]);
+      await back[view]!();
+      expect([view, document.querySelector('.react-flow'), source()]).toEqual([view, null, null]);
+    }
   });
 });
 

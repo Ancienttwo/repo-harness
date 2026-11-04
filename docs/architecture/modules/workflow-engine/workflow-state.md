@@ -1,9 +1,9 @@
 # workflow-engine/workflow-state 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:f2d56c61eb2420b887b4f5d54da1e4eca0a4f7f9e045fb80c0323769e324c519" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-workflow-state" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7cde396818d1e50af4fa18add72640e9228feed16d17961795844e3f1d832f2f" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.workflow-state`(kind `capability`)
-> **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
+> **Matched Prefixes**:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`
 > **Local Contracts**:`AGENTS.md`、`CLAUDE.md`
 > **事實優先級**:倉庫當前狀態 > 本文檔機器區 > 本文檔人工區。機器區(引言、§1、§2)由 ArchContext 從架構模型與源碼度量投影生成,手改會在下次投影被覆蓋。本文檔不記錄出處;本次投影所驗證的 commit 見 `docs/architecture/.projection-manifest.json`。
 
@@ -58,8 +58,8 @@ flowchart LR
 
 ### 1.3 規模信號
 
-- 規模量級:`20–50` 個文件 / `5000–10000` 行
-- 匹配前綴:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`、`scripts/check-state-boundaries.ts`
+- 規模量級:`20–50` 個文件 / `2000–5000` 行
+- 匹配前綴:`src/core/state/**`、`src/effects/state/**`、`src/core/workflow/**`、`interfaces/**`、`src/core/worktree-location.mjs`、`src/core/worktree-location.d.mts`、`src/cli/commands/state.ts`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -125,7 +125,7 @@ flowchart LR
 | `component.workflow-state.primary` | Effective State Resolver | `5–10` 個文件 / `500–1000` 行 | 未宣告 |
 | `component.workflow-state.primary-cli` | Effective State Resolver (cli) | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 | `component.workflow-state.primary-effects` | Effective State Resolver (effects) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.workflow-state.primary-scripts` | Effective State Resolver (scripts) | `1–2` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.workflow-state.primary-scripts` | Effective State Resolver (scripts) | 未宣告 `source.include` | 未宣告 |
 
 ## 2. P2:端到端數據流
 

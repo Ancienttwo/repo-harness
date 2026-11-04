@@ -308,7 +308,14 @@ describe('Skills page', () => {
     expect(state('herdr', 'claude')).toBe('stale copy');
     expect(state('think', 'claude')).toBe('drift');
     expect(state('repo-harness', 'claude')).toBe('ok link');
+    expect(text('[data-skill="repo-harness"] [data-host-cell="claude"]')).toContain('installed · link');
+    expect(text('[data-skill="herdr"] [data-host-cell="claude"]')).toContain('drift · copy');
+    // The catalog lists Pi for every fixture skill and setup check judged none there.
+    expect(state('think', 'pi')).toBe('not_installed');
     expect(text('[data-skills-abnormal]')).toBe('4 need attention');
+    // The only action repairs repo-harness skills with the recorded selection.
+    expect(text('[data-skill-repair="update"]')).toContain('recorded plugin selection: architecture, product');
+    expect(text('[data-skill-repair="update"] [data-command] code')).toBe('repo-harness update');
     expect(text('[data-skill="repo-harness-ship"]')).toContain('Validates finished worktrees');
     // The skill projection check that setup check flagged sits above the table with its command.
     expect(text('[data-setup-page="skills"] [data-check="doctor.skill-projection"] [data-command]')).toContain('repo-harness skills sync');
@@ -319,6 +326,32 @@ describe('Skills page', () => {
     expect(document.querySelector('[data-check]')).toBeNull();
     expect(text('[data-skills-abnormal]')).toBe('All match their source');
     expect(all('[data-skill-abnormal="true"]')).toHaveLength(0);
+    expect(document.querySelector('[data-skill-repair]')).toBeNull();
+  });
+
+  test('host cells without a judgment follow the catalog hosts, and no ledger means no update command', async () => {
+    const snapshot = degradedSetup(NOW);
+    const skills = snapshot.skills.map(skill => skill.name === 'think' ? { ...skill, catalog_hosts: ['claude' as const, 'codex' as const] }
+      : skill.name === 'hunt' ? { ...skill, catalog_hosts: null } : skill);
+    await mount('#skills', props({ ...snapshot, skills, install_selection: null }));
+    const state = (skill: string) => document.querySelector(`[data-skill="${skill}"] [data-host-cell="pi"] [data-skill-state]`)!.getAttribute('data-skill-state');
+    expect([state('repo-harness'), state('think'), state('hunt')]).toEqual(['not_installed', 'not_supported', 'not_judged']);
+    expect(document.querySelector('[data-skill-repair="update"]')).toBeNull();
+    expect(text('[data-skill-repair="no-ledger"]')).toContain('repo-harness update cannot run');
+  });
+
+  test('other skills in each host root are listed read only by name and path', async () => {
+    await mount('#skills', props(readySetup(NOW)));
+    expect(all('[data-other-skill]').map(row => [row.closest('[data-skill-root]')!.getAttribute('data-skill-root'), row.textContent])).toEqual([
+      ['claude', 'frontend-design~/.claude/skills/frontend-design'], ['claude', 'pdf~/.claude/skills/pdf'],
+    ]);
+    expect(text('[data-skill-root="codex"]')).toContain('No other skills');
+    expect(text('[data-skill-root="pi"]')).toContain('No skill root');
+    expect(all('[data-other-skill] button, [data-other-skill] a')).toHaveLength(0);
+    await act(async () => root?.unmount());
+    root = null; document.body.innerHTML = '';
+    await mount('#skills', props({ ...readySetup(NOW), skill_roots: [] }));
+    expect(text('[data-other-skills="unknown"]')).toContain('the skill catalog could not be read');
   });
 
   test('no judged skills never reads as all-consistent; the flagged check explains it', async () => {
