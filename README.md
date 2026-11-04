@@ -323,9 +323,7 @@ When Codex materially contributes to a commit, add a visible trailer:
 | Waza by [TW93](https://x.com/HiTw93) (`think`, `hunt`, `check`, `health`) | Daily planning, bug hunts, verification and health checks |
 | `mermaid` | Authoring and readability review for architecture diagrams |
 | [herdr](https://herdr.dev/) (`hc`) | Peer-terminal runtime: dispatch, collaboration, hosting the acceptance reviewer |
-| [`reverse-skill-router`](https://github.com/zhaoxuya520/reverse-skill) | Optional, explicit-only routing for reverse-engineering tasks |
 | CodeGraph (`@colbymchenry/codegraph`) | Symbol-aware navigation and impact tracing |
-| OpenAI Codex | Primary execution agent for implementation and verification |
 
 None of these are bundled dependencies; see
 [external tooling](docs/reference-configs/external-tooling.md) for how each is installed.
