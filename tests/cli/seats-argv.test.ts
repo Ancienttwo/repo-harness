@@ -1,6 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { spawnSync } from "child_process";
-import { mkdirSync, mkdtempSync, realpathSync, rmSync, writeFileSync } from "fs";
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from "fs";
 import { tmpdir } from "os";
 import { join } from "path";
 import { seatPaneName } from "../../src/core/operator/seat-launch";
@@ -83,6 +83,8 @@ function withRepository(home: string, panePrefix: string | undefined, fn: (repo:
   }
 }
 const denied = (args: string[]) => values(args, "--disallowedTools");
+/** With --repository-id the argv is `/bin/sh -c <script> <bun> <cli>` and then the agent argv. */
+const agent = (launch: { argv: string[] }) => launch.argv.slice(5);
 
 describe("repo-harness seats argv", () => {
   test("without a seats section the advisor launch comes from the defaults and briefs the default fleet", () => {
@@ -268,6 +270,35 @@ describe("repo-harness seats argv", () => {
     });
   });
 
+  test("with --repository-id the argv labels its own terminal before the agent starts; a label failure starts no agent", () => {
+    withHome(undefined, (home) => {
+      withRepository(home, "rh", (repo) => {
+        const worker = JSON.parse(run(registryEnv(home), ["worker", "--repository-id", "1186405141", "--parent", "1000", "--issue", "1473", "--json"], repo).stdout);
+        expect(worker.argv.slice(0, 2)).toEqual(["/bin/sh", "-c"]);
+        // A fake hc and a fake agent on an explicit PATH: no real terminal is labelled or started.
+        const bin = join(home, "bin"), log = join(home, "calls.log");
+        mkdirSync(bin);
+        writeFileSync(join(bin, "hc"), `#!/bin/sh\nprintf 'hc %s\\n' "$*" >> "${log}"\nif [ -n "$FAKE_HC_FAIL" ]; then printf '%s' '{"error":{"kind":"not_found","message":"no terminal"}}' >&2; exit 3; fi\n`
+          + `printf '%s' '{"address":"t5","state":"live","labels":{"repo-harness.seat":"worker"},"turn":0}'\n`);
+        writeFileSync(join(bin, "codex"), `#!/bin/sh\nprintf 'codex %s %s %s\\n' "$#" "$1" "$2" >> "${log}"\n`);
+        for (const name of ["hc", "codex"]) chmodSync(join(bin, name), 0o755);
+        const label = "hc label --json -- t5 repo-harness.seat=worker repo-harness.repository=1186405141 repo-harness.issue=1473 repo-harness.parent=1000";
+        for (const [env, error, calls] of [
+          [{ HC_TERMINAL_ID: "t5" }, null, [label, `codex ${agent(worker).length - 1} -m gpt-6.1-sol`]],
+          [{ HC_TERMINAL_ID: "t5", FAKE_HC_FAIL: "1" }, "label_failed", [label]],
+          [{}, "terminal_unknown", []],
+        ] as const) {
+          writeFileSync(log, "");
+          const result = spawnSync(worker.argv[0], worker.argv.slice(1), { env: { ...registryEnv(home), PATH: `${bin}:/bin:/usr/bin`, ...env }, encoding: "utf8", cwd: repo });
+          const lines = readFileSync(log, "utf8").split("\n").filter(Boolean);
+          const failure = error === null ? null : JSON.parse(result.stderr);
+          expect([result.status === 0, failure?.error ?? null, failure?.message.startsWith("The seat did not start: ") ?? null, lines])
+            .toEqual([error === null, error, error === null ? null : true, [...calls]]);
+        }
+      });
+    });
+  });
+
   test("the pane name and the tab name come from the registry prefix of the primary checkout, one per role", () => {
     withHome(undefined, (home) => {
       withRepository(home, "rh", (repo, worktree) => {
@@ -275,10 +306,10 @@ describe("repo-harness seats argv", () => {
         const orchestrator = named(repo, "orchestrator");
         expect([orchestrator.name, orchestrator.tab]).toEqual(["rh-orch", "orch"]);
         // A Claude seat carries the same name as its session name.
-        expect(orchestrator.argv.slice(2, 5)).toEqual(["claude", "-n", "rh-orch"]);
+        expect(agent(orchestrator).slice(2, 5)).toEqual(["claude", "-n", "rh-orch"]);
         const advisor = named(repo, "advisor", "--parent", "1000");
         expect([advisor.name, advisor.tab]).toEqual(["rh-adv", "orch"]);
-        expect(advisor.argv.slice(0, 3)).toEqual(["claude", "-n", "rh-adv"]);
+        expect(agent(advisor).slice(0, 3)).toEqual(["claude", "-n", "rh-adv"]);
         // A linked worktree resolves to its primary checkout; the default worker runs Codex, which has no session name flag.
         const worker = named(worktree, "worker", "--parent", "1000", "--issue", "1508", "--pr", "1521", "--qualifier", "device");
         expect([worker.name, worker.tab]).toEqual(["rh-w-1508-device", "#1000"]);
