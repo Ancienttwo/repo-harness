@@ -1,5 +1,6 @@
 import { expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
+import { spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, renameSync, rmSync, statSync, symlinkSync, unlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { cleanupContentsDigestInput } from '../../src/core/operator/worktree-cleanup-observation';
@@ -62,6 +63,34 @@ test('a wholly ignored directory is one loss entry, its contents are not changed
     const plan = createCleanupPlan('a'.repeat(32), [{ observation: { worktree, loss }, advice: { recommendation: 'keep', reason: 'Fixture.', evidence: ['Fixture.'], archive: { git: null, private: null } } }]);
     expect(plan.items[0]!.loss).toMatchObject({ ignored: ['.env', 'cache/'], archivable: ['.env'] });
   } finally { f.cleanup(); }
+});
+
+// Sibling loss lists under CLEANUP_PLAN_MAX_PATHS: changed paths, ignored entries, unpublished commits, and the changed-or-ignored union that bounds `archivable`.
+test('a worktree above the plan path cap fails too_large for each loss list', () => {
+  const files = (tree: string, directory: string, count: number, suffix: string) => {
+    mkdirSync(join(tree, directory), { recursive: true });
+    for (let index = 0; index < count; index++) writeFileSync(join(tree, directory, `${index}${suffix}`), `${index}`);
+  };
+  const ignoredLogs = (tree: string, count: number) => { files(tree, 'logs', count, '.log'); writeFileSync(join(tree, 'logs/.gitignore'), '*.log\n'); };
+  const cases: Array<[string, (f: ReturnType<typeof fixture>) => void]> = [
+    ['changed paths', f => files(f.tree, 'new', 1001, '.txt')],
+    ['ignored entries', f => ignoredLogs(f.tree, 1001)],
+    ['unpublished commits', f => {
+      const head = f.git(f.tree, 'rev-parse', 'HEAD'), stamp = 'Fixture <fixture@example.invalid> 1700000000 +0000';
+      const stream = Array.from({ length: 1001 }, (_, index) => `commit refs/heads/many\ncommitter ${stamp}\ndata 1\n${index % 10}\n${index === 0 ? `from ${head}\n` : ''}\n`).join('');
+      expect(spawnSync('git', ['fast-import', '--quiet'], { cwd: f.repo, input: stream }).status).toBe(0); f.git(f.tree, 'checkout', '-q', 'many');
+    }],
+    ['changed and ignored union', f => { files(f.tree, 'new', 600, '.txt'); ignoredLogs(f.tree, 600); }],
+  ];
+  for (const [name, setup] of cases) {
+    const f = fixture();
+    try {
+      setup(f);
+      let code = 'observed';
+      try { f.observe(); } catch (error) { code = (error as Error).message; }
+      expect([name, code]).toEqual([name, 'cleanup_observation_too_large']);
+    } finally { f.cleanup(); }
+  }
 });
 
 test('index-only versions and skip-worktree content remain observable', () => {

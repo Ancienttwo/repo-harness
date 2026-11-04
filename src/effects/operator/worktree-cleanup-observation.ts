@@ -3,6 +3,7 @@ import { closeSync, fstatSync, lstatSync, readSync, realpathSync, type Stats } f
 import { resolve } from 'node:path';
 import { cleanupContentsDigestInput, type CleanupFileEvidence, type CleanupIndexEntry, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
+import { CLEANUP_PLAN_MAX_PATHS } from '../../core/operator/worktree-cleanup-plan';
 import { docSessionGitRunner, type DocSessionGitRunner } from './doc-session-changes';
 import { worktreeId } from '../git/worktree-record';
 import { cleanupDirectoryNames, openCleanupChild, openCleanupDirectory, UnsupportedCleanupPath, CleanupDirectoryTooLarge } from './cleanup-file-access';
@@ -169,6 +170,9 @@ function once(target: CleanupObservationTarget, options: CleanupObservationOptio
   }
   for (const entry of index) if (!headFiles.has(entry.path) || entry.stage !== 0) changed.add(entry.path);
   if (commits.length + files.length + index.length > (options.max_entries ?? 20_000)) fail('too_large');
+  // `archivable` is a subset of changed and ignored paths, so their union bounds it too.
+  if (changed.size > CLEANUP_PLAN_MAX_PATHS || ignored.length > CLEANUP_PLAN_MAX_PATHS || commits.length > CLEANUP_PLAN_MAX_PATHS
+    || new Set([...changed, ...ignored]).size > CLEANUP_PLAN_MAX_PATHS) fail('too_large');
   if (!sameStat(stat, lstatSync(target.worktree))) fail('changed');
   return { kind: target.kind, identity: { dev: stat.dev, ino: stat.ino, birthtime_ms: stat.birthtimeMs }, branch, head_commit: head,
     files, index, changed_paths: [...changed].sort(), ignored, commits, remote_refs: remoteRefs };
