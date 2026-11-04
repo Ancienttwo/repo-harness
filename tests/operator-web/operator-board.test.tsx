@@ -38,6 +38,7 @@ import {
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
 import type { AuthorizedCleanupPost, CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
+import { cleanupPlanPorts } from '../../src/operator-web/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
@@ -924,7 +925,8 @@ describe('worktree page', () => {
     const main = document.querySelector('main')!;
     expect(main.querySelectorAll('select, textarea, form, [draggable="true"], [contenteditable], [data-write-action]')).toHaveLength(0);
     for (const input of main.querySelectorAll('input')) expect(input.matches('input[type="checkbox"][data-select]')).toBe(true);
-    for (const button of main.querySelectorAll('button')) expect(button.matches('[data-clean]') || button.closest('[data-command]') !== null).toBe(true);
+    // The plan review button opens the review; it removes nothing by itself.
+    for (const button of main.querySelectorAll('button')) expect(button.matches('[data-clean], [data-plan-review-open]') || button.closest('[data-command]') !== null).toBe(true);
     for (const word of ['Delete', 'Prune', 'Let the agent']) expect(main.textContent).not.toContain(word);
     for (const cell of main.querySelectorAll('[data-directory]')) expect(cell.textContent).not.toContain('/');
     expect(main.textContent).not.toMatch(/(?:^|[\s(])(?:\/(?:Users|home|tmp|private|var)\/|~\/)/u);
@@ -1159,15 +1161,15 @@ describe('worktree cleanup (5.1)', () => {
 
 /** The busy plan routes, recording what the page sends. */
 function recordPlan(base: CleanupPlanPorts = cleanupPlanFixture(NOW)) {
-  const chosen: (readonly CleanupChoice[])[] = [], executed: AuthorizedCleanupPost[] = [];
+  const opened: (readonly string[])[] = [], chosen: (readonly CleanupChoice[])[] = [], executed: AuthorizedCleanupPost[] = [];
   let plan: CleanupPlan | null = null;
   const keep = async (answer: Awaited<ReturnType<CleanupPlanPorts['open']>>) => { if (answer.state === 'ready') plan = answer.plan; return answer; };
   const ports: CleanupPlanPorts = {
-    open: () => base.open().then(keep),
+    open: ids => { opened.push(ids); return base.open(ids).then(keep); },
     choose: (session, choices) => { chosen.push(choices); return base.choose(session, choices).then(keep); },
     execute: request => { executed.push(request); return base.execute(request); },
   };
-  return { ports, chosen, executed, plan: () => plan! };
+  return { ports, opened, chosen, executed, plan: () => plan! };
 }
 const planItem = (directory: string) => Array.from(document.querySelectorAll<HTMLElement>('[data-plan-item]'))
   .find(row => row.querySelector('[data-directory]')?.textContent === directory)!;
@@ -1191,6 +1193,9 @@ describe('worktree cleanup plan review (#1720)', () => {
     const record = recordPlan();
     await openReview(record.ports);
     expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('ready');
+    // Pass 1 asks for the registered non-green rows of the list: no primary checkout, no orphan.
+    expect(record.opened).toEqual([['repo-harness-wt-kanban-redesign', 'repo-harness-wt-oar', 'codex-7f3a', 'repo-harness-wt-docs-cleanup', 'operator-site-csp']
+      .map(directory => rowOf(directory).id)]);
     // One item of each judgment; green keeps the one-click clean, red and an unread loss cannot be selected.
     expect(planItem('feat-kanban-status').querySelector('[data-plan-green]')).not.toBeNull();
     for (const directory of ['feat-kanban-status', 'repo-harness-wt-kanban-redesign', 'repo-harness-wt-old-spike']) {
@@ -1220,7 +1225,8 @@ describe('worktree cleanup plan review (#1720)', () => {
     const notes = record.plan().items.find(item => item.worktree.directory === 'repo-harness-wt-notes')!;
     const slug = `codex-7f3a-${codex.worktree.id.slice(3, 11)}`, day = new Date(NOW).toISOString().slice(0, 10);
     expect(record.chosen).toHaveLength(1);
-    expect(decodeCleanupChoices(record.chosen[0])).toHaveLength(EDITABLE.length);
+    // One choice per plan item: the server refuses a set that misses one.
+    expect(decodeCleanupChoices(record.chosen[0])).toHaveLength(document.querySelectorAll('[data-plan-item]').length);
     expect(record.chosen[0]!.filter(choice => choice.recommendation !== 'keep')).toEqual([
       { id: codex.worktree.id, recommendation: 'archive_then_delete', archive: {
         git: { directory: `docs/archive/${day}-${slug}`, branch: `docs/archive-${slug}`, paths: ['src/hooks/run.ts'], include_commits: false },
@@ -1313,10 +1319,39 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect(planItem('codex-7f3a').querySelector('[data-plan-digest="plan"]')?.textContent).toBe(plan.items[0]!.plan_sha256);
   });
 
+  test('the production ports post each pass and the execution to their routes, and keep each answer typed', async () => {
+    const ready = await cleanupPlanFixture(NOW).open([]);
+    if (ready.state !== 'ready') throw new Error('the busy fixture plan is ready');
+    const plan = ready.plan, id = plan.items[3]!.worktree.id;
+    const answers: (() => Response)[] = [
+      () => Response.json(plan),
+      () => Response.json({ error: { code: 'choices_changed', message: 'refused', next_action: 'retry' } }, { status: 409 }),
+      () => Response.json({ protocol: 1, kind: 'operator_authorized_worktree_cleanup', session_id: plan.session_id, items: [] }),
+      () => { throw new TypeError('connection refused'); },
+    ];
+    const original = globalThis.fetch;
+    const requests: { method: string; url: string; body: Record<string, unknown> }[] = [];
+    globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
+      requests.push({ method: options?.method ?? 'GET', url: String(url), body: JSON.parse(String(options?.body)) });
+      return answers[requests.length - 1]!();
+    }) as typeof fetch;
+    try {
+      const execute = { request_id: crypto.randomUUID(), session_id: plan.session_id, ids: [id], expected_digest: 'a'.repeat(64), approvals: [] };
+      const results = [await cleanupPlanPorts.open([id]), await cleanupPlanPorts.choose(plan.session_id, [{ id, recommendation: 'keep', archive: { git: null, private: null } }]),
+        await cleanupPlanPorts.execute(execute), await cleanupPlanPorts.open([id])];
+      // An execution result with no items fails its decoder: the request ran, so the page says unreadable, not unreachable.
+      expect(results.map(result => result.state === 'refused' ? `refused ${result.status} ${result.error.code}` : result.state)).toEqual(['ready', 'refused 409 choices_changed', 'unreadable', 'unreachable']);
+      expect(requests.map(request => `${request.method} ${request.url} ${Object.keys(request.body).sort().join(',')}`)).toEqual([
+        'POST /api/v1/worktrees/cleanup/plan ids,request_id', 'POST /api/v1/worktrees/cleanup/plan choices,request_id,session_id',
+        'POST /api/v1/worktrees/cleanup/execute approvals,expected_digest,ids,request_id,session_id', 'POST /api/v1/worktrees/cleanup/plan ids,request_id']);
+      expect(requests[0]!.body.request_id).toMatch(UUID); expect(requests[0]!.body.request_id).not.toBe(requests[1]!.body.request_id);
+    } finally { globalThis.fetch = original; }
+  });
+
   test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {
     const base = cleanupPlanFixture(NOW);
     let opens = 0;
-    const record = recordPlan({ ...base, open: () => ++opens === 1 ? Promise.reject(new Error('down')) : base.open() });
+    const record = recordPlan({ ...base, open: ids => ++opens === 1 ? Promise.reject(new Error('down')) : base.open(ids) });
     await openReview(record.ports);
     expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('failed');
     expect(document.querySelector('[data-plan-failure]')?.getAttribute('data-plan-failure')).toBe('unreachable');
