@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, type CleanupAdvice } from '../../src/core/operator/worktree-cleanup-plan';
+import {
+  cleanupEligible, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupChoices, decodeCleanupExecutionResult, decodeCleanupPlan,
+  type CleanupAdvice, type CleanupExecutionResult,
+} from '../../src/core/operator/worktree-cleanup-plan';
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
@@ -71,6 +74,40 @@ describe('cleanup plan contract and execution boundary', () => {
       { ...advice(), archive: { git: null, private: { directory: '/home/private', paths: ['.env'] } } },
       { ...advice(), recommendation: 'delete' },
     ]) expect(() => decodeCleanupAdvice(input)).toThrow();
+  });
+  test('a user choice carries only id, recommendation and archive, under the advice archive rules', () => {
+    const id = observation().worktree.id;
+    const choice = { id, recommendation: advice().recommendation, archive: advice().archive };
+    const keep = createCleanupPlan(SID, [{ observation: observation(), advice: { ...advice(false), recommendation: 'keep' } }]).items[0]!;
+    // Pass 1 is keep: the item is not selectable, but the observation lets the user choose.
+    expect([cleanupEligible(keep), cleanupSelection(keep).selectable]).toEqual([true, false]);
+    expect(decodeCleanupChoices([choice, { id: observation(2).worktree.id, recommendation: 'keep', archive: { git: null, private: null } }])).toHaveLength(2);
+    for (const input of [
+      [], [choice, choice], [{ ...choice, id: 'wt_1' }], [{ ...choice, reason: 'From the page.' }], [{ ...choice, evidence: ['x'] }],
+      [{ ...choice, archive: { git: null, private: null } }], [{ ...choice, recommendation: 'delete' }],
+      [{ ...choice, archive: { git: { ...advice().archive.git!, directory: 'docs/other' }, private: null } }],
+      [{ ...choice, archive: { git: null, private: { directory: '/home/private', paths: ['.env'] } } }],
+      [{ ...choice, archive: { git: { ...advice().archive.git!, paths: ['../escape'] }, private: null } }],
+      Array.from({ length: 17 }, (_, n) => ({ ...choice, id: observation(n + 1).worktree.id })),
+    ]) expect(() => decodeCleanupChoices(input)).toThrow('worktree_cleanup_plan_invalid');
+  });
+  test('the execution result decoder accepts each producer outcome and pairs reasons with outcomes', async () => {
+    const h = harness([observation(), observation(2, 'green'), observation(3, 'red')]);
+    h.observations[0] = { ...h.observations[0]!, loss: { ...h.observations[0]!.loss!, head_commit: 'f'.repeat(40) } };
+    const skipped = await executeCleanupPlan(h.request, h.ports);
+    const push = harness(), plain = harness();
+    const failed = await executeCleanupPlan(push.request, { ...push.ports, archivePush: async () => { throw new Error('remote unknown'); } });
+    const removed = await executeCleanupPlan(plain.request, plain.ports);
+    for (const result of [skipped, failed, removed]) expect(decodeCleanupExecutionResult(JSON.parse(JSON.stringify(result)))).toEqual(result);
+    expect([...skipped.items, ...failed.items, ...removed.items].map(i => [i.outcome, i.reason])).toEqual([
+      ['skipped', 'loss_changed'], ['removed', null], ['skipped', 'in_use'], ['reconcile_required', 'archive_failed'], ['removed', null]]);
+    const item = (edit: object): CleanupExecutionResult => ({ ...removed, items: [{ ...removed.items[0]!, ...edit }] });
+    for (const input of [
+      item({ reason: 'in_use' }), item({ outcome: 'skipped', reason: 'archive_failed' }), item({ outcome: 'skipped', reason: null }),
+      item({ outcome: 'reconcile_required', reason: 'loss_changed' }), item({ outcome: 'failed', reason: 'unavailable' }), item({ stage: 'archive' }),
+      item({ archive_pr: '/private/receipt' }), item({ raw: 'private' }), { ...removed, items: [] }, { ...removed, items: [removed.items[0], removed.items[0]] },
+      { ...removed, kind: 'operator_worktree_cleanup' }, { ...removed, session_id: 'b'.repeat(31) },
+    ]) expect(() => decodeCleanupExecutionResult(input)).toThrow('worktree_cleanup_plan_invalid');
   });
   test('archive manifests only select observed loss paths and retain unpushed commits', () => {
     const o = observation();

@@ -1,10 +1,10 @@
 import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
-import { containsSecret } from '../../core/security/secret-patterns';
 import { cleanupContentsDigestInput, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import {
-  cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan,
-  type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupPlan, type CleanupPlanItem,
+  cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, isArchivePr,
+  type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupExecutionItem, type CleanupExecutionResult, type CleanupPlan, type CleanupPlanItem,
+  type CleanupReason, type CleanupStage,
 } from '../../core/operator/worktree-cleanup-plan';
 import { selectionDigestInput, worktreeDigestRow } from '../../core/operator/worktree-cleanup';
 import type { WorktreeView } from '../../core/operator/worktrees';
@@ -56,22 +56,6 @@ export function cleanupPlanSelectionDigest(plan: CleanupPlan, ids: readonly stri
   return sha256(selectionDigestInput(selected.map(item => worktreeDigestRow(item.worktree))));
 }
 
-export type CleanupStage = 'reconcile' | 'observe' | 'archive_commit' | 'archive_push' | 'archive_pr' | 'remove';
-export type CleanupReason = 'in_use' | 'not_approved' | 'loss_changed' | 'plan_changed' | 'unavailable' | 'archive_failed' | 'removal_unproven';
-export interface CleanupExecutionItem {
-  readonly id: string;
-  readonly outcome: 'removed' | 'skipped' | 'reconcile_required';
-  readonly reason: CleanupReason | null;
-  readonly stage: CleanupStage;
-  readonly archive_pr: string | null;
-}
-export interface CleanupExecutionResult {
-  readonly protocol: 1;
-  readonly kind: 'operator_authorized_worktree_cleanup';
-  readonly session_id: string;
-  readonly items: readonly CleanupExecutionItem[];
-}
-
 /** A readback result, not a receipt supplied by the caller. The adapter verifies the durable receipt. */
 export type CleanupReconciliation = { readonly state: 'absent' } | {
   readonly state: 'pending' | 'completed';
@@ -81,9 +65,6 @@ export type CleanupReconciliation = { readonly state: 'absent' } | {
   readonly plan_sha256: string;
   readonly archive_pr: string | null;
 };
-
-const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
-  && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);
 
 function reconciliation(value: unknown, key: string, item: CleanupPlanItem): CleanupReconciliation {
   if (!value || typeof value !== 'object' || Array.isArray(value)) throw new Error('cleanup reconciliation invalid');

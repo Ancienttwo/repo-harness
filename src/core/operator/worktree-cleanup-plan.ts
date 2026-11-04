@@ -36,10 +36,35 @@ export interface CleanupPlan {
   readonly items: readonly CleanupPlanItem[];
 }
 export interface CleanupApproval { readonly id: string; readonly loss_sha256: string; readonly plan_sha256: string }
+export interface CleanupChoice {
+  readonly id: string;
+  readonly recommendation: CleanupAdvice['recommendation'];
+  readonly archive: CleanupArchivePlan;
+}
 export interface AuthorizedCleanupRequest extends WorktreeCleanupRequest {
   readonly session_id: string;
   readonly approvals: readonly CleanupApproval[];
 }
+export const CLEANUP_STAGES = ['reconcile', 'observe', 'archive_commit', 'archive_push', 'archive_pr', 'remove'] as const;
+export type CleanupStage = typeof CLEANUP_STAGES[number];
+const SKIP_REASONS = ['in_use', 'not_approved', 'loss_changed', 'plan_changed', 'unavailable'] as const;
+const RECONCILE_REASONS = ['archive_failed', 'removal_unproven'] as const;
+export const CLEANUP_REASONS = [...SKIP_REASONS, ...RECONCILE_REASONS] as const;
+export type CleanupReason = typeof CLEANUP_REASONS[number];
+export interface CleanupExecutionItem {
+  readonly id: string;
+  readonly outcome: 'removed' | 'skipped' | 'reconcile_required';
+  readonly reason: CleanupReason | null;
+  readonly stage: CleanupStage;
+  readonly archive_pr: string | null;
+}
+export interface CleanupExecutionResult {
+  readonly protocol: 1;
+  readonly kind: 'operator_authorized_worktree_cleanup';
+  readonly session_id: string;
+  readonly items: readonly CleanupExecutionItem[];
+}
+const WORKTREE_ID = /^wt_[a-f0-9]{64}$/u;
 const digest = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{64}$/u.test(value);
 const session = (value: unknown): value is string => typeof value === 'string' && /^[a-f0-9]{32}$/u.test(value);
 function fail(): never { throw new Error('worktree_cleanup_plan_invalid'); }
@@ -48,15 +73,16 @@ function exact(value: unknown, keys: string): Record<string, unknown> {
   return value as Record<string, unknown>;
 }
 const publicText = (value: unknown) => isPublicWorktreeText(value) && !containsSecret(value);
+export const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
+  && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);
 function paths(value: unknown, directory = false): void {
   if (!Array.isArray(value) || value.length > 1000 || new Set(value).size !== value.length
     || !value.every(path => typeof path === 'string' && isRepositoryRelativePath(directory && path.endsWith('/') ? path.slice(0, -1) : path) && !containsSecret(path))) fail();
 }
-export function decodeCleanupAdvice(value: unknown): CleanupAdvice {
-  const advice = exact(value, 'archive,evidence,reason,recommendation');
-  if (!['delete', 'archive_then_delete', 'keep'].includes(advice.recommendation as string) || !publicText(advice.reason)
-    || !Array.isArray(advice.evidence) || advice.evidence.length === 0 || advice.evidence.length > 32 || !advice.evidence.every(publicText)) fail();
-  const archive = exact(advice.archive, 'git,private');
+/** The recommendation and archive that a plan item binds, shared by server advice and the user's choice. */
+function decodeArchiveChoice(recommendation: unknown, value: unknown): void {
+  if (!['delete', 'archive_then_delete', 'keep'].includes(recommendation as string)) fail();
+  const archive = exact(value, 'git,private');
   if (archive.git !== null) {
     const git = exact(archive.git, 'branch,directory,include_commits,paths');
     if (typeof git.directory !== 'string' || !/^docs\/archive\/[0-9]{4}-[0-9]{2}-[0-9]{2}-[a-z0-9][a-z0-9-]{0,79}$/u.test(git.directory)
@@ -69,8 +95,27 @@ export function decodeCleanupAdvice(value: unknown): CleanupAdvice {
     paths(local.paths);
   }
   const hasArchive = archive.git !== null || archive.private !== null;
-  if ((advice.recommendation === 'archive_then_delete') !== hasArchive) fail();
+  if ((recommendation === 'archive_then_delete') !== hasArchive) fail();
+}
+
+export function decodeCleanupAdvice(value: unknown): CleanupAdvice {
+  const advice = exact(value, 'archive,evidence,reason,recommendation');
+  if (!publicText(advice.reason) || !Array.isArray(advice.evidence) || advice.evidence.length === 0 || advice.evidence.length > 32 || !advice.evidence.every(publicText)) fail();
+  decodeArchiveChoice(advice.recommendation, advice.archive);
   return value as CleanupAdvice;
+}
+
+/** Pass 2 input: the user's choice per item. The server keeps its own reason and evidence. */
+export function decodeCleanupChoices(value: unknown): readonly CleanupChoice[] {
+  if (!Array.isArray(value) || value.length === 0 || value.length > WORKTREE_CLEANUP_MAX_IDS) fail();
+  const ids = new Set<string>();
+  for (const raw of value as unknown[]) {
+    const choice = exact(raw, 'archive,id,recommendation');
+    if (typeof choice.id !== 'string' || !WORKTREE_ID.test(choice.id) || ids.has(choice.id)) fail();
+    ids.add(choice.id);
+    decodeArchiveChoice(choice.recommendation, choice.archive);
+  }
+  return value as readonly CleanupChoice[];
 }
 
 export function decodeCleanupPlan(value: unknown): CleanupPlan {
@@ -114,10 +159,32 @@ export function decodeAuthorizedCleanupRequest(value: unknown): AuthorizedCleanu
   return { ...selection, session_id: request.session_id as string, approvals: [...request.approvals as CleanupApproval[]].sort((a, b) => a.id.localeCompare(b.id)) };
 }
 
+/** Exact public shape of the authorized execution. Each outcome carries only the reasons its producer can give. */
+export function decodeCleanupExecutionResult(value: unknown): CleanupExecutionResult {
+  const result = exact(value, 'items,kind,protocol,session_id');
+  if (result.protocol !== 1 || result.kind !== 'operator_authorized_worktree_cleanup' || !session(result.session_id)
+    || !Array.isArray(result.items) || result.items.length === 0 || result.items.length > WORKTREE_CLEANUP_MAX_IDS) fail();
+  const ids = new Set<string>();
+  for (const raw of result.items as unknown[]) {
+    const item = exact(raw, 'archive_pr,id,outcome,reason,stage');
+    const reasons: readonly unknown[] = item.outcome === 'skipped' ? SKIP_REASONS : item.outcome === 'reconcile_required' ? RECONCILE_REASONS : [];
+    if (typeof item.id !== 'string' || !WORKTREE_ID.test(item.id) || ids.has(item.id) || !CLEANUP_STAGES.includes(item.stage as CleanupStage)
+      || !(item.archive_pr === null || isArchivePr(item.archive_pr))
+      || (item.outcome === 'removed' ? item.reason !== null : !reasons.includes(item.reason))) fail();
+    ids.add(item.id);
+  }
+  return value as CleanupExecutionResult;
+}
+
+/** Observation facts only: whether a user choice other than keep can make the item selectable. */
+export function cleanupEligible(item: Pick<CleanupPlanItem, 'worktree' | 'loss'>): boolean {
+  return item.worktree.judgment !== 'red' && item.worktree.repository_id !== null && item.worktree.process_count === 0 && item.loss !== null
+    && !item.worktree.reasons.some(reason => ['primary', 'process_unknown', 'runtime_unknown', 'probe_failed'].includes(reason));
+}
+
 /** Browser selection policy; lack of an observation never becomes permission. */
 export function cleanupSelection(item: CleanupPlanItem): { selectable: boolean; selected_by_default: boolean } {
-  const selectable = item.worktree.judgment !== 'red' && item.worktree.repository_id !== null && item.worktree.process_count === 0 && item.loss !== null && item.advice.recommendation !== 'keep'
-    && !item.worktree.reasons.some(reason => ['primary', 'process_unknown', 'runtime_unknown', 'probe_failed'].includes(reason));
+  const selectable = cleanupEligible(item) && item.advice.recommendation !== 'keep';
   return { selectable, selected_by_default: selectable && item.worktree.judgment === 'green' };
 }
 
