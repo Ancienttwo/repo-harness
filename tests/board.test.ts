@@ -128,8 +128,9 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
   expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.17', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
   expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.seat_status === 'observed'
-    ? [terminal.address, terminal.seat, terminal.issue, terminal.status] : [terminal.address, terminal.reason])).toEqual([
-    ['t1', 'worker', 1476, 'blocked'], ['t2', 'worker', 1475, 'done'], ['t3', 'orchestrator', null, 'idle'], ['t4', 'seat_label_missing'],
+    ? [terminal.address, terminal.seat, terminal.issue, terminal.status, terminal.agent] : [terminal.address, terminal.reason, terminal.agent])).toEqual([
+    ['t1', 'worker', 1476, 'blocked', 'codex'], ['t2', 'worker', 1475, 'done', 'claude-code'],
+    ['t3', 'orchestrator', null, 'idle', null], ['t4', 'seat_label_missing', 'sleep'],
   ]);
   // One hc core holds seats of two repositories with parent #1474; each board reads only its own repository id.
   const foreign = replay({ parent: (data) => { data.repository.databaseId = 987654321; } });
@@ -456,7 +457,7 @@ function watchHc(env: Json = {}) {
 test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads the log', async () => {
   const board = replay();
   const seat = (address: string, seatName: string, status: string | null) =>
-    ({ address, name: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
+    ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
   const terminals = [seat('t1', 'worker', 'working'), seat('t3', 'orchestrator', 'idle'), seat('t6', 'orchestrator', 'blocked'),
     seat('t7', 'orchestrator', 'blocked'), seat('t8', 'orchestrator', 'working'), seat('t9', 'advisor', 'done'), seat('t10', 'orchestrator', 'blocked'),
     seat('t11', 'orchestrator', 'blocked')];
