@@ -6,7 +6,8 @@ import type { SkillHost } from '../../effects/host-skill-roots';
 import type { ManagedInstallSurface } from '../installer/install-profile';
 import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
 import { globalConfigurationWriter } from '../../effects/configuration/global-configuration';
-import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { chmodSync, cpSync, existsSync, linkSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
+import { createHash } from "crypto";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
@@ -32,7 +33,8 @@ import {
 import {
   enabledPlugins,
 } from "../installer/install-state";
-import { installSelectionCommand, type PluginId } from "../../core/skill-surface/plugin-manifest";
+import { installSelectionCommand, ownerEnabled, type PluginId } from "../../core/skill-surface/plugin-manifest";
+import { compareHcVersions, HC_MIN_VERSION, HC_RELEASE_ASSETS, type HcReleaseAsset } from "../../core/operator/herdr-pin";
 import {
   parseSkillSurfaceCatalog,
   requiredExplicitExternalDependencyInstallGroups,
@@ -168,22 +170,26 @@ function withStepName(step: GlobalRuntimeStep, name: string, detail?: string): G
   return { ...step, step: name, detail: detail ?? step.detail };
 }
 
+/** The first `name` executable on `env.PATH`, or null. */
+function findOnPath(name: string, env: NodeJS.ProcessEnv): string | null {
+  if (!env.PATH) return null;
+  const extensions = process.platform === "win32"
+    ? (env.PATHEXT ?? process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
+    : [""];
+  for (const directory of env.PATH.split(delimiter)) {
+    if (!directory) continue;
+    for (const extension of extensions) {
+      const candidate = join(directory, `${name}${extension}`);
+      if (existsSync(candidate)) return candidate;
+    }
+  }
+  return null;
+}
+
 function resolveBunExecutable(env?: NodeJS.ProcessEnv): string {
   const explicit = env?.REPO_HARNESS_BUN_EXECUTABLE ?? process.env.REPO_HARNESS_BUN_EXECUTABLE;
   if (explicit) return resolve(explicit);
-  if (env?.PATH) {
-    const extensions = process.platform === "win32"
-      ? (env.PATHEXT ?? process.env.PATHEXT ?? ".EXE;.CMD;.BAT;.COM").split(";").filter(Boolean)
-      : [""];
-    for (const directory of env.PATH.split(delimiter)) {
-      if (!directory) continue;
-      for (const extension of extensions) {
-        const candidate = join(directory, `bun${extension}`);
-        if (existsSync(candidate)) return candidate;
-      }
-    }
-  }
-  return process.execPath;
+  return (env && findOnPath("bun", env)) ?? process.execPath;
 }
 
 function bindBunRuntimeEnv(env: NodeJS.ProcessEnv | undefined, bunExecutable: string): NodeJS.ProcessEnv {
@@ -1451,6 +1457,187 @@ function ensureCodegraphCli(cwd: string, bunExecutable: string, codegraphVersion
   };
 }
 
+export const HERDR_CORE_STEP = "ensure herdr-core (hc)";
+
+/** Node `<platform>-<arch>` to the pin's release asset name. */
+const HC_ASSET_NAMES: Readonly<Record<string, string>> = {
+  "darwin-arm64": "macos-aarch64",
+  "darwin-x64": "macos-x86_64",
+  "linux-arm64": "linux-aarch64",
+  "linux-x64": "linux-x86_64",
+  "win32-x64": "windows-x86_64",
+};
+
+export interface HerdrCoreInstallInput {
+  readonly cwd: string;
+  readonly env: NodeJS.ProcessEnv;
+  /** The command to rerun after a manual install. */
+  readonly command: "install" | "update";
+  /** Node `<platform>-<arch>`. */
+  readonly platform: string;
+  readonly minVersion: string;
+  readonly assets: Readonly<Record<string, HcReleaseAsset>>;
+}
+
+function processFailure(result: { readonly stderr: string; readonly error?: string; readonly status: number | null }): string {
+  return (result.stderr || result.error || "").trim() || `exit ${result.status}`;
+}
+
+function hcVersionOf(hc: string, cwd: string, env: NodeJS.ProcessEnv): { version: string } | { failure: string } {
+  const result = runBoundedProcess(hc, ["--version"], { cwd, env, timeoutMs: 5_000 });
+  const version = /^hc ([0-9]+\.[0-9]+\.[0-9]+)$/u.exec(result.stdout.trim())?.[1];
+  if (result.ok && version !== undefined) return { version };
+  return { failure: `${hc} --version failed: ${processFailure(result)}` };
+}
+
+/**
+ * The official install layout of one platform (releases.herdr.dev/core
+ * install.sh and install.ps1): the install directory, the archive members it
+ * copies, and the hc link. Windows extracts the zip with its own tar.exe;
+ * the Git Bash tar cannot open a zip.
+ */
+interface HcInstallLayout {
+  readonly dir: string;
+  readonly binary: string;
+  readonly members: readonly string[];
+  readonly link: string;
+  readonly linkKind: "symlink" | "hardlink";
+  readonly tar: string;
+  /** Windows only: the PowerShell that adds `dir` to the user PATH (owner M62). Unix edits no shell profile. */
+  readonly powershell: string | null;
+}
+
+function hcInstallLayout(assetName: string, env: NodeJS.ProcessEnv): HcInstallLayout | { failure: string } {
+  if (assetName !== "windows-x86_64") {
+    const dir = join(homeDir(env), ".local", "bin");
+    return { dir, binary: "herdr-core", members: ["herdr-core"], link: "hc", linkKind: "symlink", tar: "tar", powershell: null };
+  }
+  if (!env.LOCALAPPDATA) return { failure: "LOCALAPPDATA is not set; it names the herdr-core install directory" };
+  if (!env.SystemRoot) return { failure: "SystemRoot is not set; it names the Windows tar.exe that opens the herdr-core zip" };
+  const tar = join(env.SystemRoot, "System32", "tar.exe");
+  if (!existsSync(tar)) return { failure: `${tar} is missing; it opens the herdr-core zip (Windows 10 1803 or newer)` };
+  const powershell = join(env.SystemRoot, "System32", "WindowsPowerShell", "v1.0", "powershell.exe");
+  if (!existsSync(powershell)) return { failure: `${powershell} is missing; it adds the herdr-core directory to the user PATH` };
+  return { dir: join(env.LOCALAPPDATA, "Programs", "herdr-core"), binary: "herdr-core.exe", members: ["herdr-core.exe", "conpty"], link: "hc.exe", linkKind: "hardlink", tar, powershell };
+}
+
+/**
+ * The user PATH step of install.ps1: read the raw `HKCU\Environment` `Path`
+ * (unexpanded), keep its value kind, append `dir` only when no entry matches
+ * (no case, trailing backslash ignored), then set and clear a user variable so
+ * running programs reread the environment. Not `setx`: it cuts the value at
+ * 1024 characters. Prints `listed` or `added`.
+ */
+function addToWindowsUserPath(powershell: string, dir: string, cwd: string, env: NodeJS.ProcessEnv): { outcome: "listed" | "added" } | { failure: string } {
+  const script = [
+    "$ErrorActionPreference = 'Stop'",
+    `$dir = '${dir.replaceAll("'", "''")}'`,
+    "$key = [Microsoft.Win32.Registry]::CurrentUser.OpenSubKey('Environment', $true)",
+    "try {",
+    "  $raw = [string]$key.GetValue('Path', '', [Microsoft.Win32.RegistryValueOptions]::DoNotExpandEnvironmentNames)",
+    "  if ($raw -split ';' | Where-Object { $_.Trim().TrimEnd('\\') -ieq $dir.TrimEnd('\\') }) { 'listed' } else {",
+    "    $kind = if ($key.GetValueNames() -contains 'Path') { $key.GetValueKind('Path') } else { [Microsoft.Win32.RegistryValueKind]::ExpandString }",
+    "    $key.SetValue('Path', $(if ($raw) { \"$($raw.TrimEnd(';'));$dir\" } else { $dir }), $kind)",
+    "    [Environment]::SetEnvironmentVariable('HC_INSTALLING', '1', 'User')",
+    "    [Environment]::SetEnvironmentVariable('HC_INSTALLING', $null, 'User')",
+    "    'added'",
+    "  }",
+    "} finally { $key.Close() }",
+  ].join("\n");
+  // UTF-16LE base64: Windows PowerShell 5.1 splits the quotes of a -Command argument.
+  const encoded = Buffer.from(script, "utf16le").toString("base64");
+  const result = runBoundedProcess(powershell, ["-NoProfile", "-NonInteractive", "-EncodedCommand", encoded], { cwd, env, timeoutMs: 30_000 });
+  const outcome = result.stdout.trim();
+  if (result.ok && (outcome === "listed" || outcome === "added")) return { outcome };
+  return { failure: `adding ${dir} to the user PATH failed: ${processFailure(result)}` };
+}
+
+export interface HerdrCoreInstallResult {
+  readonly step: GlobalRuntimeStep;
+  /** The install directory when it is not on PATH: the later steps of this run put it first on their PATH. */
+  readonly pathEntry: string | null;
+}
+
+/**
+ * Bring hc on PATH to the package floor. Missing: download the pinned asset,
+ * check its sha256 and the downloaded hc, then install it in the official
+ * layout. Below the floor: `hc update --version <floor>`. At or above: no
+ * change. hc is a user tool after install: no ledger entry, and an existing
+ * hc install file is never overwritten.
+ */
+export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallResult {
+  const { cwd, env, minVersion } = input;
+  const done = (step: Omit<GlobalRuntimeStep, "step">, pathEntry: string | null = null): HerdrCoreInstallResult => ({ step: { step: HERDR_CORE_STEP, ...step }, pathEntry });
+  const fail = (detail: string): HerdrCoreInstallResult => done({ status: "failed", detail });
+  const hc = findOnPath("hc", env);
+  if (hc !== null) {
+    const current = hcVersionOf(hc, cwd, env);
+    if ("failure" in current) return fail(current.failure);
+    if (compareHcVersions(current.version, minVersion) >= 0) {
+      return done({ status: "ok", detail: `hc ${current.version} at ${hc} is at or above ${minVersion}; no change` });
+    }
+    const update = runBoundedProcess(hc, ["update", "--version", minVersion], { cwd, env, timeoutMs: 300_000 });
+    if (!update.ok) return fail(`hc update --version ${minVersion} failed: ${processFailure(update)}`);
+    const updated = hcVersionOf(hc, cwd, env);
+    if ("failure" in updated) return fail(updated.failure);
+    if (compareHcVersions(updated.version, minVersion) < 0) return fail(`hc update --version ${minVersion} left hc ${updated.version}`);
+    return done({ status: "ok", detail: `updated hc ${current.version} to ${updated.version} at ${hc}` });
+  }
+
+  const assetName = HC_ASSET_NAMES[input.platform];
+  const asset = assetName === undefined ? undefined : input.assets[assetName];
+  if (assetName === undefined || asset === undefined) {
+    return fail(`no herdr-core release asset for ${input.platform}; install hc >=${minVersion} manually (Herdr.app or a herdr-core release), then run repo-harness ${input.command}`);
+  }
+  const layout = hcInstallLayout(assetName, env);
+  if ("failure" in layout) return fail(layout.failure);
+  for (const name of [...layout.members, layout.link]) {
+    const path = join(layout.dir, name);
+    // An earlier run may have installed it into a dir that is still off PATH.
+    if (pathEntryExists(path)) return fail(`hc is not on PATH, and ${path} exists; refusing to overwrite it; add ${layout.dir} to PATH, then rerun repo-harness ${input.command}`);
+  }
+  const scratch = mkdtempSync(join(tmpdir(), "repo-harness-hc-"));
+  try {
+    const archive = join(scratch, assetName === "windows-x86_64" ? "herdr-core.zip" : "herdr-core.tar.gz");
+    const download = runBoundedProcess("curl", ["--fail", "--location", "--silent", "--show-error", "--output", archive, asset.url], { cwd, env, timeoutMs: 300_000 });
+    if (!download.ok) return fail(`download of ${asset.url} failed: ${processFailure(download)}`);
+    const actual = createHash("sha256").update(readFileSync(archive)).digest("hex");
+    if (actual !== asset.sha256) return fail(`sha256 mismatch for ${asset.url}: expected ${asset.sha256}, got ${actual}; nothing installed`);
+    const extract = join(scratch, "extract");
+    mkdirSync(extract);
+    const unpack = runBoundedProcess(layout.tar, ["-xf", archive, "-C", extract], { cwd, env });
+    if (!unpack.ok) return fail(`extract of ${asset.url} failed: ${processFailure(unpack)}`);
+    const missing = layout.members.filter(name => !existsSync(join(extract, name)));
+    if (assetName === "windows-x86_64" && !existsSync(join(extract, "conpty", "conpty.dll"))) missing.push(join("conpty", "conpty.dll"));
+    if (missing.length > 0) return fail(`${asset.url} holds no complete hc (missing ${missing.join(", ")}); nothing installed`);
+    const downloaded = hcVersionOf(join(extract, layout.binary), cwd, env);
+    if ("failure" in downloaded) return fail(`the downloaded hc does not run on this machine: ${downloaded.failure}`);
+    if (downloaded.version !== minVersion) return fail(`the downloaded hc reports ${downloaded.version}, expected ${minVersion}; nothing installed`);
+
+    mkdirSync(layout.dir, { recursive: true });
+    const binary = join(layout.dir, layout.binary);
+    const link = join(layout.dir, layout.link);
+    for (const name of layout.members) cpSync(join(extract, name), join(layout.dir, name), { recursive: true, force: false, errorOnExist: true });
+    chmodSync(binary, 0o755);
+    if (layout.linkKind === "symlink") symlinkSync(layout.binary, link);
+    else linkSync(binary, link);
+    const installed = `installed hc ${downloaded.version} (sha256 verified) into ${layout.dir}: ${[...layout.members, layout.link].join(", ")}`;
+    let pathNote: string | null = null;
+    if (layout.powershell !== null) {
+      const userPath = addToWindowsUserPath(layout.powershell, layout.dir, cwd, env);
+      if ("failure" in userPath) return fail(`${installed}; ${userPath.failure}`);
+      pathNote = userPath.outcome === "added" ? `added ${layout.dir} to the user PATH: new terminals have hc` : `${layout.dir} is already on the user PATH`;
+    }
+    // Windows paths compare without case, as install.ps1 does.
+    const samePath = (left: string) => process.platform === "win32" ? resolve(left).toLowerCase() === resolve(layout.dir).toLowerCase() : resolve(left) === resolve(layout.dir);
+    const onPath = (env.PATH ?? "").split(delimiter).some(entry => entry !== "" && samePath(entry));
+    const runNote = onPath ? null : `${pathNote === null ? `add ${layout.dir} to PATH to use hc; ` : ""}this run uses it for its later steps`;
+    return done({ status: "ok", detail: [installed, pathNote, runNote].filter(note => note !== null).join("; ") }, onPath ? null : layout.dir);
+  } finally {
+    rmSync(scratch, { recursive: true, force: true });
+  }
+}
+
 function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly PluginId[] {
   return [...new Set([...plugins, id])].sort() as PluginId[];
 }
@@ -1470,7 +1657,7 @@ export function runGlobalRuntimeSetup(
   const cwd = opts.cwd ?? process.cwd();
   const target = opts.target ?? "both";
   const bunExecutable = resolveBunExecutable(opts.env);
-  const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
+  let env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
   const plugins = opts.plugins ?? enabledPlugins(requireInstallState(env));
   const piSelected = plugins.includes('pi');
   const updateMode = opts.updateMode === true;
@@ -1631,6 +1818,17 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "disabled" });
   }
 
+  if (steps.every((step) => step.status !== "failed")) {
+    const herdr = loadSkillSurfaceCatalog(sourceRoot).packages.find((pkg) => pkg.name === "herdr");
+    if (herdr === undefined) steps.push({ step: HERDR_CORE_STEP, status: "failed", detail: "the skill-surface catalog has no herdr package" });
+    else if (!ownerEnabled(herdr.owner, plugins)) steps.push({ step: HERDR_CORE_STEP, status: "skipped", detail: `no selected plugin needs hc (herdr owner ${herdr.owner})` });
+    else {
+      const hc = ensureHerdrCore({ cwd, env, command: updateMode ? "update" : "install", platform: `${process.platform}-${process.arch}`, minVersion: HC_MIN_VERSION, assets: HC_RELEASE_ASSETS });
+      steps.push(hc.step);
+      // The directory that this run wrote, never a searched one; the user PATH stays unchanged.
+      if (hc.pathEntry !== null) env = { ...env, PATH: [hc.pathEntry, env.PATH].filter(Boolean).join(delimiter) };
+    }
+  }
   if (steps.every((step) => step.status !== "failed")) steps.push(ports.configureHerdrSkill(target, env, piSelected));
   if (steps.every((step) => step.status !== 'failed')) {
     const pi = installPiPackage(bunGlobalPackageRoot(env)!, plugins.includes('pi') && target === 'both' && opts.hostAdapters !== false, env);

@@ -1,21 +1,27 @@
 import { spawn } from 'node:child_process';
-import { readFileSync } from 'node:fs';
+import { randomUUID } from 'node:crypto';
+import { mkdirSync, readFileSync, renameSync, rmSync, writeFileSync } from 'node:fs';
 import { homedir } from 'node:os';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { createInterface } from 'node:readline';
 import {
   CLAUDE_QUOTA_CAPTURE_PATH,
   decodeClaudeQuotaCapture,
   decodeCodexRateLimitsResult,
   unknownQuotaReading,
+  type ClaudeQuotaCapture,
   type QuotaReading,
 } from '../../core/operator/quota';
 
 const CODEX_READ_TIMEOUT_MS = 20_000;
 
+function claudeCapturePath(env: NodeJS.ProcessEnv): string {
+  return join(env.HOME ?? homedir(), ...CLAUDE_QUOTA_CAPTURE_PATH);
+}
+
 /** Reads only the capture file that the Q2 status line route writes. */
 export function readClaudeQuota(env: NodeJS.ProcessEnv = process.env): QuotaReading {
-  const path = join(env.HOME ?? homedir(), ...CLAUDE_QUOTA_CAPTURE_PATH);
+  const path = claudeCapturePath(env);
   let text: string;
   try {
     text = readFileSync(path, 'utf8');
@@ -26,6 +32,59 @@ export function readClaudeQuota(env: NodeJS.ProcessEnv = process.env): QuotaRead
   let value: unknown;
   try { value = JSON.parse(text); } catch { return unknownQuotaReading('claude', 'capture is not JSON'); }
   return decodeClaudeQuotaCapture(value);
+}
+
+/**
+ * Writes the status line `rate_limits` object, unchanged, with a new
+ * `observed_at`. The reader's decoder checks the capture first: a capture
+ * that it rejects is not written, and the old file stays. Concurrent sessions
+ * each write a unique temp file and rename it, so a reader never sees a
+ * partial file.
+ */
+function writeClaudeQuotaCapture(rateLimits: unknown, now: Date, env: NodeJS.ProcessEnv = process.env): QuotaReading {
+  const capture = { observed_at: now.toISOString(), rate_limits: rateLimits };
+  const reading = decodeClaudeQuotaCapture(capture);
+  if (reading.reason !== null) return reading;
+  // The decoder accepted the object, so it has the ClaudeQuotaCapture shape.
+  const accepted = capture as ClaudeQuotaCapture;
+  const path = claudeCapturePath(env);
+  mkdirSync(dirname(path), { recursive: true, mode: 0o700 });
+  const temp = `${path}.${randomUUID()}.tmp`;
+  try {
+    writeFileSync(temp, `${JSON.stringify(accepted)}\n`, { mode: 0o600, flag: 'wx' });
+    renameSync(temp, path);
+  } finally {
+    rmSync(temp, { force: true });
+  }
+  return reading;
+}
+
+const STATUS_LINE_LABELS: Readonly<Record<string, string>> = { five_hour: '5h', seven_day: '7d' };
+
+export interface ClaudeStatusLineResult {
+  readonly exitCode: number;
+  readonly stdout: string;
+  readonly stderr: string;
+}
+
+/**
+ * The `repo-harness-hook statusline` handler for the Claude Code status line
+ * stdin `rate_limits` value (https://code.claude.com/docs/en/statusline). It
+ * prints each window with a reading, for example `5h 12% · 7d 30%`; an absent
+ * window is left out. Without `rate_limits` it writes nothing, keeps the old
+ * capture and prints an empty line.
+ */
+export function runClaudeStatusLine(rateLimits: unknown, env: NodeJS.ProcessEnv = process.env, now: Date = new Date()): ClaudeStatusLineResult {
+  if (rateLimits === undefined) return { exitCode: 0, stdout: '\n', stderr: '' };
+  const reading = writeClaudeQuotaCapture(rateLimits, now, env);
+  if (reading.reason !== null) {
+    return { exitCode: 1, stdout: '', stderr: `repo-harness-hook statusline: capture not written: ${reading.reason}\n` };
+  }
+  const line = reading.windows
+    .filter(window => window.used_percent !== null)
+    .map(window => `${STATUS_LINE_LABELS[window.window]} ${Math.round(window.used_percent!)}%`)
+    .join(' · ');
+  return { exitCode: 0, stdout: `${line}\n`, stderr: '' };
 }
 
 /**
