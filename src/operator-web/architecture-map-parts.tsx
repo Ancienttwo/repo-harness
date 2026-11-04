@@ -7,6 +7,8 @@ import { useReactFlow, useViewport } from '@xyflow/react';
 import {
   ARCHITECTURE_VIOLATION_READS,
   architectureViolationCommand,
+  flowSelectorKey,
+  flowSteps,
   type ArchitectureImpactV1,
   type ArchitectureMapV1,
   type ArchitectureViolationsLayerV1,
@@ -96,6 +98,16 @@ export function violationFacts(map: ArchitectureMapV1, nodeIds: ReadonlySet<stri
   if (flows.state === 'ok') {
     for (const entry of flows.unprovable.filter(item => nodeIds.has(item.id))) {
       facts.push({ key: `flows-${entry.id}`, text: t('architecture.layer.node.flows', { count: entry.diagnostics }), part: 'flows' });
+    }
+    // Each step of a flow of these nodes whose selector archctx reports and does not prove; step N is its place in the flow, outcome steps after the main steps.
+    const proofs = new Map(flows.evidence.map(entry => [flowSelectorKey(entry), entry.status]));
+    for (const flow of map.flows.filter(item => nodeIds.has(item.capability))) {
+      flowSteps(flow).forEach(({ outcome, step }, index) => {
+        const status = proofs.get(flowSelectorKey(step.evidence));
+        if (status === undefined || status === 'proven') return;
+        facts.push({ key: `flow-step-${flow.id}-${outcome ?? ''}-${step.id}`, part: 'flows',
+          text: t('architecture.layer.node.flow_step', { flow: flow.name, step: index + 1, label: step.label, status }) });
+      });
     }
   }
   if (anchors.state === 'ok') {

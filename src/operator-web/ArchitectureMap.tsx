@@ -15,7 +15,7 @@ import {
   MAP_LAYERS,
   modulesLayerView,
   truncatedParts,
-  violationCounts,
+  violationItems,
   type MapLayerId,
 } from './architecture-map-layers';
 import { counted, Gap, Note } from './architecture-map-parts';
@@ -72,11 +72,11 @@ function layerCount(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: numb
   if (!layerAvailable(map, layer)) return null;
   const { changes, pull_requests: pullRequests, tests, decisions } = map.layers;
   const modules = (id: MapLayerId) => [...modulesLayerView(map, id, pullRequest).marks.values()].filter(mark => mark.tone !== 'muted').length;
-  if (layer === 'changes') return changes.state === 'ok' ? t('architecture.layer.count.changes', { modules: counted(t, modules('changes'), 'module'), commits: counted(t, changes.commits.length, 'commit') }) : null;
-  if (layer === 'violations') return String([...violationCounts(map).values()].reduce((sum, count) => sum + count, 0));
+  if (layer === 'changes') return changes.state === 'ok' ? t('architecture.layer.count.changes', { modules: counted(t, modules('changes'), 'module', changes.truncated.nodes), commits: counted(t, changes.commits.length, 'commit') }) : null;
+  if (layer === 'violations') return String(violationItems(map));
   if (layer === 'pull_requests') {
     const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(item => item.number === pullRequest)?.impact : undefined;
-    return pullRequest === null ? null : impact?.state === 'ok' ? t('architecture.layer.count.pull_requests', { number: pullRequest, modules: counted(t, modules('pull_requests'), 'module') }) : `#${pullRequest}`;
+    return pullRequest === null ? null : impact?.state === 'ok' ? t('architecture.layer.count.pull_requests', { number: pullRequest, modules: counted(t, modules('pull_requests'), 'module', impact.truncated.nodes) }) : `#${pullRequest}`;
   }
   if (layer === 'tests') return tests.state === 'ok' ? `${tests.capabilities.length} / ${map.nodes.filter(node => node.kind === 'capability').length}` : null;
   return counted(t, decisions.items.length, 'decision');

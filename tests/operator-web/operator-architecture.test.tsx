@@ -615,9 +615,10 @@ describe('architecture map', () => {
       .toEqual(['changes:ok', 'violations:ok', 'pull_requests:unavailable', 'tests:ok', 'decisions:ok']);
     // Each chip with data counts what its layer covers.
     expect([...document.querySelectorAll('.architecture-layers button')].map(item => item.querySelector('.architecture-layers__count')?.textContent ?? null))
-      .toEqual(['1 module · 1 commit', '3', null, '2 / 2', '2 decisions']);
-    // The changed component marks its capability with the commits that touch it; capabilities with nothing on the layer fade, external systems do not.
-    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '1 commit']);
+      .toEqual(['1 module · 1 commit', '4', null, '2 / 2', '2 decisions']);
+    // The changed component marks its capability with the commits that touch it; archctx cut the paths, so that count is a lower bound.
+    // Capabilities with nothing on the layer fade, external systems do not.
+    expect([box(CENTER).getAttribute('data-tone'), box(CENTER).querySelector('.architecture-map__mark')?.textContent]).toEqual(['change', '≥1 commit']);
     expect([box(CALLER).hasAttribute('data-quiet'), box(EXTERNAL).hasAttribute('data-quiet')]).toEqual([true, false]);
     expect(document.querySelector('[data-layer-summary="changes"]')?.textContent).toContain('≥2 files changed in 1 commit, ≥0 without an owner');
     expect([gaps(), notes()]).toEqual([[], ['changes.truncated:paths']]);
@@ -655,6 +656,23 @@ describe('architecture map', () => {
     await act(async () => box(CALLER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
     await settle();
     expect(document.querySelector('[data-module-decisions]')?.textContent).toBe('Route through one router (accepted) · docs/adr/ADR-0001-router.md');
+
+    // The violations chip counts each item once; a capability's mark counts each item that names one of its nodes once.
+    const onlyDebt = (nodes: string[]): ArchitectureMapLayersInput => ({ ...mapLayers, violations: {
+      debt: { state: 'ok', items: [{ kind: nodes.length === 0 ? 'unowned-path' : 'ambiguous-owner', nodes, paths: ['src/shared.ts'] }] },
+      flows: noCodeFacts, anchors: noCodeFacts, dependencies: noCodeFacts, layer_direction: undeclaredLayers } });
+    const debtRows: [string[], [string, string | null][]][] = [
+      [[], [[CENTER, null], [CALLER, null]]],
+      [[PART, CALLER], [[CENTER, '1'], [CALLER, '1']]],
+      [[CENTER, PART], [[CENTER, '1'], [CALLER, null]]],
+    ];
+    for (const [nodes, marks] of debtRows) {
+      await act(async () => root?.render(workspace({ repositoryId: `repo-debt-${nodes.join('-')}`, readMap: reader({ state: 'ok', map: mapFor(true, onlyDebt(nodes)) }) })));
+      await settle();
+      await choose('violations');
+      expect([nodes, document.querySelector('.architecture-layers [data-layer="violations"] .architecture-layers__count')?.textContent,
+        marks.map(([id]) => [id, box(id).querySelector('.architecture-map__mark')?.textContent ?? null])]).toEqual([nodes, '1', marks]);
+    }
   });
 
   test('PR impact marks the nodes the chosen PR changes and the nodes that depend on them, and a PR without a complete list says why', async () => {
@@ -702,6 +720,7 @@ describe('architecture map', () => {
     await settle();
     expect(document.querySelector('[data-module-impact="21"]')?.textContent).toBe('Changes 1 file here.');
 
+
     await act(async () => {
       select().value = '22';
       select().dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
@@ -718,6 +737,29 @@ describe('architecture map', () => {
     const refused = document.querySelector('.architecture-map__gap[data-gap="pull_request"]')!;
     expect([refused.getAttribute('data-reason'), refused.getAttribute('data-code'), refused.textContent]).toEqual(['archctx_error', 'AC_SCHEMA_INVALID native-context-arguments-invalid',
       'No impact for this pull request: archctx impact refused with AC_SCHEMA_INVALID native-context-arguments-invalid.']);
+
+    // A capability counts each changed path that one of its nodes owns once, also a path with two owners in it; cut paths make the count a lower bound.
+    const owned = (path: string, owners: string[]) => ({ path, added: null, deleted: null, owners, reason_codes: ['paths-only'] });
+    const fileRows: [ReturnType<typeof owned>[], boolean, string][] = [
+      [[owned('src/ledger.ts', [PART])], false, '1 file'],
+      [[owned('src/ledger.ts', [PART, CENTER])], false, '1 file'],
+      [[owned('src/ledger.ts', [PART]), owned('src/pipeline.ts', [CENTER])], true, '≥2 files'],
+    ];
+    for (const [paths, cut, files] of fileRows) {
+      const rowMap = mapFor(true, { ...mapLayers, pull_requests: { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
+        { number: 21, title: 'Ledger rows', url: 'https://github.com/acme/widgets/pull/21', head_sha: head, impact: {
+          state: 'ok', paths, unowned_paths: [], nodes: [...new Set(paths.flatMap(path => path.owners))].map(id => ({ id, files: paths.filter(path => path.owners.includes(id)).length })),
+          dependents: [], dependency_coverage: 'complete', flow_steps: { status: 'known', reason_codes: [], items: [] }, truncated: { ...whole, paths: cut },
+        } }] } });
+      await act(async () => root?.render(workspace({ repositoryId: `repo-files-${paths.length}-${cut}`, readMap: reader({ state: 'ok', map: rowMap }) })));
+      await settle();
+      await act(async () => document.querySelector<HTMLButtonElement>('.architecture-layers [data-layer="pull_requests"]')!.click());
+      await settle();
+      await act(async () => box(CENTER).dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+      await settle();
+      expect([box(CENTER).querySelector('.architecture-map__mark')?.textContent, document.querySelector('[data-module-impact="21"]')?.textContent])
+        .toEqual([files, `Changes ${files} here.`]);
+    }
   });
 
   test('a layer with data that marks no node dims no node', async () => {
@@ -934,7 +976,10 @@ describe('sequence and topology base maps', () => {
     expect([inspector().querySelector('[data-module-domain]')?.textContent, inspector().querySelector('[data-node-size]')?.textContent]).toEqual(['workflow-engine', '900 lines in 1 files']);
     expect([...inspector().querySelectorAll('[data-relation-id]')].map(item => item.textContent)).toContain(`calls Name ${CALLER} · 7 imports`);
     expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
-      'Flow proof cannot be proven (2 diagnostics)flows check', `Imports Name ${CALLER} with no declared relation (3 imports)deps`]);
+      'Flow proof cannot be proven (2 diagnostics)flows check',
+      // The flow's steps joined to archctx's proof by selector: route is proven and the outcome steps have no proof, so only append is listed.
+      'Flow "Append a ledger row", step 2 (Step append): archctx reports no-direct-call.flows check',
+      `Imports Name ${CALLER} with no declared relation (3 imports)deps`]);
     expect([...inspector().querySelectorAll('[data-fix-command]')].map(item => item.textContent)).toEqual([architectureViolationCommand('flows'), architectureViolationCommand('dependencies')]);
     expect(architectureViolationCommand('flows')).toBe('archctx flows check --no-sync --json');
     // The PR changes the capability's component, and its flow step ends there: the third step, the first of an outcome.

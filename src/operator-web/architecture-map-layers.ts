@@ -56,6 +56,21 @@ export function violationCounts(map: ArchitectureMapV1): Map<string, number> {
   return counts;
 }
 
+/** The violation items of the map, each once: debt items, unprovable capabilities, stale citations, undeclared imports, imports against the layer order. */
+export function violationItems(map: ArchitectureMapV1): number {
+  const { debt, flows, anchors, dependencies, layer_direction: layerDirection } = map.layers.violations;
+  return (debt.state === 'ok' ? debt.items.length : 0)
+    + (flows.state === 'ok' ? flows.unprovable.length : 0)
+    + (anchors.state === 'ok' ? anchors.nodes.reduce((sum, entry) => sum + entry.findings.length, 0) : 0)
+    + (dependencies.state === 'ok' ? dependencies.edges.length : 0)
+    + (layerDirection.state === 'ok' ? layerDirection.edges.length : 0);
+}
+
+/** The changed paths of `impact` that a node of `ids` owns, each once. */
+export function impactPaths(impact: ArchitectureImpactV1, ids: ReadonlySet<string>): number {
+  return impact.paths.filter(path => path.owners.some(id => ids.has(id))).length;
+}
+
 /** The open PR the PR impact layer shows first: the lowest number with impact data. */
 export function firstImpactPullRequest(map: ArchitectureMapV1): number | null {
   const { pull_requests: pullRequests } = map.layers;
@@ -102,8 +117,11 @@ export function capabilityOwners(map: ArchitectureMapV1): Map<string, string> {
   return owners;
 }
 
-/** A capability's mark on the module map. `count`: commits today, violations, files in the PR or decisions; null for a dependent or a test result. */
-export interface ModuleMark { readonly tone: MapMarkTone; readonly count: number | null }
+/**
+ * A capability's mark on the module map. `count`: commits today, violations, files in the PR or decisions;
+ * null for a dependent or a test result. `atLeast`: archctx cut the changed paths at its limit, so the count is a lower bound.
+ */
+export interface ModuleMark { readonly tone: MapMarkTone; readonly count: number | null; readonly atLeast: boolean }
 export interface ModulesLayerView {
   readonly available: boolean;
   readonly marks: ReadonlyMap<string, ModuleMark>;
@@ -125,24 +143,24 @@ export function modulesLayerView(map: ArchitectureMapV1, layer: MapLayerId, pull
     const marks = new Map<string, ModuleMark>();
     for (const [id, count] of entries) {
       const owner = owners.get(id);
-      if (owner !== undefined) marks.set(owner, { tone, count: (marks.get(owner)?.count ?? 0) + count });
+      if (owner !== undefined) marks.set(owner, { tone, count: (marks.get(owner)?.count ?? 0) + count, atLeast: false });
     }
     return marks;
   };
   const withDependents = (marks: Map<string, ModuleMark>, impact: ArchitectureImpactV1) => {
     for (const entry of impact.dependents) {
       const owner = owners.get(entry.id);
-      if (owner !== undefined && !marks.has(owner)) marks.set(owner, { tone: 'muted', count: null });
+      if (owner !== undefined && !marks.has(owner)) marks.set(owner, { tone: 'muted', count: null, atLeast: false });
     }
     return marks;
   };
   if (layer === 'changes') {
     const { changes } = map.layers;
     if (changes.state !== 'ok') return NO_MODULES;
-    const changed = new Set(changes.nodes.flatMap(entry => owners.get(entry.id) ?? []));
-    const commits = changes.commits.flatMap(commit => [...new Set(commit.nodes.flatMap(id => owners.get(id) ?? []))].map(id => [id, 1] as const));
-    const marks = new Map([...changed].map(id => [id, { tone: 'change', count: 0 } as ModuleMark]));
-    for (const [id, mark] of sum(commits, 'change')) if (changed.has(id)) marks.set(id, mark);
+    // A commit names the owners of the paths it changed; with cut paths, that list is a lower bound.
+    const commits = sum(changes.commits.flatMap(commit => [...new Set(commit.nodes.flatMap(id => owners.get(id) ?? []))].map(id => [id, 1] as const)), 'change');
+    const marks = new Map(changes.nodes.flatMap(entry => owners.get(entry.id) ?? []).map((id): [string, ModuleMark] =>
+      [id, { tone: 'change', count: commits.get(id)?.count ?? 0, atLeast: changes.truncated.paths }]));
     return view(withDependents(marks, changes));
   }
   // An item that names two nodes of one capability counts once for it.
@@ -164,14 +182,19 @@ export function modulesLayerView(map: ArchitectureMapV1, layer: MapLayerId, pull
     const { tests } = map.layers;
     if (tests.state !== 'ok') return NO_MODULES;
     return view(new Map(tests.capabilities.map(entry => [entry.id, {
-      tone: entry.failed > 0 ? 'danger' : entry.passed > 0 && entry.passed + entry.skipped === entry.files ? 'success' : 'muted', count: null,
+      tone: entry.failed > 0 ? 'danger' : entry.passed > 0 && entry.passed + entry.skipped === entry.files ? 'success' : 'muted', count: null, atLeast: false,
     }])));
   }
   if (layer === 'pull_requests') {
     const { pull_requests: pullRequests } = map.layers;
     const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(entry => entry.number === pullRequest)?.impact : undefined;
     if (impact?.state !== 'ok') return NO_MODULES;
-    return view(withDependents(sum(impact.nodes.map(entry => [entry.id, entry.files]), 'change'), impact));
+    // A path with two owners in one capability is one file of it.
+    const files = new Map<string, number>();
+    for (const path of impact.paths) for (const id of new Set(path.owners.flatMap(owner => owners.get(owner) ?? []))) files.set(id, (files.get(id) ?? 0) + 1);
+    const marks = new Map(impact.nodes.flatMap(entry => owners.get(entry.id) ?? []).map((id): [string, ModuleMark] =>
+      [id, { tone: 'change', count: files.get(id) ?? 0, atLeast: impact.truncated.paths }]));
+    return view(withDependents(marks, impact));
   }
   return view(sum(once(map.layers.decisions.items.map(item => ({ ids: item.applies_to, count: 1 }))), 'muted'));
 }

@@ -20,7 +20,7 @@ import {
   type NodeProps,
 } from '@xyflow/react';
 import { flowSteps, type ArchitectureMapNodeV1, type ArchitectureMapV1 } from '../core/operator/architecture-map';
-import { archctxCode, capabilityOwners, impactTargets, modulesLayerView, type MapLayerId, type ModuleMark, type ModulesLayerView } from './architecture-map-layers';
+import { archctxCode, capabilityOwners, impactPaths, impactTargets, modulesLayerView, type MapLayerId, type ModuleMark, type ModulesLayerView } from './architecture-map-layers';
 import { counted, FactList, FixCommand, NodeDetails, NodeRelations, nodeSize, violationFacts, ZoomControls } from './architecture-map-parts';
 import { layoutModules, type DomainSide, type ModulesLayout } from './architecture-modules-layout';
 import type { OperatorTranslate } from './i18n';
@@ -57,8 +57,8 @@ const DomainNode = memo(function DomainNode({ data }: NodeProps<Node<DomainData,
 function badge(layer: MapLayerId, mark: ModuleMark, t: OperatorTranslate): string | null {
   if (layer === 'tests') return null;
   if (mark.count === null) return '↳';
-  if (layer === 'changes') return mark.count === 0 ? null : counted(t, mark.count, 'commit');
-  if (layer === 'pull_requests') return counted(t, mark.count, 'file');
+  if (layer === 'changes') return mark.count === 0 ? null : counted(t, mark.count, 'commit', mark.atLeast);
+  if (layer === 'pull_requests') return counted(t, mark.count, 'file', mark.atLeast);
   return String(mark.count);
 }
 
@@ -123,7 +123,7 @@ function PullRequestImpact({ map, pullRequest, ids, capability, t }: {
   const names = new Map(map.nodes.map(node => [node.id, node.name]));
   const owners = capabilityOwners(map);
   const facts: { readonly key: string; readonly text: string }[] = [];
-  const files = impact.nodes.filter(entry => ids.has(entry.id)).reduce((sum, entry) => sum + entry.files, 0);
+  const files = impactPaths(impact, ids);
   if (files > 0) facts.push({ key: 'files', text: t('architecture.modules.impact.files', { files: counted(t, files, 'file', impact.truncated.paths) }) });
   const targets = [...ids].flatMap(id => impactTargets(impact, id)).filter(id => !ids.has(id));
   if (targets.length > 0) facts.push({ key: 'targets', text: t('architecture.layer.node.dependent', { names: [...new Set(targets)].map(id => names.get(id) ?? id).join(', ') }) });
