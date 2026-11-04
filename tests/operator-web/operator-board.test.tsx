@@ -1436,6 +1436,16 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('ready');
     // Pass 1 asks for the registered non-green rows of the list: no primary checkout, no orphan.
     expect(record.opened).toEqual([REVIEWABLE.map(directory => rowOf(directory).id)]);
+    // Every item shows the choice, reason and evidence of the plan version, word for word.
+    const shown = (directory: string) => {
+      const block = planItem(directory).querySelector('[data-plan-advice]')!;
+      return { recommendation: block.getAttribute('data-plan-advice'), reason: block.querySelector('[data-plan-advice-reason]')?.textContent,
+        evidence: Array.from(block.querySelectorAll('[data-plan-evidence]'), line => line.textContent) };
+    };
+    for (const item of record.plan().items) {
+      expect(shown(item.worktree.directory)).toEqual({ recommendation: item.advice.recommendation, reason: item.advice.reason, evidence: [...item.advice.evidence] });
+    }
+    expect(planItem('repo-harness-wt-oar').querySelector('[data-plan-advice] p')?.textContent).toBe('Plan advice: Keep. Waiting for the user to choose.');
     // One item of each judgment; green keeps the one-click clean, red and an unread loss cannot be selected.
     expect(planItem('feat-kanban-status').querySelector('[data-plan-green]')).not.toBeNull();
     for (const directory of ['feat-kanban-status', 'repo-harness-wt-kanban-redesign', 'repo-harness-wt-old-spike']) {
@@ -1501,6 +1511,31 @@ describe('worktree cleanup plan review (#1720)', () => {
     });
   });
 
+  test('while the plan is made, the page shows the running request and its seconds; the line goes when the answer arrives', async () => {
+    const base = cleanupPlanFixture(NOW);
+    const held: (() => void)[] = [];
+    const hold = <T,>(answer: Promise<T>) => new Promise<T>(resolve => { held.push(() => void answer.then(resolve)); });
+    const ports: CleanupPlanPorts = { ...base, open: ids => hold(base.open(ids)), choose: (session, choices) => hold(base.choose(session, choices)) };
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy(), { worktreeCleanupPlan: ports })} />);
+    for (const directory of REVIEWABLE) await act(async () => checkbox(directory).click());
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!.click());
+    const building = () => document.querySelector('[role="status"][data-plan-building]');
+    const answer = async () => { await act(async () => held.shift()!()); await until(() => building() === null); };
+    // Pass 1: the line counts the seconds since the page sent the request.
+    await until(() => building() !== null);
+    expect(building()?.textContent).toBe(`The operator service makes the plan for ${REVIEWABLE.length} worktrees… 0 s`);
+    await act(async () => { await Bun.sleep(1_100); });
+    expect(building()?.textContent).toBe(`The operator service makes the plan for ${REVIEWABLE.length} worktrees… 1 s`);
+    await answer();
+    // Pass 2 shows the same line until the new plan version arrives.
+    await option('repo-harness-wt-notes', 'delete');
+    await act(async () => planButton('choose').click());
+    expect(building()?.getAttribute('data-plan-building')).toBe('0');
+    await answer();
+    expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-advice]')?.getAttribute('data-plan-advice')).toBe('delete');
+  });
+
   test('each execution reason shows its own message', async () => {
     const record = recordPlan();
     await openReview(record.ports);
@@ -1561,6 +1596,10 @@ describe('worktree cleanup plan review (#1720)', () => {
     const box = planItem('repo-harness-wt-notes').querySelector<HTMLInputElement>('[data-plan-authorize]')!;
     expect([box.checked, box.disabled, planButton('execute').getAttribute('data-plan-execute')]).toEqual([false, false, '0']);
     expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-digest="plan"]')?.textContent).toBe(advised.plan.items.find(item => item.worktree.id === notes.worktree.id)!.plan_sha256);
+    // The advised item shows the choice of the new plan version with its reason and evidence.
+    const advice = planItem('repo-harness-wt-notes').querySelector('[data-plan-advice]')!;
+    expect([advice.getAttribute('data-plan-advice'), advice.querySelector('[data-plan-advice-reason]')?.textContent,
+      Array.from(advice.querySelectorAll('[data-plan-evidence]'), line => line.textContent)]).toEqual(['delete', notes.advice.reason, [...notes.advice.evidence]]);
 
     // A failed job and a start refusal each show their own text and leave the plan as it is.
     finished = () => status('failed', null, 'advice_invalid');
