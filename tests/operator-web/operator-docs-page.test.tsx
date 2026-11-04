@@ -12,7 +12,7 @@ import { registryOf } from '../../src/operator-web/fixtures';
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
 import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { DOCS_COMMIT, DOCS_COMMITTED_AT, docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from '../../src/operator-web/fixtures/docs';
-import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
+import { DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 // Mermaid needs a layout engine to draw; this stand-in records how the page
 // configures it and returns an SVG that carries a script, as an injected
@@ -105,9 +105,9 @@ describe('docs route', () => {
     expect(workspaceHash({ workspace: 'docs', module: null, item: 'docs/design/a b.md' })).toBe('#docs/docs/design/a%20b.md');
     // The route reads the path; the server decides whether it may be served.
     expect(parseWorkspaceLocation('#docs/docs/.env').item).toBe('docs/.env');
-    expect(parseWorkspaceLocation('#docs/').workspace).toBe('home');
-    expect(parseWorkspaceLocation('#docs/docs//a.md').workspace).toBe('home');
-    expect(parseWorkspaceLocation('#docs/docs/%E0%A4%A').workspace).toBe('home');
+    expect(parseWorkspaceLocation('#docs/')).toEqual(DEFAULT_LOCATION);
+    expect(parseWorkspaceLocation('#docs/docs//a.md')).toEqual(DEFAULT_LOCATION);
+    expect(parseWorkspaceLocation('#docs/docs/%E0%A4%A')).toEqual(DEFAULT_LOCATION);
   });
 
   test('a relative link opens only inside docs/, and a URL only for http or https', () => {

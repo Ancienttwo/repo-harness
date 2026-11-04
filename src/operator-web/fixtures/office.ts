@@ -1,6 +1,9 @@
 import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
 import { decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
+import { boardSummary, type BoardSummaryV1 } from '../../core/board/summary';
+import { decodeOperatorRepositories } from '../../core/operator/repositories';
 import type { OperatorAppProps } from '../App';
+import type { BoardSummariesRead } from '../board-office';
 import type { BoardParentsRead, BoardRead } from '../board-view';
 import type { BossCommandWriter } from '../office-boss';
 import { HARNESS_ID } from './dev-activity';
@@ -8,7 +11,8 @@ import { HARNESS_ID } from './dev-activity';
 /**
  * The sample state of the approved S0 mockup page 一间房 (#1790 M82): the
  * #1309 board of repo-harness with six workers, two in the queue, three in the
- * cart and three in the tray. Every other repository is the idle room.
+ * cart and three in the tray. The overview page has eight rooms: this board,
+ * three other lit rooms and four idle rooms.
  */
 export const OFFICE_PARENT = 1309;
 const REPOSITORY = 'Ancienttwo/repo-harness';
@@ -90,10 +94,60 @@ function officeWorkers(now: number): readonly BoardTerminalV1[] {
   ];
 }
 
+/** The other lit rooms of the overview page, with the agents and counts of the mockup. */
+interface SampleRoom {
+  readonly name: string;
+  readonly parent: number;
+  readonly orchestrator: string | null;
+  readonly advisor: string | null;
+  /** Agent and hc status of each worker. */
+  readonly workers: readonly (readonly [string | null, string])[];
+  readonly summary: BoardSummaryV1;
+}
+
+const NO_PLAN = { accepted: null, size: null };
+const SAMPLE_ROOMS: Readonly<Record<string, SampleRoom>> = {
+  repo_a1a1a1a1a1a1a1a1: {
+    name: 'aiphabee', parent: 212, orchestrator: 'claude-code', advisor: 'codex',
+    workers: [['claude-code', 'working'], ['codex', 'working'], ['codex', 'working']],
+    summary: { queue: 0, ci_failures: 1, batch: { accepted: 2, size: 4 }, needs_you: 1 },
+  },
+  repo_a2a2a2a2a2a2a2a2: {
+    name: 'AstroZi', parent: 87, orchestrator: 'codex', advisor: 'claude-code',
+    workers: [['claude-code', 'idle'], ['codex', 'idle'], ['claude-code', 'idle']],
+    summary: { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 3 }, needs_you: 0 },
+  },
+  repo_a3a3a3a3a3a3a3a3: {
+    name: 'arch-context', parent: 438, orchestrator: null, advisor: null,
+    workers: [[null, 'working']],
+    summary: { queue: 0, ci_failures: 0, batch: NO_PLAN, needs_you: 0 },
+  },
+};
+const IDLE_ROOMS: Readonly<Record<string, string>> = {
+  repo_a4a4a4a4a4a4a4a4: 'byok-sdk', repo_a5a5a5a5a5a5a5a5: 'fortune-algo', repo_a6a6a6a6a6a6a6a6: 'hegui-agent', repo_a7a7a7a7a7a7a7a7: 'enterprise-brain',
+};
+
+function sampleParents(room: SampleRoom, repository: string, now: number): BoardParentsV1 {
+  const observed_at = new Date(now).toISOString();
+  const seat = (address: string, agent: string | null, status: string, role: string, parent: string | null): BoardParentsSeatV1 =>
+    ({ address, name: null, agent, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: role, issue: null, pr: null, parent });
+  return decodeBoardParents({
+    protocol: 2, kind: 'repo-harness.board-parents', observed_at, repository,
+    parents: [{ number: room.parent, title: room.name, url: `https://github.com/${repository}/issues/${room.parent}`, updated_at: observed_at, sub_issues: { total: 6, completed: 2 }, seats: room.workers.length }],
+    seats: [
+      ...(room.orchestrator === null ? [] : [seat('t1', room.orchestrator, 'idle', 'orchestrator', null)]),
+      ...(room.advisor === null ? [] : [seat('t2', room.advisor, 'idle', 'advisor', null)]),
+      ...room.workers.map(([agent, status], index) => ({ ...seat(`t${10 + index}`, agent, status, 'worker', String(room.parent)), issue: 100 + index })),
+    ],
+  });
+}
+
 export function officeParents(repositoryId: string, now: number): BoardParentsV1 {
   const observed_at = new Date(now).toISOString();
+  const sample = SAMPLE_ROOMS[repositoryId];
+  if (sample !== undefined) return sampleParents(sample, `Ancienttwo/${sample.name}`, now);
   if (repositoryId !== HARNESS_ID) {
-    return decodeBoardParents({ protocol: 2, kind: 'repo-harness.board-parents', observed_at, repository: 'Ancienttwo/operator-site', parents: [], seats: [] });
+    return decodeBoardParents({ protocol: 2, kind: 'repo-harness.board-parents', observed_at, repository: `Ancienttwo/${IDLE_ROOMS[repositoryId]!}`, parents: [], seats: [] });
   }
   return decodeBoardParents({
     protocol: 2, kind: 'repo-harness.board-parents', observed_at, repository: REPOSITORY,
@@ -101,6 +155,22 @@ export function officeParents(repositoryId: string, now: number): BoardParentsV1
     seats: [lead('t3', 'claude-code', 'orchestrator'), lead('t4', 'codex', 'advisor'), ...officeWorkers(now).map(terminal => ({ ...terminal, parent: String(OFFICE_PARENT) }))],
   });
 }
+
+function officeSummaries(repositoryId: string, now: number): BoardSummariesRead {
+  const sample = SAMPLE_ROOMS[repositoryId];
+  // The mockup's repo-harness card waits for nobody; the sample board has an A2 finding.
+  const row = sample !== undefined ? { parent: sample.parent, summary: sample.summary } : { parent: OFFICE_PARENT, summary: { ...boardSummary(officeBoard(now)), needs_you: 0 } };
+  return { state: 'ok', summaries: { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: repositoryId, parents: [{ ...row, status: 'observed', observed_at: new Date(now).toISOString() }] } };
+}
+
+const officeRepositories = decodeOperatorRepositories({
+  protocol: 1, kind: 'operator_repositories', stale_registrations: 0,
+  repositories: [
+    { repository_id: HARNESS_ID, display_name: 'repo-harness', access_mode: 'read_write' },
+    ...Object.entries(SAMPLE_ROOMS).map(([repository_id, room]) => ({ repository_id, display_name: room.name, access_mode: 'read_write' })),
+    ...Object.entries(IDLE_ROOMS).map(([repository_id, name]) => ({ repository_id, display_name: name, access_mode: 'read_write' })),
+  ],
+});
 
 /** The first send of a command plays its effect; the next one gets the server's cooldown answer. */
 function officeBossWriter(): BossCommandWriter {
@@ -124,6 +194,9 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     readBoard: (subject): Promise<BoardRead> => Promise.resolve(subject.repository_id === HARNESS_ID && subject.parent === OFFICE_PARENT
       ? { state: 'ok', board: officeBoard(now) } : { state: 'unavailable', reason: 'board_parent_invalid' }),
     readBoardParents: (repositoryId): Promise<BoardParentsRead> => Promise.resolve({ state: 'ok', list: officeParents(repositoryId, now) }),
+    readBoardSummaries: repositoryId => Promise.resolve(officeSummaries(repositoryId, now)),
+    readRepositories: () => Promise.resolve(officeRepositories),
+    initialRepositories: officeRepositories,
     writeBossCommand: officeBossWriter(),
   };
 }

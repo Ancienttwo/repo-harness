@@ -14,7 +14,7 @@ import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { registryOf } from '../../src/operator-web/fixtures';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
-import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
+import { DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
 let window: Window;
@@ -100,7 +100,7 @@ describe('tests page', () => {
   test('the page has its own hash without a parameter', () => {
     expect(parseWorkspaceLocation('#tests')).toEqual({ workspace: 'tests', module: null, item: null });
     expect(workspaceHash({ workspace: 'tests', module: null, item: null })).toBe('#tests');
-    expect(parseWorkspaceLocation('#tests/extra').workspace).toBe('home');
+    expect(parseWorkspaceLocation('#tests/extra')).toEqual(DEFAULT_LOCATION);
   });
 
   test('first entry loads repository inventory before showing its test results', async () => {

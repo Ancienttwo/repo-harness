@@ -7,6 +7,7 @@ import type { DevActivitySnapshotV2 } from '../core/dev-activity/types';
 import type { NotifyStatusV1 } from '../core/operator/notify-status';
 import type { RuntimeOverlay } from '../core/operator/runtime-status';
 import { BoardPage, boardListRepository } from './BoardPage';
+import { fetchBoardSummaries, type BoardSummariesReader } from './board-office';
 import { postBossCommand, type BossCommandWriter } from './office-boss';
 import { fetchBoard, fetchBoardParents, useBoard, useBoardParents, type BoardParentsReader, type BoardReader, type BoardView } from './board-view';
 import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotAccessReader, type BotReviewsReader } from './bots';
@@ -84,6 +85,8 @@ export interface OperatorAppProps {
   readonly readBoard?: BoardReader;
   /** The parent list route of one repository, behind the Board page without a board. */
   readonly readBoardParents?: BoardParentsReader;
+  /** The stored board summaries of one repository, behind the office overview. */
+  readonly readBoardSummaries?: BoardSummariesReader;
   /** The boss command route of the office room (#1757). */
   readonly writeBossCommand?: BossCommandWriter;
   readonly readNotifyStatus?: NotifyStatusReader;
@@ -277,6 +280,7 @@ export function OperatorApp({
   initialRuntimeOverlay,
   readBoard = fetchBoard,
   readBoardParents = fetchBoardParents,
+  readBoardSummaries = fetchBoardSummaries,
   writeBossCommand = postBossCommand,
   readNotifyStatus,
   initialNotifyStatus,
@@ -363,8 +367,8 @@ export function OperatorApp({
     if (openRepository !== null) chooseBoardRepository(openRepository);
   }, [openRepository, chooseBoardRepository]);
   const boardOptions = registered.map(row => ({ id: row.repository_id, label: registeredLabel(registered, row.repository_id) }));
-  // The parent list reads only while the Board page shows no board and no room.
-  const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardSubject === null && repositoryRoom === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
+  // The parent list reads only on the list layout: the overview reads its own, and a second read at the same time gets parents_busy.
+  const boardParents = useBoardParents(readBoardParents, workspace === 'board' && boardLayout(place.item) === 'list' && boardSubject === null ? boardListRepository(boardOptions, boardRepository) : null, refreshGeneration);
 
   useEffect(() => {
     const restore = () => setPlace(parseWorkspaceLocation(window.location.hash));
@@ -455,7 +459,7 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} mode={theme.mode} readBoardParents={readBoardParents} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} room={repositoryRoom} view={board} readBoard={readBoard} writeBossCommand={writeBossCommand} mode={theme.mode} readBoardParents={readBoardParents} readBoardSummaries={readBoardSummaries} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {/* Kept mounted after the first visit so the open plan review and the plan selection survive a page change. */}

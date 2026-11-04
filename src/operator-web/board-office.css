@@ -1,24 +1,12 @@
 /*
  * Board office view (#1755), after the Board pixel office mockup
  * docs/design/operator-console/mockups/board-pixel-office.html. The room is
- * one SVG pixel grid (office-scene.ts) coloured by the --px tokens; the
- * overview cards are box-shadow grids coloured by the --office tokens; no
- * image files. The rules are unlayered: App.tsx imports this file before
+ * one SVG pixel grid (office-scene.ts) coloured by the --px tokens, and so is
+ * each mini room of the overview; no image files. The rules are unlayered: App.tsx imports this file before
  * app.css, so a `@layer components` block here would put the layer below
  * Tailwind's base layer, and preflight would reset buttons and borders.
  */
 .board-office {
-  --office-wall: #E8DFCC;
-  --office-wall-dk: #DBCFB6;
-  --office-floor-1: #F7F1E6;
-  --office-floor-2: #F1E9DA;
-  --office-ink: #14202E;
-  --office-skin: #F2C9A0;
-  --office-mouth: #B4574A;
-  --office-shirt: #3B5470;
-  --office-agent-unknown: #FFFFFF;
-  --office-agent-unknown-dk: #EAE1CF;
-  --office-idle-room: #5E6670;
   --office-info: #2D5BB8;
   --office-ok: #1F8A5B;
   --office-warn: #D9870A;
@@ -26,17 +14,6 @@
   --office-term: #111B27;
 }
 :root[data-mode="dark"] .board-office {
-  --office-wall: #1B2D40;
-  --office-wall-dk: #14202E;
-  --office-floor-1: #16222F;
-  --office-floor-2: #13202C;
-  --office-ink: #0A121A;
-  --office-skin: #E6B98F;
-  --office-mouth: #9C4A3F;
-  --office-shirt: #74879B;
-  --office-agent-unknown: #14202E;
-  --office-agent-unknown-dk: #294056;
-  --office-idle-room: #2A3440;
   --office-info: #6FA8E6;
   --office-ok: #4CC38A;
   --office-warn: #E0B25C;
@@ -46,10 +23,10 @@
 
 /*
  * The one scene palette of the S0 art (#1790): day tokens, and the night set
- * in dark mode and in an idle room. Labels on the floor follow the scene.
+ * in dark mode and in an idle room or mini room. Labels on the floor follow the scene.
  */
 .board-office { --px-ink: #1B2433; --px-ink2: #34445C; --px-slate: #5B6D85; --px-mist: #9AA9BC; --px-cloud: #DCE4EC; --px-paper: #FFF9EE; --px-wall: #F1E3C6; --px-wallSh: #DCC7A0; --px-wood: #A06C3C; --px-woodDk: #6B4526; --px-floorA: #C99A64; --px-floorB: #BD8D58; --px-floorSh: #99693C; --px-deskTop: #F0DDB6; --px-deskFr: #D3B888; --px-skin: #F3CBA2; --px-skinSh: #D99A72; --px-shirt: #3F5874; --px-claude: #D46A3B; --px-claudeDk: #92421F; --px-codex: #3A6FD0; --px-codexDk: #21458F; --px-screen: #5BB1F2; --px-danger: #E2453C; --px-dangerDk: #9C2621; --px-warn: #F3B53F; --px-warnDk: #9A6410; --px-ok: #43A86C; --px-okDk: #25784A; --px-accent: #F28C3A; --px-leaf: #5E9C43; --px-sky: #9FD0F2; --px-text: #1B2433; --px-text-shadow: rgb(255 249 238 / .7); }
-:root[data-mode="dark"] .board-office, .board-office__scene[data-night] { --px-ink: #0A0F18; --px-ink2: #1C2638; --px-slate: #34445A; --px-mist: #5D6E85; --px-cloud: #8C9AAE; --px-paper: #E8E2D4; --px-wall: #2B3850; --px-wallSh: #222D42; --px-wood: #6E5138; --px-woodDk: #3E2E20; --px-floorA: #433E48; --px-floorB: #3B3741; --px-floorSh: #29262E; --px-deskTop: #8E7E6A; --px-deskFr: #6A5D4E; --px-skin: #D3A684; --px-skinSh: #9E7258; --px-shirt: #344963; --px-claude: #C8643A; --px-claudeDk: #85401F; --px-codex: #4F84DC; --px-codexDk: #2A4F96; --px-screen: #78C8FF; --px-danger: #FF5B4F; --px-dangerDk: #A3302A; --px-warn: #FFC85A; --px-warnDk: #B5821F; --px-ok: #52C98E; --px-okDk: #2E8058; --px-accent: #FF9C4A; --px-leaf: #3E6B3B; --px-sky: #142440; --px-text: #E8E2D4; --px-text-shadow: #0A0F18; }
+:root[data-mode="dark"] .board-office, .board-office__scene[data-night], .board-office__mini[data-night] { --px-ink: #0A0F18; --px-ink2: #1C2638; --px-slate: #34445A; --px-mist: #5D6E85; --px-cloud: #8C9AAE; --px-paper: #E8E2D4; --px-wall: #2B3850; --px-wallSh: #222D42; --px-wood: #6E5138; --px-woodDk: #3E2E20; --px-floorA: #433E48; --px-floorB: #3B3741; --px-floorSh: #29262E; --px-deskTop: #8E7E6A; --px-deskFr: #6A5D4E; --px-skin: #D3A684; --px-skinSh: #9E7258; --px-shirt: #344963; --px-claude: #C8643A; --px-claudeDk: #85401F; --px-codex: #4F84DC; --px-codexDk: #2A4F96; --px-screen: #78C8FF; --px-danger: #FF5B4F; --px-dangerDk: #A3302A; --px-warn: #FFC85A; --px-warnDk: #B5821F; --px-ok: #52C98E; --px-okDk: #2E8058; --px-accent: #FF9C4A; --px-leaf: #3E6B3B; --px-sky: #142440; --px-text: #E8E2D4; --px-text-shadow: #0A0F18; }
 
 .board-office { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
 .board-office__header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
@@ -68,19 +45,43 @@
 .board-office__meter-blocks > span[data-open] { border: 2px solid var(--text-color-kumo-subtle); }
 .board-office__meter[data-full] { color: var(--text-color-kumo-warning); }
 
-/* Overview. */
-.board-office__cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
-.board-office__card { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 12px; text-align: left; border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); color: var(--text-color-kumo-default); font: inherit; }
+/* Overview: the grid of the S0 page, 5 columns at its 1376 px width. */
+[data-board-office="overview"] { width: 100%; max-width: 1376px; margin-inline: auto; gap: 20px; }
+[data-board-office="overview"] .board-office__header { gap: 12px 20px; }
+[data-board-office="overview"] .board-office__header h1 { font-family: var(--font-display); font-size: 22px; letter-spacing: -.01em; }
+[data-board-office="overview"] .board-office__tools { gap: 8px; }
+.board-office__mascot { position: relative; width: 44px; height: 52px; flex: none; overflow: hidden; border-radius: 8px; background: var(--rh-accent-tint); box-shadow: inset 0 0 0 2px var(--rh-accent); }
+.board-office__mascot svg { position: absolute; left: 6px; top: 5px; image-rendering: pixelated; }
+.board-office__mascot svg[data-moved] { transform: translateY(-1px); }
+.board-office__stat { display: inline-flex; height: 28px; align-items: center; gap: 6px; padding: 0 10px; border-radius: 999px; font: 12px var(--font-mono); white-space: nowrap; }
+.board-office__stat > span { width: 8px; height: 8px; }
+.board-office__stat[data-tone="subtle"] { background: var(--color-kumo-base); color: var(--text-color-kumo-default); }
+.board-office__stat[data-tone="subtle"] > span { background: var(--color-kumo-line); }
+.board-office__stat[data-tone="info"] { background: var(--color-kumo-info-tint); color: var(--text-color-kumo-info); }
+.board-office__stat[data-tone="info"] > span { background: var(--office-info); }
+.board-office__stat[data-tone="warn"] { background: var(--color-kumo-warning-tint); color: var(--text-color-kumo-warning); }
+.board-office__stat[data-tone="warn"] > span { background: var(--office-warn); }
+.board-office__stat[data-tone="danger"] { background: var(--color-kumo-danger-tint); color: var(--text-color-kumo-danger); }
+.board-office__stat[data-tone="danger"] > span { background: var(--office-danger); }
+.board-office__stat[data-tone="accent"] { background: var(--rh-accent-tint); color: var(--text-color-kumo-strong); }
+.board-office__stat[data-tone="accent"] > span { background: var(--rh-accent); }
+.board-office__cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(256px, 1fr)); }
+.board-office__card { display: flex; min-width: 0; flex-direction: column; gap: 10px; padding: 12px; text-align: left; border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); color: var(--text-color-kumo-default); font: inherit; }
+.board-office__card[data-waiting] { box-shadow: 0 0 0 2px var(--rh-accent); }
 button.board-office__card { cursor: pointer; }
 button.board-office__card:hover { border-color: var(--office-info); }
-.board-office__card-name { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
-.board-office__card-name strong { font-family: var(--font-mono); font-size: 13px; color: var(--text-color-kumo-strong); }
+button.board-office__card:focus-visible { outline: 3px solid var(--color-kumo-brand); outline-offset: 2px; }
+.board-office__mini { display: block; width: 224px; height: 144px; flex: none; align-self: center; background: var(--color-kumo-recessed); box-shadow: 0 0 0 2px var(--px-ink); image-rendering: pixelated; }
+.board-office__card-name { display: flex; min-width: 0; align-items: baseline; gap: 8px; }
+.board-office__card-name strong { min-width: 0; overflow: hidden; font: 600 14px var(--font-mono); color: var(--text-color-kumo-strong); text-overflow: ellipsis; white-space: nowrap; }
 .board-office__card-name span { min-width: 0; overflow: hidden; font-size: 12px; color: var(--text-color-kumo-subtle); text-overflow: ellipsis; white-space: nowrap; }
 .board-office__card-chips { display: flex; flex-wrap: wrap; gap: 4px; }
-.board-office__thumb { position: relative; display: flex; height: 96px; flex-wrap: wrap; align-content: flex-end; gap: 4px 10px; padding: 26px 10px 8px; overflow: hidden; border: 2px solid var(--office-ink); background: repeating-conic-gradient(var(--office-floor-1) 0 25%, var(--office-floor-2) 0 50%) 0 0 / 16px 16px; }
-.board-office__thumb::before { position: absolute; inset: 0 0 auto; height: 18px; content: ""; background: var(--office-wall); border-bottom: 2px solid var(--office-wall-dk); }
-.board-office__thumb[data-idle] { align-items: center; justify-content: center; padding-top: 18px; background: var(--office-idle-room); color: #FFFFFF; font-size: 12px; }
-.board-office__thumb[data-idle]::before { background: color-mix(in srgb, var(--office-idle-room) 80%, #000000); border-color: transparent; }
+.board-office__card-chip { padding: 0 6px; font: 500 11.5px/18px var(--font-mono); }
+.board-office__card-chip[data-tone="subtle"] { background: var(--color-kumo-recessed); color: var(--text-color-kumo-default); }
+.board-office__card-chip[data-tone="warn"] { background: var(--color-kumo-warning-tint); color: var(--text-color-kumo-warning); }
+.board-office__card-chip[data-tone="danger"] { background: var(--color-kumo-danger-tint); color: var(--text-color-kumo-danger); }
+.board-office__card-chip[data-tone="ok"] { background: var(--color-kumo-success-tint); color: var(--text-color-kumo-success); }
+.board-office__card-chip[data-tone="accent"] { background: var(--rh-accent-tint); color: var(--text-color-kumo-strong); }
 .board-office__card-reason { margin: 0; font-size: 12px; color: var(--text-color-kumo-danger); }
 
 /* Room: one 16 px grid at an integer scale, 3x above 1100 px and 2x below. */
@@ -158,11 +159,6 @@ button.board-office__card:hover { border-color: var(--office-info); }
 .board-office__confirm-actions { display: flex; justify-content: flex-end; gap: 8px; }
 .board-office__confirm-actions button { height: 40px; padding: 0 16px; cursor: pointer; border: 1px solid var(--color-kumo-line); border-radius: 8px; background: var(--color-kumo-base); color: var(--text-color-kumo-strong); font-size: 14px; font-weight: 500; }
 .board-office__confirm-actions button[data-boss-confirm-send] { border-color: transparent; background: var(--color-kumo-brand); color: #FFFFFF; font-weight: 600; }
-
-/* Sprites: a 1×1 cell whose box-shadow paints the grid. */
-.board-office__sprite { position: relative; display: inline-block; flex: none; }
-.board-office__sprite > span:first-child { position: absolute; left: 0; top: 0; }
-.board-office__badge { position: absolute; display: grid; min-width: 16px; height: 12px; place-items: center; padding: 0 2px; border: 1px dashed #51647B; background: var(--office-agent-unknown); color: #51647B; font: 700 8px/1 var(--font-mono); }
 
 /* Legend dialog. */
 .board-office__legend { position: fixed; top: 50%; left: 50%; z-index: 50; display: flex; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); flex-direction: column; transform: translate(-50%, -50%); border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); box-shadow: 0 24px 48px rgb(0 0 0 / .2); }

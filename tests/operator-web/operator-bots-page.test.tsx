@@ -16,7 +16,7 @@ import { busyDevActivity } from '../../src/operator-web/fixtures/dev-activity';
 import { registryOf } from '../../src/operator-web/fixtures';
 
 const REGISTRY = registryOf(['repo-harness', 'repo-console']);
-import { parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
+import { DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
 
 let root: Root | null = null;
 let window: Window;
@@ -109,7 +109,7 @@ describe('navigation', () => {
   test('#bots is the last Setup page and refuses a parameter', async () => {
     expect(parseWorkspaceLocation('#bots')).toEqual({ workspace: 'bots', module: null, item: null });
     expect(workspaceHash({ workspace: 'bots', module: null, item: null })).toBe('#bots');
-    expect(parseWorkspaceLocation('#bots/hermes').workspace).toBe('home');
+    expect(parseWorkspaceLocation('#bots/hermes')).toEqual(DEFAULT_LOCATION);
     await mount('', props(serve(ok(busyBotAccess(NOW)))));
     const setup = all('[aria-labelledby="nav-group-setup"] a[data-workspace]').map(link => link.getAttribute('data-workspace'));
     expect(setup.at(-1)).toBe('bots');

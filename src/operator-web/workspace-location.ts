@@ -46,7 +46,6 @@ export interface WorkspaceLocation {
   readonly item: string | null;
 }
 
-const HOME: WorkspaceLocation = { workspace: 'home', module: null, item: null };
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const ISSUE_NUMBER = /^[1-9][0-9]{0,9}$/u;
 const REGISTERED_REPOSITORY_ID = /^repo_[0-9a-f]{16}$/u;
@@ -55,6 +54,8 @@ const REGISTERED_REPOSITORY_ID = /^repo_[0-9a-f]{16}$/u;
 export type BoardLayout = 'list' | 'office';
 /** A registered repository id is `repo_<16 hex>`, so this segment never names a repository. */
 const OFFICE_SEGMENT = 'office';
+/** The landing page: the page of an empty fragment, and of any fragment that names no valid page. `#home` stays Home. */
+export const DEFAULT_LOCATION: WorkspaceLocation = { workspace: 'board', module: null, item: OFFICE_SEGMENT };
 
 /** The board subject of a `#board/...` item: a registered repository id, its parent issue, the drawer issue and the layout. */
 export interface BoardPlace {
@@ -108,13 +109,13 @@ function decodeItem(value: string): string | null {
   return decoded.length > 0 && decoded.length <= ITEM_ID_LIMIT && !/[\u0000-\u001f\u007f]/u.test(decoded) ? decoded : null;
 }
 
-/** An empty or unknown fragment is Home. A malformed parameter also falls to Home. */
+/** An empty or unknown fragment is the default page. A malformed parameter also falls to the default page. */
 export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   const [name, parameter, ...rest] = hash.replace(/^#/u, '').split('/');
   if (name === 'docs') {
     if (parameter === undefined) return { workspace: 'docs', module: null, item: null };
     const segments = [parameter, ...rest].map(decodeItem);
-    return segments.some(segment => segment === null) ? HOME : { workspace: 'docs', module: null, item: segments.join('/') };
+    return segments.some(segment => segment === null) ? DEFAULT_LOCATION : { workspace: 'docs', module: null, item: segments.join('/') };
   }
   if (name === 'board') {
     if (parameter === undefined) return boardHomeLocation('list');
@@ -123,22 +124,22 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
     const room = boardRoom(item);
     if (room !== null) return boardRoomLocation(room);
     const place = boardPlace(item);
-    return place === null ? HOME : boardLocation(place);
+    return place === null ? DEFAULT_LOCATION : boardLocation(place);
   }
-  if (rest.length > 0) return HOME;
+  if (rest.length > 0) return DEFAULT_LOCATION;
   if (name === 'home' || name === 'repositories' || name === 'worktrees' || name === 'system' || name === 'agents' || name === 'skills' || name === 'hooks' || name === 'cli' || name === 'bots' || name === 'tests') {
-    return parameter === undefined ? { workspace: name, module: null, item: null } : HOME;
+    return parameter === undefined ? { workspace: name, module: null, item: null } : DEFAULT_LOCATION;
   }
   if (name === 'architecture') {
     if (parameter === undefined) return { workspace: 'architecture', module: null, item: null };
-    return CAPABILITY_ID.test(parameter) ? { workspace: 'architecture', module: parameter, item: null } : HOME;
+    return CAPABILITY_ID.test(parameter) ? { workspace: 'architecture', module: parameter, item: null } : DEFAULT_LOCATION;
   }
   if (name === 'tools') {
     if (parameter === undefined) return { workspace: 'tools', module: null, item: null };
     // Catalog ids already match the decoder's strict id pattern.
-    return TOOL_CATALOG.tools.some(tool => tool.id === parameter) ? { workspace: 'tools', module: null, item: parameter } : HOME;
+    return TOOL_CATALOG.tools.some(tool => tool.id === parameter) ? { workspace: 'tools', module: null, item: parameter } : DEFAULT_LOCATION;
   }
-  return HOME;
+  return DEFAULT_LOCATION;
 }
 
 export function workspaceHash({ workspace, module, item }: WorkspaceLocation): string {

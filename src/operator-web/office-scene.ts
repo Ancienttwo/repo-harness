@@ -1,7 +1,7 @@
 import type { AdvisorBossCommand } from '../core/board/advisor-seat';
 import type { DeskState } from './board-office';
 import {
-  agentBody, agentPalette, agentTagColor, BOSS, BOSS_PALETTE, CARROT, CARROT_PALETTE, CHAIR, CHAIR_PALETTE, glyph, PX_COLORS, SHADE_DARK, SHADE_LIGHT, SHADE_SUN, textWidth,
+  agentBody, agentPalette, agentTagColor, BOSS, BOSS_PALETTE, CARROT, CARROT_PALETTE, CHAIR, CHAIR_PALETTE, glyph, miniAgent, PX_COLORS, SHADE_DARK, SHADE_LIGHT, SHADE_SUN, textWidth,
   type BossPose, type FrontPose, type Outfit, type Pose, type PxColor, type PxMap, type SceneAgent, type Sprite, type SpritePalette,
 } from './office-sprites';
 
@@ -810,4 +810,90 @@ export function composeRoom(room: SceneRoom, view: SceneView): ComposedScene {
     effects(fb, effect, actor, f, height);
   }
   return { width: 320, height, paths: fb.paths(), labels, deskLabels, hits, tags };
+}
+
+export interface SceneMiniRoom {
+  readonly orchestrator: SceneAgent | null;
+  readonly advisor: SceneAgent | null;
+  readonly plan: boolean;
+  readonly needsYou: boolean;
+  readonly desks: readonly { readonly agent: SceneAgent; readonly state: DeskState }[];
+  /** The queue count; the summary names no agent, so each figure is an unknown agent. */
+  readonly queue: number;
+  readonly idle: boolean;
+}
+
+const MINI_WIDTH = 112;
+const MINI_HEIGHT = 72;
+const MINI_DESK_X = [2, 30, 58, 86] as const;
+const MINI_DESK_Y = [42, 57] as const;
+const MINI_DESKS = MINI_DESK_X.length * MINI_DESK_Y.length;
+const MINI_QUEUE = 4;
+const MINI_SOCKETS = 6;
+const MINI_DIM: PxMap = { floorA: 'floorSh', floorB: 'floorSh', wall: 'wallSh', wood: 'woodDk', deskTop: 'deskFr', deskFr: 'wood', mist: 'slate', cloud: 'mist', paper: 'cloud', slate: 'ink2' };
+
+function miniLead(fb: FrameBuffer, agent: SceneAgent | null, x: number, f: number): void {
+  if (agent !== null) fb.sprite(miniAgent(agent.kind, 'front'), x, 13 + (f % 6 < 3 ? -1 : 0), agentPalette(agent.kind, 'plain'));
+  fb.box(x - 2, 20, 11, 4, 'deskTop');
+}
+
+function miniDesk(fb: FrameBuffer, desk: SceneMiniRoom['desks'][number] | undefined, index: number, f: number): void {
+  const x = MINI_DESK_X[index % MINI_DESK_X.length]!;
+  const y = MINI_DESK_Y[index < MINI_DESK_X.length ? 0 : 1]!;
+  const coding = desk?.state === 'coding';
+  shadow(fb, x + 5, y + 6, 20, 6);
+  fb.box(x + 10, y, 9, 7, 'ink2');
+  fb.rect(x + 11, y + 1, 7, 4, coding ? 'screen' : 'ink');
+  if (coding) fb.hl(x + 12, y + 2, 2 + (f + index) % 4, 'paper');
+  fb.box(x + 5, y + 6, 20, 4, 'deskTop');
+  fb.box(x + 5, y + 9, 20, 3, 'deskFr');
+  if (desk === undefined) fb.box(x + 11, y + 11, 7, 3, 'slate');
+  else fb.sprite(miniAgent(desk.agent.kind, 'back'), x + 11, y + 8 + (coding && (f + index) % 2 !== 0 ? -1 : 0), agentPalette(desk.agent.kind, 'plain'));
+}
+
+/**
+ * One repository as a mini room on a 112x72 grid, after the overview page of
+ * the S0 mockup. The batch cart stays empty: the summary sends the total of
+ * all batches, not the batch that the cart holds.
+ */
+export function composeMiniRoom(room: SceneMiniRoom, { frame: f, night }: Pick<SceneView, 'frame' | 'night'>): readonly ScenePath[] {
+  const fb = new FrameBuffer(MINI_WIDTH, MINI_HEIGHT);
+  fb.rect(0, 0, MINI_WIDTH, 12, 'wall');
+  fb.hl(0, 0, MINI_WIDTH, 'wallSh');
+  fb.rect(0, 12, MINI_WIDTH, 3, 'wood');
+  fb.hl(0, 14, MINI_WIDTH, 'woodDk');
+  for (let row = 0; row * 4 + 15 < MINI_HEIGHT; row += 1) {
+    const y = 15 + row * 4;
+    fb.rect(0, y, MINI_WIDTH, 4, row % 2 !== 0 ? 'floorB' : 'floorA');
+    fb.hl(0, y, MINI_WIDTH, 'floorSh');
+    for (let x = (row * 11) % 24; x < MINI_WIDTH; x += 24) fb.vl(x, y, 4, 'floorSh');
+  }
+  if (night) fb.glow(104, 50, 10, SHADE_LIGHT);
+  fb.box(5, 2, 14, 9, 'sky', 'woodDk');
+  fb.vl(11, 3, 7, 'wood');
+  fb.hl(6, 6, 12, 'wood');
+  if (night) fb.px(15, 4, 'paper'); else fb.px(7, 9, 'paper');
+  if (room.plan) { fb.box(42, 1, 28, 10, 'paper'); fb.hl(45, 4, 14, 'ink'); fb.hl(45, 7, 19, 'slate'); }
+  if (room.needsYou) { fb.frame(94, 0, 16, 15, 'accent'); fb.box(86, 1, 5, 7, 'accent'); fb.vl(88, 2, 3, 'ink'); fb.px(88, 6, 'ink'); }
+  fb.box(96, 1, 12, 14, 'wood');
+  fb.box(98, 3, 8, 3, 'ink2', 'ink2');
+  fb.px(105, 9, 'warn');
+  shadow(fb, 32, 16, 48, 12);
+  fb.box(32, 16, 48, 10, 'mist');
+  fb.box(32, 25, 48, 3, 'wood');
+  miniLead(fb, room.orchestrator, 42, f);
+  miniLead(fb, room.advisor, 63, f + 3);
+  fb.dashed(20, 29, 44, 12, 'warn', 0);
+  for (let index = 0; index < Math.min(room.queue, MINI_QUEUE); index += 1) fb.sprite(miniAgent('unknown', 'front'), 52 - index * 10, 31 + ((f + index) % 2 !== 0 ? -1 : 0), agentPalette('unknown', 'plain'));
+  fb.box(78, 31, 30, 8, 'cloud');
+  for (let socket = 0; socket < MINI_SOCKETS; socket += 1) fb.px(81 + socket * 4, 34, 'slate');
+  fb.px(81, 39, 'ink'); fb.px(104, 39, 'ink');
+  fb.box(102, 40, 7, 4, night ? 'warn' : 'paper');
+  fb.vl(105, 44, 6, 'ink');
+  for (let index = 0; index < MINI_DESKS; index += 1) miniDesk(fb, room.desks[index], index, f);
+  if (room.idle) {
+    fb.shade(0, 0, MINI_WIDTH, MINI_HEIGHT, MINI_DIM);
+    fb.box(102, 40, 7, 4, 'warn');
+  }
+  return fb.paths();
 }

@@ -266,6 +266,17 @@ export function agentPalette(kind: AgentKind, outfit: Outfit): SpritePalette {
   return kind === 'claude' ? { ...palette, u: 'paper', ...OUTFITS[outfit].palette } : palette;
 }
 
+/** The 7-8 pixel agents of the overview's mini rooms: the same bodies at the mini grid, in the same palette. */
+const MINI_SPRITES: Readonly<Record<'person' | 'claude' | 'codex', { readonly front: Sprite; readonly back: Sprite }>> = {
+  person: { front: ['.kkkkk.', 'kjhhhhk', 'kHHHHHk', 'ksesesk', '.kssSk.', 'kbbbbbk', 'kbbbbbk', '.kd.dk.'], back: ['.kkkkk.', 'kjhhhhk', 'kHHHHHk', 'krrrrrk', '.kbbbk.', 'kbbbbbk', 'kbbbbbk'] },
+  claude: { front: ['........', '.jhhhhh.', '.hehheh.', 'hhhhhhhh', '.HHHHHH.', '.H.HH.H.'], back: ['.jhhhhh.', '.hhhhhh.', 'hhhhhhhh', '.HHHHHH.', '.H.HH.H.'] },
+  codex: { front: ['.h....h.', '.hhhhhh.', 'hweyyewh', '.hjjjjh.', '.hjjjjh.', '..y..y..'], back: ['.h....h.', '.hhhhhh.', 'HhhhhhhH', '.hHhhHh.', '.hhhhhh.'] },
+};
+
+export function miniAgent(kind: AgentKind, facing: 'front' | 'back'): Sprite {
+  return MINI_SPRITES[kind === 'claude' || kind === 'codex' ? kind : 'person'][facing];
+}
+
 export const CHAIR: Sprite = [
   '...kkkkkkkkkkkk...', '..kmmlllllllllMk..', '..kmllllllllllMk..', '..klllllllllllMk..', '..klllllllllllMk..', '...kMMMMMMMMMMk...',
   '....kkkkkkkkkk....', '........kk........', '.....kkkkkkkk.....', '....kk......kk....',
