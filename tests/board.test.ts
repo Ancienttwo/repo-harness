@@ -21,6 +21,7 @@ import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/paren
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
+import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -161,6 +162,45 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
     ['R5', 'tier_label_missing', '#1494 #1479 .ai/harness/policy.json (unowned) src/effects/terminal/herdr-decision.ts (unowned)'],
     ['R5', 'tier_label_missing', '#1499 #1476 .ai/harness/policy.json (unowned) src/core/sessions/task-sessions.ts (unowned)'],
   ]);
+});
+
+test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
+  const board = replay();
+  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 });
+  const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
+  const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
+    block },
+    pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
+      : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
+  expect(boardSummary(planned)).toMatchObject({ queue: 0, ci_failures: 1, batch: { accepted: 1, size: 4 } });
+  const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
+  const reopened: BoardV1 = { ...planned,
+    items: planned.items.map(item => item.number === 1475 ? { ...item, pull_requests: [1491, 1500] } : item),
+    pull_requests: [...planned.pull_requests.map(pr => pr.number === 1491 ? { ...pr, state: 'closed' as const } : pr),
+      { ...accepted, number: 1500, state: 'open', acceptance: { status: 'not_accepted' } }],
+  };
+  expect(boardSummary(reopened)).toMatchObject({ queue: 1, batch: { accepted: 0, size: 4 } });
+  expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
+    ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
+  expect(boardSummary({ ...planned, plan: { status: 'absent', truncated: false } }).batch).toEqual({ accepted: null, size: null });
+  expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
+    block: { ...block, batches: [] } } }).batch).toEqual({ accepted: 0, size: 0 });
+});
+
+test('one strict summary decoder checks snapshots and route rows', () => {
+  const row = { parent: 1474, status: 'observed', observed_at: REPLAY_NOW.toISOString(),
+    summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, needs_you: 3 } } as const;
+  const response = { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
+  expect(decodeBoardSummaries(response)).toEqual(response);
+  expect(decodeBoardSummaries({ ...response, parents: [{ parent: 1474, status: 'not_read' }, { parent: 1651, status: 'unavailable', reason: 'snapshot_invalid' }] }).parents).toHaveLength(2);
+  for (const invalid of [{ ...response, protocol: 2 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
+    { ...response, extra: 1 }, { ...response, parents: [row, row] }, ...[
+      { ...row, observed_at: 'yesterday' }, { ...row, observed_at: '2026-02-31T00:00:00Z' }, { ...row, parent: 0 }, { ...row, extra: 1 },
+      { ...row, summary: { ...row.summary, queue: -1 } }, { ...row, summary: { ...row.summary, needs_you: 0.5 } },
+      { ...row, summary: { ...row.summary, batch: { accepted: 3, size: 2 } } },
+      { ...row, summary: { ...row.summary, batch: { accepted: null, size: 2 } } },
+      { parent: 1474, status: 'unavailable', reason: '' }, { parent: 1474, status: 'not_read', summary: row.summary },
+    ].map(parent => ({ ...response, parents: [parent] }))]) expect(() => decodeBoardSummaries(invalid)).toThrow('board summaries invalid');
 });
 
 test('decoders refuse an unknown protocol or kind', () => {
