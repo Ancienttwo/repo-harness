@@ -144,8 +144,8 @@ drift with `repo-harness install --state`. Use the installed hook with a
 disposable HOME and scratch repository for the established probe:
 `PreToolUse --route edit` on an `_ops/` target exits 2; `Stop --route default`
 and `SessionStart --route default` exit 0. Check that the restarted Operator
-serves the matching web bundle and the protocol 2 parent list. No probe
-result is recorded yet.
+serves the matching web bundle and the protocol 2 parent list. The owner
+machine results are in Publication below (#1804).
 
 ## Hosted CI
 
@@ -208,8 +208,8 @@ result is recorded yet.
 
 - Host typecheck and the bot fixture test must pass before handoff is
   accepted. Record the exact subject and environment; no assertions change.
-- Advisor pre-publish smoke: PASS (see Publication). Owner post-upgrade
-  proof remains pending. This prep makes no skill-effectiveness or
+- Advisor pre-publish smoke and owner post-upgrade proof: PASS (see
+  Publication). This prep makes no skill-effectiveness or
   production acceptance claim.
 
 ## Publication
@@ -232,7 +232,31 @@ result is recorded yet.
   GitHub Release https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.3.
 - `check-release-published.sh 0.26.3`: OK; runtime-evidence-receipt valid
   (published_tarball, clean_install, installed_hook_readback).
-- Owner machine upgrade, hook probe and Operator read-back: pending advisor.
+- Owner machine upgrade and post-upgrade probe: advisor t11's report in
+  #1804, 2026-11-04 UTC (owner M82 item 4).
+  - 20:10:12Z: `bun add -g repo-harness@0.26.3 --no-cache` installed global
+    0.26.3.
+  - 20:10:22Z: `repo-harness update --version 0.26.3`, run from `/tmp`:
+    runtime reconcile ok, receipt
+    `sha256:e0745637a223ac7644838d82719f767efc251c2864ec8a3caca307817325c7df`.
+    Global working rules unchanged; hc 0.1.17 unchanged; 22 leftovers,
+    0 removable.
+  - `repo-harness install --state`: protocol 3, core 0.26.3, all 7 plugins
+    0.26.3, selection all, applied 2026-11-04T20:10:29.641Z, drift consistent
+    (no missing owners, no surface drift).
+  - Hook probe with the installed hook, disposable HOME and scratch
+    repository: PreToolUse edit on `_ops` exit 2, Stop default 0,
+    SessionStart default 0, no catalog error; 0 install-profile sections.
+    `dist/oar-review-host.js` and `dist/operator-ui/index.html` are present.
+  - Operator on port 4318 restarted on 0.26.3 at 20:10:39Z (pid 43744,
+    own session). `GET /` returned 200 with the same assets as the packaged
+    `dist/operator-ui/index.html`: `index-D7rPKSwt.js`, `index-BNoMxGvm.css`,
+    `rolldown-runtime-hePW80VL.js`. `/api/v1/quota` returned 200,
+    `repo-harness.quota.v1`.
+    `/api/v1/repositories/repo_d6a7c6d6950c10aa/board/parents` returned 200,
+    protocol 2 (1 parent, 5 repository seats).
+  - Pages opened before 20:10:39Z need a reload before a write because the
+    write token belongs to the server process (#1795).
 
 ## Rollback
 
