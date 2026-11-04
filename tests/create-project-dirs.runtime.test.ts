@@ -906,6 +906,7 @@ describe("create-project-dirs runtime smoke", () => {
         JSON.stringify({
           external_tooling: {
             routing: { complex: "retired-provider", simple: "waza", knowledge: "gbrain" },
+            herdr_core: { min_version: "0.1.16" },
           },
           agentic_development: {
             routing: {
@@ -938,8 +939,11 @@ describe("create-project-dirs runtime smoke", () => {
       );
       expect(pythonOnly.status).toBe(0);
       expect(readFileSync(pythonOutput, "utf-8")).toBe(readFileSync(primaryOutput, "utf-8"));
+      // Both merges delete the retired hc pin key and report it.
+      for (const run of [primary, pythonOnly]) expect(run.stdout).toContain("[repo-harness] removed retired policy keys: external_tooling.herdr_core\n");
 
       const policy = JSON.parse(readFileSync(pythonOutput, "utf-8"));
+      expect(policy.external_tooling).not.toHaveProperty("herdr_core");
       expect(policy.external_tooling.routing).toEqual({ simple: "waza" });
       expect(policy.agentic_development.routing).toMatchObject({
         product_discovery: "parent-agent:geju",

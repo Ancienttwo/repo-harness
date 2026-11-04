@@ -16,6 +16,7 @@ import { MCP_AUDIT_LOG_RELATIVE_PATH } from '../../src/cli/mcp/audit';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { decodeBotAccessSnapshot, projectMcpAuditEntry, projectMcpDoctor, type BotAccessSnapshotV1 } from '../../src/core/operator/bot-access';
 import { botRegistryPath, registerBot } from '../../src/effects/bot-registry';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
 import { fakeHc } from '../helpers/fake-hc';
 
 const NOW = new Date('2026-10-27T00:00:00.000Z');
@@ -107,7 +108,7 @@ describe('Bot access collector', () => {
       }] });
       expect(snapshot.hc).toEqual({
         state: 'ok',
-        version: { state: 'ok', value: { state: 'aligned', expected: { min_version: '0.1.17' }, actual: { version: '0.1.17' } } },
+        version: { state: 'ok', value: { state: 'aligned', expected: { min_version: HC_MIN_VERSION }, actual: { version: HC_MIN_VERSION } } },
         herdr_app: { state: 'not_pinned' },
         terminals: { state: 'ok', value: [
           { address: 't12', name: 'task-1f0c2a9e4b7d3c5a8e61', status: 'working' },
@@ -140,8 +141,6 @@ describe('Bot access collector', () => {
   test('the real mcp doctor --json output projects without paths or endpoints, and the store stays unwritten', async () => {
     const f = fixture();
     try {
-      // The doctor counts a repository with a policy as adopted; this case keeps the repository unadopted.
-      f.hc.setPin(null);
       const before = readdirSync(f.home).sort();
       const result = await runBotAccessCommand(process.execPath, MCP_DOCTOR_ARGV, { cwd: BOT_ACCESS_CWD, env: { ...f.env, NO_COLOR: '1' }, timeout_ms: 60_000 });
       expect(result.ok).toBe(true);
@@ -153,14 +152,14 @@ describe('Bot access collector', () => {
     } finally { f.cleanup(); }
   }, 90_000);
 
-  test('a core below the pin shows both versions and reads no terminal; a missing hc, a stopped core and a missing pin are named', async () => {
+  test('a core below the package pin shows both versions and reads no terminal; a missing hc and a stopped core are named', async () => {
     const f = fixture();
     const collect = () => collectBotAccess({ env: f.env, now: () => NOW, run_command: async () => ({ ok: false, code: 'failed' }), read_notify: notifyOk });
     try {
       f.hc.setVersion('0.1.15');
       const mismatch = await collect();
       expect(mismatch.hc).toEqual({
-        state: 'ok', version: { state: 'ok', value: { state: 'mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } } },
+        state: 'ok', version: { state: 'ok', value: { state: 'mismatch', expected: { min_version: HC_MIN_VERSION }, actual: { version: '0.1.15' } } },
         herdr_app: { state: 'not_pinned' }, terminals: { state: 'unavailable', reason: 'hc_version_mismatch' },
       });
       expect(f.hc.argv().some(line => line.startsWith('events'))).toBe(false);
@@ -168,17 +167,12 @@ describe('Bot access collector', () => {
 
       f.hc.setVersion(null);
       expect((await collect()).hc).toEqual({ state: 'unavailable', reason: 'hc_unreachable' });
-      f.hc.setVersion('0.1.17');
+      f.hc.setVersion(HC_MIN_VERSION);
       const missing = await collectBotAccess({ env: { ...f.env, PATH: '/bin:/usr/bin' }, now: () => NOW, run_command: async () => ({ ok: false, code: 'failed' }), read_notify: notifyOk });
       // Only a fake hc is ever on PATH here; the system directories hold none.
       expect(missing.hc).toEqual({ state: 'unavailable', reason: 'hc_missing' });
       f.hc.failEvents(true);
       expect(hcOk(await collect()).terminals).toEqual({ state: 'unavailable', reason: 'hc_terminals_failed' });
-      f.hc.setPin(null);
-      const unpinned = await collect();
-      expect(unpinned.hc).toEqual({ state: 'ok', version: { state: 'unavailable', reason: 'hc_pin_unavailable' }, herdr_app: { state: 'not_pinned' },
-        terminals: { state: 'unavailable', reason: 'hc_pin_unavailable' } });
-      expect(decodeBotAccessSnapshot(unpinned)).toEqual(unpinned);
     } finally { f.cleanup(); }
   });
 
@@ -322,13 +316,13 @@ describe('Bot access collector', () => {
         value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, terminals: { state: 'ok', value: [{ address: 'pane-1', name: null, status: 'idle' }] } } : null }),
         value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'ok', value: { state: 'aligned', expected: { min_version: '0.1.17' }, actual: { version: '/usr/bin/hc' } } } } : null }),
         value => ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, herdr_app: { state: 'aligned' } } : null }),
-        // Each terminals reason names one version state: aligned → failed, mismatch → mismatch, no pin → no pin.
+        // Each terminals reason names one version state: aligned → failed, mismatch → mismatch. The version has no unavailable reason.
         ...(['hc_version_mismatch', 'hc_pin_unavailable'] as const).map(reason => (value: BotAccessSnapshotV1) =>
           ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, terminals: { state: 'unavailable', reason } } : null })),
         ...(['hc_terminals_failed', 'hc_pin_unavailable'] as const).map(reason => (value: BotAccessSnapshotV1) =>
           ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'ok', value: { state: 'mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } } },
             terminals: { state: 'unavailable', reason } } : null })),
-        ...(['hc_terminals_failed', 'hc_version_mismatch'] as const).map(reason => (value: BotAccessSnapshotV1) =>
+        ...(['hc_terminals_failed', 'hc_version_mismatch', 'hc_pin_unavailable'] as const).map(reason => (value: BotAccessSnapshotV1) =>
           ({ ...value, hc: value.hc.state === 'ok' ? { ...value.hc, version: { state: 'unavailable', reason: 'hc_pin_unavailable' }, terminals: { state: 'unavailable', reason } } : null })),
         value => ({ ...value, protocol: 1 }),
         value => ({ ...value, notify: value.notify.state === 'ok' ? { ...value.notify, deliveries: { ...value.notify.deliveries, slack: { at: null, result: 'sent' } } } : null }),

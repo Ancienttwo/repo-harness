@@ -213,7 +213,7 @@ function SourceBanners({ board, refreshFailed, unevaluated, t }: {
 }) {
   const rows: { readonly key: string; readonly text: string }[] = [];
   if (refreshFailed !== null) rows.push({ key: 'refresh', text: t('board.banner.refreshFailed', { reason: t(`board.reason.${refreshFailed}` as OperatorMessageKey) }) });
-  if (board.execution.status === 'unavailable') rows.push({ key: 'execution', text: t('board.banner.execution', { reason: board.execution.reason }) });
+  if (board.execution.status === 'unavailable') rows.push({ key: 'execution', text: board.execution.reason === 'no_seat_terminals' ? t('board.banner.execution.no_seat_terminals') : t('board.banner.execution', { reason: board.execution.reason }) });
   if (board.daily_run.status === 'unavailable') rows.push({ key: 'daily', text: t('board.banner.dailyRun', { reason: board.daily_run.reason }) });
   if (board.plan.status === 'unavailable') rows.push({ key: 'plan', text: t('board.banner.plan', { reason: board.plan.reason }) });
   if (board.tooling.hc.status === 'unavailable') rows.push({ key: 'hc', text: t('board.banner.hc', { reason: board.tooling.hc.reason }) });

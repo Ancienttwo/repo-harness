@@ -363,7 +363,8 @@ export function hcLabelPairs(labels: HcLabels): string[] {
 /**
  * `hc label`: set repo-harness labels on a terminal that `herdrAppDo('tab.new' | 'pane.split')` just created.
  * That terminal has no labels yet, so this is the one call that does not first require a repo-harness label;
- * use it only with the `t<n>` address that the placement returned.
+ * use it only with the `t<n>` address that the placement returned, or with `HC_TERMINAL_ID` inside that terminal
+ * (`repo-harness seats label`, #1695).
  */
 export function hcLabel(terminalAddress: string, labels: HcLabels, options: HerdrCoreOptions = {}): HcTerminal {
   return ownedTerminal(hc('label', ['--', address(terminalAddress), ...hcLabelPairs(labels)], options));

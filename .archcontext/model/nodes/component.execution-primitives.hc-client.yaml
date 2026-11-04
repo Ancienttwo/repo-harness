@@ -13,4 +13,6 @@ responsibilities:
   - Hold the six hc acts hcRun, hcSend, hcKill, hcRm, hcLabel and herdrAppDo for direct callers in task-agent-host only. The attention host port in this file also runs hc run and hc send for the board command. ADR-0002 requires that an operator act calls a core command; this stays a review rule until an operator act appears.
 source:
   include:
+    - src/core/operator/herdr-core-pin.json
+    - src/core/operator/herdr-pin.ts
     - src/effects/terminal/herdr-core.ts

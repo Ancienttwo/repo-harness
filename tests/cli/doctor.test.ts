@@ -25,6 +25,7 @@ import { buildManagedHooks, MANAGED_TAG } from '../../src/cli/installer/managed-
 import { parseSkillSurfaceCatalog } from '../../src/core/skill-surface/catalog';
 import { writeNotifyInstallRecord } from '../../src/effects/terminal/herdr-notify-install';
 import { notifyRelayDoctorCheck } from '../../src/cli/commands/herdr';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
 
 const DOCTOR_CHECK_TIMEOUT_MS = 15000;
 // The default selection on a host without `pi` on PATH.
@@ -136,8 +137,7 @@ afterEach(() => {
 const fakeHcBin = fs.realpathSync(fs.mkdtempSync(path.join(os.tmpdir(), 'repo-harness-doctor-hc-')));
 const pathBeforeFakeHc = process.env.PATH;
 beforeAll(() => {
-  const policy = JSON.parse(fs.readFileSync(path.join(import.meta.dir, '..', '..', '.ai/harness/policy.json'), 'utf8'));
-  writeExecutable(path.join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${policy.external_tooling.herdr_core.min_version}\\n'\n`);
+  writeExecutable(path.join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${HC_MIN_VERSION}\\n'\n`);
   process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
 });
 afterAll(() => {

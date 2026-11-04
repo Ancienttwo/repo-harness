@@ -275,24 +275,6 @@ export function defaultPolicy(documentationProfile: string, documentationLanguag
       reference_resolver: "repo-harness docs path <doc-id>",
     },
     external_tooling: {
-      // Projection of the canonical repository pin; herdr-runtime-pin tests guard drift.
-      herdr_core: {
-        "min_version": "0.1.17",
-        "release_assets": {
-          "linux-x86_64": {
-            "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-linux-x86_64.tar.gz",
-            "sha256": "82ec44043f6894bfdb716b979b87cda43fd7fa46b0104e7b7bd93e64d1a9b877"
-          },
-          "macos-aarch64": {
-            "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-macos-aarch64.tar.gz",
-            "sha256": "cedbd4d4d9ba1385588198dd4d3c67d2654478f33add5b6445d4d0eb9da5fcf3"
-          },
-          "macos-x86_64": {
-            "url": "https://releases.herdr.dev/core/0.1.17/herdr-core-macos-x86_64.tar.gz",
-            "sha256": "e2dc3211edb1f1c77d0e73dd76c1426636d71050f34a5303916a56d363d7062b"
-          }
-        }
-      },
       routing: {
         simple: "waza",
       },
@@ -670,6 +652,11 @@ export function planStandardAdoption(opts: StandardPlanOptions): { operations: A
   if (agentFleet && Array.isArray(agentFleet.managed_agents) && agentFleet.managed_agents.includes("orchestrator")) {
     agentFleet.managed_agents = agentFleet.managed_agents.filter((role) => role !== "orchestrator");
     retiredPolicyKeys.push("external_tooling.agent_fleet.managed_agents[orchestrator]");
+  }
+  // The hc floor ships in the package (#1686). Remove this step when no registered repository policy has the key.
+  if (Object.hasOwn(externalTooling, "herdr_core")) {
+    delete externalTooling.herdr_core;
+    retiredPolicyKeys.push("external_tooling.herdr_core");
   }
   const externalRouting = isObject(externalTooling.routing) ? externalTooling.routing : {};
   const retiredComplexProvider = typeof externalRouting.complex === "string" ? externalRouting.complex : null;

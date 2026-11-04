@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useState } from 'react';
+import { memo, useCallback, useMemo, useState, type ReactNode } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -77,10 +77,11 @@ function Legend({ t }: { readonly t: OperatorTranslate }) {
   </dl>;
 }
 
-function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
+function TopologyCanvas({ map, layer, pullRequest, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
+  readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
@@ -168,6 +169,7 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
       </ReactFlow>
     </div>
     <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selectedId ?? undefined}>
+      {side}
       {selectedId === null ? <p className="detail-quiet">{t('architecture.map.pick')}</p>
         : <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={selectedId} onModule={onModule} t={t}>
           {selectedBox !== null && selectedBox.parent !== null && <p data-runs-in={selectedBox.parent}>{t('architecture.topology.in', { name: names.get(selectedBox.parent) ?? selectedBox.parent })}</p>}
@@ -184,11 +186,12 @@ function TopologyCanvas({ map, layer, pullRequest, onModule, t }: {
   </div>;
 }
 
-/** The topology base map: namespaces, processes, mounts and external systems of the model. */
-export function ArchitectureTopology({ map, layer, pullRequest, onModule, t }: {
+/** The topology base map: namespaces, processes, mounts and external systems of the model. `side` leads the side panel. */
+export function ArchitectureTopology({ map, layer, pullRequest, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
+  readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
@@ -196,7 +199,10 @@ export function ArchitectureTopology({ map, layer, pullRequest, onModule, t }: {
   const layout = useMemo(() => layoutTopology(map, placement), [map, placement]);
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
   if (!layout.boxes.some(box => box.node.kind !== 'external-system')) {
-    return <Note part="topology.empty" reason="topology_undeclared">{t('architecture.topology.none')}</Note>;
+    return <div className="architecture-map">
+      <Note part="topology.empty" reason="topology_undeclared">{t('architecture.topology.none')}</Note>
+      <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')}>{side}</aside>
+    </div>;
   }
   const names = new Map(map.nodes.map(node => [node.id, node.name]));
   const relations = new Map(map.relations.map(relation => [relation.id, relation]));
@@ -214,6 +220,6 @@ export function ArchitectureTopology({ map, layer, pullRequest, onModule, t }: {
       </details>
     </Note>}
     {layout.stacked.length > 0 && <Note part="topology.mount_order" reason="mount_order_not_on_map">{t('architecture.topology.stacked', { names: layout.stacked.map(id => names.get(id) ?? id).join(', ') })}</Note>}
-    <ReactFlowProvider><TopologyCanvas key={map.commit} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>
+    <ReactFlowProvider><TopologyCanvas key={map.commit} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>
   </div>;
 }
