@@ -725,7 +725,8 @@ describe('operator serve command and HTTP boundary', () => {
     expect(spawnSync('git', ['init', '-q'], { cwd: repository }).status).toBe(0);
     const gh = join(scratch, 'gh');
     writeFileSync(gh, '#!/bin/sh\n[ "$*" = "api --hostname github.com repos/{owner}/{repo}" ] && echo \'{"id":1186405141}\' && exit 0\nexit 1\n');
-    const labels = '{"repo-harness.seat":"advisor","repo-harness.repository":"1186405141","repo-harness.parent":"1503"}';
+    // The advisor seat carries no parent label: one advisor serves the repository (#1780).
+    const labels = '{"repo-harness.seat":"advisor","repo-harness.repository":"1186405141"}';
     const secret = `ghp_${'a'.repeat(36)}`;
     writeFileSync(join(scratch, 'hc'), [
       '#!/bin/sh', `printf '%s\\n' "$*" >> ${JSON.stringify(join(scratch, 'hc.log'))}`, 'case "$1" in',
@@ -753,9 +754,9 @@ describe('operator serve command and HTTP boundary', () => {
         code: 'advisor_send_unconfirmed', failure: { protocol: 1, kind: 'repo-harness.advisor-seat-send-failure', github_repository_id: 1186405141, parent: 1503, terminal: 't9', code: 'advisor_send_unconfirmed' } });
       const log = readFileSync(join(scratch, 'hc.log'), 'utf8').split('\n');
       expect(log.filter(line => line !== '' && !line.startsWith('get '))).toEqual([
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', `send --json -- t9 line 1`, 'line 2',
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'read --json --lines 200 -- t9',
-        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'send --json -- t9 again']);
+        'ls --json --label repo-harness.repository=1186405141', `send --json -- t9 line 1`, 'line 2',
+        'ls --json --label repo-harness.repository=1186405141', 'read --json --lines 200 -- t9',
+        'ls --json --label repo-harness.repository=1186405141', 'send --json -- t9 again']);
     } finally {
       for (const path of [repository, scratch, writable.home, readOnly.home]) rmSync(path, { recursive: true, force: true });
     }

@@ -479,17 +479,17 @@ export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<str
   return invoke(program, rest, options);
 }
 
-/** The board host port (#1505): seat terminals of one parent issue by its parent label, the seat labels of one repository (#1659), the hc version, and the advisor seat send and read (#1756). */
+/** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the seat labels of one repository (#1659), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
     if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
     throw error;
   };
   return {
-    seatTerminals: (repositoryId, parent) => {
+    seatTerminals: (repositoryId) => {
       try {
         // A watcher terminal (#1509) carries the repository and parent labels too, but it is a program, not a seat.
-        const terminals = hcList({ [RH_LABEL.repository]: repositoryId, [RH_LABEL.parent]: String(parent) }, options)
+        const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, options)
           .map(({ address, agent }) => ({ ...hcGet(address, options), agent }))
           .filter(terminal => terminal.labels[RH_LABEL.service] === undefined)
           .map((terminal) => {
@@ -497,7 +497,7 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
             return {
               address: terminal.address, name: terminal.name, agent: terminal.agent, state: terminal.state, status: terminal.status?.state ?? null,
               status_kind: terminal.status?.kind ?? null, status_ms: terminal.status_ms ?? null, turn: terminal.turn,
-              labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr) },
+              labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
             };
           });
         return { status: 'observed', terminals };

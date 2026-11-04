@@ -113,7 +113,7 @@ export interface BoardSeatTerminalReadV1 {
   readonly status_kind: string | null;
   readonly status_ms: number | null;
   readonly turn: number;
-  readonly labels: { readonly seat?: string; readonly issue?: string; readonly pr?: string };
+  readonly labels: { readonly seat?: string; readonly issue?: string; readonly pr?: string; readonly parent?: string };
 }
 
 /**
@@ -123,11 +123,12 @@ export interface BoardSeatTerminalReadV1 {
  */
 export interface BoardHostPortsV1 {
   /**
-   * Terminals that carry both the repository label (the GitHub numeric
-   * repository id, decimal) and the parent label. One hc core can host seats
-   * of several repositories that share a parent number.
+   * The terminals that carry the repository label (the GitHub numeric
+   * repository id, decimal), with their raw parent label; watcher terminals
+   * are left out. One hc core can host seats of several repositories that
+   * share a parent number. The caller selects the seats of one parent.
    */
-  readonly seatTerminals: (repositoryId: string, parent: number) =>
+  readonly seatTerminals: (repositoryId: string) =>
     | { readonly status: 'observed'; readonly terminals: readonly BoardSeatTerminalReadV1[] }
     | { readonly status: 'unavailable'; readonly reason: string };
   /**
