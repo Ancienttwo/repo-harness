@@ -5,7 +5,7 @@ import { Window } from 'happy-dom';
 import { isGroupNode, moduleDetail, moduleGraph, type ModelNode, type ModelRelation, type ModuleDetailV1, type ModuleIndexV1 } from '../../src/core/architecture/module-view';
 import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/core/review/module-review-prompt';
 import { OperatorApp } from '../../src/operator-web/App';
-import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
+import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
 import {
@@ -1194,21 +1194,35 @@ describe('architecture history', () => {
     expect(shape.edges.size).toBe(0);
   });
 
-  test('an error milestone shows only its code, the base across it is named, and the next page pins the first head', async () => {
+  test('the newest page shows first, an error milestone shows only its code, the base across it is named, and an older page pins the first head', async () => {
+    // archctx pages run oldest first: a one-milestone read gives the head and the total (50), then the newest page.
     const gap = page('gap');
+    const removal = page('removal');
     const paths: string[] = [];
+    const sources: (ArchitectureSource | null)[] = [];
     respond = path => {
       paths.push(path);
-      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' ? gap : page('removal'), 200, '"history-1"');
+      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' && paths.length > 2 ? removal : gap, 200, '"history-1"');
     };
-    await mount(workspace());
+    await mount(workspace({ onSource: source => sources.push(source) }));
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
     await settle();
-    expect(paths).toEqual([`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25`]);
+    expect(paths).toEqual([
+      `/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=1`,
+      `/api/v1/repositories/${REPO}/architecture/history?offset=25&limit=25&ref=${gap.head}`,
+    ]);
+    expect([...document.querySelectorAll('li[data-milestone-rev]')].map(item => [item.getAttribute('data-milestone-rev'), item.getAttribute('aria-selected')]))
+      .toEqual([...gap.milestones].reverse().map((item, index) => [item.rev, String(index === 0)]));
+    expect(sources.at(-1)).toEqual({ head: gap.head, read: 3, total: 50 });
+    expect(document.querySelector('#architecture-tab-history .architecture-tabs__count')?.textContent).toBe('50');
     const pick = async (prefix: string) => {
       await act(async () => document.querySelector<HTMLElement>(`li[data-milestone-rev^="${prefix}"]`)!.click());
       await settle();
     };
+    // The oldest milestone read compares with a base that is not read yet: no gap count is made up.
+    await pick('06a42cf1');
+    expect(document.querySelector('.architecture-history__caption')?.textContent).toBe('c4a2cd0 → 06a42cf · the base is not read yet');
+    expect(document.querySelector('li[data-milestone-rev^="06a42cf1"] [data-tone="gap"]')).toBeNull();
     await pick('827a2e47');
     expect(document.querySelector('[data-gap="milestone"]')?.getAttribute('data-code')).toBe('history-model-invalid');
     expect(document.querySelector('.architecture-history__canvas-error code')?.textContent).toBe('history-model-invalid');
@@ -1218,10 +1232,45 @@ describe('architecture history', () => {
     expect(document.querySelector('[data-base-rev]')?.getAttribute('data-base-rev')).toBe(milestone(gap, '06a42cf1').rev);
     expect(document.querySelector('[data-gap="skipped"]')?.getAttribute('data-count')).toBe('1');
 
-    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__timeline footer button')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__load')!.click());
     await settle();
-    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=3&limit=25&ref=${gap.head}`);
-    expect(document.querySelectorAll('li[data-milestone-rev]')).toHaveLength(5);
+    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25&ref=${gap.head}`);
+    expect([...document.querySelectorAll('li[data-milestone-rev]')].map(item => item.getAttribute('data-milestone-rev')))
+      .toEqual([...removal.milestones, ...gap.milestones].reverse().map(item => item.rev));
+    expect(sources.at(-1)).toEqual({ head: gap.head, read: 5, total: 50 });
+    expect(document.querySelector('.architecture-history__load')).toBeNull();
+
+    // The inspector opens on the first capability the delta removes; its name and its removed relations come from the base milestone.
+    await pick('d02a082f');
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe('capability.runtime-harness.delegated-runs');
+    expect(inspector.querySelector('[data-diff="removed"]')?.textContent).toBe('This milestone removed it. The name comes from the base milestone 1761db9.');
+    expect(inspector.querySelectorAll('li[data-diff="removed"]')).toHaveLength(5);
+    // Four removed components: two belong to the removed capabilities, so only engineer-scheduling and task-fleet count as changed inside.
+    expect(document.querySelector('li[data-milestone-rev^="d02a082f"] [data-tone="inside"]')?.textContent).toBe('•2');
+  });
+
+  // cx1735-r1-inspector-drops-removed-relations: the relation list comes from the delta, not from the drawn shape.
+  // Each row reads one milestone whose base is not read, so a capability removed against that base is not drawn.
+  test.each<{ name: string; page: keyof typeof historyPages; rev: string; node: string; rows: [string, string[]][] }>([
+    { name: 'removed relations to undrawn capabilities only', page: 'removal', rev: 'd02a082f', node: 'capability.runtime-harness.evidence-ledger',
+      rows: [['removed', ['capability.runtime-harness.delegated-runs']], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'removed relations between drawn capabilities and to undrawn ones', page: 'removal', rev: 'd02a082f', node: 'capability.organization.task-fleet',
+      rows: [['removed', []], ['removed', ['capability.runtime-harness.delegated-runs']], ['removed', []], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'an added relation', page: 'inside', rev: '49f7ba6f', node: 'capability.runtime-harness.task-agent-host', rows: [['added', []]] },
+  ])('with an unread base the inspector lists every relation change of the node: $name', async ({ page: name, rev, node, rows }) => {
+    const only = { ...page(name), milestones: [milestone(page(name), rev)] };
+    respond = () => json(only, 200, '"history-1"');
+    await mount(workspace());
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
+    await settle();
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${node}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe(node);
+    // An undrawn endpoint shows as its archctx id.
+    expect([...inspector.querySelectorAll('li[data-diff]')].map(item => [item.getAttribute('data-diff'), [...item.querySelectorAll('code')].map(code => code.textContent)]))
+      .toEqual(rows);
   });
 
   test('a shallow clone shows only the archctx code and the repair command, with no timeline', async () => {

@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, test } from 'bun:test';
 import { spawnSync } from 'node:child_process';
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { chmodSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import {
@@ -13,6 +13,7 @@ import {
 
 const ROOT = join(import.meta.dir, '../..');
 const CLI = join(ROOT, 'src/cli/index.ts');
+const HOOK_ENTRY = join(ROOT, 'src/cli/hook-entry.ts');
 const NOW = Date.parse('2026-11-04T12:00:00.000Z');
 const HOUR = 3_600_000;
 const fixtures: string[] = [];
@@ -168,5 +169,47 @@ describe('repo-harness quota', () => {
     expect(result.status).toBe(0);
     const report = JSON.parse(result.stdout) as QuotaReport;
     expect(report.accounts.map(account => [account.account, account.state, account.reason])).toEqual([['claude', 'unknown', 'no capture'], ['chatgpt', 'unknown', reason]]);
+  });
+});
+
+describe('repo-harness-hook statusline', () => {
+  test('copies rate_limits unchanged with a new observed_at, prints the line, and keeps the old capture otherwise', () => {
+    const f = fixture(null);
+    const capture = join(f.home, '.repo-harness', 'quota', 'claude.json');
+    rmSync(join(f.home, '.repo-harness'), { recursive: true });
+    const resetsAt = Math.floor(Date.now() / 1000);
+    const fiveHour = { used_percentage: 12.4, resets_at: resetsAt + 2 * 3600 }, sevenDay = { used_percentage: 30, resets_at: resetsAt + 100 * 3600 };
+    const statusline = (stdin: string, args: string[] = []) => spawnSync(process.execPath, [HOOK_ENTRY, 'statusline', ...args], { cwd: tmpdir(), env: f.env, input: stdin, encoding: 'utf8', timeout: 40_000 });
+    const rows: Array<[string, string, string[], number, string, Record<string, unknown> | 'kept']> = [
+      // [case, stdin, extra argv, exit, stdout, written rate_limits or 'kept']
+      ['both windows and an undocumented key', JSON.stringify({ session_id: 's', rate_limits: { five_hour: fiveHour, seven_day: sevenDay, other: { x: 1 } } }), [], 0, '5h 12% · 7d 30%\n', { five_hour: fiveHour, seven_day: sevenDay, other: { x: 1 } }],
+      ['one window', JSON.stringify({ rate_limits: { seven_day: sevenDay } }), [], 0, '7d 30%\n', { seven_day: sevenDay }],
+      ['no rate_limits', JSON.stringify({ session_id: 's' }), [], 0, '\n', 'kept'],
+      ['empty stdin', '', [], 0, '\n', 'kept'],
+      ['rate_limits not an object', JSON.stringify({ rate_limits: 'x' }), [], 1, '', 'kept'],
+      ['stdin not JSON', '{', [], 1, '', 'kept'],
+      ['an extra argument', JSON.stringify({ rate_limits: { seven_day: sevenDay } }), ['--json'], 2, '', 'kept'],
+    ];
+    let previous = '';
+    for (const [name, stdin, args, exit, stdout, written] of rows) {
+      const before = Date.now();
+      const result = statusline(stdin, args);
+      expect([name, result.status, result.stdout], result.stderr).toEqual([name, exit, stdout]);
+      const text = readFileSync(capture, 'utf8');
+      if (written === 'kept') {
+        expect([name, text]).toEqual([name, previous]);
+        continue;
+      }
+      const value = JSON.parse(text) as { observed_at: string; rate_limits: unknown };
+      expect([name, Object.keys(value), value.rate_limits]).toEqual([name, ['observed_at', 'rate_limits'], written]);
+      expect(Date.parse(value.observed_at)).toBeGreaterThanOrEqual(Math.floor(before / 1000) * 1000);
+      expect(decodeClaudeQuotaCapture(value).reason).toBeNull();
+      expect(statSync(capture).mode & 0o777).toBe(0o600);
+      previous = text;
+    }
+    expect(statusline(JSON.stringify({ rate_limits: 'x' })).stderr).toBe('repo-harness-hook statusline: capture not written: rate_limits is not an object\n');
+    // The Q1 reader accepts the capture that the writer wrote.
+    const report = JSON.parse(quota(['--json'], f.env).stdout) as QuotaReport;
+    expect(report.accounts[0]).toMatchObject({ account: 'claude', observed_at: JSON.parse(previous).observed_at, windows: [{ window: 'five_hour', reason: 'five_hour absent' }, { window: 'seven_day', used_percent: 30, reason: null }] });
   });
 });

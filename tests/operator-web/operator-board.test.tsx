@@ -12,6 +12,7 @@ import { cleanCommand } from '../../src/cli/commands/worktrees';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
+import { createCleanupPlan, type CleanupObservation } from '../../src/effects/operator/worktree-cleanup-plan';
 import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
@@ -34,7 +35,9 @@ import {
   HARNESS_ID,
   INBOX_TASK,
 } from '../../src/operator-web/fixtures/dev-activity';
-import { busyWorktrees, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
+import { busyWorktrees, cleanupPlanFixture, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
+import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
+import type { AuthorizedCleanupPost, CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
@@ -1151,6 +1154,179 @@ describe('worktree cleanup (5.1)', () => {
     const kept = worktreeRow('repo-harness-wt-kanban-redesign');
     expect(kept.querySelector('[data-processes]')?.textContent).toContain('processes using it: 2');
     expect(kept.textContent).not.toContain('repo-harness worktrees clean');
+  });
+});
+
+/** The busy plan routes, recording what the page sends. */
+function recordPlan(base: CleanupPlanPorts = cleanupPlanFixture(NOW)) {
+  const chosen: (readonly CleanupChoice[])[] = [], executed: AuthorizedCleanupPost[] = [];
+  let plan: CleanupPlan | null = null;
+  const keep = async (answer: Awaited<ReturnType<CleanupPlanPorts['open']>>) => { if (answer.state === 'ready') plan = answer.plan; return answer; };
+  const ports: CleanupPlanPorts = {
+    open: () => base.open().then(keep),
+    choose: (session, choices) => { chosen.push(choices); return base.choose(session, choices).then(keep); },
+    execute: request => { executed.push(request); return base.execute(request); },
+  };
+  return { ports, chosen, executed, plan: () => plan! };
+}
+const planItem = (directory: string) => Array.from(document.querySelectorAll<HTMLElement>('[data-plan-item]'))
+  .find(row => row.querySelector('[data-directory]')?.textContent === directory)!;
+const option = (directory: string, value: string) => act(async () => planItem(directory).querySelector<HTMLInputElement>(`[data-plan-option="${value}"]`)!.click());
+async function destination(directory: string, path: string, value: string): Promise<void> {
+  const select = planItem(directory).querySelector<HTMLElement>(`[data-plan-path="${path}"]`)!.querySelector('select')!;
+  await act(async () => { select.value = value; select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event); });
+}
+const planButton = (name: 'choose' | 'execute') => document.querySelector<HTMLButtonElement>(`button[data-plan-${name}]`)!;
+async function openReview(ports: CleanupPlanPorts): Promise<void> {
+  installDom(WORKTREES_URL);
+  await mount(<OperatorApp {...props(busy(), { worktreeCleanupPlan: ports })} />);
+  await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!.click());
+  await until(() => document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review') !== 'loading');
+}
+const EDITABLE = ['repo-harness-wt-oar', 'codex-7f3a', 'repo-harness-wt-docs-cleanup', 'repo-harness-wt-notes', 'repo-harness-wt-bench',
+  'repo-harness-wt-i18n', 'repo-harness-wt-archctx', 'repo-harness-wt-ci-lane'];
+
+describe('worktree cleanup plan review (#1720)', () => {
+  test('pass 1 offers a choice only on eligible non-green items; pass 2 authorizes the shown digests and sends them', async () => {
+    const record = recordPlan();
+    await openReview(record.ports);
+    expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('ready');
+    // One item of each judgment; green keeps the one-click clean, red and an unread loss cannot be selected.
+    expect(planItem('feat-kanban-status').querySelector('[data-plan-green]')).not.toBeNull();
+    for (const directory of ['feat-kanban-status', 'repo-harness-wt-kanban-redesign', 'repo-harness-wt-old-spike']) {
+      expect(planItem(directory).querySelectorAll('input, select')).toHaveLength(0);
+    }
+    expect(planItem('repo-harness-wt-kanban-redesign').querySelector('[data-plan-locked]')).not.toBeNull();
+    expect(planItem('repo-harness-wt-old-spike').querySelector('[data-plan-loss]')?.getAttribute('data-plan-loss')).toBe('unknown');
+    expect(Array.from(document.querySelectorAll('[data-plan-item][data-editable="true"] [data-directory]')).map(cell => cell.textContent)).toEqual(EDITABLE);
+    expect(document.querySelectorAll('[data-plan-authorization]')).toHaveLength(0);
+    expect([planButton('choose').disabled, planButton('execute').disabled]).toEqual([true, true]);
+    // Commits need an archive, so Delete is disabled and says why.
+    expect(planItem('repo-harness-wt-oar').querySelector<HTMLInputElement>('[data-plan-option="delete"]')!.disabled).toBe(true);
+    expect(planItem('repo-harness-wt-oar').querySelector('[data-plan-note]')?.getAttribute('data-plan-note')).toBe('commitsNeedArchive');
+
+    await option('codex-7f3a', 'archive_then_delete');
+    expect(planItem('codex-7f3a').querySelector('[data-plan-note]')?.getAttribute('data-plan-note')).toBe('archiveEmpty');
+    expect(planButton('choose').disabled).toBe(true);
+    await destination('codex-7f3a', 'src/hooks/run.ts', 'git');
+    await destination('codex-7f3a', '.env', 'private');
+    // An ignored directory is not a file the archive accepts.
+    expect(planItem('codex-7f3a').querySelector('[data-plan-path="node_modules/"]')).toBeNull();
+    await option('repo-harness-wt-notes', 'delete');
+    await act(async () => planButton('choose').click());
+    await until(() => document.querySelectorAll('[data-plan-authorization]').length === 2);
+
+    const codex = record.plan().items.find(item => item.worktree.directory === 'codex-7f3a')!;
+    const notes = record.plan().items.find(item => item.worktree.directory === 'repo-harness-wt-notes')!;
+    const slug = `codex-7f3a-${codex.worktree.id.slice(3, 11)}`, day = new Date(NOW).toISOString().slice(0, 10);
+    expect(record.chosen).toHaveLength(1);
+    expect(decodeCleanupChoices(record.chosen[0])).toHaveLength(EDITABLE.length);
+    expect(record.chosen[0]!.filter(choice => choice.recommendation !== 'keep')).toEqual([
+      { id: codex.worktree.id, recommendation: 'archive_then_delete', archive: {
+        git: { directory: `docs/archive/${day}-${slug}`, branch: `docs/archive-${slug}`, paths: ['src/hooks/run.ts'], include_commits: false },
+        private: { directory: codex.worktree.repository_id!, paths: ['.env'] } } },
+      { id: notes.worktree.id, recommendation: 'delete', archive: { git: null, private: null } },
+    ]);
+    for (const item of [codex, notes]) {
+      const block = planItem(item.worktree.directory).querySelector('[data-plan-authorization]')!;
+      expect([block.querySelector('[data-plan-digest="plan"]')?.textContent, block.querySelector('[data-plan-digest="loss"]')?.textContent]).toEqual([item.plan_sha256, item.loss_sha256!]);
+    }
+
+    // A choice the plan does not bind cannot be authorized until the plan is made again.
+    await act(async () => planItem('repo-harness-wt-notes').querySelector<HTMLInputElement>('[data-plan-authorize]')!.click());
+    await option('repo-harness-wt-notes', 'keep');
+    expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-authorization]')).toBeNull();
+    expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-stale]')).not.toBeNull();
+    expect(planButton('execute').getAttribute('data-plan-execute')).toBe('0');
+    await option('repo-harness-wt-notes', 'delete');
+    await act(async () => planItem('codex-7f3a').querySelector<HTMLInputElement>('[data-plan-authorize]')!.click());
+    expect(planButton('execute').getAttribute('data-plan-execute')).toBe('2');
+
+    await act(async () => planButton('execute').click());
+    await until(() => document.querySelector('[data-plan-result]') !== null);
+    const { request_id: requestId, ...body } = record.executed[0]!;
+    expect(requestId).toMatch(UUID);
+    const rows = [codex, notes].sort((left, right) => left.worktree.id < right.worktree.id ? -1 : 1);
+    // The server's request decoder accepts the body; each approval is the digest pair the item showed.
+    expect(decodeAuthorizedCleanupRequest(body)).toEqual({
+      session_id: record.plan().session_id, ids: rows.map(item => item.worktree.id),
+      expected_digest: selectionDigest(rows.map(item => worktreeDigestRow(item.worktree))),
+      approvals: rows.map(item => ({ id: item.worktree.id, loss_sha256: item.loss_sha256!, plan_sha256: item.plan_sha256 })),
+    });
+  });
+
+  test('each execution reason shows its own message', async () => {
+    const record = recordPlan();
+    await openReview(record.ports);
+    for (const directory of EDITABLE) await option(directory, 'archive_then_delete');
+    for (const [directory, path] of [['codex-7f3a', '.env'], ['repo-harness-wt-notes', 'docs/release-notes.md'], ['repo-harness-wt-bench', 'bench/hooks.ts'],
+      ['repo-harness-wt-i18n', 'src/operator-web/i18n/home.ts'], ['repo-harness-wt-ci-lane', 'scripts/check-ci.sh']] as const) await destination(directory, path, 'git');
+    await option('repo-harness-wt-docs-cleanup', 'delete');
+    await act(async () => planButton('choose').click());
+    await until(() => document.querySelectorAll('[data-plan-authorize]').length === EDITABLE.length);
+    for (const box of document.querySelectorAll<HTMLInputElement>('[data-plan-authorize]')) await act(async () => box.click());
+    await act(async () => planButton('execute').click());
+    await until(() => document.querySelector('[data-plan-result]') !== null);
+    const messages = Object.fromEntries(Array.from(document.querySelectorAll('[data-plan-result-item]'))
+      .map(item => [item.getAttribute('data-reason') ?? item.getAttribute('data-outcome'), item.querySelector('[data-plan-reason-text]')?.textContent ?? null]));
+    expect(messages).toEqual({
+      removed: null,
+      in_use: 'A process or session uses it now. Nothing was removed.',
+      not_approved: 'The server found no valid authorization for it. Nothing was removed.',
+      loss_changed: 'Its contents changed after you authorized it. Nothing was removed.',
+      plan_changed: 'The plan changed after you authorized it. Nothing was removed.',
+      unavailable: 'Its state could not be read. Nothing was removed.',
+      archive_failed: 'The archive could not be confirmed, so the worktree was kept. Check the archive branch before you try again.',
+      removal_unproven: 'The removal could not be confirmed. Reload the list before you try again.',
+    });
+    expect(document.querySelector('[data-plan-result] p')?.textContent).toBe('removed: 1 · skipped: 5 · needs a check: 2');
+    expect(document.querySelectorAll('[data-plan-item] input:not(:disabled), [data-plan-item] select:not(:disabled)')).toHaveLength(0);
+  });
+
+  test('only server-archivable paths get a destination, and the page\'s choice passes createCleanupPlan', async () => {
+    const tree = rowOf('codex-7f3a'), session = 'd'.repeat(32);
+    const file = { path: 'docs/guide.md', kind: 'file' as const, mode: 0o644, size: 5, sha256: 'd'.repeat(64), git_oid: 'e'.repeat(40) };
+    // A changed file, an ignored file, a staged deletion, an empty directory and an unchanged tracked file.
+    const observation: CleanupObservation = { worktree: tree, loss: { kind: 'registered', identity: { dev: 1, ino: 1, birthtime_ms: 1 }, branch: `refs/heads/${tree.branch}`,
+      head_commit: 'c'.repeat(40), index: [], commits: [], remote_refs: [], ignored: ['.env'], changed_paths: ['docs/guide.md', 'docs/removed.md', 'empty'],
+      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, file, { ...file, path: 'empty', kind: 'directory', sha256: null, git_oid: null }] } };
+    const keep = { recommendation: 'keep' as const, reason: 'Waiting for the user to choose.', evidence: ['judgment: yellow'], archive: { git: null, private: null } };
+    let plan = createCleanupPlan(session, [{ observation, advice: keep }]);
+    const ports: CleanupPlanPorts = {
+      open: async () => ({ state: 'ready', plan }),
+      // The server keeps its own reason and evidence and takes only the choice.
+      choose: async (_session, choices) => {
+        plan = createCleanupPlan(session, [{ observation, advice: { ...keep, recommendation: choices[0]!.recommendation, archive: choices[0]!.archive } }]);
+        return { state: 'ready', plan };
+      },
+      execute: () => Promise.reject(new Error('not used')),
+    };
+    await openReview(ports);
+    await option('codex-7f3a', 'archive_then_delete');
+    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-path]')).map(row => row.getAttribute('data-plan-path'))).toEqual(['.env', 'docs/guide.md']);
+    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-loss-list="files"] li')).map(row => row.textContent)).toEqual(['docs/guide.md', 'docs/removed.md', 'empty']);
+    await destination('codex-7f3a', 'docs/guide.md', 'git');
+    await destination('codex-7f3a', '.env', 'private');
+    await act(async () => planButton('choose').click());
+    await until(() => planItem('codex-7f3a').querySelector('[data-plan-authorization]') !== null);
+    expect(plan.items[0]!.advice.archive).toMatchObject({ git: { paths: ['docs/guide.md'], include_commits: false }, private: { directory: tree.repository_id, paths: ['.env'] } });
+    expect(planItem('codex-7f3a').querySelector('[data-plan-digest="plan"]')?.textContent).toBe(plan.items[0]!.plan_sha256);
+  });
+
+  test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {
+    const base = cleanupPlanFixture(NOW);
+    let opens = 0;
+    const record = recordPlan({ ...base, open: () => ++opens === 1 ? Promise.reject(new Error('down')) : base.open() });
+    await openReview(record.ports);
+    expect(document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review')).toBe('failed');
+    expect(document.querySelector('[data-plan-failure]')?.getAttribute('data-plan-failure')).toBe('unreachable');
+    expect(document.querySelectorAll('[data-plan-item]')).toHaveLength(0);
+    await act(async () => Array.from(document.querySelectorAll<HTMLButtonElement>('[data-plan-failure] button')).find(button => button.textContent === 'Try again')!.click());
+    await until(() => document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review') === 'ready');
+    expect(document.querySelector('[data-plan-failure]')).toBeNull();
+    expect(record.chosen).toHaveLength(0);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-back]')!.click());
+    expect(document.querySelector('[data-worktrees-page]')).not.toBeNull();
   });
 });
 
