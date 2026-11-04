@@ -36,7 +36,7 @@ import {
 } from './architecture-map-layers';
 import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } from './architecture-map-parts';
 import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
-import { ArchitectureSequence, SequenceFlowPicker } from './ArchitectureSequence';
+import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -484,11 +484,11 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
       <div className="architecture-lens">
         <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>
         <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
-        {view === 'sequence' ? <SequenceFlowPicker map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} t={t} />
+        {view === 'sequence' ? <SequenceLensTools map={map} layer={layer} pullRequest={pullRequest} flowId={flow} t={t} />
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
       {view === 'modules' && <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>}
-      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} side={side} onModule={onModule} t={t} />}
+      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
       {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
     </>}
   </div>;

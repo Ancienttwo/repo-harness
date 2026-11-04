@@ -5,7 +5,7 @@ import { Window } from 'happy-dom';
 import { isGroupNode, moduleDetail, moduleGraph, type ModelNode, type ModelRelation, type ModuleDetailV1, type ModuleIndexV1 } from '../../src/core/architecture/module-view';
 import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/core/review/module-review-prompt';
 import { OperatorApp } from '../../src/operator-web/App';
-import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
+import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } from '../../src/operator-web/ArchitectureWorkspace';
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
 import {
@@ -14,7 +14,8 @@ import {
   type ArchitectureMapRelationV1, type ArchitectureMapV1,
 } from '../../src/core/operator/architecture-map';
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
-import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
+import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
+import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
 import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -874,6 +875,9 @@ describe('sequence and topology base maps', () => {
     const commit = layout.messages[2]!;
     expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
       .toEqual([['success', 'error'], true, ['pipe', 'router']]);
+    // A fragment spans the columns that its outcome names: the kept rows reach git, the refused rows end at the router.
+    const column = (id: string) => layout.columns.find(entry => entry.participant.id === id)!.x;
+    expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
   });
 
   test('topology boxes nest by namespace, a deployed node sits in its process, and a relation is drawn between boxes or counted as unplaced', () => {
@@ -949,7 +953,10 @@ describe('sequence and topology base maps', () => {
     expect([...document.querySelectorAll('.architecture-sequence__box')].map(item => [item.getAttribute('data-placement'), item.textContent])).toEqual([
       ['unknown', 'Process unknown'], ['process', `Name ${SERVER}`], ['external', 'External systems']]);
     expect(document.querySelector('.architecture-sequence__box[data-placement="unknown"]')?.getAttribute('data-reason')).toBe(t('architecture.runtime.deployment_undeclared'));
-    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => item.getAttribute('data-kind'))).toEqual(['success', 'error']);
+    // The first outcome opens the alt and the next one is an else, in model order; the colour follows the outcome kind.
+    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => [item.getAttribute('data-kind'), item.querySelector('.mono-value')?.textContent]))
+      .toEqual([['success', 'alt'], ['error', 'else']]);
+    expect([...document.querySelectorAll('.architecture-sequence__terminal')].map(item => [item.getAttribute('data-kind'), item.textContent])).toEqual([['success', 'Done'], ['error', 'Stop']]);
     // Today's changes reach the append step.
     const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
     expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
@@ -957,6 +964,7 @@ describe('sequence and topology base maps', () => {
     await click('.react-flow__node[data-id="message::route"]');
     expect(message(':route').hasAttribute('data-selected')).toBe(true);
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
+    expect(inspector().querySelector('[data-step-title]')?.textContent).toBe(`Name ${CALLER} → Name ${CENTER}`);
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('proven');
     expect([...inspector().querySelectorAll('[data-call-sites] li')].map(item => item.textContent)).toEqual(['src/router.ts:12', 'src/router-entry.ts']);
@@ -980,14 +988,102 @@ describe('sequence and topology base maps', () => {
     expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
     await click('.react-flow__node[data-id="participant:ledger"]');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
-    // A not-applicable flow states its rationale instead of a diagram.
-    await act(async () => {
-      const select = document.querySelector<HTMLSelectElement>('.architecture-lens select')!;
-      select.value = 'flow.router.none';
-      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
-    });
+    // The side panel lists the flows in model order; today's changes reach a step of the first one.
+    const flows = () => [...document.querySelectorAll('.architecture-sequence__flow-list button')].map(item => [item.textContent, item.getAttribute('aria-pressed'), item.hasAttribute('data-lit')]);
+    expect(flows()).toEqual([['1Append a ledger row', 'true', true], ['2No router flow', 'false', false]]);
+    // A not-applicable flow states its rationale instead of a diagram, and has nothing to export.
+    await click('[data-flow-id="flow.router.none"]');
+    expect([notes(), flows()[1]![1], document.querySelector<HTMLButtonElement>('[data-sequence-export]')?.disabled])
+      .toEqual([expect.arrayContaining(['sequence.not_applicable:flow_not_applicable']), 'true', true]);
+
+    // The flow list stays one mounted control across each kind of flow change, so focus and its scroll position stay;
+    // a selection belongs to its flow and does not come back on a return.
+    const second = { ...flow, id: 'flow.pipeline.second', name: 'Second ledger flow' };
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-three-flows', readMap: reader(runtimeMap({ flows: [flow, second, runtimeMap().flows[1]!],
+      // Custom flows declare no code, so the map carries no proof either.
+      layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
     await settle();
-    expect(notes()).toContain('sequence.not_applicable:flow_not_applicable');
+    await tab('sequence');
+    await click(`[data-flow-id="${FLOW}"]`);
+    await click('.react-flow__node[data-id="message::route"]');
+    const list = document.querySelector<HTMLElement>('.architecture-sequence__flow-list')!;
+    for (const [target, view] of [[second.id, 'diagram'], ['flow.router.none', 'note'], [FLOW, 'diagram']] as const) {
+      const button = list.querySelector<HTMLButtonElement>(`[data-flow-id="${target}"]`)!;
+      list.scrollTop = 40;
+      button.focus();
+      await click(`[data-flow-id="${target}"]`);
+      expect([document.querySelector('[data-view="sequence"]')?.getAttribute('data-flow'), document.querySelector('.architecture-map__canvas') === null ? 'note' : 'diagram',
+        list.isConnected, list.scrollTop, button.isConnected, document.activeElement === button, button.getAttribute('aria-pressed'), inspector().hasAttribute('data-step-id')])
+        .toEqual([target, view, true, 40, true, true, 'true', false]);
+    }
+  });
+
+  test('the lens row counts the steps that have code evidence and exports the flow on screen as one SVG file', async () => {
+    const files: { name: string; blob: Blob }[] = [];
+    const { createObjectURL, revokeObjectURL } = URL;
+    const blobs = new Map<string, Blob>();
+    URL.createObjectURL = (blob: Blob) => { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; };
+    URL.revokeObjectURL = () => {};
+    const anchor = window.HTMLAnchorElement.prototype;
+    const { click: anchorClick } = anchor;
+    anchor.click = function (this: HTMLAnchorElement) { files.push({ name: this.download, blob: blobs.get(this.href)! }); };
+    try {
+      await mount(workspace({ readMap: reader(runtimeMap()) }));
+      await tab('sequence');
+      // Declared code names the route and append selectors; the outcome steps have none.
+      expect(document.querySelector('[data-sequence-summary]')?.textContent).toBe('2 flows from the model; 2 of 4 steps have code evidence');
+      await click('[data-sequence-export]');
+      const svg = await files[0]!.blob.text();
+      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
+      expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
+
+      // Every label kind keeps its estimated text box inside its own shape and the file, with one long label per kind and CJK
+      // text. The kept terminal sits on git, the rightmost participant; the append step is a self message.
+      // The estimate never undercounts: widest glyphs per class, in em at weights 400 and 600, as Chrome draws system-ui (SF Pro) on macOS.
+      const measured = [['中', 0.944, 0.944], ['W', 0.924, 0.952], ['%', 0.808, 0.863], ['m', 0.803, 0.843], ['&', 0.669, 0.691], ['6', 0.617, 0.641]] as const;
+      expect(measured.filter(([glyph, regular, bold]) => textWidth(glyph, 100, false) < regular * 100 || textWidth(glyph, 100, true) < bold * 100)).toEqual([]);
+      const latin = (text: string) => `${text} `.repeat(4).trim();
+      const cjk = (text: string) => text.repeat(4);
+      const [route, append] = flow.steps;
+      const [kept, refused] = flow.outcomes;
+      const wide = { ...flow,
+        steps: [{ ...route!, label: latin('Route the request through the root router before the pipeline appends') }, { ...append!, to: 'pipe', label: cjk('流水线先校验请求和账本状态') }],
+        outcomes: [
+          { ...kept!, label: cjk('账本行已保存并提交到 git，再把提交结果返回给调用方'), steps: [{ ...kept!.steps[0]!, label: latin('Commit the WRITTEN LEDGER ROW to git') }],
+            terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA' } },
+          { ...refused!, label: latin('Row refused because the ledger rejected the append for a known reason'), steps: [{ ...refused!.steps[0]!, label: cjk('账本拒绝追加并给出原因') }],
+            terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+        ] };
+      const names = ['路由器：根路由在流水线之前选择处理程序', 'Pipeline Workflow Engine Capability With Many Words', 'Ledger component that appends attested rows', '外部系统 git 与 archctx 子进程'];
+      const wideLayout = layoutSequence(wide, runtimePlacement(runtimeMap()));
+      const exported = sequenceSvg(wideLayout, {
+        box: box => latin(`${box.key} runs every hook event in its own Bun process`),
+        participant: nodeId => ({ name: names[flow.participants.findIndex(entry => entry.node === nodeId)]!, kind: 'capability' }),
+      });
+      const shapes: Record<keyof typeof SEQUENCE_SVG_FONT, readonly (readonly [number, number])[]> = {
+        title: wideLayout.boxes.map(box => [box.x, box.x + box.width]),
+        'fragment-label': wideLayout.fragments.map(fragment => [fragment.x, fragment.x + fragment.width]),
+        name: wideLayout.columns.map(column => [column.x - SEQUENCE_SVG_HEADER_WIDTH / 2, column.x + SEQUENCE_SVG_HEADER_WIDTH / 2]),
+        'message-label': wideLayout.messages.map(message => message.from === message.to ? [message.from, message.from + SEQUENCE_COLUMN / 2]
+          : [Math.min(message.from, message.to), Math.max(message.from, message.to)]),
+        terminal: wideLayout.terminals.map(terminal => [terminal.x - SEQUENCE_SVG_TERMINAL_WIDTH / 2, terminal.x + SEQUENCE_SVG_TERMINAL_WIDTH / 2]),
+      };
+      const shown = (markup: string) => markup.replace(/<[^>]+>/gu, '').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&amp;/gu, '&');
+      const labels = (Object.keys(shapes) as (keyof typeof SEQUENCE_SVG_FONT)[]).flatMap(kind => [...exported.matchAll(
+        new RegExp(`<text class="${kind}[^"]*" x="([\\d.]+)" y="[\\d.]+"( text-anchor="middle")?><title>[^<]*</title>(.*?)</text>`, 'gu'))].map((match, index) => {
+        const text = shown(match[3]!);
+        const width = textWidth(text, SEQUENCE_SVG_FONT[kind].size, SEQUENCE_SVG_FONT[kind].bold);
+        const left = Number(match[1]) - (match[2] === undefined ? 0 : width / 2);
+        const [low, high] = shapes[kind][index]!;
+        return { kind, text, inside: left >= Math.max(low, 0) && left + width <= Math.min(high, wideLayout.width), shortened: text.endsWith('…') };
+      }));
+      expect(Object.fromEntries(Object.entries(shapes).map(([kind, list]) => [kind, [list.length, labels.filter(entry => entry.kind === kind).length]])))
+        .toEqual({ title: [3, 3], 'fragment-label': [2, 2], name: [4, 4], 'message-label': [4, 4], terminal: [2, 2] });
+      expect(labels.filter(entry => !entry.inside || !entry.shortened)).toEqual([]);
+    } finally {
+      Object.assign(URL, { createObjectURL, revokeObjectURL });
+      anchor.click = anchorClick;
+    }
   });
 
   test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {
@@ -1098,21 +1194,35 @@ describe('architecture history', () => {
     expect(shape.edges.size).toBe(0);
   });
 
-  test('an error milestone shows only its code, the base across it is named, and the next page pins the first head', async () => {
+  test('the newest page shows first, an error milestone shows only its code, the base across it is named, and an older page pins the first head', async () => {
+    // archctx pages run oldest first: a one-milestone read gives the head and the total (50), then the newest page.
     const gap = page('gap');
+    const removal = page('removal');
     const paths: string[] = [];
+    const sources: (ArchitectureSource | null)[] = [];
     respond = path => {
       paths.push(path);
-      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' ? gap : page('removal'), 200, '"history-1"');
+      return json(new URL(path, 'http://127.0.0.1').searchParams.get('offset') === '0' && paths.length > 2 ? removal : gap, 200, '"history-1"');
     };
-    await mount(workspace());
+    await mount(workspace({ onSource: source => sources.push(source) }));
     await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
     await settle();
-    expect(paths).toEqual([`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25`]);
+    expect(paths).toEqual([
+      `/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=1`,
+      `/api/v1/repositories/${REPO}/architecture/history?offset=25&limit=25&ref=${gap.head}`,
+    ]);
+    expect([...document.querySelectorAll('li[data-milestone-rev]')].map(item => [item.getAttribute('data-milestone-rev'), item.getAttribute('aria-selected')]))
+      .toEqual([...gap.milestones].reverse().map((item, index) => [item.rev, String(index === 0)]));
+    expect(sources.at(-1)).toEqual({ head: gap.head, read: 3, total: 50 });
+    expect(document.querySelector('#architecture-tab-history .architecture-tabs__count')?.textContent).toBe('50');
     const pick = async (prefix: string) => {
       await act(async () => document.querySelector<HTMLElement>(`li[data-milestone-rev^="${prefix}"]`)!.click());
       await settle();
     };
+    // The oldest milestone read compares with a base that is not read yet: no gap count is made up.
+    await pick('06a42cf1');
+    expect(document.querySelector('.architecture-history__caption')?.textContent).toBe('c4a2cd0 → 06a42cf · the base is not read yet');
+    expect(document.querySelector('li[data-milestone-rev^="06a42cf1"] [data-tone="gap"]')).toBeNull();
     await pick('827a2e47');
     expect(document.querySelector('[data-gap="milestone"]')?.getAttribute('data-code')).toBe('history-model-invalid');
     expect(document.querySelector('.architecture-history__canvas-error code')?.textContent).toBe('history-model-invalid');
@@ -1122,10 +1232,45 @@ describe('architecture history', () => {
     expect(document.querySelector('[data-base-rev]')?.getAttribute('data-base-rev')).toBe(milestone(gap, '06a42cf1').rev);
     expect(document.querySelector('[data-gap="skipped"]')?.getAttribute('data-count')).toBe('1');
 
-    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__timeline footer button')!.click());
+    await act(async () => document.querySelector<HTMLButtonElement>('.architecture-history__load')!.click());
     await settle();
-    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=3&limit=25&ref=${gap.head}`);
-    expect(document.querySelectorAll('li[data-milestone-rev]')).toHaveLength(5);
+    expect(paths.at(-1)).toBe(`/api/v1/repositories/${REPO}/architecture/history?offset=0&limit=25&ref=${gap.head}`);
+    expect([...document.querySelectorAll('li[data-milestone-rev]')].map(item => item.getAttribute('data-milestone-rev')))
+      .toEqual([...removal.milestones, ...gap.milestones].reverse().map(item => item.rev));
+    expect(sources.at(-1)).toEqual({ head: gap.head, read: 5, total: 50 });
+    expect(document.querySelector('.architecture-history__load')).toBeNull();
+
+    // The inspector opens on the first capability the delta removes; its name and its removed relations come from the base milestone.
+    await pick('d02a082f');
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe('capability.runtime-harness.delegated-runs');
+    expect(inspector.querySelector('[data-diff="removed"]')?.textContent).toBe('This milestone removed it. The name comes from the base milestone 1761db9.');
+    expect(inspector.querySelectorAll('li[data-diff="removed"]')).toHaveLength(5);
+    // Four removed components: two belong to the removed capabilities, so only engineer-scheduling and task-fleet count as changed inside.
+    expect(document.querySelector('li[data-milestone-rev^="d02a082f"] [data-tone="inside"]')?.textContent).toBe('•2');
+  });
+
+  // cx1735-r1-inspector-drops-removed-relations: the relation list comes from the delta, not from the drawn shape.
+  // Each row reads one milestone whose base is not read, so a capability removed against that base is not drawn.
+  test.each<{ name: string; page: keyof typeof historyPages; rev: string; node: string; rows: [string, string[]][] }>([
+    { name: 'removed relations to undrawn capabilities only', page: 'removal', rev: 'd02a082f', node: 'capability.runtime-harness.evidence-ledger',
+      rows: [['removed', ['capability.runtime-harness.delegated-runs']], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'removed relations between drawn capabilities and to undrawn ones', page: 'removal', rev: 'd02a082f', node: 'capability.organization.task-fleet',
+      rows: [['removed', []], ['removed', ['capability.runtime-harness.delegated-runs']], ['removed', []], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'an added relation', page: 'inside', rev: '49f7ba6f', node: 'capability.runtime-harness.task-agent-host', rows: [['added', []]] },
+  ])('with an unread base the inspector lists every relation change of the node: $name', async ({ page: name, rev, node, rows }) => {
+    const only = { ...page(name), milestones: [milestone(page(name), rev)] };
+    respond = () => json(only, 200, '"history-1"');
+    await mount(workspace());
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
+    await settle();
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${node}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe(node);
+    // An undrawn endpoint shows as its archctx id.
+    expect([...inspector.querySelectorAll('li[data-diff]')].map(item => [item.getAttribute('data-diff'), [...item.querySelectorAll('code')].map(code => code.textContent)]))
+      .toEqual(rows);
   });
 
   test('a shallow clone shows only the archctx code and the repair command, with no timeline', async () => {

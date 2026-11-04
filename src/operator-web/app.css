@@ -188,12 +188,12 @@
   .architecture-tabs [role="tab"][aria-selected="true"] { @apply bg-kumo-tint text-kumo-strong; }
   .architecture-tabs__count { @apply font-mono text-xs text-kumo-subtle; }
   .architecture-map-view { @apply flex min-w-0 flex-col gap-3.5; }
-  /* The lens row: layer chips, then the hint or the sequence flow picker at the end. */
+  /* The lens row: layer chips, then the hint or the sequence map's summary and export at the end. */
   .architecture-lens { @apply flex min-h-[30px] min-w-0 flex-wrap items-center gap-2; }
   .architecture-lens__label { @apply mr-1 text-xs text-kumo-subtle max-sm:sr-only; }
   .architecture-lens__hint { @apply ml-auto text-xs text-kumo-subtle; }
-  .architecture-lens__pick { @apply ml-auto flex min-w-0 max-w-full items-center gap-2 text-xs text-kumo-subtle; }
-  .architecture-lens__pick select { @apply h-[30px] min-w-0 max-w-[32rem] flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-sm text-kumo-default; }
+  .architecture-lens__tools { @apply ml-auto flex min-w-0 flex-wrap items-center justify-end gap-3 text-xs text-kumo-subtle; }
+  .architecture-lens__export { @apply h-[30px] cursor-pointer whitespace-nowrap rounded-[7px] border border-kumo-line bg-transparent px-3 text-xs text-kumo-default hover:bg-kumo-tint disabled:cursor-default disabled:opacity-50; }
   .architecture-map__side { @apply flex flex-col gap-2 border-b border-kumo-hairline pb-3; }
   .architecture-map__gap { @apply rounded-lg bg-kumo-warning-tint p-3 text-sm text-kumo-default; }
   .architecture-map__note { @apply rounded-lg border border-dashed border-kumo-line p-3 text-sm text-kumo-subtle; }
@@ -218,7 +218,7 @@
   .architecture-map__swatch--dashed { border-top-style: dashed; }
   .architecture-map__swatch--external { @apply h-3 rounded-sm border-2 border-dashed; }
   .architecture-map__zoom button { @apply h-7 min-w-7 cursor-pointer rounded-md px-1.5 text-kumo-default hover:bg-kumo-recessed; }
-  .architecture-map__inspector { @apply flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm; overflow-wrap: anywhere; }
+  .architecture-map__inspector { @apply relative flex min-w-0 flex-col gap-2 rounded-xl border border-kumo-line bg-kumo-base p-4 text-sm; overflow-wrap: anywhere; }
   .architecture-map__inspector h3 { @apply text-sm font-semibold text-kumo-strong; }
   .architecture-map__inspector h4 { @apply text-xs font-semibold text-kumo-subtle; }
   .architecture-map__inspector ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs; }
@@ -247,16 +247,19 @@
   .architecture-map__command { @apply mt-1; }
   .architecture-map__command > code { @apply whitespace-normal break-all font-mono; }
   .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
-  .architecture-sequence__box { @apply h-full w-full rounded-xl border bg-kumo-recessed px-3 pt-1.5 text-xs font-medium text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__box { @apply flex h-full w-full flex-col justify-end rounded-xl border bg-kumo-recessed px-3 pb-1.5 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-sequence__box[data-placement="external"] { @apply border-dashed bg-transparent; }
   .architecture-sequence__box[data-placement="unknown"] { @apply border-dashed; }
   .architecture-sequence__box > span { @apply block truncate; }
-  .architecture-sequence__fragment { @apply h-full w-full rounded-lg px-2 pt-1 text-xs text-kumo-default; }
-  .architecture-sequence__fragment[data-kind="success"] { @apply bg-kumo-success-tint; }
-  .architecture-sequence__fragment[data-kind="error"] { @apply bg-kumo-danger-tint; }
-  .architecture-sequence__fragment .mono-value { @apply font-semibold text-kumo-strong; }
+  .architecture-sequence__fragment { @apply h-full w-full rounded-lg border border-dashed px-2 pt-1 text-[11px] font-semibold; }
+  .architecture-sequence__fragment[data-kind="success"] { @apply border-kumo-success bg-kumo-success-tint text-kumo-success; }
+  .architecture-sequence__fragment[data-kind="error"] { @apply border-kumo-danger bg-kumo-danger-tint text-kumo-danger; }
+  .architecture-sequence__fragment .mono-value { @apply mr-1; }
   .architecture-sequence__lifeline { @apply h-full w-full border-l border-dashed; border-color: var(--text-color-kumo-subtle); opacity: .5; }
-  .architecture-sequence__header { @apply bg-kumo-base; }
+  .architecture-sequence__header { @apply items-center rounded-[10px] bg-kumo-base text-center; }
+  .architecture-sequence__header[data-kind="capability"] { @apply bg-kumo-info-tint; }
+  .architecture-sequence__header[data-kind="external-system"] { @apply bg-transparent; }
+  .architecture-sequence__header strong { @apply text-xs; }
   .architecture-sequence__message { @apply relative flex h-full w-full cursor-pointer flex-col justify-end text-xs text-kumo-default; }
   .architecture-sequence__label { @apply line-clamp-2 min-w-0 px-2 pb-0.5 text-center text-[11px] leading-[14px]; }
   .architecture-sequence__label .architecture-map__mark { @apply ml-1; }
@@ -272,107 +275,23 @@
   .architecture-sequence__message[data-selected] .architecture-sequence__arrow { border-top-width: 2px; border-color: var(--rh-accent); }
   .architecture-sequence__message[data-selected][data-direction="right"] .architecture-sequence__arrow::after { border-left-color: var(--rh-accent); }
   .architecture-sequence__message[data-selected][data-direction="left"] .architecture-sequence__arrow::after { border-right-color: var(--rh-accent); }
-  .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] leading-[12px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-sequence__terminal { @apply h-full w-full overflow-hidden rounded-md border bg-kumo-base px-2 py-1 text-center text-[11px] font-semibold leading-[12px]; }
+  .architecture-sequence__terminal[data-kind="success"] { @apply border-kumo-success text-kumo-success; }
+  .architecture-sequence__terminal[data-kind="error"] { @apply border-kumo-danger text-kumo-danger; }
+  .architecture-sequence__flows { @apply flex shrink-0 flex-col gap-0.5 border-b border-kumo-hairline pb-3; }
+  .architecture-sequence__flow-list { @apply flex max-h-72 flex-col gap-0.5 overflow-y-auto; }
+  .architecture-sequence__flow-list button { @apply flex min-h-9 w-full shrink-0 cursor-pointer items-center gap-2.5 rounded-[7px] border-0 bg-transparent px-2.5 text-left text-[13px] text-kumo-default hover:bg-kumo-tint; }
+  .architecture-sequence__flow-list button[aria-pressed="true"] { @apply bg-kumo-tint font-medium text-kumo-strong; }
+  .architecture-sequence__flow-list .mono-value { @apply w-6 shrink-0 text-xs text-kumo-subtle; }
+  .architecture-sequence__flow-name { @apply min-w-0 flex-1 truncate; }
+  .architecture-sequence__lit { @apply size-1.5 shrink-0 rounded-full; background: var(--rh-accent); }
+  .architecture-sequence__code { @apply font-mono; }
   .architecture-topology__namespace { @apply bg-transparent; }
   .architecture-topology__box[data-kind="process"] { @apply bg-kumo-recessed; }
   .architecture-topology__box[data-kind="external-system"] { @apply border-dashed bg-kumo-base; }
   .architecture-topology__box[data-kind="mount"] { @apply bg-kumo-base; }
   .architecture-topology__member { @apply min-h-0 py-0; }
   .architecture-topology__member strong { @apply text-xs; }
-  /* History view (#1300), after the design mockup docs/design/operator-console/mockups/1300-architecture-history.html (#1324). */
-  .architecture-history { @apply flex min-w-0 flex-col gap-3; }
-  .architecture-history__banner { @apply flex flex-wrap items-center gap-2 rounded-lg px-3 py-2 text-[13px] text-kumo-default; background: var(--color-kumo-warning-tint); }
-  .architecture-history__banner button { @apply ml-auto cursor-pointer rounded-md border border-kumo-line bg-kumo-base px-2.5 py-0.5; }
-  .architecture-history__body { @apply grid min-w-0 gap-3 lg:grid-cols-[minmax(240px,300px)_minmax(0,1fr)] xl:h-[72vh] xl:min-h-[36rem] xl:grid-cols-[300px_minmax(0,1fr)_320px]; }
-  .architecture-history__body[data-stale] > * { filter: saturate(.55); }
-  .architecture-history__empty { @apply m-0 p-4 text-sm text-kumo-subtle; }
-  .architecture-history__timeline { @apply flex min-h-0 min-w-0 flex-col overflow-hidden rounded-xl border border-kumo-line bg-kumo-base lg:row-span-2 xl:row-span-1; }
-  .architecture-history__timeline > header { @apply flex items-baseline gap-2 px-3.5 py-2.5; border-bottom: 1px solid var(--color-kumo-hairline); }
-  .architecture-history__timeline h3 { @apply m-0 text-[13px] font-semibold text-kumo-strong; }
-  .architecture-history__timeline > header span { @apply ml-auto font-mono text-xs text-kumo-subtle; }
-  .architecture-history__timeline ol { @apply relative m-0 max-h-[40vh] flex-1 list-none overflow-y-auto py-1.5 pl-0 lg:max-h-[72vh] xl:max-h-none; }
-  .architecture-history__timeline ol::before { content: ""; @apply absolute bottom-0 left-6 top-0 w-px bg-kumo-line; }
-  .architecture-history__timeline li { @apply relative grid cursor-pointer grid-cols-[22px_minmax(0,1fr)] gap-x-2 border-l-2 border-transparent py-2 pl-3.5 pr-3; }
-  .architecture-history__timeline li:hover { background: var(--color-kumo-fill-hover); }
-  .architecture-history__timeline li[aria-selected="true"] { @apply bg-kumo-tint; border-left-color: var(--rh-accent); }
-  .architecture-history__timeline > footer { @apply flex items-center justify-between gap-2 px-3.5 py-2 font-mono text-[11px] text-kumo-subtle; border-top: 1px solid var(--color-kumo-hairline); }
-  .architecture-history__timeline > footer button { @apply cursor-pointer rounded-md border border-kumo-line bg-kumo-base px-2 py-0.5 font-sans text-xs text-kumo-default disabled:cursor-default disabled:opacity-60; }
-  .architecture-history__dot { @apply relative z-[1] ml-[3px] mt-[5px] size-[11px] rounded-full border-2 bg-kumo-base; border-color: var(--text-color-kumo-subtle); }
-  .architecture-history__timeline li[data-state="error"] .architecture-history__dot { @apply rounded-[2px]; border-color: var(--color-kumo-danger); background: var(--color-kumo-danger-tint); }
-  .architecture-history__timeline li[aria-selected="true"] .architecture-history__dot { border-color: var(--rh-accent); background: var(--rh-accent); }
-  .architecture-history__date { @apply flex items-center gap-2 font-mono text-xs text-kumo-subtle; }
-  .architecture-history__date code { @apply ml-auto; }
-  .architecture-history__subject { @apply col-start-2 line-clamp-2 text-[13px] text-kumo-strong; overflow-wrap: anywhere; }
-  .architecture-history__chips { @apply col-start-2 mt-1 flex flex-wrap gap-1; }
-  .architecture-history__canvas { @apply relative h-[60vh] min-h-[22rem] min-w-0 overflow-hidden rounded-xl border xl:h-auto xl:min-h-0; border-color: var(--rh-diagram-line); background: var(--rh-diagram-bg); }
-  .architecture-history__canvas-error { @apply absolute inset-0 grid place-content-center justify-items-center gap-2 p-6 text-center; }
-  .architecture-history__canvas-error p { @apply m-0 text-[13px] text-kumo-subtle; overflow-wrap: anywhere; }
-  .architecture-history__caption { @apply m-0 rounded-lg border bg-kumo-base px-2.5 py-1 font-mono text-xs text-kumo-subtle; border-color: var(--rh-diagram-line); }
-  .architecture-history__legend { @apply m-0 flex max-w-[min(28rem,calc(100vw-6rem))] flex-wrap gap-x-3 gap-y-1 rounded-lg border bg-kumo-base px-2.5 py-1.5 text-xs text-kumo-subtle; border-color: var(--rh-diagram-line); }
-  .architecture-history__legend div { @apply inline-flex items-center gap-1.5; }
-  .architecture-history__legend dt, .architecture-history__legend dd { @apply m-0; }
-  .architecture-history__tools { @apply flex flex-wrap items-center justify-end gap-1.5; }
-  .architecture-history__tools label { @apply inline-flex h-[30px] cursor-pointer items-center gap-1.5 rounded-lg border bg-kumo-base px-2.5 text-xs text-kumo-default; border-color: var(--rh-diagram-line); }
-  .architecture-history__group { @apply h-full w-full rounded-xl border; border-color: var(--rh-diagram-line); background: color-mix(in srgb, var(--color-kumo-recessed) 55%, transparent); }
-  .architecture-history__group span { @apply block px-3.5 pt-2 font-mono text-[11px] font-semibold uppercase tracking-[.04em] text-kumo-subtle; }
-  .architecture-history__node { @apply flex h-full w-full flex-col justify-center gap-0.5 overflow-hidden rounded-lg border bg-kumo-base px-2.5; border-color: var(--rh-diagram-line); }
-  .architecture-history__name { @apply flex min-w-0 items-center gap-1.5 text-xs font-medium text-kumo-strong; }
-  .architecture-history__name span { @apply truncate; }
-  .architecture-history__name b { @apply font-mono text-xs font-bold; }
-  .architecture-history__from { @apply truncate text-[11px] text-kumo-subtle; }
-  .architecture-history__inspector { @apply flex min-h-0 min-w-0 flex-col gap-3.5 overflow-y-auto rounded-xl border border-kumo-line bg-kumo-base p-3.5 lg:col-start-2 xl:col-start-3; }
-  .architecture-history__inspector h3 { @apply m-0 text-[15px] font-semibold leading-[1.4] text-kumo-strong; font-family: var(--font-display); overflow-wrap: anywhere; }
-  .architecture-history__eyebrow, .architecture-history__delta h4 { @apply m-0 mb-1 font-mono text-[11px] font-semibold uppercase tracking-[.06em] text-kumo-subtle; }
-  .architecture-history__facts { @apply m-0 grid grid-cols-[auto_minmax(0,1fr)] gap-x-3 gap-y-1 text-[13px]; }
-  .architecture-history__facts dt { @apply text-kumo-subtle; }
-  .architecture-history__facts dd { @apply m-0 font-mono text-xs; overflow-wrap: anywhere; }
-  .architecture-history__counts { @apply grid grid-cols-4 gap-1.5; }
-  .architecture-history__counts div { @apply rounded-lg bg-kumo-recessed px-2 py-1.5; }
-  .architecture-history__counts b { @apply block font-mono text-lg font-semibold leading-tight text-kumo-strong; }
-  .architecture-history__counts span { @apply text-[11px] text-kumo-subtle; }
-  .architecture-history__delta ul { @apply m-0 flex list-none flex-col gap-1 p-0; }
-  .architecture-history__delta li { @apply flex flex-wrap items-baseline gap-x-1.5 gap-y-0.5 rounded-md border-l-2 border-kumo-line bg-kumo-recessed px-2 py-1 text-xs; overflow-wrap: anywhere; }
-  .architecture-history__delta code { @apply text-[11px] text-kumo-subtle; }
-  .architecture-history__ref { @apply cursor-pointer border-0 bg-transparent p-0 text-left text-xs text-kumo-default hover:underline; }
-  .architecture-history__more { @apply mt-1 cursor-pointer border-0 bg-transparent p-0 text-xs text-kumo-subtle underline; }
-  .architecture-history__callout { @apply m-0 rounded-lg bg-kumo-recessed px-2.5 py-2 text-[13px] text-kumo-default; overflow-wrap: anywhere; }
-  .architecture-history__callout code { @apply text-xs; }
-  .architecture-history__callout[data-tone="error"] { background: var(--color-kumo-danger-tint); }
-  .architecture-history__callout[data-tone="gap"] { background: var(--color-kumo-warning-tint); }
-  .architecture-history__whole-error { @apply grid min-h-[24rem] place-content-center justify-items-center gap-3 rounded-xl border border-kumo-line bg-kumo-base p-8 text-center; }
-  .architecture-history__whole-error p { @apply m-0 text-kumo-subtle; }
-  .architecture-history__whole-error > code, .architecture-history__canvas-error > code { @apply rounded-md px-2.5 py-1 text-sm; color: var(--text-color-kumo-danger); background: var(--color-kumo-danger-tint); }
-  /* History diff states (mockup #1324). "changed inside" is not in the mockup; it uses the accent token in the same pattern. */
-  .architecture-history__chip { @apply inline-flex h-5 items-center rounded-full bg-kumo-recessed px-1.5 font-mono text-[11px] font-medium text-kumo-subtle; }
-  .architecture-history__chip[data-tone="added"] { color: var(--text-color-kumo-success); background: var(--color-kumo-success-tint); }
-  .architecture-history__chip[data-tone="removed"], .architecture-history__chip[data-tone="error"] { color: var(--text-color-kumo-danger); background: var(--color-kumo-danger-tint); }
-  .architecture-history__chip[data-tone="renamed"] { color: var(--text-color-kumo-info); background: var(--color-kumo-info-tint); }
-  .architecture-history__chip[data-tone="gap"] { color: var(--text-color-kumo-warning); background: var(--color-kumo-warning-tint); }
-  .architecture-history__node[data-diff="added"] { border: 2px solid var(--color-kumo-success); background: var(--color-kumo-success-tint); }
-  .architecture-history__node[data-diff="added"] b { color: var(--text-color-kumo-success); }
-  .architecture-history__node[data-diff="removed"] { border: 1.5px dashed var(--color-kumo-danger); background: var(--color-kumo-danger-tint); }
-  .architecture-history__node[data-diff="removed"] .architecture-history__name { color: var(--text-color-kumo-danger); }
-  .architecture-history__node[data-diff="removed"] .architecture-history__name span { @apply line-through; }
-  .architecture-history__node[data-diff="renamed"] { border: 2px solid var(--color-kumo-info); background: var(--color-kumo-info-tint); }
-  .architecture-history__node[data-diff="renamed"] b { color: var(--text-color-kumo-info); }
-  .architecture-history__node[data-diff="inside"] { border: 1.5px dashed var(--rh-accent); background: var(--rh-accent-tint); }
-  .architecture-history__node[data-diff="inside"] b { color: var(--text-color-kumo-brand); }
-  .architecture-history__node[data-selected] { border: 2.5px solid var(--rh-accent); }
-  .architecture-history__node[data-quiet] { opacity: .45; }
-  .architecture-history__swatch { @apply inline-block h-3 w-[18px] rounded-[3px] border bg-kumo-base align-middle; border-color: var(--rh-diagram-line); }
-  .architecture-history__swatch[data-diff="added"] { border: 2px solid var(--color-kumo-success); background: var(--color-kumo-success-tint); }
-  .architecture-history__swatch[data-diff="removed"] { border: 1.5px dashed var(--color-kumo-danger); background: var(--color-kumo-danger-tint); }
-  .architecture-history__swatch[data-diff="renamed"] { border: 2px solid var(--color-kumo-info); background: var(--color-kumo-info-tint); }
-  .architecture-history__swatch[data-diff="inside"] { border: 1.5px dashed var(--rh-accent); background: var(--rh-accent-tint); }
-  .architecture-history__line { @apply inline-block w-5 align-middle; border-top: 2px solid var(--color-kumo-success); }
-  .architecture-history__line[data-diff="removed"] { border-top: 2px dashed var(--color-kumo-danger); }
-  .architecture-history__delta li[data-diff="added"] { border-left-color: var(--color-kumo-success); }
-  .architecture-history__delta li[data-diff="removed"] { border-left-color: var(--color-kumo-danger); }
-  .architecture-history__delta li[data-diff="renamed"] { border-left-color: var(--color-kumo-info); }
-  .architecture-history__counts div[data-diff="added"] b { color: var(--text-color-kumo-success); }
-  .architecture-history__counts div[data-diff="removed"] b { color: var(--text-color-kumo-danger); }
-  .architecture-history__counts div[data-diff="renamed"] b { color: var(--text-color-kumo-info); }
-  /* End of history diff states. */
   @media (max-width: 47.5rem) { .architecture-map__legend, .architecture-history__legend { display: none; } }
 }
 
@@ -401,13 +320,3 @@
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
 .architecture-map .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
 .architecture-map[data-view="topology"] .architecture-map__edge .react-flow__edge-path { stroke-opacity: .55; }
-.architecture-history__canvas .react-flow__handle { pointer-events: none; opacity: 0; }
-.architecture-history__canvas .react-flow__attribution { background: transparent; font-size: 11px; }
-.architecture-history__canvas .react-flow__attribution a { color: var(--text-color-kumo-subtle); }
-/* History diff states for relations (React Flow is unlayered). Part of the block above. */
-.architecture-history__edge .react-flow__edge-path { stroke: var(--rh-diagram-line); stroke-width: 1; stroke-opacity: .7; }
-.architecture-history__edge--added .react-flow__edge-path { stroke: var(--color-kumo-success); stroke-width: 1.8; stroke-opacity: 1; }
-.architecture-history__edge--removed .react-flow__edge-path { stroke: var(--color-kumo-danger); stroke-width: 1.8; stroke-opacity: 1; stroke-dasharray: 5 4; }
-.architecture-history__edge.is-quiet .react-flow__edge-path { stroke-opacity: .25; }
-.architecture-history__edge.is-cold .react-flow__edge-path { stroke-opacity: .08; }
-.architecture-history__edge.is-hot .react-flow__edge-path { stroke-opacity: 1; stroke-width: 2.2; }
