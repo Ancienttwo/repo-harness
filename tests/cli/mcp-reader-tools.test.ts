@@ -8,7 +8,7 @@ import { repoHarnessRepoIdFor, type RepoHarnessAccessMode } from '../../src/effe
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildReaderToolDefinitions, callReaderTool, createReaderToolContext, type ReaderToolContext } from '../../src/cli/mcp/reader-tools';
 import { WorkspaceManager } from '../../src/cli/mcp/workspaces';
-import type { GeneralRepoCodeGraphAdapter } from '../../src/cli/mcp/codegraph-adapter';
+import { createCodeGraphCliAdapter, type GeneralRepoCodeGraphAdapter } from '../../src/cli/mcp/codegraph-adapter';
 import { currentProcessStartTime } from '../../src/effects/locking/process-start-time';
 
 async function jsonTool(ctx: ReaderToolContext, name: string, args: Record<string, unknown> = {}) {
@@ -111,7 +111,7 @@ async function withReaderRepo<T>(fn: (repoRoot: string, ctx: ReaderToolContext) 
       enableReader: true,
       allowedRoots: [repoRoot],
     });
-    const ctx = createReaderToolContext(repoRoot, policy, new WorkspaceManager({ allowedRoots: [repoRoot], policy }));
+    const ctx = createReaderToolContext(repoRoot, policy, createCodeGraphCliAdapter(), new WorkspaceManager({ allowedRoots: [repoRoot], policy }));
     return await fn(repoRoot, ctx);
   } finally {
     if (previousRepoHarnessHome === undefined) {
@@ -182,7 +182,7 @@ describe('MCP reader tools', () => {
       expect(opened.workspace_id).toMatch(/^ws_/);
 
       const otherPolicy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [repoRoot] });
-      const otherCtx = createReaderToolContext(repoRoot, otherPolicy, new WorkspaceManager({ allowedRoots: [repoRoot], policy: otherPolicy }));
+      const otherCtx = createReaderToolContext(repoRoot, otherPolicy, createCodeGraphCliAdapter(), new WorkspaceManager({ allowedRoots: [repoRoot], policy: otherPolicy }));
       const denied = await jsonTool(otherCtx, 'tree', { workspace_id: opened.workspace_id });
       expect(denied.error.code).toBe('WORKSPACE_NOT_FOUND');
     });
@@ -200,7 +200,7 @@ describe('MCP reader tools', () => {
       expect(readOnlyTools).toContain('read_file');
       expect(readOnlyTools).toContain('write_file');
       expect(readOnlyTools).toContain('refresh_repo_index');
-      const readOnlyCtx = createReaderToolContext(repoRoot, readOnlyPolicy, new WorkspaceManager({ allowedRoots: [repoRoot], policy: readOnlyPolicy }));
+      const readOnlyCtx = createReaderToolContext(repoRoot, readOnlyPolicy, createCodeGraphCliAdapter(), new WorkspaceManager({ allowedRoots: [repoRoot], policy: readOnlyPolicy }));
       const blockedWrite = await jsonTool(readOnlyCtx, 'write_file', {
         repo_id: repoId,
         path: 'docs/generated.txt',
@@ -225,7 +225,7 @@ describe('MCP reader tools', () => {
       process.env.REPO_HARNESS_HOME = repoHarnessHome;
       writeFileSync(join(repoRoot, '.env'), 'SENTINEL=not-registered\n');
       const policy = getMcpPolicy('planner', { enableReader: true, allowedRoots: [repoRoot] });
-      const ctx = createReaderToolContext(repoRoot, policy, new WorkspaceManager({ allowedRoots: [repoRoot], policy }));
+      const ctx = createReaderToolContext(repoRoot, policy, createCodeGraphCliAdapter(), new WorkspaceManager({ allowedRoots: [repoRoot], policy }));
       const roots = await jsonTool(ctx, 'list_allowed_roots');
       expect(roots.roots[0].repo_id).toBeUndefined();
       expect(roots.repos).toEqual([]);
@@ -589,8 +589,8 @@ describe('MCP reader tools', () => {
       const writeCtx = createReaderToolContext(
         repoRoot,
         ctx.policy,
-        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
         fakeCodeGraph,
+        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
       );
       const repoId = (await jsonTool(writeCtx, 'list_allowed_roots')).roots[0].repo_id;
       const capabilities = await jsonTool(writeCtx, 'get_repo_capabilities', { repo_id: repoId });
@@ -992,8 +992,8 @@ describe('MCP reader tools', () => {
 	      const failingCtx = createReaderToolContext(
 	        repoRoot,
 	        ctx.policy,
-	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
 	        failingCodeGraph,
+	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
 	      );
 	      const failedRefresh = await jsonTool(failingCtx, 'refresh_repo_index', {
 	        repo_id: repoId,
@@ -1066,8 +1066,8 @@ describe('MCP reader tools', () => {
 	      const raceCtx = createReaderToolContext(
 	        repoRoot,
 	        ctx.policy,
+	        createCodeGraphCliAdapter(),
 	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
-	        undefined,
 	        {
 	          beforeMutationCommit(event) {
 	            const trip = (name: string, fn: () => void): void => {
@@ -1171,6 +1171,7 @@ describe('MCP reader tools', () => {
 	        const writeCtx = createReaderToolContext(
 	          repoRoot,
 	          ctx.policy,
+	          createCodeGraphCliAdapter(),
 	          new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
 	        );
 	        const repoId = (await jsonTool(writeCtx, 'list_allowed_roots')).roots[0].repo_id;
@@ -1300,8 +1301,8 @@ describe('MCP reader tools', () => {
 	      const raceCtx = createReaderToolContext(
 	        repoRoot,
 	        ctx.policy,
+	        createCodeGraphCliAdapter(),
 	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
-	        undefined,
 	        {
 	          beforeNativeMoveCommit(event) {
 	            if (event.toPath === 'docs/native-race-target.txt') {
@@ -1332,6 +1333,7 @@ describe('MCP reader tools', () => {
 	      const writeCtx = createReaderToolContext(
 	        repoRoot,
 	        ctx.policy,
+	        createCodeGraphCliAdapter(),
 	        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
 	      );
 	      const repoId = (await jsonTool(writeCtx, 'list_allowed_roots')).roots[0].repo_id;
@@ -1425,8 +1427,8 @@ describe('MCP reader tools', () => {
       const cgCtx = createReaderToolContext(
         repoRoot,
         ctx.policy,
-        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
         fakeCodeGraph,
+        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
       );
 
       const repoId = (await jsonTool(cgCtx, 'list_allowed_roots')).roots[0].repo_id;
@@ -1658,8 +1660,8 @@ describe('MCP reader tools', () => {
       const secureCtx = createReaderToolContext(
         repoRoot,
         ctx.policy,
-        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
         throwingCodeGraph,
+        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
       );
       const repoId = (await jsonTool(secureCtx, 'list_allowed_roots')).roots[0].repo_id;
 
@@ -1782,8 +1784,8 @@ describe('MCP reader tools', () => {
       const obsCtx = createReaderToolContext(
         repoRoot,
         ctx.policy,
-        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
         fakeCodeGraph,
+        new WorkspaceManager({ allowedRoots: [repoRoot], policy: ctx.policy }),
       );
       const repoId = (await jsonTool(obsCtx, 'list_allowed_roots')).roots[0].repo_id;
 

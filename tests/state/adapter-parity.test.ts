@@ -10,6 +10,7 @@ import type {
 import { getMcpPolicy } from '../../src/cli/mcp/policy';
 import { buildStateToolDefinitions, callStateTool } from '../../src/cli/mcp/state-tools';
 import { callMcpTool, type McpToolContext } from '../../src/cli/mcp/tools';
+import { createCodeGraphCliAdapter } from '../../src/cli/mcp/codegraph-adapter';
 import {
   buildStateSnapshot,
   resolveEffectiveState,
@@ -101,7 +102,7 @@ function runPublicHook(cwd: string): StateSnapshot {
 
 async function runPublicMcp(cwd: string): Promise<CompactState> {
   const policy = getMcpPolicy('planner', { allowedRoots: [cwd] });
-  const raw = await callMcpTool({ repoRoot: cwd, policy }, 'summarize_repo_harness_state');
+  const raw = await callMcpTool({ repoRoot: cwd, policy, codeGraphAdapter: createCodeGraphCliAdapter() }, 'summarize_repo_harness_state');
   return JSON.parse(raw.content[0].text) as CompactState;
 }
 
@@ -214,7 +215,7 @@ describe('Effective State adapter authority parity and policy boundaries', () =>
     const fixture = createEffectiveStateFixture();
     try {
       const policy = getMcpPolicy('planner', { allowedRoots: [fixture.cwd] });
-      const ctx: McpToolContext = { repoRoot: fixture.cwd, policy };
+      const ctx: McpToolContext = { repoRoot: fixture.cwd, policy, codeGraphAdapter: createCodeGraphCliAdapter() };
       const beforeRaw = await callMcpTool(ctx, 'summarize_repo_harness_state');
       const before = JSON.parse(beforeRaw.content[0].text) as Record<string, any>;
       expect(before.kind).toBe('repo-harness-effective-state');

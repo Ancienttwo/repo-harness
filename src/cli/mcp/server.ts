@@ -18,7 +18,7 @@ export interface McpServerOptions {
   enableReader?: boolean;
   allowedRoots?: string[];
   /** The CodeGraph reads of the reader tools; `mcp serve` sets it from the recorded selection. */
-  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+  codeGraphAdapter: GeneralRepoCodeGraphAdapter;
 }
 
 function normalizeAllowedRoots(rawRoots: string[], opts: { skipDenied?: boolean } = {}): string[] {
