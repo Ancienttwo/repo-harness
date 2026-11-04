@@ -24,7 +24,7 @@ import { mapLayerView, type MapLayerId, type MapMark } from './architecture-map-
 import { firstViewport, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
 import { runtimePlacement } from './architecture-runtime';
 import {
-  layoutTopology, processNamespace, TOPOLOGY_BASES, TOPOLOGY_BOX_HEADER, TOPOLOGY_KINDS, TOPOLOGY_MEMBER, topologySvg, withoutDeprecated,
+  layoutTopology, processNamespace, TOPOLOGY_BASES, TOPOLOGY_BOX_HEADER, TOPOLOGY_KINDS, TOPOLOGY_MEMBER, topologySvg,
   type MountTone, type TopologyBase, type TopologyBox, type TopologyLayout,
 } from './architecture-topology-layout';
 import type { OperatorTranslate } from './i18n';
@@ -128,10 +128,7 @@ function download(name: string, content: string): void {
   setTimeout(() => URL.revokeObjectURL(url), 0);
 }
 
-function segmentLayout(map: ArchitectureMapV1, base: TopologyBase, legacy: boolean): TopologyLayout {
-  const shown = legacy ? map : withoutDeprecated(map);
-  return layoutTopology(shown, runtimePlacement(shown), base);
-}
+const segmentLayout = (map: ArchitectureMapV1, base: TopologyBase, legacy: boolean) => layoutTopology(map, runtimePlacement(map), base, legacy);
 
 /** The lens-row tools of the topology map: the segment, the legacy switch and the SVG export of the segment on screen. */
 export function TopologyLensTools({ map, base, onBase, legacy, onLegacy, t }: {
@@ -315,11 +312,10 @@ export function ArchitectureTopology({ map, layer, pullRequest, base, legacy, si
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
-  const shown = useMemo(() => legacy ? map : withoutDeprecated(map), [map, legacy]);
-  const placement = useMemo(() => runtimePlacement(shown), [shown]);
-  const layout = useMemo(() => layoutTopology(shown, placement, base), [shown, placement, base]);
+  const placement = useMemo(() => runtimePlacement(map), [map]);
+  const layout = useMemo(() => layoutTopology(map, placement, base, legacy), [map, placement, base, legacy]);
   const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
-  const declared = shown.nodes.some(node => node.kind === 'process' || node.kind === 'namespace' || node.kind === 'mount');
+  const declared = map.nodes.some(node => node.kind === 'process' || node.kind === 'namespace' || node.kind === 'mount');
   const empty = !declared ? { part: 'topology.empty', reason: 'topology_undeclared', text: t('architecture.topology.none') }
     : !layout.boxes.some(box => box.node.kind !== 'external-system') ? { ...SEGMENT_EMPTY[base], text: t(`architecture.topology.none.${base}`) } : null;
   if (empty !== null) {
@@ -343,6 +339,6 @@ export function ArchitectureTopology({ map, layer, pullRequest, base, legacy, si
         })}</ul>
       </details>
     </Note>}
-    <ReactFlowProvider><TopologyCanvas key={`${map.commit}:${base}:${legacy}`} map={shown} layout={layout} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>
+    <ReactFlowProvider><TopologyCanvas key={`${map.commit}:${base}:${legacy}`} map={map} layout={layout} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>
   </div>;
 }

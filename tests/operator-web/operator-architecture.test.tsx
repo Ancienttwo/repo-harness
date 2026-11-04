@@ -18,7 +18,7 @@ import {
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
 import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
-import { layoutTopology, withoutDeprecated } from '../../src/operator-web/architecture-topology-layout';
+import { layoutTopology, topologySvg, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
 import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
@@ -936,7 +936,7 @@ describe('sequence and topology base maps', () => {
 
   test('topology segments: processes hold deployed code and draw lifted relations; namespaces frame their mounts in order with a reader or writer tone; mounters list mounts in order', () => {
     const map = runtimeMap();
-    const processes = layoutTopology(map, runtimePlacement(map), 'process');
+    const processes = layoutTopology(map, runtimePlacement(map), 'process', true);
     const box = new Map(processes.boxes.map(item => [item.node.id, item]));
     // Process boxes and external systems only; the namespace and its runs-in relations belong to the namespace segment.
     expect(processes.boxes.map(item => item.node.id).sort()).toEqual([CLI, EXTERNAL, SERVER].sort());
@@ -955,30 +955,52 @@ describe('sequence and topology base maps', () => {
         mapRelation('relation.w-cache', 'writes', PART, 'mount.cache'), mapRelation('relation.r-cache', 'reads', CALLER, 'mount.cache'), mapRelation('relation.r-old', 'reads', CALLER, 'mount.old'),
         { ...mapRelation('relation.s-remote', 'calls', HOST, 'namespace.remote'), protocol: 'ssh' }],
     });
-    expect(layoutTopology(mounted, runtimePlacement(mounted), 'process').edges.find(edge => edge.kind === 'spawns')?.protocols).toEqual(['stdio']);
-    const cases: readonly { readonly name: string; readonly map: ArchitectureMapV1; readonly base: 'namespace' | 'mount'; readonly expected: unknown }[] = [
-      { name: 'namespace frames', map: mounted, base: 'namespace', expected: {
+    expect(layoutTopology(mounted, runtimePlacement(mounted), 'process', true).edges.find(edge => edge.kind === 'spawns')?.protocols).toEqual(['stdio']);
+    // Legacy off with a deprecated node in each place that another node names: a namespace parent (with a grandparent and at the top),
+    // a mount's home namespace and mounter, and a process with deployed code.
+    const deprecated = (node: ArchitectureMapNodeV1): ArchitectureMapNodeV1 => ({ ...node, status: 'deprecated' });
+    const hidden = runtimeMap({
+      nodes: [...runtimeMap().nodes, deprecated(mapNode('namespace.old', 'namespace', HOST)), mapNode('namespace.child', 'namespace', 'namespace.old'),
+        deprecated(mapNode('namespace.gone', 'namespace')), mapNode('namespace.orphan', 'namespace', 'namespace.gone'),
+        mount('mount.kept', 0), deprecated(mapNode('process.old', 'process'))],
+      relations: [...runtimeMap().relations, mapRelation('relation.m-kept', 'mounts', 'namespace.old', 'mount.kept'),
+        mapRelation('relation.p-deploy', 'deployed-on', PART, 'process.old'), mapRelation('relation.p-runs', 'runs-in', 'process.old', HOST)],
+    });
+    const cases: readonly { readonly name: string; readonly map: ArchitectureMapV1; readonly base: TopologyBase; readonly legacy: boolean; readonly expected: unknown }[] = [
+      { name: 'hidden namespace parents', map: hidden, base: 'namespace', legacy: false, expected: {
+        boxes: [[HOST, null, true, null], ['mount.kept', HOST, false, 'point'], ['namespace.child', HOST, false, null], ['namespace.orphan', null, false, null]], edges: [], members: [] } },
+      { name: 'hidden mounter', map: hidden, base: 'mount', legacy: false, expected: { boxes: [], edges: [], members: [] } },
+      // The ledger runs in the hidden process, so its read of git has no box and is not unplaced; the router's call into the pipe still is.
+      { name: 'hidden process', map: hidden, base: 'process', legacy: false, expected: {
+        boxes: [[EXTERNAL, null, false, null], [CLI, null, false, null], [SERVER, null, false, null]], edges: [[CLI, SERVER, 'spawns', []]], members: [[SERVER, [CENTER]]] } },
+      { name: 'namespace frames', map: mounted, base: 'namespace', legacy: true, expected: {
         boxes: [[HOST, null, true, null], ['mount.config', HOST, false, 'point'], ['mount.cache', HOST, false, 'writer'], ['mount.old', HOST, false, 'reader'], ['namespace.remote', null, false, null]],
         edges: [[HOST, 'namespace.remote', 'calls', ['ssh']]], members: [] } },
-      { name: 'legacy off', map: withoutDeprecated(mounted), base: 'namespace', expected: {
+      { name: 'legacy off', map: mounted, base: 'namespace', legacy: false, expected: {
         boxes: [[HOST, null, true, null], ['mount.config', HOST, false, 'point'], ['mount.cache', HOST, false, 'writer'], ['namespace.remote', null, false, null]],
         edges: [[HOST, 'namespace.remote', 'calls', ['ssh']]], members: [] } },
       // Mounters follow the model's node order.
-      { name: 'mounters', map: mounted, base: 'mount', expected: {
+      { name: 'mounters', map: mounted, base: 'mount', legacy: true, expected: {
         boxes: [[HOST, null, false, null], [CLI, null, false, null]], edges: [], members: [[HOST, ['mount.old']], [CLI, ['mount.config', 'mount.cache']]] } },
-      { name: 'no mount', map, base: 'mount', expected: { boxes: [], edges: [], members: [] } },
+      { name: 'no mount', map, base: 'mount', legacy: true, expected: { boxes: [], edges: [], members: [] } },
     ];
     for (const entry of cases) {
-      const layout = layoutTopology(entry.map, runtimePlacement(entry.map), entry.base);
+      const layout = layoutTopology(entry.map, runtimePlacement(entry.map), entry.base, entry.legacy);
       const actual: unknown = {
         boxes: layout.boxes.map(item => [item.node.id, item.parent, item.group, item.tone]),
         edges: layout.edges.map(edge => [edge.source, edge.target, edge.kind, edge.protocols]),
         members: layout.boxes.filter(item => item.members.length > 0).map(item => [item.node.id, item.members.map(member => member.id)]),
       };
       expect([entry.name, actual]).toEqual([entry.name, entry.expected]);
+      // Each box of the SVG file clips its text with its own clip path.
+      const svg = topologySvg(layout, { detail: item => item.node.kind, member: (_, member) => member.name });
+      expect([entry.name, [...svg.matchAll(/clip-path="url\(#(clip-\d+)\)"/gu)].map(match => match[1])])
+        .toEqual([entry.name, [...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])]);
+      expect(new Set([...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])).size).toBe(layout.boxes.length);
     }
+    expect(layoutTopology(hidden, runtimePlacement(hidden), 'process', false).unplaced).toEqual(['relation.b-router']);
     // A frame encloses its mounts, and the mounts stack in mount order.
-    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace').boxes.map(item => [item.node.id, item]));
+    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace', true).boxes.map(item => [item.node.id, item]));
     const inside = (inner: string, outer: string) => {
       const a = frames.get(inner)!, b = frames.get(outer)!;
       return a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
@@ -1306,7 +1328,7 @@ describe('sequence and topology base maps', () => {
     expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
     expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
     // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
-    const first = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process').boxes.find(item => item.node.kind !== 'external-system')!;
+    const first = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).boxes.find(item => item.node.kind !== 'external-system')!;
     expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(first.x - 24) * 0.85}px,${-(first.y - 24) * 0.85}px) scale(0.85)`);
     expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
     // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.

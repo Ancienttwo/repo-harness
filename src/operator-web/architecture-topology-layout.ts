@@ -79,16 +79,20 @@ export interface TopologyLayout {
 
 interface Box { readonly x: number; readonly y: number; readonly width: number; readonly height: number }
 
-/** The map without its `deprecated` nodes and the relations that touch them: the legacy switch off. */
-export function withoutDeprecated(map: ArchitectureMapV1): ArchitectureMapV1 {
-  const kept = new Set(map.nodes.filter(node => node.status !== 'deprecated').map(node => node.id));
-  return { ...map, nodes: map.nodes.filter(node => kept.has(node.id)), relations: map.relations.filter(relation => kept.has(relation.source) && kept.has(relation.target)) };
-}
+/** Which nodes a segment may draw: `legacy` false leaves out the `deprecated` nodes and the relations that touch them. */
+type Visible = (nodeId: string) => boolean;
+const touches = (visible: Visible, relation: { readonly source: string; readonly target: string }) => visible(relation.source) && visible(relation.target);
 
-export function layoutTopology(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, base: TopologyBase): TopologyLayout {
-  if (base === 'process') return layoutProcesses(map, placement);
-  if (base === 'namespace') return layoutNamespaces(map);
-  return layoutMounters(map);
+/**
+ * One segment of the topology map. The layout reads the whole map and leaves the hidden nodes out itself, so a
+ * kept node never names a removed parent: a box whose namespace is hidden goes into the nearest shown namespace.
+ */
+export function layoutTopology(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, base: TopologyBase, legacy: boolean): TopologyLayout {
+  const deprecated = new Set(legacy ? [] : map.nodes.filter(node => node.status === 'deprecated').map(node => node.id));
+  const visible: Visible = id => !deprecated.has(id);
+  if (base === 'process') return layoutProcesses(map, placement, visible);
+  if (base === 'namespace') return layoutNamespaces(map, visible);
+  return layoutMounters(map, visible);
 }
 
 /** The namespace that a process runs in, or null when the model names none. */
@@ -108,13 +112,13 @@ function addRelation(edge: TopologyEdge, relation: ArchitectureMapV1['relations'
   };
 }
 
-function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement): TopologyLayout {
+function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => RuntimePlacement, visible: Visible): TopologyLayout {
   const byId = new Map(map.nodes.map(node => [node.id, node]));
-  const boxes = map.nodes.filter(node => node.kind === 'process' || node.kind === 'external-system');
+  const boxes = map.nodes.filter(node => (node.kind === 'process' || node.kind === 'external-system') && visible(node.id));
   const isBox = (id: string) => { const kind = byId.get(id)?.kind; return kind === 'process' || kind === 'external-system'; };
   const members = new Map<string, ArchitectureMapNodeV1[]>();
   for (const relation of map.relations) {
-    if (relation.kind === 'deployed-on' && byId.get(relation.target)?.kind === 'process' && !TOPOLOGY_KINDS.has(byId.get(relation.source)!.kind)) {
+    if (relation.kind === 'deployed-on' && touches(visible, relation) && byId.get(relation.target)?.kind === 'process' && !TOPOLOGY_KINDS.has(byId.get(relation.source)!.kind)) {
       members.set(relation.target, [...(members.get(relation.target) ?? []), byId.get(relation.source)!]);
     }
   }
@@ -128,10 +132,12 @@ function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => 
   const edges = new Map<string, TopologyEdge>();
   const unplaced: string[] = [];
   for (const relation of map.relations) {
-    if (CONTAINMENT.has(relation.kind)) continue;
+    if (CONTAINMENT.has(relation.kind) || !touches(visible, relation)) continue;
     if ([relation.source, relation.target].some(id => { const kind = byId.get(id)!.kind; return kind === 'namespace' || kind === 'mount'; })) continue;
     const source = end(relation.source);
     const target = end(relation.target);
+    // An end that runs in a hidden process has no box while the legacy switch is off; the relation is not unplaced.
+    if ((source !== null && !visible(source)) || (target !== null && !visible(target))) continue;
     if (source === null || target === null) {
       if (source !== null || target !== null) unplaced.push(relation.id);
       continue;
@@ -163,24 +169,33 @@ function layoutProcesses(map: ArchitectureMapV1, placement: (nodeId: string) => 
 /** Mounts in `mount.order`; the decoder sets `mount` on every mount node. */
 const byOrder = (a: ArchitectureMapNodeV1, b: ArchitectureMapNodeV1) => a.mount!.order - b.mount!.order;
 
-function layoutNamespaces(map: ArchitectureMapV1): TopologyLayout {
+function layoutNamespaces(map: ArchitectureMapV1, visible: Visible): TopologyLayout {
   const byId = new Map(map.nodes.map(node => [node.id, node]));
   const kind = (id: string) => byId.get(id)!.kind;
-  const shown = map.nodes.filter(node => node.kind === 'namespace' || node.kind === 'mount');
+  const shown = map.nodes.filter(node => (node.kind === 'namespace' || node.kind === 'mount') && visible(node.id));
+  // The nearest shown namespace at or above `id` on the namespace parent chain.
+  const frame = (id: string | null): string | null => {
+    let cursor = id;
+    while (cursor !== null && kind(cursor) === 'namespace' && !visible(cursor)) cursor = byId.get(cursor)!.parent;
+    return cursor !== null && kind(cursor) === 'namespace' ? cursor : null;
+  };
   const container = new Map<string, string>();
-  for (const node of shown) if (node.kind === 'namespace' && node.parent !== null && kind(node.parent) === 'namespace') container.set(node.id, node.parent);
+  for (const node of shown) {
+    const home = node.kind === 'namespace' ? frame(node.parent) : null;
+    if (home !== null) container.set(node.id, home);
+  }
   for (const relation of map.relations) {
-    if (relation.kind !== 'mounts' || kind(relation.target) !== 'mount') continue;
-    const home = kind(relation.source) === 'namespace' ? relation.source : kind(relation.source) === 'process' ? processNamespace(map, relation.source) : null;
+    if (relation.kind !== 'mounts' || kind(relation.target) !== 'mount' || !visible(relation.target)) continue;
+    const home = frame(kind(relation.source) === 'namespace' ? relation.source : kind(relation.source) === 'process' ? processNamespace(map, relation.source) : null);
     if (home !== null) container.set(relation.target, home);
   }
   const tone = new Map<string, MountTone>();
   for (const relation of map.relations) {
-    if (kind(relation.target) !== 'mount') continue;
+    if (kind(relation.target) !== 'mount' || !touches(visible, relation)) continue;
     if (relation.kind === 'writes') tone.set(relation.target, 'writer');
     else if (relation.kind === 'reads' && tone.get(relation.target) !== 'writer') tone.set(relation.target, 'reader');
   }
-  const isShown = (id: string) => { const value = kind(id); return value === 'namespace' || value === 'mount'; };
+  const isShown = (id: string) => { const value = kind(id); return (value === 'namespace' || value === 'mount') && visible(id); };
   const edges = new Map<string, TopologyEdge>();
   for (const relation of map.relations) {
     if (CONTAINMENT.has(relation.kind) || !isShown(relation.source) || !isShown(relation.target) || relation.source === relation.target) continue;
@@ -219,11 +234,12 @@ function layoutNamespaces(map: ArchitectureMapV1): TopologyLayout {
   return { base: 'namespace', boxes, edges: [...edges.values()], unplaced: [], ...extent(boxes) };
 }
 
-function layoutMounters(map: ArchitectureMapV1): TopologyLayout {
+/** A hidden mounter takes its mounts out of this segment; the namespace segment still shows them. */
+function layoutMounters(map: ArchitectureMapV1, visible: Visible): TopologyLayout {
   const byId = new Map(map.nodes.map(node => [node.id, node]));
   const mounts = new Map<string, ArchitectureMapNodeV1[]>();
   for (const relation of map.relations) {
-    if (relation.kind === 'mounts' && byId.get(relation.target)?.kind === 'mount') mounts.set(relation.source, [...(mounts.get(relation.source) ?? []), byId.get(relation.target)!]);
+    if (relation.kind === 'mounts' && touches(visible, relation) && byId.get(relation.target)?.kind === 'mount') mounts.set(relation.source, [...(mounts.get(relation.source) ?? []), byId.get(relation.target)!]);
   }
   let x = MARGIN;
   const boxes = map.nodes.filter(node => mounts.has(node.id)).map((node): TopologyBox => {
@@ -260,12 +276,12 @@ const escape = (value: string) => value.replace(/[&<>"]/gu, char => ({ '&': '&am
 export function topologySvg(layout: TopologyLayout, text: TopologySvgText): string {
   const parts: string[] = [];
   const centre = new Map(layout.boxes.map(box => [box.node.id, [box.x + box.width / 2, box.y + box.height / 2] as const]));
-  for (const box of layout.boxes) {
+  for (const [index, box] of layout.boxes.entries()) {
     const style = box.tone ?? (box.node.kind === 'namespace' ? 'frame' : box.node.kind === 'external-system' ? 'external' : 'box');
     parts.push(
-      `<clipPath id="clip-${parts.length}"><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"/></clipPath>`,
+      `<clipPath id="clip-${index}"><rect x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"/></clipPath>`,
       `<rect class="${style}" x="${box.x}" y="${box.y}" width="${box.width}" height="${box.height}" rx="10"/>`,
-      `<g clip-path="url(#clip-${parts.length - 1})"><text class="title" x="${box.x + 12}" y="${box.y + 20}">${escape(box.node.name)}</text>`
+      `<g clip-path="url(#clip-${index})"><text class="title" x="${box.x + 12}" y="${box.y + 20}">${escape(box.node.name)}</text>`
         + `<text class="detail" x="${box.x + 12}" y="${box.y + 36}">${escape(text.detail(box))}</text>`
         + box.members.map((member, index) => `<text x="${box.x + 12}" y="${box.y + TOPOLOGY_BOX_HEADER + 16 + index * TOPOLOGY_MEMBER}">${escape(text.member(box, member))}</text>`).join('')
         + '</g>',
