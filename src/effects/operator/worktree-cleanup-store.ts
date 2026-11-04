@@ -2,6 +2,7 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
+import { decodeCleanupInvestigationJob, type CleanupInvestigationJob } from '../../core/operator/worktree-cleanup-investigation';
 import type { CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import { decodeCleanupPlan, type CleanupPlan, type CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
@@ -69,6 +70,14 @@ export function cleanupStagingDirectory(env: NodeJS.ProcessEnv, sessionId: strin
   return privateDirectory(join(cleanupSessionDirectory(env, sessionId), 'staging'));
 }
 
+/** Replace one private session file atomically. */
+function replacePrivate(env: NodeJS.ProcessEnv, sessionId: string, name: string, value: unknown): void {
+  const directory = cleanupSessionDirectory(env, sessionId), temporary = join(directory, `.${name}-${randomUUID()}`);
+  createFileExclusiveDurably(temporary, Buffer.from(JSON.stringify(value)));
+  try { renameSync(temporary, join(directory, name)); } catch (error) { unlinkSync(temporary); throw error; }
+  syncDirectoryDurably(directory);
+}
+
 /** Replace the session plan atomically. The private items must be exactly the plan items, bound by their loss digests. */
 export function saveCleanupSession(env: NodeJS.ProcessEnv, session: CleanupSession): void {
   const plan = decodeCleanupPlan(session.plan);
@@ -78,10 +87,7 @@ export function saveCleanupSession(env: NodeJS.ProcessEnv, session: CleanupSessi
     const own = session.items[item.worktree.id]!;
     if (own.target.id !== item.worktree.id || cleanupLossSha256({ worktree: item.worktree, loss: own.loss }) !== item.loss_sha256) throw new Error('worktree cleanup session items invalid');
   }
-  const directory = cleanupSessionDirectory(env, plan.session_id), temporary = join(directory, `.plan-${randomUUID()}`);
-  createFileExclusiveDurably(temporary, Buffer.from(JSON.stringify({ plan, items: session.items })));
-  try { renameSync(temporary, join(directory, 'plan.json')); } catch (error) { unlinkSync(temporary); throw error; }
-  syncDirectoryDurably(directory);
+  replacePrivate(env, plan.session_id, 'plan.json', { plan, items: session.items });
 }
 
 export function loadCleanupSession(env: NodeJS.ProcessEnv, sessionId: string): CleanupSession {
@@ -114,4 +120,17 @@ export function writeCleanupArchiveRecord(env: NodeJS.ProcessEnv, sessionId: str
   const path = join(cleanupSessionDirectory(env, sessionId), archiveName(item));
   createFileExclusiveDurably(path, Buffer.from(JSON.stringify({ manifest_sha256: record.manifest_sha256, pr: record.pr })));
   syncDirectoryDurably(join(path, '..'));
+}
+
+/** The latest investigation job of a session. One record per session: a new job replaces it. */
+export function saveCleanupInvestigation(env: NodeJS.ProcessEnv, job: CleanupInvestigationJob): void {
+  replacePrivate(env, job.session_id, 'investigation.json', decodeCleanupInvestigationJob(job));
+}
+
+export function loadCleanupInvestigation(env: NodeJS.ProcessEnv, sessionId: string): CleanupInvestigationJob | null {
+  const path = sessionFile(env, sessionId, 'investigation.json'), raw = path === null ? null : readPrivate(path);
+  if (raw === null) return null;
+  const job = decodeCleanupInvestigationJob(raw);
+  if (job.session_id !== sessionId) throw new Error('worktree cleanup investigation changed');
+  return job;
 }

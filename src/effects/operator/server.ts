@@ -6,6 +6,9 @@ import { startDevActivityCollector } from '../dev-activity/collector';
 import { startWorktreeCollector } from './worktree-collector';
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE, worktreeCleanupWriteRoute } from './worktree-cleanup';
 import { OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE, OPERATOR_WORKTREES_CLEANUP_PLAN_ROUTE, worktreeCleanupExecuteWriteRoute, worktreeCleanupPlanWriteRoute } from './worktree-cleanup-route';
+import {
+  OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE, OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE, readCleanupInvestigationStatus, worktreeCleanupInvestigationWriteRoute,
+} from './worktree-cleanup-investigation';
 import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { architecturePullRequestsSource } from '../../core/dev-activity/architecture';
@@ -139,6 +142,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   // Plans and runs the authorized removal of non-green worktrees; both effects run in a supervised child process.
   Object.freeze({ id: 'worktrees_cleanup_plan', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_PLAN_ROUTE.source, write: true }),
   Object.freeze({ id: 'worktrees_cleanup_execute', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE.source, write: true }),
+  // Starts the agent investigation of one plan session in a supervised job child; the status route reads its record.
+  Object.freeze({ id: 'worktrees_cleanup_investigation', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE.source, write: true }),
+  Object.freeze({ id: 'worktrees_cleanup_investigation_status', method: 'GET', pattern: OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE.source, write: false }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
   Object.freeze({ id: 'bot_reviews', method: 'GET', pattern: OPERATOR_BOT_REVIEWS_PATH, write: false }),
@@ -1122,6 +1128,7 @@ export async function startOperatorServer(
     worktreeCleanupWriteRoute(options.env),
     worktreeCleanupPlanWriteRoute({ env: options.env }),
     worktreeCleanupExecuteWriteRoute({ env: options.env }),
+    worktreeCleanupInvestigationWriteRoute({ env: options.env, read_quota: options.read_quota }),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
     .concat(injectedWriteRoutes);
   // The inventory is the one write authority: a handler it does not declare
@@ -1399,6 +1406,21 @@ export async function startOperatorServer(
         sendRefusal(request, response, AGENTS_CONFIGURATION_FAILURES[error.code].status,
           errorBody(error.code, error.message, AGENTS_CONFIGURATION_FAILURES[error.code].next_action), headOnly);
       }
+      return;
+    }
+
+    const investigation = OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE.exec(pathname);
+    if (investigation !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The investigation status accepts no query selectors.'), headOnly);
+        return;
+      }
+      const status = readCleanupInvestigationStatus({ ...process.env, ...options.env }, investigation[1]!);
+      if (status === null) {
+        sendRefusal(request, response, 404, errorBody('investigation_not_found', 'No investigation of this cleanup session exists.', 'Start an investigation from the plan page.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, status, headOnly);
       return;
     }
 

@@ -1,8 +1,10 @@
 import { expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
-import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, writeFileSync } from 'node:fs';
+import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { decodeAuthorizedCleanupRequest, type CleanupArchivePlan, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
+import { decodeAuthorizedCleanupRequest, cleanupSelection, type CleanupAdvice, type CleanupArchivePlan, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
+import { CLEANUP_INVESTIGATION_MANIFEST, WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS } from '../../src/core/operator/worktree-cleanup-investigation';
+import type { TaskRequest } from '../../src/core/review/runner-port';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import type { WorktreeProcess } from '../../src/effects/git/worktree-processes';
@@ -11,12 +13,17 @@ import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { runSetupProcess } from '../../src/effects/setup/collector';
 import { createGithubDraftPrPublisher } from '../../src/effects/operator/doc-session-finalize-github';
 import { startOperatorServer } from '../../src/effects/operator/server';
-import { cleanupPlanSelectionDigest } from '../../src/effects/operator/worktree-cleanup-plan';
+import { cleanupPlanSelectionDigest, createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
+import {
+  CleanupInvestigationError, prepareCleanupInvestigation, readCleanupInvestigationStatus, runCleanupInvestigation, startCleanupInvestigation,
+  worktreeCleanupInvestigationWriteRoute, type CleanupInvestigator,
+} from '../../src/effects/operator/worktree-cleanup-investigation';
+import { prepareReviewLauncher } from '../../src/effects/review/review-isolation';
 import { CLEANUP_ARCHIVE_BRANCH } from '../../src/effects/operator/worktree-cleanup-publish';
 import {
   chooseCleanupSessionPlan, createCleanupSessionPlan, runAuthorizedCleanup, worktreeCleanupExecuteWriteRoute, worktreeCleanupPlanWriteRoute,
 } from '../../src/effects/operator/worktree-cleanup-route';
-import { loadCleanupSession } from '../../src/effects/operator/worktree-cleanup-store';
+import { loadCleanupInvestigation, loadCleanupSession, saveCleanupInvestigation, saveCleanupSession } from '../../src/effects/operator/worktree-cleanup-store';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 
@@ -202,3 +209,163 @@ routeTest('the plan and execute routes run in the supervised child and write the
     expect(audit.find(record => record.operation === 'worktrees_cleanup_execute').target).toBe('worktrees');
   } finally { await server.close(); }
 });
+
+const quota = (state: string) => async () => ({ protocol: 'repo-harness.quota.v1', read_at: '2026-11-04T00:00:00.000Z', accounts: [
+  { account: 'chatgpt', source: 'codex_app_server', observed_at: '2026-11-04T00:00:00.000Z', state, reason: state === 'unknown' ? 'no reading' : null, windows: [] }] });
+const refusalCode = async (action: () => unknown) => { try { await action(); } catch (error) { return (error as { code?: string }).code; } return 'accepted'; };
+
+// Sibling inputs of "no codex turn may start": each quota state that M60 refuses, a report that fails its decoder, a missing session and a plan above the cap.
+routeTest('the investigation start refuses an exhausted or unknown chatgpt quota and a plan above the item cap, and changes nothing', async f => {
+  const first = createCleanupSessionPlan([f.id], f.options());
+  const unread = async () => ({ protocol: 'repo-harness.quota.v1', accounts: 'not a list' });
+  for (const [name, read, code] of [['exhausted', quota('exhausted'), 'quota_exhausted'], ['unknown', quota('unknown'), 'quota_unknown'], ['unreadable report', unread, 'quota_unknown']] as const) {
+    expect([name, await refusalCode(() => startCleanupInvestigation(first.session_id, { env: f.env, read_quota: read }))]).toEqual([name, code]);
+  }
+  expect(await refusalCode(() => startCleanupInvestigation('c'.repeat(32), { env: f.env, read_quota: quota('normal') }))).toBe('session_not_found');
+  // A session above the cap: the same real item under distinct ids, with no loss evidence.
+  const row = first.items[0]!.worktree, keep: CleanupAdvice = { recommendation: 'keep', reason: 'fixture', evidence: ['fixture'], archive: none };
+  const ids = Array.from({ length: WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS + 1 }, (_, index) => `wt_${index.toString(16).padStart(64, '0')}`);
+  const large = createCleanupPlan('b'.repeat(32), ids.map(id => ({ observation: { worktree: { ...row, id }, loss: null }, advice: keep })));
+  saveCleanupSession(f.env, { plan: large, items: Object.fromEntries(ids.map(id => [id, { target: { repository: f.repo, worktree: f.tree, id, kind: 'registered' as const }, loss: null }])) });
+  expect(await refusalCode(() => startCleanupInvestigation(large.session_id, { env: f.env, read_quota: quota('normal') }))).toBe('investigation_too_large');
+  for (const session of [first.session_id, large.session_id]) expect(loadCleanupInvestigation(f.env, session)).toBeNull();
+  expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(first);
+});
+
+routeTest('the investigation routes start one job, refuse a second while it runs, and record a failure when the child stops before its own record', async f => {
+  const ui = join(f.parent, 'ui'); mkdirSync(ui); writeFileSync(join(ui, 'index.html'), '<!doctype html><title>fixture</title>');
+  const childEnv = { REPO_HARNESS_HOME: f.home, REPO_HARNESS_WORKTREE_ROOT: f.parent };
+  let stop: (code: 'timeout' | 'failed') => void = () => {};
+  const run_process: typeof runSetupProcess = () => new Promise(resolve => { stop = code => resolve({ ok: false, code }); });
+  const server = await startOperatorServer({ port: 0, static_root: ui, env: childEnv,
+    write_routes: [worktreeCleanupInvestigationWriteRoute({ env: childEnv, read_quota: quota('normal'), run_process })] });
+  try {
+    const first = createCleanupSessionPlan([f.id], f.options());
+    const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
+    const start = async () => {
+      const response = await fetch(`${server.url}/api/v1/worktrees/cleanup/investigation`, { method: 'POST', body: JSON.stringify({ request_id: crypto.randomUUID(), session_id: first.session_id }),
+        headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie } });
+      return { status: response.status, body: await response.json() };
+    };
+    const status = async () => { const response = await fetch(`${server.url}/api/v1/worktrees/cleanup/investigation/${first.session_id}`); return { status: response.status, body: await response.json() }; };
+    expect((await status()).status).toBe(404);
+    const started = await start();
+    expect(started).toMatchObject({ status: 202, body: { session_id: first.session_id, state: 'running', failure: null } });
+    expect(await status()).toEqual({ status: 200, body: { ...started.body, plan: null } });
+    expect(await start()).toMatchObject({ status: 409, body: { error: { code: 'investigation_running' } } });
+    for (const [code, failure] of [['timeout', 'timeout'], ['failed', 'host_failed']] as const) {
+      if (code === 'failed') { saveCleanupInvestigation(f.env, { ...started.body, state: 'failed', failure: 'timeout' }); expect((await start()).status).toBe(202); }
+      stop(code);
+      await Bun.sleep(50);
+      expect((await status()).body).toMatchObject({ state: 'failed', failure, plan: null });
+    }
+    expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(first);
+    // A running record past its deadline has no parent left, so it reads as interrupted.
+    const record = loadCleanupInvestigation(f.env, first.session_id)!;
+    saveCleanupInvestigation(f.env, { ...record, state: 'running', failure: null, deadline_at: '2026-11-04T00:00:00.000Z' });
+    expect(readCleanupInvestigationStatus(f.env, first.session_id)).toMatchObject({ state: 'failed', failure: 'interrupted' });
+    const audit = readFileSync(join(f.home, 'operator/audit.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+    expect(audit.filter(entry => entry.phase === 'intent').map(entry => [entry.operation, entry.target])).toEqual([
+      ['worktrees_cleanup_investigation', `worktree_cleanup_session:${first.session_id}`], ['worktrees_cleanup_investigation', `worktree_cleanup_session:${first.session_id}`],
+      ['worktrees_cleanup_investigation', `worktree_cleanup_session:${first.session_id}`]]);
+  } finally { await server.close(); }
+});
+
+const darwinRouteTest = (name: string, body: (f: Fixture) => Promise<void>) => process.platform === 'darwin' ? routeTest(name, body) : test.skip(name, () => {});
+const answer = (request: TaskRequest, items: unknown) => ({ request_id: request.request_id, context_sha256: request.context_sha256, value: { items } });
+const writer = (result: (request: TaskRequest, id: string) => unknown): CleanupInvestigator => async (run, request) => {
+  const manifest = JSON.parse(readFileSync(join(run.output, CLEANUP_INVESTIGATION_MANIFEST), 'utf8'));
+  writeFileSync(request.result_ref, JSON.stringify(result(request, manifest.items[0].id)));
+};
+
+darwinRouteTest('decoded advice becomes a new plan version with nothing authorized, and each malformed answer fails the job with no plan change', async f => {
+  const deleteAdvice = (id: string) => ({ id, advice: { recommendation: 'delete' as const, reason: 'The change is a review note.', evidence: ['Changed paths: 1.'], archive: none } });
+  // Sibling inputs of "the agent answer is not advice for exactly this plan".
+  const malformed: Array<[string, CleanupInvestigator]> = [
+    ['no result file', async () => {}],
+    ['not JSON', async (_run, request) => writeFileSync(request.result_ref, '{')],
+    ['a link to another file', async (run, request) => symlinkSync(join(run.output, CLEANUP_INVESTIGATION_MANIFEST), request.result_ref)],
+    ['another request', writer((request, id) => ({ ...answer(request, [deleteAdvice(id)]), request_id: crypto.randomUUID() }))],
+    ['an unknown item', writer(request => answer(request, [deleteAdvice(`wt_${'0'.repeat(64)}`)]))],
+    ['a missing item', writer(request => answer(request, []))],
+    ['an extra field', writer((request, id) => answer(request, [{ ...deleteAdvice(id), authorized: true }]))],
+    ['a path that is not archivable', writer((request, id) => answer(request, [{ id, advice: { ...deleteAdvice(id).advice, recommendation: 'archive_then_delete',
+      archive: { git: null, private: { directory: f.repoId, paths: ['.gitignore'] } } } }]))],
+  ];
+  for (const [name, investigate] of malformed) {
+    const first = createCleanupSessionPlan([f.id], f.options());
+    const outcome = await runCleanupInvestigation(first.session_id, crypto.randomUUID().replaceAll('-', ''), { env: f.env, deadline: Date.now() + 30_000, investigate })
+      .then(() => 'accepted', error => error instanceof CleanupInvestigationError ? error.failure : String(error));
+    expect([name, outcome]).toEqual([name, 'advice_invalid']);
+    expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(first);
+  }
+  // A user choice saved during the turn wins over the agent answer.
+  const raced = createCleanupSessionPlan([f.id], f.options());
+  const chosen = await runCleanupInvestigation(raced.session_id, 'a'.repeat(32), { env: f.env, deadline: Date.now() + 30_000, investigate: async (run, request) => {
+    await writer((value, id) => answer(value, [deleteAdvice(id)]))(run, request, '', 0);
+    chooseCleanupSessionPlan(raced.session_id, [{ id: f.id, recommendation: 'delete', archive: none }], f.options());
+  } }).then(() => 'accepted', error => (error as CleanupInvestigationError).failure);
+  expect(chosen).toBe('plan_changed');
+  expect(loadCleanupSession(f.env, raced.session_id).plan.items[0]!.advice.reason).toBe(raced.items[0]!.advice.reason);
+
+  const first = createCleanupSessionPlan([f.id], f.options());
+  let manifest: { items: { id: string; evidence: unknown; loss: unknown }[] } | null = null;
+  const plan = await runCleanupInvestigation(first.session_id, 'b'.repeat(32), { env: f.env, deadline: Date.now() + 30_000, investigate: async (run, request, context) => {
+    manifest = JSON.parse(readFileSync(join(run.output, CLEANUP_INVESTIGATION_MANIFEST), 'utf8'));
+    expect(context).toContain(`Read ${CLEANUP_INVESTIGATION_MANIFEST} in your working directory.`);
+    await writer((value, id) => answer(value, [deleteAdvice(id)]))(run, request, context, 0);
+  } });
+  // The manifest is the server observation: the public loss summary and the private evidence, with no host path.
+  expect(manifest!.items.map(item => item.id)).toEqual([f.id]);
+  expect(manifest!.items[0]!.loss).toEqual(first.items[0]!.loss);
+  expect(manifest!.items[0]!.evidence).toEqual(loadCleanupSession(f.env, first.session_id).items[f.id]!.loss);
+  expect(JSON.stringify(manifest)).not.toContain(f.parent);
+  expect(plan.items[0]!.advice).toEqual(deleteAdvice(f.id).advice);
+  expect(plan.items[0]!.loss_sha256).toBe(first.items[0]!.loss_sha256);
+  expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(plan);
+  // Advice is not authorization: the item is selectable only by the user, and execution without an approval removes nothing.
+  expect(cleanupSelection(plan.items[0]!)).toEqual({ selectable: true, selected_by_default: false });
+  expect((await runAuthorizedCleanup(decodeAuthorizedCleanupRequest({ session_id: plan.session_id, ids: [f.id],
+    expected_digest: cleanupPlanSelectionDigest(plan, [f.id]), approvals: [] }), f.options())).items[0]).toMatchObject({ outcome: 'skipped', reason: 'not_approved' });
+  expect(existsSync(f.tree)).toBe(true);
+});
+
+darwinRouteTest('zero-model probes through the launcher: the fake codex cannot read or write a target worktree or write the primary checkout, and writes only its output', async f => {
+  const first = createCleanupSessionPlan([f.id], f.options());
+  const session = loadCleanupSession(f.env, first.session_id);
+  const run = prepareCleanupInvestigation(f.env, first.session_id, 'c'.repeat(32), [session.items[f.id]!.target]);
+  const common = realpathSync(join(f.repo, '.git'));
+  expect(run.paths.cleanupReadDenied).toEqual([common, join(common, 'worktrees/repo-wt-feature'), realpathSync(f.tree)].sort());
+  const bin = join(f.parent, 'fake-codex-bin'); mkdirSync(bin);
+  const outside = join(f.parent, 'outside.txt');
+  // Each line names one access and whether the OS allowed it.
+  writeFileSync(join(bin, 'codex'), `#!/bin/sh
+probe() { name="$1"; shift; if "$@" >/dev/null 2>&1; then echo "$name allowed"; else echo "$name denied"; fi; }
+probe read-target-file /bin/cat '${f.tree}/tracked.txt'
+probe list-target /bin/ls '${f.tree}'
+probe read-target-git-dir /bin/ls '${common}/worktrees'
+probe read-common-git-dir /bin/cat '${common}/HEAD'
+probe write-target /bin/sh -c "echo changed > '${f.tree}/tracked.txt'"
+probe write-primary /bin/sh -c "echo changed > '${f.repo}/tracked.txt'"
+probe write-outside /bin/sh -c "echo changed > '${outside}'"
+probe write-output /bin/sh -c "echo written > '${run.output}/probe.txt'"
+probe read-manifest-dir /bin/ls '${run.output}'
+`);
+  chmodSync(join(bin, 'codex'), 0o755);
+  const vendor = Bun.which('codex', { PATH: bin })!;
+  expect(vendor).toBe(join(bin, 'codex'));
+  const launcher = prepareReviewLauncher(run.control, run.policyFile, vendor);
+  const probed = runLauncher(launcher, bin);
+  expect(probed).toEqual(['read-target-file denied', 'list-target denied', 'read-target-git-dir denied', 'read-common-git-dir denied', 'write-target denied',
+    'write-primary denied', 'write-outside denied', 'write-output allowed', 'read-manifest-dir allowed']);
+  expect(readFileSync(join(f.tree, 'tracked.txt'), 'utf8')).toBe('reviewed change\n');
+  expect(readFileSync(join(f.repo, 'tracked.txt'), 'utf8')).toBe('base\n');
+  expect(existsSync(outside)).toBe(false);
+  expect(readFileSync(join(run.output, 'probe.txt'), 'utf8')).toBe('written\n');
+});
+
+function runLauncher(launcher: string, bin: string): string[] {
+  const result = execFileSync(launcher, [], { encoding: 'utf8', env: { PATH: `${bin}:/usr/bin:/bin` }, timeout: 15_000 });
+  return result.trim().split('\n');
+}
+

@@ -5,6 +5,7 @@ import {
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupChoice, type CleanupExecutionItem, type CleanupExecutionResult,
   type CleanupPlan, type CleanupPlanItem,
 } from '../core/operator/worktree-cleanup-plan';
+import type { CleanupInvestigationStatus } from '../core/operator/worktree-cleanup-investigation';
 import type { WorktreeView } from '../core/operator/worktrees';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { isOperatorMessageKey, type OperatorTranslate } from './i18n';
@@ -29,6 +30,7 @@ export type CleanupPlanFailure =
   | { readonly state: 'unreadable' };
 export type CleanupPlanAnswer = { readonly state: 'ready'; readonly plan: CleanupPlan } | CleanupPlanFailure;
 export type CleanupExecutionAnswer = { readonly state: 'done'; readonly result: CleanupExecutionResult } | CleanupPlanFailure;
+export type CleanupInvestigationAnswer = { readonly state: 'investigation'; readonly status: CleanupInvestigationStatus } | CleanupPlanFailure;
 export type AuthorizedCleanupPost = AuthorizedCleanupRequest & { readonly request_id: string };
 
 /** The plan routes connect these (`cleanupPlanPorts`); each answer passed the core decoder. */
@@ -38,7 +40,14 @@ export interface CleanupPlanPorts {
   /** Pass 2: a new plan from the same observations with the user's choices. */
   readonly choose: (sessionId: string, choices: readonly CleanupChoice[]) => Promise<CleanupPlanAnswer>;
   readonly execute: (request: AuthorizedCleanupPost) => Promise<CleanupExecutionAnswer>;
+  /** Starts the agent investigation of the session plan; the answer is the running job. */
+  readonly investigate: (sessionId: string) => Promise<CleanupInvestigationAnswer>;
+  /** The latest investigation of the session; after a job that succeeded it carries the new plan version. */
+  readonly investigation: (sessionId: string) => Promise<CleanupInvestigationAnswer>;
 }
+
+/** How often the page reads the status of a running investigation. */
+export const CLEANUP_INVESTIGATION_POLL_MS = 2_000;
 
 type Destination = 'git' | 'private';
 /** The user's edit of one item. Archive names are made only when the choice is sent. */
@@ -256,7 +265,30 @@ function FailureBanner({ failure, during, onRetry, t }: {
   return <Banner variant={failure.state === 'unreachable' ? 'error' : 'alert'} data-plan-failure={failure.state} description={t(key)} action={action} />;
 }
 
-type Pending = 'open' | 'choose' | 'execute' | null;
+type Pending = 'open' | 'choose' | 'execute' | 'investigate' | null;
+
+/** The start button and the job status. The agent's advice reaches the page only as a new plan version. */
+function Investigation({ status, failure, pending, locked, onStart, onRetry, t }: {
+  readonly status: CleanupInvestigationStatus | null; readonly failure: CleanupPlanFailure | null; readonly pending: boolean; readonly locked: boolean;
+  readonly onStart: () => void; readonly onRetry: (() => void) | null; readonly t: OperatorTranslate;
+}) {
+  return (
+    <section className="flex flex-col gap-2" data-plan-investigation={status?.state ?? 'none'}>
+      <div className="flex flex-wrap items-center gap-3">
+        <Button variant="secondary" onClick={onStart} disabled={locked} data-plan-investigate>
+          {pending ? t('worktrees.plan.investigating') : t('worktrees.plan.investigate')}
+        </Button>
+        {status && (
+          <p role="status" className={`text-sm ${status.state === 'failed' ? 'text-kumo-danger' : 'text-kumo-default'}`} data-plan-investigation-failure={status.failure ?? undefined}>
+            {t(`worktrees.plan.investigation.${status.state}`)}
+            {status.failure !== null && <> {t(`worktrees.plan.investigation.failure.${status.failure}`)}</>}
+          </p>
+        )}
+      </div>
+      {failure && <FailureBanner failure={failure} during="plan" onRetry={onRetry} t={t} />}
+    </section>
+  );
+}
 
 /**
  * The only place where a non-green worktree is authorized (#1277 S3). The user
@@ -272,6 +304,8 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
   const [pending, setPending] = useState<Pending>('open');
   const [failure, setFailure] = useState<{ readonly failure: CleanupPlanFailure; readonly during: 'plan' | 'execute' } | null>(null);
   const [result, setResult] = useState<CleanupExecutionResult | null>(null);
+  const [investigation, setInvestigation] = useState<CleanupInvestigationStatus | null>(null);
+  const [investigationFailure, setInvestigationFailure] = useState<CleanupPlanFailure | null>(null);
 
   const accept = useCallback((answer: CleanupPlanAnswer) => {
     setPending(null);
@@ -297,7 +331,31 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
   const invalid = editableItems.some(item => draftProblem(item, draftOfItem(item)) !== null);
   const authorizable = new Set(editableItems.filter(item => item.advice.recommendation !== 'keep' && sameDraft(draftOfItem(item), draftOf(item.advice))).map(item => item.worktree.id));
   const chosen = items.filter(item => authorized.has(item.worktree.id) && authorizable.has(item.worktree.id));
-  const locked = pending !== null || result !== null;
+  const investigating = investigation?.state === 'running';
+  const locked = pending !== null || result !== null || investigating;
+
+  /** A job that succeeded replaces the plan, so drafts and authorizations start again from the new version. */
+  const follow = useCallback((answer: CleanupInvestigationAnswer) => {
+    if (answer.state !== 'investigation') { setInvestigationFailure(answer); return; }
+    setInvestigationFailure(null);
+    setInvestigation(answer.status);
+    if (answer.status.plan !== null) accept({ state: 'ready', plan: answer.status.plan });
+  }, [accept]);
+  const sessionId = plan?.session_id ?? null;
+  const poll = useCallback(() => {
+    if (sessionId !== null) void ports.investigation(sessionId).catch(lost).then(follow);
+  }, [ports, sessionId, follow]);
+  useEffect(() => {
+    if (!investigating) return;
+    const timer = setTimeout(poll, CLEANUP_INVESTIGATION_POLL_MS);
+    return () => clearTimeout(timer);
+  }, [investigating, investigation, poll]);
+
+  const investigate = () => {
+    if (plan === null || locked) return;
+    setPending('investigate');
+    void ports.investigate(plan.session_id).catch(lost).then(answer => { setPending(null); follow(answer); });
+  };
 
   const choose = () => {
     if (plan === null || locked || !changed || invalid) return;
@@ -337,6 +395,8 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
       {result !== null && plan !== null && <ExecutionResult plan={plan} result={result} t={t} />}
       {plan !== null && (
         <>
+          {result === null && <Investigation status={investigation} failure={investigationFailure} pending={pending === 'investigate'} locked={locked}
+            onStart={investigate} onRetry={investigating ? poll : null} t={t} />}
           <ul className="overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
             {items.map(item => (
               <PlanItem key={item.worktree.id} item={item} draft={draftOfItem(item)} authorized={authorized.has(item.worktree.id)} locked={locked} t={t}

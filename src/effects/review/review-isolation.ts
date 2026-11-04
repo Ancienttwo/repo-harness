@@ -159,8 +159,17 @@ export function removeCopiedAuth(output: string): { status: 'removed' | 'absent'
   } catch { return { status: 'cleanup_pending' }; }
 }
 
+/**
+ * The cleanup investigation (#1721) adds one rule to the review profile: the
+ * agent cannot read the target worktrees and their Git directories, so it
+ * judges only from the server manifest. Other callers leave the field out and
+ * get the review profile unchanged. The host derives the policy from these
+ * same paths, so the field travels in the host spec.
+ */
+export type CleanupReviewIsolationPaths = ReviewIsolationPaths & { readonly cleanupReadDenied?: readonly string[] };
+
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */
-export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = process.platform): string {
+export function reviewIsolationPolicy(paths: CleanupReviewIsolationPaths, platform = process.platform): string {
   if (!isAbsolute(paths.output) || lstatSync(paths.output).isSymbolicLink() || !lstatSync(paths.output).isDirectory()) {
     throw new Error('OAR_REVIEW_OUTPUT_UNSAFE');
   }
@@ -173,7 +182,8 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
       || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_agent_directory_unsafe');
     piPolicy = `(deny file-write* (literal ${JSON.stringify(join(directory, 'models.json'))}))\n`;
   }
-  const protectedEntries = [paths.primary, paths.ownerRecord, paths.journal, paths.gitCommonDir];
+  const readDenied = paths.cleanupReadDenied ?? [];
+  const protectedEntries = [paths.primary, paths.ownerRecord, paths.journal, paths.gitCommonDir, ...readDenied];
   for (const path of [paths.subject, ...protectedEntries]) {
     if (!isAbsolute(path)) throw new Error('OAR_REVIEW_PROTECTED_PATH_UNSAFE');
     const canonical = realpathSync(path);
@@ -181,6 +191,9 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
       throw new Error('OAR_REVIEW_OUTPUT_OVERLAPS_AUTHORITY');
     }
   }
+  // Seatbelt matches resolved paths, so a link would leave its target readable.
+  if (readDenied.some(path => realpathSync(path) !== path)) throw new Error('OAR_REVIEW_PROTECTED_PATH_UNSAFE');
+  const readPolicy = readDenied.map(path => `(deny file-read* (subpath ${JSON.stringify(path)}))\n`).join('');
   if (platform !== 'darwin') throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM');
   // Output alone is writable; every real CODEX_HOME state grant is retired.
   // Definitions, trust, settings/hooks and credentials stay denied even inside
@@ -190,7 +203,7 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
   const exceptions = `(require-not (subpath ${JSON.stringify(output)}))`;
   // macOS resolves DNS through this system socket. Other local services remain denied.
   const unixSockets = '(require-all (remote unix-socket) (require-not (remote unix-socket (path-literal "/private/var/run/mDNSResponder"))))';
-  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound ${unixSockets})\n${piPolicy}`;
+  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound ${unixSockets})\n${piPolicy}${readPolicy}`;
 
 }
 
