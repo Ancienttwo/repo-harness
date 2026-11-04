@@ -10,7 +10,7 @@ Worker entrypoint. The archimap is the project's architecture map for people and
 orchestrator agent. It is one static HTML file,
 `docs/architecture/archimap.html`, made of fixed-size boards: the layered
 overview, the measured dependency directions, the runtime topology, the
-key sequences and the remarks. The orchestrator of
+key sequences, the remarks and the behavior statecharts. The orchestrator of
 `repo-harness-issue-flow` splits work by its modules. Workers cite its
 module IDs. A stale map therefore sends issues to the wrong boundaries.
 
@@ -62,7 +62,11 @@ model's own docs. The archimap is the one hand-composed HTML view.
    For a first draw, write the grouping to a scratch `modules.json` and
    pass `--modules <file>` instead of `--map`. `--model` is required, and
    `measure.ts` exits 2 when it is missing or when
-   `docs/architecture/.projection-manifest.json` is missing. Each module in
+   `docs/architecture/.projection-manifest.json` is missing. It also exits
+   2 on a malformed `extensions.behaviorSpecs` entry
+   (`behavior_spec_invalid:<node id>`), a missing spec file
+   (`behavior_spec_missing:<path>`) or a spec node that no map module
+   covers on its `parent` chain (`behavior_spec_uncovered:<node id>`). Each module in
    the output carries `docs`: the capability documents it covers, resolved
    from `modules[].nodes` through that manifest. Fix every `uncoveredNodes`,
    `unknownNodes`, `duplicateNodes` and `overlaps` entry in the grouping
@@ -80,7 +84,8 @@ model's own docs. The archimap is the one hand-composed HTML view.
    run. Do not hand-count.
 4. **Choose the boards.** Read `references/boards.md`. The overview and
    the remarks are always present. Include each other board when its
-   condition holds.
+   condition holds. Draw one behavior board for each entry of
+   `modules[].behaviorSpecs` in the measurement.
 5. **Compose.** Copy `assets/template.html`, and follow
    `references/visual-language.md` for the grid, colors, node kinds and
    edges. Write the real content. Every overview node carries its map
@@ -99,8 +104,11 @@ model's own docs. The archimap is the one hand-composed HTML view.
 7. **Check.** Open the file in a browser (the built-in browser pane or a
    headless browser) and look at each board. Check for overlapping boxes,
    clipped text, arrows that end in empty space, and a legend that matches
-   the edge styles used. Run `measure.ts` once more against the written
-   map and confirm that the coverage lists are empty.
+   the edge styles used. On each behavior board, compare every state name
+   and transition label with the spec at its path: each one must be a spec
+   state value or action name, and each red marker must have one legend
+   row. Run `measure.ts` once more against the written map and confirm
+   that the coverage lists are empty.
 8. **Ship with the change.** In a refresh triggered by a branch change,
    commit the map in the same PR as the model change. Say in the PR body
    which boards changed.
