@@ -100,27 +100,27 @@ export function decodeQuotaReport(value: unknown): QuotaReport {
   const nullableString = (value: unknown) => value === null || string(value);
   const nullableNumber = (value: unknown) => value === null || (typeof value === 'number' && Number.isFinite(value));
   const state = (value: unknown) => QUOTA_STATE_ORDER.includes(value as QuotaState);
-  const require = (valid: boolean): void => { if (!valid) throw new Error('Invalid quota report value'); };
+  const expectValid = (valid: boolean): void => { if (!valid) throw new Error('Invalid quota report value'); };
   const report = object(value, ['protocol', 'read_at', 'accounts']);
-  require(report.protocol === QUOTA_PROTOCOL && string(report.read_at) && Array.isArray(report.accounts));
+  expectValid(report.protocol === QUOTA_PROTOCOL && string(report.read_at) && Array.isArray(report.accounts));
   for (const value of report.accounts as unknown[]) {
     const account = object(value, ['account', 'source', 'observed_at', 'state', 'reason', 'windows'], ['codex']);
-    require((account.account === 'claude' || account.account === 'chatgpt')
+    expectValid((account.account === 'claude' || account.account === 'chatgpt')
       && (account.source === 'claude_capture_file' || account.source === 'codex_app_server')
       && nullableString(account.observed_at) && state(account.state) && nullableString(account.reason) && Array.isArray(account.windows));
     for (const value of account.windows as unknown[]) {
       const window = object(value, ['window', 'window_minutes', 'used_percent', 'resets_at', 'elapsed_percent', 'pace', 'state', 'reason']);
-      require(string(window.window) && nullableNumber(window.window_minutes) && nullableNumber(window.used_percent)
+      expectValid(string(window.window) && nullableNumber(window.window_minutes) && nullableNumber(window.used_percent)
         && nullableString(window.resets_at) && nullableNumber(window.elapsed_percent) && nullableNumber(window.pace)
         && (state(window.state) || window.state === 'absent') && nullableString(window.reason));
     }
     if (Object.hasOwn(account, 'codex')) {
       const codex = object(account.codex, ['plan_type', 'credits', 'rate_limit_reached_type', 'field_errors']);
-      require(nullableString(codex.plan_type) && nullableString(codex.rate_limit_reached_type)
+      expectValid(nullableString(codex.plan_type) && nullableString(codex.rate_limit_reached_type)
         && Array.isArray(codex.field_errors) && codex.field_errors.every(string));
       if (codex.credits !== null) {
         const credits = object(codex.credits, ['has_credits', 'unlimited', 'balance']);
-        require(typeof credits.has_credits === 'boolean' && typeof credits.unlimited === 'boolean' && nullableString(credits.balance));
+        expectValid(typeof credits.has_credits === 'boolean' && typeof credits.unlimited === 'boolean' && nullableString(credits.balance));
       }
     }
   }

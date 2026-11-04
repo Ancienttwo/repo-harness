@@ -32,6 +32,7 @@ import {
 } from '../../src/effects/operator/server';
 import { OPERATOR_SETTINGS_AGENTS_PATH, OPERATOR_SETTINGS_AGENTS_ROUTE } from '../../src/effects/operator/agents-settings-route';
 import { OPERATOR_SETTINGS_SEATS_PATH, OPERATOR_SETTINGS_SEATS_ROUTE } from '../../src/effects/operator/seats-settings-route';
+import { OPERATOR_QUOTA_PATH } from '../../src/core/operator/quota';
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE } from '../../src/effects/operator/worktree-cleanup';
 import { OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from '../../src/effects/operator/doc-session-changes';
@@ -100,6 +101,7 @@ describe('operator structural write boundary', () => {
       'settings_agents',
       'settings_agents_write',
       'settings_seats',
+      'quota',
       'settings_seats_write',
       'sessions_create',
       'architecture_modules',
@@ -141,6 +143,7 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents')).toEqual({ id: 'settings_agents', method: 'GET', pattern: OPERATOR_SETTINGS_AGENTS_PATH, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_agents_write')).toEqual({ id: 'settings_agents_write', method: 'POST', pattern: OPERATOR_SETTINGS_AGENTS_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_seats')).toEqual({ id: 'settings_seats', method: 'GET', pattern: OPERATOR_SETTINGS_SEATS_PATH, write: false });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'quota')).toEqual({ id: 'quota', method: 'GET', pattern: OPERATOR_QUOTA_PATH, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'settings_seats_write')).toEqual({ id: 'settings_seats_write', method: 'POST', pattern: OPERATOR_SETTINGS_SEATS_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'worktrees_cleanup')).toEqual({ id: 'worktrees_cleanup', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'sessions_create')).toEqual({ id: 'sessions_create', method: 'POST', pattern: OPERATOR_SESSIONS_ROUTE.source, write: true });
