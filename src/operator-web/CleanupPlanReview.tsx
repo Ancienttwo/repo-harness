@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { Banner, Button } from '@cloudflare/kumo';
+import { Banner, Button, Loader } from '@cloudflare/kumo';
 import {
   cleanupEligible,
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupChoice, type CleanupExecutionItem, type CleanupExecutionResult,
@@ -121,6 +121,36 @@ function LossLists({ item, t }: { readonly item: CleanupPlanItem; readonly t: Op
   );
 }
 
+/** The advice that this plan version binds, as the server wrote it. Pass 2 keeps the reason and evidence and binds the user's choice. */
+function Advice({ advice, t }: { readonly advice: CleanupAdvice; readonly t: OperatorTranslate }) {
+  return (
+    <div className="flex flex-col gap-1 text-xs" data-plan-advice={advice.recommendation}>
+      <p className="text-kumo-default">
+        <span className="font-medium text-kumo-strong">{t('worktrees.plan.advice', { choice: t(`worktrees.plan.choice.${advice.recommendation}`) })}</span>
+        {' '}<span data-plan-advice-reason>{advice.reason}</span>
+      </p>
+      <ul className="flex flex-col gap-0.5 pl-4 font-mono text-kumo-subtle" aria-label={t('worktrees.plan.advice.evidence')}>
+        {advice.evidence.map((line, index) => <li key={index} className="break-all" data-plan-evidence>{line}</li>)}
+      </ul>
+    </div>
+  );
+}
+
+/** A plan request has no progress of its own; the line counts the seconds since the page sent it. */
+function PlanBuild({ count, t }: { readonly count: number; readonly t: OperatorTranslate }) {
+  const [started] = useState(Date.now);
+  const [seconds, setSeconds] = useState(0);
+  useEffect(() => {
+    const timer = setInterval(() => setSeconds(Math.floor((Date.now() - started) / 1000)), 1_000);
+    return () => clearInterval(timer);
+  }, [started]);
+  return (
+    <p role="status" className="flex items-center gap-1.5 text-sm text-kumo-default" data-plan-building={seconds}>
+      <Loader size={12} />{t('worktrees.plan.building', { count, seconds })}
+    </p>
+  );
+}
+
 const CHOICES: readonly CleanupAdvice['recommendation'][] = ['keep', 'delete', 'archive_then_delete'];
 
 function ChoiceEditor({ item, draft, locked, onChange, t }: {
@@ -211,6 +241,7 @@ function PlanItem({ item, draft, authorized, locked, onDraft, onAuthorize, t }: 
           {tree.reasons.map(reason => <li key={reason} data-reason={reason}>{t(`worktrees.reason.${reason}`)}</li>)}
         </ul>
       )}
+      <Advice advice={item.advice} t={t} />
       <LossLists item={item} t={t} />
       {tree.judgment === 'green'
         ? <p className="text-xs text-kumo-subtle" data-plan-green>{t('worktrees.plan.green')}</p>
@@ -396,7 +427,7 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
         <h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.plan.title')}</h1>
         {back}
       </header>
-      {pending === 'open' && <p className="text-sm text-kumo-subtle" data-plan-loading>{t('worktrees.plan.loading')}</p>}
+      {(pending === 'open' || pending === 'choose') && <PlanBuild count={ids.length} t={t} />}
       {failure && <FailureBanner failure={failure.failure} during={failure.during} onRetry={plan === null ? open : null} t={t} />}
       {result !== null && plan !== null && <ExecutionResult plan={plan} result={result} t={t} />}
       {plan !== null && (
