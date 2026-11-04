@@ -3,8 +3,13 @@
 // browser applies to served snapshots. Branches line up with the board fixture
 // so its merged `feat/kanban-status` card joins a green worktree.
 import { decodeWorktreeCleanupResult } from '../../core/operator/worktree-cleanup';
+import {
+  cleanupPlanDigestInput, decodeAuthorizedCleanupRequest, decodeCleanupChoices, decodeCleanupExecutionResult, decodeCleanupPlan,
+  type CleanupExecutionItem, type CleanupLossSummary, type CleanupPlan, type CleanupPlanItem, type CleanupReason,
+} from '../../core/operator/worktree-cleanup-plan';
 import { unavailableWorktrees, type WorktreeLifecycle, type WorktreeView, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import type { WorktreeCleanupWriter } from '../worktrees';
+import type { CleanupPlanPorts } from '../CleanupPlanReview';
 import { HARNESS_ID } from './dev-activity';
 
 const SITE_ID = 'repo_1f2e3d4c5b6a7980';
@@ -112,4 +117,90 @@ export function worktreeCleanupFixture(snapshot: WorktreesSnapshot): WorktreeCle
       return { id, repository_id: row.repository_id, directory: row.directory, outcome: skipped ? 'skipped' : 'removed', reason: skipped ? 'process_in_use' : null };
     }),
   }) });
+}
+
+const PLAN_SESSION = '7c1e9a40b2d35f6e8a9c0b1d2e3f4a5b';
+
+async function sha256(input: string): Promise<string> {
+  const hash = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(input)));
+  return Array.from(hash, byte => byte.toString(16).padStart(2, '0')).join('');
+}
+
+/** plan_sha256 hashes the core digest input, as the server does. */
+async function planItem(item: Omit<CleanupPlanItem, 'plan_sha256'>): Promise<CleanupPlanItem> {
+  return { ...item, plan_sha256: await sha256(cleanupPlanDigestInput(PLAN_SESSION, item)) };
+}
+
+/**
+ * Pass 1 of the busy cleanup plan: one item of each judgment, a loss nobody
+ * could read, and eight items the user can choose for. The loss digest is a
+ * stand-in, because only the server reads raw contents.
+ */
+async function firstPlan(now: number): Promise<CleanupPlan> {
+  const busy = busyWorktrees(now).repositories.flatMap(repository => repository.worktrees);
+  const row = (directory: string) => busy.find(tree => tree.directory === directory)!;
+  const extra = (seed: string, directory: string, branch: string, dirty: number) => tree(now, HARNESS_ID, seed, {
+    directory, branch, source: 'contract', judgment: 'yellow', reasons: ['dirty'], dirty_files: dirty, merge: 'unmerged', size_bytes: 64 * MB });
+  const commits = (count: number) => Array.from({ length: count }, (_, index) => String(index + 1).repeat(40));
+  const loss = (files: string[], ignored: string[] = [], commitCount = 0): CleanupLossSummary => ({ files, ignored, commits: commits(commitCount) });
+  const rows: { readonly tree: WorktreeView; readonly loss: CleanupLossSummary | null }[] = [
+    { tree: row('feat-kanban-status'), loss: loss([]) },
+    { tree: row('repo-harness-wt-kanban-redesign'), loss: loss(['src/operator-web/BoardPage.tsx'], [], 3) },
+    { tree: row('repo-harness-wt-old-spike'), loss: null },
+    { tree: row('repo-harness-wt-oar'), loss: loss([], [], 2) },
+    { tree: row('codex-7f3a'), loss: loss(['src/hooks/run.ts', 'docs/hooks.md'], ['.env', 'node_modules/']) },
+    { tree: row('repo-harness-wt-docs-cleanup'), loss: loss([]) },
+    { tree: extra('e2', 'repo-harness-wt-notes', 'docs/release-notes', 1), loss: loss(['docs/release-notes.md']) },
+    { tree: extra('f3', 'repo-harness-wt-bench', 'perf/bench-hooks', 2), loss: loss(['bench/hooks.ts', 'bench/README.md'], ['bench/out.json']) },
+    { tree: extra('a4', 'repo-harness-wt-i18n', 'feat/i18n-split', 1), loss: loss(['src/operator-web/i18n/home.ts']) },
+    { tree: extra('b5', 'repo-harness-wt-archctx', 'fix/archctx-pin', 1), loss: loss(['package.json'], [], 1) },
+    { tree: extra('c6', 'repo-harness-wt-ci-lane', 'ci/affected-lane', 1), loss: loss(['scripts/check-ci.sh']) },
+  ];
+  const items = await Promise.all(rows.map(async ({ tree: worktree, loss: summary }) => planItem({
+    worktree, loss: summary,
+    advice: worktree.judgment === 'green'
+      ? { recommendation: 'delete', reason: 'Merged and clean.', evidence: ['merge: provider'], archive: { git: null, private: null } }
+      : { recommendation: 'keep', reason: 'Waiting for the user to choose.', evidence: [`judgment: ${worktree.judgment}`, ...worktree.reasons], archive: { git: null, private: null } },
+    loss_sha256: summary === null ? null : await sha256(`fixture loss ${worktree.id} ${JSON.stringify(summary)}`),
+  })));
+  return decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: PLAN_SESSION, items });
+}
+
+/** In order, the outcome given to each authorized id: one removal, then every reason once. */
+const OUTCOMES: readonly [CleanupExecutionItem['outcome'], CleanupReason | null, CleanupExecutionItem['stage']][] = [
+  ['removed', null, 'remove'], ['skipped', 'in_use', 'observe'], ['skipped', 'not_approved', 'observe'], ['skipped', 'loss_changed', 'observe'],
+  ['skipped', 'plan_changed', 'observe'], ['skipped', 'unavailable', 'observe'], ['reconcile_required', 'archive_failed', 'archive_push'],
+  ['reconcile_required', 'removal_unproven', 'remove'],
+];
+
+/** The plan routes for the busy fixture. Every answer passes the decoder that the routes will apply. */
+export function cleanupPlanFixture(now: number): CleanupPlanPorts {
+  let plan: Promise<CleanupPlan> | null = null;
+  return {
+    open: async () => ({ state: 'ready', plan: await (plan = firstPlan(now)) }),
+    choose: async (sessionId, raw) => {
+      const choices = decodeCleanupChoices(raw);
+      const current = await plan!;
+      if (sessionId !== current.session_id) throw new Error('fixture session changed');
+      const items = await Promise.all(current.items.map(async ({ plan_sha256: _old, ...item }) => {
+        const choice = choices.find(row => row.id === item.worktree.id);
+        return planItem(choice ? { ...item, advice: { ...item.advice, recommendation: choice.recommendation, archive: choice.archive } } : item);
+      }));
+      const next = decodeCleanupPlan({ ...current, items });
+      plan = Promise.resolve(next);
+      return { state: 'ready', plan: next };
+    },
+    execute: async ({ request_id: _request, ...body }) => {
+      const request = decodeAuthorizedCleanupRequest(body);
+      const current = await plan!;
+      return { state: 'done', result: decodeCleanupExecutionResult({
+        protocol: 1, kind: 'operator_authorized_worktree_cleanup', session_id: request.session_id,
+        items: request.ids.map((id, index) => {
+          const [outcome, reason, stage] = OUTCOMES[index % OUTCOMES.length]!;
+          const git = current.items.find(item => item.worktree.id === id)!.advice.archive.git;
+          return { id, outcome, reason, stage, archive_pr: outcome === 'removed' && git !== null ? 'https://github.com/example/repo-harness/pull/1801' : null };
+        }),
+      }) };
+    },
+  };
 }
