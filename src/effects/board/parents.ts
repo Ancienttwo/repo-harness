@@ -2,6 +2,7 @@ import { spawnSync } from 'child_process';
 import type { BoardHostPortsV1 } from '../../core/board/board';
 import { projectBoardParents, type BoardParentsV1 } from '../../core/board/parents';
 import { decodeOpenIssuesRead } from '../../core/board/source';
+import { seatTerminalsWithBranches } from './collect';
 
 const GH_TIMEOUT_MS = 60_000;
 
@@ -33,9 +34,10 @@ export interface BoardParentsCollectInput {
 }
 
 /**
- * One paginated GraphQL read of the open issues and one hc list of the
- * repository's seat terminals. gh fills `{owner}` and `{repo}` from the
- * checkout, so no third read names the repository.
+ * One paginated GraphQL read of the open issues, one hc list of the
+ * repository's seat terminals and one git read of each seat's branch. gh fills
+ * `{owner}` and `{repo}` from the checkout, so no other read names the
+ * repository.
  */
 export function collectBoardParents(input: BoardParentsCollectInput): BoardParentsV1 {
   const observedAt = (input.now?.() ?? new Date()).toISOString();
@@ -53,5 +55,5 @@ export function collectBoardParents(input: BoardParentsCollectInput): BoardParen
   const issues = decodeOpenIssuesRead(pages);
   const seats = input.host.seatTerminals(String(issues.repository.database_id));
   if (seats.status === 'unavailable') throw new BoardParentsError('parents_hc_failed', `hc could not list the seat terminals: ${seats.reason}`);
-  return projectBoardParents({ observed_at: observedAt, issues, terminals: seats.terminals });
+  return projectBoardParents({ observed_at: observedAt, issues, terminals: seatTerminalsWithBranches(seats.terminals) });
 }

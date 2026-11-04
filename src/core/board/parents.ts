@@ -1,4 +1,4 @@
-import { seatTerminal, type BoardSeatTerminalReadV1, type BoardTerminalV1 } from './board';
+import { checkSeatBranches, seatTerminal, type BoardSeatTerminalInputV1, type BoardTerminalV1 } from './board';
 import type { BoardOpenIssuesReadV1 } from './source';
 
 /**
@@ -7,7 +7,7 @@ import type { BoardOpenIssuesReadV1 } from './source';
  * live seat of the repository for the Office overview and room. It is the
  * entry of the Board page. GitHub and hc stay the authorities.
  */
-export const BOARD_PARENTS_PROTOCOL = 2 as const;
+export const BOARD_PARENTS_PROTOCOL = 3 as const;
 export const BOARD_PARENTS_KIND = 'repo-harness.board-parents' as const;
 
 export interface BoardParentV1 {
@@ -38,8 +38,8 @@ export interface BoardParentsV1 {
 export interface BoardParentsInputV1 {
   readonly observed_at: string;
   readonly issues: BoardOpenIssuesReadV1;
-  /** The `seatTerminals` read of the repository: live terminals, watcher terminals left out. */
-  readonly terminals: readonly BoardSeatTerminalReadV1[];
+  /** The `seatTerminals` read of the repository with each branch: live terminals, watcher terminals left out. */
+  readonly terminals: readonly BoardSeatTerminalInputV1[];
 }
 
 export function projectBoardParents(input: BoardParentsInputV1): BoardParentsV1 {
@@ -65,10 +65,11 @@ export function projectBoardParents(input: BoardParentsInputV1): BoardParentsV1 
   });
 }
 
-/** Refuse a parent list of another protocol or kind at a process boundary (Surface contract, docs/adr/ADR-0002). */
+/** Refuse a parent list of another protocol or kind, or a seat without a valid branch, at a process boundary (Surface contract, docs/adr/ADR-0002). */
 export function decodeBoardParents(value: unknown): BoardParentsV1 {
   const list = value as Partial<BoardParentsV1> | null;
   if (list?.protocol !== BOARD_PARENTS_PROTOCOL) throw new Error(`unsupported board parents protocol: ${String(list?.protocol)}`);
   if (list.kind !== BOARD_PARENTS_KIND) throw new Error(`unsupported board parents kind: ${String(list.kind)}`);
+  checkSeatBranches(list.seats);
   return list as BoardParentsV1;
 }

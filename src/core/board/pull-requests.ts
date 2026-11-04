@@ -1,6 +1,6 @@
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from './board';
 
-/** The open pull requests of an item, newest number first. */
+/** The pull requests of an item in every state, newest number first. */
 export function itemPullRequests(board: BoardV1, item: BoardItemV1): readonly BoardPullRequestV1[] {
   return board.pull_requests.filter(pr => item.pull_requests.includes(pr.number)).slice().sort((left, right) => right.number - left.number);
 }

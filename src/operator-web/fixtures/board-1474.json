@@ -1,9 +1,10 @@
 {
-  "protocol": 1,
+  "protocol": 2,
   "kind": "repo-harness.board",
   "observed_at": "2026-11-02T23:29:42.936Z",
   "repository": "Ancienttwo/repo-harness",
   "default_branch": "main",
+  "acceptance_merge": "off",
   "parent": {
     "number": 1474,
     "title": "herdr-core \u8fc1\u79fb\uff1a\u9000\u5f79 classic herdr CLI\uff08G37\uff09",
@@ -864,6 +865,7 @@
         "status_kind": "question",
         "status_ms": 1793661522936,
         "turn": 0,
+        "branch": null,
         "seat_status": "observed",
         "seat": "worker",
         "issue": 1476,
@@ -878,6 +880,7 @@
         "status_kind": null,
         "status_ms": 1793661522954,
         "turn": 0,
+        "branch": null,
         "seat_status": "observed",
         "seat": "worker",
         "issue": 1475,
@@ -892,6 +895,7 @@
         "status_kind": null,
         "status_ms": 1793661522964,
         "turn": 0,
+        "branch": null,
         "seat_status": "observed",
         "seat": "orchestrator",
         "issue": null,
@@ -906,6 +910,7 @@
         "status_kind": null,
         "status_ms": null,
         "turn": 0,
+        "branch": null,
         "seat_status": "unavailable",
         "reason": "seat_label_missing"
       }
