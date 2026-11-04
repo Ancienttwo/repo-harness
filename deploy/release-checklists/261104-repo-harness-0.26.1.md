@@ -256,9 +256,30 @@ The owner accepts or repairs each flag before publish.
 
 ## Publication
 
-- Publish candidate: pending owner.
-- npm version: pending owner.
-- Git tag: pending owner.
-- Published tarball digest: pending owner.
-- `bun run check:release-published`: pending owner.
-- Owner machine upgrade and hook probe: pending owner.
+- Publish candidate: `c2da46997fbbb44e43273c63a1b3064dae40204b` (the #1693
+  merge commit). Run 1 stopped at the upload: the stored npm session token
+  was invalid (`npm whoami` gave E401), so npm sent it instead of starting
+  web authentication, and the PUT failed at once with E404 and no web
+  authentication link. Nothing was published. The owner logged in to npm
+  again; run 2 published.
+- npm version: `repo-harness@0.26.1`, dist-tag `latest`.
+- Git tag: annotated `v0.26.1`, tag object
+  `a0e7ecdb6cf545832f136640c11f35cd90ff0ffa`, on `c2da46997`; GitHub Release
+  https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.1, published
+  2026-11-04T05:54:37Z.
+- Published tarball digest: shasum `84885b698e2cd97cd79bf31816eb49d325809596`,
+  integrity `sha512-NR1OEGyJQmy95HOQdjMJgka0V2nOGMl3ePlbiYCMceiKXfZippRmmxjJsYbUvKUTofPMube3g1c8+i3xWzg9ow==`.
+- `bun run check:release-published`: coordinator-run, read-only, in a
+  detached worktree of `c2da46997` (removed after the run).
+  `bash scripts/check-release-published.sh 0.26.1` at 2026-11-04T06:06Z:
+  `runtime-evidence-receipt: valid published_tarball, clean_install,
+  installed_hook_readback`; `[release-published] OK: registry, dist-tag,
+  tarball, tag, and local version files agree.` (decision on #1703).
+- Owner machine upgrade and hook probe: package swap,
+  `repo-harness update --version 0.26.1`, install state consistent,
+  `setup check` 38 ok and 0 fail. The hook probe with a recorded install
+  state passes before and after the update. The Operator server on port 4318
+  restarted on 0.26.1.
+
+- Yellow flag for the next release: run `npm whoami` before the publish. An
+  invalid stored token makes npm skip web authentication and fail with E404.
