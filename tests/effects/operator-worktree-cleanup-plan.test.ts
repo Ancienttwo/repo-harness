@@ -129,7 +129,7 @@ describe('cleanup plan contract and execution boundary', () => {
       files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, directory('cache'), file, symlink('docs/link.md'), symlink('docs/staged-link.md'),
         symlink('docs/tracked-link.md'), { ...file, path: 'docs/was-link.md' }, directory('empty')] };
     const plan = (paths: string[]) => createCleanupPlan(SID, [{ observation: { ...o, loss }, advice: { ...advice(), archive: { git: null, private: { directory: 'fixture-repo', paths } } } }]);
-    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: loss.changed_paths, archivable: ['.env', 'bin/run.sh', 'docs/guide.md', 'docs/index-link.md', 'docs/staged.md', 'docs/was-link.md'] });
+    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: loss.changed_paths, archivable: ['.env', 'bin/run.sh', 'docs/guide.md', 'docs/index-link.md', 'docs/staged.md', 'docs/was-link.md'], private_only: ['.env'] });
     // A worktree entry decides when present: only a regular file (changed, ignored, or a former symlink now a file) qualifies.
     // Without one, any index version qualifies (100644, 100755, 120000): staging saves each blob with its mode.
     for (const [path, accepted] of [['docs/guide.md', true], ['.env', true], ['docs/was-link.md', true], ['docs/staged.md', true], ['bin/run.sh', true],
@@ -141,6 +141,10 @@ describe('cleanup plan contract and execution boundary', () => {
     const item = plan(['docs/guide.md']).items[0]!;
     for (const archivable of [['docs/guide.md', '.env'], ['.env', '.env'], ['/private/.env']]) {
       expect(() => decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: SID, items: [{ ...item, loss: { ...item.loss!, archivable } }] })).toThrow('worktree_cleanup_plan_invalid');
+    }
+    // `private_only` is a sorted subset of `archivable`.
+    for (const private_only of [['docs/guide.md', '.env'], ['README.md']]) {
+      expect(() => decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: SID, items: [{ ...item, loss: { ...item.loss!, private_only } }] })).toThrow('worktree_cleanup_plan_invalid');
     }
   });
   test('private-only archive never calls Git push or PR publication', async () => {

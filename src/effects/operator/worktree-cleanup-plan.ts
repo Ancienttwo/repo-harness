@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { cleanupContentsDigestInput, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import {
-  cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, isArchivePr,
+  cleanupPlanDigestInput, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, gitArchiveRefuses, isArchivePr,
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupExecutionItem, type CleanupExecutionResult, type CleanupPlan, type CleanupPlanItem,
   type CleanupReason, type CleanupStage,
 } from '../../core/operator/worktree-cleanup-plan';
@@ -47,18 +47,19 @@ export function createCleanupPlan(sessionId: string, inputs: readonly { observat
   const items = inputs.map(({ observation, advice }) => {
     advice = decodeCleanupAdvice(advice);
     const loss = observation.loss;
+    let summary: CleanupPlanItem['loss'] = null;
     if (loss !== null) {
-      const selected = [...(advice.archive.git?.paths ?? []), ...(advice.archive.private?.paths ?? [])];
-      const archivable = new Set(archivablePaths(loss));
-      if (new Set(selected).size !== selected.length || selected.some(path => !archivable.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
+      const archivable = archivablePaths(loss), sizes = new Map(loss.files.map(file => [file.path, file.size]));
+      // An index-only path has no observed size, so staging applies the size rule to its blob.
+      const privateOnly = archivable.filter(path => gitArchiveRefuses(path, sizes.get(path) ?? null));
+      const selected = [...(advice.archive.git?.paths ?? []), ...(advice.archive.private?.paths ?? [])], allowed = new Set(archivable), refused = new Set(privateOnly);
+      if (new Set(selected).size !== selected.length || selected.some(path => !allowed.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
+      if (advice.archive.git?.paths.some(path => refused.has(path))) throw new Error('worktree_cleanup_archive_git_refused');
       if (loss.commits.length && advice.recommendation !== 'keep' && !advice.archive.git?.include_commits) throw new Error('worktree_cleanup_commits_need_archive');
+      summary = { files: [...loss.changed_paths], ignored: [...loss.ignored].sort(), commits: [...loss.commits], archivable, private_only: privateOnly };
     }
     const item: Omit<CleanupPlanItem, 'plan_sha256'> = {
-      worktree: observation.worktree, advice,
-      loss: loss === null ? null : {
-        files: [...loss.changed_paths],
-        ignored: [...loss.ignored].sort(), commits: [...loss.commits], archivable: archivablePaths(loss),
-      },
+      worktree: observation.worktree, advice, loss: summary,
       loss_sha256: cleanupLossSha256(observation),
     };
     return { ...item, plan_sha256: sha256(cleanupPlanDigestInput(sessionId, item)) };

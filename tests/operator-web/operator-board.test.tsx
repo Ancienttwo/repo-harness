@@ -1267,8 +1267,9 @@ describe('worktree cleanup plan review (#1720)', () => {
     const record = recordPlan();
     await openReview(record.ports);
     for (const directory of EDITABLE) await option(directory, 'archive_then_delete');
-    for (const [directory, path] of [['codex-7f3a', '.env'], ['repo-harness-wt-notes', 'docs/release-notes.md'], ['repo-harness-wt-bench', 'bench/hooks.ts'],
-      ['repo-harness-wt-i18n', 'src/operator-web/i18n/home.ts'], ['repo-harness-wt-ci-lane', 'scripts/check-ci.sh']] as const) await destination(directory, path, 'git');
+    // The fixture marks `.env` private-only, so it takes the private archive.
+    for (const [directory, path, value] of [['codex-7f3a', '.env', 'private'], ['repo-harness-wt-notes', 'docs/release-notes.md', 'git'], ['repo-harness-wt-bench', 'bench/hooks.ts', 'git'],
+      ['repo-harness-wt-i18n', 'src/operator-web/i18n/home.ts', 'git'], ['repo-harness-wt-ci-lane', 'scripts/check-ci.sh', 'git']] as const) await destination(directory, path, value);
     await option('repo-harness-wt-docs-cleanup', 'delete');
     await act(async () => planButton('choose').click());
     await until(() => document.querySelectorAll('[data-plan-authorize]').length === EDITABLE.length);
@@ -1313,6 +1314,10 @@ describe('worktree cleanup plan review (#1720)', () => {
     await option('codex-7f3a', 'archive_then_delete');
     expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-path]')).map(row => row.getAttribute('data-plan-path'))).toEqual(['.env', 'docs/guide.md']);
     expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-loss-list="files"] li')).map(row => row.textContent)).toEqual(['docs/guide.md', 'docs/removed.md', 'empty']);
+    // Git storage refuses `.env` by name, so the page offers only Not archived or Private for it.
+    const offered = (path: string) => Array.from(planItem('codex-7f3a').querySelectorAll<HTMLOptionElement>(`[data-plan-path="${path}"] option`)).map(option => option.value);
+    expect(offered('.env')).toEqual(['none', 'private']);
+    expect(offered('docs/guide.md')).toEqual(['none', 'git', 'private']);
     await destination('codex-7f3a', 'docs/guide.md', 'git');
     await destination('codex-7f3a', '.env', 'private');
     await act(async () => planButton('choose').click());

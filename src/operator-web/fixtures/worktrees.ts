@@ -144,7 +144,7 @@ async function firstPlan(now: number): Promise<CleanupPlan> {
   const commits = (count: number) => Array.from({ length: count }, (_, index) => String(index + 1).repeat(40));
   // `archivable` is what the server lists: a staged deletion and an ignored directory have no bytes to archive.
   const loss = (archivable: string[], files: string[], ignored: string[] = [], commitCount = 0): CleanupLossSummary =>
-    ({ files, ignored, commits: commits(commitCount), archivable });
+    ({ files, ignored, commits: commits(commitCount), archivable, private_only: archivable.filter(path => path === '.env') });
   const rows: { readonly tree: WorktreeView; readonly loss: CleanupLossSummary | null }[] = [
     { tree: row('feat-kanban-status'), loss: loss([], []) },
     { tree: row('repo-harness-wt-kanban-redesign'), loss: loss(['src/operator-web/BoardPage.tsx'], ['src/operator-web/BoardPage.tsx'], [], 3) },
