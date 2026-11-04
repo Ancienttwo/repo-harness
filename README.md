@@ -43,7 +43,7 @@ files let Claude and Codex resume work across sessions.
 
 ### 1. Install the CLI
 
-Prerequisites: a Git working tree, `bun`, and `hc` (herdr-core) >= `external_tooling.herdr_core.min_version` for host readiness; macOS/Linux also require `bash`,
+Prerequisites: a Git working tree, `bun`, and `hc` (herdr-core) >= the `min_version` in the package file `src/core/operator/herdr-core-pin.json` for host readiness; macOS/Linux also require `bash`,
 while Windows requires Git for Windows (including its Bash and `usr/bin`
 tools). `jq` is optional. No Node.js required — the installer uses Bun >=
 1.4.0 as the runtime, installing or upgrading Bun first when needed.
@@ -68,7 +68,7 @@ npx -y repo-harness@latest install   # npx fallback; the CLI still runs on Bun
 ```
 
 Install `hc` through Herdr.app or a herdr-core release. Verify that `hc --version`
-reports at least `.ai/harness/policy.json#external_tooling.herdr_core.min_version`.
+reports at least `min_version` of `src/core/operator/herdr-core-pin.json` in the installed package.
 Persistent review hosting requires POSIX process groups; on Windows use WSL.
 Missing, unusable or older hc blocks host readiness. Before upgrading from tmux,
 drain existing reviewers using the previous version and explicitly rebind terminal
@@ -569,7 +569,7 @@ dependencies.
 | [Hylarucoder](https://x.com/hylarucoder) / Geju | P1/P2/P3 due-diligence method and Geju practice that shaped the planning, tracing, and decision-rationale discipline in this workflow | Methodology contribution and acknowledgement; not a bundled dependency |
 | Waza by [TW93](https://x.com/HiTw93), including `think`, `hunt`, `check`, and `health` | Daily planning, bug hunts, verification, health checks, and Codex-first skill sync | Installed through the skills CLI into host skill roots |
 | `mermaid` | Authoring and readability review for Mermaid architecture and system-flow source | Runtime-referenced review skill, not vendored into generated repos and never an HTML artifact generator |
-| [herdr](https://herdr.dev/) (`hc`, herdr-core) | Required peer-terminal runtime: notification dispatch, peer collaboration, and hosting the persistent acceptance reviewer | Externally installed `hc` binary, pinned in `.ai/harness/policy.json#external_tooling.herdr_core` (`min_version` floor and checksum-verified CI release asset); replaces the retired tmux runtime |
+| [herdr](https://herdr.dev/) (`hc`, herdr-core) | Required peer-terminal runtime: notification dispatch, peer collaboration, and hosting the persistent acceptance reviewer | Externally installed `hc` binary, pinned in the package file `src/core/operator/herdr-core-pin.json` (`min_version` floor and checksum-verified CI release asset); replaces the retired tmux runtime |
 | [`reverse-skill-router`](https://github.com/zhaoxuya520/reverse-skill) | Routes reverse-engineering and security tasks to specialist playbooks | Recommended explicit-only Skill (`--with-reverse-skill`); not profile-selected because upstream's target-mention authorization assumption requires independent scope review |
 | CodeGraph (`@colbymchenry/codegraph`) | Symbol-aware navigation, impact tracing, and readiness checks for this self-host repo | Dev dependency in this repo; generated repos stay global-MCP-first unless policy opts in |
 | OpenAI Codex | Primary execution agent for repo-local implementation, verification, and GitHub contributor attribution when a commit materially includes Codex-authored work | External agent runtime; attribution is an explicit commit trailer, not hidden hook automation |

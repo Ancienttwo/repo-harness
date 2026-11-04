@@ -2,6 +2,24 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- The package file `src/core/operator/herdr-core-pin.json` is now the only
+  hc (herdr-core) pin. It holds the `min_version` floor and the release assets
+  that CI installs. The Board, the Bots page, the runtime overlay,
+  `check-agent-tooling.sh` and the CI action read this file. The floor protects
+  the hc client code of the package, so each install reads the floor of its
+  own code. The repository policy key `external_tooling.herdr_core` is
+  retired: `init` and adoption no longer seed it, and they delete it and
+  report it in the retired policy keys. No reader reads the old key.
+- `hc_pin_unavailable` (Bots page and runtime overlay), the Board reason
+  `pin_unavailable` and the `configuration-error` status of
+  `runtime.herdr_core` are removed. A missing or malformed pin file fails at
+  module load. `runtime.herdr_core.min_version_source` is now
+  `package:src/core/operator/herdr-core-pin.json`.
+
 ## [0.26.1] - 2026-11-04
 
 This release fixes the hook runtime of 0.26.0. In 0.26.0, the installed

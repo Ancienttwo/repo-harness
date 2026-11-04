@@ -98,9 +98,23 @@ export interface SetupSkill {
   name: string;
   /** Catalog `summary` (assets/skill-commands/manifest.json); null when the catalog has no entry. */
   summary: string | null;
+  /** Catalog `hosts`: the hosts that the package supports, in SETUP_HOSTS order; null when the catalog has no entry. */
+  catalog_hosts: SetupHost[] | null;
   /** Null when setup check has no expected projection of this skill on the host. */
   hosts: SetupPerHost<SetupSkillHostRow | null>;
 }
+
+/** One host skill root and the entries in it that are not catalog packages. Nothing in it is managed. */
+export interface SetupHostSkillRoot {
+  host: SetupHost;
+  /** The root with HOME written as `~`; `[private path]` when it is outside HOME. */
+  root: string;
+  /** Sorted directory and link names that no catalog package owns; dot entries are left out. Null when the root does not exist. */
+  other_skills: string[] | null;
+}
+
+/** The install ledger's plugin selection, which `repo-harness update` installs again. */
+export type SetupInstallSelection = 'all' | string[];
 
 /** `HookEvent` vocabulary, in route registry order. */
 export const SETUP_HOOK_EVENTS = ['SessionStart', 'PreToolUse', 'UserPromptSubmit', 'SubagentStart', 'Stop'] as const;
@@ -182,6 +196,10 @@ export interface SetupSnapshotV2 {
   hosts: SetupHostFacts[];
   /** Skills that setup check judged on at least one host, in setup check order. */
   skills: SetupSkill[];
+  /** Always claude, codex, pi in that order when data is present. */
+  skill_roots: SetupHostSkillRoot[];
+  /** Null when the install ledger is missing or invalid; then `repo-harness update` cannot run. */
+  install_selection: SetupInstallSelection | null;
   hooks: SetupHookEvent[];
   /** Null when there is no data, the collector found no repository root, or a hook log read failed. */
   hook_usage: SetupHookUsage | null;

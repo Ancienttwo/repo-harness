@@ -29,10 +29,9 @@ Commands for the topology steps:
 | Step | Command |
 |---|---|
 | Start the orchestrator | `herdr-app do tab.new --name "$(repo-harness seats argv orchestrator --repository-id <repository-id> --json \| jq -r .tab)" --space <id> --folder <repository> --argv "$(repo-harness seats argv orchestrator --repository-id <repository-id>)"` |
-| New worker tab | `herdr-app do tab.new --name "$(repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n> --json \| jq -r .tab)" --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --issue <n>)" --task <packet>` |
+| New worker tab | `herdr-app do tab.new --name "$(repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n> --json \| jq -r .tab)" --space <id> --folder <worktree> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n>)" --task <packet>` |
 | Start the advisor | `herdr-app do pane.split --direction right --pane <orchestrator pane> --argv "$(repo-harness seats argv advisor --repository-id <repository-id>)"` |
-| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --issue <n>)"` |
-| Label a seat | `hc label <t> $(repo-harness seats argv <seat> --repository-id <repository-id> --parent <n> --issue <n> --pr <n> --json \| jq -r '.labels[]')` |
+| Second worker in a tab | `herdr-app do pane.split --direction right --pane <pane> --argv "$(repo-harness seats argv worker --repository-id <repository-id> --parent <n> --issue <n>)"` |
 | Message a worker | `hc send <t> <comment URL>` |
 | Read a worker | `hc read <t>` |
 | Wait for a worker | `hc wait <t>` |
@@ -40,7 +39,7 @@ Commands for the topology steps:
 
 `repo-harness seats argv <seat>` prints the argv of the seat from the `seats` section of `~/.repo-harness/config.json`, or from the seat defaults when the section is absent. The argv holds the model, the effort, the tool limits and the seat brief. Its stderr names the source and each limit. A limit marked `instructions_only` is written into the launch instructions only; the host does not enforce it. Without `--argv`, the pane opens a shell.
 
-Each start prints the new `terminal`. Label it in the next step, or the board shows the execution axis as `unavailable` (`no_seat_terminals`). `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
+With `--repository-id`, the argv labels its own terminal before the agent starts: it runs `repo-harness seats label`, which sets the seat labels on `HC_TERMINAL_ID`, and then starts the agent. The board finds seats only by these labels; a terminal without them leaves the execution axis `unavailable` (`no_seat_terminals`). When the label fails, the agent does not start and the terminal shows the error. Each start prints the new `terminal`. `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
 
 ### Pane and tab names
 

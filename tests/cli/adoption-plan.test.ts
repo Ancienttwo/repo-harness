@@ -33,24 +33,24 @@ function writeOperation(path: string, content: string): AdoptionOperation {
 }
 
 describe("canonical adoption plan", () => {
-  test("adoption supplies the herdr-core pin to old repositories and preserves explicit floors", () => {
+  test("adoption deletes and reports the retired herdr-core policy key and seeds no hc pin", () => {
     const repo = tempRepo();
-    const pin = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf8")).external_tooling.herdr_core;
     try {
       mkdirSync(join(repo, ".ai/harness"), { recursive: true });
-      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ external_tooling: { routing: { custom: "kept" } } }));
+      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify({ external_tooling: { routing: { custom: "kept" }, herdr_core: { min_version: "0.1.16" } } }));
       const plan = planAdoption({ repoRoot: repo, mode: "standard", apply: true });
       const operation = plan.operations.find(op => op.path === ".ai/harness/policy.json");
       if (!operation || operation.kind !== "writeFile") throw new Error("policy operation missing");
-      expect(JSON.parse(operation.content).external_tooling.herdr_core).toEqual(pin);
+      expect(JSON.parse(operation.content).external_tooling).not.toHaveProperty("herdr_core");
+      expect(JSON.parse(operation.content).external_tooling.routing.custom).toBe("kept");
+      expect(plan.warnings).toContainEqual(expect.objectContaining({ code: "retired-policy-keys", message: "Removed retired harness policy keys: external_tooling.herdr_core" }));
       expect(applyAdoptionPlan(plan).ok).toBe(true);
-      const policy = JSON.parse(readFileSync(join(repo, ".ai/harness/policy.json"), "utf8"));
-      expect(policy.external_tooling.herdr_core).toEqual(pin);
-      policy.external_tooling.herdr_core.min_version = "99.0.0";
-      writeFileSync(join(repo, ".ai/harness/policy.json"), JSON.stringify(policy));
-      const next = planAdoption({ repoRoot: repo, mode: "standard" }).operations.find(op => op.path === ".ai/harness/policy.json");
-      if (!next || next.kind !== "writeFile") throw new Error("policy operation missing");
-      expect(JSON.parse(next.content).external_tooling.herdr_core.min_version).toBe("99.0.0");
+      // A keyless policy stays keyless and reports nothing.
+      const next = planAdoption({ repoRoot: repo, mode: "standard" });
+      const nextPolicy = next.operations.find(op => op.path === ".ai/harness/policy.json");
+      if (!nextPolicy || nextPolicy.kind !== "writeFile") throw new Error("policy operation missing");
+      expect(JSON.parse(nextPolicy.content).external_tooling).not.toHaveProperty("herdr_core");
+      expect(next.warnings.map(warning => warning.code)).not.toContain("retired-policy-keys");
     } finally { cleanup(repo); }
   });
 

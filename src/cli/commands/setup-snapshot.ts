@@ -2,10 +2,12 @@
 // runs in the collector's child process (setup-check-child.ts), never in the
 // `operator serve` event loop: the builder is synchronous and spawns its own
 // probes. It reads only the builder result, the skill catalog that the skill
-// projection check reads, the route registry, and the packaged agent fleet.
-// It never runs the fleet install script and never reads credential files.
+// projection check reads, the route registry, the packaged agent fleet, and
+// the entry names of each host skill root. It never runs the fleet install
+// script, never reads credential files and never changes a host skill root.
 
 import { readdirSync, readFileSync } from 'node:fs';
+import os from 'node:os';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -14,9 +16,10 @@ import { buildSetupCheck, type SetupCheckBuild } from './init-hook';
 import { HOOK_EVENT_TELEMETRY_PATH, HOOK_EVENT_TELEMETRY_PROTOCOL } from '../hook/event-telemetry';
 import { ROUTES } from '../hook/route-registry';
 import { resolveRepoRoot } from '../hook/runtime';
-import { projectSetupSnapshot, type SetupRawFleetRole } from '../../core/setup/projection';
+import { projectSetupSnapshot, type SetupRawCatalogPackage, type SetupRawFleetRole, type SetupRawSkillRoot } from '../../core/setup/projection';
 import type { SetupHookUsage, SetupSnapshotV2 } from '../../core/setup/types';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';
+import { hostSkillRoot, SKILL_HOSTS } from '../../effects/host-skill-roots';
 import { readHookUsage } from '../../effects/setup/hook-usage';
 import { parseFrontmatter } from '../../effects/terminal/task-role-profiles';
 
@@ -33,15 +36,35 @@ export function readFleetRoles(directory: string = SETUP_FLEET_SOURCE_DIR): Setu
     });
 }
 
-/** Catalog summaries from the package root the skill projection check reads. Empty when the catalog is unreadable. */
-function skillSummaries(env: NodeJS.ProcessEnv): Map<string, string> {
+/** Catalog packages from the package root the skill projection check reads. Null when the catalog is unreadable. */
+function skillCatalog(env: NodeJS.ProcessEnv): Map<string, SetupRawCatalogPackage> | null {
   try {
     const manifest = readFileSync(join(skillProjectionSourceRoot(env), 'assets', 'skill-commands', 'manifest.json'), 'utf8');
     const catalog = parseSkillSurfaceCatalog(manifest, { declared: true });
-    return catalog.status === 'valid' ? new Map(catalog.catalog.packages.map(pkg => [pkg.name, pkg.summary])) : new Map();
+    return catalog.status === 'valid' ? new Map(catalog.catalog.packages.map(pkg => [pkg.name, { summary: pkg.summary, hosts: pkg.hosts }])) : null;
   } catch {
-    return new Map();
+    return null;
   }
+}
+
+/** The HOME that the skill projection check reads. */
+function skillHome(env: NodeJS.ProcessEnv): string {
+  return env.HOME ?? env.USERPROFILE ?? os.homedir();
+}
+
+/** The directories and links in each host skill root. Read only: nothing in a root is changed. */
+export function readHostSkillRoots(env: NodeJS.ProcessEnv): SetupRawSkillRoot[] {
+  const home = skillHome(env);
+  return SKILL_HOSTS.map((host) => {
+    const root = hostSkillRoot(home, host, env);
+    try {
+      const entries = readdirSync(root, { withFileTypes: true });
+      return { host, root, entries: entries.filter(entry => entry.isDirectory() || entry.isSymbolicLink()).map(entry => entry.name) };
+    } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { host, root, entries: null };
+      throw error;
+    }
+  });
 }
 
 export function projectSetupBuild(build: SetupCheckBuild, options: {
@@ -63,7 +86,10 @@ export function projectSetupBuild(build: SetupCheckBuild, options: {
     adapters: build.status.targets,
     cli_versions: { ...(codexVersion === undefined ? {} : { codex: codexVersion }), ...(piVersion === undefined ? {} : { pi: piVersion }) },
     skill_rows: doctorCheck('skill-projection')?.skills ?? null,
-    skill_summaries: skillSummaries(options.env),
+    skill_catalog: skillCatalog(options.env),
+    home: skillHome(options.env),
+    skill_roots: readHostSkillRoots(options.env),
+    install_selection: build.status.installState.recorded === true ? build.status.installState.selection : null,
     routes: ROUTES,
     fleet_roles: readFleetRoles(options.fleet_dir),
     fleet_hosts: tools?.agent_fleet?.hosts ?? null,

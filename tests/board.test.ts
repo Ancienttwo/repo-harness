@@ -18,6 +18,7 @@ import { applyDependencyMigration, planDependencyMigration, runDependencyMigrati
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
+import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
@@ -39,7 +40,7 @@ const { readFileSync } = require('fs');
 const args = process.argv.slice(2);
 const gets = readFileSync(process.env.FIXTURES + '/hc-get.jsonl', 'utf8').trim().split('\\n').map(line => JSON.parse(line));
 const labels = address => gets.find(get => get.address === address).labels;
-if (args[0] === '--version') console.log('hc 0.1.17');
+if (args[0] === '--version') console.log('hc ' + process.env.HC_VERSION);
 else if (args[0] === 'ls') {
   const wanted = args.flatMap((arg, at) => (args[at - 1] === '--label' ? [arg.split('=')] : []));
   const list = JSON.parse(readFileSync(process.env.FIXTURES + '/hc-ls.json', 'utf8'));
@@ -55,7 +56,8 @@ interface Replay {
   readonly owners?: (results: Json[]) => void;
   /** Replaces the recorded archctx process. */
   readonly archctx?: RunArchctxProcess;
-  readonly pin?: string;
+  /** The version that the fake hc reports; the recorded core reported 0.1.17. */
+  readonly hcVersion?: string;
   readonly now?: Date;
 }
 
@@ -69,9 +71,8 @@ function comment(body: string, createdAt: string): Json {
 
 function replay(options: Replay = {}): BoardV1 {
   const root = tmpWorkspace('board'); roots.push(root);
-  mkdirSync(join(root, 'bin')); mkdirSync(join(root, '.ai/harness'), { recursive: true });
+  mkdirSync(join(root, 'bin'));
   writeFileSync(join(root, 'bin/hc'), HC); chmodSync(join(root, 'bin/hc'), 0o755);
-  writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: options.pin ?? '0.1.16' } } }));
   const parent = JSON.parse(fixture('parent-1474.graphql.json')); options.parent?.(parent.data);
   const pulls = JSON.parse(fixture('pull-requests-1474.graphql.json')); options.pulls?.(pulls.data);
   const resolved = JSON.parse(fixture('archctx-resolve-1474.json')); options.owners?.(resolved.data.results);
@@ -80,7 +81,7 @@ function replay(options: Replay = {}): BoardV1 {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
-    host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES } }),
+    host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.17' } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
@@ -124,7 +125,7 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   expect(board.pull_requests[0]!.acceptance).toMatchObject({ status: 'accepted', via: 'record', accepted_at: '2026-11-02T21:12:35Z' });
   expect(board.plan).toMatchObject({ status: 'unavailable', reason: 'plan block invalid: the plan comment has 0 fenced json blocks, expected 1' });
   expect(board.daily_run).toMatchObject({ status: 'observed', conclusion: 'failure', open_repair_issues: [] });
-  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.17', min_version: '0.1.16' }, herdr_app: { status: 'not_pinned' } });
+  expect(board.tooling).toEqual({ hc: { status: 'observed', version: '0.1.17', min_version: HC_MIN_VERSION }, herdr_app: { status: 'not_pinned' } });
   expect(board.execution.status === 'observed' && board.execution.terminals.map(terminal => terminal.seat_status === 'observed'
     ? [terminal.address, terminal.seat, terminal.issue, terminal.status] : [terminal.address, terminal.reason])).toEqual([
     ['t1', 'worker', 1476, 'blocked'], ['t2', 'worker', 1475, 'done'], ['t3', 'orchestrator', null, 'idle'], ['t4', 'seat_label_missing'],
@@ -266,7 +267,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
   const plan = { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476], holds: [], batches: [], seat_limits: { worker: 3 } };
   const board = replay({
     now: later,
-    pin: '0.1.18',
+    hcVersion: '0.1.15',
     parent: (data) => {
       data.repository.issue.comments.nodes.push(comment(`repo-harness plan\n\n\`\`\`json\n${JSON.stringify(plan)}\n\`\`\`\n`, '2026-11-02T23:00:00Z'));
       issueNode(data, 1475).comments.nodes.push(comment('repo-harness issue claim status\nClaim: x\nStatus: done\nPR: #1491 head 20e2cbd2\n', '2026-11-02T21:50:00Z'));

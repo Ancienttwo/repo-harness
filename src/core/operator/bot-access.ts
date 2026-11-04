@@ -75,11 +75,11 @@ export interface BotAccessSnapshotV1 {
   /** The core that the server's environment selects. A core below the pin answers, but its terminals are not read. */
   readonly hc: {
     readonly state: 'ok';
-    readonly version: { readonly state: 'ok'; readonly value: HcVersionCheck } | BotAccessUnavailable<'hc_pin_unavailable'>;
+    readonly version: { readonly state: 'ok'; readonly value: HcVersionCheck };
     /** Herdr.app has no pin yet. */
     readonly herdr_app: { readonly state: 'not_pinned' };
     readonly terminals: { readonly state: 'ok'; readonly value: readonly HcTerminalProjection[] }
-      | BotAccessUnavailable<'hc_version_mismatch' | 'hc_pin_unavailable' | 'hc_terminals_failed'>;
+      | BotAccessUnavailable<'hc_version_mismatch' | 'hc_terminals_failed'>;
   } | BotAccessUnavailable<HcSectionReason>;
   readonly notify: {
     readonly state: 'ok';
@@ -262,18 +262,15 @@ export function decodeBotAccessSnapshot(value: unknown): BotAccessSnapshotV1 {
 
   const hc = section(v.hc, 'hc', ['version', 'herdr_app', 'terminals'], ['hc_missing', 'hc_unreachable']);
   if (hc.version !== undefined) {
-    const version = section(hc.version, 'hc version', ['value'], ['hc_pin_unavailable']);
-    let state: 'aligned' | 'mismatch' | 'pin_unavailable' = 'pin_unavailable';
-    if (version.value !== undefined) {
-      const check = obj(version.value, ['state', 'expected', 'actual'], 'hc version value');
-      state = oneOf(check.state, ['aligned', 'mismatch'] as const, 'hc version state');
-      match(obj(check.expected, ['min_version'], 'hc expected').min_version, HC_VERSION_TEXT, 'hc min_version');
-      match(obj(check.actual, ['version'], 'hc actual').version, HC_VERSION_TEXT, 'hc actual version');
-    }
+    // The floor ships in the package, so the version section has no unavailable reason.
+    const check = obj(section(hc.version, 'hc version', ['value'], []).value, ['state', 'expected', 'actual'], 'hc version value');
+    const state = oneOf(check.state, ['aligned', 'mismatch'] as const, 'hc version state');
+    match(obj(check.expected, ['min_version'], 'hc expected').min_version, HC_VERSION_TEXT, 'hc min_version');
+    match(obj(check.actual, ['version'], 'hc actual').version, HC_VERSION_TEXT, 'hc actual version');
     if (obj(hc.herdr_app, ['state'], 'herdr_app').state !== 'not_pinned') fail('herdr_app state');
-    const terminals = section(hc.terminals, 'hc terminals', ['value'], ['hc_version_mismatch', 'hc_pin_unavailable', 'hc_terminals_failed']);
+    const terminals = section(hc.terminals, 'hc terminals', ['value'], ['hc_version_mismatch', 'hc_terminals_failed']);
     // Terminals are read only from a core at or above the pin; each unavailable reason names one version state.
-    const expected = { aligned: 'hc_terminals_failed', mismatch: 'hc_version_mismatch', pin_unavailable: 'hc_pin_unavailable' }[state];
+    const expected = { aligned: 'hc_terminals_failed', mismatch: 'hc_version_mismatch' }[state];
     if (terminals.value !== undefined ? state !== 'aligned' : object(hc.terminals)?.reason !== expected) fail('hc terminals state');
     if (terminals.value !== undefined) {
       for (const raw of array(terminals.value, 'hc terminals value')) {

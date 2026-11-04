@@ -18,6 +18,7 @@ import {
   type SetupHookUsage,
   type SetupHost,
   type SetupHostFacts,
+  type SetupHostSkillRoot,
   type SetupOverallStatus,
   type SetupSkill,
   type SetupSnapshotV2,
@@ -52,6 +53,21 @@ export interface SetupRawSkillRow {
   readonly ok: boolean;
 }
 
+/** One catalog package: its summary and the hosts it supports. */
+export interface SetupRawCatalogPackage {
+  readonly summary: string;
+  readonly hosts: readonly string[];
+}
+
+/** One host skill root as the collector read it. */
+export interface SetupRawSkillRoot {
+  readonly host: SetupHost;
+  /** Absolute root path. */
+  readonly root: string;
+  /** Names of the directories and links in the root; null when the root does not exist. */
+  readonly entries: readonly string[] | null;
+}
+
 /** One `ROUTES` entry. Route hosts can include hosts outside SETUP_HOSTS; the projection reads only SETUP_HOSTS. */
 export interface SetupRawRoute {
   readonly event: string;
@@ -79,7 +95,14 @@ export interface SetupProjectionInput {
   readonly cli_versions: Partial<Record<SetupHost, string>>;
   /** Null when the skill projection check produced no judgments. */
   readonly skill_rows: readonly SetupRawSkillRow[] | null;
-  readonly skill_summaries: ReadonlyMap<string, string>;
+  /** Catalog packages by name; null when the catalog is unreadable. */
+  readonly skill_catalog: ReadonlyMap<string, SetupRawCatalogPackage> | null;
+  /** The HOME that the skill roots are under. */
+  readonly home: string;
+  /** One root per SETUP_HOSTS entry, in that order. */
+  readonly skill_roots: readonly SetupRawSkillRoot[];
+  /** The install ledger selection; null when the ledger is missing or invalid. */
+  readonly install_selection: 'all' | readonly string[] | null;
   readonly routes: readonly SetupRawRoute[];
   readonly fleet_roles: readonly SetupRawFleetRole[];
   /** `tooling.tools.agent_fleet.hosts` exactly as the tooling report gave it. */
@@ -136,7 +159,30 @@ function skills(input: SetupProjectionInput): SetupSkill[] {
     hosts[row.host] = { state: row.state, ok: row.ok };
     byName.set(row.name, hosts);
   }
-  return [...byName].map(([name, hosts]) => ({ name, summary: packageText(input.skill_summaries.get(name)), hosts }));
+  return [...byName].map(([name, hosts]) => {
+    const entry = input.skill_catalog?.get(name);
+    return { name, summary: packageText(entry?.summary), catalog_hosts: entry ? SETUP_HOSTS.filter(host => entry.hosts.includes(host)) : null, hosts };
+  });
+}
+
+/** `~` for HOME; any other absolute root is a private path. */
+function publicRoot(root: string, home: string): string {
+  const separator = root[home.length];
+  return redact(root.startsWith(home) && (separator === '/' || separator === '\\') ? `~${root.slice(home.length)}` : root);
+}
+
+/**
+ * Without a readable catalog no entry can be told apart from a repo-harness
+ * skill, so no root is listed rather than listing managed skills as other.
+ */
+function skillRoots(input: SetupProjectionInput): SetupHostSkillRoot[] {
+  const catalog = input.skill_catalog;
+  if (catalog === null) return [];
+  return input.skill_roots.map(({ host, root, entries }) => ({
+    host,
+    root: publicRoot(root, input.home),
+    other_skills: entries === null ? null : entries.filter(name => !name.startsWith('.') && !catalog.has(name)).map(redact).sort(),
+  }));
 }
 
 function hooks(routes: readonly SetupRawRoute[]): SetupHookEvent[] {
@@ -216,6 +262,8 @@ export function projectSetupSnapshot(input: SetupProjectionInput): SetupSnapshot
     checks: problems,
     hosts: SETUP_HOSTS.map(host => hostFacts(host, input, checks)),
     skills: skills(input),
+    skill_roots: skillRoots(input),
+    install_selection: input.install_selection === null || input.install_selection === 'all' ? input.install_selection : [...input.install_selection],
     hooks: hooks(input.routes),
     hook_usage: input.hook_usage,
     fleet: fleet(input),
