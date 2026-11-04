@@ -90,6 +90,7 @@ export interface BoardPullRequestV1 {
 export type BoardTerminalV1 = {
   readonly address: string;
   readonly name: string | null;
+  readonly agent: string | null;
   readonly state: 'live' | 'finished';
   /** The program's own 7501 word; null when it never reported. */
   readonly status: string | null;
@@ -106,6 +107,7 @@ export type BoardTerminalV1 = {
 export interface BoardSeatTerminalReadV1 {
   readonly address: string;
   readonly name: string | null;
+  readonly agent: string | null;
   readonly state: 'live' | 'finished';
   readonly status: string | null;
   readonly status_kind: string | null;

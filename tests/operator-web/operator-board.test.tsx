@@ -689,7 +689,7 @@ describe('board office (#1755)', () => {
   const rows = (selector: string) => Array.from(document.querySelectorAll<HTMLElement>(selector));
   type Terminal = BoardV1['execution'] extends infer E ? E extends { readonly terminals: readonly (infer T)[] } ? T : never : never;
   const seat = (address: string, seatName: string, issue: number | null, pr: number | null, status: string | null, state: 'live' | 'finished' = 'live'): Terminal =>
-    ({ address, name: address, state, status, status_kind: null, status_ms: null, turn: 0, seat_status: 'observed', seat: seatName, issue, pr });
+    ({ address, name: address, agent: null, state, status, status_kind: null, status_ms: null, turn: 0, seat_status: 'observed', seat: seatName, issue, pr });
   const observedClaim = { status_kind: 'observed', url: 'https://github.com/Ancienttwo/repo-harness/issues/1478#issuecomment-1', created_at: '2026-11-02T21:00:00Z', status: 'draft PR open; claim remains active', pr: null, head_sha: null } as const;
   /** The recorded board of #1474 with edited pull requests, items and terminals. */
   const boardWith = ({ prs = {}, items = {}, terminals, plan }: {
@@ -729,7 +729,7 @@ describe('board office (#1755)', () => {
         seat('t7', 'worker', null, null, 'working'),
         // Left out: a finished worker, a seat-label gap and the two lead seats.
         seat('t8', 'worker', 1480, null, 'working', 'finished'),
-        { address: 't9', name: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, seat_status: 'unavailable', reason: 'seat_label_missing' },
+        { address: 't9', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, seat_status: 'unavailable', reason: 'seat_label_missing' },
         seat('t10', 'orchestrator', null, null, 'idle'),
         seat('t11', 'advisor', null, null, 'idle'),
       ],
