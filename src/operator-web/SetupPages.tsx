@@ -10,6 +10,8 @@ import {
   type SetupHookRoute,
   type SetupHost,
   type SetupHostFacts,
+  type SetupHostSkillRoot,
+  type SetupInstallSelection,
   type SetupSkill,
   type SetupSnapshotV2,
 } from '../core/setup/types';
@@ -22,6 +24,7 @@ import {
   orderSkills,
   setupPageState,
   SETUP_CHECK_COMMAND,
+  SKILL_UPDATE_COMMAND,
   skillAbnormal,
   skillCell,
   type SetupPageState,
@@ -58,7 +61,9 @@ const SKILL_CELL: Readonly<Record<SkillCell, { readonly key: OperatorMessageKey;
   'invalid path type': { key: 'setup.skillState.invalidPathType', tone: 'danger' },
   'source missing': { key: 'setup.skillState.sourceMissing', tone: 'danger' },
   'unowned real directory': { key: 'setup.skillState.unownedRealDirectory', tone: 'danger' },
-  not_expected: { key: 'setup.skillState.notExpected', tone: 'neutral' },
+  not_supported: { key: 'setup.skillState.notSupported', tone: 'neutral' },
+  not_installed: { key: 'setup.skillState.notInstalled', tone: 'neutral' },
+  not_judged: { key: 'setup.skillState.notJudged', tone: 'neutral' },
 };
 
 const SKILL_PROJECTION_CHECK = 'doctor.skill-projection';
@@ -336,11 +341,62 @@ function SkillRow({ skill, t }: { readonly skill: SetupSkill; readonly t: Operat
         <span className="min-w-0 text-xs text-kumo-subtle md:line-clamp-2" title={skill.summary ?? undefined}>{skill.summary ?? t('setup.skills.noSummary')}</span>
       </span>
       <HostCells t={t} render={host => {
-        const cell = skillCell(skill.hosts[host]);
+        const cell = skillCell(skill, host);
         const { key, tone } = SKILL_CELL[cell];
         return <span className="inline-flex items-center gap-1.5" data-skill-state={cell}><StatusDot tone={tone} /><span className={tone === 'neutral' ? 'text-kumo-subtle' : undefined}>{t(key)}</span></span>;
       }} />
     </li>
+  );
+}
+
+function selectionText(selection: SetupInstallSelection, t: OperatorTranslate): string {
+  if (selection === 'all') return t('setup.skills.selectionAll');
+  return selection.length === 0 ? t('setup.skills.selectionCore') : selection.join(', ');
+}
+
+/** The only action: `repo-harness update` repairs repo-harness skills. It needs the install ledger. */
+function SkillRepair({ selection, t }: { readonly selection: SetupInstallSelection | null; readonly t: OperatorTranslate }) {
+  if (selection === null) return <p className="text-sm text-kumo-subtle" data-skill-repair="no-ledger">{t('setup.skills.noLedger')}</p>;
+  return (
+    <div className="flex min-w-0 flex-col gap-1.5" data-skill-repair="update">
+      <p className="text-sm text-kumo-default">{t('setup.skills.repair', { selection: selectionText(selection, t) })}</p>
+      <CommandLine command={SKILL_UPDATE_COMMAND} t={t} />
+    </div>
+  );
+}
+
+function SkillRoot({ root, t }: { readonly root: SetupHostSkillRoot; readonly t: OperatorTranslate }) {
+  return (
+    <section aria-labelledby={`skill-root-${root.host}`} className="flex min-w-0 flex-col" data-skill-root={root.host}>
+      <h3 id={`skill-root-${root.host}`} className="flex flex-wrap items-center gap-x-2 px-3 pb-1 text-xs">
+        <span className="font-semibold text-kumo-strong">{hostName(root.host, t)}</span>
+        <span className="font-mono text-kumo-subtle [overflow-wrap:anywhere]">{root.root}</span>
+      </h3>
+      {root.other_skills === null || root.other_skills.length === 0
+        ? <p className="px-3 text-sm text-kumo-subtle">{t(root.other_skills === null ? 'setup.skills.rootMissing' : 'setup.skills.noOther')}</p>
+        : (
+          <ul className="flex flex-col divide-y divide-kumo-hairline rounded-lg border border-kumo-hairline">
+            {root.other_skills.map(name => (
+              <li key={name} className={ROW} data-other-skill={name}>
+                <span className="font-mono text-sm text-kumo-strong md:w-56 md:shrink-0 [overflow-wrap:anywhere]">{name}</span>
+                <span className="min-w-0 font-mono text-xs text-kumo-subtle [overflow-wrap:anywhere]">{`${root.root}/${name}`}</span>
+              </li>
+            ))}
+          </ul>
+        )}
+    </section>
+  );
+}
+
+function OtherSkills({ roots, t }: { readonly roots: readonly SetupHostSkillRoot[]; readonly t: OperatorTranslate }) {
+  return (
+    <Card labelledBy="setup-other-skills-heading">
+      <SectionTitle id="setup-other-skills-heading" count={roots.reduce((total, root) => total + (root.other_skills?.length ?? 0), 0)}>{t('setup.skills.other')}</SectionTitle>
+      {roots.length === 0 ? <p className="text-sm text-kumo-subtle" data-other-skills="unknown">{t('setup.skills.otherUnknown')}</p> : <>
+        <p className="text-xs text-kumo-subtle">{t('setup.skills.otherNote')}</p>
+        <div className="flex min-w-0 flex-col gap-4">{roots.map(root => <SkillRoot key={root.host} root={root} t={t} />)}</div>
+      </>}
+    </Card>
   );
 }
 
@@ -355,7 +411,7 @@ export function SkillsPage(props: PageProps & { readonly onOpenTool: (id: string
         const abnormal = skills.filter(skillAbnormal).length;
         // The skill projection check itself, when setup check flagged it; its detail explains missing rows.
         const projection = snapshot.checks.find(check => check.id === SKILL_PROJECTION_CHECK) ?? null;
-        return (
+        return (<>
           <Card labelledBy="setup-skills-heading">
             <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
               <SectionTitle id="setup-skills-heading" count={skills.length}>{t('setup.skills.title')}</SectionTitle>
@@ -368,6 +424,7 @@ export function SkillsPage(props: PageProps & { readonly onOpenTool: (id: string
               )}
             </div>
             {projection && <ul className="rounded-lg border border-kumo-hairline" aria-label={t('setup.skills.check')}><CheckRow check={projection} t={t} /></ul>}
+            {abnormal > 0 && <SkillRepair selection={snapshot.install_selection} t={t} />}
             {skills.length === 0 ? <p className="text-sm text-kumo-subtle">{t('setup.skills.empty')}</p> : (
               <div className="flex min-w-0 flex-col">
                 <ColumnHeader t={t} lead={<><span className="w-56 shrink-0">{t('setup.skills.skill')}</span><span>{t('setup.skills.summary')}</span></>} />
@@ -375,7 +432,8 @@ export function SkillsPage(props: PageProps & { readonly onOpenTool: (id: string
               </div>
             )}
           </Card>
-        );
+          <OtherSkills roots={snapshot.skill_roots} t={t} />
+        </>);
       }}
     </SetupFrame>
     <ToolGroup kind="skill" onOpen={props.onOpenTool} t={t} />
