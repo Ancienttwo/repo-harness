@@ -28,9 +28,17 @@ and needs no migration.
 
 - The selection read of a hook or command root no longer checks the
   ownership surfaces of the install state. In 0.26.0, a state with a surface
-  outside the host mutation paths made that read `unreadable`. `install`,
-  `update`, `doctor`, `status`, `uninstall` and `upgrade` still check each
-  surface and fail with `install_state_invalid_ownership`. (#1683)
+  outside the host mutation paths made that read `unreadable`. With
+  `architecture` selected, every root that uses this read now loads the
+  architecture providers for such a state, where 0.26.0 skipped them: the
+  CLI root, the hook, the Operator architecture thread,
+  `scripts/capability-resolver.ts`, `scripts/check-managed-runtime.ts`,
+  `scripts/contract-worktree-runtime.ts`, and the shell gate
+  `scripts/lib/architecture-plugin.sh`, so `check-ci.sh`,
+  `contract-worktree.sh` and `check-agent-tooling.sh` start archctx or
+  CodeGraph. `install`, `update`, `doctor`, `status`, `uninstall` and
+  `upgrade` still check each surface and fail with
+  `install_state_invalid_ownership`. (#1683)
 - The Operator module review diff reads path owners through the
   architecture ownership port. When the `architecture` plugin is not
   selected, it fails with `diff_owner_resolution_failed` before any archctx

@@ -44,8 +44,20 @@ the advisor; the agent does not tag, publish or create a GitHub release.
   not load the installer.
 - Behavior change (#1683): the selection read of a hook or command root
   (`readRecordedSelection`, `src/cli/installer/architecture-selection.ts:20`)
-  no longer checks the ownership surfaces. `install`, `update`, `doctor`,
-  `status`, `uninstall` and `upgrade` still check them.
+  no longer checks the ownership surfaces. With `architecture` selected and
+  an ownership surface outside the host mutation paths, every root that uses
+  this read now loads the architecture providers, where 0.26.0 skipped them
+  as `unreadable`: the CLI root (`src/cli/index.ts:135`), the hook
+  (`src/cli/hook-entry.ts:21`), the Operator architecture thread
+  (`src/cli/commands/architecture-thread.ts:13`),
+  `scripts/capability-resolver.ts:39`, `scripts/check-managed-runtime.ts:6`,
+  `scripts/contract-worktree-runtime.ts:131`, and the shell gate
+  `scripts/lib/architecture-plugin.sh:20`, so `check-ci.sh`,
+  `contract-worktree.sh` and `check-agent-tooling.sh` start archctx or
+  CodeGraph. The list is `git grep -n "readRecordedSelection(" -- src
+  scripts assets` at the PR head. `install`, `update`, `doctor`, `status`,
+  `uninstall` and `upgrade` still check each surface and fail with
+  `install_state_invalid_ownership`.
 - Operator: the module review diff reads owners through the ownership port
   (#1682); the architecture page names each map failure (#1677).
 - MCP: the CodeGraph adapter is required (#1675).
