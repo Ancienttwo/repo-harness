@@ -71,7 +71,7 @@ const OPERATOR_JOB_CONTROLLER_ACK_TIMEOUT_MS = 5_000;
 const OPERATOR_DIAGNOSTIC_ACTION = 'Retry. If the error stays, restart `repo-harness operator serve`.';
 const OPERATOR_REGISTRY_ACTION = 'Run `repo-harness fleet prune` to show the registry error.';
 const OPERATOR_ASSET_ACTION = 'Build the operator UI with `bun run build:operator-web` and retry.';
-const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness adopt`, then refresh the board.';
+const OPERATOR_ADOPT_ACTION = 'Adopt the repository with `repo-harness init`, then refresh the board.';
 
 /**
  * The dispatcher's own matchers, exported so the inventory below and the test

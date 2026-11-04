@@ -129,7 +129,7 @@ export function RepositoriesPage({ view, activity, now, onOpen, t }: {
         {t('freshness.repositories.refreshFailed')}
       </p>}
       {repositories.length === 0 && stale === 0
-        ? <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} commandLine="repo-harness adopt --help" />
+        ? <Empty size="sm" icon={<CircleDashedIcon size={32} />} title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} commandLine="repo-harness init --dry-run" />
         : (
           <ul className="divide-y divide-kumo-hairline overflow-hidden rounded-xl border border-kumo-line bg-kumo-base">
             {shown.map(repository => (
