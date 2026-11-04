@@ -13,6 +13,7 @@ import * as childProcess from 'node:child_process';
 import * as fs from 'node:fs';
 import { readArchitecture, readHistory } from '../../src/effects/operator/architecture';
 import type { ArchctxProcessResult } from '../../src/core/architecture/contracts';
+import { resolveCompatibleNodeRuntime } from '../../src/effects/architecture/archctx-provider';
 import { ARCHITECTURE_FAILURES } from '../../src/core/operator/architecture';
 import { unavailableDevActivitySnapshot } from '../../src/core/dev-activity/decode';
 import { unavailableWorktrees, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
@@ -909,7 +910,8 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   const registered = registryHome([{ path: root, accessMode: 'read_only' }]);
   const registry = { ids: registered.ids, home: watchedPath(registered.home) };
   const git = architectureGit(scratch);
-  const env = { ...process.env, REPO_HARNESS_HOME: registry.home, ...git.env };
+  // The thread root and the CLI root register the ownership port only for a selected plugin; diff mode needs it.
+  const env = { ...pluginSelectionEnv(), REPO_HARNESS_HOME: registry.home, ...git.env };
   const before = architectureFiles(root), registryBefore = architectureFiles(registry.home);
   const changes: string[] = [];
   const watchers = [root, registry.home].map(path => watch(path, { recursive: true }, (kind, file) => changes.push(`${kind}:${file}`)));
@@ -922,8 +924,7 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules`;
   try {
     const cli = new URL('../../src/cli/index.ts', import.meta.url).pathname;
-    // `module` is an architecture command: the CLI comparison runs with a HOME that selects the plugin.
-    const cliEnv = { ...env, HOME: pluginSelectionEnv().HOME };
+    const cliEnv = env;
     const list = spawnSync(process.execPath, [cli, 'module', 'list', '--json'], { cwd: root, env: cliEnv, encoding: 'utf8' });
     expect(list.status).toBe(0);
     for (const method of ['GET', 'HEAD']) {
@@ -961,6 +962,35 @@ test('architecture GET and HEAD match CLI digests and keep closed argv with zero
   // still has its own 10-second production deadline. Allow the complete chain
   // to finish on a busy host without changing any result or latency assertion.
 }, 120_000);
+
+test('architecture diff mode resolves owners only when the thread root has the selected plugin', async () => {
+  const root = realpathSync(moduleRepository());
+  const base = fixtureGit(root, ['rev-parse', 'HEAD']);
+  fixtureWrite(root, 'src/module/read.ts', 'export const read = () => 2;\n'); const head = fixtureCommit(root);
+  const registry = registryHome([{ path: root, accessMode: 'read_only' }]);
+  const scratch = mkdtempSync('/tmp/oui-b-owners-'), selected = pluginSelectionEnv().HOME!, node = resolveCompatibleNodeRuntime(process.env);
+  const log = join(scratch, 'node-argv.jsonl'), shim = join(scratch, 'node-probe');
+  writeFileSync(shim, `#!${node}\nconst fs = require('node:fs');\nconst args = process.argv.slice(2);\nfs.appendFileSync(${JSON.stringify(log)}, JSON.stringify(args) + '\\n');\nprocess.exit(require('node:child_process').spawnSync(${JSON.stringify(node)}, args, { stdio: 'inherit' }).status ?? 1);\n`, { mode: 0o755 });
+  const path = `/api/v1/repositories/${registry.ids[0]}/architecture/modules/${MODULE_ID}/review-prompt?shard=1&mode=diff&base=${base}&head=${head}`;
+  try {
+    for (const [name, home, status, code, resolves] of [
+      ['selected', selected, 200, undefined, true],
+      ['not selected', process.env.HOME, 422, 'diff_owner_resolution_failed', false],
+    ] as const) {
+      writeFileSync(log, '');
+      const server = await startOperatorServer({ port: 0, timeout_ms: 10000, env: { ...process.env, HOME: home, ...registry.env, REPO_HARNESS_NODE_BIN: shim } });
+      try {
+        const response = await fetch(server.url + path), body = await response.json() as { code?: string; digest?: string };
+        expect(response.status, name).toBe(status);
+        if (code) expect(body, name).toEqual({ code }); else expect(body.digest, name).toMatch(/^[0-9a-f]{64}$/);
+        const calls = readFileSync(log, 'utf8').trim().split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]);
+        // The model read starts archctx in both cases, so the shim log proves that the probe saw archctx.
+        expect(calls.some(argv => argv.includes('export')), name).toBe(true);
+        expect(calls.some(argv => argv.includes('resolve')), name).toBe(resolves);
+      } finally { await server.close(); }
+    }
+  } finally { for (const dir of [root, scratch, selected, registry.home]) rmSync(dir, { recursive: true, force: true }); }
+}, 60_000);
 
 test('architecture rejects F-01 query injections before any child and refuses cross-site API calls', async () => {
   const root = realpathSync(moduleRepository()), scratch = mkdtempSync('/tmp/oui-b-reject-');
