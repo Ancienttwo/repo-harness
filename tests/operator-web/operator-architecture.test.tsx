@@ -1154,6 +1154,29 @@ describe('architecture history', () => {
     expect(document.querySelector('li[data-milestone-rev^="d02a082f"] [data-tone="inside"]')?.textContent).toBe('•2');
   });
 
+  // cx1735-r1-inspector-drops-removed-relations: the relation list comes from the delta, not from the drawn shape.
+  // Each row reads one milestone whose base is not read, so a capability removed against that base is not drawn.
+  test.each<{ name: string; page: keyof typeof historyPages; rev: string; node: string; rows: [string, string[]][] }>([
+    { name: 'removed relations to undrawn capabilities only', page: 'removal', rev: 'd02a082f', node: 'capability.runtime-harness.evidence-ledger',
+      rows: [['removed', ['capability.runtime-harness.delegated-runs']], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'removed relations between drawn capabilities and to undrawn ones', page: 'removal', rev: 'd02a082f', node: 'capability.organization.task-fleet',
+      rows: [['removed', []], ['removed', ['capability.runtime-harness.delegated-runs']], ['removed', []], ['removed', ['capability.runtime-harness.pm-dispatch']]] },
+    { name: 'an added relation', page: 'inside', rev: '49f7ba6f', node: 'capability.runtime-harness.task-agent-host', rows: [['added', []]] },
+  ])('with an unread base the inspector lists every relation change of the node: $name', async ({ page: name, rev, node, rows }) => {
+    const only = { ...page(name), milestones: [milestone(page(name), rev)] };
+    respond = () => json(only, 200, '"history-1"');
+    await mount(workspace());
+    await act(async () => document.querySelector<HTMLButtonElement>('#architecture-tab-history')!.click());
+    await settle();
+    await act(async () => document.querySelector(`.react-flow__node[data-id="${node}"]`)!.dispatchEvent(new window.MouseEvent('click', { bubbles: true }) as unknown as Event));
+    await settle();
+    const inspector = document.querySelector('.architecture-history__inspector')!;
+    expect(inspector.getAttribute('data-node-id')).toBe(node);
+    // An undrawn endpoint shows as its archctx id.
+    expect([...inspector.querySelectorAll('li[data-diff]')].map(item => [item.getAttribute('data-diff'), [...item.querySelectorAll('code')].map(code => code.textContent)]))
+      .toEqual(rows);
+  });
+
   test('a shallow clone shows only the archctx code and the repair command, with no timeline', async () => {
     respond = () => json({ code: 'history_shallow_repository' }, 422);
     await mount(workspace());

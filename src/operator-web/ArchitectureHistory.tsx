@@ -402,6 +402,20 @@ function whatChanged(id: string, milestone: ValidMilestone, marks: Marks, shape:
   return diff === undefined ? t('architectureHistory.what.same') : t(`architectureHistory.what.${diff}`);
 }
 
+/**
+ * The relation changes archctx reports for one capability. They come from the delta, not from the
+ * drawn shape: a relation to a capability of an unread base is still a change. A first milestone has none.
+ */
+export function nodeRelations(milestone: ValidMilestone, id: string): readonly { readonly edge: HistoryEdge; readonly diff: HistoryEdgeDiff }[] {
+  const { delta } = milestone;
+  if (delta.baseRev === null) return [];
+  const touches = (edge: HistoryEdge) => edge.source === id || edge.target === id;
+  return [
+    ...delta.edgesChanged.added.filter(touches).map(edge => ({ edge, diff: 'added' as const })),
+    ...delta.edgesChanged.removed.filter(touches).map(edge => ({ edge, diff: 'removed' as const })),
+  ];
+}
+
 /** The selected capability: its head, its change in this milestone, its changed relations and the base. */
 function Inspector({ milestone, shape, marks, skipped, selected, github, t }: {
   readonly milestone: HistoryMilestone;
@@ -422,8 +436,12 @@ function Inspector({ milestone, shape, marks, skipped, selected, github, t }: {
   }
   const { baseRev } = milestone.delta;
   const node = selected === null ? null : shape!.capabilities.get(selected)!;
-  const relations = node === null ? [] : shape!.input.relations.filter(relation => marks!.edges.has(relation.id) && (relation.source === node.id || relation.target === node.id));
-  const name = (id: string) => shape!.capabilities.get(id)!.name;
+  const relations = node === null ? [] : nodeRelations(milestone, node.id);
+  // A capability that is not drawn (its base milestone is not read yet) shows as its archctx id.
+  const endpoint = (id: string) => {
+    const capability = shape!.capabilities.get(id);
+    return capability === undefined ? <code>{id}</code> : capability.name;
+  };
   return <aside className="architecture-history__inspector" aria-label={label} data-milestone-rev={milestone.rev} data-node-id={node?.id}>
     {node !== null && <>
       <header>
@@ -438,13 +456,10 @@ function Inspector({ milestone, shape, marks, skipped, selected, github, t }: {
       <section>
         <h4>{t('architectureHistory.relations')}</h4>
         {relations.length === 0 ? <p className="architecture-history__quiet">{t('architectureHistory.none')}</p>
-          : <ul>{relations.map(relation => {
-            const diff = marks!.edges.get(relation.id)!;
-            return <li key={relation.id} data-diff={diff}>
-              <span className="architecture-history__chip" data-tone={diff}>{diff === 'added' ? '+' : '−'}</span>
-              <span>{name(relation.source)} → {name(relation.target)}</span>
-            </li>;
-          })}</ul>}
+          : <ul>{relations.map(({ edge, diff }) => <li key={`${diff}:${edgeId(edge)}`} data-diff={diff}>
+            <span className="architecture-history__chip" data-tone={diff}>{diff === 'added' ? '+' : '−'}</span>
+            <span>{endpoint(edge.source)} → {endpoint(edge.target)}</span>
+          </li>)}</ul>}
       </section>
     </>}
     <section>
