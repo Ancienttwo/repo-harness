@@ -1,10 +1,10 @@
-import { useCallback, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
 import { ArchitectureHistory } from './ArchitectureHistory';
-import { ArchitectureMap, type ArchitectureBaseMap, type ArchitectureMapReader } from './ArchitectureMap';
+import { ArchitectureMap, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -246,7 +246,16 @@ type ArchitectureView = 'map' | 'sequence' | 'topology' | 'modules' | 'history';
 const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'sequence', 'topology', 'modules', 'history'];
 const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules' | 'history'>, ArchitectureBaseMap>> = { map: 'modules', sequence: 'sequence', topology: 'topology' };
 
-function ViewTabs({ view, onChange, t }: { readonly view: ArchitectureView; readonly onChange: (view: ArchitectureView) => void; readonly t: OperatorTranslate }) {
+/** The model commit that the page shows, for the header row; a map also has its collection time. */
+export interface ArchitectureSource { readonly commit: string; readonly collectedAt: string | null }
+
+function ViewTabs({ view, counts, onChange, t }: {
+  readonly view: ArchitectureView;
+  /** Capabilities on the module map and flows on the sequence map, once a map is read. */
+  readonly counts: Partial<Record<ArchitectureView, number>>;
+  readonly onChange: (view: ArchitectureView) => void;
+  readonly t: OperatorTranslate;
+}) {
   return <div className="architecture-tabs" role="tablist" aria-label={t('architecture.views')}>
     {ARCHITECTURE_VIEWS.map((item, index) => (
       <button key={item} type="button" role="tab" id={`architecture-tab-${item}`} aria-controls="architecture-view" aria-selected={view === item} tabIndex={view === item ? 0 : -1}
@@ -258,17 +267,19 @@ function ViewTabs({ view, onChange, t }: { readonly view: ArchitectureView; read
           event.preventDefault(); onChange(ARCHITECTURE_VIEWS[next]!);
           event.currentTarget.parentElement?.querySelectorAll<HTMLButtonElement>('[role="tab"]')[next]?.focus();
         }}
-      >{t(`architecture.view.${item}`)}</button>
+      >{t(`architecture.view.${item}`)}{counts[item] !== undefined && <span className="architecture-tabs__count">{counts[item]}</span>}</button>
     ))}
   </div>;
 }
 
-export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule, refreshGeneration, readMap, t }: {
+export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule, onSource, refreshGeneration, readMap, t }: {
   readonly repositoryId: string;
   /** `owner/name` on GitHub, for commit links in the history. */
   readonly github: string | null;
   readonly moduleId: string | null;
   readonly onModule: (id: string | null) => void;
+  /** Receives the source of the view on screen, and `null` when the view has none or the workspace closes. */
+  readonly onSource: (source: ArchitectureSource | null) => void;
   readonly refreshGeneration: number;
   /** The map route's reader; fixtures inject one. */
   readonly readMap?: ArchitectureMapReader;
@@ -279,23 +290,27 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   const modulePath = moduleId === null ? null : `${root}/${moduleId}`;
   const index = useArchitectureRead(moduleId === null && view === 'modules' ? root : null, decodeArchitectureModuleIndex, refreshGeneration);
   const detail = useArchitectureRead(modulePath, decodeArchitectureModuleDetail, refreshGeneration);
-  return <section className="architecture-workspace" aria-labelledby="architecture-heading">
-    <header className="architecture-workspace__heading">
-      <p className="detail-eyebrow">{t('architecture.eyebrow')}</p>
-      <h2 id="architecture-heading">{t('workspace.architecture')}</h2>
-      {moduleId !== null && <button type="button" className="operator-button operator-button--secondary" onClick={() => onModule(null)}>{t('architecture.back')}</button>}
-      {(index.value ?? detail.value) && <p className="detail-quiet">{t('architecture.commit')} <code>{(index.value ?? detail.value)!.commit}</code></p>}
-    </header>
+  // The last map summary stays for the tab counts while another view shows; a new repository starts without one.
+  const [summary, setSummary] = useState<{ readonly repositoryId: string; readonly value: ArchitectureMapSummary } | null>(null);
+  const onSummary = useCallback((value: ArchitectureMapSummary) => setSummary({ repositoryId, value }), [repositoryId]);
+  const mapSummary = summary?.repositoryId === repositoryId ? summary.value : null;
+  const counts = mapSummary === null ? {} : { map: mapSummary.modules, sequence: mapSummary.flows };
+  const commit = moduleId !== null ? detail.value?.commit : view === 'modules' ? index.value?.commit : view === 'history' ? undefined : mapSummary?.commit;
+  const collectedAt = moduleId === null && view !== 'modules' && view !== 'history' ? mapSummary?.collectedAt ?? null : null;
+  useEffect(() => { onSource(commit === undefined ? null : { commit, collectedAt }); }, [commit, collectedAt, onSource]);
+  useEffect(() => () => onSource(null), [onSource]);
+  return <section className="architecture-workspace" aria-label={t('nav.architecture')}>
     {moduleId === null ? <>
-      <ViewTabs view={view} onChange={setView} t={t} />
-      <div id="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
+      <ViewTabs view={view} counts={counts} onChange={setView} t={t} />
+      <div id="architecture-view" className="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
         {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} t={t} />
-          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} t={t} /> : <>
+          : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} onSummary={onSummary} t={t} /> : <>
             <ReadStatus read={index} loading="architecture.loading" t={t} />
             {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
           </>}
       </div>
     </> : <>
+      <div><button type="button" className="operator-button operator-button--secondary" onClick={() => onModule(null)}>{t('architecture.back')}</button></div>
       <ReadStatus read={detail} loading="architecture.module.loading" t={t} />
       {detail.value && modulePath && <ModulePage detail={detail.value} base={modulePath} generation={refreshGeneration} onModule={onModule} t={t} />}
     </>}

@@ -1,4 +1,4 @@
-import { memo, useCallback, useMemo, useRef, useState } from 'react';
+import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import {
   Background,
   BackgroundVariant,
@@ -36,7 +36,7 @@ import {
 } from './architecture-map-layers';
 import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } from './architecture-map-parts';
 import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
-import { ArchitectureSequence } from './ArchitectureSequence';
+import { ArchitectureSequence, SequenceFlowPicker } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
@@ -145,29 +145,33 @@ function Legend({ map, view, t }: { readonly map: ArchitectureMapV1; readonly vi
   </dl>;
 }
 
-function Inspector({ map, layer, pullRequest, selected, onModule, t }: {
+function Inspector({ map, layer, pullRequest, selected, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
   readonly selected: MapLayoutNode | null;
+  readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
   if (selected === null) {
     return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')}>
+      {side}
       <p className="detail-quiet">{t('architecture.map.pick')}</p>
       <p className="detail-quiet">{t('architecture.map.counts', { nodes: counted(t, map.nodes.length, 'node'), relations: counted(t, map.relations.length, 'relation') })}</p>
     </aside>;
   }
   return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selected.node.id}>
+    {side}
     <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={selected.node.id} onModule={onModule} t={t} />
   </aside>;
 }
 
-function MapCanvas({ map, layer, pullRequest, onModule, t }: {
+function MapCanvas({ map, layer, pullRequest, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
+  readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
@@ -257,7 +261,7 @@ function MapCanvas({ map, layer, pullRequest, onModule, t }: {
         <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
       </ReactFlow>
     </div>
-    <Inspector map={map} layer={layer} pullRequest={pullRequest} selected={selected} onModule={onModule} t={t} />
+    <Inspector map={map} layer={layer} pullRequest={pullRequest} selected={selected} side={side} onModule={onModule} t={t} />
   </div>;
 }
 
@@ -272,7 +276,7 @@ function LayerBar({ map, layer, onLayer, t }: {
   readonly onLayer: (layer: MapLayerId) => void;
   readonly t: OperatorTranslate;
 }) {
-  return <div className="architecture-layers" role="group" aria-label={t('architecture.layers')}>
+  return <div className="architecture-layers" role="group" aria-labelledby="architecture-layers-label">
     {MAP_LAYERS.map(item => (
       <button key={item} type="button" aria-pressed={layer === item} data-layer={item}
         data-state={layerAvailable(map, item) ? 'ok' : 'unavailable'} onClick={() => onLayer(item)}>
@@ -282,15 +286,15 @@ function LayerBar({ map, layer, onLayer, t }: {
   </div>;
 }
 
-/** The flow steps archctx ties to a change, or its reason codes when it cannot; and the parts it cut at its limits. */
-function ImpactNotes({ part, impact, t }: { readonly part: string; readonly impact: ArchitectureImpactV1; readonly t: OperatorTranslate }) {
+/** The flow steps archctx ties to a change, or its reason codes when it cannot, on the sequence map that draws them; and the parts it cut at its limits. */
+function ImpactNotes({ part, impact, flowSteps, t }: { readonly part: string; readonly impact: ArchitectureImpactV1; readonly flowSteps: boolean; readonly t: OperatorTranslate }) {
   const { flow_steps: steps } = impact;
   const truncated = truncatedParts(impact.truncated);
   return <>
-    {steps.status === 'known'
+    {flowSteps && (steps.status === 'known'
       ? <p data-flow-steps={part}>{t('architecture.layer.flow_steps.known', { count: steps.items!.length })}</p>
-      : <Gap part={`${part}.flow_steps`} reason={steps.reason_codes.join(' ')}>{t('architecture.layer.flow_steps.unknown', { reasons: steps.reason_codes.join(', ') })}</Gap>}
-    {steps.items !== null && steps.items.length > 0 && <ul data-flow-step-list={part}>
+      : <Gap part={`${part}.flow_steps`} reason={steps.reason_codes.join(' ')}>{t('architecture.layer.flow_steps.unknown', { reasons: steps.reason_codes.join(', ') })}</Gap>)}
+    {flowSteps && steps.items !== null && steps.items.length > 0 && <ul data-flow-step-list={part}>
       {steps.items.map(item => <li key={`${item.flow}:${item.outcome ?? ''}:${item.step}`}><code>{item.flow}</code> · {item.step}{item.reason_codes.length > 0 && ` · ${item.reason_codes.join(', ')}`}</li>)}
     </ul>}
     {truncated.length > 0 && <Note part={`${part}.truncated`} reason={truncated.join(' ')}>{[
@@ -301,8 +305,9 @@ function ImpactNotes({ part, impact, t }: { readonly part: string; readonly impa
 }
 
 /** What the active layer covers, or why it has no data. Every number is a count from the collector. */
-function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
+function LayerSummary({ map, view, layer, pullRequest, onPullRequest, t }: {
   readonly map: ArchitectureMapV1;
+  readonly view: ArchitectureBaseMap;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
   readonly onPullRequest: (number: number) => void;
@@ -328,7 +333,7 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
         relationsAdded: count('relations', 'added'), relationsRemoved: count('relations', 'removed'), relationsChanged: count('relations', 'changed'),
         flowsAdded: count('flows', 'added'), flowsRemoved: count('flows', 'removed'), flowsChanged: count('flows', 'changed'),
       })}</p>
-      <ImpactNotes part="changes" impact={changes} t={t} />
+      <ImpactNotes part="changes" impact={changes} flowSteps={view === 'sequence'} t={t} />
     </div>;
   }
   if (layer === 'violations') {
@@ -392,7 +397,7 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
           unowned: `${chosen.impact.truncated.paths ? '≥' : ''}${chosen.impact.unowned_paths.length}`,
         })}</>}
       </p>}
-      {chosen?.impact.state === 'ok' && <ImpactNotes part="pull_request" impact={chosen.impact} t={t} />}
+      {chosen?.impact.state === 'ok' && <ImpactNotes part="pull_request" impact={chosen.impact} flowSteps={view === 'sequence'} t={t} />}
       {chosen?.impact.state === 'unavailable' && (chosen.impact.reason === 'archctx_error'
         ? <Gap part="pull_request" reason={chosen.impact.reason} code={archctxCode(chosen.impact)}>{t('architecture.layer.pull_requests.pr.archctx_error', { code: archctxCode(chosen.impact) })}</Gap>
         : <Gap part="pull_request" reason={chosen.impact.reason}>{t(`architecture.layer.pull_requests.pr.${chosen.impact.reason}`)}</Gap>)}
@@ -425,22 +430,36 @@ function MapUnavailable({ read, kept, t }: {
 /** The base maps that read the map route: modules (layered by the model's layer order), sequence and topology. */
 export type ArchitectureBaseMap = 'modules' | 'sequence' | 'topology';
 
+/** What the page shows about the map outside the map view: the header row's commit and time, and the tab counts. */
+export interface ArchitectureMapSummary { readonly commit: string; readonly collectedAt: string; readonly modules: number; readonly flows: number }
+
+/** The map-wide gaps that `view` depends on. Without a layer order only the module map, which draws the bands, loses something. */
+function MapGaps({ map, view, t }: { readonly map: ArchitectureMapV1; readonly view: ArchitectureBaseMap; readonly t: OperatorTranslate }) {
+  return <>
+    {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
+    {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
+    {view === 'modules' && map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
+  </>;
+}
+
 /**
  * The committed model on one base map, with line and import counts from the map collector.
- * The read, the active layer and the chosen PR stay when the base map changes.
+ * The read, the active layer, the chosen PR and the chosen flow stay when the base map changes.
  */
-export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchArchitectureMap, refreshGeneration, onModule, t }: {
+export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchArchitectureMap, refreshGeneration, onModule, onSummary, t }: {
   readonly repositoryId: string;
   readonly view?: ArchitectureBaseMap;
   readonly read?: ArchitectureMapReader;
   readonly refreshGeneration: number;
   readonly onModule: (id: string) => void;
+  readonly onSummary: (summary: ArchitectureMapSummary) => void;
   readonly t: OperatorTranslate;
 }) {
   const result = useArchitectureMap(read, repositoryId, refreshGeneration);
   // PRD 2-ARCH-P1: the map opens on today's changes.
   const [layer, setLayer] = useState<MapLayerId>('changes');
   const [picked, setPicked] = useState<number | null>(null);
+  const [flow, setFlow] = useState<string | null>(null);
   // The last good map stays on screen through a failed refresh; a new repository starts empty.
   const shown = useRef<{ repositoryId: string; map: ArchitectureMapV1 } | null>(null);
   if (result?.state === 'ok') shown.current = { repositoryId, map: result.map };
@@ -448,21 +467,27 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   // A picked PR that a refresh no longer lists falls back to the first PR with impact data.
   const listed = map !== null && map.layers.pull_requests.state === 'ok' && map.layers.pull_requests.pull_requests.some(item => item.number === picked);
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
+  useEffect(() => {
+    if (map !== null) onSummary({ commit: map.commit, collectedAt: map.collected_at, modules: map.nodes.filter(node => node.kind === 'capability').length, flows: map.flows.length });
+  }, [map, onSummary]);
+  // The active layer's summary and the gaps of this view go to the side panel, so the canvas starts below the lens row.
+  const side = map && <div className="architecture-map__side" data-map-side>
+    <MapGaps map={map} view={view} t={t} />
+    <LayerSummary map={map} view={view} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
+  </div>;
   return <div className="architecture-map-view">
     {result === null && <p role="status">{t('architecture.map.loading')}</p>}
     {result?.state === 'unavailable' && <MapUnavailable read={result} kept={map !== null} t={t} />}
     {map && <>
-      <p className="detail-quiet architecture-map__source">
-        {t('architecture.commit')} <code>{map.commit}</code> · {t('architecture.map.collected')} <time dateTime={map.collected_at}>{map.collected_at}</time>
-      </p>
-      {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
-      {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
-      {map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
-      <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
-      <LayerSummary map={map} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
-      {view === 'modules' && <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} /></ReactFlowProvider>}
-      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} />}
-      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} onModule={onModule} t={t} />}
+      <div className="architecture-lens">
+        <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>
+        <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
+        {view === 'sequence' ? <SequenceFlowPicker map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} t={t} />
+          : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
+      </div>
+      {view === 'modules' && <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>}
+      {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} side={side} onModule={onModule} t={t} />}
+      {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
     </>}
   </div>;
 }
