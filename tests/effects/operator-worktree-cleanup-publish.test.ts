@@ -43,7 +43,7 @@ if (method === 'GET' && endpoint === 'repos/Fixture/Archive') {
 save(); process.stdout.write(JSON.stringify(out));
 `;
 
-function fixture() {
+function fixture(push: 'url' | 'pushurl' = 'url') {
   const parent = tmpWorkspace('cleanup-publish'), repo = join(parent, 'repo'), tree = join(parent, 'repo-wt-feature');
   const home = join(parent, 'home'), staging = join(parent, 'staging'), remote = join(parent, 'remote.git'), bin = join(parent, 'bin');
   for (const path of [repo, home, staging, bin]) mkdirSync(path, { mode: 0o700 });
@@ -52,6 +52,7 @@ function fixture() {
   writeFileSync(join(repo, 'docs/guide.md'), 'base\n'); writeFileSync(join(repo, '.gitignore'), '.env\n'); commitAll(repo, 'base');
   git(parent, 'init', '--bare', '-q', remote);
   git(repo, 'remote', 'add', 'origin', remote); git(repo, 'push', '-q', 'origin', 'main'); git(repo, 'fetch', '-q', 'origin');
+  if (push === 'pushurl') git(repo, 'remote', 'set-url', '--push', 'origin', `file://${remote}`);
   git(repo, 'worktree', 'add', '-b', 'feature', tree);
   writeFileSync(join(tree, 'docs/guide.md'), 'working\n'); writeFileSync(join(tree, '.env'), 'SYNTHETIC=fixture\n');
   const env = { ...process.env, REPO_HARNESS_HOME: home, REPO_HARNESS_WORKTREE_ROOT: parent };
@@ -102,14 +103,16 @@ function fixture() {
 }
 type Fixture = ReturnType<typeof fixture>;
 
-function publishTest(name: string, body: (f: Fixture) => Promise<void>) {
+function publishTest(name: string, body: (f: Fixture) => Promise<void>, push: 'url' | 'pushurl' = 'url') {
   test(name, async () => {
-    const f = fixture();
+    const f = fixture(push);
     try { await body(f); } finally { f.cleanup(); }
   }, 60_000);
 }
 
-publishTest('the archive commit, push and Draft PR are read back before removal, and a credential file stays private', async f => {
+// Sibling push targets: the remote's url and its pushurl. Neither may write a tracking ref that the bound loss covers.
+for (const push of ['url', 'pushurl'] as const) publishTest(`the archive commit, push and Draft PR are read back before removal, and a credential file stays private (${push})`, async f => {
+  const tracking = () => f.git(f.repo, 'for-each-ref', '--format=%(refname) %(objectname)', 'refs/remotes/'), before = tracking();
   expect((await executeCleanupPlan(f.request, f.ports)).items[0]).toMatchObject({ outcome: 'removed', reason: null, archive_pr: 'https://github.com/Fixture/Archive/pull/1' });
   const head = f.local()!;
   expect(f.calls).toEqual(['commit', 'push', 'pr', `remove local=${head} remote=${head} drafts=1`]);
@@ -120,7 +123,8 @@ publishTest('the archive commit, push and Draft PR are read back before removal,
   expect(remoteGit('show', `${head}:${archivePath}/docs/guide.md`)).toBe('working');
   expect(readFileSync(join(f.home, 'archive', repoId, f.operation, '.env'), 'utf8')).toBe('SYNTHETIC=fixture\n');
   expect(readFileSync(join(f.tree, '.env'), 'utf8')).toBe('SYNTHETIC=fixture\n');
-});
+  expect(tracking()).toBe(before);
+}, push);
 
 publishTest('a retry after a lost Draft PR create reconciles the key and creates no second branch, commit or PR', async f => {
   f.loseCreateResponse();

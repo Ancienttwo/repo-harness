@@ -25,6 +25,7 @@ export interface CleanupArchivePublisherOptions {
 type ArchivePorts = Pick<CleanupExecutionPorts, 'archiveCommit' | 'archivePush' | 'archivePr'>;
 
 const OID = /^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u;
+const PUSH_REMOTE = 'repo-harness-cleanup-archive';
 const sha256 = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
 
 export function createCleanupArchivePorts(sessionId: string, options: CleanupArchivePublisherOptions): ArchivePorts {
@@ -121,8 +122,10 @@ export function createCleanupArchivePorts(sessionId: string, options: CleanupArc
       const d = await destination(key, item), commit = ownCommit(d), url = remoteUrl(d);
       const remote = remoteHead(d, url);
       if (remote !== null && remote !== commit) throw new Error('archive remote branch has another commit');
-      // The empty lease requires an absent remote branch.
-      if (remote === null) git(d.repository, ['push', '--porcelain', `--force-with-lease=${d.ref}:`, '--', url, `${commit}:${d.ref}`]);
+      // Git 2.56 updates the tracking refs of a configured remote whose URL equals a raw push URL, and the bound
+      // loss covers refs/remotes. A named remote with no fetch refspec writes no tracking ref. The empty lease
+      // requires an absent remote branch.
+      if (remote === null) git(d.repository, ['-c', `remote.${PUSH_REMOTE}.url=${url}`, 'push', '--porcelain', `--force-with-lease=${d.ref}:`, PUSH_REMOTE, `${commit}:${d.ref}`]);
       if (remoteHead(d, url) !== commit) throw new Error('archive push readback failed');
     },
     archivePr: async (key, item) => {
