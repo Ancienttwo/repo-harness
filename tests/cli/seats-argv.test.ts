@@ -148,6 +148,8 @@ describe("repo-harness seats argv", () => {
     ] as const) {
       withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
         const orchestrator = launch(home, "orchestrator");
+        expect(orchestrator.brief).toContain("You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. You do not tag, release, delete, or change credentials or permissions.");
+        expect(orchestrator.brief).not.toContain("You do not push, tag, release, delete, or change credentials or permissions.");
         // Each row also refuses the conflicting sentences: the other review path, and the Herdr-only rule with a fleet.
         const other = review === seatReview ? gatekeeperReview : seatReview;
         expect([fleet, orchestrator.brief.includes(review), orchestrator.brief.includes(dispatch), orchestrator.brief.includes(other)]).toEqual([fleet, true, true, false]);
