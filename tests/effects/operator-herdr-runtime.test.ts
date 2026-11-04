@@ -1,13 +1,12 @@
 import { describe, expect, test } from 'bun:test';
-import { mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { createHash } from 'node:crypto';
-import { HcPinUnavailableError, HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
-import { createHerdrCoreRuntimeTransport, readHcPin } from '../../src/effects/operator/herdr-runtime-transport';
+import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
+import { createHerdrCoreRuntimeTransport } from '../../src/effects/operator/herdr-runtime-transport';
 import { configureRuntimeSource } from '../../src/effects/operator/runtime-source';
 import { createRuntimeStatusObserver } from '../../src/effects/operator/runtime-status';
 import { decodeRuntimeConfig, startRuntimeService } from '../../src/effects/operator/runtime-service';
-import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
 import { startOperatorServer } from '../../src/effects/operator/server';
 import { parseOperatorServeOptions } from '../../src/cli/commands/operator';
 import type { RuntimeIdentity } from '../../src/core/operator/runtime-status';
@@ -54,45 +53,23 @@ describe('herdr-core runtime observation', () => {
     } finally { owner?.close(); f.cleanup(); }
   });
 
-  test('a core below the pin fails with both versions; a missing pin and an unreachable core fail closed', async () => {
+  test('a core below the package pin fails with both versions; the registry does not set the pin; an unreachable core fails closed', async () => {
     expect(hcVersionCheck('0.1.17', '0.1.17')).toEqual({ state: 'aligned', expected: { min_version: '0.1.17' }, actual: { version: '0.1.17' } });
     expect(hcVersionCheck('0.1.20', '0.1.17').state).toBe('aligned');
     expect(hcVersionCheck('0.1.9', '0.1.17')).toEqual({ state: 'mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.9' } });
     const f = fakeHc('hc-runtime-version');
     try {
-      const capabilities = () => createHerdrCoreRuntimeTransport('fixture', f.env).transport.capabilities(new AbortController().signal).then(() => null, (error: unknown) => error);
+      const capabilities = (env = f.env) => createHerdrCoreRuntimeTransport('fixture', env).transport.capabilities(new AbortController().signal).then(() => null, (error: unknown) => error);
       f.setVersion('0.1.15');
       const mismatch = await capabilities();
       expect(mismatch).toBeInstanceOf(HcVersionMismatchError);
-      expect((mismatch as HcVersionMismatchError).check).toEqual({ state: 'mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } });
+      expect((mismatch as HcVersionMismatchError).check).toEqual({ state: 'mismatch', expected: { min_version: HC_MIN_VERSION }, actual: { version: '0.1.15' } });
       expect(f.argv().some(line => line.startsWith('events'))).toBe(false);
+      // No registry read sets the floor: a missing registry leaves a core at the floor usable.
+      f.setVersion(HC_MIN_VERSION);
+      expect(await capabilities({ ...f.env, REPO_HARNESS_HOME: join(f.root, 'missing') })).toBeNull();
       f.setVersion(null);
       expect(await capabilities()).toMatchObject({ name: 'HerdrCoreError', reason: 'failed' });
-      f.setPin(null);
-      expect(await capabilities()).toBeInstanceOf(HcPinUnavailableError);
-    } finally { f.cleanup(); }
-  });
-
-  test('the highest pin over the registered repository policies wins; an unreadable policy pins nothing', () => {
-    const f = fakeHc('hc-runtime-pin');
-    try {
-      expect(readHcPin(f.env)).toBe('0.1.17');
-      // A second registered repository with a lower pin: the higher pin wins in either registry order.
-      const lower = join(f.root, 'repos', 'lower'), registry = join(f.env.REPO_HARNESS_HOME!, 'registered-repos.json');
-      mkdirSync(join(lower, '.ai', 'harness'), { recursive: true });
-      writeFileSync(join(lower, '.ai', 'harness', 'policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: '0.1.9' } } }));
-      const list = JSON.parse(readFileSync(registry, 'utf8'));
-      const entry = { ...list.repos[0], id: repoHarnessRepoIdFor(lower), path: lower };
-      for (const repos of [[...list.repos, entry], [entry, ...list.repos]]) {
-        writeFileSync(registry, JSON.stringify({ ...list, repos }));
-        expect(readHcPin(f.env)).toBe('0.1.17');
-      }
-      writeFileSync(registry, JSON.stringify(list));
-      writeFileSync(join(f.repo, '.ai', 'harness', 'policy.json'), '{"external_tooling":');
-      expect(readHcPin(f.env)).toBeNull();
-      f.setPin('0.1.9');
-      expect(readHcPin(f.env)).toBe('0.1.9');
-      expect(readHcPin({ ...f.env, REPO_HARNESS_HOME: join(f.root, 'missing') })).toBeNull();
     } finally { f.cleanup(); }
   });
 
@@ -103,9 +80,9 @@ describe('herdr-core runtime observation', () => {
       const epoch = owner.observer.read().source_epoch;
       f.setVersion('0.1.15'); f.emit('not json');
       await until(() => owner.observer.read().reason?.code === 'hc_version_mismatch');
-      expect(owner.observer.read()).toMatchObject({ status: 'unavailable', reason: { code: 'hc_version_mismatch', expected: { min_version: '0.1.17' }, actual: { version: '0.1.15' } } });
+      expect(owner.observer.read()).toMatchObject({ status: 'unavailable', reason: { code: 'hc_version_mismatch', expected: { min_version: HC_MIN_VERSION }, actual: { version: '0.1.15' } } });
       expect(JSON.stringify(owner.observer.read())).not.toMatch(/private|message|stack/);
-      f.setVersion('0.1.17');
+      f.setVersion(HC_MIN_VERSION);
       await until(() => owner.observer.read().status === 'ready');
       expect(owner.observer.read()).toMatchObject({ reason: null, badges: [{ state: 'working' }] });
       expect(owner.observer.read().source_epoch).toBeGreaterThan(epoch);
@@ -132,7 +109,7 @@ describe('herdr-core runtime observation', () => {
     try {
       expect(service.read()).toMatchObject({ status: 'ready', unclaimed: 1 });
       const epoch = service.read().source_epoch;
-      f.setVersion('0.1.17', 'core-2'); f.setSnapshot(1, [terminal, { ...terminal, address: 't1b' }]); f.emit('not json');
+      f.setVersion(HC_MIN_VERSION, 'core-2'); f.setSnapshot(1, [terminal, { ...terminal, address: 't1b' }]); f.emit('not json');
       // The reconnect advances the source epoch only after it has identified the new core.
       await until(() => service.read().source_epoch > epoch);
       await service.refresh();

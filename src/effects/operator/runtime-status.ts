@@ -1,6 +1,6 @@
 import { decodeRuntimeIdentity, decodeRuntimeObservation, projectRuntimeOverlay, runtimeIdentityKey, runtimeBindingKeys, runtimeInteger,
   unavailableRuntimeOverlay, nativeRuntimeFreshness, RUNTIME_LIMIT, NATIVE_RUNTIME_SOURCE_LIMIT, type NativeRuntimeSourceSummary, type RuntimeIdentity, type RuntimeObservation, type RuntimeOverlay, type RuntimeUnavailableReason } from '../../core/operator/runtime-status';
-import { HcPinUnavailableError, HcVersionMismatchError } from '../../core/operator/herdr-pin';
+import { HcVersionMismatchError } from '../../core/operator/herdr-pin';
 import { decodeRuntimeCaptureSnapshot, type NativeRuntimeProvider, type RuntimeCaptureSnapshot } from '../../core/operator/runtime-capture';
 
 /**
@@ -28,7 +28,6 @@ export interface RuntimeSource {
 
 /** Preserve only the typed public version facts, never an arbitrary error message. */
 export function runtimeUnavailableReason(error: unknown): RuntimeUnavailableReason | null {
-  if (error instanceof HcPinUnavailableError) return { code: 'hc_pin_unavailable' };
   if (!(error instanceof HcVersionMismatchError)) return null;
   const { expected, actual } = error.check;
   return { code: 'hc_version_mismatch', expected: { min_version: expected.min_version }, actual: { version: actual.version } };

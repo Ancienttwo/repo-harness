@@ -1,7 +1,9 @@
 import { loadArchitectureProjectionPolicy, readGlobalArchitectureConfiguration } from './projection-config';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { createRequire } from 'node:module';
 import { userInfo } from 'node:os';
-import { isAbsolute, join, resolve, sep } from 'node:path';
+import { dirname, isAbsolute, join, resolve, sep } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { ARCHCONTEXT_NODE_RANGE, ERROR_CATALOG, failureIssues, architectureDocsProjectionCompatibilityIssues, PROJECTION_REQUEST_SCHEMA_VERSION, digestJson, type ArchContextError, type ArchctxCapabilitiesV1, type ArchitectureDebtReportV1, type DocsAnchorsReportV1, type Json, type ProjectionApplyReadbackResultV1, type ProjectionExpectedSnapshotV1, type ProjectionMode, type ProjectionRequestV1, type ProjectionResultV2 } from 'archctx-contracts';
 import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
@@ -32,11 +34,17 @@ function capabilityAuthorityReady(repoRoot: string): boolean {
   return existsSync(join(repoRoot, '.archcontext', 'model', 'nodes'));
 }
 
-export function resolvePackageLocalArchctx(consumerRoot: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ResolvedArchctxPackage {
-  const packageRoot = findInstalledArchctxPackageRoot(consumerRoot, requiredVersion);
-  const manifestPath = join(packageRoot, 'package.json');
+/**
+ * Module resolution finds archctx from the running module, or from an explicit
+ * consumer root. The base is a real module file in the source tree and in
+ * `dist/hook-entry.js`, so both find the dependency that the install placed.
+ */
+export function resolvePackageLocalArchctx(consumerRoot?: string, requiredVersion: string = ARCHCTX_REQUIRED_VERSION): ResolvedArchctxPackage {
+  const origin = consumerRoot === undefined ? `module ${fileURLToPath(import.meta.url)}` : `consumer root ${resolve(consumerRoot)}`;
+  const manifestPath = resolvePackageManifest(consumerRoot === undefined ? import.meta.url : join(resolve(consumerRoot), 'package.json'), 'archctx', `package-local archctx@${requiredVersion} is missing from the dependency tree of ${origin}`);
+  const packageRoot = dirname(manifestPath);
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown; engines?: unknown };
-  if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: `package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from consumer root ${resolve(consumerRoot)})` });
+  if (manifest.name !== 'archctx' || manifest.version !== requiredVersion) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: `package-local archctx mismatch: expected archctx@${requiredVersion}, got ${String(manifest.name)}@${String(manifest.version)} (resolved from ${origin})` });
   const engines = isRecord(manifest.engines) ? manifest.engines : null;
   if (engines?.node !== ARCHCONTEXT_NODE_RANGE) throw new Error(`package-local archctx@${requiredVersion} Node runtime contract mismatch: expected ${ARCHCONTEXT_NODE_RANGE}, got ${String(engines?.node)}`);
   const bin = isRecord(manifest.bin) && typeof manifest.bin.archctx === 'string' ? manifest.bin.archctx : null;
@@ -120,7 +128,7 @@ export class ArchctxClient {
   readonly resolved: ResolvedArchctxPackage;
 
   constructor(readonly repoRoot: string, requiredVersion: string, readonly options: ArchctxProviderOptions = {}) {
-    this.resolved = resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), requiredVersion);
+    this.resolved = resolvePackageLocalArchctx(options.consumerRoot, requiredVersion);
   }
 
   json(args: readonly string[], maximumMs = 120_000, allowErrorEnvelope = false): unknown {
@@ -441,10 +449,9 @@ function decodeProjectionExpectedSnapshot(value: unknown): ProjectionExpectedSna
   };
 }
 
-/** The worker guidance ships in the running package, so the path is valid for every host. */
+/** A package-relative name: the installed skill and the package carry the same file on every host. */
 function architectureAdoptionStep(): string {
-  const reference = join(findConsumerRoot(), 'assets', 'skill-commands', 'repo-harness-architecture', 'references', 'worker.md');
-  return `The repository has no complete ArchContext model. Follow "Adopt ArchContext in a repository" in ${reference}.`;
+  return 'The repository has no complete ArchContext model. Follow "Adopt ArchContext in a repository" in references/worker.md of the repo-harness-architecture skill (assets/skill-commands/repo-harness-architecture/references/worker.md in the repo-harness package).';
 }
 
 export function runArchitectureProjection(request: ProjectionRequestV1, repoRoot: string, options: ArchctxProviderOptions = {}): ProjectionResultV2 {
@@ -566,7 +573,7 @@ function decodeCompleteArchitectureDebt(data: unknown, headSha: string): Archite
 export function indexPackageLocalCodeGraph(checkoutRoot: string, options: ArchctxProviderOptions = {}): void {
   const policy = options.policy ?? loadArchitectureProjectionPolicy(options.env);
   if (policy.provider === 'disabled') throw new Error('architecture projection provider is disabled');
-  const binaryPath = resolvePackageLocalCodeGraph(resolvePackageLocalArchctx(options.consumerRoot ?? findConsumerRoot(), policy.requiredVersion));
+  const binaryPath = resolvePackageLocalCodeGraph(resolvePackageLocalArchctx(options.consumerRoot, policy.requiredVersion));
   const env = { ...(options.env ?? process.env), CODEGRAPH_NO_DOWNLOAD: '1', CODEGRAPH_TELEMETRY: '0' };
   const args = CODEGRAPH_INIT_ARGS;
   const result = options.run
@@ -582,8 +589,7 @@ function resolvePackageLocalCodeGraph(archctx: ResolvedArchctxPackage): string {
   const name = '@colbymchenry/codegraph';
   const declared = (JSON.parse(readFileSync(join(archctx.packageRoot, 'package.json'), 'utf8')) as { dependencies?: Record<string, unknown> }).dependencies?.[name];
   if (typeof declared !== 'string') throw new Error(`package-local archctx@${archctx.version} does not declare ${name}`);
-  const packageRoot = findPackageRoot(archctx.packageRoot, name);
-  if (!packageRoot) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness', message: `package-local ${name}@${declared} is missing from the archctx dependency tree rooted at ${archctx.packageRoot}` });
+  const packageRoot = dirname(resolvePackageManifest(join(archctx.packageRoot, 'package.json'), name, `package-local ${name}@${declared} is missing from the archctx dependency tree rooted at ${archctx.packageRoot}`));
   const manifest = JSON.parse(readFileSync(join(packageRoot, 'package.json'), 'utf8')) as { name?: unknown; version?: unknown; bin?: unknown };
   if (manifest.name !== name || manifest.version !== declared) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISMATCH', action: 'update-repo-harness', message: `package-local CodeGraph mismatch: archctx declares ${name}@${declared}, got ${String(manifest.name)}@${String(manifest.version)}` });
   const bin = isRecord(manifest.bin) && typeof manifest.bin.codegraph === 'string' ? manifest.bin.codegraph : null;
@@ -613,33 +619,11 @@ function remainingTimeout(options: Pick<ArchctxProviderOptions, 'deadlineMs' | '
   return Math.min(maximumMs, remaining);
 }
 
-function findInstalledArchctxPackageRoot(consumerRoot: string, requiredVersion: string): string {
-  const packageRoot = findPackageRoot(consumerRoot, 'archctx');
-  if (!packageRoot) throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness', message: `package-local archctx@${requiredVersion} is missing from the consumer dependency tree rooted at ${resolve(consumerRoot)}` });
-  return packageRoot;
-}
-
-function findPackageRoot(startRoot: string, name: string): string | null {
-  let current = realpathSync(resolve(startRoot));
-  while (true) {
-    const candidate = join(current, 'node_modules', name);
-    if (existsSync(join(candidate, 'package.json'))) return candidate;
-    const parent = resolve(current, '..');
-    if (parent === current) return null;
-    current = parent;
-  }
-}
-
-export function findConsumerRoot(): string {
-  let current = resolve(import.meta.dir);
-  while (true) {
-    try {
-      const manifest = JSON.parse(readFileSync(join(current, 'package.json'), 'utf8')) as { name?: unknown };
-      if (manifest.name === 'repo-harness') return current;
-    } catch { /* continue upward */ }
-    const parent = resolve(current, '..');
-    if (parent === current) throw new Error('repo-harness package root is unavailable');
-    current = parent;
+function resolvePackageManifest(base: string, name: string, missingMessage: string): string {
+  try { return createRequire(base).resolve(`${name}/package.json`); }
+  catch (error) {
+    if ((error as NodeJS.ErrnoException).code === 'MODULE_NOT_FOUND') throw new ArchctxClientError({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness', message: missingMessage });
+    throw error;
   }
 }
 

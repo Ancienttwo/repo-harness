@@ -259,7 +259,7 @@ function versionBelow(have: string, need: string): boolean {
 function a8(context: Context): void {
   const hc = context.board.tooling.hc;
   if (hc.status === 'unavailable') return skip(context, 'A8', hc.reason);
-  if (versionBelow(hc.version, hc.min_version)) find(context, 'A8', {}, `hc ${hc.version} is below the policy pin ${hc.min_version}`);
+  if (versionBelow(hc.version, hc.min_version)) find(context, 'A8', {}, `hc ${hc.version} is below the repo-harness pin ${hc.min_version}`);
 }
 
 function r1(context: Context): void {
