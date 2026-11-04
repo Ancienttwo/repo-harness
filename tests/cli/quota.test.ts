@@ -111,6 +111,9 @@ describe('quota classification', () => {
     const rows: Array<[string, ReturnType<typeof classifyQuotaReading>, string, string | null, Array<[string, string, string | null]>]> = [
       // [case, account report, account state, account reason, [window, state, reason]]
       ['claude weekly absent', claude({ five_hour: fiveHour(10) }), 'unknown', null, [['five_hour', 'normal', null], ['seven_day', 'unknown', 'seven_day absent']]],
+      ['claude weekly absent, five_hour exhausted', claude({ five_hour: fiveHour(96) }), 'exhausted', null, [['five_hour', 'exhausted', null], ['seven_day', 'unknown', 'seven_day absent']]],
+      ['claude weekly absent, five_hour tight', claude({ five_hour: fiveHour(90) }), 'tight', null, [['five_hour', 'tight', null], ['seven_day', 'unknown', 'seven_day absent']]],
+      ['claude weekly malformed, five_hour exhausted', claude({ five_hour: fiveHour(96), seven_day: { used_percentage: 5 } }), 'exhausted', null, [['five_hour', 'exhausted', null], ['seven_day', 'unknown', 'seven_day.resets_at missing or not Unix seconds']]],
       ['claude weekly stale', claude({ seven_day: week(10, 84) }, stale), 'unknown', 'reading older than 30 min', [['five_hour', 'unknown', 'reading older than 30 min'], ['seven_day', 'unknown', 'reading older than 30 min']]],
       ['claude weekly malformed', claude({ five_hour: fiveHour(10), seven_day: { used_percentage: 5 } }), 'unknown', null, [['five_hour', 'normal', null], ['seven_day', 'unknown', 'seven_day.resets_at missing or not Unix seconds']]],
       ['claude non-weekly undefined', claude({ seven_day: week(10, 84) }), 'normal', null, [['five_hour', 'absent', 'five_hour absent'], ['seven_day', 'normal', null]]],
@@ -118,6 +121,9 @@ describe('quota classification', () => {
       ['claude non-weekly malformed', claude({ five_hour: 'x', seven_day: week(10, 84) }), 'unknown', null, [['five_hour', 'unknown', 'five_hour is not an object'], ['seven_day', 'normal', null]]],
       ['claude non-weekly valid', claude({ five_hour: fiveHour(96), seven_day: week(10, 84) }), 'exhausted', null, [['five_hour', 'exhausted', null], ['seven_day', 'normal', null]]],
       ['codex weekly absent', codex({ primary: short, secondary: null }), 'unknown', 'no window of 10080 min', [['primary', 'normal', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex weekly absent, primary exhausted', codex({ primary: codexWindow(96, 300, 4), secondary: null }), 'exhausted', 'no window of 10080 min', [['primary', 'exhausted', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex weekly absent, primary tight', codex({ primary: codexWindow(90, 300, 4), secondary: null }), 'tight', 'no window of 10080 min', [['primary', 'tight', null], ['secondary', 'absent', 'secondary absent']]],
+      ['codex weekly malformed, primary exhausted', codex({ primary: codexWindow(96, 300, 4), secondary: { ...weekly, usedPercent: -1 } }), 'exhausted', null, [['primary', 'exhausted', null], ['secondary', 'unknown', 'secondary.usedPercent missing or not a non-negative integer']]],
       ['codex weekly stale', codex({ primary: weekly, secondary: null }, stale), 'unknown', 'reading older than 30 min', [['primary', 'unknown', 'reading older than 30 min'], ['secondary', 'unknown', 'reading older than 30 min']]],
       ['codex weekly malformed', codex({ primary: { ...weekly, usedPercent: -1 }, secondary: null }), 'unknown', null, [['primary', 'unknown', 'primary.usedPercent missing or not a non-negative integer'], ['secondary', 'absent', 'secondary absent']]],
       ['codex non-weekly undefined', codex({ primary: weekly }), 'normal', null, [['primary', 'normal', null], ['secondary', 'absent', 'secondary absent']]],

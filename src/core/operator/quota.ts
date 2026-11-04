@@ -20,7 +20,7 @@ export type QuotaWindowState = QuotaState | 'absent';
  * Worst first: the account takes the first state in this order that one of
  * its windows has. A window without a reading cannot prove headroom, so it
  * outranks normal and surplus (decision 6625256198). The weekly window is
- * required: without it the account is `unknown`.
+ * required: a missing one counts as `unknown` in this order.
  */
 export const QUOTA_STATE_ORDER: readonly QuotaState[] = ['exhausted', 'tight', 'unknown', 'normal', 'surplus'];
 
@@ -184,7 +184,7 @@ function classifyWindow(sample: WindowSample, nowMs: number, readingReason: stri
 
 /**
  * Applies the #1716 decision table to each window. The worst window state wins; `rate_limit_reached_type` set means exhausted.
- * No window of 10080 min means no weekly reading, so the account is unknown.
+ * No window of 10080 min means no weekly reading; that counts as an unknown window in the order.
  */
 export function classifyQuotaReading(reading: QuotaReading, nowMs: number): QuotaAccountReport {
   const stale = reading.reason === null && reading.observed_at !== null && nowMs - Date.parse(reading.observed_at) > QUOTA_STALE_MS;
@@ -192,10 +192,10 @@ export function classifyQuotaReading(reading: QuotaReading, nowMs: number): Quot
   const windows = reading.windows.map(sample => classifyWindow(sample, nowMs, reason));
   const reached = reason === null ? reading.codex?.rate_limit_reached_type ?? null : null;
   const weekly = reading.windows.some(sample => sample.window_minutes === WEEKLY_WINDOW_MINUTES);
+  // A missing weekly reading is one more `unknown` candidate: exhausted or tight on another window still wins.
   const state: QuotaState = reason !== null ? 'unknown'
     : reached !== null ? 'exhausted'
-      : !weekly ? 'unknown'
-        : QUOTA_STATE_ORDER.find(candidate => windows.some(window => window.state === candidate)) ?? 'unknown';
+      : QUOTA_STATE_ORDER.find(candidate => (candidate === 'unknown' && !weekly) || windows.some(window => window.state === candidate)) ?? 'unknown';
   const accountReason = reason ?? (reached !== null ? `rate_limit_reached_type ${reached}` : !weekly ? `no window of ${WEEKLY_WINDOW_MINUTES} min` : null);
   return {
     account: reading.account, source: reading.source, observed_at: reading.observed_at, state,
