@@ -241,17 +241,19 @@ function ModulePage({ detail, base, generation, onModule, t }: {
  * Read-only view of the committed architecture model. Every action is a command
  * for the Bot to copy; the board sends no request that acts on it.
  */
-/** Design order: the module base map (layered by the model's layer order), sequence, topology, the module list, then history. */
+/** Design order: the module base map (capabilities in domain groups), sequence, topology, the module list, then history. */
 type ArchitectureView = 'map' | 'sequence' | 'topology' | 'modules' | 'history';
 const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'sequence', 'topology', 'modules', 'history'];
 const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules' | 'history'>, ArchitectureBaseMap>> = { map: 'modules', sequence: 'sequence', topology: 'topology' };
 
 /**
  * The source of the view on screen, for the header row: the model commit (a map also has its
- * collection time), or for History the pinned head and the milestones read.
+ * collection time, branch and archctx version), or for History the pinned head and the milestones read.
  */
 export type ArchitectureSource = ModelSource | HistorySummary;
-interface ModelSource { readonly commit: string; readonly collectedAt: string | null }
+interface ModelSource { readonly commit: string; readonly map: MapSource | null }
+/** `headRef` is null for a detached HEAD. */
+interface MapSource { readonly collectedAt: string; readonly headRef: string | null; readonly archctxVersion: string }
 
 function ViewTabs({ view, counts, onChange, t }: {
   readonly view: ArchitectureView;
@@ -297,13 +299,13 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   // The tab counts of the last map stay while another view shows; a new repository starts without them.
   // The map source is only the map on screen: the base map clears it when it shows no map or closes.
   const [counts, setCounts] = useState<{ readonly repositoryId: string; readonly value: Partial<Record<ArchitectureView, number>> } | null>(null);
-  const [mapSource, setMapSource] = useState<ModelSource | null>(null);
+  const [mapSource, setMapSource] = useState<(MapSource & { readonly commit: string }) | null>(null);
   const [historySource, setHistorySource] = useState<HistorySummary | null>(null);
   const count = useCallback((value: Partial<Record<ArchitectureView, number>>) => {
     setCounts(current => ({ repositoryId, value: { ...current?.repositoryId === repositoryId ? current.value : {}, ...value } }));
   }, [repositoryId]);
   const onSummary = useCallback((summary: ArchitectureMapSummary | null) => {
-    setMapSource(summary === null ? null : { commit: summary.commit, collectedAt: summary.collectedAt });
+    setMapSource(summary === null ? null : { commit: summary.commit, collectedAt: summary.collectedAt, headRef: summary.headRef, archctxVersion: summary.archctxVersion });
     if (summary !== null) count({ map: summary.modules, sequence: summary.flows });
   }, [count]);
   const onHistory = useCallback((summary: HistorySummary | null) => {
@@ -311,9 +313,13 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
     if (summary !== null) count({ history: summary.total });
   }, [count]);
   const commit = moduleId !== null ? detail.value?.commit : view === 'modules' ? index.value?.commit : view === 'history' ? undefined : mapSource?.commit;
-  const collectedAt = moduleId === null && view !== 'modules' && view !== 'history' ? mapSource?.collectedAt ?? null : null;
+  const shownMap = moduleId === null && view !== 'modules' && view !== 'history' ? mapSource : null;
   const history = moduleId === null && view === 'history' ? historySource : null;
-  useEffect(() => { onSource(history ?? (commit === undefined ? null : { commit, collectedAt })); }, [history, commit, collectedAt, onSource]);
+  useEffect(() => {
+    onSource(history ?? (commit === undefined ? null : {
+      commit, map: shownMap === null ? null : { collectedAt: shownMap.collectedAt, headRef: shownMap.headRef, archctxVersion: shownMap.archctxVersion },
+    }));
+  }, [history, commit, shownMap, onSource]);
   useEffect(() => () => onSource(null), [onSource]);
   return <section className="architecture-workspace" aria-label={t('nav.architecture')}>
     {moduleId === null ? <>
