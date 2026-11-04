@@ -177,6 +177,7 @@ button.board-office__card:focus-visible { outline: 3px solid var(--color-kumo-br
 .board-office__advisor-log:focus-visible { outline: 3px solid var(--color-kumo-brand); outline-offset: -3px; }
 .board-office__advisor-state { flex: none; margin: 12px 16px 0; font-size: 13px; color: var(--text-color-kumo-subtle); }
 .board-office__notice.board-office__advisor-state { color: var(--text-color-kumo-warning); }
+.board-office__advisor-state[data-advisor-loading] { flex: 1 1 320px; }
 .board-office__advisor-sent { flex: none; margin: 10px 16px 0; font: 12px/1.4 var(--font-mono); color: var(--text-color-kumo-subtle); }
 .board-office__advisor form { display: flex; flex: none; align-items: flex-end; gap: 8px; margin-top: 12px; padding: 12px 16px; border-top: 1px solid var(--color-kumo-line); }
 .board-office__advisor textarea { min-width: 0; flex: 1; resize: none; padding: 8px 10px; border: 1px solid var(--color-kumo-line); border-radius: 8px; background: var(--color-kumo-base); color: var(--text-color-kumo-strong); font-size: 14px; line-height: 1.5; }

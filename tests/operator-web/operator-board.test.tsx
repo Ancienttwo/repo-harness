@@ -1556,6 +1556,70 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[data-advisor-dialog]')).toBeNull();
   });
 
+  test('a pending send or read shows no old read-back or status, and the text box stays read-only during the send', async () => {
+    const refusedWith = (code: string): AdvisorMessageWrite => ({ state: 'refused', status: 409, error: { code, message: 'm.', next_action: 'n.' } });
+    const failedRead: AdvisorTranscriptRead = { state: 'refused', error: { code: 'advisor_timeout', message: 'm.', next_action: 'n.' } };
+    const fresh = readBack('working', { turn: 5, lines: ['new'] });
+    const pending = (waiting: string) => {
+      expect([document.querySelector('[data-advisor-loading]')?.textContent, readBackText(), document.querySelector('[data-advisor-turn]'), document.querySelector('[data-advisor-seat]')?.textContent])
+        .toEqual([waiting, null, null, 'Agent unknown']);
+    };
+    const field = () => document.querySelector<HTMLTextAreaElement>('[data-advisor-text]')!;
+    for (const [answer, second, notice, text] of [
+      [delivered(5), fresh, null, ''],
+      [refusedWith('advisor_seat_absent'), fresh, 'advisor_seat_absent', 'hello'],
+      [refusedWith('reconcile_required'), fresh, 'reconcile_required', 'hello'],
+      [{ state: 'unreachable' }, fresh, 'unreachable', 'hello'],
+      [{ state: 'unreadable' }, fresh, 'unreadable', 'hello'],
+      [delivered(5), failedRead, null, ''],
+      [refusedWith('reconcile_required'), failedRead, 'reconcile_required', 'hello'],
+    ] as const) {
+      const reads: ((value: AdvisorTranscriptRead) => void)[] = [];
+      let answerSend: (value: AdvisorMessageWrite) => void = () => {};
+      await advisorRoom({
+        readAdvisorTranscript: () => new Promise((resolve) => { reads.push(resolve); }),
+        writeAdvisorMessage: () => new Promise((resolve) => { answerSend = resolve; }),
+      });
+      await openAdvisor();
+      pending('Reading the advisor terminal');
+      await act(async () => reads[0]!(readBack('idle', { lines: ['old'] })));
+      await settle();
+      expect(readBackText()).toBe('old');
+      await draftAdvisor('hello');
+      await sendAdvisor();
+      pending('Sending');
+      expect([field().readOnly, reads.length]).toEqual([true, 1]);
+      await act(async () => answerSend(answer));
+      await settle();
+      pending('Reading the advisor terminal');
+      expect([field().readOnly, field().value, reads.length, document.querySelector('[data-advisor-notice]')?.getAttribute('data-advisor-notice') ?? null]).toEqual([false, text, 2, notice]);
+      expect(rows('[data-advisor-send]')[0]!.getAttribute('aria-disabled')).toBe('true');
+      await act(async () => reads[1]!(second));
+      await settle();
+      expect(document.querySelector('[data-advisor-loading]')).toBeNull();
+      if (second === fresh) {
+        expect([readBackText(), document.querySelector('[data-advisor-turn]')?.textContent]).toEqual(['new', 'Running a turn']);
+      } else {
+        expect([readBackText(), document.querySelector('[data-advisor-turn]'), document.querySelector('[data-advisor-seat]')?.textContent]).toEqual([null, null, 'Agent unknown']);
+        expect(document.querySelector('[data-advisor-read-failure="advisor_timeout"]')).not.toBeNull();
+      }
+      await act(async () => root?.unmount());
+    }
+
+    const reads: { readonly resolve: (value: AdvisorTranscriptRead) => void; readonly signal: AbortSignal }[] = [];
+    await advisorRoom({ readAdvisorTranscript: (_subject, signal) => new Promise((resolve) => { reads.push({ resolve, signal }); }) });
+    await openAdvisor();
+    await act(async () => rows('[data-advisor-close]')[0]!.click());
+    expect([document.querySelector('[data-advisor-dialog]'), reads[0]!.signal.aborted]).toEqual([null, true]);
+    await openAdvisor();
+    await act(async () => reads[0]!.resolve(readBack('idle', { lines: ['old'] })));
+    await settle();
+    pending('Reading the advisor terminal');
+    await act(async () => reads[1]!.resolve(fresh));
+    await settle();
+    expect(readBackText()).toBe('new');
+  });
+
   test('the advisor route clients name the subject, decode the answer and keep a typed refusal', async () => {
     const realFetch = globalThis.fetch;
     const calls: { readonly url: string; readonly method: string | undefined }[] = [];

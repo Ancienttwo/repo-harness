@@ -13,7 +13,9 @@ import { postOperatorWrite, WriteReloadBanner, type OperatorWriteAnswer, type Op
  * The advisor seat dialog of the office room (#1809): browser side of the two
  * #1756 routes. The server owns the redaction and the status: the page draws
  * only what the decoders return. The read-back runs on open and after each
- * send. No background read runs, because the room polls no transcript.
+ * send. No background read runs, because the room polls no transcript. A
+ * pending send or read drops the last read-back, so the page never shows an
+ * old status as current.
  */
 const MESSAGES_PATH = '/api/v1/seats/advisor/messages';
 const TRANSCRIPT_PATH = '/api/v1/seats/advisor/transcript';
@@ -68,14 +70,14 @@ function sendNoticeText(failure: Exclude<OperatorWriteFailure, { readonly state:
   return `${refusalText(failure.error, t)} ${t('board.office.advisor.notice.notSent')}`;
 }
 
-function ReadBack({ read, reading, t }: { readonly read: AdvisorTranscriptRead | null; readonly reading: boolean; readonly t: OperatorTranslate }) {
+function ReadBack({ read, sending, t }: { readonly read: AdvisorTranscriptRead | null; readonly sending: boolean; readonly t: OperatorTranslate }) {
   const logRef = useRef<HTMLPreElement | null>(null);
   const lines = read?.state === 'ok' ? read.transcript.lines : null;
   // The newest terminal text is at the end of the read-back.
   useEffect(() => {
     if (logRef.current !== null) logRef.current.scrollTop = logRef.current.scrollHeight;
   }, [lines]);
-  if (read === null) return <p className="board-office__advisor-state" data-advisor-loading>{t('board.office.advisor.loading')}</p>;
+  if (read === null) return <p className="board-office__advisor-state" data-advisor-loading>{t(sending ? 'board.office.advisor.sending' : 'board.office.advisor.loading')}</p>;
   if (read.state !== 'ok') {
     const code = read.state === 'refused' ? read.error.code : read.state;
     return <p className="board-office__notice board-office__advisor-state" role="status" data-advisor-read-failure={code}>{read.state === 'refused' ? refusalText(read.error, t) : t(`board.office.advisor.read.${read.state}`)}</p>;
@@ -86,7 +88,7 @@ function ReadBack({ read, reading, t }: { readonly read: AdvisorTranscriptRead |
       {!complete && <p className="board-office__notice board-office__advisor-state" data-advisor-incomplete>{why === null ? t('board.office.advisor.incomplete') : `${t('board.office.advisor.incomplete')} ${why}`}</p>}
       {lines!.length === 0
         ? <p className="board-office__advisor-state" data-advisor-empty>{t('board.office.advisor.empty')}</p>
-        : <pre ref={logRef} className="board-office__advisor-log" tabIndex={0} aria-label={t('board.office.advisor.readback')} aria-busy={reading} data-advisor-readback>{lines!.join('\n')}</pre>}
+        : <pre ref={logRef} className="board-office__advisor-log" tabIndex={0} aria-label={t('board.office.advisor.readback')} data-advisor-readback>{lines!.join('\n')}</pre>}
     </>
   );
 }
@@ -100,8 +102,8 @@ export function OfficeAdvisorDialog({ repositoryId, parent, agent, portrait, rea
   const fieldRef = useRef<HTMLTextAreaElement | null>(null);
   const readControl = useRef<AbortController | null>(null);
   const inFlight = useRef(false);
+  // Null while a send or a read is pending.
   const [transcript, setTranscript] = useState<AdvisorTranscriptRead | null>(null);
-  const [reading, setReading] = useState(true);
   const [draft, setDraft] = useState('');
   const [sending, setSending] = useState(false);
   const [sent, setSent] = useState<AdvisorSeatSendV1 | null>(null);
@@ -111,11 +113,9 @@ export function OfficeAdvisorDialog({ repositoryId, parent, agent, portrait, rea
     readControl.current?.abort();
     const control = new AbortController();
     readControl.current = control;
-    setReading(true);
+    setTranscript(null);
     read({ repository_id: repositoryId, parent }, control.signal).then((answer) => {
-      if (control.signal.aborted) return;
-      setReading(false);
-      setTranscript(answer);
+      if (!control.signal.aborted) setTranscript(answer);
     }, (error: unknown) => {
       if (!control.signal.aborted) throw error;
     });
@@ -131,12 +131,13 @@ export function OfficeAdvisorDialog({ repositoryId, parent, agent, portrait, rea
   useModalFocus({ dialogRef, closeRef: fieldRef, identity: 'board-office-advisor', onClose: close });
 
   const text = draft.trim();
-  const locked = sending || reading || text === '';
+  const locked = sending || transcript === null || text === '';
   const submit = (event: FormEvent) => {
     event.preventDefault();
     if (locked || inFlight.current) return;
     inFlight.current = true;
     setSending(true);
+    setTranscript(null);
     setSent(null);
     setFailure(null);
     void write({ request_id: crypto.randomUUID(), repository_id: repositoryId, parent, text }).then((answer) => {
@@ -168,13 +169,13 @@ export function OfficeAdvisorDialog({ repositoryId, parent, agent, portrait, rea
             <XIcon size={16} aria-hidden="true" />
           </button>
         </header>
-        <ReadBack read={transcript} reading={reading} t={t} />
+        <ReadBack read={transcript} sending={sending} t={t} />
         {sent !== null && <p className="board-office__advisor-sent" role="status" data-advisor-sent={sent.turn}>{t('board.office.advisor.sent', { terminal: sent.terminal, turn: sent.turn })}</p>}
         {failure?.state === 'reload_required'
           ? <div className="board-office__advisor-state"><WriteReloadBanner t={t} /></div>
           : failure !== null && <p className="board-office__notice board-office__advisor-state" role="status" data-advisor-notice={failure.state === 'refused' ? failure.error.code : failure.state}>{sendNoticeText(failure, t)}</p>}
         <form onSubmit={submit}>
-          <textarea ref={fieldRef} rows={2} value={draft} aria-label={t('board.office.advisor.field')} placeholder={t('board.office.advisor.field')} data-advisor-text onChange={event => setDraft(event.target.value)} />
+          <textarea ref={fieldRef} rows={2} value={draft} readOnly={sending} aria-label={t('board.office.advisor.field')} placeholder={t('board.office.advisor.field')} data-advisor-text onChange={event => setDraft(event.target.value)} />
           <button type="submit" aria-disabled={locked} data-advisor-send>{t(sending ? 'board.office.advisor.sending' : 'board.office.advisor.send')}</button>
         </form>
       </div>
