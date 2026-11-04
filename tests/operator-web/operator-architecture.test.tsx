@@ -549,7 +549,7 @@ describe('architecture map', () => {
     for (const [read, role, message, next] of [
       [{ state: 'unavailable', reason: 'architecture_map_pending' }, 'status', 'The server has not collected the architecture map yet.', 'The page reads the map again on its own.'],
       [{ state: 'unavailable', reason: 'registry_unavailable' }, 'alert', 'The repository registry is unreadable.', 'Run `repo-harness fleet prune` to show the registry error.'],
-      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `repo-harness adopt`, then refresh the board.'],
+      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `repo-harness init`, then refresh the board.'],
       [{ state: 'unavailable', reason: 'model_unavailable' }, 'alert', 'The committed architecture model could not be read, and archctx gave no error code.', 'Check that the registered path is a git checkout with a commit. `repo-harness fleet prune` lists registrations whose path is gone.'],
       [{ state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }, 'alert',
         'archctx refused to read the committed architecture model: AC_MODEL_ADOPTION_REQUIRED native-context-model-missing.', 'Run `archctx export native --ref HEAD --json` in the repository. The archctx error gives its action and details.'],

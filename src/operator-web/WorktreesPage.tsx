@@ -215,7 +215,7 @@ export function WorktreesPage({ view, cleanup, now, t }: { readonly view: Worktr
   if (view.kind === 'unreachable') return <div data-worktrees-page="unreachable">{header}<BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="repo-harness operator serve" /></div>;
   const snapshot = worktreesOf(view);
   if (snapshot === null) return <div data-worktrees-page="pending">{header}<BoardState title={t('worktrees.pending.title')} description={t('worktrees.pending.body')} /></div>;
-  if (snapshot.repositories.length === 0 && snapshot.unassigned.length === 0) return <div data-worktrees-page="empty">{header}<BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness adopt --help" /></div>;
+  if (snapshot.repositories.length === 0 && snapshot.unassigned.length === 0) return <div data-worktrees-page="empty">{header}<BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness init --dry-run" /></div>;
   const reclaimable = reclaimableSpace(snapshot);
   const running = cleanup.state.kind === 'running';
   const count = cleanup.state.kind === 'running' ? cleanup.state.count : cleanup.selected.length;
