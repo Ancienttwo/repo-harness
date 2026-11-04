@@ -2,7 +2,8 @@ import { createHash } from 'crypto';
 import { copyFileSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, realpathSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { dirname, join, relative } from 'path';
-import { installProfileStatePath, versions } from '../../src/cli/installer/install-profile';
+import { versions } from '../../src/cli/installer/install-profile';
+import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
 /** Seed the persisted protocol, independently of unrelated owner probes. */

@@ -9,13 +9,17 @@ All notable changes to this skill are documented here.
 - Each `repo-harness-hook` run on a machine with a recorded install state
   exited 1 with `invalid skill-surface catalog at
   <bun global>/assets/skill-commands/manifest.json: MANIFEST_MISSING`. So no
-  guard, inbox, SessionStart or Stop route ran in 0.26.0. In the
-  `dist/hook-entry.js` bundle, `install-profile.ts` read the skill-surface
-  manifest and `package.json` three directories above the bundle file, not
-  from the package root. It now reads both from one package root that is
-  correct in source and in the bundle, and fails closed when that root does
-  not name `repo-harness`. The tarball install smoke now runs the installed
-  hook with a recorded install state. (#1680)
+  guard, inbox, SessionStart or Stop route ran in 0.26.0. The hook read the
+  selection through the installer module, which loaded the skill-surface
+  manifest three directories above the `dist/hook-entry.js` bundle. The hook
+  now reads the selection through a small install-state read model with no
+  package-asset or host-path dependency, so the installer is not in the hook
+  bundle. The selection read of a hook or command root no longer fails on an
+  ownership surface outside the host mutation paths; `install`, `update`,
+  `doctor` and `status` still check each surface. The package version comes
+  from one static `package.json` import, and the single-file bundle marker is
+  the boolean `REPO_HARNESS_SINGLE_FILE_BUNDLE`. The tarball install smoke now
+  runs the installed hook with a recorded install state. (#1680)
 
 ## [0.26.0] - 2026-11-04
 

@@ -7,7 +7,8 @@
  */
 
 import { bunGlobalPackageRoot, expectedSkillProjections, skillLinkMatches, type SkillProjection } from '../installer/skill-projection';
-import { defaultPluginSelection, enabledPlugins, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState, type InstallState } from '../installer/install-profile';
+import { defaultPluginSelection, installStateStatus, managedInstallSurfaceIsCurrent, readInstallState, type InstallState } from '../installer/install-profile';
+import { enabledPlugins } from '../installer/install-state';
 import { installSelectionCommand, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 import { hashManagedTree, installedCopyTreeOptions } from '../../effects/managed-tree';
 import { parseSkillSurfaceCatalog } from '../../core/skill-surface/catalog';

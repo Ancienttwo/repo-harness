@@ -22,13 +22,13 @@ import {
 } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
+import { readInstallState } from '../installer/install-profile';
 import {
   enabledPlugins,
   InstallStateError,
   installProfileStatePath,
-  readInstallState,
   type InstallStateErrorCode,
-} from '../installer/install-profile';
+} from '../installer/install-state';
 import { selectionLabel, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/contracts';
 import { globalArchitectureSectionPresent } from '../../effects/configuration/global-configuration';

@@ -531,21 +531,22 @@ if (result.capability_id !== "apps-web") {
 }
 JS_EOF
 
-# A recorded install state with a managed surface makes each bundled hook run
-# validate that surface against the package skill-surface catalog. The earlier
-# hook runs have no install state, so they do not reach that read.
+# The earlier hook runs have no install state. Here the installed hook reads a
+# recorded protocol 3 state with a managed surface, and must exit 0 with no
+# error output. In 0.26.0 that read loaded the package skill-surface catalog in
+# the bundle and exited 1 (#1680).
 bun - "$INSTALLED_ROOT" "$SMOKE_HOME" <<'JS_EOF'
 const [, , installedRoot, home] = process.argv;
 const { mkdirSync, writeFileSync } = await import('node:fs');
 const { dirname, join } = await import('node:path');
-const { installProfileStatePath, versions } = await import(`${installedRoot}/src/cli/installer/install-profile.ts`);
+const { version } = await Bun.file(`${installedRoot}/package.json`).json();
 const { PLUGIN_IDS } = await import(`${installedRoot}/src/core/skill-surface/plugin-manifest.ts`);
-const statePath = installProfileStatePath({ HOME: home });
+const statePath = join(home, '.repo-harness', 'install-state.json');
 const settings = { owner: 'core', path: join(home, '.claude', 'settings.json'), type: 'managed-file',
   authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
   content_hash: `sha256:${'0'.repeat(64)}`, managed_marker: 'transaction-created-file', symlink_target: null };
 mkdirSync(dirname(statePath), { recursive: true });
-writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions([...PLUGIN_IDS]), selection: 'all',
+writeFileSync(statePath, JSON.stringify({ protocol: 3, core: { version }, plugins: PLUGIN_IDS.map((id) => ({ id, version })), selection: 'all',
   transaction_id: 'tarball-smoke', applied_at: new Date().toISOString(), ownership_manifest: [settings], previous: null }));
 JS_EOF
 run_recorded_selection_hook() {

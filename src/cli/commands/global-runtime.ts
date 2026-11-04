@@ -23,13 +23,15 @@ import { DEFAULT_PROCESS_MAX_BUFFER_BYTES, redactProcessOutput, runProcess as ru
 import { leftoverCheckWarning } from "./upgrade";
 import { commitVerifiedSkillTree, skillTreeSha256 } from "../../effects/skill-tree-integrity";
 import {
-  enabledPlugins,
   managedInstallSurfaceIsCurrent,
   piPackageSurface,
   readInstallState,
   recordVerifiedAgentFleetOwnership,
   requireInstallState,
 } from "../installer/install-profile";
+import {
+  enabledPlugins,
+} from "../installer/install-state";
 import { installSelectionCommand, type PluginId } from "../../core/skill-surface/plugin-manifest";
 import {
   parseSkillSurfaceCatalog,

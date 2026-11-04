@@ -1,5 +1,6 @@
 import { CLI_PORTS, registerArchitecturePlugin } from '../../src/cli/index';
-import { installProfileStatePath, ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
+import { ownerForInstallPath, versions } from '../../src/cli/installer/install-profile';
+import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import { installSelectionCommand, type PluginId } from '../../src/core/skill-surface/plugin-manifest';
 import { hashManagedTree } from '../../src/effects/managed-tree';
 import { afterAll, afterEach, beforeAll, describe, expect, test } from 'bun:test';
