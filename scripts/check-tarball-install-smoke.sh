@@ -531,4 +531,36 @@ if (result.capability_id !== "apps-web") {
 }
 JS_EOF
 
+# A recorded install state with a managed surface makes each bundled hook run
+# validate that surface against the package skill-surface catalog. The earlier
+# hook runs have no install state, so they do not reach that read.
+bun - "$INSTALLED_ROOT" "$SMOKE_HOME" <<'JS_EOF'
+const [, , installedRoot, home] = process.argv;
+const { mkdirSync, writeFileSync } = await import('node:fs');
+const { dirname, join } = await import('node:path');
+const { installProfileStatePath, versions } = await import(`${installedRoot}/src/cli/installer/install-profile.ts`);
+const { PLUGIN_IDS } = await import(`${installedRoot}/src/core/skill-surface/plugin-manifest.ts`);
+const statePath = installProfileStatePath({ HOME: home });
+const settings = { owner: 'core', path: join(home, '.claude', 'settings.json'), type: 'managed-file',
+  authority: 'repo-harness-install-transaction', removal: 'managed-surfaces-only',
+  content_hash: `sha256:${'0'.repeat(64)}`, managed_marker: 'transaction-created-file', symlink_target: null };
+mkdirSync(dirname(statePath), { recursive: true });
+writeFileSync(statePath, JSON.stringify({ protocol: 3, ...versions([...PLUGIN_IDS]), selection: 'all',
+  transaction_id: 'tarball-smoke', applied_at: new Date().toISOString(), ownership_manifest: [settings], previous: null }));
+JS_EOF
+run_recorded_selection_hook() {
+  local event="$1" route="$2" payload="$3" status=0
+  (cd "$TARGET_REPO" && printf '%s\n' "$payload" | HOOK_HOST="claude" "$HOOK" "$event" --route "$route") \
+    >"$TMP_DIR/hook-$event.stdout" 2>"$TMP_DIR/hook-$event.stderr" || status=$?
+  if [[ "$status" -ne 0 || -s "$TMP_DIR/hook-$event.stderr" ]]; then
+    echo "[tarball-smoke] ERROR: installed repo-harness-hook $event --route $route with a recorded install state returned $status" >&2
+    cat "$TMP_DIR/hook-$event.stderr" >&2
+    exit 1
+  fi
+}
+run_recorded_selection_hook PreToolUse edit \
+  "{\"session_id\":\"tarball-smoke\",\"hook_event_name\":\"PreToolUse\",\"cwd\":\"$TARGET_REPO\",\"tool_name\":\"Write\",\"tool_input\":{\"file_path\":\"$TARGET_REPO/notes.txt\",\"content\":\"x\"}}"
+run_recorded_selection_hook Stop default \
+  "{\"session_id\":\"tarball-smoke\",\"hook_event_name\":\"Stop\",\"cwd\":\"$TARGET_REPO\",\"stop_hook_active\":false}"
+
 echo "[tarball-smoke] OK: ${PACKAGE_NAME}-${PACKAGE_VERSION}.tgz installs, serves the packaged Operator, and packaged CLI bins start."

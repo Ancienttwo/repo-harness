@@ -2,6 +2,21 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Fixed
+
+- Each `repo-harness-hook` run on a machine with a recorded install state
+  exited 1 with `invalid skill-surface catalog at
+  <bun global>/assets/skill-commands/manifest.json: MANIFEST_MISSING`. So no
+  guard, inbox, SessionStart or Stop route ran in 0.26.0. In the
+  `dist/hook-entry.js` bundle, `install-profile.ts` read the skill-surface
+  manifest and `package.json` three directories above the bundle file, not
+  from the package root. It now reads both from one package root that is
+  correct in source and in the bundle, and fails closed when that root does
+  not name `repo-harness`. The tarball install smoke now runs the installed
+  hook with a recorded install state. (#1680)
+
 ## [0.26.0] - 2026-11-04
 
 This release has breaking changes. archctx and CodeGraph are the

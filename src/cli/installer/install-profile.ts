@@ -20,7 +20,7 @@ import {
   writeFileSync,
 } from 'fs';
 import { homedir } from 'os';
-import { basename, delimiter, dirname, join } from 'path';
+import { basename, delimiter, dirname, join, resolve } from 'path';
 import { fileURLToPath } from 'url';
 import {
   MANAGED_TAG,
@@ -54,30 +54,46 @@ import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } 
 import { piExecutable } from '../../effects/pi-executable';
 import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
 
-const SKILL_SURFACE_MANIFEST_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..', '..', '..',
-  'assets', 'skill-commands', 'manifest.json',
-);
+/**
+ * Build-time version literal of the single-file hook bundle (package.json
+ * `build:hook-bundle`). It is defined only in `dist/hook-entry.js`, where
+ * `import.meta.url` is the bundle file one directory below the package root.
+ * This source file is three directories below the package root.
+ */
+declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
+const PACKAGE_ROOT_FROM_MODULE = typeof REPO_HARNESS_BUNDLED_CLI_VERSION === 'string' ? '..' : '../../..';
+
+/**
+ * The running package root and version. The root is proven by its
+ * `package.json` name, so a wrong module depth fails closed here and never
+ * reads another package's files.
+ */
+function runningPackage(): { readonly root: string; readonly version: string } {
+  const root = resolve(fileURLToPath(new URL(PACKAGE_ROOT_FROM_MODULE, import.meta.url)));
+  const path = join(root, 'package.json');
+  const raw = existsSync(path) ? JSON.parse(readFileSync(path, 'utf-8')) as { name?: unknown; version?: unknown } : null;
+  if (raw?.name !== 'repo-harness') throw new Error(`repo-harness package root is not proven: ${path} does not name repo-harness`);
+  if (typeof raw.version !== 'string' || !raw.version.trim()) throw new Error(`invalid package version: ${path}`);
+  return { root, version: raw.version };
+}
 
 /**
  * Reads and parses this package's own bundled skill-surface manifest. Not
  * parameterized by env/sourceRoot: install-profile.ts manages installed
  * state at the user's HOME, not a foreign source tree, so its manifest is
- * always the currently-running package's own file, resolved relative to this
- * module's own location. Fails closed before any caller mutates host state.
+ * always the currently-running package's own file. Fails closed before any
+ * caller mutates host state.
  * Deliberately does not pass an `exists` callback for package sources.
  * Called lazily (never at module load) so importing this module never has a
  * filesystem side effect on its own.
  */
 export function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
-  const source = existsSync(SKILL_SURFACE_MANIFEST_PATH)
-    ? readFileSync(SKILL_SURFACE_MANIFEST_PATH, 'utf-8')
-    : null;
+  const manifestPath = join(runningPackage().root, 'assets', 'skill-commands', 'manifest.json');
+  const source = existsSync(manifestPath) ? readFileSync(manifestPath, 'utf-8') : null;
   const resolution = parseSkillSurfaceCatalog(source, { declared: true });
   if (resolution.status !== 'valid') {
     const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join('; ');
-    throw new Error(`invalid skill-surface catalog at ${SKILL_SURFACE_MANIFEST_PATH}: ${detail}`);
+    throw new Error(`invalid skill-surface catalog at ${manifestPath}: ${detail}`);
   }
   return resolution.catalog;
 }
@@ -1506,10 +1522,7 @@ function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
 }
 
 export function installedPackageVersion(): string {
-  const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
-  const raw = JSON.parse(readFileSync(path, 'utf-8')) as { version?: unknown };
-  if (typeof raw.version !== 'string' || !raw.version.trim()) throw new Error(`invalid package version: ${path}`);
-  return raw.version;
+  return runningPackage().version;
 }
 
 /** Core and every enabled plugin record the running package version until plugins ship separately (#1287 step 4). */
