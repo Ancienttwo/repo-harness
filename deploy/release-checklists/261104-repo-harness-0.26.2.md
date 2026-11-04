@@ -8,7 +8,7 @@
   #1689). Owner decision M63 added #1741 to 0.26.2, so the coordinator moved
   the base to `21430323b` plus #1742 only. The release-prep branch
   `chore/release-0.26.2` starts on this base and merges no later main.
-- Source commit: the head of the release-prep PR for #1740. The publish
+- Source commit: the head of the release-prep PR #1744 (#1740). The publish
   candidate is the merge commit of that PR on `origin/main`. The owner
   records it below before publish.
 - Previous release: 0.26.1, from the release-prep merge
