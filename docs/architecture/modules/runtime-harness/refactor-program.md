@@ -1,5 +1,5 @@
 # Refactor Program
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:7665bbeea514490e48cd5b317e008d5399ba6b4a0a926a05af98f455d44289f5" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-runtime-harness-refactor-program" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:e1a2c8364f4d44fe28d1ebcb2ada365f95ea12192acfbc63e27d70958512c6be" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.runtime-harness.refactor-program`(kind `capability`)
 > **Matched Prefixes**:`src/effects/refactor/**`
@@ -33,7 +33,7 @@ flowchart LR
 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- |
 | `entrypoint.refactor-program.observe` | `src/effects/refactor/recommendations.ts#discoverRefactorRecommendations` | `sink.refactor-program.provider-scan` → `src/effects/refactor/archctx-provider.ts#runRefactorScan` |
-| `entrypoint.refactor-program.decide` | `src/cli/commands/refactor.ts#decideRefactorRecommendation` | `sink.refactor-program.decision` → `src/effects/refactor/archctx-provider.ts#decideRecommendation` |
+| `entrypoint.refactor-program.decide` | `src/cli/commands/refactor-actions.ts#decideRefactorRecommendation` | `sink.refactor-program.decision` → `src/effects/refactor/archctx-provider.ts#decideRecommendation` |
 
 組件入口:
 
@@ -50,6 +50,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `component.refactor-program.archctx-provider` — Scan for structural observations and record user decisions through the pinned package-local ArchContext CLI
+- `depends-on` → `capability.workflow-engine.contract-assets` — Type the archctx provider options with the core architecture contract
 - `calls` → `component.execution-primitives.repository-registry` — Resolve the canonical repository path through the repo registry
 
 入向關係:
@@ -72,8 +73,8 @@ flowchart LR
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
 | `component.refactor-program.archctx-provider` | Refactor ArchContext Provider Boundary | `1–2` 個文件 / `50–100` 行 | 未宣告 |
-| `component.refactor-program.cli-layer` | Refactor Recommendations (cli) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
-| `component.refactor-program.core-layer` | Refactor Recommendations (core) | `1–2` 個文件 / `20–50` 行 | 未宣告 |
+| `component.refactor-program.cli-layer` | Refactor Recommendations (cli) | `2–5` 個文件 / `100–200` 行 | 未宣告 |
+| `component.refactor-program.core-layer` | Refactor Recommendations (core) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 

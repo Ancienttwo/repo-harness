@@ -1,5 +1,5 @@
 # public-surface/action-commands 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:c4f8c4e0ebcd933c410801e81fce3ed1109d6e20526651676f6dfa9bbdba395a" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-public-surface-action-commands" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:21e67b061612821bdccb1b25c1159fb6b8e403caac2850dcd7faab7d63f76f2d" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.public-surface.action-commands`(kind `capability`)
 > **Matched Prefixes**:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
@@ -21,7 +21,7 @@ flowchart LR
   p1_component_action_commands_skill_surface_catalog_core_988720fd["Skill Surface Catalog (core)"]:::component
   p1_capability_public_surface_action_commands_26efab87 -->|"Install action command skills"| p1_component_action_commands_primary_c9e77bd1
   p1_component_action_commands_primary_c9e77bd1 -->|"Name bundled skill packages as manifest package sources"| p1_component_action_commands_bundled_skills_d9a66507
-  p1_capability_public_surface_action_commands_26efab87 -->|"Select the facade and host placement projection for a profile"| p1_component_action_commands_skill_surface_catalog_a72c29bc
+  p1_capability_public_surface_action_commands_26efab87 -->|"Select the facade and host placement projection for a plugin selection"| p1_component_action_commands_skill_surface_catalog_a72c29bc
   p1_component_action_commands_skill_surface_catalog_a72c29bc -->|"Read manifest.json as the single catalog authority"| p1_component_action_commands_primary_c9e77bd1
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -29,7 +29,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:81d199e59d880a2dd829c406cdb3d76c7ffc1a6fc34c9c9ca4a0c8b4da860b87`).
+- Proof: `proven` (`sha256:8492acf80287823c7dcb48cbb04a4ec0254140d0b9288a7da108a69216f41628`).
 - Semantic nodes: `5`; declared relations: `4`.
 
 ### 1.2 模組職責表
@@ -42,13 +42,14 @@ flowchart LR
 
 | 組件 | 宣告入口 | 錨點 | 職責 |
 | --- | --- | --- | --- |
-| `component.action-commands.skill-surface-catalog` | `entrypoint.action-commands.profile-projection` | `scripts/skill-surface-select.ts#main` | `sink.action-commands.facades-for-profile` → `src/core/skill-surface/catalog.ts#facadesForProfile` |
-| `component.action-commands.skill-surface-catalog` | `entrypoint.action-commands.profile-projection` | `scripts/skill-surface-select.ts#loadCatalog` | `sink.action-commands.parse-catalog` → `src/core/skill-surface/catalog.ts#parseSkillSurfaceCatalog` |
+| `component.action-commands.skill-surface-catalog` | `entrypoint.action-commands.selection-projection` | `scripts/skill-surface-select.ts#main` | `sink.action-commands.facades-for-selection` → `src/core/skill-surface/catalog.ts#facadesForSelection` |
+| `component.action-commands.skill-surface-catalog` | `entrypoint.action-commands.selection-projection` | `scripts/skill-surface-select.ts#loadCatalog` | `sink.action-commands.parse-catalog` → `src/core/skill-surface/catalog.ts#parseSkillSurfaceCatalog` |
 
 ### 1.3 規模信號
 
 - 規模量級:`50–100` 個文件 / `5000–10000` 行
 - 匹配前綴:`assets/skill-commands/**`、`assets/skills/**`、`assets/skill-version.json`、`.claude/.skill-version`、`src/core/skill-surface/**`、`scripts/skill-surface-select.ts`、`scripts/run-skill-routing-eval.ts`、`scripts/check-skill-version.ts`
+- 排除前綴:`assets/skills/repo-harness-archimap/**`、`assets/skill-commands/repo-harness-architecture/**`
 - 推導:掃描 `source.include` 減 `source.exclude`,跳過 `.git/` 與 `node_modules/`,再按 1–2–5 階梯分桶。精確計數不入本文檔:量級足以回答「這個能力有多大」,而逐行計數會讓覆蓋範圍內任何一次源碼改動都改寫本文檔。
 
 ### 1.4 依賴邊界
@@ -58,7 +59,7 @@ flowchart LR
 - `depends-on` → `capability.workflow-engine.contract-assets` — Read the workflow contract during skill version checks.
 - `depends-on` → `capability.verification.evals-checks` — Run the skill evaluation engine for routing checks.
 - `calls` → `component.action-commands.primary` — Install action command skills
-- `calls` → `component.action-commands.skill-surface-catalog` — Select the facade and host placement projection for a profile
+- `calls` → `component.action-commands.skill-surface-catalog` — Select the facade and host placement projection for a plugin selection
 
 入向關係:
 
@@ -82,12 +83,12 @@ flowchart LR
 | --- | --- | --- | --- |
 | `component.action-commands.bundled-skills` | Bundled Skill Packages | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.action-commands.primary` | Command Facades and Manifest | `10–20` 個文件 / `1000–2000` 行 | 未宣告 |
-| `component.action-commands.skill-surface-catalog` | Skill Surface Catalog | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.action-commands.profile-projection` |
-| `component.action-commands.skill-surface-catalog-core` | Skill Surface Catalog (core) | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
+| `component.action-commands.skill-surface-catalog` | Skill Surface Catalog | `5–10` 個文件 / `2000–5000` 行 | `entrypoint.action-commands.selection-projection` |
+| `component.action-commands.skill-surface-catalog-core` | Skill Surface Catalog (core) | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:81d199e59d880a2dd829c406cdb3d76c7ffc1a6fc34c9c9ca4a0c8b4da860b87`); selectors `3/3`.
+> **Proof**: `proven` (`sha256:8492acf80287823c7dcb48cbb04a4ec0254140d0b9288a7da108a69216f41628`); selectors `3/3`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
@@ -111,10 +112,10 @@ sequenceDiagram
   autonumber
   participant p2_capability_4262990f as Action Commands
   participant p2_catalog_12ea5e22 as Skill Surface Catalog
-  p2_capability_4262990f->>p2_catalog_12ea5e22: Compute the facade set for the requested profile
+  p2_capability_4262990f->>p2_catalog_12ea5e22: Compute the facade set for the requested plugin selection
   alt Projection is printed for the sync script
-  p2_capability_4262990f->>p2_catalog_12ea5e22: Print facades and host placements from the same selector the catalog self-check uses
-    Note over p2_capability_4262990f: Return the profile projection
+  p2_capability_4262990f->>p2_catalog_12ea5e22: Print the facades and host placements that the selection projects
+    Note over p2_capability_4262990f: Return the selection projection
   else Manifest is missing or invalid
   p2_capability_4262990f->>p2_catalog_12ea5e22: Parse manifest.json and print every diagnostic when it is not valid
     Note over p2_capability_4262990f: Exit nonzero before any host mutation

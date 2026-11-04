@@ -1,6 +1,6 @@
 # verification/acceptance-review 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:4b261cdf1e2f2ebc8bf028af048ca048ef65a601acd911fdf5b99aa33a988315" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-acceptance-review" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:5d74db7f95917b273f287c5c045e168e719863e5af92b1943e26c1b351714b71" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.acceptance-review`(kind `capability`)
 > **Matched Prefixes**:`src/core/review/**`、`src/effects/review/**`、`src/cli/commands/review.ts`、`scripts/acceptance-receipt.ts`、`scripts/change-assessment.ts`、`src/effects/admission/admission-store.ts`、`src/effects/admission/admission-source.ts`、`src/effects/admission/issue-goal.ts`、`src/effects/admission/control-admission.ts`、`src/effects/github/issues.ts`、`src/effects/github/policy.ts`
@@ -34,7 +34,7 @@ flowchart LR
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Plugin → core: bind task sessions to the active review admission and its source#44; resolve the policy review base of the diff fingerprint#44; implement the reviewer runner port#44; and apply the review isolation policy in the OAR review host"| p1_capability_verification_acceptance_review_f80a24d6
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Use host installation commands for Herdr skill setup."| p1_capability_runtime_harness_hook_adapters_75a11743
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Start send and collect persistent Herdr task agents"| p1_component_task_agent_host_primary_d8453f09
-  p1_component_task_agent_host_primary_d8453f09 -->|"Run Git through the process runner#44; hold task session locks#44; and read and write immutable session artifacts"| p1_capability_workflow_engine_execution_primitives_b3033934
+  p1_component_task_agent_host_primary_d8453f09 -->|"Run Git through the process runner#44; hold task session locks#44; read and write immutable session artifacts#44; run hc through the hc client#44; read the notify secret key names#44; read the notify config#44; the delivery record and the notify file paths through the notify read contract#44; and build the next delivery record with its channel names#44; record types and empty record"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_capability_runtime_harness_task_agent_host_d81dadb6 -->|"Run the reviewer session#44; its OAR review host and its pre-prompt inbox companion for acceptance review"| p1_component_task_agent_host_review_runner_c2379e1e
   p1_component_task_agent_host_review_runner_c2379e1e -->|"Read and write immutable session artifacts#44; including the accepted-input proof#44; and read the host process identity"| p1_capability_workflow_engine_execution_primitives_b3033934
   p1_component_task_agent_host_review_runner_c2379e1e -->|"Start#44; send to#44; collect from and close the reviewer task session#44; and read its binding and OAR observations"| p1_component_task_agent_host_primary_d8453f09
@@ -45,7 +45,7 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:1cadb882926d2611093de99e35dcacfc9c9afdf8594367388d15c75f00b8f990`).
+- Proof: `proven` (`sha256:60bf3f0e27595f214aa9ba21ae77b3c0a4892958701bc20952dc1e0f99a1cf1d`).
 - Semantic nodes: `11`; declared relations: `13`.
 
 ### 1.2 模組職責表
@@ -120,7 +120,7 @@ flowchart LR
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:1cadb882926d2611093de99e35dcacfc9c9afdf8594367388d15c75f00b8f990`); selectors `16/16`.
+> **Proof**: `proven` (`sha256:60bf3f0e27595f214aa9ba21ae77b3c0a4892958701bc20952dc1e0f99a1cf1d`); selectors `16/16`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%
