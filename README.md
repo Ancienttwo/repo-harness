@@ -115,8 +115,8 @@ flowchart TB
   Verify -->|pass| PR["Pull request<br/><sub>changes · checks · risk · rollback</sub>"]
   PR --> Review["Acceptance review<br/><sub>when risk requires it</sub>"]
   Review --> Merge["Merge<br/><sub>publication merge</sub>"]
-  Work -. Stop hook .-> Handoff["Handoff<br/><sub>branch · result · next action</sub>"]
-  Handoff -. next session .-> Start
+  Work -. Stop hook .-> Checkpoint["Evidence checkpoint<br/><sub>publishes accepted evidence only</sub>"]
+  PR -. next session re-reads issue, PR, branch .-> Start
 ```
 
 Three layers, each with one owner:
@@ -134,7 +134,8 @@ in, the hook exits silently.
 ### One task, two sessions
 
 A session can end in the middle of a task. The next session — on another day,
-host or agent — continues from files, not from the old chat:
+host or agent — continues from the branch, the issue and the PR, not from the
+old chat. No local handoff file is written:
 
 ```mermaid
 sequenceDiagram
@@ -145,12 +146,12 @@ sequenceDiagram
   participant B as Session B (Claude)
   A->>I: Read scope, claims, linked PRs
   A->>R: Work on a branch, run checks
-  A->>I: Push commits, update PR evidence
-  Note over A: Session ends (context limit, reboot, handoff)
-  A-->>R: Stop hook writes handoff<br/>(branch · result · next action)
-  B->>R: SessionStart hook loads context + state pointers
+  A->>I: Push commits, write result and next step in the PR
+  Note over A: Session ends (context limit, reboot)
+  A-->>R: Stop hook publishes the existing evidence checkpoint
+  B->>R: SessionStart emits Effective State<br/>(issue + branch from the branch name)
   B->>I: Re-read issue, latest claim, PR
-  B->>R: Continue from the exact next step
+  B->>R: Continue from the step the PR names
   B->>I: Final checks, risk and rollback in PR
 ```
 
@@ -174,7 +175,7 @@ sequenceDiagram
 
 | | |
 | --- | --- |
-| **Session continuity** | Issue + PR + handoff let any agent resume without the original chat. |
+| **Session continuity** | The branch names the issue; the issue and PR carry scope and the next step, so any agent resumes without the original chat. |
 | **Typed hook runtime** | 6 public routes (Claude 5, Codex 5), each bound to exactly one in-process handler. |
 | **Edit-boundary guards** | `RepoScopeGuard`, `ExternalReferenceGuard`, `OpsPrivateGuard`, `EditScopeGuard`, `ApplyPatchScopeGuard`. |
 | **Progressive context** | Root context plus per-capability contracts, backed by ArchContext and CodeGraph. |
@@ -217,8 +218,8 @@ run trace. Accept only when checks pass and external acceptance is `pass`,
 | The GitHub issue and PR | Verification records and run trace |
 | Latest claim status on the issue | Residual risk and rollback |
 
-When summaries disagree with the issue, PR, checks or handoff, the source
-artifacts win.
+When summaries disagree with the issue, PR or checks, the source artifacts
+win.
 
 Execution evidence and acceptance are separate authorities. A green check is
 not an approval, and a reviewer record is not a merge permission:
