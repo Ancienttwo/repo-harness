@@ -571,7 +571,10 @@ describe('operator serve command and HTTP boundary', () => {
       try {
         if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
         expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
-          summary: boardSummary(board) }]);
+          summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, current_batch: null, needs_you: 3, worker_limit: 8,
+            seats: { status: 'observed', stalled: 0, desks: [
+              { seat: 'worker', agent: 'codex', issue: 1476, pr: 1499, state: 'idle' }, { seat: 'worker', agent: 'claude-code', issue: 1475, pr: 1491, state: 'idle' },
+            ] } } }]);
         expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
         board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
         expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
