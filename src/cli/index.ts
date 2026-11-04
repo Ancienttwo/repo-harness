@@ -100,7 +100,6 @@ import {
   beginInstallHostTransaction,
   commitInstallHostTransaction,
   effectiveSkillRoots,
-  enabledPlugins,
   installProfileTransactionPaths,
   installStateStatus,
   keptPluginLine,
@@ -117,6 +116,9 @@ import {
   type InstallState,
   type SelectionResolution,
 } from './installer/install-profile';
+import {
+  enabledPlugins,
+} from './installer/install-state';
 import { runAdoptionPlan } from './commands/adoption-plan';
 import { rollbackAdoptionTransaction } from '../effects/fs-transaction';
 import {

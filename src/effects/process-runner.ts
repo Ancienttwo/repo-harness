@@ -45,8 +45,8 @@ export interface ProcessRunResult {
 export const DEFAULT_PROCESS_TIMEOUT_MS = 120_000;
 export const DEFAULT_PROCESS_MAX_OUTPUT_BYTES = 64 * 1024;
 export const DEFAULT_PROCESS_MAX_BUFFER_BYTES = 1024 * 1024;
-declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
-const IS_SINGLE_FILE_HOOK_BUNDLE = typeof REPO_HARNESS_BUNDLED_CLI_VERSION === "string";
+declare const REPO_HARNESS_SINGLE_FILE_BUNDLE: boolean | undefined;
+const IS_SINGLE_FILE_HOOK_BUNDLE = typeof REPO_HARNESS_SINGLE_FILE_BUNDLE === "boolean" && REPO_HARNESS_SINGLE_FILE_BUNDLE;
 const PROCESS_SUPERVISOR = IS_SINGLE_FILE_HOOK_BUNDLE
   ? import.meta.path
   : join(import.meta.dir, "process-supervisor.ts");

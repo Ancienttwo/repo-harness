@@ -1,4 +1,5 @@
 import { syncCrossReviewSkills } from '../src/cli/commands/init';
+import { readRecordedSelection } from '../src/cli/installer/architecture-selection';
 import { configureRequiredHerdrSkill } from '../src/cli/commands/herdr-skill';
 import { describe, expect, test } from 'bun:test';
 import { chmodSync, cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, readlinkSync, rmSync, symlinkSync, writeFileSync } from 'fs';
@@ -13,12 +14,9 @@ import {
   codegraphProjection,
   commitInstallHostTransaction,
   effectiveSkillRoots,
-  enabledPlugins,
   installProfileHostMutationPaths,
-  installProfileStatePath,
   installProfileTransactionPaths,
   installStateStatus,
-  InstallStateError,
   loadSkillSurfaceCatalog,
   piPackageSurface,
   planInstallSelection,
@@ -32,6 +30,11 @@ import {
   versions,
   type InstallState,
 } from '../src/cli/installer/install-profile';
+import {
+  enabledPlugins,
+  installProfileStatePath,
+  InstallStateError,
+} from '../src/cli/installer/install-state';
 import { ownerEnabled, PLUGIN_IDS, type PluginId, type PluginSelection, type SurfaceOwner } from '../src/core/skill-surface/plugin-manifest';
 import { runTransactionalRuntimeRefresh } from '../src/cli/index';
 import { CANDIDATE_RECONCILE_STEP, type GlobalRuntimeOptions, type GlobalRuntimeResult } from '../src/cli/commands/global-runtime';
@@ -1152,6 +1155,8 @@ describe('install selection', () => {
 
     expect(() => prepareInstallSelectionSwitch([], env)).toThrow('invalid ownership surface');
     expect(readFileSync(external, 'utf-8')).toBe(content);
+    // The hook selection read uses the read model only; the installer commands own the surface check (#1680).
+    expect(readRecordedSelection(env)).toEqual({ status: 'recorded', plugins: ALL_PLUGINS });
   }));
 
   test('reinstall refreshes ownership for an already-owned CodeGraph projection', () => withHome((env) => {

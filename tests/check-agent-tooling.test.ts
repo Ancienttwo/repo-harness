@@ -20,7 +20,8 @@ import { runSubagentContext } from "../src/cli/hook/subagent-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
-import { installProfileStatePath, versions } from "../src/cli/installer/install-profile";
+import { versions } from "../src/cli/installer/install-profile";
+import { installProfileStatePath } from "../src/cli/installer/install-state";
 import type { PluginId } from "../src/core/skill-surface/plugin-manifest";
 
 const ROOT = join(import.meta.dir, "..");

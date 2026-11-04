@@ -21,7 +21,6 @@ import {
 } from 'fs';
 import { homedir } from 'os';
 import { basename, delimiter, dirname, join } from 'path';
-import { fileURLToPath } from 'url';
 import {
   MANAGED_TAG,
   canonicalManagedHookProjection,
@@ -31,7 +30,7 @@ import {
 import {
   mutationPathSkillNames as catalogMutationPathSkillNames,
   requiredExplicitExternalDependencyInstallGroups,
-  parseSkillSurfaceCatalog,
+  validateSkillSurfaceCatalogValue,
   selectionOwnedSkillNames,
   type SkillSurfaceCatalog,
 } from '../../core/skill-surface/catalog';
@@ -39,7 +38,6 @@ import {
   HOST_PROGRAM_PLUGINS,
   installSelectionCommand,
   isHostProgramPlugin,
-  isPluginId,
   isSurfaceOwner,
   ownerEnabled,
   PLUGIN_IDS,
@@ -53,36 +51,38 @@ import { hashManagedTree, OWNER_MARKER } from '../../effects/managed-tree';
 import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
-
-const SKILL_SURFACE_MANIFEST_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..', '..', '..',
-  'assets', 'skill-commands', 'manifest.json',
-);
+import skillSurfaceManifest from '../../../assets/skill-commands/manifest.json';
+import { version as PACKAGE_VERSION } from '../../../package.json';
+import { architectureRepair } from './architecture-selection';
+import {
+  enabledPlugins,
+  INSTALL_STATE_PROTOCOL,
+  installProfileStatePath,
+  InstallStateError,
+  invalidOwnership,
+  parseRecordedInstallState,
+  readRecordedInstallState,
+  type RecordedInstallSnapshot,
+  type RecordedInstallState,
+} from './install-state';
 
 /**
- * Reads and parses this package's own bundled skill-surface manifest. Not
- * parameterized by env/sourceRoot: install-profile.ts manages installed
- * state at the user's HOME, not a foreign source tree, so its manifest is
- * always the currently-running package's own file, resolved relative to this
- * module's own location. Fails closed before any caller mutates host state.
- * Deliberately does not pass an `exists` callback for package sources.
- * Called lazily (never at module load) so importing this module never has a
- * filesystem side effect on its own.
+ * Parses this package's own skill-surface manifest. Not parameterized by
+ * env/sourceRoot: install-profile.ts manages installed state at the user's
+ * HOME, not a foreign source tree, so its manifest is always the running
+ * package's own file. The module system resolves it at build time in a bundle
+ * and at load time in source. Fails closed before any caller mutates host
+ * state. Deliberately does not pass an `exists` callback for package sources.
  */
 export function loadSkillSurfaceCatalog(): SkillSurfaceCatalog {
-  const source = existsSync(SKILL_SURFACE_MANIFEST_PATH)
-    ? readFileSync(SKILL_SURFACE_MANIFEST_PATH, 'utf-8')
-    : null;
-  const resolution = parseSkillSurfaceCatalog(source, { declared: true });
+  const resolution = validateSkillSurfaceCatalogValue(skillSurfaceManifest, { declared: true });
   if (resolution.status !== 'valid') {
     const detail = resolution.diagnostics.map((d) => `${d.code} ${d.path}: ${d.message}`).join('; ');
-    throw new Error(`invalid skill-surface catalog at ${SKILL_SURFACE_MANIFEST_PATH}: ${detail}`);
+    throw new Error(`invalid skill-surface catalog assets/skill-commands/manifest.json: ${detail}`);
   }
   return resolution.catalog;
 }
 
-export const INSTALL_STATE_PROTOCOL = 3 as const;
 export const INSTALL_HOSTS = ['claude', 'codex', 'pi'] as const;
 const AGENT_FLEET_FILE = new RegExp(
   `/(?:\\.claude/agents/(?:${MANAGED_AGENTS.join('|')})\\.md|\\.codex/agents/(?:${MANAGED_AGENTS.join('|')})\\.toml)$`,
@@ -100,41 +100,13 @@ export interface ManagedInstallSurface {
   readonly symlink_target: string | null;
 }
 
-export interface InstalledPlugin {
-  readonly id: PluginId;
-  readonly version: string;
-}
-
-export interface InstallState {
-  readonly protocol: typeof INSTALL_STATE_PROTOCOL;
-  /** Core records only its version. The package manifest owns the plugin-to-surface map. */
-  readonly core: { readonly version: string };
-  /** Enabled plugins only: sorted, unique. Absence means disabled. */
-  readonly plugins: readonly InstalledPlugin[];
-  /** How the plugin set was chosen. An explicit list equals the plugin ids; `all` holds any subset. */
-  readonly selection: PluginSelection;
-  readonly transaction_id: string;
-  readonly applied_at: string;
+/** The recorded state after the host-path check of each ownership surface. */
+export interface InstallState extends Omit<RecordedInstallState, 'ownership_manifest' | 'previous'> {
   readonly ownership_manifest: readonly ManagedInstallSurface[];
   readonly previous: InstallStateSnapshot | null;
 }
 
 export type InstallStateSnapshot = Omit<InstallState, 'previous'>;
-
-export type InstallStateErrorCode =
-  | 'install_state_missing'
-  | 'install_state_protocol_retired'
-  | 'install_state_invalid'
-  | 'install_state_invalid_ownership'
-  | 'install_plugin_unavailable';
-
-/** Typed failure of the install state or of a requested selection. Nothing is written before it is thrown. */
-export class InstallStateError extends Error {
-  constructor(readonly code: InstallStateErrorCode, readonly path: string, message: string) {
-    super(message);
-    this.name = 'InstallStateError';
-  }
-}
 
 export interface OwnerProbe {
   readonly status: 'present' | 'missing';
@@ -218,10 +190,6 @@ export interface InstallPlan {
 const CODEGRAPH_CONFIG_MARKER = 'codegraph-config-projection';
 /** Markers of records that own one fragment of a shared host configuration file. */
 const SECTION_MARKERS: ReadonlySet<string> = new Set([MANAGED_TAG, CODEGRAPH_CONFIG_MARKER]);
-
-export function enabledPlugins(state: Pick<InstallState, 'plugins'>): readonly PluginId[] {
-  return state.plugins.map(plugin => plugin.id);
-}
 
 function managedAdapterHash(path: string): string | null {
   try {
@@ -739,15 +707,11 @@ export function recordUnresolvedPiOwnership(
 export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
   const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
   const before = snapshot?.existed && snapshot.backup_path
-    ? parseState(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path, env).ownership_manifest
+    ? checkedState(parseRecordedInstallState(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path), snapshot.backup_path, env).ownership_manifest
     : [];
   const sources = new Set(before.filter(surface => surface.type === 'pi-package').map(surface => surface.path));
   const current = readInstallState(env);
   return (current?.ownership_manifest ?? []).filter(surface => surface.type === 'pi-package' && !sources.has(surface.path));
-}
-
-export function installProfileStatePath(env: NodeJS.ProcessEnv = process.env): string {
-  return join(env.HOME ?? homedir(), '.repo-harness', 'install-state.json');
 }
 
 /**
@@ -1116,102 +1080,23 @@ function validateManagedSurface(raw: unknown, env: NodeJS.ProcessEnv, plugins: r
   return validSurfaceShape(raw, env);
 }
 
-function invalid(path: string, detail: string): InstallStateError {
-  return new InstallStateError('install_state_invalid', path, `install state ${detail}; inspect: repo-harness install --state: ${path}`);
+/** The host-path check of each ownership surface, against the plugins of the same snapshot. */
+function checkedSurfaces(snapshot: RecordedInstallSnapshot, path: string, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
+  const plugins = enabledPlugins(snapshot);
+  const surfaces = snapshot.ownership_manifest;
+  if (!surfaces.every((surface): surface is ManagedInstallSurface => validateManagedSurface(surface, env, plugins))) throw invalidOwnership(path);
+  return surfaces;
 }
 
-function parsePlugins(raw: unknown, coreVersion: string, path: string): readonly InstalledPlugin[] {
-  if (!Array.isArray(raw)) throw invalid(path, 'has no plugins array');
-  const plugins = raw.map((entry): InstalledPlugin => {
-    if (!isRecord(entry) || Object.keys(entry).sort().join(',') !== 'id,version') throw invalid(path, 'has a malformed plugin entry');
-    if (!isPluginId(entry.id)) {
-      throw new InstallStateError('install_state_invalid', path, `install state names unknown plugin ${JSON.stringify(entry.id)}; expected one of ${PLUGIN_IDS.join(', ')}: ${path}`);
-    }
-    // Plugin versions equal the core version until plugins ship separately (#1287 step 4).
-    if (entry.version !== coreVersion) throw invalid(path, `records plugin ${entry.id} at version ${String(entry.version)}, not ${coreVersion}`);
-    return { id: entry.id, version: entry.version };
-  });
-  const ids = plugins.map(plugin => plugin.id);
-  if (ids.join(',') !== PLUGIN_IDS.filter(id => ids.includes(id)).join(',')) throw invalid(path, 'plugins are not sorted and unique');
-  return plugins;
-}
-
-/** `all`, or the explicit list, which must equal the recorded plugin ids. Nothing is inferred from the plugin entries. */
-function parseSelection(raw: unknown, ids: readonly PluginId[], path: string, label: string): PluginSelection {
-  if (raw === 'all') return 'all';
-  if (!Array.isArray(raw) || !raw.every(isPluginId)) throw invalid(path, `${label} has no valid selection ("all" or a list of plugin ids)`);
-  if (raw.join(',') !== ids.join(',')) {
-    throw invalid(path, `${label} selection ${JSON.stringify(raw)} does not equal its plugins ${JSON.stringify(ids)}`);
-  }
-  return ids;
-}
-
-/** 0.25.4 is the last release that reads protocol 2: its `update` migrates the state to protocol 3 (#1607). */
-const PROTOCOL_2_BRIDGE = 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4';
-
-function currentPackageUpdate(): string {
-  return `bun add -g repo-harness@${installedPackageVersion()} --no-cache && repo-harness update`;
-}
-
-function parseStateBase(raw: unknown, path: string, env: NodeJS.ProcessEnv, label: string): InstallStateSnapshot {
-  if (!isRecord(raw)) throw invalid(path, `${label} is not an object`);
-  if (raw.protocol === 1) {
-    throw new InstallStateError('install_state_protocol_retired', path,
-      `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.x bridge first: `
-      + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (repo-harness install --help in 0.25.3 names it); '
-      + `then the protocol 2 bridge: ${PROTOCOL_2_BRIDGE}; then: ${currentPackageUpdate()}`);
-  }
-  if (raw.protocol === 2) {
-    throw new InstallStateError('install_state_protocol_retired', path,
-      `install state ${path} is protocol 2, which this package no longer reads. Migrate it with the 0.25.4 bridge first: `
-      + `${PROTOCOL_2_BRIDGE} (its update migrates protocol 2 to 3); then: ${currentPackageUpdate()}`);
-  }
-  if (raw.protocol !== INSTALL_STATE_PROTOCOL) throw invalid(path, `${label} has unsupported protocol ${String(raw.protocol)}`);
-  if (!isRecord(raw.core) || Object.keys(raw.core).join(',') !== 'version' || typeof raw.core.version !== 'string' || !raw.core.version.trim()) {
-    throw invalid(path, `${label} has an invalid core version`);
-  }
-  const plugins = parsePlugins(raw.plugins, raw.core.version, path);
-  const ids = plugins.map(plugin => plugin.id);
-  const selection = parseSelection(raw.selection, ids, path, label);
-  if (!Array.isArray(raw.ownership_manifest) || raw.ownership_manifest.some((surface) => !validateManagedSurface(surface, env, ids))) {
-    throw new InstallStateError('install_state_invalid_ownership', path,
-      `install state has an invalid ownership surface (unknown path, malformed entry, or an owner that is not enabled); inspect: repo-harness install --state: ${path}`);
-  }
-  if (typeof raw.transaction_id !== 'string' || typeof raw.applied_at !== 'string') throw invalid(path, `${label} has invalid metadata`);
-  return {
-    protocol: INSTALL_STATE_PROTOCOL,
-    core: { version: raw.core.version },
-    plugins,
-    selection,
-    transaction_id: raw.transaction_id,
-    applied_at: raw.applied_at,
-    ownership_manifest: raw.ownership_manifest,
-  };
-}
-
-/** The strict protocol 3 reader. Protocol 1 and 2 fail closed with their typed codes. */
-export function parseState(raw: unknown, path: string, env: NodeJS.ProcessEnv): InstallState {
-  const current = parseStateBase(raw, path, env, 'state');
-  const previousRaw = isRecord(raw) ? raw.previous : undefined;
-  if (previousRaw === null) return { ...current, previous: null };
-  if (!isRecord(previousRaw) || 'previous' in previousRaw) throw invalid(path, 'has an invalid previous state');
-  return { ...current, previous: parseStateBase(previousRaw, path, env, 'previous state') };
-}
-
-/** Read the raw state file, or null when it is absent. */
-function readRawInstallState(env: NodeJS.ProcessEnv = process.env): unknown {
-  const path = installProfileStatePath(env);
-  if (!existsSync(path)) return null;
-  try {
-    return JSON.parse(readFileSync(path, 'utf-8')) as unknown;
-  } catch (error) {
-    throw invalid(path, `is not valid JSON (${(error as Error).message})`);
-  }
+/** The read model's state with each ownership surface checked; the installer commands read state only through this. */
+function checkedState(recorded: RecordedInstallState, path: string, env: NodeJS.ProcessEnv): InstallState {
+  const previous = recorded.previous === null ? null : { ...recorded.previous, ownership_manifest: checkedSurfaces(recorded.previous, path, env) };
+  return { ...recorded, ownership_manifest: checkedSurfaces(recorded, path, env), previous };
 }
 
 export function readInstallState(env: NodeJS.ProcessEnv = process.env): InstallState | null {
-  const raw = readRawInstallState(env);
-  return raw === null ? null : parseState(raw, installProfileStatePath(env), env);
+  const recorded = readRecordedInstallState(env);
+  return recorded === null ? null : checkedState(recorded, installProfileStatePath(env), env);
 }
 
 /** `update` resolves the recorded selection; without a state it has none. */
@@ -1440,11 +1325,6 @@ export function notAddedPluginLine(id: PluginId): string {
   return `not added ${id} in a partial refresh; run: ${UPDATE_COMMAND}`;
 }
 
-/** The install command that keeps these plugins and adds `architecture`; with no recorded state, the default install. */
-export function architectureRepair(plugins: readonly PluginId[] | null): string {
-  return plugins === null ? installSelectionCommand('all') : installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === 'architecture'));
-}
-
 /**
  * A repository whose policy sets `context.capability_source: archcontext` or
  * `tooling.codegraph.enabled: true` needs the architecture plugin. update,
@@ -1505,17 +1385,9 @@ function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
   renameSync(temp, target);
 }
 
-export function installedPackageVersion(): string {
-  const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
-  const raw = JSON.parse(readFileSync(path, 'utf-8')) as { version?: unknown };
-  if (typeof raw.version !== 'string' || !raw.version.trim()) throw new Error(`invalid package version: ${path}`);
-  return raw.version;
-}
-
 /** Core and every enabled plugin record the running package version until plugins ship separately (#1287 step 4). */
 export function versions(plugins: readonly PluginId[]): Pick<InstallState, 'core' | 'plugins'> {
-  const version = installedPackageVersion();
-  return { core: { version }, plugins: plugins.map(id => ({ id, version })) };
+  return { core: { version: PACKAGE_VERSION }, plugins: plugins.map(id => ({ id, version: PACKAGE_VERSION })) };
 }
 
 function snapshot(state: InstallState): InstallStateSnapshot {

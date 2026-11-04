@@ -6,7 +6,8 @@ import { execSync } from 'child_process';
 import { runStatus, formatStatus } from '../../src/cli/commands/status';
 import { runInstall } from '../../src/cli/commands/install';
 import { registerArchitecturePlugin } from '../../src/cli/index';
-import { installProfileStatePath, versions } from '../../src/cli/installer/install-profile';
+import { versions } from '../../src/cli/installer/install-profile';
+import { installProfileStatePath } from '../../src/cli/installer/install-state';
 import type { PluginId } from '../../src/core/skill-surface/plugin-manifest';
 
 const FULL_PLUGINS: readonly PluginId[] = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'];
