@@ -4,7 +4,7 @@ import { join } from 'node:path';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import type { JsonValue } from '../../core/evidence/types';
 import { containsSecret } from '../../core/security/secret-patterns';
-import { cleanupPlanDigestInput, decodeCleanupPlan, type CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
+import { cleanupPlanDigestInput, decodeCleanupPlan, gitArchiveRefuses, type CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
 import type { CleanupFileEvidence, CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
 import { repoHarnessHome } from '../repo-harness-home';
@@ -19,8 +19,6 @@ export class CleanupArchiveError extends Error {
 }
 function fail(code: CleanupArchiveError['code']): never { throw new CleanupArchiveError(code); }
 const hex = (data: string | Buffer) => createHash('sha256').update(data).digest('hex');
-const PRIVATE_FILE = /(?:^|\/)(?:\.env(?:\.[^/]*)?|\.envrc|auth\.json|\.?credentials(?:\.json)?|secrets?\.json|token\.json|mcp\.tokens\.json|id_(?:rsa|ed25519|ecdsa)|[^/]+\.(?:pem|key|p12|pfx))$/iu;
-const GIT_FILE_MAX = 16 * 1024 * 1024;
 type Original = { kind: 'file' | 'symlink'; mode: number } | { kind: 'index'; mode: string; stage: number; oid: string }
   | { kind: 'commit'; oid: string; parents: readonly string[] } | { kind: 'manifest' };
 interface Artifact {
@@ -112,13 +110,13 @@ function sourceFile(root: number, path: string): { fd: number; close: () => void
   } catch (error) { if (owned) closeSync(directory); throw error; }
 }
 function gitSafe(path: string, bytes: Buffer): void {
-  if (PRIVATE_FILE.test(path) || bytes.length > GIT_FILE_MAX || bytes.includes(0)) fail('unsafe_git_content');
+  if (gitArchiveRefuses(path, bytes.length) || bytes.includes(0)) fail('unsafe_git_content');
   let text: string;
   try { text = new TextDecoder('utf-8', { fatal: true }).decode(bytes); } catch { return fail('unsafe_git_content'); }
   if (containsSecret(text) || text.includes('GIT binary patch')) fail('unsafe_git_content');
 }
 function fileBytes(root: number, file: CleanupFileEvidence, deadline: number): Buffer {
-  if (file.kind !== 'file' || file.size > GIT_FILE_MAX) fail('unsafe_git_content');
+  if (file.kind !== 'file' || gitArchiveRefuses(file.path, file.size)) fail('unsafe_git_content');
   const source = sourceFile(root, file.path);
   try {
     const bytes = Buffer.alloc(file.size); let offset = 0;
@@ -160,7 +158,7 @@ export function stageCleanupArchive(sessionId: string, target: CleanupObservatio
       if (path === '.git' || path === 'SOURCE.md' || path.startsWith('.cleanup/')) fail('unsupported');
       const file = loss.files.find(file => file.path === path);
       if (file) {
-        if (storage === 'git') { if (PRIVATE_FILE.test(path)) fail('unsafe_git_content'); save(storage, path, path, fileBytes(source, file, options.deadline), { kind: 'file', mode: file.mode }); }
+        if (storage === 'git') save(storage, path, path, fileBytes(source, file, options.deadline), { kind: 'file', mode: file.mode });
         else {
           if (file.kind !== 'file' || file.sha256 === null) fail('unsupported');
           const record = { storage, path, source: path, sha256: file.sha256, size: file.size, original: { kind: 'file' as const, mode: file.mode } };
@@ -219,7 +217,7 @@ function stageCommits(target: CleanupObservationTarget, loss: CleanupLossEvidenc
   for (const { commit, parents } of commits) {
     checkDeadline(options.deadline);
     const changed = runner.text(target.worktree, ['diff-tree', '--root', '--no-commit-id', '--name-only', '-r', '-z', commit]).split('\0').filter(Boolean);
-    if (changed.some(path => PRIVATE_FILE.test(path))) fail('unsafe_git_content');
+    if (changed.some(path => gitArchiveRefuses(path, null))) fail('unsafe_git_content');
     const patch = runner.bytes(target.worktree, ['format-patch', '--root', '-1', '--stdout', '--binary', '--full-index', '--no-zero-commit', '--no-signature', '--no-ext-diff', '--no-textconv', commit]);
     const identity = Buffer.from(`From ${commit} Mon Sep 17 00:00:00 2001\n`);
     if (!patch.subarray(0, identity.length).equals(identity)) fail('unsupported');
