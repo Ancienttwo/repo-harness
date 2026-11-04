@@ -5,11 +5,10 @@ import { capabilityRegistryFromNativeContext, archcontextNodeId, type Archcontex
 import { generatedSummaryState, moduleDetail, ModuleReadError, type ModelNode, type ModelRelation, type ModelFlow, type ModuleIndexV1, type ModuleDetailV1, type LinkedModuleDoc } from '../../core/architecture/module-view';
 import { buildModuleReviewPrompt, moduleStaleCitations, sha256, type ModuleReviewPromptV1, type PromptSource } from '../../core/review/module-review-prompt';
 import { ARCHCONTEXT_MANIFEST, ArchctxClientError, type GeneratedSummaryFreshness } from '../../core/architecture/projection';
-import type { ArchctxProviderOptions } from '../../core/architecture/contracts';
+import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import { canonicalize } from '../../core/evidence/canonical-json';
 import { markdownHeader } from '../../core/state/artifact-parsers';
 import { repoHarnessRepoIdFor } from '../repo-registry';
-import { resolveArchcontextCapabilityPaths } from './archcontext-owners';
 import { readArchitectureNativeContext } from './architecture-read';
 import { version as PACKAGE_VERSION } from '../../../package.json';
 import { gitExecFileSync } from '../git/runner';
@@ -347,8 +346,11 @@ export class ArchitectureModelReader {
     try { names = new TextDecoder('utf-8', { fatal: true }).decode(raw).split('\0').filter(Boolean); }
     catch { throw new ModuleReadError('git_path_encoding_invalid'); }
     if (names.length === 0) return '';
+    // The process root registers the ownership port only for a selected architecture plugin.
+    const ownership = architecturePort('ownership');
+    if (isArchitectureUnavailable(ownership)) throw new ModuleReadError('diff_owner_resolution_failed');
     let resolution;
-    try { resolution = resolveArchcontextCapabilityPaths(this.root, this.owners, names, options); }
+    try { resolution = ownership.resolvePaths(this.root, this.owners, names, options); }
     catch { throw new ModuleReadError('diff_owner_resolution_failed'); }
     // Unavailable ownership, a model that archctx rejected (ARCHCONTEXT_MODEL_REJECTED) and an
     // ambiguous or invalid path can each hide a path of this module.

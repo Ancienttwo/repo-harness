@@ -39,7 +39,7 @@ function run(): void {
       const env = message.env as NodeJS.ProcessEnv | undefined;
       if (message.kind === 'architecture' && isArchitectureRequest(message.request)) {
         // The brief requires a worker; the outer process owns and retires its Git process tree.
-        const worker = new Worker(new URL('./architecture.ts', import.meta.url), { workerData: { request: message.request, env } });
+        const worker = new Worker(new URL('../../cli/commands/architecture-thread.ts', import.meta.url), { workerData: { request: message.request, env } });
         worker.once('message', finish);
         worker.once('error', () => finish({ ok: false, code: 'unavailable' }));
         worker.once('exit', () => { if (!settled) finish({ ok: false, code: 'unavailable' }); });

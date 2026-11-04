@@ -11,3 +11,5 @@ responsibilities:
 source:
   include:
     - src/cli/commands/architecture-*.ts
+  exclude:
+    - src/cli/commands/architecture-thread.ts
