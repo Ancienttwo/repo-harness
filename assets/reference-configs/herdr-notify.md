@@ -37,6 +37,8 @@ Commands for the topology steps:
 | Wait for a worker | `hc wait <t>` |
 | Close a worker pane | `herdr-app do pane.close --pane <pane>` |
 
+A Codex worker seat in a linked contract worktree edits files and runs checks only. It runs no `git fetch`, `git commit` or `git push`. Its last message gives the commit subject and body, the PR title and body, and the check results. The orchestrator commits the worktree diff with that message and explicit paths only, pushes the branch and opens the PR. The orchestrator is the head owner of record and pushes each fix round; no other agent pushes to that PR. The Codex seat remains the content author and answers review threads through the orchestrator.
+
 `repo-harness seats argv <seat>` prints the argv of the seat from the `seats` section of `~/.repo-harness/config.json`, or from the seat defaults when the section is absent. The argv holds the model, the effort, the tool limits and the seat brief. Its stderr names the source and each limit. A limit marked `instructions_only` is written into the launch instructions only; the host does not enforce it. Without `--argv`, the pane opens a shell.
 
 With `--repository-id`, the argv labels its own terminal before the agent starts: it runs `repo-harness seats label`, which sets the seat labels on `HC_TERMINAL_ID`, and then starts the agent. The board finds seats only by these labels; a terminal without them leaves the execution axis `unavailable` (`no_seat_terminals`). When the label fails, the agent does not start and the terminal shows the error. Each start prints the new `terminal`. `<repository-id>` is the GitHub numeric repository id (`gh api repos/<owner>/<repo> --jq .id`). Leave out `--issue` and `--pr` for the orchestrator and the advisor.
