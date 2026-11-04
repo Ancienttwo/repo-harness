@@ -2,7 +2,118 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.26.2] - 2026-11-04
+
+This release has one breaking change: the Reverse Skill integration is
+removed, and the candidate reconciliation protocol goes from 2 to 3. So a
+plain `repo-harness update` from 0.26.1 or 0.26.0 stops with the upgrade
+command. `install` and `update` now install or update herdr-core (`hc`) to the
+package pin, and install the Claude Code status line that captures the Claude
+quota. The install state stays protocol 3: no migration.
+
+### Upgrade
+
+- From 0.26.x, install the new CLI directly, then update:
+
+  ```bash
+  bun add -g repo-harness@0.26.2 --no-cache
+  repo-harness update
+  ```
+
+  A 0.26.1 or 0.26.0 CLI sends a candidate reconciliation request of
+  protocol 2. The 0.26.2 candidate does not accept a request of protocol 1 or
+  2: `update` fails with `candidate_request_protocol_retired`, and the message
+  gives the upgrade command above. (#1713)
+- `--with-reverse-skill` is now an unknown option: `install` and `update`
+  exit non-zero with `unknown option`. Remove the flag from your scripts. The
+  install ledger does not own an installed `reverse-skill-router` copy, so
+  0.26.2 does not delete it. (#1713)
+- The status line is installed only when none exists. When
+  `~/.claude/settings.json` has no `statusLine`, `install` and `update` add
+  the managed entry `repo-harness-hook statusline`. An existing status line
+  is not changed: `install` prints the documented pipe that sends the status
+  line input to `repo-harness-hook statusline` and then to your command.
+  (#1733)
+- When `hc` is missing or below the package pin floor (0.1.17), `install` and
+  `update` install or update it. On Windows, the hc install adds its directory
+  to the user PATH. On Unix, it prints the PATH hint when the directory is not
+  on PATH, and uses the directory for the rest of the run. (#1724)
+- From 0.25.4 or earlier, use the `[0.26.0]` Upgrade steps with 0.26.2 in
+  place of 0.26.0.
+
+### Breaking
+
+- The `reverse-skill-router` integration is removed: its catalog package, the
+  `--with-reverse-skill` flag of `install` and `update`, and the
+  `configure Reverse Skill` step of the global runtime setup.
+  `CANDIDATE_RECONCILIATION_PROTOCOL` goes from 2 to 3 and the
+  `reverse_skill` request field is removed. A protocol 1 or 2 request throws
+  `CandidateRequestProtocolRetiredError`, which names
+  `bun add -g repo-harness@<version> --no-cache && repo-harness update`. A
+  protocol 3 request with a retired field (`profile` or `reverse_skill`) fails
+  with `invalid shape`. (#1713)
+
+### Added
+
+- `repo-harness quota [--json]` reads the rate-limit windows of each provider
+  account (`claude`, `chatgpt`) and gives each account one state:
+  `exhausted`, `tight`, `unknown`, `normal` or `surplus`. The Codex reader
+  asks `codex app-server` for `account/rateLimits/read`. The Claude reader
+  reads only the capture file `~/.repo-harness/quota/claude.json`. Each
+  decoder fails closed per field with a named reason. A reading older than 30
+  minutes makes each window `unknown`. The command exits 0 when the read
+  completes, also for an `unknown` account. (#1723)
+- `repo-harness-hook statusline` writes the `rate_limits` object of the
+  Claude Code status line input to the quota capture file (mode 0600, temp
+  file then rename) and prints the windows, for example `5h 12% · 7d 30%`. A
+  `rate_limits` value that the decoder rejects is not written and exits 1.
+  `install` sets the managed `statusLine` only when none exists, and refreshes
+  it only while its command has the managed tag. A user status line is not
+  changed; `install` prints this pipe:
+  `input=$(cat); printf '%s' "$input" | repo-harness-hook statusline >/dev/null; printf '%s' "$input" | <your status line command>`.
+  `uninstall` removes only a tagged entry. (#1733)
+- `install` and `update` run the step `ensure herdr-core (hc)`. When `hc` is
+  missing, the step downloads the pinned asset with `curl`, checks its
+  sha256, checks the downloaded `hc --version`, and installs it in the layout
+  of the official installer: `~/.local/bin/herdr-core` and the `hc` link on
+  Unix, `%LOCALAPPDATA%\Programs\herdr-core` on Windows x64. Below the floor,
+  it runs `hc update --version <floor>` and reads the version back. On
+  Windows, the step adds the directory to the user PATH (`HKCU\Environment`
+  `Path`) when no entry matches, without `setx`. On Unix, it prints the PATH
+  hint, edits no shell profile, and puts the directory first on the PATH of
+  the later steps of the run. An existing install file is never overwritten:
+  the refusal says `add <dir> to PATH, then rerun repo-harness
+  <install|update>`. A checksum mismatch, a failed download, an incomplete
+  archive or a platform with no pin target installs nothing. `uninstall`
+  keeps `hc`. The pin adds the `linux-aarch64` and `windows-x86_64` assets.
+  `setup check` names the repair command for `runtime.herdr_core`. (#1724)
+- `repo-harness fleet remove <repo-ids...> [--apply --expected-revision
+  <digest>]` removes the registry rows of named repositories, also when their
+  paths are present. It uses the prune writer, the preview, the revision fence
+  and the mutation lock. An unknown ID removes nothing. `fleet prune` is
+  unchanged. (#1706)
+- `seats argv <seat> --repository-id <id>` labels its own terminal before the
+  agent starts, through the new `seats label` command. A label failure
+  (`terminal_unknown`, `label_failed`) starts no agent. The Board names the
+  missing seat labels and the start command for `no_seat_terminals`. (#1707)
+- Operator Skills page: the state of each skill per host (claude, codex, pi):
+  installed, missing or drifted. The page lists the other skills in each host
+  skill root, read only, and shows one copyable `repo-harness update` when a
+  skill needs attention. (#1714)
+- Operator architecture page: the Sequence view (#1734) and the History view
+  (#1735) per the design canvas. Both read the map route and decoder of
+  contract v7.
+- Worktree cleanup: the production archive ports commit, push and open a
+  Draft PR for an archive, and read back each write before the next stage. So
+  a removal runs only after a read-back archive and its Draft PR. (#1726) The
+  plan review page authorizes each non-green worktree per item; each approval
+  carries the two digests that the item shows. (#1727)
+- A TLA+ spec of the ship closeout claim, `specs/tla/ShipCloseoutClaim.tla`,
+  and the local TLC runner `scripts/contract-closeout-tla.sh`. The runner
+  pins tla2tools 1.7.4 by SHA-256 and downloads nothing. (#1736)
+- The archimap skill has a behavior (statechart) board. `measure.ts` reads
+  `extensions.behaviorSpecs` and fails closed on a bad entry. The first board
+  draws `ship-closeout-claim`. (#1739)
 
 ### Changed
 
@@ -13,12 +124,47 @@ All notable changes to this skill are documented here.
   the hc client code of the package, so each install reads the floor of its
   own code. The repository policy key `external_tooling.herdr_core` is
   retired: `init` and adoption no longer seed it, and they delete it and
-  report it in the retired policy keys. No reader reads the old key.
+  report it in the retired policy keys. No reader reads the old key. (#1712)
 - `hc_pin_unavailable` (Bots page and runtime overlay), the Board reason
   `pin_unavailable` and the `configuration-error` status of
-  `runtime.herdr_core` are removed. A missing or malformed pin file fails at
-  module load. `runtime.herdr_core.min_version_source` is now
-  `package:src/core/operator/herdr-core-pin.json`.
+  `runtime.herdr_core` are removed. A missing pin file, or a pin file that is
+  not valid JSON, fails at module load. A `min_version` that is not `x.y.z`
+  loads, and the first version check then fails closed with
+  `hc_version_invalid`. `runtime.herdr_core.min_version_source` is now
+  `package:src/core/operator/herdr-core-pin.json`. (#1712)
+- The architecture map wire contract goes from
+  `repo-harness.architecture-map.v6` to v7 in the producer, the decoder, the
+  readers and the fixture. v7 adds `head_ref`, `archctx_version`,
+  `nodes[].domain`, `nodes[].namespace`, `nodes[].mount`,
+  `relations[].protocol`, the `changes.commits` rows and the `anchors`
+  findings rows. There is no v6 alias and no second decoder. (#1729)
+- archctx and CodeGraph resolve by module resolution from the package, not by
+  a walk to the first `package.json` named `repo-harness`. A missing package
+  is `RH_ARCHCTX_PACKAGE_MISSING` with action `update-repo-harness`. The
+  adoption notice names `references/worker.md` relative to the package.
+  (#1711)
+- The Operator architecture header follows the design. The canvas top is at
+  159 px at 1920x958, and the canvas fills the viewport below the lens row.
+  (#1715)
+- The Operator web strings move from `src/operator-web/i18n.ts` to one module
+  per page under `src/operator-web/i18n/`. (#1708)
+
+### Fixed
+
+- The Operator empty-state command is now `repo-harness init --dry-run`, and
+  the next action names `repo-harness init`. Before, it was
+  `repo-harness adopt --help`, which printed the root help, because the CLI
+  has no top-level `adopt` command. (#1710)
+
+### Documentation
+
+- The README is a landing page: what repo-harness does, how to start, and how
+  a reviewer reads agent work. The Reverse Skill row is removed. (#1709)
+- The issue-flow coordinator reads `repo-harness quota --json` before each
+  dispatch wave and records the reading in its claim. (#1732)
+- The 0.26.1 publication values are in its release record. (#1704)
+- The generated architecture outputs are refreshed for `main@ccdc0587af67`.
+  (#1600)
 
 ## [0.26.1] - 2026-11-04
 
