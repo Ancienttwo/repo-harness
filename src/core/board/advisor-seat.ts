@@ -36,13 +36,14 @@ export type AdvisorSeatCliFailure = typeof ADVISOR_SEAT_CLI_FAILURES[number];
 
 /**
  * Every refusal code of the operator advisor routes. The boss command route
- * adds `boss_cooldown` and `advisor_turn_running`; both stop before a send.
+ * adds `boss_cooldown`, `advisor_turn_running` and `advisor_turn_unknown`;
+ * each stops before a send.
  */
 export const ADVISOR_SEAT_FAILURES = [
   ...ADVISOR_SEAT_CLI_FAILURES,
   'repository_read_only', 'registry_unavailable', 'repository_not_found', 'github_unavailable',
   'advisor_busy', 'advisor_timeout', 'advisor_unavailable', 'advisor_invalid', 'invalid_request',
-  'boss_cooldown', 'advisor_turn_running',
+  'boss_cooldown', 'advisor_turn_running', 'advisor_turn_unknown',
 ] as const;
 export type AdvisorSeatFailure = typeof ADVISOR_SEAT_FAILURES[number];
 
@@ -53,7 +54,7 @@ export type AdvisorSeatFailure = typeof ADVISOR_SEAT_FAILURES[number];
 export const ADVISOR_SEAT_NOT_SENT: ReadonlySet<AdvisorSeatFailure> = new Set<AdvisorSeatFailure>([
   'text_invalid', 'hc_unavailable', 'advisor_seat_absent', 'advisor_seat_ambiguous',
   'repository_read_only', 'repository_not_found', 'registry_unavailable', 'github_unavailable', 'advisor_busy',
-  'boss_cooldown', 'advisor_turn_running',
+  'boss_cooldown', 'advisor_turn_running', 'advisor_turn_unknown',
 ]);
 
 /**
@@ -83,8 +84,19 @@ export const ADVISOR_BOSS_COMMAND_TABLE: Readonly<Record<AdvisorBossCommand, { r
   },
 });
 
-/** The hc status word of a seat whose turn runs; the read-back carries it as `status`. */
-export const ADVISOR_TURN_RUNNING_STATUS = 'working' as const;
+/**
+ * The advisor turn as the read-back `status` (the hc status word) proves it.
+ * A boss command goes only to a seat whose turn is over: an allow list, so a
+ * missing or new status word never sends. With `blocked` the text and Enter
+ * could answer a pending prompt.
+ */
+const ADVISOR_TURN_OVER: readonly string[] = ['idle', 'done'];
+const ADVISOR_TURN_RUNNING: readonly string[] = ['working', 'blocked'];
+
+export function advisorTurnState(status: string | null): 'over' | 'running' | 'unknown' {
+  if (status !== null && ADVISOR_TURN_OVER.includes(status)) return 'over';
+  return status !== null && ADVISOR_TURN_RUNNING.includes(status) ? 'running' : 'unknown';
+}
 
 export function advisorBossCommandText(command: AdvisorBossCommand, parent: number): string {
   return ADVISOR_BOSS_COMMAND_TABLE[command].text.replace('{parent}', String(parent));

@@ -1,5 +1,5 @@
 import {
-  ADVISOR_SEAT_NOT_SENT, ADVISOR_TURN_RUNNING_STATUS, advisorBossCommandText, advisorBossCooldownSeconds,
+  ADVISOR_SEAT_NOT_SENT, advisorBossCommandText, advisorBossCooldownSeconds, advisorTurnState,
   decodeAdvisorBossCommandRequest, decodeAdvisorSeatMessageRequest, decodeAdvisorSeatSend, decodeAdvisorSeatSendFailure, decodeAdvisorSeatTranscript,
   type AdvisorSeatFailure, type AdvisorSeatMessageRequestV1, type AdvisorSeatRequestV1, type AdvisorSeatSendOutcomeV1,
 } from '../../core/board/advisor-seat';
@@ -41,6 +41,7 @@ export const ADVISOR_SEAT_REFUSALS: Readonly<Record<AdvisorSeatFailure, { readon
   advisor_timeout: { status: 504, message: 'The board advisor command did not finish in time.', next_action: RETRY },
   boss_cooldown: { status: 409, message: 'This boss command was sent for this parent inside its cooldown.', next_action: 'Wait retry_after_seconds, then send the command with a new request_id.' },
   advisor_turn_running: { status: 409, message: 'The advisor seat is running a turn.', next_action: 'Wait until the advisor seat finishes its turn, then send the command with a new request_id.' },
+  advisor_turn_unknown: { status: 409, message: 'The advisor seat reports no known turn status.', next_action: 'Wait for the advisor seat to report a status, then send the command with a new request_id.' },
 });
 
 /**
@@ -159,7 +160,8 @@ function earlierSends(auditEnv: NodeJS.ProcessEnv | undefined, binding: string):
 /**
  * The boss commands (#1757, owner M71). Before the send: the cooldown of the
  * command for the parent from the audit log, then the #1756 read-back status
- * of the seat. Each refusal is recorded and proves nothing was sent.
+ * of the seat, which must show a finished turn. Each refusal is recorded and
+ * proves nothing was sent.
  */
 export function advisorBossCommandWriteRoute(input: {
   readonly admit: BoardCliAdmission;
@@ -214,7 +216,8 @@ export function advisorBossCommandWriteRoute(input: {
             let transcript;
             try { transcript = decodeAdvisorSeatTranscript(value); } catch { return failedSend(request, 'advisor_invalid', null, 'not_sent'); }
             if (transcript.parent !== request.parent) return failedSend(request, 'advisor_invalid', transcript.terminal, 'not_sent');
-            if (transcript.status === ADVISOR_TURN_RUNNING_STATUS) return failedSend(request, 'advisor_turn_running', transcript.terminal);
+            const turn = advisorTurnState(transcript.status);
+            if (turn !== 'over') return failedSend(request, turn === 'running' ? 'advisor_turn_running' : 'advisor_turn_unknown', transcript.terminal);
             const text = advisorBossCommandText(request.command, request.parent);
             return sendText(send, input.env, { repository_id: request.repository_id, parent: request.parent, text }, signal);
           });

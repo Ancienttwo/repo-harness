@@ -739,7 +739,7 @@ describe('operator serve command and HTTP boundary', () => {
     const home = mkdtempSync(join(tmpdir(), 'repo-harness-boss-home-'));
     const env = { REPO_HARNESS_HOME: home };
     const sent = (parent: number) => ({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1186405141, parent, terminal: 't9', started: true, turn: 2 });
-    const transcript = (parent: number, status: string) => ({ protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1186405141, parent,
+    const transcript = (parent: number, status: string | null) => ({ protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1186405141, parent,
       terminal: 't9', status, status_kind: null, turn: 2, complete: true, why: null, lines: [] });
     let read: (input: BoardReadInput) => Promise<unknown> = async input => transcript(input.parent, 'idle');
     let send: (input: BoardReadInput & { text: string }) => Promise<unknown> = async input => sent(input.parent);
@@ -776,10 +776,19 @@ describe('operator serve command and HTTP boundary', () => {
       }
       expect(audit().find(record => record.status === 409)).toMatchObject({ phase: 'result', status: 409, body: { advisor_seat: { repository_id: 'repo-a', parent: 1503, terminal: null, code: 'boss_cooldown', delivery: 'not_sent' } } });
 
-      // A running turn refuses the command before the send; that refusal does not start the cooldown.
-      read = async input => transcript(input.parent, 'working');
-      expect(await boss('mine', 1503)).toEqual([409, 'advisor_turn_running', null, ['read 1503']]);
-      expect(audit().at(-1).body.advisor_seat).toEqual({ repository_id: 'repo-a', parent: 1503, terminal: 't9', code: 'advisor_turn_running', delivery: 'not_sent' });
+      // Only a finished turn takes a boss command. A running or unknown turn is refused before the send and starts no cooldown.
+      const idle: typeof read = async input => transcript(input.parent, 'idle');
+      for (const [row, [status, code]] of ([['idle', 'ok'], ['done', 'ok'], ['working', 'advisor_turn_running'], ['blocked', 'advisor_turn_running'],
+        [null, 'advisor_turn_unknown'], ['thinking', 'advisor_turn_unknown']] as const).entries()) {
+        const parent = 1600 + row;
+        const sent = [`read ${parent}`, `send ${parent} 【排雷】`];
+        read = async input => transcript(input.parent, status);
+        expect([status, await boss('mine', parent)]).toEqual([status, code === 'ok' ? [200, 'ok', null, sent] : [409, code, null, [`read ${parent}`]]]);
+        if (code === 'ok') continue;
+        expect(audit().at(-1).body.advisor_seat).toEqual({ repository_id: 'repo-a', parent, terminal: 't9', code, delivery: 'not_sent' });
+        read = idle;
+        expect([status, await boss('mine', parent)]).toEqual([status, [200, 'ok', null, sent]]);
+      }
       // Every failure of the read-back comes before the send, so it keeps its own code and does not start the cooldown.
       for (const [failure, status] of [['advisor_seat_absent', 409], ['advisor_read_failed', 502], ['advisor_timeout', 504], ['advisor_unavailable', 503]] as const) {
         read = async () => { throw new BoardReadError(failure); };
