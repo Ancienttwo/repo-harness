@@ -181,7 +181,34 @@ repo-harness install --state | jq -r '"protocol=\(.protocol) selection=\(.select
 
 ## Acceptance environment
 
-ACCEPTANCE_ENVIRONMENT_PENDING
+- macOS 26.5 arm64 (Darwin 25.5.0), Bun 1.4.3, Node 24.18.0, npm 10.9.8,
+  TypeScript 7.0.2.
+- `bun install --frozen-lockfile` (no changes) in the release worktree on
+  `chore/release-0.26.2`.
+- Guard: `hc`, `herdr-app` and `herdr` shims that log the call and exit 97
+  are first on PATH for every check. PATH holds only explicit directories
+  (guard, `node_modules/.bin`, a directory with links to the `bun`, `node`,
+  `npm` and `npx` binaries only, `/opt/homebrew/bin`, `/usr/bin`, `/bin`,
+  `/usr/sbin`, `/sbin`), not `~/.local/bin` and not `~/.bun/bin`. HOME is a
+  scratch directory. `HC_*`, `HERDR_ENV`, `CLAUDECODE`, `CLAUDE_CODE_*` and
+  `REPO_HARNESS_SOURCE_ROOT` are removed. No run called the owner's `hc`. No
+  check started an archctx process from this worktree.
+- Subject: commit `2efe8675c` (base `0996046c7` plus the version, changelog
+  and record edits). The head did not move during the run, and the worktree
+  stayed clean. The next commit changes only this section.
+- `bun run check:type`: exit 0.
+- `bun run check:release`: exit 0 in 97 s. `[helpers] projection OK`;
+  expensive release lane `tests/harness-benchmark-matrix.test.ts` 31 pass,
+  0 fail; `[tarball-smoke] OK: repo-harness-0.26.2.tgz installs, serves the
+  packaged Operator, and packaged CLI bins start.`; `[release] OK: npm
+  package gate passed.` Guard calls: 2 (`hc server status --json`).
+- Prepublish gate, read-only: `bash scripts/check-npm-release.sh
+  --prepublish`: exit 0, `[release] OK: prepublish fast gate passed`. It runs
+  `check:helpers` and an `npm view` lookup that proves 0.26.2 is
+  unpublished; it does not publish.
+- An earlier `check:release` on the first base failed 1 of 31 tests with
+  `benchmark source commit changed after isolated install one`, because a
+  commit landed during the run. That run is not evidence for this subject.
 
 ### Advisor-run evidence
 
