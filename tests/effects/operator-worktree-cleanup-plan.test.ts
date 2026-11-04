@@ -120,14 +120,15 @@ describe('cleanup plan contract and execution boundary', () => {
   test('the plan lists the archivable loss paths, and the archive validator accepts exactly them', () => {
     const o = observation(), file = o.loss!.files[0]!;
     const directory = (path: string) => ({ ...file, path, kind: 'directory' as const, sha256: null, git_oid: null });
-    const loss = { ...o.loss!, ignored: ['.env', 'cache/'], changed_paths: ['docs/guide.md', 'docs/removed.md', 'docs/staged.md', 'empty'],
+    const loss = { ...o.loss!, ignored: ['.env', 'cache/'], changed_paths: ['docs/guide.md', 'docs/link.md', 'docs/removed.md', 'docs/staged.md', 'empty'],
       index: [{ path: 'docs/staged.md', mode: '100644', oid: 'f'.repeat(40), stage: 0 }],
-      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, directory('cache'), file, directory('empty')] };
+      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, directory('cache'), file, { ...file, path: 'docs/link.md', kind: 'symlink' as const }, directory('empty')] };
     const plan = (paths: string[]) => createCleanupPlan(SID, [{ observation: { ...o, loss }, advice: { ...advice(), archive: { git: null, private: { directory: 'fixture-repo', paths } } } }]);
-    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: ['docs/guide.md', 'docs/removed.md', 'docs/staged.md', 'empty'], archivable: ['.env', 'docs/guide.md', 'docs/staged.md'] });
-    // Changed file, ignored file, index-only version: bytes exist. Staged deletion, empty or ignored directory: no bytes. Unchanged tracked file: nothing lost.
+    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: ['docs/guide.md', 'docs/link.md', 'docs/removed.md', 'docs/staged.md', 'empty'], archivable: ['.env', 'docs/guide.md', 'docs/staged.md'] });
+    // Changed file, ignored file, index-only version: bytes exist. Staged deletion, empty or ignored directory: no bytes.
+    // Symlink: no archive storage takes it. Unchanged tracked file: nothing lost.
     for (const [path, accepted] of [['docs/guide.md', true], ['.env', true], ['docs/staged.md', true],
-      ['docs/removed.md', false], ['empty', false], ['cache', false], ['README.md', false]] as const) {
+      ['docs/removed.md', false], ['empty', false], ['cache', false], ['docs/link.md', false], ['README.md', false]] as const) {
       if (accepted) expect(plan([path]).items[0]!.advice.archive.private!.paths).toEqual([path]);
       else expect(() => plan([path])).toThrow('archive_paths_invalid');
     }

@@ -26,12 +26,13 @@ export function cleanupLossSha256(observed: CleanupObservation): string | null {
 }
 
 /**
- * Loss paths with observed bytes or an index version. A staged deletion and an
- * empty directory have neither; an unchanged tracked file is not a loss.
+ * Loss paths with regular-file bytes or an index version. A staged deletion and
+ * an empty directory have neither, no archive storage takes a symlink, and an
+ * unchanged tracked file is not a loss.
  */
 function archivablePaths(loss: CleanupLossEvidence): string[] {
   const lost = new Set([...loss.changed_paths, ...loss.ignored]);
-  const observed = [...loss.files.filter(file => file.kind !== 'directory' && file.path !== '.git'), ...loss.index].map(file => file.path);
+  const observed = [...loss.files.filter(file => file.kind === 'file' && file.path !== '.git'), ...loss.index].map(file => file.path);
   return [...new Set(observed.filter(path => lost.has(path)))].sort();
 }
 
