@@ -8,8 +8,9 @@ import {
   type WorktreeCleanupResult,
 } from '../core/operator/worktree-cleanup';
 import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../core/operator/worktrees';
-import { decodeCleanupExecutionResult, decodeCleanupPlan } from '../core/operator/worktree-cleanup-plan';
-import { decodeCleanupInvestigationJob, decodeCleanupInvestigationStatus } from '../core/operator/worktree-cleanup-investigation';
+import {
+  decodeCleanupExecutionResult, decodeCleanupInvestigationJob, decodeCleanupInvestigationStatus, decodeCleanupPlan,
+} from '../core/operator/worktree-cleanup-plan';
 import type { CleanupPlanFailure, CleanupPlanPorts } from './CleanupPlanReview';
 import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';

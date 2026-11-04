@@ -2,8 +2,10 @@ import { expect, test } from 'bun:test';
 import { execFileSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { decodeAuthorizedCleanupRequest, cleanupSelection, type CleanupAdvice, type CleanupArchivePlan, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
-import { CLEANUP_INVESTIGATION_MANIFEST, WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS } from '../../src/core/operator/worktree-cleanup-investigation';
+import {
+  CLEANUP_INVESTIGATION_MANIFEST, cleanupSelection, decodeAuthorizedCleanupRequest, WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS,
+  type CleanupAdvice, type CleanupArchivePlan, type CleanupPlan,
+} from '../../src/core/operator/worktree-cleanup-plan';
 import type { TaskRequest } from '../../src/core/review/runner-port';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
 import { worktreeId } from '../../src/effects/git/worktree-record';

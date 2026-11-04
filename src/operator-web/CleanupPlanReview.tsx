@@ -3,9 +3,8 @@ import { Banner, Button } from '@cloudflare/kumo';
 import {
   cleanupEligible,
   type AuthorizedCleanupRequest, type CleanupAdvice, type CleanupChoice, type CleanupExecutionItem, type CleanupExecutionResult,
-  type CleanupPlan, type CleanupPlanItem,
+  type CleanupInvestigationStatus, type CleanupPlan, type CleanupPlanItem,
 } from '../core/operator/worktree-cleanup-plan';
-import type { CleanupInvestigationStatus } from '../core/operator/worktree-cleanup-investigation';
 import type { WorktreeView } from '../core/operator/worktrees';
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { isOperatorMessageKey, type OperatorTranslate } from './i18n';

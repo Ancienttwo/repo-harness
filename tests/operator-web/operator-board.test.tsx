@@ -36,9 +36,8 @@ import {
   INBOX_TASK,
 } from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
-import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
+import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupInvestigationStatus, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
 import { CLEANUP_INVESTIGATION_POLL_MS, type AuthorizedCleanupPost, type CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
-import type { CleanupInvestigationStatus } from '../../src/core/operator/worktree-cleanup-investigation';
 import { cleanupPlanPorts } from '../../src/operator-web/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';

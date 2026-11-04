@@ -5,12 +5,11 @@
 import { decodeWorktreeCleanupResult } from '../../core/operator/worktree-cleanup';
 import {
   cleanupPlanDigestInput, decodeAuthorizedCleanupRequest, decodeCleanupChoices, decodeCleanupExecutionResult, decodeCleanupPlan,
-  type CleanupExecutionItem, type CleanupLossSummary, type CleanupPlan, type CleanupPlanItem, type CleanupReason,
+  WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS, type CleanupExecutionItem, type CleanupLossSummary, type CleanupPlan, type CleanupPlanItem, type CleanupReason,
 } from '../../core/operator/worktree-cleanup-plan';
 import { unavailableWorktrees, type WorktreeLifecycle, type WorktreeView, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import type { WorktreeCleanupWriter } from '../worktrees';
 import type { CleanupPlanPorts } from '../CleanupPlanReview';
-import { WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS } from '../../core/operator/worktree-cleanup-investigation';
 import { HARNESS_ID } from './dev-activity';
 
 const SITE_ID = 'repo_1f2e3d4c5b6a7980';

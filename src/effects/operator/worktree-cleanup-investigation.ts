@@ -11,9 +11,8 @@ import { decodeQuotaReport } from '../../core/operator/quota';
 import type { ProcessProof, ReviewHostSpec, TaskRequest } from '../../core/review/runner-port';
 import {
   CLEANUP_INVESTIGATION_MANIFEST, cleanupInvestigationInstructions, cleanupInvestigationManifest, decodeCleanupInvestigationResult,
-  WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS, type CleanupInvestigationFailure, type CleanupInvestigationJob, type CleanupInvestigationStatus,
-} from '../../core/operator/worktree-cleanup-investigation';
-import type { CleanupAdvice, CleanupPlan } from '../../core/operator/worktree-cleanup-plan';
+  WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS, type CleanupAdvice, type CleanupInvestigationFailure, type CleanupInvestigationJob, type CleanupInvestigationStatus, type CleanupPlan,
+} from '../../core/operator/worktree-cleanup-plan';
 import { resolveGitCommonDirectory } from '../git/common-directory';
 import { configuredGitBinary, gitExecFileSync, withoutRepositorySelectingGitEnv } from '../git/runner';
 import { reviewSessionOptions, taskReviewRunner } from '../review-runner/task-review-runner';

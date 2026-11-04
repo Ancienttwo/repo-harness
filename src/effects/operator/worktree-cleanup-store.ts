@@ -2,9 +2,10 @@
 import { randomUUID } from 'node:crypto';
 import { closeSync, constants, lstatSync, mkdirSync, openSync, readFileSync, renameSync, unlinkSync } from 'node:fs';
 import { join } from 'node:path';
-import { decodeCleanupInvestigationJob, type CleanupInvestigationJob } from '../../core/operator/worktree-cleanup-investigation';
 import type { CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
-import { decodeCleanupPlan, type CleanupPlan, type CleanupPlanItem } from '../../core/operator/worktree-cleanup-plan';
+import {
+  decodeCleanupInvestigationJob, decodeCleanupPlan, type CleanupInvestigationJob, type CleanupPlan, type CleanupPlanItem,
+} from '../../core/operator/worktree-cleanup-plan';
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
 import { cleanupLossSha256 } from './worktree-cleanup-plan';
