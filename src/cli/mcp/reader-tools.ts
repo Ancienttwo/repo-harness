@@ -1,8 +1,6 @@
 import { createHash } from 'crypto';
 import { closeSync, lstatSync, openSync, readFileSync, readSync, readdirSync, statSync } from 'fs';
-import { createReadStream } from 'fs';
 import { opendir } from 'fs/promises';
-import { createInterface } from 'readline';
 import { join } from 'path';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
 import { redactMcpText } from './redaction';
@@ -373,58 +371,55 @@ async function readText(ctx: ReaderToolContext, args: Record<string, unknown>): 
   const endLine = Math.min(requestedEnd, startLine + MAX_READ_LINES - 1);
   const maxBytes = numberArg(args.max_bytes, DEFAULT_READ_BYTES, 1024, HARD_READ_BYTES);
   const lineNumbers = booleanArg(args.line_numbers, true);
+  const scanLimit = ctx.policy.maxFileBytes;
+  const size = statSync(target.absolutePath).size;
+  if (size > scanLimit) {
+    return errorResult('FILE_TOO_LARGE', `file exceeds the ${scanLimit} byte redaction scan limit`, { size, scan_limit_bytes: scanLimit });
+  }
+  // Redact the whole file before the range cut: a rule such as private_key
+  // needs both markers in one string. Redaction keeps line breaks, so the
+  // line numbers below are source line numbers.
+  const redacted = redactMcpText(readFileSync(target.absolutePath, 'utf-8'));
+  const lines = redacted.text.split(/\r\n|\r|\n/);
+  if (lines.at(-1) === '') lines.pop();
   const selected: string[] = [];
-  let currentLine = 0;
   let bytesReturned = 0;
-  let hasMore = false;
+  let hasMore = lines.length > endLine;
   let truncated = false;
 
-  const stream = createReadStream(target.absolutePath, { encoding: 'utf-8' });
-  const reader = createInterface({ input: stream, crlfDelay: Infinity });
-  try {
-    for await (const line of reader) {
-      currentLine += 1;
-      if (currentLine < startLine) continue;
-      if (currentLine > endLine) {
-        hasMore = true;
-        break;
+  for (let currentLine = startLine; currentLine <= Math.min(endLine, lines.length); currentLine += 1) {
+    const line = lines[currentLine - 1];
+    const rendered = lineNumbers ? `${currentLine}: ${line}` : line;
+    const separatorBytes = selected.length > 0 ? Buffer.byteLength('\n') : 0;
+    const renderedBytes = Buffer.byteLength(rendered);
+    if (bytesReturned + separatorBytes + renderedBytes > maxBytes) {
+      const remainingBytes = maxBytes - bytesReturned - separatorBytes;
+      if (remainingBytes > 0) {
+        const truncatedLine = truncateUtf8(rendered, remainingBytes);
+        selected.push(truncatedLine);
+        bytesReturned += separatorBytes + Buffer.byteLength(truncatedLine);
       }
-      const rendered = lineNumbers ? `${currentLine}: ${line}` : line;
-      const separatorBytes = selected.length > 0 ? Buffer.byteLength('\n') : 0;
-      const renderedBytes = Buffer.byteLength(rendered);
-      if (bytesReturned + separatorBytes + renderedBytes > maxBytes) {
-        const remainingBytes = maxBytes - bytesReturned - separatorBytes;
-        if (remainingBytes > 0) {
-          const truncatedLine = truncateUtf8(rendered, remainingBytes);
-          selected.push(truncatedLine);
-          bytesReturned += separatorBytes + Buffer.byteLength(truncatedLine);
-        }
-        truncated = true;
-        hasMore = true;
-        break;
-      }
-      selected.push(rendered);
-      bytesReturned += separatorBytes + renderedBytes;
+      truncated = true;
+      hasMore = true;
+      break;
     }
-  } finally {
-    reader.close();
-    stream.destroy();
+    selected.push(rendered);
+    bytesReturned += separatorBytes + renderedBytes;
   }
   const text = selected.join('\n');
-  const redacted = redactMcpText(text);
   const actualEndLine = selected.length > 0 ? startLine + selected.length - 1 : startLine - 1;
   audit(ctx, 'read_text', 'ok', args, target.relativePath);
   return textResult({
     workspace_id: target.workspace.id,
     path: target.relativePath,
-    text: redacted.text,
+    text,
     start_line: startLine,
     end_line: actualEndLine,
     line_numbers: lineNumbers,
-    bytes_returned: Buffer.byteLength(redacted.text),
+    bytes_returned: bytesReturned,
     has_more: hasMore,
     next_start_line: hasMore ? actualEndLine + 1 : undefined,
-    content_sha256: sha256(Buffer.from(text, 'utf-8')),
+    content_sha256: sha256(text),
     redactions: redacted.redactions,
     truncated,
   });
