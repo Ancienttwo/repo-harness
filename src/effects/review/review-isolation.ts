@@ -162,10 +162,11 @@ export function removeCopiedAuth(output: string): { status: 'removed' | 'absent'
 /**
  * The cleanup investigation (#1721) adds two rules to the review profile: the
  * agent cannot read the target worktrees and their Git directories, so it
- * judges only from the server manifest (M69), and it cannot open TCP to
- * localhost, so it cannot reach the operator console routes (M74). Other
- * callers leave the field out and get the review profile unchanged. The host
- * derives the policy from these same paths, so the field travels in the host spec.
+ * judges only from the server manifest (M69), and it cannot open IPv4 TCP to
+ * localhost or any IPv6 TCP, so it cannot reach the operator console routes
+ * (M74, decision 6636485306). Other callers leave the field out and get the
+ * review profile unchanged. The host derives the policy from these same paths,
+ * so the field travels in the host spec.
  */
 export type CleanupReviewIsolationPaths = ReviewIsolationPaths & { readonly cleanup?: { readonly readDenied: readonly string[] } };
 
@@ -194,9 +195,10 @@ export function reviewIsolationPolicy(paths: CleanupReviewIsolationPaths, platfo
   }
   // Seatbelt matches resolved paths, so a link would leave its target readable.
   if (readDenied.some(path => realpathSync(path) !== path)) throw new Error('OAR_REVIEW_PROTECTED_PATH_UNSAFE');
-  // Seatbelt "localhost" covers 127.0.0.1 and ::1; remote hosts stay reachable.
+  // Seatbelt "localhost" also matches this host's own addresses. A tcp "localhost"
+  // rule lets ::ffff:127.0.0.1 through, so IPv6 TCP is denied whole; remote IPv4 stays open.
   const cleanupPolicy = paths.cleanup === undefined ? ''
-    : `${readDenied.map(path => `(deny file-read* (subpath ${JSON.stringify(path)}))\n`).join('')}(deny network-outbound (remote tcp "localhost:*"))\n`;
+    : `${readDenied.map(path => `(deny file-read* (subpath ${JSON.stringify(path)}))\n`).join('')}(deny network-outbound (remote tcp4 "localhost:*"))\n(deny network-outbound (remote tcp6 "*:*"))\n`;
   if (platform !== 'darwin') throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM');
   // Output alone is writable; every real CODEX_HOME state grant is retired.
   // Definitions, trust, settings/hooks and credentials stay denied even inside

@@ -994,7 +994,7 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   // The policy text is the same on every host; only its enforcement needs macOS.
   expect(reviewIsolationPolicy(spec, 'darwin')).not.toMatch(/file-read|remote tcp/u);
   const target = realpathSync(subject);
-  expect(reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [target] } }, 'darwin')).toBe(`${reviewIsolationPolicy(spec, 'darwin')}(deny file-read* (subpath ${JSON.stringify(target)}))\n(deny network-outbound (remote tcp "localhost:*"))\n`);
+  expect(reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [target] } }, 'darwin')).toBe(`${reviewIsolationPolicy(spec, 'darwin')}(deny file-read* (subpath ${JSON.stringify(target)}))\n(deny network-outbound (remote tcp4 "localhost:*"))\n(deny network-outbound (remote tcp6 "*:*"))\n`);
   expect(() => reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [root] } })).toThrow('OVERLAPS_AUTHORITY');
   const subjectLink = join(root, 'subject-link'); symlinkSync(subject, subjectLink);
   expect(() => reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [subjectLink] } })).toThrow('PROTECTED_PATH_UNSAFE');

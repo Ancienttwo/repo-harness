@@ -349,7 +349,7 @@ darwinRouteTest('zero-model probes through the launcher: the fake codex cannot r
   // Listeners make a refused connect come from the profile, not from a closed port.
   const v4 = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
   const v6 = Bun.listen({ hostname: '::1', port: 0, socket: { data() {} } });
-  for (const [host, port] of [['127.0.0.1', v4.port], ['::1', v6.port]] as const) {
+  for (const [host, port] of [['127.0.0.1', v4.port], ['::1', v6.port], ['::ffff:127.0.0.1', v4.port]] as const) {
     expect(spawnSync('/usr/bin/nc', ['-z', '-G', '2', host, String(port)]).status).toBe(0);
   }
   // Each line names one access and whether the OS allowed it.
@@ -366,6 +366,9 @@ probe write-output /bin/sh -c "echo written > '${run.output}/probe.txt'"
 probe read-manifest-dir /bin/ls '${run.output}'
 probe connect-localhost-v4 /usr/bin/nc -z -G 2 127.0.0.1 ${v4.port}
 probe connect-localhost-v6 /usr/bin/nc -z -G 2 ::1 ${v6.port}
+probe connect-mapped-v4 /usr/bin/nc -z -G 2 ::ffff:127.0.0.1 ${v4.port}
+# A TEST-NET address has no listener and may have no route; only the profile answers EPERM.
+if /usr/bin/nc -v -z -G 1 192.0.2.1 9 2>&1 | /usr/bin/grep -q 'Operation not permitted'; then echo 'connect-remote-v4 denied'; else echo 'connect-remote-v4 not-denied'; fi
 `);
   chmodSync(join(bin, 'codex'), 0o755);
   const vendor = Bun.which('codex', { PATH: bin })!;
@@ -375,7 +378,7 @@ probe connect-localhost-v6 /usr/bin/nc -z -G 2 ::1 ${v6.port}
   v4.stop(true); v6.stop(true);
   expect(probed).toEqual(['read-target-file denied', 'list-target denied', 'read-target-git-dir denied', 'read-common-git-dir denied', 'write-target denied',
     'write-primary denied', 'write-outside denied', 'write-output allowed', 'read-manifest-dir allowed',
-    'connect-localhost-v4 denied', 'connect-localhost-v6 denied']);
+    'connect-localhost-v4 denied', 'connect-localhost-v6 denied', 'connect-mapped-v4 denied', 'connect-remote-v4 not-denied']);
   expect(readFileSync(join(f.tree, 'tracked.txt'), 'utf8')).toBe('reviewed change\n');
   expect(readFileSync(join(f.repo, 'tracked.txt'), 'utf8')).toBe('base\n');
   expect(existsSync(outside)).toBe(false);
