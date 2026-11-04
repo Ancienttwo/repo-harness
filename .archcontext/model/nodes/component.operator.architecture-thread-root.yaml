@@ -1,0 +1,16 @@
+schemaVersion: archcontext.node/v2
+id: component.operator.architecture-thread-root
+kind: component
+name: Operator Architecture Read Thread Root
+status: active
+parent: capability.runtime-harness.operator
+layer: cli
+summary: "Worker thread root of one operator architecture read: it registers the architecture providers when the install selection includes architecture, then runs the shared architecture read."
+responsibilities:
+  - Register the architecture providers for the recorded install selection before the read, because a worker thread has its own module instances.
+  - Run one architecture read from the task-read process and post its result or its public failure code.
+extensions:
+  harnessTier: composition
+source:
+  include:
+    - src/effects/operator/architecture-thread.ts

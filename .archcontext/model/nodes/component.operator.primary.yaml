@@ -37,6 +37,7 @@ source:
     - src/effects/operator/worktree-orphans-worker.ts
     - src/effects/operator/architecture-map-collector.ts
     - src/effects/operator/architecture-map-worker.ts
+    - src/effects/operator/architecture-thread.ts
   entrypoints:
     - id: entrypoint.operator.http-server
       path: src/effects/operator/server.ts
