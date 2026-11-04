@@ -34,11 +34,16 @@ export const ADVISOR_SEAT_TRANSCRIPT_KIND = 'repo-harness.advisor-seat-transcrip
 export const ADVISOR_SEAT_CLI_FAILURES = ['text_invalid', 'hc_unavailable', 'advisor_seat_absent', 'advisor_seat_ambiguous', 'advisor_send_unconfirmed', 'advisor_read_failed'] as const;
 export type AdvisorSeatCliFailure = typeof ADVISOR_SEAT_CLI_FAILURES[number];
 
-/** Every refusal code of the two operator routes. */
+/**
+ * Every refusal code of the operator advisor routes. The boss command route
+ * adds `boss_cooldown`, `advisor_turn_running` and `advisor_turn_unknown`;
+ * each stops before a send.
+ */
 export const ADVISOR_SEAT_FAILURES = [
   ...ADVISOR_SEAT_CLI_FAILURES,
   'repository_read_only', 'registry_unavailable', 'repository_not_found', 'github_unavailable',
   'advisor_busy', 'advisor_timeout', 'advisor_unavailable', 'advisor_invalid', 'invalid_request',
+  'boss_cooldown', 'advisor_turn_running', 'advisor_turn_unknown',
 ] as const;
 export type AdvisorSeatFailure = typeof ADVISOR_SEAT_FAILURES[number];
 
@@ -49,7 +54,59 @@ export type AdvisorSeatFailure = typeof ADVISOR_SEAT_FAILURES[number];
 export const ADVISOR_SEAT_NOT_SENT: ReadonlySet<AdvisorSeatFailure> = new Set<AdvisorSeatFailure>([
   'text_invalid', 'hc_unavailable', 'advisor_seat_absent', 'advisor_seat_ambiguous',
   'repository_read_only', 'repository_not_found', 'registry_unavailable', 'github_unavailable', 'advisor_busy',
+  'boss_cooldown', 'advisor_turn_running', 'advisor_turn_unknown',
 ]);
+
+/**
+ * The four boss commands (#1757, owner M71): preset texts to the advisor seat
+ * only. The client sends the id; the server fills `{parent}` and owns the
+ * cooldown. The ids are the `RH_CMD_KEYS` of the approved mockup (#1737).
+ */
+export const ADVISOR_BOSS_COMMANDS = ['rage', 'carrot', 'mine', 'valve'] as const;
+export type AdvisorBossCommand = typeof ADVISOR_BOSS_COMMANDS[number];
+
+export const ADVISOR_BOSS_COMMAND_TABLE: Readonly<Record<AdvisorBossCommand, { readonly cooldown_seconds: number; readonly text: string }>> = Object.freeze({
+  rage: {
+    cooldown_seconds: 30 * 60,
+    text: '【大棒】检查 parent #{parent} 下的执行席和审查席：列出超过时限、没有新提交、推送、评论或 CI 变化的席位，每个给一条处理建议（催一下、重派或停掉）。催一下的直接交给编排席；重派和停掉先回复我，等我确认。',
+  },
+  carrot: {
+    cooldown_seconds: 60 * 60,
+    text: '【萝卜】按当前席位上限和配额状态，为 parent #{parent} 提出下一批可并行派工的 issue、写入范围和顺序。只回复方案，等我批准后再交给编排席。',
+  },
+  mine: {
+    cooldown_seconds: 30 * 60,
+    text: '【排雷】对比 parent #{parent} 在跑和排队任务的写入范围，列出每个冲突（文件、涉及的 issue）和消除冲突的顺序。只回复结果，不派工。',
+  },
+  valve: {
+    cooldown_seconds: 60 * 60,
+    text: '【收放】按配额报告（`repo-harness quota`）和 parent #{parent} 的队列长度，提议新的执行席上限（例如 6 → 5）和理由。只回复方案，等我批准。',
+  },
+});
+
+/**
+ * The advisor turn as the read-back `status` (the hc status word) proves it.
+ * A boss command goes only to a seat whose turn is over: an allow list, so a
+ * missing or new status word never sends. With `blocked` the text and Enter
+ * could answer a pending prompt.
+ */
+const ADVISOR_TURN_OVER: readonly string[] = ['idle', 'done'];
+const ADVISOR_TURN_RUNNING: readonly string[] = ['working', 'blocked'];
+
+export function advisorTurnState(status: string | null): 'over' | 'running' | 'unknown' {
+  if (status !== null && ADVISOR_TURN_OVER.includes(status)) return 'over';
+  return status !== null && ADVISOR_TURN_RUNNING.includes(status) ? 'running' : 'unknown';
+}
+
+export function advisorBossCommandText(command: AdvisorBossCommand, parent: number): string {
+  return ADVISOR_BOSS_COMMAND_TABLE[command].text.replace('{parent}', String(parent));
+}
+
+/** The whole seconds left in the cooldown of one command after its counted sends; 0 when none is inside it. */
+export function advisorBossCooldownSeconds(command: AdvisorBossCommand, sentAtMs: readonly number[], nowMs: number): number {
+  const window = ADVISOR_BOSS_COMMAND_TABLE[command].cooldown_seconds * 1000;
+  return sentAtMs.reduce((remaining, at) => Math.max(remaining, Math.ceil((at + window - nowMs) / 1000)), 0);
+}
 
 export class AdvisorSeatError extends Error {
   constructor(
@@ -70,6 +127,10 @@ export interface AdvisorSeatRequestV1 {
 
 export interface AdvisorSeatMessageRequestV1 extends AdvisorSeatRequestV1 {
   readonly text: string;
+}
+
+export interface AdvisorBossCommandRequestV1 extends AdvisorSeatRequestV1 {
+  readonly command: AdvisorBossCommand;
 }
 
 interface AdvisorSeatTargetV1 {
@@ -156,13 +217,26 @@ export function decodeAdvisorSeatRequest(value: unknown): AdvisorSeatRequestV1 {
   return { repository_id: fields.repository_id, parent: decodeAdvisorParent(fields.parent) };
 }
 
-/** The POST body without `request_id`. The parent is a JSON number here. */
+/** The repository and the parent of a POST body; the parent is a JSON number there. */
+function decodeAdvisorPostScope(fields: Record<string, unknown>): AdvisorSeatRequestV1 {
+  if (!Number.isSafeInteger(fields.parent) || (fields.parent as number) < 1) throw new TypeError('parent is not an issue number');
+  return decodeAdvisorSeatRequest({ repository_id: fields.repository_id, parent: String(fields.parent) });
+}
+
+/** The POST body without `request_id`. */
 export function decodeAdvisorSeatMessageRequest(value: unknown): AdvisorSeatMessageRequestV1 {
   const fields = record(value, ['parent', 'repository_id', 'text']);
-  if (!Number.isSafeInteger(fields.parent) || (fields.parent as number) < 1) throw new TypeError('parent is not an issue number');
-  const { repository_id, parent } = decodeAdvisorSeatRequest({ repository_id: fields.repository_id, parent: String(fields.parent) });
+  const { repository_id, parent } = decodeAdvisorPostScope(fields);
   if (typeof fields.text !== 'string' || advisorTextProblem(fields.text) !== null) throw new TypeError('text is invalid');
   return { repository_id, parent, text: fields.text };
+}
+
+/** The boss command POST body without `request_id`: the command id, never a text. */
+export function decodeAdvisorBossCommandRequest(value: unknown): AdvisorBossCommandRequestV1 {
+  const fields = record(value, ['command', 'parent', 'repository_id']);
+  const { repository_id, parent } = decodeAdvisorPostScope(fields);
+  if (!(ADVISOR_BOSS_COMMANDS as readonly unknown[]).includes(fields.command)) throw new TypeError('command is not a boss command');
+  return { repository_id, parent, command: fields.command as AdvisorBossCommand };
 }
 
 function target(fields: Record<string, unknown>): AdvisorSeatTargetV1 {

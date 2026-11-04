@@ -53,7 +53,7 @@ export class OperatorWriteRefusal extends Error {
 
 const REQUEST_ID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u;
 const OPERATION = /^[a-z][a-z0-9_]{0,63}$/u;
-// A target is a logical name plus at most two ids (`advisor_seat:<repository_id>:<parent>`); the shape keeps paths out of the audit log.
+// A target is a logical name plus at most two ids, for example `advisor_seat:<repository_id>`; the shape keeps paths out of the audit log.
 const TARGET = /^[a-z][a-z0-9_]{0,63}(?::[A-Za-z0-9][A-Za-z0-9._-]{0,127}){0,2}$/u;
 // The directory lock waits with a blocking sleep. In-process contention is
 // refused before it, so this bound only covers a short CLI critical section.
@@ -71,7 +71,8 @@ export function parseOperatorRequestId(value: unknown): string | null {
   return typeof value === 'string' && REQUEST_ID.test(value) ? value : null;
 }
 
-function operatorWriteBinding(operation: string, target: string, input: JsonValue): string {
+/** The one hash that binds a request_id to its operation, target and input; the audit records carry it as `binding_sha256`. */
+export function operatorWriteBinding(operation: string, target: string, input: JsonValue): string {
   return createHash('sha256').update(canonicalize({ operation, target, input })).digest('hex');
 }
 

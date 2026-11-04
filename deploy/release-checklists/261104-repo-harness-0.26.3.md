@@ -24,9 +24,8 @@
   dependency, lockfile, hook or install logic changes in the prep diff.
   The base already pins archctx and archctx-contracts to exact 0.11.3.
 - Release date and record prefix: UTC `2026-11-04`, from `date -u +%F`.
-- Publish status: pending owner.
-- Hold reason: local acceptance needs host completion; see Acceptance
-  environment. Advisor pre-publish smoke and release-prep CI are pending.
+- Publish status: published 2026-11-04 (see Publication).
+- Hold reason: none.
 
 ### Owner decision
 
@@ -154,8 +153,8 @@ result is recorded yet.
   `8b127cbcbe730450b4f6e0cdc65545022e79c2c4`: completed, success, read with
   `gh run list --commit <base> --limit 5 --json
   databaseId,name,status,conclusion,headSha` on 2026-11-04 UTC.
-- Release-prep PR `Required / CI`: pending; no PR or prep commit exists at
-  the worker handoff. Base CI does not validate the prep diff.
+- Release-prep PR #1797 (#1796) `Required / CI`: success on prep head
+  `4f8c4e869` (run in the PR checks; source #1801).
 
 ## Acceptance environment
 
@@ -209,17 +208,30 @@ result is recorded yet.
 
 - Host typecheck and the bot fixture test must pass before handoff is
   accepted. Record the exact subject and environment; no assertions change.
-- Advisor pre-publish smoke and owner post-upgrade proof remain pending.
-  This prep makes no skill-effectiveness or production acceptance claim.
+- Advisor pre-publish smoke: PASS (see Publication). Owner post-upgrade
+  proof remains pending. This prep makes no skill-effectiveness or
+  production acceptance claim.
 
 ## Publication
 
-- Publish candidate merge SHA and prep PR: pending owner/coordinator.
-- Advisor pre-publish smoke command, subject and result: pending advisor.
-- npm version, publication time and dist-tag: pending owner.
-- Tarball shasum and integrity, registry comparison: pending owner.
-- Git tag object and target, GitHub Release: pending owner.
-- `check-release-published.sh 0.26.3`: not run.
+- Publish candidate: release-prep merge
+  `b6db3da37398f86793ef914046d41e29c8d1fe5e`, PR #1797 (#1796).
+  Publication values below come from advisor t11's report in #1801.
+- Advisor pre-publish smoke: PASS on b6db3da37: version 0.26.3;
+  0 install-profile sections in the hook bundle; pack list 902 files with
+  dist/hook-entry.js, dist/oar-review-host.js and dist/operator-ui/index.html;
+  hooks PreToolUse/edit 2, Stop 0, SessionStart 0, no catalog error.
+  The issue does not give the smoke command.
+- npm version: `repo-harness@0.26.3`, dist-tag `latest`, published
+  2026-11-04 (GitHub Release 19:43:53Z).
+- Tarball shasum: `8b7a71b52be93858f0dc55b7a0906c755d42e97c`, integrity
+  `sha512-sD5MXunTSqO1fj9TbzdbI3lNfIb9YnkXYlKQlYi9rM66JTBoKVSdik6s3Ul8NHpvB/uHNYYCUTWr0axbNP8E6Q==`;
+  registry read-back matched (19:38:19Z to 19:43:48Z).
+- Git tag: `v0.26.3`, annotated, tag object
+  `21986cebe1d114a18fd2cee50b333de3d49640a3`, target b6db3da37;
+  GitHub Release https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.3.
+- `check-release-published.sh 0.26.3`: OK; runtime-evidence-receipt valid
+  (published_tarball, clean_install, installed_hook_readback).
 - Owner machine upgrade, hook probe and Operator read-back: pending advisor.
 
 ## Rollback

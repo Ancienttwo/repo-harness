@@ -42,7 +42,7 @@ import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/operator/quot
 import { readQuotaReport } from './quota';
 import { decodeBoardParents } from '../../core/board/parents';
 import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
-import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorSeatWriteRoute } from './advisor-seat-route';
+import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorBossCommandWriteRoute, advisorSeatWriteRoute } from './advisor-seat-route';
 import { decodeAdvisorSeatRequest, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
@@ -156,6 +156,8 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false }),
   // The only console write into an agent terminal (#1756, D11): plain text to the one advisor seat of a board, in a board CLI child.
   Object.freeze({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true }),
+  // The four boss commands (#1757): a command id, sent as its server-side text through the same advisor seat send.
+  Object.freeze({ id: 'advisor_boss_commands', method: 'POST', pattern: OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE.source, write: true }),
   Object.freeze({ id: 'advisor_seat_transcript', method: 'GET', pattern: OPERATOR_ADVISOR_TRANSCRIPT_PATH, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false }),
@@ -1149,6 +1151,8 @@ export async function startOperatorServer(
     worktreeCleanupInvestigationWriteRoute({ env: options.env, read_quota: options.read_quota }),
     // A client that leaves does not abort a send; only the deadline or the server close does.
     advisorSeatWriteRoute({ admit: run => admitBoardCli(run)?.result ?? null, env: boardEnvironment, send: options.send_advisor }),
+    advisorBossCommandWriteRoute({ admit: run => admitBoardCli(run)?.result ?? null, env: boardEnvironment, audit_env: options.env,
+      send: options.send_advisor, read: options.read_advisor_transcript }),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
     .concat(injectedWriteRoutes);
   // The inventory is the one write authority: a handler it does not declare
