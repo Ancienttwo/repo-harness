@@ -874,6 +874,9 @@ describe('sequence and topology base maps', () => {
     const commit = layout.messages[2]!;
     expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
       .toEqual([['success', 'error'], true, ['pipe', 'router']]);
+    // A fragment spans the columns that its outcome names: the kept rows reach git, the refused rows end at the router.
+    const column = (id: string) => layout.columns.find(entry => entry.participant.id === id)!.x;
+    expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
   });
 
   test('topology boxes nest by namespace, a deployed node sits in its process, and a relation is drawn between boxes or counted as unplaced', () => {
@@ -949,7 +952,10 @@ describe('sequence and topology base maps', () => {
     expect([...document.querySelectorAll('.architecture-sequence__box')].map(item => [item.getAttribute('data-placement'), item.textContent])).toEqual([
       ['unknown', 'Process unknown'], ['process', `Name ${SERVER}`], ['external', 'External systems']]);
     expect(document.querySelector('.architecture-sequence__box[data-placement="unknown"]')?.getAttribute('data-reason')).toBe(t('architecture.runtime.deployment_undeclared'));
-    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => item.getAttribute('data-kind'))).toEqual(['success', 'error']);
+    // The first outcome opens the alt and the next one is an else, in model order; the colour follows the outcome kind.
+    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => [item.getAttribute('data-kind'), item.querySelector('.mono-value')?.textContent]))
+      .toEqual([['success', 'alt'], ['error', 'else']]);
+    expect([...document.querySelectorAll('.architecture-sequence__terminal')].map(item => [item.getAttribute('data-kind'), item.textContent])).toEqual([['success', 'Done'], ['error', 'Stop']]);
     // Today's changes reach the append step.
     const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
     expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
@@ -957,6 +963,7 @@ describe('sequence and topology base maps', () => {
     await click('.react-flow__node[data-id="message::route"]');
     expect(message(':route').hasAttribute('data-selected')).toBe(true);
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
+    expect(inspector().querySelector('[data-step-title]')?.textContent).toBe(`Name ${CALLER} → Name ${CENTER}`);
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('proven');
     expect([...inspector().querySelectorAll('[data-call-sites] li')].map(item => item.textContent)).toEqual(['src/router.ts:12', 'src/router-entry.ts']);
@@ -980,14 +987,37 @@ describe('sequence and topology base maps', () => {
     expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
     await click('.react-flow__node[data-id="participant:ledger"]');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
-    // A not-applicable flow states its rationale instead of a diagram.
-    await act(async () => {
-      const select = document.querySelector<HTMLSelectElement>('.architecture-lens select')!;
-      select.value = 'flow.router.none';
-      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
-    });
-    await settle();
-    expect(notes()).toContain('sequence.not_applicable:flow_not_applicable');
+    // The side panel lists the flows in model order; today's changes reach a step of the first one.
+    const flows = () => [...document.querySelectorAll('.architecture-sequence__flow-list button')].map(item => [item.textContent, item.getAttribute('aria-pressed'), item.hasAttribute('data-lit')]);
+    expect(flows()).toEqual([['1Append a ledger row', 'true', true], ['2No router flow', 'false', false]]);
+    // A not-applicable flow states its rationale instead of a diagram, and has nothing to export.
+    await click('[data-flow-id="flow.router.none"]');
+    expect([notes(), flows()[1]![1], document.querySelector<HTMLButtonElement>('[data-sequence-export]')?.disabled])
+      .toEqual([expect.arrayContaining(['sequence.not_applicable:flow_not_applicable']), 'true', true]);
+  });
+
+  test('the lens row counts the steps that have code evidence and exports the flow on screen as one SVG file', async () => {
+    const files: { name: string; blob: Blob }[] = [];
+    const { createObjectURL, revokeObjectURL } = URL;
+    const blobs = new Map<string, Blob>();
+    URL.createObjectURL = (blob: Blob) => { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; };
+    URL.revokeObjectURL = () => {};
+    const anchor = window.HTMLAnchorElement.prototype;
+    const { click: anchorClick } = anchor;
+    anchor.click = function (this: HTMLAnchorElement) { files.push({ name: this.download, blob: blobs.get(this.href)! }); };
+    try {
+      await mount(workspace({ readMap: reader(runtimeMap()) }));
+      await tab('sequence');
+      // Declared code names the route and append selectors; the outcome steps have none.
+      expect(document.querySelector('[data-sequence-summary]')?.textContent).toBe('2 flows from the model; 2 of 4 steps have code evidence');
+      await click('[data-sequence-export]');
+      const svg = await files[0]!.blob.text();
+      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
+      expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
+    } finally {
+      Object.assign(URL, { createObjectURL, revokeObjectURL });
+      anchor.click = anchorClick;
+    }
   });
 
   test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {

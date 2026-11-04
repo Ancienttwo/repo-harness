@@ -13,6 +13,7 @@ import { archctxCode, mapLayerView, type MapLayerId, type MapMark } from './arch
 import { firstViewport, FixCommand, Mark, NodeDetails, Note, nodeSize, ZoomControls } from './architecture-map-parts';
 import { runtimePlacement, type RuntimePlacement } from './architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN, SEQUENCE_HEADER, type SequenceBox } from './architecture-sequence-layout';
+import { sequenceSvg } from './architecture-sequence-svg';
 import type { OperatorTranslate } from './i18n';
 
 type RequiredFlow = Extract<ArchitectureMapFlowV1, { applicability: 'required' }>;
@@ -41,30 +42,34 @@ function messageTone(layer: MapLayerId, reached: ReadonlySet<string>, proven: Re
   return layer === 'violations' && status !== undefined && status !== 'proven' ? 'danger' : null;
 }
 
+/** The flows with a step that the active layer marks. */
+function litFlows(map: ArchitectureMapV1, layer: MapLayerId, reached: ReadonlySet<string>, proven: ReadonlyMap<string, string> | null): ReadonlySet<string> {
+  return new Set(map.flows.filter(flow => flowSteps(flow).some(({ outcome, step }) => messageTone(layer, reached, proven, flow.id, outcome, step) !== null)).map(flow => flow.id));
+}
+
 /** The flow the canvas opens on: the first one the active layer reaches, else the first flow with steps. */
 function firstFlow(map: ArchitectureMapV1, layer: MapLayerId, reached: ReadonlySet<string>, proven: ReadonlyMap<string, string> | null): string | null {
   const required = map.flows.filter((flow): flow is RequiredFlow => flow.applicability === 'required');
-  const lit = required.find(flow => flowSteps(flow).some(({ outcome, step }) => messageTone(layer, reached, proven, flow.id, outcome, step) !== null));
-  return (lit ?? required[0] ?? map.flows[0])?.id ?? null;
+  const lit = litFlows(map, layer, reached, proven);
+  return (required.find(flow => lit.has(flow.id)) ?? required[0] ?? map.flows[0])?.id ?? null;
 }
 
 interface BoxData extends Record<string, unknown> { readonly box: SequenceBox; readonly title: string; readonly reason: string | null }
-interface FragmentData extends Record<string, unknown> { readonly kind: 'success' | 'error'; readonly label: string }
+interface FragmentData extends Record<string, unknown> { readonly kind: 'success' | 'error'; readonly index: number; readonly label: string }
 interface HeaderData extends Record<string, unknown> { readonly name: string; readonly kind: string; readonly mark: MapMark | null; readonly quiet: boolean }
 interface MessageData extends Record<string, unknown> { readonly label: string; readonly direction: 'right' | 'left' | 'self'; readonly tone: MessageTone | null; readonly status: string | null }
-interface TerminalData extends Record<string, unknown> { readonly label: string }
+interface TerminalData extends Record<string, unknown> { readonly kind: 'success' | 'error'; readonly label: string }
 type SequenceNode = Node<BoxData, 'box'> | Node<FragmentData, 'fragment'> | Node<HeaderData, 'header'> | Node<Record<string, never>, 'lifeline'> | Node<MessageData, 'message'> | Node<TerminalData, 'terminal'>;
 
 const BoxNode = memo(function BoxNode({ data }: NodeProps<Node<BoxData, 'box'>>) {
   return <div className="architecture-sequence__box" data-placement={data.box.placement.kind} data-reason={data.reason ?? undefined} title={data.reason ?? undefined}><span>{data.title}</span></div>;
 });
 const FragmentNode = memo(function FragmentNode({ data }: NodeProps<Node<FragmentData, 'fragment'>>) {
-  return <div className="architecture-sequence__fragment" data-kind={data.kind}><span className="mono-value">{data.kind === 'success' ? 'alt' : 'else'}</span> {data.label}</div>;
+  return <div className="architecture-sequence__fragment" data-kind={data.kind}><span className="mono-value">{data.index === 0 ? 'alt' : 'else'}</span> {data.label}</div>;
 });
 const HeaderNode = memo(function HeaderNode({ data, selected }: NodeProps<Node<HeaderData, 'header'>>) {
   return <div className="architecture-map__box architecture-sequence__header" data-kind={data.kind} data-selected={selected || undefined} data-tone={data.mark?.tone} data-quiet={data.quiet || undefined}>
-    <span className="architecture-map__title"><strong>{data.name}</strong><Mark mark={data.mark} /></span>
-    <span className="architecture-map__meta">{data.kind}</span>
+    <span className="architecture-map__title"><strong title={data.name}>{data.name}</strong><Mark mark={data.mark} /></span>
   </div>;
 });
 const LifelineNode = memo(function LifelineNode() { return <div className="architecture-sequence__lifeline" />; });
@@ -75,7 +80,7 @@ const MessageNode = memo(function MessageNode({ data, selected }: NodeProps<Node
   </div>;
 });
 const TerminalNode = memo(function TerminalNode({ data }: NodeProps<Node<TerminalData, 'terminal'>>) {
-  return <div className="architecture-sequence__terminal" title={data.label}>{data.label}</div>;
+  return <div className="architecture-sequence__terminal" data-kind={data.kind} title={data.label}>{data.label}</div>;
 });
 const NODE_TYPES = { box: BoxNode, fragment: FragmentNode, header: HeaderNode, lifeline: LifelineNode, message: MessageNode, terminal: TerminalNode };
 
@@ -87,7 +92,7 @@ function placementText(placement: RuntimePlacement, names: ReadonlyMap<string, s
 function Evidence({ evidence, t }: { readonly evidence: ArchitectureFlowEvidenceV1 | undefined; readonly t: OperatorTranslate }) {
   if (evidence === undefined) return <p className="architecture-map__gap" data-gap="evidence" data-reason="selector_undeclared">{t('architecture.sequence.evidence.undeclared')}</p>;
   const path = (value: string | null) => value === null ? <span data-path-withheld>{t('architecture.sequence.evidence.withheld')}</span> : <code>{value}</code>;
-  return <ul data-step-evidence>
+  return <ul className="architecture-sequence__code" data-step-evidence>
     <li>{path(evidence.source_path)} <code>{evidence.source_symbol}</code></li>
     <li>→ {path(evidence.sink_path)} <code>{evidence.sink_symbol}</code></li>
   </ul>;
@@ -121,7 +126,9 @@ function StepDetails({ map, flow, outcome, step, t }: {
     return map.sizes.state !== 'ok' ? null : value === null ? t('architecture.map.noSize') : t('architecture.map.sizeValue', { lines: value.lines, files: value.files });
   };
   return <>
-    <h3>{step.label}</h3>
+    <h4>{t('architecture.sequence.selected')}</h4>
+    <h3 data-step-title>{names.get(from)} → {names.get(to)}</h3>
+    <p>{step.label}</p>
     <code className="architecture-map__id">{flow.id} · {outcome ?? t('architecture.sequence.main')} · {step.id}</code>
     <dl className="detail-list">
       {[from, to].map((nodeId, index) => <div key={index}><dt>{t(index === 0 ? 'architecture.sequence.from' : 'architecture.sequence.to')}</dt><dd>
@@ -136,7 +143,7 @@ function StepDetails({ map, flow, outcome, step, t }: {
       : <p className="architecture-map__gap" data-gap="proof" data-reason={flows.reason} data-code={flows.reason === 'archctx_error' ? archctxCode(flows) : undefined}>
         {flows.reason === 'archctx_error' ? t('architecture.layer.reason.archctx_error', { code: archctxCode(flows) }) : t(`architecture.layer.reason.${flows.reason}`)}
       </p>}
-    {proof !== null && proof.call_sites.length > 0 && <ul data-call-sites aria-label={t('architecture.sequence.callSites')}>
+    {proof !== null && proof.call_sites.length > 0 && <ul className="architecture-sequence__code" data-call-sites aria-label={t('architecture.sequence.callSites')}>
       {proof.call_sites.map(site => <li key={`${site.path}:${site.line ?? ''}`}><code>{site.line === null ? site.path : `${site.path}:${site.line}`}</code></li>)}
     </ul>}
     {status !== 'proven' && <FixCommand part="flows" t={t} />}
@@ -193,8 +200,8 @@ function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
           reason: box.placement.kind === 'unknown' ? t(`architecture.runtime.${box.placement.reason}`) : null },
       })),
       ...layout.fragments.map((fragment): SequenceNode => ({
-        id: `fragment:${fragment.outcome.id}`, type: 'fragment', position: { x: layout.boxes[0]!.x + 4, y: fragment.y }, zIndex: 1, ...fixed,
-        width: layout.width - 2 * layout.boxes[0]!.x - 8, height: fragment.height, data: { kind: fragment.outcome.kind, label: fragment.outcome.label },
+        id: `fragment:${fragment.outcome.id}`, type: 'fragment', position: { x: fragment.x, y: fragment.y }, zIndex: 1, ...fixed,
+        width: fragment.width, height: fragment.height, data: { kind: fragment.outcome.kind, index: fragment.index, label: fragment.outcome.label },
       })),
       ...layout.columns.map((column): SequenceNode => ({
         id: `lifeline:${column.participant.id}`, type: 'lifeline', position: { x: column.x - 1, y: layout.headerY + SEQUENCE_HEADER - 8 }, zIndex: 2, ...fixed,
@@ -222,7 +229,7 @@ function SequenceCanvas({ map, flow, layer, pullRequest, side, onModule, t }: {
       }),
       ...layout.terminals.map((terminal): SequenceNode => ({
         id: `terminal:${terminal.outcome}`, type: 'terminal', position: { x: terminal.x - 90, y: terminal.y - 16 }, width: 180, height: 32, zIndex: 4, ...fixed,
-        data: { label: terminal.label },
+        data: { kind: layout.fragments.find(fragment => fragment.outcome.id === terminal.outcome)!.outcome.kind, label: terminal.label },
       })),
     ];
   }, [map, flow, layout, view, reached, proven, names, selection, layer, t]);
@@ -280,50 +287,100 @@ function shownFlow(map: ArchitectureMapV1, layer: MapLayerId, reached: ReadonlyS
   return map.flows.find(entry => entry.id === flowId)!;
 }
 
-/** The flow choice of the sequence map, for the lens row. A lit flow has a step that the active layer marks. */
-export function SequenceFlowPicker({ map, layer, pullRequest, flowId, onFlow, t }: {
+/** Starts the browser download of one file built on the page. */
+function download(name: string, type: string, content: string): void {
+  const url = URL.createObjectURL(new Blob([content], { type }));
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = name;
+  link.click();
+  // The click starts the download in this task; the URL can go after it.
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+/** The sequence map's part of the lens row: how much of the model the flows cover, and the SVG export of the flow on screen. */
+export function SequenceLensTools({ map, layer, pullRequest, flowId, t }: {
+  readonly map: ArchitectureMapV1;
+  readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
+  readonly flowId: string | null;
+  readonly t: OperatorTranslate;
+}) {
+  const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
+  const proven = useMemo(() => proofs(map), [map]);
+  const coverage = useMemo(() => {
+    const declared = new Set(map.flow_evidence.map(entry => flowSelectorKey(entry)));
+    const steps = map.flows.flatMap(entry => flowSteps(entry));
+    return { flows: map.flows.length, steps: steps.length, evidenced: steps.filter(({ step }) => declared.has(flowSelectorKey(step.evidence))).length };
+  }, [map]);
+  if (map.flows.length === 0) return null;
+  const flow = shownFlow(map, layer, reached, proven, flowId);
+  const exportSvg = () => {
+    if (flow.applicability !== 'required') return;
+    const nodes = new Map(map.nodes.map(node => [node.id, node]));
+    const names = new Map(map.nodes.map(node => [node.id, node.name]));
+    const svg = sequenceSvg(layoutSequence(flow, runtimePlacement(map)), {
+      box: box => box.placement.kind === 'unknown' ? t('architecture.sequence.unknown') : placementText(box.placement, names, t),
+      // The decoder admits a flow only when each participant names a map node.
+      participant: nodeId => nodes.get(nodeId)!,
+    });
+    download(`${flow.id}.svg`, 'image/svg+xml', svg);
+  };
+  return <div className="architecture-lens__tools">
+    <span data-sequence-summary>{t('architecture.sequence.summary', coverage)}</span>
+    <button type="button" className="architecture-lens__export" data-sequence-export disabled={flow.applicability !== 'required'} onClick={exportSvg}>{t('architecture.sequence.export')}</button>
+  </div>;
+}
+
+/** The flows of the model in model order, at the top of the side panel. A lit flow has a step that the active layer marks. */
+function FlowList({ map, flowId, lit, onFlow, t }: {
+  readonly map: ArchitectureMapV1;
+  readonly flowId: string;
+  readonly lit: ReadonlySet<string>;
+  readonly onFlow: (flowId: string) => void;
+  readonly t: OperatorTranslate;
+}) {
+  return <div className="architecture-sequence__flows" role="group" aria-labelledby="architecture-sequence-flows">
+    <h4 id="architecture-sequence-flows">{t('architecture.sequence.flows')}</h4>
+    <div className="architecture-sequence__flow-list">
+      {map.flows.map((entry, index) => <button key={entry.id} type="button" aria-pressed={entry.id === flowId} data-flow-id={entry.id} data-lit={lit.has(entry.id) || undefined}
+        title={`${entry.name} · ${entry.id}`} onClick={() => onFlow(entry.id)}>
+        <span className="mono-value">{index + 1}</span>
+        <span className="architecture-sequence__flow-name">{entry.name}</span>
+        {lit.has(entry.id) && <span className="architecture-sequence__lit" aria-label={t('architecture.sequence.lit')} />}
+      </button>)}
+    </div>
+  </div>;
+}
+
+/** The sequence base map: one model flow per diagram, one light box per OS process. The side panel leads with the flow list, then `side`. */
+export function ArchitectureSequence({ map, layer, pullRequest, flowId, onFlow, side, onModule, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
   readonly pullRequest: number | null;
   readonly flowId: string | null;
   readonly onFlow: (flowId: string) => void;
-  readonly t: OperatorTranslate;
-}) {
-  const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
-  const proven = useMemo(() => proofs(map), [map]);
-  if (map.flows.length === 0) return null;
-  const flow = shownFlow(map, layer, reached, proven, flowId);
-  const lit = (entry: ArchitectureMapFlowV1) => flowSteps(entry).some(({ outcome, step }) => messageTone(layer, reached, proven, entry.id, outcome, step) !== null);
-  return <label className="architecture-lens__pick">
-    <span>{t('architecture.sequence.flow')}</span>
-    <select value={flow.id} onChange={event => onFlow(event.target.value)}>
-      {map.flows.map(entry => <option key={entry.id} value={entry.id} data-lit={lit(entry) || undefined}>{lit(entry) ? '● ' : ''}{entry.name} · {entry.id}</option>)}
-    </select>
-  </label>;
-}
-
-/** The sequence base map: one model flow per diagram, one light box per OS process. `side` leads the side panel. */
-export function ArchitectureSequence({ map, layer, pullRequest, flowId, side, onModule, t }: {
-  readonly map: ArchitectureMapV1;
-  readonly layer: MapLayerId;
-  readonly pullRequest: number | null;
-  readonly flowId: string | null;
   readonly side: ReactNode;
   readonly onModule: (id: string) => void;
   readonly t: OperatorTranslate;
 }) {
   const reached = useMemo(() => reachedSteps(map, layer, pullRequest), [map, layer, pullRequest]);
   const proven = useMemo(() => proofs(map), [map]);
-  const sideNote = (note: ReactNode) => <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}>{side}{note}</aside>;
+  const lit = useMemo(() => litFlows(map, layer, reached, proven), [map, layer, reached, proven]);
+  const sideNote = (note: ReactNode) => <aside className="architecture-map__inspector" aria-label={t('architecture.sequence.inspector')}>{note}</aside>;
   if (map.flows.length === 0) {
-    return <div className="architecture-map"><Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>{sideNote(null)}</div>;
+    return <div className="architecture-map"><Note part="sequence.flows" reason="flows_undeclared">{t('architecture.sequence.none')}</Note>{sideNote(side)}</div>;
   }
   const flow = shownFlow(map, layer, reached, proven, flowId);
   const note = LAYER_NOTES[layer];
-  const layerNote = note && <Note part={`sequence.${layer}`} reason={note}>{t(`architecture.sequence.note.${note}`)}</Note>;
+  const lead = <>
+    <FlowList map={map} flowId={flow.id} lit={lit} onFlow={onFlow} t={t} />
+    {side}
+    {note && <Note part={`sequence.${layer}`} reason={note}>{t(`architecture.sequence.note.${note}`)}</Note>}
+  </>;
   return <div className="architecture-sequence">
     {flow.applicability === 'not-applicable'
-      ? <div className="architecture-map"><Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>{sideNote(layerNote)}</div>
-      : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} side={<>{side}{layerNote}</>} onModule={onModule} t={t} /></ReactFlowProvider>}
+      ? <div className="architecture-map"><Note part="sequence.not_applicable" reason="flow_not_applicable">{t('architecture.flow.notApplicable', { rationale: flow.rationale })}</Note>{sideNote(lead)}</div>
+      : <ReactFlowProvider><SequenceCanvas key={flow.id} map={map} flow={flow} layer={layer} pullRequest={pullRequest} side={lead} onModule={onModule} t={t} /></ReactFlowProvider>}
   </div>;
 }
