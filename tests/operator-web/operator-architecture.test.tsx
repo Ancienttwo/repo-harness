@@ -14,7 +14,8 @@ import {
   type ArchitectureMapRelationV1, type ArchitectureMapV1,
 } from '../../src/core/operator/architecture-map';
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
-import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
+import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
+import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
 import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -1035,10 +1036,50 @@ describe('sequence and topology base maps', () => {
       const svg = await files[0]!.blob.text();
       expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
       expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
-      // A terminal label is centred on its participant's lifeline, as on the canvas, so a rightmost participant keeps it inside the file.
-      const layout = layoutSequence(flow, runtimePlacement(runtimeMap()));
-      expect([...svg.matchAll(/<text class="(success|error)" x="([\d.]+)" y="[\d.]+" text-anchor="middle">/gu)].map(match => [match[1], Number(match[2])]))
-        .toEqual(layout.terminals.map(terminal => [terminal.outcome === 'kept' ? 'success' : 'error', terminal.x]));
+
+      // Every label kind keeps its estimated text box inside its own shape and the file, with one long label per kind and CJK
+      // text. The kept terminal sits on git, the rightmost participant; the append step is a self message.
+      // The estimate never undercounts: widest glyphs per class, in em at weights 400 and 600, as Chrome draws system-ui (SF Pro) on macOS.
+      const measured = [['中', 0.944, 0.944], ['W', 0.924, 0.952], ['%', 0.808, 0.863], ['m', 0.803, 0.843], ['&', 0.669, 0.691], ['6', 0.617, 0.641]] as const;
+      expect(measured.filter(([glyph, regular, bold]) => textWidth(glyph, 100, false) < regular * 100 || textWidth(glyph, 100, true) < bold * 100)).toEqual([]);
+      const latin = (text: string) => `${text} `.repeat(4).trim();
+      const cjk = (text: string) => text.repeat(4);
+      const [route, append] = flow.steps;
+      const [kept, refused] = flow.outcomes;
+      const wide = { ...flow,
+        steps: [{ ...route!, label: latin('Route the request through the root router before the pipeline appends') }, { ...append!, to: 'pipe', label: cjk('流水线先校验请求和账本状态') }],
+        outcomes: [
+          { ...kept!, label: cjk('账本行已保存并提交到 git，再把提交结果返回给调用方'), steps: [{ ...kept!.steps[0]!, label: latin('Commit the WRITTEN LEDGER ROW to git') }],
+            terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA' } },
+          { ...refused!, label: latin('Row refused because the ledger rejected the append for a known reason'), steps: [{ ...refused!.steps[0]!, label: cjk('账本拒绝追加并给出原因') }],
+            terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+        ] };
+      const names = ['路由器：根路由在流水线之前选择处理程序', 'Pipeline Workflow Engine Capability With Many Words', 'Ledger component that appends attested rows', '外部系统 git 与 archctx 子进程'];
+      const wideLayout = layoutSequence(wide, runtimePlacement(runtimeMap()));
+      const exported = sequenceSvg(wideLayout, {
+        box: box => latin(`${box.key} runs every hook event in its own Bun process`),
+        participant: nodeId => ({ name: names[flow.participants.findIndex(entry => entry.node === nodeId)]!, kind: 'capability' }),
+      });
+      const shapes: Record<keyof typeof SEQUENCE_SVG_FONT, readonly (readonly [number, number])[]> = {
+        title: wideLayout.boxes.map(box => [box.x, box.x + box.width]),
+        'fragment-label': wideLayout.fragments.map(fragment => [fragment.x, fragment.x + fragment.width]),
+        name: wideLayout.columns.map(column => [column.x - SEQUENCE_SVG_HEADER_WIDTH / 2, column.x + SEQUENCE_SVG_HEADER_WIDTH / 2]),
+        'message-label': wideLayout.messages.map(message => message.from === message.to ? [message.from, message.from + SEQUENCE_COLUMN / 2]
+          : [Math.min(message.from, message.to), Math.max(message.from, message.to)]),
+        terminal: wideLayout.terminals.map(terminal => [terminal.x - SEQUENCE_SVG_TERMINAL_WIDTH / 2, terminal.x + SEQUENCE_SVG_TERMINAL_WIDTH / 2]),
+      };
+      const shown = (markup: string) => markup.replace(/<[^>]+>/gu, '').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&amp;/gu, '&');
+      const labels = (Object.keys(shapes) as (keyof typeof SEQUENCE_SVG_FONT)[]).flatMap(kind => [...exported.matchAll(
+        new RegExp(`<text class="${kind}[^"]*" x="([\\d.]+)" y="[\\d.]+"( text-anchor="middle")?><title>[^<]*</title>(.*?)</text>`, 'gu'))].map((match, index) => {
+        const text = shown(match[3]!);
+        const width = textWidth(text, SEQUENCE_SVG_FONT[kind].size, SEQUENCE_SVG_FONT[kind].bold);
+        const left = Number(match[1]) - (match[2] === undefined ? 0 : width / 2);
+        const [low, high] = shapes[kind][index]!;
+        return { kind, text, inside: left >= Math.max(low, 0) && left + width <= Math.min(high, wideLayout.width), shortened: text.endsWith('…') };
+      }));
+      expect(Object.fromEntries(Object.entries(shapes).map(([kind, list]) => [kind, [list.length, labels.filter(entry => entry.kind === kind).length]])))
+        .toEqual({ title: [3, 3], 'fragment-label': [2, 2], name: [4, 4], 'message-label': [4, 4], terminal: [2, 2] });
+      expect(labels.filter(entry => !entry.inside || !entry.shortened)).toEqual([]);
     } finally {
       Object.assign(URL, { createObjectURL, revokeObjectURL });
       anchor.click = anchorClick;
