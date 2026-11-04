@@ -22,6 +22,9 @@ export const en = {
   'field.publication': 'publication',
   'field.none': '—',
 
+  'write.reload.title': 'Reload this page',
+  'write.reload.body': 'The write token of this page is not valid, for example after the service restarted. Nothing was changed. Reload the page, then try again.',
+
   'copy.action': 'Copy {label}',
   'copy.idle': 'Copy',
   'copy.copied': 'Copied',
@@ -132,6 +135,9 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   'field.generation': 'generation',
   'field.publication': '发布',
   'field.none': '—',
+
+  'write.reload.title': '请刷新这个页面',
+  'write.reload.body': '这个页面的写 token 无效，例如服务重启过。什么都没有改动。刷新整个页面，再操作一次。',
 
   'copy.action': '复制{label}',
   'copy.idle': '复制',

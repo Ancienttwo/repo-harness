@@ -19,11 +19,11 @@ import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
 import { fetchBoard, fetchBoardParents, type BoardParentsRead, type BoardSubject } from '../../src/operator-web/board-view';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
-import { decodeBoardParents } from '../../src/core/board/parents';
+import { decodeBoardParents, type BoardParentsV1 } from '../../src/core/board/parents';
 import { designTokenStylesheet } from '../../src/operator-web/design-tokens';
 import { OPERATOR_RAIL_STORAGE_KEY } from '../../src/operator-web/NavRail';
 import { fetchExecution, fetchTaskMessages, itemOwner, type CiRepairsReader, type ExecutionReader, type TaskMessagesReader } from '../../src/operator-web/repository-reads';
-import { fixtureProps, FIXTURE_NAMES } from '../../src/operator-web/fixtures';
+import { fixtureProps, FIXTURE_NAMES, OFFICE_FIXTURE } from '../../src/operator-web/fixtures';
 import {
   busyDevActivity,
   busyExecution,
@@ -35,6 +35,7 @@ import {
   HARNESS_ID,
   INBOX_TASK,
 } from '../../src/operator-web/fixtures/dev-activity';
+import { settingsStores } from '../../src/operator-web/fixtures/settings';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupInvestigationStatus, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
 import { CLEANUP_INVESTIGATION_POLL_MS, type AuthorizedCleanupPost, type CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
@@ -42,8 +43,12 @@ import { cleanupPlanPorts } from '../../src/operator-web/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
-import { boardPlace, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
-import { DESK_STATES, officeRoom } from '../../src/operator-web/board-office';
+import { boardLayout, boardPlace, boardRoom, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
+import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeRoom } from '../../src/operator-web/board-office';
+import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
+import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
+import { composeRoom, sceneEffect, type SceneRoom } from '../../src/operator-web/office-scene';
+import { sceneAgent } from '../../src/operator-web/office-sprites';
 
 let root: Root | null = null;
 let window: Window;
@@ -136,7 +141,7 @@ afterEach(async () => {
 
 describe('board data rules', () => {
   test('every development fixture passes the browser decoder', () => {
-    for (const name of FIXTURE_NAMES) expect(() => fixtureProps(name)).not.toThrow();
+    for (const name of [...FIXTURE_NAMES, OFFICE_FIXTURE]) expect(() => fixtureProps(name)).not.toThrow();
     expect(() => fixtureProps('nope')).toThrow('unknown operator fixture');
     expect(degradedDevActivity(NOW).unreadable_registrations).toBe(2489);
     expect(emptyDevActivity(NOW).items).toHaveLength(0);
@@ -708,7 +713,9 @@ describe('board office (#1755)', () => {
     status: 'observed', comment_url: 'https://github.com/Ancienttwo/repo-harness/issues/1474#issuecomment-1', created_at: '2026-11-02T20:00:00Z',
     block: { protocol: 1, kind: 'repo-harness.plan', merge_order: [1475, 1476, 1479], holds: [{ issue: 1477, reason: 'waits for #1476' }], batches: [[1475, 1476]], seat_limits: { worker: 3 } },
   };
-  const room = (board: BoardV1) => officeRoom(board, evaluateBoardAttention(board));
+  /** The parent list that carries the terminals of a board: the seats of the room. */
+  const seatsOf = (board: BoardV1): BoardParentsV1 => ({ ...PARENTS, seats: board.execution.status === 'observed' ? board.execution.terminals.map(terminal => ({ ...terminal, parent: '1474' })) : [] });
+  const room = (board: BoardV1) => officeRoom(seatsOf(board), { board, attention: evaluateBoardAttention(board) });
   const officeAt = (path = '') => installDom(`http://127.0.0.1:4318/#board/office${path}`);
 
   test('each desk state rule, in order, from the board fields; the stage and the queue read the live seats and the open pull requests', () => {
@@ -744,9 +751,10 @@ describe('board office (#1755)', () => {
       ['t6', 'idle', 1478, BOARD.items.find(item => item.number === 1478)!.title],
       ['t7', 'unknown', null, null],
     ]);
-    expect([office.orchestrator, office.advisor]).toEqual(['t10', 't11']);
-    // The queue is every open pull request that is not accepted, whatever its check.
-    expect(office.queue.map(entry => [entry.pr, entry.drawerIssue])).toEqual([[1491, 1475], [1494, 1479], [1499, 1476]]);
+    expect([office.orchestrator?.address, office.advisor?.address]).toEqual(['t10', 't11']);
+    // The queue is every open pull request with a passed check that is not accepted; a seat in it is the away desk.
+    expect(office.queue.map(entry => [entry.pr, entry.issue])).toEqual([[1491, 1475]]);
+    expect(office.desks.find(desk => desk.address === 't3')?.queued).toBe(1491);
     // A seat that names only a pull request takes the item that lists it, and that pull request's head branch only when no item lists it.
     const byPullRequest = room(boardWith({ terminals: [seat('t1', 'worker', null, 1491, null), seat('t2', 'worker', null, 4242, null)] })).desks;
     expect(byPullRequest.map(desk => [desk.state, desk.drawerIssue, desk.title])).toEqual([
@@ -754,30 +762,94 @@ describe('board office (#1755)', () => {
     ]);
   });
 
-  test('without an observed plan: no limit, no free or roped desk, no cart, and every open item is backlog; with a plan the limit, the cart and the holds come from the block', () => {
+  test('without an observed plan: the issue-flow limit and no cart; with a plan the limit, the current batch and the holds come from the block; the tray holds what nobody works on', () => {
     const recorded = room(BOARD);
     expect(BOARD.plan.status).toBe('unavailable');
-    expect([recorded.plan, recorded.free_desks, recorded.roped_from, recorded.carts]).toEqual([{ status: 'none' }, 0, null, []]);
-    expect(recorded.backlog.map(entry => entry.issue)).toEqual(BOARD.items.filter(item => item.state === 'open').map(item => item.number));
+    expect([recorded.plan, recorded.limit, recorded.cart]).toEqual([{ status: 'none' }, ISSUE_FLOW_WORKER_LIMIT, null]);
+    const worked = new Set(BOARD.items.filter(item => item.pull_requests.length > 0).map(item => item.number));
+    expect(recorded.backlog.map(entry => entry.issue)).toEqual(BOARD.items.filter(item => item.state === 'open' && !worked.has(item.number) && ![1476, 1475].includes(item.number)).map(item => item.number));
     expect(recorded.desks.map(desk => [desk.address, desk.state])).toEqual([['t1', 'idle'], ['t2', 'idle']]);
-    expect(recorded.orchestrator).toBe('t3');
+    expect(recorded.orchestrator?.address).toBe('t3');
     expect(recorded.advisor).toBeNull();
-    // The door counts the findings routed to the orchestrator and nothing else.
+    // The door counts the A1 findings only: an accepted, ready pull request that waits for a merge.
     const attention = evaluateBoardAttention(BOARD);
-    expect(recorded.door_marks).toBe(attention.findings.filter(finding => finding.route === 'orchestrator').length);
-    expect(recorded.door_marks).toBeGreaterThan(0);
-    expect(officeRoom(BOARD, { ...attention, findings: attention.findings.filter(finding => finding.route === 'advisor') }).door_marks).toBe(0);
+    const a1 = { rule: 'A1', route: 'orchestrator', issues: [], pull_requests: [1491], terminals: [], message: '' } as const;
+    expect(attention.findings.filter(finding => finding.rule !== 'A1').length).toBeGreaterThan(0);
+    expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: attention.findings.filter(finding => finding.rule !== 'A1') } }).merge_waits).toBe(0);
+    expect(officeRoom(seatsOf(BOARD), { board: BOARD, attention: { ...attention, findings: [a1, a1] } }).merge_waits).toBe(2);
 
     const planned = room(boardWith({ plan: PLAN }));
-    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', merge_order: [1475, 1476, 1479], worker_limit: 3, batches: 1 });
-    expect([planned.free_desks, planned.roped_from]).toEqual([1, null]);
+    expect(planned.plan).toEqual({ status: 'observed', created_at: '2026-11-02T20:00:00Z', merge_order: [1475, 1476, 1479], worker_limit: 3, batch: 2 });
+    expect(planned.limit).toBe(3);
     // #1475's PR is accepted, #1476's is not: the cart has two places and one member.
-    expect(planned.carts).toEqual([{ size: 2, accepted: [1475] }]);
-    expect(planned.backlog.map(entry => entry.issue)).toEqual([1478, 1480, 1481, 1482, 1483]);
+    expect(planned.cart).toEqual({ size: 2, accepted: [1475] });
     expect(planned.holds).toEqual([{ issue: 1477, title: BOARD.items.find(item => item.number === 1477)!.title, reason: 'waits for #1476' }]);
-    // More live workers than the limit: the desks from the limit on are roped, and no desk is free.
-    const over = room(boardWith({ plan: { ...PLAN, block: { ...PLAN.block, seat_limits: { worker: 1 } } } }));
-    expect([over.free_desks, over.roped_from]).toEqual([0, 1]);
+    // A merged batch leaves the cart: the next batch with an unmerged member takes it.
+    const merged = boardWith({ prs: Object.fromEntries(BOARD.pull_requests.map(pr => [pr.number, { state: 'merged' as const }])), plan: PLAN });
+    expect(room(merged).cart).toBeNull();
+  });
+
+  test('the sample state equals the S0 mockup page: six workers, two away, two in the queue, three in the cart, three in the tray and the feed from server times', () => {
+    const board = officeBoard(NOW);
+    const sample = officeRoom(officeParents(HARNESS_ID, NOW), { board, attention: evaluateBoardAttention(board) });
+    expect(sample.desks.map(desk => [desk.state, desk.issue, desk.pr, desk.agent])).toEqual([
+      ['coding', 1299, null, 'claude-code'], ['ci_pending', null, 1323, 'codex'], ['ci_failed', null, 1295, 'codex'],
+      ['no_claim_status', 1305, null, 'claude-code'], ['acceptance_queue', 1300, 1324, 'claude-code'], ['acceptance_queue', 1321, 1321, 'codex'],
+    ]);
+    expect([sample.orchestrator?.agent, sample.advisor?.agent, sample.limit]).toEqual(['claude-code', 'codex', 6]);
+    expect(sample.queue.map(entry => [entry.pr, entry.agent])).toEqual([[1324, 'claude-code'], [1321, 'codex']]);
+    expect(sample.cart).toEqual({ size: 5, accepted: [1315, 1320, 1311] });
+    expect([...sample.holds.map(hold => hold.issue), ...sample.backlog.map(entry => entry.issue)]).toEqual([1316, 1302, 1304]);
+    expect(sample.feed.map(event => event.kind)).toEqual(['queued', 'accepted', 'ci_failed', 'plan', 'queued']);
+    expect(sample.feed[1]).toMatchObject({ pr: 1311, carted: true });
+    expect(activeParent(officeParents(HARNESS_ID, NOW))).toBe(OFFICE_PARENT);
+    expect(activeParent(officeParents('repo_1f2e3d4c5b6a7980', NOW))).toBeNull();
+  });
+
+  const SCENE_ROOM: SceneRoom = {
+    name: 'repo-harness', parent: 1, lit: true, orchestrator: null, advisor: null, plan: null, limit: 8, desks: [], queue: [], cart: 0, tray: 0, needsYou: false, mines: new Map(),
+    text: { noParent: 'no parent', orchestrator: '', advisor: '', tray: '', cart: '', queue: '', seat: index => `Seat ${index + 1}`, free: 'free', roped: 'roped', mine: rule => rule, say: () => '' },
+  };
+
+  test('the avatar follows the hc agent word, and the scene keeps a desk for every seat: free to the limit, roped to 8, a new row past 8', () => {
+    expect(['claude-code', 'codex', 'pi', 'grok', null].map(agent => sceneAgent(agent))).toEqual([
+      { kind: 'claude', badge: 'CC' }, { kind: 'codex', badge: 'CX' }, { kind: 'other', badge: 'PI' }, { kind: 'other', badge: 'GR' }, { kind: 'unknown', badge: '?' },
+    ]);
+    const scene = (desks: number, limit: number) => {
+      const input: SceneRoom = {
+        ...SCENE_ROOM, limit,
+        desks: Array.from({ length: desks }, (_, index) => ({ key: `desk:t${index}`, agent: sceneAgent('codex'), state: 'coding', number: `#${index}`, label: 'Coding' })),
+      };
+      const { height, deskLabels } = composeRoom(input, { frame: 0, night: false, advisorBusy: false, effect: null });
+      return [height, deskLabels.filter(label => label.text === 'free').length, deskLabels.filter(label => label.text === 'roped').length, deskLabels.length];
+    };
+    for (const [desks, limit, expected] of [
+      [0, 8, [240, 8, 0, 8]], [2, 3, [240, 1, 5, 8]], [7, 6, [240, 0, 1, 8]], [8, 6, [240, 0, 0, 8]], [9, 8, [292, 0, 3, 12]], [13, 8, [344, 0, 3, 16]],
+    ] as const) expect(scene(desks, limit)).toEqual([...expected]);
+  });
+
+  test('the scene reads the parent, the plan and the queue from their own fields, and reduced motion stands the boss still', () => {
+    const view = { frame: 0, night: false, advisorBusy: false, effect: null };
+    const plan = { order: [1], limit: 1, batch: 1 };
+    for (const [parent, roomPlan, lit, label] of [
+      [null, null, false, true], [null, null, true, true], [1, null, false, false], [1, plan, false, false], [1, null, true, false],
+    ] as const) expect(composeRoom({ ...SCENE_ROOM, parent, plan: roomPlan, lit }, view).labels.some(entry => entry.text === 'no parent')).toBe(label);
+
+    const queue = (count: number) => {
+      const { hits, labels } = composeRoom({ ...SCENE_ROOM, queue: Array.from({ length: count }, (_, index) => ({ key: `queue:${index}`, agent: sceneAgent('codex'), pr: index })) }, view);
+      return [hits.filter(hit => hit.key.startsWith('queue')).map(hit => hit.key), labels.find(entry => entry.text.startsWith('+'))?.text ?? null];
+    };
+    for (const [count, keys, more] of [
+      [3, ['queue:0', 'queue:1', 'queue:2'], null], [4, ['queue', 'queue:0', 'queue:1', 'queue:2'], '+1'], [6, ['queue', 'queue:0', 'queue:1', 'queue:2'], '+3'],
+    ] as const) expect(queue(count)).toEqual([[...keys], more]);
+
+    for (const command of ['rage', 'carrot', 'mine', 'valve'] as const) {
+      const at = (elapsed: number, still: boolean) => composeRoom(SCENE_ROOM, { ...view, effect: sceneEffect({ command, at: 1000 }, 1000 + elapsed, still) }).paths;
+      expect(at(9000, true)).toEqual(at(0, true));
+      expect(at(9000, false)).not.toEqual(at(0, false));
+      expect(sceneEffect({ command, at: 1000 }, 16000, true)).toBeNull();
+    }
+    expect(sceneEffect(null, 1000, true)).toBeNull();
   });
 
   test('the switch is part of the location: list and office open the same subject, and the office overview reads the parents once per repository', async () => {
@@ -791,6 +863,9 @@ describe('board office (#1755)', () => {
       expect([location.item, boardPlace(location.item), workspaceHash(location)]).toEqual([item, place, hash]);
     }
     for (const hash of ['#board/office/repo', '#board/office/1474', '#board/office/office', `#board/office/${HARNESS_ID}/1474/1476/9`]) expect(parseWorkspaceLocation(hash).workspace).toBe('home');
+    // The room of a repository with no selected parent.
+    const repositoryRoom = parseWorkspaceLocation(`#board/office/${HARNESS_ID}`);
+    expect([boardRoom(repositoryRoom.item), boardPlace(repositoryRoom.item), boardLayout(repositoryRoom.item), workspaceHash(repositoryRoom)]).toEqual([HARNESS_ID, null, 'office', `#board/office/${HARNESS_ID}`]);
 
     const lists: string[] = [];
     await mount(<OperatorApp {...props(busy(), { readBoardParents: async (id) => { lists.push(id); return { state: 'ok', list: PARENTS }; } })} />);
@@ -808,18 +883,23 @@ describe('board office (#1755)', () => {
     await settle();
     expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474`);
     expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe('1474');
-    // A desk opens the Task drawer of its issue; the switch keeps the board and the drawer issue.
+    // A desk selects the side panel, and the panel title opens the Task drawer of its issue; the switch keeps the board and the drawer issue.
+    await act(async () => rows('[data-desk="t2"]')[0]!.click());
+    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474`);
+    expect(document.querySelector('[data-office-panel] [data-command] code')?.textContent).toBe('gh pr checks 1491');
     await act(async () => rows('[data-desk="t1"]')[0]!.click());
+    await act(async () => rows('[data-panel-issue="1476"]')[0]!.click());
     await settle();
     expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474/1476`);
     expect(document.querySelector('[role="dialog"]')?.textContent).toContain('herdr-core 迁移 2');
     await key('Escape');
     expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474`);
-    await act(async () => rows('[data-queue-pr="1494"]')[0]!.click());
-    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474/1479`);
+    await act(async () => rows('[data-desk="t2"]')[0]!.click());
+    await act(async () => rows('[data-panel-issue="1475"]')[0]!.click());
+    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474/1475`);
     await act(async () => rows('[data-board-layout="list"]')[0]!.click());
     await settle();
-    expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1479`);
+    expect(window.location.hash).toBe(`#board/${HARNESS_ID}/1474/1475`);
     expect(document.querySelector('[data-board-office]')).toBeNull();
     expect(document.querySelector('[data-board-parent]')?.getAttribute('data-board-parent')).toBe('1474');
   });
@@ -868,23 +948,20 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[data-board-office="overview"]')?.textContent).not.toMatch(/queue|CI|batch|needs you/iu);
   });
 
-  test('the room draws the stage, the desks and the plan gap from the board; the legend lists each desk state with its source rule', async () => {
+  test('the room draws the seats of the parent list and the plan gap from the board; the legend lists each desk state with its source rule', async () => {
     officeAt(`/${HARNESS_ID}/1474`);
     await mount(<OperatorApp {...props(busy())} />);
     await settle();
     const scene = document.querySelector('[data-board-office="room"] [role="img"]')!;
-    expect(scene.getAttribute('aria-label')).toBe('Office of Ancienttwo/repo-harness #1474: 2 worker desks, 2 pull requests in the acceptance queue, no plan.');
+    expect(scene.getAttribute('aria-label')).toBe('Office of Ancienttwo/repo-harness #1474: 2 worker desks, 0 pull requests in the acceptance queue, no plan.');
     expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('none');
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('none');
-    expect(document.querySelectorAll('.board-office__meter-blocks, [data-free], [data-roped], [data-cart]')).toHaveLength(0);
-    expect(document.querySelector('[data-whiteboard]')?.textContent).toBe('No plan');
-    expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1476: Idle'], ['t2', '#1475: Idle']]);
-    expect(rows('[data-lead]').map(lead => [lead.getAttribute('data-lead'), lead.querySelector('.board-office__lead-state')?.textContent, lead.querySelectorAll('.board-office__sprite').length]))
-      .toEqual([['orchestrator', 'Seat t3', 1], ['advisor', 'Not connected', 0]]);
-    expect(document.querySelector('.board-office__door')?.getAttribute('data-marks')).toBe(String(room(BOARD).door_marks));
+    expect(rows('[data-desk]').map(desk => [desk.getAttribute('data-desk'), desk.getAttribute('aria-label')])).toEqual([['t1', '#1476 · Codex: Idle'], ['t2', '#1475 · Claude Code: Idle']]);
+    expect(rows('[data-queue-pr]')).toHaveLength(0);
+    expect(rows('[data-office-hit]').map(hit => hit.getAttribute('data-office-hit')).sort()).toEqual(['board', 'cart', 'door', 'orchestrator', 'tray']);
     expect(rows('[data-board-banner]').map(banner => banner.getAttribute('data-board-banner'))).toEqual(['plan', 'unevaluated']);
-    // Every agent badge is the unknown state: the board has no agent field.
-    expect(new Set(rows('.board-office__badge').map(badge => badge.textContent))).toEqual(new Set(['?']));
+    // No advisor seat: no boss button.
+    expect(rows('[data-boss]')).toHaveLength(0);
 
     await act(async () => rows('[data-board-legend]')[0]!.click());
     const legend = document.querySelector<HTMLElement>('[role="dialog"]')!;
@@ -903,17 +980,261 @@ describe('board office (#1755)', () => {
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
 
-  test('with an observed plan the header has the plan chip and the seat meter, and the room has the free desk, the cart, the white board and the holds', async () => {
+  test('with an observed plan the header has the plan chip and the seat meter, and each hit fills the side panel', async () => {
     officeAt(`/${HARNESS_ID}/1474`);
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: boardWith({ plan: PLAN }) }) })} />);
     await settle();
     expect(document.querySelector('[data-plan]')?.getAttribute('data-plan')).toBe('observed');
     expect(document.querySelector('[data-seat-meter]')?.getAttribute('data-seat-meter')).toBe('2/3');
-    expect(rows('[data-free]')).toHaveLength(1);
-    expect(rows('[data-cart]').map(cart => cart.getAttribute('data-cart'))).toEqual(['1/2']);
-    expect(document.querySelector('[data-whiteboard]')?.textContent).toBe('Merge order1475 1476 1479Seats 3 · batches 1');
-    expect(document.querySelector('[data-backlog]')?.getAttribute('data-backlog')).toBe('5');
-    expect(document.querySelector('[data-hold="1477"]')?.textContent).toBe('#1477 held: waits for #1476');
+    const panel = (hit: string) => {
+      rows(`[data-office-hit="${hit}"]`)[0]!.click();
+    };
+    for (const [hit, eyebrow, text, command] of [
+      ['cart', 'BATCH', 'Batch cart 1/6', 'repo-harness board --parent 1474'],
+      ['tray', 'BACKLOG', '#1477Held: waits for #1476', 'repo-harness board --parent 1474'],
+      ['door', 'MAIN', 'Next batch#1475', 'gh pr list --base main --state merged --limit 5'],
+      ['board', 'ORCHESTRATOR', 'coordinator · integrator', 'repo-harness board --parent 1474'],
+    ] as const) {
+      await act(async () => panel(hit));
+      const shown = document.querySelector('[data-office-panel]')!;
+      expect(shown.getAttribute('data-office-panel')).toBe(eyebrow);
+      expect(shown.textContent).toContain(text);
+      expect(shown.querySelector('[data-command] code')?.textContent).toBe(command);
+    }
+  });
+
+  test('a repository room with no selected parent seats every live seat: the active parent gives the plan, an idle repository keeps its furnished desks', async () => {
+    const seated: BoardParentsV1 = {
+      ...PARENTS, seats: [
+        { ...seat('t1', 'orchestrator', null, null, 'working'), agent: 'claude-code', parent: null },
+        { ...seat('t2', 'advisor', null, null, 'idle'), agent: 'codex', parent: null },
+        { ...seat('t3', 'worker', 9001, null, 'working'), agent: 'codex', parent: null },
+        { ...seat('t4', 'worker', 1476, 1499, 'idle'), agent: 'pi', parent: '1474' },
+        { address: 't5', name: null, agent: null, state: 'live', status: null, status_kind: null, status_ms: null, turn: 0, seat_status: 'unavailable', reason: 'seat_label_invalid', parent: null },
+      ],
+    };
+    const boards: number[] = [];
+    officeAt(`/${HARNESS_ID}`);
+    await mount(<OperatorApp {...props(busy(), {
+      readBoard: async (subject) => { boards.push(subject.parent); return { state: 'ok', board: boardWith({ plan: PLAN }) }; },
+      readBoardParents: async () => ({ state: 'ok', list: seated }),
+    })} />);
+    await settle();
+    expect(boards).toEqual([PARENTS.parents.find(parent => parent.seats > 0)!.number]);
+    expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe('1474');
+    expect(rows('[data-desk]').map(desk => desk.getAttribute('aria-label'))).toEqual(['#9001 · Codex: Coding', '#1476 · pi: Idle']);
+    expect(rows('[data-boss]').map(button => button.getAttribute('data-boss'))).toEqual(['rage', 'carrot', 'mine', 'valve']);
+    // The drawer resolves only items of the loaded board; a seat of another parent keeps its detail and command.
+    for (const [address, issue, command] of [['t3', null, 'gh issue view 9001 --comments'], ['t4', '1476', 'gh pr checks 1499']] as const) {
+      await act(async () => rows(`[data-desk="${address}"]`)[0]!.click());
+      expect(document.querySelector('[data-panel-issue]')?.getAttribute('data-panel-issue') ?? null).toBe(issue);
+      expect(document.querySelector('[data-office-panel] [data-command] code')?.textContent).toBe(command);
+    }
+    await act(async () => root?.unmount());
+
+    const idle: BoardParentsV1 = { ...PARENTS, parents: PARENTS.parents.map(parent => ({ ...parent, seats: 0 })), seats: [] };
+    boards.length = 0;
+    officeAt(`/${HARNESS_ID}`);
+    await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: idle }) })} />);
+    await settle();
+    expect(boards).toEqual([]);
+    const empty = document.querySelector('[data-board-office="room"]')!;
+    expect(empty.hasAttribute('data-board-parent')).toBe(false);
+    expect(empty.querySelector('[role="img"]')?.getAttribute('aria-label')).toContain('no parent: 0 worker desks');
+    expect(rows('.board-office__desk-label').map(label => label.textContent)).toEqual(Array.from({ length: 8 }, (_, index) => `Seat ${index + 1}Free desk`));
+    expect(document.querySelector('.board-office__scene[data-night]')).not.toBeNull();
+    expect(document.querySelector('[data-feed-empty]')?.textContent).toBe('No seat on duty');
+    expect(document.querySelector('[data-office-panel] [data-command] code')?.textContent).toBe('repo-harness board --parent <n>');
+    expect(rows('[data-boss]')).toHaveLength(0);
+    // No board read the default branch: the door has no command to copy.
+    await act(async () => rows('[data-office-hit="door"]')[0]!.click());
+    expect(document.querySelector('[data-office-panel] [data-command]')).toBeNull();
+    expect(document.querySelector('[data-office-panel] [data-command-gap]')?.textContent).toBe('Command unavailable: no board has read the default branch');
+  });
+
+  test('occupancy sets only the light: the parent sets the no-parent label and the plan sets the chip and the meter', async () => {
+    const noSeat = { ...PARENTS, parents: PARENTS.parents.map(parent => ({ ...parent, seats: 0 })), seats: [] };
+    const loose = { ...noSeat, seats: [{ ...seat('t1', 'worker', 9001, null, 'working'), parent: null }] };
+    for (const [path, list, plan, chip, tone, meter, label] of [
+      [`/${HARNESS_ID}/1474`, noSeat, PLAN, 'observed', null, 'worker 0/3', false],
+      [`/${HARNESS_ID}/1474`, noSeat, undefined, 'No plan', 'gap', 'worker 0 · no plan', false],
+      [`/${HARNESS_ID}`, loose, undefined, 'No plan', null, 'worker 1 · no plan', true],
+      [`/${HARNESS_ID}`, noSeat, undefined, 'Idle', null, '—', true],
+    ] as const) {
+      officeAt(path);
+      await mount(<OperatorApp {...props(busy(), {
+        readBoard: async () => ({ state: 'ok', board: boardWith({ plan }) }),
+        readBoardParents: async () => ({ state: 'ok', list }),
+      })} />);
+      await settle();
+      const shown = document.querySelector('[data-plan]')!;
+      expect(chip === 'observed' ? shown.getAttribute('data-plan') : shown.textContent).toBe(chip);
+      expect(shown.getAttribute('data-tone')).toBe(tone);
+      expect(document.querySelector('.board-office__meter')?.textContent).toBe(meter);
+      expect(rows('.board-office__scene-label').some(entry => entry.textContent === 'No parent in progress')).toBe(label);
+      await act(async () => root?.unmount());
+    }
+  });
+
+  test('a queue longer than the scene stays reachable: the zone lists every entry, and a hidden entry opens its panel and its drawer', async () => {
+    const queued = BOARD.pull_requests[0]!;
+    const board: BoardV1 = {
+      ...BOARD, pull_requests: [5001, 5002, 5003, 5004].map(number => ({ ...queued, number, acceptance: { status: 'not_accepted' } })),
+      items: BOARD.items.map(item => (item.number === 1478 ? { ...item, pull_requests: [5004] } : item)),
+    };
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board }) })} />);
+    await settle();
+    await act(async () => rows('[data-office-hit="queue"]')[0]!.click());
+    const shown = document.querySelector('[data-office-panel]')!;
+    expect(shown.getAttribute('data-office-panel')).toBe('QUEUE');
+    expect(Array.from(shown.querySelectorAll('dt')).map(term => term.textContent)).toEqual(['PR #5001', 'PR #5002', 'PR #5003', 'PR #5004']);
+    expect(rows('[data-queue-pr]').map(hit => hit.getAttribute('data-queue-pr'))).toEqual(['5001', '5002', '5003']);
+    expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).not.toContain('5004');
+    await act(async () => rows('[data-panel-pick="queue:5004"]')[0]!.click());
+    const entry = document.querySelector('[data-office-panel]')!;
+    const title = BOARD.items.find(item => item.number === 1478)!.title;
+    expect(entry.getAttribute('data-office-panel')).toBe('WORKER · QUEUE');
+    expect(entry.querySelector('h2')?.textContent).toBe(`PR #5004 ${title}`);
+    expect(entry.querySelector('[data-command] code')?.textContent).toBe('gh pr view 5004');
+    await act(async () => rows('[data-panel-issue="1478"]')[0]!.click());
+    await settle();
+    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474/1478`);
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(title);
+  });
+
+  const advisorList = (status: string | null): BoardParentsV1 => ({ ...PARENTS, seats: [...PARENTS.seats, { ...seat('t9', 'advisor', null, null, status), parent: null }] });
+
+  test('the boss buttons confirm, send only the command id and take the cooldown, the lock and the refusals from the server answers', async () => {
+    const posts: BossCommandPost[] = [];
+    const refused = (code: string, retry_after_seconds?: number): BossCommandWrite => ({ state: 'refused', status: 409, ...(retry_after_seconds === undefined ? {} : { retry_after_seconds }), error: { code, message: `server ${code}`, next_action: 'next' } });
+    for (const [answer, notice, cooling] of [
+      [{ state: 'sent' }, null, 'Stick 30:00'],
+      [refused('boss_cooldown', 90), 'boss_cooldown', 'Stick 1:30'],
+      [refused('advisor_turn_running'), 'advisor_turn_running', 'Stick'],
+      [refused('advisor_turn_unknown'), 'advisor_turn_unknown', 'Stick'],
+      [refused('repository_read_only'), 'repository_read_only', 'Stick'],
+      [refused('audit_unavailable'), 'audit_unavailable', 'Stick'],
+      [{ state: 'unreachable' }, 'unreachable', 'Stick'],
+      [{ state: 'unreadable' }, 'unreadable', 'Stick'],
+      [{ state: 'reload_required' }, null, 'Stick'],
+    ] as const) {
+      officeAt(`/${HARNESS_ID}/1474`);
+      await mount(<OperatorApp {...props(busy(), {
+        readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }),
+        writeBossCommand: async (body) => { posts.push(body); return answer; },
+      })} />);
+      await settle();
+      await act(async () => rows('[data-boss="rage"]')[0]!.click());
+      const confirm = document.querySelector('[role="alertdialog"]')!;
+      expect(confirm.textContent).toContain('【大棒】检查 parent #1474 下的执行席和审查席');
+      expect(posts).toHaveLength(0);
+      await act(async () => rows('[data-boss-confirm-send]')[0]!.click());
+      await settle();
+      expect(document.querySelector('[role="alertdialog"]')).toBeNull();
+      const { request_id, ...sent } = posts.pop()!;
+      expect(request_id).toMatch(/^[0-9a-f-]{36}$/u);
+      expect(sent).toEqual({ repository_id: HARNESS_ID, parent: 1474, command: 'rage' });
+      expect(document.querySelector('[data-boss-notice]')?.getAttribute('data-boss-notice') ?? null).toBe(notice);
+      expect(document.querySelector('[data-write-reload]') !== null).toBe(answer.state === 'reload_required');
+      expect(document.querySelector('[data-boss="rage"] span')?.textContent).toMatch(new RegExp(`^${cooling === 'Stick' ? 'Stick$' : cooling.slice(0, -2)}`, 'u'));
+      expect(document.querySelector('[data-boss="rage"]')?.getAttribute('aria-disabled')).toBe(String(cooling !== 'Stick'));
+      await act(async () => root?.unmount());
+    }
+  });
+
+  test('a cooldown notice counts its own command, and another parent starts with no timer or notice', async () => {
+    officeAt(`/${HARNESS_ID}/1474`);
+    await mount(<OperatorApp {...props(busy(), {
+      readBoard: async () => ({ state: 'ok', board: BOARD }),
+      readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }),
+      writeBossCommand: async body => (body.command === 'carrot' ? { state: 'sent' } : { state: 'refused', status: 409, retry_after_seconds: 90, error: { code: 'boss_cooldown', message: '', next_action: '' } }),
+    })} />);
+    await settle();
+    for (const command of ['carrot', 'rage']) {
+      await act(async () => rows(`[data-boss="${command}"]`)[0]!.click());
+      await act(async () => rows('[data-boss-confirm-send]')[0]!.click());
+      await settle();
+    }
+    expect(document.querySelector('[data-boss="carrot"] span')?.textContent).toMatch(/^Carrot (?:60:0\d|59:\d\d)$/u);
+    expect(document.querySelector('[data-boss-notice="boss_cooldown"]')?.textContent).toMatch(/\b1:(?:3[01]|2\d)\b/u);
+    const other = PARENTS.parents.find(parent => parent.number !== 1474)!.number;
+    await act(async () => { window.location.hash = `#board/office/${HARNESS_ID}/${other}`; window.dispatchEvent(new window.HashChangeEvent('hashchange')); });
+    await settle();
+    expect(document.querySelector('[data-board-office="room"]')?.getAttribute('data-board-parent')).toBe(String(other));
+    expect(rows('[data-boss] span').map(label => label.textContent)).toEqual(['Stick', 'Carrot', 'Sweep', 'Valve']);
+    expect(document.querySelector('[data-boss-notice]')).toBeNull();
+  });
+
+  test('reduced motion keeps the scene of an accepted command still while the cooldown runs', async () => {
+    for (const reduce of [true, false]) {
+      officeAt(`/${HARNESS_ID}/1474`);
+      Object.defineProperty(window, 'matchMedia', { configurable: true, value: (media: string) => ({ matches: media.includes('reduced-motion') && reduce, media, addEventListener() {}, removeEventListener() {} }) });
+      await mount(<OperatorApp {...props(busy(), { readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }), writeBossCommand: async () => ({ state: 'sent' }) })} />);
+      await settle();
+      await act(async () => rows('[data-boss="rage"]')[0]!.click());
+      await act(async () => rows('[data-boss-confirm-send]')[0]!.click());
+      await settle();
+      const scene = () => document.querySelector('[data-board-office="room"] [role="img"]')!.innerHTML;
+      const first = scene();
+      await act(async () => { await Bun.sleep(600); });
+      expect(scene() === first).toBe(reduce);
+      expect(document.querySelector('[data-boss="rage"] span')?.textContent).toMatch(/^Stick (?:30:0\d|29:\d\d)$/u);
+      await act(async () => root?.unmount());
+    }
+  });
+
+  test('the advisor status locks the boss buttons before any send: idle and done are open, working and blocked wait, any other status is unknown', async () => {
+    for (const [status, disabled, label] of [
+      ['idle', 'false', 'Stick'], ['done', 'false', 'Stick'],
+      ['working', 'true', 'Stick · waiting for the advisor'], ['blocked', 'true', 'Stick · waiting for the advisor'],
+      [null, 'true', 'Stick · advisor status unknown'], ['thinking', 'true', 'Stick · advisor status unknown'],
+    ] as const) {
+      const posts: BossCommandPost[] = [];
+      officeAt(`/${HARNESS_ID}/1474`);
+      await mount(<OperatorApp {...props(busy(), {
+        readBoardParents: async () => ({ state: 'ok', list: advisorList(status) }),
+        writeBossCommand: async (body) => { posts.push(body); return { state: 'sent' }; },
+      })} />);
+      await settle();
+      const button = rows('[data-boss="rage"]')[0]!;
+      expect([button.getAttribute('aria-disabled'), button.querySelector('span')?.textContent]).toEqual([disabled, label]);
+      await act(async () => button.click());
+      expect(document.querySelector('[role="alertdialog"]') !== null).toBe(disabled === 'false');
+      expect(posts).toHaveLength(0);
+      await act(async () => root?.unmount());
+    }
+  });
+
+  test('the boss route client decodes the send, reads retry_after_seconds and keeps a typed refusal', async () => {
+    const realFetch = globalThis.fetch;
+    const body: BossCommandPost = { request_id: 'r1', repository_id: HARNESS_ID, parent: 1474, command: 'mine' };
+    const answer = (status: number, value: unknown) => { globalThis.fetch = Object.assign(async () => new Response(JSON.stringify(value), { status }), { preconnect: realFetch.preconnect }); };
+    try {
+      answer(200, { protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1, parent: 1474, terminal: 't4', started: true, turn: 3 });
+      expect(await postBossCommand(body)).toEqual({ state: 'sent' });
+      answer(200, { protocol: 1, kind: 'other' });
+      expect(await postBossCommand(body)).toEqual({ state: 'unreadable' });
+      const error = { code: 'boss_cooldown', message: 'Wait.', next_action: 'Retry.' };
+      answer(409, { error, retry_after_seconds: 60 });
+      expect(await postBossCommand(body)).toEqual({ state: 'refused', status: 409, error, retry_after_seconds: 60 });
+      answer(409, { error: { ...error, code: 'advisor_turn_running' } });
+      expect(await postBossCommand(body)).toEqual({ state: 'refused', status: 409, error: { ...error, code: 'advisor_turn_running' } });
+      answer(403, { error: { ...error, code: 'write_token_invalid' } });
+      expect(await postBossCommand(body)).toEqual({ state: 'reload_required' });
+      answer(500, { nope: true });
+      expect(await postBossCommand(body)).toEqual({ state: 'unreachable' });
+    } finally {
+      globalThis.fetch = realFetch;
+    }
+  });
+
+  test('排雷 marks only the desks that an R2 or R3 finding names', () => {
+    const attention = evaluateBoardAttention(BOARD);
+    const board = boardWith({ terminals: [seat('t1', 'worker', 1476, 1499, 'working'), seat('t2', 'worker', 1475, 1491, 'working'), seat('t3', 'worker', 1477, null, 'working')] });
+    const finding = (rule: 'R2' | 'R3' | 'R1', pull_requests: readonly number[]) => ({ rule, route: 'advisor', issues: [], pull_requests, terminals: [], message: '' }) as const;
+    const marks = officeRoom(seatsOf(board), { board, attention: { ...attention, findings: [finding('R1', [1491]), finding('R2', [1499]), finding('R3', [1491])] } }).mines;
+    expect([...marks]).toEqual([['t1', 'R2'], ['t2', 'R3']]);
   });
 });
 
@@ -1787,6 +2108,109 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect([...planRows, 'repo-harness-wt-extra-12'].some(directory => checkbox(directory).checked)).toBe(false);
     expect(openState()).toEqual([true, '0', false]);
     greenUnchanged();
+  });
+
+  describe('a write that gets 403 write_token_invalid after a restart', () => {
+    const planClick = (name: 'choose' | 'execute') => act(async () => planButton(name).click());
+    const deleteChosen = async () => {
+      await option('repo-harness-wt-notes', 'delete');
+      await planClick('choose');
+    };
+    const agentsPage = async (overrides: Partial<OperatorAppProps> = {}) => {
+      const stores = settingsStores(NOW, 'busy');
+      installDom('http://127.0.0.1:4318/#agents');
+      await mount(<OperatorApp {...props(busy(), { readAgentsSettings: stores.agents.read, readSeatsSettings: stores.seats.read,
+        readSetup: () => new Promise(() => {}), readQuota: () => new Promise(() => {}), ...overrides })} />);
+      await settle();
+    };
+    const saveLocked = (section: string) => expect(document.querySelector<HTMLButtonElement>(`[data-save="${section}"]`)!.disabled).toBe(true);
+    const fixture = (...ports: (keyof CleanupPlanPorts)[]): CleanupPlanPorts => ({ ...cleanupPlanFixture(NOW), ...Object.fromEntries(ports.map(port => [port, cleanupPlanPorts[port]])) });
+    const TOKEN_ERROR = { code: 'write_token_invalid', message: 'The write token is missing or not valid.', next_action: 'Reload the operator page, then retry.' };
+    const ORIGIN_ERROR = { code: 'origin_not_allowed', message: 'The request origin is not allowed.', next_action: 'Open the page from the operator service.' };
+    /** Only a typed 403 with this code means a stale token. Every write shares one client, so one path proves each other answer. */
+    const OTHER_ANSWERS = [
+      ['a 401 with the code', 401, { error: TOKEN_ERROR }, { state: 'refused', status: 401, error: TOKEN_ERROR }],
+      ['a 500 with the code', 500, { error: TOKEN_ERROR }, { state: 'refused', status: 500, error: TOKEN_ERROR }],
+      ['a 403 with another code', 403, { error: ORIGIN_ERROR }, { state: 'refused', status: 403, error: ORIGIN_ERROR }],
+      ['a 403 with no typed error', 403, {}, { state: 'unreachable' }],
+    ] as const;
+    const WRITES: readonly {
+      readonly path: string; readonly name: string; readonly locale?: 'zh'; readonly send: (answers: unknown[]) => Promise<void>; readonly after?: () => void;
+      readonly status?: number; readonly body?: unknown; readonly keeps?: unknown;
+    }[] = [
+      { name: 'agents settings', path: '/api/v1/settings/agents', after: () => saveLocked('agents'), send: async () => {
+        await agentsPage();
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-runtime="codex"] [data-use="review"]')!.click());
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-save="agents"]')!.click());
+      } },
+      { name: 'seats settings', path: '/api/v1/settings/seats', after: () => saveLocked('seats'), send: async () => {
+        await agentsPage();
+        await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Allow gatekeeper"]')!.click());
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-save="seats"]')!.click());
+      } },
+      { name: 'one-click cleanup', path: CLEANUP_PATH, send: async () => {
+        installDom(WORKTREES_URL);
+        await mount(<OperatorApp {...props(busy())} />);
+        await act(async () => cleanButton().click());
+      } },
+      { name: 'plan pass 1', path: '/api/v1/worktrees/cleanup/plan', locale: 'zh', send: async () => {
+        installDom(WORKTREES_URL);
+        await mount(<OperatorApp {...props(busy(), { worktreeCleanupPlan: fixture('open'), initialLocale: 'zh' })} />);
+        for (const directory of REVIEWABLE) await act(async () => checkbox(directory).click());
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!.click());
+      } },
+      { name: 'plan pass 2', path: '/api/v1/worktrees/cleanup/plan', send: async () => {
+        await openReview(fixture('choose'));
+        await deleteChosen();
+      } },
+      { name: 'plan execution', path: '/api/v1/worktrees/cleanup/execute', send: async () => {
+        await openReview(fixture('execute'));
+        await deleteChosen();
+        await until(() => planItem('repo-harness-wt-notes').querySelector('[data-plan-authorize]') !== null);
+        await act(async () => planItem('repo-harness-wt-notes').querySelector<HTMLInputElement>('[data-plan-authorize]')!.click());
+        await planClick('execute');
+      } },
+      { name: 'investigation start', path: '/api/v1/worktrees/cleanup/investigation', send: async () => {
+        // The real status port is connected: a refused start reads no status, because no job exists.
+        await openReview(fixture('investigate', 'investigation'));
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+      } },
+      ...OTHER_ANSWERS.map(([name, status, body, keeps]) => ({ name, status, body, keeps, path: '/api/v1/worktrees/cleanup/plan', send: async (answers: unknown[]) => {
+        await openReview({ ...cleanupPlanFixture(NOW), open: async ids => { const answer = await cleanupPlanPorts.open(ids); answers.push(answer); return answer; } });
+      } })),
+    ];
+    const RELOAD_TEXT = {
+      en: 'Reload this pageThe write token of this page is not valid, for example after the service restarted. Nothing was changed. Reload the page, then try again.',
+      zh: '请刷新这个页面这个页面的写 token 无效，例如服务重启过。什么都没有改动。刷新整个页面，再操作一次。',
+    };
+
+    for (const write of WRITES) test(`${write.name}: ${write.keeps ? 'keeps its own result, not the reload state' : 'shows the one reload state, sends one request and offers no retry'}`, async () => {
+      const original = globalThis.fetch;
+      const requests: string[] = [];
+      const answers: unknown[] = [];
+      globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
+        requests.push(`${options?.method ?? 'GET'} ${String(url)}`);
+        return Response.json(write.body ?? { error: TOKEN_ERROR }, { status: write.status ?? 403 });
+      }) as typeof fetch;
+      try {
+        await write.send(answers);
+        if (write.keeps) {
+          await until(() => document.querySelector('[data-plan-failure]') !== null);
+          expect(answers).toEqual([write.keeps]);
+          expect(document.querySelector('[data-write-reload]')).toBeNull();
+          expect(requests).toEqual([`POST ${write.path}`]);
+          return;
+        }
+        await until(() => document.querySelector('[data-write-reload]') !== null);
+        await settle();
+        const banners = document.querySelectorAll('[data-write-reload]');
+        expect(banners).toHaveLength(1);
+        expect(banners[0]!.textContent).toBe(RELOAD_TEXT[write.locale ?? 'en']);
+        expect(banners[0]!.querySelectorAll('button')).toHaveLength(0);
+        expect(requests).toEqual([`POST ${write.path}`]);
+        write.after?.();
+      } finally { globalThis.fetch = original; }
+    });
   });
 
   test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {

@@ -11,10 +11,11 @@ import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../c
 import {
   decodeCleanupExecutionResult, decodeCleanupInvestigationJob, decodeCleanupInvestigationStatus, decodeCleanupPlan,
 } from '../core/operator/worktree-cleanup-plan';
-import type { CleanupPlanFailure, CleanupPlanPorts } from './CleanupPlanReview';
+import type { CleanupPlanPorts } from './CleanupPlanReview';
 import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
 import type { OperatorApiErrorV1 } from './operator-api-error';
+import { postOperatorWrite, type OperatorWriteAnswer, type OperatorWriteFailure } from './operator-write';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**
@@ -136,65 +137,22 @@ const WORKTREE_CLEANUP_PATH = '/api/v1/worktrees/cleanup';
 
 export type WorktreeCleanupPost = WorktreeCleanupRequest & { readonly request_id: string };
 
-/**
- * `unreachable`: no typed answer arrived, so the request may or may not have run.
- * `unreadable`: a 200 whose body failed the decoder; the cleanup ran.
- */
-export type WorktreeCleanupWrite =
-  | { readonly state: 'cleaned'; readonly result: WorktreeCleanupResult }
-  | { readonly state: 'refused'; readonly status: number; readonly error: OperatorApiErrorV1 }
-  | { readonly state: 'unreachable' }
-  | { readonly state: 'unreadable' };
+export type WorktreeCleanupWrite = { readonly state: 'cleaned'; readonly result: WorktreeCleanupResult } | OperatorWriteFailure;
 export type WorktreeCleanupWriter = (body: WorktreeCleanupPost) => Promise<WorktreeCleanupWrite>;
 
-const UNTYPED: OperatorApiErrorV1 = Object.freeze({ code: '', message: '', next_action: '' });
-
-/** The write token travels in the HttpOnly cookie the page response set. */
 export async function postWorktreeCleanup(body: WorktreeCleanupPost): Promise<WorktreeCleanupWrite> {
-  let response: Response;
-  try {
-    response = await fetch(WORKTREE_CLEANUP_PATH, {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { state: 'unreachable' };
-  }
-  const payload: unknown = await response.json().catch(() => null);
-  if (response.ok) {
-    try { return { state: 'cleaned', result: decodeWorktreeCleanupResult(payload) }; } catch { return { state: 'unreadable' }; }
-  }
-  const error = asApiError(payload, UNTYPED);
-  return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
+  const answer = await postOperatorWrite(WORKTREE_CLEANUP_PATH, body, decodeWorktreeCleanupResult);
+  return answer.state === 'ok' ? { state: 'cleaned', result: answer.value } : answer;
 }
 
 const CLEANUP_PLAN_PATH = '/api/v1/worktrees/cleanup/plan';
 const CLEANUP_EXECUTE_PATH = '/api/v1/worktrees/cleanup/execute';
 const CLEANUP_INVESTIGATION_PATH = '/api/v1/worktrees/cleanup/investigation';
 
-/** A typed refusal, a decoded 200, or the failure the review shows. Each body carries a new request_id. */
-async function postCleanupWrite<T>(path: string, body: object, decode: (value: unknown) => T): Promise<{ readonly state: 'ok'; readonly value: T } | CleanupPlanFailure> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { state: 'unreachable' };
-  }
-  const payload: unknown = await response.json().catch(() => null);
-  if (response.ok) {
-    try { return { state: 'ok', value: decode(payload) }; } catch { return { state: 'unreadable' }; }
-  }
-  const error = asApiError(payload, UNTYPED);
-  return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
-}
+const UNTYPED: OperatorApiErrorV1 = Object.freeze({ code: '', message: '', next_action: '' });
 
 /** The investigation status read: a decoded 200, a typed refusal, or the failure the review shows. */
-async function getCleanupInvestigation(sessionId: string): Promise<{ readonly state: 'ok'; readonly value: ReturnType<typeof decodeCleanupInvestigationStatus> } | CleanupPlanFailure> {
+async function getCleanupInvestigation(sessionId: string): Promise<OperatorWriteAnswer<ReturnType<typeof decodeCleanupInvestigationStatus>>> {
   let response: Response;
   try {
     response = await fetch(`${CLEANUP_INVESTIGATION_PATH}/${sessionId}`, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json' } });
@@ -209,23 +167,23 @@ async function getCleanupInvestigation(sessionId: string): Promise<{ readonly st
   return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
 }
 
-/** The plan, execute and investigation routes of the operator service. */
+/** The plan, execute and investigation routes of the operator service. Each write body carries a new request_id. */
 export const cleanupPlanPorts: CleanupPlanPorts = {
   open: async ids => {
-    const answer = await postCleanupWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), ids: [...ids] }, decodeCleanupPlan);
+    const answer = await postOperatorWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), ids: [...ids] }, decodeCleanupPlan);
     return answer.state === 'ok' ? { state: 'ready', plan: answer.value } : answer;
   },
   choose: async (sessionId, choices) => {
-    const answer = await postCleanupWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), session_id: sessionId, choices }, decodeCleanupPlan);
+    const answer = await postOperatorWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), session_id: sessionId, choices }, decodeCleanupPlan);
     return answer.state === 'ok' ? { state: 'ready', plan: answer.value } : answer;
   },
   execute: async request => {
-    const answer = await postCleanupWrite(CLEANUP_EXECUTE_PATH, request, decodeCleanupExecutionResult);
+    const answer = await postOperatorWrite(CLEANUP_EXECUTE_PATH, request, decodeCleanupExecutionResult);
     return answer.state === 'ok' ? { state: 'done', result: answer.value } : answer;
   },
   investigate: async sessionId => {
     // The start answers with the running job; only the status read carries a plan.
-    const answer = await postCleanupWrite(CLEANUP_INVESTIGATION_PATH, { request_id: crypto.randomUUID(), session_id: sessionId },
+    const answer = await postOperatorWrite(CLEANUP_INVESTIGATION_PATH, { request_id: crypto.randomUUID(), session_id: sessionId },
       value => ({ ...decodeCleanupInvestigationJob(value), plan: null }));
     return answer.state === 'ok' ? { state: 'investigation', status: answer.value } : answer;
   },
@@ -240,6 +198,7 @@ export type WorktreeCleanupState =
   | { readonly kind: 'running'; readonly count: number }
   | { readonly kind: 'cleaned'; readonly result: WorktreeCleanupResult }
   | { readonly kind: 'refused'; readonly error: OperatorApiErrorV1 }
+  | { readonly kind: 'reload_required' }
   | { readonly kind: 'unreachable' }
   | { readonly kind: 'unreadable' };
 

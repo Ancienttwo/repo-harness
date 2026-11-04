@@ -4,6 +4,7 @@ import type { AgentRuntimeSettingsEntryV1, AgentUse, AgentsSettingsV1 } from '..
 import type { OperatorApiErrorV1 } from './operator-api-error';
 import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
+import { WriteReloadBanner } from './operator-write';
 import { saveNeedsReload, setDefaultDocs, setEnabled, setUse, type AgentsDraft, type AgentsSettingsForm, type SettingsSaveState } from './settings';
 import { StatusDot, type DotTone } from './ui';
 
@@ -165,6 +166,7 @@ function DefaultDocs({ draft, settings, locked, onEdit, t }: {
 export function SaveResult({ save, reload: onReload, changedElsewhere, t }: {
   readonly save: SettingsSaveState; readonly reload: () => void; readonly changedElsewhere: boolean; readonly t: OperatorTranslate;
 }) {
+  if (save.kind === 'reload_required') return <WriteReloadBanner t={t} />;
   const reload = <Banner.Action variant="secondary" onClick={onReload}>{t('settings.reload')}</Banner.Action>;
   if (save.kind === 'refused' && save.error.code === 'reconcile_required') {
     return <Banner variant="alert" data-save-result="reconcile_required" title={t('settings.reconcile.title')} description={t('settings.reconcile.body')} action={reload} />;

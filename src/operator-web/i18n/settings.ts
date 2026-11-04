@@ -153,8 +153,6 @@ export const en = {
   'settings.error.busy.action': 'Wait, then save again. The page sends the same request.',
   'settings.error.audit_unavailable.message': 'The operator audit log cannot be written, so the change was not run.',
   'settings.error.audit_unavailable.action': 'Check the operator audit log, then save again. The page sends the same request.',
-  'settings.error.write_token_invalid.message': 'The write token of this page is not valid, for example after the service restarted. Nothing was saved.',
-  'settings.error.write_token_invalid.action': 'Reload the page, then make your change again.',
 } as const;
 
 export const zh: Readonly<Record<keyof typeof en, string>> = {
@@ -312,6 +310,4 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   'settings.error.busy.action': '稍等再保存。页面会发送同一个请求。',
   'settings.error.audit_unavailable.message': 'operator 审计日志写不进去，所以改动没有执行。',
   'settings.error.audit_unavailable.action': '检查 operator 审计日志，然后再保存。页面会发送同一个请求。',
-  'settings.error.write_token_invalid.message': '这个页面的写 token 无效，例如服务重启过。什么都没有保存。',
-  'settings.error.write_token_invalid.action': '刷新整个页面，再改一次。',
 };

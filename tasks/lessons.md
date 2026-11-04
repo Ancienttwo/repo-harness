@@ -106,3 +106,10 @@ reviewed-through: 4305f61cd699547276e2434cbf1f1a4675e4036d
 - Why: #483 consolidated this rule from earlier lessons; the pre-consolidation references and count are kept here.
 - Triggered by correction: a6f0921e, a47cde10, 35597741, #483
 - Seen: 3×
+
+- Date: 2026-11-05
+- Mistake pattern: check-mockup-parity-on-same-data
+- Prevention rule: Check mockup parity side by side on the same data, including the real empty state. A field that the mockup needs and the contract lacks is a contract gap to raise, not a visual to drop.
+- Why: The Office shipped without the pixel art, the repository room and the empty desks of its mockup, and the owner compared the page with the mockup himself.
+- Triggered by correction: #1784, #1787
+- Seen: 1×
