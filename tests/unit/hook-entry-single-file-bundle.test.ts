@@ -6,8 +6,9 @@
  * graph. Bundling breaks things unless they are held down here:
  *
  * 1. The process supervisor re-enters the bundle with its own flag.
- * 2. The build-time `--define` marks the single-file bundle for the process
- *    runner and supervisor, so it must land in the bundle.
+ * 2. The build-time `--define REPO_HARNESS_SINGLE_FILE_BUNDLE=true` marks the
+ *    single-file bundle for the process runner and supervisor, so it must land
+ *    in the bundle.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
 import { mkdtempSync, readFileSync, rmSync } from 'fs';
@@ -33,11 +34,11 @@ afterEach(() => {
   }
 });
 
-function buildBundle(define: string | null): string {
+function buildBundle(marked: boolean): string {
   const outDir = temporaryRoot();
   const outfile = join(outDir, 'hook-entry.js');
   const args = ['build', HOOK_ENTRY, '--target=bun', '--outfile', outfile];
-  if (define !== null) args.push('--define', `REPO_HARNESS_BUNDLED_CLI_VERSION="${define}"`);
+  if (marked) args.push('--define', 'REPO_HARNESS_SINGLE_FILE_BUNDLE=true');
   const built = spawnSync('bun', args, { cwd: ROOT, encoding: 'utf-8' });
   expect(built.status, `${built.stdout}\n${built.stderr}`).toBe(0);
   return outfile;
@@ -90,7 +91,7 @@ describe('hook-entry single-file bundle', () => {
     const root = temporaryRoot();
     const metadataPath = join(root, 'receipt.json');
     const result = runBundledSupervisor(
-      buildBundle('0.0.0-test'),
+      buildBundle(true),
       metadataPath,
       2_000,
       process.execPath,
@@ -124,7 +125,7 @@ describe('hook-entry single-file bundle', () => {
         'setInterval(() => {}, 1000);',
       ].join('\n');
       const result = runBundledSupervisor(
-        buildBundle('0.0.0-test'),
+        buildBundle(true),
         metadataPath,
         // Include bundled launcher startup before exercising descendant cleanup.
         2_000,
@@ -157,17 +158,17 @@ describe('hook-entry single-file bundle', () => {
   );
 
   test('bundle keeps the shebang and carries no detached SessionStart child', () => {
-    const bundle = readFileSync(buildBundle('0.0.0-test'), 'utf-8');
+    const bundle = readFileSync(buildBundle(true), 'utf-8');
     expect(bundle.split('\n')[0]).toBe('#!/usr/bin/env bun');
     expect(bundle).not.toContain('--detached-tooling-populate');
   }, 30_000);
 
   test('bundle never carries the undefined bundle marker identifier', () => {
-    const bundle = readFileSync(buildBundle('9.9.9-injected'), 'utf-8');
+    const bundle = readFileSync(buildBundle(true), 'utf-8');
     // A surviving identifier means the --define did not land; that is a build
     // defect, and the prepack script fails on exactly this condition.
-    expect(bundle).not.toContain('REPO_HARNESS_BUNDLED_CLI_VERSION');
-    expect(readFileSync(buildBundle(null), 'utf-8')).toContain('REPO_HARNESS_BUNDLED_CLI_VERSION');
+    expect(bundle).not.toContain('REPO_HARNESS_SINGLE_FILE_BUNDLE');
+    expect(readFileSync(buildBundle(false), 'utf-8')).toContain('REPO_HARNESS_SINGLE_FILE_BUNDLE');
   }, 30_000);
 
   test('package wiring ships the built bundle as the hook bin', () => {
@@ -182,7 +183,7 @@ describe('hook-entry single-file bundle', () => {
     // as part of its own JSON, so any build's chatter would break release tooling.
     expect(pkg.scripts.prepack).toBe('bun run build:hook-bundle 1>&2 && bun run build:oar-review-host 1>&2 && bun run build:operator-web 1>&2');
     expect(pkg.files).toContain('dist/oar-review-host.js');
-    expect(pkg.scripts['build:hook-bundle']).toContain('--define REPO_HARNESS_BUNDLED_CLI_VERSION');
+    expect(pkg.scripts['build:hook-bundle']).toContain('--define REPO_HARNESS_SINGLE_FILE_BUNDLE=true');
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf-8')).toMatch(/^dist\/$/m);
   });
 });
@@ -191,7 +192,7 @@ describe('hook-entry single-file bundle', () => {
 // dynamic package path at runtime. The execution cases above test this from
 // isolated folders with no source tree.
 test('bundle includes the observation owner without a dynamic source require', () => {
-  const bundle = readFileSync(buildBundle('0.0.0-test'), 'utf8');
+  const bundle = readFileSync(buildBundle(true), 'utf8');
   expect(/(?:require|requireFromHelper)\([^;\n]*readonly-observation/.test(bundle)).toBe(false);
   expect(bundle).toContain('AsyncLocalStorage');
 });

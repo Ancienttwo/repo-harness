@@ -1,11 +1,21 @@
 /**
- * The hc version floor. The pin is `external_tooling.herdr_core.min_version` of
- * the repository policy; readiness and the operator compare the version of the
- * core that answers against it. Browser bundles and Node both read this file,
- * so it stays free of Node built-ins. Herdr.app has no pin yet.
+ * The hc version floor. The release owns it: `herdr-core-pin.json` in this
+ * package protects this package's hc client code, so every reader (Board,
+ * Bots, runtime, readiness and the CI install) takes the floor from that file.
+ * Browser bundles and Node both read this file, so it stays free of Node
+ * built-ins. Herdr.app has no pin yet.
  */
+import pin from './herdr-core-pin.json';
 
 export const HC_VERSION_TEXT = /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/u;
+
+/** The lowest hc version that this release's client code supports. */
+export const HC_MIN_VERSION: string = pin.min_version;
+
+export interface HcReleaseAsset { readonly url: string; readonly sha256: string }
+
+/** The checksum-pinned herdr-core release archive of each platform, by asset name (`macos-aarch64`). */
+export const HC_RELEASE_ASSETS: Readonly<Record<string, HcReleaseAsset>> = pin.release_assets;
 
 export interface HcVersionCheck {
   /** `mismatch`: the core is older than the pin. */
@@ -35,13 +45,5 @@ export class HcVersionMismatchError extends Error {
   constructor(readonly check: HcVersionCheck) {
     super(`hc_version_mismatch: expected ${check.expected.min_version} or later; actual ${check.actual.version}`);
     this.name = 'HcVersionMismatchError';
-  }
-}
-
-/** No registered repository policy has a readable `external_tooling.herdr_core.min_version`. */
-export class HcPinUnavailableError extends Error {
-  constructor() {
-    super('hc_pin_unavailable: no registered repository policy has external_tooling.herdr_core.min_version');
-    this.name = 'HcPinUnavailableError';
   }
 }

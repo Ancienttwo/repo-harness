@@ -7,8 +7,7 @@
  */
 
 import * as fs from 'fs';
-import * as path from 'path';
-import { fileURLToPath } from 'url';
+import { version as PACKAGE_VERSION } from '../../../package.json';
 import { ALL_TARGETS } from '../installer/targets/registry';
 import { ROUTES, routesForHost } from '../hook/route-registry';
 import {
@@ -22,13 +21,13 @@ import {
 } from '../installer/managed-entries';
 import { readJsonOrEmpty } from '../installer/shared';
 import type { Location } from '../installer/types';
+import { readInstallState } from '../installer/install-profile';
 import {
   enabledPlugins,
   InstallStateError,
   installProfileStatePath,
-  readInstallState,
   type InstallStateErrorCode,
-} from '../installer/install-profile';
+} from '../installer/install-state';
 import { selectionLabel, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/contracts';
 import { globalArchitectureSectionPresent } from '../../effects/configuration/global-configuration';
@@ -36,18 +35,7 @@ import { WORKFLOW_CONTRACT_MARKER_PATH } from '../../core/adoption/minimum-harne
 import { gitExecFileSync } from '../../effects/git/runner';
 import { isOptIn } from '../hook/runtime';
 
-function packageVersion(): string {
-  const packagePath = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
-  try {
-    const parsed = JSON.parse(fs.readFileSync(packagePath, 'utf-8')) as { version?: unknown };
-    if (typeof parsed.version === 'string' && parsed.version.trim()) return parsed.version;
-  } catch {
-    // Keep --version usable even when package metadata is unavailable in a partial install.
-  }
-  return '0.0.0-unknown';
-}
-
-export const CLI_VERSION = packageVersion();
+export const CLI_VERSION: string = PACKAGE_VERSION;
 
 export interface StatusReport {
   cli: { version: string };

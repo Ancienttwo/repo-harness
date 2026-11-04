@@ -140,6 +140,9 @@ const AGENT_FLEET_SOURCE_DIR = process.env.REPO_HARNESS_AGENT_FLEET_SOURCE_DIR;
 const PACKAGE_ROOT = path.dirname(path.dirname(AGENT_FLEET_SOURCE_DIR));
 const { renderHerdrSkill } = require(path.join(PACKAGE_ROOT, "src/cli/commands/herdr-skill-render.mjs"));
 const { rawBaseUrl: WAZA_RAW_BASE_URL, files: WAZA_SHARED_RULES } = require(path.join(PACKAGE_ROOT, "src", "core", "skill-surface", "waza-shared-rules.json"));
+// The release owns the hc floor: it protects this package's hc client code.
+const HERDR_CORE_PIN_SOURCE = "package:src/core/operator/herdr-core-pin.json";
+const { min_version: HERDR_CORE_MIN_VERSION } = require(path.join(PACKAGE_ROOT, "src", "core", "operator", "herdr-core-pin.json"));
 const SKILL_SURFACE_MANIFEST_PATH = path.join(PACKAGE_ROOT, "assets", "skill-commands", "manifest.json");
 const AGENT_FLEET_SOURCE_LABEL = "package:agents/fleet";
 const AGENT_FLEET_DEFAULT_MANAGED = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
@@ -161,7 +164,6 @@ const ARCHCTX_MODEL_DIR = ".archcontext/model";
 const ARCHCTX_NODES_DIR = ".archcontext/model/nodes";
 const ARCHCTX_CAPABILITY_SOURCE_KEY = ".ai/harness/policy.json#context.capability_source";
 const ARCHCTX_STATUS_COMMAND = "repo-harness architecture-projection status --json";
-const HERDR_CORE_PIN_KEY = ".ai/harness/policy.json#external_tooling.herdr_core";
 const WAZA_STAGING_ROOT = path.join(HOME, ".agents");
 const WAZA_STAGING_DIR = path.join(WAZA_STAGING_ROOT, "skills");
 const WAZA_STAGING_RULES_DIR = path.join(WAZA_STAGING_ROOT, "rules");
@@ -806,17 +808,6 @@ function detectWaza() {
   };
 }
 
-/**
- * Reads one runtime pin at `.ai/harness/policy.json#external_tooling.<key>`.
- * The herdr-core pin also owns the release URL and checksum that CI installs
- * from. A missing or malformed pin fails closed instead of assuming a floor.
- */
-function pinnedMinVersion(key) {
-  const policy = readJson(path.join(REPO_ROOT, ".ai/harness/policy.json"));
-  const pinned = policy?.external_tooling?.[key]?.min_version;
-  return typeof pinned === "string" && /^\d+\.\d+\.\d+$/.test(pinned) ? pinned : null;
-}
-
 function versionAtLeast(actual, minimum) {
   const parse = (value) => /^(\d+)\.(\d+)\.(\d+)$/.exec(value)?.slice(1, 4).map(Number) ?? null;
   const left = parse(actual);
@@ -828,29 +819,25 @@ function versionAtLeast(actual, minimum) {
   return true;
 }
 
-function pinnedRuntimeCapability(capability, key, pinKey, versionPattern) {
-  const minVersion = pinnedMinVersion(key);
-  capability.min_version = minVersion;
-  capability.min_version_source = pinKey;
-  if (capability.path) {
+function herdrCoreCapability() {
+  const capability = commandCapability("hc", "persistent agent terminals, task sessions, review hosting and notify relay through herdr-core", "platform-runtime", true);
+  capability.min_version = HERDR_CORE_MIN_VERSION;
+  capability.min_version_source = HERDR_CORE_PIN_SOURCE;
+  // The repair command only: `install` and `update` install a missing hc from the pin.
+  if (!capability.path) capability.command = "repo-harness update";
+  else {
     try {
       capability.version = execFileSync(capability.path, ["--version"], { encoding: "utf8", timeout: 5000, stdio: ["ignore", "pipe", "pipe"] }).trim();
-      const reported = versionPattern.exec(capability.version)?.[1] ?? null;
-      if (!reported || (minVersion && !versionAtLeast(reported, minVersion))) capability.status = "unavailable";
+      const reported = /^hc (\d+\.\d+\.\d+)$/.exec(capability.version)?.[1] ?? null;
+      if (!reported || !versionAtLeast(reported, HERDR_CORE_MIN_VERSION)) capability.status = "unavailable";
+      if (reported && !versionAtLeast(reported, HERDR_CORE_MIN_VERSION)) capability.command = `hc update --version ${HERDR_CORE_MIN_VERSION}`;
     } catch (_) { capability.status = "unavailable"; }
-  }
-  if (!minVersion) {
-    capability.status = "configuration-error";
-    capability.reason = `${pinKey}.min_version is missing or malformed; run repo-harness init --repo . to merge repository policy defaults, then verify the declared version requirement`;
   }
   return capability;
 }
 
 function detectRuntimeCapabilities(waza) {
-  const herdrCore = pinnedRuntimeCapability(
-    commandCapability("hc", "persistent agent terminals, task sessions, review hosting and notify relay through herdr-core", "platform-runtime", true),
-    "herdr_core", HERDR_CORE_PIN_KEY, /^hc (\d+\.\d+\.\d+)$/
-  );
+  const herdrCore = herdrCoreCapability();
   return {
     herdr_core: herdrCore,
     bun: commandCapability(
@@ -2056,14 +2043,11 @@ const report = {
 const strictFailures = [];
 if (strictReadiness && report.runtime_capabilities.herdr_core.status !== "present") {
   const hc = report.runtime_capabilities.herdr_core;
-  if (!hc.min_version) strictFailures.push(`herdr-core configuration error: ${hc.reason}`);
-  else strictFailures.push(`herdr-core runtime is ${hc.status}; install hc >=${hc.min_version} and verify hc --version`);
+  strictFailures.push(`herdr-core runtime is ${hc.status}; install hc >=${hc.min_version} and verify hc --version`);
 }
 if (strictReadiness && report.tools.herdr_skill.status !== "present") {
   // The skill source is `hc --skill`, so the update command cannot repair it until hc is present.
-  const hcStatus = report.runtime_capabilities.herdr_core.status;
-  const repairHcFirst = hcStatus === "configuration-error" ? "fix the herdr-core pin first, then "
-    : hcStatus === "present" ? "" : "install hc first, then ";
+  const repairHcFirst = report.runtime_capabilities.herdr_core.status === "present" ? "" : "install hc first, then ";
   strictFailures.push(`Herdr skill readiness is ${report.tools.herdr_skill.status}; ${repairHcFirst}run ${report.tools.herdr_skill.install_command}`);
 }
 if (strictReadiness && ["missing", "partial"].includes(report.tools.codegraph.status)) {

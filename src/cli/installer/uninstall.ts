@@ -9,7 +9,8 @@ import { piPackagePresent, removePiPackage } from './pi-package';
 import { piExecutable } from '../../effects/pi-executable';
 import { deepEqual } from './shared';
 import { globalContextPath, removeManagedBlock } from './global-context';
-import { installProfileStatePath, managedInstallSurfaceIsCurrent, readInstallState, type ManagedInstallSurface } from './install-profile';
+import { managedInstallSurfaceIsCurrent, readInstallState, type ManagedInstallSurface } from './install-profile';
+import { installProfileStatePath } from './install-state';
 import { assertConfigurationPath, configurationPaths, configurationReceiptPath, hostConfigurationRoot, readConfigurationFragment, readConfigurationReceipt, replaceConfigurationFragment, writePrivateConfiguration } from './configuration-ownership';
 
 export interface UninstallOptions { target: 'codex' | 'claude' | 'both'; dryRun?: boolean; recoverInterrupted?: boolean; env?: NodeJS.ProcessEnv; runtimeLock?: RuntimeTransactionContext }

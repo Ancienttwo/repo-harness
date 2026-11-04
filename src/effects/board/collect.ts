@@ -1,6 +1,4 @@
 import { spawnSync } from 'child_process';
-import { readFileSync } from 'fs';
-import { join } from 'path';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
   linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
@@ -8,13 +6,12 @@ import {
 } from '../../core/board/board';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
+import { HC_MIN_VERSION } from '../../core/operator/herdr-pin';
 import type { PullRequestReadinessV2, PullRequestSelectionV2 } from '../../core/publication/merge-readiness';
 import { gitSpawnSync } from '../git/runner';
 import { collectPullRequestMergeReadiness } from '../publication/merge-readiness';
 
 const GH_TIMEOUT_MS = 30_000;
-const POLICY_PATH = '.ai/harness/policy.json';
-const SEMVER = /^[0-9]+\.[0-9]+\.[0-9]+$/u;
 
 const COMMENTS = `comments(last: ${BOARD_PAGE.comments}) { pageInfo { hasPreviousPage } nodes { url createdAt authorAssociation body } }`;
 const ISSUE_FIELDS = `number title url state labels(first: ${BOARD_PAGE.labels}) { pageInfo { hasNextPage } nodes { name } } milestone { title } ${COMMENTS}`;
@@ -116,23 +113,10 @@ function dailyRun(input: BoardCollectInput, repository: string, branch: string):
   return { status: 'observed', run_url: run.html_url, conclusion: run.conclusion as string | null, created_at: run.created_at };
 }
 
-/** `external_tooling.herdr_core.min_version` of the local policy; null when the file or the pin cannot be read. */
-function hcPin(repoRoot: string): string | null {
-  try {
-    const policy = JSON.parse(readFileSync(join(repoRoot, POLICY_PATH), 'utf-8')) as { external_tooling?: { herdr_core?: { min_version?: unknown } } };
-    const pin = policy.external_tooling?.herdr_core?.min_version;
-    return typeof pin === 'string' && SEMVER.test(pin) ? pin : null;
-  } catch {
-    return null;
-  }
-}
-
 function tooling(input: BoardCollectInput): BoardToolingV1 {
   const herdrApp = { status: 'not_pinned' } as const;
-  const pin = hcPin(input.repo_root);
-  if (pin === null) return { hc: { status: 'unavailable', reason: 'pin_unavailable' }, herdr_app: herdrApp };
   const version = input.host.hcVersion();
-  return { hc: version.status === 'unavailable' ? version : { status: 'observed', version: version.version, min_version: pin }, herdr_app: herdrApp };
+  return { hc: version.status === 'unavailable' ? version : { status: 'observed', version: version.version, min_version: HC_MIN_VERSION }, herdr_app: herdrApp };
 }
 
 const POSITIVE = /^[1-9][0-9]*$/u;

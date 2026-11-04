@@ -2,6 +2,96 @@
 
 All notable changes to this skill are documented here.
 
+## [Unreleased]
+
+### Changed
+
+- The package file `src/core/operator/herdr-core-pin.json` is now the only
+  hc (herdr-core) pin. It holds the `min_version` floor and the release assets
+  that CI installs. The Board, the Bots page, the runtime overlay,
+  `check-agent-tooling.sh` and the CI action read this file. The floor protects
+  the hc client code of the package, so each install reads the floor of its
+  own code. The repository policy key `external_tooling.herdr_core` is
+  retired: `init` and adoption no longer seed it, and they delete it and
+  report it in the retired policy keys. No reader reads the old key.
+- `hc_pin_unavailable` (Bots page and runtime overlay), the Board reason
+  `pin_unavailable` and the `configuration-error` status of
+  `runtime.herdr_core` are removed. A missing or malformed pin file fails at
+  module load. `runtime.herdr_core.min_version_source` is now
+  `package:src/core/operator/herdr-core-pin.json`.
+
+## [0.26.1] - 2026-11-04
+
+This release fixes the hook runtime of 0.26.0. In 0.26.0, the installed
+`repo-harness-hook` exited 1 on every event when the machine recorded an
+install state, so no hook route ran: the edit, bash and subagent guards, the
+inbox, SessionStart and Stop were all skipped. 0.26.1 has no breaking change
+and needs no migration.
+
+### Upgrade
+
+- From 0.26.0, install the new CLI directly, then update:
+
+  ```bash
+  bun add -g repo-harness@0.26.1 --no-cache
+  repo-harness update --version 0.26.1
+  ```
+
+  `update` runs from the CLI entry, not from the hook bundle, so the 0.26.0
+  fault does not stop it. A 0.26.0 state is protocol 3: no migration.
+- From 0.25.4 or earlier, use the `[0.26.0]` Upgrade steps with 0.26.1 in
+  place of 0.26.0.
+
+### Changed
+
+- The selection read of a hook or command root no longer checks the
+  ownership surfaces of the install state. In 0.26.0, a state with a surface
+  outside the host mutation paths made that read `unreadable`. With
+  `architecture` selected, every root that uses this read now loads the
+  architecture providers for such a state, where 0.26.0 skipped them: the
+  CLI root, the hook, the Operator architecture thread,
+  `scripts/capability-resolver.ts`, `scripts/check-managed-runtime.ts`,
+  `scripts/contract-worktree-runtime.ts`, and the shell gate
+  `scripts/lib/architecture-plugin.sh`, so `check-ci.sh`,
+  `contract-worktree.sh` and `check-agent-tooling.sh` start archctx or
+  CodeGraph. `install`, `update`, `doctor`, `status`, `uninstall` and
+  `upgrade` still check each surface and fail with
+  `install_state_invalid_ownership`. (#1683)
+- The Operator module review diff reads path owners through the
+  architecture ownership port. When the `architecture` plugin is not
+  selected, it fails with `diff_owner_resolution_failed` before any archctx
+  call. `component.architecture.owners` is a target of the plugin-internals
+  constraint again. (#1682)
+
+### Fixed
+
+- Each `repo-harness-hook` run on a machine with a recorded install state
+  exited 1 with `invalid skill-surface catalog at
+  <bun global>/assets/skill-commands/manifest.json: MANIFEST_MISSING`. So no
+  guard, inbox, SessionStart or Stop route ran in 0.26.0. The hook read the
+  selection through the installer module, which loaded the skill-surface
+  manifest three directories above the `dist/hook-entry.js` bundle. The hook
+  now reads the selection through a small install-state read model with no
+  package-asset or host-path dependency, so the installer is not in the hook
+  bundle. The selection read of a hook or command root no longer fails on an
+  ownership surface outside the host mutation paths; `install`, `update`,
+  `doctor` and `status` still check each surface. The package version comes
+  from one static `package.json` import, and the single-file bundle marker is
+  the boolean `REPO_HARNESS_SINGLE_FILE_BUNDLE`. The tarball install smoke now
+  runs the installed hook with a recorded install state. (#1683)
+- The Operator architecture page names each map failure and its next step.
+  The archctx error code goes from the map worker to the page, so the page
+  tells a missing committed model (`AC_MODEL_ADOPTION_REQUIRED`) from an
+  invalid model (`AC_SCHEMA_INVALID`) and from a git read failure. (#1677)
+- The MCP server contexts require the CodeGraph adapter, with no default, so
+  no MCP entry can run CodeGraph without the selection check. A provider
+  import failure with the plugin selected reports `status: "invalid"` with
+  the import error. (#1675)
+
+### Documentation
+
+- 0.26.0 publication values in the release record. (#1679)
+
 ## [0.26.0] - 2026-11-04
 
 This release has breaking changes. archctx and CodeGraph are the

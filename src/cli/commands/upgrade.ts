@@ -41,13 +41,15 @@ import {
 import { FS_TRANSACTION_BACKUP_ROOT, withTargetLock, type FsTransactionManifest, type FsTransactionManifestOperation } from '../../effects/fs-transaction';
 import {
   beginInstallHostTransaction,
-  installProfileStatePath,
   readInstallState,
   recordRefreshedInstallOwnership,
   rollbackInstallHostTransaction,
   type InstallHostTransaction,
   type ManagedInstallSurface,
 } from '../installer/install-profile';
+import {
+  installProfileStatePath,
+} from '../installer/install-state';
 import { globalRuntimeScope, withRuntimeTransactionLock, type RuntimeTransactionContext } from '../../effects/locking/runtime-transaction-lock';
 import { atomicWriteFileSync, formatJson } from '../installer/shared';
 import { redactProcessOutput } from '../../effects/process-runner';

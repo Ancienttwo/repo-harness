@@ -9,8 +9,8 @@ import { processGroupExists, terminateProcessGroup } from './process-group-termi
 
 export const PROCESS_SUPERVISOR_TERMINATION_GRACE_MS = 500;
 export const PROCESS_SUPERVISOR_FLAG = '--process-supervisor';
-declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
-const IS_SINGLE_FILE_HOOK_BUNDLE = typeof REPO_HARNESS_BUNDLED_CLI_VERSION === 'string';
+declare const REPO_HARNESS_SINGLE_FILE_BUNDLE: boolean | undefined;
+const IS_SINGLE_FILE_HOOK_BUNDLE = typeof REPO_HARNESS_SINGLE_FILE_BUNDLE === 'boolean' && REPO_HARNESS_SINGLE_FILE_BUNDLE;
 const PROCESS_GROUP_LAUNCHER = IS_SINGLE_FILE_HOOK_BUNDLE
   ? import.meta.path
   : join(import.meta.dir, 'process-group-launcher.ts');

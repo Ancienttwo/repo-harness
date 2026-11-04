@@ -1,6 +1,6 @@
 import { declareArchitectureAbsent, registerArchitecturePorts, type ArchitecturePorts } from '../../core/architecture/contracts';
-import type { PluginId } from '../../core/skill-surface/plugin-manifest';
-import { architectureRepair, enabledPlugins, installProfileStatePath, InstallStateError, readInstallState } from './install-profile';
+import { installSelectionCommand, PLUGIN_IDS, type PluginId } from '../../core/skill-surface/plugin-manifest';
+import { enabledPlugins, installProfileStatePath, InstallStateError, readRecordedInstallState } from './install-state';
 
 /**
  * The recorded install selection as one process root reads it, once. No
@@ -12,9 +12,14 @@ export type RecordedSelection =
   | { readonly status: 'none' }
   | { readonly status: 'unreadable'; readonly error: InstallStateError };
 
+/**
+ * The selection read of a process root. It reads the install-state read model
+ * only: the host-path check of the ownership surfaces runs in the installer
+ * commands (install, update, doctor, status), not in a hook or command root.
+ */
 export function readRecordedSelection(env: NodeJS.ProcessEnv = process.env): RecordedSelection {
   try {
-    const state = readInstallState(env);
+    const state = readRecordedInstallState(env);
     return state === null ? { status: 'none' } : { status: 'recorded', plugins: enabledPlugins(state) };
   } catch (error) {
     if (error instanceof InstallStateError) return { status: 'unreadable', error };
@@ -30,6 +35,11 @@ export function architectureSelected(selection: RecordedSelection): boolean {
 export function recordedPlugins(selection: RecordedSelection): readonly PluginId[] {
   if (selection.status === 'unreadable') throw selection.error;
   return selection.status === 'recorded' ? selection.plugins : [];
+}
+
+/** The install command that keeps these plugins and adds `architecture`; with no recorded state, the default install. */
+export function architectureRepair(plugins: readonly PluginId[] | null): string {
+  return plugins === null ? installSelectionCommand('all') : installSelectionCommand(PLUGIN_IDS.filter(id => plugins.includes(id) || id === 'architecture'));
 }
 
 function notSelectedMessage(selection: RecordedSelection): string {

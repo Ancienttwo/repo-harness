@@ -13,7 +13,7 @@ describe("verified Skill tree staging commit", () => {
     try {
       const source = join(root, "source");
       const staging = join(root, "staging");
-      const destination = join(staging, "reverse-skill-router");
+      const destination = join(staging, "fixture-skill");
       mkdirSync(source, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
 
@@ -32,7 +32,7 @@ describe("verified Skill tree staging commit", () => {
     try {
       const source = join(root, "source");
       const staging = join(root, "staging");
-      const destination = join(staging, "reverse-skill-router");
+      const destination = join(staging, "fixture-skill");
       mkdirSync(source, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
       const expected = skillTreeSha256(source);
@@ -63,7 +63,7 @@ describe("verified Skill tree staging commit", () => {
     try {
       const source = join(root, "source");
       const staging = join(root, "staging");
-      const destination = join(staging, "reverse-skill-router");
+      const destination = join(staging, "fixture-skill");
       mkdirSync(source, { recursive: true });
       mkdirSync(staging, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
@@ -73,7 +73,7 @@ describe("verified Skill tree staging commit", () => {
         status: "failed",
       });
       expect(readlinkSync(destination)).toBe(join(root, "missing-user-target"));
-      expect(readdirSync(staging)).toEqual(["reverse-skill-router"]);
+      expect(readdirSync(staging)).toEqual(["fixture-skill"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -90,13 +90,13 @@ describe("verified Skill tree staging commit", () => {
       mkdirSync(source, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
       symlinkSync(outside, join(home, ".agents"), "dir");
-      const destination = join(home, ".agents", "skills", "reverse-skill-router");
+      const destination = join(home, ".agents", "skills", "fixture-skill");
 
       expect(commitVerifiedSkillTree(source, destination, skillTreeSha256(source), {
         expectedCanonicalParent: join(home, ".agents", "skills"),
       })).toMatchObject({ status: "failed", detail: expect.stringContaining("escapes canonical authority") });
       expect(existsSync(join(outside, "skills"))).toBe(false);
-      expect(existsSync(join(outside, "skills", "reverse-skill-router"))).toBe(false);
+      expect(existsSync(join(outside, "skills", "fixture-skill"))).toBe(false);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }
@@ -111,7 +111,7 @@ describe("verified Skill tree staging commit", () => {
       mkdirSync(source, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
       symlinkSync(join(root, "missing-skills"), join(home, ".agents"), "dir");
-      const destination = join(home, ".agents", "skills", "reverse-skill-router");
+      const destination = join(home, ".agents", "skills", "fixture-skill");
 
       expect(commitVerifiedSkillTree(source, destination, skillTreeSha256(source), {
         expectedCanonicalParent: join(home, ".agents", "skills"),
@@ -127,7 +127,7 @@ describe("verified Skill tree staging commit", () => {
     try {
       const source = join(root, "source");
       const staging = join(root, "staging");
-      const destination = join(staging, "reverse-skill-router");
+      const destination = join(staging, "fixture-skill");
       mkdirSync(source, { recursive: true });
       writeFileSync(join(source, "SKILL.md"), "# verified bytes\n");
       const expected = skillTreeSha256(source);
@@ -151,7 +151,7 @@ describe("verified Skill tree staging commit", () => {
         actual: expected,
       });
       expect(skillTreeSha256(destination)).toBe(expected);
-      expect(readdirSync(staging)).toEqual(["reverse-skill-router"]);
+      expect(readdirSync(staging)).toEqual(["fixture-skill"]);
     } finally {
       rmSync(root, { recursive: true, force: true });
     }

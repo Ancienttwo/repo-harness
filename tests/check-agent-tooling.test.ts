@@ -20,7 +20,9 @@ import { runSubagentContext } from "../src/cli/hook/subagent-context";
 import { createStateInputCollector } from "../src/effects/loop/state-input-collector";
 import { resolveHookEffectiveState } from "../src/cli/hook/runtime";
 import { writeShellExecutableFixture } from "./helpers/repo-fixture";
-import { installProfileStatePath, versions } from "../src/cli/installer/install-profile";
+import { versions } from "../src/cli/installer/install-profile";
+import { HC_MIN_VERSION } from "../src/core/operator/herdr-pin";
+import { installProfileStatePath } from "../src/cli/installer/install-state";
 import type { PluginId } from "../src/core/skill-surface/plugin-manifest";
 
 const ROOT = join(import.meta.dir, "..");
@@ -29,7 +31,6 @@ const WAZA_SKILLS = ["think", "hunt", "check", "health"];
 const WAZA_RULES = ["anti-patterns.md", "chinese.md", "durable-context.md", "english.md"];
 const MANAGED_AGENTS = ["explorer", "deep-reasoner", "fast-worker", "deep-worker", "gatekeeper", "root-cause-prover", "harness-evaluator"];
 const FLEET_SOURCE_DIR = join(ROOT, "agents/fleet");
-const { herdr_core: HERDR_CORE_PIN } = JSON.parse(readFileSync(join(ROOT, ".ai/harness/policy.json"), "utf8")).external_tooling;
 // The first lines of `hc --skill` from the pinned herdr-core 0.1.17 release.
 const HERDR_SKILL = "# hc manual (herdr-core)\n\nThe current manual for herdr-core's CLI, `hc`.\n`$HC_TERMINAL_ID` is your address. Terminals you start are your children.\n";
 
@@ -71,7 +72,7 @@ test("strict readiness rejects a missing required Herdr skill", () => {
     expect(JSON.parse(unreadable.stdout).tools.herdr_skill.status).toBe("invalid");
 
     // The expected text comes only from the hc manual; classic skill output gives no expected text.
-    writeExecutable(join(envRoot.fakeBin, "hc"), `#!/bin/sh\nif [ "$1" = --skill ]; then printf '%s\\n' '---' 'name: herdr' '---' 'Check HERDR_ENV before control.'; else printf 'hc ${HERDR_CORE_PIN.min_version}\\n'; fi\n`);
+    writeExecutable(join(envRoot.fakeBin, "hc"), `#!/bin/sh\nif [ "$1" = --skill ]; then printf '%s\\n' '---' 'name: herdr' '---' 'Check HERDR_ENV before control.'; else printf 'hc ${HC_MIN_VERSION}\\n'; fi\n`);
     const classic = spawnSync("bash", [SCRIPT, "--json", "--strict-readiness", "--host", "codex"], {
       cwd: ROOT, encoding: "utf8", env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
     });
@@ -167,7 +168,7 @@ function setupFakeEnvironment(prefix: string, plugins: readonly PluginId[] | nul
   mkdirSync(join(root, ".codegraph"));
   mkdirSync(fakeBin, { recursive: true });
   // A fake hc first on PATH keeps the developer's herdr-core out of the report.
-  writeExecutable(join(fakeBin, "hc"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'hc ${HERDR_CORE_PIN.min_version}\\n'; fi\n`);
+  writeExecutable(join(fakeBin, "hc"), `#!/bin/sh\nif [ "${'${1:-}'}" = --skill ]; then printf '%s' '${HERDR_SKILL.replaceAll("'", "'\\''")}'; else printf 'hc ${HC_MIN_VERSION}\\n'; fi\n`);
   for (const host of [".claude", ".codex"]) {
     const skillDir = join(home, host, "skills", "herdr");
     mkdirSync(skillDir, { recursive: true });
@@ -444,18 +445,9 @@ function writeFakeCurl(fakeBin: string, version: string, logFile?: string) {
   );
 }
 
-/**
- * Readiness reads the hc floor from
- * `.ai/harness/policy.json#external_tooling.herdr_core`, so a fixture repo
- * that stands in for a ready repo must carry the same pin this repo publishes.
- */
 function writeFixturePolicy(repoRoot: string, policy: Record<string, unknown> = {}) {
   mkdirSync(join(repoRoot, ".ai/harness"), { recursive: true });
-  const externalTooling = { ...((policy.external_tooling as Record<string, unknown>) ?? {}), herdr_core: HERDR_CORE_PIN };
-  writeFileSync(
-    join(repoRoot, ".ai/harness/policy.json"),
-    `${JSON.stringify({ ...policy, external_tooling: externalTooling }, null, 2)}\n`
-  );
+  writeFileSync(join(repoRoot, ".ai/harness/policy.json"), `${JSON.stringify(policy, null, 2)}\n`);
 }
 
 function writeArchctxRepo(repoRoot: string, capabilitySource: "registry" | "archcontext") {
@@ -1955,12 +1947,15 @@ describe("check-agent-tooling", () => {
 });
 
 test.each([
-  ["present", "hc 0.1.17", null],
-  ["unavailable", "hc 0.1.15", null],
-  ["missing", null, null],
-  ["configuration-error", "hc 0.1.17", null],
-  ["configuration-error", "hc 0.1.17", "invalid"],
-])("herdr-core is the required herdr runtime capability: %s (hc %s, pin %s)", (status, hcVersion, malformedPin) => {
+  // [status, hc --version output, retired policy pin, repair command]
+  ["present", `hc ${HC_MIN_VERSION}`, null, undefined],
+  ["unavailable", "hc 0.1.15", null, `hc update --version ${HC_MIN_VERSION}`],
+  ["unavailable", "not a version", null, undefined],
+  ["missing", null, null, "repo-harness update"],
+  // The retired repository key is never read: the package pin decides.
+  ["present", `hc ${HC_MIN_VERSION}`, "99.0.0", undefined],
+  ["unavailable", "hc 0.1.15", "0.1.0", `hc update --version ${HC_MIN_VERSION}`],
+])("herdr-core is the required herdr runtime capability: %s (hc %s, retired policy pin %s)", (status, hcVersion, retiredPin, command) => {
   const fixture = setupFakeEnvironment("herdr-core-runtime");
   try {
     rmSync(join(fixture.fakeBin, "hc"));
@@ -1970,14 +1965,7 @@ test.each([
       const actual = Bun.which(utility);
       if (actual && !existsSync(join(fixture.fakeBin, utility))) symlinkSync(actual, join(fixture.fakeBin, utility));
     }
-    writeFixturePolicy(fixture.root);
-    if (status === "configuration-error") {
-      const policyPath = join(fixture.root, ".ai/harness/policy.json");
-      const policy = JSON.parse(readFileSync(policyPath, "utf8"));
-      if (malformedPin) policy.external_tooling.herdr_core.min_version = malformedPin;
-      else delete policy.external_tooling.herdr_core;
-      writeFileSync(policyPath, JSON.stringify(policy));
-    }
+    writeFixturePolicy(fixture.root, retiredPin ? { external_tooling: { herdr_core: { min_version: retiredPin } } } : {});
     const result = spawnSync("/bin/bash", [SCRIPT, "--json", "--strict-readiness", "--host", "claude"], {
       cwd: fixture.root, encoding: "utf8", env: { ...process.env, HOME: fixture.home, PATH: fixture.fakeBin }, timeout: 15_000,
     });
@@ -1986,19 +1974,16 @@ test.each([
     expect(herdrCore.name).toBe("hc");
     expect(herdrCore.required).toBe(true);
     expect(herdrCore.status).toBe(status);
-    expect(herdrCore.min_version).toBe(status === "configuration-error" ? null : HERDR_CORE_PIN.min_version);
+    expect(herdrCore.min_version).toBe(HC_MIN_VERSION);
+    expect(herdrCore.min_version_source).toBe("package:src/core/operator/herdr-core-pin.json");
     if (hcVersion) expect(herdrCore.version).toBe(hcVersion);
+    expect(herdrCore.command).toBe(command);
     if (status === "present") {
       expect(result.stderr).not.toContain("herdr-core");
     } else {
       expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain(status === "configuration-error"
-        ? "herdr-core configuration error: .ai/harness/policy.json#external_tooling.herdr_core.min_version is missing or malformed"
-        : `herdr-core runtime is ${status}; install hc >=${HERDR_CORE_PIN.min_version}`);
-      expect(result.stderr).toContain(status === "configuration-error"
-        ? "Herdr skill readiness is unavailable; fix the herdr-core pin first, then run repo-harness update --target claude"
-        : "Herdr skill readiness is unavailable; install hc first, then run repo-harness update --target claude");
-      if (status === "configuration-error") expect(result.stderr).not.toContain("install hc first");
+      expect(result.stderr).toContain(`herdr-core runtime is ${status}; install hc >=${HC_MIN_VERSION}`);
+      expect(result.stderr).toContain("Herdr skill readiness is unavailable; install hc first, then run repo-harness update --target claude");
     }
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
 }, 20_000);

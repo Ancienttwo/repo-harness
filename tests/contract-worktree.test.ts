@@ -21,7 +21,7 @@ import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktre
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
 import { recordPluginSelection } from "./helpers/install-ownership";
-import { installProfileStatePath } from "../src/cli/installer/install-profile";
+import { installProfileStatePath } from "../src/cli/installer/install-state";
 
 setDefaultTimeout(30000);
 

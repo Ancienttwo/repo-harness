@@ -1,9 +1,10 @@
 // Public contract of the architecture base map and its layers (PRD G11, G22).
-// The map collector reads the committed model and its decisions with `archctx
-// export native`, the tracked text files of that commit with their line counts,
+// The map collector reads the committed model, its capability domains and its
+// decisions with `archctx export native`, the tracked text files of that commit with their line counts,
 // their owners with `archctx resolve`, and the capability import counts with
 // `archctx deps`. The layers come from the same cycle: `archctx impact` from the
-// last commit before local midnight to the map commit, `archctx debt`, `docs
+// last commit before local midnight to the map commit with that window's commits
+// from `git log`, `archctx debt`, `docs
 // anchors`, `flows check --no-sync` and `constraints check`, `archctx impact
 // --paths-from` for each open PR's changed files from the Dev Activity cache, and
 // the tests collector's cache. The same export gives the model's flows and the
@@ -17,7 +18,7 @@ import { PULL_REQUEST_FILES_REASONS, type PullRequestFiles } from './pull-reques
 import { isPublicDevActivityText, isPublicRepoPath } from './public-text';
 import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableReason } from './tests';
 
-export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v6' as const;
+export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v7' as const;
 export const OPERATOR_ARCHITECTURE_MAP_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/map$/u;
 
 /**
@@ -129,7 +130,16 @@ export interface ArchitectureMapNodeV1 {
   readonly layer: string | null;
   readonly parent: string | null;
   readonly summary: string;
+  /** The capability profile's domain from the same export; non-null exactly for a capability. */
+  readonly domain: string | null;
+  /** The model's `namespace`; non-null exactly for a namespace node. */
+  readonly namespace: { readonly type: ArchitectureNamespaceType } | null;
+  /** The model's `mount`; non-null exactly for a mount node. A source or target that the prose guard would change is null. */
+  readonly mount: { readonly source: string | null; readonly target: string | null; readonly mode: 'ro' | 'rw'; readonly order: number } | null;
 }
+/** The namespace types of `archcontext.node/v2`. */
+export const ARCHITECTURE_NAMESPACE_TYPES = ['host', 'container', 'pod', 'kubernetes', 'pid', 'mount', 'net', 'user'] as const;
+export type ArchitectureNamespaceType = typeof ARCHITECTURE_NAMESPACE_TYPES[number];
 
 export interface ArchitectureMapRelationV1 {
   readonly id: string;
@@ -137,6 +147,8 @@ export interface ArchitectureMapRelationV1 {
   readonly source: string;
   readonly target: string;
   readonly intent: string;
+  /** The model's free-text `protocol`, masked like model prose. */
+  readonly protocol: string | null;
 }
 
 /** A node's tracked text files and their lines, its own and its descendants'. A node that owns no file is absent. */
@@ -249,9 +261,17 @@ export type ArchitectureChangesLayerV1 = Section<{
   readonly since: string;
   /** The newest first-parent commit before `since`; archctx compares it with the map commit. */
   readonly base: string;
-  readonly commits: number;
+  /** The first-parent commits after `base`, newest first, with the owners that `paths` gives to the paths each commit changed. */
+  readonly commits: readonly ArchitectureChangeCommitV1[];
   readonly model: readonly ArchitectureModelChangeV1[];
 } & ArchitectureImpactV1, ArchitectureChangeReason> | ArchctxRefusalV1;
+
+/**
+ * One commit of today's window. `nodes` joins the commit's changed paths with
+ * the layer's `paths`: a path that changed back inside the window is not in
+ * `paths`, and a cut `paths` makes `nodes` a lower bound.
+ */
+export interface ArchitectureChangeCommitV1 { readonly sha: string; readonly subject: string; readonly nodes: readonly string[] }
 
 /** The map's form of an `archctx impact` answer. Field names change; no value is derived. */
 export function architectureImpact(report: RefImpactV1): ArchitectureImpactV1 {
@@ -340,13 +360,26 @@ export function flowSteps(flow: ArchitectureMapFlowV1): { readonly outcome: stri
   if (flow.applicability !== 'required') return [];
   return [...flow.steps.map(step => ({ outcome: null, step })), ...flow.outcomes.flatMap(outcome => outcome.steps.map(step => ({ outcome: outcome.id, step })))];
 }
+/**
+ * One stale citation from `archctx docs anchors`. `path` and `line` come from a
+ * document origin; a path that the public-path guard refuses is null.
+ */
+export interface ArchitectureAnchorFindingV1 {
+  /** archctx's finding kind, for example `line-moved`. */
+  readonly kind: string;
+  readonly origin: 'document' | 'node-summary' | 'node-responsibility';
+  readonly path: string | null;
+  readonly line: number | null;
+  /** The citation text, masked like model prose. */
+  readonly citation: string;
+}
 export interface ArchitectureViolationsLayerV1 {
   /** `archctx debt`: unowned and contested paths, stale model anchors. */
   readonly debt: Section<{ readonly items: readonly ArchitectureDebtItemV1[] }, ArchitectureViolationReason>;
   /** Flow proofs from the existing CodeGraph index; the check writes no index. */
   readonly flows: Section<ArchitectureFlowProofsV1, ArchitectureViolationReason> | ArchctxRefusalV1;
   /** `archctx docs anchors`: citations in human-written module docs that no longer match the code. */
-  readonly anchors: Section<{ readonly citations: number; readonly nodes: readonly { readonly id: string; readonly findings: number }[] }, ArchitectureViolationReason>;
+  readonly anchors: Section<{ readonly citations: number; readonly nodes: readonly { readonly id: string; readonly findings: readonly ArchitectureAnchorFindingV1[] }[] }, ArchitectureViolationReason>;
   /** `archctx deps` rows that archctx marks undeclared: imports with no model relation behind them. */
   readonly dependencies: Section<{ readonly edges: readonly ArchitectureMapImportV1[] }, ArchitectureViolationReason>;
   /** `archctx constraints check` for the committed `layer-direction` constraints: the import edges it read, and the node pairs that import against the layer order. */
@@ -413,6 +446,10 @@ export interface ArchitectureMapV1 {
   readonly schema_version: typeof OPERATOR_ARCHITECTURE_MAP_SCHEMA;
   readonly repository_id: string;
   readonly commit: string;
+  /** The branch that HEAD names when the cycle starts; null for a detached HEAD. */
+  readonly head_ref: string | null;
+  /** The archctx package version that served every archctx read of the cycle. */
+  readonly archctx_version: string;
   readonly collected_at: string;
   readonly nodes: readonly ArchitectureMapNodeV1[];
   readonly relations: readonly ArchitectureMapRelationV1[];
@@ -449,14 +486,23 @@ const KIND = /^[a-z][a-z0-9-]{0,63}$/u;
 const id = match(ENTITY_ID);
 // Model prose is free text; an absolute path in it never leaves the host.
 const prose = (check: Check): Check => value => check(value) && isPublicDevActivityText(value as string);
-const node = object({ id, kind: match(KIND), name: prose(nonEmpty), status: match(KIND), layer: nullable(match(LAYER)), parent: nullable(id), summary: prose(text) });
-const relation = object({ id, kind: match(KIND), source: id, target: id, intent: prose(text) });
+const singleLine = prose(match(/^[^\r\n]{1,4096}$/u));
+const node = object({
+  id, kind: match(KIND), name: prose(nonEmpty), status: match(KIND), layer: nullable(match(LAYER)), parent: nullable(id), summary: prose(text),
+  domain: nullable(match(LAYER)),
+  namespace: nullable(object({ type: one(...ARCHITECTURE_NAMESPACE_TYPES) })),
+  mount: nullable(object({ source: nullable(prose(nonEmpty)), target: nullable(prose(nonEmpty)), mode: one('ro', 'rw'), order: count })),
+});
+const relation = object({ id, kind: match(KIND), source: id, target: id, intent: prose(text), protocol: nullable(singleLine) });
 const size = object({ id, files: positive, lines: count });
 const imports = object({ source: id, target: id, imports: positive });
 const reason = (values: readonly string[]): Check => object({ state: one('unavailable'), reason: one(...values) });
 const section = (fields: Record<string, Check>, reasons: readonly string[]): Check => value => object({ state: one('ok'), ...fields })(value) || reason(reasons)(value);
 const refusal: Check = value => object({ state: one('unavailable'), reason: one('archctx_error'), code: match(ARCHCTX_CODE), reason_code: nullable(match(ARCHCTX_TOKEN)) })(value);
 const commit = match(/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u);
+/** A short branch name as `git symbolic-ref --short` prints it: git's ref-name rules, at most 255 characters. */
+const HEAD_REF = /^(?![/.-])(?!.*\.\.)(?!.*@\{)(?!.*\/[/.])(?!.*[/.]$)(?!.*\.lock(?:\/|$))[^\x00-\x20\x7f~^:?*[\\]{1,255}$/u;
+const SEMVER = /^(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)\.(?:0|[1-9]\d*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$/u;
 const instant = match(/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{1,3})?Z$/u);
 const ids = list(id);
 const layerNames: Check = value => list(match(LAYER))(value) && (value as unknown[]).length > 0;
@@ -484,11 +530,11 @@ const modelChange = object({
   kind: one('nodes', 'relations', 'flows'), id, change: one('added', 'removed', 'changed'), fields: list(match(/^[A-Za-z][A-Za-z0-9_-]{0,127}$/u)),
 });
 /** `path` checks every changed path; the decoder uses `repoPath`, and a projection uses `text` to tell a path-guard refusal from a broken answer. */
-const changesWith = (path: Check): Check => either(section({ since: instant, base: commit, commits: count, model: list(modelChange), ...impactFields(path) }, ARCHITECTURE_CHANGE_REASONS), refusal);
+const changeCommit = object({ sha: commit, subject: prose(match(/^[^\r\n]{0,4096}$/u)), nodes: ids });
+const changesWith = (path: Check): Check => either(section({ since: instant, base: commit, commits: list(changeCommit), model: list(modelChange), ...impactFields(path) }, ARCHITECTURE_CHANGE_REASONS), refusal);
 const pullRequestImpactWith = (path: Check): Check => either(section(impactFields(path), ARCHITECTURE_PR_REASONS), refusal);
 const changes = changesWith(repoPath);
 const pullRequestImpact = pullRequestImpactWith(repoPath);
-const singleLine = prose(match(/^[^\r\n]{1,4096}$/u));
 const selectorFields = { entrypoint: localId, source_symbol: singleLine, sink: localId };
 const flowStep = object({ id: localId, from: localId, to: localId, label: prose(nonEmpty), evidence: object(selectorFields) });
 const flow = either(
@@ -500,13 +546,16 @@ const flow = either(
   object({ id, capability: id, name: prose(nonEmpty), applicability: one('not-applicable'), rationale: prose(nonEmpty) }),
 );
 const flowEvidence = object({ ...selectorFields, node: id, source_path: nullable(repoPath), sink_path: nullable(repoPath), sink_symbol: singleLine });
+const anchorFindings: Check = value => list(object({
+  kind: match(ARCHCTX_TOKEN), origin: one('document', 'node-summary', 'node-responsibility'), path: nullable(repoPath), line: nullable(positive), citation: prose(nonEmpty),
+}))(value) && (value as unknown[]).length > 0;
 const violations = object({
   debt: section({ items: list(object({ kind: one(...ARCHITECTURE_DEBT_KINDS), nodes: ids, paths: list(repoPath) })) }, ARCHITECTURE_VIOLATION_REASONS),
   flows: either(section({
     selectors: count, proven: count, unproven: count, used_unproven: count, unprovable: list(object({ id, diagnostics: count })),
     evidence: list(object({ ...selectorFields, status: match(ARCHCTX_TOKEN), call_sites: list(object({ path: repoPath, line: nullable(positive) })) })),
   }, ARCHITECTURE_VIOLATION_REASONS), refusal),
-  anchors: section({ citations: count, nodes: list(object({ id, findings: positive })) }, ARCHITECTURE_VIOLATION_REASONS),
+  anchors: section({ citations: count, nodes: list(object({ id, findings: anchorFindings })) }, ARCHITECTURE_VIOLATION_REASONS),
   dependencies: section({ edges: list(imports) }, ARCHITECTURE_VIOLATION_REASONS),
   layer_direction: either(section({
     imports: count, edges: list(object({ source: id, target: id, source_layer: match(LAYER), target_layer: match(LAYER), imports: positive })),
@@ -533,6 +582,8 @@ const map = object({
   schema_version: one(OPERATOR_ARCHITECTURE_MAP_SCHEMA),
   repository_id: match(/^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u),
   commit,
+  head_ref: nullable(match(HEAD_REF)),
+  archctx_version: match(SEMVER),
   collected_at: instant,
   nodes: list(node),
   relations: list(relation),
@@ -622,15 +673,17 @@ function impactValid(impact: ArchitectureImpactV1, index: MapIndex, owner: (id: 
     && (steps.items ?? []).every(item => index.steps.has(stepKey(item.flow, item.outcome, item.step)));
 }
 
-/** Today's changes: an added or changed node, relation or flow is in the map, a removed one is not. */
+/** Today's changes: an added or changed node, relation or flow is in the map, a removed one is not. Each commit names its owners as `paths` does. */
 function changesValid(value: unknown, index: MapIndex, path: Check = repoPath): boolean {
   if (!(path === repoPath ? changes : changesWith(path))(value)) return false;
   const layer = value as ArchitectureChangesLayerV1;
   if (layer.state !== 'ok') return true;
   const removed = new Set(layer.model.filter(entry => entry.kind === 'nodes' && entry.change === 'removed').map(entry => entry.id));
   const present = (kind: ArchitectureModelChangeV1['kind'], has: ReadonlySet<string>) => layer.model.filter(entry => entry.kind === kind).every(entry => (entry.change === 'removed') !== has.has(entry.id));
+  const owner = (nodeId: string) => index.nodes.has(nodeId) || removed.has(nodeId);
   return unique(layer.model.map(entry => `${entry.kind}\0${entry.id}`)) && present('nodes', index.nodes) && present('relations', index.relations) && present('flows', index.flows)
-    && impactValid(layer, index, nodeId => index.nodes.has(nodeId) || removed.has(nodeId));
+    && unique(layer.commits.map(entry => entry.sha)) && layer.commits.every(entry => unique(entry.nodes) && entry.nodes.every(owner))
+    && impactValid(layer, index, owner);
 }
 
 /** One PR's impact names only nodes of the map commit's model. */
@@ -669,6 +722,8 @@ export function decodeArchitectureMap(value: unknown): ArchitectureMapV1 {
     && edges.every(entry => entry.source !== entry.target && capability(entry.source) && capability(entry.target));
   const { violations, pull_requests: pulls, tests, decisions: decided } = result.layers;
   if (nodes.size !== result.nodes.length || relations.size !== result.relations.length
+    || result.nodes.some(entry => (entry.domain !== null) !== (entry.kind === 'capability') || (entry.namespace !== null) !== (entry.kind === 'namespace')
+      || (entry.mount !== null) !== (entry.kind === 'mount'))
     || result.nodes.some(entry => entry.parent !== null && !nodes.has(entry.parent)) || result.nodes.some(entry => !reachesRoot(entry.id, nodes))
     || result.relations.some(entry => !nodes.has(entry.source) || !nodes.has(entry.target))
     || (result.layer_order.state === 'ok' && (!unique(result.layer_order.layers) || !layered(result.nodes, result.layer_order.layers)))
@@ -843,6 +898,8 @@ export function withTestCoverage(map: ArchitectureMapV1, source: ArchitectureTes
 export function projectArchitectureMap(input: {
   readonly repository_id: string;
   readonly commit: string;
+  readonly head_ref: string | null;
+  readonly archctx_version: string;
   readonly collected_at: string;
   readonly nodes: readonly ArchitectureMapNodeV1[];
   readonly relations: readonly ArchitectureMapRelationV1[];
@@ -874,6 +931,8 @@ export function projectArchitectureMap(input: {
     schema_version: OPERATOR_ARCHITECTURE_MAP_SCHEMA,
     repository_id: input.repository_id,
     commit: input.commit,
+    head_ref: input.head_ref,
+    archctx_version: input.archctx_version,
     collected_at: input.collected_at,
     nodes: byId(input.nodes),
     relations: byId(input.relations),

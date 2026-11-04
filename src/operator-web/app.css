@@ -111,7 +111,8 @@
   .tone-neutral, .tone-unknown { @apply text-kumo-subtle; }
   span.operator-badge, li.operator-badge { @apply inline-flex w-fit items-center gap-1 rounded-full bg-kumo-recessed px-2 py-0.5 text-xs font-medium; }
 
-  .notify-status, .architecture-workspace { @apply flex min-w-0 flex-col gap-3; }
+  .notify-status { @apply flex min-w-0 flex-col gap-3; }
+  .architecture-workspace { @apply flex min-w-0 flex-col gap-3.5; }
   .automation-heading h2, .notify-status h2, .architecture-workspace h2 { @apply text-base font-semibold text-kumo-strong; }
   .automation-source h3 { @apply text-sm font-semibold text-kumo-strong; }
   pre { @apply max-w-full overflow-x-auto rounded-lg bg-kumo-recessed p-3 text-xs; white-space: pre-wrap; overflow-wrap: anywhere; }
@@ -145,7 +146,9 @@
   .native-runtime h3 { @apply text-sm font-semibold; }
   .native-runtime > p { @apply text-xs text-kumo-subtle; }
 
-  .architecture-workspace__heading { @apply flex flex-wrap items-center gap-3; }
+  /* The shared header row: the page title once, as rail group / page. */
+  .operator-crumb { @apply m-0 flex shrink-0 items-center gap-2 text-sm text-kumo-subtle; }
+  .operator-crumb strong { @apply text-[15px] font-semibold text-kumo-strong; font-family: var(--font-display); }
   .architecture-notice { @apply rounded-lg bg-kumo-danger-tint p-3 text-sm text-kumo-danger; }
   .module-domains { @apply grid gap-3 lg:grid-cols-2; }
   .module-domain { @apply rounded-xl border border-kumo-line bg-kumo-base p-3; }
@@ -180,11 +183,18 @@
   .module-graph__intent { @apply mx-2 text-kumo-default; }
   .module-graph__group ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-sm; }
 
-  .architecture-tabs { @apply inline-flex w-full max-w-full gap-0.5 overflow-x-auto rounded-lg bg-kumo-recessed p-0.5 sm:w-auto; }
-  .architecture-tabs [role="tab"] { @apply h-8 flex-1 cursor-pointer whitespace-nowrap rounded-md px-3 text-sm font-medium text-kumo-subtle transition-colors hover:text-kumo-default sm:flex-none; }
-  .architecture-tabs [role="tab"][aria-selected="true"] { @apply bg-kumo-base text-kumo-strong shadow-xs; }
-  .architecture-map-view { @apply flex min-w-0 flex-col gap-2; }
-  .architecture-map__source { overflow-wrap: anywhere; }
+  .architecture-tabs { @apply inline-flex w-full max-w-full gap-0.5 overflow-x-auto rounded-[10px] border border-kumo-line bg-kumo-base p-[3px] sm:w-auto sm:self-start; }
+  .architecture-tabs [role="tab"] { @apply inline-flex h-8 flex-1 cursor-pointer items-center justify-center gap-1.5 whitespace-nowrap rounded-[7px] px-3.5 text-[13px] text-kumo-default transition-colors hover:text-kumo-strong active:bg-kumo-tint sm:flex-none; }
+  .architecture-tabs [role="tab"][aria-selected="true"] { @apply bg-kumo-tint text-kumo-strong; }
+  .architecture-tabs__count { @apply font-mono text-xs text-kumo-subtle; }
+  .architecture-map-view { @apply flex min-w-0 flex-col gap-3.5; }
+  /* The lens row: layer chips, then the hint or the sequence flow picker at the end. */
+  .architecture-lens { @apply flex min-h-[30px] min-w-0 flex-wrap items-center gap-2; }
+  .architecture-lens__label { @apply mr-1 text-xs text-kumo-subtle max-sm:sr-only; }
+  .architecture-lens__hint { @apply ml-auto text-xs text-kumo-subtle; }
+  .architecture-lens__pick { @apply ml-auto flex min-w-0 max-w-full items-center gap-2 text-xs text-kumo-subtle; }
+  .architecture-lens__pick select { @apply h-[30px] min-w-0 max-w-[32rem] flex-1 rounded-md border border-kumo-line bg-kumo-base px-2 text-sm text-kumo-default; }
+  .architecture-map__side { @apply flex flex-col gap-2 border-b border-kumo-hairline pb-3; }
   .architecture-map__gap { @apply rounded-lg bg-kumo-warning-tint p-3 text-sm text-kumo-default; }
   .architecture-map__note { @apply rounded-lg border border-dashed border-kumo-line p-3 text-sm text-kumo-subtle; }
   .architecture-map { @apply grid min-w-0 gap-3 lg:grid-cols-[minmax(0,1fr)_minmax(300px,360px)]; }
@@ -214,7 +224,7 @@
   .architecture-map__inspector ul { @apply m-0 flex list-none flex-col gap-1 p-0 text-xs; }
   .architecture-map__id { @apply text-xs text-kumo-subtle; }
   .architecture-layers { @apply flex flex-wrap gap-1.5; }
-  .architecture-layers button { @apply inline-flex h-7 cursor-pointer items-center rounded-full border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium text-kumo-strong hover:bg-kumo-tint; }
+  .architecture-layers button { @apply inline-flex h-[30px] cursor-pointer items-center rounded-full border border-kumo-line bg-kumo-base px-2.5 text-xs font-medium text-kumo-strong hover:bg-kumo-tint; }
   .architecture-layers button[data-state="unavailable"] { @apply border-dashed text-kumo-subtle; }
   .architecture-layers button[aria-pressed="true"] { @apply border-kumo-contrast bg-kumo-contrast text-kumo-inverse; }
   .architecture-layer-summary { @apply flex min-w-0 flex-col gap-1 text-sm text-kumo-default; overflow-wrap: anywhere; }
@@ -364,6 +374,19 @@
   .architecture-history__counts div[data-diff="renamed"] b { color: var(--text-color-kumo-info); }
   /* End of history diff states. */
   @media (max-width: 47.5rem) { .architecture-map__legend, .architecture-history__legend { display: none; } }
+}
+
+/*
+ * Wide screens: a page with a base map is one viewport high, and the map canvas takes the height
+ * below the lens row. Unlayered, so it overrides the main element's padding utility.
+ */
+@media (width >= 64rem) {
+  .operator-content:has(.architecture-map) { flex: none; height: calc(100dvh - 3.5rem); padding-bottom: 1rem; }
+  .operator-content:has(.architecture-map) :is(.architecture-workspace, .architecture-view, .architecture-map-view, .architecture-sequence, .architecture-topology, .architecture-map) { flex: 1 1 0; min-height: 0; }
+  .operator-content:has(.architecture-map) .architecture-view { display: flex; flex-direction: column; }
+  .operator-content:has(.architecture-map) .architecture-map { grid-template-rows: minmax(0, 1fr); }
+  .operator-content:has(.architecture-map) .architecture-map__canvas { height: auto; min-height: 0; }
+  .operator-content:has(.architecture-map) .architecture-map__inspector { min-height: 0; overflow-y: auto; }
 }
 
 /* React Flow's stylesheet is unlayered, so a rule for its classes inside a layer always loses. */

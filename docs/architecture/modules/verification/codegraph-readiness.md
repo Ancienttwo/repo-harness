@@ -1,5 +1,5 @@
 # verification/codegraph-readiness 架构文档
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:637dd7c2f0f62668e1163709076d1bf1faa153c27eb240618836d3ff2705faf7" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-verification-codegraph-readiness" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:06465453d1913b376172f66f42be3e57db87b37bc922b5b067f89a68243b446e" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.verification.codegraph-readiness`(kind `capability`)
 > **Matched Prefixes**:`src/cli/tools/codegraph.ts`、`src/cli/mcp/codegraph-adapter.ts`、`src/cli/commands/tools.ts`
@@ -15,6 +15,7 @@ Resolves and verifies the repository CodeGraph runtime and index readiness.
 ```mermaid
 flowchart LR
   p1_capability_verification_codegraph_readiness_2de91963["CodeGraph Readiness"]:::component
+  p1_component_codegraph_readiness_mcp_adapter_ca49660e["CodeGraph MCP Adapter"]:::component
   p1_component_codegraph_readiness_primary_ea3c45ff["CodeGraph Readiness Check"]:::component
   p1_component_codegraph_readiness_scripts_layer_411e29c3["CodeGraph Readiness (scripts)"]:::component
   p1_component_codegraph_readiness_tests_layer_7504ac63["CodeGraph Readiness (tests)"]:::component
@@ -25,8 +26,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ecc6873738e51de4fdb544b42f351d865091a29b44ef37273e3020707519f044`).
-- Semantic nodes: `4`; declared relations: `1`.
+- Proof: `proven` (`sha256:96eac5ec6ad387740f513086d800afc8c3c1cb15ac4ffa5fe5aca682eef7334f`).
+- Semantic nodes: `5`; declared relations: `1`.
 
 ### 1.2 模組職責表
 
@@ -49,7 +50,7 @@ flowchart LR
 出向關係:
 
 - `calls` → `external.codegraph` — Run codegraph to check index readiness and read code facts.
-- `depends-on` → `capability.workflow-engine.contract-assets` — Type the CodeGraph init step with the core init port type
+- `depends-on` → `capability.workflow-engine.contract-assets` — Type the CodeGraph init step with the core init port type and the CodeGraph doctor provider with the core architecture contract
 - `depends-on` → `capability.verification.evals-checks` — Use shared repository fixtures for CodeGraph resolver tests.
 - `depends-on` → `capability.workflow-engine.execution-primitives` — Run bounded CodeGraph processes.
 - `depends-on` → `capability.runtime-harness.global-runtime-reconciliation` — Type the CodeGraph doctor checks and global runtime MCP step with the core doctor and global runtime port types
@@ -65,6 +66,8 @@ flowchart LR
 
 組件出向關係:
 
+- `component.codegraph-readiness.mcp-adapter`:
+  - 無。
 - `component.codegraph-readiness.primary`:
   - 無。
 - `component.codegraph-readiness.scripts-layer`:
@@ -76,13 +79,14 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
-| `component.codegraph-readiness.primary` | CodeGraph Readiness Check | 未宣告 `source.include` | 未宣告 |
+| `component.codegraph-readiness.mcp-adapter` | CodeGraph MCP Adapter | `1–2` 個文件 / `200–500` 行 | 未宣告 |
+| `component.codegraph-readiness.primary` | CodeGraph Readiness Check | `2–5` 個文件 / `1000–2000` 行 | 未宣告 |
 | `component.codegraph-readiness.scripts-layer` | CodeGraph Readiness (scripts) | `1–2` 個文件 / `10–20` 行 | 未宣告 |
 | `component.codegraph-readiness.tests-layer` | CodeGraph Readiness (tests) | `1–2` 個文件 / `100–200` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ecc6873738e51de4fdb544b42f351d865091a29b44ef37273e3020707519f044`); selectors `1/1`.
+> **Proof**: `proven` (`sha256:96eac5ec6ad387740f513086d800afc8c3c1cb15ac4ffa5fe5aca682eef7334f`); selectors `1/1`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

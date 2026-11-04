@@ -13,6 +13,7 @@ responsibilities:
   - "Own the doc citation protocol: decode a citation of whole lines and find the cited lines at their place, at one unique new place, or report them stale."
   - "Own the list of runtimes with verified docs isolation: the agent settings, doc session creation and the docs host boundary read only this list."
   - "Own the doc session event schema: redact message text and paths with the shared secret token rules, decode an event with exact fields that leave no place for raw tool arguments, commands, terminal output or environment values, and order events by the epoch.seq cursor."
+  - "Own the quota read model (#1716) with one strict decoder per source, for the Claude capture file contract and the codex app-server account/rateLimits/read result; a missing or malformed field makes its window unknown with a named reason, and each window is classified by the decision table, worst window first."
   - "Validate bounded organization V2 payloads with exact field sets, repository and admitted-session identities, component consistency, SHA syntax and overlay-to-attention digest linkage. Snapshot builders compute content hashes; the decoder does not recompute them."
 source:
   include:
@@ -20,6 +21,8 @@ source:
   exclude:
     - "src/core/operator/doc-session-agent-record.ts"
     - "src/core/operator/doc-session-record.ts"
+    - "src/core/operator/herdr-core-pin.json"
+    - "src/core/operator/herdr-pin.ts"
     - "src/core/operator/pane-prefix.ts"
     - "src/core/operator/public-text.ts"
     - "src/core/operator/tests.ts"
