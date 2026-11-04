@@ -1,16 +1,19 @@
 import { Command } from 'commander';
 import { dirname } from 'path';
+import { fileURLToPath } from 'url';
 import { CLAUDE_BUILTIN_AGENT_TYPES, SeatPaneNameError, buildSeatLaunch, seatPaneName, seatTabName, type SeatLaunchV1 } from '../../core/operator/seat-launch';
 import { SEAT_IDS, decodeSeatsConfig, type SeatId } from '../../core/operator/seats-settings';
 import { readGlobalConfiguration } from '../../effects/configuration/global-configuration';
 import { resolveGitCommonDirectory } from '../../effects/git/common-directory';
 import { ClaudeAgentTypesError, claudeHostAgentTypes } from '../../effects/operator/claude-agent-types';
 import { RepoHarnessRegistryStrictError, canonicalRepoPath, readRepoHarnessRegistryStrictSnapshot, repoCheckoutProbeEnv } from '../../effects/repo-registry';
-import { RH_LABEL, hcLabelPairs } from '../../effects/terminal/herdr-core';
+import { HerdrCoreError, RH_LABEL, hcLabel, hcLabelPairs, type HcLabels } from '../../effects/terminal/herdr-core';
 import { MANAGED_AGENTS } from '../../effects/terminal/task-role-profiles';
 
+const CLI_ENTRY = fileURLToPath(new URL('../index.ts', import.meta.url));
+
 class SeatsCommandError extends Error {
-  constructor(readonly code: 'seat_unknown' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required', message: string) {
+  constructor(readonly code: 'seat_unknown' | 'config_invalid' | 'label_value_invalid' | 'repository_id_required' | 'terminal_unknown', message: string) {
     super(message);
   }
 }
@@ -28,8 +31,8 @@ export interface SeatLabelInput {
 
 const POSITIVE = /^[1-9][0-9]*$/u;
 
-/** The `hc label` pairs that the board reads (#1505). The GitHub numeric repository id identifies the repository. */
-function seatLabels(seat: SeatId, input: SeatLabelInput): string[] {
+/** The seat labels that the board reads (#1505), or none without `--repository-id`. The GitHub numeric repository id identifies the repository. */
+function seatLabels(seat: SeatId, input: SeatLabelInput): HcLabels | undefined {
   const { repositoryId, release, qualifier, ...dispatch } = input;
   for (const [name, value] of Object.entries({ repositoryId, ...dispatch })) {
     if (value !== undefined && !POSITIVE.test(value)) throw new SeatsCommandError('label_value_invalid', `--${name === 'repositoryId' ? 'repository-id' : name} must be a positive decimal integer.`);
@@ -38,15 +41,40 @@ function seatLabels(seat: SeatId, input: SeatLabelInput): string[] {
     if ([...Object.values(dispatch), release, qualifier].some(value => value !== undefined)) {
       throw new SeatsCommandError('repository_id_required', '--issue, --pr, --parent, --release and --qualifier need --repository-id.');
     }
-    return [];
+    return undefined;
   }
-  return hcLabelPairs({
+  return {
     [RH_LABEL.seat]: seat,
     [RH_LABEL.repository]: repositoryId,
     ...(dispatch.issue === undefined ? {} : { [RH_LABEL.issue]: dispatch.issue }),
     ...(dispatch.pr === undefined ? {} : { [RH_LABEL.pr]: dispatch.pr }),
     ...(dispatch.parent === undefined ? {} : { [RH_LABEL.parent]: dispatch.parent }),
-  });
+  };
+}
+
+function seatId(seat: string): SeatId {
+  if (!SEAT_IDS.includes(seat as SeatId)) throw new SeatsCommandError('seat_unknown', `Unknown seat ${seat}. Use one of: ${SEAT_IDS.join(', ')}.`);
+  return seat as SeatId;
+}
+
+/**
+ * The seat argv labels its own terminal before the agent starts (#1695). `herdr-app do` runs the argv in the new hc
+ * terminal, so `seats label` labels `HC_TERMINAL_ID`, then `exec` replaces the shell with the agent. When the label
+ * fails, the shell stops before the agent starts. Each token in the script is a seat id or a checked positive integer.
+ */
+function selfLabelingArgv(seat: SeatId, input: SeatLabelInput, agent: readonly string[]): string[] {
+  const flags = ([['--repository-id', input.repositoryId], ['--issue', input.issue], ['--pr', input.pr], ['--parent', input.parent]] as const)
+    .flatMap(([flag, value]) => value === undefined ? [] : [flag, value]);
+  return ['/bin/sh', '-c', `"$0" "$1" seats label ${[seat, ...flags].join(' ')} && shift && exec "$@"`, process.execPath, CLI_ENTRY, ...agent];
+}
+
+/** `seats label`: set the seat labels on the calling hc terminal. The seat argv runs it before the agent starts. */
+function labelOwnTerminal(seat: string, input: SeatLabelInput, env: NodeJS.ProcessEnv = process.env): void {
+  const labels = seatLabels(seatId(seat), input);
+  if (labels === undefined) throw new SeatsCommandError('repository_id_required', 'seats label needs --repository-id.');
+  const terminal = env.HC_TERMINAL_ID;
+  if (!terminal) throw new SeatsCommandError('terminal_unknown', 'HC_TERMINAL_ID is not set: start the seat argv with herdr-app do tab.new or pane.split.');
+  hcLabel(terminal, labels, { env });
 }
 
 /** The registry entry of the primary checkout of `cwd` holds the pane prefix; a linked worktree resolves to its primary root. */
@@ -66,13 +94,12 @@ function panePrefix(cwd: string, env: NodeJS.ProcessEnv): string {
 export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJS.ProcessEnv = process.env, cwd = process.cwd()): SeatLaunchV1 & {
   readonly labels: readonly string[]; readonly name: string | null; readonly tab: string | null;
 } {
-  if (!SEAT_IDS.includes(seat as SeatId)) throw new SeatsCommandError('seat_unknown', `Unknown seat ${seat}. Use one of: ${SEAT_IDS.join(', ')}.`);
+  const id = seatId(seat);
   let config: Record<string, unknown>;
   try { config = readGlobalConfiguration(env).config; } catch (error) { throw new SeatsCommandError('config_invalid', (error as Error).message); }
   let seats;
   try { seats = decodeSeatsConfig(config.seats); } catch { throw new SeatsCommandError('config_invalid', 'The seats section of the repo-harness configuration is not valid.'); }
-  const id = seat as SeatId;
-  const pairs = seatLabels(id, labels);
+  const labelSet = seatLabels(id, labels);
   // The pane name needs the registry prefix, so it comes only with the seat labels.
   const name = labels.repositoryId === undefined ? null : seatPaneName({
     prefix: panePrefix(cwd, env), seat: id, issue: id === 'worker' ? labels.issue : undefined, release: labels.release, qualifier: labels.qualifier,
@@ -81,7 +108,12 @@ export function seatLaunch(seat: string, labels: SeatLabelInput = {}, env: NodeJ
   const agentTypes = seats[id].runtime === 'claude' && seats[id].fleet.length > 0
     ? [...MANAGED_AGENTS, ...CLAUDE_BUILTIN_AGENT_TYPES, ...claudeHostAgentTypes(env)]
     : [];
-  return { ...buildSeatLaunch(id, seats[id], config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined), labels: pairs, name, tab };
+  const launch = buildSeatLaunch(id, seats[id], config.seats === undefined ? 'defaults' : 'seats', agentTypes, name ?? undefined);
+  return {
+    ...launch,
+    argv: labelSet === undefined ? launch.argv : selfLabelingArgv(id, labels, launch.argv),
+    labels: labelSet === undefined ? [] : hcLabelPairs(labelSet), name, tab,
+  };
 }
 
 export function buildSeatsCommand(): Command {
@@ -90,7 +122,7 @@ export function buildSeatsCommand(): Command {
     .command('argv')
     .description('Print the argv that starts a seat, from the seats section of ~/.repo-harness/config.json')
     .argument('<seat>', SEAT_IDS.join('|'))
-    .option('--repository-id <id>', 'GitHub numeric repository id; adds the seat labels for `hc label`')
+    .option('--repository-id <id>', 'GitHub numeric repository id; the argv then labels its own terminal before the agent starts')
     .option('--issue <n>', 'Issue number for the seat labels')
     .option('--pr <n>', 'PR number for the seat labels')
     .option('--parent <n>', 'Parent issue number for the seat labels and the tab name')
@@ -123,6 +155,24 @@ export function buildSeatsCommand(): Command {
       }
       if (launch.labels.length > 0) process.stderr.write(`labels: ${launch.labels.join(' ')}\n`);
       if (launch.name !== null) process.stderr.write(`name: ${launch.name}\ntab: ${launch.tab}\n`);
+    });
+  seats
+    .command('label')
+    .description('Set the seat labels on the calling hc terminal; the seat argv runs it before the agent starts')
+    .argument('<seat>', SEAT_IDS.join('|'))
+    .option('--repository-id <id>', 'GitHub numeric repository id')
+    .option('--issue <n>', 'Issue number')
+    .option('--pr <n>', 'PR number')
+    .option('--parent <n>', 'Parent issue number')
+    .action((seat: string, options: SeatLabelInput) => {
+      try {
+        labelOwnTerminal(seat, { repositoryId: options.repositoryId, issue: options.issue, pr: options.pr, parent: options.parent });
+      } catch (error) {
+        if (!(error instanceof SeatsCommandError || error instanceof HerdrCoreError)) throw error;
+        const code = error instanceof SeatsCommandError ? error.code : 'label_failed';
+        process.stderr.write(`${JSON.stringify({ ok: false, error: code, message: `The seat did not start: ${error.message}` })}\n`);
+        process.exitCode = 1;
+      }
     });
   return seats;
 }

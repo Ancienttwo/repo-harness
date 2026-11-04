@@ -31,7 +31,6 @@ import {
 } from '../../core/operator/bot-access';
 import { readBotRegistry } from '../bot-registry';
 import { readRepoHarnessRegistryStrictSnapshot, RepoHarnessRegistryStrictError } from '../repo-registry';
-import { HcPinUnavailableError } from '../../core/operator/herdr-pin';
 import { HerdrCoreError } from '../terminal/herdr-core';
 import { TASK_SESSION_LABELS, observeHcCore, readHcSnapshot } from './herdr-runtime-transport';
 import type { NotifyCacheV1 } from './notify-collector';
@@ -172,9 +171,6 @@ async function hcSection(env: NodeJS.ProcessEnv): Promise<BotAccessSnapshotV1['h
   let observed;
   try { observed = await observeHcCore(env, HC_TIMEOUT_MS); }
   catch (error) {
-    if (error instanceof HcPinUnavailableError) {
-      return { state: 'ok', version: { state: 'unavailable', reason: 'hc_pin_unavailable' }, herdr_app, terminals: { state: 'unavailable', reason: 'hc_pin_unavailable' } };
-    }
     return { state: 'unavailable', reason: error instanceof HerdrCoreError && error.reason === 'missing' ? 'hc_missing' : 'hc_unreachable' };
   }
   const version = { state: 'ok', value: observed.check } as const;

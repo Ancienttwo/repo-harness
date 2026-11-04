@@ -715,7 +715,7 @@ describe('single affected verification and daily fallback', () => {
     for (const path of ['src/host.ts', 'src/host-dependency.ts', 'tests/native.test.ts', 'tests/helpers/nested.ts']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });
     }
-    expect(selectPlatformCoverage(['.ai/harness/policy.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
+    expect(selectPlatformCoverage(['src/core/operator/herdr-core-pin.json'], inputs)).toEqual({ native_oar: true, home_isolation: false });
     // A src module imported only by a native test root, directly or transitively, triggers the native lane.
     for (const path of ['src/other.ts', 'src/deep.ts', 'assets/schema.json']) {
       expect(selectPlatformCoverage([path], inputs)).toEqual({ native_oar: true, home_isolation: false });

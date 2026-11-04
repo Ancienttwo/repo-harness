@@ -19,8 +19,10 @@ function fixture() {
     source: 'init' as const, registeredAt: '2026-09-11T00:00:00.000Z', lastSeenAt: '2026-09-11T00:00:00.000Z' }));
   const registry = join(env.REPO_HARNESS_HOME, 'registered-repos.json');
   writeFileSync(registry, JSON.stringify({ version: 1, authorizationRevision: 5, repos }));
-  const cli = (...args: string[]) => spawnSync(process.execPath, [resolve(import.meta.dir, '../../src/cli/index.ts'), 'fleet', 'prune', ...args], { env, encoding: 'utf8' });
-  return { root, env, repos, registry, cli };
+  const fleet = (command: 'prune' | 'remove', ...args: string[]) => spawnSync(process.execPath, [resolve(import.meta.dir, '../../src/cli/index.ts'), 'fleet', command, ...args], { env, encoding: 'utf8' });
+  const cli = (...args: string[]) => fleet('prune', ...args);
+  const remove = (...args: string[]) => fleet('remove', ...args);
+  return { root, env, repos, registry, cli, remove };
 }
 
 test('CLI defaults to preview, applies exact selected IDs with a revision fence and preserves other rows/files', () => {
@@ -42,6 +44,38 @@ test('CLI defaults to preview, applies exact selected IDs with a revision fence 
   const current = readFileSync(f.registry, 'utf8');
   expect(f.cli('--apply', '--expected-revision', plan.registry_revision).status).toBe(2);
   expect(readFileSync(f.registry, 'utf8')).toBe(current);
+});
+
+test('remove previews named present rows, applies them under the revision fence and keeps the directories', () => {
+  const f = fixture(); const before = readFileSync(f.registry, 'utf8');
+  const present = f.repos[0]!; const missing = f.repos[1]!;
+  const byId = <T extends { id: string }>(rows: T[]) => rows.sort((a, b) => a.id.localeCompare(b.id));
+  writeFileSync(join(present.path, 'kept'), 'checkout');
+  expect(f.cli('--repo-id', present.id).stdout).toContain('"reason": "path_present"');
+
+  const preview = f.remove(present.id, missing.id); expect(preview.status, preview.stderr).toBe(0);
+  const plan = JSON.parse(preview.stdout);
+  expect(plan.applied).toBe(false);
+  expect(plan.candidates).toEqual(byId([{ ...present, reason: 'named' }, { ...missing, reason: 'named' }]));
+  expect(plan.removed).toEqual([]); expect(plan.skipped).toEqual([]);
+  expect(readFileSync(f.registry, 'utf8')).toBe(before);
+
+  // No ID list, no revision, an unknown ID beside a known one, or a stale revision: nothing changes.
+  for (const args of [[], ['--apply', '--expected-revision', plan.registry_revision], [present.id, '--apply'],
+    [present.id, 'unknown', '--apply', '--expected-revision', plan.registry_revision],
+    [present.id, '--apply', '--expected-revision', `sha256:${'0'.repeat(64)}`]]) {
+    const refused = f.remove(...args);
+    expect(refused.status, args.join(' ')).not.toBe(0);
+    expect(readFileSync(f.registry, 'utf8')).toBe(before);
+  }
+
+  const apply = f.remove(present.id, missing.id, '--apply', '--expected-revision', plan.registry_revision);
+  expect(apply.status, apply.stderr).toBe(0);
+  expect(JSON.parse(apply.stdout).removed).toEqual(byId([present, missing]));
+  const state = readRepoHarnessRegistryStrictSnapshot({ env: f.env, adoptedOnly: false });
+  expect(state.authorizationRevision).toBe(6);
+  expect(state.repos).toEqual(byId(f.repos.slice(2)));
+  expect(readFileSync(join(present.path, 'kept'), 'utf8')).toBe('checkout');
 });
 
 test('apply reprobes filesystem and no-op preserves bytes and revision', () => {

@@ -202,7 +202,6 @@ const STATUS_TONE: Readonly<Record<HcTerminalStatus, DotTone>> = { idle: 'neutra
 
 /** A core below the pin answered: both versions show, so it never reads as a missing core. */
 function HcVersion({ version, t }: { readonly version: HcReady['version']; readonly t: OperatorTranslate }) {
-  if (version.state !== 'ok') return <Line tone="warn" data-hc-version={version.reason}>{t(`bots.hc.reason.${version.reason}`)}</Line>;
   const { state, expected, actual } = version.value;
   const words = { version: actual.version, min: expected.min_version };
   return state === 'aligned'

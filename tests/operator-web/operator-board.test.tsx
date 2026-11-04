@@ -505,6 +505,12 @@ describe('board page', () => {
     expect(protocolReads).toBe(2);
     expect(document.querySelector('[data-board-reason]')?.getAttribute('data-board-reason')).toBe('board_invalid');
     expect(rows('[data-finding]')).toHaveLength(0);
+
+    // Without seat terminals the banner names what is missing and the start command (#1695).
+    await act(async () => root?.unmount());
+    await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board: { ...BOARD, execution: { status: 'unavailable', reason: 'no_seat_terminals' } } }) })} />);
+    await settle();
+    expect(document.querySelector('[data-board-banner="execution"]')?.textContent).toContain('No hc terminal carries the seat labels of this parent, so the seat columns are empty. Start each seat with the start rows in herdr-notify.md: the argv of `repo-harness seats argv <seat> --repository-id <id>` labels its own terminal.');
   });
 
   test('the board reader decodes the body with the core decoder and keeps each route refusal; any other answer is unreachable', async () => {

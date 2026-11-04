@@ -36,7 +36,6 @@ export function RuntimeSummary({ view, now, t }: { view: RuntimeView; now: numbe
     <span>{t(failed ? 'runtimeObservation.refreshFailed' : overlay.status === 'unavailable' ? 'runtimeObservation.unavailable' : 'runtimeObservation.readOnly')}</span>
     {overlay.reason?.code === 'hc_version_mismatch' && <span data-runtime-reason={overlay.reason.code}>
       {t('runtimeObservation.reason.hc_version_mismatch', { version: overlay.reason.actual.version, min: overlay.reason.expected.min_version })}</span>}
-    {overlay.reason?.code === 'hc_pin_unavailable' && <span data-runtime-reason={overlay.reason.code}>{t('runtimeObservation.reason.hc_pin_unavailable')}</span>}
     {overlay.native_sources.length === 0 && <span>{t('runtimeObservation.unclaimed', { count: overlay.unclaimed })}</span>}
     {overlay.observed_at && <time dateTime={overlay.observed_at} title={overlay.observed_at}>{formatRelativeAge(overlay.observed_at, now, t)}</time>}
   </div>
