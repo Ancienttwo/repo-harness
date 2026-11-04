@@ -57,10 +57,8 @@ function draftOf(advice: CleanupAdvice): Draft {
 const sameDraft = (left: Draft, right: Draft) => left.recommendation === right.recommendation
   && JSON.stringify(Object.entries(left.destinations).sort()) === JSON.stringify(Object.entries(right.destinations).sort());
 
-/** Files a server archive accepts: changed files and ignored files. An ignored directory is not a file. */
-function archivable(item: CleanupPlanItem): readonly string[] {
-  return item.loss === null ? [] : [...new Set([...item.loss.files, ...item.loss.ignored.filter(path => !path.endsWith('/'))])];
-}
+/** The server names the loss paths an archive can take; the page infers nothing from a path. */
+const archivable = (item: CleanupPlanItem): readonly string[] => item.loss?.archivable ?? [];
 
 const hasCommits = (item: CleanupPlanItem) => (item.loss?.commits.length ?? 0) > 0;
 

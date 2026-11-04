@@ -25,22 +25,32 @@ export function cleanupLossSha256(observed: CleanupObservation): string | null {
   }));
 }
 
+/**
+ * Loss paths with observed bytes or an index version. A staged deletion and an
+ * empty directory have neither; an unchanged tracked file is not a loss.
+ */
+function archivablePaths(loss: CleanupLossEvidence): string[] {
+  const lost = new Set([...loss.changed_paths, ...loss.ignored]);
+  const observed = [...loss.files.filter(file => file.kind !== 'directory' && file.path !== '.git'), ...loss.index].map(file => file.path);
+  return [...new Set(observed.filter(path => lost.has(path)))].sort();
+}
+
 /** Called only on server observations. Agent text is advice, never an authorization. */
 export function createCleanupPlan(sessionId: string, inputs: readonly { observation: CleanupObservation; advice: CleanupAdvice }[]): CleanupPlan {
   const items = inputs.map(({ observation, advice }) => {
     advice = decodeCleanupAdvice(advice);
     const loss = observation.loss;
     if (loss !== null) {
-      const available = new Set([...loss.files.filter(file => file.kind !== 'directory' && file.path !== '.git'), ...loss.index].map(file => file.path));
       const selected = [...(advice.archive.git?.paths ?? []), ...(advice.archive.private?.paths ?? [])];
-      if (new Set(selected).size !== selected.length || selected.some(path => !available.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
+      const archivable = new Set(archivablePaths(loss));
+      if (new Set(selected).size !== selected.length || selected.some(path => !archivable.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
       if (loss.commits.length && advice.recommendation !== 'keep' && !advice.archive.git?.include_commits) throw new Error('worktree_cleanup_commits_need_archive');
     }
     const item: Omit<CleanupPlanItem, 'plan_sha256'> = {
       worktree: observation.worktree, advice,
       loss: loss === null ? null : {
         files: [...loss.changed_paths],
-        ignored: [...loss.ignored].sort(), commits: [...loss.commits],
+        ignored: [...loss.ignored].sort(), commits: [...loss.commits], archivable: archivablePaths(loss),
       },
       loss_sha256: cleanupLossSha256(observation),
     };

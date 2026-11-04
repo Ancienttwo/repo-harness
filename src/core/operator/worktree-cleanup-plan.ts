@@ -21,6 +21,8 @@ export interface CleanupLossSummary {
   readonly files: readonly string[];
   readonly ignored: readonly string[];
   readonly commits: readonly string[];
+  /** Sorted loss paths that an archive can take; the server's archive validator uses this same list. */
+  readonly archivable: readonly string[];
 }
 export interface CleanupPlanItem {
   readonly worktree: WorktreeView;
@@ -135,8 +137,9 @@ export function decodeCleanupPlan(value: unknown): CleanupPlan {
     decodeCleanupAdvice(item.advice);
     if ((item.loss === null) !== (item.loss_sha256 === null)) fail();
     if (item.loss !== null) {
-      const loss = exact(item.loss, 'commits,files,ignored');
-      paths(loss.files); paths(loss.ignored, true);
+      const loss = exact(item.loss, 'archivable,commits,files,ignored');
+      paths(loss.files); paths(loss.ignored, true); paths(loss.archivable);
+      if (!(loss.archivable as string[]).every((path, index, all) => index === 0 || all[index - 1]! < path)) fail();
       if (!Array.isArray(loss.commits) || loss.commits.length > 1000 || new Set(loss.commits).size !== loss.commits.length
         || !loss.commits.every(oid => typeof oid === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(oid))) fail();
     }

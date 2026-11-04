@@ -117,6 +117,25 @@ describe('cleanup plan contract and execution boundary', () => {
     const plan = createCleanupPlan(SID, [{ observation: { ...o, loss: null }, advice: { ...advice(false), recommendation: 'keep' } }]);
     expect(cleanupSelection(plan.items[0]!)).toEqual({ selectable: false, selected_by_default: false });
   });
+  test('the plan lists the archivable loss paths, and the archive validator accepts exactly them', () => {
+    const o = observation(), file = o.loss!.files[0]!;
+    const directory = (path: string) => ({ ...file, path, kind: 'directory' as const, sha256: null, git_oid: null });
+    const loss = { ...o.loss!, ignored: ['.env', 'cache/'], changed_paths: ['docs/guide.md', 'docs/removed.md', 'docs/staged.md', 'empty'],
+      index: [{ path: 'docs/staged.md', mode: '100644', oid: 'f'.repeat(40), stage: 0 }],
+      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, directory('cache'), file, directory('empty')] };
+    const plan = (paths: string[]) => createCleanupPlan(SID, [{ observation: { ...o, loss }, advice: { ...advice(), archive: { git: null, private: { directory: 'fixture-repo', paths } } } }]);
+    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: ['docs/guide.md', 'docs/removed.md', 'docs/staged.md', 'empty'], archivable: ['.env', 'docs/guide.md', 'docs/staged.md'] });
+    // Changed file, ignored file, index-only version: bytes exist. Staged deletion, empty or ignored directory: no bytes. Unchanged tracked file: nothing lost.
+    for (const [path, accepted] of [['docs/guide.md', true], ['.env', true], ['docs/staged.md', true],
+      ['docs/removed.md', false], ['empty', false], ['cache', false], ['README.md', false]] as const) {
+      if (accepted) expect(plan([path]).items[0]!.advice.archive.private!.paths).toEqual([path]);
+      else expect(() => plan([path])).toThrow('archive_paths_invalid');
+    }
+    const item = plan(['docs/guide.md']).items[0]!;
+    for (const archivable of [['docs/guide.md', '.env'], ['.env', '.env'], ['/private/.env']]) {
+      expect(() => decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: SID, items: [{ ...item, loss: { ...item.loss!, archivable } }] })).toThrow('worktree_cleanup_plan_invalid');
+    }
+  });
   test('private-only archive never calls Git push or PR publication', async () => {
     const h = harness();
     const plan = createCleanupPlan(SID, [{ observation: h.observations[0]!, advice: { ...advice(), archive: { git: null, private: { directory: 'fixture-repo', paths: ['docs/guide.md'] } } } }]);

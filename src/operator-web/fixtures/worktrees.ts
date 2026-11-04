@@ -142,19 +142,21 @@ async function firstPlan(now: number): Promise<CleanupPlan> {
   const extra = (seed: string, directory: string, branch: string, dirty: number) => tree(now, HARNESS_ID, seed, {
     directory, branch, source: 'contract', judgment: 'yellow', reasons: ['dirty'], dirty_files: dirty, merge: 'unmerged', size_bytes: 64 * MB });
   const commits = (count: number) => Array.from({ length: count }, (_, index) => String(index + 1).repeat(40));
-  const loss = (files: string[], ignored: string[] = [], commitCount = 0): CleanupLossSummary => ({ files, ignored, commits: commits(commitCount) });
+  // `archivable` is what the server lists: a staged deletion and an ignored directory have no bytes to archive.
+  const loss = (archivable: string[], files: string[], ignored: string[] = [], commitCount = 0): CleanupLossSummary =>
+    ({ files, ignored, commits: commits(commitCount), archivable });
   const rows: { readonly tree: WorktreeView; readonly loss: CleanupLossSummary | null }[] = [
-    { tree: row('feat-kanban-status'), loss: loss([]) },
-    { tree: row('repo-harness-wt-kanban-redesign'), loss: loss(['src/operator-web/BoardPage.tsx'], [], 3) },
+    { tree: row('feat-kanban-status'), loss: loss([], []) },
+    { tree: row('repo-harness-wt-kanban-redesign'), loss: loss(['src/operator-web/BoardPage.tsx'], ['src/operator-web/BoardPage.tsx'], [], 3) },
     { tree: row('repo-harness-wt-old-spike'), loss: null },
-    { tree: row('repo-harness-wt-oar'), loss: loss([], [], 2) },
-    { tree: row('codex-7f3a'), loss: loss(['src/hooks/run.ts', 'docs/hooks.md'], ['.env', 'node_modules/']) },
-    { tree: row('repo-harness-wt-docs-cleanup'), loss: loss([]) },
-    { tree: extra('e2', 'repo-harness-wt-notes', 'docs/release-notes', 1), loss: loss(['docs/release-notes.md']) },
-    { tree: extra('f3', 'repo-harness-wt-bench', 'perf/bench-hooks', 2), loss: loss(['bench/hooks.ts', 'bench/README.md'], ['bench/out.json']) },
-    { tree: extra('a4', 'repo-harness-wt-i18n', 'feat/i18n-split', 1), loss: loss(['src/operator-web/i18n/home.ts']) },
-    { tree: extra('b5', 'repo-harness-wt-archctx', 'fix/archctx-pin', 1), loss: loss(['package.json'], [], 1) },
-    { tree: extra('c6', 'repo-harness-wt-ci-lane', 'ci/affected-lane', 1), loss: loss(['scripts/check-ci.sh']) },
+    { tree: row('repo-harness-wt-oar'), loss: loss([], [], [], 2) },
+    { tree: row('codex-7f3a'), loss: loss(['.env', 'docs/hooks.md', 'src/hooks/run.ts'], ['docs/hooks.md', 'docs/old-hooks.md', 'src/hooks/run.ts'], ['.env', 'node_modules/']) },
+    { tree: row('repo-harness-wt-docs-cleanup'), loss: loss([], []) },
+    { tree: extra('e2', 'repo-harness-wt-notes', 'docs/release-notes', 1), loss: loss(['docs/release-notes.md'], ['docs/release-notes.md']) },
+    { tree: extra('f3', 'repo-harness-wt-bench', 'perf/bench-hooks', 2), loss: loss(['bench/README.md', 'bench/hooks.ts', 'bench/out.json'], ['bench/README.md', 'bench/hooks.ts'], ['bench/out.json']) },
+    { tree: extra('a4', 'repo-harness-wt-i18n', 'feat/i18n-split', 1), loss: loss(['src/operator-web/i18n/home.ts'], ['src/operator-web/i18n/home.ts']) },
+    { tree: extra('b5', 'repo-harness-wt-archctx', 'fix/archctx-pin', 1), loss: loss(['package.json'], ['package.json'], [], 1) },
+    { tree: extra('c6', 'repo-harness-wt-ci-lane', 'ci/affected-lane', 1), loss: loss(['scripts/check-ci.sh'], ['scripts/check-ci.sh']) },
   ];
   const items = await Promise.all(rows.map(async ({ tree: worktree, loss: summary }) => planItem({
     worktree, loss: summary,

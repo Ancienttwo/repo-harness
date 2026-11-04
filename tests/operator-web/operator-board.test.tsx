@@ -12,6 +12,7 @@ import { cleanCommand } from '../../src/cli/commands/worktrees';
 import { decodeWorktreeCleanupRequest, worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import { decodeWorktrees, unavailableWorktrees, WORKTREE_REASONS, type WorktreesSnapshot } from '../../src/core/operator/worktrees';
 import { selectionDigest } from '../../src/effects/operator/worktree-cleanup';
+import { createCleanupPlan, type CleanupObservation } from '../../src/effects/operator/worktree-cleanup-plan';
 import { documentTitle, OPERATOR_BOARD_REPOSITORY_STORAGE_KEY, OperatorApp, type OperatorAppProps } from '../../src/operator-web/App';
 import { evaluateBoardAttention } from '../../src/core/board/attention';
 import { decodeBoard, type BoardV1 } from '../../src/core/board/board';
@@ -1280,6 +1281,36 @@ describe('worktree cleanup plan review (#1720)', () => {
     });
     expect(document.querySelector('[data-plan-result] p')?.textContent).toBe('removed: 1 · skipped: 5 · needs a check: 2');
     expect(document.querySelectorAll('[data-plan-item] input:not(:disabled), [data-plan-item] select:not(:disabled)')).toHaveLength(0);
+  });
+
+  test('only server-archivable paths get a destination, and the page\'s choice passes createCleanupPlan', async () => {
+    const tree = rowOf('codex-7f3a'), session = 'd'.repeat(32);
+    const file = { path: 'docs/guide.md', kind: 'file' as const, mode: 0o644, size: 5, sha256: 'd'.repeat(64), git_oid: 'e'.repeat(40) };
+    // A changed file, an ignored file, a staged deletion, an empty directory and an unchanged tracked file.
+    const observation: CleanupObservation = { worktree: tree, loss: { kind: 'registered', identity: { dev: 1, ino: 1, birthtime_ms: 1 }, branch: `refs/heads/${tree.branch}`,
+      head_commit: 'c'.repeat(40), index: [], commits: [], remote_refs: [], ignored: ['.env'], changed_paths: ['docs/guide.md', 'docs/removed.md', 'empty'],
+      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, file, { ...file, path: 'empty', kind: 'directory', sha256: null, git_oid: null }] } };
+    const keep = { recommendation: 'keep' as const, reason: 'Waiting for the user to choose.', evidence: ['judgment: yellow'], archive: { git: null, private: null } };
+    let plan = createCleanupPlan(session, [{ observation, advice: keep }]);
+    const ports: CleanupPlanPorts = {
+      open: async () => ({ state: 'ready', plan }),
+      // The server keeps its own reason and evidence and takes only the choice.
+      choose: async (_session, choices) => {
+        plan = createCleanupPlan(session, [{ observation, advice: { ...keep, recommendation: choices[0]!.recommendation, archive: choices[0]!.archive } }]);
+        return { state: 'ready', plan };
+      },
+      execute: () => Promise.reject(new Error('not used')),
+    };
+    await openReview(ports);
+    await option('codex-7f3a', 'archive_then_delete');
+    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-path]')).map(row => row.getAttribute('data-plan-path'))).toEqual(['.env', 'docs/guide.md']);
+    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-loss-list="files"] li')).map(row => row.textContent)).toEqual(['docs/guide.md', 'docs/removed.md', 'empty']);
+    await destination('codex-7f3a', 'docs/guide.md', 'git');
+    await destination('codex-7f3a', '.env', 'private');
+    await act(async () => planButton('choose').click());
+    await until(() => planItem('codex-7f3a').querySelector('[data-plan-authorization]') !== null);
+    expect(plan.items[0]!.advice.archive).toMatchObject({ git: { paths: ['docs/guide.md'], include_commits: false }, private: { directory: 'codex-7f3a', paths: ['.env'] } });
+    expect(planItem('codex-7f3a').querySelector('[data-plan-digest="plan"]')?.textContent).toBe(plan.items[0]!.plan_sha256);
   });
 
   test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {
