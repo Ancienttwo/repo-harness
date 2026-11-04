@@ -163,6 +163,7 @@ describe('Bot access collector', () => {
         herdr_app: { state: 'not_pinned' }, terminals: { state: 'unavailable', reason: 'hc_version_mismatch' },
       });
       expect(f.hc.argv().some(line => line.startsWith('events'))).toBe(false);
+      expect(f.hc.argv()).toEqual(['server status --json']);
       expect(decodeBotAccessSnapshot(mismatch)).toEqual(mismatch);
 
       f.hc.setVersion(null);

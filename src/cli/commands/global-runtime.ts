@@ -1577,11 +1577,11 @@ export function ensureHerdrCore(input: HerdrCoreInstallInput): HerdrCoreInstallR
       return done({ status: "ok", detail: `hc ${current.version} at ${hc} is at or above ${minVersion}; no change` });
     }
     const update = runBoundedProcess(hc, ["update", "--version", minVersion], { cwd, env, timeoutMs: 300_000 });
-    if (!update.ok) return fail(`hc update --version ${minVersion} failed: ${processFailure(update)}`);
+    if (!update.ok) return fail(`hc client ${current.version} is below the repo-harness floor ${minVersion}; hc update --version ${minVersion} failed: ${processFailure(update)}`);
     const updated = hcVersionOf(hc, cwd, env);
     if ("failure" in updated) return fail(updated.failure);
-    if (compareHcVersions(updated.version, minVersion) < 0) return fail(`hc update --version ${minVersion} left hc ${updated.version}`);
-    return done({ status: "ok", detail: `updated hc ${current.version} to ${updated.version} at ${hc}` });
+    if (compareHcVersions(updated.version, minVersion) < 0) return fail(`hc update --version ${minVersion} left hc client ${updated.version} below the repo-harness floor ${minVersion}`);
+    return done({ status: "ok", detail: `hc client ${current.version} was below the repo-harness floor ${minVersion}; hc update --version ${minVersion} updated it to ${updated.version} at ${hc}` });
   }
 
   const assetName = HC_ASSET_NAMES[input.platform];

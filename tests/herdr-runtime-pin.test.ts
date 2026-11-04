@@ -381,6 +381,7 @@ interface HcStepRow {
   readonly served: "pinned" | "tampered" | "absent" | "wrong-version" | "no-conpty";
   readonly existing?: "herdr-core" | "hc";
   readonly updateFails?: boolean;
+  readonly updateLeavesVersion?: boolean;
   readonly installDirOnPath?: boolean;
   /** Windows: the fake powershell.exe fails its user PATH write. */
   readonly userPathFails?: boolean;
@@ -412,9 +413,11 @@ const HC_STEP_ROWS: readonly HcStepRow[] = [
   { label: "missing: no pin target for the platform", before: null, platform: "win32-arm64", served: "pinned", status: "failed", requests: 0, installed: false, hcCalls: [],
     detail: `no herdr-core release asset for win32-arm64; install hc >=${HC_MIN_VERSION} manually (Herdr.app or a herdr-core release), then run repo-harness update` },
   { label: "below the floor: hc update --version", before: "0.1.15", platform: "darwin-arm64", served: "pinned", status: "ok", requests: 0, installed: false,
-    hcCalls: ["--version", `update --version ${HC_MIN_VERSION}`, "--version"] },
+    hcCalls: ["--version", `update --version ${HC_MIN_VERSION}`, "--version"], detail: `hc client 0.1.15 was below the repo-harness floor ${HC_MIN_VERSION}; hc update --version ${HC_MIN_VERSION} updated it to ${HC_MIN_VERSION}` },
   { label: "below the floor: a failed hc update stops", before: "0.1.15", platform: "darwin-arm64", served: "pinned", updateFails: true, status: "failed", requests: 0, installed: false,
-    hcCalls: ["--version", `update --version ${HC_MIN_VERSION}`], detail: `hc update --version ${HC_MIN_VERSION} failed: hc: managed install; update it with its package manager` },
+    hcCalls: ["--version", `update --version ${HC_MIN_VERSION}`], detail: `hc client 0.1.15 is below the repo-harness floor ${HC_MIN_VERSION}; hc update --version ${HC_MIN_VERSION} failed: hc: managed install; update it with its package manager` },
+  { label: "below the floor: hc update leaves the client below the floor", before: "0.1.15", platform: "darwin-arm64", served: "pinned", updateLeavesVersion: true, status: "failed", requests: 0, installed: false,
+    hcCalls: ["--version", `update --version ${HC_MIN_VERSION}`, "--version"], detail: `hc update --version ${HC_MIN_VERSION} left hc client 0.1.15 below the repo-harness floor ${HC_MIN_VERSION}` },
   { label: "at the floor: no change", before: HC_MIN_VERSION, platform: "darwin-arm64", served: "pinned", status: "ok", requests: 0, installed: false, hcCalls: ["--version"] },
   { label: "above the floor: no change", before: "99.0.0", platform: "darwin-arm64", served: "pinned", status: "ok", requests: 0, installed: false, hcCalls: ["--version"] },
 ];
@@ -448,7 +451,7 @@ test.each(HC_STEP_ROWS.map(row => [row.label, row] as const))("herdr-core instal
     if (row.before !== null) {
       writeFileSync(join(root, "hc-version"), row.before);
       writeFileSync(join(fakeBin, "hc"), `#!/bin/sh\nprintf '%s\\n' "$*" >> "${root}/hc-argv.log"\n`
-        + `if [ "$1" = update ]; then ${row.updateFails ? `echo 'hc: managed install; update it with its package manager' >&2; exit 1` : `printf '%s' "$3" > "${root}/hc-version"; exit 0`}; fi\n`
+        + `if [ "$1" = update ]; then ${row.updateFails ? `echo 'hc: managed install; update it with its package manager' >&2; exit 1` : row.updateLeavesVersion ? 'exit 0' : `printf '%s' "$3" > "${root}/hc-version"; exit 0`}; fi\n`
         + `printf 'hc %s\\n' "$(cat "${root}/hc-version")"\n`, { mode: 0o755 });
     }
     const port = await server.port;

@@ -64,6 +64,8 @@ describe('herdr-core runtime observation', () => {
       const mismatch = await capabilities();
       expect(mismatch).toBeInstanceOf(HcVersionMismatchError);
       expect((mismatch as HcVersionMismatchError).check).toEqual({ state: 'mismatch', expected: { min_version: HC_MIN_VERSION }, actual: { version: '0.1.15' } });
+      expect((mismatch as HcVersionMismatchError).message).toBe(`hc core 0.1.15 is below the repo-harness floor ${HC_MIN_VERSION}; if hc --version is below ${HC_MIN_VERSION}, run hc update --version ${HC_MIN_VERSION} (it restarts the core); else run hc server restart.`);
+      expect(f.argv()).toEqual(['server status --json']);
       expect(f.argv().some(line => line.startsWith('events'))).toBe(false);
       // No registry read sets the floor: a missing registry leaves a core at the floor usable.
       f.setVersion(HC_MIN_VERSION);
