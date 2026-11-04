@@ -14,7 +14,8 @@ import {
   type ArchitectureMapRelationV1, type ArchitectureMapV1,
 } from '../../src/core/operator/architecture-map';
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
-import { layoutSequence } from '../../src/operator-web/architecture-sequence-layout';
+import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
+import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
 import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
@@ -874,6 +875,9 @@ describe('sequence and topology base maps', () => {
     const commit = layout.messages[2]!;
     expect([layout.fragments.map(fragment => fragment.outcome.kind), commit.y > kept.y && commit.y < kept.y + kept.height, layout.terminals.map(entry => entry.participant)])
       .toEqual([['success', 'error'], true, ['pipe', 'router']]);
+    // A fragment spans the columns that its outcome names: the kept rows reach git, the refused rows end at the router.
+    const column = (id: string) => layout.columns.find(entry => entry.participant.id === id)!.x;
+    expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
   });
 
   test('topology boxes nest by namespace, a deployed node sits in its process, and a relation is drawn between boxes or counted as unplaced', () => {
@@ -949,7 +953,10 @@ describe('sequence and topology base maps', () => {
     expect([...document.querySelectorAll('.architecture-sequence__box')].map(item => [item.getAttribute('data-placement'), item.textContent])).toEqual([
       ['unknown', 'Process unknown'], ['process', `Name ${SERVER}`], ['external', 'External systems']]);
     expect(document.querySelector('.architecture-sequence__box[data-placement="unknown"]')?.getAttribute('data-reason')).toBe(t('architecture.runtime.deployment_undeclared'));
-    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => item.getAttribute('data-kind'))).toEqual(['success', 'error']);
+    // The first outcome opens the alt and the next one is an else, in model order; the colour follows the outcome kind.
+    expect([...document.querySelectorAll('.architecture-sequence__fragment')].map(item => [item.getAttribute('data-kind'), item.querySelector('.mono-value')?.textContent]))
+      .toEqual([['success', 'alt'], ['error', 'else']]);
+    expect([...document.querySelectorAll('.architecture-sequence__terminal')].map(item => [item.getAttribute('data-kind'), item.textContent])).toEqual([['success', 'Done'], ['error', 'Stop']]);
     // Today's changes reach the append step.
     const message = (id: string) => document.querySelector(`.react-flow__node[data-id="message:${id}"] .architecture-sequence__message`)!;
     expect([message(':append').getAttribute('data-tone'), message(':route').hasAttribute('data-tone')]).toEqual(['change', false]);
@@ -957,6 +964,7 @@ describe('sequence and topology base maps', () => {
     await click('.react-flow__node[data-id="message::route"]');
     expect(message(':route').hasAttribute('data-selected')).toBe(true);
     expect(inspector().getAttribute('data-step-id')).toBe(':route');
+    expect(inspector().querySelector('[data-step-title]')?.textContent).toBe(`Name ${CALLER} → Name ${CENTER}`);
     expect(inspector().querySelector('[data-step-evidence]')?.textContent).toBe('src/router.ts route→ src/pipeline.ts route');
     expect(inspector().querySelector('[data-step-proof]')?.getAttribute('data-step-proof')).toBe('proven');
     expect([...inspector().querySelectorAll('[data-call-sites] li')].map(item => item.textContent)).toEqual(['src/router.ts:12', 'src/router-entry.ts']);
@@ -980,14 +988,102 @@ describe('sequence and topology base maps', () => {
     expect([inspector().getAttribute('data-node-id'), inspector().querySelector('[data-runtime]')?.textContent]).toEqual([CALLER, `Runs in: ${t('architecture.runtime.deployment_undeclared')}`]);
     await click('.react-flow__node[data-id="participant:ledger"]');
     expect(inspector().querySelector('[data-runtime]')?.textContent).toBe(`Runs in: Name ${SERVER}`);
-    // A not-applicable flow states its rationale instead of a diagram.
-    await act(async () => {
-      const select = document.querySelector<HTMLSelectElement>('.architecture-lens select')!;
-      select.value = 'flow.router.none';
-      select.dispatchEvent(new window.Event('change', { bubbles: true }) as unknown as Event);
-    });
+    // The side panel lists the flows in model order; today's changes reach a step of the first one.
+    const flows = () => [...document.querySelectorAll('.architecture-sequence__flow-list button')].map(item => [item.textContent, item.getAttribute('aria-pressed'), item.hasAttribute('data-lit')]);
+    expect(flows()).toEqual([['1Append a ledger row', 'true', true], ['2No router flow', 'false', false]]);
+    // A not-applicable flow states its rationale instead of a diagram, and has nothing to export.
+    await click('[data-flow-id="flow.router.none"]');
+    expect([notes(), flows()[1]![1], document.querySelector<HTMLButtonElement>('[data-sequence-export]')?.disabled])
+      .toEqual([expect.arrayContaining(['sequence.not_applicable:flow_not_applicable']), 'true', true]);
+
+    // The flow list stays one mounted control across each kind of flow change, so focus and its scroll position stay;
+    // a selection belongs to its flow and does not come back on a return.
+    const second = { ...flow, id: 'flow.pipeline.second', name: 'Second ledger flow' };
+    await act(async () => root?.render(workspace({ repositoryId: 'repo-three-flows', readMap: reader(runtimeMap({ flows: [flow, second, runtimeMap().flows[1]!],
+      // Custom flows declare no code, so the map carries no proof either.
+      layers: { ...layers, violations: { ...layers.violations, flows: noCodeFacts } } })) })));
     await settle();
-    expect(notes()).toContain('sequence.not_applicable:flow_not_applicable');
+    await tab('sequence');
+    await click(`[data-flow-id="${FLOW}"]`);
+    await click('.react-flow__node[data-id="message::route"]');
+    const list = document.querySelector<HTMLElement>('.architecture-sequence__flow-list')!;
+    for (const [target, view] of [[second.id, 'diagram'], ['flow.router.none', 'note'], [FLOW, 'diagram']] as const) {
+      const button = list.querySelector<HTMLButtonElement>(`[data-flow-id="${target}"]`)!;
+      list.scrollTop = 40;
+      button.focus();
+      await click(`[data-flow-id="${target}"]`);
+      expect([document.querySelector('[data-view="sequence"]')?.getAttribute('data-flow'), document.querySelector('.architecture-map__canvas') === null ? 'note' : 'diagram',
+        list.isConnected, list.scrollTop, button.isConnected, document.activeElement === button, button.getAttribute('aria-pressed'), inspector().hasAttribute('data-step-id')])
+        .toEqual([target, view, true, 40, true, true, 'true', false]);
+    }
+  });
+
+  test('the lens row counts the steps that have code evidence and exports the flow on screen as one SVG file', async () => {
+    const files: { name: string; blob: Blob }[] = [];
+    const { createObjectURL, revokeObjectURL } = URL;
+    const blobs = new Map<string, Blob>();
+    URL.createObjectURL = (blob: Blob) => { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; };
+    URL.revokeObjectURL = () => {};
+    const anchor = window.HTMLAnchorElement.prototype;
+    const { click: anchorClick } = anchor;
+    anchor.click = function (this: HTMLAnchorElement) { files.push({ name: this.download, blob: blobs.get(this.href)! }); };
+    try {
+      await mount(workspace({ readMap: reader(runtimeMap()) }));
+      await tab('sequence');
+      // Declared code names the route and append selectors; the outcome steps have none.
+      expect(document.querySelector('[data-sequence-summary]')?.textContent).toBe('2 flows from the model; 2 of 4 steps have code evidence');
+      await click('[data-sequence-export]');
+      const svg = await files[0]!.blob.text();
+      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/class="message"/gu) ?? []).length]).toEqual([[`${FLOW}.svg`], 'image/svg+xml', 4]);
+      expect([`<title>Name ${CALLER}</title>`, '>alt</tspan> Row kept', '>else</tspan> Row refused', '>Done</text>', '>Stop</text>'].filter(text => !svg.includes(text))).toEqual([]);
+
+      // Every label kind keeps its estimated text box inside its own shape and the file, with one long label per kind and CJK
+      // text. The kept terminal sits on git, the rightmost participant; the append step is a self message.
+      // The estimate never undercounts: widest glyphs per class, in em at weights 400 and 600, as Chrome draws system-ui (SF Pro) on macOS.
+      const measured = [['中', 0.944, 0.944], ['W', 0.924, 0.952], ['%', 0.808, 0.863], ['m', 0.803, 0.843], ['&', 0.669, 0.691], ['6', 0.617, 0.641]] as const;
+      expect(measured.filter(([glyph, regular, bold]) => textWidth(glyph, 100, false) < regular * 100 || textWidth(glyph, 100, true) < bold * 100)).toEqual([]);
+      const latin = (text: string) => `${text} `.repeat(4).trim();
+      const cjk = (text: string) => text.repeat(4);
+      const [route, append] = flow.steps;
+      const [kept, refused] = flow.outcomes;
+      const wide = { ...flow,
+        steps: [{ ...route!, label: latin('Route the request through the root router before the pipeline appends') }, { ...append!, to: 'pipe', label: cjk('流水线先校验请求和账本状态') }],
+        outcomes: [
+          { ...kept!, label: cjk('账本行已保存并提交到 git，再把提交结果返回给调用方'), steps: [{ ...kept!.steps[0]!, label: latin('Commit the WRITTEN LEDGER ROW to git') }],
+            terminal: { participant: 'git', label: 'WROTE THE COMMITTED LEDGER ROW AND RETURNED ITS SHA' } },
+          { ...refused!, label: latin('Row refused because the ledger rejected the append for a known reason'), steps: [{ ...refused!.steps[0]!, label: cjk('账本拒绝追加并给出原因') }],
+            terminal: { participant: 'router', label: '停止：返回拒绝原因和账本代码给路由器' } },
+        ] };
+      const names = ['路由器：根路由在流水线之前选择处理程序', 'Pipeline Workflow Engine Capability With Many Words', 'Ledger component that appends attested rows', '外部系统 git 与 archctx 子进程'];
+      const wideLayout = layoutSequence(wide, runtimePlacement(runtimeMap()));
+      const exported = sequenceSvg(wideLayout, {
+        box: box => latin(`${box.key} runs every hook event in its own Bun process`),
+        participant: nodeId => ({ name: names[flow.participants.findIndex(entry => entry.node === nodeId)]!, kind: 'capability' }),
+      });
+      const shapes: Record<keyof typeof SEQUENCE_SVG_FONT, readonly (readonly [number, number])[]> = {
+        title: wideLayout.boxes.map(box => [box.x, box.x + box.width]),
+        'fragment-label': wideLayout.fragments.map(fragment => [fragment.x, fragment.x + fragment.width]),
+        name: wideLayout.columns.map(column => [column.x - SEQUENCE_SVG_HEADER_WIDTH / 2, column.x + SEQUENCE_SVG_HEADER_WIDTH / 2]),
+        'message-label': wideLayout.messages.map(message => message.from === message.to ? [message.from, message.from + SEQUENCE_COLUMN / 2]
+          : [Math.min(message.from, message.to), Math.max(message.from, message.to)]),
+        terminal: wideLayout.terminals.map(terminal => [terminal.x - SEQUENCE_SVG_TERMINAL_WIDTH / 2, terminal.x + SEQUENCE_SVG_TERMINAL_WIDTH / 2]),
+      };
+      const shown = (markup: string) => markup.replace(/<[^>]+>/gu, '').replace(/&lt;/gu, '<').replace(/&gt;/gu, '>').replace(/&quot;/gu, '"').replace(/&amp;/gu, '&');
+      const labels = (Object.keys(shapes) as (keyof typeof SEQUENCE_SVG_FONT)[]).flatMap(kind => [...exported.matchAll(
+        new RegExp(`<text class="${kind}[^"]*" x="([\\d.]+)" y="[\\d.]+"( text-anchor="middle")?><title>[^<]*</title>(.*?)</text>`, 'gu'))].map((match, index) => {
+        const text = shown(match[3]!);
+        const width = textWidth(text, SEQUENCE_SVG_FONT[kind].size, SEQUENCE_SVG_FONT[kind].bold);
+        const left = Number(match[1]) - (match[2] === undefined ? 0 : width / 2);
+        const [low, high] = shapes[kind][index]!;
+        return { kind, text, inside: left >= Math.max(low, 0) && left + width <= Math.min(high, wideLayout.width), shortened: text.endsWith('…') };
+      }));
+      expect(Object.fromEntries(Object.entries(shapes).map(([kind, list]) => [kind, [list.length, labels.filter(entry => entry.kind === kind).length]])))
+        .toEqual({ title: [3, 3], 'fragment-label': [2, 2], name: [4, 4], 'message-label': [4, 4], terminal: [2, 2] });
+      expect(labels.filter(entry => !entry.inside || !entry.shortened)).toEqual([]);
+    } finally {
+      Object.assign(URL, { createObjectURL, revokeObjectURL });
+      anchor.click = anchorClick;
+    }
   });
 
   test('each layer on the sequence map marks steps or participants from the collector, or says what it cannot mark', async () => {
