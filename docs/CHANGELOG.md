@@ -2,7 +2,40 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.26.1] - 2026-11-04
+
+This release fixes the hook runtime of 0.26.0. In 0.26.0, the installed
+`repo-harness-hook` exited 1 on every event when the machine recorded an
+install state, so no hook route ran: the edit, bash and subagent guards, the
+inbox, SessionStart and Stop were all skipped. 0.26.1 has no breaking change
+and needs no migration.
+
+### Upgrade
+
+- From 0.26.0, install the new CLI directly, then update:
+
+  ```bash
+  bun add -g repo-harness@0.26.1 --no-cache
+  repo-harness update --version 0.26.1
+  ```
+
+  `update` runs from the CLI entry, not from the hook bundle, so the 0.26.0
+  fault does not stop it. A 0.26.0 state is protocol 3: no migration.
+- From 0.25.4 or earlier, use the `[0.26.0]` Upgrade steps with 0.26.1 in
+  place of 0.26.0.
+
+### Changed
+
+- The selection read of a hook or command root no longer checks the
+  ownership surfaces of the install state. In 0.26.0, a state with a surface
+  outside the host mutation paths made that read `unreadable`. `install`,
+  `update`, `doctor`, `status`, `uninstall` and `upgrade` still check each
+  surface and fail with `install_state_invalid_ownership`. (#1683)
+- The Operator module review diff reads path owners through the
+  architecture ownership port. When the `architecture` plugin is not
+  selected, it fails with `diff_owner_resolution_failed` before any archctx
+  call. `component.architecture.owners` is a target of the plugin-internals
+  constraint again. (#1682)
 
 ### Fixed
 
@@ -19,7 +52,19 @@ All notable changes to this skill are documented here.
   `doctor` and `status` still check each surface. The package version comes
   from one static `package.json` import, and the single-file bundle marker is
   the boolean `REPO_HARNESS_SINGLE_FILE_BUNDLE`. The tarball install smoke now
-  runs the installed hook with a recorded install state. (#1680)
+  runs the installed hook with a recorded install state. (#1683)
+- The Operator architecture page names each map failure and its next step.
+  The archctx error code goes from the map worker to the page, so the page
+  tells a missing committed model (`AC_MODEL_ADOPTION_REQUIRED`) from an
+  invalid model (`AC_SCHEMA_INVALID`) and from a git read failure. (#1677)
+- The MCP server contexts require the CodeGraph adapter, with no default, so
+  no MCP entry can run CodeGraph without the selection check. A provider
+  import failure with the plugin selected reports `status: "invalid"` with
+  the import error. (#1675)
+
+### Documentation
+
+- 0.26.0 publication values in the release record. (#1679)
 
 ## [0.26.0] - 2026-11-04
 
