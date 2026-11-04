@@ -877,7 +877,7 @@ describe('board office (#1755)', () => {
       ['idle', 'Idle', 'No rule above matches.'],
       ['unknown', 'Unknown desk', 'The seat names no issue and no pull request.'],
     ]);
-    expect([...DESK_STATES]).toEqual(Array.from(legend.querySelectorAll('[data-legend-state]')).map(entry => entry.getAttribute('data-legend-state')));
+    expect(Array.from(legend.querySelectorAll('[data-legend-state]')).map(entry => entry.getAttribute('data-legend-state'))).toEqual([...DESK_STATES]);
     await key('Escape');
     expect(document.querySelector('[role="dialog"]')).toBeNull();
   });
