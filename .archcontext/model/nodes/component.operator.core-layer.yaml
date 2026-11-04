@@ -34,6 +34,7 @@ source:
     - src/core/operator/docs-host-runtimes.ts
     - src/core/operator/docs.ts
     - src/core/operator/execution-state.ts
+    - src/core/operator/herdr-core-pin.json
     - src/core/operator/herdr-pin.ts
     - src/core/operator/notify-status.ts
     - src/core/operator/pane-prefix.ts

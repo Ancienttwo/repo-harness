@@ -813,9 +813,11 @@ describe('package-local ArchContext projection provider', () => {
     const readiness = inspectArchitectureProjectionReadiness(f.repoRoot, architectureModelReady, { consumerRoot: f.consumerRoot, policy, run });
     expect(readiness.codeFacts.state).toBe('ready');
     expect(readiness.apply.enabled).toBe(false);
-    const reference = /in (\/.+worker\.md)\.$/.exec(readiness.next!)?.[1];
-    expect(realpathSync(reference!)).toBe(realpathSync(join(import.meta.dir, '..', 'assets', 'skill-commands', 'repo-harness-architecture', 'references', 'worker.md')));
-    expect(readFileSync(reference!, 'utf8')).toContain('## Adopt ArchContext in a repository');
+    // The notice names the file relative to the package, so the source tree and the bundle print the same valid reference.
+    const reference = /\((assets\/\S+worker\.md) in the repo-harness package\)\.$/.exec(readiness.next!)?.[1];
+    expect(reference).toBe('assets/skill-commands/repo-harness-architecture/references/worker.md');
+    expect(readiness.next).not.toContain(PACKAGE_ROOT);
+    expect(readFileSync(join(PACKAGE_ROOT, reference!), 'utf8')).toContain('## Adopt ArchContext in a repository');
   });
 
   describe('committed projection manifest compatibility', () => {
@@ -1132,6 +1134,12 @@ describe('package-local ArchContext projection provider', () => {
     expect(resolved.binaryPath).toBe(realpathSync(f.binary));
     writeFileSync(join(f.consumerRoot, 'node_modules', 'archctx', 'package.json'), '{"name":"archctx","version":"0.3.0"}\n');
     expect(() => resolvePackageLocalArchctx(f.consumerRoot)).toThrow(`expected archctx@${ARCHCTX_REQUIRED_VERSION}`);
+    // A fresh consumer root: the Bun resolver caches directory entries that it has already read.
+    const empty = fixture();
+    rmSync(join(empty.consumerRoot, 'node_modules', 'archctx'), { recursive: true });
+    const missing = (() => { try { resolvePackageLocalArchctx(empty.consumerRoot); } catch (error) { return error; } })();
+    expect(missing).toBeInstanceOf(ArchctxClientError);
+    expect(missing).toMatchObject({ code: 'RH_ARCHCTX_PACKAGE_MISSING', action: 'update-repo-harness' });
   });
 
   test('resolves a hoisted package from an installed repo-harness package root', () => {

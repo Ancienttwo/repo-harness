@@ -1,48 +1,23 @@
-// The operator's herdr-core reads: the hc pin, the core check and the runtime
+// The operator's herdr-core reads: the core check and the runtime
 // transport. Every read goes through the typed helpers of `herdr-core.ts`, on
 // the core that the server's environment selects (`HC_SESSION` / `HC_SOCKET`).
 // Terminal text, titles and working directories never leave this file.
 
-import { readFileSync } from 'node:fs';
-import { join } from 'node:path';
-import { HC_VERSION_TEXT, HcPinUnavailableError, HcVersionMismatchError, compareHcVersions, hcVersionCheck, type HcVersionCheck } from '../../core/operator/herdr-pin';
-import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
+import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck, type HcVersionCheck } from '../../core/operator/herdr-pin';
 import { RH_LABEL, RH_ROLE, hcEvents, hcServerStatusAsync, type HcLabels, type HcTerminal } from '../terminal/herdr-core';
 import type { StructuredRuntimeTransport } from './runtime-source';
 import { RUNTIME_SOURCE_PROTOCOL } from './runtime-source';
 
 /** The operator observes task-session terminals only; it never lists unlabeled terminals. */
 export const TASK_SESSION_LABELS: HcLabels = { [RH_LABEL.role]: RH_ROLE.taskSession };
-const POLICY_SEGMENTS = ['.ai', 'harness', 'policy.json'] as const;
 const RECONNECT_MS = 1000;
-
-/**
- * The highest `external_tooling.herdr_core.min_version` over the registered
- * repository policies: one hc core serves all of them. Null when none is readable.
- */
-export function readHcPin(env: NodeJS.ProcessEnv): string | null {
-  let pin: string | null = null, repos;
-  // An unreadable registry names no policy, so no pin is known.
-  try { repos = readRepoHarnessRegistryStrictSnapshot({ env }).repos; } catch { return null; }
-  for (const repo of repos) {
-    let value: unknown;
-    try {
-      const policy = JSON.parse(readFileSync(join(repo.path, ...POLICY_SEGMENTS), 'utf8')) as { external_tooling?: { herdr_core?: { min_version?: unknown } } };
-      value = policy.external_tooling?.herdr_core?.min_version;
-    } catch { continue; /* an unreadable policy pins nothing */ }
-    if (typeof value === 'string' && HC_VERSION_TEXT.test(value) && (pin === null || compareHcVersions(value, pin) > 0)) pin = value;
-  }
-  return pin;
-}
 
 export interface HcCoreObservation { readonly core_id: string; readonly check: HcVersionCheck }
 
-/** The answering core and its version against the pin. Throws `HcPinUnavailableError` or a `HerdrCoreError`. */
+/** The answering core and its version against the package floor. Throws a `HerdrCoreError`. */
 export async function observeHcCore(env: NodeJS.ProcessEnv, timeoutMs?: number): Promise<HcCoreObservation> {
-  const pin = readHcPin(env);
-  if (pin === null) throw new HcPinUnavailableError();
   const status = await hcServerStatusAsync({ env, timeoutMs });
-  return { core_id: status.core.id, check: hcVersionCheck(status.version, pin) };
+  return { core_id: status.core.id, check: hcVersionCheck(status.version, HC_MIN_VERSION) };
 }
 
 export interface HcSnapshot { readonly seq: number; readonly terminals: readonly HcTerminal[] }

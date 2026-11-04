@@ -10,7 +10,7 @@ import { decodeRuntimeConfig, startRuntimeService, type NativeRuntimeConfig, typ
 import { readNativeRuntimeSnapshot, type NativeRuntimeSourceConfig } from '../../src/effects/operator/native-runtime-source';
 import { RUNTIME_CAPTURE_MAX_BYTES, type RuntimeCaptureSnapshot } from '../../src/core/operator/runtime-capture';
 import { configureRuntimeSource, RUNTIME_SOURCE_EVENTS, RUNTIME_SOURCE_PROTOCOL, type ConfiguredRuntimeSource } from '../../src/effects/operator/runtime-source';
-import { HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
+import { HC_MIN_VERSION, HcVersionMismatchError, hcVersionCheck } from '../../src/core/operator/herdr-pin';
 import { fakeHc } from '../helpers/fake-hc';
 import { startOperatorServer } from '../../src/effects/operator/server';
 
@@ -26,7 +26,7 @@ const snapshot = (o = observation()): RuntimeSnapshot => ({ bindings: [o.identit
 const project = (observations: RuntimeObservation[], bindings: RuntimeIdentity[] = [identity]) => projectRuntimeOverlay(bindings, observations, at, 0, Date.parse(at));
 function deferred<T>() { let resolve!: (v: T) => void; const promise = new Promise<T>(r => { resolve = r; }); return { promise, resolve }; }
 
-const versionCheck = () => hcVersionCheck('0.1.15', '0.1.17');
+const versionCheck = () => hcVersionCheck('0.1.15', HC_MIN_VERSION);
 const versionReason = () => {
   const { expected, actual } = versionCheck();
   return { code: 'hc_version_mismatch' as const, expected, actual };
@@ -36,8 +36,6 @@ describe('structured runtime overlay', () => {
   test('requires the v7 reason field and accepts only bounded unavailable version facts', () => {
     const reason = versionReason(), overlay = unavailableRuntimeOverlay(0, reason);
     expect(decodeRuntimeOverlay(overlay)).toEqual(overlay);
-    const pin = unavailableRuntimeOverlay(0, { code: 'hc_pin_unavailable' });
-    expect(decodeRuntimeOverlay(pin)).toEqual(pin);
     const { reason: omitted, ...missing } = overlay;
     expect(omitted).toEqual(reason);
     for (const invalid of [
@@ -48,6 +46,7 @@ describe('structured runtime overlay', () => {
       { ...overlay, reason: { ...reason, actual: { version: '/private/secret' } } },
       { ...overlay, reason: { ...reason, actual: { version: null } } },
       { ...overlay, reason: { ...reason, expected: { min_version: '0.1.17', revision: 'a'.repeat(40) } } },
+      { ...overlay, reason: { code: 'hc_pin_unavailable' } },
       { ...overlay, reason: { code: 'hc_pin_unavailable', expected: reason.expected } },
       { ...overlay, reason: { code: 'herdr_version_mismatch', expected: reason.expected, actual: reason.actual } },
     ]) expect(() => decodeRuntimeOverlay(invalid)).toThrow();
