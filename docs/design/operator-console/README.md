@@ -4,7 +4,7 @@ Design material for the operator console redesign. The design brief is
 [`../../prds/DESIGN-operator-console-uiux.md`](../../prds/DESIGN-operator-console-uiux.md) and
 the PRD is the snapshot
 [`docs/prds/20261026-2310-operator-console-uiux.prd.md`](../../prds/20261026-2310-operator-console-uiux.prd.md)
-(rev 213). Where this file and the design brief disagree, the brief wins.
+(rev 269). Where this file and the design brief disagree, the brief wins.
 
 | Material | Where |
 | --- | --- |
