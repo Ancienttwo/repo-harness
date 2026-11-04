@@ -75,7 +75,18 @@ function input(overrides: Partial<SetupProjectionInput> = {}): SetupProjectionIn
       { host: 'codex', name: 'repo-harness', state: 'ok copy', ok: false },
       { host: 'codex', name: 'think', state: 'missing', ok: false },
     ],
-    skill_summaries: new Map([['repo-harness', 'Root router Skill.'], ['think', 'Plans authoring work; authoritative for authorization reviews.']]),
+    skill_catalog: new Map([
+      ['repo-harness', { summary: 'Root router Skill.', hosts: ['pi', 'claude', 'codex'] }],
+      ['think', { summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: ['claude', 'codex'] }],
+    ]),
+    home: '/Users/alice',
+    // Claude: user skills, a catalog package, a dot entry and a credential-like name. Codex: no root. Pi: a root outside HOME.
+    skill_roots: [
+      { host: 'claude', root: '/Users/alice/.claude/skills', entries: ['zeta', 'think', '.system', `key-${FAKE_SECRETS[0]}`, 'alpha'] },
+      { host: 'codex', root: '/Users/alice/.codex/skills', entries: null },
+      { host: 'pi', root: '/opt/pi/agent/skills', entries: [] },
+    ],
+    install_selection: ['architecture', 'product'],
     routes: ROUTES,
     fleet_roles: [
       { name: 'explorer', description: 'Read-only explorer.', model: 'sonnet', effort: 'medium' },
@@ -126,9 +137,15 @@ describe('setup snapshot projection', () => {
     });
     expect(snapshot.hosts[0]).toMatchObject({ host: 'claude', adapter_check: 'ok', cli_version: null });
     expect(snapshot.skills).toEqual([
-      { name: 'repo-harness', summary: 'Root router Skill.', hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false }, pi: null } },
-      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false }, pi: null } },
+      { name: 'repo-harness', summary: 'Root router Skill.', catalog_hosts: ['claude', 'codex', 'pi'], hosts: { claude: { state: 'ok link', ok: true }, codex: { state: 'ok copy', ok: false }, pi: null } },
+      { name: 'think', summary: 'Plans authoring work; authoritative for authorization reviews.', catalog_hosts: ['claude', 'codex'], hosts: { claude: { state: 'stale copy', ok: false }, codex: { state: 'missing', ok: false }, pi: null } },
     ]);
+    expect(snapshot.skill_roots).toEqual([
+      { host: 'claude', root: '~/.claude/skills', other_skills: ['[configured]', 'alpha', 'zeta'] },
+      { host: 'codex', root: '~/.codex/skills', other_skills: null },
+      { host: 'pi', root: '[private path]', other_skills: [] },
+    ]);
+    expect(snapshot.install_selection).toEqual(['architecture', 'product']);
     expect(snapshot.hooks.flatMap(event => event.routes.map(route => `${event.event}.${route.route_id}`)))
       .toEqual(ROUTES.map(route => `${route.event}.${route.routeId}`));
     expect(snapshot.hooks.map(event => event.event)).not.toContain('SubagentStop');
@@ -162,6 +179,7 @@ describe('setup snapshot projection', () => {
     expect(snapshot.hosts[0]).toEqual({ host: 'claude', reported: true, adapter_check: 'ok', detected: false, adapter: null, cli_version: null });
     expect(snapshot.hosts[1]).toMatchObject({ host: 'codex', reported: false, adapter: null });
     expect(snapshot.skills).toEqual([]);
+    expect(decodeSetupSnapshot(projectSetupSnapshot(input({ skill_catalog: null }))).skill_roots).toEqual([]);
     expect(snapshot.fleet.every(role => SETUP_HOSTS.every(host => role.hosts[host] === null))).toBe(true);
   });
 });
@@ -251,5 +269,15 @@ describe('setup snapshot decoder', () => {
     rejects(s => { s.hook_usage.routes[0].last_blocked_at = null; });
     rejects(s => { s.hook_usage.window_hours = 48; });
     rejects(s => { s.hook_usage.recent_denials[0].command = 'rm -rf x'; });
+    rejects(s => { s.skills[0].catalog_hosts = ['codex', 'claude']; });
+    rejects(s => { s.skills[0].catalog_hosts = ['claude', 'mac']; });
+    rejects(s => { s.skill_roots.reverse(); });
+    rejects(s => { s.skill_roots.pop(); });
+    rejects(s => { s.skill_roots[0].root = '/Users/alice/.claude/skills'; });
+    rejects(s => { s.skill_roots[0].other_skills = ['zeta', 'alpha']; });
+    rejects(s => { s.skill_roots[0].other_skills.push('Reads /Users/alice'); });
+    rejects(s => { s.install_selection = 'some'; });
+    rejects(s => { s.install_selection = ['bad plugin']; });
+    rejects(s => { Object.assign(s, unavailableSetupSnapshot(), { install_selection: 'all' }); });
   });
 });

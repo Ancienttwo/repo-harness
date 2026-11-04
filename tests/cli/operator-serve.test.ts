@@ -319,7 +319,7 @@ describe('operator serve command and HTTP boundary', () => {
     let reads = 0;
     const ready: SetupSnapshotV2 = projectSetupSnapshot({
       collected_at: '2026-10-10T00:00:00.000Z', setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
-      checks: [], check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_summaries: new Map(),
+      checks: [], check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_catalog: null, home: '/nowhere', skill_roots: [], install_selection: null,
       routes: ROUTES, fleet_roles: [], fleet_hosts: null, hook_usage: null,
     });
     let current: unknown = ready;

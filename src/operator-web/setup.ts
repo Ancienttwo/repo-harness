@@ -86,16 +86,25 @@ export function orderSkills(skills: readonly SetupSkill[]): readonly SetupSkill[
 }
 
 /**
- * The words for one host row. An ok state that is not ok means the install
- * ledger records drift for that skill; every other state is setup check's own.
+ * The words for one host cell. An ok state that is not ok means the install
+ * ledger records drift for that skill; every other judged state is setup
+ * check's own. Without a judgment the catalog `hosts` field says whether the
+ * package supports the host (not installed there) or not.
  */
-export type SkillCell = 'not_expected' | 'drift' | SetupSkillHostRow['state'];
+export type SkillCell = 'not_supported' | 'not_installed' | 'not_judged' | 'drift' | SetupSkillHostRow['state'];
 
-export function skillCell(row: SetupSkillHostRow | null): SkillCell {
-  if (row === null) return 'not_expected';
+export function skillCell(skill: SetupSkill, host: SetupHost): SkillCell {
+  const row = skill.hosts[host];
+  if (row === null) {
+    if (skill.catalog_hosts === null) return 'not_judged';
+    return skill.catalog_hosts.includes(host) ? 'not_installed' : 'not_supported';
+  }
   if (!row.ok && row.state.startsWith('ok ')) return 'drift';
   return row.state;
 }
+
+/** The command that installs the recorded selection again; it repairs every repo-harness skill row. */
+export const SKILL_UPDATE_COMMAND = 'repo-harness update';
 
 /** The setup check whose command repairs this host's installation. */
 export function hostCommand(checks: readonly SetupCheck[], host: SetupHost): SetupCheck | null {
