@@ -15,6 +15,7 @@ import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
 import { assertConfigurationPath, hostConfigurationRoot } from '../configuration-ownership';
+import { MANAGED_TAG, isRepoHarnessManagedHookCommand } from '../../../core/adoption/managed-hook-config';
 import type {
   AgentTarget,
   DetectionResult,
@@ -48,6 +49,20 @@ function userConfigPath(loc: Location): string {
   // Prefer $HOME env so tests can isolate via temp dirs; os.homedir() is
   // cached and ignores runtime $HOME mutations in some Node/Bun versions.
   return path.join(process.env.HOME ?? os.homedir(), '.claude', 'settings.json');
+}
+
+/**
+ * The `statusLine` entry that install writes. The managed tag is its ownership
+ * proof, as for the managed hook commands: a user edit removes the tag, and the
+ * entry is then the user's.
+ */
+export const CLAUDE_STATUS_LINE = Object.freeze({ type: 'command', command: `: ${MANAGED_TAG}; exec repo-harness-hook statusline` });
+
+/** The documented one-line pipe that keeps an existing status line and also writes the quota capture. */
+export const CLAUDE_STATUS_LINE_PIPE = `input=$(cat); printf '%s' "$input" | repo-harness-hook statusline >/dev/null; printf '%s' "$input" | <your status line command>`;
+
+function isManagedStatusLine(value: unknown): boolean {
+  return typeof value === 'object' && value !== null && isRepoHarnessManagedHookCommand((value as { command?: unknown }).command);
 }
 
 class ClaudeTarget implements AgentTarget {
@@ -86,13 +101,19 @@ class ClaudeTarget implements AgentTarget {
     const managed = buildManagedHooks('claude');
     const merged = mergeHooks(cleaned, managed);
     const next: SettingsFile = { ...data, hooks: merged };
+    // Set the status line only when none exists; refresh it only while it carries the tag.
+    const userStatusLine = data.statusLine !== undefined && !isManagedStatusLine(data.statusLine);
+    if (!userStatusLine) next.statusLine = CLAUDE_STATUS_LINE;
+    const notes = userStatusLine
+      ? [`statusLine exists and is not changed. To capture Claude quota, set its command to: ${CLAUDE_STATUS_LINE_PIPE}`]
+      : [];
     const nextContent = formatJson(next);
 
     const created = !fs.existsSync(filePath);
     if (!created) {
       const current = fs.readFileSync(filePath, 'utf-8');
       if (current === nextContent) {
-        return { files: [{ path: filePath, action: 'unchanged' }] };
+        return { files: [{ path: filePath, action: 'unchanged' }], ...(notes.length ? { notes } : {}) };
       }
     }
     atomicWriteFileSync(filePath, nextContent);
@@ -100,7 +121,7 @@ class ClaudeTarget implements AgentTarget {
       files: [{ path: filePath, action: created ? 'created' : 'updated' }],
       notes: [created
         ? 'Claude Code will pick up hooks on next ConfigChange event; no restart needed.'
-        : 'Claude Code auto-reloads settings.json on write (verified Phase 0).'],
+        : 'Claude Code auto-reloads settings.json on write (verified Phase 0).', ...notes],
     };
   }
 
@@ -112,10 +133,12 @@ class ClaudeTarget implements AgentTarget {
     }
     const data = readJsonOrEmpty<SettingsFile>(filePath);
     const cleaned = stripManagedEntries(data.hooks);
-    if (deepEqual(cleaned, data.hooks ?? {})) {
+    const ownedStatusLine = isManagedStatusLine(data.statusLine);
+    if (deepEqual(cleaned, data.hooks ?? {}) && !ownedStatusLine) {
       return { files: [{ path: filePath, action: 'not-found' }] };
     }
     const next: SettingsFile = { ...data, hooks: cleaned };
+    if (ownedStatusLine) delete next.statusLine;
     if (!opts.dryRun) atomicWriteFileSync(filePath, formatJson(next));
     return { files: [{ path: filePath, action: 'removed' }] };
   }

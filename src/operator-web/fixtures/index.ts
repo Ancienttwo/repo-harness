@@ -19,7 +19,7 @@ import { decodeDocsFile, decodeDocsTree } from '../../core/operator/docs';
 import { docsFileAnswer, docsPendingAnswer, docsTreeAnswer, type DocsWireAnswer } from './docs';
 import { busyDevActivity, busyExecution, busyRuntimeOverlay, busyTaskMessages, degradedDevActivity, DOCS_ID, emptyDevActivity, emptyExecution, HARNESS_ID, SITE_ID } from './dev-activity';
 import { degradedSetup, loadingSetup, readySetup } from './setup';
-import { busyWorktrees, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
+import { busyWorktrees, cleanupPlanFixture, degradedWorktrees, emptyWorktrees, worktreeCleanupFixture } from './worktrees';
 import { readyRepairIssue, readyTests } from './tests';
 import { settingsStores } from './settings';
 import { decodeArchitectureMap } from '../../core/operator/architecture-map';
@@ -155,6 +155,8 @@ export function fixtureProps(name: string): OperatorAppProps {
     readWorktrees: () => Promise.resolve(worktrees),
     initialWorktrees: worktrees,
     writeWorktreeCleanup: worktreeCleanupFixture(worktrees),
+    // busy: a plan with each judgment; the execution gives one removal and then each refusal reason once.
+    worktreeCleanupPlan: fixture === 'busy' ? cleanupPlanFixture(now) : undefined,
     readRepositoryHead: fixture === 'degraded' ? unavailable('docs tree') : () => Promise.resolve('49f7ba6fa3c1d2e4b5a6978877665544332211aa'),
     readCiRepairs: repositoryId => Promise.resolve(repairs(repositoryId)),
     readExecution: repositoryId => Promise.resolve(execution(repositoryId)),
