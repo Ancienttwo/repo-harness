@@ -12,8 +12,12 @@ const SURPLUS_RESET_MS = 24 * 3_600_000;
 
 export type QuotaAccount = 'claude' | 'chatgpt';
 export type QuotaState = 'exhausted' | 'tight' | 'normal' | 'surplus' | 'unknown';
-/** Worst first: the account takes the first state in this order that one of its windows has. */
-export const QUOTA_STATE_ORDER: readonly QuotaState[] = ['exhausted', 'tight', 'normal', 'surplus', 'unknown'];
+/**
+ * Worst first: the account takes the first state in this order that one of
+ * its windows has. A window without a reading cannot prove headroom, so it
+ * outranks normal and surplus (decision 6625256198).
+ */
+export const QUOTA_STATE_ORDER: readonly QuotaState[] = ['exhausted', 'tight', 'unknown', 'normal', 'surplus'];
 
 /** One present window of the Claude status line stdin `rate_limits` object. */
 export interface ClaudeRateLimitWindow { used_percentage: number; resets_at: number }

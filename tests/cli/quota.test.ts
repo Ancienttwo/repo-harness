@@ -29,18 +29,18 @@ const week = (used: number, resetsInHours: number) => ({ used_percentage: used, 
 
 describe('quota classification', () => {
   test.each([
-    // [case, seven_day used, hours to reset, state] — elapsed at 84 h is 50%.
-    ['used at 95 is exhausted', 95, 84, 'exhausted'],
-    ['headroom under 15 is tight', 86, 160, 'tight'],
-    ['pace over +15 is tight', 66, 84, 'tight'],
-    ['pace +15 exactly is normal', 65, 84, 'normal'],
-    ['pace under -25 with the reset under 24 h is surplus', 60, 12, 'surplus'],
-    ['pace under -25 with the reset 24 h or more away is normal', 10, 84, 'normal'],
-  ] as const)('%s', (_name, used, hours, state) => {
+    // [case, seven_day used, hours to reset, window state, account state] — elapsed at 84 h is 50%.
+    // five_hour is absent, so the account is unknown unless seven_day is exhausted or tight.
+    ['used at 95 is exhausted', 95, 84, 'exhausted', 'exhausted'],
+    ['headroom under 15 is tight', 86, 160, 'tight', 'tight'],
+    ['pace over +15 is tight', 66, 84, 'tight', 'tight'],
+    ['pace +15 exactly is normal', 65, 84, 'normal', 'unknown'],
+    ['pace under -25 with the reset under 24 h is surplus', 60, 12, 'surplus', 'unknown'],
+    ['pace under -25 with the reset 24 h or more away is normal', 10, 84, 'normal', 'unknown'],
+  ] as const)('%s', (_name, used, hours, windowState, accountState) => {
     const account = claude({ seven_day: week(used, hours) });
-    expect(account.windows.find(window => window.window === 'seven_day')?.state).toBe(state);
-    // five_hour is absent: an unknown window does not outrank a reading.
-    expect(account.state).toBe(state);
+    expect(account.windows.find(window => window.window === 'seven_day')?.state).toBe(windowState);
+    expect(account.state).toBe(accountState);
   });
 
   test('the worst window wins and each failed field names its reason', () => {
@@ -113,7 +113,7 @@ require('node:readline').createInterface({ input: process.stdin }).on('line', li
   } else if (message.method === 'account/rateLimits/read') {
     if (mode === 'error') return out({ id: message.id, error: { code: -32603, message: 'not logged in' } });
     const resetsAt = Math.floor(Date.now() / 1000) + 167 * 3600;
-    out({ id: message.id, result: { rateLimits: { primary: null, secondary: { usedPercent: 1, windowDurationMins: 10080, resetsAt }, credits: { hasCredits: true, unlimited: false, balance: '34410.83' }, planType: 'pro', rateLimitReachedType: null } } });
+    out({ id: message.id, result: { rateLimits: { primary: { usedPercent: 50, windowDurationMins: 300, resetsAt: Math.floor(Date.now() / 1000) + 2 * 3600 }, secondary: { usedPercent: 1, windowDurationMins: 10080, resetsAt }, credits: { hasCredits: true, unlimited: false, balance: '34410.83' }, planType: 'pro', rateLimitReachedType: null } } });
   }
 });
 `;
