@@ -35,6 +35,7 @@ import {
   HARNESS_ID,
   INBOX_TASK,
 } from '../../src/operator-web/fixtures/dev-activity';
+import { settingsStores } from '../../src/operator-web/fixtures/settings';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
 import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupInvestigationStatus, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
 import { CLEANUP_INVESTIGATION_POLL_MS, type AuthorizedCleanupPost, type CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
@@ -1787,6 +1788,109 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect([...planRows, 'repo-harness-wt-extra-12'].some(directory => checkbox(directory).checked)).toBe(false);
     expect(openState()).toEqual([true, '0', false]);
     greenUnchanged();
+  });
+
+  describe('a write that gets 403 write_token_invalid after a restart', () => {
+    const planClick = (name: 'choose' | 'execute') => act(async () => planButton(name).click());
+    const deleteChosen = async () => {
+      await option('repo-harness-wt-notes', 'delete');
+      await planClick('choose');
+    };
+    const agentsPage = async (overrides: Partial<OperatorAppProps> = {}) => {
+      const stores = settingsStores(NOW, 'busy');
+      installDom('http://127.0.0.1:4318/#agents');
+      await mount(<OperatorApp {...props(busy(), { readAgentsSettings: stores.agents.read, readSeatsSettings: stores.seats.read,
+        readSetup: () => new Promise(() => {}), readQuota: () => new Promise(() => {}), ...overrides })} />);
+      await settle();
+    };
+    const saveLocked = (section: string) => expect(document.querySelector<HTMLButtonElement>(`[data-save="${section}"]`)!.disabled).toBe(true);
+    const fixture = (...ports: (keyof CleanupPlanPorts)[]): CleanupPlanPorts => ({ ...cleanupPlanFixture(NOW), ...Object.fromEntries(ports.map(port => [port, cleanupPlanPorts[port]])) });
+    const TOKEN_ERROR = { code: 'write_token_invalid', message: 'The write token is missing or not valid.', next_action: 'Reload the operator page, then retry.' };
+    const ORIGIN_ERROR = { code: 'origin_not_allowed', message: 'The request origin is not allowed.', next_action: 'Open the page from the operator service.' };
+    /** Only a typed 403 with this code means a stale token. Every write shares one client, so one path proves each other answer. */
+    const OTHER_ANSWERS = [
+      ['a 401 with the code', 401, { error: TOKEN_ERROR }, { state: 'refused', status: 401, error: TOKEN_ERROR }],
+      ['a 500 with the code', 500, { error: TOKEN_ERROR }, { state: 'refused', status: 500, error: TOKEN_ERROR }],
+      ['a 403 with another code', 403, { error: ORIGIN_ERROR }, { state: 'refused', status: 403, error: ORIGIN_ERROR }],
+      ['a 403 with no typed error', 403, {}, { state: 'unreachable' }],
+    ] as const;
+    const WRITES: readonly {
+      readonly path: string; readonly name: string; readonly locale?: 'zh'; readonly send: (answers: unknown[]) => Promise<void>; readonly after?: () => void;
+      readonly status?: number; readonly body?: unknown; readonly keeps?: unknown;
+    }[] = [
+      { name: 'agents settings', path: '/api/v1/settings/agents', after: () => saveLocked('agents'), send: async () => {
+        await agentsPage();
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-runtime="codex"] [data-use="review"]')!.click());
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-save="agents"]')!.click());
+      } },
+      { name: 'seats settings', path: '/api/v1/settings/seats', after: () => saveLocked('seats'), send: async () => {
+        await agentsPage();
+        await act(async () => document.querySelector<HTMLButtonElement>('[aria-label="Allow gatekeeper"]')!.click());
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-save="seats"]')!.click());
+      } },
+      { name: 'one-click cleanup', path: CLEANUP_PATH, send: async () => {
+        installDom(WORKTREES_URL);
+        await mount(<OperatorApp {...props(busy())} />);
+        await act(async () => cleanButton().click());
+      } },
+      { name: 'plan pass 1', path: '/api/v1/worktrees/cleanup/plan', locale: 'zh', send: async () => {
+        installDom(WORKTREES_URL);
+        await mount(<OperatorApp {...props(busy(), { worktreeCleanupPlan: fixture('open'), initialLocale: 'zh' })} />);
+        for (const directory of REVIEWABLE) await act(async () => checkbox(directory).click());
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!.click());
+      } },
+      { name: 'plan pass 2', path: '/api/v1/worktrees/cleanup/plan', send: async () => {
+        await openReview(fixture('choose'));
+        await deleteChosen();
+      } },
+      { name: 'plan execution', path: '/api/v1/worktrees/cleanup/execute', send: async () => {
+        await openReview(fixture('execute'));
+        await deleteChosen();
+        await until(() => planItem('repo-harness-wt-notes').querySelector('[data-plan-authorize]') !== null);
+        await act(async () => planItem('repo-harness-wt-notes').querySelector<HTMLInputElement>('[data-plan-authorize]')!.click());
+        await planClick('execute');
+      } },
+      { name: 'investigation start', path: '/api/v1/worktrees/cleanup/investigation', send: async () => {
+        // The real status port is connected: a refused start reads no status, because no job exists.
+        await openReview(fixture('investigate', 'investigation'));
+        await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+      } },
+      ...OTHER_ANSWERS.map(([name, status, body, keeps]) => ({ name, status, body, keeps, path: '/api/v1/worktrees/cleanup/plan', send: async (answers: unknown[]) => {
+        await openReview({ ...cleanupPlanFixture(NOW), open: async ids => { const answer = await cleanupPlanPorts.open(ids); answers.push(answer); return answer; } });
+      } })),
+    ];
+    const RELOAD_TEXT = {
+      en: 'Reload this pageThe write token of this page is not valid, for example after the service restarted. Nothing was changed. Reload the page, then try again.',
+      zh: '请刷新这个页面这个页面的写 token 无效，例如服务重启过。什么都没有改动。刷新整个页面，再操作一次。',
+    };
+
+    for (const write of WRITES) test(`${write.name}: ${write.keeps ? 'keeps its own result, not the reload state' : 'shows the one reload state, sends one request and offers no retry'}`, async () => {
+      const original = globalThis.fetch;
+      const requests: string[] = [];
+      const answers: unknown[] = [];
+      globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
+        requests.push(`${options?.method ?? 'GET'} ${String(url)}`);
+        return Response.json(write.body ?? { error: TOKEN_ERROR }, { status: write.status ?? 403 });
+      }) as typeof fetch;
+      try {
+        await write.send(answers);
+        if (write.keeps) {
+          await until(() => document.querySelector('[data-plan-failure]') !== null);
+          expect(answers).toEqual([write.keeps]);
+          expect(document.querySelector('[data-write-reload]')).toBeNull();
+          expect(requests).toEqual([`POST ${write.path}`]);
+          return;
+        }
+        await until(() => document.querySelector('[data-write-reload]') !== null);
+        await settle();
+        const banners = document.querySelectorAll('[data-write-reload]');
+        expect(banners).toHaveLength(1);
+        expect(banners[0]!.textContent).toBe(RELOAD_TEXT[write.locale ?? 'en']);
+        expect(banners[0]!.querySelectorAll('button')).toHaveLength(0);
+        expect(requests).toEqual([`POST ${write.path}`]);
+        write.after?.();
+      } finally { globalThis.fetch = original; }
+    });
   });
 
   test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {

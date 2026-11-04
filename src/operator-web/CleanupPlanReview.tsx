@@ -7,6 +7,7 @@ import {
 } from '../core/operator/worktree-cleanup-plan';
 import type { WorktreeView } from '../core/operator/worktrees';
 import type { OperatorApiErrorV1 } from './operator-api-error';
+import { WriteReloadBanner, type OperatorWriteFailure } from './operator-write';
 import { isOperatorMessageKey, type OperatorTranslate } from './i18n';
 import { StatusDot, type DotTone } from './ui';
 import { selectionDigest } from './worktrees';
@@ -22,14 +23,9 @@ export function refusalText(error: OperatorApiErrorV1, t: OperatorTranslate): { 
     : { message: error.message, next_action: error.next_action, localized: false };
 }
 
-/** `unreachable`: no typed answer arrived. `unreadable`: an answer failed its decoder. */
-export type CleanupPlanFailure =
-  | { readonly state: 'refused'; readonly status: number; readonly error: OperatorApiErrorV1 }
-  | { readonly state: 'unreachable' }
-  | { readonly state: 'unreadable' };
-export type CleanupPlanAnswer = { readonly state: 'ready'; readonly plan: CleanupPlan } | CleanupPlanFailure;
-export type CleanupExecutionAnswer = { readonly state: 'done'; readonly result: CleanupExecutionResult } | CleanupPlanFailure;
-export type CleanupInvestigationAnswer = { readonly state: 'investigation'; readonly status: CleanupInvestigationStatus } | CleanupPlanFailure;
+export type CleanupPlanAnswer = { readonly state: 'ready'; readonly plan: CleanupPlan } | OperatorWriteFailure;
+export type CleanupExecutionAnswer = { readonly state: 'done'; readonly result: CleanupExecutionResult } | OperatorWriteFailure;
+export type CleanupInvestigationAnswer = { readonly state: 'investigation'; readonly status: CleanupInvestigationStatus } | OperatorWriteFailure;
 export type AuthorizedCleanupPost = AuthorizedCleanupRequest & { readonly request_id: string };
 
 /** The plan routes connect these (`cleanupPlanPorts`); each answer passed the core decoder. */
@@ -280,8 +276,9 @@ function ExecutionResult({ plan, result, t }: { readonly plan: CleanupPlan; read
 }
 
 function FailureBanner({ failure, during, onRetry, t }: {
-  readonly failure: CleanupPlanFailure; readonly during: 'plan' | 'execute'; readonly onRetry: (() => void) | null; readonly t: OperatorTranslate;
+  readonly failure: OperatorWriteFailure; readonly during: 'plan' | 'execute'; readonly onRetry: (() => void) | null; readonly t: OperatorTranslate;
 }) {
+  if (failure.state === 'reload_required') return <WriteReloadBanner t={t} />;
   const action = onRetry && <Banner.Action variant="secondary" onClick={onRetry}>{t('worktrees.plan.retry')}</Banner.Action>;
   if (failure.state === 'refused') {
     const text = refusalText(failure.error, t);
@@ -299,7 +296,7 @@ type Pending = 'open' | 'choose' | 'execute' | 'investigate' | null;
 
 /** The start button and the job status. The agent's advice reaches the page only as a new plan version. */
 function Investigation({ status, failure, pending, locked, onStart, onRetry, t }: {
-  readonly status: CleanupInvestigationStatus | null; readonly failure: CleanupPlanFailure | null; readonly pending: boolean; readonly locked: boolean;
+  readonly status: CleanupInvestigationStatus | null; readonly failure: OperatorWriteFailure | null; readonly pending: boolean; readonly locked: boolean;
   readonly onStart: () => void; readonly onRetry: (() => void) | null; readonly t: OperatorTranslate;
 }) {
   return (
@@ -332,10 +329,10 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
   const [drafts, setDrafts] = useState<Readonly<Record<string, Draft>>>({});
   const [authorized, setAuthorized] = useState<ReadonlySet<string>>(() => new Set());
   const [pending, setPending] = useState<Pending>('open');
-  const [failure, setFailure] = useState<{ readonly failure: CleanupPlanFailure; readonly during: 'plan' | 'execute' } | null>(null);
+  const [failure, setFailure] = useState<{ readonly failure: OperatorWriteFailure; readonly during: 'plan' | 'execute' } | null>(null);
   const [result, setResult] = useState<CleanupExecutionResult | null>(null);
   const [investigation, setInvestigation] = useState<CleanupInvestigationStatus | null>(null);
-  const [investigationFailure, setInvestigationFailure] = useState<CleanupPlanFailure | null>(null);
+  const [investigationFailure, setInvestigationFailure] = useState<OperatorWriteFailure | null>(null);
 
   const accept = useCallback((answer: CleanupPlanAnswer) => {
     setPending(null);
@@ -346,7 +343,7 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
     setAuthorized(new Set());
   }, []);
   // A port that throws gave no typed answer, the same as a lost connection.
-  const lost = (): CleanupPlanFailure => ({ state: 'unreachable' });
+  const lost = (): OperatorWriteFailure => ({ state: 'unreachable' });
 
   const open = useCallback(() => {
     setPending('open');
@@ -389,7 +386,7 @@ export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
       setPending(null);
       // No answer, an unreadable answer and a running refusal can each hide a job that exists: read its status first.
       // Only when that read finds no job does the start failure show.
-      if (answer.state === 'investigation' || (answer.state === 'refused' && answer.error.code !== 'investigation_running')) { follow(answer); return; }
+      if (answer.state === 'investigation' || answer.state === 'reload_required' || (answer.state === 'refused' && answer.error.code !== 'investigation_running')) { follow(answer); return; }
       void ports.investigation(sessionOf).catch(lost).then(status => follow(status.state === 'investigation' ? status : answer));
     });
   };
