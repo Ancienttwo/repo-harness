@@ -94,8 +94,11 @@ switcher. Full spec: [`design-system/components/NavRail.md`](design-system/compo
 
 17 SVGs in [`design-system/assets/mascots/`](design-system/assets/mascots/),
 scaled by whole multiples with `image-rendering: pixelated`, `alt=""`, at most
-one per screen. Exception: the Board office view (#1755) draws one CSS pixel
-sprite per seat and per queued pull request, so it shows many on one screen.
+one per screen. Exception: the Board office view (#1790) draws each scene as one
+SVG pixel framebuffer, with one path per palette colour and
+`image-rendering: pixelated`. The scene carries its own sprites (agents and the
+carrot boss), so it shows many characters on one screen. These sprites are not
+files in this folder, and the scene has a text label instead of `alt=""`.
 
 | Mascot | File | Used on |
 | --- | --- | --- |
