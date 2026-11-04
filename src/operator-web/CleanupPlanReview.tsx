@@ -42,7 +42,7 @@ export interface CleanupPlanPorts {
 
 type Destination = 'git' | 'private';
 /** The user's edit of one item. Archive names are made only when the choice is sent. */
-interface Draft {
+export interface Draft {
   readonly recommendation: CleanupAdvice['recommendation'];
   readonly destinations: Readonly<Record<string, Destination>>;
 }
@@ -75,14 +75,15 @@ function archiveSlug(tree: WorktreeView): string {
   return [words, tree.id.slice(3, 11)].filter(Boolean).join('-');
 }
 
-function choiceOf(item: CleanupPlanItem, draft: Draft, day: string): CleanupChoice {
+/** An editable item has a repository (`cleanupEligible`); private files are stored under its id. */
+export function choiceOf(item: CleanupPlanItem, draft: Draft, day: string): CleanupChoice {
   const id = item.worktree.id;
   if (draft.recommendation !== 'archive_then_delete') return { id, recommendation: draft.recommendation, archive: { git: null, private: null } };
   const pick = (destination: Destination) => archivable(item).filter(path => draft.destinations[path] === destination);
   const git = pick('git'), local = pick('private'), slug = archiveSlug(item.worktree);
   return { id, recommendation: 'archive_then_delete', archive: {
     git: git.length > 0 || hasCommits(item) ? { directory: `docs/archive/${day}-${slug}`, branch: `docs/archive-${slug}`, paths: git, include_commits: hasCommits(item) } : null,
-    private: local.length > 0 ? { directory: item.worktree.directory, paths: local } : null,
+    private: local.length > 0 ? { directory: item.worktree.repository_id!, paths: local } : null,
   } };
 }
 

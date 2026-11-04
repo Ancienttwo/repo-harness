@@ -10,6 +10,7 @@ import { resolveGitCommonDirectory } from '../../src/effects/git/common-director
 import { inspectWorktree } from '../../src/effects/state/coordination-worktree-topology';
 import { commitAll, initGitRepo, run, tmpWorkspace } from '../helpers/repo-fixture';
 import type { WorktreeView } from '../../src/core/operator/worktrees';
+import { choiceOf } from '../../src/operator-web/CleanupPlanReview';
 
 const sid = 'a'.repeat(32), repoId = `repo_${'b'.repeat(16)}`, archivePath = 'docs/archive/2026-10-29-feature';
 function fixture() {
@@ -70,6 +71,14 @@ archiveTest('stages raw worktree and index versions, and copies synthetic privat
     const source = readFileSync(join(archive, 'SOURCE.md'), 'utf8');
     expect(source).toContain(sid); expect(source).toContain(repoId); expect(source).not.toContain(f.parent); expect(source).not.toContain('SYNTHETIC_PRIVATE=');
     expect(stageCleanupArchive(sid, f.target, item, f.options())).toEqual(result);
+    // The review page's choice for the same files passes createCleanupPlan and this staging check (private files under the repository id).
+    const choice = choiceOf(item, { recommendation: 'archive_then_delete', destinations: { 'docs/guide.md': 'git', '.env': 'private' } }, '2026-10-29');
+    const chosen = createCleanupPlan(sid, [{ observation: { worktree: item.worktree, loss: observeCleanupLoss(f.target, f.options()) },
+      advice: { ...item.advice, recommendation: choice.recommendation, archive: choice.archive } }]).items[0]!;
+    expect(chosen.advice.archive.private).toEqual({ directory: repoId, paths: ['.env'] });
+    const staged = stageCleanupArchive(sid, f.target, chosen, f.options());
+    expect(readFileSync(join(staged.private_directory!, '.env'), 'utf8')).toBe('SYNTHETIC_PRIVATE=fixture\n');
+    expect(readFileSync(join(staged.git_directory!, chosen.advice.archive.git!.directory, 'docs/guide.md'), 'utf8')).toBe('working version\n');
   } finally { f.cleanup(); }
 });
 

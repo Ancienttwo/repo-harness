@@ -1224,7 +1224,7 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect(record.chosen[0]!.filter(choice => choice.recommendation !== 'keep')).toEqual([
       { id: codex.worktree.id, recommendation: 'archive_then_delete', archive: {
         git: { directory: `docs/archive/${day}-${slug}`, branch: `docs/archive-${slug}`, paths: ['src/hooks/run.ts'], include_commits: false },
-        private: { directory: 'codex-7f3a', paths: ['.env'] } } },
+        private: { directory: codex.worktree.repository_id!, paths: ['.env'] } } },
       { id: notes.worktree.id, recommendation: 'delete', archive: { git: null, private: null } },
     ]);
     for (const item of [codex, notes]) {
@@ -1309,7 +1309,7 @@ describe('worktree cleanup plan review (#1720)', () => {
     await destination('codex-7f3a', '.env', 'private');
     await act(async () => planButton('choose').click());
     await until(() => planItem('codex-7f3a').querySelector('[data-plan-authorization]') !== null);
-    expect(plan.items[0]!.advice.archive).toMatchObject({ git: { paths: ['docs/guide.md'], include_commits: false }, private: { directory: 'codex-7f3a', paths: ['.env'] } });
+    expect(plan.items[0]!.advice.archive).toMatchObject({ git: { paths: ['docs/guide.md'], include_commits: false }, private: { directory: tree.repository_id, paths: ['.env'] } });
     expect(planItem('codex-7f3a').querySelector('[data-plan-digest="plan"]')?.textContent).toBe(plan.items[0]!.plan_sha256);
   });
 
