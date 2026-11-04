@@ -308,7 +308,7 @@ boundary explicit:
 
 | Capability | Owner | Required for |
 |---|---|---|
-| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | required, at least the version pinned in `.ai/harness/policy.json#external_tooling.herdr_core`; persistent agent terminals, task sessions, review hosting and the notify relay |
+| `herdr_core` (`hc`) | user install (Herdr.app or a herdr-core release) | required, at least the version pinned in the package file `src/core/operator/herdr-core-pin.json`; persistent agent terminals, task sessions, review hosting and the notify relay |
 | `bun` | repo-harness | repo-harness-owned global installs, local dependency install, tests, and runtime execution |
 | `bash` | repo-harness | helper scripts, migration, setup checks, and contract verification wrappers; Git-for-Windows Bash is the Windows platform contract |
 | `npm` | npm registry | registry readbacks, publish gates, and opt-in update checks; not repo-harness-owned global install repair |
@@ -316,14 +316,17 @@ boundary explicit:
 | `rsync` | platform filesystem | installed-copy runtime mirroring |
 | `symlink` | platform filesystem | link-mode aliases; copy mode is the fallback |
 
-`.ai/harness/policy.json#external_tooling.herdr_core` is the single herdr pin: it
-owns the `min_version` floor and the checksum-verified `release_assets` entry that
-CI installs. Install hc through Herdr.app or a herdr-core release and verify
-`hc --version` reports at least that pinned `min_version`.
-`check-agent-tooling.sh --strict-readiness` reads the same key and fails if hc is
-missing, unusable, or older than the pin. A missing or malformed pin is a
-`configuration-error`. `setup check` projects `runtime.herdr_core`. Repo-harness
-does not install hc or edit user Herdr config. Herdr.app is not a readiness
+The package file `src/core/operator/herdr-core-pin.json` is the single herdr pin.
+The release owns it, because the floor protects the package's hc client code: a
+global install, a local install and a source checkout each read the pin of their
+own code. The file owns the `min_version` floor and the checksum-verified
+`release_assets` entry that CI installs. Install hc through Herdr.app or a
+herdr-core release and verify `hc --version` reports at least that `min_version`.
+`check-agent-tooling.sh --strict-readiness` reads the same file and fails if hc is
+missing, unusable, or older than the pin. A repository policy has no hc pin:
+`init` and adoption delete the retired policy key and report it. `setup check`
+projects `runtime.herdr_core`. Repo-harness does not install hc or edit user
+Herdr config. Herdr.app is not a readiness
 requirement: it has no Intel macOS build.
 The root `repo-harness` skill requires the `herdr` skill on Codex and Claude.
 `repo-harness install` and `repo-harness update` put the caller-context policy in

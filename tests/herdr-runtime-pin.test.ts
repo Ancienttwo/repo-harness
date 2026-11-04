@@ -1,27 +1,24 @@
 import { renderHerdrSkill } from "../src/cli/commands/herdr-skill-render.mjs";
-import { defaultPolicy } from "../src/effects/adoption/standard-plan";
 import { describe, expect, test, spyOn } from "bun:test";
 import { readFileSync } from "fs";
 import { dirname, join } from "path";
 import { run, withTempRepo } from "./helpers/repo-fixture";
 import { configureRequiredHerdrSkill } from "../src/cli/commands/herdr-skill";
+import { HC_MIN_VERSION } from "../src/core/operator/herdr-pin";
 
 /**
- * `.ai/harness/policy.json#external_tooling.herdr_core` is the single herdr
- * runtime pin. These are drift checks for its readers: CI, the readiness script,
- * and the downstream policy seed must derive the floor, URL, and checksum from
- * that key instead of restating them.
+ * The package file `src/core/operator/herdr-core-pin.json` is the single herdr
+ * runtime pin. These are drift checks for its readers: CI and the readiness
+ * script must derive the floor, URL, and checksum from that file instead of
+ * restating them.
  */
 const ROOT = join(import.meta.dir, "..");
-const POLICY_PATH = join(ROOT, ".ai/harness/policy.json");
+const PIN_FILE = "src/core/operator/herdr-core-pin.json";
 const CI_PATH = join(ROOT, ".github/workflows/ci.yml");
 const SCRIPT_PATH = join(ROOT, "scripts/check-agent-tooling.sh");
-const SEED_PATHS = [
-  join(ROOT, "scripts/lib/project-init-lib.sh"),
-];
 
-function readPolicy() {
-  return JSON.parse(readFileSync(POLICY_PATH, "utf8"));
+function readPin() {
+  return JSON.parse(readFileSync(join(ROOT, PIN_FILE), "utf8"));
 }
 
 function herdrInstallStep() {
@@ -37,7 +34,8 @@ function herdrInstallStep() {
 
 describe("herdr runtime pin has one source of truth", () => {
   test("the herdr-core pin names an official release asset for each CI runner platform", () => {
-    const core = readPolicy().external_tooling?.herdr_core;
+    const core = readPin();
+    expect(core.min_version).toBe(HC_MIN_VERSION);
     expect(core.min_version).toBe("0.1.17");
     for (const platform of ['linux-x86_64', 'macos-aarch64', 'macos-x86_64']) {
       const asset = core.release_assets?.[platform];
@@ -61,9 +59,10 @@ describe("herdr runtime pin has one source of truth", () => {
     const install = nativeSteps.findIndex(step => step.uses === './.github/actions/install-pinned-herdr-core');
     expect(install).toBeLessThan(nativeSteps.findIndex(step => step.name === 'Run native OAR acceptance tests'));
     const step = herdrInstallStep();
-    expect(step).toContain(".ai/harness/policy.json");
-    expect(step).toContain(".external_tooling.herdr_core.min_version");
-    expect(step).toContain(".external_tooling.herdr_core.release_assets[$asset]");
+    expect(step).toContain(`pin='${PIN_FILE}'`);
+    expect(step).toContain("'.min_version'");
+    expect(step).toContain("'.release_assets[$asset].url'");
+    expect(step).toContain("'.release_assets[$asset].sha256'");
     expect(step).toContain("sha256sum --check");
     expect(step).toContain('shasum -a 256 --check');
     expect(step).toContain('"$bin/hc" --version');
@@ -77,15 +76,15 @@ describe("herdr runtime pin has one source of truth", () => {
     ["the pinned digest", true],
     ["a wrong digest", false],
   ])("the herdr-core install with %s", (_label, digestMatches) => withTempRepo('hc-install', root => {
-    const version = readPolicy().external_tooling.herdr_core.min_version;
+    const version = readPin().min_version;
     mkdirSync(join(root, 'pkg'));
     writeFileSync(join(root, 'pkg/herdr-core'), `#!/bin/sh\necho "hc ${version}"\n`, { mode: 0o755 });
     expect(run('tar', ['-czf', 'asset.tar.gz', '-C', 'pkg', 'herdr-core'], root).status).toBe(0);
     const digest = new Bun.CryptoHasher('sha256').update(readFileSync(join(root, 'asset.tar.gz'))).digest('hex');
     const asset = { url: `file://${join(root, 'asset.tar.gz')}`, sha256: digestMatches ? digest : '0'.repeat(64) };
     const release_assets = Object.fromEntries(['linux-x86_64', 'macos-aarch64', 'macos-x86_64'].map(platform => [platform, asset]));
-    mkdirSync(join(root, '.ai/harness'), { recursive: true });
-    writeFileSync(join(root, '.ai/harness/policy.json'), JSON.stringify({ external_tooling: { herdr_core: { min_version: version, release_assets } } }));
+    mkdirSync(join(root, dirname(PIN_FILE)), { recursive: true });
+    writeFileSync(join(root, PIN_FILE), JSON.stringify({ min_version: version, release_assets }));
     mkdirSync(join(root, 'runner'));
     const result = run('bash', ['-c', herdrInstallStep()], root, {
       RUNNER_TEMP: join(root, 'runner'), GITHUB_PATH: join(root, 'github-path'),
@@ -98,13 +97,13 @@ describe("herdr runtime pin has one source of truth", () => {
 
   test("check-agent-tooling.sh carries no hand-coded herdr version floor", () => {
     const script = readFileSync(SCRIPT_PATH, "utf8");
-    expect(script).toContain('".ai/harness/policy.json#external_tooling.herdr_core"');
-    expect(script).toContain("external_tooling?.[key]?.min_version");
-    expect(script).toContain('"herdr_core", HERDR_CORE_PIN_KEY,');
+    expect(script).toContain(`const HERDR_CORE_PIN_SOURCE = "package:${PIN_FILE}";`);
+    expect(script).toContain('require(path.join(PACKAGE_ROOT, "src", "core", "operator", "herdr-core-pin.json"))');
+    expect(script).not.toContain(".ai/harness/policy.json#external_tooling.herdr_core");
     const herdrLines = script.split("\n").filter((line) => /herdr/i.test(line));
     expect(herdrLines.length).toBeGreaterThan(0);
-    // The shared pin reader and floor check carry no "herdr" text, so scan their whole bodies.
-    for (const name of ["pinnedMinVersion", "pinnedRuntimeCapability"]) {
+    // The floor checks carry no "herdr" text on every line, so scan their whole bodies.
+    for (const name of ["versionAtLeast", "herdrCoreCapability"]) {
       const start = script.indexOf(`\nfunction ${name}(`);
       expect(start, name).toBeGreaterThanOrEqual(0);
       herdrLines.push(...script.slice(start, script.indexOf("\n}\n", start)).split("\n"));
@@ -112,20 +111,6 @@ describe("herdr runtime pin has one source of truth", () => {
     for (const line of herdrLines) {
       expect(line).not.toMatch(/\d+\.\d+\.\d+/);
       expect(line).not.toMatch(/minor\s*[<>]=?\s*\d|\[2\]\)\s*[<>]/);
-    }
-  });
-
-  test.each(["herdr_core"])("the downstream policy seed projects the same %s pin", key => {
-    const pin = readPolicy().external_tooling[key];
-    expect(pin).toBeDefined();
-    expect((defaultPolicy("minimal-agentic", "en").external_tooling as Record<string, unknown>)[key]).toEqual(pin);
-    for (const seedPath of SEED_PATHS) {
-      const seed = readFileSync(seedPath, "utf8");
-      const start = seed.indexOf(`    "${key}": {`);
-      expect(start, seedPath).toBeGreaterThanOrEqual(0);
-      // The block ends at the first closing brace at its own indent, with or without a trailing comma.
-      const block = seed.slice(start, start + seed.slice(start).search(/\n    }/) + "\n    }".length);
-      expect(JSON.parse(`{${block}}`), seedPath).toEqual({ [key]: pin });
     }
   });
 

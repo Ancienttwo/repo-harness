@@ -17,6 +17,7 @@ import { readUpgradeFixture } from '../helpers/upgrade-fixtures';
 import { renderGlobalRulesBlock } from '../../src/cli/installer/global-context';
 import { CLI_PORTS } from '../../src/cli/index';
 import { initGitRepo } from '../helpers/repo-fixture';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
 
 const ROOT = join(import.meta.dir, '..', '..');
 const CLI = join(ROOT, 'src/cli/index.ts');
@@ -25,8 +26,7 @@ const CLI = join(ROOT, 'src/cli/index.ts');
 const fakeHcBin = mkdtempSync(join(tmpdir(), 'repo-harness-init-hook-hc-'));
 const pathBeforeFakeHc = process.env.PATH;
 beforeAll(() => {
-  const policy = JSON.parse(readFileSync(join(ROOT, '.ai/harness/policy.json'), 'utf8'));
-  writeFileSync(join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${policy.external_tooling.herdr_core.min_version}\\n'\n`, { mode: 0o755 });
+  writeFileSync(join(fakeHcBin, 'hc'), `#!/bin/sh\nprintf 'hc ${HC_MIN_VERSION}\\n'\n`, { mode: 0o755 });
   process.env.PATH = `${fakeHcBin}:${pathBeforeFakeHc ?? ''}`;
 });
 afterAll(() => {
