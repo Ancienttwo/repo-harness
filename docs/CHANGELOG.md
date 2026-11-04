@@ -2,6 +2,133 @@
 
 All notable changes to this skill are documented here.
 
+## [0.26.3] - 2026-11-04
+
+This release adds authorized worktree cleanup, agent investigation of a
+cleanup plan, advisor seat routes, the Board office view and three
+architecture views. It fixes MCP range redaction and repository seat reads.
+The board parent list moves to protocol 2. The install state and candidate
+reconciliation stay at protocol 3.
+
+### Upgrade
+
+- Install the CLI, then update to this exact version:
+
+  ```bash
+  bun add -g repo-harness@0.26.3 --no-cache
+  repo-harness update --version 0.26.3
+  ```
+
+  From 0.25.4 or earlier, follow the `[0.26.0]` Upgrade steps with 0.26.3
+  in place of 0.26.0.
+- Keep the Operator server and web on the same package version. The parent
+  list is protocol 2; an older web bundle refuses it as `parents_invalid`.
+  The board snapshot stays protocol 1 and adds `terminals[].agent`, the hc
+  string or null. Custom readers must accept these shapes. (#1791, #1776)
+- Open a new cleanup plan after the upgrade. The plan decoder requires
+  `private_only` and `no_destination`; older saved plans do not decode.
+  (#1751, #1764)
+- MCP `read_text` now refuses a file above 512 KiB with `FILE_TOO_LARGE`.
+  A smaller line range or `max_bytes` does not change the whole-file scan
+  limit. (#1772)
+- No hook or install protocol changes. The hc install/update messages now
+  name the client; core mismatch messages give the core repair steps.
+  (#1774)
+
+### Breaking
+
+- `board parents --json` moves from protocol 1 to 2 and adds `seats`, with
+  every live seat of the repository, with or without a parent label. Each
+  row keeps the raw parent label or null. One hc read supplies both the seat
+  rows and the existing per-parent counts. There is no protocol 1 reader.
+  (#1791)
+
+### Added
+
+- Operator worktree cleanup plan and execute routes use server observations,
+  persisted sessions, per-item authorization, the topology lock and write
+  audit. Removal requires fresh loss evidence and proof of preservation;
+  an archive requires its Draft PR read-back before removal. The page plans
+  at most 16 registered non-green worktrees per batch. (#1738)
+- The architecture Modules view groups capabilities by domain, rolls up
+  changes and violations, and shows commit, test and PR impact details. The
+  shared header adds the branch and archctx version from contract v7.
+  (#1743)
+- The architecture Layers view uses the model's declared layer order. It
+  shows selected-layer relations and violations and exports an SVG.
+  (#1753)
+- Cleanup plans mark paths that Git storage refuses by name or size as
+  `private_only`. The review page offers Private or Not archived for these
+  paths. Observation includes index blob sizes; staging retains the content
+  checks. (#1751)
+- The Board page has an Office / List switch, an office overview, one room
+  per board and a state legend. Desks, queues and plan displays use the
+  existing board data. The view adds no write action. (#1762)
+- `GET /api/v1/quota` serves the quota read model with a strict decoder.
+  One read runs at a time, with no cache or retry. (#1761)
+- The architecture Topology view has process, namespace and mount segments,
+  declared mount order, a deprecated-node switch and SVG export. (#1763)
+- The Agents page shows quota account and window states, usage, resets,
+  pace, plan, credits and unavailable reasons from the server report. It
+  reads on page open and Refresh, with no timer. (#1766)
+- The Operator can send plain text to the advisor seat and read its
+  redacted transcript. Each send uses the write audit; unknown delivery
+  requires reconciliation. The client cannot choose a terminal address.
+  (#1765)
+- Cleanup plan investigation runs one Codex turn through the review host
+  for at most eight items. It reads the server manifest and cannot read the
+  target worktrees or their Git directories. The job denies local IPv4 TCP
+  and all outbound IPv6 TCP. Advice reloads the plan with every authorization
+  box unchecked; only the user can authorize removal. (#1767)
+
+### Changed
+
+- archctx and archctx-contracts are pinned to exact 0.11.3, with the lock
+  entries and clean-room readback updated. (#1746)
+- Board seat terminals keep the hc `agent` string unchanged, or null when
+  hc reports none. The board snapshot protocol stays 1. (#1776)
+
+### Fixed
+
+- Cleanup plans offer no archive destination for a path with an index
+  version above the staging read limit of 512 KiB. `no_destination` is
+  disjoint from `private_only`; staging keeps the same read limit. (#1764)
+- Codex worker briefs define the publication handoff: the coordinator
+  commits the worker's diff, pushes it and opens the PR. (#1760)
+- MCP `read_text` redacts the whole admitted file before it cuts the line
+  range and byte limit. A range inside a PEM private key no longer exposes
+  its body. Redaction keeps source line numbers, counts matches in the whole
+  file and hashes the returned redacted text. (#1772)
+- Each hc reader checks its own component. Board A8 uses the shared numeric
+  comparator. Client messages name `hc update --version <floor>`; a core
+  mismatch gives that command when the client is below the floor, otherwise
+  `hc server restart`. (#1774)
+- Bots and Runtime core mismatch displays give the two repair commands in
+  the same order as the core error, using the snapshot's floor. (#1779)
+- Board rooms read the orchestrator and advisor by repository, with or
+  without a parent label. Workers still need the selected parent label.
+  Advisor resolution requires exactly one live advisor per repository;
+  sends from all parent rooms share that repository's lock. (#1782)
+- The advisor's rolling 24-hour wake cap counts successful sends across
+  every watched parent of the repository, rather than eight per parent.
+  (#1792)
+
+### Documentation
+
+- The 0.26.2 release record has the publication values and the TTY
+  requirement for npm web authentication. (#1747)
+- The 0.26.2 release record has the owner machine upgrade and post-upgrade
+  probe results. (#1749)
+- Generated architecture outputs are refreshed for
+  `main@c963e166640b` (#1728), `main@582a38ad229e` (#1759) and
+  `main@609c5599482f` (#1769).
+- The Operator PRD snapshot is at rev 269 and records D11/G38: console
+  messages go only to the advisor seat. (#1717)
+- The Board pixel office HTML mockup and its design index entry are in the
+  repository. (#1737)
+- Nineteen stale citations are removed from the human sections of six
+  architecture module docs. Generated regions are unchanged. (#1775)
+
 ## [0.26.2] - 2026-11-04
 
 This release has one breaking change: the Reverse Skill integration is
