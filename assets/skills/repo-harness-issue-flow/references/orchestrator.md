@@ -220,7 +220,7 @@ module is in the title so that a list view shows the write scopes.
 Quota belongs to the provider account, not to the host. A seat draws from
 the account of its provider route: Claude Code and pi with an Anthropic
 login share the Claude account; Codex and pi with a ChatGPT login share
-the ChatGPT account (#1716, owner M59).
+the ChatGPT account.
 
 Before each dispatch wave, run `repo-harness quota --json`. It prints one
 state for each account (`claude`, `chatgpt`) and the windows that it read.
@@ -236,7 +236,7 @@ account `unknown`, unless another window is `exhausted` or `tight`.
 
 | State | Condition | Coordinator action |
 |---|---|---|
-| exhausted | used ≥ 95%, or `rate_limit_reached_type` set | No new dispatch to that account. For Codex this includes review seats: start no new Codex turn. Do not spend credits (owner M60). A merge that needs a Codex review seat waits for the weekly reset. |
+| exhausted | used ≥ 95%, or `rate_limit_reached_type` set | No new dispatch to that account, review seats included: start no new turn on it. Spend credits only when the owner allows it; otherwise a merge that needs that account's review seat waits for the reset. |
 | tight | headroom < 15%, or pace > +15 | Must-ship work only. Halve the writer cap. No stretch work. |
 | normal | other | The plan's cap. |
 | surplus | pace < −25 and the reset is less than 24 h away | Pull stretch work forward, up to the full cap. |
@@ -249,12 +249,9 @@ example Opus or Fable) that the status line capture does not have. Use it
 for the manual reading only; no code parses its text. Record the manual
 reading and its source in the `Dispatch reading:` line.
 
-Owner rule M58 applies in every state. Codex takes review seats and Low
-tasks only. When the Claude account is `tight` or `exhausted`, defer
-Medium and High implementation; do not move it to Codex. At 95% or more
-of the Codex weekly window, start no new Codex turn. Do not spend Codex
-credits. When Codex is exhausted, a High merge waits for the Codex review
-seat; the Claude gatekeeper does not replace the cross-model seat.
+Seat model routing follows the repository's or the user's own routing
+rule. When an account is `tight` or `exhausted`, defer Medium and High
+implementation; do not move it to another provider by default.
 
 ## 8. Follow up
 
