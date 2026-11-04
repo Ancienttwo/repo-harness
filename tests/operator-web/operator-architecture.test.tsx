@@ -9,6 +9,7 @@ import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } f
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
 import { layoutModules, type ModulesBox } from '../../src/operator-web/architecture-modules-layout';
+import { layersSvg, layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
@@ -17,7 +18,7 @@ import {
 import { runtimePlacement } from '../../src/operator-web/architecture-runtime';
 import { layoutSequence, SEQUENCE_COLUMN } from '../../src/operator-web/architecture-sequence-layout';
 import { SEQUENCE_SVG_FONT, SEQUENCE_SVG_HEADER_WIDTH, SEQUENCE_SVG_TERMINAL_WIDTH, sequenceSvg, textWidth } from '../../src/operator-web/architecture-sequence-svg';
-import { layoutTopology } from '../../src/operator-web/architecture-topology-layout';
+import { layoutTopology, topologySvg, type TopologyBase } from '../../src/operator-web/architecture-topology-layout';
 import recordedMap from '../../src/operator-web/fixtures/architecture-map.json';
 import type { ArchitectureHistory as HistoryPage } from 'archctx-contracts';
 import { historyShape, skippedMilestones, type ValidMilestone } from '../../src/operator-web/ArchitectureHistory';
@@ -556,7 +557,7 @@ describe('architecture map', () => {
     // Only the base-map gaps, in the side panel; the open layer's flow-step gap belongs to the sequence map.
     expect([...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
-    // No base map draws the layer order, so a model without ordered layers states no map gap.
+    // Only the Layers view draws the layer order, so a model without ordered layers states no gap on the other base maps.
     await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, mapLayers, undeclaredLayers) }) })));
     await settle();
     const sideGaps = () => [...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')]);
@@ -893,6 +894,7 @@ describe('sequence and topology base maps', () => {
     await settle();
   };
   const tab = async (id: string) => { await act(async () => document.querySelector<HTMLButtonElement>(`#architecture-tab-${id}`)!.click()); await settle(); };
+  const segment = async (base: string) => click(`[data-topology-base="${base}"]`);
   const chooseLayer = async (layer: string) => { await act(async () => document.querySelector<HTMLButtonElement>(`.architecture-layers [data-layer="${layer}"]`)!.click()); await settle(); };
   const notes = () => [...document.querySelectorAll('.architecture-map__note')].map(item => `${item.getAttribute('data-note')}:${item.getAttribute('data-reason')}`);
   const inspector = () => document.querySelector('.architecture-map__inspector')!;
@@ -932,41 +934,176 @@ describe('sequence and topology base maps', () => {
     expect(layout.fragments.map(fragment => [fragment.index, fragment.x < column('pipe'), fragment.x + fragment.width > column('git')])).toEqual([[0, true, true], [1, true, false]]);
   });
 
-  test('topology boxes nest by namespace, a deployed node sits in its process, and a relation is drawn between boxes or counted as unplaced', () => {
+  test('topology segments: processes hold deployed code and draw lifted relations; namespaces frame their mounts in order with a reader or writer tone; mounters list mounts in order', () => {
     const map = runtimeMap();
-    const layout = layoutTopology(map, runtimePlacement(map));
-    const box = new Map(layout.boxes.map(item => [item.node.id, item]));
-    // Every topology node once, code nodes not as boxes; a namespace comes before what it holds.
-    expect(layout.boxes.map(item => item.node.id).sort()).toEqual([CLI, EXTERNAL, HOST, SERVER].sort());
-    expect(layout.boxes.findIndex(item => item.node.id === HOST)).toBeLessThan(Math.min(...[SERVER, CLI].map(id => layout.boxes.findIndex(item => item.node.id === id))));
+    const processes = layoutTopology(map, runtimePlacement(map), 'process', true);
+    const box = new Map(processes.boxes.map(item => [item.node.id, item]));
+    // Process boxes and external systems only; the namespace and its runs-in relations belong to the namespace segment.
+    expect(processes.boxes.map(item => item.node.id).sort()).toEqual([CLI, EXTERNAL, SERVER].sort());
+    expect([box.get(SERVER)!.parent, box.get(SERVER)!.members.map(member => member.id)]).toEqual([null, [CENTER]]);
+    // The spawn joins two processes; the ledger's read of git is drawn from its process; the router runs in no process.
+    expect(processes.edges.map(edge => [edge.source, edge.target, edge.kind, edge.dashed, edge.relations, edge.protocols])).toEqual([
+      [SERVER, EXTERNAL, 'io', true, ['relation.c-git'], []], [CLI, SERVER, 'spawns', true, ['relation.g-spawns'], []]]);
+    expect(processes.unplaced).toEqual(['relation.b-router']);
+
+    // CLI mounts the cache (order 1) and the config (order 0); a deprecated store sits in the host frame; the host reaches a second namespace over ssh.
+    const mount = (id: string, order: number, status = 'active') => ({ ...mapNode(id, 'mount'), status, mount: { source: order === 0 ? null : `src/${id}`, target: `mnt/${id}`, mode: 'rw', order } as const });
+    const mounted = runtimeMap({
+      nodes: [...runtimeMap().nodes, mount('mount.cache', 1), mount('mount.config', 0), mount('mount.old', 2, 'deprecated'), mapNode('namespace.remote', 'namespace')],
+      relations: [...runtimeMap().relations.map(relation => relation.kind === 'spawns' ? { ...relation, protocol: 'stdio' } : relation),
+        mapRelation('relation.m-cache', 'mounts', CLI, 'mount.cache'), mapRelation('relation.m-config', 'mounts', CLI, 'mount.config'), mapRelation('relation.m-old', 'mounts', HOST, 'mount.old'),
+        mapRelation('relation.w-cache', 'writes', PART, 'mount.cache'), mapRelation('relation.r-cache', 'reads', CALLER, 'mount.cache'), mapRelation('relation.r-old', 'reads', CALLER, 'mount.old'),
+        { ...mapRelation('relation.s-remote', 'calls', HOST, 'namespace.remote'), protocol: 'ssh' }],
+    });
+    expect(layoutTopology(mounted, runtimePlacement(mounted), 'process', true).edges.find(edge => edge.kind === 'spawns')?.protocols).toEqual(['stdio']);
+    // Legacy off with a deprecated node in each place that another node names: a namespace parent (with a grandparent and at the top),
+    // a mount's home namespace and mounter, and a process with deployed code.
+    const deprecated = (node: ArchitectureMapNodeV1): ArchitectureMapNodeV1 => ({ ...node, status: 'deprecated' });
+    const hidden = runtimeMap({
+      nodes: [...runtimeMap().nodes, deprecated(mapNode('namespace.old', 'namespace', HOST)), mapNode('namespace.child', 'namespace', 'namespace.old'),
+        deprecated(mapNode('namespace.gone', 'namespace')), mapNode('namespace.orphan', 'namespace', 'namespace.gone'),
+        mount('mount.kept', 0), deprecated(mapNode('process.old', 'process'))],
+      relations: [...runtimeMap().relations, mapRelation('relation.m-kept', 'mounts', 'namespace.old', 'mount.kept'),
+        mapRelation('relation.p-deploy', 'deployed-on', PART, 'process.old'), mapRelation('relation.p-runs', 'runs-in', 'process.old', HOST)],
+    });
+    const cases: readonly { readonly name: string; readonly map: ArchitectureMapV1; readonly base: TopologyBase; readonly legacy: boolean; readonly expected: unknown }[] = [
+      { name: 'hidden namespace parents', map: hidden, base: 'namespace', legacy: false, expected: {
+        boxes: [[HOST, null, true, null], ['mount.kept', HOST, false, 'point'], ['namespace.child', HOST, false, null], ['namespace.orphan', null, false, null]], edges: [], members: [] } },
+      { name: 'hidden mounter', map: hidden, base: 'mount', legacy: false, expected: { boxes: [], edges: [], members: [] } },
+      // The ledger runs in the hidden process, so its read of git has no box and is not unplaced; the router's call into the pipe still is.
+      { name: 'hidden process', map: hidden, base: 'process', legacy: false, expected: {
+        boxes: [[EXTERNAL, null, false, null], [CLI, null, false, null], [SERVER, null, false, null]], edges: [[CLI, SERVER, 'spawns', []]], members: [[SERVER, [CENTER]]] } },
+      { name: 'namespace frames', map: mounted, base: 'namespace', legacy: true, expected: {
+        boxes: [[HOST, null, true, null], ['mount.config', HOST, false, 'point'], ['mount.cache', HOST, false, 'writer'], ['mount.old', HOST, false, 'reader'], ['namespace.remote', null, false, null]],
+        edges: [[HOST, 'namespace.remote', 'calls', ['ssh']]], members: [] } },
+      { name: 'legacy off', map: mounted, base: 'namespace', legacy: false, expected: {
+        boxes: [[HOST, null, true, null], ['mount.config', HOST, false, 'point'], ['mount.cache', HOST, false, 'writer'], ['namespace.remote', null, false, null]],
+        edges: [[HOST, 'namespace.remote', 'calls', ['ssh']]], members: [] } },
+      // Mounters follow the model's node order.
+      { name: 'mounters', map: mounted, base: 'mount', legacy: true, expected: {
+        boxes: [[HOST, null, false, null], [CLI, null, false, null]], edges: [], members: [[HOST, ['mount.old']], [CLI, ['mount.config', 'mount.cache']]] } },
+      { name: 'no mount', map, base: 'mount', legacy: true, expected: { boxes: [], edges: [], members: [] } },
+    ];
+    for (const entry of cases) {
+      const layout = layoutTopology(entry.map, runtimePlacement(entry.map), entry.base, entry.legacy);
+      const actual: unknown = {
+        boxes: layout.boxes.map(item => [item.node.id, item.parent, item.group, item.tone]),
+        edges: layout.edges.map(edge => [edge.source, edge.target, edge.kind, edge.protocols]),
+        members: layout.boxes.filter(item => item.members.length > 0).map(item => [item.node.id, item.members.map(member => member.id)]),
+      };
+      expect([entry.name, actual]).toEqual([entry.name, entry.expected]);
+      // Each box of the SVG file clips its text with its own clip path.
+      const svg = topologySvg(layout, { detail: item => item.node.kind, member: (_, member) => member.name });
+      expect([entry.name, [...svg.matchAll(/clip-path="url\(#(clip-\d+)\)"/gu)].map(match => match[1])])
+        .toEqual([entry.name, [...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])]);
+      expect(new Set([...svg.matchAll(/<clipPath id="(clip-\d+)"/gu)].map(match => match[1])).size).toBe(layout.boxes.length);
+    }
+    expect(layoutTopology(hidden, runtimePlacement(hidden), 'process', false).unplaced).toEqual(['relation.b-router']);
+    // A frame encloses its mounts, and the mounts stack in mount order.
+    const frames = new Map(layoutTopology(mounted, runtimePlacement(mounted), 'namespace', true).boxes.map(item => [item.node.id, item]));
     const inside = (inner: string, outer: string) => {
-      const a = box.get(inner)!, b = box.get(outer)!;
+      const a = frames.get(inner)!, b = frames.get(outer)!;
       return a.x >= b.x && a.y >= b.y && a.x + a.width <= b.x + b.width && a.y + a.height <= b.y + b.height;
     };
-    expect([inside(SERVER, HOST), inside(CLI, HOST), inside(EXTERNAL, HOST), box.get(HOST)!.group, box.get(SERVER)!.parent]).toEqual([true, true, false, true, HOST]);
-    expect(box.get(SERVER)!.members.map(member => member.id)).toEqual([CENTER]);
-    // The spawn joins two processes; the ledger's read of git is drawn from its process; the router runs in no process.
-    expect(layout.edges.map(edge => [edge.source, edge.target, edge.kind, edge.dashed, edge.relations])).toEqual([
-      [SERVER, EXTERNAL, 'io', true, ['relation.c-git']], [CLI, SERVER, 'spawns', true, ['relation.g-spawns']]]);
-    expect([layout.unplaced, layout.stacked]).toEqual([['relation.b-router'], []]);
-    // Two mounts of one process: the map has no mount order, so the layout names the mounter.
-    const mounted = runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('mount.a', 'mount'), mapNode('mount.b', 'mount')],
-      relations: [...runtimeMap().relations, mapRelation('relation.m-a', 'mounts', CLI, 'mount.a'), mapRelation('relation.m-b', 'mounts', CLI, 'mount.b')] });
-    const stacked = layoutTopology(mounted, runtimePlacement(mounted));
-    expect([stacked.stacked, stacked.boxes.find(item => item.node.id === 'mount.a')?.parent]).toEqual([[CLI], HOST]);
+    expect([inside('mount.config', HOST), inside('mount.cache', HOST), inside('namespace.remote', HOST), frames.get('mount.config')!.y < frames.get('mount.cache')!.y]).toEqual([true, true, false, true]);
   });
 
   test('the tabs follow the design order and the layer stays when the base map changes', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     // The module map tab counts capabilities and the sequence tab counts flows.
     expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => [item.firstChild?.textContent, item.querySelector('.architecture-tabs__count')?.textContent ?? null]))
-      .toEqual([['Modules', '2'], ['Sequence', '2'], ['Topology', null], ['Module list', null], ['History', null]]);
+      .toEqual([['Modules', '2'], ['Layers', null], ['Sequence', '2'], ['Topology', null], ['Module list', null], ['History', null]]);
     await chooseLayer('violations');
     await tab('sequence');
     expect(document.querySelector('#architecture-tab-sequence')?.getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
     await tab('topology');
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
+  });
+
+  test('the layers map draws the declared layer order with own lines; the selected layer has lanes, size bars and its layer-direction violations; a missing order or check says why', async () => {
+    // CALLER (cli) calls CENTER (core) over http; PART, inside CENTER, reads git; git calls CALLER, against the order. web holds no node; the server has no layer.
+    type Direction = ArchitectureMapLayersInput['violations']['layer_direction'];
+    const layered = (direction: Direction, order: ArchitectureLayerOrderV1 = { state: 'ok', layers: ['cli', 'web', 'core', 'external'] }) => projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: order,
+      nodes: [{ ...mapNode(CALLER, 'capability'), layer: 'cli' }, mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER),
+        { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode(SERVER, 'process'), layer: null }],
+      relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), { ...mapRelation('relation.b-router', 'calls', CALLER, CENTER), protocol: 'http' },
+        mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)],
+      flows: [flow], flow_evidence: runtimeMap().flow_evidence,
+      sizes: { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/pipeline.ts', 50], ['src/router.ts', 100]]),
+        owners: new Map([['src/ledger.ts', PART], ['src/pipeline.ts', CENTER], ['src/router.ts', CALLER]]) },
+      dependencies: { state: 'ok', matrix: [] },
+      layers: { ...layers, violations: { ...layers.violations, layer_direction: direction } },
+    });
+    const checked: Direction = { state: 'ok', imports: 40, edges: [
+      { source: CENTER, target: CALLER, source_layer: 'core', target_layer: 'cli', imports: 2 }, { source: PART, target: CALLER, source_layer: 'core', target_layer: 'cli', imports: 1 }] };
+    const map = layered(checked);
+    const layout = layoutLayers(map, ['cli', 'web', 'core', 'external']);
+    // CENTER's 950 lines include PART's 900, so core owns 50 + 900 and lists PART first.
+    expect(layout.bands.map(band => [band.layer, band.index, band.members.map(member => member.node.id), band.files, band.lines])).toEqual([
+      ['cli', 0, [CALLER], 1, 100], ['web', 1, [], 0, 0], ['core', 2, [PART, CENTER], 2, 950], ['external', 3, [EXTERNAL], 0, 0]]);
+    for (const [index, band] of layout.bands.slice(1).entries()) expect(layout.bands[index]!.y + layout.bands[index]!.height < band.y).toBe(true);
+    // Out of core: the dashed git read in the right gutter; into core: the http call in the left one. The relation inside core has no lane.
+    const lanes = layout.lanes('core');
+    expect([layout.lanes(null), lanes.map(lane => [lane.source, lane.target, lane.dashed, lane.side, lane.protocols, lane.relations])]).toEqual([[], [
+      ['core', 'external', true, 'right', [], ['relation.c-git']], ['cli', 'core', false, 'left', ['http'], ['relation.b-router']]]]);
+    const bands = new Map(layout.bands.map(band => [band.layer, band]));
+    const within = (layer: string, y: number) => y > bands.get(layer)!.y && y < bands.get(layer)!.y + bands.get(layer)!.height;
+    const { x: left, width } = layout.bands[0]!;
+    expect(lanes.filter(lane => !within(lane.source, lane.points[0]![1]) || !within(lane.target, lane.points[3]![1])
+      || (lane.side === 'right' ? lane.points[1]![0] <= left + width : lane.points[1]![0] >= left))).toEqual([]);
+    // The recorded map of this repository: every declared layer is a band, and the bands' own lines add up to the top-level nodes' totals.
+    const recorded = decodeArchitectureMap(recordedMap);
+    const order = recorded.layer_order.state === 'ok' ? recorded.layer_order.layers : [];
+    const real = layoutLayers(recorded, order);
+    const tops = new Set(recorded.nodes.filter(node => node.parent === null).map(node => node.id));
+    const totals = recorded.sizes.state === 'ok' ? recorded.sizes.nodes.filter(entry => tops.has(entry.id)).reduce((sum, entry) => sum + entry.lines, 0) : null;
+    expect([real.bands.map(band => band.layer), real.lanes('effects').length]).toEqual([[...order], 19]);
+    expect(real.bands.reduce((sum, band) => sum + band.lines!, 0)).toBe(totals!);
+
+    const files: { name: string; blob: Blob }[] = [];
+    const { createObjectURL, revokeObjectURL } = URL;
+    const blobs = new Map<string, Blob>();
+    URL.createObjectURL = (blob: Blob) => { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; };
+    URL.revokeObjectURL = () => {};
+    const anchor = window.HTMLAnchorElement.prototype;
+    const { click: anchorClick } = anchor;
+    anchor.click = function (this: HTMLAnchorElement) { files.push({ name: this.download, blob: blobs.get(this.href)! }); };
+    try {
+      await mount(workspace({ readMap: reader(map) }));
+      await tab('layers');
+      // The provenance line and the export replace the lens chips; no layer is selected, so no lane is drawn.
+      expect([document.querySelector('[data-layers-provenance]')?.textContent, document.querySelector('.architecture-layers'), document.querySelector('.architecture-map')?.getAttribute('data-lane-count')])
+        .toEqual(['Layer order and layer-direction rules from archctx 0.11.2', null, '0']);
+      expect([...document.querySelectorAll('.architecture-layermap__band')].map(item => item.textContent)).toEqual(['L0 cli', 'L1 web', 'L2 core', 'L3 external']);
+      expect([document.querySelector('.react-flow__node[data-id="core"] .architecture-layermap__lines')?.textContent, notes()]).toEqual(['950', ['layers.unlayered:node_layer_undeclared']]);
+      await click('.react-flow__node[data-id="core"]');
+      expect([inspector().getAttribute('data-layer-id'), document.querySelector('.architecture-map')?.getAttribute('data-lane-count'), inspector().querySelector('[data-layer-size]')?.textContent])
+        .toEqual(['core', '2', '950 lines in 2 files']);
+      // Size bars by own lines; the two violating node pairs sum into one layer pair.
+      expect([...inspector().querySelectorAll('[data-size-row]')].map(item => item.getAttribute('data-size-row'))).toEqual([PART, CENTER]);
+      expect([...inspector().querySelectorAll('[data-pair]')].map(item => item.textContent)).toEqual(['core → cli3Violation']);
+      expect(inspector().querySelector('[data-layer-checked]')?.textContent).toBe('archctx checked 40 imports against the layer order.');
+      await click('[data-layers-export]');
+      const svg = await files[0]!.blob.text();
+      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/<path class="lane/gu) ?? []).length, svg.includes('<rect class="box selected"'), svg.includes('>http</text>')])
+        .toEqual([['layers-ccccccc.svg'], 'image/svg+xml', 2, true, true]);
+      expect(svg).toBe(layersSvg(layout, 'core', { band: band => `L${band.index} ${band.layer}`, members: band => band.members.map(member => member.node.name).join(' · ') }));
+
+      // A model without the layer-direction constraint keeps the map and says why the check is missing; a model without ordered layers has no map.
+      await act(async () => root?.render(workspace({ readMap: reader(layered({ state: 'unavailable', reason: 'layer_direction_undeclared' })) })));
+      await settle();
+      await click('.react-flow__node[data-id="core"]');
+      expect(inspector().querySelector('[data-gap="layer_direction"]')?.getAttribute('data-reason')).toBe('layer_direction_undeclared');
+      const undeclared = { state: 'unavailable', reason: 'model_layers_undeclared' } as const;
+      await act(async () => root?.render(workspace({ readMap: reader(layered(undeclared, undeclared)) })));
+      await settle();
+      expect([document.querySelector('.react-flow'), document.querySelector('[data-gap="layer_order"]')?.getAttribute('data-reason')]).toEqual([null, 'model_layers_undeclared']);
+    } finally {
+      Object.assign(URL, { createObjectURL, revokeObjectURL });
+      anchor.click = anchorClick;
+    }
   });
 
   test('2-ARCH-P2 on the module map: a capability shows its domain, size, violations with their source, PR impact with the flow step, and the command that lists them', async () => {
@@ -1178,18 +1315,24 @@ describe('sequence and topology base maps', () => {
   test('2-ARCH-P2 on the topology map: a deployed node shows its size, edges, violations and command; layers light boxes and unplaced parts say why', async () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     await tab('topology');
+    const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
+    // The artboard opens on the namespace segment. The host frame holds no mount and is lit through the server that runs in it; no node is deprecated.
+    expect(document.querySelector('[data-topology-base][aria-pressed="true"]')?.getAttribute('data-topology-base')).toBe('namespace');
+    expect([box(HOST).querySelector('[data-namespace-empty]')?.textContent, box(HOST).hasAttribute('data-quiet')]).toEqual(['No mount', false]);
+    const legacy = document.querySelector<HTMLButtonElement>('[data-topology-legacy]')!;
+    expect([legacy.disabled, legacy.getAttribute('aria-pressed'), legacy.textContent]).toEqual([true, 'true', 'Legacy stores0']);
+    await segment('process');
     const canvas = document.querySelector('[data-view="topology"]')!;
-    expect([canvas.getAttribute('data-node-count'), canvas.getAttribute('data-edge-count')]).toEqual(['4', '2']);
+    expect([canvas.getAttribute('data-base'), canvas.getAttribute('data-node-count'), canvas.getAttribute('data-edge-count')]).toEqual(['process', '3', '2']);
     expect(document.querySelector(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`)?.classList.contains('react-flow__node-member')).toBe(true);
     expect(document.querySelector(`.react-flow__node[data-id="${EXTERNAL}"] .architecture-topology__box`)?.getAttribute('data-kind')).toBe('external-system');
     expect(notes()).toEqual(['topology.unplaced:deployment_undeclared']);
     // The map opens at the module map's readable zoom on its first runtime box, not fitted to the whole map.
-    const host = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap())).boxes.find(item => item.node.id === HOST)!;
-    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(host.x - 24) * 0.85}px,${-(host.y - 24) * 0.85}px) scale(0.85)`);
+    const first = layoutTopology(runtimeMap(), runtimePlacement(runtimeMap()), 'process', true).boxes.find(item => item.node.kind !== 'external-system')!;
+    expect(document.querySelector<HTMLElement>('.react-flow__viewport')?.style.transform).toBe(`translate(${-(first.x - 24) * 0.85}px,${-(first.y - 24) * 0.85}px) scale(0.85)`);
     expect(document.querySelector('[data-note="topology.unplaced"]')?.textContent).toContain(`calls Name ${CALLER} → Name ${CENTER}`);
     // Today the ledger changed: its capability and the process it runs in are lit; the CLI is not.
-    const box = (id: string) => document.querySelector(`.react-flow__node[data-id="${id}"] > div`)!;
-    expect([box(`${SERVER}/${CENTER}`).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet'), box(HOST).hasAttribute('data-quiet')]).toEqual(['muted', false, true, false]);
+    expect([box(`${SERVER}/${CENTER}`).getAttribute('data-tone'), box(SERVER).hasAttribute('data-quiet'), box(CLI).hasAttribute('data-quiet')]).toEqual(['muted', false, true]);
 
     await click(`.react-flow__node[data-id="${SERVER}/${CENTER}"]`);
     expect(inspector().getAttribute('data-node-id')).toBe(CENTER);
@@ -1204,6 +1347,9 @@ describe('sequence and topology base maps', () => {
     expect(notes()).toEqual(['topology.unplaced_marks:deployment_undeclared', 'topology.unplaced:deployment_undeclared']);
     await chooseLayer('violations');
     expect(notes()).toContain('topology.violations:imports_on_module_map');
+    // The model declares no mount, so the mount segment is its empty state.
+    await segment('mount');
+    expect(notes()).toContain('topology.mounts:mount_undeclared');
     // A model without processes, namespaces or mounts has no topology map.
     await act(async () => root?.render(workspace({ repositoryId: 'repo-flat', readMap: reader(runtimeMap({ nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
       relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)] })) })));
@@ -1212,14 +1358,24 @@ describe('sequence and topology base maps', () => {
     expect(notes()).toContain('topology.empty:topology_undeclared');
   });
 
-  test('a namespace that mounts gets routing handles for its edge, and a node deployed on two processes is one canvas node per process with one inspector', async () => {
-    const map = runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('mount.cache', 'mount')],
-      relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI), mapRelation('relation.i-mount', 'mounts', HOST, 'mount.cache')] });
-    expect(layoutTopology(map, runtimePlacement(map)).edges.map(edge => [edge.source, edge.target, edge.kind])).toContainEqual([HOST, 'mount.cache', 'mounts']);
+  test('a namespace frame holds its mounts with tone, fields and writers; the legacy switch hides a deprecated mount; a node deployed on two processes is one canvas node per process with one inspector', async () => {
+    const map = runtimeMap({ nodes: [...runtimeMap().nodes, mapNode('mount.cache', 'mount'), { ...mapNode('mount.old', 'mount'), status: 'deprecated' }],
+      relations: [...runtimeMap().relations, mapRelation('relation.h-deploy', 'deployed-on', CENTER, CLI), mapRelation('relation.i-mount', 'mounts', HOST, 'mount.cache'),
+        mapRelation('relation.j-mount', 'mounts', HOST, 'mount.old'), mapRelation('relation.k-write', 'writes', PART, 'mount.cache')] });
     await mount(workspace({ readMap: reader(map) }));
     await tab('topology');
-    // In happy-dom React Flow draws no edge, so the handles that the namespace edge routes through stand for it.
+    // In happy-dom React Flow draws no edge, so the handles that a namespace edge routes through stand for it.
     expect([...document.querySelectorAll(`.react-flow__node[data-id="${HOST}"] .react-flow__handle`)].map(item => item.classList.contains('source') ? 'source' : 'target').sort()).toEqual(['source', 'target']);
+    expect(['mount.cache', 'mount.old'].map(id => document.querySelector(`.react-flow__node[data-id="${id}"] [data-mount-tone]`)?.getAttribute('data-mount-tone'))).toEqual(['writer', 'point']);
+    await click('.react-flow__node[data-id="mount.cache"]');
+    expect([inspector().querySelector('[data-mount-fields]')?.textContent, inspector().querySelector('[data-writers]')?.textContent])
+      .toEqual([`Order0Source → targetmasked → maskedModeroMounted byName ${HOST}`, `Name ${PART}`]);
+    const legacy = () => document.querySelector<HTMLButtonElement>('[data-topology-legacy]')!;
+    expect([legacy().disabled, legacy().textContent]).toEqual([false, 'Legacy stores1']);
+    await click('[data-topology-legacy]');
+    expect([legacy().getAttribute('aria-pressed'), document.querySelector('.react-flow__node[data-id="mount.old"]'), document.querySelector('.react-flow__node[data-id="mount.cache"]') !== null]).toEqual(['false', null, true]);
+
+    await segment('process');
     const members = [...document.querySelectorAll('.react-flow__node-member')].map(item => item.getAttribute('data-id'));
     expect(members.sort()).toEqual([`${CLI}/${CENTER}`, `${SERVER}/${CENTER}`]);
     for (const process of [SERVER, CLI]) {

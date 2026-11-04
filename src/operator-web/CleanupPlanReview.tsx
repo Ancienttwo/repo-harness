@@ -60,6 +60,10 @@ const sameDraft = (left: Draft, right: Draft) => left.recommendation === right.r
 /** The server names the loss paths an archive can take; the page infers nothing from a path. */
 const archivable = (item: CleanupPlanItem): readonly string[] => item.loss?.archivable ?? [];
 
+/** The server refuses every destination for a path that staging cannot read, and a Git destination for a path that Git storage refuses by name or size. */
+const destinationsOf = (item: CleanupPlanItem, path: string): readonly ('none' | Destination)[] =>
+  item.loss?.no_destination.includes(path) ? ['none'] : item.loss?.private_only.includes(path) ? ['none', 'private'] : ['none', 'git', 'private'];
+
 const hasCommits = (item: CleanupPlanItem) => (item.loss?.commits.length ?? 0) > 0;
 
 /** Why a draft cannot go to the server, or null. The server refuses a delete that would drop commits. */
@@ -142,7 +146,7 @@ function ChoiceEditor({ item, draft, locked, onChange, t }: {
               <select className="rounded border border-kumo-line bg-kumo-base px-1.5 py-0.5 text-xs text-kumo-default"
                 aria-label={t('worktrees.plan.destination.label', { path })} value={draft.destinations[path] ?? 'none'} disabled={locked}
                 onChange={event => destination(path, event.target.value)}>
-                {(['none', 'git', 'private'] as const).map(value => <option key={value} value={value}>{t(`worktrees.plan.destination.${value}`)}</option>)}
+                {destinationsOf(item, path).map(value => <option key={value} value={value}>{t(`worktrees.plan.destination.${value}`)}</option>)}
               </select>
               <code className="min-w-0 break-all font-mono text-kumo-default">{path}</code>
             </li>
