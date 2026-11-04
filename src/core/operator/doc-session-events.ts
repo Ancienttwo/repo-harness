@@ -1,4 +1,4 @@
-import { containsSecret, SECRET_TOKEN_PATTERNS } from '../security/secret-patterns';
+import { hasUnredactedSecret, replaceSecrets } from '../security/secret-patterns';
 import { isPublicDevActivityText, publicDevActivityText } from './public-text';
 
 /**
@@ -61,20 +61,6 @@ const TYPE_KEYS: Readonly<Record<DocSessionEventV1['type'], readonly string[]>> 
   turn: ['boundary'],
   failure: ['category'],
 };
-
-// Some replacements still match their own rule (`Authorization: Bearer [REDACTED]`),
-// so the check runs on the text with the replacement strings taken out.
-function hasUnredactedSecret(text: string): boolean {
-  let rest = text;
-  for (const { replacement } of SECRET_TOKEN_PATTERNS) rest = rest.split(replacement).join('');
-  return containsSecret(rest);
-}
-
-function replaceSecrets(text: string): string {
-  let out = text;
-  for (const { pattern, replacement } of SECRET_TOKEN_PATTERNS) out = out.replace(new RegExp(pattern.source, pattern.flags), replacement);
-  return out;
-}
 
 /** Message text the page may show: token rules first, then absolute paths; a secret left over withholds the text. */
 function redactDocSessionText(text: string): string {

@@ -41,7 +41,9 @@ import { decodeBoard } from '../../core/board/board';
 import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/operator/quota';
 import { readQuotaReport } from './quota';
 import { decodeBoardParents } from '../../core/board/parents';
-import { BoardReadError, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
+import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
+import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorSeatWriteRoute } from './advisor-seat-route';
+import { decodeAdvisorSeatRequest, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
 import { readOperatorRepositories } from './repositories';
@@ -152,6 +154,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
   Object.freeze({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false }),
+  // The only console write into an agent terminal (#1756, D11): plain text to the one advisor seat of a board, in a board CLI child.
+  Object.freeze({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true }),
+  Object.freeze({ id: 'advisor_seat_transcript', method: 'GET', pattern: OPERATOR_ADVISOR_TRANSCRIPT_PATH, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false }),
   Object.freeze({ id: 'docs_tree', method: 'GET', pattern: OPERATOR_DOCS_TREE_ROUTE.source, write: false }),
@@ -249,6 +254,10 @@ export interface OperatorServerOptions {
   readonly read_quota?: () => Promise<unknown>;
   /** The parent list read: the `board parents` CLI's JSON for one repository. Production runs the CLI; only tests inject another. */
   readonly read_board_parents?: (input: BoardParentsReadInput) => Promise<unknown>;
+  /** The advisor seat send: the `board advisor send` CLI's JSON. Production runs the CLI; only tests inject another. */
+  readonly send_advisor?: (input: BoardReadInput & { readonly text: string }) => Promise<unknown>;
+  /** The advisor seat read-back: the `board advisor transcript` CLI's JSON. Production runs the CLI; only tests inject another. */
+  readonly read_advisor_transcript?: (input: BoardReadInput) => Promise<unknown>;
   readonly host?: string;
   /** Port 0 is accepted by the effect for ephemeral test servers. */
   readonly port?: number;
@@ -1027,9 +1036,25 @@ export async function startOperatorServer(
   };
 
   /**
-   * One board CLI run per request. The board and the parent list share one
-   * concurrency cap. The CLI's JSON is decoded once here; a client that
-   * leaves aborts the run.
+   * One board CLI run under the cap that the board, the parent list and the
+   * advisor seat routes share. The server close aborts it and waits for it.
+   */
+  const admitBoardCli = <T>(run: (signal: AbortSignal) => Promise<T>): { readonly result: Promise<T>; readonly abort: () => void } | null => {
+    if (closed || activeBoardReads.size >= maxConcurrency) return null;
+    const controller = new AbortController();
+    activeBoardReads.add(controller);
+    const result = Promise.resolve().then(() => run(controller.signal));
+    const completion: Promise<void> = result.then(() => {}, () => {}).finally(() => {
+      activeBoardReads.delete(controller);
+      boardCompletions.delete(completion);
+    });
+    boardCompletions.add(completion);
+    return { result, abort: () => controller.abort() };
+  };
+
+  /**
+   * One board CLI read per request. The CLI's JSON is decoded once here; a
+   * client that leaves aborts the run.
    */
   const handleBoardCliRead = <F extends string>(
     request: IncomingMessage, response: ServerResponse, headOnly: boolean,
@@ -1041,13 +1066,11 @@ export async function startOperatorServer(
       const refusal = refusals[code];
       sendRefusal(request, response, refusal.status, errorBody(code, refusal.message, refusal.next_action), headOnly);
     };
-    if (closed || activeBoardReads.size >= maxConcurrency) { refuse(codes.busy); return; }
-    const controller = new AbortController();
-    activeBoardReads.add(controller);
-    const onClose = () => controller.abort();
+    const run = admitBoardCli(read);
+    if (run === null) { refuse(codes.busy); return; }
+    const onClose = () => run.abort();
     response.once('close', onClose);
-    const completion: Promise<void> = Promise.resolve()
-      .then(() => read(controller.signal))
+    void run.result
       .then((value) => {
         if (response.destroyed) return;
         let decoded;
@@ -1057,12 +1080,7 @@ export async function startOperatorServer(
         if (response.destroyed) return;
         refuse(error instanceof BoardReadError && Object.hasOwn(refusals, error.code) ? error.code as F : codes.unavailable);
       })
-      .finally(() => {
-        activeBoardReads.delete(controller);
-        response.removeListener('close', onClose);
-        boardCompletions.delete(completion);
-      });
-    boardCompletions.add(completion);
+      .finally(() => response.removeListener('close', onClose));
   };
 
   /**
@@ -1129,6 +1147,8 @@ export async function startOperatorServer(
     worktreeCleanupPlanWriteRoute({ env: options.env }),
     worktreeCleanupExecuteWriteRoute({ env: options.env }),
     worktreeCleanupInvestigationWriteRoute({ env: options.env, read_quota: options.read_quota }),
+    // A client that leaves does not abort a send; only the deadline or the server close does.
+    advisorSeatWriteRoute({ admit: run => admitBoardCli(run)?.result ?? null, env: boardEnvironment, send: options.send_advisor }),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
     .concat(injectedWriteRoutes);
   // The inventory is the one write authority: a handler it does not declare
@@ -1557,6 +1577,28 @@ export async function startOperatorServer(
       const read = options.read_board ?? readRepositoryBoard;
       handleBoardCliRead(request, response, headOnly, BOARD_UNAVAILABLE, { busy: 'board_busy', invalid: 'board_invalid', unavailable: 'board_unavailable' },
         signal => read({ repository_id: boardRoute[1]!, parent: Number(parent), env: boardEnvironment, signal }), decodeBoard);
+      return;
+    }
+
+    if (pathname === OPERATOR_ADVISOR_TRANSCRIPT_PATH) {
+      // A read-back runs the board CLI, one GitHub read and the hc reads; HEAD gets no read.
+      if (headOnly) {
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The advisor transcript route supports only GET.'), true, { Allow: 'GET' });
+        return;
+      }
+      let subject;
+      try {
+        // A repeated key would leave its first value unread, so it is refused.
+        if (new Set(url.searchParams.keys()).size !== [...url.searchParams.keys()].length) throw new TypeError('repeated query key');
+        subject = decodeAdvisorSeatRequest(Object.fromEntries(url.searchParams));
+      } catch {
+        const refusal = ADVISOR_SEAT_REFUSALS.invalid_request;
+        sendRefusal(request, response, refusal.status, errorBody('invalid_request', refusal.message, refusal.next_action), headOnly);
+        return;
+      }
+      const read = options.read_advisor_transcript ?? readRepositoryAdvisorTranscript;
+      handleBoardCliRead(request, response, headOnly, ADVISOR_SEAT_REFUSALS, { busy: 'advisor_busy', invalid: 'advisor_invalid', unavailable: 'advisor_unavailable' },
+        signal => read({ ...subject, env: boardEnvironment, signal }), decodeAdvisorSeatTranscript);
       return;
     }
 
