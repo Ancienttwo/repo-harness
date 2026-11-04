@@ -9,6 +9,12 @@ import { validDocsRef } from './docs-reader';
 import type { DocSessionFinalizeDependencies } from './doc-session-finalize';
 
 type Adapters = Pick<DocSessionFinalizeDependencies, 'publication_target' | 'find_draft_pr' | 'create_draft_pr'>;
+/** Branch-parameterized Draft PR publication. Each caller owns its branch pattern. */
+export interface GithubDraftPrPublisher {
+  readonly publication_target: (checkout: string) => Promise<DocSessionPublicationTarget>;
+  readonly find_draft_pr: DocSessionFinalizeDependencies['find_draft_pr'];
+  readonly create_draft_pr: DocSessionFinalizeDependencies['create_draft_pr'];
+}
 const DEADLINE_MS = 15_000;
 const MAX_BYTES = 2 * 1024 * 1024;
 const MAX_PAGES = 5;
@@ -18,10 +24,10 @@ const object = (value: unknown): Record<string, any> => {
   if (!value || typeof value !== 'object' || Array.isArray(value)) return fail();
   return value as Record<string, any>;
 };
-function targetCheck(target: DocSessionPublicationTarget, branch?: string, commit?: string): void {
+function targetCheck(target: DocSessionPublicationTarget, pattern: RegExp, branch?: string, commit?: string): void {
   if (!REPOSITORY.test(target.repository) || !/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(target.remote)
     || !validDocsRef(`refs/heads/${target.base_branch}`)
-    || (branch !== undefined && !/^docs\/[0-9a-f]{12}$/u.test(branch))
+    || (branch !== undefined && !pattern.test(branch))
     || (commit !== undefined && !/^(?:[0-9a-f]{40}|[0-9a-f]{64})$/u.test(commit))) fail();
 }
 
@@ -85,21 +91,22 @@ function targetRepository(read: Api, target: DocSessionPublicationTarget): Repos
   return repo;
 }
 
-export function createDocSessionGithubAdapters(
+export function createGithubDraftPrPublisher(
   env: NodeJS.ProcessEnv,
+  branchPattern: RegExp,
   runner: GithubCommandRunner = runGithubCommand,
   now: () => number = Date.now,
-): Adapters {
+): GithubDraftPrPublisher {
   return {
-    publication_target: async (session: DocSessionRecordV1) => {
+    publication_target: async (checkout: string) => {
       const git = docSessionGitRunner(env).text;
-      const names = git(session.worktree, ['remote']).trim().split('\n').filter(Boolean);
+      const names = git(checkout, ['remote']).trim().split('\n').filter(Boolean);
       if (names.length > 32) return fail();
       const candidates: Array<{ remote: string; repository: string }> = [];
       for (const remote of names) {
         if (!/^[A-Za-z0-9][A-Za-z0-9._-]*$/u.test(remote)) return fail();
-        const fetchUrls = git(session.worktree, ['remote', 'get-url', '--all', remote]).trim().split('\n');
-        const pushUrls = git(session.worktree, ['remote', 'get-url', '--push', '--all', remote]).trim().split('\n');
+        const fetchUrls = git(checkout, ['remote', 'get-url', '--all', remote]).trim().split('\n');
+        const pushUrls = git(checkout, ['remote', 'get-url', '--push', '--all', remote]).trim().split('\n');
         const githubs = [...fetchUrls, ...pushUrls].map(githubRemoteRepository);
         if (githubs.every(name => name === null)) continue;
         if (fetchUrls.length !== 1 || pushUrls.length !== 1 || githubs[0] === null || githubs[0] !== githubs[1]) return fail();
@@ -111,12 +118,12 @@ export function createDocSessionGithubAdapters(
       return { remote: selected.remote, repository: repo.name, base_branch: repo.base };
     },
     find_draft_pr: async (target, branch, commit) => {
-      targetCheck(target, branch, commit);
+      targetCheck(target, branchPattern, branch, commit);
       const read = api(runner, now);
       return find(read, target, branch, commit, targetRepository(read, target));
     },
     create_draft_pr: async (target, branch, commit, message): Promise<DocSessionPrCreateResult> => {
-      targetCheck(target, branch, commit);
+      targetCheck(target, branchPattern, branch, commit);
       if (!message.trim() || message.length > 8000 || message.includes('\0')) return fail();
       const read = api(runner, now);
       let repo: Repository;
@@ -144,4 +151,13 @@ export function createDocSessionGithubAdapters(
       }
     },
   };
+}
+
+export function createDocSessionGithubAdapters(
+  env: NodeJS.ProcessEnv,
+  runner: GithubCommandRunner = runGithubCommand,
+  now: () => number = Date.now,
+): Adapters {
+  const publisher = createGithubDraftPrPublisher(env, /^docs\/[0-9a-f]{12}$/u, runner, now);
+  return { ...publisher, publication_target: (session: DocSessionRecordV1) => publisher.publication_target(session.worktree) };
 }

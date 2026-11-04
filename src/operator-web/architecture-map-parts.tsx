@@ -88,7 +88,11 @@ export function violationFacts(map: ArchitectureMapV1, nodeId: string, names: Re
   }
   if (anchors.state === 'ok') {
     const entry = anchors.nodes.find(item => item.id === nodeId);
-    if (entry) facts.push({ key: 'anchors', text: t('architecture.layer.node.anchors', { count: entry.findings }), part: 'anchors' });
+    entry?.findings.forEach((finding, index) => facts.push({
+      key: `anchors-${index}`, part: 'anchors',
+      text: t('architecture.layer.node.anchor', { origin: t(`architecture.layer.anchor.${finding.origin}`), citation: finding.citation, kind: finding.kind }),
+      paths: finding.path === null ? undefined : [finding.line === null ? finding.path : `${finding.path}:${finding.line}`],
+    }));
   }
   if (dependencies.state === 'ok') {
     for (const edge of dependencies.edges.filter(item => item.source === nodeId)) {
