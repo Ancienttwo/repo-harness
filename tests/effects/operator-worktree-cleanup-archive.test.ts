@@ -112,11 +112,17 @@ test('Git storage refuses private names and large files in the plan and again at
     mkdirSync(join(f.tree, 'config'));
     writeFileSync(join(f.tree, 'config/secrets.json'), 'SYNTHETIC=fixture\n'); f.git(f.tree, 'add', 'config/secrets.json'); fs.unlinkSync(join(f.tree, 'config/secrets.json'));
     writeFileSync(join(f.tree, 'docs/guide.md'), 'ordinary\n'); writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
-    writeFileSync(join(f.tree, 'cache.bin'), Buffer.alloc(16 * 1024 * 1024 + 1, 'a'));
-    // Name rule (worktree file and index-only blob), size rule, and an ordinary file.
-    for (const [path, refused] of [['.env', true], ['config/secrets.json', true], ['cache.bin', true], ['docs/guide.md', false]] as const) {
+    const large = Buffer.alloc(16 * 1024 * 1024 + 1, 'a');
+    writeFileSync(join(f.tree, 'cache.bin'), large);
+    writeFileSync(join(f.tree, 'docs/staged-large.txt'), large); f.git(f.tree, 'add', 'docs/staged-large.txt'); fs.unlinkSync(join(f.tree, 'docs/staged-large.txt'));
+    writeFileSync(join(f.tree, 'docs/index-large.txt'), large); f.git(f.tree, 'add', 'docs/index-large.txt'); writeFileSync(join(f.tree, 'docs/index-large.txt'), 'small\n');
+    // Name rule (worktree file and index-only blob), size rule (worktree file, index-only blob, index blob beside a small worktree file), and an ordinary file.
+    // Staging cannot read an index version above 512 KiB yet (#1754), so the two large index rows check the plan only.
+    for (const [path, refused, staged] of [['.env', true, true], ['config/secrets.json', true, true], ['cache.bin', true, true],
+      ['docs/staged-large.txt', true, false], ['docs/index-large.txt', true, false], ['docs/guide.md', false, true]] as const) {
       const item = f.plan([], [path]);
       expect(item.loss!.private_only.includes(path)).toBe(refused);
+      if (!staged) { expect(() => f.plan([path], [])).toThrow('worktree_cleanup_archive_git_refused'); continue; }
       expect(stageCleanupArchive(sid, f.target, item, f.options()).artifacts.some(artifact => artifact.source === path)).toBe(true);
       if (!refused) { expect(stageCleanupArchive(sid, f.target, f.plan([path], []), f.options()).git_directory).not.toBeNull(); continue; }
       expect(() => f.plan([path], [])).toThrow('worktree_cleanup_archive_git_refused');

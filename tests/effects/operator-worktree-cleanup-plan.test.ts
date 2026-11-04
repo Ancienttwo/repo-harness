@@ -121,7 +121,7 @@ describe('cleanup plan contract and execution boundary', () => {
     const o = observation(), file = o.loss!.files[0]!;
     const directory = (path: string) => ({ ...file, path, kind: 'directory' as const, sha256: null, git_oid: null });
     const symlink = (path: string) => ({ ...file, path, kind: 'symlink' as const });
-    const staged = (path: string, mode: string) => ({ path, mode, oid: 'f'.repeat(40), stage: 0 });
+    const staged = (path: string, mode: string) => ({ path, mode, oid: 'f'.repeat(40), stage: 0, size: 5 });
     const loss = { ...o.loss!, ignored: ['.env', 'cache/'],
       changed_paths: ['bin/run.sh', 'docs/guide.md', 'docs/index-link.md', 'docs/link.md', 'docs/removed.md', 'docs/staged-link.md', 'docs/staged.md', 'docs/tracked-link.md', 'docs/was-link.md', 'empty'],
       index: [staged('bin/run.sh', '100755'), staged('docs/index-link.md', '120000'), staged('docs/staged-link.md', '120000'), staged('docs/staged.md', '100644'),

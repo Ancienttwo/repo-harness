@@ -1295,10 +1295,13 @@ describe('worktree cleanup plan review (#1720)', () => {
   test('only server-archivable paths get a destination, and the page\'s choice passes createCleanupPlan', async () => {
     const tree = rowOf('codex-7f3a'), session = 'd'.repeat(32);
     const file = { path: 'docs/guide.md', kind: 'file' as const, mode: 0o644, size: 5, sha256: 'd'.repeat(64), git_oid: 'e'.repeat(40) };
-    // A changed file, an ignored file, a staged deletion, an empty directory and an unchanged tracked file.
+    // A changed file, an ignored file, a staged deletion, an empty directory, an unchanged tracked file,
+    // a large index-only blob and a large index blob beside a small worktree file.
+    const large = { mode: '100644', oid: 'f'.repeat(40), stage: 0, size: 16 * 1024 * 1024 + 1 };
     const observation: CleanupObservation = { worktree: tree, loss: { kind: 'registered', identity: { dev: 1, ino: 1, birthtime_ms: 1 }, branch: `refs/heads/${tree.branch}`,
-      head_commit: 'c'.repeat(40), index: [], commits: [], remote_refs: [], ignored: ['.env'], changed_paths: ['docs/guide.md', 'docs/removed.md', 'empty'],
-      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, file, { ...file, path: 'empty', kind: 'directory', sha256: null, git_oid: null }] } };
+      head_commit: 'c'.repeat(40), index: [{ ...large, path: 'docs/index-large.txt' }, { ...large, path: 'docs/staged-large.txt' }], commits: [], remote_refs: [], ignored: ['.env'],
+      changed_paths: ['docs/guide.md', 'docs/index-large.txt', 'docs/removed.md', 'docs/staged-large.txt', 'empty'],
+      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, file, { ...file, path: 'docs/index-large.txt' }, { ...file, path: 'empty', kind: 'directory', sha256: null, git_oid: null }] } };
     const keep = { recommendation: 'keep' as const, reason: 'Waiting for the user to choose.', evidence: ['judgment: yellow'], archive: { git: null, private: null } };
     let plan = createCleanupPlan(session, [{ observation, advice: keep }]);
     const ports: CleanupPlanPorts = {
@@ -1312,11 +1315,13 @@ describe('worktree cleanup plan review (#1720)', () => {
     };
     await openReview(ports);
     await option('codex-7f3a', 'archive_then_delete');
-    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-path]')).map(row => row.getAttribute('data-plan-path'))).toEqual(['.env', 'docs/guide.md']);
-    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-loss-list="files"] li')).map(row => row.textContent)).toEqual(['docs/guide.md', 'docs/removed.md', 'empty']);
-    // Git storage refuses `.env` by name, so the page offers only Not archived or Private for it.
+    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-path]')).map(row => row.getAttribute('data-plan-path')))
+      .toEqual(['.env', 'docs/guide.md', 'docs/index-large.txt', 'docs/staged-large.txt']);
+    expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-loss-list="files"] li')).map(row => row.textContent))
+      .toEqual(['docs/guide.md', 'docs/index-large.txt', 'docs/removed.md', 'docs/staged-large.txt', 'empty']);
+    // Git storage refuses `.env` by name and the two large index blobs by size, so the page offers only Not archived or Private for them.
     const offered = (path: string) => Array.from(planItem('codex-7f3a').querySelectorAll<HTMLOptionElement>(`[data-plan-path="${path}"] option`)).map(option => option.value);
-    expect(offered('.env')).toEqual(['none', 'private']);
+    for (const path of ['.env', 'docs/index-large.txt', 'docs/staged-large.txt']) expect(offered(path)).toEqual(['none', 'private']);
     expect(offered('docs/guide.md')).toEqual(['none', 'git', 'private']);
     await destination('codex-7f3a', 'docs/guide.md', 'git');
     await destination('codex-7f3a', '.env', 'private');

@@ -49,9 +49,10 @@ export function createCleanupPlan(sessionId: string, inputs: readonly { observat
     const loss = observation.loss;
     let summary: CleanupPlanItem['loss'] = null;
     if (loss !== null) {
-      const archivable = archivablePaths(loss), sizes = new Map(loss.files.map(file => [file.path, file.size]));
-      // An index-only path has no observed size, so staging applies the size rule to its blob.
-      const privateOnly = archivable.filter(path => gitArchiveRefuses(path, sizes.get(path) ?? null));
+      // Staging saves the worktree file and every index version of a path, so the largest of them decides the size rule.
+      const archivable = archivablePaths(loss), largest = new Map<string, number>();
+      for (const { path, size } of [...loss.files, ...loss.index]) largest.set(path, Math.max(size, largest.get(path) ?? 0));
+      const privateOnly = archivable.filter(path => gitArchiveRefuses(path, largest.get(path)!));
       const selected = [...(advice.archive.git?.paths ?? []), ...(advice.archive.private?.paths ?? [])], allowed = new Set(archivable), refused = new Set(privateOnly);
       if (new Set(selected).size !== selected.length || selected.some(path => !allowed.has(path))) throw new Error('worktree_cleanup_archive_paths_invalid');
       if (advice.archive.git?.paths.some(path => refused.has(path))) throw new Error('worktree_cleanup_archive_git_refused');

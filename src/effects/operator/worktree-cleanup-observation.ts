@@ -51,13 +51,22 @@ function repositoryIdentity(target: CleanupObservationTarget, runner: DocSession
   return common;
 }
 
-function indexEntries(text: string): CleanupIndexEntry[] {
+function indexEntries(text: string): Omit<CleanupIndexEntry, 'size'>[] {
   return nul(text).map(field => {
     const match = /^(\d{6}) ([a-f0-9]{40}|[a-f0-9]{64}) ([0-3])\t([\s\S]+)$/u.exec(field);
     if (!match || !isRepositoryRelativePath(match[4])) return fail('unsupported');
     if (!['100644', '100755', '120000'].includes(match[1]!)) return fail('unsupported');
     return { mode: match[1]!, oid: match[2]!, stage: Number(match[3]), path: match[4]! };
   }).sort((a, b) => a.path.localeCompare(b.path, 'en') || a.stage - b.stage);
+}
+/** One batch read of the blob sizes, in index order. At most 21 bytes a line keeps the output below the runner limit. */
+function withSizes(runner: DocSessionGitRunner, worktree: string, entries: Omit<CleanupIndexEntry, 'size'>[], maxEntries: number): CleanupIndexEntry[] {
+  if (entries.length === 0) return [];
+  if (entries.length > maxEntries) fail('too_large');
+  const output = runner.bytes(worktree, ['cat-file', '--batch-check=%(objectsize)', '--buffer'], [0], Buffer.from(entries.map(entry => `${entry.oid}\n`).join('')));
+  const sizes = output.toString('utf8').split('\n');
+  if (sizes.length !== entries.length + 1 || sizes.pop() !== '' || !sizes.every(size => /^(?:0|[1-9][0-9]*)$/u.test(size))) fail('unavailable');
+  return entries.map((entry, position) => ({ ...entry, size: Number(sizes[position]) }));
 }
 function headEntries(runner: DocSessionGitRunner, path: string, head: string): Map<string, { mode: string; oid: string }> {
   const result = new Map<string, { mode: string; oid: string }>();
@@ -136,7 +145,7 @@ function once(target: CleanupObservationTarget, options: CleanupObservationOptio
     head = git(['rev-parse', '--verify', 'HEAD^{commit}']); if (!oidPattern.test(head)) fail('unavailable');
     branch = runner.text(target.worktree, ['symbolic-ref', '--quiet', 'HEAD'], true).trim() || null;
     if (branch !== null && !branch.startsWith('refs/heads/')) fail('unsupported');
-    index = indexEntries(runner.text(target.worktree, ['ls-files', '--stage', '-z']));
+    index = withSizes(runner, target.worktree, indexEntries(runner.text(target.worktree, ['ls-files', '--stage', '-z'])), options.max_entries ?? 20_000);
     headFiles = headEntries(runner, target.worktree, head);
     // No session base: every unpublished ancestor can be lost with this branch.
     commits = git(['rev-list', '--topo-order', '--reverse', head, '--not', '--remotes']).split('\n').filter(Boolean);
