@@ -13,4 +13,4 @@ extensions:
   harnessTier: composition
 source:
   include:
-    - src/effects/operator/architecture-thread.ts
+    - src/cli/commands/architecture-thread.ts
