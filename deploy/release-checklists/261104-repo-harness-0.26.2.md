@@ -3,9 +3,11 @@
 ## Scope and authority
 
 - Release-prep base: `origin/main`
-  `21430323bdde0cece624a944eafb890823a86ddb` (#1739, the last must-ship
-  merge, for #1689). The release-prep branch `chore/release-0.26.2` starts on
-  this base and merges no later main.
+  `0996046c74d2ce1c826c4d3bbd82133a3397c2f0` (#1742, the #1741 quota fix).
+  The first base was `21430323b` (#1739, the last must-ship merge, for
+  #1689). Owner decision M63 added #1741 to 0.26.2, so the coordinator moved
+  the base to `21430323b` plus #1742 only. The release-prep branch
+  `chore/release-0.26.2` starts on this base and merges no later main.
 - Source commit: the head of the release-prep PR for #1740. The publish
   candidate is the merge commit of that PR on `origin/main`. The owner
   records it below before publish.
@@ -16,11 +18,11 @@
   - Tag `v0.26.1`: annotated. Tag object:
     `a0e7ecdb6cf545832f136640c11f35cd90ff0ffa`. Target:
     `c2da46997fbbb44e43273c63a1b3064dae40204b`.
-- Merged range: `c2da46997..21430323b`: 23 first-parent commits and 23
+- Merged range: `c2da46997..0996046c7`: 24 first-parent commits and 24
   commits in total (`git rev-list --count`). Every PR in the range is a
   squash merge: #1704, #1708, #1706, #1711, #1707, #1712, #1714, #1715,
   #1600, #1709, #1710, #1713, #1723, #1729, #1726, #1732, #1724, #1733,
-  #1727, #1736, #1735, #1734, #1739.
+  #1727, #1736, #1735, #1734, #1739, #1742.
 - The npm package goes from 0.26.1 to 0.26.2. `package.json`,
   `assets/skill-version.json` (version and template version), README
   ("Release & license", the section that #1709 made from "Current Release")
@@ -51,7 +53,9 @@ release.
   PATH hint and uses the directory for the rest of the run.
 - Quota (#1716): `repo-harness quota [--json]` (#1723), the Claude status
   line capture and the managed `statusLine` entry (#1733), the coordinator
-  quota read in the issue-flow skill (#1732).
+  quota read in the issue-flow skill (#1732). The account state comes from
+  the weekly window, and an absent non-weekly window is `absent` (#1741,
+  #1742).
 - hc pin (#1712): one package pin file; the policy key
   `external_tooling.herdr_core` is retired.
 - Operator: architecture map contract v7 (#1729), Sequence view (#1734),
@@ -68,7 +72,7 @@ release.
 - The full list is in `docs/CHANGELOG.md`, section `[0.26.2]`. The
   `[Unreleased]` entries of #1712 are now in `[0.26.2]` Changed, with the
   malformed-pin sentence fixed (gatekeeper P3 `gk1712-r1-01` on #1686).
-  `[0.26.1]` and all older sections are byte-identical to `21430323b`.
+  `[0.26.1]` and all older sections are byte-identical to `0996046c7`.
 
 ## Publication steps for the owner
 
@@ -168,9 +172,9 @@ repo-harness install --state | jq -r '"protocol=\(.protocol) selection=\(.select
 
 ## Hosted CI
 
-- Push CI on main: all 23 runs from `f656dc13d` (#1704, the first PR after
-  0.26.1, run 41783880328) to `21430323b` passed. The run on the base is
-  41808271405 (`21430323b`, success).
+- Push CI on main: all 24 runs from `f656dc13d` (#1704, the first PR after
+  0.26.1, run 41783880328) to `0996046c7` passed. The run on the base is
+  41811256828 (`0996046c7`, success).
 - Daily run: the last scheduled run is 41764739486 on `51119343e`
   (2026-11-04T03:04Z): success. It is older than the range.
 - The release-prep PR needs green `Required / CI` on its head before merge.
