@@ -26,6 +26,12 @@ Rules that keep the topology safe:
   agent that needs a change in it (a reviewer's fix, a main sync, a repair)
   either asks the head owner on the board, or takes the head-owner role
   through a handoff comment first. Two pushers on one branch lose work.
+  Exception: for a Codex worker seat in a linked contract worktree, the
+  orchestrator is the head owner of record. It commits the worker's diff
+  with the worker's message and explicit paths only, pushes the branch,
+  opens the PR and pushes each fix round. No other agent pushes to that
+  PR. The Codex seat remains the content author and answers review threads
+  through the orchestrator.
 - **Acceptor ≠ writer.** The acceptor of a round did not write the subject
   SHA. For the High tier, prefer an acceptor from a different model family.
   When no other family is available, use a fresh same-family context and

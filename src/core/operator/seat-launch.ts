@@ -123,6 +123,9 @@ function roleParagraphs(seat: SeatId, config: SeatConfigV1, fleet: readonly stri
   return [
     'You are a worker seat. You deliver one issue or PR and report to the orchestrator.',
     fleet.length === 0 ? 'You have no sub-agents.' : `You may call these sub-agents: ${roleList(fleet)}. Call no other agent type.`,
+    ...(config.runtime === 'codex' ? [
+      'As a Codex worker seat in a linked contract worktree, edit files and run checks only. Do not run `git fetch`, `git commit` or `git push`. In your last message, give the commit subject and body, the PR title and body, and the check results. The orchestrator commits your worktree diff with that message and explicit paths only, pushes the branch and opens the PR. It is the head owner of record and pushes each fix round; no other agent pushes to that PR. You remain the content author and answer review threads through the orchestrator.',
+    ] : []),
   ];
 }
 
