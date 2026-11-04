@@ -1,0 +1,185 @@
+/*
+ * Board office view (#1755), after the Board pixel office mockup
+ * docs/design/operator-console/mockups/board-pixel-office.html. Sprites are
+ * box-shadow pixel grids (BoardOffice.tsx) coloured by the tokens below; no
+ * image files. The rules are unlayered: App.tsx imports this file before
+ * app.css, so a `@layer components` block here would put the layer below
+ * Tailwind's base layer, and preflight would reset buttons and borders.
+ */
+.board-office {
+  --office-wall: #E8DFCC;
+  --office-wall-dk: #DBCFB6;
+  --office-floor-1: #F7F1E6;
+  --office-floor-2: #F1E9DA;
+  --office-desk: #C89B6D;
+  --office-desk-dk: #8E6440;
+  --office-screen-off: #3B5470;
+  --office-ink: #14202E;
+  --office-skin: #F2C9A0;
+  --office-mouth: #B4574A;
+  --office-shirt: #3B5470;
+  --office-agent-unknown: #FFFFFF;
+  --office-agent-unknown-dk: #EAE1CF;
+  --office-glass: #BCD3EE;
+  --office-board: #FFFFFF;
+  --office-door: #9A6B45;
+  --office-idle-room: #5E6670;
+  --office-info: #2D5BB8;
+  --office-ok: #1F8A5B;
+  --office-warn: #D9870A;
+  --office-danger: #DC2626;
+  --office-accent: #E8742C;
+}
+:root[data-mode="dark"] .board-office {
+  --office-wall: #1B2D40;
+  --office-wall-dk: #14202E;
+  --office-floor-1: #16222F;
+  --office-floor-2: #13202C;
+  --office-desk: #7A5A3C;
+  --office-desk-dk: #4A3522;
+  --office-screen-off: #1B2D40;
+  --office-ink: #0A121A;
+  --office-skin: #E6B98F;
+  --office-mouth: #9C4A3F;
+  --office-shirt: #74879B;
+  --office-agent-unknown: #14202E;
+  --office-agent-unknown-dk: #294056;
+  --office-glass: #2D4A6B;
+  --office-board: #E8EEF5;
+  --office-door: #6B4A2E;
+  --office-idle-room: #2A3440;
+  --office-info: #6FA8E6;
+  --office-ok: #4CC38A;
+  --office-warn: #E0B25C;
+  --office-danger: #F87171;
+  --office-accent: #F08A3C;
+}
+
+@keyframes office-bob { 0%, 49% { transform: translateY(0); } 50%, 100% { transform: translateY(-2px); } }
+@keyframes office-sway { 0%, 49% { transform: translateX(0); } 50%, 100% { transform: translateX(2px); } }
+
+.board-office { display: flex; min-width: 0; flex-direction: column; gap: 16px; }
+.board-office__header { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 16px; }
+.board-office__header h1 { margin: 0; font-size: 16px; font-weight: 600; color: var(--text-color-kumo-strong); }
+.board-office__tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px 12px; margin-left: auto; }
+.board-office__chip { display: inline-flex; height: 22px; align-items: center; gap: 4px; padding: 0 8px; border-radius: 6px; background: var(--color-kumo-recessed); color: var(--text-color-kumo-default); font-family: var(--font-mono); font-size: 12px; white-space: nowrap; }
+.board-office__chip[data-tone="gap"] { background: var(--color-kumo-warning-tint); color: var(--text-color-kumo-warning); }
+.board-office__legend-button { height: 32px; padding: 0 12px; cursor: pointer; border: 1px solid var(--color-kumo-line); border-radius: 8px; background: var(--color-kumo-base); color: var(--text-color-kumo-strong); font-size: 13px; font-weight: 500; }
+.board-office__legend-button:hover { background: var(--color-kumo-tint); }
+
+/* Seat meter: one block per worker seat up to the plan limit. */
+.board-office__meter { display: inline-flex; align-items: center; gap: 6px; font-family: var(--font-mono); font-size: 12px; color: var(--text-color-kumo-default); }
+.board-office__meter-blocks { display: inline-flex; gap: 2px; }
+.board-office__meter-blocks > span { width: 8px; height: 12px; border: 1px dashed var(--text-color-kumo-subtle); }
+.board-office__meter-blocks > span[data-used] { border: 0; background: var(--office-info); }
+.board-office__meter-blocks > span[data-over] { border: 0; background: var(--office-danger); }
+
+/* Overview. */
+.board-office__cards { display: grid; gap: 16px; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); }
+.board-office__card { display: flex; min-width: 0; flex-direction: column; gap: 8px; padding: 12px; text-align: left; border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); color: var(--text-color-kumo-default); font: inherit; }
+button.board-office__card { cursor: pointer; }
+button.board-office__card:hover { border-color: var(--office-accent); }
+.board-office__card-name { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 8px; }
+.board-office__card-name strong { font-family: var(--font-mono); font-size: 13px; color: var(--text-color-kumo-strong); }
+.board-office__card-name span { min-width: 0; overflow: hidden; font-size: 12px; color: var(--text-color-kumo-subtle); text-overflow: ellipsis; white-space: nowrap; }
+.board-office__card-chips { display: flex; flex-wrap: wrap; gap: 4px; }
+.board-office__thumb { position: relative; display: flex; height: 96px; flex-wrap: wrap; align-content: flex-end; gap: 4px 10px; padding: 26px 10px 8px; overflow: hidden; border: 2px solid var(--office-ink); background: repeating-conic-gradient(var(--office-floor-1) 0 25%, var(--office-floor-2) 0 50%) 0 0 / 16px 16px; }
+.board-office__thumb::before { position: absolute; inset: 0 0 auto; height: 18px; content: ""; background: var(--office-wall); border-bottom: 2px solid var(--office-wall-dk); }
+.board-office__thumb[data-idle] { align-items: center; justify-content: center; padding-top: 18px; background: var(--office-idle-room); color: #FFFFFF; font-size: 12px; }
+.board-office__thumb[data-idle]::before { background: color-mix(in srgb, var(--office-idle-room) 80%, #000000); border-color: transparent; }
+.board-office__card-reason { margin: 0; font-size: 12px; color: var(--text-color-kumo-danger); }
+
+/* Room. */
+.board-office__room { position: relative; max-width: 1280px; overflow: hidden; border: 1px solid var(--color-kumo-line); border-radius: 12px; }
+.board-office__scene { position: absolute; inset: 0; background: repeating-conic-gradient(var(--office-floor-1) 0 25%, var(--office-floor-2) 0 50%) 0 0 / 24px 24px; }
+.board-office__scene::before { position: absolute; inset: 0 0 auto; height: 112px; content: ""; background: var(--office-wall); border-bottom: 4px solid var(--office-wall-dk); }
+.board-office__layout { position: relative; display: grid; gap: 20px; padding: 16px 20px 24px; grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) minmax(0, 1fr); grid-template-areas: "plate board door" "tray stage cart" "queue queue queue" "desks desks desks"; }
+.board-office__plate { grid-area: plate; align-self: start; justify-self: start; padding: 8px 12px; border: 3px solid var(--office-desk-dk); background: var(--office-ink); color: #FFFFFF; font-family: var(--font-mono); font-size: 12px; font-weight: 700; letter-spacing: .08em; text-transform: uppercase; }
+.board-office__plate span { display: block; color: var(--office-accent); letter-spacing: 0; }
+.board-office__whiteboard { grid-area: board; justify-self: center; min-width: 0; max-width: 360px; padding: 8px 12px; border: 3px solid var(--office-ink); background: var(--office-board); color: #14202E; font-family: var(--font-mono); font-size: 12px; line-height: 1.4; }
+.board-office__whiteboard strong { display: block; letter-spacing: .08em; text-transform: uppercase; }
+.board-office__whiteboard p { margin: 0; overflow-wrap: anywhere; }
+.board-office__whiteboard small { color: #51647B; font-size: 11px; }
+.board-office__door { grid-area: door; position: relative; justify-self: end; width: 64px; height: 84px; border: 4px solid var(--office-ink); background: var(--office-door); }
+.board-office__door::before { position: absolute; top: 6px; left: 6px; right: 6px; padding: 1px 0; content: attr(data-sign); background: var(--office-ink); color: #FFFFFF; font: 700 9px/1.2 var(--font-mono); letter-spacing: .1em; text-align: center; }
+.board-office__door::after { position: absolute; right: 6px; top: 46px; width: 5px; height: 5px; content: ""; background: var(--office-warn); }
+.board-office__door[data-marks] { box-shadow: 0 0 0 3px var(--office-accent); }
+.board-office__door-mark { position: absolute; top: -12px; right: -12px; display: grid; min-width: 20px; height: 20px; place-items: center; padding: 0 4px; background: var(--office-accent); color: var(--office-ink); font: 700 12px/1 var(--font-mono); }
+
+.board-office__tray { grid-area: tray; display: flex; min-width: 0; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-color-kumo-default); }
+.board-office__tray-desk { width: 120px; height: 20px; border-bottom: 4px solid var(--office-desk-dk); background: var(--office-desk); }
+.board-office__tray ul { display: flex; max-height: 112px; flex-direction: column; gap: 2px; margin: 0; padding: 0; overflow-y: auto; list-style: none; }
+.board-office__tray li { flex: none; overflow: hidden; color: var(--text-color-kumo-subtle); text-overflow: ellipsis; white-space: nowrap; }
+.board-office__tray li[data-hold] { color: var(--text-color-kumo-warning); white-space: normal; }
+
+.board-office__stage { grid-area: stage; align-self: start; display: flex; justify-content: center; gap: 32px; padding: 12px 16px 8px; border: 2px solid var(--office-ink); background: color-mix(in srgb, var(--office-wall) 70%, transparent); }
+.board-office__lead { display: flex; flex-direction: column; align-items: center; gap: 4px; font-size: 12px; }
+.board-office__lead-name { padding: 0 6px; background: var(--office-ink); color: #FFFFFF; font: 700 10px/1.6 var(--font-mono); letter-spacing: .1em; text-transform: uppercase; }
+.board-office__lead[data-absent] .board-office__lead-state { color: var(--text-color-kumo-subtle); }
+
+.board-office__cart { grid-area: cart; display: flex; min-width: 0; flex-direction: column; align-items: flex-start; gap: 8px; font-size: 12px; }
+.board-office__cart-body { display: flex; gap: 3px; padding: 4px; border: 2px solid var(--office-ink); background: var(--office-board); }
+.board-office__cart-body > span { width: 14px; height: 14px; border: 2px dashed #51647B; }
+.board-office__cart-body > span[data-accepted] { border: 0; background: var(--office-ok); box-shadow: 0 0 0 2px var(--office-ink); }
+
+.board-office__queue { grid-area: queue; display: flex; min-height: 72px; flex-wrap: wrap; align-items: flex-end; gap: 12px; padding: 8px 12px; border: 2px dashed var(--text-color-kumo-subtle); }
+.board-office__queue > p { width: 100%; margin: 0; font-size: 12px; color: var(--text-color-kumo-default); }
+
+.board-office__desks { grid-area: desks; display: grid; gap: 20px 16px; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); }
+.board-office__desk { position: relative; display: flex; min-width: 0; flex-direction: column; align-items: stretch; gap: 4px; padding: 6px; text-align: left; border: 2px solid transparent; background: transparent; color: var(--text-color-kumo-default); font: inherit; font-size: 12px; }
+button.board-office__desk:not(:disabled) { cursor: pointer; }
+button.board-office__desk:not(:disabled):hover { border-color: var(--office-accent); }
+.board-office__desk[data-roped] { border: 2px dashed var(--office-danger); }
+.board-office__desk[data-free] .board-office__furniture { opacity: .6; }
+.board-office__furniture { position: relative; height: 74px; }
+.board-office__monitor { position: absolute; left: 50%; top: 0; width: 40px; height: 28px; margin-left: -20px; border: 3px solid var(--office-ink); background: var(--office-screen-off); }
+.board-office__desk[data-state="coding"] .board-office__monitor { background: var(--office-info); }
+.board-office__desk[data-state="ci_failed"] .board-office__monitor { background: var(--office-danger); }
+.board-office__surface { position: absolute; left: 8px; right: 8px; top: 34px; height: 12px; border: 2px solid var(--office-ink); border-bottom-width: 5px; background: var(--office-desk); border-bottom-color: var(--office-desk-dk); }
+.board-office__lamp { position: absolute; left: 6px; top: 4px; width: 14px; height: 26px; border: 2px solid var(--office-ink); background: var(--office-ink); }
+.board-office__lamp::after { position: absolute; left: 1px; right: 1px; bottom: 1px; height: 8px; content: ""; background: var(--office-info); }
+.board-office__desk[data-state="ci_failed"] .board-office__lamp::after { background: var(--office-danger); }
+.board-office__bubble { position: absolute; right: 4px; top: -2px; min-width: 26px; padding: 1px 4px; border: 2px solid var(--office-ink); background: #FFFFFF; color: var(--office-info); font: 700 10px/1.3 var(--font-mono); text-align: center; }
+.board-office__desk[data-state="ci_failed"] .board-office__bubble { color: var(--office-danger); }
+.board-office__desk[data-state="no_claim_status"] .board-office__bubble { color: var(--office-warn); }
+.board-office__desk[data-state="unknown"] .board-office__bubble { color: #51647B; }
+.board-office__worker { position: absolute; left: 50%; top: 42px; margin-left: -18px; }
+.board-office__label { display: flex; min-width: 0; flex-wrap: wrap; align-items: baseline; gap: 2px 6px; }
+.board-office__label strong { font-family: var(--font-mono); color: var(--text-color-kumo-strong); }
+.board-office__label span[data-state] { color: var(--text-color-kumo-subtle); }
+.board-office__label span[data-state="ci_failed"] { color: var(--text-color-kumo-danger); }
+.board-office__label span[data-state="no_claim_status"] { color: var(--text-color-kumo-warning); }
+.board-office__label span[data-state="coding"], .board-office__label span[data-state="ci_pending"] { color: var(--text-color-kumo-info); }
+.board-office__title { overflow: hidden; color: var(--text-color-kumo-subtle); text-overflow: ellipsis; white-space: nowrap; }
+
+/* Sprites: a 1×1 cell whose box-shadow paints the grid. */
+.board-office__sprite { position: relative; display: inline-block; flex: none; }
+.board-office__sprite > span:first-child { position: absolute; left: 0; top: 0; }
+.board-office__sprite[data-move="bob"] > span:first-child { animation: office-bob 1s steps(1) infinite; }
+.board-office__sprite[data-move="sway"] > span:first-child { animation: office-sway 1.2s steps(1) infinite; }
+.board-office__badge { position: absolute; display: grid; min-width: 16px; height: 12px; place-items: center; padding: 0 2px; border: 1px dashed #51647B; background: var(--office-agent-unknown); color: #51647B; font: 700 8px/1 var(--font-mono); }
+.board-office__queued { display: flex; cursor: pointer; flex-direction: column; align-items: center; gap: 2px; padding: 2px; border: 2px solid transparent; background: transparent; color: var(--text-color-kumo-default); font: 700 10px/1.2 var(--font-mono); }
+.board-office__queued:disabled { cursor: default; }
+.board-office__queued:not(:disabled):hover { border-color: var(--office-accent); }
+.board-office__queued > span:first-child { padding: 0 3px; border: 2px solid var(--office-ink); background: #FFFFFF; color: #14202E; }
+
+/* Legend dialog. */
+.board-office__legend { position: fixed; top: 50%; left: 50%; z-index: 50; display: flex; width: min(720px, calc(100vw - 32px)); max-height: calc(100dvh - 32px); flex-direction: column; transform: translate(-50%, -50%); border: 1px solid var(--color-kumo-line); border-radius: 12px; background: var(--color-kumo-base); box-shadow: 0 24px 48px rgb(0 0 0 / .2); }
+.board-office__legend > header { display: flex; align-items: center; justify-content: space-between; gap: 12px; padding: 14px 18px; border-bottom: 1px solid var(--color-kumo-hairline); }
+.board-office__legend h2 { margin: 0; font-size: 15px; font-weight: 600; color: var(--text-color-kumo-strong); }
+.board-office__legend ul { display: grid; gap: 12px; margin: 0; padding: 16px 18px 20px; overflow-y: auto; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); list-style: none; }
+.board-office__legend li { display: flex; flex-direction: column; gap: 4px; padding: 8px; border: 1px solid var(--color-kumo-line); border-radius: 10px; }
+.board-office__legend li > .board-office__desk { pointer-events: none; }
+.board-office__legend li strong { font-size: 13px; color: var(--text-color-kumo-strong); }
+.board-office__legend li p { margin: 0; font-size: 12px; color: var(--text-color-kumo-subtle); }
+
+@media (max-width: 720px) {
+  .board-office__layout { padding: 12px; grid-template-columns: minmax(0, 1fr) auto; grid-template-areas: "plate door" "board board" "stage stage" "tray cart" "queue queue" "desks desks"; }
+  .board-office__scene::before { height: 100px; }
+  .board-office__stage { gap: 16px; }
+  .board-office__desks { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .board-office__sprite > span:first-child { animation: none !important; }
+}
