@@ -30,7 +30,7 @@ function snapshot(collectedAt: string): SetupSnapshotV2 {
   return projectSetupSnapshot({
     collected_at: collectedAt, setup_status: 'ok', summary: { ok: 1, warn: 0, fail: 0, na: 0, needs_agent: 0 },
     checks: [{ id: 'doctor.cli-version', title: 'repo-harness CLI version', status: 'ok', detail: '0.21.1' }],
-    check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_summaries: new Map(),
+    check_commands: new Map(), adapters: [], cli_versions: {}, skill_rows: [], skill_catalog: null, home: '/nowhere', skill_roots: [], install_selection: null,
     routes: ROUTES, fleet_roles: [], fleet_hosts: null, hook_usage: null,
   });
 }
@@ -201,11 +201,12 @@ setInterval(() => {}, 1000);
       collected_at: '2026-10-10T00:00:00.000Z', setup_status: 'ok', summary: { ok: 0, warn: 0, fail: 0, na: 0, needs_agent: 0 },
       checks: [], check_commands: new Map(), adapters: [], cli_versions: {},
       skill_rows: packages.map(pkg => ({ host: 'claude' as const, name: pkg.name, state: 'ok link' as const, ok: true })),
-      skill_summaries: new Map(packages.map(pkg => [pkg.name, pkg.summary])),
+      skill_catalog: new Map(packages.map(pkg => [pkg.name, { summary: pkg.summary, hosts: pkg.hosts }])),
+      home: '/nowhere', skill_roots: [], install_selection: null,
       routes: ROUTES, fleet_roles: roles, fleet_hosts: null, hook_usage: null,
     }));
     expect(packages.length).toBeGreaterThan(0);
-    expect(projected.skills.map(skill => [skill.name, skill.summary])).toEqual(packages.map(pkg => [pkg.name, pkg.summary]));
+    expect(projected.skills.map(skill => [skill.name, skill.summary, skill.catalog_hosts])).toEqual(packages.map(pkg => [pkg.name, pkg.summary, [...pkg.hosts]]));
     const expectedRoles: (string | null)[][] = roles.map(role => [role.name ?? null, role.description ?? null, role.model ?? null, role.effort ?? null]);
     expect(projected.fleet.map(role => [role.name, role.description, role.model, role.effort])).toEqual(expectedRoles);
     expect(JSON.stringify(projected)).not.toContain('[configured]');
@@ -218,6 +219,9 @@ setInterval(() => {}, 1000);
     const secrets = ['sk-proj-FAKEFAKEFAKEFAKEFAKEFAKE0003', 'ghp_FAKEFAKEFAKEFAKEFAKEFAKE0004', 'pi-fake-oauth-refresh-0005'];
     try {
       for (const dir of [cwd, join(home, '.pi/agent'), join(home, '.codex'), join(home, '.claude')]) mkdirSync(dir, { recursive: true });
+      // A user skill, a catalog package, a dot entry and a plain file in the scratch Claude skill root.
+      for (const dir of ['my-skill', 'repo-harness-test', '.hidden']) mkdirSync(join(home, '.claude/skills', dir), { recursive: true });
+      writeFileSync(join(home, '.claude/skills/notes.txt'), 'not a skill');
       writeFileSync(join(home, '.pi/agent/auth.json'), JSON.stringify({ anthropic: { type: 'oauth', refresh: secrets[2], access: secrets[0] } }));
       writeFileSync(join(home, '.codex/config.toml'), `[mcp_servers.x]\nbearer_token = "${secrets[1]}"\n`);
       writeFileSync(join(home, '.claude/CLAUDE.md'), `# Notes\nOPENAI_API_KEY=${secrets[0]}\n`);
@@ -230,6 +234,12 @@ setInterval(() => {}, 1000);
       expect(outcome.snapshot.fleet).toHaveLength(7);
       expect(outcome.snapshot.hooks.flatMap(event => event.routes)).toHaveLength(ROUTES.length);
       expect(outcome.snapshot.skills.length).toBeGreaterThan(0);
+      expect(outcome.snapshot.skill_roots).toEqual([
+        { host: 'claude', root: '~/.claude/skills', other_skills: ['my-skill'] },
+        { host: 'codex', root: '~/.codex/skills', other_skills: null },
+        { host: 'pi', root: '~/.pi/agent/skills', other_skills: null },
+      ]);
+      expect(outcome.snapshot.install_selection).toBeNull();
       for (const forbidden of [root, home, '/Users/', '/private/', ...secrets]) expect(text).not.toContain(forbidden);
       expect(existsSync(join(home, '.claude/agents'))).toBe(false);
       expect(existsSync(join(home, '.codex/agents'))).toBe(false);

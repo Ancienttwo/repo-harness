@@ -1,6 +1,6 @@
 # workflow-engine/execution-primitives 架構文檔
 
-<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:931e3860473da7471cc808bb197d5f5fb2e7b76c7ac8130390dc0a3bcf344d2d" -->
+<!-- BEGIN ARCHCONTEXT:generated target="projection_target.entity.capability-workflow-engine-execution-primitives" rendererVersion="archcontext.docs-renderer/v6" outputDigest="sha256:ab03d4364a91daf4aac0d27a29e0fc30b9f0e3f83353f8bee19fac7110704272" -->
 > **狀態**:`active`
 > **Capability ID**:`capability.workflow-engine.execution-primitives`(kind `capability`)
 > **Matched Prefixes**:`src/effects/process-runner.ts`、`src/effects/process-supervisor.ts`、`src/effects/process-group-launcher.ts`、`src/effects/process-group-termination.ts`、`src/effects/process-group-registry.ts`、`src/effects/expensive-run-lock.ts`、`src/effects/readonly-observation.ts`、`src/effects/atomic-append.ts`、`src/effects/locking/**`、`src/effects/git/**`
@@ -16,6 +16,9 @@ Runs bounded child processes and provides the canonical directory lock and Git c
 ```mermaid
 flowchart LR
   p1_capability_workflow_engine_execution_primitives_b3033934["Execution Primitives"]:::component
+  p1_component_execution_primitives_hc_client_0c8c8ef8["hc Client"]:::component
+  p1_component_execution_primitives_notify_read_829d6cce["Notify Read Contract"]:::component
+  p1_component_execution_primitives_notify_read_core_614397cc["Notify Read Contract (core)"]:::component
   p1_component_execution_primitives_primary_800678c8["Bounded Process And Lock Primitives"]:::component
   p1_component_execution_primitives_public_projections_1287b1f9["Public Text and Worktree Views"]:::component
   p1_component_execution_primitives_repository_registry_49e2fbe9["Repository Registry and Account Home"]:::component
@@ -23,6 +26,8 @@ flowchart LR
   p1_component_execution_primitives_session_artifact_io_f1f01a74["Immutable Session Artifact I/O"]:::component
   p1_component_execution_primitives_task_message_claim_dbe6af55["Task Message Claim Primitives"]:::component
   p1_component_execution_primitives_task_session_record_e7a96008["Task Session Record"]:::component
+  p1_component_execution_primitives_notify_read_829d6cce -->|"Decode the relay delivery record with its one decoder#44; and give the empty record when no file exists"| p1_component_execution_primitives_notify_read_core_614397cc
+  p1_component_execution_primitives_notify_read_829d6cce -->|"Root the notify install record#44; notify.env and the relay delivery record in the account-level repo-harness home."| p1_component_execution_primitives_repository_registry_49e2fbe9
   p1_capability_workflow_engine_execution_primitives_b3033934 -->|"Run a bounded child process"| p1_component_execution_primitives_primary_800678c8
   classDef actor fill:#111827,color:#ffffff,stroke:#f9fafb,stroke-width:2px
   classDef component fill:#075985,color:#ffffff,stroke:#bae6fd,stroke-width:2px
@@ -30,8 +35,8 @@ flowchart LR
   classDef external fill:#7c2d12,color:#ffffff,stroke:#fed7aa,stroke-width:2px
 ```
 
-- Proof: `proven` (`sha256:ca60808174d4373193b2b24752a89fed54b6e7fe234c5946be4305d1c5717e38`).
-- Semantic nodes: `8`; declared relations: `1`.
+- Proof: `proven` (`sha256:0ad6dd0452b9a890d2fcf0b57aaeccadb356f87b5430ebc3b7ad135ef587b5a6`).
+- Semantic nodes: `11`; declared relations: `3`.
 
 ### 1.2 模組職責表
 
@@ -71,6 +76,7 @@ flowchart LR
 - `calls` ← `component.evals-checks.evals-and-benchmarks` — Take the expensive-run lock before a costly benchmark profile runs
 - `calls` ← `component.evidence-ledger.primary` — Hold exclusive directory locks under the Git common directory and read the virtual tree
 - `calls` ← `component.global-runtime-reconciliation.archctx-closure` — Run the archctx binary through the process runner
+- `calls` ← `component.global-runtime-reconciliation.global-configuration` — Hold the global runtime transaction lock and sync the configuration directory durably
 - `calls` ← `component.global-runtime-reconciliation.primary` — Run processes and read lock owners during runtime reconciliation
 - `calls` ← `component.global-runtime-reconciliation.release-packaging` — Run installed binaries to read back runtime evidence
 - `calls` ← `component.hook-adapters.edit-guards` — Lock the circuit breaker records
@@ -79,10 +85,10 @@ flowchart LR
 - `calls` ← `component.hook-adapters.session-lifecycle` — Hold the native role evidence lock
 - `calls` ← `component.mcp-sidecar.primary` — Read the worktree topology for the PM server scope
 - `calls` ← `component.mcp-sidecar.repo-policy-registry` — Run Git for repository roots and lock guarded writes
-- `depends-on` ← `capability.runtime-harness.operator` — Read Git topology for task diffs and development activity.
+- `depends-on` ← `capability.runtime-harness.operator` — Read Git topology for task diffs and development activity. Read the task session records, the native session record and the process proof for task execution state. Use the hc client for hc server status, hc ls, hc events, the terminal labels, the herdr-app command and its error type. Read the notify install record, the notify config and the relay delivery record through the notify read contract, and use its relay channel names and record types in the notify status and the Bots page.
 - `depends-on` ← `capability.organization.publication` — Resolve the Git common directory for the feedback store, and validate the shared task message claim in feedback records
 - `calls` ← `component.publication.primary` — Read the worktree topology and the Git common directory
-- `calls` ← `component.task-agent-host.primary` — Run Git through the process runner, hold task session locks, and read and write immutable session artifacts
+- `calls` ← `component.task-agent-host.primary` — Run Git through the process runner, hold task session locks, read and write immutable session artifacts, run hc through the hc client, read the notify secret key names, read the notify config, the delivery record and the notify file paths through the notify read contract, and build the next delivery record with its channel names, record types and empty record
 - `calls` ← `component.task-agent-host.review-runner` — Read and write immutable session artifacts, including the accepted-input proof, and read the host process identity
 - `calls` ← `component.task-fleet.provider-feedback` — Hold the shared task lock while feedback events and delivery receipts are recorded
 - `calls` ← `component.task-fleet.task-inbox` — Hold exclusive directory locks under the Git common directory for the task inbox, and validate the shared task message claim and message fields
@@ -92,6 +98,14 @@ flowchart LR
 
 組件出向關係:
 
+- `component.execution-primitives.hc-client`:
+  - `depends-on` → `capability.organization.board` — Implement the board host port (seat terminals by parent label and the hc version) and the attention host port (start watcher terminals with hc run, read watcher terminals, and send to and wait on seat terminals)
+  - `calls` → `external.herdr-core` — Run the hc CLI for its callers and parse its JSON output. For the board and attention host ports, list seat and watcher terminals, read the hc version, start watcher terminals with hc run, and send to and wait on seat terminals.
+- `component.execution-primitives.notify-read`:
+  - `reads` → `component.execution-primitives.notify-read-core` — Decode the relay delivery record with its one decoder, and give the empty record when no file exists
+  - `reads` → `component.execution-primitives.repository-registry` — Root the notify install record, notify.env and the relay delivery record in the account-level repo-harness home.
+- `component.execution-primitives.notify-read-core`:
+  - 無。
 - `component.execution-primitives.primary`:
   - 無。
 - `component.execution-primitives.public-projections`:
@@ -111,17 +125,20 @@ flowchart LR
 
 | 組件 | 名稱 | 規模量級 | 宣告入口 |
 | --- | --- | --- | --- |
+| `component.execution-primitives.hc-client` | hc Client | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
+| `component.execution-primitives.notify-read` | Notify Read Contract | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.execution-primitives.notify-read-core` | Notify Read Contract (core) | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.execution-primitives.primary` | Bounded Process And Lock Primitives | `20–50` 個文件 / `2000–5000` 行 | 未宣告 |
 | `component.execution-primitives.public-projections` | Public Text and Worktree Views | `2–5` 個文件 / `100–200` 行 | 未宣告 |
 | `component.execution-primitives.repository-registry` | Repository Registry and Account Home | `2–5` 個文件 / `500–1000` 行 | 未宣告 |
-| `component.execution-primitives.secret-patterns` | Secret Patterns | `1–2` 個文件 / `20–50` 行 | 未宣告 |
+| `component.execution-primitives.secret-patterns` | Secret Patterns | `2–5` 個文件 / `20–50` 行 | 未宣告 |
 | `component.execution-primitives.session-artifact-io` | Immutable Session Artifact I/O | `1–2` 個文件 / `50–100` 行 | 未宣告 |
 | `component.execution-primitives.task-message-claim` | Task Message Claim Primitives | `2–5` 個文件 / `100–200` 行 | 未宣告 |
-| `component.execution-primitives.task-session-record` | Task Session Record | `1–2` 個文件 / `100–200` 行 | 未宣告 |
+| `component.execution-primitives.task-session-record` | Task Session Record | `1–2` 個文件 / `200–500` 行 | 未宣告 |
 
 ## 2. P2:端到端數據流
 
-> **Proof**: `proven` (`sha256:ca60808174d4373193b2b24752a89fed54b6e7fe234c5946be4305d1c5717e38`); selectors `5/5`.
+> **Proof**: `proven` (`sha256:0ad6dd0452b9a890d2fcf0b57aaeccadb356f87b5430ebc3b7ad135ef587b5a6`); selectors `5/5`.
 
 ```mermaid
 %%{init: {"theme":"base","themeVariables":{"background":"#0d1117","actorBkg":"#312e81","actorBorder":"#c4b5fd","actorTextColor":"#ffffff","signalColor":"#e5e7eb","signalTextColor":"#e5e7eb","labelBoxBkgColor":"#4c1d95","labelBoxBorderColor":"#c4b5fd","labelTextColor":"#ffffff","noteBkgColor":"#78350f","noteBorderColor":"#fcd34d","noteTextColor":"#ffffff","sequenceNumberColor":"#ffffff"}}}%%

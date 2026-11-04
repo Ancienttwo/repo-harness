@@ -16,6 +16,7 @@ source:
     - src/cli/commands/setup-snapshot.ts
     - src/cli/commands/setup-check-child.ts
     - src/cli/commands/seats.ts
+    - src/cli/commands/quota.ts
   exclude:
     - src/cli/commands/module.ts
     - src/cli/commands/operator.ts

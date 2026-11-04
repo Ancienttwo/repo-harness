@@ -805,11 +805,9 @@ describe('install selection', () => {
       for (const facade of ['repo-harness-check', 'repo-harness-product', 'repo-harness-ship']) {
         expect(paths).toContain(join(env.HOME!, host, 'skills', facade));
       }
-      expect(paths).toContain(join(env.HOME!, host, 'skills', 'reverse-skill-router'));
       expect(paths).toContain(join(env.HOME!, host, 'skills', 'obsidian-markdown'));
       expect(paths).toContain(join(env.HOME!, host, 'skills', 'obsidian-cli'));
     }
-    expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'reverse-skill-router'));
     expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'obsidian-markdown'));
     expect(paths).toContain(join(env.HOME!, '.agents', 'skills', 'obsidian-cli'));
   }));
