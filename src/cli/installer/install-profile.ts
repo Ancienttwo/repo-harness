@@ -54,11 +54,15 @@ import { piPackagePresent, planPiPackage, removePiPackage, type PiPackageStep } 
 import { piExecutable } from '../../effects/pi-executable';
 import { capabilitySourceModeFromPolicy } from '../../core/capabilities/resolver';
 
-const SKILL_SURFACE_MANIFEST_PATH = join(
-  dirname(fileURLToPath(import.meta.url)),
-  '..', '..', '..',
-  'assets', 'skill-commands', 'manifest.json',
-);
+declare const REPO_HARNESS_BUNDLED_CLI_VERSION: string | undefined;
+
+// The hook reads install state from the single-file bundle in dist/; the CLI
+// runs this module from src/cli/installer/.
+const PACKAGE_ROOT = typeof REPO_HARNESS_BUNDLED_CLI_VERSION === 'string'
+  ? join(dirname(fileURLToPath(import.meta.url)), '..')
+  : join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..');
+
+const SKILL_SURFACE_MANIFEST_PATH = join(PACKAGE_ROOT, 'assets', 'skill-commands', 'manifest.json');
 
 /**
  * Reads and parses this package's own bundled skill-surface manifest. Not
@@ -1506,7 +1510,7 @@ function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
 }
 
 export function installedPackageVersion(): string {
-  const path = join(dirname(fileURLToPath(import.meta.url)), '..', '..', '..', 'package.json');
+  const path = join(PACKAGE_ROOT, 'package.json');
   const raw = JSON.parse(readFileSync(path, 'utf-8')) as { version?: unknown };
   if (typeof raw.version !== 'string' || !raw.version.trim()) throw new Error(`invalid package version: ${path}`);
   return raw.version;

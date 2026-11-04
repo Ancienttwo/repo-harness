@@ -10,7 +10,7 @@
  *    runner and supervisor, so it must land in the bundle.
  */
 import { afterEach, describe, expect, test } from 'bun:test';
-import { mkdtempSync, readFileSync, rmSync } from 'fs';
+import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { spawnSync } from 'child_process';
@@ -33,8 +33,7 @@ afterEach(() => {
   }
 });
 
-function buildBundle(define: string | null): string {
-  const outDir = temporaryRoot();
+function buildBundle(define: string | null, outDir = temporaryRoot()): string {
   const outfile = join(outDir, 'hook-entry.js');
   const args = ['build', HOOK_ENTRY, '--target=bun', '--outfile', outfile];
   if (define !== null) args.push('--define', `REPO_HARNESS_BUNDLED_CLI_VERSION="${define}"`);
@@ -186,6 +185,32 @@ describe('hook-entry single-file bundle', () => {
     expect(readFileSync(join(ROOT, '.gitignore'), 'utf-8')).toMatch(/^dist\/$/m);
   });
 });
+
+// The package ships the bundle in dist/ beside assets/. A hook reads the
+// install state at load, and the state validation reads the package manifest.
+test('bundled hook reads a recorded install state from the package layout', () => {
+  const pkg = temporaryRoot();
+  const bundle = buildBundle('0.0.0-test', join(pkg, 'dist'));
+  cpSync(join(ROOT, 'assets/skill-commands/manifest.json'), join(pkg, 'assets/skill-commands/manifest.json'));
+  const home = join(pkg, 'home');
+  mkdirSync(join(home, '.repo-harness'), { recursive: true });
+  writeFileSync(join(home, '.repo-harness', 'install-state.json'), JSON.stringify({
+    protocol: 3, core: { version: '0.0.0-test' }, plugins: [], selection: [], previous: null,
+    transaction_id: 'fixture', applied_at: '2026-11-04T00:00:00.000Z',
+    ownership_manifest: [{
+      authority: 'repo-harness-install-transaction', content_hash: 'sha256:fixture', managed_marker: 'fixture',
+      owner: 'core', path: join(home, '.claude', 'settings.json'), removal: 'managed-surfaces-only',
+      symlink_target: null, type: 'managed-file',
+    }],
+  }));
+  const result = spawnSync('bun', [bundle, 'Stop', '--route', 'default'], {
+    cwd: home,
+    env: { ...process.env, HOME: home, HOOK_HOST: 'claude' },
+    input: JSON.stringify({ hook_event_name: 'Stop', stop_hook_active: false, cwd: home }),
+    encoding: 'utf-8',
+  });
+  expect(result.status, result.stderr).toBe(0);
+}, 30_000);
 
 // The bundle must contain the observation owner rather than resolve an eager
 // dynamic package path at runtime. The execution cases above test this from
