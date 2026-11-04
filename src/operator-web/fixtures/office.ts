@@ -94,12 +94,15 @@ function officeWorkers(now: number): readonly BoardTerminalV1[] {
   ];
 }
 
+/** Null is an empty seat; a null agent is an occupied seat whose agent is unknown. */
+type SampleLead = { readonly agent: string | null } | null;
+
 /** The other lit rooms of the overview page, with the agents and counts of the mockup. */
 interface SampleRoom {
   readonly name: string;
   readonly parent: number;
-  readonly orchestrator: string | null;
-  readonly advisor: string | null;
+  readonly orchestrator: SampleLead;
+  readonly advisor: SampleLead;
   /** Agent and hc status of each worker. */
   readonly workers: readonly (readonly [string | null, string])[];
   readonly summary: BoardSummaryV1;
@@ -108,17 +111,17 @@ interface SampleRoom {
 const NO_PLAN = { accepted: null, size: null };
 const SAMPLE_ROOMS: Readonly<Record<string, SampleRoom>> = {
   repo_a1a1a1a1a1a1a1a1: {
-    name: 'aiphabee', parent: 212, orchestrator: 'claude-code', advisor: 'codex',
+    name: 'aiphabee', parent: 212, orchestrator: { agent: 'claude-code' }, advisor: { agent: 'codex' },
     workers: [['claude-code', 'working'], ['codex', 'working'], ['codex', 'working']],
     summary: { queue: 0, ci_failures: 1, batch: { accepted: 2, size: 4 }, needs_you: 1 },
   },
   repo_a2a2a2a2a2a2a2a2: {
-    name: 'AstroZi', parent: 87, orchestrator: 'codex', advisor: 'claude-code',
+    name: 'AstroZi', parent: 87, orchestrator: { agent: 'codex' }, advisor: { agent: 'claude-code' },
     workers: [['claude-code', 'idle'], ['codex', 'idle'], ['claude-code', 'idle']],
     summary: { queue: 1, ci_failures: 0, batch: { accepted: 0, size: 3 }, needs_you: 0 },
   },
   repo_a3a3a3a3a3a3a3a3: {
-    name: 'arch-context', parent: 438, orchestrator: null, advisor: null,
+    name: 'arch-context', parent: 438, orchestrator: { agent: null }, advisor: null,
     workers: [[null, 'working']],
     summary: { queue: 0, ci_failures: 0, batch: NO_PLAN, needs_you: 0 },
   },
@@ -135,8 +138,8 @@ function sampleParents(room: SampleRoom, repository: string, now: number): Board
     protocol: 2, kind: 'repo-harness.board-parents', observed_at, repository,
     parents: [{ number: room.parent, title: room.name, url: `https://github.com/${repository}/issues/${room.parent}`, updated_at: observed_at, sub_issues: { total: 6, completed: 2 }, seats: room.workers.length }],
     seats: [
-      ...(room.orchestrator === null ? [] : [seat('t1', room.orchestrator, 'idle', 'orchestrator', null)]),
-      ...(room.advisor === null ? [] : [seat('t2', room.advisor, 'idle', 'advisor', null)]),
+      ...(room.orchestrator === null ? [] : [seat('t1', room.orchestrator.agent, 'idle', 'orchestrator', null)]),
+      ...(room.advisor === null ? [] : [seat('t2', room.advisor.agent, 'idle', 'advisor', null)]),
       ...room.workers.map(([agent, status], index) => ({ ...seat(`t${10 + index}`, agent, status, 'worker', String(room.parent)), issue: 100 + index })),
     ],
   });

@@ -45,7 +45,7 @@ import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
 import { fetchRepositories } from '../../src/operator-web/repositories';
 import { boardLayout, boardPlace, boardRoom, DEFAULT_LOCATION, parseWorkspaceLocation, workspaceHash } from '../../src/operator-web/workspace-location';
-import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
+import { activeParent, DESK_STATES, ISSUE_FLOW_WORKER_LIMIT, officeCard, officeRoom, type BoardSummariesRead } from '../../src/operator-web/board-office';
 import { OFFICE_PARENT, officeBoard, officeParents } from '../../src/operator-web/fixtures/office';
 import { postBossCommand, type BossCommandPost, type BossCommandWrite } from '../../src/operator-web/office-boss';
 import { composeMiniRoom, composeRoom, sceneEffect, type SceneMiniRoom, type SceneRoom } from '../../src/operator-web/office-scene';
@@ -977,6 +977,69 @@ describe('board office (#1755)', () => {
     expect(rows('[data-office-total]').map(chip => chip.textContent)).toEqual(['rooms: 9', 'on seat: 16', 'queued for acceptance: 3', 'CI failed: 2', 'waiting for you: 2', 'rooms not read: 4']);
     expect(rows('[data-repository$="3"]')[0]!.getAttribute('aria-label')).toBe('service-3: needs you 2, worker 2, queue 1, CI ✗ 1, all batches 3/8. Open the office.');
     expect(document.querySelector('.board-office__mascot')?.getAttribute('aria-label')).toBe('Boss (you): calm');
+  });
+
+  test('a hidden tab drops every kept observation: with a parents read, a summaries read or no read in flight, the resumed cycle shows nothing old', async () => {
+    const counts = (queue: number) => ({ queue, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 0 });
+    const stale = 3;
+    const fresh = 5;
+    const totals = () => rows('[data-office-total]').map(chip => chip.textContent);
+    for (const inFlight of ['parents', 'summaries', 'none'] as const) {
+      officeAt();
+      let visibility = 'visible';
+      Object.defineProperty(document, 'visibilityState', { configurable: true, get: () => visibility });
+      const visible = async (value: string) => { visibility = value; await act(async () => document.dispatchEvent(new window.Event('visibilitychange') as unknown as Event)); };
+      const one = fiveRegistered([HARNESS_ID]);
+      let hold: 'parents' | 'summaries' | null = null;
+      let queue = stale;
+      const held: (() => void)[] = [];
+      const gate = <T,>(read: 'parents' | 'summaries', answer: T) => (hold === read ? new Promise<T>(resolve => held.push(() => resolve(answer))) : Promise.resolve(answer));
+      await mount(<OperatorApp {...props(busy(), {
+        initialRepositories: one, readRepositories: async () => one,
+        readBoardParents: () => gate('parents', { state: 'ok', list: PARENTS }),
+        readBoardSummaries: id => gate('summaries', summaryRead(id, observed(counts(queue)))),
+      })} />);
+      await settle();
+      expect(rows('[data-office-chip="queue"]').map(chip => chip.textContent)).toEqual([`queue ${stale}`]);
+      if (inFlight !== 'none') {
+        hold = inFlight;
+        await act(async () => rows('button').find(element => element.textContent?.includes('Refresh'))!.click());
+        await settle();
+        expect(held).toHaveLength(1);
+      }
+      await visible('hidden');
+      const unconfirmed = ['rooms: 1', 'on seat: 0', 'queued for acceptance: 0', 'CI failed: 0', 'waiting for you: 0', 'rooms not read: 1'];
+      expect(rows('[data-office-card="loading"]')).toHaveLength(1);
+      expect(totals()).toEqual(unconfirmed);
+      // The aborted read answers late; its answer does not count.
+      await act(async () => { held.splice(0).forEach(finish => finish()); });
+      await settle();
+      expect(totals()).toEqual(unconfirmed);
+      queue = fresh;
+      hold = 'parents';
+      await visible('visible');
+      await settle();
+      expect(held).toHaveLength(1);
+      expect(rows('[data-office-card="loading"]')).toHaveLength(1);
+      expect(totals()).toEqual(unconfirmed);
+      hold = null;
+      await act(async () => held.shift()!());
+      await settle();
+      expect(rows('[data-office-chip="queue"]').map(chip => chip.textContent)).toEqual([`queue ${fresh}`]);
+      expect(totals()).toEqual(['rooms: 1', 'on seat: 2', `queued for acceptance: ${fresh}`, 'CI failed: 0', 'waiting for you: 0']);
+      await act(async () => root?.unmount());
+      root = null;
+      window.happyDOM.abort();
+    }
+  });
+
+  test('the sample leads equal the mockup: an empty seat stays empty, and an occupied seat with an unknown agent stays occupied', () => {
+    const repository = fixtureProps(OFFICE_FIXTURE).initialRepositories!.repositories.find(row => row.display_name === 'arch-context')!.repository_id;
+    const { room } = officeCard({ kind: 'ready', list: officeParents(repository, NOW), summaries: null });
+    expect([room.orchestrator?.agent, room.advisor]).toEqual([null, null]);
+    expect(room.orchestrator).not.toBeNull();
+    const lead = (orchestrator: SceneMiniRoom['orchestrator']) => composeMiniRoom({ orchestrator, advisor: null, plan: false, needsYou: false, desks: [], queue: 0, idle: false }, { frame: 0, night: false });
+    expect(lead(sceneAgent(null))).not.toEqual(lead(null));
   });
 
   test('a mini room draws the seats and the summary it gets: lit screens, the door, the whiteboard and the grey idle room', () => {

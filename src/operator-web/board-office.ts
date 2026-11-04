@@ -1,4 +1,4 @@
-import { useCallback, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import type { BoardAttentionV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
 import type { BoardParentsSeatV1, BoardParentsV1 } from '../core/board/parents';
@@ -300,9 +300,10 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
         show(id, () => ({ kind: 'failed', reason: parents.reason }));
         continue;
       }
+      const active = activeParent(parents.list) !== null;
       // A refresh keeps the summaries of the last read on the card until its new read settles.
-      show(id, current => ({ kind: 'ready', list: parents.list, summaries: current.kind === 'ready' ? current.summaries : null }));
-      if (activeParent(parents.list) === null) continue;
+      show(id, current => ({ kind: 'ready', list: parents.list, summaries: active && current.kind === 'ready' ? current.summaries : null }));
+      if (!active) continue;
       const summaries = await readSummaries(id, signal);
       if (signal.aborted) return false;
       if (summaries.state !== 'ok') complete = false;
@@ -311,6 +312,12 @@ export function useOfficeOverview(repositories: readonly string[], readParents: 
     return complete;
   }, [readParents, readSummaries, key]);
   useObservationRefresh(observe, JSON.stringify(['office-overview', key, generation]), { enabled: repositories.length > 0 });
+  // Reads stop while the tab is hidden, so a kept view has no known age. The rooms load again on return, and the next cycle confirms each one.
+  useEffect(() => {
+    const forget = () => { if (document.visibilityState === 'hidden') setViews(new Map()); };
+    document.addEventListener('visibilitychange', forget);
+    return () => document.removeEventListener('visibilitychange', forget);
+  }, []);
   return views;
 }
 
