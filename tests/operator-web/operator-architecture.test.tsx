@@ -6,7 +6,7 @@ import { isGroupNode, moduleDetail, moduleGraph, type ModelNode, type ModelRelat
 import { buildModuleReviewPrompt, type ModuleReviewPromptV1 } from '../../src/core/review/module-review-prompt';
 import { OperatorApp } from '../../src/operator-web/App';
 import { ArchitectureWorkspace, reviewPromptCommand } from '../../src/operator-web/ArchitectureWorkspace';
-import type { ArchitectureMapRead, ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
+import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
@@ -535,7 +535,7 @@ describe('architecture map', () => {
     expect([...document.querySelectorAll('.architecture-map__inspector [data-relation-id]')].map(item => item.getAttribute('data-relation-id'))).toContain('relation.a-own');
   });
 
-  test('a missing line or import source is stated with its reason, and a failed read shows its code', async () => {
+  test('a missing line or import source is stated with its reason, and a failed read names its state and next step', async () => {
     await mount(workspace({ readMap: reader({ state: 'ok', map: mapFor(false) }) }));
     // Only the base-map gaps; the open layer's own flow-step gap stays in its summary.
     expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
@@ -545,10 +545,38 @@ describe('architecture map', () => {
     await settle();
     expect([...document.querySelectorAll('.architecture-map-view > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')])).toEqual([['layer_order', 'model_layers_undeclared']]);
     expect(document.querySelectorAll('.architecture-map__band')).toHaveLength(0);
-    await act(async () => root?.render(workspace({ repositoryId: 'repo-other', readMap: reader({ state: 'unavailable', reason: 'model_unavailable' }) })));
+    // Each reason names its state and its next step; archctx's codes stay visible; a pending map is a status, not an alert.
+    for (const [read, role, message, next] of [
+      [{ state: 'unavailable', reason: 'architecture_map_pending' }, 'status', 'The server has not collected the architecture map yet.', 'The page reads the map again on its own.'],
+      [{ state: 'unavailable', reason: 'registry_unavailable' }, 'alert', 'The repository registry is unreadable.', 'Run `repo-harness fleet prune` to show the registry error.'],
+      [{ state: 'unavailable', reason: 'repository_not_found' }, 'alert', 'No registered repository has this id.', 'Adopt the repository with `repo-harness adopt`, then refresh the board.'],
+      [{ state: 'unavailable', reason: 'model_unavailable' }, 'alert', 'The committed architecture model could not be read, and archctx gave no error code.', 'Check that the registered path is a git checkout with a commit. `repo-harness fleet prune` lists registrations whose path is gone.'],
+      [{ state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }, 'alert',
+        'archctx refused to read the committed architecture model: AC_MODEL_ADOPTION_REQUIRED native-context-model-missing.', 'Run `archctx export native --ref HEAD --json` in the repository. The archctx error gives its action and details.'],
+      [{ state: 'unavailable', reason: 'architecture_map_invalid' }, 'alert', 'The architecture map failed validation.', 'Retry. If the error stays, restart `repo-harness operator serve`.'],
+      [{ state: 'unavailable', reason: 'architecture_map_failed' }, 'alert', 'The map process read the committed model, then failed.', 'Wait for the next collection in 5 minutes. If the error stays, restart `repo-harness operator serve`.'],
+      [{ state: 'unavailable', reason: 'architecture_map_timeout' }, 'alert', 'The map process passed its time limit.', 'Wait for the next collection in 5 minutes. If the error stays, check that git and archctx answer in the repository.'],
+      [{ state: 'unavailable', reason: 'architecture_map_process_failed' }, 'alert', 'The map process did not start or gave no result.', 'Wait for the next collection in 5 minutes. If the error stays, restart `repo-harness operator serve`.'],
+      [{ state: 'unavailable', reason: 'unreachable' }, 'alert', 'The operator API gave no typed answer.', 'Check that `repo-harness operator serve` runs, then retry.'],
+    ] as const) {
+      await act(async () => root?.render(workspace({ repositoryId: `repo-${read.reason}`, readMap: reader(read) })));
+      await settle();
+      const notice = document.querySelector(`.architecture-map-view > [role="${role}"]`);
+      expect([notice?.getAttribute('data-error-code'), notice?.getAttribute('data-code'), [...notice?.children ?? []].map(line => line.textContent)])
+        .toEqual([read.reason, read.reason === 'archctx_error' ? 'AC_MODEL_ADOPTION_REQUIRED native-context-model-missing' : null, [message, next]]);
+      expect(document.querySelector('.architecture-map')).toBeNull();
+    }
+    // A failed refresh keeps the last map and says so before the reason.
+    await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor() }) })));
     await settle();
-    expect(document.querySelector('[role="alert"]')?.getAttribute('data-error-code')).toBe('model_unavailable');
-    expect(document.querySelector('.architecture-map')).toBeNull();
+    await act(async () => root?.render(workspace({ readMap: reader({ state: 'unavailable', reason: 'architecture_map_timeout' }), refreshGeneration: 1 })));
+    await settle();
+    expect([...document.querySelector('.architecture-map-view > [role="alert"]')?.children ?? []].map(line => line.textContent)[0]).toBe('The last map stays on screen. The refresh failed.');
+    expect(document.querySelector('.architecture-map')).not.toBeNull();
+    // The route's refusal body carries archctx's codes to the page.
+    respond = () => json({ error: { code: 'archctx_error', message: 'm', next_action: 'n' }, archctx: { code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' } }, 503);
+    expect(await fetchArchitectureMap('repo-a', new AbortController().signal))
+      .toEqual({ state: 'unavailable', reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' });
   });
 
   test('the map opens on today\'s changes, and each layer marks nodes from the collector\'s facts or states its reason', async () => {

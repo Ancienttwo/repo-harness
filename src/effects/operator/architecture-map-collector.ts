@@ -18,10 +18,13 @@ import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 import {
+  ARCHITECTURE_MAP_WORKER_REASONS,
+  archctxRefusal,
   decodeArchitectureMap,
   withTestCoverage,
-  type ArchitectureMapUnavailableReason,
+  type ArchitectureMapUnavailableV1,
   type ArchitectureMapV1,
+  type ArchitectureMapWorkerReason,
   type ArchitecturePullRequestsSource,
   type ArchitectureTestsSource,
 } from '../../core/operator/architecture-map';
@@ -40,7 +43,7 @@ export const ARCHITECTURE_MAP_CHILD_ENTRY = fileURLToPath(new URL('./architectur
 
 export type ArchitectureMapRepositoryCache =
   | { readonly state: 'ready'; readonly map: ArchitectureMapV1 }
-  | { readonly state: 'unavailable'; readonly reason: ArchitectureMapUnavailableReason };
+  | ArchitectureMapUnavailableV1;
 
 export interface ArchitectureMapCollectorOptions {
   readonly env?: NodeJS.ProcessEnv;
@@ -65,18 +68,28 @@ export interface ArchitectureMapCollectorHandle {
   readonly close: () => Promise<void>;
 }
 
+const INVALID = { state: 'unavailable', reason: 'architecture_map_invalid' } as const;
+
+/** The child's failure: one of its own reasons, or archctx's codes with the archctx shape. */
+function childFailure(record: Record<string, unknown>): ArchitectureMapUnavailableV1 {
+  if (record.reason === 'archctx_error') return archctxRefusal(record.code, record.reason_code) ?? INVALID;
+  return (ARCHITECTURE_MAP_WORKER_REASONS as readonly unknown[]).includes(record.reason)
+    ? { state: 'unavailable', reason: record.reason as ArchitectureMapWorkerReason }
+    : INVALID;
+}
+
 /** The child's one result line, checked against the repository it was asked for. */
 function childResult(stdout: string, repositoryId: string, tests: (repositoryId: string) => ArchitectureTestsSource): ArchitectureMapRepositoryCache {
   let value: unknown;
-  try { value = JSON.parse(stdout); } catch { return { state: 'unavailable', reason: 'architecture_map_invalid' }; }
+  try { value = JSON.parse(stdout); } catch { return INVALID; }
   const record = value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
-  if (record?.id !== repositoryId) return { state: 'unavailable', reason: 'architecture_map_invalid' };
-  if (record.ok === false) return { state: 'unavailable', reason: 'model_unavailable' };
+  if (record?.id !== repositoryId) return INVALID;
+  if (record.ok === false) return childFailure(record);
   try {
     const map = decodeArchitectureMap(record.snapshot);
-    return map.repository_id === repositoryId ? { state: 'ready', map: withTestCoverage(map, tests(repositoryId)) } : { state: 'unavailable', reason: 'architecture_map_invalid' };
+    return map.repository_id === repositoryId ? { state: 'ready', map: withTestCoverage(map, tests(repositoryId)) } : INVALID;
   } catch {
-    return { state: 'unavailable', reason: 'architecture_map_invalid' };
+    return INVALID;
   }
 }
 
@@ -106,7 +119,8 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
     } finally {
       rmSync(dir, { recursive: true, force: true });
     }
-    return result.ok ? childResult(result.stdout, repositoryId, options.read_tests ?? (() => ({ state: 'unavailable', reason: 'tests_pending' }))) : { state: 'unavailable', reason: 'model_unavailable' };
+    if (!result.ok) return { state: 'unavailable', reason: result.code === 'timeout' ? 'architecture_map_timeout' : 'architecture_map_process_failed' };
+    return childResult(result.stdout, repositoryId, options.read_tests ?? (() => ({ state: 'unavailable', reason: 'tests_pending' })));
   };
 
   const cycle = (): Promise<void> => {
@@ -120,7 +134,7 @@ export function startArchitectureMapCollector(options: ArchitectureMapCollectorO
         if (closed) return;
         let cache: ArchitectureMapRepositoryCache;
         try { cache = await collect(repo.id); }
-        catch { cache = { state: 'unavailable', reason: 'model_unavailable' }; }
+        catch { cache = { state: 'unavailable', reason: 'architecture_map_process_failed' }; }
         next.set(repo.id, cache);
       }
       if (closed) return;

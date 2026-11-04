@@ -20,15 +20,32 @@ import { TESTS_UNAVAILABLE_REASONS, type TestsSnapshotV1, type TestsUnavailableR
 export const OPERATOR_ARCHITECTURE_MAP_SCHEMA = 'repo-harness.architecture-map.v6' as const;
 export const OPERATOR_ARCHITECTURE_MAP_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/architecture\/map$/u;
 
-/** Why a repository's map cannot be served. Each maps to one HTTP status in the route. */
+/**
+ * Why a repository's map cannot be served. Each maps to one HTTP status in the route.
+ * `model_unavailable`: the committed model read failed with no archctx error code
+ * (an archctx refusal is an `ArchitectureMapUnavailableV1` with archctx's codes);
+ * `architecture_map_failed`: the map process read the model, then failed;
+ * `architecture_map_timeout`: the map process passed its deadline;
+ * `architecture_map_process_failed`: the map process did not start or gave no result.
+ */
 export const ARCHITECTURE_MAP_UNAVAILABLE_REASONS = [
   'architecture_map_pending',
   'registry_unavailable',
   'repository_not_found',
   'model_unavailable',
   'architecture_map_invalid',
+  'architecture_map_failed',
+  'architecture_map_timeout',
+  'architecture_map_process_failed',
 ] as const;
 export type ArchitectureMapUnavailableReason = typeof ARCHITECTURE_MAP_UNAVAILABLE_REASONS[number];
+/** The reasons that the map process itself reports; the collector refuses any other. */
+export const ARCHITECTURE_MAP_WORKER_REASONS = ['repository_not_found', 'model_unavailable', 'architecture_map_failed'] as const;
+export type ArchitectureMapWorkerReason = typeof ARCHITECTURE_MAP_WORKER_REASONS[number];
+/** A repository without a map: a named reason, or archctx's refusal of the committed model read. */
+export type ArchitectureMapUnavailableV1 =
+  | { readonly state: 'unavailable'; readonly reason: ArchitectureMapUnavailableReason }
+  | ArchctxRefusalV1;
 
 /** Why line counts are missing while the model itself is served. */
 export const ARCHITECTURE_MAP_SIZE_REASONS = ['model_worktree_dirty', 'checkout_changed', 'ownership_unavailable', 'git_read_failed'] as const;
@@ -168,6 +185,23 @@ export function archctxRefusal(code: unknown, reasonCode: unknown): ArchctxRefus
   if (typeof code !== 'string' || !ARCHCTX_CODE.test(code)) return null;
   if (reasonCode !== undefined && reasonCode !== null && (typeof reasonCode !== 'string' || !ARCHCTX_TOKEN.test(reasonCode))) return null;
   return { state: 'unavailable', reason: 'archctx_error', code, reason_code: reasonCode ?? null };
+}
+
+/** The map route's refusal body: the typed operator error, and archctx's codes when its code is `archctx_error`. */
+export interface ArchitectureMapRefusalV1 {
+  readonly error: { readonly code: string; readonly message: string; readonly next_action: string };
+  readonly archctx?: { readonly code: string; readonly reason_code: string | null };
+}
+
+/** The unavailable state that a map route refusal names; null when the body is not such a refusal. */
+export function decodeArchitectureMapRefusal(body: unknown): ArchitectureMapUnavailableV1 | null {
+  const record = (value: unknown) => value !== null && typeof value === 'object' && !Array.isArray(value) ? value as Record<string, unknown> : null;
+  const code = record(record(body)?.error)?.code;
+  if (code === 'archctx_error') {
+    const archctx = record(record(body)?.archctx);
+    return archctx === null ? null : archctxRefusal(archctx.code, archctx.reason_code);
+  }
+  return (ARCHITECTURE_MAP_UNAVAILABLE_REASONS as readonly unknown[]).includes(code) ? { state: 'unavailable', reason: code as ArchitectureMapUnavailableReason } : null;
 }
 
 /** One changed path from `archctx impact`. Its reason codes say why a line count is null or an owner is contested. */

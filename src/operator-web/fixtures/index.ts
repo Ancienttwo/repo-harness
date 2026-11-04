@@ -98,9 +98,13 @@ export function fixtureProps(name: string): OperatorAppProps {
   // degraded: the task session records could not be read.
   const execution = (repositoryId: string): ExecutionRead => fixture === 'busy' ? busyExecution(repositoryId, now)
     : fixture === 'empty' ? emptyExecution(repositoryId, now) : { state: 'unavailable', reason: 'execution_state_unavailable' };
-  // degraded: the model is served with no line or import counts and no layer data; empty: the first collection has not finished.
+  // degraded: the model is served with no line or import counts and no layer data, and archctx finds no committed model
+  // in the other repositories; empty: the first collection has not finished.
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
-  const map = (repositoryId: string): ArchitectureMapRead => fixture === 'empty' || repositoryId !== HARNESS_ID ? { state: 'unavailable', reason: 'architecture_map_pending' }
+  const map = (repositoryId: string): ArchitectureMapRead => fixture === 'empty' ? { state: 'unavailable', reason: 'architecture_map_pending' }
+    : repositoryId !== HARNESS_ID ? (fixture === 'degraded'
+      ? { state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }
+      : { state: 'unavailable', reason: 'architecture_map_pending' })
     : { state: 'ok', map: decodeArchitectureMap(fixture === 'busy' ? architectureMap : {
       ...architectureMap,
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' },

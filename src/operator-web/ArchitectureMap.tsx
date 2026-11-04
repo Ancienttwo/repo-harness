@@ -17,10 +17,11 @@ import {
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
+  decodeArchitectureMapRefusal,
   type ArchctxRefusalV1,
   type ArchitectureImpactV1,
   type ArchitectureLayerDirectionReason,
-  type ArchitectureMapUnavailableReason,
+  type ArchitectureMapUnavailableV1,
   type ArchitectureMapV1,
 } from '../core/operator/architecture-map';
 import {
@@ -37,20 +38,15 @@ import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } fr
 import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
 import { ArchitectureSequence } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
-import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
 import { useObservationRefresh } from './useObservationRefresh';
 
-export type ArchitectureMapReason = ArchitectureMapUnavailableReason | 'unreachable';
+/** The route's refusal, or `unreachable` when the route gave no typed refusal. */
 export type ArchitectureMapRead =
   | { readonly state: 'ok'; readonly map: ArchitectureMapV1 }
-  | { readonly state: 'unavailable'; readonly reason: ArchitectureMapReason };
+  | ArchitectureMapUnavailableV1
+  | { readonly state: 'unavailable'; readonly reason: 'unreachable' };
 export type ArchitectureMapReader = (repositoryId: string, signal: AbortSignal) => Promise<ArchitectureMapRead>;
-
-// Every refusal the map route sends; the record keeps this list complete against the route's reason type.
-const MAP_REASONS: Readonly<Record<ArchitectureMapUnavailableReason, true>> = {
-  architecture_map_pending: true, registry_unavailable: true, repository_not_found: true, model_unavailable: true, architecture_map_invalid: true,
-};
 
 export async function fetchArchitectureMap(repositoryId: string, signal: AbortSignal): Promise<ArchitectureMapRead> {
   let response: Response;
@@ -61,10 +57,7 @@ export async function fetchArchitectureMap(repositoryId: string, signal: AbortSi
     return { state: 'unavailable', reason: 'unreachable' };
   }
   const body: unknown = await response.json().catch(() => null);
-  if (!response.ok) {
-    const { code } = asApiError(body);
-    return { state: 'unavailable', reason: Object.hasOwn(MAP_REASONS, code) ? code as ArchitectureMapReason : 'unreachable' };
-  }
+  if (!response.ok) return decodeArchitectureMapRefusal(body) ?? { state: 'unavailable', reason: 'unreachable' };
   try { return { state: 'ok', map: decodeArchitectureMap(body) }; } catch { return { state: 'unavailable', reason: 'architecture_map_invalid' }; }
 }
 
@@ -414,6 +407,21 @@ function LayerSummary({ map, layer, pullRequest, onPullRequest, t }: {
   </div>;
 }
 
+/** Why the map is missing and the next step; a pending map is a status, not a failure. archctx's codes stay visible. */
+function MapUnavailable({ read, kept, t }: {
+  readonly read: Exclude<ArchitectureMapRead, { readonly state: 'ok' }>;
+  readonly kept: boolean;
+  readonly t: OperatorTranslate;
+}) {
+  const code = read.reason === 'archctx_error' ? archctxCode(read) : undefined;
+  const pending = read.reason === 'architecture_map_pending';
+  return <p className={pending ? undefined : 'architecture-notice'} role={pending ? 'status' : 'alert'} data-error-code={read.reason} data-code={code}>
+    {kept && <span className="block">{t('architecture.map.kept')}</span>}
+    <span className="block">{t(`architecture.map.unavailable.${read.reason}`, code === undefined ? undefined : { code })}</span>
+    <span className="block">{t(`architecture.map.unavailable.${read.reason}.next`)}</span>
+  </p>;
+}
+
 /** The base maps that read the map route: modules (layered by the model's layer order), sequence and topology. */
 export type ArchitectureBaseMap = 'modules' | 'sequence' | 'topology';
 
@@ -442,9 +450,7 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   return <div className="architecture-map-view">
     {result === null && <p role="status">{t('architecture.map.loading')}</p>}
-    {result?.state === 'unavailable' && <p className="architecture-notice" role="alert" data-error-code={result.reason}>
-      {t(map === null ? 'architecture.failed' : 'architecture.refreshFailed', { code: result.reason })}
-    </p>}
+    {result?.state === 'unavailable' && <MapUnavailable read={result} kept={map !== null} t={t} />}
     {map && <>
       <p className="detail-quiet architecture-map__source">
         {t('architecture.commit')} <code>{map.commit}</code> · {t('architecture.map.collected')} <time dateTime={map.collected_at}>{map.collected_at}</time>

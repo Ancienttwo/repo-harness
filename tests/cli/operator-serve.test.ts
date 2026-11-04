@@ -43,7 +43,7 @@ import {
   buildOperatorCommand,
   parseOperatorServeOptions,
 } from '../../src/cli/commands/operator';
-import { projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
+import { decodeArchitectureMapRefusal, projectArchitectureMap, type ArchitectureMapV1, type ArchitecturePullRequestsSource } from '../../src/core/operator/architecture-map';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from '../../src/effects/operator/architecture-map-collector';
 import { worktreeDigestRow } from '../../src/core/operator/worktree-cleanup';
 import { worktreeId } from '../../src/effects/git/worktree-record';
@@ -1135,6 +1135,10 @@ describe('architecture map', () => {
         [{ state: 'unavailable', reason: 'registry_unavailable' }, 503, 'registry_unavailable'],
         [{ state: 'unavailable', reason: 'repository_not_found' }, 404, 'repository_not_found'],
         [{ state: 'unavailable', reason: 'model_unavailable' }, 503, 'model_unavailable'],
+        [{ state: 'unavailable', reason: 'architecture_map_failed' }, 503, 'architecture_map_failed'],
+        [{ state: 'unavailable', reason: 'architecture_map_timeout' }, 503, 'architecture_map_timeout'],
+        [{ state: 'unavailable', reason: 'architecture_map_process_failed' }, 503, 'architecture_map_process_failed'],
+        [{ state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }, 503, 'archctx_error'],
         // A cached map that fails the decoder is refused, not sent.
         [{ state: 'ready', map: { ...map, nodes: [{ ...map.nodes[0]!, summary: 1 }] } }, 503, 'architecture_map_invalid'],
       ] as const) {
@@ -1142,6 +1146,8 @@ describe('architecture map', () => {
         const answer = await get();
         expect(answer.status).toBe(status);
         expect((answer.body as { error?: { code: string } }).error?.code).toBe(code);
+        // The page reads archctx's codes from the refusal; every other refusal has only the typed error.
+        expect(decodeArchitectureMapRefusal(answer.body)).toEqual(next.state === 'ready' ? { state: 'unavailable', reason: 'architecture_map_invalid' } : next);
       }
       cache = { state: 'ready', map };
       expect(await get()).toEqual({ status: 200, body: map });
@@ -1165,15 +1171,25 @@ describe('architecture map', () => {
       expect(ready.state === 'ready' && ready.map.layers.tests).toEqual({ state: 'unavailable', reason: 'tests_pending' });
       expect(collector.read('repo-unregistered')).toEqual({ state: 'unavailable', reason: 'repository_not_found' });
     } finally { await collector.close(); }
-    for (const [run_process, reason] of [
-      [async () => ({ ok: false, code: 'failed' }), 'model_unavailable'],
-      [async () => ({ ok: true, stdout: JSON.stringify({ id: 'repo-other', ok: true, snapshot: map }) }), 'architecture_map_invalid'],
-      [async () => { throw new Error('spawn failed'); }, 'model_unavailable'],
+    const failed = (line: Record<string, unknown>) => async () => ({ ok: true, stdout: JSON.stringify({ id, ok: false, ...line }) });
+    const refusal = { reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-document-marker-invalid' } as const;
+    for (const [run_process, expected] of [
+      [async () => ({ ok: false, code: 'failed' }), { reason: 'architecture_map_process_failed' }],
+      [async () => ({ ok: false, code: 'timeout' }), { reason: 'architecture_map_timeout' }],
+      [async () => { throw new Error('spawn failed'); }, { reason: 'architecture_map_process_failed' }],
+      [async () => ({ ok: true, stdout: JSON.stringify({ id: 'repo-other', ok: true, snapshot: map }) }), { reason: 'architecture_map_invalid' }],
+      // The child's own reasons and archctx's codes pass; any other failure line is invalid.
+      [failed({ reason: 'model_unavailable' }), { reason: 'model_unavailable' }],
+      [failed({ reason: 'repository_not_found' }), { reason: 'repository_not_found' }],
+      [failed({ reason: 'architecture_map_failed' }), { reason: 'architecture_map_failed' }],
+      [failed(refusal), refusal],
+      [failed({ ...refusal, code: 'schema invalid' }), { reason: 'architecture_map_invalid' }],
+      [failed({ reason: 'registry_unavailable' }), { reason: 'architecture_map_invalid' }],
     ] as const) {
       const failing = startArchitectureMapCollector({ env: registry.env, interval_ms: 60_000, run_process: run_process as never });
       try {
         await failing.settled();
-        expect(failing.read(id)).toEqual({ state: 'unavailable', reason });
+        expect(failing.read(id)).toEqual({ state: 'unavailable', ...expected });
       } finally { await failing.close(); }
     }
     // The tests layer comes from the tests collector's cache when the child's map arrives.

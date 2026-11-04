@@ -22,7 +22,7 @@ import { startDocsCollector, type DocsRepositoryCache } from './docs-collector';
 import { startTestsCollector, type TestsRepositoryCache } from './tests-collector';
 import { startExecutionCollector, type ExecutionRepositoryCache } from './execution-collector';
 import { startArchitectureMapCollector, type ArchitectureMapRepositoryCache } from './architecture-map-collector';
-import { decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapUnavailableReason } from '../../core/operator/architecture-map';
+import { decodeArchitectureMap, OPERATOR_ARCHITECTURE_MAP_ROUTE, type ArchitectureMapRefusalV1, type ArchitectureMapUnavailableV1 } from '../../core/operator/architecture-map';
 import { decodeTaskExecutionView, type ExecutionStateUnavailableReason, type TaskExecutionViewV1 } from '../../core/operator/execution-state';
 import { decodeTaskMessagesView, TASK_MESSAGES_FAILURES, type TaskMessagesRefusal } from '../../core/operator/task-messages';
 import { decodeTestsSnapshot, type TestsUnavailableReason } from '../../core/operator/tests';
@@ -425,12 +425,23 @@ const TESTS_UNAVAILABLE: Readonly<Record<TestsUnavailableReason, { readonly stat
   tests_invalid: { status: 503, message: 'The test results failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
 };
 
-const ARCHITECTURE_MAP_UNAVAILABLE: Readonly<Record<ArchitectureMapUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
+const ARCHITECTURE_MAP_RETRY = 'Wait for the next collection in 5 minutes.';
+const ARCHITECTURE_MAP_UNAVAILABLE: Readonly<Record<ArchitectureMapUnavailableV1['reason'], { readonly status: number; readonly message: string; readonly next_action: string }>> = {
   architecture_map_pending: { status: 503, message: 'The architecture map is not collected yet.', next_action: 'Retry in a minute.' },
   registry_unavailable: { status: 503, message: 'The repository registry is unreadable.', next_action: OPERATOR_REGISTRY_ACTION },
   repository_not_found: { status: 404, message: 'No registered repository has this id.', next_action: OPERATOR_ADOPT_ACTION },
-  model_unavailable: { status: 503, message: 'The committed architecture model could not be read.', next_action: 'Run `repo-harness architecture-projection status --json` in the repository.' },
+  model_unavailable: {
+    status: 503, message: 'The committed architecture model could not be read, and archctx gave no error code.',
+    next_action: 'Check that the registered path is a git checkout with a commit. `repo-harness fleet prune` lists registrations whose path is gone.',
+  },
+  archctx_error: {
+    status: 503, message: 'archctx refused to read the committed architecture model.',
+    next_action: 'Run `archctx export native --ref HEAD --json` in the repository. The archctx error gives its action and details.',
+  },
   architecture_map_invalid: { status: 503, message: 'The architecture map failed validation.', next_action: OPERATOR_DIAGNOSTIC_ACTION },
+  architecture_map_failed: { status: 503, message: 'The map process read the committed model, then failed.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, restart \`repo-harness operator serve\`.` },
+  architecture_map_timeout: { status: 503, message: 'The map process passed its time limit.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, check that git and archctx answer in the repository.` },
+  architecture_map_process_failed: { status: 503, message: 'The map process did not start or gave no result.', next_action: `${ARCHITECTURE_MAP_RETRY} If the error stays, restart \`repo-harness operator serve\`.` },
 };
 
 const EXECUTION_UNAVAILABLE: Readonly<Record<ExecutionStateUnavailableReason, { readonly status: number; readonly message: string; readonly next_action: string }>> = {
@@ -1542,7 +1553,10 @@ export async function startOperatorServer(
       const cache = (options.read_architecture_map ?? architectureMap?.read ?? (() => ({ state: 'unavailable', reason: 'architecture_map_pending' }) as const))(architectureMapRoute[1]!);
       if (cache.state !== 'ready') {
         const refusal = ARCHITECTURE_MAP_UNAVAILABLE[cache.reason];
-        sendRefusal(request, response, refusal.status, errorBody(cache.reason, refusal.message, refusal.next_action), headOnly);
+        const body: ArchitectureMapRefusalV1 = cache.reason === 'archctx_error'
+          ? { ...errorBody(cache.reason, refusal.message, refusal.next_action), archctx: { code: cache.code, reason_code: cache.reason_code } }
+          : errorBody(cache.reason, refusal.message, refusal.next_action);
+        sendRefusal(request, response, refusal.status, body, headOnly);
         return;
       }
       let map;

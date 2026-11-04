@@ -451,7 +451,11 @@ describe('architecture map', () => {
       const core = '.archcontext/model/nodes/component.module.core.yaml';
       fixtureWrite(root, core, fixtureYaml({ ...JSON.parse(readFileSync(join(root, core), 'utf8')), layer: 'web' }));
       fixtureCommit(root);
-      expect(collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending)).toEqual({ id: 'repo_0123456789abcdef', ok: false, reason: 'model_unavailable' });
+      // archctx's refusal keeps its own codes; a registered path that is gone fails in git, with no archctx code.
+      expect(collectArchitectureMap('repo_0123456789abcdef', root, '2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending))
+        .toEqual({ id: 'repo_0123456789abcdef', ok: false, reason: 'archctx_error', code: 'AC_SCHEMA_INVALID', reason_code: 'native-context-model-invalid' });
+      expect(collectArchitectureMap('repo_0123456789abcdef', join(root, 'gone'),'2026-10-27T09:00:00.000Z', '2026-10-27T00:00:00.000Z', pending))
+        .toEqual({ id: 'repo_0123456789abcdef', ok: false, reason: 'model_unavailable' });
     } finally { rmSync(root, { recursive: true, force: true }); }
   });
 
