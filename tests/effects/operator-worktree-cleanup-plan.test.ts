@@ -1,7 +1,10 @@
 import { describe, expect, test } from 'bun:test';
 import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupPlan, type CleanupAdvice } from '../../src/core/operator/worktree-cleanup-plan';
+import {
+  cleanupEligible, cleanupSelection, decodeAuthorizedCleanupRequest, decodeCleanupAdvice, decodeCleanupChoices, decodeCleanupExecutionResult, decodeCleanupPlan,
+  type CleanupAdvice, type CleanupExecutionResult,
+} from '../../src/core/operator/worktree-cleanup-plan';
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
 import { worktreeId } from '../../src/effects/git/worktree-record';
 import { resolveGitCommonDirectory } from '../../src/effects/git/common-directory';
@@ -72,6 +75,40 @@ describe('cleanup plan contract and execution boundary', () => {
       { ...advice(), recommendation: 'delete' },
     ]) expect(() => decodeCleanupAdvice(input)).toThrow();
   });
+  test('a user choice carries only id, recommendation and archive, under the advice archive rules', () => {
+    const id = observation().worktree.id;
+    const choice = { id, recommendation: advice().recommendation, archive: advice().archive };
+    const keep = createCleanupPlan(SID, [{ observation: observation(), advice: { ...advice(false), recommendation: 'keep' } }]).items[0]!;
+    // Pass 1 is keep: the item is not selectable, but the observation lets the user choose.
+    expect([cleanupEligible(keep), cleanupSelection(keep).selectable]).toEqual([true, false]);
+    expect(decodeCleanupChoices([choice, { id: observation(2).worktree.id, recommendation: 'keep', archive: { git: null, private: null } }])).toHaveLength(2);
+    for (const input of [
+      [], [choice, choice], [{ ...choice, id: 'wt_1' }], [{ ...choice, reason: 'From the page.' }], [{ ...choice, evidence: ['x'] }],
+      [{ ...choice, archive: { git: null, private: null } }], [{ ...choice, recommendation: 'delete' }],
+      [{ ...choice, archive: { git: { ...advice().archive.git!, directory: 'docs/other' }, private: null } }],
+      [{ ...choice, archive: { git: null, private: { directory: '/home/private', paths: ['.env'] } } }],
+      [{ ...choice, archive: { git: { ...advice().archive.git!, paths: ['../escape'] }, private: null } }],
+      Array.from({ length: 17 }, (_, n) => ({ ...choice, id: observation(n + 1).worktree.id })),
+    ]) expect(() => decodeCleanupChoices(input)).toThrow('worktree_cleanup_plan_invalid');
+  });
+  test('the execution result decoder accepts each producer outcome and pairs reasons with outcomes', async () => {
+    const h = harness([observation(), observation(2, 'green'), observation(3, 'red')]);
+    h.observations[0] = { ...h.observations[0]!, loss: { ...h.observations[0]!.loss!, head_commit: 'f'.repeat(40) } };
+    const skipped = await executeCleanupPlan(h.request, h.ports);
+    const push = harness(), plain = harness();
+    const failed = await executeCleanupPlan(push.request, { ...push.ports, archivePush: async () => { throw new Error('remote unknown'); } });
+    const removed = await executeCleanupPlan(plain.request, plain.ports);
+    for (const result of [skipped, failed, removed]) expect(decodeCleanupExecutionResult(JSON.parse(JSON.stringify(result)))).toEqual(result);
+    expect([...skipped.items, ...failed.items, ...removed.items].map(i => [i.outcome, i.reason])).toEqual([
+      ['skipped', 'loss_changed'], ['removed', null], ['skipped', 'in_use'], ['reconcile_required', 'archive_failed'], ['removed', null]]);
+    const item = (edit: object): CleanupExecutionResult => ({ ...removed, items: [{ ...removed.items[0]!, ...edit }] });
+    for (const input of [
+      item({ reason: 'in_use' }), item({ outcome: 'skipped', reason: 'archive_failed' }), item({ outcome: 'skipped', reason: null }),
+      item({ outcome: 'reconcile_required', reason: 'loss_changed' }), item({ outcome: 'failed', reason: 'unavailable' }), item({ stage: 'archive' }),
+      item({ archive_pr: '/private/receipt' }), item({ raw: 'private' }), { ...removed, items: [] }, { ...removed, items: [removed.items[0], removed.items[0]] },
+      { ...removed, kind: 'operator_worktree_cleanup' }, { ...removed, session_id: 'b'.repeat(31) },
+    ]) expect(() => decodeCleanupExecutionResult(input)).toThrow('worktree_cleanup_plan_invalid');
+  });
   test('archive manifests only select observed loss paths and retain unpushed commits', () => {
     const o = observation();
     expect(() => createCleanupPlan(SID, [{ observation: o, advice: { ...advice(), archive: { git: { ...advice().archive.git!, paths: ['missing.md'] }, private: null } } }])).toThrow('archive_paths_invalid');
@@ -79,6 +116,32 @@ describe('cleanup plan contract and execution boundary', () => {
     expect(() => createCleanupPlan(SID, [{ observation: { ...o, loss: { ...o.loss!, commits: ['f'.repeat(40)] } }, advice: advice(false) }])).toThrow('commits_need_archive');
     const plan = createCleanupPlan(SID, [{ observation: { ...o, loss: null }, advice: { ...advice(false), recommendation: 'keep' } }]);
     expect(cleanupSelection(plan.items[0]!)).toEqual({ selectable: false, selected_by_default: false });
+  });
+  test('the plan lists the archivable loss paths, and the archive validator accepts exactly them', () => {
+    const o = observation(), file = o.loss!.files[0]!;
+    const directory = (path: string) => ({ ...file, path, kind: 'directory' as const, sha256: null, git_oid: null });
+    const symlink = (path: string) => ({ ...file, path, kind: 'symlink' as const });
+    const staged = (path: string, mode: string) => ({ path, mode, oid: 'f'.repeat(40), stage: 0 });
+    const loss = { ...o.loss!, ignored: ['.env', 'cache/'],
+      changed_paths: ['bin/run.sh', 'docs/guide.md', 'docs/index-link.md', 'docs/link.md', 'docs/removed.md', 'docs/staged-link.md', 'docs/staged.md', 'docs/tracked-link.md', 'docs/was-link.md', 'empty'],
+      index: [staged('bin/run.sh', '100755'), staged('docs/index-link.md', '120000'), staged('docs/staged-link.md', '120000'), staged('docs/staged.md', '100644'),
+        staged('docs/tracked-link.md', '120000'), staged('docs/was-link.md', '120000')],
+      files: [{ ...file, path: '.env' }, { ...file, path: 'README.md' }, directory('cache'), file, symlink('docs/link.md'), symlink('docs/staged-link.md'),
+        symlink('docs/tracked-link.md'), { ...file, path: 'docs/was-link.md' }, directory('empty')] };
+    const plan = (paths: string[]) => createCleanupPlan(SID, [{ observation: { ...o, loss }, advice: { ...advice(), archive: { git: null, private: { directory: 'fixture-repo', paths } } } }]);
+    expect(plan(['docs/guide.md']).items[0]!.loss).toMatchObject({ files: loss.changed_paths, archivable: ['.env', 'bin/run.sh', 'docs/guide.md', 'docs/index-link.md', 'docs/staged.md', 'docs/was-link.md'] });
+    // A worktree entry decides when present: only a regular file (changed, ignored, or a former symlink now a file) qualifies.
+    // Without one, any index version qualifies (100644, 100755, 120000): staging saves each blob with its mode.
+    for (const [path, accepted] of [['docs/guide.md', true], ['.env', true], ['docs/was-link.md', true], ['docs/staged.md', true], ['bin/run.sh', true],
+      ['docs/index-link.md', true], ['docs/removed.md', false], ['empty', false], ['cache', false], ['docs/link.md', false], ['docs/staged-link.md', false],
+      ['docs/tracked-link.md', false], ['README.md', false]] as const) {
+      if (accepted) expect(plan([path]).items[0]!.advice.archive.private!.paths).toEqual([path]);
+      else expect(() => plan([path])).toThrow('archive_paths_invalid');
+    }
+    const item = plan(['docs/guide.md']).items[0]!;
+    for (const archivable of [['docs/guide.md', '.env'], ['.env', '.env'], ['/private/.env']]) {
+      expect(() => decodeCleanupPlan({ protocol: 1, kind: 'operator_worktree_cleanup_plan', session_id: SID, items: [{ ...item, loss: { ...item.loss!, archivable } }] })).toThrow('worktree_cleanup_plan_invalid');
+    }
   });
   test('private-only archive never calls Git push or PR publication', async () => {
     const h = harness();
