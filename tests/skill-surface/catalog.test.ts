@@ -9,7 +9,6 @@ import {
   mutationPathSkillNames,
   parseSkillSurfaceCatalog,
   requiredExplicitExternalDependencyInstallGroups,
-  requiredExplicitExternalSkillInstallGroup,
   selectionOwnedSkillNames,
   validateSkillSurfaceCatalogValue,
   type SkillSurfaceCatalog,
@@ -318,13 +317,13 @@ describe("skill-surface catalog: the real manifest.json on disk", () => {
   // Current closed catalog excludes the retired headless plan skill.
   test("covers all 15 repo-owned entries plus the 9 external skills (24 packages)", () => {
     if (resolution.status !== "valid") throw new Error("expected valid catalog");
-    expect(resolution.catalog.packages.length).toBe(24);
+    expect(resolution.catalog.packages.length).toBe(23);
     const repoOwned = resolution.catalog.packages.filter((p) => p.kind !== "external");
     expect(repoOwned.length).toBe(15);
     expect(repoOwned.map(p => p.name)).not.toContain("claude-plan");
     const external = resolution.catalog.packages.filter((p) => p.kind === "external");
     expect(external.map((p) => p.name).sort()).toEqual([
-      "check", "health", "herdr", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "reverse-skill-router", "think",
+      "check", "health", "herdr", "hunt", "mermaid", "obsidian-cli", "obsidian-markdown", "think",
     ]);
   });
 
@@ -432,44 +431,35 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
     });
   });
 
-  test("externalSkillsForSelection: core gets Waza and Mermaid while Reverse Skill and the Obsidian companions stay explicit-only", () => {
+  test("externalSkillsForSelection: core gets Waza and Mermaid while the Obsidian companions stay explicit-only", () => {
     expect(externalSkillsForSelection(catalog, [])).toEqual(["think", "hunt", "check", "health", "mermaid"]);
     expect(externalSkillsForSelection(catalog, PLUGIN_IDS)).toEqual(["think", "hunt", "check", "health", "mermaid"]);
-    expect(externalSkillsForSelection(catalog, undefined)).toContain("reverse-skill-router");
+    expect(externalSkillsForSelection(catalog, undefined)).toContain("obsidian-markdown");
   });
 
-  test("requiredExplicitExternalSkillInstallGroup selects the pinned explicit-only package", () => {
-    expect(requiredExplicitExternalSkillInstallGroup(catalog, "reverse-skill-router", ["codex"])).toEqual({
-      status: "selected",
-      group: {
-      provider: "zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55",
-      hosts: ["codex"],
-      skills: ["reverse-skill-router"],
-      integrityBySkill: {
-        "reverse-skill-router": "sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda",
-      },
-      },
-    });
-  });
-
-  test("requiredExplicitExternalSkillInstallGroup rejects a selection-projected package", () => {
-    const fullPackage = catalog.packages.find((pkg) => pkg.name === "mermaid")!;
-    expect(requiredExplicitExternalSkillInstallGroup(catalog, fullPackage.name, ["codex"])).toEqual({
+  test("requiredExplicitExternalDependencyInstallGroups rejects a selection-projected dependency", () => {
+    const projected: SkillSurfaceCatalog = {
+      ...catalog,
+      packages: catalog.packages.map((pkg) => (
+        pkg.name === "obsidian-cli" ? { ...pkg, explicitOnly: false } : pkg
+      )),
+    };
+    expect(requiredExplicitExternalDependencyInstallGroups(projected, "obsidian-memory", ["codex"])).toEqual({
       status: "not_explicit_only",
-      name: "mermaid",
+      name: "obsidian-cli",
     });
   });
 
-  test("requiredExplicitExternalSkillInstallGroup requires pinned tree integrity", () => {
+  test("requiredExplicitExternalDependencyInstallGroups requires pinned tree integrity", () => {
     const withoutIntegrity: SkillSurfaceCatalog = {
       ...catalog,
       packages: catalog.packages.map((pkg) => (
-        pkg.name === "reverse-skill-router" ? { ...pkg, integrity: null } : pkg
+        pkg.name === "obsidian-markdown" ? { ...pkg, integrity: null } : pkg
       )),
     };
-    expect(requiredExplicitExternalSkillInstallGroup(withoutIntegrity, "reverse-skill-router", ["codex"])).toEqual({
+    expect(requiredExplicitExternalDependencyInstallGroups(withoutIntegrity, "obsidian-memory", ["codex"])).toEqual({
       status: "missing_integrity",
-      name: "reverse-skill-router",
+      name: "obsidian-markdown",
     });
   });
 
@@ -500,7 +490,7 @@ describe("skill-surface catalog: target post-cutover discovery matrix", () => {
       "obsidian-memory", "windows-python-first",
     ]);
     expect(externalSkills).toEqual([
-      "repo-harness-cross-review", "repo-harness-herdr-portal", "herdr", "think", "hunt", "check", "health", "mermaid", "reverse-skill-router",
+      "repo-harness-cross-review", "repo-harness-herdr-portal", "herdr", "think", "hunt", "check", "health", "mermaid",
       "obsidian-markdown", "obsidian-cli",
     ]);
   });
