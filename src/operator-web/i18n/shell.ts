@@ -102,6 +102,8 @@ export const en = {
   'freshness.sourcesOk': '{count} sources ok',
   'freshness.stale': '{count} stale',
   'freshness.unavailable': '{count} unavailable',
+  'freshness.architecture.collected': 'Map collected {age} ago',
+  'freshness.architecture.model': 'Committed model',
   'copy.commandLabel': 'Copy command',
 
   'nav.bots': 'Bots',
@@ -211,6 +213,8 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   'freshness.sourcesOk': '{count} 个来源正常',
   'freshness.stale': '{count} 个过期',
   'freshness.unavailable': '{count} 个不可用',
+  'freshness.architecture.collected': '{age}前采集的底图',
+  'freshness.architecture.model': '已提交的模型',
   'copy.commandLabel': '复制命令',
 
   'nav.bots': 'Bots',

@@ -25,7 +25,7 @@ import { SKILL_PROJECTION_STATES } from '../skill-surface/projection-state';
 export function unavailableSetupSnapshot(reason: SetupReason = 'collection_pending'): SetupSnapshotV2 {
   return {
     projection_version: SETUP_PROJECTION, status: 'unavailable', reason, collected_at: null,
-    setup_status: null, summary: null, checks: [], hosts: [], skills: [], hooks: [], hook_usage: null, fleet: [],
+    setup_status: null, summary: null, checks: [], hosts: [], skills: [], skill_roots: [], install_selection: null, hooks: [], hook_usage: null, fleet: [],
   };
 }
 
@@ -61,7 +61,7 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
   };
 
   const v = obj(value, ['projection_version', 'status', 'reason', 'collected_at', 'setup_status', 'summary', 'checks',
-    'hosts', 'skills', 'hooks', 'hook_usage', 'fleet'], 'snapshot');
+    'hosts', 'skills', 'skill_roots', 'install_selection', 'hooks', 'hook_usage', 'fleet'], 'snapshot');
   if (v.projection_version !== SETUP_PROJECTION) fail('projection_version');
   const status = oneOf(v.status, SETUP_SNAPSHOT_STATUSES, 'status');
   const reason = nullable(v.reason, x => oneOf(x, SETUP_REASONS, 'reason'));
@@ -126,11 +126,16 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
 
   const skillNames = new Set<string>();
   for (const raw of array(v.skills, 'skills')) {
-    const s = obj(raw, ['name', 'summary', 'hosts'], 'skill');
+    const s = obj(raw, ['name', 'summary', 'catalog_hosts', 'hosts'], 'skill');
     const name = id(s.name, 'skill name');
     if (skillNames.has(name)) fail('duplicate skill');
     skillNames.add(name);
     nullable(s.summary, x => packageText(x, 'skill summary'));
+    nullable(s.catalog_hosts, x => {
+      const catalogHosts = array(x, 'catalog hosts');
+      if (catalogHosts.join(',') !== SETUP_HOSTS.filter(host => catalogHosts.includes(host)).join(',')) fail('catalog hosts');
+      return catalogHosts;
+    });
     let rows = 0;
     perHost(s.hosts, x => nullable(x, y => {
       const r = obj(y, ['state', 'ok'], 'skill row');
@@ -141,6 +146,22 @@ export function decodeSetupSnapshot(value: unknown): SetupSnapshotV2 {
     }), 'skill hosts');
     if (rows === 0) fail('skill without rows');
   }
+
+  // Empty when the catalog was unreadable; otherwise one root per host in host order.
+  const roots = array(v.skill_roots, 'skill roots');
+  if (roots.length !== 0 && (!hasData || roots.length !== SETUP_HOSTS.length)) fail('skill roots');
+  roots.forEach((raw, index) => {
+    const r = obj(raw, ['host', 'root', 'other_skills'], 'skill root');
+    if (r.host !== SETUP_HOSTS[index]) fail('skill root order');
+    text(r.root, 'skill root path');
+    nullable(r.other_skills, x => {
+      const names = array(x, 'other skills').map(name => text(name, 'other skill name'));
+      if (names.join('\n') !== [...names].sort().join('\n')) fail('other skills order');
+      return names;
+    });
+  });
+  nullable(v.install_selection, x => (x === 'all' ? x : array(x, 'install selection').map(plugin => packageScalar(plugin, 'install selection plugin'))));
+  if (!hasData && v.install_selection !== null) fail('unavailable snapshot carries data');
 
   let eventIndex = -1;
   for (const raw of array(v.hooks, 'hooks')) {

@@ -1,12 +1,9 @@
 export const en = {
-  'workspace.architecture': 'Architecture',
   'workspace.loading': 'Loading workspace…',
-  'architecture.eyebrow': 'Committed architecture model',
   'architecture.loading': 'Reading architecture modules…',
   'architecture.module.loading': 'Reading module facts…',
   'architecture.failed': 'The read failed: {code}',
   'architecture.refreshFailed': 'The last result stays on screen. The refresh failed: {code}',
-  'architecture.commit': 'Commit',
   'architecture.back': 'All modules',
   'architecture.empty': 'The model declares no modules.',
   'architecture.components': 'Components: {count}',
@@ -105,7 +102,6 @@ export const en = {
   'architecture.map.unavailable.unreachable': 'The operator API gave no typed answer.',
   'architecture.map.unavailable.unreachable.next': 'Check that `repo-harness operator serve` runs, then retry.',
   'architecture.map.label': 'Architecture map',
-  'architecture.map.collected': 'Collected',
   'architecture.map.counts': '{nodes} and {relations} from the committed model.',
   'architecture.map.sizes.model_worktree_dirty': 'No line counts: the model in the working tree has uncommitted changes.',
   'architecture.map.sizes.checkout_changed': 'No line counts: the checkout changed while the map was collected. The next collection reads it again.',
@@ -148,6 +144,7 @@ export const en = {
 
   // Architecture map layers
   'architecture.layers': 'Layers',
+  'architecture.lens.hint': 'Opens on the module map and today\'s changes',
   'architecture.layer.changes': "Today's changes",
   'architecture.layer.violations': 'Violations and drift',
   'architecture.layer.pull_requests': 'PR impact',
@@ -315,14 +312,11 @@ export const en = {
 } as const;
 
 export const zh: Readonly<Record<keyof typeof en, string>> = {
-  'workspace.architecture': '架构',
   'workspace.loading': '正在加载工作区…',
-  'architecture.eyebrow': '已提交的架构模型',
   'architecture.loading': '正在读架构模块…',
   'architecture.module.loading': '正在读模块事实…',
   'architecture.failed': '读取失败：{code}',
   'architecture.refreshFailed': '屏幕上保留上一次的结果。刷新失败：{code}',
-  'architecture.commit': 'Commit',
   'architecture.back': '全部模块',
   'architecture.empty': '模型里没有声明模块。',
   'architecture.components': 'component：{count}',
@@ -419,7 +413,6 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
   'architecture.map.unavailable.unreachable': 'operator API 没有给出带类型的回答。',
   'architecture.map.unavailable.unreachable.next': '确认 `repo-harness operator serve` 在运行，然后重试。',
   'architecture.map.label': '架构底图',
-  'architecture.map.collected': '采集于',
   'architecture.map.counts': '已提交的模型有 {nodes} 个节点、{relations} 条关系。',
   'architecture.map.sizes.model_worktree_dirty': '没有行数：工作区里的模型有未提交的改动。',
   'architecture.map.sizes.checkout_changed': '没有行数：采集期间检出发生了变化。下一次采集会重新读取。',
@@ -462,6 +455,7 @@ export const zh: Readonly<Record<keyof typeof en, string>> = {
 
   // Architecture map layers
   'architecture.layers': '图层',
+  'architecture.lens.hint': '默认打开模块底图和今日变更',
   'architecture.layer.changes': '今日变更',
   'architecture.layer.violations': '违规与漂移',
   'architecture.layer.pull_requests': 'PR 影响面',
