@@ -479,7 +479,7 @@ export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<str
   return invoke(program, rest, options);
 }
 
-/** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the seat labels of one repository (#1659), the hc version, and the advisor seat send and read (#1756). */
+/** The board host port (#1505): the seat terminals of one repository with their parent labels (#1780), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
     if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
@@ -500,17 +500,6 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
               labels: { seat: label(RH_LABEL.seat), issue: label(RH_LABEL.issue), pr: label(RH_LABEL.pr), parent: label(RH_LABEL.parent) },
             };
           });
-        return { status: 'observed', terminals };
-      } catch (error) {
-        return unavailable(error);
-      }
-    },
-    repositorySeats: (repositoryId) => {
-      try {
-        const terminals = hcList({ [RH_LABEL.repository]: repositoryId }, options)
-          .map(({ address }) => hcGet(address, options).labels)
-          .filter(labels => labels[RH_LABEL.service] === undefined)
-          .map(labels => ({ parent: labels[RH_LABEL.parent], seat: labels[RH_LABEL.seat] }));
         return { status: 'observed', terminals };
       } catch (error) {
         return unavailable(error);

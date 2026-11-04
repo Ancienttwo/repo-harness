@@ -51,7 +51,7 @@ export function collectBoardParents(input: BoardParentsCollectInput): BoardParen
     throw new BoardParentsError('parents_github_failed', 'gh api graphql returned invalid JSON');
   }
   const issues = decodeOpenIssuesRead(pages);
-  const seats = input.host.repositorySeats(String(issues.repository.database_id));
+  const seats = input.host.seatTerminals(String(issues.repository.database_id));
   if (seats.status === 'unavailable') throw new BoardParentsError('parents_hc_failed', `hc could not list the seat terminals: ${seats.reason}`);
   return projectBoardParents({ observed_at: observedAt, issues, terminals: seats.terminals });
 }

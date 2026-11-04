@@ -1,8 +1,8 @@
 import { spawnSync } from 'child_process';
 import { architecturePort, isArchitectureUnavailable, type ArchctxProviderOptions } from '../../core/architecture/contracts';
 import {
-  linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
-  type BoardPathOwnersV1, type BoardSeatTerminalReadV1, type BoardTerminalV1, type BoardToolingV1, type BoardV1,
+  linkedPullRequests, projectBoard, seatTerminal, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
+  type BoardPathOwnersV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
 import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
@@ -120,19 +120,8 @@ function tooling(input: BoardCollectInput): BoardToolingV1 {
   return { hc: version.status === 'unavailable' ? version : { status: 'observed', version: version.version, min_version: HC_MIN_VERSION }, herdr_app: herdrApp };
 }
 
-const POSITIVE = /^[1-9][0-9]*$/u;
 /** One orchestrator and one advisor serve the whole repository (#1780): the board of every parent shows them. */
 const REPOSITORY_SEATS: ReadonlySet<string> = new Set(['orchestrator', ADVISOR_SEAT]);
-
-function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
-  const { labels, ...base } = terminal;
-  const { seat, issue, pr } = labels;
-  if (seat === undefined) return { ...base, seat_status: 'unavailable', reason: 'seat_label_missing' };
-  if (seat === '' || [issue, pr].some(value => value !== undefined && !POSITIVE.test(value))) {
-    return { ...base, seat_status: 'unavailable', reason: 'seat_label_invalid' };
-  }
-  return { ...base, seat_status: 'observed', seat, issue: issue === undefined ? null : Number(issue), pr: pr === undefined ? null : Number(pr) };
-}
 
 /**
  * The seat terminals of this repository and parent: the orchestrator and the

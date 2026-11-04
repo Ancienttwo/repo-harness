@@ -200,6 +200,9 @@ test('parent list: one paginated issue read and one hc list give the open parent
   expect(list.repository).toBe('Ancienttwo/repo-harness');
   // t1-t3 have a seat label; t4 has none, and t5 is a seat of another repository with the same parent.
   expect(list.parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
+  // The seats list keeps every seat terminal of the repository with its hc agent kind, status word and raw parent label.
+  expect(list.seats.map(seat => [seat.address, seat.seat_status === 'observed' && [seat.seat, seat.issue, seat.pr], seat.parent, seat.agent, seat.status]))
+    .toEqual([['t1', ['worker', 1476, 1499], '1474', 'codex', 'blocked'], ['t2', ['worker', 1475, 1491], '1474', 'claude-code', 'done'], ['t3', ['orchestrator', null, null], '1474', null, 'idle']]);
   expect(calls).toHaveLength(1);
   expect(calls[0]!.filter(arg => !arg.startsWith('query='))).toEqual(['api', 'graphql', '--hostname', 'github.com', '--paginate', '--slurp', '-f', '-F', 'owner={owner}', '-F', 'name={repo}']);
   // Two pages give the same list as one.
@@ -548,9 +551,12 @@ test('watch service: --watch refuses a terminal without the service labels; star
   // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
   // without a parent label. A worker shows only in the room of its parent label; a terminal of another repository never.
   const room = (repository: string, labels: Json) => ({ labels: { 'repo-harness.repository': repository, ...labels } });
-  const repositorySeats = watchHc({
-    FAKE_LS: ['t7', 't11', 't12', 't16', 't17', 't18', 't19'].map(address => ({ address, state: 'live' })),
+  const agents: Json = { t5: 'bun', t7: 'claude', t11: 'codex', t12: 'claude', t16: 'claude', t17: 'codex', t18: 'claude', t19: 'claude', t21: 'codex' };
+  const repositoryTerminals = watchHc({
+    FAKE_LS: ['t5', 't7', 't11', 't12', 't16', 't17', 't18', 't19', 't21'].map(address => ({ address, state: 'live', agent: agents[address] })),
     FAKE_TERMINALS: {
+      // t5 is the attention watcher of this repository; t21 is a seat with an invalid pr label.
+      t5: { labels: { ...labels, 'repo-harness.repository': '1186405141' } }, t21: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.pr': 'x' }),
       t7: room('1186405141', { 'repo-harness.seat': 'orchestrator' }), t11: room('1186405141', { 'repo-harness.seat': 'advisor' }),
       t12: room('1186405141', { 'repo-harness.seat': 'orchestrator', 'repo-harness.parent': '1503' }),
       t16: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.parent': '1474', 'repo-harness.issue': '1721' }),
@@ -559,9 +565,17 @@ test('watch service: --watch refuses a terminal without the service labels; star
       t19: room('987654321', { 'repo-harness.seat': 'advisor' }),
     },
   });
-  const office = replay({ host: boardHostPorts(repositorySeats.options) }).execution;
+  const office = replay({ host: boardHostPorts(repositoryTerminals.options) }).execution;
   expect(office.status === 'observed' && office.terminals.map(terminal => [terminal.address, terminal.seat_status === 'observed' && terminal.seat]))
     .toEqual([['t7', 'orchestrator'], ['t11', 'advisor'], ['t12', 'orchestrator'], ['t16', 'worker']]);
+  // The parent list of the repository keeps every seat, with or without a parent label (#1785); the watcher and the
+  // other repository never show, and an invalid label shows as such.
+  const officeSeats = collectBoardParents({ repo_root: repositoryTerminals.root, now: () => REPLAY_NOW, host: boardHostPorts(repositoryTerminals.options),
+    gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) }).seats;
+  expect(officeSeats.map(seat => [seat.address, seat.seat_status === 'observed' ? [seat.seat, seat.issue] : seat.reason, seat.parent, seat.agent])).toEqual([
+    ['t7', ['orchestrator', null], null, 'claude'], ['t11', ['advisor', null], null, 'codex'], ['t12', ['orchestrator', null], '1503', 'claude'],
+    ['t16', ['worker', 1721], '1474', 'claude'], ['t17', ['worker', 1773], '1503', 'codex'], ['t18', ['worker', 1774], null, 'claude'],
+    ['t21', 'seat_label_invalid', null, 'codex']]);
 
   // Doctor runs in repository 1186405141. t6 is the watcher of another repository with the same parent.
   const other = { ...labels, 'repo-harness.repository': '987654321' };
