@@ -100,12 +100,6 @@ export interface IntegrityBoundExternalSkillInstallGroup extends Omit<ExternalSk
   readonly integrityBySkill: Readonly<Record<string, string>>;
 }
 
-export type RequiredExternalSkillInstallGroup =
-  | { readonly status: "selected"; readonly group: IntegrityBoundExternalSkillInstallGroup }
-  | { readonly status: "missing"; readonly name: string }
-  | { readonly status: "not_explicit_only"; readonly name: string }
-  | { readonly status: "missing_integrity"; readonly name: string };
-
 export type RequiredExternalDependencyInstallGroups =
   | { readonly status: "selected"; readonly groups: readonly IntegrityBoundExternalSkillInstallGroup[] }
   | { readonly status: "missing"; readonly name: string }
@@ -685,31 +679,6 @@ export function externalSkillsForSelection(
   return catalog.packages
     .filter((pkg) => pkg.kind === "external" && (plugins === undefined || selected(pkg, plugins)))
     .map((pkg) => pkg.name);
-}
-
-/** Select one named explicit-only external package, or fail closed. */
-export function requiredExplicitExternalSkillInstallGroup(
-  catalog: SkillSurfaceCatalog,
-  name: string,
-  hosts: readonly SkillSurfaceHost[],
-): RequiredExternalSkillInstallGroup {
-  const named = catalog.packages.find((pkg) => pkg.name === name);
-  if (named === undefined || named.kind !== "external" || named.provider === null) {
-    return { status: "missing", name };
-  }
-  if (!named.explicitOnly) return { status: "not_explicit_only", name };
-  if (named.integrity === null) return { status: "missing_integrity", name };
-  const selectedHosts = hosts.filter((host) => named.hosts.includes(host));
-  if (selectedHosts.length === 0) return { status: "missing", name };
-  return {
-    status: "selected",
-    group: {
-      provider: named.provider,
-      hosts: selectedHosts,
-      skills: [name],
-      integrityBySkill: { [name]: named.integrity },
-    },
-  };
 }
 
 /** Stable transitive dependency names for one package, excluding the root. */

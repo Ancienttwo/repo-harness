@@ -14,7 +14,7 @@ plugin id. The installer maps the other surfaces through
 
 | Owner | Surfaces |
 |---|---|
-| `core` | The CLI, the Claude and Codex hook adapters with every hook route, the agent fleet files, the root router `repo-harness`, `repo-harness-check`, `repo-harness-test`, `repo-harness-issue-flow`, `repo-harness-ship`, the Herdr skill, Waza (`think`, `hunt`, `check`, `health` and the Waza rules files), and Mermaid. `repo-harness-setup`, `merge-gate`, `herdr` and `reverse-skill-router` are explicit-only. |
+| `core` | The CLI, the Claude and Codex hook adapters with every hook route, the agent fleet files, the root router `repo-harness`, `repo-harness-check`, `repo-harness-test`, `repo-harness-issue-flow`, `repo-harness-ship`, the Herdr skill, Waza (`think`, `hunt`, `check`, `health` and the Waza rules files), and Mermaid. `repo-harness-setup`, `merge-gate` and `herdr` are explicit-only. |
 | `architecture` | `repo-harness-architecture`, `repo-harness-archimap`, and the CodeGraph CLI and MCP projection. |
 | `cross-review` | `repo-harness-cross-review`. |
 | `peer-runtime` | `repo-harness-herdr-portal` (Claude host only). |
@@ -173,16 +173,6 @@ repo-harness update
 ```
 
 ## Explicit-Only Skills
-
-`reverse-skill-router` is a recommended but explicit-only dependency. Its
-upstream pack tells agents to treat a mentioned target as authorized, which is
-not a valid repo-harness authority boundary. No selection installs it. Install
-it only after independent scope review with
-`repo-harness install --with-reverse-skill` or
-`repo-harness update --with-reverse-skill`. The install copies the router pack;
-its optional security toolchains stay on demand. The catalog pins upstream
-commit `539899ddc7608d63dc66e08e794d572e080f1a55` and verifies the selected
-tree's SHA-256 before any host projection.
 
 `obsidian-memory` declares `obsidian-markdown` and `obsidian-cli` as hard
 companion Skill dependencies. Both upstream Skills are explicit-only, and an

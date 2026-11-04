@@ -26,6 +26,7 @@ import { useLocale, type OperatorLocale, type OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { NavRail, RailMenuButton, switchOption, useRailCollapsed, type RepositorySwitchModel } from './NavRail';
 import type { ArchitectureMapReader } from './ArchitectureMap';
+import type { ArchitectureSource } from './ArchitectureWorkspace';
 import type { NotifyStatusReader } from './NotifyStatus';
 import { RepositoriesPage } from './RepositoriesPage';
 import {
@@ -55,7 +56,7 @@ import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } 
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
 import { useTheme } from './theme';
 import { useNow } from './ui';
-import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
 import {
   fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
   type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
@@ -221,6 +222,28 @@ function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly n
   );
 }
 
+/** The architecture page's line: the model commit on screen and, for a map, when the server collected it. */
+function ArchitectureFreshness({ source, now, t }: { readonly source: ArchitectureSource | null; readonly now: number; readonly t: OperatorTranslate }) {
+  if (source === null) return null;
+  return (
+    <span data-freshness="ok" data-freshness-source="architecture">
+      {source.collectedAt === null ? t('freshness.architecture.model') : t('freshness.architecture.collected', { age: ageWords(source.collectedAt, now, t) })}
+      {' · '}<code className="mono-value" title={source.commit}>{source.commit.slice(0, 7)}</code>
+    </span>
+  );
+}
+
+/** The page title, once per page: the rail group, then the page name. */
+function PageCrumb({ workspace, t }: { readonly workspace: Workspace; readonly t: OperatorTranslate }) {
+  const group = WORKSPACES.find(entry => entry.id === workspace)!.group;
+  return (
+    <p className="operator-crumb">
+      {group !== null && <><span>{t(`nav.group.${group}`)}</span><span aria-hidden="true">/</span></>}
+      <strong>{t(`nav.${workspace}`)}</strong>
+    </p>
+  );
+}
+
 export function OperatorApp({
   readRepositories = fetchRepositories,
   initialRepositories,
@@ -331,6 +354,7 @@ export function OperatorApp({
     openPlace(boardHome);
   };
   const refresh = () => setRefreshGeneration(current => current + 1);
+  const [architectureSource, setArchitectureSource] = useState<ArchitectureSource | null>(null);
 
   const [railCollapsed, toggleRail] = useRailCollapsed(workspace);
   const [drawerOpen, setDrawerOpen] = useState(false);
@@ -383,11 +407,13 @@ export function OperatorApp({
         collapsed={railCollapsed} onToggleCollapsed={toggleRail} drawerOpen={drawerOpen} onCloseDrawer={closeDrawer}
         activity={devActivity} locale={locale} onLocale={setLocale} theme={theme.preference} onTheme={theme.cycle} t={t} />
       <div className="flex min-w-0 flex-1 flex-col">
-        <header className="operator-header sticky top-0 z-10 flex items-center gap-3 border-b border-kumo-line bg-kumo-canvas/95 px-4 py-2 backdrop-blur rail:px-6">
+        <header className="operator-header sticky top-0 z-10 flex h-14 items-center gap-3 bg-kumo-canvas px-4 rail:px-6">
           <RailMenuButton expanded={drawerOpen} onOpen={openDrawer} t={t} />
+          <PageCrumb workspace={workspace} t={t} />
           {/* One freshness line, about the source of the page on screen. */}
-          <span className="min-w-0 flex-1 truncate text-xs text-kumo-subtle">
+          <span className="min-w-0 flex-1 truncate text-right text-xs text-kumo-subtle">
             {workspace === 'cli' ? null : workspace === 'bots' ? <BotsFreshness view={botAccess} now={now} t={t} />
+              : workspace === 'architecture' ? <ArchitectureFreshness source={architectureSource} now={now} t={t} />
               : (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace) ? <SetupFreshness view={setup} now={now} t={t} />
               : workspace === 'worktrees' ? <WorktreesFreshness view={worktrees} now={now} t={t} />
               : workspace === 'board' ? <BoardFreshness view={board} now={now} t={t} />
@@ -397,7 +423,7 @@ export function OperatorApp({
             <span className="max-sm:sr-only">{t('status.refresh')}</span>
           </Button>
         </header>
-        <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-5 pb-10 rail:px-6" data-workspace={workspace}>
+        <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
           {workspace === 'board' && <BoardPage place={boardSubject} view={board} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
@@ -414,16 +440,11 @@ export function OperatorApp({
               generation={refreshGeneration} mode={theme.mode} now={now} onOpen={openPlace} t={t} />
           </Suspense>}
           {workspace === 'tests' && <TestsPage repositoryId={activeRepository?.repository_id ?? null} readTests={readTests} generation={refreshGeneration} now={now} t={t} />}
-          {workspace === 'architecture' && <>
-            <header className="border-b border-kumo-hairline pb-4">
-              <h1 className="text-xl font-semibold text-kumo-strong">{t('nav.architecture')}</h1>
-            </header>
-            {!activeRepository ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
-              : <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
-                <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
-                  onModule={module => openPlace({ workspace: 'architecture', module, item: null })} t={t} />
-              </Suspense>}
-          </>}
+          {workspace === 'architecture' && (!activeRepository ? <p role="status" className="text-sm text-kumo-subtle">{t('repository.select')}</p>
+            : <Suspense fallback={<p role="status" className="text-sm text-kumo-subtle">{t('workspace.loading')}</p>}>
+              <ArchitectureWorkspace repositoryId={activeRepository.repository_id} github={(devSnapshot && repositoryById(devSnapshot, activeRepository.repository_id)?.github) ?? null} moduleId={place.module} refreshGeneration={refreshGeneration} readMap={readArchitectureMap}
+                onModule={module => openPlace({ workspace: 'architecture', module, item: null })} onSource={setArchitectureSource} t={t} />
+            </Suspense>)}
           {workspace === 'bots' && <BotsPage view={botAccess} reviews={botReviews} now={now} t={t} />}
           {/* Kept mounted after the first visit so its readers pause while away and read once on return. */}
           {systemMounted && <div hidden={workspace !== 'system'}>

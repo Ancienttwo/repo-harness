@@ -384,26 +384,6 @@
       "audience": "worker"
     },
     {
-      "name": "reverse-skill-router",
-      "kind": "external",
-      "source": null,
-      "provider": "zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55",
-      "integrity": "sha256:7aafee6c0dec684d410af6864ab77da4d88b9d442142c0efb91b235ce9793dda",
-      "hosts": [
-        "claude",
-        "codex",
-        "pi"
-      ],
-      "owner": "core",
-      "explicitOnly": true,
-      "discoverability": "external-marketplace",
-      "requires": [],
-      "mutatesRepoByDefault": false,
-      "summary": "Explicit-opt-in reverse-engineering and security-task router pack. Fetched from zhaoxuya520/reverse-skill via bunx skills add after independent authorization review.",
-      "retirementCandidate": null,
-      "audience": "worker"
-    },
-    {
       "name": "obsidian-markdown",
       "kind": "external",
       "source": null,
