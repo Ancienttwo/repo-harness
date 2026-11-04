@@ -31,10 +31,10 @@ export type CleanupPlanAnswer = { readonly state: 'ready'; readonly plan: Cleanu
 export type CleanupExecutionAnswer = { readonly state: 'done'; readonly result: CleanupExecutionResult } | CleanupPlanFailure;
 export type AuthorizedCleanupPost = AuthorizedCleanupRequest & { readonly request_id: string };
 
-/** The plan routes (#1719) connect these; each answer passed the core decoder. */
+/** The plan routes connect these (`cleanupPlanPorts`); each answer passed the core decoder. */
 export interface CleanupPlanPorts {
-  /** Pass 1: the server's plan, in which every non-green item is `keep`. */
-  readonly open: () => Promise<CleanupPlanAnswer>;
+  /** Pass 1: the server observes these non-green worktrees; every item is `keep`. */
+  readonly open: (ids: readonly string[]) => Promise<CleanupPlanAnswer>;
   /** Pass 2: a new plan from the same observations with the user's choices. */
   readonly choose: (sessionId: string, choices: readonly CleanupChoice[]) => Promise<CleanupPlanAnswer>;
   readonly execute: (request: AuthorizedCleanupPost) => Promise<CleanupExecutionAnswer>;
@@ -259,8 +259,8 @@ type Pending = 'open' | 'choose' | 'execute' | null;
  * chooses per item, the server makes a plan from the choices, and each approval
  * carries the two digests that the item shows.
  */
-export function CleanupPlanReview({ ports, now, onBack, t }: {
-  readonly ports: CleanupPlanPorts; readonly now: number; readonly onBack: () => void; readonly t: OperatorTranslate;
+export function CleanupPlanReview({ ports, ids, now, onBack, t }: {
+  readonly ports: CleanupPlanPorts; readonly ids: readonly string[]; readonly now: number; readonly onBack: () => void; readonly t: OperatorTranslate;
 }) {
   const [plan, setPlan] = useState<CleanupPlan | null>(null);
   const [drafts, setDrafts] = useState<Readonly<Record<string, Draft>>>({});
@@ -282,8 +282,8 @@ export function CleanupPlanReview({ ports, now, onBack, t }: {
 
   const open = useCallback(() => {
     setPending('open');
-    void ports.open().catch(lost).then(accept);
-  }, [ports, accept]);
+    void ports.open(ids).catch(lost).then(accept);
+  }, [ports, ids, accept]);
   useEffect(() => { open(); }, [open]);
 
   const draftOfItem = (item: CleanupPlanItem) => drafts[item.worktree.id] ?? draftOf(item.advice);
@@ -299,7 +299,9 @@ export function CleanupPlanReview({ ports, now, onBack, t }: {
     if (plan === null || locked || !changed || invalid) return;
     const day = new Date(now).toISOString().slice(0, 10);
     setPending('choose');
-    void ports.choose(plan.session_id, editableItems.map(item => choiceOf(item, draftOfItem(item), day))).catch(lost).then(accept);
+    // The server takes one choice per plan item. An item the user cannot edit is not eligible, so the server keeps it.
+    void ports.choose(plan.session_id, items.map(item => editable(item) ? choiceOf(item, draftOfItem(item), day)
+      : { id: item.worktree.id, recommendation: 'keep' as const, archive: { git: null, private: null } })).catch(lost).then(accept);
   };
 
   const execute = () => {

@@ -3,6 +3,7 @@ import { closeSync, fstatSync, lstatSync, readSync, realpathSync, type Stats } f
 import { resolve } from 'node:path';
 import { cleanupContentsDigestInput, type CleanupFileEvidence, type CleanupIndexEntry, type CleanupLossEvidence } from '../../core/operator/worktree-cleanup-observation';
 import { isRepositoryRelativePath } from '../../core/operator/doc-session-events';
+import { CLEANUP_PLAN_MAX_PATHS } from '../../core/operator/worktree-cleanup-plan';
 import { docSessionGitRunner, type DocSessionGitRunner } from './doc-session-changes';
 import { worktreeId } from '../git/worktree-record';
 import { cleanupDirectoryNames, openCleanupChild, openCleanupDirectory, UnsupportedCleanupPath, CleanupDirectoryTooLarge } from './cleanup-file-access';
@@ -145,18 +146,21 @@ function once(target: CleanupObservationTarget, options: CleanupObservationOptio
       if (!oidPattern.test(oid) || !name.startsWith('refs/remotes/')) return fail('unavailable');
       return { name, oid };
     });
-    ignored = nul(runner.text(target.worktree, ['ls-files', '--others', '--ignored', '--exclude-standard', '-z'])).sort();
-    if (!ignored.every(isRepositoryRelativePath)) fail('unsupported');
+    // A wholly ignored directory is one `dir/` entry, so an installed dependency tree stays one loss path.
+    ignored = nul(runner.text(target.worktree, ['ls-files', '--others', '--ignored', '--exclude-standard', '--directory', '-z'])).sort();
+    if (!ignored.every(path => isRepositoryRelativePath(path.endsWith('/') ? path.slice(0, -1) : path))) fail('unsupported');
   }
   const files = scanFiles(target.worktree, format, options);
+  const ignoredFiles = new Set(ignored), ignoredDirectories = ignored.filter(path => path.endsWith('/'));
+  const isIgnored = (path: string) => ignoredFiles.has(path) || ignoredDirectories.some(directory => `${path}/`.startsWith(directory));
   const changed = new Set<string>();
   for (const file of files) {
-    if (file.path === '.git' || file.kind === 'directory' || ignored.includes(file.path)) continue;
+    if (file.path === '.git' || file.kind === 'directory' || isIgnored(file.path)) continue;
     const tracked = headFiles.get(file.path);
     const mode = file.kind === 'symlink' ? '120000' : (file.mode & 0o100) ? '100755' : '100644';
     if (!tracked || tracked.oid !== file.git_oid || tracked.mode !== mode) changed.add(file.path);
   }
-  for (const file of files) if (file.kind === 'directory' && !files.some(other => other.path.startsWith(file.path + '/'))) changed.add(file.path);
+  for (const file of files) if (file.kind === 'directory' && !isIgnored(file.path) && !files.some(other => other.path.startsWith(file.path + '/'))) changed.add(file.path);
   const present = new Set(files.map(file => file.path));
   for (const path of headFiles.keys()) if (!present.has(path)) changed.add(path);
   const staged = new Map(index.map(entry => [entry.path, entry]));
@@ -166,6 +170,9 @@ function once(target: CleanupObservationTarget, options: CleanupObservationOptio
   }
   for (const entry of index) if (!headFiles.has(entry.path) || entry.stage !== 0) changed.add(entry.path);
   if (commits.length + files.length + index.length > (options.max_entries ?? 20_000)) fail('too_large');
+  // `archivable` is a subset of changed and ignored paths, so their union bounds it too.
+  if (changed.size > CLEANUP_PLAN_MAX_PATHS || ignored.length > CLEANUP_PLAN_MAX_PATHS || commits.length > CLEANUP_PLAN_MAX_PATHS
+    || new Set([...changed, ...ignored]).size > CLEANUP_PLAN_MAX_PATHS) fail('too_large');
   if (!sameStat(stat, lstatSync(target.worktree))) fail('changed');
   return { kind: target.kind, identity: { dev: stat.dev, ino: stat.ino, birthtime_ms: stat.birthtimeMs }, branch, head_commit: head,
     files, index, changed_paths: [...changed].sort(), ignored, commits, remote_refs: remoteRefs };

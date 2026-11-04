@@ -58,7 +58,7 @@ import { useTheme } from './theme';
 import { useNow } from './ui';
 import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
 import {
-  fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
+  cleanupPlanPorts, fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
   type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
 } from './worktrees';
 import { WorktreesPage } from './WorktreesPage';
@@ -273,7 +273,7 @@ export function OperatorApp({
   readWorktrees = fetchWorktrees,
   initialWorktrees,
   writeWorktreeCleanup = postWorktreeCleanup,
-  worktreeCleanupPlan,
+  worktreeCleanupPlan = cleanupPlanPorts,
   readCliInventory = fetchCliInventory,
   initialCliInventory,
   readRepositoryHead = fetchRepositoryHead,

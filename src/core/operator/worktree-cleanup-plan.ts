@@ -77,8 +77,10 @@ function exact(value: unknown, keys: string): Record<string, unknown> {
 const publicText = (value: unknown) => isPublicWorktreeText(value) && !containsSecret(value);
 export const isArchivePr = (value: unknown): value is string => typeof value === 'string' && !containsSecret(value)
   && /^https:\/\/github\.com\/[A-Za-z0-9_.-]+\/[A-Za-z0-9_.-]+\/pull\/[1-9][0-9]*$/u.test(value);
+/** Most entries in one loss list of a plan item. The observation refuses a worktree above it, so one large worktree cannot fail a whole plan. */
+export const CLEANUP_PLAN_MAX_PATHS = 1000;
 function paths(value: unknown, directory = false): void {
-  if (!Array.isArray(value) || value.length > 1000 || new Set(value).size !== value.length
+  if (!Array.isArray(value) || value.length > CLEANUP_PLAN_MAX_PATHS || new Set(value).size !== value.length
     || !value.every(path => typeof path === 'string' && isRepositoryRelativePath(directory && path.endsWith('/') ? path.slice(0, -1) : path) && !containsSecret(path))) fail();
 }
 /** The recommendation and archive that a plan item binds, shared by server advice and the user's choice. */
@@ -140,7 +142,7 @@ export function decodeCleanupPlan(value: unknown): CleanupPlan {
       const loss = exact(item.loss, 'archivable,commits,files,ignored');
       paths(loss.files); paths(loss.ignored, true); paths(loss.archivable);
       if (!(loss.archivable as string[]).every((path, index, all) => index === 0 || all[index - 1]! < path)) fail();
-      if (!Array.isArray(loss.commits) || loss.commits.length > 1000 || new Set(loss.commits).size !== loss.commits.length
+      if (!Array.isArray(loss.commits) || loss.commits.length > CLEANUP_PLAN_MAX_PATHS || new Set(loss.commits).size !== loss.commits.length
         || !loss.commits.every(oid => typeof oid === 'string' && /^(?:[a-f0-9]{40}|[a-f0-9]{64})$/u.test(oid))) fail();
     }
   }
