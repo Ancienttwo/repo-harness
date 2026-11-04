@@ -26,6 +26,26 @@ if [[ ! -d "$AGENT_FLEET_SOURCE_DIR" ]]; then
 fi
 export REPO_HARNESS_AGENT_FLEET_SOURCE_DIR="$AGENT_FLEET_SOURCE_DIR"
 
+# CodeGraph and archctx belong to the architecture plugin. The selection comes
+# from the shared shell gate, once; the report below starts their binaries only
+# for `selected`. The plugin code that runs this probe (src/cli/tools/codegraph.ts)
+# passes --architecture-selected: its process already registered the plugin,
+# also while an install applies a selection that it records only after this run.
+# shellcheck source=lib/architecture-plugin.sh
+. "$package_root/scripts/lib/architecture-plugin.sh"
+probe_args=()
+architecture_selected_by_caller=0
+for arg in "$@"; do
+  if [[ "$arg" == --architecture-selected ]]; then architecture_selected_by_caller=1; else probe_args+=("$arg"); fi
+done
+if [[ "$architecture_selected_by_caller" -eq 1 ]]; then
+  REPO_HARNESS_ARCHITECTURE_SELECTION=selected
+  REPO_HARNESS_ARCHITECTURE_SELECTION_REASON=""
+else
+  repo_harness_architecture_selection "$package_root"
+fi
+export REPO_HARNESS_ARCHITECTURE_SELECTION REPO_HARNESS_ARCHITECTURE_SELECTION_REASON
+
 if command -v node >/dev/null 2>&1; then
   RUNTIME_BIN="$(command -v node)"
 elif command -v bun >/dev/null 2>&1; then
@@ -37,7 +57,7 @@ else
   exit 1
 fi
 
-exec "$RUNTIME_BIN" - "$@" <<'NODE_EOF'
+exec "$RUNTIME_BIN" - ${probe_args[@]+"${probe_args[@]}"} <<'NODE_EOF'
 const fs = require("fs");
 const crypto = require("crypto");
 const os = require("os");
@@ -52,7 +72,7 @@ let probeSkillsCli = false;
 let hostMode = "both";
 
 function usage() {
-  console.log(`Usage: scripts/check-agent-tooling.sh [--json] [--check-updates] [--strict-readiness] [--probe-skills-cli] [--host claude|codex|both]`);
+  console.log(`Usage: scripts/check-agent-tooling.sh [--json] [--check-updates] [--strict-readiness] [--probe-skills-cli] [--architecture-selected] [--host claude|codex|both]`);
 }
 
 for (let index = 0; index < argv.length; index += 1) {
@@ -1715,7 +1735,24 @@ function codeGraphVersion(binPath, probes) {
   return null;
 }
 
-function detectCodeGraph() {
+/**
+ * CodeGraph and archctx belong to the architecture plugin. Without it in the
+ * recorded selection their detectors report this state and resolve or run no
+ * binary.
+ */
+function inactivePluginTool(name, managed) {
+  return {
+    name,
+    status: managed.status === "not-selected" ? "not-selected" : "selection-unreadable",
+    reason: managed.reason,
+    plugin: "architecture",
+    readiness: "inactive",
+    hook_policy: "do-not-block-hooks",
+  };
+}
+
+function detectCodeGraph(managed) {
+  if (!managed.selected) return inactivePluginTool("codegraph", managed);
   const resolution = resolveCodeGraphBinary();
   const cliPresent = Boolean(resolution.bin_path);
   const probes = [];
@@ -1890,18 +1927,24 @@ function bunExecutable() {
  * Node engine contract, bin.archctx and the binary. This probe runs that
  * function under Bun from the repo-harness package root and reports its
  * answer. The runnable command, with the resolved Node path, comes from
- * `repo-harness architecture-projection status --json`.
+ * `repo-harness architecture-projection status --json`. The selection is the
+ * one that the shell gate read above: without `selected` the probe loads no
+ * provider, `selected` is false, and the CodeGraph and archctx detectors
+ * resolve and run no binary.
  */
 function detectManagedArchctx() {
-  const unusable = (reason) => ({ status: "invalid", version: null, required_version: null, bin_path: null, node_range: null, reason, command_source: ARCHCTX_STATUS_COMMAND });
+  const selection = process.env.REPO_HARNESS_ARCHITECTURE_SELECTION;
+  const unusable = (reason) => ({ status: "invalid", selected: selection === "selected", version: null, required_version: null, bin_path: null, node_range: null, reason, command_source: ARCHCTX_STATUS_COMMAND });
+  if (selection !== "selected") {
+    return { ...unusable(process.env.REPO_HARNESS_ARCHITECTURE_SELECTION_REASON || "the install selection cannot be read"), status: selection === "not-selected" ? "not-selected" : "selection-unreadable" };
+  }
   const bun = bunExecutable();
   if (!bun) return unusable("bun is not available, so the managed archctx cannot be resolved");
   const script = [
     "const [contracts, providers, consumerRoot] = process.argv.slice(1);",
-    "const { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } = await import(contracts);",
+    "const { architecturePort, registerArchitecturePorts } = await import(contracts);",
     "registerArchitecturePorts((await import(providers)).ARCHITECTURE_PROVIDERS);",
     "const runtime = architecturePort('runtime');",
-    "if (isArchitectureUnavailable(runtime)) throw new Error(runtime.message);",
     "try { console.log(JSON.stringify({ ok: true, required: runtime.requiredArchctxVersion, resolved: runtime.resolvePackageLocalArchctx(consumerRoot) })); }",
     "catch (error) { console.log(JSON.stringify({ ok: false, required: runtime.requiredArchctxVersion, reason: error instanceof Error ? error.message : String(error) })); }",
   ].join("\n");
@@ -1918,6 +1961,7 @@ function detectManagedArchctx() {
   if (!answer.ok) return { ...unusable(answer.reason), required_version: answer.required };
   return {
     status: "present",
+    selected: true,
     version: answer.resolved.version,
     required_version: answer.required,
     bin_path: answer.resolved.binaryPath,
@@ -1933,8 +1977,8 @@ function detectManagedArchctx() {
  * readiness or blocks hooks, and a version that differs from the managed one
  * gets a warning.
  */
-function detectArchctx() {
-  const managed = detectManagedArchctx();
+function detectArchctx(managed) {
+  if (!managed.selected) return inactivePluginTool("archctx", managed);
   const pathBin = resolvePathCommand(ARCHCTX_CLI_PACKAGE);
   const versionResult = pathBin ? run(pathBin, ["--version"], { timeoutMs: 1500 }) : null;
   // Some archctx builds have no --version flag and answer with a multi-line help
@@ -1991,6 +2035,7 @@ function detectArchctx() {
 
 const wazaReport = detectWaza();
 const runtimeCapabilities = detectRuntimeCapabilities(wazaReport);
+const managedArchctx = detectManagedArchctx();
 const report = {
   generated_at: new Date().toISOString(),
   repo_root: REPO_ROOT,
@@ -2003,8 +2048,8 @@ const report = {
     codex_automation_profile: detectCodexAutomationProfile(),
     obsidian_runtime_skills: detectObsidianRuntimeSkills(),
     agent_fleet: detectAgentFleet(),
-    codegraph: detectCodeGraph(),
-    archctx: detectArchctx(),
+    codegraph: detectCodeGraph(managedArchctx),
+    archctx: detectArchctx(managedArchctx),
   },
 };
 
@@ -2158,6 +2203,13 @@ function printText(result) {
   console.log("");
 
   const codegraph = result.tools.codegraph;
+  const archctx = result.tools.archctx;
+  // Both tools follow the one recorded selection, so both are inactive together.
+  if (codegraph.readiness === "inactive") {
+    console.log(`CodeGraph [${codegraph.status}]\n  - ${codegraph.reason}\n`);
+    console.log(`ArchContext [${archctx.status}]\n  - ${archctx.reason}`);
+    return;
+  }
   console.log(`CodeGraph [${codegraph.status}]`);
   console.log(`  - CLI: ${codegraph.cli_present ? `present${codegraph.version ? ` (v${codegraph.version})` : ""} via ${codegraph.source}` : "missing"}`);
   if (codegraph.drift) {
@@ -2179,7 +2231,6 @@ function printText(result) {
   console.log(`  - Sync index: ${codegraph.sync_command}`);
   console.log("");
 
-  const archctx = result.tools.archctx;
   console.log(`ArchContext [${archctx.status}] (advisory)`);
   console.log(`  - Managed CLI: ${archctx.managed.status}${archctx.managed.version ? ` (v${archctx.managed.version})` : ""}${archctx.managed.bin_path ? ` at ${archctx.managed.bin_path}` : ""}; Node ${archctx.managed.node_range ?? "unknown"}; runnable command from ${archctx.managed.command_source}`);
   console.log(`  - PATH copy: ${archctx.path_copy ? `unrelated${archctx.path_copy.version ? ` (v${archctx.path_copy.version})` : ""} at ${archctx.path_copy.bin_path}` : "none"}`);

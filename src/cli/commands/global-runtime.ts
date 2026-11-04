@@ -3,13 +3,13 @@ import { bunGlobalPackageRoot, isBunGlobalPackageSource, skillLinkMatches } from
 import { installPiPackage } from '../installer/pi-package';
 import { realPathOrResolved } from '../../effects/path-identity';
 import type { SkillHost } from '../../effects/host-skill-roots';
-import { ARCHCTX_PACKAGES, type ManagedInstallSurface } from '../installer/install-profile';
-import { ensureGlobalArchitectureProjection } from './architecture-configuration';
+import type { ManagedInstallSurface } from '../installer/install-profile';
+import { architecturePort, isArchitectureUnavailable } from '../../core/architecture/contracts';
+import { globalConfigurationWriter } from '../../effects/configuration/global-configuration';
 import { cpSync, existsSync, lstatSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, realpathSync, rmSync, symlinkSync } from "fs";
 import { homedir, tmpdir, userInfo } from "os";
 import { delimiter, dirname, join, relative, resolve, sep } from "path";
 import { fileURLToPath } from "url";
-import { ARCHCONTEXT_NODE_RANGE, productVersionManifest } from "archctx-contracts";
 import { syncWazaSharedRules, wazaStagingRulesAbsent } from "../installer/waza-rules";
 import { applyGlobalContextRefresh, preflightGlobalContextRefresh, type ReportLanguageFlag } from "../installer/global-context";
 import { configureBrainRoot, defaultBrainRootChoice, expandHomePath } from "./brain-root";
@@ -38,7 +38,6 @@ import {
   type SkillSurfaceCatalog,
 } from "../../core/skill-surface/catalog";
 import { hostSkillRoot, stagedSkillRoot } from "../../effects/host-skill-roots";
-import { archctxCapabilities, verifyArchctxDaemonRuntime } from "../../effects/architecture/archctx-provider";
 import {
   discoverWindowsProtectedHelperContract,
   resolveProtectedHelperPlatform,
@@ -103,8 +102,6 @@ export interface GlobalRuntimeResult {
 
 const SCRIPT_DIR = dirname(fileURLToPath(import.meta.url));
 export const MIN_BUN_VERSION = "1.4.0";
-const CODEGRAPH_VERSION = productVersionManifest().runtime.codeGraph.requiredVersion;
-const CODEGRAPH_PACKAGE = `@colbymchenry/codegraph@${CODEGRAPH_VERSION}`;
 const PACKED_RELEASE_TARBALL = /^repo-harness-\d+\.\d+\.\d+\.tgz$/;
 export const CANDIDATE_RECONCILE_STEP = 'reconcile installed candidate runtime';
 
@@ -389,7 +386,7 @@ function appendOutput(...values: Array<string | undefined>): string | undefined 
   return output || undefined;
 }
 
-interface PackageManifest {
+export interface PackageManifest {
   name?: unknown;
   version?: unknown;
   dependencies?: unknown;
@@ -401,17 +398,17 @@ interface ManagedRuntimeReadback {
   detail: string;
 }
 
-function readPackageManifest(packageRoot: string): PackageManifest {
+export function readPackageManifest(packageRoot: string): PackageManifest {
   return JSON.parse(readFileSync(join(packageRoot, "package.json"), "utf-8")) as PackageManifest;
 }
 
-function recordValue(value: unknown): Record<string, unknown> {
+export function recordValue(value: unknown): Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value)
     ? value as Record<string, unknown>
     : {};
 }
 
-function findInstalledPackageRoot(consumerRoot: string, packageName: string): string | null {
+export function findInstalledPackageRoot(consumerRoot: string, packageName: string): string | null {
   let current = resolve(consumerRoot);
   while (true) {
     const candidate = join(current, "node_modules", packageName);
@@ -422,11 +419,13 @@ function findInstalledPackageRoot(consumerRoot: string, packageName: string): st
   }
 }
 
+/** The archctx part runs only when the architecture plugin runs in this setup. */
 function readManagedRuntime(
   globalPackageRoot: string,
   cwd: string,
   env: NodeJS.ProcessEnv,
   expectedHarnessVersion: string | null,
+  plugins: readonly PluginId[],
 ): ManagedRuntimeReadback {
   if (!existsSync(join(globalPackageRoot, "package.json"))) {
     return { status: "package-mismatch", detail: `installed repo-harness package is missing: ${globalPackageRoot}` };
@@ -435,57 +434,13 @@ function readManagedRuntime(
   if (expectedHarnessVersion !== null && harness.version !== expectedHarnessVersion) {
     return { status: "package-mismatch", detail: `repo-harness version mismatch: expected ${expectedHarnessVersion}, got ${String(harness.version)}` };
   }
-  const dependencies = recordValue(harness.dependencies);
-  const versions: string[] = [`repo-harness@${String(harness.version)}`];
-  for (const packageName of ARCHCTX_PACKAGES) {
-    const expected = dependencies[packageName];
-    if (typeof expected !== "string") {
-      return { status: "package-mismatch", detail: `installed repo-harness does not declare mandatory dependency ${packageName}` };
-    }
-    const packageRoot = findInstalledPackageRoot(globalPackageRoot, packageName);
-    if (packageRoot === null) {
-      return { status: "package-mismatch", detail: `mandatory dependency is missing: ${packageName}@${expected}` };
-    }
-    const actual = readPackageManifest(packageRoot).version;
-    if (actual !== expected) {
-      return { status: "package-mismatch", detail: `mandatory dependency mismatch: expected ${packageName}@${expected}, got ${String(actual)}` };
-    }
-    versions.push(`${packageName}@${actual}`);
-  }
-
-  const archctxRoot = findInstalledPackageRoot(globalPackageRoot, "archctx")!;
-  const archctx = readPackageManifest(archctxRoot);
-  const nodeRange = recordValue(archctx.engines).node;
-  if (nodeRange !== ARCHCONTEXT_NODE_RANGE) {
-    return { status: "package-mismatch", detail: `archctx Node runtime contract mismatch: expected ${ARCHCONTEXT_NODE_RANGE}, got ${String(nodeRange)}` };
-  }
-  const codegraphVersion = recordValue(archctx.dependencies)["@colbymchenry/codegraph"];
-  if (typeof codegraphVersion !== "string") {
-    return { status: "package-mismatch", detail: "archctx does not declare mandatory package-local CodeGraph" };
-  }
-  const codegraphRoot = findInstalledPackageRoot(archctxRoot, "@colbymchenry/codegraph");
-  const actualCodegraph = codegraphRoot === null ? null : readPackageManifest(codegraphRoot).version;
-  if (actualCodegraph !== codegraphVersion) {
-    return { status: "package-mismatch", detail: `archctx package-local CodeGraph mismatch: expected ${codegraphVersion}, got ${String(actualCodegraph)}` };
-  }
-
-  try {
-    const providerOptions = {
-      consumerRoot: globalPackageRoot,
-      env,
-      policy: {
-        provider: "archctx" as const,
-        applyMode: "manual" as const,
-        requiredVersion: String(dependencies.archctx),
-        timeoutMs: 10_000,
-      },
-    };
-    archctxCapabilities(cwd, providerOptions);
-  } catch (error) {
-    return { status: "runtime-mismatch", detail: error instanceof Error ? error.message : String(error) };
-  }
-  versions.push(`@colbymchenry/codegraph@${actualCodegraph}`, `node=${ARCHCONTEXT_NODE_RANGE}`);
-  return { status: "ready", detail: versions.join("; ") };
+  const versions = [`repo-harness@${String(harness.version)}`];
+  if (!plugins.includes('architecture')) return { status: "ready", detail: versions.join("; ") };
+  const setup = architecturePort('setup');
+  if (isArchitectureUnavailable(setup)) return { status: "runtime-mismatch", detail: setup.message };
+  const archctx = setup.readManagedPackages(globalPackageRoot, cwd, env);
+  if (archctx.status !== "ready") return archctx;
+  return { status: "ready", detail: [...versions, ...archctx.versions].join("; ") };
 }
 
 function safeReadManagedRuntime(
@@ -493,9 +448,10 @@ function safeReadManagedRuntime(
   cwd: string,
   env: NodeJS.ProcessEnv,
   expectedHarnessVersion: string | null,
+  plugins: readonly PluginId[],
 ): ManagedRuntimeReadback {
   try {
-    return readManagedRuntime(globalPackageRoot, cwd, env, expectedHarnessVersion);
+    return readManagedRuntime(globalPackageRoot, cwd, env, expectedHarnessVersion, plugins);
   } catch (error) {
     return { status: "package-mismatch", detail: `managed dependency readback failed: ${error instanceof Error ? error.message : String(error)}` };
   }
@@ -506,6 +462,7 @@ function reconcileManagedRuntime(
   bunExecutable: string,
   env: NodeJS.ProcessEnv,
   installSpec: string,
+  plugins: readonly PluginId[],
 ): GlobalRuntimeStep {
   const globalPackageRoot = bunGlobalPackageRoot(env);
   if (globalPackageRoot === null) {
@@ -513,7 +470,7 @@ function reconcileManagedRuntime(
   }
   const requested = installSpec.startsWith("repo-harness@") ? installSpec.slice("repo-harness@".length) : null;
   const expectedHarnessVersion = requested && requested !== "latest" && requested !== "next" ? requested : null;
-  const initial = safeReadManagedRuntime(globalPackageRoot, cwd, env, expectedHarnessVersion);
+  const initial = safeReadManagedRuntime(globalPackageRoot, cwd, env, expectedHarnessVersion, plugins);
   if (initial.status === "ready") {
     return { step: "verify managed runtime dependencies", status: "ok", detail: initial.detail };
   }
@@ -528,24 +485,30 @@ function reconcileManagedRuntime(
   };
 }
 
-function inspectManagedDaemonRuntime(cwd: string, env: NodeJS.ProcessEnv): GlobalRuntimeStep {
+function inspectManagedDaemonRuntime(cwd: string, env: NodeJS.ProcessEnv, plugins: readonly PluginId[]): GlobalRuntimeStep {
+  const step = 'check shared ArchContext daemon';
+  if (!plugins.includes('architecture')) return { step, status: 'skipped', detail: 'architecture plugin not selected' };
+  const setup = architecturePort('setup');
+  if (isArchitectureUnavailable(setup)) return { step, status: 'failed', detail: setup.message };
   try {
-    const consumerRoot = bunGlobalPackageRoot(env);
-    if (!consumerRoot) throw new Error('unable to resolve Bun global package root');
-    const requiredVersion = recordValue(readPackageManifest(consumerRoot).dependencies).archctx;
-    if (typeof requiredVersion !== 'string') throw new Error('managed archctx dependency version is unavailable');
-    verifyArchctxDaemonRuntime(cwd, {
-      consumerRoot, env,
-      policy: { provider: 'archctx', applyMode: 'manual', requiredVersion, timeoutMs: 10_000 },
-    });
-    return { step: 'check shared ArchContext daemon', status: 'ok', detail: 'daemon is compatible or cleanly stopped' };
+    setup.verifyDaemon(cwd, env);
+    return { step, status: 'ok', detail: 'daemon is compatible or cleanly stopped' };
   } catch (error) {
-    return { step: 'check shared ArchContext daemon', status: 'failed', detail: error instanceof Error ? error.message : String(error) };
+    return { step, status: 'failed', detail: error instanceof Error ? error.message : String(error) };
   }
 }
 
+/** The global architecture projection section follows the architecture plugin; without it the section stays as it is. */
+function configureArchitectureProjection(env: NodeJS.ProcessEnv, plugins: readonly PluginId[], runtimeLock: RuntimeTransactionContext | undefined): GlobalRuntimeStep {
+  const step = 'global architecture projection';
+  if (!plugins.includes('architecture')) return { step, status: 'skipped', detail: 'architecture plugin not selected' };
+  const setup = architecturePort('setup');
+  if (isArchitectureUnavailable(setup)) return { step, status: 'failed', detail: setup.message };
+  return setup.ensureGlobalConfiguration(env, globalConfigurationWriter(env, runtimeLock));
+}
+
 export function verifyInstalledManagedRuntime(
-  opts: Pick<GlobalRuntimeOptions, 'sourceRoot' | 'cwd' | 'env'> = {},
+  opts: Pick<GlobalRuntimeOptions, 'sourceRoot' | 'cwd' | 'env'> & { readonly plugins: readonly PluginId[] },
 ): GlobalRuntimeStep {
   const sourceRoot = opts.sourceRoot ?? defaultSourceRoot();
   const version = packageVersion(sourceRoot);
@@ -555,9 +518,9 @@ export function verifyInstalledManagedRuntime(
   const cwd = opts.cwd ?? process.cwd();
   const bunExecutable = resolveBunExecutable(opts.env);
   const env = bindBunRuntimeEnv(commandEnv(sourceRoot, opts.env), bunExecutable);
-  const packages = reconcileManagedRuntime(cwd, bunExecutable, env, `repo-harness@${version}`);
+  const packages = reconcileManagedRuntime(cwd, bunExecutable, env, `repo-harness@${version}`, opts.plugins);
   if (packages.status !== 'ok') return packages;
-  const daemon = inspectManagedDaemonRuntime(cwd, env);
+  const daemon = inspectManagedDaemonRuntime(cwd, env, opts.plugins);
   return daemon.status === 'failed' ? { ...packages, status: 'failed', detail: daemon.detail } : packages;
 }
 
@@ -1447,11 +1410,12 @@ export function configureProtectedHelperPlatform(
   }
 }
 
-function ensureCodegraphCli(cwd: string, bunExecutable: string, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
+function ensureCodegraphCli(cwd: string, bunExecutable: string, codegraphVersion: string, env?: NodeJS.ProcessEnv, refresh = false): GlobalRuntimeStep {
+  const codegraphPackage = `@colbymchenry/codegraph@${codegraphVersion}`;
   const check = runProcess("codegraph", ["--version"], cwd, env);
   if (!refresh && check.status === "ok") return withStepName(check, "ensure CodeGraph CLI", "present");
-  const install = runProcess(bunExecutable, ["add", "-g", CODEGRAPH_PACKAGE], cwd, env);
-  if (install.status !== "ok") return withStepName(install, "ensure CodeGraph CLI", CODEGRAPH_PACKAGE);
+  const install = runProcess(bunExecutable, ["add", "-g", codegraphPackage], cwd, env);
+  if (install.status !== "ok") return withStepName(install, "ensure CodeGraph CLI", codegraphPackage);
   const recheck = runProcess("codegraph", ["--version"], cwd, env);
   if (recheck.status === "ok") {
     if (refresh) {
@@ -1470,22 +1434,22 @@ function ensureCodegraphCli(cwd: string, bunExecutable: string, env?: NodeJS.Pro
           detail: `CodeGraph package readback failed: ${error instanceof Error ? error.message : String(error)}`,
         };
       }
-      if (installedVersion !== CODEGRAPH_VERSION) {
+      if (installedVersion !== codegraphVersion) {
         return {
           ...recheck,
           step: "ensure CodeGraph CLI",
           status: "failed",
-          detail: `CodeGraph readback mismatch: expected ${CODEGRAPH_VERSION}, got ${String(installedVersion)}`,
+          detail: `CodeGraph readback mismatch: expected ${codegraphVersion}, got ${String(installedVersion)}`,
         };
       }
     }
-    return withStepName(recheck, "ensure CodeGraph CLI", refresh ? `updated=${CODEGRAPH_VERSION}` : "installed");
+    return withStepName(recheck, "ensure CodeGraph CLI", refresh ? `updated=${codegraphVersion}` : "installed");
   }
   return {
     ...recheck,
     step: "ensure CodeGraph CLI",
     status: "failed",
-    detail: `${CODEGRAPH_PACKAGE} installed, but codegraph is not on PATH`,
+    detail: `${codegraphPackage} installed, but codegraph is not on PATH`,
   };
 }
 
@@ -1495,7 +1459,6 @@ function withPlugin(plugins: readonly PluginId[], id: PluginId): readonly Plugin
 
 /** Plugin setup steps that the composition root (src/cli/index.ts) passes in. */
 export interface GlobalRuntimePorts {
-  readonly configureCodegraphMcp: (cwd: string, target: InstallTargetSpec, env: NodeJS.ProcessEnv) => GlobalRuntimeStep;
   /** `piSelected` false: Herdr stays core on Claude and Codex, and its Pi copy is not written. */
   readonly configureHerdrSkill: (target: InstallTargetSpec, env: NodeJS.ProcessEnv, piSelected: boolean) => GlobalRuntimeStep;
 }
@@ -1542,18 +1505,18 @@ export function runGlobalRuntimeSetup(
       return finalizeRuntimeResult(steps);
     }
     if (updateMode && install.status === "ok" && opts.installSpec) {
-      steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec));
+      steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
     }
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
   else {
     steps.push({ step: "install repo-harness CLI", status: "skipped", detail: "disabled" });
-    if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec));
+    if (updateMode && opts.installSpec) steps.push(reconcileManagedRuntime(cwd, bunExecutable, env, opts.installSpec, plugins));
     if (updateMode && steps.some((step) => step.status === "failed")) return finalizeRuntimeResult(steps);
   }
 
   if (updateMode && opts.installSpec) {
-    const daemon = inspectManagedDaemonRuntime(cwd, env);
+    const daemon = inspectManagedDaemonRuntime(cwd, env, plugins);
     // Package installation succeeded. Shared-daemon maintenance must not roll
     // that candidate back and strand hoisted dependencies at a newer version.
     // The strict installed-runtime verifier above still fails on this state.
@@ -1562,7 +1525,7 @@ export function runGlobalRuntimeSetup(
       : daemon);
   }
 
-  const architectureConfiguration = ensureGlobalArchitectureProjection(env, opts.runtimeLock);
+  const architectureConfiguration = configureArchitectureProjection(env, plugins, opts.runtimeLock);
   steps.push(architectureConfiguration);
   if (architectureConfiguration.status === 'failed') return finalizeRuntimeResult(steps);
 
@@ -1692,9 +1655,15 @@ export function runGlobalRuntimeSetup(
     steps.push({ step: "ensure CodeGraph CLI", status: "skipped", detail: "architecture plugin not selected" });
     steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "architecture plugin not selected" });
   } else if (opts.codegraph ?? updateMode) {
-    const ensure = ensureCodegraphCli(cwd, bunExecutable, env, updateMode);
+    const setup = architecturePort('setup');
+    const codegraphPort = architecturePort('codegraph');
+    const ensure = isArchitectureUnavailable(setup)
+      ? { step: "ensure CodeGraph CLI", status: "failed" as const, detail: setup.message }
+      : isArchitectureUnavailable(codegraphPort)
+        ? { step: "ensure CodeGraph CLI", status: "failed" as const, detail: codegraphPort.message }
+        : ensureCodegraphCli(cwd, bunExecutable, setup.codegraphVersion, env, updateMode);
     steps.push(ensure);
-    if (ensure.status === "ok") steps.push(ports.configureCodegraphMcp(cwd, target, env));
+    if (ensure.status === "ok" && !isArchitectureUnavailable(codegraphPort)) steps.push(codegraphPort.configureMcp(cwd, target, env));
     else steps.push({ step: "configure CodeGraph MCP", status: "skipped", detail: "CodeGraph CLI install failed" });
   } else {
     steps.push({ step: "ensure CodeGraph CLI", status: "skipped", detail: "disabled" });

@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.codegraph-readiness.mcp-adapter
+kind: component
+name: CodeGraph MCP Adapter
+status: active
+parent: capability.verification.codegraph-readiness
+layer: cli
+summary: "The CodeGraph read contract of general-repo-access: the CLI adapter for snapshot, refresh and query reads."
+responsibilities:
+  - Run the CodeGraph CLI reads that the general-repo-access MCP tools call.
+source:
+  include:
+    - src/cli/mcp/codegraph-adapter.ts

@@ -14,6 +14,7 @@ import { formatArchcontextCapabilityError, readArchcontextCapabilityAuthority, r
 import { readArchitectureNativeContext } from "../src/effects/architecture/architecture-read";
 import { ArchctxClientError } from "../src/core/architecture/projection";
 import { withReadonlyObservation } from "../src/effects/readonly-observation";
+import { pluginSelectionEnv } from "./helpers/install-ownership";
 
 const ROOT = join(import.meta.dir, "..");
 const NODES_DIR = ".archcontext/model/nodes";
@@ -40,11 +41,15 @@ function writePolicy(cwd: string, capabilitySource: string | null): void {
   writeFile(cwd, ".ai/harness/policy.json", `${JSON.stringify({ version: 1, context }, null, 2)}\n`);
 }
 
+// The packaged resolver loads the archctx providers only for a selected architecture plugin.
+const SELECTED_ENV = pluginSelectionEnv();
+
 function runResolver(cwd: string, args: string[], input?: string) {
   return spawnSync("bun", [join(ROOT, "scripts/capability-resolver.ts"), ...args, "--repo", cwd], {
     cwd,
     encoding: "utf-8",
     input,
+    env: SELECTED_ENV,
   });
 }
 
@@ -445,33 +450,51 @@ describe("capability source: no fallback in either direction", () => {
     }
   }, 30_000);
 
-  test("a process with no architecture provider fails closed at each core port consumer", () => {
+  test("a process with no architecture provider fails closed at each core port consumer, and an unselected plugin is not a failure", () => {
     const cwd = archcontextWorkspace("capability-source-no-provider");
     // A bare bun process has no test preload, so it registers no provider.
     const script = `
-      const { ARCHITECTURE_CONTRACT_VERSION, architecturePort, registerArchitecturePorts } = await import(${JSON.stringify(join(ROOT, "src/core/architecture/contracts.ts"))});
+      const { ARCHITECTURE_CONTRACT_VERSION, architecturePort, declareArchitectureAbsent, registerArchitecturePorts } = await import(${JSON.stringify(join(ROOT, "src/core/architecture/contracts.ts"))});
+      const { checkArchitectureProjectionSelection, codegraphDoctorChecks } = await import(${JSON.stringify(join(ROOT, "src/cli/commands/doctor.ts"))});
+      const { pathOwners } = await import(${JSON.stringify(join(ROOT, "src/effects/board/collect.ts"))});
       const { capabilityOwnersForPaths } = await import(${JSON.stringify(join(ROOT, "src/effects/state/resolve-effective-state.ts"))});
       const { runCapabilityContextStatus } = await import(${JSON.stringify(join(ROOT, "src/cli/commands/capability-context.ts"))});
       const { collectArchitectureNotice } = await import(${JSON.stringify(join(ROOT, "src/cli/hook/hook-protocol.ts"))});
       const message = (run) => { try { run(); return "returned"; } catch (error) { return error.message; } };
       const ownership = (await import(${JSON.stringify(join(ROOT, "src/effects/architecture/providers.ts"))})).ARCHITECTURE_PROVIDERS.ownership;
-      console.log(JSON.stringify({
-        otherVersion: message(() => registerArchitecturePorts({ ownership: { ...ownership, contractVersion: ARCHITECTURE_CONTRACT_VERSION + 1 } })),
+      const otherVersion = message(() => registerArchitecturePorts({ ownership: { ...ownership, contractVersion: ARCHITECTURE_CONTRACT_VERSION + 1 } }));
+      const consumers = () => ({
         stillUnavailable: architecturePort("ownership").status,
         effectiveState: message(() => capabilityOwnersForPaths(process.cwd(), ["apps/web/page.tsx"])),
         capabilityContext: message(() => runCapabilityContextStatus(process.cwd())),
         notice: collectArchitectureNotice(process.cwd(), () => null, {}),
-      }));`;
+        doctor: [...codegraphDoctorChecks(process.cwd()), ...checkArchitectureProjectionSelection({ HOME: process.cwd() })],
+        board: pathOwners({ repo_root: process.cwd() }, [{ state: "open", files: ["apps/web/page.tsx"] }]),
+      });
+      const missing = consumers();
+      declareArchitectureAbsent("ARCHITECTURE_PLUGIN_NOT_SELECTED", "the architecture plugin is not selected; run: repo-harness install");
+      console.log(JSON.stringify({ otherVersion, missing, notSelected: consumers() }));`;
     try {
       const res = spawnSync("bun", ["-e", script], { cwd, encoding: "utf-8" });
       expect(res.status, res.stderr).toBe(0);
-      const rows = JSON.parse(res.stdout);
-      expect(rows.otherVersion).toBe("architecture ownership provider has contract version 2; core requires 1");
-      expect(rows.stillUnavailable).toBe("unavailable");
-      for (const row of ["effectiveState", "capabilityContext"]) {
-        expect(rows[row], row).toContain("no architecture ownership provider is registered in this process");
+      const { otherVersion, missing, notSelected } = JSON.parse(res.stdout);
+      expect(otherVersion).toBe("architecture ownership provider has contract version 3; core requires 2");
+      // A missing provider fails each consumer; an unselected plugin is inert in the hook and doctor rows.
+      for (const [rows, code, message] of [
+        [missing, "ARCHITECTURE_PROVIDER_UNAVAILABLE", "no architecture ownership provider is registered in this process"],
+        [notSelected, "ARCHITECTURE_PLUGIN_NOT_SELECTED", "the architecture plugin is not selected; run: repo-harness install"],
+      ] as const) {
+        expect(rows.stillUnavailable, code).toBe("unavailable");
+        for (const row of ["effectiveState", "capabilityContext"] as const) expect(rows[row], `${code} ${row}`).toContain(message);
+        expect(rows.board, code).toEqual({ status: "unavailable", reason: code });
       }
-      expect(rows.notice).toEqual({ diagnostics: "repo-harness: architecture notice unavailable: no architecture notice provider is registered in this process\n" });
+      expect(missing.notice).toEqual({ diagnostics: "repo-harness: architecture notice unavailable: no architecture notice provider is registered in this process\n" });
+      expect(missing.doctor).toEqual([{ id: "codegraph", describe: "CodeGraph checks", status: "fail", detail: "no architecture codegraph provider is registered in this process" }]);
+      expect(notSelected.notice).toEqual({});
+      expect(notSelected.doctor).toEqual([
+        { id: "codegraph", describe: "CodeGraph checks", status: "na", detail: "the architecture plugin is not selected; run: repo-harness install" },
+        { id: "architecture-projection", describe: "Host architecture projection configuration", status: "na", detail: "not selected; the architecture plugin is not selected; run: repo-harness install" },
+      ]);
     } finally {
       rmSync(cwd, { recursive: true, force: true });
     }

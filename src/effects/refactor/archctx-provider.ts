@@ -3,17 +3,14 @@ import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError } from "../../core/archite
 import type { ArchctxProviderOptions } from "../../core/architecture/contracts";
 import { canonicalize } from "../../core/evidence/canonical-json";
 import {
+  REFACTOR_DEFAULT_TIMEOUT_MS,
+  REFACTOR_MAX_TIMEOUT_MS,
   refactorEnvelopeData,
   RefactorProviderError,
+  type RefactorDecision,
   type RefactorScanResultV1,
 } from "../../core/refactor/provider-contract";
 import { commandLabel, runPackageLocalArchctxJson } from "../architecture/archctx-provider";
-
-export type RefactorDecision = "accept" | "defer" | "reject";
-
-export const REFACTOR_MIN_TIMEOUT_MS = 1_000;
-export const REFACTOR_DEFAULT_TIMEOUT_MS = 120_000;
-export const REFACTOR_MAX_TIMEOUT_MS = 600_000;
 
 /** Package resolution refuses an installed archctx whose manifest is not the pinned version. */
 function invoke(repoRoot: string, args: readonly string[], options: ArchctxProviderOptions, timeoutMs: number): unknown {

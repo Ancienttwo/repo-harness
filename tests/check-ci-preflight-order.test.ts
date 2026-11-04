@@ -13,7 +13,7 @@ test("daily governance records failure without authorizing PR coverage", () => {
   mkdirSync(join(fixture, "scripts/lib"), { recursive: true });
   const testLog = join(bin, "bun-test.log");
   try {
-    for (const path of ["scripts/check-ci.sh", "scripts/lib/ci-run-tests.sh"]) {
+    for (const path of ["scripts/check-ci.sh", "scripts/lib/ci-run-tests.sh", "scripts/lib/architecture-plugin.sh"]) {
       copyFileSync(join(ROOT, path), join(fixture, path));
     }
     writeFileSync(join(bin, "bun"), `#!/bin/bash\nif [[ "$1" == "test" ]]; then echo test >> ${JSON.stringify(testLog)}; fi\nexit 0\n`);

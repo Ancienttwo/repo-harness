@@ -180,10 +180,12 @@ export function withRepo(fn: (cwd: string) => void): void {
 export function runStateCli(
   cwd: string,
   args: readonly string[],
+  env: NodeJS.ProcessEnv = process.env,
 ): { status: number | null; stdout: string; stderr: string } {
   const result = spawnSync(process.execPath, [CLI, ...args], {
     cwd,
     encoding: 'utf-8',
+    env,
   });
   return { status: result.status, stdout: result.stdout, stderr: result.stderr };
 }

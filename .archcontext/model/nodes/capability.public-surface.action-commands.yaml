@@ -4,37 +4,40 @@ kind: capability
 name: Action Commands
 status: active
 layer: assets
-summary: Defines the user-facing action command skill surface, the bundled skill packages and the skill-surface catalog that projects them.
+summary: "Defines the user-facing action command skill surface, the bundled skill packages and the skill-surface catalog that projects them."
 responsibilities:
   - Own action command assets and their behavior/evaluation contracts.
   - Own the bundled skill packages under assets/skills and the skill version pins.
-  - Own the pure skill-surface catalog and the plugin selection and host projection selector for Claude, Codex and Pi that hosts and installers consume.
+  - "Own the pure skill-surface catalog and the plugin selection and host projection selector for Claude, Codex and Pi that hosts and installers consume."
 source:
   include:
-    - "assets/skill-commands/**"
-    - "assets/skills/**"
-    - "assets/skill-version.json"
-    - ".claude/.skill-version"
-    - "src/core/skill-surface/**"
-    - "scripts/skill-surface-select.ts"
-    - "scripts/run-skill-routing-eval.ts"
-    - "scripts/check-skill-version.ts"
+    - assets/skill-commands/**
+    - assets/skills/**
+    - assets/skill-version.json
+    - .claude/.skill-version
+    - src/core/skill-surface/**
+    - scripts/skill-surface-select.ts
+    - scripts/run-skill-routing-eval.ts
+    - scripts/check-skill-version.ts
   entrypoints:
     - id: entrypoint.action-commands.primary
-      path: "src/cli/commands/init.ts"
+      path: src/cli/commands/init.ts
       symbols:
-        - name: "syncCrossReviewSkills"
+        - name: syncCrossReviewSkills
           sinks:
             - id: sink.action-commands.primary
-              path: "src/cli/commands/init.ts"
-              symbol: "loadSkillSurfaceCatalog"
+              path: src/cli/commands/init.ts
+              symbol: loadSkillSurfaceCatalog
+  exclude:
+    - assets/skills/repo-harness-archimap/**
+    - assets/skill-commands/repo-harness-architecture/**
 extensions:
-  harnessTier: "core"
+  harnessTier: core
   contractFiles:
-    agents: "AGENTS.md"
-    claude: "CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: AGENTS.md
+    claude: CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun test tests/action-command-skills.test.ts"
-    - "bun run benchmark:skills --dry-run"
-    - "bun test tests/skill-surface/catalog.test.ts tests/skill-surface/canonical-packages.test.ts"
+    - bun test tests/action-command-skills.test.ts
+    - bun run benchmark:skills --dry-run
+    - bun test tests/skill-surface/catalog.test.ts tests/skill-surface/canonical-packages.test.ts

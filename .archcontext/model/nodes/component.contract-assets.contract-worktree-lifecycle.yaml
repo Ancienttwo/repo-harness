@@ -5,10 +5,10 @@ name: Worktree Safety and Branch Delivery
 status: active
 parent: capability.workflow-engine.contract-assets
 layer: scripts
-summary: Starts isolated worktrees, ships branch-only PRs and removes only proven merged, clean and unowned worktrees.
+summary: "Starts isolated worktrees, ships branch-only PRs and removes only proven merged, clean and unowned worktrees."
 responsibilities:
   - Start isolated worktrees and sweep merged managed worktrees under the worktree topology lock.
-  - Ship a frozen branch candidate to a PR with a durable journal, provider readback and explicit branch recovery.
+  - "Ship a frozen branch candidate to a PR with a durable journal, provider readback and explicit branch recovery."
   - Keep the protected merge gate. Do not run contract finish or local merge commands.
   - Stop checkout architecture daemons and recorded runtime before guarded cleanup.
 source:
@@ -18,3 +18,5 @@ source:
     - scripts/ship-worktrees.sh
     - scripts/merge-gate.ts
     - scripts/cutover-closure.ts
+  exclude:
+    - scripts/contract-worktree-runtime.ts

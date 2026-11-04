@@ -10,6 +10,4 @@ responsibilities:
   - Hold the effects-layer source files of Capability Registry so layer direction is checked per directory.
 source:
   include:
-    - src/effects/architecture/archcontext-owners.ts
-    - src/effects/architecture/archcontext-resolve-cache.ts
     - src/effects/architecture/capability-resolver.ts

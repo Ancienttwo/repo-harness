@@ -1,8 +1,14 @@
 schemaVersion: archcontext.node/v2
 id: component.codegraph-readiness.primary
 kind: component
-name: "CodeGraph Readiness Check"
+name: CodeGraph Readiness Check
 status: active
 parent: capability.verification.codegraph-readiness
-layer: "cli"
-summary: "Executes the reviewed verify codegraph readiness boundary."
+layer: cli
+summary: Executes the reviewed verify codegraph readiness boundary.
+responsibilities:
+  - "Resolve, install and configure CodeGraph, and run the doctor and init CodeGraph checks."
+source:
+  include:
+    - src/cli/tools/codegraph.ts
+    - src/cli/commands/tools.ts

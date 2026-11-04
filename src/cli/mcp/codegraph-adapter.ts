@@ -218,6 +218,29 @@ function discoverCodeGraphRepo(repoRoot: string, env: NodeJS.ProcessEnv, timeout
   }
 }
 
+/**
+ * The adapter of an MCP server without the architecture plugin in the
+ * recorded selection: it runs no CodeGraph binary, and each read reports why.
+ */
+export function createCodeGraphNotSelectedAdapter(message: string): GeneralRepoCodeGraphAdapter {
+  return {
+    discoverRepo: () => unavailable(message, 0, false),
+    refreshRepo: (_repoRoot, opts) => ({
+      available: false,
+      refreshed: false,
+      integrated: false,
+      source: 'unavailable',
+      indexRevision: 0,
+      latencyMs: 0,
+      strategy: 'unsupported',
+      requestedPaths: opts?.paths ?? [],
+      pathRefreshSupported: false,
+      files: 0,
+      error: { code: 'INDEX_UNAVAILABLE', message, retryable: false },
+    }),
+  };
+}
+
 export function createCodeGraphCliAdapter(opts: {
   env?: NodeJS.ProcessEnv;
   timeoutMs?: number;

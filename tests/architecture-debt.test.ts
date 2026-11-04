@@ -7,7 +7,7 @@ import { digestJson, errorEnvelope, type ArchitectureDebtItemV1, type Architectu
 import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, decodeArchitectureDebtReport } from '../src/core/architecture/projection';
 import type { ArchctxProcessResult, ArchitectureProjectionPolicy, RunArchctxProcess } from '../src/core/architecture/contracts';
 import { completeArchitectureDebt, checkpointArchitectureDebt } from '../src/effects/architecture/archctx-provider';
-import { architectureDebtReport, architectureDebtSummary } from '../src/cli/commands/architecture-debt';
+import { architectureDebtReport, architectureDebtSummary } from '../src/cli/commands/architecture-debt-report';
 
 /**
  * Recorded from archctx@0.8.0 `complete --head-sha <sha> --json` in a disposable

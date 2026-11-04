@@ -7,8 +7,8 @@ import { trustedNodeCandidates } from '../runtime/node-candidates';
 import { selectCompatibleNode } from '../runtime/node-runtime';
 import { runProcess } from '../process-runner';
 import type { CapabilityOwnership } from '../../core/capabilities/registry';
-import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, assertArchctxVersion, assertProjectionApplyReadbackResult, assertProjectionResult, decodeArchitectureDebtReport, decodeDocsAnchorsReport, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
-import type { ArchctxProcessResult, ArchctxProviderOptions, ArchitectureProjectionPolicy, RunArchctxProcess, ArchitectureDaemonStopFailure, ArchitectureDaemonStopReportV1, ResolvedArchctxPackage } from '../../core/architecture/contracts';
+import { ARCHCTX_REQUIRED_VERSION, ArchctxClientError, assertArchctxVersion, assertProjectionApplyReadbackResult, assertProjectionResult, decodeArchitectureDebtReport, decodeDocsAnchorsReport } from '../../core/architecture/projection';
+import type { ArchctxProcessResult, ArchctxProviderOptions, ArchitectureProjectionPolicy, RunArchctxProcess, ArchitectureDaemonStopFailure, ArchitectureDaemonStopReportV1, ResolvedArchctxPackage, ArchitectureProjectionReadinessV1 } from '../../core/architecture/contracts';
 import { gitExecFileSync } from '../git/runner';
 
 const ARCHCTX_MAX_OUTPUT_BYTES = 8 * 1024 * 1024;

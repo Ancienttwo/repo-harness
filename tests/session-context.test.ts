@@ -15,6 +15,7 @@ import { getRoute } from '../src/cli/hook/route-registry';
 import { createStateInputCollector } from '../src/effects/loop/state-input-collector';
 import { resolveEffectiveState } from '../src/effects/state/resolve-effective-state';
 import { hookIdentity } from './helpers/hook-identity';
+import { recordPluginSelection } from './helpers/install-ownership';
 
 const HOOK_ENTRY = join(import.meta.dir, "../src/cli/hook-entry.ts");
 const RESUME = ".ai/harness/handoff/resume.md";
@@ -240,6 +241,8 @@ describe("architecture debt section", () => {
 
   function nativeFixture(): Fixture {
     const root = agentNoticeFixture();
+    // The hook child reads the architecture plugin selection from this HOME.
+    recordPluginSelection({ HOME: join(root, 'home') });
     return { root, home: join(root, 'home'), write: (path, text) => fixtureWrite(root, path, text), cleanup: () => rmSync(root, { recursive: true, force: true }) };
   }
 

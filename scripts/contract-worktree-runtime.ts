@@ -126,13 +126,19 @@ try {
     }, { closeout: true });
   } else if (action === 'stop-architecture-daemons') {
     const { checkoutPath } = await import(pathToFileURL(join(packageRoot, 'src/effects/state/coordination-worktree-topology.ts')).href) as typeof import('../src/effects/state/coordination-worktree-topology');
-    const { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } = await import(pathToFileURL(join(packageRoot, 'src/core/architecture/contracts.ts')).href) as typeof import('../src/core/architecture/contracts');
-    const { ARCHITECTURE_PROVIDERS } = await import(pathToFileURL(join(packageRoot, 'src/effects/architecture/providers.ts')).href) as typeof import('../src/effects/architecture/providers');
-    registerArchitecturePorts(ARCHITECTURE_PROVIDERS);
+    const { architecturePort, isArchitectureUnavailable } = await import(pathToFileURL(join(packageRoot, 'src/core/architecture/contracts.ts')).href) as typeof import('../src/core/architecture/contracts');
+    const { readRecordedSelection, registerSelectedArchitecturePorts } = await import(pathToFileURL(join(packageRoot, 'src/cli/installer/architecture-selection.ts')).href) as typeof import('../src/cli/installer/architecture-selection');
+    await registerSelectedArchitecturePorts(readRecordedSelection(), async () => (await import(pathToFileURL(join(packageRoot, 'src/effects/architecture/providers.ts')).href) as typeof import('../src/effects/architecture/providers')).ARCHITECTURE_PROVIDERS);
     const runtime = architecturePort('runtime');
-    if (isArchitectureUnavailable(runtime)) throw new Error(runtime.message);
-    const report = runtime.stopWorkspaceDaemons(value('--repo'), checkoutPath(value('--worktree')));
-    console.log(JSON.stringify(report));
-    if (report.failures.length > 0) process.exitCode = 1;
+    const worktree = checkoutPath(value('--worktree'));
+    // Without the plugin the closeout starts no archctx and stops nothing. A daemon that started while the plugin was selected keeps running after a deselection.
+    if (isArchitectureUnavailable(runtime) && runtime.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED') {
+      console.log(JSON.stringify({ schemaVersion: 'repo-harness.architecture-daemon-stop/v1', worktree, provider: 'disabled', stopped: [], failures: [] }));
+    } else {
+      if (isArchitectureUnavailable(runtime)) throw new Error(runtime.message);
+      const report = runtime.stopWorkspaceDaemons(value('--repo'), worktree);
+      console.log(JSON.stringify(report));
+      if (report.failures.length > 0) process.exitCode = 1;
+    }
   } else throw new Error('unknown worktree runtime action');
 } catch (error) { console.error(String(error)); process.exitCode = 1; }

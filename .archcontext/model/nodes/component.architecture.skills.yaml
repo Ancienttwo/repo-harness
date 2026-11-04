@@ -1,0 +1,14 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.skills
+kind: component
+name: Architecture Skills
+status: active
+parent: capability.runtime-harness.architecture
+layer: assets
+summary: Holds the repo-harness-architecture and repo-harness-archimap skill packages.
+responsibilities:
+  - Holds the repo-harness-architecture and repo-harness-archimap skill packages.
+source:
+  include:
+    - assets/skills/repo-harness-archimap/**
+    - assets/skill-commands/repo-harness-architecture/**

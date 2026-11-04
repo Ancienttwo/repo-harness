@@ -9,5 +9,4 @@ summary: The scripts-layer files of Effective State Resolver. Responsibilities s
 responsibilities:
   - Hold the scripts-layer source files of Effective State Resolver so layer direction is checked per directory.
 source:
-  include:
-    - scripts/check-state-boundaries.ts
+  include: []

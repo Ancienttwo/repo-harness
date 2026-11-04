@@ -39,7 +39,7 @@ outcomes:
       - id: configure-architecture
         from: reconciler
         to: archctx-closure
-        label: Ensure the global architecture projection configuration
+        label: Configure the global architecture projection through the setup port when the architecture plugin is selected
         evidence:
           entrypointId: entrypoint.global-runtime-reconciliation.update
           sourceSymbol: runGlobalRuntimeSetup
@@ -55,7 +55,7 @@ outcomes:
       - id: register-pi-package
         from: reconciler
         to: hook-adapters
-        label: Check and register the installed candidate's Pi package when the host selection enables it
+        label: "Check and register the installed candidate's Pi package when the host selection enables it"
         evidence:
           entrypointId: entrypoint.global-runtime-reconciliation.update
           sourceSymbol: runGlobalRuntimeSetup

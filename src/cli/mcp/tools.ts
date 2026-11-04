@@ -16,15 +16,17 @@ import { buildStateToolDefinitions, callStateTool, isStateTool } from './state-t
 import { buildFleetToolDefinitions, callFleetTool, fleetToolArgumentError, isFleetTool } from './fleet-tools';
 import type { McpPolicy } from './types';
 import type { WorkspaceManager } from './workspaces';
+import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 
 export interface McpToolContext {
   repoRoot: string;
   policy: McpPolicy;
   workspaceManager?: WorkspaceManager;
+  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
 }
 
 function readerContext(ctx: McpToolContext) {
-  const reader = createReaderToolContext(ctx.repoRoot, ctx.policy, ctx.workspaceManager);
+  const reader = createReaderToolContext(ctx.repoRoot, ctx.policy, ctx.workspaceManager, ctx.codeGraphAdapter);
   ctx.workspaceManager = reader.workspaceManager;
   return reader;
 }

@@ -8,6 +8,7 @@ import { buildMcpServerInstructions } from './instructions';
 import { getMcpPolicy, parseMcpProfile, sensitiveAllowedRootReason } from './policy';
 import { isRepoHarnessAdopted, resolveMcpRepoRoot } from './repo';
 import { buildMcpToolDefinitions, callMcpTool, type McpToolContext } from './tools';
+import type { GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { repoHarnessPackageVersion } from './version';
 import { WorkspaceManager } from './workspaces';
 
@@ -16,6 +17,8 @@ export interface McpServerOptions {
   profile?: string;
   enableReader?: boolean;
   allowedRoots?: string[];
+  /** The CodeGraph reads of the reader tools; `mcp serve` sets it from the recorded selection. */
+  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
 }
 
 function normalizeAllowedRoots(rawRoots: string[], opts: { skipDenied?: boolean } = {}): string[] {
@@ -101,6 +104,7 @@ export function createMcpToolContext(opts: McpServerOptions): McpToolContext {
     repoRoot,
     policy,
     workspaceManager: readerEnabled ? new WorkspaceManager({ allowedRoots: policyAllowedRoots, policy }) : undefined,
+    codeGraphAdapter: opts.codeGraphAdapter,
   };
 }
 

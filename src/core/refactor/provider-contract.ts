@@ -7,6 +7,12 @@ import type {
   RefactorRequestV1,
 } from "archctx-contracts";
 
+export type RefactorDecision = "accept" | "defer" | "reject";
+
+export const REFACTOR_MIN_TIMEOUT_MS = 1_000;
+export const REFACTOR_DEFAULT_TIMEOUT_MS = 120_000;
+export const REFACTOR_MAX_TIMEOUT_MS = 600_000;
+
 export class RefactorProviderError extends Error {
   constructor(readonly code: string, message: string, readonly action?: string) { super(message); this.name = "RefactorProviderError"; }
 }

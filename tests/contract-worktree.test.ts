@@ -20,6 +20,8 @@ import { runUpgrade } from '../src/cli/commands/upgrade';
 import { sweepManagedWorktrees } from '../src/effects/state/coordination-worktree-topology';
 import { copyHelpers, ROOT } from "./helpers/helper-script-fixture";
 import { commitAll, initGitRepo, run, tmpWorkspace } from "./helpers/repo-fixture";
+import { recordPluginSelection } from "./helpers/install-ownership";
+import { installProfileStatePath } from "../src/cli/installer/install-profile";
 
 setDefaultTimeout(30000);
 
@@ -183,6 +185,49 @@ describe("contract-worktree helper integration", () => {
       rmSync(cwd, { recursive: true, force: true });
     }
   }, 15000);
+
+  test("contract-worktree start creates the worktree and runs CodeGraph only for a selected architecture plugin", () => {
+    const cases = [
+      { name: "not-selected", state: null, skipped: "the architecture plugin is not selected; run: repo-harness install" },
+      { name: "unreadable", state: "{", skipped: "the install selection cannot be read" },
+      { name: "selected", state: "selected", skipped: null },
+    ] as const;
+    for (const entry of cases) {
+      const cwd = tmpWorkspace(`helper-contract-start-codegraph-${entry.name}`);
+      const worktreePath = `${cwd}-wt`;
+      const home = join(cwd, "home");
+      const fakeBin = join(cwd, "fakebin");
+      const log = join(cwd, "codegraph.log");
+      try {
+        copyHelpers(cwd);
+        initGitRepo(cwd);
+        writeFileSync(join(cwd, ".gitignore"), ".codegraph/\nhome/\nfakebin/\ncodegraph.log\n");
+        commitAll(cwd, "seed codegraph start");
+        mkdirSync(join(cwd, ".codegraph"));
+        mkdirSync(fakeBin);
+        writeFileSync(join(fakeBin, "codegraph"), `#!/bin/sh\necho "$*" >> "${log}"\n`, { mode: 0o755 });
+        if (entry.state === "selected") recordPluginSelection({ HOME: home });
+        else if (entry.state) {
+          mkdirSync(join(home, ".repo-harness"), { recursive: true });
+          writeFileSync(installProfileStatePath({ HOME: home }), entry.state);
+        } else mkdirSync(home, { recursive: true });
+
+        const started = start(["--issue", "123", "--path", worktreePath, "--fresh"], cwd, { HOME: home, PATH: `${fakeBin}:${GH_DIR}:${process.env.PATH ?? ""}` });
+        expect(started.status, `${started.stdout}\n${started.stderr}`).toBe(0);
+        expect(existsSync(join(worktreePath, ".git"))).toBe(true);
+        if (entry.skipped === null) {
+          expect(readFileSync(log, "utf8")).toBe("init\n");
+        } else {
+          expect(existsSync(log)).toBe(false);
+          expect(started.stderr).toContain(`[architecture] skipped CodeGraph index of the worktree: ${entry.skipped}`);
+        }
+      } finally {
+        run("git", ["worktree", "remove", "--force", worktreePath], cwd);
+        rmSync(worktreePath, { recursive: true, force: true });
+        rmSync(cwd, { recursive: true, force: true });
+      }
+    }
+  }, 60000);
 
   test("contract-worktree start uses --type for the branch prefix", () => {
     const cwd = tmpWorkspace("helper-contract-start-type");

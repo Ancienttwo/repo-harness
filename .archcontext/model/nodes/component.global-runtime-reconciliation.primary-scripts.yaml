@@ -10,5 +10,4 @@ responsibilities:
   - Hold the scripts-layer source files of Global Runtime Reconciler so layer direction is checked per directory.
 source:
   include:
-    - scripts/check-managed-runtime.ts
     - scripts/sync-codex-installed-copies.sh

@@ -16,6 +16,7 @@ import {
 import type { BridgeHookOutput } from '../src/cli/hook/hook-protocol';
 import { commitAll, initGitRepo, sandboxEnv, tmpWorkspace } from './helpers/repo-fixture';
 import { writeNoticeRegistry } from './helpers/agent-notice';
+import { recordPluginSelection } from './helpers/install-ownership';
 
 const buildRoot = tmpWorkspace('pi-hook-bundle');
 // test:files builds dist/hook-entry.js before this file. Exercise the same-package default.
@@ -218,6 +219,8 @@ describe('Pi real SDK with scripted provider fixture', () => {
   test('context is hidden and delivered once per session; inbox notices reach the model', async () => {
     const f = await fixture();
     try {
+      // The architecture notice needs the architecture plugin selection in the fixture HOME.
+      recordPluginSelection({ HOME: f.home });
       // Adopt registry context after SessionStart, so inbox owns the new status notice.
       writeNoticeRegistry(f.root);
       writeFileSync(join(f.root, '.ai/harness/policy.json'), JSON.stringify({ context: { capability_source: 'registry' } }));

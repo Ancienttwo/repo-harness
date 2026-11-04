@@ -4,42 +4,44 @@ kind: capability
 name: Hook Adapters
 status: active
 layer: cli
-summary: Installs and runs typed Claude, Codex and Pi host hook routes.
+summary: "Installs and runs typed Claude, Codex and Pi host hook routes."
 responsibilities:
-  - Own managed hook entries, route dispatch, edit path guarding, and Stop handling.
-  - Own the Pi event adapter, capability probe and bounded same-package Bun hook bridge.
+  - "Own managed hook entries, route dispatch, edit path guarding, and Stop handling."
+  - "Own the Pi event adapter, capability probe and bounded same-package Bun hook bridge."
   - Own native Pi package registration and the skill projections that core and the selected plugins own for all three hosts.
-  - Own the hook event log, its size-bounded archive and the one-release run summary cleanup module.
-  - Own the install, status and security commands that project and inspect the host adapters.
+  - "Own the hook event log, its size-bounded archive and the one-release run summary cleanup module."
+  - "Own the install, status and security commands that project and inspect the host adapters."
 source:
   include:
-    - "src/cli/hook/**"
-    - "src/cli/installer/**"
-    - "src/pi/**"
-    - "src/effects/managed-tree.ts"
-    - "src/cli/hook-entry.ts"
-    - "src/effects/loop/**"
-    - "src/effects/segmented-log.ts"
-    - "src/effects/run-summary-retention.ts"
-    - "src/cli/commands/install.ts"
-    - "src/cli/commands/status.ts"
-    - "src/cli/commands/security.ts"
+    - src/cli/hook/**
+    - src/cli/installer/**
+    - src/pi/**
+    - src/effects/managed-tree.ts
+    - src/cli/hook-entry.ts
+    - src/effects/loop/**
+    - src/effects/segmented-log.ts
+    - src/effects/run-summary-retention.ts
+    - src/cli/commands/install.ts
+    - src/cli/commands/status.ts
+    - src/cli/commands/security.ts
   entrypoints:
     - id: entrypoint.hook-adapters.primary
-      path: "src/cli/hook/runtime.ts"
+      path: src/cli/hook/runtime.ts
       symbols:
-        - name: "runHook"
+        - name: runHook
           sinks:
             - id: sink.hook-adapters.primary
-              path: "src/cli/hook/handler-registry.ts"
-              symbol: "getHandlerForRoute"
+              path: src/cli/hook/handler-registry.ts
+              symbol: getHandlerForRoute
+  exclude:
+    - src/cli/hook/agent-notice.ts
 extensions:
-  harnessTier: "core"
+  harnessTier: core
   contractFiles:
-    agents: "src/cli/hook/AGENTS.md"
-    claude: "src/cli/hook/CLAUDE.md"
-  lspProfile: "typescript-lsp"
+    agents: src/cli/hook/AGENTS.md
+    claude: src/cli/hook/CLAUDE.md
+  lspProfile: typescript-lsp
   verification:
-    - "bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts"
-    - "bun run test:files tests/cli/route-registry.test.ts tests/stop-handler.test.ts tests/cli/install.test.ts tests/cli/status.test.ts tests/cli/security.test.ts tests/cli/hook.test.ts tests/hook-protocol.test.ts --timeout 60000 --max-concurrency 1"
-    - "bun run test:files tests/pi-extension.test.ts tests/pi-compat.test.ts tests/cli/pi-install.test.ts --timeout 60000 --max-concurrency 1"
+    - bun test tests/hook-runtime.test.ts tests/hook-contracts.test.ts tests/workflow-contract.test.ts
+    - bun run test:files tests/cli/route-registry.test.ts tests/stop-handler.test.ts tests/cli/install.test.ts tests/cli/status.test.ts tests/cli/security.test.ts tests/cli/hook.test.ts tests/hook-protocol.test.ts --timeout 60000 --max-concurrency 1
+    - bun run test:files tests/pi-extension.test.ts tests/pi-compat.test.ts tests/cli/pi-install.test.ts --timeout 60000 --max-concurrency 1

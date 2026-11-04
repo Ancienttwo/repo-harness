@@ -1,12 +1,7 @@
 import { Command, InvalidArgumentError } from 'commander';
-import { RefactorProviderError } from '../../core/refactor/provider-contract';
+import { REFACTOR_DEFAULT_TIMEOUT_MS, REFACTOR_MAX_TIMEOUT_MS, REFACTOR_MIN_TIMEOUT_MS, RefactorProviderError, type RefactorDecision } from '../../core/refactor/provider-contract';
 import { canonicalRepoPath } from '../../effects/repo-registry';
-import { decideRecommendation, REFACTOR_DEFAULT_TIMEOUT_MS, REFACTOR_MAX_TIMEOUT_MS, REFACTOR_MIN_TIMEOUT_MS, type RefactorDecision } from '../../effects/refactor/archctx-provider';
-import {
-  observeRefactorRecommendations,
-  type RefactorRecommendation,
-  type RefactorRecommendationResult,
-} from '../../effects/refactor/recommendations';
+import type { RefactorRecommendation, RefactorRecommendationResult } from '../../effects/refactor/recommendations';
 
 const DECISIONS: readonly RefactorDecision[] = ['accept', 'defer', 'reject'];
 const EVIDENCE_ITEMS_SHOWN = 5;
@@ -53,11 +48,6 @@ function formatCandidate(entry: RefactorRecommendation, index: number): string {
   ].join('\n');
 }
 
-/** One archctx call decides a recorded suggestion or a fresh scan candidate. The limit must match the scan that produced the suggestion. */
-export function decideRefactorRecommendation(root: string, recommendationId: string, decision: RefactorDecision, reason: string, importNodeLimit?: number, timeoutMs?: number): string {
-  return decideRecommendation(recommendationId, decision, reason, root, {}, importNodeLimit, timeoutMs).status;
-}
-
 function parseImportNodeLimit(value: string): number {
   if (!/^[0-9]+$/.test(value) || Number(value) < 1) throw new InvalidArgumentError('must be a positive integer');
   return Number(value);
@@ -82,7 +72,8 @@ export function buildRefactorCommand(): Command {
     .option('--import-node-limit <n>', 'Raise the CodeGraph import read cap; use the same value for decide', parseImportNodeLimit)
     .option('--timeout-ms <ms>', `Per archctx call timeout in ms (default ${REFACTOR_DEFAULT_TIMEOUT_MS}, max ${REFACTOR_MAX_TIMEOUT_MS})`, parseTimeoutMs)
     .option('--json', 'Output machine-readable JSON')
-    .action((options: { repo: string; importNodeLimit?: number; timeoutMs?: number; json?: boolean }) => {
+    .action(async (options: { repo: string; importNodeLimit?: number; timeoutMs?: number; json?: boolean }) => {
+      const { observeRefactorRecommendations } = await import('../../effects/refactor/recommendations');
       const value = observeRefactorRecommendations(canonicalRepoPath(options.repo), { importNodeLimit: options.importNodeLimit, timeoutMs: options.timeoutMs });
       process.stdout.write(options.json ? `${JSON.stringify(value, null, 2)}\n` : formatRefactorRecommendations(value));
       if (value.status === 'unavailable' || value.status === 'proof_required') process.exitCode = 1;
@@ -95,9 +86,10 @@ export function buildRefactorCommand(): Command {
     .option('--repo <path>', 'Repository root', '.')
     .option('--import-node-limit <n>', 'Same limit the suggestion was scanned with', parseImportNodeLimit)
     .option('--timeout-ms <ms>', `Per archctx call timeout in ms (default ${REFACTOR_DEFAULT_TIMEOUT_MS}, max ${REFACTOR_MAX_TIMEOUT_MS})`, parseTimeoutMs)
-    .action((recommendationId: string, decision: string, options: { reason: string; repo: string; importNodeLimit?: number; timeoutMs?: number }) => {
+    .action(async (recommendationId: string, decision: string, options: { reason: string; repo: string; importNodeLimit?: number; timeoutMs?: number }) => {
       try {
         if (!DECISIONS.includes(decision as RefactorDecision)) throw new Error(`decision must be one of ${DECISIONS.join('|')}`);
+        const { decideRefactorRecommendation } = await import('./refactor-actions');
         const status = decideRefactorRecommendation(canonicalRepoPath(options.repo), recommendationId, decision as RefactorDecision, options.reason, options.importNodeLimit, options.timeoutMs);
         process.stdout.write(`${JSON.stringify({ recommendationId, status }, null, 2)}\n`);
       } catch (error) { fail(error); }

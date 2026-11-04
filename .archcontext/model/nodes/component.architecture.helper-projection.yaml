@@ -1,0 +1,13 @@
+schemaVersion: archcontext.node/v2
+id: component.architecture.helper-projection
+kind: component
+name: Capability Resolver Projection
+status: active
+parent: capability.runtime-harness.architecture
+layer: scripts
+summary: "Builds the standalone capability resolver helper from the registry, resolver, contract and archcontext reader sources."
+responsibilities:
+  - "Builds the standalone capability resolver helper from the registry, resolver, contract and archcontext reader sources."
+source:
+  include:
+    - scripts/sync-helper-sources.ts

@@ -1,0 +1,6 @@
+schemaVersion: archcontext.relation/v1
+id: relation.architecture.helper-projection
+kind: calls
+source: capability.runtime-harness.architecture
+target: component.architecture.helper-projection
+intent: Project the standalone capability resolver helper

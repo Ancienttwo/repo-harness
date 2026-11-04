@@ -29,6 +29,7 @@ import { isOptIn, resolveRepoRoot } from '../hook/runtime';
 import { ROUTES } from '../hook/route-registry';
 import { inspectWorkflowMarker } from '../../effects/adoption/workflow-marker';
 import { architecturePort, isArchitectureUnavailable, type ArchitectureDoctorCheck } from '../../core/architecture/contracts';
+import { globalArchitectureSectionPresent } from '../../effects/configuration/global-configuration';
 import { capabilitySourceMode, loadRegistryAuthority, readWorkflowPolicy } from '../../effects/state/resolve-effective-state';
 import { readText } from '../../effects/state/collect-state-inputs';
 
@@ -571,18 +572,36 @@ function judgedPlugins(installed: InstallState | null, env: NodeJS.ProcessEnv): 
   return installed ? enabledPlugins(installed) : defaultPluginSelection('both', env).plugins;
 }
 
-/** The CodeGraph readiness, MCP host and index checks, in report order, from the CodeGraph doctor port. */
-function codegraphDoctorChecks(cwd: string, plugins: readonly PluginId[] | Error): readonly ArchitectureDoctorCheck[] {
-  const port = architecturePort('codegraphDoctor');
-  if (isArchitectureUnavailable(port)) return [{ id: 'codegraph', describe: 'CodeGraph checks', status: 'fail', detail: port.message }];
-  return port.checks(cwd, plugins);
+/**
+ * The CodeGraph readiness, MCP host and index checks, in report order, from
+ * the CodeGraph port. CodeGraph follows the architecture plugin, so
+ * without it one `na` row stands for them and nothing runs.
+ */
+export function codegraphDoctorChecks(cwd: string): readonly ArchitectureDoctorCheck[] {
+  const port = architecturePort('codegraph');
+  if (isArchitectureUnavailable(port)) {
+    return [{ id: 'codegraph', describe: 'CodeGraph checks', status: port.code === 'ARCHITECTURE_PLUGIN_NOT_SELECTED' ? 'na' : 'fail', detail: port.message }];
+  }
+  return port.checks(cwd);
+}
+
+/** Only an unselected plugin has this row: the host projection section stays inert, and the row says whether it exists. */
+export function checkArchitectureProjectionSelection(env: NodeJS.ProcessEnv): DoctorCheckResult[] {
+  const setup = architecturePort('setup');
+  if (!isArchitectureUnavailable(setup) || setup.code !== 'ARCHITECTURE_PLUGIN_NOT_SELECTED') return [];
+  const id = 'architecture-projection';
+  const describe = 'Host architecture projection configuration';
+  try {
+    const section = globalArchitectureSectionPresent(env);
+    return [{ id, describe, status: 'na', detail: `${section.present ? `configured, not selected (${section.path})` : 'not selected'}; ${setup.message}` }];
+  } catch (error) {
+    return [{ id, describe, status: 'warn', detail: `${(error as Error).message}; ${setup.message}` }];
+  }
 }
 
 export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), target: DoctorTarget = 'both'): DoctorReport {
   const checks: DoctorCheckResult[] = [];
-  let plugins: readonly PluginId[] | Error;
-  try { plugins = judgedPlugins(readInstallState(process.env), process.env); } catch (error) { plugins = error as Error; }
-  const codegraphChecks = codegraphDoctorChecks(cwd, plugins);
+  const codegraphChecks = codegraphDoctorChecks(cwd);
   const securityReport = runSecurityScan({ cwd });
   checks.push(checkPath());
   checks.push(checkVersion());
@@ -597,6 +616,7 @@ export function runDoctor(ports: DoctorPorts, cwd: string = process.cwd(), targe
   }
   checks.push(checkCodexTrustState());
   checks.push(...codegraphChecks);
+  checks.push(...checkArchitectureProjectionSelection(process.env));
   checks.push(checkSecurityConfig(securityReport));
   checks.push(checkTypedHookRoutes(cwd));
   checks.push(checkCapabilityRegistry(cwd));

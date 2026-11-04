@@ -6,11 +6,11 @@ import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
 import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
-import { CLI_PORTS, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
+import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
 import { dependencies, devDependencies } from '../../package.json';
-import { recordInstallOwnership } from '../helpers/install-ownership';
+import { recordInstallOwnership, recordPluginSelection } from '../helpers/install-ownership';
 import { writeFakeHc } from '../helpers/fake-hc';
 import wazaRules from '../../src/core/skill-surface/waza-shared-rules.json';
 import { applyInstallSelection, beginInstallHostTransaction, installProfileHostMutationPaths, installProfileStatePath, managedInstallSurfaceIsCurrent, readInstallState, recordRefreshedInstallOwnership, loadSkillSurfaceCatalog, rollbackInstallHostTransaction, versions } from '../../src/cli/installer/install-profile';
@@ -407,6 +407,7 @@ describe('install command global runtime bootstrap', () => {
   });
 
   test('upgrades an old Bun runtime before any global install or update steps', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-bun-floor-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -436,7 +437,7 @@ describe('install command global runtime bootstrap', () => {
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
-        plugins: [],
+        plugins: ['architecture'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
@@ -569,6 +570,7 @@ describe('install command global runtime bootstrap', () => {
   }, 30_000);
 
   test('the agent fleet helper runs on the validated Bun when that executable is not named bun', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-fleet-bun-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -617,6 +619,7 @@ describe('install command global runtime bootstrap', () => {
   }, 30_000);
 
   test('installs CLI, hooks, Waza, brain root, and CodeGraph without setup-plugins.sh', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-'));
     const source = join(tmp, 'node_modules', 'repo-harness');
     const home = join(tmp, 'home');
@@ -812,6 +815,7 @@ exit 0
   }, 15_000);
 
   test('update mode reconciles mandatory dependencies and refreshes explicitly selected Waza, Mermaid, and CodeGraph', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
@@ -900,6 +904,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
   }, 15_000);
 
   test('update mode preserves the working CLI and fails closed when Bun leaves a stale mandatory dependency tree', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-managed-update-repair-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
@@ -928,7 +933,7 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
-        plugins: [],
+        plugins: ['architecture'],
         installSpec: 'repo-harness@9.9.9',
         updateMode: true,
         syncSkill: false,
@@ -1324,6 +1329,7 @@ exit 0
   });
 
   test('repairs Bun dependency loop by reinstalling CLI from a packed tarball and drops superseded release tarballs', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-loop-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
@@ -1412,6 +1418,7 @@ exit 0
   });
 
   test('full installs bundled cross-review while mutable marketplace skills stay disabled by default', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-full-cross-review-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1516,6 +1523,7 @@ exit 0
   });
 
   test('full refuses a partial unowned host skill projection', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-partial-skill-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1613,6 +1621,7 @@ exit 0
       rmSync(globalHarness, { recursive: true, force: true });
       symlinkSync(ROOT, globalHarness, 'dir');
       writeExecutable(join(fakeBin, 'node'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo v22.21.0; exit 0; fi\nexit 1\n');
+      recordPluginSelection({ HOME: home });
 
       const result = spawnSync('bash', [join(ROOT, 'scripts', 'sync-codex-installed-copies.sh')], {
         cwd: repo,
@@ -1641,6 +1650,7 @@ exit 0
   }, 15_000);
 
   test('npx cache sources force copy-based installed skill sync', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-npx-'));
     const source = join(tmp, '_npx', 'abc123', 'node_modules', 'repo-harness');
     const home = join(tmp, 'home');
@@ -1679,6 +1689,7 @@ exit 0
   });
 
   test('skips CLI self-install when running from the Bun global package source', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-self-install-'));
     const home = join(tmp, 'home');
     const source = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
@@ -1724,6 +1735,7 @@ exit 0
   });
 
   test('skips CLI self-install when Bun global package links to the workspace source', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-linked-source-'));
     const home = join(tmp, 'home');
     const source = join(tmp, 'workspace', 'repo-harness');
@@ -1769,6 +1781,7 @@ exit 0
   });
 
   test('skip detail appends an update hint when a newer version is available', () => {
+    registerArchitecturePlugin();
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-global-init-update-hint-'));
     const home = join(tmp, 'home');
     const source = join(home, '.bun', 'install', 'global', 'node_modules', 'repo-harness');
@@ -2452,7 +2465,8 @@ test('managed runtime readback reports stale shared daemon after a successful pa
     const nodePath = join(fakeBin, 'node.fixture-body');
     const original = readFileSync(nodePath, 'utf8');
     writeFileSync(nodePath, original.replace('"data":{"running":false}', `"data":{"running":true,"versionUnsupported":{"reason":"product-version-mismatch","expected":"${ARCHCTX_PIN}","received":"0.2.3","action":"upgrade-archctx-runtime","command":"archctx daemon upgrade"}}`));
-    const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, env: {
+    registerArchitecturePlugin();
+    const result = verifyInstalledManagedRuntime({ sourceRoot: source, cwd: tmp, plugins: ['architecture'], env: {
       ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath,
     } });
@@ -2478,7 +2492,7 @@ test('daemon maintenance preserves the verified candidate and hoisted dependenci
     const globalModules = join(home, '.bun/install/global/node_modules');
     const harnessManifest = join(globalModules, 'repo-harness/package.json');
     writeFileSync(harnessManifest, JSON.stringify({ name: 'repo-harness', version: '1.0.0', dependencies: { archctx: '0.2.3', 'archctx-contracts': '0.2.3' } }));
-    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, plugins: [] as const,
+    const options = { sourceRoot: source, cwd: tmp, target: 'codex' as const, plugins: ['architecture'] as const,
       installCli: false, installSpec: 'repo-harness@9.9.9', updateMode: true,
       syncSkill: false, hostAdapters: false, externalSkills: false, codegraph: false,
       env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
@@ -2514,7 +2528,7 @@ test('a fleet failure after the CLI install restores the predecessor hoisted arc
     const globalModules = join(home, '.bun/install/global/node_modules');
     const env = { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun'),
       PATH: `${fakeBin}:${process.env.PATH ?? ''}`, REPO_HARNESS_BUN_EXECUTABLE: process.execPath };
-    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', plugins: [], env }, () => {
+    const result = runTransactionalRuntimeRefresh({ cwd: tmp, target: 'codex', plugins: ['architecture'], env }, () => {
       writeFileSync(join(globalModules, 'repo-harness/package.json'), JSON.stringify({
         name: 'repo-harness', version: '9.9.9', dependencies: { archctx: '9.9.9', 'archctx-contracts': '9.9.9' },
       }));
@@ -2533,7 +2547,7 @@ test('a fleet failure after the CLI install restores the predecessor hoisted arc
     expect(result.exitCode).toBe(1);
     expect(JSON.parse(readFileSync(join(globalModules, 'archctx/package.json'), 'utf8')).version).toBe(ARCHCTX_PIN);
     expect(JSON.parse(readFileSync(join(globalModules, 'archctx-contracts/package.json'), 'utf8')).version).toBe(ARCHCTX_CONTRACTS_PIN);
-    expect(verifyInstalledManagedRuntime({ sourceRoot: predecessor, cwd: tmp, env }).status).toBe('ok');
+    expect(verifyInstalledManagedRuntime({ sourceRoot: predecessor, cwd: tmp, plugins: ['architecture'], env }).status).toBe('ok');
   } finally { rmSync(tmp, { recursive: true, force: true }); }
 });
 

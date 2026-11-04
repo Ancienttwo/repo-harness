@@ -3,6 +3,7 @@ import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from "fs"
 import { tmpdir } from "os";
 import { join } from "path";
 import { spawnSync } from "child_process";
+import { recordPluginSelection } from "../helpers/install-ownership";
 import { writeShellExecutableFixture } from "../helpers/repo-fixture";
 
 const ROOT = join(import.meta.dir, "..", "..");
@@ -18,6 +19,7 @@ function setupFakeEnvironment(prefix: string) {
   const fakeBin = join(root, "fakebin");
   mkdirSync(home, { recursive: true });
   mkdirSync(fakeBin, { recursive: true });
+  recordPluginSelection({ HOME: home });
   writeExecutable(
     join(fakeBin, "timeout"),
     [

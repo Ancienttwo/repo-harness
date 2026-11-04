@@ -3,6 +3,7 @@ import { chmodSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync 
 import { tmpdir } from "os";
 import { dirname, join } from "path";
 import { spawnSync } from "child_process";
+import { recordPluginSelection } from "../helpers/install-ownership";
 
 const ROOT = join(import.meta.dir, "..", "..");
 const CLI = join(ROOT, "src/cli/index.ts");
@@ -104,6 +105,7 @@ function runConfigure(target: string, options: RunConfigureOptions = {}) {
 
     writeFakeCodeGraph(envRoot.fakeBin, logFile);
     writeFakeSkillsCli(envRoot.fakeBin);
+    recordPluginSelection({ HOME: envRoot.home });
 
     const res = spawnSync("bun", [CLI, "tools", "configure", "codegraph", "--target", target, "--location", "global", "--json", "--repo", ROOT], {
       cwd: ROOT,
@@ -255,4 +257,43 @@ describe("tools configure codegraph", () => {
     // agent prompts, not adapter output.
     expect(res.stdout).not.toMatch(/codegraph_\w+\s*\(/);
   }, 15000);
+});
+
+describe("architecture plugin guard", () => {
+  test("each architecture command fails closed with the repair command before it starts a process", () => {
+    const envRoot = setupFakeEnvironment("repo-harness-architecture-guard");
+    const logFile = join(envRoot.root, "tool.log");
+    try {
+      writeFakeCodeGraph(envRoot.fakeBin, logFile);
+      const commands = [
+        ["architecture-projection", "status", "--json"],
+        ["architecture-debt", "--json"],
+        ["refactor", "recommendations", "--repo", ROOT, "--json"],
+        ["tools", "ensure", "codegraph", "--repo", ROOT],
+        ["tools", "configure", "codegraph", "--target", "codex", "--location", "global", "--repo", ROOT],
+        ["module", "list", "--json"],
+        ["module", "review-prompt", "capability.runtime-harness.architecture", "--json"],
+      ];
+      // No install state, then a recorded selection without the plugin.
+      for (const [selection, repair] of [
+        [null, "repo-harness install"],
+        [["product"], "repo-harness install --plugins architecture,product"],
+      ] as const) {
+        if (selection) recordPluginSelection({ HOME: envRoot.home }, selection);
+        for (const args of commands) {
+          const name = args[0] === "tools" ? args.slice(0, 3).join(" ") : args[0];
+          const res = spawnSync("bun", [CLI, ...args], {
+            cwd: ROOT, encoding: "utf-8",
+            env: { ...process.env, HOME: envRoot.home, PATH: `${envRoot.fakeBin}:${process.env.PATH ?? ""}` },
+          });
+          expect(res.status, `${repair}: ${name}`).toBe(1);
+          expect(res.stdout, name).toBe("");
+          expect(res.stderr, name).toContain(`repo-harness ${name} needs the architecture plugin: the architecture plugin is not selected; run: ${repair}\n`);
+        }
+      }
+      expect(() => readFileSync(logFile, "utf-8")).toThrow();
+    } finally {
+      rmSync(envRoot.root, { recursive: true, force: true });
+    }
+  }, 60000);
 });

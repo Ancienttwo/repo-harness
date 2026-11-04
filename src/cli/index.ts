@@ -24,7 +24,7 @@ import { newPiPackagesSinceTransaction, parseState, recordPiInstallOwnership, re
 import { formatInstallStateMigrationPlan, installStateMigrationPaths, migrateInstallState, protocol2SnapshotSurfaces } from './installer/install-state-migration';
 import { parsePluginList, PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection } from '../core/skill-surface/plugin-manifest';
 import { writeAllSync } from './runtime/write-all-sync';
-import { runInit, type InitPorts } from './commands/init';
+import { runInit } from './commands/init';
 import { CLI_VERSION, formatStatus, runStatus } from './commands/status';
 import { formatDoctor, runDoctor, type DoctorPorts } from './commands/doctor';
 import { buildInitHookCommand, buildSetupCommand, formatInitHook, runInitHook } from './commands/init-hook';
@@ -32,9 +32,9 @@ import { formatMigratePlan, runMigrate } from './commands/migrate';
 import { buildReviewCommand } from './commands/review';
 import { taskReviewRunner } from '../effects/review-runner/task-review-runner';
 import { buildUpgradeCommand } from './commands/upgrade';
-import { buildToolsCommand, CODEGRAPH_DOCTOR_PROVIDER, CODEGRAPH_INIT_STEP, configureCodegraphMcpStep } from './commands/tools';
-import { registerArchitecturePorts } from '../core/architecture/contracts';
-import { ARCHITECTURE_PROVIDERS } from '../effects/architecture/providers';
+import { buildToolsCommand } from './commands/tools';
+import { architecturePort, isArchitectureUnavailable, registerArchitecturePorts } from '../core/architecture/contracts';
+import { architectureSelected, assertArchitectureCommandSelected, declareArchitectureSelection, readRecordedSelection, recordedPlugins } from './installer/architecture-selection';
 import { buildHerdrCommand, notifyRelayDoctorCheck } from './commands/herdr';
 import { buildEventsCommand } from './commands/events';
 import { buildBrainCommand } from './commands/brain';
@@ -62,6 +62,7 @@ import { buildRetentionCommand, type RetentionPorts } from './commands/retention
 import { configureRequiredHerdrSkill } from './commands/herdr-skill';
 import { MCP_AUDIT_LOG_RELATIVE_PATH } from './mcp/audit';
 import { MCP_INDEX_EVENTS_RELATIVE_PATH, MCP_METRICS_RELATIVE_PATH, MCP_TRACE_RELATIVE_PATH } from './mcp/general-repo-access';
+import { createCodeGraphCliAdapter, createCodeGraphNotSelectedAdapter } from './mcp/codegraph-adapter';
 import { TASK_INBOX_V2_RELATIVE_PATH } from '../core/fleet/task-inbox-layout';
 import { formatSecurityScan, runSecurityScan } from './commands/security';
 import {
@@ -96,7 +97,7 @@ import { removeOwnedDanglingSkillLinks } from '../effects/skill-tree-integrity';
 import { providerSkillLock } from '../effects/host-skill-roots';
 import {
   applyInstallSelection,
-  assertCodegraphPolicySelection,
+  assertArchitecturePolicySelection,
   beginInstallHostTransaction,
   commitInstallHostTransaction,
   effectiveSkillRoots,
@@ -129,8 +130,32 @@ import {
 } from './commands/validators';
 import type { Location } from './installer/types';
 
-// Core reaches the architecture code only through these ports; registration checks the contract version.
-registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, codegraphDoctor: CODEGRAPH_DOCTOR_PROVIDER });
+// The recorded selection, read once per process. Core reaches the architecture code only through the ports.
+const architectureSelection = readRecordedSelection();
+let architectureRegistered = false;
+
+/**
+ * Loads and registers the architecture providers, once. The root calls it
+ * only for a selected plugin: at start for the recorded selection, and in
+ * install, update and candidate reconciliation when their plugin set adds
+ * it. In-process tests of a selected plugin call it too.
+ */
+export function registerArchitecturePlugin(): void {
+  if (architectureRegistered) return;
+  const { ARCHITECTURE_PROVIDERS } = require('../effects/architecture/providers') as typeof import('../effects/architecture/providers');
+  const { ARCHITECTURE_SETUP_PROVIDER } = require('./commands/architecture-setup') as typeof import('./commands/architecture-setup');
+  const { CODEGRAPH_PROVIDER } = require('./tools/codegraph') as typeof import('./tools/codegraph');
+  registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, setup: ARCHITECTURE_SETUP_PROVIDER, codegraph: CODEGRAPH_PROVIDER });
+  architectureRegistered = true;
+}
+
+if (architectureSelected(architectureSelection)) registerArchitecturePlugin();
+else declareArchitectureSelection(architectureSelection);
+
+/** An architecture command stays in help; its handler checks the selection before any probe or write, then loads the plugin code. */
+function architectureCommand(command: Command, name: string = command.name()): Command {
+  return command.hook('preAction', () => assertArchitectureCommandSelected(architectureSelection, name));
+}
 
 /**
  * The plugin checks, setup steps and storage roots that core commands take as
@@ -139,14 +164,11 @@ registerArchitecturePorts({ ...ARCHITECTURE_PROVIDERS, codegraphDoctor: CODEGRAP
  */
 export const CLI_PORTS: {
   readonly doctor: DoctorPorts;
-  readonly init: InitPorts;
   readonly globalRuntime: GlobalRuntimePorts;
   readonly retention: RetentionPorts;
 } = {
   doctor: { notifyRelayCheck: notifyRelayDoctorCheck, attentionWatchCheck: (cwd) => attentionWatchDoctorCheck(attentionHostPorts(), () => readLocalRepositoryId({ repo_root: cwd }, url => githubRemoteRepository(url) !== null)) },
-  init: { codegraphStep: CODEGRAPH_INIT_STEP },
   globalRuntime: {
-    configureCodegraphMcp: configureCodegraphMcpStep,
     configureHerdrSkill: (target, env, piSelected) => configureRequiredHerdrSkill(target, env, undefined, piSelected),
   },
   retention: {
@@ -278,6 +300,7 @@ function runTransactionalSelectionProjection(
     try {
       priorReceipts = readInstallState(transactionEnv)?.ownership_manifest ?? [];
       prepareInstallSelectionSwitch(selected.record, options.env);
+      if (plugins.includes('architecture')) registerArchitecturePlugin();
       result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, { ...options, plugins, runtimeLock: lock });
     } catch (error) {
       rollbackRuntimeTransaction(transaction, transactionEnv, recorded, error);
@@ -422,6 +445,7 @@ export function runCandidateRuntimeReconciliation(
   const state = requireInstallState(env);
   const resolved = resolveRecordedSelection(state, request.target, env, { partial: !complete });
   const plugins = resolved.run;
+  if (plugins.includes('architecture')) registerArchitecturePlugin();
   // Stdout is the receipt; the parent shows this stderr in its reconcile step.
   for (const line of selectionLines(resolved)) console.error(line);
   const piSkillRoot = piSkillRootSnapshots(env);
@@ -560,7 +584,8 @@ export function runTransactionalRuntimeRefresh(
         recordedSelection = { state, resolved };
         plugins = resolved.run;
       }
-      assertCodegraphPolicySelection(options.cwd ?? process.cwd(), plugins, transactionEnv);
+      assertArchitecturePolicySelection(options.cwd ?? process.cwd(), plugins, transactionEnv);
+      if (plugins.includes('architecture')) registerArchitecturePlugin();
     } catch (error) {
       // Nothing outside the snapshot ran yet, so a restore is enough.
       restoreTransactionBytes(transaction, error);
@@ -632,7 +657,7 @@ async function runGlobalRuntimeBootstrap(
   const selection: PluginSelection = rawOpts.plugins === false ? [] : rawOpts.plugins === undefined ? 'all' : parsePluginList(rawOpts.plugins);
   const resolved = resolveRecordedSelection({ selection, plugins: current?.plugins ?? [] }, target);
   const { run: plugins, record } = resolved;
-  assertCodegraphPolicySelection(process.cwd(), plugins);
+  assertArchitecturePolicySelection(process.cwd(), plugins);
   const basePlan = planInstallSelection(selection, resolved, current, process.env);
   const plan = { ...basePlan,
     pi_package: planPiPackage(basePlan.pi_package.source, plugins.includes('pi') && target === 'both' && rawOpts.hooks !== false),
@@ -861,7 +886,7 @@ export function buildProgram(): Command {
         mode,
         env,
       };
-      const result = runInit(CLI_PORTS.init, common);
+      const result = runInit({ ...common, plugins: recordedPlugins(architectureSelection) });
       if (rawOpts.json === true) {
         console.log(JSON.stringify(result, null, 2));
       } else {
@@ -999,7 +1024,7 @@ export function buildProgram(): Command {
 
   program.addCommand(buildInitHookCommand(CLI_PORTS.doctor));
   program.addCommand(buildReviewCommand(taskReviewRunner));
-  program.addCommand(buildModuleCommand());
+  program.addCommand(architectureCommand(buildModuleCommand()));
   program.addCommand(buildSetupCommand(CLI_PORTS.doctor));
   program.addCommand(buildUpgradeCommand());
 
@@ -1029,13 +1054,23 @@ export function buildProgram(): Command {
       process.exit(rawOpts.strict === true && strictFailure ? 1 : 0);
     });
 
-  program.addCommand(buildToolsCommand());
+  const tools = buildToolsCommand();
+  for (const group of ['ensure', 'configure']) {
+    const codegraph = tools.commands.find(command => command.name() === group)?.commands.find(command => command.name() === 'codegraph');
+    if (!codegraph) throw new Error(`tools ${group} codegraph is not defined`);
+    architectureCommand(codegraph, `tools ${group} codegraph`);
+  }
+  program.addCommand(tools);
   program.addCommand(buildHerdrCommand());
   program.addCommand(buildEventsCommand());
   program.addCommand(buildBrainCommand());
   program.addCommand(buildCapabilityContextCommand());
   program.addCommand(buildDocsCommand());
-  program.addCommand(buildMcpCommand());
+  program.addCommand(buildMcpCommand(() => {
+    // The reader tools run CodeGraph only for a selected plugin; otherwise each read reports the absence.
+    const port = architecturePort('codegraph');
+    return isArchitectureUnavailable(port) ? createCodeGraphNotSelectedAdapter(port.message) : createCodeGraphCliAdapter();
+  }));
   program.addCommand(buildRunCommand());
   program.addCommand(buildStateCommand());
   program.addCommand(buildPublicationCommand());
@@ -1045,9 +1080,9 @@ export function buildProgram(): Command {
   program.addCommand(buildOperatorCommand());
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
-  program.addCommand(buildRefactorCommand());
-  program.addCommand(buildArchitectureProjectionCommand());
-  program.addCommand(buildArchitectureDebtCommand());
+  program.addCommand(architectureCommand(buildRefactorCommand()));
+  program.addCommand(architectureCommand(buildArchitectureProjectionCommand()));
+  program.addCommand(architectureCommand(buildArchitectureDebtCommand()));
   program.addCommand(buildStrategyCommand());
   program.addCommand(buildRetentionCommand(CLI_PORTS.retention));
   program.addCommand(buildSeatsCommand());

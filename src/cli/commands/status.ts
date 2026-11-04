@@ -30,9 +30,8 @@ import {
   type InstallStateErrorCode,
 } from '../installer/install-profile';
 import { selectionLabel, type PluginId, type PluginSelection } from '../../core/skill-surface/plugin-manifest';
-import { inspectArchitectureProjectionReadiness } from '../../effects/architecture/archctx-provider';
-import { architectureModelReady } from '../../effects/architecture/architecture-read';
-import type { ArchitectureProjectionReadinessV1 } from '../../core/architecture/projection';
+import { architecturePort, isArchitectureUnavailable, type ArchitectureProjectionReadinessV1 } from '../../core/architecture/contracts';
+import { globalArchitectureSectionPresent } from '../../effects/configuration/global-configuration';
 import { WORKFLOW_CONTRACT_MARKER_PATH } from '../../core/adoption/minimum-harness-version';
 import { gitExecFileSync } from '../../effects/git/runner';
 import { isOptIn } from '../hook/runtime';
@@ -83,7 +82,7 @@ export interface StatusReport {
         error: string;
         path: string;
       };
-  architectureProjection?: ArchitectureProjectionReadinessV1 | { error: string };
+  architectureProjection?: ArchitectureProjectionReadinessV1 | ArchitectureProjectionNotSelected | { error: string };
 }
 
 function resolveRepoRoot(cwd: string): string | null {
@@ -156,6 +155,22 @@ export function formatManagedHookProjectionMismatch(
   return `${route} ${mismatch.field} expected=${formatProjectionValue(mismatch.expected)} actual=${formatProjectionValue(mismatch.actual)}`;
 }
 
+/** The plugin is not selected: archctx does not run, and the host section, when present, stays inert. */
+export interface ArchitectureProjectionNotSelected {
+  selected: false;
+  configured: boolean;
+  configurationPath: string;
+  next: string;
+}
+
+function architectureProjectionStatus(repoRoot: string): NonNullable<StatusReport['architectureProjection']> {
+  const setup = architecturePort('setup');
+  if (!isArchitectureUnavailable(setup)) return setup.readiness(repoRoot);
+  if (setup.code !== 'ARCHITECTURE_PLUGIN_NOT_SELECTED') return { error: setup.message };
+  const section = globalArchitectureSectionPresent();
+  return { selected: false, configured: section.present, configurationPath: section.path, next: setup.message };
+}
+
 export function readInstallStateForStatus(): StatusReport['installState'] {
   try {
     const state = readInstallState();
@@ -208,7 +223,7 @@ export function runStatus(cwd: string = process.cwd()): StatusReport {
   let architectureProjection: StatusReport['architectureProjection'];
   if (repoRoot && repo.optIn) {
     try {
-      architectureProjection = inspectArchitectureProjectionReadiness(repoRoot, architectureModelReady);
+      architectureProjection = architectureProjectionStatus(repoRoot);
     } catch (error) {
       architectureProjection = { error: error instanceof Error ? error.message : String(error) };
     }
@@ -270,7 +285,10 @@ export function formatStatus(report: StatusReport, asJson = false): string {
     lines.push('');
     lines.push('Architecture projection:');
     if ('error' in report.architectureProjection) lines.push(`  error: ${report.architectureProjection.error}`);
-    else {
+    else if ('selected' in report.architectureProjection) {
+      lines.push(`  plugin: ${report.architectureProjection.configured ? `configured, not selected (${report.architectureProjection.configurationPath})` : 'not selected'}`);
+      lines.push(`  next: ${report.architectureProjection.next}`);
+    } else {
       lines.push(`  model authority: ${report.architectureProjection.modelAuthority.source} (${report.architectureProjection.modelAuthority.ready ? 'ready' : 'blocked'})`);
       lines.push(`  provider: ${report.architectureProjection.projectionProvider.provider} (${report.architectureProjection.projectionProvider.state})`);
       lines.push(`  code facts: ${report.architectureProjection.codeFacts.state}`);
