@@ -166,13 +166,22 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
 
 test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
   const board = replay();
-  expect(boardSummary(board)).toEqual({ queue: 2, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 });
+  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 });
   const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
   const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
     block },
     pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
       : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
-  expect(boardSummary(planned)).toMatchObject({ queue: 1, ci_failures: 1, batch: { accepted: 1, size: 4 } });
+  expect(boardSummary(planned)).toMatchObject({ queue: 0, ci_failures: 1, batch: { accepted: 1, size: 4 } });
+  const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
+  const reopened: BoardV1 = { ...planned,
+    items: planned.items.map(item => item.number === 1475 ? { ...item, pull_requests: [1491, 1500] } : item),
+    pull_requests: [...planned.pull_requests.map(pr => pr.number === 1491 ? { ...pr, state: 'closed' as const } : pr),
+      { ...accepted, number: 1500, state: 'open', acceptance: { status: 'not_accepted' } }],
+  };
+  expect(boardSummary(reopened)).toMatchObject({ queue: 1, batch: { accepted: 0, size: 4 } });
+  expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
+    ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
   expect(boardSummary({ ...planned, plan: { status: 'absent', truncated: false } }).batch).toEqual({ accepted: null, size: null });
   expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
     block: { ...block, batches: [] } } }).batch).toEqual({ accepted: 0, size: 0 });

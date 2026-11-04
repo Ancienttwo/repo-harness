@@ -571,7 +571,7 @@ describe('operator serve command and HTTP boundary', () => {
       try {
         if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
         expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
-          summary: { queue: 2, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 } }]);
+          summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 } }]);
         expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
         board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
         expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);

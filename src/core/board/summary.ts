@@ -1,5 +1,6 @@
 import { evaluateBoardAttention } from './attention';
 import type { BoardV1 } from './board';
+import { primaryPullRequest } from './pull-requests';
 
 export interface BoardSummaryV1 {
   readonly queue: number;
@@ -27,12 +28,11 @@ export function boardSummary(board: BoardV1): BoardSummaryV1 {
   let batch: BoardSummaryV1['batch'] = { accepted: null, size: null };
   if (board.plan.status === 'observed') {
     const members = board.plan.block.batches.flat();
-    const accepted = new Set(board.pull_requests.filter(pr => pr.acceptance.status === 'accepted').map(pr => pr.number));
     batch = { size: members.length, accepted: members.filter(number =>
-      board.items.some(item => item.number === number && item.pull_requests.some(pr => accepted.has(pr)))).length };
+      board.items.some(item => item.number === number && primaryPullRequest(board, item)?.acceptance.status === 'accepted')).length };
   }
   return {
-    queue: open.filter(pr => pr.acceptance.status === 'not_accepted').length,
+    queue: open.filter(pr => pr.acceptance.status === 'not_accepted' && pr.required_check.status === 'success').length,
     ci_failures: open.filter(pr => pr.required_check.status === 'failure').length,
     batch,
     needs_you: evaluateBoardAttention(board).findings.filter(finding => finding.route === 'orchestrator').length,

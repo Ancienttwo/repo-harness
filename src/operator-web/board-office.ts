@@ -1,7 +1,8 @@
 import type { BoardAttentionV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardTerminalV1, BoardV1 } from '../core/board/board';
 import type { BoardParentV1 } from '../core/board/parents';
-import { primaryPullRequest, type BoardParentsReader } from './board-view';
+import { primaryPullRequest } from '../core/board/pull-requests';
+import type { BoardParentsReader } from './board-view';
 
 /**
  * The data map of the Board office view (#1755): board → room, parent list →
