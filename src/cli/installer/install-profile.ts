@@ -183,7 +183,7 @@ export interface SelectionResolution {
   readonly notAdded: readonly PluginId[];
 }
 
-export const UPDATE_COMMAND = 'repo-harness update';
+const UPDATE_COMMAND = 'repo-harness update';
 
 interface HostSurfaceSnapshot {
   readonly path: string;
@@ -532,7 +532,7 @@ export function managedInstallSurfaceIsCurrent(surface: Pick<ManagedInstallSurfa
 }
 
 /** Generated agent fleet targets written by scripts/install-agent-fleet.sh. */
-export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   return MANAGED_AGENTS.flatMap((agent) => [
     join(home, '.codex', 'agents', `${agent}.toml`),
@@ -601,7 +601,7 @@ function verifiedAgentFleetSurfaces(env: NodeJS.ProcessEnv): readonly ManagedIns
  * The one order of every written ownership manifest, so a writer that changes
  * nothing rewrites no bytes and an unchanged check compares like with like.
  */
-export function canonicalOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInstallSurface[] {
+function canonicalOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInstallSurface[] {
   return [...surfaces].sort((left, right) => left.path.localeCompare(right.path)
     || left.type.localeCompare(right.type)
     || (left.managed_marker ?? '').localeCompare(right.managed_marker ?? ''));
@@ -1199,7 +1199,7 @@ export function parseState(raw: unknown, path: string, env: NodeJS.ProcessEnv): 
 }
 
 /** Read the raw state file, or null when it is absent. */
-export function readRawInstallState(env: NodeJS.ProcessEnv = process.env): unknown {
+function readRawInstallState(env: NodeJS.ProcessEnv = process.env): unknown {
   const path = installProfileStatePath(env);
   if (!existsSync(path)) return null;
   try {
@@ -1347,7 +1347,7 @@ export function installStateStatus(
 }
 
 /** Why a host plugin cannot be selected now, or null when its host program is present. Other read errors throw. */
-export function hostPluginAbsence(_id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
+function hostPluginAbsence(_id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
   return piExecutable(env) === null ? 'pi is not on PATH' : null;
 }
 
@@ -1497,7 +1497,7 @@ export function planInstallSelection(
   };
 }
 
-export function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
+function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
   const target = installProfileStatePath(env);
   mkdirSync(dirname(target), { recursive: true });
   const temp = `${target}.tmp-${process.pid}-${Date.now()}`;
