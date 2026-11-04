@@ -266,7 +266,7 @@ test('OpenAI prompt detection uses a token boundary without shrinking MCP redact
 
 test('each formerly quadratic secret rule stays linear on a 1 MiB run and still matches', () => {
   const run = (unit: string) => unit.repeat(Math.ceil(1024 * 1024 / unit.length));
-  const keyBegin = '-----BEGIN PRIVATE KEY-----', keyEnd = '-----END PRIVATE KEY-----';
+  const keyBegin = '-----BEGIN PRIVATE KEY-----', keyEnd = '-----END PRIVATE KEY-----', key = keyBegin + '\nbody\n' + keyEnd;
   const mcp = (text: string) => redactMcpText(text).text;
   const rows: ReadonlyArray<{ run: string; sample: string; replacement?: string; redact?: (text: string) => string }> = [
     { run: run('a'), sample: '://user:pass@example.invalid', replacement: '[CREDENTIAL URL REDACTED]' },
@@ -274,7 +274,17 @@ test('each formerly quadratic secret rule stays linear on a 1 MiB run and still 
     { run: run('eyJ'), sample: '.' + 'b'.repeat(12) + '.' + 'c'.repeat(12), replacement: '[JWT REDACTED]' },
     { run: run(keyBegin + '\n'), sample: keyEnd, replacement: '[PRIVATE KEY REDACTED]' },
     // The match start is 1 MiB after the text start, so the rule walks back the whole run.
-    { run: run('a'), sample: keyBegin + '\nbody\n' + keyEnd, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('a'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    // Each run below holds text that passes for the start of a rule, but no complete start literal.
+    { run: run('-'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('-'.repeat(80) + '\n' + 'x'.repeat(75) + '\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('| --- | ----- | ----- |\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('-----BEGIN PRIVATE KEY\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run(keyEnd + '\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    // Each run below has one start every 100 characters, so each walk crosses a long gap.
+    { run: run('1'.repeat(99) + 'a'), sample: '://user:pass@example.invalid', replacement: '[CREDENTIAL URL REDACTED]' },
+    { run: run('http://' + 'a'.repeat(93)), sample: '?token=fake', replacement: '[ENDPOINT REDACTED]' },
+    { run: run('eyJ' + 'a'.repeat(97)), sample: '.' + 'b'.repeat(12) + '.' + 'c'.repeat(12), replacement: '[JWT REDACTED]' },
     { run: run('TOKEN'), sample: '=fake' },
     { run: 'TOKEN=null' + ' '.repeat(1024 * 1024), sample: 'x' },
     { run: run('TOKEN'), sample: '=fake', replacement: '=[REDACTED]', redact: mcp },

@@ -7,15 +7,17 @@ const KEY_END = `-----END${KEY_LABEL}`;
  *
  * Each rule runs in linear time. Where one failed start proves that later
  * starts in the same run fail too, a lookbehind rejects those later starts. It
- * follows the start literal, so it runs only at a candidate, and it stops at
- * the previous candidate, so the walks do not overlap:
+ * runs only after the complete start literal, and it stops at the previous
+ * candidate, so the walks do not overlap:
  * - jwt_token, url_token: a start that fails leaves no match in its run.
  * - credential_url: every letter in a scheme run reaches the same `://`, so
  *   only the first letter of the run starts a match.
  * - private_key: a BEGIN that finds no END proves that no later BEGIN finds one,
  *   so only a BEGIN whose nearest earlier marker is an END, or no marker, starts
- *   a match. The lookbehind stops at that marker and captures it when it is a
- *   BEGIN. The next `\1` then needs `-----` before the text `BEGIN`, which fails.
+ *   a match. A lookahead for the complete BEGIN header comes first, so dashes
+ *   alone start no walk. The lookbehind stops at that marker and captures it
+ *   when it is a BEGIN. The next `\1` then needs `-----` before the text `BEGIN`,
+ *   which fails.
  *   An END can share dashes with a BEGIN on either side, so the marker excludes
  *   a BEGIN's closing dashes and a BEGIN that an END overlaps.
  *
@@ -29,7 +31,7 @@ export const SECRET_TOKEN_PATTERNS = [
   { type: 'github_pat_v2', pattern: /github_pat_[A-Za-z0-9_]{30,}/g, replacement: 'github_pat_[REDACTED]' },
   { type: 'aws_key', pattern: /AKIA[0-9A-Z]{16}/g, replacement: 'AKIA[REDACTED]' },
   { type: 'jwt_token', pattern: /eyJ(?<!eyJ[A-Za-z0-9_-]*?eyJ)[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}\.[A-Za-z0-9_-]{10,}/g, replacement: '[JWT REDACTED]' },
-  { type: 'private_key', pattern: new RegExp(String.raw`-----(?<=(?:((?<!${KEY_END}-{0,4})${KEY_BEGIN}(?=-----))|${KEY_END}-----|^)[\s\S]*?-----)\1BEGIN${KEY_LABEL}-----[\s\S]*?${KEY_END}-----`, 'g'), replacement: '[PRIVATE KEY REDACTED]' },
+  { type: 'private_key', pattern: new RegExp(String.raw`-----(?=BEGIN${KEY_LABEL}-----)(?<=(?:((?<!${KEY_END}-{0,4})${KEY_BEGIN}(?=-----))|${KEY_END}-----|^)[\s\S]*?-----)\1BEGIN${KEY_LABEL}-----[\s\S]*?${KEY_END}-----`, 'g'), replacement: '[PRIVATE KEY REDACTED]' },
   { type: 'webhook_url', pattern: /https:\/\/(?:hooks\.slack\.com\/services|(?:canary\.|ptb\.)?discord(?:app)?\.com\/api(?:\/v\d+)?\/webhooks)\/[^\s<>"']+/gi, replacement: '[WEBHOOK REDACTED]' },
   { type: 'credential_url', pattern: /[a-z](?<![a-z][0-9+.-]*[a-z])[a-z0-9+.-]*:\/\/[^\s/@:]+:[^\s/@]+@[^\s<>"']+/gi, replacement: '[CREDENTIAL URL REDACTED]' },
   { type: 'url_token', pattern: /https?:\/\/(?<!https?:\/\/[^\s<>"']*?https?:\/\/)[^\s<>"']*[?&](?:token|key|secret|auth|signature|sig|code)=[^\s<>"']+/gi, replacement: '[ENDPOINT REDACTED]' },
