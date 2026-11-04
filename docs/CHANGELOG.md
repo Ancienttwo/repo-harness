@@ -2,20 +2,69 @@
 
 All notable changes to this skill are documented here.
 
-## [Unreleased]
+## [0.26.0] - 2026-11-04
+
+This release has breaking changes. archctx and CodeGraph are the
+`architecture` plugin and run only when the install selection includes it.
+The DSH plugin is removed. Install-state protocol 2 is retired: 0.25.4 is the
+bridge release.
+
+### Upgrade
+
+- From 0.25.4 (install-state protocol 3), install the new CLI directly, then
+  update:
+
+  ```bash
+  bun add -g repo-harness@0.26.0 --no-cache
+  repo-harness update --version 0.26.0
+  ```
+
+  A 0.25.4 state needs no migration. `update` resolves the selection `"all"`
+  again from the plugin ids of 0.26.0, so a recorded `architecture` stays
+  selected. Check: `repo-harness install --state` shows `"protocol": 3`, and
+  its `plugins` list holds `architecture`. A state recorded with an explicit
+  list keeps that list; when it does not hold `architecture`, the
+  architecture tools report `not selected` with the repair command
+  `repo-harness install --plugins architecture,<your plugins>`. (#1671)
+- From 0.25.3 or earlier (install-state protocol 2), use the 0.25.4 bridge
+  first, then install 0.26.0:
+
+  ```bash
+  bun add -g repo-harness@0.25.4 --no-cache
+  repo-harness update --version 0.25.4
+  bun add -g repo-harness@0.26.0 --no-cache
+  repo-harness update --version 0.26.0
+  ```
+
+  `docs/CHANGELOG.md` `[0.25.4]` (Upgrade) gives the protocol 2 to 3
+  mapping. (#1676)
+- The 0.25.4 workaround for #1650 ends: `repo-harness migrate --apply`
+  outside a repository now refuses before any write. (#1652)
+- A Herdr skill copy with a stale owner marker no longer stops `update`.
+  (#1661, #1669)
 
 ### Breaking
 
+- Install-state protocol 2 is retired (owner decision M35). The protocol 2
+  to 3 one-shot in `update` is deleted. The strict reader refuses a protocol 2
+  state with `install_state_protocol_retired`, which names the 0.25.4 bridge:
+  `bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version
+  0.25.4`. The protocol 1 refusal names the same bridge after its 0.25.3
+  step. The code `install_state_migration_required` and the setup check
+  action `install-state.migrate` are removed; a retired state gets the
+  `install-state.repair` action. (#1676)
 - The DSH plugin and the `dsh` plugin id are removed (owner decision M45).
   The package no longer ships `dist/dsh/` or `cordis.patch.yml`, and has no
   `dsh` package key or `@deepseek-ai/cordis` peer dependency. `repo-harness
   doctor` has no `dsh-plugin` check, the setup report and console have no DSH
   host row, and the hook runtime accepts no `HOOK_HOST=dsh`. An install state
-  that records `dsh` fails closed with `install_state_invalid` (unknown
-  plugin `"dsh"`). Fix: delete that plugin entry from
-  `~/.repo-harness/install-state.json` (and `dsh` from an explicit
-  `selection`), or delete the file and run `repo-harness install`. No known
-  machine records `dsh`. (#1653)
+  that records `dsh` in its plugins, in an explicit `selection` or in its
+  `previous` state fails closed with `install_state_invalid` (`install state
+  names unknown plugin "dsh"`); a ledger entry with owner `dsh` fails with
+  `install_state_invalid_ownership`. Fix: delete
+  `~/.repo-harness/install-state.json`, then run `repo-harness install` for a
+  former `"all"` selection, or `repo-harness install --plugins <ids>` with the
+  former list without `dsh`. No known machine records `dsh`. (#1657)
 - archctx and CodeGraph are the `architecture` plugin. A process loads them
   only when the recorded install selection includes `architecture`. No
   install state means not selected. With the plugin not selected, SessionStart,
@@ -47,7 +96,7 @@ All notable changes to this skill are documented here.
   until #1670: with the plugin not selected, `repo-harness operator serve`
   still starts archctx in its architecture history and module routes and in
   its architecture map collector, through `model-reader.ts` and
-  `architecture-read.ts`. (#1656)
+  `architecture-read.ts`. (#1671)
 
 ### Changed
 
@@ -63,7 +112,7 @@ All notable changes to this skill are documented here.
   `GET /api/v1/repositories/<id>/board/parents`, under the board read
   concurrency cap. A failed read shows its refusal code
   (`parents_github_failed`, `parents_source_invalid`, `parents_hc_failed`,
-  `parents_timeout` and others), never an empty list. (#1659)
+  `parents_timeout` and others), never an empty list. (#1666)
 - The operator console has one Agents page for hosts, sub-agents and seats
   (owner decision M46). Its sections are Hosts (the setup check status of each
   host with its enable switch, then the other agent runtimes), Subagents (read
@@ -73,11 +122,51 @@ All notable changes to this skill are documented here.
   with `seat_runtime_not_enabled`. After a save of one section, the other
   section reads again, and an edited draft moves to the new revision when its
   own stored section did not change. The Settings page and its rail entry are
-  removed. `#settings` and `#settings/seats` open Home. (#1658)
+  removed. `#settings` and `#settings/seats` open Home. (#1664)
 - `repo-harness run <helper>` selects a trusted Node runtime that satisfies
   the package `engines.node` range (`>=24 <26`). Before, it used the archctx
   range (`>=22.22 <26`), so a Node 22.22 to 23.x runtime outside the package
-  engine range could run helpers. (#1655)
+  engine range could run helpers. (#1667)
+
+### Fixed
+
+- `repo-harness migrate` takes the project adapters from the repository
+  root. Outside a repository it fails with `repo-harness migrate: cwd is not
+  in a git repository: <cwd>` before any read or write, and it refuses a
+  candidate that is a user-level adapter (`~/.claude/settings.json`,
+  `~/.codex/hooks.json`, by real path) with `repo-harness migrate: refusing
+  user-level adapter: <path>`. The setup check reports the
+  `legacy.project-*` rows as `na` outside a repository and offers no
+  `migrate --apply` command when migrate would refuse. (#1652)
+- The Herdr skill step rewrites a stale owner marker on a copy whose
+  `SKILL.md` equals the render, when the copy holds only `SKILL.md` and the
+  marker as regular files. (#1661) The refusal for an unowned or changed
+  copy names the path and the manual remedy (move the copy out of the skills
+  root, then run `repo-harness update` again), and the equal-content path
+  checks the entries before it reads the marker, so a FIFO marker cannot
+  hang it. (#1669)
+- The operator architecture map: a lens that marks no map node dims nothing;
+  top-level nodes with no relation go on a grid below the dagre rows; a
+  relation between a group and its own member draws no line, and the
+  inspector and the relation count still include it. (#1665)
+- Ship-claim recovery acts only on the claim generation that it checked, so
+  a recovery never removes a live ship claim and two recoveries never share
+  one recovery lane. A claim or lane record without a generation fails
+  closed with status 5; a lane with a reclaim marker fails closed with
+  status 6. A crash between the claim create and its record write now needs
+  a manual removal. (#1645)
+
+### CI
+
+- `Required / CI` needs the `architecture-advisory` job. Its first step
+  fails on an ADR-0002 rule 5 import of task-agent-host or archctx-closure
+  internals from the operator, mcp-sidecar or task-fleet capabilities
+  (constraint `constraint.surface.plugin-internals`). (#1647)
+
+### Documentation
+
+- The archimap is refreshed at `f77f3d04`. (#1644)
+- The 0.25.4 release record holds the publication values. (#1649)
 
 ## [0.25.4] - 2026-11-04
 
