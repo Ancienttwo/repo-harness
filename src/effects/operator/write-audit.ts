@@ -108,19 +108,18 @@ function decodeAuditRecord(value: unknown): OperatorAuditRecordV1 {
 }
 
 /**
- * Fails closed on an unreadable or malformed log: a request_id cannot be
- * proven new when part of the log is unreadable, so nothing may execute.
+ * Every record of the log in order. Fails closed on an unreadable or
+ * malformed log: a fact derived from part of the log cannot be proven.
  */
-export function readOperatorAuditRequest(auditPath: string, requestId: string): OperatorAuditRequestState {
+export function readOperatorAuditRecords(auditPath: string): readonly OperatorAuditRecordV1[] {
   let text: string;
   try {
     text = readFileSync(auditPath, 'utf-8');
   } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return { intent: null, result: null };
+    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return [];
     throw new OperatorAuditUnavailableError('audit log is unreadable');
   }
-  let intent: OperatorWriteIntentRecordV1 | null = null;
-  let result: OperatorWriteResultRecordV1 | null = null;
+  const records: OperatorAuditRecordV1[] = [];
   for (const line of text.split('\n')) {
     if (line === '') continue;
     let parsed: unknown;
@@ -129,7 +128,16 @@ export function readOperatorAuditRequest(auditPath: string, requestId: string): 
     } catch {
       throw new OperatorAuditUnavailableError('audit log has a malformed line');
     }
-    const record = decodeAuditRecord(parsed);
+    records.push(decodeAuditRecord(parsed));
+  }
+  return records;
+}
+
+/** A request_id cannot be proven new when part of the log is unreadable, so this fails closed too. */
+export function readOperatorAuditRequest(auditPath: string, requestId: string): OperatorAuditRequestState {
+  let intent: OperatorWriteIntentRecordV1 | null = null;
+  let result: OperatorWriteResultRecordV1 | null = null;
+  for (const record of readOperatorAuditRecords(auditPath)) {
     if (record.request_id !== requestId) continue;
     if (record.phase === 'intent') intent ??= record;
     else result ??= record;

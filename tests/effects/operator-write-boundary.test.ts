@@ -37,7 +37,7 @@ import { OPERATOR_WORKTREES_CLEANUP_ROUTE } from '../../src/effects/operator/wor
 import { OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE, OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE } from '../../src/effects/operator/worktree-cleanup-investigation';
 import { OPERATOR_SESSIONS_ROUTE } from '../../src/effects/operator/doc-session';
 import { OPERATOR_SESSION_DIFF_ROUTE, OPERATOR_SESSION_LOSS_ROUTE } from '../../src/effects/operator/doc-session-changes';
-import { OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH } from '../../src/effects/operator/advisor-seat-route';
+import { OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH } from '../../src/effects/operator/advisor-seat-route';
 
 /**
  * The inventory claim under test is "zero browser writes". Probing a
@@ -50,12 +50,12 @@ function writeRouteIds(routes: readonly OperatorRouteV1[]): readonly string[] {
 
 describe('operator structural write boundary', () => {
   test('declares only the admitted write routes and rejects every mutation verb even when mislabeled read-only', () => {
-    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'settings_agents_write', 'settings_seats_write', 'sessions_create']);
+    expect(writeRouteIds(OPERATOR_ROUTES)).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_agents_write', 'settings_seats_write', 'sessions_create']);
     for (const method of ['POST', 'PUT', 'PATCH', 'DELETE'] as const) {
       const mutation: OperatorRouteV1 = { id: 'fake_write', method, pattern: '/api/v1/fleet/tasks/anything', write: false };
-      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'fake_write']);
+      expect(writeRouteIds([...OPERATOR_ROUTES, mutation])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'fake_write']);
     }
-    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'get_write']);
+    expect(writeRouteIds([...OPERATOR_ROUTES, { id: 'get_write', method: 'GET', pattern: '/api/write', write: true }])).toEqual(['worktrees_cleanup', 'worktrees_cleanup_plan', 'worktrees_cleanup_execute', 'worktrees_cleanup_investigation', 'advisor_seat_messages', 'advisor_boss_commands', 'settings_agents_write', 'settings_seats_write', 'sessions_create', 'get_write']);
   });
 
   test('the dispatcher admits only GET, HEAD and, for a write route, POST', async () => {
@@ -93,6 +93,7 @@ describe('operator structural write boundary', () => {
       'board',
       'board_parents',
       'advisor_seat_messages',
+      'advisor_boss_commands',
       'advisor_seat_transcript',
       'execution_state',
       'task_messages',
@@ -136,6 +137,7 @@ describe('operator structural write boundary', () => {
     expect(OPERATOR_ROUTES.find(route => route.id === 'board')).toEqual({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'board_parents')).toEqual({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'advisor_seat_messages')).toEqual({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true });
+    expect(OPERATOR_ROUTES.find(route => route.id === 'advisor_boss_commands')).toEqual({ id: 'advisor_boss_commands', method: 'POST', pattern: OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE.source, write: true });
     expect(OPERATOR_ROUTES.find(route => route.id === 'advisor_seat_transcript')).toEqual({ id: 'advisor_seat_transcript', method: 'GET', pattern: OPERATOR_ADVISOR_TRANSCRIPT_PATH, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'execution_state')).toEqual({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false });
     expect(OPERATOR_ROUTES.find(route => route.id === 'task_messages')).toEqual({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false });
