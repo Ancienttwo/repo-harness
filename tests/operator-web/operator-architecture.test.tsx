@@ -9,6 +9,7 @@ import { ArchitectureWorkspace, reviewPromptCommand, type ArchitectureSource } f
 import { fetchArchitectureMap, type ArchitectureMapRead, type ArchitectureMapReader } from '../../src/operator-web/ArchitectureMap';
 import { layoutArchitectureMap, MAP_NODE_MIN_WIDTH, type MapLayoutNode } from '../../src/operator-web/architecture-map-layout';
 import { layoutModules, type ModulesBox } from '../../src/operator-web/architecture-modules-layout';
+import { layersSvg, layoutLayers } from '../../src/operator-web/architecture-layers-layout';
 import {
   architectureViolationCommand, decodeArchitectureMap, projectArchitectureMap,
   type ArchitectureFlowSelectorV1, type ArchitectureLayerOrderV1, type ArchitectureMapFlowV1, type ArchitectureMapLayersInput, type ArchitectureMapNodeV1,
@@ -556,7 +557,7 @@ describe('architecture map', () => {
     // Only the base-map gaps, in the side panel; the open layer's flow-step gap belongs to the sequence map.
     expect([...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => item.getAttribute('data-reason'))).toEqual(['model_worktree_dirty', 'code_facts_other_commit']);
     expect(document.querySelector('.architecture-map__legend')?.textContent).not.toContain('imports');
-    // No base map draws the layer order, so a model without ordered layers states no map gap.
+    // Only the Layers view draws the layer order, so a model without ordered layers states no gap on the other base maps.
     await act(async () => root?.render(workspace({ readMap: reader({ state: 'ok', map: mapFor(true, mapLayers, undeclaredLayers) }) })));
     await settle();
     const sideGaps = () => [...document.querySelectorAll('[data-map-side] > .architecture-map__gap')].map(item => [item.getAttribute('data-gap'), item.getAttribute('data-reason')]);
@@ -960,13 +961,98 @@ describe('sequence and topology base maps', () => {
     await mount(workspace({ readMap: reader(runtimeMap()) }));
     // The module map tab counts capabilities and the sequence tab counts flows.
     expect([...document.querySelectorAll('.architecture-tabs [role="tab"]')].map(item => [item.firstChild?.textContent, item.querySelector('.architecture-tabs__count')?.textContent ?? null]))
-      .toEqual([['Modules', '2'], ['Sequence', '2'], ['Topology', null], ['Module list', null], ['History', null]]);
+      .toEqual([['Modules', '2'], ['Layers', null], ['Sequence', '2'], ['Topology', null], ['Module list', null], ['History', null]]);
     await chooseLayer('violations');
     await tab('sequence');
     expect(document.querySelector('#architecture-tab-sequence')?.getAttribute('aria-selected')).toBe('true');
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
     await tab('topology');
     expect(document.querySelector('.architecture-layers [aria-pressed="true"]')?.getAttribute('data-layer')).toBe('violations');
+  });
+
+  test('the layers map draws the declared layer order with own lines; the selected layer has lanes, size bars and its layer-direction violations; a missing order or check says why', async () => {
+    // CALLER (cli) calls CENTER (core) over http; PART, inside CENTER, reads git; git calls CALLER, against the order. web holds no node; the server has no layer.
+    type Direction = ArchitectureMapLayersInput['violations']['layer_direction'];
+    const layered = (direction: Direction, order: ArchitectureLayerOrderV1 = { state: 'ok', layers: ['cli', 'web', 'core', 'external'] }) => projectArchitectureMap({
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: order,
+      nodes: [{ ...mapNode(CALLER, 'capability'), layer: 'cli' }, mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER),
+        { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode(SERVER, 'process'), layer: null }],
+      relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), { ...mapRelation('relation.b-router', 'calls', CALLER, CENTER), protocol: 'http' },
+        mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)],
+      flows: [flow], flow_evidence: runtimeMap().flow_evidence,
+      sizes: { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/pipeline.ts', 50], ['src/router.ts', 100]]),
+        owners: new Map([['src/ledger.ts', PART], ['src/pipeline.ts', CENTER], ['src/router.ts', CALLER]]) },
+      dependencies: { state: 'ok', matrix: [] },
+      layers: { ...layers, violations: { ...layers.violations, layer_direction: direction } },
+    });
+    const checked: Direction = { state: 'ok', imports: 40, edges: [
+      { source: CENTER, target: CALLER, source_layer: 'core', target_layer: 'cli', imports: 2 }, { source: PART, target: CALLER, source_layer: 'core', target_layer: 'cli', imports: 1 }] };
+    const map = layered(checked);
+    const layout = layoutLayers(map, ['cli', 'web', 'core', 'external']);
+    // CENTER's 950 lines include PART's 900, so core owns 50 + 900 and lists PART first.
+    expect(layout.bands.map(band => [band.layer, band.index, band.members.map(member => member.node.id), band.files, band.lines])).toEqual([
+      ['cli', 0, [CALLER], 1, 100], ['web', 1, [], 0, 0], ['core', 2, [PART, CENTER], 2, 950], ['external', 3, [EXTERNAL], 0, 0]]);
+    for (const [index, band] of layout.bands.slice(1).entries()) expect(layout.bands[index]!.y + layout.bands[index]!.height < band.y).toBe(true);
+    // Out of core: the dashed git read in the right gutter; into core: the http call in the left one. The relation inside core has no lane.
+    const lanes = layout.lanes('core');
+    expect([layout.lanes(null), lanes.map(lane => [lane.source, lane.target, lane.dashed, lane.side, lane.protocols, lane.relations])]).toEqual([[], [
+      ['core', 'external', true, 'right', [], ['relation.c-git']], ['cli', 'core', false, 'left', ['http'], ['relation.b-router']]]]);
+    const bands = new Map(layout.bands.map(band => [band.layer, band]));
+    const within = (layer: string, y: number) => y > bands.get(layer)!.y && y < bands.get(layer)!.y + bands.get(layer)!.height;
+    const { x: left, width } = layout.bands[0]!;
+    expect(lanes.filter(lane => !within(lane.source, lane.points[0]![1]) || !within(lane.target, lane.points[3]![1])
+      || (lane.side === 'right' ? lane.points[1]![0] <= left + width : lane.points[1]![0] >= left))).toEqual([]);
+    // The recorded map of this repository: every declared layer is a band, and the bands' own lines add up to the top-level nodes' totals.
+    const recorded = decodeArchitectureMap(recordedMap);
+    const order = recorded.layer_order.state === 'ok' ? recorded.layer_order.layers : [];
+    const real = layoutLayers(recorded, order);
+    const tops = new Set(recorded.nodes.filter(node => node.parent === null).map(node => node.id));
+    const totals = recorded.sizes.state === 'ok' ? recorded.sizes.nodes.filter(entry => tops.has(entry.id)).reduce((sum, entry) => sum + entry.lines, 0) : null;
+    expect([real.bands.map(band => band.layer), real.lanes('effects').length]).toEqual([[...order], 19]);
+    expect(real.bands.reduce((sum, band) => sum + band.lines!, 0)).toBe(totals!);
+
+    const files: { name: string; blob: Blob }[] = [];
+    const { createObjectURL, revokeObjectURL } = URL;
+    const blobs = new Map<string, Blob>();
+    URL.createObjectURL = (blob: Blob) => { const url = `blob:test/${blobs.size}`; blobs.set(url, blob); return url; };
+    URL.revokeObjectURL = () => {};
+    const anchor = window.HTMLAnchorElement.prototype;
+    const { click: anchorClick } = anchor;
+    anchor.click = function (this: HTMLAnchorElement) { files.push({ name: this.download, blob: blobs.get(this.href)! }); };
+    try {
+      await mount(workspace({ readMap: reader(map) }));
+      await tab('layers');
+      // The provenance line and the export replace the lens chips; no layer is selected, so no lane is drawn.
+      expect([document.querySelector('[data-layers-provenance]')?.textContent, document.querySelector('.architecture-layers'), document.querySelector('.architecture-map')?.getAttribute('data-lane-count')])
+        .toEqual(['Layer order and layer-direction rules from archctx 0.11.2', null, '0']);
+      expect([...document.querySelectorAll('.architecture-layermap__band')].map(item => item.textContent)).toEqual(['L0 cli', 'L1 web', 'L2 core', 'L3 external']);
+      expect([document.querySelector('.react-flow__node[data-id="core"] .architecture-layermap__lines')?.textContent, notes()]).toEqual(['950', ['layers.unlayered:node_layer_undeclared']]);
+      await click('.react-flow__node[data-id="core"]');
+      expect([inspector().getAttribute('data-layer-id'), document.querySelector('.architecture-map')?.getAttribute('data-lane-count'), inspector().querySelector('[data-layer-size]')?.textContent])
+        .toEqual(['core', '2', '950 lines in 2 files']);
+      // Size bars by own lines; the two violating node pairs sum into one layer pair.
+      expect([...inspector().querySelectorAll('[data-size-row]')].map(item => item.getAttribute('data-size-row'))).toEqual([PART, CENTER]);
+      expect([...inspector().querySelectorAll('[data-pair]')].map(item => item.textContent)).toEqual(['core → cli3Violation']);
+      expect(inspector().querySelector('[data-layer-checked]')?.textContent).toBe('archctx checked 40 imports against the layer order.');
+      await click('[data-layers-export]');
+      const svg = await files[0]!.blob.text();
+      expect([files.map(file => file.name), files[0]!.blob.type, (svg.match(/<path class="lane/gu) ?? []).length, svg.includes('<rect class="box selected"'), svg.includes('>http</text>')])
+        .toEqual([['layers-ccccccc.svg'], 'image/svg+xml', 2, true, true]);
+      expect(svg).toBe(layersSvg(layout, 'core', { band: band => `L${band.index} ${band.layer}`, members: band => band.members.map(member => member.node.name).join(' · ') }));
+
+      // A model without the layer-direction constraint keeps the map and says why the check is missing; a model without ordered layers has no map.
+      await act(async () => root?.render(workspace({ readMap: reader(layered({ state: 'unavailable', reason: 'layer_direction_undeclared' })) })));
+      await settle();
+      await click('.react-flow__node[data-id="core"]');
+      expect(inspector().querySelector('[data-gap="layer_direction"]')?.getAttribute('data-reason')).toBe('layer_direction_undeclared');
+      const undeclared = { state: 'unavailable', reason: 'model_layers_undeclared' } as const;
+      await act(async () => root?.render(workspace({ readMap: reader(layered(undeclared, undeclared)) })));
+      await settle();
+      expect([document.querySelector('.react-flow'), document.querySelector('[data-gap="layer_order"]')?.getAttribute('data-reason')]).toEqual([null, 'model_layers_undeclared']);
+    } finally {
+      Object.assign(URL, { createObjectURL, revokeObjectURL });
+      anchor.click = anchorClick;
+    }
   });
 
   test('2-ARCH-P2 on the module map: a capability shows its domain, size, violations with their source, PR impact with the flow step, and the command that lists them', async () => {

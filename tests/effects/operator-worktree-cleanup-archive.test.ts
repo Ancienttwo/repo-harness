@@ -1,7 +1,9 @@
 import { expect, spyOn, test } from 'bun:test';
 import * as fs from 'node:fs';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
+import { createHash } from 'node:crypto';
 import { join } from 'node:path';
+import { cleanupPlanDigestInput } from '../../src/core/operator/worktree-cleanup-plan';
 import { createCleanupPlan } from '../../src/effects/operator/worktree-cleanup-plan';
 import { stageCleanupArchive } from '../../src/effects/operator/worktree-cleanup-archive';
 import { observeCleanupLoss } from '../../src/effects/operator/worktree-cleanup-observation';
@@ -94,8 +96,6 @@ test('source changes during staging refuse success and keep the original worktre
 test('credentials and binary content cannot enter a Git archive', () => {
   const f = fixture();
   try {
-    writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
-    expect(() => stageCleanupArchive(sid, f.target, f.plan(['.env'], []), f.options())).toThrow('unsafe_git_content');
     writeFileSync(join(f.tree, 'docs/guide.md'), 'ghp_' + 'q'.repeat(36));
     expect(() => stageCleanupArchive(sid, f.target, f.plan(['docs/guide.md'], []), f.options())).toThrow('unsafe_git_content');
     writeFileSync(join(f.tree, 'cache.bin'), Buffer.alloc(65_537, 0));
@@ -103,6 +103,35 @@ test('credentials and binary content cannot enter a Git archive', () => {
     const result = stageCleanupArchive(sid, f.target, f.plan([], ['cache.bin']), f.options());
     expect(readFileSync(join(result.private_directory!, 'cache.bin')).equals(Buffer.alloc(65_537, 0))).toBe(true);
     expect(statSync(join(result.private_directory!, 'cache.bin')).mode & 0o777).toBe(0o600);
+  } finally { f.cleanup(); }
+});
+
+test('Git storage refuses private names and large files in the plan and again at staging; private storage takes them', () => {
+  const f = fixture();
+  try {
+    mkdirSync(join(f.tree, 'config'));
+    writeFileSync(join(f.tree, 'config/secrets.json'), 'SYNTHETIC=fixture\n'); f.git(f.tree, 'add', 'config/secrets.json'); fs.unlinkSync(join(f.tree, 'config/secrets.json'));
+    writeFileSync(join(f.tree, 'docs/guide.md'), 'ordinary\n'); writeFileSync(join(f.tree, '.env'), 'SYNTHETIC=fixture\n');
+    const large = Buffer.alloc(16 * 1024 * 1024 + 1, 'a');
+    writeFileSync(join(f.tree, 'cache.bin'), large);
+    writeFileSync(join(f.tree, 'docs/staged-large.txt'), large); f.git(f.tree, 'add', 'docs/staged-large.txt'); fs.unlinkSync(join(f.tree, 'docs/staged-large.txt'));
+    writeFileSync(join(f.tree, 'docs/index-large.txt'), large); f.git(f.tree, 'add', 'docs/index-large.txt'); writeFileSync(join(f.tree, 'docs/index-large.txt'), 'small\n');
+    // Name rule (worktree file and index-only blob), size rule (worktree file, index-only blob, index blob beside a small worktree file), and an ordinary file.
+    // Staging cannot read an index version above 512 KiB yet (#1754), so the two large index rows check the plan only.
+    for (const [path, refused, staged] of [['.env', true, true], ['config/secrets.json', true, true], ['cache.bin', true, true],
+      ['docs/staged-large.txt', true, false], ['docs/index-large.txt', true, false], ['docs/guide.md', false, true]] as const) {
+      const item = f.plan([], [path]);
+      expect(item.loss!.private_only.includes(path)).toBe(refused);
+      if (!staged) { expect(() => f.plan([path], [])).toThrow('worktree_cleanup_archive_git_refused'); continue; }
+      expect(stageCleanupArchive(sid, f.target, item, f.options()).artifacts.some(artifact => artifact.source === path)).toBe(true);
+      if (!refused) { expect(stageCleanupArchive(sid, f.target, f.plan([path], []), f.options()).git_directory).not.toBeNull(); continue; }
+      expect(() => f.plan([path], [])).toThrow('worktree_cleanup_archive_git_refused');
+      // Staging keeps the same rule for a Git destination that did not come from createCleanupPlan.
+      const { plan_sha256: _plan, ...rest } = { ...item, advice: { ...item.advice, archive: {
+        git: { directory: archivePath, branch: 'docs/archive-feature', paths: [path], include_commits: false }, private: null } } };
+      const forged = { ...rest, plan_sha256: createHash('sha256').update(cleanupPlanDigestInput(sid, rest)).digest('hex') };
+      expect(() => stageCleanupArchive(sid, f.target, forged, f.options())).toThrow('unsafe_git_content');
+    }
   } finally { f.cleanup(); }
 });
 
