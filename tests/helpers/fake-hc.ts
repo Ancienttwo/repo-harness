@@ -33,6 +33,30 @@ export function writeFakeHc(bin: string): void {
   writeShellExecutableFixture(join(bin, 'hc'), `#!/bin/sh\nif [ "\${1:-}" = --skill ]; then printf "%s\\n" "# hc manual (herdr-core)" "" "\\\`\\$HC_TERMINAL_ID\\\` is your address."; else printf "hc ${HC_MIN_VERSION}\\n"; fi\n`);
 }
 
+// A herdr-core release server in its own process: the install step downloads with a synchronous curl.
+const RELEASE_SERVER = `import { appendFileSync, existsSync, readFileSync } from 'node:fs';
+const [dir, log] = process.argv.slice(2);
+const server = Bun.serve({ hostname: '127.0.0.1', port: 0, fetch(request) {
+  const path = new URL(request.url).pathname;
+  appendFileSync(log, path + '\\n');
+  return existsSync(dir + path) ? new Response(readFileSync(dir + path)) : new Response('not found', { status: 404 });
+} });
+console.log(server.port);
+`;
+
+/** Serve the files of `release` at http://127.0.0.1:<port>/<name>; `requests` lists the paths asked for. */
+export function startFakeHcRelease(root: string, release: string) {
+  const script = join(root, 'release-server.ts'), log = join(root, 'release-requests.log');
+  writeFileSync(script, RELEASE_SERVER);
+  writeFileSync(log, '');
+  const child = Bun.spawn([process.execPath, script, release, log], { stdout: 'pipe' });
+  return {
+    port: child.stdout.getReader().read().then(chunk => Number(new TextDecoder().decode(chunk.value).trim())),
+    requests: () => readFileSync(log, 'utf8').split('\n').filter(Boolean),
+    stop: () => child.kill(),
+  };
+}
+
 export interface FakeTerminal { readonly address: string; readonly name?: string | null; readonly status?: Record<string, unknown> | null; readonly state?: 'live' | 'finished' }
 
 /** A terminal row as hc writes it, with the fields the operator must never pass on (cwd, title, argv, foreground). */

@@ -12,6 +12,11 @@ export const HC_VERSION_TEXT = /^[0-9]{1,9}\.[0-9]{1,9}\.[0-9]{1,9}$/u;
 /** The lowest hc version that this release's client code supports. */
 export const HC_MIN_VERSION: string = pin.min_version;
 
+export interface HcReleaseAsset { readonly url: string; readonly sha256: string }
+
+/** The checksum-pinned herdr-core release archive of each platform, by asset name (`macos-aarch64`). */
+export const HC_RELEASE_ASSETS: Readonly<Record<string, HcReleaseAsset>> = pin.release_assets;
+
 export interface HcVersionCheck {
   /** `mismatch`: the core is older than the pin. */
   readonly state: 'aligned' | 'mismatch';

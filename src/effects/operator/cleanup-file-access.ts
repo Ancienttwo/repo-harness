@@ -1,5 +1,6 @@
 import { dlopen, FFIType, toArrayBuffer, type Pointer } from 'bun:ffi';
-import { closeSync, constants, fsyncSync, fstatSync, openSync, type Stats } from 'node:fs';
+import { closeSync, constants, fsyncSync, fstatSync, openSync, realpathSync, type Stats } from 'node:fs';
+import { join } from 'node:path';
 
 export class UnsupportedCleanupPath extends Error {}
 export class CleanupDirectoryTooLarge extends Error {}
@@ -124,12 +125,17 @@ export function ensureCleanupPrivateDirectory(parent: number, name: string): num
   catch (error) { closeSync(child.fd); throw error; }
 }
 export function createCleanupPrivateFile(parent: number, name: string): number {
-  // Apple arm64 passes variadic arguments on the stack. Bun's fixed FFI
-  // declaration cannot pass openat's creation mode there. Reads omit O_CREAT.
-  if (process.platform === 'darwin' && process.arch === 'arm64') throw new UnsupportedCleanupPath('archive creation needs a native openat wrapper on Apple arm64');
-  const fd = native().openat(parent, cName(name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | closeOnExec, 0o600);
-  if (fd < 0) throw new Error('cleanup archive create failed');
-  return fd;
+  // Apple arm64 passes variadic arguments on the stack, so Bun's fixed FFI openat cannot pass a creation mode.
+  // fs.openSync passes the mode itself. The path can resolve elsewhere, so the created file must be the held
+  // directory's child before any write; publication links only from the held descriptor.
+  cName(name);
+  const fd = openSync(join(realpathSync(`/dev/fd/${parent}`), name), constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW | closeOnExec, 0o600);
+  try {
+    const child = openCleanupChild(parent, name), created = fstatSync(fd);
+    closeSync(child.fd);
+    if (child.link !== null || child.stat.dev !== created.dev || child.stat.ino !== created.ino) throw new Error('cleanup archive create left the held directory');
+    return fd;
+  } catch (error) { closeSync(fd); throw error; }
 }
 /** Hard-link publication never replaces an existing archive artifact. */
 export function publishCleanupPrivateFile(parent: number, temporary: string, name: string): boolean {
