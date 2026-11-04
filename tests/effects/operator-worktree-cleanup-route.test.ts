@@ -113,6 +113,7 @@ routeTest('pass 1 keeps each non-green worktree with server text in a private pl
   expect(await refusal(() => chooseCleanupSessionPlan(first.session_id, [{ id: `wt_${'0'.repeat(64)}`, recommendation: 'delete', archive: none }], f.options()))).toBe('choices_changed');
   expect(await refusal(() => chooseCleanupSessionPlan(first.session_id, [{ id: f.id, recommendation: 'archive_then_delete', archive: { git: null, private: { directory: f.repoId, paths: ['.gitignore'] } } }], f.options()))).toBe('choice_invalid');
   expect(await refusal(() => chooseCleanupSessionPlan('c'.repeat(32), [{ id: f.id, recommendation: 'delete', archive: none }], f.options()))).toBe('session_not_found');
+  expect(existsSync(join(f.home, 'operator/worktree-cleanup', 'c'.repeat(32)))).toBe(false);
   expect(loadCleanupSession(f.env, first.session_id).plan).toEqual(second);
   f.git(f.tree, 'checkout', '--', 'tracked.txt'); rmSync(join(f.tree, '.env'));
   writeFileSync(join(f.tree, 'feature.txt'), 'feature\n'); commitAll(f.tree, 'feature'); f.git(f.tree, 'push', '-q', 'origin', 'feature:main'); f.git(f.repo, 'fetch', '-q', 'origin');
@@ -161,12 +162,15 @@ routeTest('an archive item is deleted only after the push and Draft PR read back
   expect(await f.execute(value)).toMatchObject({ outcome: 'removed', stage: 'reconcile', archive_pr: 'https://github.com/Fixture/Archive/pull/1' });
 });
 
-routeTest('a stale tracking ref does not prove that the remote keeps the branch commits', async f => {
+// Sibling inputs: a stale tracking ref alone, and a stale tracking ref with a local replacement that grafts the branch under the advertised main.
+for (const replacement of [false, true]) routeTest(`a stale tracking ref does not prove that the remote keeps the branch commits${replacement ? ', even with a replacement graft' : ''}`, async f => {
   f.git(f.tree, 'checkout', '--', 'tracked.txt'); writeFileSync(join(f.tree, 'own.txt'), 'own\n'); commitAll(f.tree, 'own');
   f.git(f.tree, 'push', '-q', 'origin', 'feature'); f.git(f.repo, 'fetch', '-q', 'origin');
+  // The plan is made after both changes, so its own observation agrees with them.
+  f.git(f.parent, '--git-dir', f.remote, 'update-ref', '-d', 'refs/heads/feature');
+  if (replacement) f.git(f.repo, 'replace', '--graft', f.git(f.repo, 'rev-parse', 'refs/remotes/origin/main'), f.git(f.tree, 'rev-parse', 'HEAD'));
   const value = f.plan();
   expect(value.items[0]!.loss!.commits).toEqual([]);
-  f.git(f.parent, '--git-dir', f.remote, 'update-ref', '-d', 'refs/heads/feature');
   expect(await f.execute(value)).toMatchObject({ outcome: 'reconcile_required', reason: 'removal_unproven', stage: 'remove' });
   expect(existsSync(f.tree)).toBe(true); expect(f.git(f.repo, 'branch', '--list', 'feature')).toContain('feature');
 });

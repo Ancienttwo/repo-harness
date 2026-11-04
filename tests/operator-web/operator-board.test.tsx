@@ -1091,10 +1091,12 @@ describe('worktree cleanup (5.1)', () => {
       () => Response.json({ error: { code: 'a_code_from_a_newer_server', message: 'Server sentence.', next_action: 'Server next step.' } }, { status: 503 })]);
     try {
       await mount(<OperatorApp {...props(busy())} />);
+      // A registered non-green row is checked for the plan review instead; the clean request carries only green ids (5-WT-P1).
+      const reviewable = new Set(['repo-harness-wt-kanban-redesign', 'repo-harness-wt-oar', 'codex-7f3a', 'repo-harness-wt-docs-cleanup', 'operator-site-csp']);
       for (const row of document.querySelectorAll<HTMLElement>('[data-worktree]')) {
         const box = row.querySelector<HTMLInputElement>('input[data-select]')!;
-        const green = row.getAttribute('data-judgment') === 'green';
-        expect([box.disabled, box.checked]).toEqual([!green, green]);
+        const on = row.getAttribute('data-judgment') === 'green' || reviewable.has(row.querySelector('[data-directory]')!.textContent!);
+        expect([box.disabled, box.checked]).toEqual([!on, on]);
       }
       const expected: [string, string][] = [
         ['not_approved', 'A selected worktree is not green. Nothing was removed.'],
@@ -1346,6 +1348,32 @@ describe('worktree cleanup plan review (#1720)', () => {
         'POST /api/v1/worktrees/cleanup/execute approvals,expected_digest,ids,request_id,session_id', 'POST /api/v1/worktrees/cleanup/plan ids,request_id']);
       expect(requests[0]!.body.request_id).toMatch(UUID); expect(requests[0]!.body.request_id).not.toBe(requests[1]!.body.request_id);
     } finally { globalThis.fetch = original; }
+  });
+
+  test('above the plan limit the user checks a batch, so every non-green row is reachable', async () => {
+    const base = trees(), yellow = rowOf('repo-harness-wt-oar');
+    const extra = Array.from({ length: 12 }, (_, index) => ({ ...yellow, id: `wt_${'9'.repeat(62)}${index.toString(16).padStart(2, '0')}`, directory: `repo-harness-wt-extra-${index}` }));
+    const snapshot = decodeWorktrees({ ...base, repositories: base.repositories.map((group, index) => index === 0 ? { ...group, worktrees: [...group.worktrees, ...extra] } : group) });
+    const record = recordPlan();
+    installDom(WORKTREES_URL);
+    await mount(<OperatorApp {...props(busy(), { initialWorktrees: snapshot, readWorktrees: async () => snapshot, worktreeCleanupPlan: record.ports })} />);
+    await settle();
+    const open = () => document.querySelector<HTMLButtonElement>('[data-plan-review-open]')!;
+    expect([open().disabled, open().getAttribute('data-plan-review-open'), document.querySelector('[data-plan-limit]') !== null]).toEqual([true, '17', true]);
+    const batch = async (cleared: string) => {
+      await act(async () => checkbox(cleared).click());
+      expect([open().disabled, open().getAttribute('data-plan-review-open'), document.querySelector('[data-plan-limit]') !== null]).toEqual([false, '16', false]);
+      await act(async () => open().click());
+      await until(() => document.querySelector('[data-plan-review]')?.getAttribute('data-plan-review') === 'ready');
+      await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-back]')!.click());
+      await settle();
+    };
+    // Two batches of 16 reach all 17 rows; going back restores the full selection.
+    await batch('repo-harness-wt-oar');
+    await batch('codex-7f3a');
+    expect(record.opened.map(ids => ids.length)).toEqual([16, 16]);
+    expect([record.opened[0]!.includes(rowOf('repo-harness-wt-oar').id), record.opened[1]!.includes(rowOf('repo-harness-wt-oar').id)]).toEqual([false, true]);
+    expect(new Set(record.opened.flat()).size).toBe(17);
   });
 
   test('a plan that does not arrive says so, sends no choice and can be asked again', async () => {

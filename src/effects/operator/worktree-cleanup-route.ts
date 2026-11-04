@@ -196,7 +196,8 @@ function verifyPrivateArtifacts(staged: StagedCleanupArchive): void {
 function verifyRemoteCoverage(input: CleanupRemovalInput, env: NodeJS.ProcessEnv): void {
   if (input.loss.head_commit === null) return;
   const git = (args: readonly string[], stdin?: string) => gitExecFileSync(['--no-pager', ...args], {
-    cwd: input.target.repository, env: { ...withoutRepositorySelectingGitEnv(env), GIT_TERMINAL_PROMPT: '0' }, gitBin: configuredGitBinary(env),
+    // Replacement objects would change the ancestry; observation and publication read the original graph too.
+    cwd: input.target.repository, env: { ...withoutRepositorySelectingGitEnv(env), GIT_TERMINAL_PROMPT: '0', GIT_NO_REPLACE_OBJECTS: '1' }, gitBin: configuredGitBinary(env),
     timeout: 30_000, maxBuffer: 16 * 1024 * 1024, encoding: 'utf8', input: stdin, stdio: ['pipe', 'pipe', 'pipe'],
   });
   const advertised = new Set<string>();

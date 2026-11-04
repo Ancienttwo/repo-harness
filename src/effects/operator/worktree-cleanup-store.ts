@@ -7,7 +7,7 @@ import { decodeCleanupPlan, type CleanupPlan, type CleanupPlanItem } from '../..
 import { createFileExclusiveDurably, syncDirectoryDurably } from '../atomic-append';
 import type { CleanupObservationTarget } from './worktree-cleanup-observation';
 import { cleanupLossSha256 } from './worktree-cleanup-plan';
-import { prepareOperatorStateDir } from './write-audit';
+import { operatorStateDir, prepareOperatorStateDir } from './write-audit';
 
 const SESSION = /^[a-f0-9]{32}$/u;
 
@@ -27,10 +27,13 @@ export class CleanupSessionMissing extends Error {
   constructor() { super('worktree cleanup session not found'); }
 }
 
-function privateDirectory(path: string): string {
-  mkdirSync(path, { recursive: true, mode: 0o700 });
+function assertPrivateDirectory(path: string): void {
   const stat = lstatSync(path);
   if (!stat.isDirectory() || stat.isSymbolicLink() || stat.uid !== process.getuid?.() || (stat.mode & 0o077) !== 0) throw new Error('worktree cleanup store unsafe');
+}
+function privateDirectory(path: string): string {
+  mkdirSync(path, { recursive: true, mode: 0o700 });
+  assertPrivateDirectory(path);
   return path;
 }
 function readPrivate(path: string): unknown {
@@ -47,6 +50,18 @@ function readPrivate(path: string): unknown {
 export function cleanupSessionDirectory(env: NodeJS.ProcessEnv, sessionId: string): string {
   if (!SESSION.test(sessionId)) throw new Error('worktree cleanup session id invalid');
   return privateDirectory(join(privateDirectory(join(prepareOperatorStateDir(env), 'worktree-cleanup')), sessionId));
+}
+/** Read paths create nothing: an unknown session leaves no directory behind. Null means that no file can exist. */
+function sessionFile(env: NodeJS.ProcessEnv, sessionId: string, name: string): string | null {
+  if (!SESSION.test(sessionId)) throw new Error('worktree cleanup session id invalid');
+  const store = join(operatorStateDir(env), 'worktree-cleanup'), directory = join(store, sessionId);
+  for (const path of [store, directory]) {
+    try { assertPrivateDirectory(path); } catch (error) {
+      if ((error as NodeJS.ErrnoException).code === 'ENOENT') return null;
+      throw error;
+    }
+  }
+  return join(directory, name);
 }
 
 /** The existing private scratch directory that archive staging requires. */
@@ -70,7 +85,7 @@ export function saveCleanupSession(env: NodeJS.ProcessEnv, session: CleanupSessi
 }
 
 export function loadCleanupSession(env: NodeJS.ProcessEnv, sessionId: string): CleanupSession {
-  const raw = readPrivate(join(cleanupSessionDirectory(env, sessionId), 'plan.json'));
+  const path = sessionFile(env, sessionId, 'plan.json'), raw = path === null ? null : readPrivate(path);
   if (raw === null) throw new CleanupSessionMissing();
   const record = raw as { plan: unknown; items: Record<string, CleanupPrivateItem> };
   const plan = decodeCleanupPlan(record.plan);
@@ -82,11 +97,11 @@ export function loadCleanupSession(env: NodeJS.ProcessEnv, sessionId: string): C
   return { plan, items: record.items };
 }
 
-const archivePath = (env: NodeJS.ProcessEnv, sessionId: string, item: CleanupPlanItem) =>
-  join(cleanupSessionDirectory(env, sessionId), `archive-${item.worktree.id}-${item.plan_sha256}.json`);
+const archiveName = (item: CleanupPlanItem) => `archive-${item.worktree.id}-${item.plan_sha256}.json`;
 
 export function readCleanupArchiveRecord(env: NodeJS.ProcessEnv, sessionId: string, item: CleanupPlanItem): CleanupArchiveRecord | null {
-  return readPrivate(archivePath(env, sessionId, item)) as CleanupArchiveRecord | null;
+  const path = sessionFile(env, sessionId, archiveName(item));
+  return (path === null ? null : readPrivate(path)) as CleanupArchiveRecord | null;
 }
 
 /** Write once. A retry with the same readback is accepted; a different one is refused. */
@@ -96,7 +111,7 @@ export function writeCleanupArchiveRecord(env: NodeJS.ProcessEnv, sessionId: str
     if (existing.manifest_sha256 !== record.manifest_sha256 || existing.pr !== record.pr) throw new Error('worktree cleanup archive record changed');
     return;
   }
-  const path = archivePath(env, sessionId, item);
+  const path = join(cleanupSessionDirectory(env, sessionId), archiveName(item));
   createFileExclusiveDurably(path, Buffer.from(JSON.stringify({ manifest_sha256: record.manifest_sha256, pr: record.pr })));
   syncDirectoryDurably(join(path, '..'));
 }
