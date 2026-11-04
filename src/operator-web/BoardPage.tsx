@@ -6,14 +6,16 @@ import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/boa
 import type { BoardParentV1 } from '../core/board/parents';
 import {
   BOARD_STAGES, findingItem, itemStage, itemTerminals, primaryPullRequest, shippedToday,
-  type BoardParentsView, type BoardReason, type BoardStage, type BoardView,
+  type BoardParentsReader, type BoardParentsView, type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
+import { officeRoom } from './board-office';
+import { BoardLayoutSwitch, BoardOfficeOverview, BoardOfficeRoom } from './BoardOffice';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { isTaskMessagesTaskId } from '../core/operator/task-messages';
 import { itemOwner, useExecutions, useTaskMessages, type ExecutionReader, type ItemOwner, type TaskMessagesReader } from './repository-reads';
 import { TaskDrawer } from './TaskDrawer';
 import { Age, BoardState, ExternalLink, PageLink, SectionTitle, StatusDot, type DotTone } from './ui';
-import { boardLocation, type BoardPlace, type WorkspaceLocation } from './workspace-location';
+import { boardLocation, type BoardLayout, type BoardPlace, type WorkspaceLocation } from './workspace-location';
 
 const INFLIGHT_PREVIEW = 4;
 type BoardTab = 'all' | 'attention' | Exclude<BoardStage, 'closed'>;
@@ -45,7 +47,7 @@ function ParentRow({ repository, parent, onOpen, now, t }: {
   const { total, completed } = parent.sub_issues;
   return (
     <li className="border-b border-kumo-hairline last:border-b-0" data-board-parent-row={parent.number} data-seats={parent.seats}>
-      <PageLink to={boardLocation({ repository_id: repository, parent: parent.number, issue: null })} onOpen={onOpen}
+      <PageLink to={boardLocation({ repository_id: repository, parent: parent.number, issue: null, layout: 'list' })} onOpen={onOpen}
         className="flex flex-col gap-2 px-4 py-3 hover:bg-kumo-tint focus-visible:ring-2 focus-visible:ring-kumo-brand focus-visible:outline-none active:bg-kumo-recessed md:flex-row md:items-center md:gap-4">
         <StatusDot tone={parent.seats > 0 ? 'active' : 'neutral'} className="hidden md:inline-flex" />
         <span className="flex min-w-0 flex-1 items-baseline gap-2">
@@ -83,6 +85,7 @@ function ParentList({ repositories, repository, onRepository, parents, onOpen, n
     <section className="flex w-full max-w-4xl flex-col gap-4" aria-labelledby="board-parents" data-board-subject>
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <h1 id="board-parents" className="text-base font-semibold text-kumo-strong">{t('board.subject.title')}</h1>
+        <BoardLayoutSwitch layout="list" place={null} onOpen={onOpen} t={t} />
         <label className="flex min-w-0 md:ml-auto">
           <span className="sr-only">{t('board.subject.repository')}</span>
           <select className={cn(field, 'w-full md:w-56')} value={repository ?? ''} onChange={event => onRepository(event.target.value)}>
@@ -234,8 +237,6 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const { board, attention } = view;
-  // Only the open drawer needs the verified sessions of this repository.
-  const executions = useExecutions(readExecution, useMemo(() => [place.repository_id], [place.repository_id]), generation, place.issue !== null);
   const [tab, setTab] = useState<BoardTab>('all');
   const [query, setQuery] = useState('');
   const [expanded, setExpanded] = useState(false);
@@ -257,18 +258,13 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
     { id: 'attention', count: attention.findings.length },
     ...BOARD_STAGES.map(stage => ({ id: stage, count: open.filter(item => itemStage(board, item) === stage).length })),
   ];
-  const drawerItem = place.issue === null ? null : board.items.find(item => item.number === place.issue) ?? null;
-  const drawerBranch = drawerItem ? primaryPullRequest(board, drawerItem)?.head_ref ?? null : null;
-  const owner: ItemOwner = drawerBranch === null ? { state: 'none' } : itemOwner(executions, { repository_id: place.repository_id, branch: drawerBranch });
-  // Only a verified session names the task whose inbox the drawer reads, and only a 64-hex task id has an inbox.
-  const taskIds = owner.state === 'verified' ? [...new Set(owner.tasks.map(task => task.task).filter(isTaskMessagesTaskId))] : [];
-  const inboxReads = useTaskMessages(readTaskMessages, place.repository_id, taskIds, generation, place.issue !== null);
   return (
     <div className="flex flex-col gap-5" data-board-parent={board.parent.number}>
       <header className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
         <h1 className="text-base font-semibold text-kumo-strong">{t('board.parent', { number: board.parent.number })}</h1>
         <ExternalLink href={board.parent.url} className="min-w-0 text-sm">{board.parent.title}</ExternalLink>
         <span className="text-xs text-kumo-subtle">{board.repository}</span>
+        <span className="ml-auto self-center"><BoardLayoutSwitch layout="list" place={place} onOpen={onOpen} t={t} /></span>
       </header>
       <div className="flex flex-col gap-3 md:flex-row md:items-center">
         <div className="flex flex-wrap gap-0.5 rounded-lg border border-kumo-line bg-kumo-base p-0.5" role="group" aria-label={t('board.tabs')}>
@@ -330,18 +326,62 @@ function ReadyBoard({ view, place, readExecution, readTaskMessages, generation, 
           )}
         </section>
       )}
-      {place.issue !== null && (
-        <TaskDrawer board={board} attention={attention} item={drawerItem} issue={place.issue}
-          owner={owner} inbox={taskIds.length === 0 ? null : { reads: inboxReads }}
-          order={[...new Set([...findings.flatMap(finding => findingItem(board, finding) ?? []), ...inflight])]}
-          place={place} onOpen={onOpen} now={now} t={t} />
-      )}
+      <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation}
+        order={[...new Set([...findings.flatMap(finding => findingItem(board, finding) ?? []), ...inflight])]} onOpen={onOpen} now={now} t={t} />
     </div>
   );
 }
 
-export function BoardPage({ place, view, parents, repositories, chosenRepository, onRepository, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+/** The Task drawer of `place.issue`, with the verified sessions and the inbox it reads; both layouts open it. */
+function BoardDrawer({ view, place, readExecution, readTaskMessages, generation, order, onOpen, now, t }: {
+  readonly view: BoardView & { readonly kind: 'ready' }; readonly place: BoardPlace;
+  readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
+  readonly order: readonly BoardItemV1[]; readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
+}) {
+  const { board, attention } = view;
+  // Only the open drawer needs the verified sessions of this repository.
+  const executions = useExecutions(readExecution, useMemo(() => [place.repository_id], [place.repository_id]), generation, place.issue !== null);
+  const drawerItem = place.issue === null ? null : board.items.find(item => item.number === place.issue) ?? null;
+  const drawerBranch = drawerItem ? primaryPullRequest(board, drawerItem)?.head_ref ?? null : null;
+  const owner: ItemOwner = drawerBranch === null ? { state: 'none' } : itemOwner(executions, { repository_id: place.repository_id, branch: drawerBranch });
+  // Only a verified session names the task whose inbox the drawer reads, and only a 64-hex task id has an inbox.
+  const taskIds = owner.state === 'verified' ? [...new Set(owner.tasks.map(task => task.task).filter(isTaskMessagesTaskId))] : [];
+  const inboxReads = useTaskMessages(readTaskMessages, place.repository_id, taskIds, generation, place.issue !== null);
+  if (place.issue === null) return null;
+  return (
+    <TaskDrawer board={board} attention={attention} item={drawerItem} issue={place.issue}
+      owner={owner} inbox={taskIds.length === 0 ? null : { reads: inboxReads }}
+      order={order} place={place} onOpen={onOpen} now={now} t={t} />
+  );
+}
+
+/** The office room of one board, with the source banners and the Task drawer of the list. */
+function OfficeBoard({ view, place, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  readonly view: BoardView & { readonly kind: 'ready' }; readonly place: BoardPlace;
+  readonly readExecution: ExecutionReader; readonly readTaskMessages: TaskMessagesReader; readonly generation: number;
+  readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
+}) {
+  const { board, attention } = view;
+  const room = useMemo(() => officeRoom(board, attention), [board, attention]);
+  // j/k in the drawer move through the desks, then the acceptance queue.
+  const order = [...new Set([...room.desks.map(desk => desk.drawerIssue), ...room.queue.map(entry => entry.drawerIssue)])]
+    .flatMap(issue => board.items.find(item => item.number === issue) ?? []);
+  return (
+    <>
+      <BoardOfficeRoom board={board} room={room} place={place} onOpen={onOpen} now={now} t={t}
+        banners={<SourceBanners board={board} refreshFailed={view.refreshFailed} unevaluated={attention.unevaluated.length} t={t} />} />
+      <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation}
+        order={order} onOpen={onOpen} now={now} t={t} />
+    </>
+  );
+}
+
+export function BoardPage({ layout, place, view, parents, repositories, chosenRepository, onRepository, readBoardParents, readExecution, readTaskMessages, generation, onOpen, now, t }: {
+  /** The layout of the location; with a board it equals `place.layout`. */
+  readonly layout: BoardLayout;
   readonly place: BoardPlace | null;
+  /** The parents route: the office overview reads it once for each registered repository. */
+  readonly readBoardParents: BoardParentsReader;
   /** The execution route: the verified sessions behind the Task drawer's follow-up. */
   readonly readExecution: ExecutionReader;
   /** The task messages route: the stored inbox of each verified task in the Task drawer. */
@@ -359,6 +399,7 @@ export function BoardPage({ place, view, parents, repositories, chosenRepository
   readonly t: OperatorTranslate;
 }) {
   if (place === null || view === null) {
+    if (layout === 'office') return <BoardOfficeOverview repositories={repositories} readParents={readBoardParents} generation={generation} onOpen={onOpen} t={t} />;
     return <ParentList repositories={repositories} repository={boardListRepository(repositories, chosenRepository)} onRepository={onRepository} parents={parents} onOpen={onOpen} now={now} t={t} />;
   }
   if (view.kind === 'loading') return <BoardState loading title={t('board.loading.title')} description={t('board.loading.parentBody', { number: place.parent })} />;
@@ -370,5 +411,6 @@ export function BoardPage({ place, view, parents, repositories, chosenRepository
       </div>
     );
   }
+  if (place.layout === 'office') return <OfficeBoard view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
   return <ReadyBoard view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} onOpen={onOpen} now={now} t={t} />;
 }

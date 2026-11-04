@@ -56,7 +56,7 @@ import { CliPage, fetchCliInventory, useCliInventory, type CliInventoryReader } 
 import type { CliInventorySnapshotV1 } from '../core/setup/cli-inventory';
 import { useTheme } from './theme';
 import { useNow } from './ui';
-import { boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
+import { boardLayout, boardPlace, parseWorkspaceLocation, SETUP_WORKSPACES, WORKSPACES, workspaceHash, type Workspace, type WorkspaceLocation } from './workspace-location';
 import {
   cleanupPlanPorts, fetchWorktrees, postWorktreeCleanup, useWorktreeCleanup, useWorktrees, worktreesOf,
   type WorktreeCleanupWriter, type WorktreesReader, type WorktreesView,
@@ -442,7 +442,7 @@ export function OperatorApp({
         </header>
         <main className="operator-content mx-auto flex w-full max-w-[1680px] min-w-0 flex-1 flex-col gap-5 px-4 pt-1 pb-10 rail:px-6" data-workspace={workspace}>
           {workspace === 'home' && <Home view={devActivity} worktrees={worktrees} readCiRepairs={readCiRepairs} readExecution={readExecution} generation={refreshGeneration} now={now} onOpen={openPlace} t={t} />}
-          {workspace === 'board' && <BoardPage place={boardSubject} view={board} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
+          {workspace === 'board' && <BoardPage layout={boardLayout(place.item)} place={boardSubject} view={board} readBoardParents={readBoardParents} parents={boardParents} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={refreshGeneration} now={now} onOpen={openPlace} t={t}
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} plan={worktreeCleanupPlan} now={now} t={t} />}
