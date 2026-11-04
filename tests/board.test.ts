@@ -16,6 +16,7 @@ import { githubRemoteRepository } from '../src/core/operator/docs';
 import { renderDependencyMigrationPlan } from '../src/core/board/dependency-migration';
 import { applyDependencyMigration, planDependencyMigration, runDependencyMigration } from '../src/effects/board/dependency-migration';
 import { attentionHostPorts, boardHostPorts } from '../src/effects/terminal/herdr-core';
+import { AdvisorSeatError, decodeAdvisorSeatTranscript, readAdvisorSeat, sendToAdvisorSeat } from '../src/core/board/advisor-seat';
 import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/parents';
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
@@ -430,9 +431,13 @@ const terminals = JSON.parse(process.env.FAKE_TERMINALS);
 const address = args.at(-1);
 const out = value => console.log(JSON.stringify(value));
 if (args[0] === 'get') out({ address, state: 'live', turn: 1, labels: { 'repo-harness.seat': 'x' }, ...terminals[address] });
+else if (args[0] === 'send' && process.env.FAKE_SEND_FAIL) { process.stderr.write(JSON.stringify({ error: { kind: 'blocked', message: 'blocked' } })); process.exit(9); }
 else if (args[0] === 'send') out({ started: true, turn: 2 });
+else if (args[0] === 'read') out(JSON.parse(process.env.FAKE_READ));
 else if (args[0] === 'wait') out({ terminal: address, turn: 2, ...JSON.parse(process.env.FAKE_WAITS)[address] });
-else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS) });
+// As the live core: ls --label keeps the rows whose labels carry every pair.
+else if (args[0] === 'ls') out({ terminals: JSON.parse(process.env.FAKE_LS).filter(row => args.every((arg, at) => args[at - 1] !== '--label'
+  || (terminals[row.address]?.labels ?? {})[arg.slice(0, arg.indexOf('='))] === arg.slice(arg.indexOf('=') + 1))) });
 else if (args[0] === 'run') out({ address: 't20', state: 'live' });
 else process.exit(2);
 `;
@@ -736,4 +741,49 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
   // --plan <digest> without --write is refused too.
   expect(stopOf(() => flags.command({ write: false, plan: checked.digest }))).toMatchObject({ code: 'plan_without_write' });
   expect([flags.calls(), flags.writes]).toEqual([0, []]);
+});
+
+test('advisor seat: plain text reaches only the one live advisor terminal of the repository and parent; the read-back is cut and redacted', () => {
+  const seat = (name: string | null, parent = '1503') => ({ labels: {
+    'repo-harness.repository': '1186405141', 'repo-harness.parent': parent, ...(name === null ? {} : { 'repo-harness.seat': name }) } });
+  // Refused: the orchestrator, a worker, the advisor of another parent and a terminal without the seat label.
+  const refused = { t3: seat('orchestrator'), t4: seat('worker'), t5: seat('advisor', '1504'), t6: seat(null) };
+  const advisorHc = (terminals: Json, env: Json = {}) => {
+    const hc = watchHc({ FAKE_LS: Object.keys(terminals).map(address => ({ address, state: 'live' })), FAKE_TERMINALS: terminals, ...env });
+    return { ...hc, scope: { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts(hc.options) } };
+  };
+  const code = (action: () => unknown) => { try { action(); return 'ok'; } catch (error) { return (error as AdvisorSeatError).code; } };
+  const sends = (hc: ReturnType<typeof advisorHc>) => hc.calls().filter(args => args[0] === 'send');
+
+  const absent = advisorHc(refused);
+  expect(code(() => sendToAdvisorSeat(absent.scope, 'status?'))).toBe('advisor_seat_absent');
+  expect(absent.calls()[0]).toEqual(['ls', '--json', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503']);
+  expect(sends(absent)).toEqual([]);
+  expect(code(() => sendToAdvisorSeat(advisorHc({ ...refused, t9: seat('advisor'), t10: seat('advisor') }).scope, 'status?'))).toBe('advisor_seat_ambiguous');
+
+  const one = advisorHc({ ...refused, t9: { ...seat('advisor'), status: { state: 'working', kind: 'tool' }, turn: 3 } }, {
+    FAKE_READ: { text: ['dropped', ...Array.from({ length: 196 }, (_, at) => `l${at}`), 'export GITHUB_TOKEN=ghp_' + 'a'.repeat(36), 'API_KEY=hunter2',
+      'Authorization: Bearer abc', 'x'.repeat(5000)].join('\n'), complete: false, why: 'working' },
+  });
+  // Characters, not UTF-16 units: 4000 emoji are 8000 units.
+  for (const text of ['status?', 'line 1\nline 2', 'a'.repeat(4000), '😀'.repeat(4000)]) {
+    expect(sendToAdvisorSeat(one.scope, text)).toEqual({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1186405141, parent: 1503, terminal: 't9', started: true, turn: 2 });
+    expect(sends(one).at(-1)).toEqual(['send', '--json', '--', 't9', text]);
+  }
+  const before = one.calls().length;
+  for (const text of ['', 'a'.repeat(4001), 'a\tb', 'a\rb', 'a\u0007b', 'a\u001bb', 'a\u007fb', 'a\u009bb']) expect(code(() => sendToAdvisorSeat(one.scope, text))).toBe('text_invalid');
+  expect(one.calls()).toHaveLength(before);
+
+  const transcript = readAdvisorSeat(one.scope);
+  expect(one.calls().at(-1)).toEqual(['read', '--json', '--lines', '200', '--', 't9']);
+  expect(transcript).toMatchObject({ terminal: 't9', status: 'working', status_kind: 'tool', turn: 3, complete: false, why: 'working' });
+  expect(transcript.lines).toHaveLength(200);
+  expect(transcript.lines.slice(0, 2)).toEqual(['l0', 'l1']);
+  expect(transcript.lines.slice(-4)).toEqual(['export GITHUB_TOKEN=ghp_[REDACTED]', '[line withheld: secret]', 'Authorization: Bearer [REDACTED]', 'x'.repeat(1000)]);
+  expect(decodeAdvisorSeatTranscript(JSON.parse(JSON.stringify(transcript)))).toEqual(transcript);
+  expect(() => decodeAdvisorSeatTranscript({ ...transcript, lines: ['API_KEY=hunter2'] })).toThrow('advisor seat transcript is invalid');
+
+  expect(code(() => sendToAdvisorSeat(advisorHc({ t9: seat('advisor') }, { FAKE_SEND_FAIL: '1' }).scope, 'status?'))).toBe('advisor_send_failed');
+  const missing = { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts({ env: { PATH: '/nonexistent' } }) };
+  expect([code(() => sendToAdvisorSeat(missing, 'status?')), code(() => readAdvisorSeat(missing))]).toEqual(['hc_unavailable', 'hc_unavailable']);
 });

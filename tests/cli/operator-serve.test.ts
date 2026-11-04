@@ -31,7 +31,7 @@ import type { DocsTreeV1 } from '../../src/core/operator/docs';
 import type { TestsSnapshotV1 } from '../../src/core/operator/tests';
 import type { TestsRepositoryCache } from '../../src/effects/operator/tests-collector';
 import { decodeBoard } from '../../src/core/board/board';
-import { BoardReadError, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from '../../src/effects/operator/board-read';
+import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, sendRepositoryAdvisor, type BoardParentsReadInput, type BoardReadInput } from '../../src/effects/operator/board-read';
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents } from '../../src/core/board/parents';
@@ -618,6 +618,121 @@ describe('operator serve command and HTTP boundary', () => {
       rmSync(repository, { recursive: true, force: true });
       rmSync(scratch, { recursive: true, force: true });
       rmSync(registry.home, { recursive: true, force: true });
+    }
+  }, 60_000);
+
+  test('advisor seat routes: the client names only repository and parent; each send is audited; refusals keep their codes; the board read cap is shared', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-advisor-home-'));
+    const ui = join(home, 'ui');
+    mkdirSync(ui);
+    writeFileSync(join(ui, 'index.html'), '<!doctype html><main>operator</main>');
+    const sent = { protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1186405141, parent: 1503, terminal: 't9', started: true, turn: 2 };
+    const transcript = { protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1186405141, parent: 1503, terminal: 't9',
+      status: 'idle', status_kind: null, turn: 2, complete: true, why: null, lines: ['ok', 'Authorization: Bearer [REDACTED]'] };
+    let send: () => Promise<unknown> = async () => sent;
+    let read: () => Promise<unknown> = async () => transcript;
+    const sends: (BoardReadInput & { text: string })[] = [];
+    const reads: BoardReadInput[] = [];
+    let hold: () => void = () => {};
+    let started: () => void = () => {};
+    const boardStarted = new Promise<void>(resolve => { started = resolve; });
+    const server = await startOperatorServer({ port: 0, max_concurrency: 1, static_root: ui, env: { REPO_HARNESS_HOME: home },
+      send_advisor: input => { sends.push(input); return send(); }, read_advisor_transcript: input => { reads.push(input); return read(); },
+      read_board: () => new Promise(resolve => { hold = () => resolve(decodeBoard(board1474)); started(); }) });
+    const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
+    let next = 0;
+    const post = (body: Record<string, unknown>) => fetch(`${server.url}/api/v1/seats/advisor/messages`, { method: 'POST',
+      body: JSON.stringify({ request_id: `123e4567-e89b-42d3-a456-${String(next++).padStart(12, '0')}`, ...body }),
+      headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie } });
+    const get = (query: string) => fetch(`${server.url}/api/v1/seats/advisor/transcript${query}`);
+    const answer = async (response: Response) => [response.status, ((await response.json()) as { error?: { code: string } }).error?.code ?? 'ok'];
+    const audit = () => readFileSync(join(home, 'operator/audit.jsonl'), 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const message = { repository_id: 'repo-a', parent: 1503, text: 'status?' };
+    try {
+      expect(await answer(await post(message))).toEqual([200, 'ok']);
+      expect(sends[0]).toMatchObject({ repository_id: 'repo-a', parent: 1503, text: 'status?', env: { GH_PROMPT_DISABLED: '1' } });
+      // The audit names the repository in the target and the parent and the resolved terminal in the result; the text stays out of it.
+      expect(audit().map(record => record.phase === 'intent' ? [record.operation, record.target] : [record.status, record.body])).toEqual([
+        ['advisor_seat_message', 'advisor_seat:repo-a'], [200, sent]]);
+      expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
+      // Text limits, a terminal address in the request and a non-number parent are refused before a child runs.
+      for (const body of [{ ...message, text: '' }, { ...message, text: 'a'.repeat(4001) }, { ...message, text: 'a\tb' }, { ...message, terminal: 't9' },
+        { ...message, parent: '1503' }, { repository_id: 'repo-a', parent: 1503 }]) {
+        expect(await answer(await post(body))).toEqual([400, 'invalid_body']);
+      }
+      expect(sends).toHaveLength(1);
+      // A child failure that proves nothing was sent is the recorded result; a timeout may follow a send.
+      for (const [failure, status] of [['advisor_seat_absent', 409], ['advisor_seat_ambiguous', 409], ['repository_read_only', 403], ['advisor_send_failed', 502],
+        ['advisor_timeout', 409]] as const) {
+        send = async () => { throw new BoardReadError(failure); };
+        expect(await answer(await post(message))).toEqual([status, failure === 'advisor_timeout' ? 'reconcile_required' : failure]);
+      }
+      expect(audit().filter(record => record.phase === 'result').map(record => record.body.error?.code ?? 'ok'))
+        .toEqual(['ok', 'advisor_seat_absent', 'advisor_seat_ambiguous', 'repository_read_only', 'advisor_send_failed']);
+
+      for (const query of ['', '?repository_id=repo-a', '?repository_id=repo-a&parent=0', '?repository_id=repo-a&parent=1503&terminal=t9', '?repository_id=repo-a&parent=1503&parent=1504']) {
+        expect(await answer(await get(query))).toEqual([400, 'invalid_request']);
+      }
+      expect(reads).toHaveLength(0);
+      const ready = await get('?repository_id=repo-a&parent=1503');
+      expect([ready.status, await ready.json()]).toEqual([200, transcript]);
+      expect(reads[0]).toMatchObject({ repository_id: 'repo-a', parent: 1503 });
+      for (const [failure, status] of [['advisor_seat_absent', 409], ['advisor_seat_ambiguous', 409], ['advisor_read_failed', 502], ['advisor_timeout', 504]] as const) {
+        read = async () => { throw new BoardReadError(failure); };
+        expect(await answer(await get('?repository_id=repo-a&parent=1503'))).toEqual([status, failure]);
+      }
+      read = async () => ({ ...transcript, lines: ['API_KEY=hunter2'] });
+      expect(await answer(await get('?repository_id=repo-a&parent=1503'))).toEqual([503, 'advisor_invalid']);
+      expect((await fetch(`${server.url}/api/v1/seats/advisor/transcript?repository_id=repo-a&parent=1503`, { method: 'HEAD' })).status).toBe(405);
+
+      // A board read in flight holds the one slot of the shared cap.
+      send = async () => sent;
+      const board = fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`);
+      await boardStarted;
+      expect(await answer(await post(message))).toEqual([503, 'advisor_busy']);
+      expect(await answer(await get('?repository_id=repo-a&parent=1503'))).toEqual([503, 'advisor_busy']);
+      hold();
+      expect((await board).status).toBe(200);
+    } finally {
+      await server.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('advisor seat CLI child: the registered root, gh for the numeric id, a fake hc on an explicit PATH; read_only refuses a send', async () => {
+    const repository = mkdtempSync(join(tmpdir(), 'repo-harness-advisor-'));
+    const scratch = mkdtempSync(join(tmpdir(), 'repo-harness-advisor-bin-'));
+    expect(spawnSync('git', ['init', '-q'], { cwd: repository }).status).toBe(0);
+    const gh = join(scratch, 'gh');
+    writeFileSync(gh, '#!/bin/sh\n[ "$*" = "api --hostname github.com repos/{owner}/{repo}" ] && echo \'{"id":1186405141}\' && exit 0\nexit 1\n');
+    const labels = '{"repo-harness.seat":"advisor","repo-harness.repository":"1186405141","repo-harness.parent":"1503"}';
+    const secret = `ghp_${'a'.repeat(36)}`;
+    writeFileSync(join(scratch, 'hc'), [
+      '#!/bin/sh', `printf '%s\\n' "$*" >> ${JSON.stringify(join(scratch, 'hc.log'))}`, 'case "$1" in',
+      `  ls) echo '{"terminals":[{"address":"t9","state":"live"}]}' ;;`,
+      `  get) echo '{"address":"t9","state":"live","turn":4,"status":{"state":"idle"},"labels":${labels}}' ;;`,
+      `  send) echo '{"started":true,"turn":5}' ;;`,
+      `  read) echo '{"text":"done\\\\ntoken ${secret}","complete":true}' ;;`,
+      '  *) exit 2 ;;', 'esac', ''].join('\n'));
+    chmodSync(gh, 0o755);
+    chmodSync(join(scratch, 'hc'), 0o755);
+    const writable = registryHome([{ path: repository, accessMode: 'read_write' }]);
+    const readOnly = registryHome([{ path: repository, accessMode: 'read_only' }]);
+    const env = (registry: typeof writable) => ({ PATH: `${scratch}:/usr/bin:/bin`, HOME: registry.home, ...registry.env, REPO_HARNESS_GH_BIN: gh });
+    const signal = new AbortController().signal;
+    try {
+      const text = 'line 1\nline 2';
+      expect(await sendRepositoryAdvisor({ repository_id: writable.ids[0]!, parent: 1503, text, env: env(writable), signal }))
+        .toEqual({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1186405141, parent: 1503, terminal: 't9', started: true, turn: 5 });
+      expect(await readRepositoryAdvisorTranscript({ repository_id: readOnly.ids[0]!, parent: 1503, env: env(readOnly), signal })).toMatchObject({
+        terminal: 't9', status: 'idle', turn: 4, complete: true, why: null, lines: ['done', 'token ghp_[REDACTED]'] });
+      await expect(sendRepositoryAdvisor({ repository_id: readOnly.ids[0]!, parent: 1503, text, env: env(readOnly), signal })).rejects.toMatchObject({ code: 'repository_read_only' });
+      const log = readFileSync(join(scratch, 'hc.log'), 'utf8').split('\n');
+      expect(log.filter(line => line !== '' && !line.startsWith('get '))).toEqual([
+        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', `send --json -- t9 line 1`, 'line 2',
+        'ls --json --label repo-harness.repository=1186405141 --label repo-harness.parent=1503', 'read --json --lines 200 -- t9']);
+    } finally {
+      for (const path of [repository, scratch, writable.home, readOnly.home]) rmSync(path, { recursive: true, force: true });
     }
   }, 60_000);
 

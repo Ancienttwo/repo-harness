@@ -1,5 +1,7 @@
 import { Command } from 'commander';
+import { readFileSync } from 'fs';
 import { fileURLToPath } from 'url';
+import { AdvisorSeatError, readAdvisorSeat, sendToAdvisorSeat } from '../../core/board/advisor-seat';
 import { AttentionWatchError, attentionLogPath, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../../effects/board/attention-watch';
 import { evaluateBoardAttention, type BoardAttentionV1 } from '../../core/board/attention';
 import type { AttentionHostPortsV1 } from '../../core/board/attention-delivery';
@@ -107,6 +109,28 @@ export function buildBoardCommand(host: BoardHostPortsV1, attentionHost: Attenti
         process.exitCode = 1;
       }
     });
+  // The operator advisor seat routes (#1756) run these two commands in the registered root.
+  const advisor = board.command('advisor')
+    .description('The advisor seat of one parent issue: the one live terminal with the advisor seat label (takes --parent and --json)');
+  const advisorAction = (action: (scope: Parameters<typeof readAdvisorSeat>[0]) => unknown) => (_options: BoardOptions, command: Command) => {
+    try {
+      const options = command.optsWithGlobals<BoardOptions>();
+      if (options.json !== true) throw new BoardCollectError('board advisor prints JSON only; pass --json');
+      const parent = parentNumber(options);
+      process.stdout.write(`${JSON.stringify(action({ github_repository_id: readRepositoryId({ repo_root: process.cwd() }), parent, host }))}\n`);
+    } catch (error) {
+      if (!(error instanceof AdvisorSeatError || error instanceof BoardCollectError)) throw error;
+      const code = error instanceof AdvisorSeatError ? { code: error.code } : {};
+      process.stderr.write(`${JSON.stringify({ ok: false, error: error.name, ...code, message: error.message })}\n`);
+      process.exitCode = 1;
+    }
+  };
+  advisor.command('send')
+    .description('Send stdin as plain text to the advisor seat terminal with hc send')
+    .action(advisorAction(scope => sendToAdvisorSeat(scope, readFileSync(0, 'utf8'))));
+  advisor.command('transcript')
+    .description('Read the last lines of the advisor seat terminal with hc read; every line is redacted')
+    .action(advisorAction(readAdvisorSeat));
   board.command('migrate-dependencies')
     .description('One-shot operator migration: plan the blocked-by links for the Depends on / 依赖 lines of the open sub-issues of one parent and the tier labels, with no write; --write applies the plan (takes --parent and --json)')
     .option('--write', 'Apply the plan: create the planned labels and blocked-by links (requires --plan)')

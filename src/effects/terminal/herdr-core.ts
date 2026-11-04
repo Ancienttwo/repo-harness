@@ -476,7 +476,7 @@ export function herdrAppDo(command: HerdrAppPlacement, args: Readonly<Record<str
   return invoke(program, rest, options);
 }
 
-/** The board host port (#1505): seat terminals of one parent issue by its parent label, the seat labels of one repository (#1659), and the hc version. */
+/** The board host port (#1505): seat terminals of one parent issue by its parent label, the seat labels of one repository (#1659), the hc version, and the advisor seat send and read (#1756). */
 export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1 {
   const unavailable = (error: unknown) => {
     if (error instanceof HerdrCoreError) return { status: 'unavailable', reason: `hc_${error.reason}` } as const;
@@ -516,6 +516,20 @@ export function boardHostPorts(options: HerdrCoreOptions = {}): BoardHostPortsV1
     hcVersion: () => {
       try {
         return { status: 'observed', version: hcVersion(options) };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+    advisorSend: (address, text) => {
+      try {
+        return { status: 'sent', ...hcSend(address, text, options) };
+      } catch (error) {
+        return unavailable(error);
+      }
+    },
+    advisorRead: (address, lines) => {
+      try {
+        return { status: 'observed', ...hcRead(address, lines, options) };
       } catch (error) {
         return unavailable(error);
       }
