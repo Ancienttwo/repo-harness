@@ -38,7 +38,8 @@ export interface WorkspaceLocation {
    * parent issue and `#board/<repository>/<parent>/<issue>` opens one of its
    * issues in the drawer (see `boardPlace`). A leading `office` segment
    * (`#board/office`, `#board/office/<repository>/<parent>[/<issue>]`) selects
-   * the office layout; without it the board is the list. `#tools/<id>` opens one catalog entry.
+   * the office layout; without it the board is the list. `#board/office/<repository>`
+   * is the room of a repository with no selected parent. `#tools/<id>` opens one catalog entry.
    * `#docs/<path>` names one repository-relative file; the docs route decides
    * whether it may be read.
    */
@@ -48,6 +49,7 @@ export interface WorkspaceLocation {
 const HOME: WorkspaceLocation = { workspace: 'home', module: null, item: null };
 const REPOSITORY_ID = /^[A-Za-z0-9][A-Za-z0-9._-]{0,127}$/u;
 const ISSUE_NUMBER = /^[1-9][0-9]{0,9}$/u;
+const REGISTERED_REPOSITORY_ID = /^repo_[0-9a-f]{16}$/u;
 
 /** The two layouts of the Board page. The list is the default. */
 export type BoardLayout = 'list' | 'office';
@@ -75,6 +77,17 @@ export function boardPlace(item: string | null): BoardPlace | null {
   if (rest.length > 0 || repository === undefined || !REPOSITORY_ID.test(repository) || parent === undefined || !ISSUE_NUMBER.test(parent)) return null;
   if (issue !== undefined && !ISSUE_NUMBER.test(issue)) return null;
   return { repository_id: repository, parent: Number(parent), issue: issue === undefined ? null : Number(issue), layout };
+}
+
+/** The repository of an `office/<repository>` item: the room with no selected parent. */
+export function boardRoom(item: string | null): string | null {
+  if (item === null) return null;
+  const [office, repository, ...rest] = item.split('/');
+  return office === OFFICE_SEGMENT && repository !== undefined && rest.length === 0 && REGISTERED_REPOSITORY_ID.test(repository) ? repository : null;
+}
+
+export function boardRoomLocation(repository_id: string): WorkspaceLocation {
+  return { workspace: 'board', module: null, item: `${OFFICE_SEGMENT}/${repository_id}` };
 }
 
 export function boardLocation(place: BoardPlace): WorkspaceLocation {
@@ -106,7 +119,10 @@ export function parseWorkspaceLocation(hash: string): WorkspaceLocation {
   if (name === 'board') {
     if (parameter === undefined) return boardHomeLocation('list');
     if (parameter === OFFICE_SEGMENT && rest.length === 0) return boardHomeLocation('office');
-    const place = boardPlace([parameter, ...rest].join('/'));
+    const item = [parameter, ...rest].join('/');
+    const room = boardRoom(item);
+    if (room !== null) return boardRoomLocation(room);
+    const place = boardPlace(item);
     return place === null ? HOME : boardLocation(place);
   }
   if (rest.length > 0) return HOME;
