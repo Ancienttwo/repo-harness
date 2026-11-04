@@ -225,9 +225,17 @@ function SetupFreshness({ view, now, t }: { readonly view: SetupView; readonly n
   );
 }
 
-/** The architecture page's line: the model commit on screen and, for a map, when the server collected it. */
+/**
+ * The architecture page's line: the model commit on screen and, for a map, when the server collected it;
+ * for History, the head that pins the pages and the milestones read of archctx's total.
+ */
 function ArchitectureFreshness({ source, now, t }: { readonly source: ArchitectureSource | null; readonly now: number; readonly t: OperatorTranslate }) {
   if (source === null) return null;
+  if ('head' in source) {
+    return <span data-freshness="ok" data-freshness-source="architecture-history" title={source.head}>
+      {t('architectureHistory.header', { head: source.head.slice(0, 7), read: source.read, total: source.total })}
+    </span>;
+  }
   return (
     <span data-freshness="ok" data-freshness-source="architecture">
       {source.collectedAt === null ? t('freshness.architecture.model') : t('freshness.architecture.collected', { age: ageWords(source.collectedAt, now, t) })}

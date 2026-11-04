@@ -3,7 +3,7 @@ import type { Json } from 'archctx-contracts';
 import type { ModuleDetailV1, ModuleIndexV1, ModuleState } from '../core/architecture/module-view';
 import type { ModuleReviewPromptV1 } from '../core/review/module-review-prompt';
 import { decodeArchitectureModuleDetail, decodeArchitectureModuleIndex, decodeArchitectureReviewPrompt } from '../core/operator/architecture';
-import { ArchitectureHistory } from './ArchitectureHistory';
+import { ArchitectureHistory, type HistorySummary } from './ArchitectureHistory';
 import { ArchitectureMap, type ArchitectureBaseMap, type ArchitectureMapReader, type ArchitectureMapSummary } from './ArchitectureMap';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ModuleGraph } from './ModuleGraph';
@@ -246,12 +246,16 @@ type ArchitectureView = 'map' | 'sequence' | 'topology' | 'modules' | 'history';
 const ARCHITECTURE_VIEWS: readonly ArchitectureView[] = ['map', 'sequence', 'topology', 'modules', 'history'];
 const BASE_MAPS: Readonly<Record<Exclude<ArchitectureView, 'modules' | 'history'>, ArchitectureBaseMap>> = { map: 'modules', sequence: 'sequence', topology: 'topology' };
 
-/** The model commit that the page shows, for the header row; a map also has its collection time. */
-export interface ArchitectureSource { readonly commit: string; readonly collectedAt: string | null }
+/**
+ * The source of the view on screen, for the header row: the model commit (a map also has its
+ * collection time), or for History the pinned head and the milestones read.
+ */
+export type ArchitectureSource = ModelSource | HistorySummary;
+interface ModelSource { readonly commit: string; readonly collectedAt: string | null }
 
 function ViewTabs({ view, counts, onChange, t }: {
   readonly view: ArchitectureView;
-  /** Capabilities on the module map and flows on the sequence map, once a map is read. */
+  /** Capabilities on the module map and flows on the sequence map once a map is read, and milestones once History is read. */
   readonly counts: Partial<Record<ArchitectureView, number>>;
   readonly onChange: (view: ArchitectureView) => void;
   readonly t: OperatorTranslate;
@@ -293,20 +297,29 @@ export function ArchitectureWorkspace({ repositoryId, github, moduleId, onModule
   // The tab counts of the last map stay while another view shows; a new repository starts without them.
   // The map source is only the map on screen: the base map clears it when it shows no map or closes.
   const [counts, setCounts] = useState<{ readonly repositoryId: string; readonly value: Partial<Record<ArchitectureView, number>> } | null>(null);
-  const [mapSource, setMapSource] = useState<ArchitectureSource | null>(null);
+  const [mapSource, setMapSource] = useState<ModelSource | null>(null);
+  const [historySource, setHistorySource] = useState<HistorySummary | null>(null);
+  const count = useCallback((value: Partial<Record<ArchitectureView, number>>) => {
+    setCounts(current => ({ repositoryId, value: { ...current?.repositoryId === repositoryId ? current.value : {}, ...value } }));
+  }, [repositoryId]);
   const onSummary = useCallback((summary: ArchitectureMapSummary | null) => {
     setMapSource(summary === null ? null : { commit: summary.commit, collectedAt: summary.collectedAt });
-    if (summary !== null) setCounts({ repositoryId, value: { map: summary.modules, sequence: summary.flows } });
-  }, [repositoryId]);
+    if (summary !== null) count({ map: summary.modules, sequence: summary.flows });
+  }, [count]);
+  const onHistory = useCallback((summary: HistorySummary | null) => {
+    setHistorySource(summary);
+    if (summary !== null) count({ history: summary.total });
+  }, [count]);
   const commit = moduleId !== null ? detail.value?.commit : view === 'modules' ? index.value?.commit : view === 'history' ? undefined : mapSource?.commit;
   const collectedAt = moduleId === null && view !== 'modules' && view !== 'history' ? mapSource?.collectedAt ?? null : null;
-  useEffect(() => { onSource(commit === undefined ? null : { commit, collectedAt }); }, [commit, collectedAt, onSource]);
+  const history = moduleId === null && view === 'history' ? historySource : null;
+  useEffect(() => { onSource(history ?? (commit === undefined ? null : { commit, collectedAt })); }, [history, commit, collectedAt, onSource]);
   useEffect(() => () => onSource(null), [onSource]);
   return <section className="architecture-workspace" aria-label={t('nav.architecture')}>
     {moduleId === null ? <>
       <ViewTabs view={view} counts={counts?.repositoryId === repositoryId ? counts.value : {}} onChange={setView} t={t} />
       <div id="architecture-view" className="architecture-view" role="tabpanel" aria-labelledby={`architecture-tab-${view}`}>
-        {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} t={t} />
+        {view === 'history' ? <ArchitectureHistory path={historyPath(repositoryId)} github={github} read={fetchArchitecture} refreshGeneration={refreshGeneration} onSummary={onHistory} t={t} />
           : view !== 'modules' ? <ArchitectureMap repositoryId={repositoryId} view={BASE_MAPS[view]} read={readMap} refreshGeneration={refreshGeneration} onModule={onModule} onSummary={onSummary} t={t} /> : <>
             <ReadStatus read={index} loading="architecture.loading" t={t} />
             {index.value && <ModuleList index={index.value} onModule={onModule} t={t} />}
