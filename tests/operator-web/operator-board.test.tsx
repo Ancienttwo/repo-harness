@@ -1076,9 +1076,12 @@ describe('board office (#1755)', () => {
     }
   });
 
-  test('a queue longer than the scene stays reachable: the zone lists every entry in the side panel', async () => {
+  test('a queue longer than the scene stays reachable: the zone lists every entry, and a hidden entry opens its panel and its drawer', async () => {
     const queued = BOARD.pull_requests[0]!;
-    const board: BoardV1 = { ...BOARD, pull_requests: [5001, 5002, 5003, 5004].map(number => ({ ...queued, number, acceptance: { status: 'not_accepted' } })) };
+    const board: BoardV1 = {
+      ...BOARD, pull_requests: [5001, 5002, 5003, 5004].map(number => ({ ...queued, number, acceptance: { status: 'not_accepted' } })),
+      items: BOARD.items.map(item => (item.number === 1478 ? { ...item, pull_requests: [5004] } : item)),
+    };
     officeAt(`/${HARNESS_ID}/1474`);
     await mount(<OperatorApp {...props(busy(), { readBoard: async () => ({ state: 'ok', board }) })} />);
     await settle();
@@ -1086,6 +1089,18 @@ describe('board office (#1755)', () => {
     const shown = document.querySelector('[data-office-panel]')!;
     expect(shown.getAttribute('data-office-panel')).toBe('QUEUE');
     expect(Array.from(shown.querySelectorAll('dt')).map(term => term.textContent)).toEqual(['PR #5001', 'PR #5002', 'PR #5003', 'PR #5004']);
+    expect(rows('[data-queue-pr]').map(hit => hit.getAttribute('data-queue-pr'))).toEqual(['5001', '5002', '5003']);
+    expect(rows('[data-desk]').map(desk => desk.getAttribute('data-desk'))).not.toContain('5004');
+    await act(async () => rows('[data-panel-pick="queue:5004"]')[0]!.click());
+    const entry = document.querySelector('[data-office-panel]')!;
+    const title = BOARD.items.find(item => item.number === 1478)!.title;
+    expect(entry.getAttribute('data-office-panel')).toBe('WORKER · QUEUE');
+    expect(entry.querySelector('h2')?.textContent).toBe(`PR #5004 ${title}`);
+    expect(entry.querySelector('[data-command] code')?.textContent).toBe('gh pr view 5004');
+    await act(async () => rows('[data-panel-issue="1478"]')[0]!.click());
+    await settle();
+    expect(window.location.hash).toBe(`#board/office/${HARNESS_ID}/1474/1478`);
+    expect(document.querySelector('[role="dialog"]')?.textContent).toContain(title);
   });
 
   const advisorList = (status: string | null): BoardParentsV1 => ({ ...PARENTS, seats: [...PARENTS.seats, { ...seat('t9', 'advisor', null, null, status), parent: null }] });

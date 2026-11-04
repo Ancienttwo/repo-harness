@@ -318,7 +318,8 @@ interface PanelView {
   readonly eyebrow: string;
   readonly title: string;
   readonly sub: string;
-  readonly rows: readonly (readonly [string, string])[];
+  /** Term, value, and the hit key that the value selects. */
+  readonly rows: readonly (readonly [string, string, string?])[];
   /** Null when the command needs a value that no read observed. */
   readonly command: string | null;
   readonly portrait: readonly ScenePath[] | null;
@@ -365,7 +366,7 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
   if (key === 'queue') {
     return {
       eyebrow: 'QUEUE', title: t('board.office.queue', { count: room.queue.length }), sub: t('board.office.panel.queue.sub'),
-      rows: room.queue.map(entry => [`PR #${entry.pr}`, entry.title] as const), command: 'gh pr list --state open', portrait: null, issue: null,
+      rows: room.queue.map(entry => [`PR #${entry.pr}`, entry.title, `queue:${entry.pr}`] as const), command: 'gh pr list --state open', portrait: null, issue: null,
     };
   }
   const accepted = room.cart?.accepted ?? [];
@@ -399,7 +400,7 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
   };
 }
 
-function OfficePanel({ view, onIssue, t }: { readonly view: PanelView; readonly onIssue: (issue: number) => void; readonly t: OperatorTranslate }) {
+function OfficePanel({ view, onIssue, onPick, t }: { readonly view: PanelView; readonly onIssue: (issue: number) => void; readonly onPick: (key: string) => void; readonly t: OperatorTranslate }) {
   const { issue } = view;
   return (
     <section className="board-office__panel" data-office-panel={view.eyebrow}>
@@ -413,7 +414,7 @@ function OfficePanel({ view, onIssue, t }: { readonly view: PanelView; readonly 
           <span className="board-office__panel-sub">{view.sub}</span>
         </div>
       </div>
-      <dl>{view.rows.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl>
+      <dl>{view.rows.map(([term, value, key]) => <div key={term}><dt>{term}</dt><dd>{key === undefined ? value : <button type="button" data-panel-pick={key} onClick={() => onPick(key)}>{value}</button>}</dd></div>)}</dl>
       {view.command === null
         ? <p className="board-office__command" data-command-gap>{t('board.office.panel.noBranch')}</p>
         : (
@@ -577,7 +578,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
           </div>
         </div>
         <aside className="board-office__aside" aria-label={t('board.office.panel.label')}>
-          <OfficePanel view={panelView(selected, room, parent, defaultBranch, planText, clock.frame, t)} onIssue={openIssue} t={t} />
+          <OfficePanel view={panelView(selected, room, parent, defaultBranch, planText, clock.frame, t)} onIssue={openIssue} onPick={setPicked} t={t} />
           <OfficeFeed room={room} lit={lit} parent={parent} t={t} />
         </aside>
       </div>
