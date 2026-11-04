@@ -4,7 +4,7 @@ Design material for the operator console redesign. The design brief is
 [`../../prds/DESIGN-operator-console-uiux.md`](../../prds/DESIGN-operator-console-uiux.md) and
 the PRD is the snapshot
 [`docs/prds/20261026-2310-operator-console-uiux.prd.md`](../../prds/20261026-2310-operator-console-uiux.prd.md)
-(rev 213). Where this file and the design brief disagree, the brief wins.
+(rev 269). Where this file and the design brief disagree, the brief wins.
 
 | Material | Where |
 | --- | --- |
@@ -12,6 +12,7 @@ the PRD is the snapshot
 | Design system (live) | Claude design-system artifact: https://claude.ai/artifact/JyoYEw29VBRwmBRnnKf3TT (private until shared). Read at version `1793028749-cefd` |
 | Design system (repo copy) | [`design-system/`](design-system/README.md): README, `tokens.json`, component guidelines, logos and mascots |
 | Architecture History view (#1300) | [`mockups/1300-architecture-history.html`](mockups/1300-architecture-history.html): self-contained HTML. Timeline, milestone map, delta styles for added, removed and renamed nodes and changed relations, and six states. Data is the repo-harness model at 28 real milestones, aggregated per capability in the `archctx history` v1 shape |
+| Board pixel office | [`mockups/board-pixel-office.html`](mockups/board-pixel-office.html): self-contained HTML export of the Claude design artifact https://claude.ai/artifact/TgArwqpdtxG34p7gB2jFB7 at version `1793781748-df6c` (private until shared). Four views: all-offices overview with room popups, one room per repo and parent issue, state legend, and boss sprite sheet. Each room has an orchestrator and an advisor on the stage, worker desks up to the seat limit, a CI tower, the acceptance queue and a batch cart of 6. Four boss commands go only to the advisor: 大棒, 萝卜, 排雷 and 收放. Each opens a confirmation, has a cooldown, and locks the other three until the advisor finishes. repo-harness shows the #1309 board of 2026-11-01; aiphabee and AstroZi are sample states |
 
 ## Page inventory
 
