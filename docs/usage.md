@@ -460,15 +460,3 @@ dependencies.
 | `mermaid` | Authoring and readability review for Mermaid architecture and system-flow source | Runtime-referenced review skill, not vendored into generated repos and never an HTML artifact generator |
 | [herdr](https://herdr.dev/) (`hc`, herdr-core) | Required peer-terminal runtime: notification dispatch, peer collaboration, and hosting the persistent acceptance reviewer | Externally installed `hc` binary, pinned in `.ai/harness/policy.json#external_tooling.herdr_core` (`min_version` floor and checksum-verified CI release asset); replaces the retired tmux runtime |
 | CodeGraph (`@colbymchenry/codegraph`) | Symbol-aware navigation, impact tracing, and readiness checks for this self-host repo | Dev dependency in this repo; generated repos stay global-MCP-first unless policy opts in |
-
-### GitHub Contributor Attribution
-
-When Codex materially contributes to a commit, use GitHub's standard co-author
-trailer at the end of the message:
-
-```text
-Co-authored-by: codex <codex@openai.com>
-```
-
-Keep this opt-in and visible per commit. Do not bake it into downstream
-repo-harness commit scripts or hooks unless that repo adopts the same policy.

@@ -312,9 +312,6 @@ reference docs in `assets/reference-configs/` (projected into
 `docs/reference-configs/`). See the [maintainer reference](docs/usage.md#maintainer-reference)
 for release lanes and skill sync.
 
-When Codex materially contributes to a commit, add a visible trailer:
-`Co-authored-by: codex <codex@openai.com>`.
-
 ## Acknowledgements
 
 | Tool or repo | Used for |
