@@ -1,11 +1,13 @@
+import { seatTerminal, type BoardSeatTerminalReadV1, type BoardTerminalV1 } from './board';
 import type { BoardOpenIssuesReadV1 } from './source';
 
 /**
  * The parent list: the open issues of one repository that have at least one
- * sub-issue, with the count of live hc seats that name each one. It is the
+ * sub-issue, with the count of live hc seats that name each one, and every
+ * live seat of the repository for the Office overview and room. It is the
  * entry of the Board page. GitHub and hc stay the authorities.
  */
-export const BOARD_PARENTS_PROTOCOL = 1 as const;
+export const BOARD_PARENTS_PROTOCOL = 2 as const;
 export const BOARD_PARENTS_KIND = 'repo-harness.board-parents' as const;
 
 export interface BoardParentV1 {
@@ -19,6 +21,9 @@ export interface BoardParentV1 {
   readonly seats: number;
 }
 
+/** A live seat terminal of the repository; `parent` is its raw parent label, or null when it has none. */
+export type BoardParentsSeatV1 = BoardTerminalV1 & { readonly parent: string | null };
+
 export interface BoardParentsV1 {
   readonly protocol: typeof BOARD_PARENTS_PROTOCOL;
   readonly kind: typeof BOARD_PARENTS_KIND;
@@ -26,19 +31,22 @@ export interface BoardParentsV1 {
   readonly repository: string;
   /** Parents with live seats first, then the most recently updated. */
   readonly parents: readonly BoardParentV1[];
+  /** Every terminal with a seat label, with or without a parent label, in hc list order. */
+  readonly seats: readonly BoardParentsSeatV1[];
 }
 
 export interface BoardParentsInputV1 {
   readonly observed_at: string;
   readonly issues: BoardOpenIssuesReadV1;
-  readonly terminals: readonly { readonly parent?: string; readonly seat?: string }[];
+  /** The `seatTerminals` read of the repository: live terminals, watcher terminals left out. */
+  readonly terminals: readonly BoardSeatTerminalReadV1[];
 }
 
 export function projectBoardParents(input: BoardParentsInputV1): BoardParentsV1 {
   const seats = new Map<string, number>();
-  for (const terminal of input.terminals) {
-    if (terminal.parent === undefined || terminal.seat === undefined || terminal.seat === '') continue;
-    seats.set(terminal.parent, (seats.get(terminal.parent) ?? 0) + 1);
+  for (const { labels: { parent, seat } } of input.terminals) {
+    if (parent === undefined || seat === undefined || seat === '') continue;
+    seats.set(parent, (seats.get(parent) ?? 0) + 1);
   }
   const parents = input.issues.issues
     .filter(issue => issue.sub_issues.total > 0)
@@ -52,6 +60,8 @@ export function projectBoardParents(input: BoardParentsInputV1): BoardParentsV1 
     observed_at: input.observed_at,
     repository: input.issues.repository.name_with_owner,
     parents: Object.freeze(parents),
+    seats: Object.freeze(input.terminals.filter(terminal => terminal.labels.seat !== undefined)
+      .map(terminal => Object.freeze({ ...seatTerminal(terminal), parent: terminal.labels.parent ?? null }))),
   });
 }
 

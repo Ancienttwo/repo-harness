@@ -1,5 +1,5 @@
-import { appendFileSync, mkdirSync, readFileSync } from 'node:fs';
-import { dirname, join } from 'node:path';
+import { appendFileSync, mkdirSync, readFileSync, readdirSync } from 'node:fs';
+import { basename, dirname, join } from 'node:path';
 import { evaluateBoardAttention } from '../../core/board/attention';
 import { ADVISOR_CAP_SPAN_MS, planAttentionDeliveries, type AttentionDeliveryV1, type AttentionHostPortsV1 } from '../../core/board/attention-delivery';
 import type { BoardV1 } from '../../core/board/board';
@@ -41,20 +41,29 @@ function append(path: string, record: AttentionLogRecordV1): void {
   appendFileSync(path, `${JSON.stringify(record)}\n`, { mode: 0o600 });
 }
 
-/** Windows in the last 24 hours with at least one advisor send. A seat wakes once per window, however many terminals it has. */
+/** Parent windows in the last 24 hours with an advisor send, across all logs of the repository. */
 export function advisorWakes(path: string, now: Date): number {
-  let text: string;
-  try { text = readFileSync(path, 'utf8'); } catch (error) {
+  const directory = dirname(path);
+  const name = basename(path);
+  const prefix = name.slice(0, name.lastIndexOf('-') + 1);
+  let files: string[];
+  try { files = readdirSync(directory); } catch (error) {
     if ((error as NodeJS.ErrnoException).code === 'ENOENT') return 0;
     throw error;
   }
   const since = now.getTime() - ADVISOR_CAP_SPAN_MS;
-  const windows = new Set<string>();
-  for (const line of text.split('\n').filter(Boolean)) {
-    const record = JSON.parse(line) as AttentionLogRecordV1;
-    if (record.kind === 'send' && record.route === 'advisor' && record.outcome === 'sent' && Date.parse(record.at) > since) windows.add(record.window);
+  let wakes = 0;
+  for (const file of files.filter(file => file.startsWith(prefix) && file.endsWith('.jsonl'))) {
+    const text = readFileSync(join(directory, file), 'utf8');
+    // Different parents can start a window at the same time.
+    const windows = new Set<string>();
+    for (const line of text.split('\n').filter(Boolean)) {
+      const record = JSON.parse(line) as AttentionLogRecordV1;
+      if (record.kind === 'send' && record.route === 'advisor' && record.outcome === 'sent' && Date.parse(record.at) > since) windows.add(record.window);
+    }
+    wakes += windows.size;
   }
-  return windows.size;
+  return wakes;
 }
 
 export interface AttentionWindowInput {

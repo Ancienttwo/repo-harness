@@ -2,11 +2,42 @@ import { lstatSync, realpathSync, mkdirSync, existsSync, readFileSync, openSync,
 import { spawnSync } from 'node:child_process';
 import { isAbsolute, relative, sep, join, dirname } from 'node:path';
 import { piAgentDir } from '../pi-agent-dir';
+import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
 import type { ReviewIsolationAdmission, ReviewIsolationPaths } from '../../core/review/runner-port';
 
 
+export interface PiAgentDirectory { readonly directory: string; readonly loopbackPorts: readonly number[] }
+
+const MODEL_URL_DEFAULT_PORTS: Readonly<Record<string, number>> = { 'http:': 80, 'https:': 443 };
+const LOOPBACK_MODEL_HOSTS: readonly string[] = ['127.0.0.1', 'localhost', '[::1]'];
+
+/**
+ * The loopback ports that models.json names as a provider baseUrl (M82). The
+ * review profile allows these ports and no other, so a provider on the console
+ * port would reopen the write routes and refuses the session. A remote provider
+ * needs no rule.
+ */
+function piModelLoopbackPorts(bytes: Buffer): readonly number[] {
+  let providers: Record<string, { readonly baseUrl?: unknown } | null> | null | undefined;
+  try { providers = JSON.parse(bytes.toString('utf8'))?.providers; } catch { throw new Error('review_pi_models_invalid'); }
+  const ports = new Set<number>();
+  for (const provider of Object.values(providers ?? {})) {
+    const baseUrl = provider?.baseUrl;
+    if (baseUrl === undefined) continue;
+    if (typeof baseUrl !== 'string' || !URL.canParse(baseUrl)) throw new Error('review_pi_model_base_url_invalid');
+    const url = new URL(baseUrl), defaultPort = MODEL_URL_DEFAULT_PORTS[url.protocol];
+    // "127.0.0.1:3425/v1" parses with the scheme "127.0.0.1:", so the scheme check also refuses a missing scheme.
+    if (defaultPort === undefined) throw new Error('review_pi_model_base_url_invalid');
+    if (!LOOPBACK_MODEL_HOSTS.includes(url.hostname)) continue;
+    const port = url.port === '' ? defaultPort : Number(url.port);
+    if (port === OPERATOR_DEFAULT_PORT) throw new Error('review_pi_model_port_is_operator_console');
+    ports.add(port);
+  }
+  return [...ports];
+}
+
 /** Credentials stay at their source. Only the native model defaults are projected into private settings. */
-export function preparePiAgentDirectory(output: string, sourceHome: string, env: Readonly<Record<string, string | undefined>> = process.env): string {
+export function preparePiAgentDirectory(output: string, sourceHome: string, env: Readonly<Record<string, string | undefined>> = process.env): PiAgentDirectory {
   const directory = join(ownedOutput(output), '.pi-agent');
   try { mkdirSync(directory, { mode: 0o700 }); } catch (error) {
     if ((error as NodeJS.ErrnoException).code !== 'EEXIST') throw error;
@@ -19,8 +50,10 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
     if (existsSync(path) && (lstatSync(path).isSymbolicLink() || !lstatSync(path).isDirectory())) throw new Error('review_pi_source_unsafe');
   }
   const models = join(source, 'models.json'), destination = join(directory, 'models.json');
+  let loopbackPorts: readonly number[] = [];
   if (existsSync(models)) {
-    const bytes = readAuthBytes(models); bytes.fill(0);
+    const bytes = readAuthBytes(models);
+    try { loopbackPorts = piModelLoopbackPorts(bytes); } finally { bytes.fill(0); }
     if (!existsSync(destination)) symlinkSync(models, destination);
     if (!lstatSync(destination).isSymbolicLink() || readlinkSync(destination) !== models) throw new Error('review_pi_models_changed');
   } else if (existsSync(destination)) throw new Error('review_pi_models_changed');
@@ -34,7 +67,7 @@ export function preparePiAgentDirectory(output: string, sourceHome: string, env:
     if (!existsSync(link)) writeFileSync(link, '{}', { flag: 'wx', mode: 0o600 });
     if (lstatSync(link).isSymbolicLink() || readFileSync(link, 'utf8') !== '{}') throw new Error('review_pi_auth_changed');
   }
-  return directory;
+  return { directory, loopbackPorts };
 }
 
 function preparePiSettings(directory: string, source: string): void {
@@ -159,8 +192,17 @@ export function removeCopiedAuth(output: string): { status: 'removed' | 'absent'
   } catch { return { status: 'cleanup_pending' }; }
 }
 
+/**
+ * The cleanup investigation (#1721) adds one rule to the review profile: the
+ * agent cannot read the target worktrees and their Git directories, so it
+ * judges only from the server manifest (M69). Other callers leave the field out.
+ * The host derives the policy from these same paths, so the field travels in
+ * the host spec.
+ */
+export type CleanupReviewIsolationPaths = ReviewIsolationPaths & { readonly cleanup?: { readonly readDenied: readonly string[] } };
+
 /** Seatbelt owns enforcement. This emits OS policy, never vendor CLI arguments. */
-export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = process.platform): string {
+export function reviewIsolationPolicy(paths: CleanupReviewIsolationPaths, platform = process.platform): string {
   if (!isAbsolute(paths.output) || lstatSync(paths.output).isSymbolicLink() || !lstatSync(paths.output).isDirectory()) {
     throw new Error('OAR_REVIEW_OUTPUT_UNSAFE');
   }
@@ -173,7 +215,8 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
       || stat.uid !== process.getuid?.() || (stat.mode & 0o777) !== 0o700) throw new Error('review_pi_agent_directory_unsafe');
     piPolicy = `(deny file-write* (literal ${JSON.stringify(join(directory, 'models.json'))}))\n`;
   }
-  const protectedEntries = [paths.primary, paths.ownerRecord, paths.journal, paths.gitCommonDir];
+  const readDenied = paths.cleanup?.readDenied ?? [];
+  const protectedEntries = [paths.primary, paths.ownerRecord, paths.journal, paths.gitCommonDir, ...readDenied];
   for (const path of [paths.subject, ...protectedEntries]) {
     if (!isAbsolute(path)) throw new Error('OAR_REVIEW_PROTECTED_PATH_UNSAFE');
     const canonical = realpathSync(path);
@@ -181,6 +224,16 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
       throw new Error('OAR_REVIEW_OUTPUT_OVERLAPS_AUTHORITY');
     }
   }
+  // Seatbelt matches resolved paths, so a link would leave its target readable.
+  if (readDenied.some(path => realpathSync(path) !== path)) throw new Error('OAR_REVIEW_PROTECTED_PATH_UNSAFE');
+  // Every review agent is denied the operator console routes (#1770, M82).
+  // Seatbelt "localhost" also matches this host's own addresses. A tcp "localhost"
+  // rule lets ::ffff:127.0.0.1 through, so IPv6 TCP is denied whole; remote IPv4 stays open.
+  const networkPolicy = '(deny network-outbound (remote tcp4 "localhost:*"))\n(deny network-outbound (remote tcp6 "*:*"))\n';
+  // The last matching rule wins, so each allow follows the deny. A "localhost"
+  // baseUrl can resolve to either family, so the allow names tcp, not tcp4.
+  const modelPortPolicy = (paths.piLoopbackPorts ?? []).map(port => `(allow network-outbound (remote tcp "localhost:${port}"))\n`).join('');
+  const readPolicy = readDenied.map(path => `(deny file-read* (subpath ${JSON.stringify(path)}))\n`).join('');
   if (platform !== 'darwin') throw new Error('OAR_REVIEW_ISOLATION_UNSUPPORTED_PLATFORM');
   // Output alone is writable; every real CODEX_HOME state grant is retired.
   // Definitions, trust, settings/hooks and credentials stay denied even inside
@@ -190,7 +243,7 @@ export function reviewIsolationPolicy(paths: ReviewIsolationPaths, platform = pr
   const exceptions = `(require-not (subpath ${JSON.stringify(output)}))`;
   // macOS resolves DNS through this system socket. Other local services remain denied.
   const unixSockets = '(require-all (remote unix-socket) (require-not (remote unix-socket (path-literal "/private/var/run/mDNSResponder"))))';
-  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound ${unixSockets})\n${piPolicy}`;
+  return `(version 1)\n(allow default)\n(deny file-write* (require-all ${exceptions} (require-not (literal "/dev/null"))))\n(deny file-write* (regex #"${forbiddenFiles}"))\n(deny file-write* (regex #"${forbiddenDirectories}"))\n(deny signal)\n(deny network-outbound ${unixSockets})\n${piPolicy}${networkPolicy}${modelPortPolicy}${readPolicy}`;
 
 }
 

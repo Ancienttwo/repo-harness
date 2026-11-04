@@ -21,6 +21,7 @@ import { decodeBoardParents, type BoardParentsV1 } from '../src/core/board/paren
 import { BoardSourceError } from '../src/core/board/source';
 import { HC_MIN_VERSION } from '../src/core/operator/herdr-pin';
 import { BoardParentsError, collectBoardParents } from '../src/effects/board/parents';
+import { boardSummary, decodeBoardSummaries } from '../src/core/board/summary';
 import boardParentsFixture from '../src/operator-web/fixtures/board-parents.json';
 
 // Recorded on 2026-11-03: the two GraphQL reads of parent #1474 with the collector's own queries, the newest
@@ -163,6 +164,45 @@ test('replay: the recorded #1474 reads project to a board, and its findings come
   ]);
 });
 
+test('board summary counts the recorded PRs, planned issue members and orchestrator findings', () => {
+  const board = replay();
+  expect(boardSummary(board)).toEqual({ queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 });
+  const block = { protocol: 1, kind: 'repo-harness.plan', merge_order: [], holds: [], batches: [[1475, 1476], [1477, 1479]], seat_limits: { worker: 4 } } as const;
+  const planned: BoardV1 = { ...board, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
+    block },
+    pull_requests: board.pull_requests.map(pr => pr.number === 1494 ? { ...pr, required_check: { status: 'failure', completed_at: board.observed_at } }
+      : pr.number === 1499 ? { ...pr, state: 'closed' } : pr) };
+  expect(boardSummary(planned)).toMatchObject({ queue: 0, ci_failures: 1, batch: { accepted: 1, size: 4 } });
+  const accepted = planned.pull_requests.find(pr => pr.number === 1491)!;
+  const reopened: BoardV1 = { ...planned,
+    items: planned.items.map(item => item.number === 1475 ? { ...item, pull_requests: [1491, 1500] } : item),
+    pull_requests: [...planned.pull_requests.map(pr => pr.number === 1491 ? { ...pr, state: 'closed' as const } : pr),
+      { ...accepted, number: 1500, state: 'open', acceptance: { status: 'not_accepted' } }],
+  };
+  expect(boardSummary(reopened)).toMatchObject({ queue: 1, batch: { accepted: 0, size: 4 } });
+  expect(boardSummary({ ...reopened, pull_requests: reopened.pull_requests.map(pr => pr.number === 1500
+    ? { ...pr, required_check: { status: 'pending' } } : pr) }).queue).toBe(0);
+  expect(boardSummary({ ...planned, plan: { status: 'absent', truncated: false } }).batch).toEqual({ accepted: null, size: null });
+  expect(boardSummary({ ...planned, plan: { status: 'observed', comment_url: 'https://github.com/plan', created_at: board.observed_at,
+    block: { ...block, batches: [] } } }).batch).toEqual({ accepted: 0, size: 0 });
+});
+
+test('one strict summary decoder checks snapshots and route rows', () => {
+  const row = { parent: 1474, status: 'observed', observed_at: REPLAY_NOW.toISOString(),
+    summary: { queue: 2, ci_failures: 0, batch: { accepted: 1, size: 2 }, needs_you: 3 } } as const;
+  const response = { protocol: 1, kind: 'repo-harness.board-summaries', repository_id: 'repo-a', parents: [row] } as const;
+  expect(decodeBoardSummaries(response)).toEqual(response);
+  expect(decodeBoardSummaries({ ...response, parents: [{ parent: 1474, status: 'not_read' }, { parent: 1651, status: 'unavailable', reason: 'snapshot_invalid' }] }).parents).toHaveLength(2);
+  for (const invalid of [{ ...response, protocol: 2 }, { ...response, kind: 'other' }, { ...response, repository_id: '../a' },
+    { ...response, extra: 1 }, { ...response, parents: [row, row] }, ...[
+      { ...row, observed_at: 'yesterday' }, { ...row, observed_at: '2026-02-31T00:00:00Z' }, { ...row, parent: 0 }, { ...row, extra: 1 },
+      { ...row, summary: { ...row.summary, queue: -1 } }, { ...row, summary: { ...row.summary, needs_you: 0.5 } },
+      { ...row, summary: { ...row.summary, batch: { accepted: 3, size: 2 } } },
+      { ...row, summary: { ...row.summary, batch: { accepted: null, size: 2 } } },
+      { parent: 1474, status: 'unavailable', reason: '' }, { parent: 1474, status: 'not_read', summary: row.summary },
+    ].map(parent => ({ ...response, parents: [parent] }))]) expect(() => decodeBoardSummaries(invalid)).toThrow('board summaries invalid');
+});
+
 test('decoders refuse an unknown protocol or kind', () => {
   expect(() => decodeBoard({ protocol: 2, kind: 'repo-harness.board' })).toThrow('unsupported board protocol: 2');
   expect(() => decodeBoard({ protocol: 1, kind: 'fleet_board_snapshot' })).toThrow('unsupported board kind: fleet_board_snapshot');
@@ -200,6 +240,9 @@ test('parent list: one paginated issue read and one hc list give the open parent
   expect(list.repository).toBe('Ancienttwo/repo-harness');
   // t1-t3 have a seat label; t4 has none, and t5 is a seat of another repository with the same parent.
   expect(list.parents.map(parent => [parent.number, `${parent.sub_issues.completed}/${parent.sub_issues.total}`, parent.seats])).toEqual([[1474, '2/9', 3], [1651, '3/9', 0]]);
+  // The seats list keeps every seat terminal of the repository with its hc agent kind, status word and raw parent label.
+  expect(list.seats.map(seat => [seat.address, seat.seat_status === 'observed' && [seat.seat, seat.issue, seat.pr], seat.parent, seat.agent, seat.status]))
+    .toEqual([['t1', ['worker', 1476, 1499], '1474', 'codex', 'blocked'], ['t2', ['worker', 1475, 1491], '1474', 'claude-code', 'done'], ['t3', ['orchestrator', null, null], '1474', null, 'idle']]);
   expect(calls).toHaveLength(1);
   expect(calls[0]!.filter(arg => !arg.startsWith('query='))).toEqual(['api', 'graphql', '--hostname', 'github.com', '--paginate', '--slurp', '-f', '-F', 'owner={owner}', '-F', 'name={repo}']);
   // Two pages give the same list as one.
@@ -457,7 +500,7 @@ function watchHc(env: Json = {}) {
   return { root, options, host: attentionHostPorts(options), calls: () => readFileSync(log, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line) as string[]) };
 }
 
-test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads the log', async () => {
+test('watch window: idle sends at once, blocked waits, working sends at window end, and the advisor cap reads all repository logs', async () => {
   const board = replay();
   const seat = (address: string, seatName: string, status: string | null) =>
     ({ address, name: null, agent: null, state: 'live', status, status_kind: null, status_ms: null, turn: 1, seat_status: 'observed', seat: seatName, issue: null, pr: null }) as BoardTerminalV1;
@@ -475,12 +518,17 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
   });
   const logPath = attentionLogPath(1186405141, 1474, { REPO_HARNESS_HOME: hc.root });
   expect(logPath).toBe(join(hc.root, 'board/attention-1186405141-1474.jsonl'));
-  // Seven advisor wakes in the last 24 hours, one 25 hours ago.
+  // Seven advisor wakes across two parents in the last 24 hours, one 25 hours ago.
   const start = REPLAY_NOW.getTime();
   mkdirSync(join(hc.root, 'board'));
-  writeFileSync(logPath, [...Array.from({ length: 7 }, (_, at) => start - (at + 1) * 3_600_000), start - 25 * 3_600_000].map(time => JSON.stringify({
-    at: new Date(time).toISOString(), window: String(time), parent: 1474, kind: 'send', route: 'advisor', terminal: 't9', rules: ['R2'], outcome: 'sent', detail: null,
-  })).join('\n') + '\n');
+  const otherLogPath = attentionLogPath(1186405141, 1475, { REPO_HARNESS_HOME: hc.root });
+  const history = [...Array.from({ length: 7 }, (_, at) => start - (at % 4 + 1) * 3_600_000), start - 25 * 3_600_000].map((time, at) => ({
+    at: new Date(time).toISOString(), window: String(time), parent: at < 4 ? 1474 : 1475,
+    kind: 'send', route: 'advisor', terminal: 't9', rules: ['R2'], outcome: 'sent', detail: null,
+  }));
+  writeFileSync(logPath, history.slice(0, 4).map(record => JSON.stringify(record)).join('\n') + '\n');
+  writeFileSync(otherLogPath, history.slice(4).map(record => JSON.stringify(record)).join('\n') + '\n');
+  writeFileSync(attentionLogPath(11864051410, 1474, { REPO_HARNESS_HOME: hc.root }), history.map(record => JSON.stringify(record)).join('\n') + '\n');
   let clock = start;
   const slept: number[] = [];
   const window = () => runAttentionWindow({ parent: 1474, deliver: true, log_path: logPath, collect: () => watched, host: hc.host,
@@ -501,13 +549,20 @@ test('watch window: idle sends at once, blocked waits, working sends at window e
     ['send', '--json', '--', 't10', orchestrator],
     ['send', '--json', '--', 't8', orchestrator],
   ]);
-  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(8).map(line => JSON.parse(line));
+  const records = () => readFileSync(logPath, 'utf8').split('\n').filter(Boolean).slice(4).map(line => JSON.parse(line));
   expect(records().filter(record => record.kind === 'send').map(record => [record.terminal, record.outcome, record.at])).toEqual([
     ['t3', 'sent', REPLAY_NOW.toISOString()], ['t9', 'sent', REPLAY_NOW.toISOString()], ['t7', 'sent', REPLAY_NOW.toISOString()],
     ['t6', 'skipped_blocked', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t10', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
     ['t11', 'terminal_ended', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()], ['t8', 'sent', new Date(start + WINDOW_WITH_WORKERS_MS).toISOString()],
   ]);
   expect(records().filter(record => record.kind === 'finding').map(record => record.rule)).toEqual(['A1', 'A7', 'R2']);
+
+  await runAttentionWindow({ parent: 1475, deliver: true, log_path: otherLogPath, collect: () => ({ ...watched, parent: { ...watched.parent, number: 1475 } }), host: hc.host,
+    now: () => new Date(clock), sleep: async () => {} });
+  const otherRecords = readFileSync(otherLogPath, 'utf8').split('\n').filter(Boolean).slice(4).map(line => JSON.parse(line));
+  expect(otherRecords.filter(record => record.kind === 'skip').map(record => [record.route, record.reason])).toEqual([['advisor', 'advisor_daily_cap']]);
+  expect(otherRecords.filter(record => record.kind === 'send' && record.route === 'orchestrator' && record.outcome === 'sent')).toHaveLength(4);
+  expect(hc.calls().filter(args => args[0] === 'send' && args.at(-2) === 't9')).toHaveLength(1);
 
   // The next window: the advisor has eight wakes in 24 hours, and no worker runs, so the window is 60 minutes.
   terminals[0] = { ...terminals[0]!, state: 'finished' };
@@ -548,9 +603,12 @@ test('watch service: --watch refuses a terminal without the service labels; star
   // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
   // without a parent label. A worker shows only in the room of its parent label; a terminal of another repository never.
   const room = (repository: string, labels: Json) => ({ labels: { 'repo-harness.repository': repository, ...labels } });
-  const repositorySeats = watchHc({
-    FAKE_LS: ['t7', 't11', 't12', 't16', 't17', 't18', 't19'].map(address => ({ address, state: 'live' })),
+  const agents: Json = { t5: 'bun', t7: 'claude', t11: 'codex', t12: 'claude', t16: 'claude', t17: 'codex', t18: 'claude', t19: 'claude', t21: 'codex' };
+  const repositoryTerminals = watchHc({
+    FAKE_LS: ['t5', 't7', 't11', 't12', 't16', 't17', 't18', 't19', 't21'].map(address => ({ address, state: 'live', agent: agents[address] })),
     FAKE_TERMINALS: {
+      // t5 is the attention watcher of this repository; t21 is a seat with an invalid pr label.
+      t5: { labels: { ...labels, 'repo-harness.repository': '1186405141' } }, t21: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.pr': 'x' }),
       t7: room('1186405141', { 'repo-harness.seat': 'orchestrator' }), t11: room('1186405141', { 'repo-harness.seat': 'advisor' }),
       t12: room('1186405141', { 'repo-harness.seat': 'orchestrator', 'repo-harness.parent': '1503' }),
       t16: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.parent': '1474', 'repo-harness.issue': '1721' }),
@@ -559,9 +617,17 @@ test('watch service: --watch refuses a terminal without the service labels; star
       t19: room('987654321', { 'repo-harness.seat': 'advisor' }),
     },
   });
-  const office = replay({ host: boardHostPorts(repositorySeats.options) }).execution;
+  const office = replay({ host: boardHostPorts(repositoryTerminals.options) }).execution;
   expect(office.status === 'observed' && office.terminals.map(terminal => [terminal.address, terminal.seat_status === 'observed' && terminal.seat]))
     .toEqual([['t7', 'orchestrator'], ['t11', 'advisor'], ['t12', 'orchestrator'], ['t16', 'worker']]);
+  // The parent list of the repository keeps every seat, with or without a parent label (#1785); the watcher and the
+  // other repository never show, and an invalid label shows as such.
+  const officeSeats = collectBoardParents({ repo_root: repositoryTerminals.root, now: () => REPLAY_NOW, host: boardHostPorts(repositoryTerminals.options),
+    gh_runner: () => ({ status: 0, stdout: fixture('open-issues.graphql.json') }) }).seats;
+  expect(officeSeats.map(seat => [seat.address, seat.seat_status === 'observed' ? [seat.seat, seat.issue] : seat.reason, seat.parent, seat.agent])).toEqual([
+    ['t7', ['orchestrator', null], null, 'claude'], ['t11', ['advisor', null], null, 'codex'], ['t12', ['orchestrator', null], '1503', 'claude'],
+    ['t16', ['worker', 1721], '1474', 'claude'], ['t17', ['worker', 1773], '1503', 'codex'], ['t18', ['worker', 1774], null, 'claude'],
+    ['t21', 'seat_label_invalid', null, 'codex']]);
 
   // Doctor runs in repository 1186405141. t6 is the watcher of another repository with the same parent.
   const other = { ...labels, 'repo-harness.repository': '987654321' };

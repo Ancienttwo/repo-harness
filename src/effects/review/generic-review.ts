@@ -194,6 +194,7 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     const outbox = client.outputDirectory(reviewerRepo, primary, session.task, GENERIC_REVIEW_ROLE);
     ensureSessionDirectory(reviewerRepo, outbox);
     let runtimeHome: string | undefined;
+    let piLoopbackPorts: readonly number[] = [];
     if (session.actual_harness === 'codex') {
       authOutput = outbox;
       const marker = join(dir, 'auth-copy.json');
@@ -203,13 +204,14 @@ export async function runReviewRound<Session, Endpoint>(options: ReviewOptions<E
     }
     if (session.actual_harness === 'pi') {
       piOutput = outbox;
-      runtimeHome = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir);
+      const prepared = preparePiAgentDirectory(outbox, client.endpointHome(options.endpoint) ?? process.env.HOME ?? userInfo().homedir);
+      runtimeHome = prepared.directory; piLoopbackPorts = prepared.loopbackPorts;
     }
     // Isolation admission precedes any SDK/native Session creation.
     const repository = taskRepository(root);
     const isolationPaths = { subject: root, primary, ownerRecord: dir, journal: dir,
       gitCommonDir: repository.repository_id, output: outbox,
-      ...(session.actual_harness === 'pi' ? { piAgentDirectory: runtimeHome } : {}) };
+      ...(session.actual_harness === 'pi' ? { piAgentDirectory: runtimeHome, piLoopbackPorts } : {}) };
     const policy = reviewIsolationPolicy(isolationPaths);
     const profilePath = join(dir, 'isolation.sb');
     if (!existsSync(profilePath)) writeFileSync(profilePath, policy, { flag: 'wx', mode: 0o600 });

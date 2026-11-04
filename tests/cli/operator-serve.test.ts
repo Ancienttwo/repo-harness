@@ -1,10 +1,11 @@
 import { pluginSelectionEnv } from '../helpers/install-ownership';
 import { describe, expect, test } from 'bun:test';
-import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, realpathSync, rmSync, symlinkSync, writeFileSync, readdirSync, readFileSync, statSync, openSync, closeSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { spawn, spawnSync } from 'node:child_process';
 import { repoHarnessRepoIdFor } from '../../src/effects/repo-registry';
+import { taskReviewRunner } from '../../src/effects/review-runner/task-review-runner';
 import { MODULE_ID, MODULE_DOC, MODULE_NODE, moduleRepository, fixtureYaml, fixtureWrite, fixtureCommit, fixtureGit, isNativeExportGitRead } from '../helpers/module-repository';
 import { createHash } from 'node:crypto';
 import { chmodSync, watch, lstatSync, renameSync } from 'node:fs';
@@ -35,6 +36,7 @@ import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, r
 import board1474 from '../../src/operator-web/fixtures/board-1474.json';
 import boardParents from '../../src/operator-web/fixtures/board-parents.json';
 import { decodeBoardParents } from '../../src/core/board/parents';
+import { decodeBoardSummaries } from '../../src/core/board/summary';
 
 import {
   architectureStatus,
@@ -55,7 +57,8 @@ import { decodeWorktreeCleanupRequest } from '../../src/core/operator/worktree-c
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE, runWorktreeCleanupChild, selectionDigest, worktreeCleanupOperation } from '../../src/effects/operator/worktree-cleanup';
 import { runSetupProcess } from '../../src/effects/setup/collector';
 import type { OperatorWriteRoute } from '../../src/effects/operator/write-channel';
-import { OPERATOR_RECONCILE_ACTION } from '../../src/effects/operator/write-run';
+import { OPERATOR_RECONCILE_ACTION, operatorWriteBinding, runOperatorWrite } from '../../src/effects/operator/write-run';
+import { advisorBossCommandWriteRoute } from '../../src/effects/operator/advisor-seat-route';
 import { controlledWorktreeProcessPreload } from '../helpers/controlled-worktree-processes';
 import { fakeHc } from '../helpers/fake-hc';
 import { collectRepositoryWorktrees } from '../../src/effects/operator/worktree-collector-worker';
@@ -105,7 +108,7 @@ describe('operator serve command and HTTP boundary', () => {
     expect(() => parseOperatorServeOptions({ host: '0.0.0.0' })).toThrow('127.0.0.1 or ::1');
     expect(() => parseOperatorServeOptions({ port: '65536' })).toThrow('port');
     expect(() => parseOperatorServeOptions({ timeoutMs: '999' })).toThrow('timeout-ms');
-    expect(buildOperatorCommand().name()).toBe('operator');
+    expect(buildOperatorCommand(taskReviewRunner).name()).toBe('operator');
   });
 
   test('UX-local-human-control-board-v1-P1 serves health, the registered repositories without their roots, and static fallback', async () => {
@@ -547,6 +550,53 @@ describe('operator serve command and HTTP boundary', () => {
     }
   });
 
+  test('board reads replace private summaries and the summary route reads only the listed parents', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'board-summaries-'));
+    let board = decodeBoard(board1474), reads = 0;
+    const list = decodeBoardParents(boardParents);
+    const server = await startOperatorServer({ port: 0, env: { REPO_HARNESS_HOME: home },
+      read_board: async () => { reads++; return board; }, read_board_parents: async () => list });
+    const path = `${server.url}/api/v1/repositories/repo-a/board/summaries`;
+    const target = join(home, 'board/summaries/repo-a-1474.json');
+    const get = async () => {
+      const response = await fetch(path);
+      expect(response.status).toBe(200);
+      return decodeBoardSummaries(await response.json());
+    };
+    try {
+      expect((await get()).parents).toEqual(list.parents.map(parent => ({ parent: parent.number, status: 'not_read' })));
+      expect(reads).toBe(0);
+      expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+      const first = readFileSync(target, 'utf8'), inode = statSync(target).ino, fd = openSync(target, 'r');
+      try {
+        if (process.platform !== 'win32') expect(statSync(target).mode & 0o777).toBe(0o600);
+        expect(decodeBoardSummaries(JSON.parse(first)).parents).toEqual([{ parent: 1474, status: 'observed', observed_at: board.observed_at,
+          summary: { queue: 0, ci_failures: 0, batch: { accepted: null, size: null }, needs_you: 3 } }]);
+        expect((await get()).parents).toEqual([JSON.parse(first).parents[0], { parent: 1651, status: 'not_read' }]);
+        board = { ...board, observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() };
+        expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+        expect(readFileSync(fd, 'utf8')).toBe(first);
+        expect(statSync(target).ino).not.toBe(inode);
+        expect((await get()).parents[0]).toMatchObject({ status: 'observed', observed_at: board.observed_at });
+        board = decodeBoard(board1474);
+        expect((await fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`)).status).toBe(200);
+        expect((await get()).parents[0]).toMatchObject({ observed_at: new Date(Date.parse(board.observed_at) + 60_000).toISOString() });
+      } finally { closeSync(fd); }
+      expect(readdirSync(join(home, 'board/summaries'))).toEqual(['repo-a-1474.json']);
+      writeFileSync(target, '{');
+      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_invalid' });
+      writeFileSync(target, JSON.stringify({ ...JSON.parse(first), repository_id: 'repo-b' }));
+      expect((await get()).parents[0]).toEqual({ parent: 1474, status: 'unavailable', reason: 'snapshot_subject_invalid' });
+      rmSync(target); mkdirSync(target);
+      expect((await get()).parents[0]).toMatchObject({ parent: 1474, status: 'unavailable', reason: expect.stringContaining('snapshot_read_failed:') });
+      expect((await fetch(`${path}?all=1`)).status).toBe(400);
+      expect((await fetch(path, { method: 'HEAD' })).status).toBe(405);
+      expect((await fetch(path, { headers: { Origin: 'http://foreign.invalid' } })).status).toBe(403);
+      expect((await fetch(path, { method: 'POST', headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin' } })).status).toBe(405);
+      expect(reads).toBe(3);
+    } finally { await server.close(); rmSync(home, { recursive: true, force: true }); }
+  });
+
   test('board parents route takes no query, decodes the board parents CLI JSON once, maps each refusal and shares the board read cap', async () => {
     const list = decodeBoardParents(boardParents);
     let result: () => Promise<unknown> = async () => list;
@@ -569,7 +619,8 @@ describe('operator serve command and HTTP boundary', () => {
         const response = await get(path);
         expect([response.status, await code(response)]).toEqual([status, failure]);
       }
-      result = async () => ({ ...list, protocol: 2 });
+      // Protocol 1 is the retired parent list without the seats list (#1785).
+      result = async () => ({ ...list, protocol: 1 });
       const invalid = await get(path);
       expect([invalid.status, await code(invalid)]).toEqual([503, 'parents_invalid']);
       const head = await get(path, { method: 'HEAD' });
@@ -577,6 +628,8 @@ describe('operator serve command and HTTP boundary', () => {
       // A board read in flight holds the one slot of the shared cap.
       const board = get('/api/v1/repositories/repo-a/board?parent=1474');
       await boardStarted;
+      const summariesBusy = await get('/api/v1/repositories/repo-a/board/summaries');
+      expect([summariesBusy.status, await code(summariesBusy)]).toEqual([503, 'parents_busy']);
       const busy = await get(path);
       expect([busy.status, await code(busy)]).toEqual([503, 'parents_busy']);
       hold();
@@ -642,7 +695,7 @@ describe('operator serve command and HTTP boundary', () => {
       read_board: () => new Promise(resolve => { hold = () => resolve(decodeBoard(board1474)); started(); }) });
     const cookie = ((await fetch(`${server.url}/`)).headers.get('set-cookie') ?? '').split(';')[0]!;
     let next = 0;
-    const post = (body: Record<string, unknown>) => fetch(`${server.url}/api/v1/seats/advisor/messages`, { method: 'POST',
+    const post = (body: Record<string, unknown>, route = 'messages') => fetch(`${server.url}/api/v1/seats/advisor/${route}`, { method: 'POST',
       body: JSON.stringify({ request_id: `123e4567-e89b-42d3-a456-${String(next++).padStart(12, '0')}`, ...body }),
       headers: { Origin: server.url, 'Sec-Fetch-Site': 'same-origin', 'Content-Type': 'application/json', Cookie: cookie } });
     const get = (query: string) => fetch(`${server.url}/api/v1/seats/advisor/transcript${query}`);
@@ -705,16 +758,111 @@ describe('operator serve command and HTTP boundary', () => {
       expect(await answer(await get('?repository_id=repo-a&parent=1503'))).toEqual([503, 'advisor_invalid']);
       expect((await fetch(`${server.url}/api/v1/seats/advisor/transcript?repository_id=repo-a&parent=1503`, { method: 'HEAD' })).status).toBe(405);
 
-      // A board read in flight holds the one slot of the shared cap.
+      // A boss command (#1757) names only its id: the server reads the seat status, then sends its own text through the same send.
       send = async () => sent;
+      read = async () => transcript;
+      const boss = { repository_id: 'repo-a', parent: 1503, command: 'rage' };
+      for (const body of [{ ...boss, command: 'boss' }, { ...boss, text: 'status?' }, { ...boss, parent: '1503' }]) {
+        expect(await answer(await post(body, 'boss-commands'))).toEqual([400, 'invalid_body']);
+      }
+      expect(await answer(await post(boss, 'boss-commands'))).toEqual([200, 'ok']);
+      expect([reads.at(-1), sends.at(-1)]).toMatchObject([{ repository_id: 'repo-a', parent: 1503 }, { repository_id: 'repo-a', parent: 1503 }]);
+      expect(sends.at(-1)!.text.startsWith('【大棒】检查 parent #1503 下的执行席和审查席')).toBe(true);
+      expect(audit().filter(record => record.phase === 'intent').at(-1)).toMatchObject({ operation: 'advisor_boss_rage', target: 'advisor_seat:repo-a' });
+      expect(await answer(await post(boss, 'boss-commands'))).toEqual([409, 'boss_cooldown']);
+
+      // A board read in flight holds the one slot of the shared cap.
       const board = fetch(`${server.url}/api/v1/repositories/repo-a/board?parent=1474`);
       await boardStarted;
       expect(await answer(await post(message))).toEqual([503, 'advisor_busy']);
+      expect(await answer(await post({ ...boss, command: 'mine' }, 'boss-commands'))).toEqual([503, 'advisor_busy']);
       expect(await answer(await get('?repository_id=repo-a&parent=1503'))).toEqual([503, 'advisor_busy']);
       hold();
       expect((await board).status).toBe(200);
     } finally {
       await server.close();
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
+  test('boss commands: the cooldown of a command and parent comes from the audit log; a running turn and every failure before the send prove nothing was sent', async () => {
+    const home = mkdtempSync(join(tmpdir(), 'repo-harness-boss-home-'));
+    const env = { REPO_HARNESS_HOME: home };
+    const sent = (parent: number) => ({ protocol: 1, kind: 'repo-harness.advisor-seat-send', github_repository_id: 1186405141, parent, terminal: 't9', started: true, turn: 2 });
+    const transcript = (parent: number, status: string | null) => ({ protocol: 1, kind: 'repo-harness.advisor-seat-transcript', github_repository_id: 1186405141, parent,
+      terminal: 't9', status, status_kind: null, turn: 2, complete: true, why: null, lines: [] });
+    let read: (input: BoardReadInput) => Promise<unknown> = async input => transcript(input.parent, 'idle');
+    let send: (input: BoardReadInput & { text: string }) => Promise<unknown> = async input => sent(input.parent);
+    let calls: string[] = [];
+    let clock = 0;
+    const route = advisorBossCommandWriteRoute({ admit: run => run(new AbortController().signal), env, audit_env: env, now: () => clock,
+      read: (input) => { calls.push(`read ${input.parent}`); return read(input); },
+      send: (input) => { calls.push(`send ${input.parent} ${input.text.slice(0, 4)}`); return send(input); } });
+    let next = 0;
+    const boss = async (command: string, parent: number) => {
+      calls = [];
+      const { status, body } = await runOperatorWrite(`123e4567-e89b-42d3-a456-${String(next++).padStart(12, '0')}`, route.decode({ repository_id: 'repo-a', parent, command }, []), env);
+      const { error, retry_after_seconds } = body as { error?: { code: string }; retry_after_seconds?: number };
+      return [status, error?.code ?? 'ok', retry_after_seconds ?? null, calls];
+    };
+    const auditPath = join(home, 'operator/audit.jsonl');
+    const audit = () => readFileSync(auditPath, 'utf8').split('\n').filter(Boolean).map(line => JSON.parse(line));
+    const lastSentAt = () => Date.parse(audit().filter(record => record.phase === 'intent').at(-1).recorded_at);
+    try {
+      expect(await boss('rage', 1503)).toEqual([200, 'ok', null, ['read 1503', 'send 1503 【大棒】']]);
+      expect(audit().map(record => record.phase === 'intent' ? record.operation : record.status)).toEqual(['advisor_boss_rage', 200]);
+      const rage = lastSentAt();
+      // The cooldown is per command and per parent, and ends after exactly its seconds.
+      const steps: readonly (readonly [number, string, number, readonly unknown[]])[] = [
+        [rage + 1_000, 'rage', 1503, [409, 'boss_cooldown', 1_799, []]],
+        [rage + 1_799_001, 'rage', 1503, [409, 'boss_cooldown', 1, []]],
+        [rage + 1_000, 'rage', 1504, [200, 'ok', null, ['read 1504', 'send 1504 【大棒】']]],
+        [rage + 1_000, 'carrot', 1503, [200, 'ok', null, ['read 1503', 'send 1503 【萝卜】']]],
+        [rage + 1_800_000, 'rage', 1503, [200, 'ok', null, ['read 1503', 'send 1503 【大棒】']]],
+      ];
+      for (const [at, command, parent, answer] of steps) {
+        clock = at;
+        expect([command, parent, await boss(command, parent)] as unknown[]).toEqual([command, parent, answer]);
+      }
+      expect(audit().find(record => record.status === 409)).toMatchObject({ phase: 'result', status: 409, body: { advisor_seat: { repository_id: 'repo-a', parent: 1503, terminal: null, code: 'boss_cooldown', delivery: 'not_sent' } } });
+
+      // Only a finished turn takes a boss command. A running or unknown turn is refused before the send and starts no cooldown.
+      const idle: typeof read = async input => transcript(input.parent, 'idle');
+      for (const [row, [status, code]] of ([['idle', 'ok'], ['done', 'ok'], ['working', 'advisor_turn_running'], ['blocked', 'advisor_turn_running'],
+        [null, 'advisor_turn_unknown'], ['thinking', 'advisor_turn_unknown']] as const).entries()) {
+        const parent = 1600 + row;
+        const sent = [`read ${parent}`, `send ${parent} 【排雷】`];
+        read = async input => transcript(input.parent, status);
+        expect([status, await boss('mine', parent)]).toEqual([status, code === 'ok' ? [200, 'ok', null, sent] : [409, code, null, [`read ${parent}`]]]);
+        if (code === 'ok') continue;
+        expect(audit().at(-1).body.advisor_seat).toEqual({ repository_id: 'repo-a', parent, terminal: 't9', code, delivery: 'not_sent' });
+        read = idle;
+        expect([status, await boss('mine', parent)]).toEqual([status, [200, 'ok', null, sent]]);
+      }
+      // Every failure of the read-back comes before the send, so it keeps its own code and does not start the cooldown.
+      for (const [failure, status] of [['advisor_seat_absent', 409], ['advisor_read_failed', 502], ['advisor_timeout', 504], ['advisor_unavailable', 503]] as const) {
+        read = async () => { throw new BoardReadError(failure); };
+        expect(await boss('mine', 1503)).toEqual([status, failure, null, ['read 1503']]);
+        expect(audit().at(-1).body.advisor_seat).toMatchObject({ code: failure, delivery: 'not_sent' });
+      }
+      read = async () => transcript(1504, 'idle');
+      expect(await boss('mine', 1503)).toEqual([503, 'advisor_invalid', null, ['read 1503']]);
+      read = async input => transcript(input.parent, 'idle');
+      expect(await boss('mine', 1503)).toEqual([200, 'ok', null, ['read 1503', 'send 1503 【排雷】']]);
+
+      // A send that may have run starts the cooldown, as does an intent left without a result.
+      send = async () => { throw new BoardReadError('advisor_timeout'); };
+      expect(await boss('valve', 1503)).toEqual([409, 'reconcile_required', null, ['read 1503', 'send 1503 【收放】']]);
+      clock = lastSentAt() + 1_000;
+      expect(await boss('valve', 1503)).toEqual([409, 'boss_cooldown', 3_599, []]);
+      const intent = (parent: number, recordedAt: string) => `${JSON.stringify({ protocol: 1, phase: 'intent', recorded_at: recordedAt,
+        request_id: `923e4567-e89b-42d3-a456-${String(parent).padStart(12, '0')}`, operation: 'advisor_boss_rage', target: 'advisor_seat:repo-a',
+        binding_sha256: operatorWriteBinding('advisor_boss_rage', 'advisor_seat:repo-a', { repository_id: 'repo-a', parent, command: 'rage' }) })}\n`;
+      writeFileSync(auditPath, intent(1507, new Date(clock).toISOString()) + intent(1508, 'not a time'), { flag: 'a' });
+      expect(await boss('rage', 1507)).toEqual([409, 'boss_cooldown', 1_800, []]);
+      // A send time that does not parse cannot prove the cooldown.
+      expect(await boss('rage', 1508)).toEqual([503, 'audit_unavailable', null, []]);
+    } finally {
       rmSync(home, { recursive: true, force: true });
     }
   });

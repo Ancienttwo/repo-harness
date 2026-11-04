@@ -8,7 +8,9 @@ import {
   type WorktreeCleanupResult,
 } from '../core/operator/worktree-cleanup';
 import { decodeWorktrees, type WorktreeView, type WorktreesSnapshot } from '../core/operator/worktrees';
-import { decodeCleanupExecutionResult, decodeCleanupPlan } from '../core/operator/worktree-cleanup-plan';
+import {
+  decodeCleanupExecutionResult, decodeCleanupInvestigationJob, decodeCleanupInvestigationStatus, decodeCleanupPlan,
+} from '../core/operator/worktree-cleanup-plan';
 import type { CleanupPlanFailure, CleanupPlanPorts } from './CleanupPlanReview';
 import { asApiError } from './operator-api-error';
 import type { OperatorTranslate } from './i18n';
@@ -169,6 +171,7 @@ export async function postWorktreeCleanup(body: WorktreeCleanupPost): Promise<Wo
 
 const CLEANUP_PLAN_PATH = '/api/v1/worktrees/cleanup/plan';
 const CLEANUP_EXECUTE_PATH = '/api/v1/worktrees/cleanup/execute';
+const CLEANUP_INVESTIGATION_PATH = '/api/v1/worktrees/cleanup/investigation';
 
 /** A typed refusal, a decoded 200, or the failure the review shows. Each body carries a new request_id. */
 async function postCleanupWrite<T>(path: string, body: object, decode: (value: unknown) => T): Promise<{ readonly state: 'ok'; readonly value: T } | CleanupPlanFailure> {
@@ -190,7 +193,23 @@ async function postCleanupWrite<T>(path: string, body: object, decode: (value: u
   return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
 }
 
-/** The plan and execute routes of the operator service. */
+/** The investigation status read: a decoded 200, a typed refusal, or the failure the review shows. */
+async function getCleanupInvestigation(sessionId: string): Promise<{ readonly state: 'ok'; readonly value: ReturnType<typeof decodeCleanupInvestigationStatus> } | CleanupPlanFailure> {
+  let response: Response;
+  try {
+    response = await fetch(`${CLEANUP_INVESTIGATION_PATH}/${sessionId}`, { cache: 'no-store', credentials: 'same-origin', headers: { Accept: 'application/json' } });
+  } catch {
+    return { state: 'unreachable' };
+  }
+  const payload: unknown = await response.json().catch(() => null);
+  if (response.ok) {
+    try { return { state: 'ok', value: decodeCleanupInvestigationStatus(payload) }; } catch { return { state: 'unreadable' }; }
+  }
+  const error = asApiError(payload, UNTYPED);
+  return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
+}
+
+/** The plan, execute and investigation routes of the operator service. */
 export const cleanupPlanPorts: CleanupPlanPorts = {
   open: async ids => {
     const answer = await postCleanupWrite(CLEANUP_PLAN_PATH, { request_id: crypto.randomUUID(), ids: [...ids] }, decodeCleanupPlan);
@@ -203,6 +222,16 @@ export const cleanupPlanPorts: CleanupPlanPorts = {
   execute: async request => {
     const answer = await postCleanupWrite(CLEANUP_EXECUTE_PATH, request, decodeCleanupExecutionResult);
     return answer.state === 'ok' ? { state: 'done', result: answer.value } : answer;
+  },
+  investigate: async sessionId => {
+    // The start answers with the running job; only the status read carries a plan.
+    const answer = await postCleanupWrite(CLEANUP_INVESTIGATION_PATH, { request_id: crypto.randomUUID(), session_id: sessionId },
+      value => ({ ...decodeCleanupInvestigationJob(value), plan: null }));
+    return answer.state === 'ok' ? { state: 'investigation', status: answer.value } : answer;
+  },
+  investigation: async sessionId => {
+    const answer = await getCleanupInvestigation(sessionId);
+    return answer.state === 'ok' ? { state: 'investigation', status: answer.value } : answer;
   },
 };
 

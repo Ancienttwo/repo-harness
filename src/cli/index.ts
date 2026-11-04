@@ -1049,7 +1049,7 @@ export function buildProgram(): Command {
   program.addCommand(buildBoardCommand(boardHostPorts(), attentionHostPorts()));
   program.addCommand(buildFleetCommand());
   program.addCommand(buildBotsCommand());
-  program.addCommand(buildOperatorCommand());
+  program.addCommand(buildOperatorCommand(taskReviewRunner));
   program.addCommand(buildWorktreesCommand());
   program.addCommand(buildCatchUpCommand());
   program.addCommand(buildQuotaCommand());

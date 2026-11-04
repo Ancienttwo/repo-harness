@@ -5,6 +5,7 @@ import { runRuntimeCapture } from '../../effects/operator/runtime-capture';
 import { RUNTIME_CAPTURE_OWNERSHIP_UNSUPPORTED } from '../../effects/operator/runtime-capture-writer';
 import { runtimeCaptureId, type NativeRuntimeProvider } from '../../core/operator/runtime-capture';
 import { readRepoHarnessRegistryStrictSnapshot } from '../../effects/repo-registry';
+import { runCleanupInvestigationJob, type CleanupReviewHost } from '../../effects/operator/worktree-cleanup-investigation';
 import type { CliUsageSource } from '../../effects/setup/cli-inventory';
 import { HOOK_EVENT_TELEMETRY_PATH } from '../hook/event-telemetry';
 import { buildDocSessionsCommand } from './doc-sessions';
@@ -12,12 +13,12 @@ import { buildDocSessionsCommand } from './doc-sessions';
 import {
   OPERATOR_DEFAULT_HOST,
   OPERATOR_DEFAULT_MAX_CONCURRENCY,
-  OPERATOR_DEFAULT_PORT,
   OPERATOR_DEFAULT_TIMEOUT_MS,
   OperatorServerError,
   startOperatorServer,
   type OperatorServerOptions,
 } from '../../effects/operator/server';
+import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
 
 export interface OperatorServeRawOptions {
   readonly host?: string;
@@ -138,7 +139,8 @@ export async function runOperatorServe(options: OperatorServeOptions): Promise<v
   }
 }
 
-export function buildOperatorCommand(): Command {
+/** `reviewHost` is the task-agent-host review runner that the CLI root injects; the cleanup investigation job runs codex through it. */
+export function buildOperatorCommand(reviewHost: CleanupReviewHost): Command {
   const operator = new Command('operator').description('Serve the local read-only Human Control Board');
   operator
     .command('serve')
@@ -173,6 +175,15 @@ export function buildOperatorCommand(): Command {
         process.stderr.write(`${JSON.stringify({ ok: false, error: code })}\n`);
         process.exitCode = 1;
       }
+    });
+  // The job child of POST /api/v1/worktrees/cleanup/investigation. Only the operator server starts it.
+  operator
+    .command('cleanup-investigation-job', { hidden: true })
+    .argument('<session-id>')
+    .argument('<job-id>')
+    .argument('<deadline-ms>')
+    .action(async (sessionId: string, jobId: string, deadlineMs: string) => {
+      await runCleanupInvestigationJob(sessionId, jobId, Number(deadlineMs), reviewHost);
     });
   operator.addCommand(buildDocSessionsCommand());
   return operator;

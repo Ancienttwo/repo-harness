@@ -6,6 +6,9 @@ import { startDevActivityCollector } from '../dev-activity/collector';
 import { startWorktreeCollector } from './worktree-collector';
 import { OPERATOR_WORKTREES_CLEANUP_ROUTE, worktreeCleanupWriteRoute } from './worktree-cleanup';
 import { OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE, OPERATOR_WORKTREES_CLEANUP_PLAN_ROUTE, worktreeCleanupExecuteWriteRoute, worktreeCleanupPlanWriteRoute } from './worktree-cleanup-route';
+import {
+  OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE, OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE, readCleanupInvestigationStatus, worktreeCleanupInvestigationWriteRoute,
+} from './worktree-cleanup-investigation';
 import { decodeWorktrees, unavailableWorktrees, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import { decodeDevActivitySnapshot, unavailableDevActivitySnapshot } from '../../core/dev-activity/decode';
 import { architecturePullRequestsSource } from '../../core/dev-activity/architecture';
@@ -38,8 +41,10 @@ import { decodeBoard } from '../../core/board/board';
 import { decodeQuotaReport, OPERATOR_QUOTA_PATH } from '../../core/operator/quota';
 import { readQuotaReport } from './quota';
 import { decodeBoardParents } from '../../core/board/parents';
+import { decodeBoardSummaries } from '../../core/board/summary';
+import { readBoardSummaries, writeBoardSummary } from './board-summary';
 import { BoardReadError, readRepositoryAdvisorTranscript, readRepositoryBoard, readRepositoryBoardParents, type BoardParentsReadInput, type BoardReadInput } from './board-read';
-import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorSeatWriteRoute } from './advisor-seat-route';
+import { ADVISOR_SEAT_REFUSALS, OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE, OPERATOR_ADVISOR_MESSAGES_ROUTE, OPERATOR_ADVISOR_TRANSCRIPT_PATH, advisorBossCommandWriteRoute, advisorSeatWriteRoute } from './advisor-seat-route';
 import { decodeAdvisorSeatRequest, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import type { BoardParentsReadFailure, BoardReadFailure } from '../../core/operator/board-read';
 import { startNotifyCollector, type NotifyCacheV1 } from './notify-collector';
@@ -63,11 +68,11 @@ import { AgentsConfigurationError } from '../configuration/agents-configuration'
 import type { AgentRuntimesCacheV1 } from '../../core/operator/agents-settings';
 import { OPERATOR_SESSION_EVENTS_ROUTE } from './doc-session-events';
 import { OPERATOR_SESSIONS_ROUTE, docSessionCreateRoute } from './doc-session';
+import { OPERATOR_DEFAULT_PORT } from '../../core/review/operator-console-port';
 
 export const OPERATOR_SERVER_PROTOCOL = 1 as const;
 export const OPERATOR_SERVICE_NAME = 'repo-harness-operator' as const;
 export const OPERATOR_DEFAULT_HOST = '127.0.0.1' as const;
-export const OPERATOR_DEFAULT_PORT = 4318 as const;
 export const OPERATOR_DEFAULT_MAX_CONCURRENCY = 4 as const;
 export const OPERATOR_DEFAULT_TIMEOUT_MS = 30_000 as const;
 const OPERATOR_WORKER_CLEANUP_GRACE_MS = 500;
@@ -97,6 +102,7 @@ export const OPERATOR_TESTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za
 export const OPERATOR_BOARD_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board$/u;
 /** The open parent issues of one registered repository: the entry of the Board page. */
 export const OPERATOR_BOARD_PARENTS_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/parents$/u;
+export const OPERATOR_BOARD_SUMMARIES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/board\/summaries$/u;
 export const OPERATOR_EXECUTION_STATE_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/execution$/u;
 /** The stored task inbox of one task that the execution view of the same repository lists as verified. */
 export const OPERATOR_TASK_MESSAGES_ROUTE = /^\/api\/v1\/repositories\/([A-Za-z0-9][A-Za-z0-9._-]{0,127})\/tasks\/([0-9a-f]{64})\/messages$/u;
@@ -141,6 +147,9 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   // Plans and runs the authorized removal of non-green worktrees; both effects run in a supervised child process.
   Object.freeze({ id: 'worktrees_cleanup_plan', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_PLAN_ROUTE.source, write: true }),
   Object.freeze({ id: 'worktrees_cleanup_execute', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_EXECUTE_ROUTE.source, write: true }),
+  // Starts the agent investigation of one plan session in a supervised job child; the status route reads its record.
+  Object.freeze({ id: 'worktrees_cleanup_investigation', method: 'POST', pattern: OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_ROUTE.source, write: true }),
+  Object.freeze({ id: 'worktrees_cleanup_investigation_status', method: 'GET', pattern: OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE.source, write: false }),
   Object.freeze({ id: 'setup', method: 'GET', pattern: OPERATOR_SETUP_PATH, write: false }),
   Object.freeze({ id: 'bot_access', method: 'GET', pattern: OPERATOR_BOT_ACCESS_PATH, write: false }),
   Object.freeze({ id: 'bot_reviews', method: 'GET', pattern: OPERATOR_BOT_REVIEWS_PATH, write: false }),
@@ -148,8 +157,11 @@ export const OPERATOR_ROUTES: readonly OperatorRouteV1[] = Object.freeze([
   Object.freeze({ id: 'tests', method: 'GET', pattern: OPERATOR_TESTS_ROUTE.source, write: false }),
   Object.freeze({ id: 'board', method: 'GET', pattern: OPERATOR_BOARD_ROUTE.source, write: false }),
   Object.freeze({ id: 'board_parents', method: 'GET', pattern: OPERATOR_BOARD_PARENTS_ROUTE.source, write: false }),
+  Object.freeze({ id: 'board_summaries', method: 'GET', pattern: OPERATOR_BOARD_SUMMARIES_ROUTE.source, write: false }),
   // The only console write into an agent terminal (#1756, D11): plain text to the one advisor seat of a board, in a board CLI child.
   Object.freeze({ id: 'advisor_seat_messages', method: 'POST', pattern: OPERATOR_ADVISOR_MESSAGES_ROUTE.source, write: true }),
+  // The four boss commands (#1757): a command id, sent as its server-side text through the same advisor seat send.
+  Object.freeze({ id: 'advisor_boss_commands', method: 'POST', pattern: OPERATOR_ADVISOR_BOSS_COMMANDS_ROUTE.source, write: true }),
   Object.freeze({ id: 'advisor_seat_transcript', method: 'GET', pattern: OPERATOR_ADVISOR_TRANSCRIPT_PATH, write: false }),
   Object.freeze({ id: 'execution_state', method: 'GET', pattern: OPERATOR_EXECUTION_STATE_ROUTE.source, write: false }),
   Object.freeze({ id: 'task_messages', method: 'GET', pattern: OPERATOR_TASK_MESSAGES_ROUTE.source, write: false }),
@@ -1050,11 +1062,12 @@ export async function startOperatorServer(
    * One board CLI read per request. The CLI's JSON is decoded once here; a
    * client that leaves aborts the run.
    */
-  const handleBoardCliRead = <F extends string>(
+  const handleBoardCliRead = <F extends string, T>(
     request: IncomingMessage, response: ServerResponse, headOnly: boolean,
     refusals: Readonly<Record<F, { readonly status: number; readonly message: string; readonly next_action: string }>>,
     codes: { readonly busy: F; readonly invalid: F; readonly unavailable: F },
-    read: (signal: AbortSignal) => Promise<unknown>, decode: (value: unknown) => unknown,
+    read: (signal: AbortSignal) => Promise<unknown>, decode: (value: unknown) => T,
+    completed?: (value: T) => void,
   ): void => {
     const refuse = (code: F) => {
       const refusal = refusals[code];
@@ -1066,9 +1079,10 @@ export async function startOperatorServer(
     response.once('close', onClose);
     void run.result
       .then((value) => {
-        if (response.destroyed) return;
         let decoded;
-        try { decoded = decode(value); } catch { refuse(codes.invalid); return; }
+        try { decoded = decode(value); } catch { if (!response.destroyed) refuse(codes.invalid); return; }
+        try { completed?.(decoded); } catch { if (!response.destroyed) refuse(codes.unavailable); return; }
+        if (response.destroyed) return;
         sendJson(response, 200, decoded, headOnly);
       }, (error: unknown) => {
         if (response.destroyed) return;
@@ -1140,8 +1154,11 @@ export async function startOperatorServer(
     worktreeCleanupWriteRoute(options.env),
     worktreeCleanupPlanWriteRoute({ env: options.env }),
     worktreeCleanupExecuteWriteRoute({ env: options.env }),
+    worktreeCleanupInvestigationWriteRoute({ env: options.env, read_quota: options.read_quota }),
     // A client that leaves does not abort a send; only the deadline or the server close does.
     advisorSeatWriteRoute({ admit: run => admitBoardCli(run)?.result ?? null, env: boardEnvironment, send: options.send_advisor }),
+    advisorBossCommandWriteRoute({ admit: run => admitBoardCli(run)?.result ?? null, env: boardEnvironment, audit_env: options.env,
+      send: options.send_advisor, read: options.read_advisor_transcript }),
   ].filter(route => !injectedWriteRoutes.some(injected => injected.id === route.id))
     .concat(injectedWriteRoutes);
   // The inventory is the one write authority: a handler it does not declare
@@ -1422,6 +1439,21 @@ export async function startOperatorServer(
       return;
     }
 
+    const investigation = OPERATOR_WORKTREES_CLEANUP_INVESTIGATION_STATUS_ROUTE.exec(pathname);
+    if (investigation !== null) {
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The investigation status accepts no query selectors.'), headOnly);
+        return;
+      }
+      const status = readCleanupInvestigationStatus({ ...process.env, ...options.env }, investigation[1]!);
+      if (status === null) {
+        sendRefusal(request, response, 404, errorBody('investigation_not_found', 'No investigation of this cleanup session exists.', 'Start an investigation from the plan page.'), headOnly);
+        return;
+      }
+      sendJson(response, 200, status, headOnly);
+      return;
+    }
+
     if (pathname === OPERATOR_QUOTA_PATH) {
       if (url.search !== '') {
         sendRefusal(request, response, 400, errorBody('invalid_request', 'Quota accepts no query selectors.'), headOnly);
@@ -1554,7 +1586,8 @@ export async function startOperatorServer(
       }
       const read = options.read_board ?? readRepositoryBoard;
       handleBoardCliRead(request, response, headOnly, BOARD_UNAVAILABLE, { busy: 'board_busy', invalid: 'board_invalid', unavailable: 'board_unavailable' },
-        signal => read({ repository_id: boardRoute[1]!, parent: Number(parent), env: boardEnvironment, signal }), decodeBoard);
+        signal => read({ repository_id: boardRoute[1]!, parent: Number(parent), env: boardEnvironment, signal }), decodeBoard,
+        board => writeBoardSummary(boardEnvironment, boardRoute[1]!, board));
       return;
     }
 
@@ -1577,6 +1610,23 @@ export async function startOperatorServer(
       const read = options.read_advisor_transcript ?? readRepositoryAdvisorTranscript;
       handleBoardCliRead(request, response, headOnly, ADVISOR_SEAT_REFUSALS, { busy: 'advisor_busy', invalid: 'advisor_invalid', unavailable: 'advisor_unavailable' },
         signal => read({ ...subject, env: boardEnvironment, signal }), decodeAdvisorSeatTranscript);
+      return;
+    }
+
+    const summariesRoute = OPERATOR_BOARD_SUMMARIES_ROUTE.exec(pathname);
+    if (summariesRoute !== null) {
+      if (headOnly) {
+        sendRefusal(request, response, 405, errorBody('method_not_allowed', 'The board summaries route supports only GET.'), true, { Allow: 'GET' });
+        return;
+      }
+      if (url.search !== '') {
+        sendRefusal(request, response, 400, errorBody('invalid_request', 'The board summaries route accepts no query parameters.'), headOnly);
+        return;
+      }
+      const read = options.read_board_parents ?? readRepositoryBoardParents;
+      handleBoardCliRead(request, response, headOnly, BOARD_PARENTS_UNAVAILABLE, { busy: 'parents_busy', invalid: 'parents_invalid', unavailable: 'parents_unavailable' },
+        signal => read({ repository_id: summariesRoute[1]!, env: boardEnvironment, signal }), value =>
+          decodeBoardSummaries(readBoardSummaries(boardEnvironment, summariesRoute[1]!, decodeBoardParents(value))));
       return;
     }
 

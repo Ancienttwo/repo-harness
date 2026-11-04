@@ -4,8 +4,9 @@ import { MagnifyingGlassIcon, WarningIcon } from '@phosphor-icons/react';
 import type { BoardFindingV1 } from '../core/board/attention';
 import type { BoardItemV1, BoardPullRequestV1, BoardV1 } from '../core/board/board';
 import type { BoardParentV1 } from '../core/board/parents';
+import { primaryPullRequest } from '../core/board/pull-requests';
 import {
-  BOARD_STAGES, findingItem, itemStage, itemTerminals, primaryPullRequest, shippedToday,
+  BOARD_STAGES, findingItem, itemStage, itemTerminals, shippedToday,
   type BoardParentsReader, type BoardParentsView, type BoardReason, type BoardStage, type BoardView,
 } from './board-view';
 import { officeRoom } from './board-office';

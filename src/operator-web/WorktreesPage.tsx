@@ -196,8 +196,8 @@ function CleanupResult({ cleanup, t }: { readonly cleanup: WorktreeCleanup; read
 
 /**
  * Every worktree the collector found. Green rows start checked and one click
- * cleans the checked ones; yellow and red rows cannot be selected (5.1). A
- * non-green row is authorized only on the cleanup plan review (#1277 S3).
+ * cleans the checked ones (5.1). A registered non-green row starts unchecked
+ * and is authorized only on the cleanup plan review (#1277 S3).
  */
 export function WorktreesPage({ view, cleanup, plan, now, t }: {
   readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly plan: CleanupPlanPorts | undefined; readonly now: number; readonly t: OperatorTranslate;
@@ -205,13 +205,14 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
   const digests = useRowDigests(cleanup.selectable);
   // The ids are fixed when the review opens, so a list refresh does not ask for a new plan.
   const [reviewing, setReviewing] = useState<readonly string[] | null>(null);
-  const [planExcluded, setPlanExcluded] = useState<ReadonlySet<string>>(() => new Set());
-  const planToggle = (id: string, on: boolean) => setPlanExcluded(current => {
+  // The owner checks each plan row, so a row the collector adds later also starts unchecked.
+  const [planChecked, setPlanChecked] = useState<ReadonlySet<string>>(() => new Set());
+  const planToggle = (id: string, on: boolean) => setPlanChecked(current => {
     const next = new Set(current);
-    if (on) next.delete(id); else next.add(id);
+    if (on) next.add(id); else next.delete(id);
     return next;
   });
-  if (reviewing && plan) return <CleanupPlanReview ports={plan} ids={reviewing} now={now} t={t} onBack={() => { setReviewing(null); setPlanExcluded(new Set()); cleanup.reselect(); }} />;
+  if (reviewing && plan) return <CleanupPlanReview ports={plan} ids={reviewing} now={now} t={t} onBack={() => { setReviewing(null); setPlanChecked(new Set()); cleanup.reselect(); }} />;
   const header = <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.title')}</h1></header>;
   if (view.kind === 'loading') return <div data-worktrees-page="pending">{header}<BoardState loading title={t('freshness.worktrees.loading')} description={t('worktrees.pending.body')} /></div>;
   if (view.kind === 'unreachable') return <div data-worktrees-page="unreachable">{header}<BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="repo-harness operator serve" /></div>;
@@ -222,9 +223,9 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
   // The plan route observes registered non-green worktrees; a primary checkout or an orphan is never planned.
   const planIds = plan ? snapshot.repositories.flatMap(repository => repository.worktrees)
     .filter(tree => tree.judgment !== 'green' && !tree.reasons.includes('primary') && !tree.reasons.includes('unregistered')).map(tree => tree.id) : [];
-  // Each review takes one batch of checked rows, so every row is reachable when there are more than one plan holds.
+  // Each review takes one batch of checked rows; only a row of the current list counts.
   const planCandidates = new Set(planIds);
-  const planSelected = planIds.filter(id => !planExcluded.has(id));
+  const planSelected = planIds.filter(id => planChecked.has(id));
   const planOverLimit = planSelected.length > WORKTREE_CLEANUP_MAX_IDS;
   const running = cleanup.state.kind === 'running';
   const count = cleanup.state.kind === 'running' ? cleanup.state.count : cleanup.selected.length;
@@ -232,7 +233,7 @@ export function WorktreesPage({ view, cleanup, plan, now, t }: {
   const selectable = new Set(cleanup.selectable.map(tree => tree.id));
   const checked = new Set(cleanup.selected.map(tree => tree.id));
   const rowCleanup = (tree: WorktreeView): RowCleanup => planCandidates.has(tree.id)
-    ? { selectable: true, checked: !planExcluded.has(tree.id), removed: false, locked: running, digest: undefined, toggle: planToggle }
+    ? { selectable: true, checked: planChecked.has(tree.id), removed: false, locked: running, digest: undefined, toggle: planToggle }
     : { selectable: selectable.has(tree.id), checked: checked.has(tree.id), removed: cleanup.removed.has(tree.id), locked: running, digest: digests[tree.id], toggle: cleanup.toggle };
   return (
     <div className="flex flex-col gap-5" data-worktrees-page={view.refreshFailed ? 'refresh-failed' : snapshot.status}>
