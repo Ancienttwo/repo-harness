@@ -1,5 +1,5 @@
 import { expect, test } from 'bun:test';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { chmodSync, existsSync, mkdirSync, readFileSync, readdirSync, realpathSync, rmSync, statSync, symlinkSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import {
@@ -338,14 +338,20 @@ darwinRouteTest('decoded advice becomes a new plan version with nothing authoriz
   expect(existsSync(f.tree)).toBe(true);
 });
 
-darwinRouteTest('zero-model probes through the launcher: the fake codex cannot read or write a target worktree or write the primary checkout, and writes only its output', async f => {
+darwinRouteTest('zero-model probes through the launcher: the fake codex cannot read or write a target worktree, write the primary checkout or connect to localhost, and writes only its output', async f => {
   const first = createCleanupSessionPlan([f.id], f.options());
   const session = loadCleanupSession(f.env, first.session_id);
   const run = prepareCleanupInvestigation(f.env, first.session_id, 'c'.repeat(32), [session.items[f.id]!.target]);
   const common = realpathSync(join(f.repo, '.git'));
-  expect(run.paths.cleanupReadDenied).toEqual([common, join(common, 'worktrees/repo-wt-feature'), realpathSync(f.tree)].sort());
+  expect(run.paths.cleanup?.readDenied).toEqual([common, join(common, 'worktrees/repo-wt-feature'), realpathSync(f.tree)].sort());
   const bin = join(f.parent, 'fake-codex-bin'); mkdirSync(bin);
   const outside = join(f.parent, 'outside.txt');
+  // Listeners make a refused connect come from the profile, not from a closed port.
+  const v4 = Bun.listen({ hostname: '127.0.0.1', port: 0, socket: { data() {} } });
+  const v6 = Bun.listen({ hostname: '::1', port: 0, socket: { data() {} } });
+  for (const [host, port] of [['127.0.0.1', v4.port], ['::1', v6.port]] as const) {
+    expect(spawnSync('/usr/bin/nc', ['-z', '-G', '2', host, String(port)]).status).toBe(0);
+  }
   // Each line names one access and whether the OS allowed it.
   writeFileSync(join(bin, 'codex'), `#!/bin/sh
 probe() { name="$1"; shift; if "$@" >/dev/null 2>&1; then echo "$name allowed"; else echo "$name denied"; fi; }
@@ -358,14 +364,18 @@ probe write-primary /bin/sh -c "echo changed > '${f.repo}/tracked.txt'"
 probe write-outside /bin/sh -c "echo changed > '${outside}'"
 probe write-output /bin/sh -c "echo written > '${run.output}/probe.txt'"
 probe read-manifest-dir /bin/ls '${run.output}'
+probe connect-localhost-v4 /usr/bin/nc -z -G 2 127.0.0.1 ${v4.port}
+probe connect-localhost-v6 /usr/bin/nc -z -G 2 ::1 ${v6.port}
 `);
   chmodSync(join(bin, 'codex'), 0o755);
   const vendor = Bun.which('codex', { PATH: bin })!;
   expect(vendor).toBe(join(bin, 'codex'));
   const launcher = prepareReviewLauncher(run.control, run.policyFile, vendor);
   const probed = runLauncher(launcher, bin);
+  v4.stop(true); v6.stop(true);
   expect(probed).toEqual(['read-target-file denied', 'list-target denied', 'read-target-git-dir denied', 'read-common-git-dir denied', 'write-target denied',
-    'write-primary denied', 'write-outside denied', 'write-output allowed', 'read-manifest-dir allowed']);
+    'write-primary denied', 'write-outside denied', 'write-output allowed', 'read-manifest-dir allowed',
+    'connect-localhost-v4 denied', 'connect-localhost-v6 denied']);
   expect(readFileSync(join(f.tree, 'tracked.txt'), 'utf8')).toBe('reviewed change\n');
   expect(readFileSync(join(f.repo, 'tracked.txt'), 'utf8')).toBe('base\n');
   expect(existsSync(outside)).toBe(false);

@@ -990,14 +990,14 @@ test('OAR isolation: reject authority overlap and symlink output roots before ex
   const link = join(root, 'link'); symlinkSync(output, link);
   expect(() => reviewIsolationPolicy({ ...spec, output: link })).toThrow('OUTPUT_UNSAFE');
   expect(() => reviewIsolationPolicy(spec, 'win32')).toThrow('UNSUPPORTED_PLATFORM');
-  // The cleanup read rule (#1721) applies only to a caller that names its roots; a root must not overlap output or be a link.
+  // The cleanup rules (#1721) apply only to the cleanup caller; a read root must not overlap output or be a link.
   // The policy text is the same on every host; only its enforcement needs macOS.
-  expect(reviewIsolationPolicy(spec, 'darwin')).not.toContain('file-read');
+  expect(reviewIsolationPolicy(spec, 'darwin')).not.toMatch(/file-read|remote tcp/u);
   const target = realpathSync(subject);
-  expect(reviewIsolationPolicy({ ...spec, cleanupReadDenied: [target] }, 'darwin')).toBe(`${reviewIsolationPolicy(spec, 'darwin')}(deny file-read* (subpath ${JSON.stringify(target)}))\n`);
-  expect(() => reviewIsolationPolicy({ ...spec, cleanupReadDenied: [root] })).toThrow('OVERLAPS_AUTHORITY');
+  expect(reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [target] } }, 'darwin')).toBe(`${reviewIsolationPolicy(spec, 'darwin')}(deny file-read* (subpath ${JSON.stringify(target)}))\n(deny network-outbound (remote tcp "localhost:*"))\n`);
+  expect(() => reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [root] } })).toThrow('OVERLAPS_AUTHORITY');
   const subjectLink = join(root, 'subject-link'); symlinkSync(subject, subjectLink);
-  expect(() => reviewIsolationPolicy({ ...spec, cleanupReadDenied: [subjectLink] })).toThrow('PROTECTED_PATH_UNSAFE');
+  expect(() => reviewIsolationPolicy({ ...spec, cleanup: { readDenied: [subjectLink] } })).toThrow('PROTECTED_PATH_UNSAFE');
 });
 
 async function runOarNodeFixture(label: string, body: string, confined = true, during?: (output: string, pid: number) => Promise<void>) {

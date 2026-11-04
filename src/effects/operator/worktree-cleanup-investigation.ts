@@ -193,7 +193,7 @@ export function prepareCleanupInvestigation(env: NodeJS.ProcessEnv, sessionId: s
   const repository = realpathSync(targets[0]!.repository);
   const paths: CleanupReviewIsolationPaths = { subject: repository, primary: repository, ownerRecord: cleanupSessionDirectory(env, sessionId), journal: control,
     gitCommonDir: resolveGitCommonDirectory(repository, configuredGitBinary(env), 30_000, withoutRepositorySelectingGitEnv(env)), output,
-    cleanupReadDenied: readDeniedRoots(targets, env) };
+    cleanup: { readDenied: readDeniedRoots(targets, env) } };
   let policy: string;
   try { policy = reviewIsolationPolicy(paths); } catch (error) {
     if (error instanceof Error && error.message.startsWith('OAR_REVIEW_')) throw new CleanupInvestigationError('isolation_unproven');
@@ -201,7 +201,7 @@ export function prepareCleanupInvestigation(env: NodeJS.ProcessEnv, sessionId: s
   }
   const policyFile = join(control, 'isolation.sb');
   writeFileSync(policyFile, policy, { flag: 'wx', mode: 0o600 });
-  assertReadDenied(policyFile, paths.cleanupReadDenied!);
+  assertReadDenied(policyFile, paths.cleanup!.readDenied);
   return { control, output, policyFile, paths };
 }
 
