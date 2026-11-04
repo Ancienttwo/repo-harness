@@ -109,8 +109,8 @@ plugin selection. With no flag it installs core and every plugin that the host
 can run; `--plugins <ids>` selects exactly those plugins, and `--no-plugins`
 installs core only. It is idempotent and does not apply repo-local workflow
 files to the current directory. `--dry-run --json` lists the plugins to install,
-keep, remove and skip first. Plugins, the protocol 2 to 3 migration, native
-Codex delegation authority, refresh commands, and the read-only `setup check`
+keep, remove and skip first. Plugins, the retired install-state protocols
+and their bridge releases, native Codex delegation authority, refresh commands, and the read-only `setup check`
 audit:
 [`install-profiles.md`](docs/reference-configs/install-profiles.md).
 
@@ -588,8 +588,8 @@ repo-harness commit scripts or hooks unless that repo adopts the same policy.
 
 ## Current Release
 
-- npm package: `repo-harness@0.25.4`
-- Generated workflow stamp: `repo-harness@0.25.4+template@0.25.4`
+- npm package: `repo-harness@0.26.0`
+- Generated workflow stamp: `repo-harness@0.26.0+template@0.26.0`
 - GitHub repository: `Ancienttwo/repo-harness`
 - Release notes and history: [`docs/CHANGELOG.md`](docs/CHANGELOG.md)
 

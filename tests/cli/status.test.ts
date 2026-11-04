@@ -435,12 +435,12 @@ describe('status command (Phase 1C)', () => {
         ownership_manifest: [],
         previous: null,
       }));
-      const migratable = runStatus();
-      expect(migratable.installState).toMatchObject({
+      const retired = runStatus();
+      expect(retired.installState).toMatchObject({
         recorded: 'invalid',
-        code: 'install_state_migration_required',
+        code: 'install_state_protocol_retired',
       });
-      expect(formatStatus(migratable, false)).toContain('repo-harness update');
+      expect(formatStatus(retired, false)).toContain('bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4');
     });
   });
 

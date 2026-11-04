@@ -123,7 +123,6 @@ export type InstallStateSnapshot = Omit<InstallState, 'previous'>;
 
 export type InstallStateErrorCode =
   | 'install_state_missing'
-  | 'install_state_migration_required'
   | 'install_state_protocol_retired'
   | 'install_state_invalid'
   | 'install_state_invalid_ownership'
@@ -184,7 +183,7 @@ export interface SelectionResolution {
   readonly notAdded: readonly PluginId[];
 }
 
-export const UPDATE_COMMAND = 'repo-harness update';
+const UPDATE_COMMAND = 'repo-harness update';
 
 interface HostSurfaceSnapshot {
   readonly path: string;
@@ -533,7 +532,7 @@ export function managedInstallSurfaceIsCurrent(surface: Pick<ManagedInstallSurfa
 }
 
 /** Generated agent fleet targets written by scripts/install-agent-fleet.sh. */
-export function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
+function agentFleetTargetPaths(env: NodeJS.ProcessEnv = process.env): readonly string[] {
   const home = env.HOME ?? homedir();
   return MANAGED_AGENTS.flatMap((agent) => [
     join(home, '.codex', 'agents', `${agent}.toml`),
@@ -602,7 +601,7 @@ function verifiedAgentFleetSurfaces(env: NodeJS.ProcessEnv): readonly ManagedIns
  * The one order of every written ownership manifest, so a writer that changes
  * nothing rewrites no bytes and an unchanged check compares like with like.
  */
-export function canonicalOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInstallSurface[] {
+function canonicalOwnership(surfaces: readonly ManagedInstallSurface[]): ManagedInstallSurface[] {
   return [...surfaces].sort((left, right) => left.path.localeCompare(right.path)
     || left.type.localeCompare(right.type)
     || (left.managed_marker ?? '').localeCompare(right.managed_marker ?? ''));
@@ -736,19 +735,11 @@ export function recordUnresolvedPiOwnership(
   writeState({ ...state, ownership_manifest: canonicalOwnership([...retained, ...pending.values()]) }, env);
 }
 
-/**
- * Candidate processes publish ownership into the same ledger as the parent.
- * `readSnapshot` reads the pre-transaction state file; the protocol 2 -> 3
- * update passes the one-shot reader, because its snapshot predates the migration.
- */
-export function newPiPackagesSinceTransaction(
-  transaction: InstallHostTransaction,
-  env: NodeJS.ProcessEnv,
-  readSnapshotSurfaces: (raw: unknown, path: string) => readonly Pick<ManagedInstallSurface, 'path' | 'type'>[] = (raw, path) => parseState(raw, path, env).ownership_manifest,
-): readonly ManagedInstallSurface[] {
+/** Candidate processes publish ownership into the same ledger as the parent. */
+export function newPiPackagesSinceTransaction(transaction: InstallHostTransaction, env: NodeJS.ProcessEnv): readonly ManagedInstallSurface[] {
   const snapshot = transaction.snapshots.find(entry => entry.path === installProfileStatePath(env));
   const before = snapshot?.existed && snapshot.backup_path
-    ? readSnapshotSurfaces(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path)
+    ? parseState(JSON.parse(readFileSync(snapshot.backup_path, 'utf8')), snapshot.backup_path, env).ownership_manifest
     : [];
   const sources = new Set(before.filter(surface => surface.type === 'pi-package').map(surface => surface.path));
   const current = readInstallState(env);
@@ -1093,12 +1084,8 @@ function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
-/**
- * The surface fields shared by every protocol that records ownership: path
- * allowlist, type and hash shape. The protocol 2 -> 3 one-shot reuses it for
- * its source ledger, so both protocols accept the same set of paths.
- */
-export function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.ProcessEnv, extraPath?: string): boolean {
+/** The path allowlist, type and hash shape of a recorded ownership surface. */
+function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.ProcessEnv): boolean {
   if (raw.type === 'pi-package') {
     return raw.authority === 'repo-harness-install-transaction' && raw.removal === 'managed-surfaces-only'
       && raw.path === bunGlobalPackageRoot(env) && raw.managed_marker === 'pi-package-source'
@@ -1109,7 +1096,7 @@ export function validSurfaceShape(raw: Record<string, unknown>, env: NodeJS.Proc
     raw.authority === 'repo-harness-install-transaction'
     && raw.removal === 'managed-surfaces-only'
     && typeof raw.path === 'string'
-    && (allowedPaths.has(raw.path) || raw.path === extraPath || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
+    && (allowedPaths.has(raw.path) || isDiscoveredFacadePath(raw.path, env.HOME ?? homedir(), env))
     && ['directory-copy', 'symlink', 'managed-file'].includes(String(raw.type))
     && (raw.content_hash === null || typeof raw.content_hash === 'string')
     && (raw.managed_marker === null || typeof raw.managed_marker === 'string')
@@ -1159,17 +1146,25 @@ function parseSelection(raw: unknown, ids: readonly PluginId[], path: string, la
   return ids;
 }
 
+/** 0.25.4 is the last release that reads protocol 2: its `update` migrates the state to protocol 3 (#1607). */
+const PROTOCOL_2_BRIDGE = 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4';
+
+function currentPackageUpdate(): string {
+  return `bun add -g repo-harness@${installedPackageVersion()} --no-cache && repo-harness update`;
+}
+
 function parseStateBase(raw: unknown, path: string, env: NodeJS.ProcessEnv, label: string): InstallStateSnapshot {
   if (!isRecord(raw)) throw invalid(path, `${label} is not an object`);
   if (raw.protocol === 1) {
     throw new InstallStateError('install_state_protocol_retired', path,
       `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.x bridge first: `
       + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (repo-harness install --help in 0.25.3 names it); '
-      + `then: bun add -g repo-harness@${installedPackageVersion()} --no-cache && repo-harness update`);
+      + `then the protocol 2 bridge: ${PROTOCOL_2_BRIDGE}; then: ${currentPackageUpdate()}`);
   }
   if (raw.protocol === 2) {
-    throw new InstallStateError('install_state_migration_required', path,
-      `install state ${path} is protocol 2; run: repo-harness update (it migrates the state to protocol 3 under the install transaction)`);
+    throw new InstallStateError('install_state_protocol_retired', path,
+      `install state ${path} is protocol 2, which this package no longer reads. Migrate it with the 0.25.4 bridge first: `
+      + `${PROTOCOL_2_BRIDGE} (its update migrates protocol 2 to 3); then: ${currentPackageUpdate()}`);
   }
   if (raw.protocol !== INSTALL_STATE_PROTOCOL) throw invalid(path, `${label} has unsupported protocol ${String(raw.protocol)}`);
   if (!isRecord(raw.core) || Object.keys(raw.core).join(',') !== 'version' || typeof raw.core.version !== 'string' || !raw.core.version.trim()) {
@@ -1204,7 +1199,7 @@ export function parseState(raw: unknown, path: string, env: NodeJS.ProcessEnv): 
 }
 
 /** Read the raw state file, or null when it is absent. */
-export function readRawInstallState(env: NodeJS.ProcessEnv = process.env): unknown {
+function readRawInstallState(env: NodeJS.ProcessEnv = process.env): unknown {
   const path = installProfileStatePath(env);
   if (!existsSync(path)) return null;
   try {
@@ -1352,7 +1347,7 @@ export function installStateStatus(
 }
 
 /** Why a host plugin cannot be selected now, or null when its host program is present. Other read errors throw. */
-export function hostPluginAbsence(_id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
+function hostPluginAbsence(_id: (typeof HOST_PROGRAM_PLUGINS)[number], env: NodeJS.ProcessEnv): string | null {
   return piExecutable(env) === null ? 'pi is not on PATH' : null;
 }
 
@@ -1502,7 +1497,7 @@ export function planInstallSelection(
   };
 }
 
-export function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
+function writeState(state: InstallState, env: NodeJS.ProcessEnv): void {
   const target = installProfileStatePath(env);
   mkdirSync(dirname(target), { recursive: true });
   const temp = `${target}.tmp-${process.pid}-${Date.now()}`;

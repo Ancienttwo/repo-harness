@@ -450,15 +450,23 @@ describe('init-hook command', () => {
     });
   });
 
-  test('a protocol 2 install state requires migration even when adapter count is complete', () => {
-    withTempHome((home, repo) => {
+  test('an unreadable or retired install state requires manual repair without an inapplicable command', () => {
+    const rows = [
+      { code: 'install_state_invalid', error: 'install state is not valid JSON' },
+      {
+        code: 'install_state_protocol_retired',
+        error: 'install state is protocol 2, which this package no longer reads. Migrate it with the 0.25.4 bridge first: '
+          + 'bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4',
+      },
+    ] as const;
+    for (const row of rows) withTempHome((home, repo) => {
       mkdirSync(join(home, '.codex'), { recursive: true });
       writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
       const statusReport = baseStatusReport();
       statusReport.installState = {
         recorded: 'invalid',
-        code: 'install_state_migration_required',
-        error: 'install state is protocol 2; run: repo-harness update',
+        code: row.code,
+        error: row.error,
         path: join(home, '.repo-harness', 'install-state.json'),
       };
 
@@ -472,39 +480,11 @@ describe('init-hook command', () => {
       });
 
       const adapter = report.checks.find((entry) => entry.id === 'status.adapter.codex');
-      const migration = report.agent_actions.find((entry) => entry.id === 'install-state.migrate');
-      expect(adapter?.status).toBe('needs_agent');
-      expect(adapter?.detail).toContain('install state is protocol 2');
-      expect(migration?.command).toBe('repo-harness update');
-      expect(migration?.targets).toEqual([join(home, '.repo-harness', 'install-state.json')]);
-      expect(report.agent_actions.find((entry) => entry.id === 'adapter.codex.install')).toBeUndefined();
-    });
-  });
-
-  test('corrupt install state requires manual repair without an inapplicable command', () => {
-    withTempHome((home, repo) => {
-      mkdirSync(join(home, '.codex'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'AGENTS.md'), currentRulesBlock());
-      const statusReport = baseStatusReport();
-      statusReport.installState = {
-        recorded: 'invalid',
-        code: 'install_state_invalid',
-        error: 'install state is not valid JSON',
-        path: join(home, '.repo-harness', 'install-state.json'),
-      };
-
-      const report = runInitHook(CLI_PORTS.doctor, {
-        cwd: repo,
-        target: 'codex',
-        env: { ...process.env, HOME: home },
-        statusReport,
-        doctorReport: baseDoctorReport(),
-        toolingReport: baseToolingReport(),
-      });
-
-      expect(report.checks.find((entry) => entry.id === 'status.adapter.codex')?.status).toBe('needs_agent');
+      expect(adapter?.status, row.code).toBe('needs_agent');
+      expect(adapter?.detail, row.code).toContain(row.error);
       const repair = report.agent_actions.find((entry) => entry.id === 'install-state.repair');
-      expect(repair?.command).toBeUndefined();
+      expect(repair?.reason, row.code).toBe(`Install state cannot be read (${row.code}): ${row.error}`);
+      expect(repair?.command, row.code).toBeUndefined();
       expect(repair?.targets).toEqual([join(home, '.repo-harness', 'install-state.json')]);
       expect(report.agent_actions.find((entry) => entry.id === 'install-state.migrate')).toBeUndefined();
       expect(report.agent_actions.find((entry) => entry.id === 'adapter.codex.install')).toBeUndefined();

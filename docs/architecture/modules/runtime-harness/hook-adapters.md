@@ -577,6 +577,12 @@ does not claim a direct CodeGraph call from the bridge to `runHook`.
 - P2：`install-state-migration.ts` 是 protocol 2 的唯一读者。`repo-harness update` 在 install 事务内运行它；protocol 1 必须先用 0.25.x 桥接版本迁移。
 - P3：DSH 插件与 `dsh` 插件 id 已删除（2026-11-04，#1653，owner decision M45）。记录 `dsh` 的 install state 以 `install_state_invalid` 失败。
 
+### Protocol 2 一次性迁移删除（2026-11-04，#1607，0.26.0）
+
+- 0.26.0 删除 `install-state-migration.ts` 与 `update` 里的 protocol 2 → 3 一次性迁移。上一条记录的 P2 只对 0.25.4 成立。
+- protocol 2 现在以 `install_state_protocol_retired` 失败，写入前停止。错误给出 0.25.4 桥接：`bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4`，然后装回当前版本。protocol 1 的错误先给 0.25.3 步骤，再给同一个桥接。
+- `install_state_migration_required` 与 setup check 动作 `install-state.migrate` 已删除；退役协议的 state 得到 `install-state.repair`。
+
 ## 5. 验证面
 
 capabilities.json 的 `verification_hints`：
@@ -606,7 +612,7 @@ The event route registry remains the host adapter authority. Ordinary edits and 
 
 ## Optimization Backlog
 
-- `install-profile.ts` 有 1,576 行，是本 capability 最大的文件。它同时承担插件选择计划、事务、ownership 记录和 install state 读写（`planInstallSelection`、`beginInstallHostTransaction`、`recordVerifiedAgentFleetOwnership`）。protocol 2 → 3 的一次性迁移在 `install-state-migration.ts`，#1607 在 0.26.0 删除它。拆分顺序需要改动频率证据，目前没有。
+- `install-profile.ts` 有 1,576 行，是本 capability 最大的文件。它同时承担插件选择计划、事务、ownership 记录和 install state 读写（`planInstallSelection`、`beginInstallHostTransaction`、`recordVerifiedAgentFleetOwnership`）。拆分顺序需要改动频率证据，目前没有。
 - route-runtime 与 handler 组件之间的环（§3.3）。如果 archctx 的环检测开始阻塞，把 handler 契约移到叶子组件。
 - `write-all-sync.ts` 归 global-runtime-reconciliation，但 hook 热路径也用它。它造成 hook-adapters → global-runtime-reconciliation 的一条边，而 global-runtime-reconciliation 也调用 hook-adapters。这个 26 行的工具可以移到 `execution-primitives`（G2 新建），以去掉这条 capability 级回边。
 - host-installer 与 edit-guards → acceptance-review 没有声明。`relation.acceptance-review.hook-adapters` 已经声明反向（review 命令调用 circuit breaker）。本方向有 5 条边，反向有 2 条。集成不新增反向关系。是否翻转方向是开放问题。

@@ -290,85 +290,29 @@ global package.
 | Code | Cause | Next step |
 |---|---|---|
 | `install_state_missing` | `update` found no install state. | `repo-harness install` |
-| `install_state_migration_required` | A reader other than `update` found protocol 2. | `repo-harness update` |
-| `install_state_protocol_retired` | The state is protocol 1. | The 0.25.3 bridge (see below). |
+| `install_state_protocol_retired` | The state is protocol 1 or 2. | The bridge releases (see below). |
 | `install_state_invalid` | Malformed state, unknown plugin id, wrong version, or invalid `selection`. | `repo-harness install --state` |
 | `install_state_invalid_ownership` | A ledger entry has an unknown path, a malformed shape, or an owner that is not enabled. | `repo-harness install --state` |
 | `install_plugin_unknown` | `--plugins` names an unknown id. | Use an id from the table above. |
-| `install_plugin_unavailable` | An explicit plugin is unavailable (no host program, or no host for its skills in the target), a CodeGraph policy without `architecture`, or a minimal protocol 2 state with a Pi package and no `pi`. | Install the host program, choose a target with its host, or drop the plugin. |
+| `install_plugin_unavailable` | An explicit plugin is unavailable (no host program, or no host for its skills in the target), or a CodeGraph policy without `architecture`. | Install the host program, choose a target with its host, or drop the plugin. |
 | `candidate_request_protocol_retired` | An older parent sent a protocol 1 candidate request. | `bun add -g repo-harness@<version> --no-cache && repo-harness update` |
 
-## Protocol 2 to 3 Migration
+## Retired Protocols
 
-The protocol 2 to 3 migration is a one-shot step in `repo-harness update`. It
-is the only reader of protocol 2. Issue #1607 deletes it in the 0.26.0 release;
-after that, protocol 2 gets `install_state_protocol_retired`, which names the
-0.25.x bridge.
+The package reads only protocol 3. The strict reader refuses a protocol 1
+or protocol 2 state with `install_state_protocol_retired`, and `install` and
+`update` stop before any write. The message names the bridge releases:
 
-A 0.25.3 CLI cannot run the cutover. Bootstrap the new CLI directly:
-
-```bash
-bun add -g repo-harness@0.25.4 --no-cache
-repo-harness update
-```
-
-`repo-harness update --check` prints the mapping and writes nothing. The
-migration runs under the global runtime lock and inside the host transaction.
-It validates the protocol 2 state, its previous state and the user-managed
-fleet receipt before any host change. It commits protocol 3 by atomic rename
-with `previous: null`. When the refresh in the same update changes the state,
-it records the migrated state as `previous`; a refresh that changes nothing
-leaves `previous: null`. A later failure restores the protocol 2 file and every
-deleted byte.
-
-| Protocol 2 profile | Protocol 3 selection |
+| State | Bridge |
 |---|---|
-| `full` | `"all"`: every plugin, and `pi` only when `pi` is on `PATH`. |
-| `minimal` | The explicit list `platform`, `strategy-memory`, plus the owners of the recorded ledger surfaces. |
+| Protocol 2 (0.11.1 to 0.25.3) | 0.25.4, whose `update` migrates protocol 2 to 3 once: `bun add -g repo-harness@0.25.4 --no-cache && repo-harness update --version 0.25.4` |
+| Protocol 1 | 0.25.3 first: `bun add -g repo-harness@0.25.3 --no-cache`, then its protocol 1 migration (`repo-harness install --help` in 0.25.3 names it), then the protocol 2 bridge |
 
-Each ledger entry gets its owner from its path through the protocol 3 manifest:
+After the bridge, install the current package:
+`bun add -g repo-harness@<version> --no-cache && repo-harness update`.
+`docs/CHANGELOG.md` (`[0.25.4]`, Upgrade) gives the protocol 2 to 3 mapping.
 
-- A Pi package registration (`pi-package`) adds `pi`.
-- A CodeGraph projection adds `architecture`, so a former minimal install
-  with a CodeGraph surface also gains the architecture skills.
-- A herdr-portal skill adds `peer-runtime`.
-- An entry with an empty component list gets `core`.
-
-A `minimal` state that records a Pi package maps to an explicit list with
-`pi`. When `pi` is not on `PATH`, the migration refuses before any write with
-`install_plugin_unavailable`. The message names two ways out: install Pi, then
-run `repo-harness update`; or roll back to 0.25.3 (see below). A `full` state
-never refuses for this reason, because `"all"` skips an absent `pi`.
-
-Pi skill-root copies do not add `pi`. When `pi` is not selected, the migration
-deletes each owned, unchanged Pi skill-root copy, keeps and reports each
-changed one, and drops them from the ledger. A `--target both` install without
-Pi loses these unused copies. Install Pi and run `repo-harness update` to
-bring them back, because a migrated `full` state records `"all"`.
-
-The migration also removes the retired orchestrator fleet file
-`~/.claude/agents/orchestrator.md`. It deletes an owned, unchanged file. It
-keeps and reports a changed file. It drops the file from the state and from
-the user-managed fleet receipt. A former minimal install gains the core
-surfaces: the core facades, the agent fleet files, the
-`PreToolUse.subagent` (Claude) and `SubagentStart.context` (Codex) routes, and
-Waza and Mermaid at the next `repo-harness install`. The plan lists each one.
-
-A protocol 1 state fails with `install_state_protocol_retired`. Migrate it with
-the 0.25.3 bridge first: `bun add -g repo-harness@0.25.3 --no-cache`, run its
-protocol 1 migration, then run the bootstrap above.
-
-### Rollback and Downgrade
-
-A source `git revert` does not restore a user's ledger. To go back to 0.25.3
-after a committed migration:
-
-1. `bun add -g repo-harness@0.25.3 --no-cache`
-2. Delete `~/.repo-harness/install-state.json`.
-3. Run the 0.25.3 install command with the old profile name. `docs/CHANGELOG.md`
-   (`[Unreleased]`, Upgrade) gives the exact command.
-
-The fleet and CodeGraph files stay as user-managed files.
+A source `git revert` does not restore a user's ledger.
 
 ## Install Surfaces and Refresh Commands
 
@@ -403,9 +347,8 @@ add `--check-updates` for version and adopted-repo refresh advisories. It is not
 a runtime hook: it does not write user-level files, install updates, run `init`,
 or register adapters. It emits `agent_actions` entries carrying the reason, risk,
 target files, an optional command, and the verification surface, so the Agent
-executes each one deliberately. A protocol 2 state gives the action
-`install-state.migrate` with the command `repo-harness update`; an unreadable
-state gives `install-state.repair`. `repo-harness init-hook` remains a
+executes each one deliberately. An unreadable state, a retired protocol
+included, gives the action `install-state.repair` with the typed error. `repo-harness init-hook` remains a
 compatibility alias for the adapter-only install path.
 
 ## Codex Delegation Authority

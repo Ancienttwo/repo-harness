@@ -74,8 +74,8 @@ export interface StatusReport {
     | { recorded: true; core_version: string; plugins: readonly PluginId[]; selection: PluginSelection }
     | { recorded: false }
     // install-state.json exists but the strict protocol 3 reader rejected it.
-    // The code says which next step applies: `update` migrates protocol 2,
-    // protocol 1 needs the 0.25.x bridge, and anything else needs inspection.
+    // The code says which next step applies: protocol 1 and protocol 2 need
+    // the 0.25.x bridge releases, and anything else needs inspection.
     | {
         recorded: 'invalid';
         code: InstallStateErrorCode;

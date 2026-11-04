@@ -20,8 +20,7 @@ import { fileURLToPath } from 'url';
 import { askConfirm } from './tty-prompt';
 import { runInstall, runUninstall, type InstallTargetSpec } from './commands/install';
 import { planPiPackage, removePiPackage } from './installer/pi-package';
-import { newPiPackagesSinceTransaction, parseState, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
-import { formatInstallStateMigrationPlan, installStateMigrationPaths, migrateInstallState, protocol2SnapshotSurfaces } from './installer/install-state-migration';
+import { newPiPackagesSinceTransaction, recordPiInstallOwnership, recordUnresolvedPiOwnership, type ManagedInstallSurface } from './installer/install-profile';
 import { parsePluginList, PLUGIN_IDS, selectionLabel, type PluginId, type PluginSelection } from '../core/skill-surface/plugin-manifest';
 import { writeAllSync } from './runtime/write-all-sync';
 import { runInit } from './commands/init';
@@ -350,18 +349,6 @@ function compensatePiPackages(surfaces: Iterable<ManagedInstallSurface>, env: No
   return { unresolved, failures };
 }
 
-/**
- * The state snapshot of an update that migrated protocol 2 is protocol 2; the
- * one-shot reader reads it (#1601). Every other snapshot is protocol 3.
- */
-function snapshotSurfaces(env: NodeJS.ProcessEnv) {
-  return (raw: unknown, path: string) => (
-    typeof raw === 'object' && raw !== null && (raw as { protocol?: unknown }).protocol === 2
-      ? protocol2SnapshotSurfaces(raw, path, env)
-      : parseState(raw, path, env).ownership_manifest
-  );
-}
-
 /** Restore the snapshot bytes only. A failed restore keeps both errors. */
 function restoreTransactionBytes(transaction: ReturnType<typeof beginInstallHostTransaction>, cause: unknown): void {
   try { rollbackInstallHostTransaction(transaction); } catch (restoreError) {
@@ -376,7 +363,7 @@ function rollbackRuntimeTransaction(
   const failures: unknown[] = [];
   const surfaces = new Map(newPiSurfaces(result).map(surface => [surface.path, surface]));
   try {
-    for (const surface of newPiPackagesSinceTransaction(transaction, env, snapshotSurfaces(env))) surfaces.set(surface.path, surface);
+    for (const surface of newPiPackagesSinceTransaction(transaction, env)) surfaces.set(surface.path, surface);
   } catch (error) { failures.push(error); }
   const compensation = compensatePiPackages(surfaces.values(), env);
   const unresolved = compensation.unresolved;
@@ -437,7 +424,6 @@ export function runCandidateRuntimeReconciliation(
   ) {
     throw new Error('candidate reconciliation package authority mismatch');
   }
-  // The parent migrated any protocol 2 state before this handoff, so the recorded selection is protocol 3.
   // This package version owns the resolution: it knows the plugins that it ships.
   // The parent reads and writes no install state after this handoff: this commit owns
   // the whole state, including the Pi package and Pi skill-root receipts.
@@ -548,12 +534,6 @@ function candidateHandoffContext(
   return context;
 }
 
-/** Update's one-shot step before its first install-state read (#1601). Stdout stays free for `--json`. */
-function reportInstallStateMigration(env: NodeJS.ProcessEnv): void {
-  const plan = migrateInstallState(env);
-  if (plan !== null) for (const line of formatInstallStateMigrationPlan(plan)) console.error(`[runtime] ${line}`);
-}
-
 export function runTransactionalRuntimeRefresh(
   options: GlobalRuntimeOptions,
   setup: (options: GlobalRuntimeOptions) => GlobalRuntimeResult = (setupOptions) => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, setupOptions),
@@ -562,19 +542,11 @@ export function runTransactionalRuntimeRefresh(
   // An invalid XDG_STATE_HOME must fail before the lock creates transaction state.
   providerSkillLock(transactionEnv.HOME!, transactionEnv);
   return withRuntimeTransactionLock(globalRuntimeScope(transactionEnv), (lock) => {
-    const updateMode = options.updateMode === true;
-    // The protocol 2 -> 3 migration deletes or rewrites files outside the install set, so the snapshot names them
-    // and a failed update restores them with the protocol 2 state.
-    const transaction = beginInstallHostTransaction(
-      [...runtimeHostMutationPaths(transactionEnv), ...(updateMode ? installStateMigrationPaths(transactionEnv) : [])],
-      transactionEnv,
-      { runtimeLock: lock },
-    );
+    const transaction = beginInstallHostTransaction(runtimeHostMutationPaths(transactionEnv), transactionEnv, { runtimeLock: lock });
     let plugins: readonly PluginId[];
     // Null when the caller passes its own plugin set; then the recorded state does not change.
     let recordedSelection: { readonly state: InstallState; readonly resolved: SelectionResolution } | null = null;
     try {
-      if (updateMode) reportInstallStateMigration(transactionEnv);
       if (options.plugins !== undefined) plugins = options.plugins;
       else {
         const state = requireInstallState(transactionEnv);
