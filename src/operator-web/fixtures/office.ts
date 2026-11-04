@@ -108,7 +108,7 @@ function officeBossWriter(): BossCommandWriter {
   return (body) => {
     if (sent.has(body.command)) {
       return Promise.resolve({
-        state: 'refused', retry_after_seconds: 1500,
+        state: 'refused', status: 409, retry_after_seconds: 1500,
         error: { code: 'boss_cooldown', message: 'This boss command was sent for this parent inside its cooldown.', next_action: 'Wait retry_after_seconds, then send the command with a new request_id.' },
       });
     }

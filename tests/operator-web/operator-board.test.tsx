@@ -1092,16 +1092,17 @@ describe('board office (#1755)', () => {
 
   test('the boss buttons confirm, send only the command id and take the cooldown, the lock and the refusals from the server answers', async () => {
     const posts: BossCommandPost[] = [];
-    const refused = (code: string, retry_after_seconds: number | null): BossCommandWrite => ({ state: 'refused', retry_after_seconds, error: { code, message: `server ${code}`, next_action: 'next' } });
+    const refused = (code: string, retry_after_seconds?: number): BossCommandWrite => ({ state: 'refused', status: 409, ...(retry_after_seconds === undefined ? {} : { retry_after_seconds }), error: { code, message: `server ${code}`, next_action: 'next' } });
     for (const [answer, notice, cooling] of [
       [{ state: 'sent' }, null, 'Stick 30:00'],
       [refused('boss_cooldown', 90), 'boss_cooldown', 'Stick 1:30'],
-      [refused('advisor_turn_running', null), 'advisor_turn_running', 'Stick'],
-      [refused('advisor_turn_unknown', null), 'advisor_turn_unknown', 'Stick'],
-      [refused('repository_read_only', null), 'repository_read_only', 'Stick'],
-      [refused('audit_unavailable', null), 'audit_unavailable', 'Stick'],
+      [refused('advisor_turn_running'), 'advisor_turn_running', 'Stick'],
+      [refused('advisor_turn_unknown'), 'advisor_turn_unknown', 'Stick'],
+      [refused('repository_read_only'), 'repository_read_only', 'Stick'],
+      [refused('audit_unavailable'), 'audit_unavailable', 'Stick'],
       [{ state: 'unreachable' }, 'unreachable', 'Stick'],
       [{ state: 'unreadable' }, 'unreadable', 'Stick'],
+      [{ state: 'reload_required' }, null, 'Stick'],
     ] as const) {
       officeAt(`/${HARNESS_ID}/1474`);
       await mount(<OperatorApp {...props(busy(), {
@@ -1120,6 +1121,7 @@ describe('board office (#1755)', () => {
       expect(request_id).toMatch(/^[0-9a-f-]{36}$/u);
       expect(sent).toEqual({ repository_id: HARNESS_ID, parent: 1474, command: 'rage' });
       expect(document.querySelector('[data-boss-notice]')?.getAttribute('data-boss-notice') ?? null).toBe(notice);
+      expect(document.querySelector('[data-write-reload]') !== null).toBe(answer.state === 'reload_required');
       expect(document.querySelector('[data-boss="rage"] span')?.textContent).toMatch(new RegExp(`^${cooling === 'Stick' ? 'Stick$' : cooling.slice(0, -2)}`, 'u'));
       expect(document.querySelector('[data-boss="rage"]')?.getAttribute('aria-disabled')).toBe(String(cooling !== 'Stick'));
       await act(async () => root?.unmount());
@@ -1131,7 +1133,7 @@ describe('board office (#1755)', () => {
     await mount(<OperatorApp {...props(busy(), {
       readBoard: async () => ({ state: 'ok', board: BOARD }),
       readBoardParents: async () => ({ state: 'ok', list: advisorList('idle') }),
-      writeBossCommand: async body => (body.command === 'carrot' ? { state: 'sent' } : { state: 'refused', retry_after_seconds: 90, error: { code: 'boss_cooldown', message: '', next_action: '' } }),
+      writeBossCommand: async body => (body.command === 'carrot' ? { state: 'sent' } : { state: 'refused', status: 409, retry_after_seconds: 90, error: { code: 'boss_cooldown', message: '', next_action: '' } }),
     })} />);
     await settle();
     for (const command of ['carrot', 'rage']) {
@@ -1200,9 +1202,11 @@ describe('board office (#1755)', () => {
       expect(await postBossCommand(body)).toEqual({ state: 'unreadable' });
       const error = { code: 'boss_cooldown', message: 'Wait.', next_action: 'Retry.' };
       answer(409, { error, retry_after_seconds: 60 });
-      expect(await postBossCommand(body)).toEqual({ state: 'refused', error, retry_after_seconds: 60 });
+      expect(await postBossCommand(body)).toEqual({ state: 'refused', status: 409, error, retry_after_seconds: 60 });
       answer(409, { error: { ...error, code: 'advisor_turn_running' } });
-      expect(await postBossCommand(body)).toEqual({ state: 'refused', error: { ...error, code: 'advisor_turn_running' }, retry_after_seconds: null });
+      expect(await postBossCommand(body)).toEqual({ state: 'refused', status: 409, error: { ...error, code: 'advisor_turn_running' } });
+      answer(403, { error: { ...error, code: 'write_token_invalid' } });
+      expect(await postBossCommand(body)).toEqual({ state: 'reload_required' });
       answer(500, { nope: true });
       expect(await postBossCommand(body)).toEqual({ state: 'unreachable' });
     } finally {

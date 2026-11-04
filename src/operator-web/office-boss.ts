@@ -1,6 +1,6 @@
 import { useCallback, useRef, useState } from 'react';
 import { ADVISOR_BOSS_COMMAND_TABLE, decodeAdvisorSeatSend, type AdvisorBossCommand, type AdvisorBossCommandRequestV1 } from '../core/board/advisor-seat';
-import { asApiError, type OperatorApiErrorV1 } from './operator-api-error';
+import { postOperatorWrite, type OperatorWriteFailure } from './operator-write';
 
 /**
  * Browser side of `POST /api/v1/seats/advisor/boss-commands` (#1757). The web
@@ -11,40 +11,12 @@ import { asApiError, type OperatorApiErrorV1 } from './operator-api-error';
 const BOSS_COMMANDS_PATH = '/api/v1/seats/advisor/boss-commands';
 
 export type BossCommandPost = AdvisorBossCommandRequestV1 & { readonly request_id: string };
-export type BossCommandWrite =
-  | { readonly state: 'sent' }
-  | { readonly state: 'refused'; readonly error: OperatorApiErrorV1; readonly retry_after_seconds: number | null }
-  | { readonly state: 'unreachable' }
-  | { readonly state: 'unreadable' };
+export type BossCommandWrite = { readonly state: 'sent' } | OperatorWriteFailure;
 export type BossCommandWriter = (body: BossCommandPost) => Promise<BossCommandWrite>;
 
-const UNTYPED: OperatorApiErrorV1 = Object.freeze({ code: '', message: '', next_action: '' });
-
-/** The write token travels in the HttpOnly cookie the page response set. */
 export const postBossCommand: BossCommandWriter = async (body) => {
-  let response: Response;
-  try {
-    response = await fetch(BOSS_COMMANDS_PATH, {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { state: 'unreachable' };
-  }
-  const payload: unknown = await response.json().catch(() => null);
-  if (response.ok) {
-    try {
-      decodeAdvisorSeatSend(payload);
-      return { state: 'sent' };
-    } catch {
-      return { state: 'unreadable' };
-    }
-  }
-  const error = asApiError(payload, UNTYPED);
-  if (error === UNTYPED) return { state: 'unreachable' };
-  const retry = (payload as { readonly retry_after_seconds?: unknown }).retry_after_seconds;
-  return { state: 'refused', error, retry_after_seconds: typeof retry === 'number' ? retry : null };
+  const answer = await postOperatorWrite(BOSS_COMMANDS_PATH, body, decodeAdvisorSeatSend);
+  return answer.state === 'ok' ? { state: 'sent' } : answer;
 };
 
 /** A cooldown runs per command, so the answer keeps the command that it refused. */
@@ -81,7 +53,7 @@ export function useBossCommands(write: BossCommandWriter, repositoryId: string, 
         return;
       }
       setNotice({ ...answer, command });
-      if (answer.state === 'refused' && answer.retry_after_seconds !== null) {
+      if (answer.state === 'refused' && answer.retry_after_seconds !== undefined) {
         const seconds = answer.retry_after_seconds;
         setCooldowns(current => ({ ...current, [command]: now + seconds * 1000 }));
       }

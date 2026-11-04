@@ -8,6 +8,7 @@ import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
+import { WriteReloadBanner } from './operator-write';
 import { agentPortrait, bossPortrait, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
 import { BOSS_ICONS, sceneAgent, type BossPose } from './office-sprites';
 import type { ThemeMode } from './theme';
@@ -280,7 +281,7 @@ function BossConfirm({ command, parent, frame, onCancel, onConfirm, t }: {
   );
 }
 
-function bossNoticeText(notice: BossNotice, cooldownLeft: number, t: OperatorTranslate): string {
+function bossNoticeText(notice: Exclude<BossNotice, { readonly state: 'reload_required' }>, cooldownLeft: number, t: OperatorTranslate): string {
   if (notice.state !== 'refused') return t(`board.office.boss.notice.${notice.state}`);
   const { code, message, next_action: next } = notice.error;
   if (code === 'boss_cooldown') return t('board.office.boss.notice.boss_cooldown', { left: clockText(cooldownLeft) });
@@ -538,6 +539,7 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     </>
   );
   const turn = room.advisor === null ? 'unknown' : advisorTurnState(room.advisor.status);
+  const { notice } = boss;
   const sceneLabel = t('board.office.scene', {
     repository, parent: parent === null ? t('board.office.parent.none') : `#${parent}`, workers: room.desks.length, queue: room.queue.length,
     plan: t(plan.status === 'observed' ? 'board.office.scene.plan' : 'board.office.scene.noPlan'),
@@ -554,7 +556,9 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
         </>
       )} />
       {banners}
-      {boss.notice !== null && <p className="board-office__notice" role="status" data-boss-notice={boss.notice.state === 'refused' ? boss.notice.error.code : boss.notice.state}>{bossNoticeText(boss.notice, Math.max((boss.cooldowns[boss.notice.command] ?? 0) - clock.now, 0), t)}</p>}
+      {notice?.state === 'reload_required'
+        ? <WriteReloadBanner t={t} />
+        : notice !== null && <p className="board-office__notice" role="status" data-boss-notice={notice.state === 'refused' ? notice.error.code : notice.state}>{bossNoticeText(notice, Math.max((boss.cooldowns[notice.command] ?? 0) - clock.now, 0), t)}</p>}
       <div className="board-office__body">
         <div className="board-office__scene" data-night={night ? '' : undefined}>
           <div className="board-office__grid" style={{ '--grid-w': scene.width, '--grid-h': scene.height } as CSSProperties}>
