@@ -1,0 +1,63 @@
+export const en = {
+  'repository.select': 'Select repository',
+
+  'repo.accessMode.read_only': 'read only',
+  'repo.accessMode.read_write': 'read write',
+
+  'freshness.repositories.refreshFailed': 'Registry refresh failed · showing the last list',
+
+  'repositories.noRemote': 'no GitHub remote',
+  'repositories.worktrees': 'Worktrees {count}',
+  'repositories.openPulls': 'Open PRs {count}',
+  'repositories.stale': 'Stale registrations: {count}',
+  'repositories.staleBody': 'Their paths no longer exist. Preview what would be removed:',
+  'repositories.staleApply': 'Applying removes those rows without a backup:',
+  'repositories.staleReason': 'Their paths no longer exist; the registry still records them.',
+  'repositories.staleOpen': 'Clean up',
+  'repositories.staleClose': 'Hide',
+  'repositories.notCollected': 'not collected',
+  'repositories.more': 'Show the other {count}',
+  'repositories.fewer': 'Show only the first {count}',
+  'repositories.loading': 'Reading the registry',
+  'repositories.failed.title': 'The repository registry cannot be read',
+  'repositories.failed.body': 'Check that the operator service runs, then refresh.',
+  'source.kind.git': 'Git',
+  'source.kind.github': 'GitHub',
+  'source.kind.runtime': 'Agents',
+  'source.status.ok': 'ok',
+  'source.status.stale': 'stale',
+  'source.status.unavailable': 'unavailable',
+  'source.status.not_configured': 'off',
+} as const;
+
+export const zh: Readonly<Record<keyof typeof en, string>> = {
+  'repository.select': '选择仓库',
+
+  'repo.accessMode.read_only': '只读',
+  'repo.accessMode.read_write': '读写',
+
+  'freshness.repositories.refreshFailed': '登记表刷新失败 · 显示的是上一次的列表',
+
+  'repositories.noRemote': '没有 GitHub remote',
+  'repositories.worktrees': 'Worktree {count}',
+  'repositories.openPulls': '打开的 PR {count}',
+  'repositories.stale': '{count} 条失效登记',
+  'repositories.staleBody': '这些路径已经不存在。先预览会删掉什么：',
+  'repositories.staleApply': '执行后会直接删除这些行，不留备份：',
+  'repositories.staleReason': '这些路径已经不存在，registry 还记着它们',
+  'repositories.staleOpen': '清理',
+  'repositories.staleClose': '收起',
+  'repositories.notCollected': '未采集',
+  'repositories.more': '显示其余 {count} 个',
+  'repositories.fewer': '只显示前 {count} 个',
+  'repositories.loading': '正在读取 registry',
+  'repositories.failed.title': '读不到仓库 registry',
+  'repositories.failed.body': '确认 operator 服务在运行，然后刷新。',
+  'source.kind.git': 'Git',
+  'source.kind.github': 'GitHub',
+  'source.kind.runtime': 'Agent',
+  'source.status.ok': '正常',
+  'source.status.stale': '过期',
+  'source.status.unavailable': '不可用',
+  'source.status.not_configured': '未开启',
+};
