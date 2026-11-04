@@ -6,6 +6,7 @@ import type { WorktreeView } from '../core/operator/worktrees';
 import { CleanupPlanReview, JUDGMENT_TONE as TONE, refusalText, type CleanupPlanPorts } from './CleanupPlanReview';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
+import { WriteReloadBanner } from './operator-write';
 import { Age, BoardState, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
 import {
   cleanupCommand, formatBytes, reclaimableSpace, spaceTotal, spaceWords, useRowDigests, worktreesOf,
@@ -180,6 +181,7 @@ function CleanupResult({ cleanup, t }: { readonly cleanup: WorktreeCleanup; read
   const { state } = cleanup;
   const reselect = <Banner.Action variant="secondary" onClick={cleanup.reselect}>{t('worktrees.reselect')}</Banner.Action>;
   if (state.kind === 'cleaned') return <ResultList result={state.result} t={t} />;
+  if (state.kind === 'reload_required') return <WriteReloadBanner t={t} />;
   if (state.kind === 'refused') {
     const text = refusalText(state.error, t);
     return (

@@ -11,6 +11,7 @@ import {
 } from '../core/operator/agents-settings';
 import { asApiError } from './operator-api-error';
 import type { OperatorApiErrorV1 } from './operator-api-error';
+import { postOperatorWrite, type OperatorWriteFailure } from './operator-write';
 import { useObservationRefresh } from './useObservationRefresh';
 
 /**
@@ -51,40 +52,15 @@ export interface SettingsResult {
 
 export type AgentsSettingsPost = AgentsSettingsRequestV1 & { readonly request_id: string };
 
-/**
- * `unreachable`: no typed answer arrived, so the request may or may not have
- * run; resending the same request_id replays its recorded result.
- * `unreadable`: a 200 whose body failed the decoder; the write ran.
- */
-export type SettingsWrite =
-  | { readonly state: 'saved'; readonly result: SettingsResult }
-  | { readonly state: 'refused'; readonly status: number; readonly error: OperatorApiErrorV1 }
-  | { readonly state: 'unreachable' }
-  | { readonly state: 'unreadable' };
+/** After `unreachable`, resending the same request_id replays the recorded result. */
+export type SettingsWrite = { readonly state: 'saved'; readonly result: SettingsResult } | OperatorWriteFailure;
 export type SettingsWriter<R> = (body: R & { readonly request_id: string }) => Promise<SettingsWrite>;
 export type AgentsSettingsWrite = SettingsWrite;
 export type AgentsSettingsWriter = SettingsWriter<AgentsSettingsRequestV1>;
 
-const UNTYPED: OperatorApiErrorV1 = Object.freeze({ code: '', message: '', next_action: '' });
-
-/** The write token travels in the HttpOnly cookie the page response set; the browser adds Origin and Sec-Fetch-Site. */
 export async function postSettings(path: string, decodeResult: (value: unknown) => SettingsResult, body: unknown): Promise<SettingsWrite> {
-  let response: Response;
-  try {
-    response = await fetch(path, {
-      method: 'POST', cache: 'no-store', credentials: 'same-origin',
-      headers: { Accept: 'application/json', 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-  } catch {
-    return { state: 'unreachable' };
-  }
-  const payload: unknown = await response.json().catch(() => null);
-  if (response.ok) {
-    try { return { state: 'saved', result: decodeResult(payload) }; } catch { return { state: 'unreadable' }; }
-  }
-  const error = asApiError(payload, UNTYPED);
-  return error === UNTYPED ? { state: 'unreachable' } : { state: 'refused', status: response.status, error };
+  const answer = await postOperatorWrite(path, body, decodeResult);
+  return answer.state === 'ok' ? { state: 'saved', result: answer.value } : answer;
 }
 
 export const postAgentsSettings: AgentsSettingsWriter = body => postSettings(AGENTS_SETTINGS_PATH, decodeAgentsSettingsResult, body);
@@ -161,12 +137,13 @@ export type SettingsSaveState =
   | { readonly kind: 'saving' }
   | { readonly kind: 'saved'; readonly changed: number }
   | { readonly kind: 'refused'; readonly status: number; readonly error: OperatorApiErrorV1 }
+  | { readonly kind: 'reload_required' }
   | { readonly kind: 'unreachable' }
   | { readonly kind: 'unreadable' };
 
-/** A save outcome that leaves the draft unusable until the settings are read again. */
+/** A save outcome that leaves the draft unusable until the settings or the page are read again. */
 export function saveNeedsReload(save: SettingsSaveState): boolean {
-  return save.kind === 'unreadable' || (save.kind === 'refused' && RELOAD_REQUIRED.has(save.error.code));
+  return save.kind === 'unreadable' || save.kind === 'reload_required' || (save.kind === 'refused' && RELOAD_REQUIRED.has(save.error.code));
 }
 
 export type SettingsView<S> =
