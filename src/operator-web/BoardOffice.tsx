@@ -10,6 +10,7 @@ import type { BoardParentsReader } from './board-view';
 import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
+import { OfficeAdvisorDialog, type AdvisorMessageWriter, type AdvisorTranscriptReader } from './OfficeAdvisorDialog';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
 import { WriteReloadBanner } from './operator-write';
 import { agentPortrait, bossPortrait, composeMiniRoom, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
@@ -434,7 +435,7 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
   };
 }
 
-function OfficePanel({ view, onIssue, onPick, t }: { readonly view: PanelView; readonly onIssue: (issue: number) => void; readonly onPick: (key: string) => void; readonly t: OperatorTranslate }) {
+function OfficePanel({ view, onIssue, onPick, onChat, t }: { readonly view: PanelView; readonly onIssue: (issue: number) => void; readonly onPick: (key: string) => void; readonly onChat: (() => void) | null; readonly t: OperatorTranslate }) {
   const { issue } = view;
   return (
     <section className="board-office__panel" data-office-panel={view.eyebrow}>
@@ -458,6 +459,7 @@ function OfficePanel({ view, onIssue, onPick, t }: { readonly view: PanelView; r
             <CopyButton label={t('copy.commandLabel')} value={view.command} t={t} className="board-office__copy" />
           </div>
         )}
+      {onChat !== null && <button type="button" className="board-office__chat" data-advisor-chat onClick={onChat}>{t('board.office.advisor.chat')}</button>}
     </section>
   );
 }
@@ -489,15 +491,18 @@ function OfficeFeed({ room, lit, parent, t }: { readonly room: OfficeRoom; reado
  * scene. The scene follows the approved S0 mockup; an empty room stays
  * furnished and takes the night palette.
  */
-export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, place, banners, writeBoss, mode, onOpen, now, t }: {
+export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, place, banners, writeBoss, readAdvisor, writeAdvisor, mode, onOpen, now, t }: {
   readonly repository: string; readonly repositoryId: string; readonly parent: number | null; readonly defaultBranch: string | null;
-  readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly writeBoss: BossCommandWriter; readonly mode: ThemeMode;
+  readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly writeBoss: BossCommandWriter;
+  readonly readAdvisor: AdvisorTranscriptReader; readonly writeAdvisor: AdvisorMessageWriter; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
   const clock = useClock(FRAME_MS);
   const boss = useBossCommands(writeBoss, repositoryId, parent);
   const [picked, setPicked] = useState<string | null>(null);
   const [confirm, setConfirm] = useState<AdvisorBossCommand | null>(null);
+  const [chat, setChat] = useState(false);
+  const canChat = room.advisor !== null && parent !== null;
   const lit = officeLit(room);
   const night = mode === 'dark' || !lit;
   const idle = !lit && parent === null;
@@ -561,7 +566,10 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
     if (key.startsWith('queue:')) return { 'data-queue-pr': key.slice('queue:'.length) };
     return { 'data-office-hit': key };
   };
-  const pick = (key: string) => setPicked(key === 'board' ? (room.advisor === null ? 'orchestrator' : 'advisor') : key);
+  const pick = (key: string) => {
+    setPicked(key === 'board' ? (room.advisor === null ? 'orchestrator' : 'advisor') : key);
+    if (key === 'advisor' && canChat) setChat(true);
+  };
   const openIssue = (issue: number) => onOpen(boardLocation({ repository_id: repositoryId, parent: parent!, issue, layout: 'office' }));
 
   const heading = (
@@ -612,11 +620,15 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
           </div>
         </div>
         <aside className="board-office__aside" aria-label={t('board.office.panel.label')}>
-          <OfficePanel view={panelView(selected, room, parent, defaultBranch, planText, clock.frame, t)} onIssue={openIssue} onPick={setPicked} t={t} />
+          <OfficePanel view={panelView(selected, room, parent, defaultBranch, planText, clock.frame, t)} onIssue={openIssue} onPick={setPicked} onChat={canChat && selected === 'advisor' ? () => setChat(true) : null} t={t} />
           <OfficeFeed room={room} lit={lit} parent={parent} t={t} />
         </aside>
       </div>
       {confirm !== null && parent !== null && <BossConfirm command={confirm} parent={parent} frame={clock.frame} onCancel={() => setConfirm(null)} onConfirm={() => { setConfirm(null); boss.send(confirm); }} t={t} />}
+      {chat && canChat && (
+        <OfficeAdvisorDialog repositoryId={repositoryId} parent={parent} agent={agentName(room.advisor!.agent, t)} read={readAdvisor} write={writeAdvisor} onClose={() => setChat(false)} t={t}
+          portrait={<svg viewBox="0 0 26 26" width="52" height="52" shapeRendering="crispEdges"><Paths paths={agentPortrait(sceneAgent(room.advisor!.agent), stageOutfit('advisor'), 1)} /></svg>} />
+      )}
     </section>
   );
 }

@@ -1,3 +1,4 @@
+import { ADVISOR_SEAT_SEND_KIND, ADVISOR_SEAT_TRANSCRIPT_KIND, ADVISOR_TRANSCRIPT_LINE_WITHHELD, decodeAdvisorSeatSend, decodeAdvisorSeatTranscript } from '../../core/board/advisor-seat';
 import { decodeBoard, type BoardItemV1, type BoardPullRequestV1, type BoardTerminalV1, type BoardV1 } from '../../core/board/board';
 import { decodeBoardParents, type BoardParentsSeatV1, type BoardParentsV1 } from '../../core/board/parents';
 import { boardSummary, type BoardSummaryV1 } from '../../core/board/summary';
@@ -6,6 +7,7 @@ import type { OperatorAppProps } from '../App';
 import type { BoardSummariesRead } from '../board-office';
 import type { BoardParentsRead, BoardRead } from '../board-view';
 import type { BossCommandWriter } from '../office-boss';
+import type { AdvisorMessageWriter, AdvisorTranscriptReader } from '../OfficeAdvisorDialog';
 import { HARNESS_ID } from './dev-activity';
 
 /**
@@ -190,8 +192,36 @@ function officeBossWriter(): BossCommandWriter {
   };
 }
 
+/** The redacted read-back of the seat, with a redacted token and a withheld line as the server returns them. A send starts a turn, as `hc send` does. */
+function officeAdvisor(): { readonly read: AdvisorTranscriptReader; readonly write: AdvisorMessageWriter } {
+  const terminal = 't4';
+  const lines = [
+    '› 重看 #1316 的排期',
+    '• 读取 parent #1309 的计划和 holds。',
+    '  gh auth token → ghp_[REDACTED]',
+    ADVISOR_TRANSCRIPT_LINE_WITHHELD,
+    '• #1316 等 DSH 通道，建议留在 holds。',
+    '  #1302、#1304 排到 #1295 之后。',
+  ];
+  let turn = 7;
+  let status = 'idle';
+  return {
+    read: subject => Promise.resolve({
+      state: 'ok',
+      transcript: decodeAdvisorSeatTranscript({ protocol: 1, kind: ADVISOR_SEAT_TRANSCRIPT_KIND, github_repository_id: 1, parent: subject.parent, terminal, status, status_kind: null, turn, complete: true, why: null, lines: [...lines] }),
+    }),
+    write: (body) => {
+      turn += 1;
+      status = 'working';
+      lines.push(`› ${body.text}`);
+      return Promise.resolve({ state: 'ok', value: decodeAdvisorSeatSend({ protocol: 1, kind: ADVISOR_SEAT_SEND_KIND, github_repository_id: 1, parent: body.parent, terminal, started: true, turn }) });
+    },
+  };
+}
+
 export function officeProps(busy: OperatorAppProps): OperatorAppProps {
   const now = Date.now();
+  const advisor = officeAdvisor();
   return {
     ...busy,
     readBoard: (subject): Promise<BoardRead> => Promise.resolve(subject.repository_id === HARNESS_ID && subject.parent === OFFICE_PARENT
@@ -201,5 +231,7 @@ export function officeProps(busy: OperatorAppProps): OperatorAppProps {
     readRepositories: () => Promise.resolve(officeRepositories),
     initialRepositories: officeRepositories,
     writeBossCommand: officeBossWriter(),
+    readAdvisorTranscript: advisor.read,
+    writeAdvisorMessage: advisor.write,
   };
 }
