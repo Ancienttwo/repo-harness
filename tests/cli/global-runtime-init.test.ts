@@ -5,7 +5,8 @@ import { dirname, join } from 'path';
 import { spawnSync } from 'child_process';
 import { PassThrough, Writable } from 'stream';
 import { createHash } from 'crypto';
-import { ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
+import { ensureHerdrCore, ownFreshWazaSharedRules, runGlobalRuntimeSetup, verifyInstalledManagedRuntime } from '../../src/cli/commands/global-runtime';
+import { HC_MIN_VERSION } from '../../src/core/operator/herdr-pin';
 import { CLI_PORTS, registerArchitecturePlugin, resolveOptionalRuntimeDeps, runCli, runTransactionalRuntimeRefresh } from '../../src/cli/index';
 import { copyPackageRuntimeFixture, writeShellExecutableFixture } from '../helpers/repo-fixture';
 import { ARCHITECTURE_DOCS_RENDERER_VERSION } from 'archctx-contracts';
@@ -242,6 +243,27 @@ function installCandidateRuntimeFixture(home: string, version: string): string {
   symlinkSync(join(ROOT, 'node_modules'), join(candidate, 'node_modules'), 'dir');
   return candidate;
 }
+
+test.each(['updated', 'failed', 'unchanged'] as const)('hc client below the floor reports its update command: %s', outcome => {
+  const root = mkdtempSync(join(tmpdir(), 'hc-client-floor-'));
+  try {
+    const bin = join(root, 'bin'), home = join(root, 'home'), version = join(root, 'version'), log = join(root, 'argv');
+    mkdirSync(bin); mkdirSync(home); writeFileSync(version, '0.1.15');
+    writeShellExecutableFixture(join(bin, 'hc'), `#!/bin/sh
+printf '%s\\n' "$*" >> "$HC_LOG"
+case "$1" in
+  --version) printf 'hc %s\\n' "$(cat "$HC_VERSION_FILE")" ;;
+  update) ${outcome === 'failed' ? 'exit 1' : outcome === 'updated' ? 'printf \'%s\' "$3" > "$HC_VERSION_FILE"' : ':'} ;;
+  *) exit 2 ;;
+esac
+`);
+    const result = ensureHerdrCore({ cwd: root, env: { HOME: home, PATH: `${bin}:/bin:/usr/bin`, HC_LOG: log, HC_VERSION_FILE: version }, command: 'update', platform: 'darwin-arm64', minVersion: HC_MIN_VERSION, assets: {} });
+    expect(result.step.status).toBe(outcome === 'updated' ? 'ok' : 'failed');
+    expect(result.step.detail).toContain('hc client 0.1.15');
+    expect(result.step.detail).toContain(`hc update --version ${HC_MIN_VERSION}`);
+    expect(readFileSync(log, 'utf8').trim().split('\n')).toEqual(['--version', `update --version ${HC_MIN_VERSION}`, ...(outcome === 'failed' ? [] : ['--version'])]);
+  } finally { rmSync(root, { recursive: true, force: true }); }
+});
 
 describe('registry-bound CLI update (#701)', () => {
   function runUpdateFixture(options: {

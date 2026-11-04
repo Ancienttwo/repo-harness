@@ -2,6 +2,8 @@
  * The hc version floor. The release owns it: `herdr-core-pin.json` in this
  * package protects this package's hc client code, so every reader (Board,
  * Bots, runtime, readiness and the CI install) takes the floor from that file.
+ * Each reader checks its component: Board, setup and install/update check the
+ * client; Bots and the runtime transport check the core.
  * Browser bundles and Node both read this file, so it stays free of Node
  * built-ins. Herdr.app has no pin yet.
  */
@@ -43,7 +45,7 @@ export function hcVersionCheck(version: string, minVersion: string): HcVersionCh
 /** The core answered, but its version is below the pin: nothing of its terminal schema is read. */
 export class HcVersionMismatchError extends Error {
   constructor(readonly check: HcVersionCheck) {
-    super(`hc_version_mismatch: expected ${check.expected.min_version} or later; actual ${check.actual.version}`);
+    super(`hc core ${check.actual.version} is below the repo-harness floor ${check.expected.min_version}; if hc --version is below ${check.expected.min_version}, run hc update --version ${check.expected.min_version} (it restarts the core); else run hc server restart.`);
     this.name = 'HcVersionMismatchError';
   }
 }

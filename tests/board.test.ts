@@ -291,6 +291,7 @@ test('one hit for each rule that the recorded state does not trigger', () => {
   const hits = rules(board);
   for (const rule of ['A2', 'A4', 'A5', 'A6', 'A8', 'R1', 'R3', 'R4', 'R5'] as const) expect(hits).toContain(rule);
   const findings = evaluateBoardAttention(board).findings;
+  expect(findings.find(finding => finding.rule === 'A8')?.message).toBe(`hc client 0.1.15 is below the repo-harness floor ${HC_MIN_VERSION}; run hc update --version ${HC_MIN_VERSION}`);
   expect(findings.find(finding => finding.rule === 'A2')?.pull_requests).toEqual([1491, 1499]);
   expect(findings.filter(finding => finding.rule === 'A6').map(finding => finding.issues)).toEqual([[1477, 1490], [1478, 1480]]);
   expect(findings.find(finding => finding.rule === 'R1')?.issues).toEqual([1477, 1478, 1479, 1480, 1481, 1482, 1483]);

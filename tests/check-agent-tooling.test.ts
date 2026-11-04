@@ -1982,7 +1982,7 @@ test.each([
       expect(result.stderr).not.toContain("herdr-core");
     } else {
       expect(result.status).not.toBe(0);
-      expect(result.stderr).toContain(`herdr-core runtime is ${status}; install hc >=${HC_MIN_VERSION}`);
+      expect(result.stderr).toContain(`hc client is ${status}; ${command ?? `install hc >=${HC_MIN_VERSION}`} and verify hc --version`);
       expect(result.stderr).toContain("Herdr skill readiness is unavailable; install hc first, then run repo-harness update --target claude");
     }
   } finally { rmSync(fixture.root, { recursive: true, force: true }); }
