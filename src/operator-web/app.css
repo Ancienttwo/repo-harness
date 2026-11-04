@@ -205,7 +205,6 @@
   .architecture-map__group { @apply bg-kumo-recessed; }
   .architecture-map__group-title { @apply flex items-baseline justify-between gap-2 overflow-hidden px-3 pt-2; }
   .architecture-map__meta { @apply truncate text-kumo-subtle; }
-  .architecture-map__band { @apply pointer-events-none absolute left-0 top-0 flex items-end border-b border-dashed pb-1 font-mono text-xs font-semibold uppercase tracking-wide text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-map__lines { @apply font-mono; }
   [data-kind="external-system"].architecture-map__box { border-style: dashed; }
   .architecture-map__box[data-selected], .architecture-map__group[data-selected] { border-width: 2px; border-color: var(--rh-accent); }
@@ -246,6 +245,29 @@
   .architecture-map__swatch--danger { @apply h-3 rounded-sm border-0 bg-kumo-danger-tint; }
   .architecture-map__command { @apply mt-1; }
   .architecture-map__command > code { @apply whitespace-normal break-all font-mono; }
+  .architecture-modules__domain { @apply relative h-full w-full rounded-xl border bg-kumo-base; border-color: var(--rh-diagram-line); }
+  .architecture-modules__domain > b { @apply absolute left-3 top-2 font-mono text-[11px] font-medium tracking-wide text-kumo-subtle; }
+  .architecture-modules__box { @apply relative flex h-full w-full cursor-pointer items-center gap-1.5 rounded-lg border bg-kumo-base px-2 text-xs text-kumo-strong; border-color: var(--rh-diagram-line); }
+  .architecture-modules__box strong { @apply min-w-0 truncate font-normal; }
+  .architecture-modules__lines { @apply ml-auto shrink-0 text-[10.5px] text-kumo-subtle; }
+  .architecture-modules__badge { @apply absolute -top-2 right-[-7px] rounded-full px-1.5 text-[10px] leading-4; }
+  .architecture-modules__badge[data-tone="danger"] { @apply bg-kumo-danger text-white; }
+  .architecture-modules__box[data-layer="changes"] .architecture-modules__badge[data-tone="change"] { @apply left-[-6px] right-auto; background: var(--rh-accent); color: var(--rh-on-accent); }
+  .architecture-modules__box[data-tone="change"] { border-width: 2px; border-color: var(--rh-accent); background: var(--rh-accent-tint); }
+  .architecture-modules__box[data-layer="pull_requests"][data-tone="change"] { @apply border border-kumo-info bg-kumo-base; box-shadow: 0 0 0 3px var(--color-kumo-info-tint), 0 0 0 4px var(--color-kumo-info); }
+  .architecture-modules__box[data-layer="violations"][data-tone="danger"] { @apply border-kumo-danger; }
+  .architecture-modules__box[data-quiet]:not([data-selected]) { opacity: .38; }
+  .architecture-modules__box[data-selected] { outline: 2px solid var(--text-color-kumo-strong); outline-offset: 2px; }
+  .architecture-modules__test { @apply h-[7px] w-[7px] shrink-0 rounded-full; box-shadow: inset 0 0 0 1px var(--text-color-kumo-subtle); }
+  .architecture-modules__test[data-test="success"] { @apply bg-kumo-success; box-shadow: none; }
+  .architecture-modules__test[data-test="danger"] { @apply bg-kumo-danger; box-shadow: none; }
+  .architecture-modules__test[data-test="muted"] { box-shadow: none; background: var(--text-color-kumo-placeholder); }
+  .architecture-modules__external { @apply flex h-full w-full cursor-pointer items-center whitespace-nowrap rounded-full border border-dashed bg-kumo-base px-2.5 text-[11.5px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
+  .architecture-modules__external[data-selected] { border-color: var(--rh-accent); color: var(--text-color-kumo-strong); }
+  .architecture-modules__heading { @apply flex flex-col gap-0.5; }
+  .architecture-modules__eyebrow { @apply font-mono text-[11px] uppercase tracking-[.12em] text-kumo-brand; }
+  .architecture-map__source { @apply block text-[11px] text-kumo-subtle; }
+  .architecture-layers__count { @apply ml-1.5 text-[11px] font-normal opacity-70; }
   .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
   .architecture-sequence__box { @apply flex h-full w-full flex-col justify-end rounded-xl border bg-kumo-recessed px-3 pb-1.5 text-[11px] text-kumo-subtle; border-color: var(--rh-diagram-line); }
   .architecture-sequence__box[data-placement="external"] { @apply border-dashed bg-transparent; }

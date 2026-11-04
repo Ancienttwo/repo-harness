@@ -1,19 +1,4 @@
-import { memo, useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
-import {
-  Background,
-  BackgroundVariant,
-  Handle,
-  MarkerType,
-  Panel,
-  Position,
-  ReactFlow,
-  ReactFlowProvider,
-  ViewportPortal,
-  type Edge,
-  type Node,
-  type NodeChange,
-  type NodeProps,
-} from '@xyflow/react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import '@xyflow/react/dist/base.css';
 import {
   decodeArchitectureMap,
@@ -28,14 +13,13 @@ import {
   archctxCode,
   firstImpactPullRequest,
   MAP_LAYERS,
-  mapLayerView,
+  modulesLayerView,
   truncatedParts,
+  violationItems,
   type MapLayerId,
-  type MapLayerView,
-  type MapMark,
 } from './architecture-map-layers';
-import { counted, firstViewport, Gap, Mark, NodeDetails, Note, ZoomControls } from './architecture-map-parts';
-import { layoutArchitectureMap, type MapLayout, type MapLayoutNode } from './architecture-map-layout';
+import { counted, Gap, Note } from './architecture-map-parts';
+import { ArchitectureModules } from './ArchitectureModules';
 import { ArchitectureSequence, SequenceLensTools } from './ArchitectureSequence';
 import { ArchitectureTopology } from './ArchitectureTopology';
 import type { OperatorTranslate } from './i18n';
@@ -78,211 +62,41 @@ function useArchitectureMap(read: ArchitectureMapReader, repositoryId: string, g
   return result?.repositoryId === repositoryId ? result.read : null;
 }
 
-interface MapNodeData extends Record<string, unknown> {
-  readonly item: MapLayoutNode;
-  readonly mark: MapMark | null;
-  /** The active layer has data and nothing in this node's subtree. */
-  readonly quiet: boolean;
-  readonly t: OperatorTranslate;
-}
-type MapNode = Node<MapNodeData, 'box' | 'group'>;
-
-function Size({ item, t }: { readonly item: MapLayoutNode; readonly t: OperatorTranslate }) {
-  return item.size === null ? null : <span className="architecture-map__lines">{t('architecture.map.lines', { lines: item.size.lines })}</span>;
-}
-
-/** Handles exist for edge routing only; the map is read-only, so they accept no connection. */
-function Handles() {
-  return <>
-    <Handle type="target" position={Position.Top} isConnectable={false} />
-    <Handle type="source" position={Position.Bottom} isConnectable={false} />
-  </>;
-}
-
-const BoxNode = memo(function BoxNode({ data, selected }: NodeProps<MapNode>) {
-  const { item, mark, quiet, t } = data;
-  return <div className="architecture-map__box" data-kind={item.node.kind} data-selected={selected || undefined} data-tone={mark?.tone} data-quiet={quiet || undefined}>
-    <Handles />
-    <span className="architecture-map__title"><strong>{item.node.name}</strong><Mark mark={mark} /></span>
-    <span className="architecture-map__meta">{item.node.kind}{item.node.layer ? ` · ${item.node.layer}` : ''} <Size item={item} t={t} /></span>
-  </div>;
-});
-
-const GroupNode = memo(function GroupNode({ data, selected }: NodeProps<MapNode>) {
-  const { item, mark, quiet, t } = data;
-  return <div className="architecture-map__group" data-kind={item.node.kind} data-selected={selected || undefined} data-tone={mark?.tone} data-quiet={quiet || undefined}>
-    <Handles />
-    <div className="architecture-map__group-title">
-      <span className="architecture-map__title"><strong>{item.node.name}</strong><Mark mark={mark} /></span>
-      <span className="architecture-map__meta">{item.node.layer ?? ''} <Size item={item} t={t} /></span>
-    </div>
-  </div>;
-});
-
-const NODE_TYPES = { box: BoxNode, group: GroupNode };
-
-/** Height of a layer label. It sits in the empty rank that the layout leaves above each band, so it covers no node. */
-const MAP_BAND_LABEL = 28;
-
-/** A labelled rule above each layer's rows, in canvas coordinates. */
-function LayerBands({ layout, t }: { readonly layout: MapLayout; readonly t: OperatorTranslate }) {
-  return <ViewportPortal>
-    {layout.bands.map(band => <div key={band.layer ?? ''} className="architecture-map__band" data-band={band.layer ?? ''}
-      style={{ transform: `translate(${band.x}px, ${band.y - MAP_BAND_LABEL - 8}px)`, width: layout.width - band.x, height: MAP_BAND_LABEL }}>
-      {band.layer ?? t('architecture.map.unlayered')}
-    </div>)}
-  </ViewportPortal>;
-}
-
-function Legend({ map, view, t }: { readonly map: ArchitectureMapV1; readonly view: MapLayerView; readonly t: OperatorTranslate }) {
-  return <dl className="architecture-map__legend" aria-label={t('architecture.map.legend')}>
-    <div><dt><span className="architecture-map__swatch" /></dt><dd>{t('architecture.map.legend.code')}</dd></div>
-    <div><dt><span className="architecture-map__swatch architecture-map__swatch--dashed" /></dt><dd>{t('architecture.map.legend.runtime')}</dd></div>
-    <div><dt><span className="architecture-map__swatch architecture-map__swatch--external" /></dt><dd>{t('architecture.map.legend.external')}</dd></div>
-    {map.sizes.state === 'ok' && <div><dt aria-hidden="true">↔</dt><dd>{t('architecture.map.legend.width')}</dd></div>}
-    {map.dependencies.state === 'ok' && <div><dt className="mono-value" aria-hidden="true">12</dt><dd>{t('architecture.map.legend.imports')}</dd></div>}
-    {view.edges.length > 0 && <div><dt><span className="architecture-map__swatch architecture-map__swatch--undeclared" /></dt><dd>{t('architecture.layer.legend.undeclared')}</dd></div>}
-  </dl>;
-}
-
-function Inspector({ map, layer, pullRequest, selected, side, onModule, t }: {
-  readonly map: ArchitectureMapV1;
-  readonly layer: MapLayerId;
-  readonly pullRequest: number | null;
-  readonly selected: MapLayoutNode | null;
-  readonly side: ReactNode;
-  readonly onModule: (id: string) => void;
-  readonly t: OperatorTranslate;
-}) {
-  if (selected === null) {
-    return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')}>
-      {side}
-      <p className="detail-quiet">{t('architecture.map.pick')}</p>
-      <p className="detail-quiet">{t('architecture.map.counts', { nodes: counted(t, map.nodes.length, 'node'), relations: counted(t, map.relations.length, 'relation') })}</p>
-    </aside>;
-  }
-  return <aside className="architecture-map__inspector" aria-label={t('architecture.map.inspector')} data-node-id={selected.node.id}>
-    {side}
-    <NodeDetails map={map} layer={layer} pullRequest={pullRequest} nodeId={selected.node.id} onModule={onModule} t={t} />
-  </aside>;
-}
-
-function MapCanvas({ map, layer, pullRequest, side, onModule, t }: {
-  readonly map: ArchitectureMapV1;
-  readonly layer: MapLayerId;
-  readonly pullRequest: number | null;
-  readonly side: ReactNode;
-  readonly onModule: (id: string) => void;
-  readonly t: OperatorTranslate;
-}) {
-  const layout = useMemo(() => layoutArchitectureMap(map), [map]);
-  const view = useMemo(() => mapLayerView(map, layer, pullRequest), [map, layer, pullRequest]);
-  const [selectedId, setSelectedId] = useState<string | null>(null);
-  const items = useMemo(() => new Map(layout.nodes.map(item => [item.node.id, item])), [layout]);
-  // A banded map opens on its top band's leftmost node and label.
-  const firstView = useMemo(() => {
-    const top = layout.bands[0];
-    return top === undefined ? undefined : firstViewport(top.x, top.y - MAP_BAND_LABEL);
-  }, [layout]);
-  const selected = selectedId === null ? null : items.get(selectedId) ?? null;
-
-  const nodes = useMemo<MapNode[]>(() => layout.nodes.map(item => {
-    const parent = item.node.parent === null ? null : items.get(item.node.parent)!;
-    return {
-      id: item.node.id,
-      type: item.group ? 'group' : 'box',
-      position: { x: item.x - (parent?.x ?? 0), y: item.y - (parent?.y ?? 0) },
-      width: item.width,
-      height: item.height,
-      ...(parent ? { parentId: parent.node.id } : {}),
-      data: { item, mark: view.marks.get(item.node.id) ?? null, quiet: view.available && !view.lit.has(item.node.id), t },
-      draggable: false,
-      connectable: false,
-      selected: item.node.id === selectedId,
-      ariaLabel: `${item.node.kind} ${item.node.name}`,
-    };
-  }), [layout, items, view, selectedId, t]);
-
-  const edges = useMemo<Edge[]>(() => [...layout.edges.map(edge => {
-    const { relation } = edge;
-    const touches = selectedId !== null && (relation.source === selectedId || relation.target === selectedId);
-    return {
-      id: relation.id,
-      source: relation.source,
-      target: relation.target,
-      className: `architecture-map__edge${touches ? ' is-active' : selectedId !== null ? ' is-dim' : ''}`,
-      style: { strokeWidth: edge.strokeWidth, ...(edge.dashed ? { strokeDasharray: '6 4' } : {}) },
-      markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: touches ? 'var(--rh-accent)' : 'var(--text-color-kumo-subtle)' },
-      ...(edge.imports === null ? {} : { label: String(edge.imports) }),
-      selectable: false,
-      focusable: false,
-      zIndex: touches ? 2 : 1,
-    };
-  }), ...view.edges.map((edge): Edge => ({
-    // An undeclared import has no model relation, so it gets its own id and stays above the relations.
-    id: `undeclared:${edge.source}->${edge.target}`,
-    source: edge.source,
-    target: edge.target,
-    className: 'architecture-map__edge architecture-map__edge--undeclared',
-    style: { strokeDasharray: '4 3' },
-    markerEnd: { type: MarkerType.ArrowClosed, width: 14, height: 14, color: 'var(--text-color-kumo-danger)' },
-    label: String(edge.imports),
-    selectable: false,
-    focusable: false,
-    zIndex: 3,
-  }))], [layout, view, selectedId]);
-
-  // Selection is the only node change the read-only map applies; click and the keyboard both arrive here.
-  const onNodesChange = useCallback((changes: NodeChange<MapNode>[]) => {
-    const chosen = changes.find(change => change.type === 'select' && change.selected);
-    if (chosen && 'id' in chosen) setSelectedId(chosen.id);
-    else if (changes.some(change => change.type === 'select')) setSelectedId(null);
-  }, []);
-
-  return <div className="architecture-map" data-node-count={map.nodes.length} data-relation-count={map.relations.length} data-layer={layer}>
-    <div className="architecture-map__canvas" aria-label={t('architecture.map.label')} role="region">
-      <ReactFlow<MapNode, Edge>
-        nodes={nodes}
-        edges={edges}
-        nodeTypes={NODE_TYPES}
-        onNodesChange={onNodesChange}
-        nodesDraggable={false}
-        nodesConnectable={false}
-        edgesFocusable={false}
-        minZoom={0.05}
-        maxZoom={2}
-        fitView={firstView === undefined}
-        {...(firstView === undefined ? {} : { defaultViewport: firstView })}
-        attributionPosition="top-right"
-      >
-        <Background variant={BackgroundVariant.Dots} gap={20} size={1.5} color="var(--rh-diagram-dot)" />
-        <LayerBands layout={layout} t={t} />
-        <Panel position="bottom-left"><Legend map={map} view={view} t={t} /></Panel>
-        <Panel position="bottom-right"><ZoomControls t={t} /></Panel>
-      </ReactFlow>
-    </div>
-    <Inspector map={map} layer={layer} pullRequest={pullRequest} selected={selected} side={side} onModule={onModule} t={t} />
-  </div>;
-}
-
 /** A layer with no data shows as unavailable; it stays selectable so its reason can be read. */
 function layerAvailable(map: ArchitectureMapV1, layer: MapLayerId): boolean {
   return layer === 'violations' ? Object.values(map.layers.violations).some(part => part.state === 'ok') : map.layers[layer].state === 'ok';
 }
 
-function LayerBar({ map, layer, onLayer, t }: {
+/** The count on a layer chip: what the layer covers, in capabilities where it marks the module map. `null` when the layer has no data. */
+function layerCount(map: ArchitectureMapV1, layer: MapLayerId, pullRequest: number | null, t: OperatorTranslate): string | null {
+  if (!layerAvailable(map, layer)) return null;
+  const { changes, pull_requests: pullRequests, tests, decisions } = map.layers;
+  const modules = (id: MapLayerId) => [...modulesLayerView(map, id, pullRequest).marks.values()].filter(mark => mark.tone !== 'muted').length;
+  if (layer === 'changes') return changes.state === 'ok' ? t('architecture.layer.count.changes', { modules: counted(t, modules('changes'), 'module', changes.truncated.nodes), commits: counted(t, changes.commits.length, 'commit') }) : null;
+  if (layer === 'violations') return String(violationItems(map));
+  if (layer === 'pull_requests') {
+    const impact = pullRequests.state === 'ok' ? pullRequests.pull_requests.find(item => item.number === pullRequest)?.impact : undefined;
+    return pullRequest === null ? null : impact?.state === 'ok' ? t('architecture.layer.count.pull_requests', { number: pullRequest, modules: counted(t, modules('pull_requests'), 'module', impact.truncated.nodes) }) : `#${pullRequest}`;
+  }
+  if (layer === 'tests') return tests.state === 'ok' ? `${tests.capabilities.length} / ${map.nodes.filter(node => node.kind === 'capability').length}` : null;
+  return counted(t, decisions.items.length, 'decision');
+}
+
+function LayerBar({ map, layer, pullRequest, onLayer, t }: {
   readonly map: ArchitectureMapV1;
   readonly layer: MapLayerId;
+  readonly pullRequest: number | null;
   readonly onLayer: (layer: MapLayerId) => void;
   readonly t: OperatorTranslate;
 }) {
   return <div className="architecture-layers" role="group" aria-labelledby="architecture-layers-label">
-    {MAP_LAYERS.map(item => (
-      <button key={item} type="button" aria-pressed={layer === item} data-layer={item}
+    {MAP_LAYERS.map(item => {
+      const count = layerCount(map, item, pullRequest, t);
+      return <button key={item} type="button" aria-pressed={layer === item} data-layer={item}
         data-state={layerAvailable(map, item) ? 'ok' : 'unavailable'} onClick={() => onLayer(item)}>
-        {t(`architecture.layer.${item}`)}
-      </button>
-    ))}
+        {t(`architecture.layer.${item}`)}{count !== null && <span className="architecture-layers__count mono-value">{count}</span>}
+      </button>;
+    })}
   </div>;
 }
 
@@ -427,18 +241,27 @@ function MapUnavailable({ read, kept, t }: {
   </p>;
 }
 
-/** The base maps that read the map route: modules (layered by the model's layer order), sequence and topology. */
+/** The base maps that read the map route: modules (capabilities in domain groups), sequence and topology. */
 export type ArchitectureBaseMap = 'modules' | 'sequence' | 'topology';
 
-/** What the page shows about the map outside the map view: the header row's commit and time, and the tab counts. */
-export interface ArchitectureMapSummary { readonly commit: string; readonly collectedAt: string; readonly modules: number; readonly flows: number }
+/**
+ * What the page shows about the map outside the map view: the header row's commit, collection time,
+ * branch (`headRef`, null for a detached HEAD) and archctx version, and the tab counts.
+ */
+export interface ArchitectureMapSummary {
+  readonly commit: string;
+  readonly collectedAt: string;
+  readonly headRef: string | null;
+  readonly archctxVersion: string;
+  readonly modules: number;
+  readonly flows: number;
+}
 
-/** The map-wide gaps that `view` depends on. Without a layer order only the module map, which draws the bands, loses something. */
-function MapGaps({ map, view, t }: { readonly map: ArchitectureMapV1; readonly view: ArchitectureBaseMap; readonly t: OperatorTranslate }) {
+/** The map-wide gaps. No base map draws the layer order, so its gap is not one. */
+function MapGaps({ map, t }: { readonly map: ArchitectureMapV1; readonly t: OperatorTranslate }) {
   return <>
     {map.sizes.state === 'unavailable' && <p className="architecture-map__gap" data-gap="sizes" data-reason={map.sizes.reason}>{t(`architecture.map.sizes.${map.sizes.reason}`)}</p>}
     {map.dependencies.state === 'unavailable' && <p className="architecture-map__gap" data-gap="dependencies" data-reason={map.dependencies.reason}>{t(`architecture.map.dependencies.${map.dependencies.reason}`)}</p>}
-    {view === 'modules' && map.layer_order.state === 'unavailable' && <p className="architecture-map__gap" data-gap="layer_order" data-reason={map.layer_order.reason}>{t(`architecture.map.layer_order.${map.layer_order.reason}`)}</p>}
   </>;
 }
 
@@ -469,12 +292,15 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
   const listed = map !== null && map.layers.pull_requests.state === 'ok' && map.layers.pull_requests.pull_requests.some(item => item.number === picked);
   const pullRequest = map === null ? null : listed ? picked : firstImpactPullRequest(map);
   useEffect(() => {
-    onSummary(map === null ? null : { commit: map.commit, collectedAt: map.collected_at, modules: map.nodes.filter(node => node.kind === 'capability').length, flows: map.flows.length });
+    onSummary(map === null ? null : {
+      commit: map.commit, collectedAt: map.collected_at, headRef: map.head_ref, archctxVersion: map.archctx_version,
+      modules: map.nodes.filter(node => node.kind === 'capability').length, flows: map.flows.length,
+    });
   }, [map, onSummary]);
   useEffect(() => () => onSummary(null), [onSummary]);
   // The active layer's summary and the gaps of this view go to the side panel, so the canvas starts below the lens row.
   const side = map && <div className="architecture-map__side" data-map-side>
-    <MapGaps map={map} view={view} t={t} />
+    <MapGaps map={map} t={t} />
     <LayerSummary map={map} view={view} layer={layer} pullRequest={pullRequest} onPullRequest={setPicked} t={t} />
   </div>;
   return <div className="architecture-map-view">
@@ -483,11 +309,11 @@ export function ArchitectureMap({ repositoryId, view = 'modules', read = fetchAr
     {map && <>
       <div className="architecture-lens">
         <span id="architecture-layers-label" className="architecture-lens__label">{t('architecture.layers')}</span>
-        <LayerBar map={map} layer={layer} onLayer={setLayer} t={t} />
+        <LayerBar map={map} layer={layer} pullRequest={pullRequest} onLayer={setLayer} t={t} />
         {view === 'sequence' ? <SequenceLensTools map={map} layer={layer} pullRequest={pullRequest} flowId={flow} t={t} />
           : <span className="architecture-lens__hint">{t('architecture.lens.hint')}</span>}
       </div>
-      {view === 'modules' && <ReactFlowProvider><MapCanvas key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} /></ReactFlowProvider>}
+      {view === 'modules' && <ArchitectureModules key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
       {view === 'sequence' && <ArchitectureSequence key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} flowId={flow} onFlow={setFlow} side={side} onModule={onModule} t={t} />}
       {view === 'topology' && <ArchitectureTopology key={`${repositoryId}:${map.commit}`} map={map} layer={layer} pullRequest={pullRequest} side={side} onModule={onModule} t={t} />}
     </>}
