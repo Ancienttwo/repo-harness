@@ -1,10 +1,10 @@
-import type { ReactNode } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Banner, Button } from '@cloudflare/kumo';
 import { WarningIcon } from '@phosphor-icons/react';
 import { WORKTREE_CLEANUP_MAX_IDS, type WorktreeCleanupItem, type WorktreeCleanupResult } from '../core/operator/worktree-cleanup';
 import type { WorktreeView } from '../core/operator/worktrees';
-import type { OperatorApiErrorV1 } from './operator-api-error';
-import { isOperatorMessageKey, type OperatorMessageKey, type OperatorTranslate } from './i18n';
+import { CleanupPlanReview, JUDGMENT_TONE as TONE, refusalText, type CleanupPlanPorts } from './CleanupPlanReview';
+import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { ageWords } from './labels';
 import { Age, BoardState, CommandLine, SectionTitle, StatusDot, type DotTone } from './ui';
 import {
@@ -15,7 +15,6 @@ import {
 type Judgment = WorktreeView['judgment'];
 
 const JUDGMENTS: readonly Judgment[] = ['green', 'yellow', 'red'];
-const TONE: Readonly<Record<Judgment, DotTone>> = { green: 'ok', yellow: 'warn', red: 'danger' };
 const BAR: Readonly<Record<Judgment, string>> = { green: 'bg-kumo-success', yellow: 'bg-kumo-warning', red: 'bg-kumo-danger' };
 
 /** The disk bar shares only measured bytes; each judgment's count stays next to its words. */
@@ -157,15 +156,6 @@ function WorktreeGroup({ group, title, status, worktrees, rowCleanup, now, t }: 
   );
 }
 
-/** Copy for a refusal is keyed by its code; a code this bundle does not know shows the server's sentence, marked as such. */
-function refusalText(error: OperatorApiErrorV1, t: OperatorTranslate): { readonly message: string; readonly next_action: string; readonly localized: boolean } {
-  const message = `worktrees.error.${error.code}.message`;
-  const action = `worktrees.error.${error.code}.action`;
-  return isOperatorMessageKey(message) && isOperatorMessageKey(action)
-    ? { message: t(message), next_action: t(action), localized: true }
-    : { message: error.message, next_action: error.next_action, localized: false };
-}
-
 const OUTCOME_TONE: Readonly<Record<WorktreeCleanupItem['outcome'], DotTone>> = { removed: 'ok', skipped: 'warn', failed: 'danger' };
 
 function ResultList({ result, t }: { readonly result: WorktreeCleanupResult; readonly t: OperatorTranslate }) {
@@ -206,10 +196,15 @@ function CleanupResult({ cleanup, t }: { readonly cleanup: WorktreeCleanup; read
 
 /**
  * Every worktree the collector found. Green rows start checked and one click
- * cleans the checked ones; yellow and red rows cannot be selected (5.1).
+ * cleans the checked ones; yellow and red rows cannot be selected (5.1). A
+ * non-green row is authorized only on the cleanup plan review (#1277 S3).
  */
-export function WorktreesPage({ view, cleanup, now, t }: { readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly now: number; readonly t: OperatorTranslate }) {
+export function WorktreesPage({ view, cleanup, plan, now, t }: {
+  readonly view: WorktreesView; readonly cleanup: WorktreeCleanup; readonly plan: CleanupPlanPorts | undefined; readonly now: number; readonly t: OperatorTranslate;
+}) {
   const digests = useRowDigests(cleanup.selectable);
+  const [reviewing, setReviewing] = useState(false);
+  if (reviewing && plan) return <CleanupPlanReview ports={plan} now={now} t={t} onBack={() => { setReviewing(false); cleanup.reselect(); }} />;
   const header = <header className="border-b border-kumo-hairline pb-4"><h1 className="text-xl font-semibold text-kumo-strong">{t('worktrees.title')}</h1></header>;
   if (view.kind === 'loading') return <div data-worktrees-page="pending">{header}<BoardState loading title={t('freshness.worktrees.loading')} description={t('worktrees.pending.body')} /></div>;
   if (view.kind === 'unreachable') return <div data-worktrees-page="unreachable">{header}<BoardState title={t('board.unreachable.title')} description={t('board.unreachable.body')} command="repo-harness operator serve" /></div>;
@@ -217,6 +212,7 @@ export function WorktreesPage({ view, cleanup, now, t }: { readonly view: Worktr
   if (snapshot === null) return <div data-worktrees-page="pending">{header}<BoardState title={t('worktrees.pending.title')} description={t('worktrees.pending.body')} /></div>;
   if (snapshot.repositories.length === 0 && snapshot.unassigned.length === 0) return <div data-worktrees-page="empty">{header}<BoardState title={t('board.noRepositories.title')} description={t('board.noRepositories.body')} command="repo-harness init --dry-run" /></div>;
   const reclaimable = reclaimableSpace(snapshot);
+  const nonGreen = snapshot.repositories.some(repository => repository.worktrees.some(tree => tree.judgment !== 'green'));
   const running = cleanup.state.kind === 'running';
   const count = cleanup.state.kind === 'running' ? cleanup.state.count : cleanup.selected.length;
   const overLimit = cleanup.selected.length > WORKTREE_CLEANUP_MAX_IDS;
@@ -233,6 +229,9 @@ export function WorktreesPage({ view, cleanup, now, t }: { readonly view: Worktr
         <p className="text-sm text-kumo-default" data-reclaimable={reclaimable.bytes} data-reclaimable-unknown={reclaimable.unknown}>
           <span className="font-medium text-kumo-strong">{t('worktrees.reclaimable')}</span> · <span className="font-mono">{spaceWords(reclaimable, t)}</span>
         </p>
+        {plan && nonGreen && (
+          <Button variant="secondary" className="ml-auto" onClick={() => setReviewing(true)} disabled={running} data-plan-review-open>{t('worktrees.plan.open')}</Button>
+        )}
         {cleanup.selectable.length > 0 && (
           <Button variant="primary" onClick={cleanup.submit} disabled={running || count === 0 || overLimit} data-clean={count}>
             {running ? t('worktrees.cleaning', { count }) : t('worktrees.clean', { count })}
