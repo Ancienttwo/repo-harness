@@ -215,6 +215,44 @@ module is in the title so that a list view shows the write scopes.
   For the Herdr pane topology, follow
   [Herdr Dispatch](https://github.com/Ancienttwo/repo-harness/blob/main/docs/reference-configs/herdr-notify.md#herdr-dispatch).
 
+### 7.1 Quota check
+
+Quota belongs to the provider account, not to the host. A seat draws from
+the account of its provider route: Claude Code and pi with an Anthropic
+login share the Claude account; Codex and pi with a ChatGPT login share
+the ChatGPT account.
+
+Before each dispatch wave, run `repo-harness quota --json`. It prints one
+state for each account (`claude`, `chatgpt`) and the windows that it read.
+Apply the table below to each account. Put the reading in the
+`Dispatch reading:` line of each claim of the wave: for each account the
+state, used %, pace, reset time and reading time.
+
+For each window (5 h and weekly), elapsed% = 100 × (1 − (resets_at −
+now) / window) and pace = used% − elapsed%. The account takes the worst
+window state, in the order `exhausted` > `tight` > `unknown` > `normal` >
+`surplus`. A window with no reading (absent, stale or malformed) makes the
+account `unknown`, unless another window is `exhausted` or `tight`.
+
+| State | Condition | Coordinator action |
+|---|---|---|
+| exhausted | used ≥ 95%, or `rate_limit_reached_type` set | No new dispatch to that account, review seats included: start no new turn on it. Spend credits only when the owner allows it; otherwise a merge that needs that account's review seat waits for the reset. |
+| tight | headroom < 15%, or pace > +15 | Must-ship work only. Halve the writer cap. No stretch work. |
+| normal | other | The plan's cap. |
+| surplus | pace < −25 and the reset is less than 24 h away | Pull stretch work forward, up to the full cap. |
+| unknown | no reading, or a reading older than 30 min | Read by hand before the dispatch. No expansion. |
+
+For an `unknown` Claude account, read it by hand with
+`claude -p "/usage" --model haiku --output-format text` from a temporary
+directory. It is a local command, and it shows the model rows (for
+example Opus or Fable) that the status line capture does not have. Use it
+for the manual reading only; no code parses its text. Record the manual
+reading and its source in the `Dispatch reading:` line.
+
+Seat model routing follows the repository's or the user's own routing
+rule. When an account is `tight` or `exhausted`, defer Medium and High
+implementation; do not move it to another provider by default.
+
 ## 8. Follow up
 
 Follow the PR and the issue comments. Do not poll CI with sleeps. Use the

@@ -340,6 +340,14 @@ The host installer, shared skill roots and catalog retain those responsibilities
 
 ## 4. 歷史決策記錄(append-only)
 
+### Map contract v7 (2026-11-04, issue #1692)
+
+- The map route serves `repo-harness.architecture-map.v7`. It replaces v6 in one change, with no alias and no second decoder. The collector cache is in memory, so a restart drops every v6 map. A browser that still runs v6 code refuses a v7 body as `architecture_map_invalid` until a reload.
+- The header adds `head_ref` (the branch that HEAD names, from `git symbolic-ref` in the checkout read; null for a detached HEAD) and `archctx_version` (`ARCHCTX_REQUIRED_VERSION`, the only version that `ArchctxClient` runs).
+- Nodes add `domain` from the capability profile of the same `export native` read, and the model's `namespace` and `mount`. Each is non-null exactly on its own node kind. A mount source or target that the prose guard would change is null, so an absolute target in the mount namespace is withheld. Relations add `protocol`, masked like model prose.
+- `changes.commits` lists each first-parent commit of the window, newest first, from one `git log` read. A commit names the owners that archctx `impact` gives to the paths it changed, so the join has one owner authority. A path that changed back inside the window names no node. When `truncated.paths` is true, the list is a lower bound.
+- `anchors.nodes[].findings` lists each stale citation: archctx's kind as an opaque token, the origin, the document path and line, and the masked citation text. A path that the public-path guard refuses is null.
+
 ### Retire the repository snapshot route (2026-11-02, issue #1345)
 
 - Delete the repository snapshot route, its worker, and the Planning and Organization views. The engineer-scheduling, engineering-overlay and integration-acceptance clusters that fed them are deleted.
