@@ -11,6 +11,7 @@ import { join } from 'node:path';
 
 import type { ArchitectureFlowSelectorCheckV1, DependencyConstraintEvaluationV1, NativeContextExportV1, RefImpactV1 } from 'archctx-contracts';
 import {
+  ArchctxClientError,
   decodeArchitectureDebtReport,
   decodeConstraintEvaluation,
   decodeDocsAnchorsReport,
@@ -44,6 +45,7 @@ import {
   type ArchitectureMapRelationV1,
   type ArchitectureMapSizeInput,
   type ArchitectureMapV1,
+  type ArchitectureMapWorkerReason,
   type ArchitectureModelChangeV1,
   type ArchitecturePullRequestImpactV1,
   type ArchitecturePullRequestSourceV1,
@@ -59,9 +61,11 @@ import { gitSpawnSync } from '../git/runner';
 import { readRepoHarnessRegistryStrictSnapshot } from '../repo-registry';
 import { publicValue } from './architecture';
 
+/** A failure carries one named reason, or archctx's codes when archctx refused the model read; never a path or a message. */
 export type ArchitectureMapWorkerResult =
   | { readonly id: string; readonly ok: true; readonly snapshot: ArchitectureMapV1 }
-  | { readonly id: string; readonly ok: false; readonly reason: 'model_unavailable' };
+  | { readonly id: string; readonly ok: false; readonly reason: ArchitectureMapWorkerReason }
+  | { readonly id: string; readonly ok: false } & Omit<ArchctxRefusalV1, 'state'>;
 
 const MODEL_ROOT = '.archcontext/model';
 const CONSTRAINT_ROOT = `${MODEL_ROOT}/constraints`;
@@ -606,7 +610,12 @@ export function collectArchitectureMap(
   const before = readCheckoutState(path);
   let committed;
   try { committed = readCommittedNativeContext(path); }
-  catch { return { id: repositoryId, ok: false, reason: 'model_unavailable' }; }
+  catch (error) {
+    const refusal = error instanceof ArchctxClientError ? archctxRefusal(error.code, error.reasonCode) : null;
+    return refusal === null
+      ? { id: repositoryId, ok: false, reason: 'model_unavailable' }
+      : { id: repositoryId, ok: false, reason: refusal.reason, code: refusal.code, reason_code: refusal.reason_code };
+  }
   const { commit, context } = committed;
   const { nodes, relations, flows, flow_evidence: evidence, decisions } = modelEntities(context, realpathSync(path));
   const known = new Set(nodes.map(node => node.id));
@@ -647,12 +656,12 @@ if (import.meta.main) {
   try { pullRequests = decodeArchitecturePullRequestsSource(JSON.parse(readFileSync(process.argv[3] ?? '', 'utf8'))); }
   catch { /* dev_activity_unavailable */ }
   const repo = readRepoHarnessRegistryStrictSnapshot({ env: process.env }).repos.find(entry => entry.id === id);
-  let result: ArchitectureMapWorkerResult = { id, ok: false, reason: 'model_unavailable' };
-  // A failure is one result; its cause (a path, an archctx error) stays in this process.
+  let result: ArchitectureMapWorkerResult = { id, ok: false, reason: 'repository_not_found' };
+  // A failure is one named result; a path or an error message stays in this process.
   if (repo) {
     const now = new Date();
     try { result = collectArchitectureMap(repo.id, repo.path, now.toISOString(), localMidnight(now), pullRequests); }
-    catch { /* model_unavailable */ }
+    catch { result = { id, ok: false, reason: 'architecture_map_failed' }; }
   }
   // Exit once the line is flushed so a handle left open cannot hold the child past its output.
   process.stdout.write(`${JSON.stringify(result)}\n`, () => process.exit(0));
