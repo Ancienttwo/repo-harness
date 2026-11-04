@@ -20,7 +20,7 @@ const REDACTION_PATTERNS: RedactionPattern[] = [
   ...SECRET_TOKEN_PATTERNS,
   {
     type: 'secret_assignment',
-    pattern: /(^|[^\w])([A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS)[A-Z0-9_]*)\s*([:=])\s*\S+/gi,
+    pattern: /(^|[^\w])((?=[A-Z0-9_]*(?:API_KEY|SECRET|TOKEN|PASSWORD|PASSWD|CREDENTIALS))[A-Z0-9_]*)\s*([:=])\s*\S+/gi,
     replacement: '$1$2$3[REDACTED]',
   },
   {

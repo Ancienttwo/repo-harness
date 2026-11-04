@@ -9,7 +9,8 @@ import { projectionResultReceiptDigest } from 'archctx-contracts';
 import { sha256 } from '../../src/core/review/module-review-prompt';
 import type { JsonValue } from '../../src/core/evidence/types';
 import { canonicalize } from '../../src/core/evidence/canonical-json';
-import { containsSecret } from '../../src/core/security/secret-patterns';
+import { redactMcpText } from '../../src/cli/mcp/redaction';
+import { containsSecret, replaceSecrets } from '../../src/core/security/secret-patterns';
 import { MODULE_DOC, MODULE_FLOW, MODULE_ID, MODULE_NODE, fixtureCommit, fixtureGit, fixtureWrite, fixtureYaml, moduleRepository, projectionCheckResult } from '../helpers/module-repository';
 
 const roots: string[] = [];
@@ -261,6 +262,43 @@ test('OpenAI prompt detection uses a token boundary without shrinking MCP redact
   expect(containsSecret('bound-task-abcdefghijklmnopqrstuv')).toBe(false);
   expect(containsSecret('"sk-'+'A'.repeat(24)+'"')).toBe(true);
   expect(containsSecret('TOKEN=prefixsk-'+'A'.repeat(24))).toBe(true);
+});
+
+test('each formerly quadratic secret rule stays linear on a 1 MiB run and still matches', () => {
+  const run = (unit: string) => unit.repeat(Math.ceil(1024 * 1024 / unit.length));
+  const keyBegin = '-----BEGIN PRIVATE KEY-----', keyEnd = '-----END PRIVATE KEY-----', key = keyBegin + '\nbody\n' + keyEnd;
+  const mcp = (text: string) => redactMcpText(text).text;
+  const rows: ReadonlyArray<{ run: string; sample: string; replacement?: string; redact?: (text: string) => string }> = [
+    { run: run('a'), sample: '://user:pass@example.invalid', replacement: '[CREDENTIAL URL REDACTED]' },
+    { run: run('http://'), sample: '?token=fake', replacement: '[ENDPOINT REDACTED]' },
+    { run: run('eyJ'), sample: '.' + 'b'.repeat(12) + '.' + 'c'.repeat(12), replacement: '[JWT REDACTED]' },
+    { run: run(keyBegin + '\n'), sample: keyEnd, replacement: '[PRIVATE KEY REDACTED]' },
+    // The match start is 1 MiB after the text start, so the rule walks back the whole run.
+    { run: run('a'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    // Each run below holds text that passes for the start of a rule, but no complete start literal.
+    { run: run('-'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('-'.repeat(80) + '\n' + 'x'.repeat(75) + '\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('| --- | ----- | ----- |\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run('-----BEGIN PRIVATE KEY\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    { run: run(keyEnd + '\n'), sample: key, replacement: '[PRIVATE KEY REDACTED]' },
+    // Each run below has one start every 100 characters, so each walk crosses a long gap.
+    { run: run('1'.repeat(99) + 'a'), sample: '://user:pass@example.invalid', replacement: '[CREDENTIAL URL REDACTED]' },
+    { run: run('http://' + 'a'.repeat(93)), sample: '?token=fake', replacement: '[ENDPOINT REDACTED]' },
+    { run: run('eyJ' + 'a'.repeat(97)), sample: '.' + 'b'.repeat(12) + '.' + 'c'.repeat(12), replacement: '[JWT REDACTED]' },
+    { run: run('TOKEN'), sample: '=fake' },
+    { run: 'TOKEN=null' + ' '.repeat(1024 * 1024), sample: 'x' },
+    { run: run('TOKEN'), sample: '=fake', replacement: '=[REDACTED]', redact: mcp },
+  ];
+  for (const row of rows) {
+    const text = row.run + row.sample, redact = row.redact ?? replaceSecrets;
+    const start = performance.now();
+    expect(containsSecret(row.run)).toBe(false);
+    expect(redact(row.run) === row.run).toBe(true);
+    expect(containsSecret(text)).toBe(true);
+    const replaced = redact(text);
+    expect(performance.now() - start).toBeLessThan(2000);
+    if (row.replacement) expect(replaced.includes(row.replacement)).toBe(true);
+  }
 });
 
 function moduleNode(root: string): Record<string, unknown> & { source: Record<string, unknown> } {
