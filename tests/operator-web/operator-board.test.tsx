@@ -1319,9 +1319,11 @@ describe('worktree cleanup plan review (#1720)', () => {
       .toEqual(['.env', 'docs/guide.md', 'docs/index-large.txt', 'docs/staged-large.txt']);
     expect(Array.from(planItem('codex-7f3a').querySelectorAll('[data-plan-loss-list="files"] li')).map(row => row.textContent))
       .toEqual(['docs/guide.md', 'docs/index-large.txt', 'docs/removed.md', 'docs/staged-large.txt', 'empty']);
-    // Git storage refuses `.env` by name and the two large index blobs by size, so the page offers only Not archived or Private for them.
+    // Git storage refuses `.env` by name, so the page offers only Not archived or Private for it. Staging cannot read
+    // the two large index blobs in any storage, so the page offers only Not archived for them.
     const offered = (path: string) => Array.from(planItem('codex-7f3a').querySelectorAll<HTMLOptionElement>(`[data-plan-path="${path}"] option`)).map(option => option.value);
-    for (const path of ['.env', 'docs/index-large.txt', 'docs/staged-large.txt']) expect(offered(path)).toEqual(['none', 'private']);
+    expect(offered('.env')).toEqual(['none', 'private']);
+    for (const path of ['docs/index-large.txt', 'docs/staged-large.txt']) expect(offered(path)).toEqual(['none']);
     expect(offered('docs/guide.md')).toEqual(['none', 'git', 'private']);
     await destination('codex-7f3a', 'docs/guide.md', 'git');
     await destination('codex-7f3a', '.env', 'private');
