@@ -5,7 +5,7 @@ import { initGitRepo, run, tmpWorkspace } from './helpers/repo-fixture';
 import { evaluateBoardAttention, type BoardRuleId } from '../src/core/board/attention';
 import { WINDOW_WITH_WORKERS_MS, WINDOW_WITHOUT_WORKERS_MS, planAttentionDeliveries } from '../src/core/board/attention-delivery';
 import { attentionLogPath, attentionWatchDoctorCheck, runAttentionWindow, serviceTerminalRepository, startAttentionWatch } from '../src/effects/board/attention-watch';
-import { decodeBoard, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
+import { decodeBoard, type BoardHostPortsV1, type BoardTerminalV1, type BoardV1 } from '../src/core/board/board';
 import { decodePlanBlock, PlanBlockError } from '../src/core/board/plan-block';
 import { decodeReviewHazards, pathHazardHits } from '../src/core/board/hazards';
 import type { PullRequestReadinessV2 } from '../src/core/publication/merge-readiness';
@@ -57,6 +57,8 @@ interface Replay {
   readonly owners?: (results: Json[]) => void;
   /** Replaces the recorded archctx process. */
   readonly archctx?: RunArchctxProcess;
+  /** Replaces the hc host that replays the recorded terminals. */
+  readonly host?: BoardHostPortsV1;
   /** The version that the fake hc reports; the recorded core reported 0.1.17. */
   readonly hcVersion?: string;
   readonly now?: Date;
@@ -82,7 +84,7 @@ function replay(options: Replay = {}): BoardV1 {
     repo_root: root,
     parent: 1474,
     now: () => options.now ?? REPLAY_NOW,
-    host: boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.17' } }),
+    host: options.host ?? boardHostPorts({ env: { PATH: `${join(root, 'bin')}:/bin:/usr/bin`, FIXTURES, HC_VERSION: options.hcVersion ?? '0.1.17' } }),
     gh_runner: (args) => {
       if (args[0] === 'repo') return answer({ nameWithOwner: 'Ancienttwo/repo-harness' });
       if (args[1] === 'graphql') return answer(args.some(arg => arg.includes('subIssues')) ? parent : pulls);
@@ -539,8 +541,27 @@ test('watch service: --watch refuses a terminal without the service labels; star
   // The board of the same parent in hc: the watcher is not a seat terminal.
   const seats = watchHc({ FAKE_LS: [{ address: 't5', state: 'live' }, { address: 't3', state: 'live' }],
     FAKE_TERMINALS: { t5: { labels }, t3: { labels: { 'repo-harness.seat': 'orchestrator', 'repo-harness.repository': '1186405141', 'repo-harness.parent': '1503' } } } });
-  const read = boardHostPorts(seats.options).seatTerminals('1186405141', 1503);
+  const read = boardHostPorts(seats.options).seatTerminals('1186405141');
   expect(read.status === 'observed' && read.terminals.map(terminal => terminal.address)).toEqual(['t3']);
+  expect(seats.calls().filter(args => args[0] === 'ls')).toEqual([['ls', '--json', '--label', 'repo-harness.repository=1186405141']]);
+
+  // One orchestrator and one advisor serve the repository (#1780): the room of every parent shows them, with or
+  // without a parent label. A worker shows only in the room of its parent label; a terminal of another repository never.
+  const room = (repository: string, labels: Json) => ({ labels: { 'repo-harness.repository': repository, ...labels } });
+  const repositorySeats = watchHc({
+    FAKE_LS: ['t7', 't11', 't12', 't16', 't17', 't18', 't19'].map(address => ({ address, state: 'live' })),
+    FAKE_TERMINALS: {
+      t7: room('1186405141', { 'repo-harness.seat': 'orchestrator' }), t11: room('1186405141', { 'repo-harness.seat': 'advisor' }),
+      t12: room('1186405141', { 'repo-harness.seat': 'orchestrator', 'repo-harness.parent': '1503' }),
+      t16: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.parent': '1474', 'repo-harness.issue': '1721' }),
+      t17: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.parent': '1503', 'repo-harness.issue': '1773' }),
+      t18: room('1186405141', { 'repo-harness.seat': 'worker', 'repo-harness.issue': '1774' }),
+      t19: room('987654321', { 'repo-harness.seat': 'advisor' }),
+    },
+  });
+  const office = replay({ host: boardHostPorts(repositorySeats.options) }).execution;
+  expect(office.status === 'observed' && office.terminals.map(terminal => [terminal.address, terminal.seat_status === 'observed' && terminal.seat]))
+    .toEqual([['t7', 'orchestrator'], ['t11', 'advisor'], ['t12', 'orchestrator'], ['t16', 'worker']]);
 
   // Doctor runs in repository 1186405141. t6 is the watcher of another repository with the same parent.
   const other = { ...labels, 'repo-harness.repository': '987654321' };
@@ -745,12 +766,12 @@ test('migrate-dependencies stops before any write on an unparsable line, a decla
   expect([flags.calls(), flags.writes]).toEqual([0, []]);
 });
 
-test('advisor seat: plain text reaches only the one live advisor terminal of the repository and parent; the read-back withholds key blocks and long lines and redacts the rest', () => {
+test('advisor seat: plain text reaches only the one live advisor terminal of the repository; the read-back withholds key blocks and long lines and redacts the rest', () => {
   const W = ADVISOR_TRANSCRIPT_LINE_WITHHELD;
-  const seat = (name: string | null, parent = '1503') => ({ labels: {
-    'repo-harness.repository': '1186405141', 'repo-harness.parent': parent, ...(name === null ? {} : { 'repo-harness.seat': name }) } });
-  // Refused: the orchestrator, a worker, the advisor of another parent and a terminal without the seat label.
-  const refused = { t3: seat('orchestrator'), t4: seat('worker'), t5: seat('advisor', '1504'), t6: seat(null) };
+  const seat = (name: string | null, parent: string | null = '1503', repository = '1186405141') => ({ labels: {
+    'repo-harness.repository': repository, ...(parent === null ? {} : { 'repo-harness.parent': parent }), ...(name === null ? {} : { 'repo-harness.seat': name }) } });
+  // Refused: the orchestrator, a worker, the advisor of another repository and a terminal without the seat label.
+  const refused = { t3: seat('orchestrator'), t4: seat('worker'), t5: seat('advisor', '1503', '987654321'), t6: seat(null) };
   const advisorHc = (terminals: Json, env: Json = {}) => {
     const hc = watchHc({ FAKE_LS: Object.keys(terminals).map(address => ({ address, state: 'live' })), FAKE_TERMINALS: terminals, ...env });
     return { ...hc, scope: { github_repository_id: 1186405141, parent: 1503, host: boardHostPorts(hc.options) } };
@@ -760,11 +781,13 @@ test('advisor seat: plain text reaches only the one live advisor terminal of the
 
   const absent = advisorHc(refused);
   expect(code(() => sendToAdvisorSeat(absent.scope, 'status?'))).toBe('advisor_seat_absent');
-  expect(absent.calls()[0]).toEqual(['ls', '--json', '--label', 'repo-harness.repository=1186405141', '--label', 'repo-harness.parent=1503']);
+  expect(absent.calls()[0]).toEqual(['ls', '--json', '--label', 'repo-harness.repository=1186405141']);
   expect(sends(absent)).toEqual([]);
-  expect(code(() => sendToAdvisorSeat(advisorHc({ ...refused, t9: seat('advisor'), t10: seat('advisor') }).scope, 'status?'))).toBe('advisor_seat_ambiguous');
+  // One advisor per repository (#1780): two live advisors with different parent labels are ambiguous.
+  expect(code(() => sendToAdvisorSeat(advisorHc({ ...refused, t9: seat('advisor'), t10: seat('advisor', '1504') }).scope, 'status?'))).toBe('advisor_seat_ambiguous');
 
-  const one = advisorHc({ ...refused, t9: { ...seat('advisor'), status: { state: 'working', kind: 'tool' }, turn: 3 } }, {
+  // The advisor carries no parent label, as its start row in herdr-notify.md writes it.
+  const one = advisorHc({ ...refused, t9: { ...seat('advisor', null), status: { state: 'working', kind: 'tool' }, turn: 3 } }, {
     FAKE_READ: { text: ['dropped', ...Array.from({ length: 196 }, (_, at) => `l${at}`), 'export GITHUB_TOKEN=ghp_' + 'a'.repeat(36), 'API_KEY=hunter2',
       'Authorization: Bearer abc', 'x'.repeat(5000)].join('\n'), complete: false, why: 'working' },
   });

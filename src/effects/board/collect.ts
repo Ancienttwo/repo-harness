@@ -4,6 +4,7 @@ import {
   linkedPullRequests, projectBoard, type BoardDailyRunInputV1, type BoardExecutionV1, type BoardHostPortsV1, type BoardPathOwnerV1,
   type BoardPathOwnersV1, type BoardSeatTerminalReadV1, type BoardTerminalV1, type BoardToolingV1, type BoardV1,
 } from '../../core/board/board';
+import { ADVISOR_SEAT } from '../../core/board/advisor-seat';
 import { BOARD_PAGE, decodeParentRead, decodePullRequestsRead, type BoardPullRequestReadV1 } from '../../core/board/source';
 import { normalizeCapabilityPath } from '../../core/capabilities/registry';
 import { HC_MIN_VERSION } from '../../core/operator/herdr-pin';
@@ -120,6 +121,8 @@ function tooling(input: BoardCollectInput): BoardToolingV1 {
 }
 
 const POSITIVE = /^[1-9][0-9]*$/u;
+/** One orchestrator and one advisor serve the whole repository (#1780): the board of every parent shows them. */
+const REPOSITORY_SEATS: ReadonlySet<string> = new Set(['orchestrator', ADVISOR_SEAT]);
 
 function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
   const { labels, ...base } = terminal;
@@ -132,15 +135,18 @@ function seatTerminal(terminal: BoardSeatTerminalReadV1): BoardTerminalV1 {
 }
 
 /**
- * The seat terminals of this repository and parent. A terminal without both
- * labels is never read. No such terminal means the seat labels are not
- * written, which the board does not read as "no stuck seats".
+ * The seat terminals of this repository and parent: the orchestrator and the
+ * advisor by their seat label with any parent label or none, and every other
+ * terminal by this parent label. No such terminal means the seat labels are
+ * not written, which the board does not read as "no stuck seats".
  */
 function execution(input: BoardCollectInput, repositoryId: number): BoardExecutionV1 {
-  const read = input.host.seatTerminals(String(repositoryId), input.parent);
+  const read = input.host.seatTerminals(String(repositoryId));
   if (read.status === 'unavailable') return read;
-  if (read.terminals.length === 0) return { status: 'unavailable', reason: 'no_seat_terminals' };
-  return { status: 'observed', terminals: Object.freeze(read.terminals.map(seatTerminal)) };
+  const parent = String(input.parent);
+  const terminals = read.terminals.filter(({ labels }) => (labels.seat !== undefined && REPOSITORY_SEATS.has(labels.seat)) || labels.parent === parent);
+  if (terminals.length === 0) return { status: 'unavailable', reason: 'no_seat_terminals' };
+  return { status: 'observed', terminals: Object.freeze(terminals.map(seatTerminal)) };
 }
 
 /**
