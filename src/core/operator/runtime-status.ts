@@ -34,10 +34,8 @@ export interface RuntimeObservation {
 export interface RuntimeBadge extends RuntimeObservation {
   badge: RuntimeState; freshness: 'fresh' | 'stale' | 'disconnected';
 }
-/** Why the hc source is unavailable, when the reason is a typed fact: the core is below the pin, or no pin is readable. */
-export type RuntimeUnavailableReason =
-  | { code: 'hc_version_mismatch'; expected: { min_version: string }; actual: { version: string } }
-  | { code: 'hc_pin_unavailable' };
+/** Why the hc source is unavailable, when the reason is a typed fact: the core is below the pin. */
+export type RuntimeUnavailableReason = { code: 'hc_version_mismatch'; expected: { min_version: string }; actual: { version: string } };
 export interface RuntimeOverlay {
   projection_version: typeof RUNTIME_OVERLAY_VERSION; status: 'ready' | 'unavailable'; reason: RuntimeUnavailableReason | null;
   observed_at: string | null; source_epoch: number;
@@ -89,7 +87,6 @@ export function decodeRuntimeObservation(value: unknown): RuntimeObservation {
 function decodeRuntimeUnavailableReason(value: unknown): RuntimeUnavailableReason | null {
   if (value === null) return null;
   const reason = record(value);
-  if (reason.code === 'hc_pin_unavailable') { exact(reason, ['code']); return { code: 'hc_pin_unavailable' }; }
   exact(reason, ['code','expected','actual']);
   if (reason.code !== 'hc_version_mismatch') throw new Error('runtime_unavailable_reason_invalid');
   const expected = record(reason.expected), actual = record(reason.actual);
