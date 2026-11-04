@@ -155,7 +155,7 @@ function desk(board: BoardV1 | null, terminal: SeatTerminal): OfficeDesk {
     title: item?.title ?? pr?.head_ref ?? null,
     branch: pr?.head_ref ?? null,
     queued: state === 'acceptance_queue' ? pr!.number : null,
-    drawerIssue: board === null ? null : item?.number ?? terminal.issue,
+    drawerIssue: item?.number ?? null,
   };
 }
 

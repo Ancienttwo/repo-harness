@@ -373,7 +373,7 @@ function OfficeRoomView({ repositoryId, list, view, place, parent, writeBossComm
     .flatMap(issue => board.items.find(item => item.number === issue) ?? []);
   return (
     <>
-      <BoardOfficeRoom repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? 'main'} room={room} place={place} writeBoss={writeBossCommand} mode={mode} onOpen={onOpen} now={now} t={t}
+      <BoardOfficeRoom key={`${repositoryId}:${parent}`} repository={list.repository} repositoryId={repositoryId} parent={parent} defaultBranch={board?.default_branch ?? null} room={room} place={place} writeBoss={writeBossCommand} mode={mode} onOpen={onOpen} now={now} t={t}
         banners={view === null ? null : <SourceBanners board={view.board} refreshFailed={view.refreshFailed} unevaluated={view.attention.unevaluated.length} t={t} />} />
       {view !== null && place !== null && (
         <BoardDrawer view={view} place={place} readExecution={readExecution} readTaskMessages={readTaskMessages} generation={generation} order={order} onOpen={onOpen} now={now} t={t} />

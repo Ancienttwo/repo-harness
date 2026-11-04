@@ -419,10 +419,19 @@ export interface SceneQueueEntry {
   readonly pr: number;
 }
 
+/** Stands the actor at its action spot: inside the act of every command, with the 排雷 sweep done. */
+const BOSS_STILL_MS = 12000;
+
+/** The effect of a scene frame. Reduced motion keeps the effect and its 15 seconds, without the walk. */
+export function sceneEffect(effect: { readonly command: BossEffect; readonly at: number } | null, now: number, still: boolean): SceneView['effect'] {
+  if (effect === null || now - effect.at >= BOSS_EFFECT_MS) return null;
+  return { command: effect.command, elapsedMs: still ? BOSS_STILL_MS : now - effect.at };
+}
+
 export interface SceneRoom {
   readonly name: string;
   readonly parent: number | null;
-  /** False when the repository has no live seat: the night palette, the lamp lit. */
+  /** Occupancy only. False when the repository has no live seat: the night palette, the lamp lit. */
   readonly lit: boolean;
   readonly orchestrator: SceneAgent | null;
   readonly advisor: SceneAgent | null;
@@ -601,7 +610,7 @@ function wall(fb: FrameBuffer, room: SceneRoom, night: boolean, f: number, heigh
   const plan = room.plan;
   const lines = plan !== null
     ? ['PLAN', plan.order.slice(0, BOARD_LINE).join(' '), plan.order.slice(BOARD_LINE, BOARD_LINE * 2).join(' '), valve ? 'SEATS ?' : `SEATS ${plan.limit} · BATCH ${plan.batch}`]
-    : [room.lit ? 'NO PLAN' : '', '', '', ''];
+    : [room.parent === null ? '' : 'NO PLAN', '', '', ''];
   fb.box(160, 3, 92, 34, 'paper');
   fb.frame(161, 4, 90, 32, 'mist');
   fb.text(lines[0]!, 165, 7, 'ink');
@@ -613,7 +622,7 @@ function wall(fb: FrameBuffer, room: SceneRoom, night: boolean, f: number, heigh
   fb.rect(176, 36, 4, 1, 'danger');
   fb.rect(184, 36, 4, 1, 'codex');
   hits.push({ key: 'board', x: 160, y: 3, width: 92, height: 34 });
-  if (!room.lit) labels.push({ x: 160, y: 13, width: 92, text: room.text.noParent, kind: 'paper' });
+  if (room.parent === null) labels.push({ x: 160, y: 13, width: 92, text: room.text.noParent, kind: 'paper' });
 
   fb.box(256, 20, 20, 3, 'wood');
   ([['slate', 9], ['claudeDk', 8], ['mist', 10], ['woodDk', 7], ['okDk', 9]] as const).forEach(([color, tall], index) => fb.box(258 + index * 3, 20 - tall, 3, tall, color));
@@ -746,6 +755,12 @@ export function composeRoom(room: SceneRoom, view: SceneView): ComposedScene {
   fb.dashed(56, 102, 128, 32, 'warn', 0);
   fb.dashed(57, 103, 126, 30, 'warn', 0);
   labels.push({ x: 59, y: 105, text: room.text.queue, kind: 'plain' });
+  // The zone hit comes first, so the entries it lists stay on top of it.
+  const overflow = room.queue.length - QUEUE_X.length;
+  if (overflow > 0) {
+    labels.push({ x: 59, y: 122, text: `+${overflow}`, kind: 'plain' });
+    hits.push({ key: 'queue', x: 56, y: 102, width: 128, height: 32 });
+  }
   room.queue.slice(0, QUEUE_X.length).forEach((entry, index) => {
     const x = QUEUE_X[index]!;
     const frame = f + index;

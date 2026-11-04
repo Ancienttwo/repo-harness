@@ -126,6 +126,7 @@ button.board-office__card:hover { border-color: var(--office-info); }
 .board-office dt { flex: none; color: var(--text-color-kumo-subtle); }
 .board-office dd { margin: 0; color: var(--text-color-kumo-strong); text-align: right; overflow-wrap: anywhere; }
 .board-office__command { display: flex; align-items: center; gap: 10px; padding: 6px 6px 6px 12px; border-radius: 8px; background: var(--office-term); color: #D8E0EA; font: 12.5px/1.5 var(--font-mono); }
+.board-office__command[data-command-gap] { margin: 0; padding: 8px 12px; background: var(--color-kumo-recessed); color: var(--text-color-kumo-subtle); }
 .board-office__command > span[aria-hidden] { color: #F08A3C; }
 .board-office__command code { min-width: 0; flex: 1; overflow-wrap: anywhere; font: inherit; }
 .board-office__copy { color: #F7F1E6; background: rgb(255 255 255 / .12); }

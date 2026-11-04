@@ -47,7 +47,8 @@ export const postBossCommand: BossCommandWriter = async (body) => {
   return { state: 'refused', error, retry_after_seconds: typeof retry === 'number' ? retry : null };
 };
 
-export type BossNotice = Exclude<BossCommandWrite, { readonly state: 'sent' }>;
+/** A cooldown runs per command, so the answer keeps the command that it refused. */
+export type BossNotice = Exclude<BossCommandWrite, { readonly state: 'sent' }> & { readonly command: AdvisorBossCommand };
 
 export interface BossCommands {
   /** The time each cooldown ends, from the last server answer. */
@@ -79,7 +80,7 @@ export function useBossCommands(write: BossCommandWriter, repositoryId: string, 
         setEffect({ command, at: now });
         return;
       }
-      setNotice(answer);
+      setNotice({ ...answer, command });
       if (answer.state === 'refused' && answer.retry_after_seconds !== null) {
         const seconds = answer.retry_after_seconds;
         setCooldowns(current => ({ ...current, [command]: now + seconds * 1000 }));

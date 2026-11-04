@@ -8,7 +8,7 @@ import type { BoardRepositoryOption } from './BoardPage';
 import { useModalFocus } from './Drawer';
 import type { OperatorMessageKey, OperatorTranslate } from './i18n';
 import { useBossCommands, type BossCommands, type BossCommandWriter, type BossNotice } from './office-boss';
-import { agentPortrait, BOSS_EFFECT_MS, bossPortrait, composeRoom, deskOutfit, deskVignette, queueOutfit, stageOutfit, type ScenePath } from './office-scene';
+import { agentPortrait, bossPortrait, composeRoom, deskOutfit, deskVignette, queueOutfit, sceneEffect, stageOutfit, type ScenePath } from './office-scene';
 import { BOSS_ICONS, sceneAgent, type BossPose } from './office-sprites';
 import type { ThemeMode } from './theme';
 import { Age, BoardState, CopyButton, PageLink } from './ui';
@@ -186,14 +186,14 @@ export function BoardOfficeOverview({ repositories, readParents, generation, onO
 /** The grid frame of the idle loops: 4 per second, still under reduced motion. */
 const FRAME_MS = 250;
 
-function useClock(): { readonly frame: number; readonly now: number } {
+function useClock(): { readonly frame: number; readonly now: number; readonly still: boolean } {
   const [clock, setClock] = useState(() => ({ frame: 0, now: Date.now() }));
+  const [still] = useState(() => typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
   useEffect(() => {
-    const still = typeof window.matchMedia === 'function' && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
     const timer = setInterval(() => setClock(current => ({ frame: still ? 0 : current.frame + 1, now: Date.now() })), FRAME_MS);
     return () => clearInterval(timer);
-  }, []);
-  return clock;
+  }, [still]);
+  return { ...clock, still };
 }
 
 const clockText = (milliseconds: number): string => {
@@ -216,11 +216,11 @@ function deskNumber(desk: OfficeDesk, t: OperatorTranslate): string {
 const deskKey = (desk: OfficeDesk): string => (desk.queued !== null ? `queue:${desk.queued}` : `desk:${desk.address}`);
 const deskStateName = (desk: OfficeDesk, t: OperatorTranslate) => (desk.state === 'acceptance_queue' ? t('board.office.desk.away') : stateName(desk.state, t));
 
-function SeatMeter({ room, lit, t }: { readonly room: OfficeRoom; readonly lit: boolean; readonly t: OperatorTranslate }) {
+function SeatMeter({ room, idle, t }: { readonly room: OfficeRoom; readonly idle: boolean; readonly t: OperatorTranslate }) {
   const count = room.desks.length;
   const planned = room.plan.status === 'observed';
   const full = planned && count >= room.limit;
-  const text = !lit ? '—' : !planned ? t('board.office.meter.noPlan', { count }) : t(full ? 'board.office.meter.full' : 'board.office.meter', { count, limit: room.limit });
+  const text = idle ? '—' : !planned ? t('board.office.meter.noPlan', { count }) : t(full ? 'board.office.meter.full' : 'board.office.meter', { count, limit: room.limit });
   return (
     <span className="board-office__meter" data-seat-meter={planned ? `${count}/${room.limit}` : 'none'} data-full={full ? '' : undefined}>
       <span className="board-office__meter-blocks" aria-hidden="true">
@@ -318,7 +318,8 @@ interface PanelView {
   readonly title: string;
   readonly sub: string;
   readonly rows: readonly (readonly [string, string])[];
-  readonly command: string;
+  /** Null when the command needs a value that no read observed. */
+  readonly command: string | null;
   readonly portrait: readonly ScenePath[] | null;
   readonly issue: number | null;
 }
@@ -334,7 +335,7 @@ function leadPanel(seat: 'orchestrator' | 'advisor', lead: OfficeLead, room: Off
   };
 }
 
-function panelView(key: string, room: OfficeRoom, parent: number | null, defaultBranch: string, planText: string, frame: number, t: OperatorTranslate): PanelView {
+function panelView(key: string, room: OfficeRoom, parent: number | null, defaultBranch: string | null, planText: string, frame: number, t: OperatorTranslate): PanelView {
   const none = t('board.office.panel.none');
   const board = `repo-harness board --parent ${parent ?? '<n>'}`;
   const queueIndex = room.queue.findIndex(entry => key === `queue:${entry.pr}`);
@@ -360,6 +361,12 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
       portrait: agentPortrait(sceneAgent(desk.agent), deskOutfit(deskIndex), frame), issue: desk.drawerIssue,
     };
   }
+  if (key === 'queue') {
+    return {
+      eyebrow: 'QUEUE', title: t('board.office.queue', { count: room.queue.length }), sub: t('board.office.panel.queue.sub'),
+      rows: room.queue.map(entry => [`PR #${entry.pr}`, entry.title] as const), command: 'gh pr list --state open', portrait: null, issue: null,
+    };
+  }
   const accepted = room.cart?.accepted ?? [];
   if (key === 'cart') {
     return {
@@ -372,7 +379,7 @@ function panelView(key: string, room: OfficeRoom, parent: number | null, default
     return {
       eyebrow: 'MAIN', title: t('board.office.panel.door'), sub: t('board.office.panel.door.sub'),
       rows: [[t('board.office.panel.door.waits'), String(room.merge_waits)], [t('board.office.panel.door.next'), accepted.length === 0 ? none : accepted.map(issue => `#${issue}`).join(' ')]],
-      command: `gh pr list --base ${defaultBranch} --state merged --limit 5`, portrait: null, issue: null,
+      command: defaultBranch === null ? null : `gh pr list --base ${defaultBranch} --state merged --limit 5`, portrait: null, issue: null,
     };
   }
   if (key === 'tray') {
@@ -406,11 +413,15 @@ function OfficePanel({ view, onIssue, t }: { readonly view: PanelView; readonly 
         </div>
       </div>
       <dl>{view.rows.map(([term, value]) => <div key={term}><dt>{term}</dt><dd>{value}</dd></div>)}</dl>
-      <div className="board-office__command" data-command>
-        <span aria-hidden="true">$</span>
-        <code>{view.command}</code>
-        <CopyButton label={t('copy.commandLabel')} value={view.command} t={t} className="board-office__copy" />
-      </div>
+      {view.command === null
+        ? <p className="board-office__command" data-command-gap>{t('board.office.panel.noBranch')}</p>
+        : (
+          <div className="board-office__command" data-command>
+            <span aria-hidden="true">$</span>
+            <code>{view.command}</code>
+            <CopyButton label={t('copy.commandLabel')} value={view.command} t={t} className="board-office__copy" />
+          </div>
+        )}
     </section>
   );
 }
@@ -443,7 +454,7 @@ function OfficeFeed({ room, lit, parent, t }: { readonly room: OfficeRoom; reado
  * furnished and takes the night palette.
  */
 export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranch, room, place, banners, writeBoss, mode, onOpen, now, t }: {
-  readonly repository: string; readonly repositoryId: string; readonly parent: number | null; readonly defaultBranch: string;
+  readonly repository: string; readonly repositoryId: string; readonly parent: number | null; readonly defaultBranch: string | null;
   readonly room: OfficeRoom; readonly place: BoardPlace | null; readonly banners: ReactNode; readonly writeBoss: BossCommandWriter; readonly mode: ThemeMode;
   readonly onOpen: (next: WorkspaceLocation) => void; readonly now: number; readonly t: OperatorTranslate;
 }) {
@@ -453,12 +464,13 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   const [confirm, setConfirm] = useState<AdvisorBossCommand | null>(null);
   const lit = room.orchestrator !== null || room.advisor !== null || room.desks.length > 0;
   const night = mode === 'dark' || !lit;
+  const idle = !lit && parent === null;
   const { plan } = room;
   const name = repository.split('/').at(-1)!;
   const planText = plan.status === 'observed' ? t('board.office.plan.observed') : t('board.office.plan.none');
-  const liveEffect = boss.effect !== null && clock.now - boss.effect.at < BOSS_EFFECT_MS ? boss.effect : null;
+  const effect = sceneEffect(boss.effect, clock.now, clock.still);
   const queueEntries = new Set(room.queue.map(entry => `queue:${entry.pr}`));
-  const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'door', 'tray', 'cart', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
+  const keys = new Set([...room.desks.map(deskKey), ...queueEntries, 'queue', 'door', 'tray', 'cart', ...(room.orchestrator === null ? [] : ['orchestrator']), ...(room.advisor === null ? [] : ['advisor'])]);
   const first = room.desks[0];
   const selected = picked !== null && keys.has(picked) ? picked : first !== undefined ? deskKey(first) : 'orchestrator';
 
@@ -493,11 +505,12 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
   }, {
     frame: clock.frame, night,
     advisorBusy: room.advisor !== null && advisorTurnState(room.advisor.status) === 'running',
-    effect: liveEffect === null ? null : { command: liveEffect.command, elapsedMs: clock.now - liveEffect.at },
+    effect,
   });
 
   const hitLabel = (key: string): string => {
     if (key === 'board') return t('board.office.hit.board');
+    if (key === 'queue') return t('board.office.queue', { count: room.queue.length });
     if (key === 'door') return room.merge_waits > 0 ? t('board.office.door.marks', { count: room.merge_waits }) : t('board.office.door.none');
     if (key === 'tray') return t('board.office.backlog', { count: room.backlog.length + room.holds.length });
     if (key === 'cart') return t('board.office.cart', { accepted: room.cart?.accepted.length ?? 0, sockets: room.cart_sockets });
@@ -521,11 +534,10 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
       <span className="board-office__parent">{parent === null ? t('board.office.parent.none') : t('board.office.parent', { number: parent })}</span>
       {plan.status === 'observed'
         ? <span className="board-office__chip" data-plan="observed">{t('board.office.plan')} · <Age at={plan.created_at} now={now} t={t} bare /></span>
-        : <span className="board-office__chip" data-tone={lit ? 'gap' : undefined} data-plan="none">{lit ? t('board.office.plan.none') : t('board.office.idle')}</span>}
+        : <span className="board-office__chip" data-tone={parent === null ? undefined : 'gap'} data-plan="none">{idle ? t('board.office.idle') : t('board.office.plan.none')}</span>}
     </>
   );
   const turn = room.advisor === null ? 'unknown' : advisorTurnState(room.advisor.status);
-  const cooldownLeft = Math.max(...ADVISOR_BOSS_COMMANDS.map(command => (boss.cooldowns[command] ?? 0) - clock.now), 0);
   const sceneLabel = t('board.office.scene', {
     repository, parent: parent === null ? t('board.office.parent.none') : `#${parent}`, workers: room.desks.length, queue: room.queue.length,
     plan: t(plan.status === 'observed' ? 'board.office.scene.plan' : 'board.office.scene.noPlan'),
@@ -537,12 +549,12 @@ export function BoardOfficeRoom({ repository, repositoryId, parent, defaultBranc
       </nav>
       <OfficeHeader heading={heading} place={place} onOpen={onOpen} t={t} tools={(
         <>
-          <SeatMeter room={room} lit={lit} t={t} />
-          {lit && room.advisor !== null && parent !== null && <BossButtons boss={boss} turn={turn} now={clock.now} onPick={setConfirm} t={t} />}
+          <SeatMeter room={room} idle={idle} t={t} />
+          {room.advisor !== null && parent !== null && <BossButtons boss={boss} turn={turn} now={clock.now} onPick={setConfirm} t={t} />}
         </>
       )} />
       {banners}
-      {boss.notice !== null && <p className="board-office__notice" role="status" data-boss-notice={boss.notice.state === 'refused' ? boss.notice.error.code : boss.notice.state}>{bossNoticeText(boss.notice, cooldownLeft, t)}</p>}
+      {boss.notice !== null && <p className="board-office__notice" role="status" data-boss-notice={boss.notice.state === 'refused' ? boss.notice.error.code : boss.notice.state}>{bossNoticeText(boss.notice, Math.max((boss.cooldowns[boss.notice.command] ?? 0) - clock.now, 0), t)}</p>}
       <div className="board-office__body">
         <div className="board-office__scene" data-night={night ? '' : undefined}>
           <div className="board-office__grid" style={{ '--grid-w': scene.width, '--grid-h': scene.height } as CSSProperties}>
