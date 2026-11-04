@@ -830,7 +830,7 @@ export function backfillRepoHarnessRegistry(
   return { registry_path: registryPath, registered, already_registered: alreadyRegistered, rejected };
 }
 
-export type RepoHarnessPruneReason = "path_missing" | "not_primary_checkout";
+export type RepoHarnessPruneReason = "path_missing" | "not_primary_checkout" | "named";
 
 /**
  * A registry apply names the exact revision its preview printed. Without a
@@ -849,14 +849,21 @@ export function assertRegistryRevisionFence(
   }
 }
 
-/** Explicit operator cleanup; unreadable paths are not proof of absence. */
+/**
+ * Explicit operator cleanup; unreadable paths are not proof of absence.
+ * `named` makes every selected row a candidate whatever its path state, so the
+ * operator can drop rows of checkouts that still exist. It never probes or
+ * touches the path, and it needs a non-empty ID list: there is no "all".
+ */
 export function pruneRepoHarnessRegistry(opts: {
   readonly env?: NodeJS.ProcessEnv;
   readonly apply?: boolean;
   readonly expectedRevision?: string;
   readonly repoIds?: readonly string[];
+  readonly named?: boolean;
 } = {}) {
   assertRegistryRevisionFence(opts);
+  if (opts.named && !opts.repoIds?.length) throw new Error('named removal requires at least one repo id');
   const inspect = (snapshot: RepoHarnessRegistryStrictSnapshot) => {
     assertRegistryRevisionFence(opts, snapshot);
     const selected = opts.repoIds === undefined ? null : new Set(opts.repoIds);
@@ -867,6 +874,10 @@ export function pruneRepoHarnessRegistry(opts: {
     const skipped: { id: string; path: string; reason: string }[] = [];
     for (const repo of snapshot.repos) {
       if (selected !== null && !selected.has(repo.id)) continue;
+      if (opts.named) {
+        candidates.push({ ...repo, reason: 'named' });
+        continue;
+      }
       try {
         lstatSync(repo.path);
       } catch (error) {

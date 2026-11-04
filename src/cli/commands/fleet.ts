@@ -169,6 +169,18 @@ export function buildFleetCommand(): Command {
         process.stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
       } catch (error) { outputFeedbackValidation(error); }
     });
+  fleet.command('remove')
+    .description('Preview the registry rows of the named repository IDs, also when their paths are present; --apply removes those rows only, without backup')
+    .argument('<repo-ids...>', 'Registered repository IDs to remove; an unknown ID refuses the whole command')
+    .option('--apply', 'Remove the named rows under the registry mutation lock; never touches the directories')
+    .option('--expected-revision <digest>', 'Exact registry_revision from the preview; required with --apply')
+    .action((repoIds: string[], options) => {
+      try {
+        const result = pruneRepoHarnessRegistry({ apply: options.apply,
+          expectedRevision: options.expectedRevision, repoIds, named: true });
+        process.stdout.write(`${JSON.stringify({ ok: true, ...result }, null, 2)}\n`);
+      } catch (error) { outputFeedbackValidation(error); }
+    });
 
   const feedback = fleet
     .command('feedback')
