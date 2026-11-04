@@ -5,7 +5,7 @@
 import { decodeWorktreeCleanupResult } from '../../core/operator/worktree-cleanup';
 import {
   cleanupPlanDigestInput, decodeAuthorizedCleanupRequest, decodeCleanupChoices, decodeCleanupExecutionResult, decodeCleanupPlan,
-  type CleanupExecutionItem, type CleanupLossSummary, type CleanupPlan, type CleanupPlanItem, type CleanupReason,
+  WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS, type CleanupExecutionItem, type CleanupLossSummary, type CleanupPlan, type CleanupPlanItem, type CleanupReason,
 } from '../../core/operator/worktree-cleanup-plan';
 import { unavailableWorktrees, type WorktreeLifecycle, type WorktreeView, type WorktreesSnapshot } from '../../core/operator/worktrees';
 import type { WorktreeCleanupWriter } from '../worktrees';
@@ -204,5 +204,11 @@ export function cleanupPlanFixture(now: number): CleanupPlanPorts {
         }),
       }) };
     },
+    // The busy plan has more items than one investigation takes, so the fixture gives the server's refusal.
+    investigate: async () => ({ state: 'refused', status: 422, error: { code: 'investigation_too_large',
+      message: `The plan has more than ${WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS} items. No investigation started.`,
+      next_action: `Split the selection into plans of at most ${WORKTREE_CLEANUP_INVESTIGATION_MAX_ITEMS} worktrees, then start an investigation for each plan.` } }),
+    investigation: async () => ({ state: 'refused', status: 404, error: { code: 'investigation_not_found',
+      message: 'No investigation of this cleanup session exists.', next_action: 'Start an investigation from the plan page.' } }),
   };
 }

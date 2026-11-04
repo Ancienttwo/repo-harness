@@ -36,8 +36,8 @@ import {
   INBOX_TASK,
 } from '../../src/operator-web/fixtures/dev-activity';
 import { busyWorktrees, cleanupPlanFixture, degradedWorktrees } from '../../src/operator-web/fixtures/worktrees';
-import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
-import type { AuthorizedCleanupPost, CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
+import { decodeAuthorizedCleanupRequest, decodeCleanupChoices, type CleanupChoice, type CleanupInvestigationStatus, type CleanupPlan } from '../../src/core/operator/worktree-cleanup-plan';
+import { CLEANUP_INVESTIGATION_POLL_MS, type AuthorizedCleanupPost, type CleanupPlanPorts } from '../../src/operator-web/CleanupPlanReview';
 import { cleanupPlanPorts } from '../../src/operator-web/worktrees';
 import { OPERATOR_THEME_STORAGE_KEY, resolveThemeMode } from '../../src/operator-web/theme';
 import { decodeOperatorRepositories, type OperatorRepositoriesV1 } from '../../src/core/operator/repositories';
@@ -1403,6 +1403,8 @@ function recordPlan(base: CleanupPlanPorts = cleanupPlanFixture(NOW)) {
     open: ids => { opened.push(ids); return base.open(ids).then(keep); },
     choose: (session, choices) => { chosen.push(choices); return base.choose(session, choices).then(keep); },
     execute: request => { executed.push(request); return base.execute(request); },
+    investigate: session => base.investigate(session),
+    investigation: session => base.investigation(session),
   };
   return { ports, opened, chosen, executed, plan: () => plan! };
 }
@@ -1525,6 +1527,83 @@ describe('worktree cleanup plan review (#1720)', () => {
     expect(document.querySelectorAll('[data-plan-item] input:not(:disabled), [data-plan-item] select:not(:disabled)')).toHaveLength(0);
   });
 
+  test('an investigation locks the plan while it runs, then loads the advised plan version with nothing authorized', async () => {
+    const record = recordPlan();
+    let polls = 0;
+    const status = (state: CleanupInvestigationStatus['state'], plan: CleanupPlan | null, failure: CleanupInvestigationStatus['failure'] = null): CleanupInvestigationStatus =>
+      ({ protocol: 1, kind: 'operator_worktree_cleanup_investigation', session_id: record.plan().session_id, job_id: 'e'.repeat(32), state,
+        started_at: new Date(NOW).toISOString(), deadline_at: new Date(NOW + 1_200_000).toISOString(), failure, plan });
+    let finished: () => CleanupInvestigationStatus = () => { throw new Error('set below'); };
+    const ports: CleanupPlanPorts = { ...record.ports,
+      investigate: async () => ({ state: 'investigation', status: status('running', null) }),
+      investigation: async () => { polls++; return { state: 'investigation', status: finished() }; } };
+    await openReview(ports);
+    const notes = record.plan().items.find(item => item.worktree.directory === 'repo-harness-wt-notes')!;
+    // The agent advises a delete with its own reason; the plan item binds it, as the server's createCleanupPlan does.
+    const advised = await record.ports.choose(record.plan().session_id, record.plan().items.map(item => ({ id: item.worktree.id,
+      recommendation: item === notes ? 'delete' as const : 'keep' as const, archive: { git: null, private: null } })));
+    if (advised.state !== 'ready') throw new Error('the fixture plan is ready');
+    finished = () => status('succeeded', advised.plan);
+    const start = () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!;
+    const section = () => document.querySelector('[data-plan-investigation]')!;
+    await act(async () => start().click());
+    await until(() => section().getAttribute('data-plan-investigation') === 'running');
+    // While the agent works, nothing on the plan can change or run.
+    expect(start().disabled).toBe(true);
+    expect(document.querySelectorAll('[data-plan-item] input:not(:disabled), [data-plan-item] select:not(:disabled)')).toHaveLength(0);
+    await act(async () => { await Bun.sleep(CLEANUP_INVESTIGATION_POLL_MS + 200); });
+    await until(() => section().getAttribute('data-plan-investigation') === 'succeeded');
+    expect(polls).toBe(1);
+    expect(section().textContent).toContain('Nothing is authorized: check each item.');
+    const box = planItem('repo-harness-wt-notes').querySelector<HTMLInputElement>('[data-plan-authorize]')!;
+    expect([box.checked, box.disabled, planButton('execute').getAttribute('data-plan-execute')]).toEqual([false, false, '0']);
+    expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-digest="plan"]')?.textContent).toBe(advised.plan.items.find(item => item.worktree.id === notes.worktree.id)!.plan_sha256);
+
+    // A failed job and a start refusal each show their own text and leave the plan as it is.
+    finished = () => status('failed', null, 'advice_invalid');
+    await act(async () => start().click());
+    await act(async () => { await Bun.sleep(CLEANUP_INVESTIGATION_POLL_MS + 200); });
+    await until(() => section().getAttribute('data-plan-investigation') === 'failed');
+    expect(section().querySelector('[data-plan-investigation-failure]')?.textContent).toBe('The investigation failed. The plan did not change. The agent answer does not fit the plan.');
+    expect(planItem('repo-harness-wt-notes').querySelector('[data-plan-authorize]')).not.toBeNull();
+  });
+
+  // Sibling inputs of "the start answer does not say whether a job exists": no answer, an unreadable answer and a running refusal.
+  for (const [name, answer] of [['no answer', { state: 'unreachable' }], ['an unreadable answer', { state: 'unreadable' }],
+    ['a running refusal', { state: 'refused', status: 409, error: { code: 'investigation_running', message: 'running', next_action: 'wait' } }]] as const) {
+    test(`after ${name} to the start, the page reads the job status and loads the plan it finished`, async () => {
+      const record = recordPlan();
+      let reads = 0;
+      const ports: CleanupPlanPorts = { ...record.ports, investigate: async () => answer,
+        investigation: async () => { reads++; return { state: 'investigation', status: { protocol: 1, kind: 'operator_worktree_cleanup_investigation',
+          session_id: record.plan().session_id, job_id: 'e'.repeat(32), state: 'succeeded', started_at: new Date(NOW).toISOString(),
+          deadline_at: new Date(NOW + 1_200_000).toISOString(), failure: null, plan: record.plan() } }; } };
+      await openReview(ports);
+      await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+      await until(() => document.querySelector('[data-plan-investigation]')?.getAttribute('data-plan-investigation') === 'succeeded');
+      expect(reads).toBe(1);
+      expect(document.querySelector('[data-plan-investigation] [data-plan-failure]')).toBeNull();
+    });
+  }
+
+  test('when the status read after a lost start finds no job, the page shows the start failure', async () => {
+    const record = recordPlan();
+    // The busy fixture's status read answers 404 investigation_not_found.
+    await openReview({ ...record.ports, investigate: async () => ({ state: 'unreachable' }) });
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+    await until(() => document.querySelector('[data-plan-investigation] [data-plan-failure]') !== null);
+    expect(document.querySelector('[data-plan-investigation] [data-plan-failure]')?.getAttribute('data-plan-failure')).toBe('unreachable');
+    expect(document.querySelector('[data-plan-investigation]')?.getAttribute('data-plan-investigation')).toBe('none');
+  });
+
+  test('a refused investigation start shows the typed refusal of the busy fixture', async () => {
+    await openReview(recordPlan().ports);
+    await act(async () => document.querySelector<HTMLButtonElement>('[data-plan-investigate]')!.click());
+    await until(() => document.querySelector('[data-plan-investigation] [data-plan-failure]') !== null);
+    expect(document.querySelector('[data-plan-investigation] [data-plan-failure]')?.getAttribute('data-plan-failure')).toBe('investigation_too_large');
+    expect(document.querySelector('[data-plan-investigation]')?.textContent).toContain('The plan has too many worktrees for one investigation.');
+  });
+
   test('only server-archivable paths get a destination, and the page\'s choice passes createCleanupPlan', async () => {
     const tree = rowOf('codex-7f3a'), session = 'd'.repeat(32);
     const file = { path: 'docs/guide.md', kind: 'file' as const, mode: 0o644, size: 5, sha256: 'd'.repeat(64), git_oid: 'e'.repeat(40) };
@@ -1545,6 +1624,8 @@ describe('worktree cleanup plan review (#1720)', () => {
         return { state: 'ready', plan };
       },
       execute: () => Promise.reject(new Error('not used')),
+      investigate: () => Promise.reject(new Error('not used')),
+      investigation: () => Promise.reject(new Error('not used')),
     };
     await openReview(ports);
     await option('codex-7f3a', 'archive_then_delete');
@@ -1575,22 +1656,32 @@ describe('worktree cleanup plan review (#1720)', () => {
       () => Response.json({ error: { code: 'choices_changed', message: 'refused', next_action: 'retry' } }, { status: 409 }),
       () => Response.json({ protocol: 1, kind: 'operator_authorized_worktree_cleanup', session_id: plan.session_id, items: [] }),
       () => { throw new TypeError('connection refused'); },
+      () => Response.json({ protocol: 1, kind: 'operator_worktree_cleanup_investigation', session_id: plan.session_id, job_id: 'e'.repeat(32), state: 'running',
+        started_at: new Date(NOW).toISOString(), deadline_at: new Date(NOW + 1_200_000).toISOString(), failure: null }, { status: 202 }),
+      () => Response.json({ error: { code: 'quota_unknown', message: 'refused', next_action: 'retry' } }, { status: 503 }),
+      () => Response.json({ protocol: 1, kind: 'operator_worktree_cleanup_investigation', session_id: plan.session_id, job_id: 'e'.repeat(32), state: 'succeeded',
+        started_at: new Date(NOW).toISOString(), deadline_at: new Date(NOW + 1_200_000).toISOString(), failure: null, plan }),
     ];
     const original = globalThis.fetch;
     const requests: { method: string; url: string; body: Record<string, unknown> }[] = [];
     globalThis.fetch = (async (url: unknown, options?: RequestInit) => {
-      requests.push({ method: options?.method ?? 'GET', url: String(url), body: JSON.parse(String(options?.body)) });
+      requests.push({ method: options?.method ?? 'GET', url: String(url), body: options?.body === undefined ? {} : JSON.parse(String(options.body)) });
       return answers[requests.length - 1]!();
     }) as typeof fetch;
     try {
       const execute = { request_id: crypto.randomUUID(), session_id: plan.session_id, ids: [id], expected_digest: 'a'.repeat(64), approvals: [] };
       const results = [await cleanupPlanPorts.open([id]), await cleanupPlanPorts.choose(plan.session_id, [{ id, recommendation: 'keep', archive: { git: null, private: null } }]),
-        await cleanupPlanPorts.execute(execute), await cleanupPlanPorts.open([id])];
+        await cleanupPlanPorts.execute(execute), await cleanupPlanPorts.open([id]),
+        await cleanupPlanPorts.investigate(plan.session_id), await cleanupPlanPorts.investigate(plan.session_id), await cleanupPlanPorts.investigation(plan.session_id)];
       // An execution result with no items fails its decoder: the request ran, so the page says unreadable, not unreachable.
-      expect(results.map(result => result.state === 'refused' ? `refused ${result.status} ${result.error.code}` : result.state)).toEqual(['ready', 'refused 409 choices_changed', 'unreadable', 'unreachable']);
+      expect(results.map(result => result.state === 'refused' ? `refused ${result.status} ${result.error.code}` : result.state === 'investigation'
+        ? `investigation ${result.status.state} ${result.status.plan === null ? 'no plan' : 'plan'}` : result.state)).toEqual(['ready', 'refused 409 choices_changed', 'unreadable', 'unreachable',
+        'investigation running no plan', 'refused 503 quota_unknown', 'investigation succeeded plan']);
       expect(requests.map(request => `${request.method} ${request.url} ${Object.keys(request.body).sort().join(',')}`)).toEqual([
         'POST /api/v1/worktrees/cleanup/plan ids,request_id', 'POST /api/v1/worktrees/cleanup/plan choices,request_id,session_id',
-        'POST /api/v1/worktrees/cleanup/execute approvals,expected_digest,ids,request_id,session_id', 'POST /api/v1/worktrees/cleanup/plan ids,request_id']);
+        'POST /api/v1/worktrees/cleanup/execute approvals,expected_digest,ids,request_id,session_id', 'POST /api/v1/worktrees/cleanup/plan ids,request_id',
+        'POST /api/v1/worktrees/cleanup/investigation request_id,session_id', 'POST /api/v1/worktrees/cleanup/investigation request_id,session_id',
+        `GET /api/v1/worktrees/cleanup/investigation/${plan.session_id} `]);
       expect(requests[0]!.body.request_id).toMatch(UUID); expect(requests[0]!.body.request_id).not.toBe(requests[1]!.body.request_id);
     } finally { globalThis.fetch = original; }
   });

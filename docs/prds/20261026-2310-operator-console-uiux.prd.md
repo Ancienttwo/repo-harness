@@ -147,12 +147,13 @@
 | 端点 | 请求体 | 成功 | 失败码 |
 | --- | --- | --- | --- |
 | `POST /api/v1/settings/agents` | `request_id`、`expected_revision`、`changes[{runtime, enabled, uses}]`、`default_docs_runtime` | 200，新的 `config_revision` 和实际改动的键 | 409 `revision_conflict`；422 `use_not_supported`（评审只接 claude、codex）；503 `busy` |
-| `POST /api/v1/sessions` | `request_id`、`kind: docs \| worktree_cleanup`、`runtime`；docs 另带 `repository_id`、`citations[]`、`instruction` | 201，`session_id`；docs 另回分支名和 worktree 目录名 | 409 `citation_stale`；422 `runtime_not_enabled`；501 `platform_unsupported`；503 `busy` |
+| `POST /api/v1/sessions` | `request_id`、`kind: docs`、`runtime`、`repository_id`、`citations[]`、`instruction`；没有 `worktree_cleanup` 类型（D12，#1721 M69） | 201，`session_id`、分支名和 worktree 目录名 | 409 `citation_stale`；422 `runtime_not_enabled`；501 `platform_unsupported`；503 `busy` |
 | `POST /api/v1/sessions/{sid}/messages` | `request_id`、`text`、`when: after_turn \| now` | 202，`landed: prompted \| queued \| steered` | 409 `steer_unsupported`，不自动改成排队；409 `session_closed` |
 | `POST /api/v1/sessions/{sid}/stop` | `request_id` | 202，本轮以 `aborted` 结束，会话保留 | 409 `no_active_turn` |
 | `POST /api/v1/sessions/{sid}/commit`（docs） | `request_id`、`expected_head`、`expected_diff_sha256`、`message` | 200，commit、推送结果和 Draft PR 链接；中途失败回已完成的步骤 | 409 `diff_changed`；422 `path_outside_scope`；422 `generated_region` |
 | `POST /api/v1/sessions/{sid}/discard`（docs） | `request_id`、`expected_head`、`expected_loss_sha256` | 200，worktree 与本地分支已删除 | 409 `turn_active`；409 `loss_changed`；409 `branch_pushed`，已推送的分支只给命令 |
 | `POST /api/v1/worktrees/cleanup` | `request_id`、`expected_digest`、`ids[]`；非绿色项另带 `session_id` 和 `approvals[{id, loss_sha256, plan_sha256}]` | 200，逐项结果：已归档（PR 链接）、已删，或跳过及原因 | 409 `digest_changed`；409 `loss_changed`；422 `not_approved`；422 `in_use` |
+| `POST /api/v1/worktrees/cleanup/investigation`（D12，#1721 M69） | `request_id`、`session_id`（一份清理计划） | 202，运行中的调查任务；状态用 `GET /api/v1/worktrees/cleanup/investigation/{sid}` 读，成功时带新的计划版本 | 404 `session_not_found`；422 `investigation_too_large`（超过 8 项，拆分计划）；409 `investigation_running`；429 `quota_exhausted`；503 `quota_unknown` |
 | POST /api/v1/seats/advisor/messages | request\_id、repository\_id、parent、text（纯文字，不超过 8 KiB） | 202，顾问席终端地址和 hc 返回的 turn；读回走 GET /api/v1/seats/advisor/transcript?parent=，返回脱敏后的最近输出和 turn 状态 | 409 advisor\_not\_live；409 advisor\_ambiguous（同一 parent 有多个顾问席终端）；422 text\_too\_long；503 hc\_unavailable |
 
 校验顺序，任何一步失败都不再往下走：
@@ -222,7 +223,7 @@
 | G22 | P1 | 架构图层数据 | 控制台只有模块列表和一跳依赖图；没有变更、违规、PR 影响面、测试、决策图层 | 见「架构」一节；上游 arch-context#407、#408、#409 已完成，repo-harness 已锁定 archctx 0.11.1（#1430） | 架构 |
 | G23 | P1 | Worktree 清单与磁盘占用 | Dev Activity 已列出登记仓库的 linked worktree，PR 合并后标 cleanup\_pending；但没有大小、来源和占用进程，残留目录不在列表里 | 后台 collector 加合并判定、来源归类、进程检查和低频 du；每个 worktree 一个稳定 id；浏览器不拿绝对路径；看板的「worktree 还没清理」改用它，退役 cleanup\_pending | Worktree、首页 |
 | G24 | P1 | 清理写入与统一 CLI | contract-worktree sweep 只管 repo-harness 自己开的；MCP 另有 cleanup；没有覆盖所有来源的入口 | 新增 repo-harness worktrees list 与 clean，clean 对绿色项直接删，非绿色项要带授权并在终端确认；HTTP 只做薄封装；执行前重核、拓扑锁、审计 | Worktree |
-| G25 | P1 | Worktree 清理会话 | 没有 | 复用文档会话的宿主与事件；agent 只读调查非绿色项、给建议和归档计划；你逐项授权后，服务端先归档进 docs/archive/ 再删 | Worktree |
+| G25 | P1 | Worktree 清理会话 | 没有 | 清理调查跑在评审宿主里，runtime 只用 codex，不开会话，不用文档会话的宿主（D12，#1721 M69）；评审的 OS 边界多一条规则，禁止读目标 worktree 和它们的 Git 目录；服务端把观察写成清单，agent 只按清单给建议和归档计划；你逐项授权后，服务端先归档进 docs/archive/ 再删 | Worktree |
 | G26 | P1 | 统一的 worktree 记录 | 三套记录格式和位置各不相同；portal skill 与手开的 worktree 不留记录；只有任务 agent 记结束状态 | 每条创建路径写同一份记录：创建方、用途、关联任务或 PR、时间；closeout 写结束状态 | Worktree |
 | G27 | P1 | 架构模型补全 | 节点都没填 layer；没有外部系统和拓扑节点；0 条 ADR，manifest 的决策目录不存在 | agent 按 repo-harness-architecture 补模型；manifest 的决策目录改到 docs/adr | 架构 |
 | G28 | P1 | 高合并量下的看板容量 | 已合并 PR 查询取 7 天窗口、上限 200 行；超出就把整个 GitHub 来源标为不可用，看板、今天已发布和今日摘要一起变空 | 缩短窗口或按日期分页，计数改用 search API 的总数；只有超限的那一类标不可用 | 首页、看板 |
@@ -505,7 +506,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 - **判定**：绿色直接复用 sweep 的谓词（`src/effects/state/coordination-worktree-topology.ts`），不另写一套；合并用 `scripts/worktree-merge-lib.sh` 的 ancestor 与 absorbed；脏和未推送来自 `git status --porcelain=v2 --branch`，被忽略的文件另列；PR 状态来自 Dev Activity；占用进程按 cwd 检查。全部在后台 collector 里做，带超时。看板的「worktree 还没清理」改用这里的判定，退役 Dev Activity 的 `cleanup_pending`，只留一个合并判定。
 - **大小**：后台低频跑 `du`，带超时，按目录和 mtime 缓存。linked worktree 共用对象库，大头通常是 `node_modules` 和构建输出。
 - **一键清理（G24）**：`POST /api/v1/worktrees/cleanup`，body 是 `request_id`、`expected_digest` 和服务端发的稳定 id，不传路径。服务端在拓扑锁下按同一条规则逐个重核，再用现有的精确删除原语删除；不再满足条件的跳过并回报。一键清理只收绿色项；非绿色项要带清理会话里的授权，CLI 删非绿色项还要在终端里逐项确认，非交互环境直接拒绝。合并过的本地分支一起删。每次执行都写审计。
-- **清理会话（G25）**：你在 Worktree 页点「让 agent 清理」，发起一个 `worktree_cleanup` 类型的会话，和文档会话共用宿主、事件和审阅流程。agent 在只读的 OS 边界里调查非绿色项：提交是否还在远端、PR 是否已关闭、未提交和被忽略的文件是不是可重建的构建产物；补丁相似只作参考，不当合并证明。然后交一份计划，每项写删或留、理由、证据、会丢什么，以及值得保留的内容归档到哪。页面用磁盘图对比清理前后：绿色项默认勾选；黄色项默认不勾，你看过证据和会丢的东西后逐项勾选，就是授权；红色项不给删除入口。PR 已关闭或远端分支已删，不说明本地内容可以丢，所以黄色项默认不勾。agent 自己不归档、不删任何东西。
+- **清理会话（G25）**：你在 Worktree 页选好非绿色项、打开清理计划，再点「请 agent 给建议」。服务端为这份计划启动一次调查，不开 `worktree_cleanup` 类型的会话，也不用文档会话的宿主（D12，#1721 M69）。agent 在评审宿主里运行：它读不到目标 worktree 和它们的 Git 目录，只读服务端写的观察清单，只写自己的输出目录。它按清单判断非绿色项：提交是否还在远端、PR 是否已关闭、未提交和被忽略的文件是不是可重建的构建产物；补丁相似只作参考，不当合并证明。然后给每项写删或留、理由、证据，以及值得保留的内容归档到哪；服务端校验后把它作为新的计划版本，不预先授权任何一项。页面用磁盘图对比清理前后：绿色项默认勾选；黄色项默认不勾，你看过证据和会丢的东西后逐项勾选，就是授权；红色项不给删除入口。PR 已关闭或远端分支已删，不说明本地内容可以丢，所以黄色项默认不勾。agent 自己不归档、不删任何东西。
 - **授权后执行**：你点「授权并执行」后，服务端逐项重核：绿色项按规则删；黄色项先按计划归档、再删，而且只有会丢内容的摘要和你看到的一致才动手，变了就跳过并要求重新授权；红色项一律跳过。删除复用 sweep 的回收区与收据（`cleanupExactWorktree`），给它加一个带授权的模式，允许删脏的、未合并的 worktree 和 git 不再登记的残留目录。本地分支随授权一起删；远端分支不动。
 - **归档**：已经在 git 历史里的内容（已推送或已合并的提交）不用归档，能从历史找回。要归档的是未提交、未推送或被忽略但值得留的内容，统一放进 `docs/archive/<日期>-<worktree>/`：文档保留原来的相对路径；未推送的提交用 `git format-patch` 存成补丁；目录里一份 `SOURCE.md` 记仓库、worktree、分支、基线提交、原路径和清理会话 id。服务端走文档会话的同一条提交流程：提交到 `docs/archive-<slug>` 分支、推送并开 Draft PR；推送成功才删 worktree。归档进了 git 历史，以后能按 `SOURCE.md` 和提交记录追到来源。凭据类文件（`.env` 等）不进 `docs/`：要留的话，服务端原样移到 `~/.repo-harness/archive/<repo-key>/`，权限 0600，不读也不显示内容；大的二进制文件也放这里，`SOURCE.md` 记它的 sha256。
 - **CLI 对等**：新增 `repo-harness worktrees list --json` 和 `repo-harness worktrees clean --ids … --expected-digest …`，覆盖所有来源；现有的 `contract-worktree sweep` 只管 repo-harness 自己开的那批。
@@ -521,7 +522,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 - [x] 文档会话的可写范围？（G5）已定：第一版只开 `docs/` 里人写的文档，生成区和指令文件除外；`plans/` 和 `.archcontext/model/` 暂不开放，也不为统一权限迁目录；模型修改仍走用户自己的 harness 和 ChangeSet。
 - [x] 文档会话的 PR 由控制台直接开，还是只给命令？已定：控制台直接开。用户看过完整 diff 后点一次「提交、推送并创建 Draft PR」，由服务端执行，agent 没有推送权限；失败时显示停在哪一步，不重复提交、不重复开 PR。
 - [x] 文档会话第一版只支持 macOS，可以吗？（G5）已定：同意，只限文档会话；只读控制台各平台都能用。
-- [x] Worktree 的清理怎么授权？（G24、G25）已定（你的决定，取代 Codex「首版只删绿色」的建议）：绿色项一键清理；非绿色项由你发起清理会话，agent 给删留建议和归档计划，你逐项授权后先把值得留的内容归档进 `docs/archive/`，再删。
+- [x] Worktree 的清理怎么授权？（G24、G25）已定（你的决定，取代 Codex「首版只删绿色」的建议）：绿色项一键清理；非绿色项由你在清理计划里发起调查，agent 给删留建议和归档计划，你逐项授权后先把值得留的内容归档进 `docs/archive/`，再删。调查跑在评审宿主里，不开会话（D12，#1721 M69）。
 - [x] 是否批准新依赖：架构画布用 `@xyflow/react` 与 `@dagrejs/dagre`，文档阅读用 markdown 渲染库（如 `react-markdown`、`remark-gfm`）和 `mermaid`？（G7、G11）已定：同意，只用在这两处；实施时核实确切版本和许可证；继续 React + Kumo，不换框架。
 - [x] 测试只做管理，还是也允许 agent 写测试？（G20、G21）已定：只做清单、结果和命令；不开写测试的会话，不在 UI 跑测试；没有结果不显示通过，「红→绿」要有可比的基线失败和修复后通过两条证据。
 - [x] Bot 要不要回到 MCP 上派活？（G30）已定：不要。0.23.1 已删 PM/Bot MCP；派活只走 CLI → herdr，MCP 给 Bot 读状态、写计划和评审。Bot 不在 herdr 那台机器上时，在那台机器上放执行端，不开 MCP 派活。
@@ -534,7 +535,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 3. **第二期 · 架构画布**：从 model 生成底图，叠加五个图层，补全模型（G11、G22、G27）。上游已就绪：archctx 0.11.1 已包含 arch-context#407、#408、#409；历史视图已随 #1300 上线（#1325）。门槛只剩布局依赖，已批准。无新写入。
 4. **第三期 · 写入通道与本机配置**：写入 API、设置页、安装探测与能力表（G1、G6、G9）；Bot 登记与归属、Slack 渠道与通知负载（G30、G31）；进程 agent 席位配置与启动命令（G33–G36）。第一个新写入只改本机配置。门槛：G1 已批准。
 5. **第四期 · 文档会话**：引用协议、docs host、事件推送、worktree 与 Draft PR（G3、G4、G5、G8）。门槛：G3 已批准；G5 的 OS 边界有零模型的拒写、拒读、拒连测试证明。
-6. **第五期 · Worktree 清理**：一键清理绿色项；清理会话复用文档会话的宿主，agent 只读调查非绿色项、给建议和归档计划，你逐项授权后先归档再删（G24、G25）。门槛：带授权的删除模式有测试，归档推送成功前不删。
+6. **第五期 · Worktree 清理**：一键清理绿色项；清理调查跑在评审宿主里，不复用文档会话的宿主（D12，#1721 M69），agent 只读调查非绿色项、给建议和归档计划，你逐项授权后先归档再删（G24、G25）。门槛：带授权的删除模式有测试，归档推送成功前不删。
 
 **研发 issue**：第〇期 [#997](https://github.com/Ancienttwo/repo-harness/issues/997)、第一期 [#998](https://github.com/Ancienttwo/repo-harness/issues/998)、第二期 [#999](https://github.com/Ancienttwo/repo-harness/issues/999)、第三期 [#1000](https://github.com/Ancienttwo/repo-harness/issues/1000)、第四期 [#1001](https://github.com/Ancienttwo/repo-harness/issues/1001)、第五期 [#1002](https://github.com/Ancienttwo/repo-harness/issues/1002)。下表每个切片是一个子 issue（#1003–#1025），挂在所属一期下面；PRD 快照在 [#996](https://github.com/Ancienttwo/repo-harness/pull/996)。
 
@@ -579,7 +580,7 @@ Worktree 页把这台机器上所有 worktree 的磁盘占用画成一张图，�
 | 4.5 追加说明、停止与会话读路由（#1146） | POST messages 与 stop；GET 会话列表、详情、diff 与丢弃清单 | steer\_unsupported 不自动排队；stop 后会话保留；响应里没有绝对路径和原始工具参数 |
 | 4.6 文档会话前端（#1147） | 首页发起、文档引用、文档会话页、侧栏「最近」 | 4-HOME、4-DOCS、4-DSES 场景都有测试；没有向编码会话发消息的控件 |
 | 5.1 Worktree 一键清理（G24） | repo-harness worktrees list 与 clean、POST /api/v1/worktrees/cleanup | 一键清理只删绿色项；没授权的非绿色项和在用的都删不掉，有测试；摘要变了回 409 |
-| 5.2 清理会话（G25） | worktree\_cleanup 会话类型、只读 OS 边界、计划审阅页、带授权的删除、归档到 docs/archive/ | agent 进程写不了任何仓库；没授权的、授权后内容变了的、在用的都删不掉；归档推送成功前不删 |
+| 5.2 清理会话（G25） | 清理调查（评审宿主加禁读目标的规则，不开会话，D12，#1721 M69）、计划审阅页、带授权的删除、归档到 docs/archive/ | agent 进程写不了任何仓库；没授权的、授权后内容变了的、在用的都删不掉；归档推送成功前不删 |
 
 ## 来源
 
