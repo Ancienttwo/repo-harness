@@ -266,6 +266,23 @@
   .architecture-modules__external[data-selected] { border-color: var(--rh-accent); color: var(--text-color-kumo-strong); }
   .architecture-modules__heading { @apply flex flex-col gap-0.5; }
   .architecture-modules__eyebrow { @apply font-mono text-[11px] uppercase tracking-[.12em] text-kumo-brand; }
+  .architecture-layermap__band { @apply flex h-full items-center font-mono text-xs text-kumo-subtle; }
+  .architecture-layermap__box { @apply flex h-full w-full cursor-pointer items-center gap-3 rounded-[10px] border bg-kumo-base px-3.5 text-[13px] text-kumo-strong; border-color: var(--rh-diagram-line); }
+  .architecture-layermap__box strong { @apply shrink-0 font-semibold; }
+  .architecture-layermap__members { @apply min-w-0 flex-1 truncate text-xs text-kumo-subtle; }
+  .architecture-layermap__lines { @apply ml-auto shrink-0 text-xs text-kumo-subtle; }
+  .architecture-layermap__box[data-empty] { @apply border-dashed; }
+  .architecture-layermap__box[data-selected] { border-width: 2px; border-color: var(--rh-accent); box-shadow: 0 0 0 3px var(--rh-accent-tint); }
+  .architecture-layermap__sizes li { @apply grid grid-cols-[9rem_minmax(0,1fr)_2.75rem] items-center gap-2.5; }
+  .architecture-layermap__size-name { @apply truncate font-mono; }
+  .architecture-layermap__bar { @apply block h-1.5 rounded-sm bg-kumo-tint; }
+  .architecture-layermap__bar > span { @apply block h-1.5 rounded-sm; background: var(--text-color-kumo-subtle); }
+  .architecture-layermap__sizes li > .mono-value { @apply text-right; }
+  .architecture-layermap__pairs li { @apply flex items-center gap-2; }
+  .architecture-layermap__pairs li > span:first-child { @apply flex-1 text-kumo-strong; }
+  .architecture-layermap__verdict { @apply w-14 text-right text-kumo-danger; }
+  .architecture-layermap__nodes summary { @apply cursor-pointer text-xs text-kumo-subtle; }
+  .architecture-layermap__nodes ul { @apply mt-1; }
   .architecture-map__source { @apply block text-[11px] text-kumo-subtle; }
   .architecture-layers__count { @apply ml-1.5 text-[11px] font-normal opacity-70; }
   .architecture-sequence, .architecture-topology { @apply flex min-w-0 flex-col gap-2; }
@@ -337,6 +354,8 @@
 .architecture-map__edge.is-dim .react-flow__edge-textwrapper { opacity: .2; }
 .architecture-map__edge.is-active .react-flow__edge-path { stroke: var(--rh-accent); stroke-opacity: 1; }
 .architecture-map__edge--undeclared .react-flow__edge-path { stroke: var(--text-color-kumo-danger); stroke-opacity: .9; }
+.architecture-layermap__lane .react-flow__edge-path { stroke-opacity: .85; stroke-width: 1.5; }
+.architecture-layermap__lane .architecture-layermap__lane--dashed { stroke-dasharray: 6 4; }
 .architecture-map__edge .react-flow__edge-text { font-family: var(--font-mono); font-size: 11px; fill: var(--text-color-kumo-default); }
 .architecture-map .react-flow__edge-textbg { fill: var(--rh-diagram-bg); }
 .architecture-map .react-flow__attribution { background: transparent; font-size: 11px; }
