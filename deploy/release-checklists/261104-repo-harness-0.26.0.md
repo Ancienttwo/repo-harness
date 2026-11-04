@@ -327,8 +327,30 @@ The owner accepts or repairs each flag before publish.
 
 ## Publication
 
-- Publish candidate: pending.
-- npm version: pending.
-- Git tag: pending.
-- Published tarball digest: pending.
-- `bun run check:release-published`: pending.
+- Publish candidate: `4366cd90354bdf45a2cd3333f5813aec101591fa` (the #1676
+  merge commit). Before the pack, its tree equaled the #1676 head tree
+  `cf6fae9f`. The publish did not use main HEAD, so #1675 and #1677 are not
+  in the tarball. The prepublish gate
+  (`bash scripts/check-npm-release.sh --prepublish`) passed in both runs.
+  Run 1 started at 2026-11-04T01:00:23Z and did not publish: the npm web
+  authentication window (about 5 minutes) expired, with E404 on
+  `/-/v1/done` at 01:05:29Z. In run 2 the owner approved the web
+  authentication at about 04:11Z.
+- npm version: `repo-harness@0.26.0`, dist-tag `latest`. Upload accepted at
+  2026-11-04T04:11:04Z.
+- Git tag: annotated `v0.26.0`, tag object
+  `1b93e61c5f21ef83bdb8129da15ab0878c7598f3`, on `4366cd903`; GitHub Release
+  https://github.com/Ancienttwo/repo-harness/releases/tag/v0.26.0, published
+  2026-11-04T04:15:26Z, notes from the `[0.26.0]` CHANGELOG section at
+  `4366cd903`.
+- Published tarball digest: shasum `8343ac67950edddf691478ddda06246787b8817c`,
+  integrity `sha512-XONEY+0LkgCmFs3514Sf3k5OCBYPtCbWiKEK3rn8A0icBpAifJb40ntgyrdrUGfGHdDECdhQd4euWR+fTuLgsg==`,
+  858 files.
+- `bun run check:release-published`: `bash scripts/check-release-published.sh
+  0.26.0` at 04:15Z: `[release-published] OK: registry, dist-tag, tarball,
+  tag, and local version files agree.`
+- Owner machine upgrade: pending owner. The machine is still on 0.25.4.
+
+- Yellow flag for the next release: the npm web authentication link expires
+  in about 5 minutes. The owner must be at the machine when the publish
+  starts.
