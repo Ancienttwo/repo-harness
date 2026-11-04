@@ -143,6 +143,34 @@ recorded host profile, and trust the Codex settings entry. Do not edit generated
 adapter commands by hand. The route registry and the adapter manifest must agree
 on the route tuple; a mismatch is a fail-closed installation error.
 
+### Claude status line and quota capture
+
+`repo-harness-hook statusline` is the Claude Code
+[status line](https://code.claude.com/docs/en/statusline) command. It is not a
+hook event and has no route, so it runs in any directory. It copies the
+documented stdin `rate_limits` object, unchanged, to
+`~/.repo-harness/quota/claude.json` (mode 0600) with a new `observed_at`, and
+prints one line such as `5h 12% · 7d 30%`. Stdin without `rate_limits` writes
+nothing and prints an empty line. `repo-harness quota` reads this file and
+marks a capture older than 30 minutes `unknown`.
+
+`repo-harness install --target claude` sets this entry only when
+`~/.claude/settings.json` has no `statusLine`:
+
+```json
+"statusLine": { "type": "command", "command": ": repo-harness-managed-hook-v1; exec repo-harness-hook statusline" }
+```
+
+The managed tag is the ownership proof, as for the managed hook commands.
+Install refreshes the entry only while its command has the tag, and uninstall
+removes it only then. A user edit removes the tag, so the entry is then the
+user's. Install does not change an existing status line. To keep it and also
+capture quota, set its command to:
+
+```sh
+input=$(cat); printf '%s' "$input" | repo-harness-hook statusline >/dev/null; printf '%s' "$input" | <your status line command>
+```
+
 ## Hook Failure Playbook
 
 When a hook blocks work:
