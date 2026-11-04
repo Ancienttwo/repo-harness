@@ -1157,7 +1157,7 @@ function parseStateBase(raw: unknown, path: string, env: NodeJS.ProcessEnv, labe
   if (!isRecord(raw)) throw invalid(path, `${label} is not an object`);
   if (raw.protocol === 1) {
     throw new InstallStateError('install_state_protocol_retired', path,
-      `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.3 bridge first: `
+      `install state ${path} is protocol 1, which this package no longer reads. Migrate it with the 0.25.x bridge first: `
       + 'bun add -g repo-harness@0.25.3 --no-cache, then run its protocol 1 migration (repo-harness install --help in 0.25.3 names it); '
       + `then the protocol 2 bridge: ${PROTOCOL_2_BRIDGE}; then: ${currentPackageUpdate()}`);
   }
