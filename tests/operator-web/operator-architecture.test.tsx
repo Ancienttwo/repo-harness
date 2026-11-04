@@ -338,8 +338,10 @@ describe('one-hop module graph', () => {
 describe('architecture map', () => {
   const PART = 'component.pipeline.ledger';
   const EXTERNAL = 'external.git';
-  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
-  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary`,
+    domain: kind === 'capability' ? id.split('.')[1]! : null, namespace: kind === 'namespace' ? { type: 'host' } as const : null,
+    mount: kind === 'mount' ? { source: null, target: null, mode: 'ro', order: 0 } as const : null });
+  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent`, protocol: null });
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
   const noCodeFactSteps = { status: 'unknown', reason_codes: ['ref-code-facts-unavailable'], items: null } as const;
@@ -355,7 +357,7 @@ describe('architecture map', () => {
   };
   const mapLayers: ArchitectureMapLayersInput = {
     // archctx impact as the map carries it: it gives the dependents (one `calls` hop) and cut the path list at its limit.
-    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1, model: [],
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: [PART] }], model: [],
       paths: [{ path: 'assets/ledger.png', added: null, deleted: null, owners: [PART], reason_codes: ['binary-diff'] },
         { path: 'src/ledger.ts', added: 5, deleted: 2, owners: [PART], reason_codes: [] }],
       unowned_paths: [], nodes: [{ id: PART, files: 2 }], dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }],
@@ -377,7 +379,7 @@ describe('architecture map', () => {
   };
   function mapFor(available = true, layers: ArchitectureMapLayersInput = mapLayers, layerOrder: ArchitectureLayerOrderV1 = coreOnly): ArchitectureMapV1 {
     return projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
       nodes: [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system')],
       relations: [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL)], flows: [], flow_evidence: [],
       sizes: available ? { state: 'ok', lines: new Map([['src/ledger.ts', 900], ['src/router.ts', 100]]), owners: new Map([['src/ledger.ts', PART], ['src/router.ts', CALLER]]) }
@@ -400,7 +402,7 @@ describe('architecture map', () => {
     const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     // Three namespace levels, with a relation that ends on the deepest one.
     const nested = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [mapNode('namespace.a', 'namespace'), mapNode('namespace.a-b', 'namespace', 'namespace.a'), mapNode('namespace.a-b-c', 'namespace', 'namespace.a-b'),
         mapNode('namespace.a-d', 'namespace', 'namespace.a'), mapNode('process.p', 'process')],
       // A group to a member two levels down, and a member back to its own group: both lines would cross the group box.
@@ -441,7 +443,7 @@ describe('architecture map', () => {
     const overlaps = (a: MapLayoutNode, b: MapLayoutNode) => a.x < b.x + b.width && b.x < a.x + a.width && a.y < b.y + b.height && b.y < a.y + a.height;
     // Nine capabilities like an unlayered model whose relations stay inside each capability.
     const loose = (layerOrder: ArchitectureLayerOrderV1) => projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: layerOrder,
       nodes: Array.from({ length: 9 }, (_, index) => mapNode(`capability.loose.c${index}`, 'capability')), relations: [], flows: [], flow_evidence: [],
       sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'model_worktree_dirty' }, layers: noLayers,
     });
@@ -475,7 +477,7 @@ describe('architecture map', () => {
     const below = (upper: { y: number; height: number }, lower: { y: number }) => upper.y + upper.height < lower.y;
     // CALLER (cli) calls CENTER (core); the git read points from core to external; the extra relation points up, against the order.
     const ordered = projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z',
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
       nodes: [{ ...mapNode(CENTER, 'capability'), layer: 'core' }, { ...mapNode(PART, 'component', CENTER), layer: 'core' }, { ...mapNode(CALLER, 'capability'), layer: 'cli' },
         { ...mapNode(EXTERNAL, 'external-system'), layer: 'external' }, { ...mapNode('process.loose', 'process'), layer: null }],
       relations: [mapRelation('relation.b-router', 'calls', CALLER, CENTER), mapRelation('relation.c-git', 'reads', PART, EXTERNAL), mapRelation('relation.d-up', 'calls', EXTERNAL, CALLER)], flows: [], flow_evidence: [],
@@ -711,7 +713,7 @@ describe('architecture map', () => {
     // A day without a change, a PR that touches no node, no violation, no test result per capability, no decision that applies to a node.
     const emptyImpact = { paths: [], unowned_paths: [], nodes: [], dependents: [], dependency_coverage: 'complete', flow_steps: noCodeFactSteps, truncated: whole } as const;
     const unlit: ArchitectureMapLayersInput = {
-      changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 0, model: [], ...emptyImpact },
+      changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [], model: [], ...emptyImpact },
       pull_requests: { state: 'ok', observed_at: '2026-10-27T08:59:00.000Z', pull_requests: [
         { number: 21, title: 'Docs', url: 'https://github.com/acme/widgets/pull/21', head_sha: 'e'.repeat(40), impact: { state: 'ok', ...emptyImpact } }] },
       violations: { debt: { state: 'ok', items: [] }, flows: { state: 'ok', selectors: 0, proven: 0, unproven: 0, used_unproven: 0, unprovable: [], evidence: [] },
@@ -732,7 +734,7 @@ describe('architecture map', () => {
     // A mark on a current member lights it and its group, and the rest stays dimmed.
     const GONE = 'capability.gone';
     const changed = (ids: string[]): ArchitectureMapLayersInput => ({ ...unlit, changes: {
-      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1,
+      state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: ids }],
       model: ids.includes(GONE) ? [{ kind: 'nodes', id: GONE, change: 'removed', fields: [] }] : [],
       ...emptyImpact, paths: ids.map(id => ({ path: `src/${id}.ts`, added: 1, deleted: 0, owners: [id], reason_codes: [] })), nodes: ids.map(id => ({ id, files: 1 })),
     } });
@@ -773,8 +775,10 @@ describe('sequence and topology base maps', () => {
   const CLI = 'process.cli';
   const HOST = 'namespace.host.developer';
   const FLOW = 'flow.pipeline.ledger';
-  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary` });
-  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent` });
+  const mapNode = (id: string, kind: string, parent: string | null = null) => ({ id, kind, name: `Name ${id}`, status: 'active', layer: 'core', parent, summary: `${id} summary`,
+    domain: kind === 'capability' ? id.split('.')[1]! : null, namespace: kind === 'namespace' ? { type: 'host' } as const : null,
+    mount: kind === 'mount' ? { source: null, target: null, mode: 'ro', order: 0 } as const : null });
+  const mapRelation = (id: string, kind: string, source: string, target: string) => ({ id, kind, source, target, intent: `${id} intent`, protocol: null });
   const selector = (name: string): ArchitectureFlowSelectorV1 => ({ entrypoint: `entrypoint.pipeline.${name}`, source_symbol: name, sink: `sink.pipeline.${name}` });
   const step = (id: string, from: string, to: string, name: string) => ({ id, from, to, label: `Step ${id}`, evidence: selector(name) });
   const flow: ArchitectureMapFlowV1 = {
@@ -789,7 +793,7 @@ describe('sequence and topology base maps', () => {
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const whole = { paths: false, nodes: false, relations: false, flow_steps: false, dependents: false, model: false } as const;
   const layers: ArchitectureMapLayersInput = {
-    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: 1, model: [],
+    changes: { state: 'ok', since: '2026-10-27T00:00:00.000Z', base: 'b'.repeat(40), commits: [{ sha: 'c'.repeat(40), subject: 'Ledger rows', nodes: [PART] }], model: [],
       paths: [{ path: 'src/ledger.ts', added: 5, deleted: 2, owners: [PART], reason_codes: [] }], unowned_paths: [], nodes: [{ id: PART, files: 1 }],
       dependents: [{ id: CENTER, touched: PART, relations: ['relation.a-own'] }], dependency_coverage: 'complete',
       flow_steps: { status: 'known', reason_codes: [], items: [{ flow: FLOW, step: 'append', outcome: null, reason_codes: [] }] }, truncated: whole },
@@ -815,7 +819,7 @@ describe('sequence and topology base maps', () => {
   };
   function runtimeMap(change: { layers?: ArchitectureMapLayersInput; flows?: ArchitectureMapFlowV1[]; nodes?: readonly ArchitectureMapNodeV1[]; relations?: readonly ArchitectureMapRelationV1[] } = {}): ArchitectureMapV1 {
     return projectArchitectureMap({
-      repository_id: REPO, commit: COMMIT, collected_at: '2026-10-27T09:00:00.000Z', layer_order: { state: 'ok', layers: ['core'] },
+      repository_id: REPO, commit: COMMIT, head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z', layer_order: { state: 'ok', layers: ['core'] },
       nodes: change.nodes ?? [mapNode(CENTER, 'capability'), mapNode(PART, 'component', CENTER), mapNode(CALLER, 'capability'), mapNode(EXTERNAL, 'external-system'),
         mapNode(SERVER, 'process'), mapNode(CLI, 'process'), mapNode(HOST, 'namespace')],
       relations: change.relations ?? [mapRelation('relation.a-own', 'calls', CENTER, PART), mapRelation('relation.b-router', 'calls', CALLER, CENTER),
@@ -920,6 +924,21 @@ describe('sequence and topology base maps', () => {
     expect(architectureViolationCommand('flows')).toBe('archctx flows check --no-sync --json');
     await click(`.react-flow__node[data-id="${PART}"]`);
     expect(inspector().querySelector('[data-related-prs]')?.textContent).toBe('#21 Ledger rows · changes 1 file');
+  });
+
+  test('a node lists each stale doc citation with its origin and location; the violations count and summary count the findings', async () => {
+    const anchors = { state: 'ok', citations: 3, nodes: [{ id: CALLER, findings: [
+      { kind: 'line-moved', origin: 'document', path: 'docs/architecture/modules/public-surface/root-router.md', line: 12, citation: 'src/router.ts:40' },
+      { kind: 'missing-symbol', origin: 'node-summary', path: null, line: null, citation: 'route' },
+    ] }] } as const;
+    await mount(workspace({ readMap: reader(runtimeMap({ layers: { ...layers, violations: { ...layers.violations, anchors } } })) }));
+    await chooseLayer('violations');
+    expect(document.querySelector('[data-layer-summary="violations"]')?.textContent).toContain('Doc citations: 2 of 3 out of date.');
+    await click(`.react-flow__node[data-id="${CALLER}"]`);
+    expect([...inspector().querySelectorAll('[data-layer-facts="violations"] > li')].map(item => item.textContent)).toEqual([
+      'Out-of-date citation in the doc: src/router.ts:40 (line-moved)docs/architecture/modules/public-surface/root-router.md:12',
+      'Out-of-date citation in the node summary: route (missing-symbol)',
+    ]);
   });
 
   test('2-ARCH-P2 on the sequence map: a message shows its declared code, archctx proof, related PR, dependency edges and the proof command; unknown parts say why', async () => {

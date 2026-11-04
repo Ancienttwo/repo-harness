@@ -1141,8 +1141,8 @@ test('operator serve admits explicit native capture snapshots without Herdr or p
 describe('architecture map', () => {
   const noCodeFacts = { state: 'unavailable', reason: 'code_facts_unavailable' } as const;
   const map: ArchitectureMapV1 = projectArchitectureMap({
-    repository_id: 'repo-a', commit: 'c'.repeat(40), collected_at: '2026-10-27T09:00:00.000Z',
-    nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.' }],
+    repository_id: 'repo-a', commit: 'c'.repeat(40), head_ref: 'main', archctx_version: '0.11.2', collected_at: '2026-10-27T09:00:00.000Z',
+    nodes: [{ id: 'capability.pipeline.ledger', kind: 'capability', name: 'Ledger', status: 'active', layer: 'core', parent: null, summary: 'Ledger.', domain: 'pipeline', namespace: null, mount: null }],
     relations: [], flows: [], flow_evidence: [], sizes: { state: 'unavailable', reason: 'model_worktree_dirty' }, dependencies: { state: 'unavailable', reason: 'code_facts_unavailable' },
     layer_order: { state: 'unavailable', reason: 'model_layers_undeclared' },
     layers: {
@@ -1171,6 +1171,8 @@ describe('architecture map', () => {
         [{ state: 'unavailable', reason: 'archctx_error', code: 'AC_MODEL_ADOPTION_REQUIRED', reason_code: 'native-context-model-missing' }, 503, 'archctx_error'],
         // A cached map that fails the decoder is refused, not sent.
         [{ state: 'ready', map: { ...map, nodes: [{ ...map.nodes[0]!, summary: 1 }] } }, 503, 'architecture_map_invalid'],
+        // v7 replaced v6 with no alias: a v6 body is refused.
+        [{ state: 'ready', map: { ...map, schema_version: 'repo-harness.architecture-map.v6' } }, 503, 'architecture_map_invalid'],
       ] as const) {
         cache = next as ArchitectureMapRepositoryCache;
         const answer = await get();
