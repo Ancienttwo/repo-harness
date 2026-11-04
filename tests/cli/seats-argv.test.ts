@@ -148,6 +148,8 @@ describe("repo-harness seats argv", () => {
     ] as const) {
       withHome({ ...DEFAULT_SEATS_CONFIG, orchestrator: { ...DEFAULT_SEATS_CONFIG.orchestrator, fleet } }, (home) => {
         const orchestrator = launch(home, "orchestrator");
+        expect(orchestrator.brief).toContain("You push only the branch of a Codex worker seat handoff: commit its worktree diff with its message and explicit paths only, push the branch, open the PR, and push each fix round. You do not tag, release, delete, or change credentials or permissions.");
+        expect(orchestrator.brief).not.toContain("You do not push, tag, release, delete, or change credentials or permissions.");
         // Each row also refuses the conflicting sentences: the other review path, and the Herdr-only rule with a fleet.
         const other = review === seatReview ? gatekeeperReview : seatReview;
         expect([fleet, orchestrator.brief.includes(review), orchestrator.brief.includes(dispatch), orchestrator.brief.includes(other)]).toEqual([fleet, true, true, false]);
@@ -163,6 +165,7 @@ describe("repo-harness seats argv", () => {
 
   test("the Codex argv holds only flags that Codex applies; the fleet goes into the launch instructions only", () => {
     const seats = { ...DEFAULT_SEATS_CONFIG, worker: { ...DEFAULT_SEATS_CONFIG.worker, tools: ["edit", "net", "read", "shell"] } };
+    const handoff = "As a Codex worker seat in a linked contract worktree, edit files and run checks only. Do not run `git fetch`, `git commit` or `git push`. In your last message, give the commit subject and body, the PR title and body, and the check results. The orchestrator commits your worktree diff with that message and explicit paths only, pushes the branch and opens the PR. It is the head owner of record and pushes each fix round; no other agent pushes to that PR. You remain the content author and answer review threads through the orchestrator.";
     withHome(seats, (home) => {
       const result = argv(home, "worker");
       expect(result.status).toBe(0);
@@ -170,9 +173,13 @@ describe("repo-harness seats argv", () => {
       const instructions = args.at(-1)!;
       expect(args.slice(0, -1)).toEqual(["codex", "-m", "gpt-6.1-sol", "-c", 'model_reasoning_effort="high"', "-s", "workspace-write", "-c", "sandbox_workspace_write.network_access=true", "-c"]);
       expect(instructions).toStartWith('developer_instructions="You are a worker seat.');
+      expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain(handoff);
       expect(JSON.parse(instructions.slice("developer_instructions=".length))).toContain("These limits are instructions only; the host does not enforce them. Keep them yourself. Do not use the task list tools. Do not use MCP tools. Do not write to GitHub.");
       expect(result.stderr).toContain("limit fleet: instructions_only (written into the launch instructions only)");
       expect(result.stderr).toContain("limit mcp: instructions_only (written into the launch instructions only)");
+    });
+    withHome({ ...seats, worker: { ...seats.worker, runtime: "claude" } }, (home) => {
+      expect(launch(home, "worker").brief).not.toContain(handoff);
     });
   });
 
