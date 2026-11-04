@@ -12,6 +12,7 @@ import { fetchBotAccess, fetchBotReviews, useBotAccess, useBotReviews, type BotA
 import { BotsFreshness, BotsPage } from './BotsPage';
 import { fetchAgentsSettings, postAgentsSettings, useAgentsSettingsForm, type AgentsSettingsReader, type AgentsSettingsWriter } from './settings';
 import { fetchSeatsSettings, postSeatsSettings, useSeatsSettingsForm, type SeatsSettingsReader, type SeatsSettingsWriter } from './seats';
+import { fetchQuota, useQuota, type QuotaReader } from './quota';
 import {
   fetchDevActivity,
   repositoryById,
@@ -116,6 +117,8 @@ export interface OperatorAppProps {
   /** The seats section and its ranges behind the Agents page Seats section, and its one write. */
   readonly readSeatsSettings?: SeatsSettingsReader;
   readonly writeSeatsSettings?: SeatsSettingsWriter;
+  /** The quota read model behind the Agents page Quota section: read when the page opens and on its Refresh. */
+  readonly readQuota?: QuotaReader;
   /** The read-only tests page's snapshot read, injectable on the same terms. */
   readonly readTests?: TestsReader;
   /** The docs page's tree and file reads; the browser default is the same-origin docs routes. */
@@ -292,6 +295,7 @@ export function OperatorApp({
   writeAgentsSettings = postAgentsSettings,
   readSeatsSettings = fetchSeatsSettings,
   writeSeatsSettings = postSeatsSettings,
+  readQuota = fetchQuota,
   readTests = fetchTestsSnapshot,
   readDocsTree = fetchDocsTree,
   readDocsFile = fetchDocsFile,
@@ -332,6 +336,7 @@ export function OperatorApp({
   const seatsSettings = useSeatsSettingsForm(readSeatsSettings, writeSeatsSettings, refreshGeneration, agentsSaves, workspace === 'agents');
   const agentsSettings = useAgentsSettingsForm(readAgentsSettings, writeAgentsSettings, refreshGeneration, seatsSettings.saves, workspace === 'agents');
   if (agentsSettings.saves !== agentsSaves) setAgentsSaves(agentsSettings.saves);
+  const quota = useQuota(readQuota, workspace === 'agents');
   // Agents, Skills and Hooks share one cached setup check result; it is read only while one of them shows.
   const setup = useSetup(readSetup, initialSetup, refreshGeneration, (SETUP_WORKSPACES as readonly Workspace[]).includes(workspace));
   const cliInventory = useCliInventory(readCliInventory, initialCliInventory, refreshGeneration, workspace === 'cli');
@@ -446,7 +451,7 @@ export function OperatorApp({
             repositories={boardOptions} chosenRepository={boardRepository} onRepository={chooseBoardRepository} />}
           {workspace === 'repositories' && <RepositoriesPage view={repositories} activity={devActivity} now={now} onOpen={openRepositoryBoard} t={t} />}
           {workspace === 'worktrees' && <WorktreesPage view={worktrees} cleanup={worktreeCleanup} plan={worktreeCleanupPlan} now={now} t={t} />}
-          {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} now={now} t={t} />}
+          {workspace === 'agents' && <AgentsPage view={setup} agents={agentsSettings} seats={seatsSettings} quota={quota} now={now} t={t} />}
           {workspace === 'skills' && <SkillsPage view={setup} now={now} t={t} onOpenTool={id => openPlace({ workspace: 'tools', module: null, item: id })} />}
           {workspace === 'hooks' && <HooksPage view={setup} now={now} t={t} />}
           {workspace === 'cli' && <CliPage view={cliInventory} now={now} t={t} />}

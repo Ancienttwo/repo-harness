@@ -1,6 +1,6 @@
 import { useState, type ReactNode } from 'react';
-import { Banner, Empty, Loader, cn } from '@cloudflare/kumo';
-import { CaretDownIcon, CaretRightIcon, ChatCircleDotsIcon, CheckIcon, MinusIcon, TerminalWindowIcon, WarningCircleIcon, WarningIcon } from '@phosphor-icons/react';
+import { Banner, Button, Empty, Loader, cn } from '@cloudflare/kumo';
+import { ArrowClockwiseIcon, CaretDownIcon, CaretRightIcon, ChatCircleDotsIcon, CheckIcon, MinusIcon, TerminalWindowIcon, WarningCircleIcon, WarningIcon } from '@phosphor-icons/react';
 import {
   SETUP_HOSTS,
   type SetupCheck,
@@ -37,6 +37,8 @@ import { AgentSettings, HostRuntimeControls } from './SettingsPage';
 import { SeatsSection } from './SeatsPage';
 import type { AgentsSettingsForm } from './settings';
 import type { SeatsSettingsForm } from './seats';
+import type { QuotaAccountReport, QuotaWindowReport, QuotaWindowState } from '../core/operator/quota';
+import type { QuotaSection as QuotaRead } from './quota';
 
 export type SetupPage = 'agents' | 'skills' | 'hooks';
 
@@ -317,8 +319,102 @@ function FleetTable({ snapshot, t }: { readonly snapshot: SetupSnapshotV2; reado
   );
 }
 
-/** Hosts, then the sub-agents, then the seats that run on both: the order is the dependency order. */
-export function AgentsPage({ agents, seats, ...props }: PageProps & { readonly agents: AgentsSettingsForm; readonly seats: SeatsSettingsForm }) {
+const QUOTA_TONE: Readonly<Record<QuotaWindowState, DotTone>> = { exhausted: 'danger', tight: 'warn', unknown: 'unknown', normal: 'ok', surplus: 'ok', absent: 'neutral' };
+/** The page's attention style: the report's own state picks it; the page judges nothing. */
+const QUOTA_ATTENTION: Readonly<Partial<Record<QuotaWindowState, string>>> = { exhausted: 'text-kumo-danger', tight: 'text-kumo-warning', unknown: 'text-kumo-warning' };
+
+function windowLength(minutes: number, t: OperatorTranslate): string {
+  if (minutes % 1440 === 0) return t('setup.quota.days', { count: minutes / 1440 });
+  if (minutes % 60 === 0) return t('setup.quota.hours', { count: minutes / 60 });
+  return t('setup.quota.minutes', { count: minutes });
+}
+
+function QuotaState({ state, t }: { readonly state: QuotaWindowState; readonly t: OperatorTranslate }) {
+  return (
+    <span className={cn('inline-flex items-center gap-1.5 text-xs font-medium', QUOTA_ATTENTION[state] ?? 'text-kumo-default')} data-quota-state={state}>
+      <StatusDot tone={QUOTA_TONE[state]} />{t(`setup.quota.state.${state}`)}
+    </span>
+  );
+}
+
+/** Each value only when the report has it; an `unknown` or `absent` window gives its reason instead of numbers it lacks. */
+function QuotaWindow({ window, t }: { readonly window: QuotaWindowReport; readonly t: OperatorTranslate }) {
+  const parts: ReactNode[] = [];
+  if (window.used_percent !== null) parts.push(<span key="used" data-quota-used>{t('setup.quota.used', { percent: window.used_percent })}</span>);
+  if (window.resets_at !== null) parts.push(<span key="resets" data-quota-resets={window.resets_at} title={window.resets_at}>{t('setup.quota.resets', { time: new Date(window.resets_at).toLocaleString() })}</span>);
+  if (window.pace !== null) parts.push(<span key="pace" data-quota-pace>{t('setup.quota.pace', { pace: `${window.pace > 0 ? '+' : ''}${window.pace}` })}</span>);
+  return (
+    <li className="flex min-w-0 flex-wrap items-center gap-x-3 gap-y-0.5 text-xs text-kumo-default" data-quota-window={window.window}>
+      <span className="font-mono text-kumo-strong">{window.window}</span>
+      {window.window_minutes !== null && <span className="text-kumo-subtle">{windowLength(window.window_minutes, t)}</span>}
+      <QuotaState state={window.state} t={t} />
+      {parts.map((part, index) => <span key={index} className="tabular-nums">{index > 0 && <span className="text-kumo-subtle">· </span>}{part}</span>)}
+      {(window.state === 'unknown' || window.state === 'absent') && window.reason !== null
+        && <span className="text-kumo-subtle [overflow-wrap:anywhere]" data-quota-reason>{window.reason}</span>}
+    </li>
+  );
+}
+
+function creditsText(codex: NonNullable<QuotaAccountReport['codex']>, t: OperatorTranslate): string {
+  const credits = codex.credits;
+  if (credits === null) return t('setup.quota.creditsUnknown');
+  if (credits.unlimited) return t('setup.quota.creditsUnlimited');
+  if (!credits.has_credits) return t('setup.quota.creditsNone');
+  return credits.balance === null ? t('setup.quota.creditsNoBalance') : t('setup.quota.credits', { balance: credits.balance });
+}
+
+function QuotaRow({ account, now, t }: { readonly account: QuotaAccountReport; readonly now: number; readonly t: OperatorTranslate }) {
+  const attention = account.state in QUOTA_ATTENTION;
+  return (
+    <li className="flex min-w-0 flex-col gap-2 px-3 py-3 md:flex-row md:items-start md:gap-4"
+      data-quota-account={account.account} data-quota-attention={String(attention)}>
+      <span className="flex shrink-0 flex-col gap-1 md:w-44">
+        <span className="text-sm font-medium text-kumo-strong">{t(`setup.quota.account.${account.account}`)}</span>
+        <QuotaState state={account.state} t={t} />
+        {account.observed_at !== null && <span className="text-xs text-kumo-subtle">{t('setup.quota.observed', { age: ageWords(account.observed_at, now, t) })}</span>}
+      </span>
+      <span className="flex min-w-0 flex-1 flex-col gap-1.5">
+        {account.reason !== null && <span className={cn('text-xs [overflow-wrap:anywhere]', QUOTA_ATTENTION[account.state] ?? 'text-kumo-subtle')} data-quota-reason>{account.reason}</span>}
+        {account.windows.length > 0 && <ul className="flex flex-col gap-1">{account.windows.map(window => <QuotaWindow key={window.window} window={window} t={t} />)}</ul>}
+        {account.codex && (
+          <span className="text-xs text-kumo-subtle" data-quota-codex>
+            {account.codex.plan_type === null ? t('setup.quota.planUnknown') : t('setup.quota.plan', { plan: account.codex.plan_type })}
+            {' · '}<span data-quota-credits>{creditsText(account.codex, t)}</span>
+          </span>
+        )}
+      </span>
+    </li>
+  );
+}
+
+/** Section 4: the quota read model, one row per provider account. */
+function QuotaSection({ quota, now, t }: { readonly quota: QuotaRead; readonly now: number; readonly t: OperatorTranslate }) {
+  const { view } = quota;
+  return (
+    <Card labelledBy="agents-quota-heading">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1" data-agents-section="quota" data-quota-view={view.kind}>
+        <SectionTitle id="agents-quota-heading">{t('setup.quota.title')}</SectionTitle>
+        {view.kind === 'ready' && <span className="text-xs text-kumo-subtle">{t('setup.quota.readAt', { age: ageWords(view.report.read_at, now, t) })}</span>}
+        <Button size="sm" variant="secondary" icon={<ArrowClockwiseIcon />} onClick={quota.refresh} disabled={quota.reading} className="ml-auto" data-quota-refresh>
+          {t('setup.quota.refresh')}
+        </Button>
+      </div>
+      {view.kind === 'loading' && <p role="status" className="flex items-center gap-2 text-sm text-kumo-subtle"><Loader size={16} />{t('setup.quota.reading')}</p>}
+      {view.kind === 'unavailable' && (
+        <Banner variant="error" data-quota-unavailable={view.reason} title={t('setup.quota.unavailable')}
+          description={t('setup.quota.unavailableBody', { reason: t(`setup.quota.reason.${view.reason}`) })} />
+      )}
+      {view.kind === 'ready' && (view.report.accounts.length === 0
+        ? <p className="text-sm text-kumo-subtle">{t('setup.quota.empty')}</p>
+        : <ul className="flex flex-col divide-y divide-kumo-hairline rounded-lg border border-kumo-hairline">
+          {view.report.accounts.map(account => <QuotaRow key={account.account} account={account} now={now} t={t} />)}
+        </ul>)}
+    </Card>
+  );
+}
+
+/** Hosts, then the sub-agents, then the seats that run on both: the order is the dependency order. Quota is per provider account, after them. */
+export function AgentsPage({ agents, seats, quota, ...props }: PageProps & { readonly agents: AgentsSettingsForm; readonly seats: SeatsSettingsForm; readonly quota: QuotaRead }) {
   return (
     <SetupFrame page="agents" {...props}>
       {snapshot => <>
@@ -326,6 +422,7 @@ export function AgentsPage({ agents, seats, ...props }: PageProps & { readonly a
         <HostList snapshot={snapshot} agents={agents} now={props.now} t={props.t} />
         {snapshot && <FleetTable snapshot={snapshot} t={props.t} />}
         <SeatsSection form={seats} agents={agents} setup={snapshot} t={props.t} />
+        <QuotaSection quota={quota} now={props.now} t={props.t} />
       </>}
     </SetupFrame>
   );
