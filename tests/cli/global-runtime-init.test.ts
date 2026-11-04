@@ -27,8 +27,6 @@ const ARCHCTX_PIN = dependencies.archctx;
 const ARCHCTX_CONTRACTS_PIN = dependencies['archctx-contracts'];
 const CODEGRAPH_PIN = devDependencies['@colbymchenry/codegraph'];
 const CLI = join(ROOT, 'src/cli/index.ts');
-const REVERSE_PROVIDER = 'zhaoxuya520/reverse-skill#539899ddc7608d63dc66e08e794d572e080f1a55';
-const REVERSE_FAKE_TREE_INTEGRITY = 'sha256:0089d4f8f81d3c4b8b055ac9a3674838cdb064ffae2f4c99d357977d3719baae';
 const OBSIDIAN_PROVIDER = 'kepano/obsidian-skills#a1dc48e68138490d522c04cbf5822214c6eb1202';
 const FULL_PLUGINS = ['architecture', 'cross-review', 'peer-runtime', 'platform', 'product', 'strategy-memory'] as const;
 
@@ -141,11 +139,11 @@ function setupFakeSource(root: string): void {
   );
 }
 
-function setReverseSkillIntegrity(root: string, integrity: string | null): void {
+function setObsidianSkillIntegrity(root: string, name: string, integrity: string | null): void {
   const manifestPath = join(root, 'assets', 'skill-commands', 'manifest.json');
   const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
-  const pkg = manifest.packages.find(({ name }: { name: string }) => name === 'reverse-skill-router');
-  if (!pkg) throw new Error('reverse-skill-router missing from fixture manifest');
+  const pkg = manifest.packages.find((entry: { name: string }) => entry.name === name);
+  if (!pkg) throw new Error(`${name} missing from fixture manifest`);
   pkg.integrity = integrity;
   writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 }
@@ -637,7 +635,6 @@ describe('install command global runtime bootstrap', () => {
       writeFakeHc(fakeBin);
       setupFakeSource(source);
       writeReadyOfficialCodexPluginCli(fakeBin, home);
-      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
       mkdirSync(join(home, '.agents', 'rules'), { recursive: true });
       writeFileSync(join(home, '.agents', 'rules', 'anti-patterns.md'), 'anti\n');
       writeFileSync(join(home, '.agents', 'rules', 'chinese.md'), 'zh\n');
@@ -651,7 +648,7 @@ describe('install command global runtime bootstrap', () => {
       // resolves the `skills` binary from PATH instead of going through bunx, so
       // that one is stubbed separately below.
       writeFakeSkillsCli(fakeBin);
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; elif [[ " $* " == *" ${REVERSE_PROVIDER} "* ]]; then names='reverse-skill-router'; elif [[ " $* " == *" zhaoxuya520/reverse-skill@"* ]]; then names='reverse-skill-router'; drift=' upstream head'; else names='mermaid'; fi; if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi; for skill in $names; do mkdir -p "$root/$skill"; printf '# %s%s\\n' "$skill" "\${drift:-}" > "$root/$skill/SKILL.md"; done; fi\nexit 0\n`);
+      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" >> "${bunxLog}"\nif [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then if [[ " $* " == *" tw93/Waza "* ]]; then names='think hunt check health'; else names='mermaid'; fi; if [[ " $* " == *" -a claude-code -s "* ]]; then root="$HOME/.claude/skills"; else root="$HOME/.agents/skills"; fi; for skill in $names; do mkdir -p "$root/$skill"; printf '# %s\\n' "$skill" > "$root/$skill/SKILL.md"; done; fi\nexit 0\n`);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
@@ -659,7 +656,6 @@ describe('install command global runtime bootstrap', () => {
         target: 'codex',
         plugins: FULL_PLUGINS,
         externalSkills: true,
-        reverseSkill: true,
         codegraph: true,
         brainRoot: join(home, 'brain'),
         env: {
@@ -683,11 +679,7 @@ describe('install command global runtime bootstrap', () => {
       expect(readFileSync(bunxLog, 'utf-8')).toContain(
         'skills add BfdCampos/dotfiles -g -a codex -s mermaid -y',
       );
-      expect(readFileSync(bunxLog, 'utf-8')).toContain(
-        `skills add ${REVERSE_PROVIDER} -g -a codex -s reverse-skill-router -y`,
-      );
       expect(readFileSync(bunxLog, 'utf-8')).not.toContain(OBSIDIAN_PROVIDER);
-      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.codex', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(false);
       expect(readFileSync(bunxLog, 'utf-8')).not.toContain('feature-dev');
@@ -964,8 +956,8 @@ if [[ -n "$output" ]]; then printf '# refreshed rule\\n' > "$output"; else print
     }
   }, 15_000);
 
-  test('fails closed before host projection when the pinned Reverse Skill tree digest drifts', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-integrity-'));
+  test('fails closed before host projection when the pinned Obsidian Skill tree digest drifts', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-integrity-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const fakeBin = join(tmp, 'bin');
@@ -987,9 +979,9 @@ printf '%s\n' "$HOME" > "${isolatedHomeLog}"
 printf '%s\n%s\n%s\n%s\n' "$BUN_INSTALL" "$BUN_INSTALL_CACHE_DIR" "$XDG_CACHE_HOME" "$XDG_STATE_HOME" > "${isolatedRuntimeLog}"
 mkdir -p "$BUN_INSTALL"
 printf 'isolated\n' > "$BUN_INSTALL/probe"
-mkdir -p "$HOME/.agents/skills/reverse-skill-router" "$HOME/.codex/skills/reverse-skill-router"
-printf '# drifted reverse-skill-router\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
-printf '# premature host projection\n' > "$HOME/.codex/skills/reverse-skill-router/SKILL.md"
+mkdir -p "$HOME/.agents/skills/obsidian-markdown" "$HOME/.codex/skills/obsidian-markdown"
+printf '# drifted obsidian-markdown\n' > "$HOME/.agents/skills/obsidian-markdown/SKILL.md"
+printf '# premature host projection\n' > "$HOME/.codex/skills/obsidian-markdown/SKILL.md"
 exit 0
 `);
 
@@ -997,12 +989,12 @@ exit 0
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: {
@@ -1015,10 +1007,10 @@ exit 0
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toMatchObject({
         status: 'failed',
       });
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')?.detail).toContain(
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')?.detail).toContain(
         'isolated staging integrity mismatch',
       );
       expect(readFileSync(isolatedHomeLog, 'utf-8').trim()).not.toBe(home);
@@ -1028,15 +1020,15 @@ exit 0
       expect(isolatedXdgCache).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.cache'));
       expect(isolatedXdgState).toBe(join(readFileSync(isolatedHomeLog, 'utf-8').trim(), '.local', 'state'));
       expect(existsSync(join(hostileBunInstall, 'probe'))).toBe(false);
-      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
-      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'obsidian-markdown'))).toBe(false);
+      expect(existsSync(join(home, '.codex', 'skills', 'obsidian-markdown'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test('rejects a pre-existing Reverse Skill staging symlink even when its target matches the pinned digest', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-staging-symlink-'));
+  test('rejects a pre-existing Obsidian Skill staging symlink even when its target matches the pinned digest', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-staging-symlink-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const outside = join(tmp, 'outside');
@@ -1044,78 +1036,78 @@ exit 0
       mkdirSync(join(home, '.agents', 'skills'), { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(outside, { recursive: true });
-      writeFileSync(join(outside, 'SKILL.md'), '# reverse-skill-router\n');
-      symlinkSync(outside, join(home, '.agents', 'skills', 'reverse-skill-router'), 'dir');
+      writeFileSync(join(outside, 'SKILL.md'), '# obsidian-markdown\n');
+      symlinkSync(outside, join(home, '.agents', 'skills', 'obsidian-markdown'), 'dir');
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toMatchObject({
         status: 'failed',
         detail: expect.stringContaining('refusing non-canonical integrity staging root'),
       });
-      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
-      expect(readFileSync(join(outside, 'SKILL.md'), 'utf-8')).toBe('# reverse-skill-router\n');
+      expect(existsSync(join(home, '.codex', 'skills', 'obsidian-markdown'))).toBe(false);
+      expect(readFileSync(join(outside, 'SKILL.md'), 'utf-8')).toBe('# obsidian-markdown\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
   test('rejects a symlinked shared skills root instead of blessing its outside realpath', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-root-symlink-'));
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-root-symlink-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
     const outside = join(tmp, 'outside');
     try {
       mkdirSync(join(home, '.agents'), { recursive: true });
       mkdirSync(repo, { recursive: true });
-      mkdirSync(join(outside, 'reverse-skill-router'), { recursive: true });
-      writeFileSync(join(outside, 'reverse-skill-router', 'SKILL.md'), '# reverse-skill-router\n');
+      mkdirSync(join(outside, 'obsidian-markdown'), { recursive: true });
+      writeFileSync(join(outside, 'obsidian-markdown', 'SKILL.md'), '# obsidian-markdown\n');
       symlinkSync(outside, join(home, '.agents', 'skills'), 'dir');
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: ROOT,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toMatchObject({
         status: 'failed',
-        detail: expect.stringContaining('refusing non-canonical integrity staging root'),
+        detail: expect.stringContaining('staging parent escapes canonical authority'),
       });
-      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
-      expect(readFileSync(join(outside, 'reverse-skill-router', 'SKILL.md'), 'utf-8'))
-        .toBe('# reverse-skill-router\n');
+      expect(existsSync(join(home, '.codex', 'skills', 'obsidian-markdown'))).toBe(false);
+      expect(readFileSync(join(outside, 'obsidian-markdown', 'SKILL.md'), 'utf-8'))
+        .toBe('# obsidian-markdown\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test('preflights unowned Reverse Skill host paths before committing shared staging', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-preflight-'));
+  test('preflights unowned Obsidian Skill host paths before committing shared staging', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-host-preflight-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1126,9 +1118,9 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
-      mkdirSync(join(home, '.codex', 'skills', 'reverse-skill-router'), { recursive: true });
-      writeFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), '# user-owned\n');
+      setObsidianSkillIntegrities(source);
+      mkdirSync(join(home, '.codex', 'skills', 'obsidian-markdown'), { recursive: true });
+      writeFileSync(join(home, '.codex', 'skills', 'obsidian-markdown', 'SKILL.md'), '# user-owned\n');
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
 
@@ -1136,25 +1128,25 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toMatchObject({
         status: 'failed',
         detail: expect.stringContaining('refusing to refresh unowned host skill'),
       });
       expect(existsSync(bunxLog)).toBe(false);
-      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
-      expect(readFileSync(join(home, '.codex', 'skills', 'reverse-skill-router', 'SKILL.md'), 'utf-8'))
+      expect(existsSync(join(home, '.agents', 'skills', 'obsidian-markdown'))).toBe(false);
+      expect(readFileSync(join(home, '.codex', 'skills', 'obsidian-markdown', 'SKILL.md'), 'utf-8'))
         .toBe('# user-owned\n');
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -1162,7 +1154,7 @@ exit 0
   });
 
   test('rejects symlinked host skill roots without writing outside HOME', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-root-symlink-'));
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-host-root-symlink-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1172,38 +1164,38 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(outside, { recursive: true });
       setupFakeSource(source);
-      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      setObsidianSkillIntegrities(source);
       symlinkSync(outside, join(home, '.codex', 'skills'), 'dir');
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toMatchObject({
         status: 'failed',
         detail: expect.stringContaining('refusing non-canonical host skill root'),
       });
-      expect(existsSync(join(outside, 'reverse-skill-router'))).toBe(false);
-      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(outside, 'obsidian-markdown'))).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'obsidian-markdown'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
   test('dangling host skill roots return a failed step and compensate committed staging', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-host-root-dangling-'));
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-host-root-dangling-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1213,12 +1205,12 @@ exit 0
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
       setupFakeSource(source);
-      setReverseSkillIntegrity(source, REVERSE_FAKE_TREE_INTEGRITY);
+      setObsidianSkillIntegrities(source);
       symlinkSync(join(tmp, 'missing-host-root'), join(home, '.codex', 'skills'), 'dir');
       writeFakeSkillsCli(fakeBin);
       writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash
-mkdir -p "$HOME/.agents/skills/reverse-skill-router"
-printf '# reverse-skill-router\\n' > "$HOME/.agents/skills/reverse-skill-router/SKILL.md"
+mkdir -p "$HOME/.agents/skills/obsidian-markdown"
+printf '# obsidian-markdown\\n' > "$HOME/.agents/skills/obsidian-markdown/SKILL.md"
 exit 0
 `);
 
@@ -1226,28 +1218,28 @@ exit 0
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home, PATH: `${fakeBin}:${process.env.PATH ?? ''}` },
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({ status: 'failed' });
-      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toMatchObject({ status: 'failed' });
+      expect(existsSync(join(home, '.agents', 'skills', 'obsidian-markdown'))).toBe(false);
       expect(existsSync(join(tmp, 'missing-host-root'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test('fails closed when explicit Reverse Skill selection is absent from the catalog', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-missing-catalog-'));
+  test('fails closed before any write when an explicit Obsidian dependency is absent from the catalog', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-missing-catalog-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1259,38 +1251,33 @@ exit 0
       const manifestPath = join(source, 'assets', 'skill-commands', 'manifest.json');
       const manifest = JSON.parse(readFileSync(manifestPath, 'utf-8'));
       manifest.packages = manifest.packages.filter(
-        ({ name }: { name: string }) => name !== 'reverse-skill-router',
+        ({ name }: { name: string }) => name !== 'obsidian-markdown',
       );
       writeFileSync(manifestPath, `${JSON.stringify(manifest, null, 2)}\n`);
 
-      const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
+      expect(() => runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home },
-      });
-
-      expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toEqual({
-        step: 'configure Reverse Skill',
-        status: 'failed',
-        detail: 'required explicit catalog package reverse-skill-router is missing for the selected host target',
-      });
+      })).toThrow('required package "obsidian-markdown" is not in this catalog');
+      expect(existsSync(join(home, '.agents', 'skills', 'obsidian-cli'))).toBe(false);
+      expect(existsSync(join(home, '.codex', 'skills', 'obsidian-cli'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
   });
 
-  test('fails closed before provider execution when explicit Reverse Skill integrity is absent', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-reverse-skill-missing-integrity-'));
+  test('fails closed before provider execution when explicit Obsidian Skill integrity is absent', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-obsidian-skill-missing-integrity-'));
     const source = join(tmp, 'source');
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
@@ -1299,31 +1286,31 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       setupFakeSource(source);
-      setReverseSkillIntegrity(source, null);
+      setObsidianSkillIntegrity(source, 'obsidian-markdown', null);
 
       const result = runGlobalRuntimeSetup(CLI_PORTS.globalRuntime, {
         sourceRoot: source,
         cwd: repo,
         target: 'codex',
-        plugins: [],
+        plugins: ['strategy-memory'],
         installCli: false,
         syncSkill: false,
         hostAdapters: false,
         externalSkills: false,
-        reverseSkill: true,
+        obsidianSkills: true,
         codegraph: false,
         brainRoot: join(home, 'brain'),
         env: { ...sanitizedChildEnv(), HOME: home },
       });
 
       expect(result.exitCode).toBe(1);
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toEqual({
-        step: 'configure Reverse Skill',
+      expect(result.steps.find((step) => step.step === 'configure Obsidian companion Skills')).toEqual({
+        step: 'configure Obsidian companion Skills',
         status: 'failed',
-        detail: 'catalog package reverse-skill-router requires a pinned tree integrity digest',
+        detail: 'catalog package obsidian-markdown requires a pinned tree integrity digest',
       });
-      expect(existsSync(join(home, '.agents', 'skills', 'reverse-skill-router'))).toBe(false);
-      expect(existsSync(join(home, '.codex', 'skills', 'reverse-skill-router'))).toBe(false);
+      expect(existsSync(join(home, '.agents', 'skills', 'obsidian-markdown'))).toBe(false);
+      expect(existsSync(join(home, '.codex', 'skills', 'obsidian-markdown'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -1444,10 +1431,6 @@ exit 0
 
       expect(result.exitCode).toBe(0);
       expect(result.steps.find((step) => step.step === 'configure Waza skills')?.status).toBe('skipped');
-      expect(result.steps.find((step) => step.step === 'configure Reverse Skill')).toMatchObject({
-        status: 'skipped',
-        detail: 'requires explicit --with-reverse-skill opt-in',
-      });
       expect(result.steps.find((step) => step.step === 'cross-review skill repo-harness-cross-review')?.status).toBe('ok');
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review', 'SKILL.md'))).toBe(true);
       expect(existsSync(join(home, '.claude', 'skills', 'merge-gate', 'SKILL.md'))).toBe(false);
@@ -1479,8 +1462,6 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
     names='think hunt check health'
     mkdir -p "$HOME/.agents/rules"
     for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
-	  elif [[ " $* " == *" zhaoxuya520/reverse-skill#"* ]]; then
-    names='reverse-skill-router'
   else
     names='mermaid'
   fi
@@ -1516,7 +1497,6 @@ exit 0
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add BfdCampos/dotfiles -g -a codex -s mermaid -y');
       expect(realpathSync(join(home, '.claude', 'skills', 'think'))).toBe(realpathSync(join(home, '.agents', 'skills', 'think')));
       expect(existsSync(join(home, '.claude', 'skills', 'mermaid', 'SKILL.md'))).toBe(true);
-      expect(existsSync(join(home, '.claude', 'skills', 'reverse-skill-router', 'SKILL.md'))).toBe(false);
       expect(existsSync(join(home, '.claude', 'skills', 'repo-harness-cross-review'))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
@@ -1533,7 +1513,7 @@ exit 0
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
       mkdirSync(fakeBin, { recursive: true });
-      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid', 'reverse-skill-router']) {
+      for (const skill of ['think', 'hunt', 'check', 'health', 'mermaid']) {
         mkdirSync(join(home, '.agents', 'skills', skill), { recursive: true });
         writeFileSync(join(home, '.agents', 'skills', skill, 'SKILL.md'), `# ${skill}\n`);
       }
@@ -1899,7 +1879,7 @@ exit 0
     expect(res.stdout).toContain('Usage: repo-harness install');
     expect(res.stdout).toContain('--target <target>');
     expect(res.stdout).toContain('--no-cli');
-    expect(res.stdout).toContain('--with-reverse-skill');
+    expect(res.stdout).not.toContain('--with-reverse-skill');
     expect(res.stdout).toContain('--with-obsidian-skills');
     expect(res.stdout).toContain('--brain-root <path>');
     expect(res.stdout).not.toContain('--with-optional');
@@ -1907,52 +1887,21 @@ exit 0
     expect(res.stdout).not.toContain('setup-plugins');
   }, 30_000);
 
-  test('CLI install routes --with-reverse-skill into the explicit provider path', () => {
+  test('CLI install rejects the removed --with-reverse-skill flag before any host write', () => {
     const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-install-reverse-flag-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
-    const fakeBin = join(tmp, 'bin');
-    const bunxLog = join(tmp, 'bunx.log');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
-      mkdirSync(fakeBin, { recursive: true });
-      writeExecutable(join(fakeBin, 'bun'), '#!/bin/bash\nif [[ "${1:-}" == "--version" ]]; then echo 1.4.0; exit 0; fi\nexit 0\n');
-      writeFakeSkillsCli(fakeBin);
-      writeExecutable(join(fakeBin, 'bunx'), `#!/bin/bash\nprintf '%s\\n' "$*" > "${bunxLog}"\nexit 0\n`);
-
       const res = spawnSync(process.execPath, [
-        CLI,
-        'install',
-        '--no-plugins',
-        '--target',
-        'codex',
-        '--no-cli',
-        '--no-sync-skill',
-        '--no-hooks',
-        '--no-external-skills',
-        '--no-codegraph',
-        '--with-reverse-skill',
-        '--json',
-      ], {
-        cwd: repo,
-        encoding: 'utf-8',
-        env: {
-          ...sanitizedChildEnv(),
-          HOME: home,
-          BUN_INSTALL: join(home, '.bun'),
-          PATH: `${fakeBin}:${process.env.PATH ?? ''}`,
-          REPO_HARNESS_BUN_EXECUTABLE: join(fakeBin, 'bun'),
-        },
-      });
+        CLI, 'install', '--no-plugins', '--target', 'codex', '--no-cli', '--no-sync-skill', '--no-hooks',
+        '--no-external-skills', '--no-codegraph', '--with-reverse-skill', '--json',
+      ], { cwd: repo, encoding: 'utf-8', env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') } });
 
-      expect(res.status, `${res.stderr}\n${res.stdout}`).toBe(1);
-      const result = JSON.parse(res.stdout);
-      expect(result.steps.find((step: { step: string }) => step.step === 'configure Reverse Skill')).toMatchObject({
-        status: 'failed',
-        detail: expect.stringContaining('cannot verify isolated staging integrity for reverse-skill-router'),
-      });
-      expect(readFileSync(bunxLog, 'utf-8')).toContain(`skills add ${REVERSE_PROVIDER}`);
+      expect(res.status, `${res.stderr}\n${res.stdout}`).not.toBe(0);
+      expect(res.stderr).toContain("unknown option '--with-reverse-skill'");
+      for (const surface of ['.repo-harness', '.codex', '.agents']) expect(existsSync(join(home, surface))).toBe(false);
     } finally {
       rmSync(tmp, { recursive: true, force: true });
     }
@@ -2026,12 +1975,12 @@ exit 0
     }
   }, 30_000);
 
-  test('update host transaction compensates Reverse Skill projections when a later step fails', () => {
-    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-reverse-rollback-'));
+  test('update host transaction compensates Obsidian Skill projections when a later step fails', () => {
+    const tmp = mkdtempSync(join(tmpdir(), 'repo-harness-cli-update-obsidian-rollback-'));
     const home = join(tmp, 'home');
     const repo = join(tmp, 'repo');
-    const staging = join(home, '.agents', 'skills', 'reverse-skill-router');
-    const projected = join(home, '.codex', 'skills', 'reverse-skill-router');
+    const staging = join(home, '.agents', 'skills', 'obsidian-markdown');
+    const projected = join(home, '.codex', 'skills', 'obsidian-markdown');
     try {
       mkdirSync(home, { recursive: true });
       mkdirSync(repo, { recursive: true });
@@ -2040,17 +1989,17 @@ exit 0
         cwd: repo,
         target: 'codex',
         plugins: FULL_PLUGINS,
-        reverseSkill: true,
+        obsidianSkills: true,
         env: { ...sanitizedChildEnv(), HOME: home, BUN_INSTALL: join(home, '.bun') },
       }, () => {
         mkdirSync(staging, { recursive: true });
-        writeFileSync(join(staging, 'SKILL.md'), '# reverse-skill-router\n');
+        writeFileSync(join(staging, 'SKILL.md'), '# obsidian-markdown\n');
         mkdirSync(join(home, '.codex', 'skills'), { recursive: true });
         symlinkSync(staging, projected, 'dir');
         return {
           exitCode: 1,
           steps: [
-            { step: 'configure Reverse Skill', status: 'ok', detail: 'projected 1 host skills' },
+            { step: 'configure Obsidian companion Skills', status: 'ok', detail: 'projected 1 host skills' },
             { step: 'cross-review skills', status: 'failed', detail: 'refusing to overwrite unowned host skill' },
           ],
           lines: [],
@@ -2279,7 +2228,7 @@ exit 0
     expect(res.stdout).toContain('--check');
     expect(res.stdout).toContain('--no-runtime-refresh');
     expect(res.stdout).toContain('--with-external-skills');
-    expect(res.stdout).toContain('--with-reverse-skill');
+    expect(res.stdout).not.toContain('--with-reverse-skill');
     expect(res.stdout).toContain('--with-obsidian-skills');
     expect(res.stdout).toContain('--configure-codegraph');
     expect(res.stdout).toContain('--no-cli');
@@ -2312,8 +2261,6 @@ if [[ "\${1:-}" == "skills" && "\${2:-}" == "add" ]]; then
     names='think hunt check health'
     mkdir -p "$HOME/.agents/rules"
     for rule in anti-patterns.md chinese.md durable-context.md english.md; do printf '# rule\\n' > "$HOME/.agents/rules/$rule"; done
-  elif [[ " $* " == *" zhaoxuya520/reverse-skill#"* ]]; then
-    names='reverse-skill-router'
   else
     names='mermaid'
   fi
@@ -2359,7 +2306,6 @@ exit 0
       expect(res.stdout).toContain('[plugins] skipped peer-runtime: --target codex has no host for its skills');
       expect(res.stdout).toContain('install repo-harness CLI');
       expect(readFileSync(bunxLog, 'utf-8')).toContain('skills add tw93/Waza');
-      expect(readFileSync(bunxLog, 'utf-8')).not.toContain('skills add zhaoxuya520/reverse-skill');
       expect(readFileSync(codegraphLog, 'utf-8')).toContain('codegraph install');
       expect(JSON.parse(readFileSync(join(home, '.repo-harness', 'install-state.json'), 'utf-8')).plugins.map(({ id }: { id: string }) => id)).toEqual(codexPlugins);
     } finally {
@@ -3269,19 +3215,21 @@ describe('Global Working Rules refresh during install and update', () => {
     expect(inspectGlobalContext(readFileSync(path, 'utf-8'), ROOT).state).toBe('managed-current');
   }), 60_000);
 
-  test('the candidate request carries only a valid report language and refuses a retired protocol 1 request', () => {
+  test('the candidate request carries only a valid report language and refuses retired protocol 1 and 2 requests', () => {
     const request = {
-      protocol: 2, transaction_id: 't', transaction_backup_root: '/tmp/b', parent_token: 'p', cwd: '/tmp',
+      protocol: 3, transaction_id: 't', transaction_backup_root: '/tmp/b', parent_token: 'p', cwd: '/tmp',
       candidate: { root: '/tmp/c', version: '9.9.9', package_digest: 'sha256:00' },
       target: 'codex', sync_skill: false, host_adapters: false, external_skills: false,
-      reverse_skill: false, obsidian_skills: false, codegraph: false,
+      obsidian_skills: false, codegraph: false,
     } as const;
     expect(parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'zh-CN' }), '9.9.9').report_language).toBe('zh-CN');
     expect(parseCandidateRequest(encodeCandidateRequest(request), '9.9.9').report_language).toBeUndefined();
     expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, report_language: 'custom' as 'en' }), '9.9.9')).toThrow('invalid shape');
-    // A released parent before request protocol 2 cannot run the protocol 3 cutover; the candidate names the direct bootstrap.
-    expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, protocol: 1 } as unknown as CandidateReconciliationRequest), '9.9.9'))
-      .toThrow(new CandidateRequestProtocolRetiredError(1, '9.9.9'));
+    // A released parent before request protocol 3 cannot drive this candidate; the candidate names the direct bootstrap.
+    for (const protocol of [1, 2]) {
+      expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, protocol, reverse_skill: false } as unknown as CandidateReconciliationRequest), '9.9.9'))
+        .toThrow(new CandidateRequestProtocolRetiredError(protocol, '9.9.9'));
+    }
     expect(() => parseCandidateRequest(encodeCandidateRequest({ ...request, profile: 'full' } as unknown as CandidateReconciliationRequest), '9.9.9')).toThrow('invalid shape');
   });
 });
