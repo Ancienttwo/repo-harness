@@ -654,7 +654,7 @@ describe('operator serve command and HTTP boundary', () => {
       expect(sends[0]).toMatchObject({ repository_id: 'repo-a', parent: 1503, text: 'status?', env: { GH_PROMPT_DISABLED: '1' } });
       // The audit names the repository in the target and the parent and the resolved terminal in the result; the text stays out of it.
       expect(audit().map(record => record.phase === 'intent' ? [record.operation, record.target] : [record.status, record.body])).toEqual([
-        ['advisor_seat_message', 'advisor_seat:repo-a:1503'], [200, sent]]);
+        ['advisor_seat_message', 'advisor_seat:repo-a'], [200, sent]]);
       expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
       // Text limits, a terminal address in the request and a non-number parent are refused before a child runs.
       for (const body of [{ ...message, text: '' }, { ...message, text: 'a'.repeat(4001) }, { ...message, text: 'a\tb' }, { ...message, terminal: 't9' },
@@ -687,7 +687,7 @@ describe('operator serve command and HTTP boundary', () => {
       send = async () => ({ ...sent, parent: 1504 });
       expect(await answer(await post(message))).toEqual([409, 'reconcile_required']);
       expect(audit().at(-1).body.advisor_seat).toEqual({ repository_id: 'repo-a', parent: 1503, terminal: 't9', code: 'advisor_invalid', delivery: 'unknown' });
-      expect(audit().slice(before).filter(record => record.phase === 'intent').every(record => record.target === 'advisor_seat:repo-a:1503')).toBe(true);
+      expect(audit().slice(before).filter(record => record.phase === 'intent').every(record => record.target === 'advisor_seat:repo-a')).toBe(true);
       expect(readFileSync(join(home, 'operator/audit.jsonl'), 'utf8')).not.toContain('status?');
 
       for (const query of ['', '?repository_id=repo-a', '?repository_id=repo-a&parent=0', '?repository_id=repo-a&parent=1503&terminal=t9', '?repository_id=repo-a&parent=1503&parent=1504']) {
