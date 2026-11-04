@@ -4,7 +4,7 @@ import * as path from 'path';
 import * as os from 'os';
 import { spawnSync } from 'child_process';
 import { runInstall, runUninstall } from '../../src/cli/commands/install';
-import { claudeTarget } from '../../src/cli/installer/targets/claude';
+import { CLAUDE_STATUS_LINE_PIPE, claudeTarget } from '../../src/cli/installer/targets/claude';
 import type { Location } from '../../src/cli/installer/types';
 import { readConfigurationReceipt } from '../../src/cli/installer/configuration-ownership';
 import { isRepoHarnessManagedHookCommand } from '../../src/core/adoption/managed-hook-config';
@@ -467,6 +467,41 @@ describe('install command (Phase 1B)', () => {
           expect(entry.hooks[0].timeout).toBe(30);
         }
       }
+    });
+  });
+
+  test.each([
+    // [case, statusLine before install, statusLine the user sets after install, uninstall exit, statusLine after uninstall]
+    ['none exists', undefined, undefined, 0, undefined],
+    ['a user status line exists', { type: 'command', command: 'my-line' }, undefined, 0, { type: 'command', command: 'my-line' }],
+    ['the user replaced the installed one', undefined, { type: 'command', command: 'my-line' }, 1, { type: 'command', command: 'my-line' }],
+  ] as const)('claude statusLine install and uninstall when %s: install writes it only into an empty slot, uninstall removes only the installed value', (_name, existing, replacement, uninstallExit, remaining) => {
+    withTempHome((home) => {
+      const filePath = path.join(home, '.claude/settings.json');
+      if (existing) {
+        fs.mkdirSync(path.dirname(filePath), { recursive: true });
+        fs.writeFileSync(filePath, `${JSON.stringify({ statusLine: existing }, null, 2)}\n`);
+      }
+      const owned = { type: 'command', command: 'repo-harness-hook statusline' };
+      const pipeNote = `[claude] note: statusLine exists and is not changed. To capture Claude quota, set its command to: ${CLAUDE_STATUS_LINE_PIPE}`;
+      const first = runInstall({ target: 'claude', location: 'global' });
+      expect(first.exitCode).toBe(0);
+      expect(JSON.parse(fs.readFileSync(filePath, 'utf-8')).statusLine).toEqual(existing ?? owned);
+      expect(first.lines.includes(pipeNote)).toBe(existing !== undefined);
+      expect(readConfigurationReceipt(home).changes.filter((entry) => entry.selector === 'statusLine')).toEqual(existing ? [] : [
+        { path: filePath, selector: 'statusLine', before: null, installed: JSON.stringify(owned), active: true },
+      ]);
+      expect(runInstall({ target: 'claude', location: 'global' }).lines).toEqual([`[claude] unchanged: ${filePath}`, ...(existing ? [pipeNote] : [])]);
+      if (replacement) {
+        const data = JSON.parse(fs.readFileSync(filePath, 'utf-8'));
+        fs.writeFileSync(filePath, `${JSON.stringify({ ...data, statusLine: replacement }, null, 2)}\n`);
+      }
+      const uninstall = runUninstall({ target: 'claude', location: 'global' });
+      expect(uninstall.exitCode, uninstall.lines.join('\n')).toBe(uninstallExit);
+      if (replacement) expect(uninstall.lines).toContain(`[unresolved] ${filePath}: user changed statusLine; preserved`);
+      const after = fs.existsSync(filePath) ? JSON.parse(fs.readFileSync(filePath, 'utf-8')) : {};
+      expect(after.statusLine).toEqual(remaining);
+      expect(after.hooks).toBeUndefined();
     });
   });
 

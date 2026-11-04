@@ -167,8 +167,11 @@ function runUserUninstallLocked(opts: UninstallOptions): UninstallResult {
     }
     if (configurationPaths(home).includes(surface.path)) {
       // A restoration receipt owns these fragments; never also delete the projection.
-      if (receipt.changes.some((entry) => entry.active && entry.path === surface.path && entry.selector !== 'default_mode_request_user_input')) {
-        if (!remaining.some((entry) => entry.active && entry.path === surface.path && entry.selector !== 'default_mode_request_user_input')) removedSurfaces.add(surface);
+      // `default_mode_request_user_input` and `statusLine` are receipt-only entries, not projection fragments.
+      const projectionFragment = (entry: (typeof receipt.changes)[number]) => entry.active && entry.path === surface.path
+        && entry.selector !== 'default_mode_request_user_input' && entry.selector !== 'statusLine';
+      if (receipt.changes.some(projectionFragment)) {
+        if (!remaining.some(projectionFragment)) removedSurfaces.add(surface);
         continue;
       }
     }

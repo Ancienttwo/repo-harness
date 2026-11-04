@@ -14,7 +14,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import * as os from 'os';
-import { assertConfigurationPath, hostConfigurationRoot } from '../configuration-ownership';
+import { assertConfigurationPath, hostConfigurationRoot, readConfigurationFragment, replaceConfigurationFragment, writeOwnedConfiguration } from '../configuration-ownership';
 import type {
   AgentTarget,
   DetectionResult,
@@ -48,6 +48,29 @@ function userConfigPath(loc: Location): string {
   // Prefer $HOME env so tests can isolate via temp dirs; os.homedir() is
   // cached and ignores runtime $HOME mutations in some Node/Bun versions.
   return path.join(process.env.HOME ?? os.homedir(), '.claude', 'settings.json');
+}
+
+/** The `statusLine` entry that install writes when `settings.json` has none. */
+export const CLAUDE_STATUS_LINE = Object.freeze({ type: 'command', command: 'repo-harness-hook statusline' });
+
+/** The documented one-line pipe that keeps an existing status line and also writes the quota capture. */
+export const CLAUDE_STATUS_LINE_PIPE = `input=$(cat); printf '%s' "$input" | repo-harness-hook statusline >/dev/null; printf '%s' "$input" | <your status line command>`;
+
+/**
+ * Sets `statusLine` only when none exists. The configuration receipt records
+ * the written entry, so uninstall removes it only while it still equals the
+ * installed value. An existing status line is not changed.
+ */
+function ensureStatusLine(filePath: string): { readonly written: boolean; readonly note?: string } {
+  const current = fs.readFileSync(filePath, 'utf-8');
+  const fragment = readConfigurationFragment(filePath, current, 'statusLine');
+  const owned = JSON.stringify(CLAUDE_STATUS_LINE);
+  if (fragment === owned) return { written: false };
+  if (fragment !== null) {
+    return { written: false, note: `statusLine exists and is not changed. To capture Claude quota, set its command to: ${CLAUDE_STATUS_LINE_PIPE}` };
+  }
+  writeOwnedConfiguration(filePath, replaceConfigurationFragment(filePath, current, 'statusLine', owned), hostConfigurationRoot());
+  return { written: true };
 }
 
 class ClaudeTarget implements AgentTarget {
@@ -89,18 +112,18 @@ class ClaudeTarget implements AgentTarget {
     const nextContent = formatJson(next);
 
     const created = !fs.existsSync(filePath);
-    if (!created) {
-      const current = fs.readFileSync(filePath, 'utf-8');
-      if (current === nextContent) {
-        return { files: [{ path: filePath, action: 'unchanged' }] };
-      }
+    const hooksChanged = created || fs.readFileSync(filePath, 'utf-8') !== nextContent;
+    if (hooksChanged) atomicWriteFileSync(filePath, nextContent);
+    const statusLine = ensureStatusLine(filePath);
+    const notes = statusLine.note ? [statusLine.note] : [];
+    if (!hooksChanged && !statusLine.written) {
+      return { files: [{ path: filePath, action: 'unchanged' }], ...(notes.length ? { notes } : {}) };
     }
-    atomicWriteFileSync(filePath, nextContent);
     return {
       files: [{ path: filePath, action: created ? 'created' : 'updated' }],
       notes: [created
         ? 'Claude Code will pick up hooks on next ConfigChange event; no restart needed.'
-        : 'Claude Code auto-reloads settings.json on write (verified Phase 0).'],
+        : 'Claude Code auto-reloads settings.json on write (verified Phase 0).', ...notes],
     };
   }
 
