@@ -1762,13 +1762,15 @@ describe("check-agent-tooling", () => {
   }, 15000);
 
   test("resolves and runs no archctx or CodeGraph binary unless the recorded selection includes the architecture plugin", () => {
-    const cases: Array<{ name: string; plugins: readonly PluginId[] | null; unreadable?: true; caller?: true; status: string; reason: string }> = [
+    const cases: Array<{ name: string; plugins: readonly PluginId[] | null; unreadable?: true; caller?: true; providerLoadFails?: true; status: string; reason: string }> = [
       { name: "no-state", plugins: null, status: "not-selected", reason: "the architecture plugin is not selected; run: repo-harness install" },
       { name: "other-plugin", plugins: ["product"], status: "not-selected", reason: "the architecture plugin is not selected; run: repo-harness install" },
       { name: "unreadable", plugins: null, unreadable: true, status: "selection-unreadable", reason: "the install selection cannot be read" },
       { name: "selected", plugins: ["architecture"], status: "present", reason: "" },
       // An install applies the selection before it records it; its plugin code passes the flag.
       { name: "caller", plugins: null, caller: true, status: "present", reason: "" },
+      // The selection reads as selected, but the provider import fails.
+      { name: "provider-load", plugins: ["architecture"], providerLoadFails: true, status: "invalid", reason: "the provider resolution did not run: error: Cannot find module" },
     ];
     for (const entry of cases) {
       const envRoot = setupFakeEnvironment(`check-agent-tooling-selection-${entry.name}`, entry.plugins);
@@ -1780,6 +1782,9 @@ describe("check-agent-tooling", () => {
         if (entry.unreadable) {
           mkdirSync(join(envRoot.home, ".repo-harness"), { recursive: true });
           writeFileSync(installProfileStatePath({ HOME: envRoot.home }), "{");
+        }
+        if (entry.providerLoadFails) {
+          writeExecutable(join(envRoot.fakeBin, "bun"), `#!/bin/sh\nfor a in "$@"; do case "$a" in */effects/architecture/providers.ts) echo "error: Cannot find module './archctx-runtime'" >&2; exit 1;; esac; done\nexec "${process.execPath}" "$@"\n`);
         }
         const res = spawnSync("bash", [SCRIPT, "--json", "--host", "claude", ...(entry.caller ? ["--architecture-selected"] : [])], {
           cwd: envRoot.root,
@@ -1793,6 +1798,12 @@ describe("check-agent-tooling", () => {
           // The positive control: with the plugin both detectors run their binaries.
           expect(readFileSync(log, "utf-8")).toBe("codegraph --version\ncodegraph status .\narchctx --version\n");
           expect(archctx.status).toBe("present");
+          continue;
+        }
+        if (entry.status === "invalid") {
+          expect(archctx.managed).toMatchObject({ status: "invalid", selected: true });
+          expect(archctx.managed.reason).toContain(entry.reason);
+          for (const tool of [codegraph, archctx]) expect(tool.readiness).not.toBe("inactive");
           continue;
         }
         expect(existsSync(log)).toBe(false);

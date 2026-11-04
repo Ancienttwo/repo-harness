@@ -10,7 +10,7 @@ import {
 } from '../../effects/locking/exclusive-directory-lock';
 import { appendSegmentedLog } from '../../effects/segmented-log';
 import { hashMcpInput, tryWriteMcpAuditEntry } from './audit';
-import { createCodeGraphCliAdapter, type CodeGraphRefreshResult, type CodeGraphRepoSnapshot, type GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
+import type { CodeGraphRefreshResult, CodeGraphRepoSnapshot, GeneralRepoCodeGraphAdapter } from './codegraph-adapter';
 import { isPathInside } from './paths';
 import {
   GeneralRepoAccessError,
@@ -50,7 +50,7 @@ export interface GeneralRepoToolDefinition {
 export interface GeneralRepoToolContext {
   repoRoot: string;
   policy: McpPolicy;
-  codeGraphAdapter?: GeneralRepoCodeGraphAdapter;
+  codeGraphAdapter: GeneralRepoCodeGraphAdapter;
   testHooks?: {
     afterSnapshotWalk?: (event: { repoRoot: string; kind: 'complete' | 'manifest_page'; attempt: number }) => void;
     beforeMutationCommit?: (event: { repoRoot: string; tool: string; paths: string[] }) => void;
@@ -193,7 +193,6 @@ const MAX_SNAPSHOT_CACHE_ENTRIES = 16;
 const MAX_ENTRY_METADATA_CACHE_ENTRIES = 200_000;
 const MAX_LAGGING_PATHS_RETURNED = 50;
 const MAX_SNAPSHOT_BUILD_ATTEMPTS = 2;
-const DEFAULT_CODEGRAPH_ADAPTER = createCodeGraphCliAdapter();
 const SNAPSHOT_CACHE = new Map<string, VisibleEntrySnapshot>();
 const ENTRY_METADATA_CACHE = new Map<string, EntryMetadataCacheValue>();
 const WRITE_TOOLS = new Set<string>(['write_file', 'apply_patch', 'move_path', 'delete_path', 'refresh_repo_index']);
@@ -993,7 +992,7 @@ function mergeCodeGraphMetadata(repo: RepoRecord, ignore: IgnorePolicy, entries:
 
 function buildManifestPageSnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy, args: Record<string, unknown>, attempt = 0): ManifestPageSnapshotBuild {
   const createdAtMs = Date.now();
-  const codeGraph = (ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER).discoverRepo(repo.canonicalRoot);
+  const codeGraph = ctx.codeGraphAdapter.discoverRepo(repo.canonicalRoot);
   const indexed = codeGraphMetadataIndex(repo, ignore, codeGraph);
   const entryMetadataStats = { hits: 0, misses: 0 };
   const counts = emptyManifestCounts();
@@ -1087,7 +1086,7 @@ function buildManifestPageSnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord
 
 function buildVisibleEntrySnapshot(ctx: GeneralRepoToolContext, repo: RepoRecord, ignore: IgnorePolicy, opts: { contentHash?: boolean } = {}, attempt = 0): VisibleEntrySnapshotBuild {
   const createdAtMs = Date.now();
-  const codeGraph = (ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER).discoverRepo(repo.canonicalRoot);
+  const codeGraph = ctx.codeGraphAdapter.discoverRepo(repo.canonicalRoot);
   const entryMetadataStats = { hits: 0, misses: 0 };
   const contentHash = opts.contentHash ?? true;
   const walked = walkVisibleEntries(repo, ignore, '.', entryMetadataStats, { contentHash, cacheMetadata: contentHash });
@@ -2184,7 +2183,7 @@ function refreshRepoIndex(ctx: GeneralRepoToolContext, args: Record<string, unkn
   const sourceInvalidationId = typeof sourceEvent?.invalidation_id === 'string' ? sourceEvent.invalidation_id : undefined;
   const beforeBuild = buildVisibleEntrySnapshot(ctx, repo, ignore, { contentHash: false });
   const before = beforeBuild.snapshot;
-  const adapter = ctx.codeGraphAdapter ?? DEFAULT_CODEGRAPH_ADAPTER;
+  const adapter = ctx.codeGraphAdapter;
   if (!adapter.refreshRepo) {
     tryWriteIndexEvent(ctx, repo, {
       event_type: 'index_refresh',
